@@ -1213,27 +1213,21 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 		return
 	}
 	c := a.ctx
-	skinned := false
-	if page, ok := a.themePage(themeStemChatbox); ok {
-		c.cgoRect = box
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
-		skinned = true
-	}
-	if !skinned {
-		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
-		c.Border(box, ColAccent)
-	}
+	skinPage, skinned := a.themePage(themeStemChatbox)
 
 	// showname/message sit at their chatbox-relative design rects (AO2 child
 	// semantics), falling back to the classic offsets when the theme omits them.
-	nameX, nameY, nameW := box.X+8, box.Y+4, box.W-16
-	if r, ok := lay.rect("showname"); ok {
-		nameX, nameY, nameW = box.X+r.X, box.Y+r.Y, r.W
-	}
-	msgX, msgY, wrapW := box.X+8, box.Y+gifChatNameRowH, box.W-16
-	if r, ok := lay.rect("message"); ok {
-		msgX, msgY, wrapW = box.X+r.X, box.Y+r.Y, r.W
-	}
+	//
+	// SHARED with the live chatbox, deliberately: this used to be its own copy of
+	// the same arithmetic, so the Qt message inset and showname_align would have
+	// landed on screen and not in the exported video. The one difference the export
+	// keeps is its taller fallback name row (gifChatNameRowH), which only applies to
+	// a theme that declares no `message` rect.
+	//
+	// Resolved before the skin is painted for the same reason as the live chatbox:
+	// the widen-and-swap ladder below decides WHICH skin is painted.
+	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+gifChatNameRowH)
+	msgX, msgY, wrapW := msgBox.X, msgBox.Y, msgBox.W
 
 	nameCol := ColAccent
 	if skinned && a.themeHasName {
@@ -1242,12 +1236,36 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	a.labelEmoji(a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText), a.elemEmoji(elemShowname, DefaultScalePct), // #39: theme showname family/size
-		nameX, nameY, nameW, sc.ShownameText, nameCol)
+	// Shared with the live chatbox (chatboxfit.go): the showname's point size folds
+	// with the export layout's OWN canvas scale — lay was built for the capture
+	// frame, not the window — so a name keeps the same proportion to its box in the
+	// video as it had on screen. #39: theme showname family/size.
+	snFont, snEmoji := a.themedChatFace(elemShowname, DefaultScalePct, lay, sc.ShownameText)
+	// ...and so does the widen-and-swap ladder (4.7e mirror-site rule). A long
+	// showname that pushed the live chatbox onto its `med` skin must push the
+	// exported frame onto it too, against the layout built for the CAPTURE frame,
+	// or the video shows a narrow name plate with the name spilling off it.
+	nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+
+	if skinned {
+		c.cgoRect = box
+		_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
+	} else {
+		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		c.Border(box, ColAccent)
+	}
+	nameX, nameW := a.shownameSpanFor(nameBox, snFont, snEmoji, sc.ShownameText, nameCol)
+	a.labelEmoji(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol)
 
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
 	// chatbox paths runs across a whole export, so the shared cache never drifts).
+	//
+	// The MESSAGE deliberately does NOT take the canvas fold the showname above
+	// takes. j.chatPct is exportChatPct, already derived from the capture height,
+	// and fitChatRaster then shrinks it until the block fits the box — so this text
+	// is sized against the export frame twice over already, and folding a third
+	// factor in would only fight the fit loop.
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()

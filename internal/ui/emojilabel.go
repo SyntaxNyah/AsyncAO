@@ -72,6 +72,47 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 	c.popClip(cp, ch)
 }
 
+// labelEmojiWidth is the LOGICAL width labelEmoji would draw text at, measured
+// through the SAME two paths and the same caches as the draw itself — so a
+// caller that aligns a label inside a box can never measure on one face and
+// paint with another.
+//
+// It is not c.TextWidth: that one always measures the fixed CHROME face, while a
+// showname draws in the theme's own family at the theme's own point size (#39).
+// Measuring the wrong face would offset a centred name by the difference.
+//
+// Allocation-free once warm, which is what lets an aligned showname stay inside
+// the whole-screen zero-alloc gate: each branch is a probe of the very cache the
+// draw call that follows will hit again (textCache on the plain path,
+// emojiCache on the fallback path), and the emoji branch's nil result is itself
+// cached.
+func (a *App) labelEmojiWidth(primary, emoji *ttf.Font, text string, col sdl.Color) int32 {
+	c := a.ctx
+	if primary == nil || text == "" {
+		return 0
+	}
+	// Same gate, same order as labelEmoji: plain single-script text takes the
+	// single-font path, everything else the multi-font raster.
+	if !render.NeedsEmojiFallback(text) && c.coversFace(primary, text) {
+		return c.labelWidthFont(primary, text, col)
+	}
+	m := c.emojiRaster(text, col, primary, emoji)
+	if m == nil { // build failed / nothing to add → labelEmoji falls back too
+		return c.labelWidthFont(primary, text, col)
+	}
+	return m.PrefixWidth(m.TotalRunes())
+}
+
+// labelWidthFont is the drawn width of a single-font label — the texture the
+// next LabelClippedFont blits, measured rather than re-rendered.
+func (c *Ctx) labelWidthFont(font *ttf.Font, text string, col sdl.Color) int32 {
+	t, ok := c.textTexture(text, col, font)
+	if !ok {
+		return 0
+	}
+	return t.logicalW()
+}
+
 // labelName draws a user-authored NAME (or short user text) at the CHROME scale with full
 // CJK / non-Latin / emoji fallback, clipped to maxW. It is the drop-in replacement for
 // c.LabelClipped on name surfaces (DM/group thread names + bodies, member/invite rows,

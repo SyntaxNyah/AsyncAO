@@ -102,6 +102,70 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   the music, areas and players lists, so a theme can't show padded logs beside a
   flush one. The left edge insets and the right deliberately does not, so the
   scrollbar stays flush against the panel edge exactly as AO2 keeps it.
+- **The themed chatbox message sits inside its box, and shownames honour the
+  theme's alignment.** Two separate faults looked like one missing margin, and
+  neither turned out to be about a margin a theme declares — no theme declares
+  one. The first is the message text, which AO2
+  insets by four pixels on every side because of the text widget it is drawn in;
+  AsyncAO started it flat against the theme's rectangle, so the first letter of
+  every line touched the frame. It is now inset the same four pixels, on all four
+  sides — symmetrically, unlike the log panels, because the message has no
+  scrollbar to leave room for. The second is the showname, which AO2 places
+  across its own box according to a setting two thirds of real themes declare and
+  AsyncAO read from none of them: a name a theme meant to be centred was drawn
+  hard against the left edge. Centre, right and AO2's justify-means-centre are
+  all honoured now, and a name too wide for its box still starts at the left so
+  its beginning is never the part that gets cut. Deliberately left alone: the
+  showname's vertical position. It looks like it should be centred in a tall
+  showname box, but stock AO2 anchors it to the top — checked against a real
+  build of the toolkit AO2 uses rather than assumed — so matching AO2 means
+  leaving it where it was. The video and comic exports resolve this geometry
+  through the same code as the live chatbox, so an exported frame can no longer
+  drift from what you were looking at.
+- **Chatbox text is sized against the box the theme drew for it.** A theme fixes
+  both halves of a proportion: how big the showname and message boxes are, and
+  what point sizes it wants the text in them drawn at. The stock AO2 client
+  multiplies both by the same number, so how much text fits a box stays whatever
+  the theme's author chose. AsyncAO scaled the boxes to the window and left the
+  point sizes alone, so that proportion moved by exactly the amount the window
+  differed from the theme's canvas. Themes drawn for a small canvas — most of
+  them — ended up with text far too small, adrift in the middle of a big box;
+  themes drawn for a very large one ended up with text that overran the frame.
+  Measured across a large set of real themes at the default window size, how much
+  text fit ranged from about a third of what the theme intended to more than
+  three times it, and only 19 of 72 themes were within a tenth of right. The
+  canvas scale is now folded into the chatbox's text, which brings all but seven
+  of those themes inside a tenth. Three things worth knowing. At the new Native
+  1:1 default, on a window at least as big as the theme's canvas, absolutely
+  nothing changes — the two scales already agree — so this only shows up once you
+  resize below the canvas or pick a different fit mode. On a small-canvas theme
+  you have scaled up, the chatbox text will be noticeably bigger than it was
+  yesterday: that is the size the theme asked for. And there is a ceiling on the
+  result, so a heavily zoomed Custom fit cannot ask for a font large enough to
+  exhaust video memory. Only the chatbox moves in this release; the logs and the
+  music, areas and player lists have the same mismatch and are tracked
+  separately. Video and comic exports fold the showname the same way, against the
+  frame they are capturing.
+- **A long showname now widens its plate and swaps the chatbox art, the way AO2
+  does it.** Themes ship two extra chatbox pictures beside the ordinary one, with
+  a wider name plate painted into them, for exactly the case where somebody's
+  showname is longer than the space the theme drew for it. AsyncAO shipped none
+  of that: a long name was simply cut off at the edge of a name plate the theme
+  never intended it to be confined to. Now the name is measured, and if it
+  overflows, the box grows by the amount the theme asks for and the chatbox
+  picture swaps to the wider one; if it still overflows, it grows again and swaps
+  to the widest. Past that the name is cut off, which is where AO2 stops too. A
+  theme that ships no wider pictures — or that asks for no extra width — leaves
+  the name exactly where it was, again matching AO2, so nothing is invented for a
+  theme whose author did not want it. Of the real themes checked, roughly seven in
+  ten get the full two-step treatment and the rest are correctly left alone. The
+  extra pictures cost nothing to look for: they are ordinary theme art, found once
+  when you pick a theme, and a theme that has none is answered from memory for as
+  long as it stays applied — no lookup happens while you are talking. The amount
+  the box grows by scales with the theme's canvas, so the wider plate keeps
+  lining up with the art at any window size, and video and comic exports swap the
+  same picture as the live chatbox so a long name cannot look right on screen and
+  spill off the plate in the exported file.
 - **Client chrome no longer passes your click through to whatever is under it.**
   Pressing a chip on the floating toolbox also pressed whatever the theme had put
   underneath it, because a widget drawn early has no way of knowing that a widget

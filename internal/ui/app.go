@@ -759,6 +759,19 @@ type App struct {
 	themePalette    theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it
 	themeNameCol    sdl.Color
 	themeHasName    bool
+	// themeShownameAlign is the active theme's `showname_align`, the one piece of
+	// chatbox text placement that is design data rather than a Qt default
+	// (chatboxfit.go). Parsed off-thread with the rest of courtroom_design.ini and
+	// landed by pollThemeApply; the zero value is Left, which is both AO2's
+	// fallback and AsyncAO's historical behaviour.
+	themeShownameAlign shownameAlign
+	// themeShownameExtra is the active theme's `showname_extra_width` in DESIGN
+	// pixels — the rung height of AO2's widen-and-swap ladder (chatboxfit.go).
+	// Design space, not window space: themeLayoutIn scales it with the rect it
+	// widens and bakes the result into the layout cache, so the draw path never
+	// touches a float. Zero (the value nine reference themes declare, and the value
+	// a themeless App carries) disables the ladder.
+	themeShownameExtra int
 	// themeFonts is the applied theme's per-element courtroom_fonts.ini table
 	// (#39): declared point size folded to a percent, the resolved family's face
 	// slot, and <id>_bold. The ZERO table means "this theme dresses nothing",
@@ -2300,6 +2313,16 @@ type themeApply struct {
 	layout    map[string]theme.Rect
 	emoteCell [2]int // emote_button_size (w, h)
 	emoteGap  [2]int // emote_button_spacing (x, y)
+	// shownameAlign is courtroom_design.ini's `showname_align` — not a rect, so it
+	// cannot ride `layout`. Parsed here, off the render thread, because
+	// parseShownameAlign lowercases the raw value (hard rule 2).
+	shownameAlign shownameAlign
+	// shownameExtra is courtroom_design.ini's `showname_extra_width` in DESIGN
+	// pixels: how much wider the showname box becomes at each rung of AO2's
+	// widen-and-swap ladder (courtroom.cpp:3357). Zero or absent disables the
+	// ladder outright — nine of the 74 reference themes do exactly that — which is
+	// AO2's own behaviour and not a gap to fill in.
+	shownameExtra int
 	// charSel is char select's OWN geometry (#20), read from the same
 	// courtroom_design.ini but kept apart from `layout` — see charselectlayout.go
 	// for why it must never join a.themeRects. Every one of its twelve keys is
@@ -2315,6 +2338,13 @@ type themeApply struct {
 	// and the dirs probed (so "nothing found" names the actual paths).
 	chatboxFile string
 	chatboxDir  string
+	// chatboxStem is the base skin's file stem WITHOUT its extension — "chat" on
+	// 64 of the 74 reference themes, "chatbox" on P5Theme, "chatblank" on the two
+	// that ship only the blank plate. It is load-time state, not diagnostics: the
+	// med/big ladder art is named after it (see chatboxMedSuffix), so hardcoding
+	// "chat" would silently skip the ladder on every theme that spells it
+	// differently.
+	chatboxStem string
 	iniKeys     int
 	probed      []string
 	inkGuard    string // readability guard verdict ("" = colors kept)
@@ -2332,6 +2362,28 @@ type themeApply struct {
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
 const themeStemChatbox = "chatbox"
+
+// themeStemChatboxMed / themeStemChatboxBig are the two WIDER chatbox skins of
+// AO2's showname widen-and-swap ladder, as T1 stems.
+//
+// They are T1 KEYS, not file names: the files are named after whichever base
+// candidate resolved (chatmed / chatboxmed / ...), which is only known once the
+// theme has been walked, so they cannot live in themeImageStems' static table.
+// The keys are fixed so every draw site names the same two textures.
+const (
+	themeStemChatboxMed = "chatboxmed"
+	themeStemChatboxBig = "chatboxbig"
+)
+
+// chatboxMedSuffix / chatboxBigSuffix are what AO2 appends to the RESOLVED base
+// skin's path to name the two wider variants (AO2-Client courtroom.cpp:3358 and
+// :3362, `current_path + "med"` / `+ "big"`). The base is whichever of
+// chat / chatbox / chatblank the theme actually shipped, so these are suffixes
+// rather than whole names.
+const (
+	chatboxMedSuffix = "med"
+	chatboxBigSuffix = "big"
+)
 
 // themeStemCharSelectBG is the char-select backdrop's stem in themeTex / T1
 // (charselect_background.* on disk). Named because two files reach for it: the
@@ -8133,24 +8185,35 @@ func (a *App) applyThemeAsync() uint64 {
 				res.nameCol = sdl.Color{R: sn.Color.R, G: sn.Color.G, B: sn.Color.B, A: 255}
 				res.hasName = true
 			}
+			// loadOne decodes ONE already-located file into the stem's slot. Split out
+			// of loadStem because the chatbox ladder below locates its files a
+			// different way (one fixed directory, no candidate list) but must decode
+			// and land them identically.
+			loadOne := func(stem, path string) bool {
+				data, rerr := os.ReadFile(path)
+				if rerr != nil {
+					return false
+				}
+				d, derr := assets.DecodeImage(data, anims)
+				if derr != nil {
+					return false
+				}
+				res.images[stem] = d
+				return true
+			}
 			loadStem := func(stem string, candidates []string, exts []string) {
 				for _, cand := range candidates {
 					path, ok := t.FindAsset(cand, exts)
 					if !ok {
 						continue
 					}
-					data, rerr := os.ReadFile(path)
-					if rerr != nil {
+					if !loadOne(stem, path) {
 						continue
 					}
-					d, derr := assets.DecodeImage(data, anims)
-					if derr != nil {
-						continue
-					}
-					res.images[stem] = d
 					if stem == themeStemChatbox {
 						res.chatboxFile = filepath.Base(path)
 						res.chatboxDir = filepath.Dir(path)
+						res.chatboxStem = cand
 					}
 					return
 				}
@@ -8160,6 +8223,37 @@ func (a *App) applyThemeAsync() uint64 {
 			}
 			for key, candidates := range themeButtonStems() {
 				loadStem(themeBtnPrefix+key, candidates, themeButtonExts)
+			}
+			// The showname widen-and-swap ladder's two wider skins (4.7c). AO2 names
+			// them by appending to the RESOLVED base skin's own path
+			// (courtroom.cpp:3358/:3362), so they are looked up here — after the base
+			// has resolved and in the base's own directory — rather than from the
+			// static candidate table above.
+			//
+			// This is where the ladder's cost lives, and it is the reason it can exist
+			// at all in a zero-fallback streaming client: two os.Stat calls per THEME
+			// APPLY, on this goroutine, beside the two dozen the theme already pays.
+			// Not one per message, and not one on the network — theme chrome is local
+			// content, unlike the character / background / evidence art the one-probe
+			// rule governs. A theme that ships neither variant simply leaves both stems
+			// out of res.images, pollThemeApply drops them from themeTex, and every
+			// draw-time probe for the rest of that theme's life is a map read that
+			// answers false. The negative is cached by construction; nothing re-probes
+			// it until the user picks another theme.
+			//
+			// MEMORY, because pinned theme pages sit on top of the T1 budget rather
+			// than inside it (render.TextureStore.UploadPinned): this is bounded by
+			// construction at exactly two files, and they are the same class and — on
+			// every theme measured — the same dimensions as the base chatbox skin
+			// already pinned. The reference corpus's largest is the AOHDUltra family's
+			// 1024x187, i.e. 748 KiB decoded apiece, so the worst case in 74 real
+			// themes is ~1.5 MiB more pinned art for as long as that theme is applied.
+			if res.chatboxStem != "" {
+				for _, rung := range chatboxLadderRungs {
+					if path, ok := theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), themeImageExts); ok {
+						loadOne(rung.texStem(), path)
+					}
+				}
 			}
 			// Readability guard: drop theme ink that has no contrast
 			// against the skin it ships with (see the constants above).
@@ -8190,6 +8284,18 @@ func (a *App) applyThemeAsync() uint64 {
 			}
 			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
 			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
+			// showname_align: a plain string design value, so DesignValue rather
+			// than ElementRect. A missing key yields "" and parseShownameAlign's
+			// default arm, which is AO2's own `else` (courtroom.cpp:3352).
+			alignRaw, _ := t.DesignValue(shownameAlignKey)
+			res.shownameAlign = parseShownameAlign(alignRaw)
+			// showname_extra_width: a bare integer, so DesignValue + the same
+			// tolerant Atoi AO2 uses (QString::toInt() yields 0 for anything it
+			// cannot parse, and AO2 feeds the result straight into the ladder's
+			// `extra_width > 0` test). A missing key, a blank one and a garbage one
+			// therefore all land on 0 = ladder disabled, which is AO2's answer too.
+			extraRaw, _ := t.DesignValue(shownameExtraWidthKey)
+			res.shownameExtra = parseShownameExtraWidth(extraRaw)
 			// Char select's twelve keys, resolved against the embedded default-theme
 			// table (#20). Off-thread with the rest of the INI work — hard rules 1
 			// and 2 — and landed by pollThemeApply.
@@ -8289,6 +8395,11 @@ func (a *App) pollThemeApply() {
 	}
 	a.themeRects = a.applyRectOverrides(rects)
 	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
+	// Lands beside the geometry it belongs to. A themeless apply carries the zero
+	// value, which is Left — so dropping a theme restores AO2's own default rather
+	// than leaving the previous theme's alignment behind.
+	a.themeShownameAlign = res.shownameAlign
+	a.themeShownameExtra = res.shownameExtra
 	// Char select's own geometry lands beside the courtroom's (#20). No
 	// applyRectOverrides pass: these keys are deliberately not editable — they are not
 	// in a.themeRects, so the layout editor never sees them and there is nothing to

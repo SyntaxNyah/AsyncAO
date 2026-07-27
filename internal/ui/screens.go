@@ -2325,9 +2325,28 @@ func (a *App) reshowSprites() {
 
 // chatBoxTopStrip is the showname strip above the message text (text draws at box.Y+chatBoxTopStrip);
 // chatBoxBottomPad leaves a little air under the last line. Used to grow the box to fit its message.
+//
+// chatOverlayPadX / chatOverlayNameY / chatOverlayBoldNudge name the rest of the
+// classic overlay's inset, which drawChatOverlay used to spell as bare 8 / 4 / 16
+// / 9 literals sprinkled across a dozen expressions (hard rule 9). VALUES ARE
+// UNCHANGED — this is naming only, and TestClassicChatOverlayInsetValuesUnchanged
+// (chatboxfit_test.go) pins the classic box to the exact pixels it drew before.
+//
+// These are AsyncAO's OWN furniture, not AO2 geometry: the classic overlay
+// invents a chatbox where the theme declares none, so nothing here is a
+// courtroom_design.ini rect. They double as the themed chatbox's fallback for a
+// theme that declares an ao2_chatbox but no showname / message child (see
+// chatboxfit.go), which is the role they always played.
 const (
 	chatBoxTopStrip  = int32(26)
 	chatBoxBottomPad = int32(8)
+	// chatOverlayPadX is the left/right gutter; the usable width loses 2× it.
+	chatOverlayPadX = int32(8)
+	// chatOverlayNameY is the showname row's offset from the box's top edge.
+	chatOverlayNameY = int32(4)
+	// chatOverlayBoldNudge is the 1 px right shift of the faux-bold second pass
+	// (no bold cut is opened — the same glyphs are drawn twice, one pixel apart).
+	chatOverlayBoldNudge = int32(1)
 )
 
 // grownChatBoxH is the chatbox height needed to show `lines` lines of `lineH`-tall text in full
@@ -2391,7 +2410,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// #39: the theme's "message" point size decides the line height, so a
 		// theme-sized message grows the flat panel by the right amount.
 		lineH := int32(a.messageFontFor(a.messagePct(), sc.MessageText).Height())
-		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-16, sc)), lineH); g > box.H {
+		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
 		}
@@ -2450,15 +2469,22 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// "showname"/"showname_font"/"showname_bold" now drive size, family and weight.
 	snFont := a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText)
 	snEmoji := a.elemEmoji(elemShowname, DefaultScalePct)
+	// NOT showname_align: this overlay is AsyncAO's own chatbox, invented for
+	// themes that declare no ao2_chatbox rect, so there is no theme-authored
+	// showname box for a theme-authored alignment to place text across. The themed
+	// chatbox honours it (chatboxfit.go).
 	if a.d.Prefs.BoldNamesOn() || a.elemBold(elemShowname) { // faux-bold the showname (1px-shifted second pass) for readability — default on
-		a.labelEmoji(snFont, snEmoji, box.X+9, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+		a.labelEmoji(snFont, snEmoji, box.X+chatOverlayPadX+chatOverlayBoldNudge, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol)
 	}
-	a.labelEmoji(snFont, snEmoji, box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	a.labelEmoji(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol)
 
-	wrapW := box.W - 16
-	a.ensureChatRaster(wrapW, themeSkinned) // theme ink only with the THEME's skin; char skins keep our readable text
+	wrapW := box.W - 2*chatOverlayPadX
+	// messagePct, NOT the themed fold: this overlay is AsyncAO's own chatbox, sized
+	// from the viewport rather than from a theme-authored design rect, so there is
+	// no canvas scale for it to keep a ratio to.
+	a.ensureChatRaster(wrapW, themeSkinned, a.messagePct()) // theme ink only with the THEME's skin; char skins keep our readable text
 	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
-	textRect := sdl.Rect{X: box.X + 8, Y: box.Y + 26, W: wrapW, H: box.Y + box.H - (box.Y + 26)}
+	textRect := sdl.Rect{X: box.X + chatOverlayPadX, Y: box.Y + chatBoxTopStrip, W: wrapW, H: box.H - chatBoxTopStrip}
 	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it. Via the Ctx
@@ -2481,9 +2507,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 				// background cap off still parks (that gate outranks this).
 				a.NoteAnimating()
 			}
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, reduce)
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, textRect.Y, reduce)
 		} else {
-			a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+			a.msRaster.Draw(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y)
 		}
 		_ = c.Ren.SetClipRect(nil)
 	}
@@ -2605,7 +2631,12 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 	c := a.ctx
 	m := a.msRaster
 	if m == nil { // animated message (msAnim): whole-block highlight
-		lineH := int32(a.messageFontFor(a.messagePct(), sc.MessageText).Height()) // #39: theme "message" size
+		// a.rasterScale, not a fresh messagePct(): it is the percent ensureChatRaster
+		// actually built msAnim at, and the two now differ inside a themed chatbox,
+		// which folds the canvas scale in (chatboxfit.go). Reaching here means msAnim
+		// is non-nil — this is only called from inside that guard — so ensureChatRaster
+		// has run and rasterScale is the scale on screen.
+		lineH := int32(a.messageFontFor(a.rasterScale, sc.MessageText).Height()) // #39: theme "message" size
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
@@ -2680,13 +2711,17 @@ func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
 // ensureChatRaster (re)rasterizes the current message when the text,
 // color, zoom, wrap width, or skin presence changed — shared by the
 // classic overlay and the themed chatbox.
-func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
+//
+// pct is the RESOLVED message scale, passed in rather than computed here because
+// the two callers no longer agree on it: the classic overlay uses messagePct
+// (the theme's declared point size folded with the Text zoom knob, #39), while
+// the themed chatbox folds the theme canvas's scale in on top so the text keeps
+// the ratio to its box that the theme author drew (chatboxfit.go). It is what
+// the raster is built at AND what rasterScale remembers, so a theme swap, a zoom
+// notch or a window resize that moves it re-rasters exactly once.
+func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
-	// #39: the RESOLVED message scale (the theme's declared point size folded with
-	// the Text zoom knob). It is what the raster is built at AND what rasterScale
-	// remembers, so a theme swap that changes the size re-rasters exactly once.
-	pct := a.messagePct()
 	// staleAnimChain: an effects line built BEFORE a lazily-loaded CJK/emoji tier landed
 	// carries the old font-chain generation; its glyphs are still tofu/uniform-advance until
 	// it re-rasters against the new chain. Keyed on fontChainGen the same way the log wrap

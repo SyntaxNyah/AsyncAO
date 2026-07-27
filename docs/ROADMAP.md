@@ -63,46 +63,146 @@ items move to `docs/FEATURES.md` as they ship.
   clock rule, so nothing in a theme asks for one. What is genuinely missing is
   four separate pieces of AO2 behaviour, none of which shipped with the themed-log
   inset:
-  - **The dominant defect was text-to-box SCALE PARITY, and the shipped
-    `ThemeFitNative` default fixes it structurally.** AO2 multiplies design rects
-    AND `courtroom_fonts.ini` point sizes by the same `themeScalingFactor`, so
+  - ~~**Text-to-box SCALE PARITY.**~~ **SHIPPED** for the chatbox pair
+    (`chatboxfit.go`, `foldCanvasFontPct`), on top of the structural half the
+    `ThemeFitNative` default already delivered. AO2 multiplies design rects AND
+    `courtroom_fonts.ini` point sizes by the same `themeScalingFactor`, so
     `rect width ÷ font size` is a theme-authored invariant; AsyncAO scaled the
-    rect by window÷design and never scaled the font, and the resulting capacity
-    ratio measured 0.49x…4.50x across the corpus (below 1.0 the message overruns
-    its rect and reads as "no margins"; above it the text floats in a huge box and
-    reads as "wrong margins"). At Native the layout scale is exactly 1.0, so the
-    two agree by construction. **Folding `min(scaleX, scaleY)` into the element
-    pct is only needed once the user resizes away from 1:1** — i.e. the
-    customization path, not the default — and is tracked as "design-resolution
-    font scaling" under the per-element font item below, with its clamp and
-    re-raster caveats.
-  - **The message rect's 4 px inset.** `ui_vp_message` is a frameless `QTextEdit`
-    with both scrollbars off, so Qt's default `QTextDocument::documentMargin`
-    insets it on ALL FOUR sides; the stock theme's own INI documents it ("There's
-    4 pixels from X position until the symbol is displayed"). Symmetric, unlike
-    the chatlog inset that shipped — the message has no scrollbar, so the
-    asymmetric helper must NOT be reused here.
-  - **Showname vertical centring and `showname_align`.** `ui_vp_showname` is a
-    `QLabel`, so its own margin is 0 (applying the 4 px inset to it would be
-    *wrong*) but it v-centres by Qt default while AsyncAO top-anchors it —
-    visible on the tall showname rects real themes ship. `showname_align` is
-    declared by 58 of 74 corpus themes (43 `center`, 15 `left`) and ignored
-    outright today. Both are cheap.
-  - **The `med` / `big` chatbox skin swap.** AO2 measures the showname and, if it
-    overflows, widens by `showname_extra_width` and swaps the chatbox art to
-    `<stem>med`, then `<stem>big`, cutting the text off past that; a theme
-    shipping neither is documented to leave the showname unresized. `chatmed`
-    exists on 66 of 74 themes, so the `med` rung alone covers ~89%. The blocker is
-    that AsyncAO is a zero-fallback streaming client: probing those stems must
-    ride the existing `themePage` residency path with a cached negative, never a
-    per-message network probe.
-  **Mirror site:** `drawGifThemedChatbox` (`internal/ui/gifexport.go`) repeats the
-  same un-inset rect resolution as the live chatbox, so every inset / alignment /
-  scale change must land there too or video and comic export diverge from what
-  players saw. **Clip caution:** AO2 does not clip `ui_vp_message` to the chatbox
-  (it is parented to the courtroom with only an origin offset) and themes
-  legitimately overhang — tightening the clip to the message rect would cut those
-  themes' last column.
+    rect by window÷design and never scaled the font, so the capacity ratio moved
+    by exactly that factor (below 1.0 the message overruns its rect and reads as
+    "no margins"; above it the text floats in a huge box). Measured over the
+    corpus at 1152x864 Letterbox — the shipped window on the mode that keeps a
+    theme's aspect — capacity against AO2 ran **0.37x … 3.38x, a 9x spread, with
+    19 of 72 themes inside 10%**; folding `emoteCellScale(scaleX, scaleY)` into
+    the resolved element percent takes that to **1.00x … 1.14x with 65 of 72
+    inside 10%**. The residue is `themeFontPct`'s point-size-to-pixel truncation
+    (a declared 10 pt resolves to 83%, which opens a 9 px face), which predates
+    this and is not the fold's to fix. Three things worth knowing before touching
+    it:
+    - At **Native** on a window at least as large as the canvas the factor is
+      exactly 1.0 and the fold is a literal identity return, so the default
+      chatbox is byte-identical to the pre-fold one. Everything below is the
+      customization path.
+    - The theme's DECLARED percent is clamped first (`themeFontMinPct` /
+      `themeFontMaxPct`; `microsoft surface 4k webao` declares `message = 50`,
+      i.e. 416%, and clips to 400% before any canvas is involved), then the canvas
+      multiplies OUTSIDE that clamp, then the product hits its own
+      `themedCanvasFontMaxPct` (1600% = 192 px). That cap never binds in an
+      aspect-preserving mode on any corpus theme at any real window — the corpus
+      maxima are 844% (Letterbox) and 1500% (Crop) at 3840x2160 — it exists for
+      `ThemeFitCustom`, whose manual zoom would take the 256x256 theme past 2500%.
+    - Under **Stretch** the fold takes the tighter axis (`emoteCellScale`), so a
+      badly stretched window under-fills its message rect by up to 3.8x. That is
+      the same trade Stretch already makes for the emote grid, in the one mode
+      that by definition abandons the theme's aspect.
+  - **Fold the canvas scale into the LOG / LIST fonts too.** *Open, deliberately
+    not done in the pass that shipped the chatbox fold.* The IC log, the server
+    log, the music list, the area list and the music name sit in window-absolute
+    scaled rects and have exactly the same parity problem — AO2 scales their point
+    sizes by the same factor. They were left out because each also carries the
+    user's own per-panel Ctrl+wheel zoom and re-wraps through caches keyed on it,
+    so folding them is a larger visible change than the chatbox pair, and because
+    the panel that changes size mid-drag would re-wrap AND re-raster every log
+    line rather than one message. The machinery is already there when it is wanted
+    — `foldCanvasFontPct` and `themeLayoutCache.textPct` are element-agnostic.
+  - ~~**The message rect's 4 px inset.**~~ **SHIPPED** (`chatboxfit.go`,
+    `themedMessageInsetPx`). `ui_vp_message` is a frameless `QTextEdit` with both
+    scrollbars off, so Qt's default `QTextDocument::documentMargin` insets it on
+    ALL FOUR sides. Confirmed by measurement rather than reading: a probe built
+    against the Qt 6.5.3 kit on the dev box, constructing the widget the way
+    `courtroom.cpp` does and sizing it to the stock theme's `message` rect,
+    reports `documentMargin` 4.0, a position-0 text cursor at (4, 4) and a
+    first-block bounding rect 234 px wide inside a 242 px viewport. Symmetric,
+    unlike the chatlog inset — the message has no scrollbar, so the asymmetric
+    helper is deliberately not reused.
+  - ~~**`showname_align`.**~~ **SHIPPED** (`chatboxfit.go`, `shownameSpan`).
+    Declared by 66 of the corpus's 97 design files (50 `center`, 16 `left`, none
+    `right` or `justify`) and previously read by nothing, so two thirds of themes
+    had their showname drawn hard left. `justify` maps to centre because that is
+    the branch AO2 wrote for it.
+  - ~~**Showname vertical centring.**~~ **DISPROVEN — do not build it.** The
+    premise was that `ui_vp_showname` v-centres by `QLabel` default while AsyncAO
+    top-anchors it. It does not: AO2 calls `setAlignment` with a HORIZONTAL-only
+    flag, both at construction and again for every message in the
+    `showname_align` block, and `QLabel::setAlignment` clears the vertical mask —
+    so Qt's default `AlignVCenter` is gone and the text lands at the top of the
+    widget. Measured on Qt 6.5.3 with a 232x120 label (the tall
+    `microsoft surface 4k webao` showname rect): ink starts at y=54 under Qt's
+    default alignment and at y=2 under `AlignLeft` alone, which is what AO2 sets.
+    AsyncAO's existing top anchor IS the parity behaviour; centring it would be a
+    divergence. No theme can override this either — nothing in the corpus or the
+    shipped AO2 themes uses `qproperty-alignment`.
+  - ~~**The `med` / `big` chatbox skin swap.**~~ **SHIPPED, both rungs**
+    (`chatboxfit.go`, `shownameLadder` / `chatboxSkinLadder`). AO2 measures the
+    showname and, if it overflows the box the theme drew, widens by
+    `showname_extra_width` and swaps the chatbox art to `<stem>med`; if it still
+    overflows, widens by twice that and swaps to `<stem>big`; past that it cuts
+    the text off. A theme shipping neither variant leaves the showname unresized —
+    documented AO2 behaviour, reproduced exactly, not worked around. Four things
+    worth knowing before touching it:
+    - **The zero-fallback objection turned out not to apply.** Theme art is
+      LOCAL content, not streamed: `applyThemeAsync` resolves it with `os.Stat` /
+      `os.ReadFile` on the theme goroutine and `pollThemeApply` pins the result in
+      T1. So the two variants cost **two extra `os.Stat` calls per theme apply**,
+      beside the two dozen a theme already pays — not one per message, and nothing
+      on the network. The one-probe-per-asset rule governs character / background /
+      evidence URLs, which is a different pipeline. The negative is cached by
+      construction: a theme that ships no variant leaves the stems out of
+      `themeTex`, and `themePage`'s first line is that map probe, so "no med skin"
+      is one map read per frame forever.
+    - **The variant's stem is derived, never hardcoded.** AO2 appends to the
+      RESOLVED base image's own path, so the file is `<whatever base resolved>med`
+      in the base's own directory. 64 of the 74 corpus themes resolve `chat`,
+      `P5Theme` resolves `chatbox`, two resolve only `chatblank`; and the
+      directory scoping matters because our theme loader falls through to a
+      `default` theme dir, which `theme.FindAssetIn` deliberately does not.
+    - **`showname_extra_width` is scaled by the canvas**, baked into
+      `themeLayoutCache.shownameExtra` on the cold rebuild so the draw path stays
+      integer-only. AO2 does not scale it (rects go through
+      `themeScalingFactor`, this value does not), but AO2 ships that factor at 1,
+      so the two agree everywhere AO2 runs; ours is 1 only at the Native default
+      on a window that fits the canvas. Floored at 1 px so a downscaled canvas
+      cannot silently drop the skin swap.
+    - **Corpus behaviour**, measured on all 74: 60 ship both variants, 14 ship
+      neither, and **none ships `med` without `big`** — so the `med`-only rung is
+      pinned by test, not by a real theme. Six themes ship a `chatmed.png` with no
+      base skin at all; AO2 resolves their base through its bundled default theme,
+      a streaming client has no such tree, so their chatbox is the flat panel and
+      the ladder correctly does not run. 65 declare a positive
+      `showname_extra_width` (32 of them 24, 14 of them 10, 4 of them 48,
+      `P5Theme` 225); the other 9 declare 0, which switches the mechanism off.
+      **The ladder therefore fires on 52 of 74 themes**, and `P5Theme` — the 225 px
+      stress case — costs nothing, because it ships neither variant and AO2 never
+      widens it either.
+    Past the last rung the behaviour is unchanged: a showname wider than the
+    biggest skin the theme shipped is left-anchored and clipped on the right at
+    every alignment (`shownameSpan` floors the offset at zero). AO2's Qt offset
+    goes negative there and clips the name's HEAD instead; losing the beginning of
+    a name is the worse of the two.
+  - **The classic (un-themed) chatbox overlay is deliberately excluded.** It has
+    no `showname` design rect to overflow — its name box is the whole chatbox
+    width less the overlay padding — and no design width for AO2's comparison, so
+    the ladder has nothing to compare against and nothing to widen. It still draws
+    the theme's base chatbox skin, as it always did.
+  **Mirror site — now structural.** `drawGifThemedChatbox`
+  (`internal/ui/gifexport.go`) used to repeat the live chatbox's rect resolution
+  with its own copy of the arithmetic. Both now call `chatboxTextRects`, and
+  `TestThemedChatboxRectsResolvedInOnePlace` fails if either grows a second copy.
+  The export's showname takes the canvas fold through the same shared
+  `themedChatFace`, against the layout built for the CAPTURE frame. Its *message*
+  deliberately does not: `exportChatPct` already derives a size from the capture
+  height and `fitChatRaster` then shrinks it until the block fits the box, so a
+  third factor would only fight that fit loop. The med/big ladder runs on both
+  sites for the same reason and is guarded the same way —
+  `TestShownameLadderReachesBothDrawSites` fails if either draws a themed chatbox
+  without it, because a long name on the wide plate on screen and spilling off the
+  narrow one in the exported file is exactly the drift this consolidation ended.
+  **Clip caution:** AO2 does not clip `ui_vp_message` to the chatbox (it is
+  parented to the courtroom with only an origin offset) and themes legitimately
+  overhang — 8 design files in the corpus do, `CCSmol` (message right edge 259 in
+  a 256-wide chatbox), `Mobile` (393 in 392) and `HDF-Fullscreen (1080p)` (770 in
+  765) worst. The clip stays on the chatbox rect; tightening it to the message
+  rect would cut those themes' last column.
 - **Read `lobby_design.ini` (theme follow-up).** Half the reference themes ship a
   lobby layout AsyncAO never opens: only `courtroom_design.ini`,
   `courtroom_fonts.ini`, `courtroom_sounds.ini` and the penalty INI are read. The

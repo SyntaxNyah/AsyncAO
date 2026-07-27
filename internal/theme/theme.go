@@ -472,11 +472,31 @@ func (t *Theme) PenaltyValue(key string) (string, bool) {
 // first existing path.
 func (t *Theme) FindAsset(stem string, exts []string) (string, bool) {
 	for _, dir := range t.dirs {
-		for _, ext := range exts {
-			path := filepath.Join(dir, stem+ext)
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				return path, true
-			}
+		if path, ok := FindAssetIn(dir, stem, exts); ok {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+// FindAssetIn is FindAsset restricted to ONE directory — the same extension
+// probe, without the fall-through to the next theme dir (and therefore without
+// the fall-through to the bundled default theme).
+//
+// It exists for the variants AO2 derives from an image it has ALREADY resolved
+// rather than looking up by name. AOImage remembers the resolved path of the
+// picture it is showing (AO2-Client aoimage.cpp m_file_name) and the chatbox's
+// widen-and-swap ladder builds its med/big candidates by string-appending to
+// that path minus its extension (courtroom.cpp:3358-3368) — so those two files
+// can only ever come out of the directory the base skin came out of. A theme
+// that ships chatmed.png but no chat.png does not get its med art in AO2, and
+// must not get it here either: pairing one theme's variant with another theme's
+// base would stretch mismatched art into the same box.
+func FindAssetIn(dir, stem string, exts []string) (string, bool) {
+	for _, ext := range exts {
+		path := filepath.Join(dir, stem+ext)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, true
 		}
 	}
 	return "", false

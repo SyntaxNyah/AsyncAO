@@ -89,7 +89,31 @@ type themeLayoutCache struct {
 	winW, winH     int32
 	designW        int32
 	scaleX, scaleY float64 // per-axis: equal for Native/Letterbox/Crop/Custom, independent for Stretch
-	offX, offY     int32
+	// textPct is the canvas scale the CHATBOX TEXT folds in, as an integer percent,
+	// baked at rebuild time (see canvasTextScalePct / chatboxfit.go for the AO2
+	// provenance). It is stored rather than derived per frame for two reasons: the
+	// draw path then stays integer-only, so a font size cannot wobble between two
+	// frames of an unchanged window; and the float rounding happens exactly once per
+	// window/fit/theme change instead of twice per frame.
+	//
+	// 0 means "no canvas": the early return above for a theme with no courtroom /
+	// viewport rect leaves it zero, and so does every hand-built cache in a test.
+	// textScalePct reads that as 100 — no fold, byte-identical to the old geometry.
+	textPct int
+	// shownameExtra is `showname_extra_width` in WINDOW pixels — the theme's
+	// design-space value already multiplied by the canvas scale, baked here for the
+	// same two reasons textPct is: the draw path stays integer-only, and the float
+	// rounding happens once per window/fit/theme change instead of once per frame.
+	//
+	// AO2 does NOT scale it (get_element_dimensions applies themeScalingFactor to
+	// the showname rect, get_design_element hands back extra_width raw), but AO2
+	// also ships that factor at 1, so the two agree everywhere AO2 actually runs.
+	// Our canvas scale is not 1 the moment a window stops matching the theme's
+	// design size, and an unscaled extra would widen the box by a different
+	// fraction of the art at every window size — the exact parity defect §4.7a
+	// describes, reintroduced one rect at a time.
+	shownameExtra int32
+	offX, offY    int32
 	// topOff is the app-chrome band reserved ABOVE the canvas (#14; topChromeH).
 	// Part of the cache key: the live courtroom builds with the band, an export
 	// frame builds without it, and both share this one cache — so a stale entry
@@ -207,6 +231,23 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// decision and must never round differently.
 	f := a.fitDesignCanvas(int32(court.W), int32(court.H), w, h, top, fit)
 	lay.scaleX, lay.scaleY = f.scaleX, f.scaleY
+	// Rounded HERE, on the cold rebuild path, so the chatbox's font resolution is
+	// pure integer arithmetic on every frame that follows (chatboxfit.go).
+	lay.textPct = canvasTextScalePct(f.scaleX, f.scaleY)
+	// Scaled by scaleX because it is ADDED TO a width that was scaled by scaleX
+	// (the showname rect, below) — the two have to move together or the widened
+	// plate stops lining up with the art the swap brings in.
+	//
+	// Floored at one pixel rather than truncated to nothing: a rung that rounds away
+	// would take the SKIN SWAP with it, so a heavily downscaled canvas would drop
+	// back to the narrow chatbox art mid-message. One pixel of widening with the
+	// right art beats none with the wrong art.
+	if a.themeShownameExtra > 0 {
+		lay.shownameExtra = int32(float64(a.themeShownameExtra) * f.scaleX)
+		if lay.shownameExtra < 1 {
+			lay.shownameExtra = 1
+		}
+	}
 	lay.offX, lay.offY = f.area.X, f.area.Y
 	lay.area = f.area
 	// WIDGET BOUNDS = the canvas, minus whatever part of it sits above the reserved
@@ -373,6 +414,22 @@ func (l *themeLayoutCache) angle(key string) float64 {
 	}
 	return config.RotationByteToDeg(b)
 }
+
+// textScalePct is the canvas scale the chatbox text folds in, as an integer
+// percent — DefaultScalePct (a no-op fold) for a cache that never carried a
+// canvas. See themeLayoutCache.textPct and chatboxfit.go.
+func (l *themeLayoutCache) textScalePct() int {
+	if l.textPct <= 0 {
+		return DefaultScalePct
+	}
+	return l.textPct
+}
+
+// shownameExtraPx is `showname_extra_width` in window pixels — one rung of AO2's
+// widen-and-swap ladder (chatboxfit.go). Zero means the theme declared no ladder
+// (nine of the 74 reference themes), and is also what a cache that never carried
+// a canvas reports, so the ladder is off by default everywhere.
+func (l *themeLayoutCache) shownameExtraPx() int32 { return l.shownameExtra }
 
 // rect fetches a usable scaled rect (absent when the theme hides or omits
 // it — hidden/overhang filtering happened at build time).
@@ -1043,8 +1100,41 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
 	}
-	skinned := false
-	if page, ok := a.themePage(themeStemChatbox); ok {
+	skinPage, skinned := a.themePage(themeStemChatbox)
+	// ONE resolution, shared verbatim with the export's themed chatbox
+	// (drawGifThemedChatbox) so video and comic frames can never disagree with what
+	// the player was looking at. It also lands the Qt insets AO2 gets for free:
+	// +4 on every side of the message, nothing on the showname (chatboxfit.go).
+	//
+	// Resolved BEFORE the skin blit because of the ladder below: which chatbox art
+	// gets painted depends on how wide the showname measures, so the name's box and
+	// its face have to exist first. AO2 has the same dependency and solves it the
+	// same way round — set_size_and_pos, then the font, then the measure, then
+	// setImage (courtroom.cpp:3301-3373).
+	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+chatBoxTopStrip)
+
+	nameCol := ColAccent
+	if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
+	}
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
+	// themedChatFace, not elemFontFor: inside a theme's own chatbox the point size
+	// folds with the canvas scale, because AO2 multiplies design rects and
+	// courtroom_fonts.ini sizes by the one themeScalingFactor and the ratio between
+	// them is what the theme author actually drew (chatboxfit.go). At the shipped
+	// Native default on a window that fits the canvas the factor is exactly 1 and
+	// this resolves to what elemFontFor returned.
+	snFont, snEmoji := a.themedChatFace(elemShowname, DefaultScalePct, lay, sc.ShownameText)
+	// AO2's widen-and-swap ladder: a showname wider than the box the theme drew
+	// widens by showname_extra_width and swaps the chatbox art for the wider plate
+	// the theme author drew for exactly that case, twice over if the theme shipped
+	// a `big` as well. Both variants are pinned theme art, so this is map reads and
+	// integer arithmetic — see chatboxSkinLadder for the residency contract.
+	nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+
+	if skinned {
 		// &box into cgo would heap-allocate the PARAMETER on every themed frame that
 		// has a message up — and because escape analysis is static, on the unskinned
 		// frames too. Shared scratch instead (ui.go cgoRect contract: SDL copies the
@@ -1055,12 +1145,18 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		// the SKIN art via CopyEx. Only the skin rotates — the showname/message text
 		// drawn below stays axis-aligned (opt-in cosmetic mismatch, accepted for the
 		// cheap tier, same as any rotated themed chrome).
+		//
+		// The DESTINATION is the ao2_chatbox rect whichever rung is showing: AO2
+		// stretches the swapped art into the widget it already sized
+		// (AOImage::setImage scales the pixmap to size() with IgnoreAspectRatio,
+		// aoimage.cpp:29-31), and every variant in the reference corpus is drawn at
+		// the base skin's own dimensions anyway — the wider name plate is painted
+		// INTO the same canvas, it does not make the canvas wider.
 		if ang := lay.angle(themeChatboxKey); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
 		} else {
-			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
+			_ = c.Ren.CopyEx(a.themeFrame(skinPage), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
-		skinned = true
 	}
 	if !skinned {
 		bg := sdl.Color{R: 16, G: 16, B: 24, A: 215}
@@ -1081,45 +1177,55 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// !skinned would never draw for them.
 	a.drawChatEgg(box, sc.MessageText)
 
-	nameX, nameY := box.X+8, box.Y+4
-	nameW := box.W - 16
-	if r, ok := lay.rect("showname"); ok {
-		nameX, nameY = box.X+r.X, box.Y+r.Y
-		nameW = r.W
-	}
-	msgX, msgY := box.X+8, box.Y+26
-	wrapW := box.W - 16
-	if r, ok := lay.rect("message"); ok {
-		msgX, msgY = box.X+r.X, box.Y+r.Y
-		wrapW = r.W
-	}
+	msgX, msgY := msgBox.X, msgBox.Y
+	wrapW := msgBox.W
 
-	nameCol := ColAccent
-	if skinned && a.themeHasName {
-		nameCol = a.themeNameCol
-	}
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
-	}
-	// Clipped: a long showname must never spill past the theme's box. elemFontFor (not
-	// the fixed chrome font) so a non-Latin name resolves to a covering face; emoji-aware
-	// so a colour-emoji name renders the glyphs, not tofu. #39: the theme's own
-	// showname family / point size / bold, matching the classic overlay.
-	snFont := a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText)
-	snEmoji := a.elemEmoji(elemShowname, DefaultScalePct)
+	// Clipped: a long showname must never spill past the theme's box (widened by the
+	// ladder above, if this theme shipped one). elemFontFor (not the fixed chrome
+	// font) so a non-Latin name resolves to a covering face; emoji-aware so a
+	// colour-emoji name renders the glyphs, not tofu. #39: the theme's own showname
+	// family / point size / bold, matching the classic overlay.
+	//
+	// showname_align, honoured at last: AO2 places the label's text across its own
+	// widget rect (courtroom.cpp:3338-3354), and half the reference corpus's design
+	// files ask for `center` — which AsyncAO drew hard left. Resolved ONCE for both
+	// draw passes so the faux-bold shadow cannot land on a different offset than
+	// the glyphs it thickens.
+	//
+	// The Y is AO2's, unchanged: ui_vp_showname is given a horizontal-only
+	// alignment (courtroom.cpp:93, and again in the block above), which CLEARS
+	// QLabel's default AlignVCenter, so AO2 draws the name at the TOP of the
+	// showname rect however tall the theme made it. Verified on a Qt 6.5.3 build:
+	// the same label in a 232x120 box inks at y=54 with Qt's default alignment and
+	// at y=2 with AlignLeft alone — the value AO2 actually sets.
+	nameX, nameW := a.shownameSpanFor(nameBox, snFont, snEmoji, sc.ShownameText, nameCol)
 	// Only the THEME's showname_bold adds the faux-bold pass here. The classic
 	// overlay also honours the client's "Bold names" pref; the themed box never
 	// has, and quietly turning that on for every themed user is a look change
 	// nobody asked for — kept out of #39's scope deliberately.
 	if a.elemBold(elemShowname) {
-		a.labelEmoji(snFont, snEmoji, nameX+1, nameY, nameW, sc.ShownameText, nameCol)
+		a.labelEmoji(snFont, snEmoji, nameX+chatOverlayBoldNudge, nameBox.Y, nameW, sc.ShownameText, nameCol)
 	}
-	a.labelEmoji(snFont, snEmoji, nameX, nameY, nameW, sc.ShownameText, nameCol)
+	a.labelEmoji(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol)
 
-	a.ensureChatRaster(wrapW, skinned)
+	// The message folds the canvas scale in for the same reason the showname does:
+	// its wrap width came from a design rect that the canvas already scaled, so a
+	// font that did not scale with it changed how much text fits a theme-authored
+	// box — overrunning the frame on one side of 1:1 and rattling around inside it
+	// on the other.
+	a.ensureChatRaster(wrapW, skinned, a.themedChatPct(elemMessage, a.chatPct, lay))
 	// Text selection works on the themed chatbox too (drag a range / dbl-click
 	// a word / triple-click all; Ctrl+C / right-click copies) — same handler
 	// as the classic overlay, fed this layout's message rect.
+	//
+	// The HEIGHT deliberately runs to the bottom of the chatbox rather than using
+	// msgBox.H: AO2 does not confine this text to the message rect either — the
+	// widget is re-parented to the Courtroom and only offset by the chatbox origin
+	// (AO2-Client courtroom.cpp:3310), which is why eight design files in the
+	// reference corpus ship a message rect that overhangs its own chatbox (CCSmol's
+	// right edge is 259 in a 256-wide box; Mobile's 393 in 392; HDF-Fullscreen
+	// 1080p's 770 in 765). Tightening either the selection rect or the clip below
+	// to msgBox would start cutting those themes' last column and last line.
 	textRect := sdl.Rect{X: msgX, Y: msgY, W: wrapW, H: box.Y + box.H - msgY}
 	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {

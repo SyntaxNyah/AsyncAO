@@ -142,8 +142,16 @@ func elemChat(el themeFontElem) bool { return el == elemShowname || el == elemMe
 // elemFontFor is the ONE call an element draw site makes: the covering face for
 // text, at el's resolved scale, in el's own declared family.
 func (a *App) elemFontFor(el themeFontElem, userPct int, text string) *ttf.Font {
+	return a.elemFontAtPct(el, a.elemPct(el, userPct), text)
+}
+
+// elemFontAtPct is elemFontFor with the scale ALREADY resolved — the split
+// exists for the themed chatbox, which folds the theme canvas's own scale into
+// the percent before it asks for a face (chatboxfit.go). Element ROUTING (whose
+// set, whose family) is identical either way; only the arithmetic in front of it
+// differs, so it belongs in one place and the routing in another.
+func (a *App) elemFontAtPct(el themeFontElem, pct int, text string) *ttf.Font {
 	f := a.themeFonts.e[el]
-	pct := a.elemPct(el, userPct)
 	if !f.dressed() && elemChat(el) {
 		return a.ctx.ChatFontFor(pct, text)
 	}

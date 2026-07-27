@@ -351,6 +351,50 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	}
 }
 
+// TestDrawCourtroomThemedCentredShownameZeroAlloc is the themed gate with the
+// showname CENTRED — the state 50 of the 97 design files in the reference corpus
+// ask for, and the one that costs something.
+//
+// Left alignment short-circuits before measuring anything (shownameSpanFor), so
+// the gates above never touch the measuring path at all. Centre and right have to
+// know how wide the name is, and the only honest way to get that is through the
+// same caches the draw uses — labelEmojiWidth re-probes textCache / emojiCache
+// rather than re-rendering or measuring the wrong face. A rendered measure, or a
+// c.TextWidth call on the chrome face, would show up here immediately.
+func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
+	a, cleanup := stageThemedCourtroom(t)
+	defer cleanup()
+
+	a.themeShownameAlign = shownameAlignCenter
+	// A theme-declared showname size too, so the measure runs on the ELEMENT face
+	// (#39) and not on the chrome font that a lazier implementation would reach for.
+	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+
+	const w, h = 1280, 720
+	draw := func() { a.drawCourtroom(w, h) }
+	draw()
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+		t.Fatal("the fixture did not reach the themed branch")
+	}
+	name := a.room.Scene.ShownameText
+	if name == "" {
+		t.Fatal("the fixture has no showname on screen — the alignment path would not run")
+	}
+	// And prove the measure it performs returns something, so this gate cannot pass
+	// vacuously on a name that measures 0 and never reaches the caches.
+	snFont := a.elemFontFor(elemShowname, DefaultScalePct, name)
+	snEmoji := a.elemEmoji(elemShowname, DefaultScalePct)
+	if px := a.labelEmojiWidth(snFont, snEmoji, name, ColAccent); px <= 0 {
+		t.Fatalf("the staged showname %q measures %d px — the centring path is doing no work", name, px)
+	}
+	settle(draw)
+
+	if n := testing.AllocsPerRun(200, draw); n != 0 {
+		t.Fatalf("a settled themed drawCourtroom with a centred showname allocates %.1f/op, want 0 — "+
+			"the showname measure is not hitting a cache (fix the alloc, don't left-align the fixture)", n)
+	}
+}
+
 // divergentZoomStepPct is how far the sibling gate above pushes two panel zooms
 // apart. 20 points is a couple of Ctrl+wheel notches — big enough that the two
 // scales cannot round to one font size, small enough to stay inside the user
