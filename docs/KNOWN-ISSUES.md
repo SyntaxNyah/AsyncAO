@@ -107,6 +107,19 @@ requiring an AsyncAO peer.
 Closing this entry means surfacing the `MS` pairing fields onto the roster, and
 deciding separately whether a live indicator justifies a server-side change.
 
+**The indicator's presentation is a separate, unstarted change.** Today a paired
+row carries a coloured chip containing the *partner's character name*, which reads
+as an unexplained coloured bar — it does not say "paired", and the name in it is
+not information anyone was looking for. What is wanted instead is a visual **link**
+between the two rows: a shared accent on both, assigned per pair so that several
+pairs in one area stay distinguishable, and non-intrusive enough to sit inside an
+existing row without crowding the badges, UID, showname and IPID already there.
+Hue alone is not sufficient — it fails for colour-blind users and it cannot be
+told apart at a glance once there are several pairs — so the accent needs a small
+shared glyph or index alongside it. This is a pure client-side rendering change
+with no wire or traffic implications, and it is independent of the polling problem
+above: it is worth doing whether or not the roster ever learns pairing live.
+
 ## ~~Color emoji & supplementary-plane characters render as boxes~~ — RESOLVED
 
 Color emoji now render (per-glyph font fallback, `internal/render/emoji.go` +
