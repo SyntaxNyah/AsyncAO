@@ -15,6 +15,50 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
+- **Bake character icons at the theme's cell size (#20 follow-up).** The themed
+  char-select grid draws cells at AO2's `button_width` scaled by the canvas
+  factor, but the icon TEXTURE is still decoded once at 64 px and scaled on copy
+  into whatever cell the theme asks for. That is what AO2 itself does —
+  `AOCharButton::setCharacter` applies the icon as a `border-image: … stretch
+  stretch` into the 60x60 button — so it is parity, not a shortcut, and on the
+  shipped Native 1:1 default the cell is 60 px against a 64 px bake, i.e. a
+  6% downscale nobody can see. It only becomes visible on a theme whose canvas is
+  upscaled well past 1:1 (Crop, or Custom zoom). Making the bake size
+  theme-driven is NOT a small change: the decode size is not part of the cache
+  key, `prefetchChain` bails on a previously failed decode so icons that failed
+  once would never re-decode at the new size, a mass re-fetch on a
+  several-thousand-character roster is a disk-tier burst, and the same textures
+  feed at least nine other draw sites — several at 18–22 px. It needs the size in
+  the key and a per-size page, not a global flip.
+- **A zero-allocation gate for the character-select screen (#20 follow-up).**
+  Every other whole-screen draw has one; this screen cannot pass one yet. The
+  grid layout itself is now alloc-free (`charSelectGridPlan`, `cellAt`,
+  `charHoverID` and the cached heading are all gated), but `drawCharCell` still
+  rebuilds each visible character's icon URL from scratch every frame, and that
+  URL depends on the session's asset origin, so caching it means invalidating on
+  an origin change as well as on a roster change. Worth doing — it is the last
+  per-cell allocation on the screen — but it is a cache with a second
+  invalidation source, not a one-line fix.
+- **Categories in the character list (#20 follow-up).** AO2 groups its
+  char-select name list by category, and the category is read from each
+  character's own `char.ini` (`get_category`), not from the wire. A streaming
+  client would have to fetch one INI per character to build that grouping — on a
+  four-thousand-character server that is four thousand requests to draw a list.
+  It needs a server-side or manifest-side source before it can be built.
+- **Character passwords (`char_password`, #20 follow-up).** AO2's char select has
+  a password box and sends its contents in a `PW` packet immediately before the
+  character-pick packet. AsyncAO implements no `PW` anywhere, so the themed
+  char-select screen deliberately leaves that theme rect empty: a password box
+  that collects a secret and drops it would be worse than none. The rect itself is
+  parsed and resolved, so the field can appear the day the packet exists. Its
+  sibling `char_passworded` is a filter checkbox that stock AO2 itself leaves
+  dead — the filter branch is commented out with a note that character
+  passwording is unimplemented — so it is omitted for the same reason and would
+  only become meaningful alongside real `PW` support.
+- **Read `lobby_design.ini` (theme follow-up).** Half the reference themes ship a
+  lobby layout AsyncAO never opens: only `courtroom_design.ini`,
+  `courtroom_fonts.ini`, `courtroom_sounds.ini` and the penalty INI are read. The
+  lobby is therefore the one screen an imported theme cannot place at all.
 - **Aspect-lock the CLASSIC (non-themed) layout (Native-fit follow-up).** The
   theme-fit modes only govern the THEMED courtroom: `themeLayout`
   (`internal/ui/theme_layout.go`) transforms an AO2 theme's design canvas, and

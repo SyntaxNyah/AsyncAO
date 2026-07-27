@@ -189,7 +189,7 @@ func (a *App) restoreLayout(themeName string, snap layoutSnapshot) {
 			a.d.Prefs.ClearThemeRectOverride(themeName, themeTabBarKey)
 		}
 	}
-	a.themeLay.valid = false
+	a.invalidateThemeCanvases()
 }
 
 // layoutEditSkip are rects the editor never touches: the stage frame
@@ -346,7 +346,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		for k, r := range a.themeRectsOrig {
 			a.themeRects[k] = r
 		}
-		a.themeLay.valid = false
+		a.invalidateThemeCanvases()
 		a.pushDebug("layout edit: all overrides reset for " + themeName)
 		return
 	}
@@ -455,7 +455,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			// A4: a per-piece reset clears the piece's tilt with its rect,
 			// mirroring clearClassicSlot's classicRot delete.
 			a.d.Prefs.ClearThemeRectRotation(themeName, hoverKey)
-			a.themeLay.valid = false
+			a.invalidateThemeCanvases()
 		}
 	}
 
@@ -587,7 +587,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			}
 		}
 		a.themeRects[a.editKey] = r
-		a.themeLay.valid = false
+		a.invalidateThemeCanvases()
 	}
 	// Release persists the edit.
 	if a.editDrag != 0 && !c.mouseDown {
@@ -619,7 +619,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		// rect. tabStripParked is in the key now, so this is the belt beside that
 		// braces — it makes the heal IMMEDIATE instead of waiting for whatever probes
 		// the key next.
-		a.themeLay.valid = false
+		a.invalidateThemeCanvases()
 	}
 
 	// Overlay: every editable rect outlined + named; selection pops.

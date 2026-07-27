@@ -152,6 +152,32 @@ func (a *App) themeWindowLayout(w, h int32) *themeLayoutCache {
 	return a.themeLayoutIn(w, h, a.topChromeH())
 }
 
+// invalidateThemeCanvases drops BOTH scaled-geometry caches — the courtroom's
+// (themeLayoutCache) and character select's (charSelectLayoutCache).
+//
+// ONE function instead of an assignment repeated at every mutation site, because the
+// two caches have DIFFERENT keys and the difference is invisible where the mutation
+// happens. themeLayoutCache keys on (w, h, band, fit, strip width, strip parked);
+// charSelectLayoutCache keys on (w, h, band, fit, themed) and on nothing else. So
+// ThemeZoom and ThemePan — which only ThemeFitCustom reads, inside the shared
+// fitDesignCanvas — are in NEITHER key, and every site that moves them has to say so
+// out loud. Five of them did not: the three Custom-fit sliders and the fit preview's
+// wheel-zoom and drag-pan cleared themeLay alone, so the courtroom re-fitted while
+// char select's canvas, its eleven widget rects and its whole grid stayed at the old
+// zoom and pan until some unrelated rebuild happened to clear them. (Repro: Settings →
+// drag the fit preview → re-pick a character.)
+//
+// Both fields are plain structs on App and clearing a bool costs nothing, so the safe
+// rule is to clear both at every site and never ask the question again. A rebuild is
+// LAZY — the cache only re-derives when its screen next asks for it — so invalidating
+// a canvas that is not on screen is free.
+//
+// charselectlayout_test.go pins that no other file assigns either `valid` flag.
+func (a *App) invalidateThemeCanvases() {
+	a.themeLay.valid = false
+	a.charSelLay.valid = false
+}
+
 // themeLayoutIn returns the cache for a (w, h) box with `top` px reserved at its top
 // edge, rebuilding on window resize, band change, fit change or theme swap
 // (pollThemeApply invalidates).
@@ -175,61 +201,14 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	if !okCourt || !okVP || court.W <= 0 || court.H <= 0 {
 		return lay
 	}
-	// Everything below lays the canvas out inside the box UNDER the reserved band;
-	// `top` is added back to the vertical origin at the end. A band taller than the
-	// window would invert the box, so floor the usable height at one pixel — the
-	// scale then collapses toward zero and the rect() floor hides the widgets, which
-	// is the same degenerate handling a 0×0 theme already gets.
-	availH := h - top
-	if availH < 1 {
-		availH = 1
-	}
 	lay.designW = int32(court.W)
-	// Per-axis scale by fit mode: Native pins scale at 1.0 and only ever shrinks;
-	// Stretch fills both axes independently (no bars, slight distortion); Crop
-	// scales UP uniformly and lets the overflow run off-screen; Letterbox scales
-	// DOWN uniformly with centered bars.
-	sx, sy := float64(w)/float64(court.W), float64(availH)/float64(court.H)
-	switch fit {
-	case config.ThemeFitNative:
-		// Stock AO2 never scales: setFixedSize makes the window BE the canvas
-		// (AO2-Client charselect.cpp:83 for char select, set_courtroom_size() for the
-		// courtroom), so a theme's art lands on screen pixels untouched. Our window is
-		// resizable, so we reproduce that at scale exactly 1.0 and only ever scale
-		// DOWN — a window smaller than the theme's canvas shrinks uniformly rather
-		// than clipping anything, which matters because config.MinWindowW/H (640×480)
-		// is BELOW several real themes' design sizes and ABOVE several others'. The
-		// offX/offY centring below already supplies the bars.
-		s := math.Min(1, math.Min(sx, sy))
-		lay.scaleX, lay.scaleY = s, s
-	case config.ThemeFitStretch:
-		lay.scaleX, lay.scaleY = sx, sy
-	case config.ThemeFitCrop:
-		s := math.Max(sx, sy)
-		lay.scaleX, lay.scaleY = s, s
-	case config.ThemeFitCustom:
-		s := math.Min(sx, sy) * float64(a.d.Prefs.ThemeZoom()) / 100 // manual zoom over the fit
-		lay.scaleX, lay.scaleY = s, s
-	default: // ThemeFitLetterbox
-		s := math.Min(sx, sy)
-		lay.scaleX, lay.scaleY = s, s
-	}
-	lay.offX = (w - int32(float64(court.W)*lay.scaleX)) / 2
-	// Centred in the room UNDER the band, then pushed past it. With top==0 this is
-	// byte-identical to the plain window centring it replaces. It puts the canvas
-	// below the band whenever the canvas FITS that room; Crop and Custom deliberately
-	// overflow, and the widget clamp below is what keeps their widgets out of the band.
-	lay.offY = top + (availH-int32(float64(court.H)*lay.scaleY))/2
-	if fit == config.ThemeFitCustom { // pan to crop where you like
-		px, py := a.d.Prefs.ThemePan()
-		lay.offX += int32(px) * w / 100
-		lay.offY += int32(py) * availH / 100
-	}
-	lay.area = sdl.Rect{
-		X: lay.offX, Y: lay.offY,
-		W: int32(float64(court.W) * lay.scaleX),
-		H: int32(float64(court.H) * lay.scaleY),
-	}
+	// The canvas placement itself is fitDesignCanvas (below) — shared verbatim with
+	// char select's own canvas (#20), which honours the same ThemeFit by product
+	// decision and must never round differently.
+	f := a.fitDesignCanvas(int32(court.W), int32(court.H), w, h, top, fit)
+	lay.scaleX, lay.scaleY = f.scaleX, f.scaleY
+	lay.offX, lay.offY = f.area.X, f.area.Y
+	lay.area = f.area
 	// WIDGET BOUNDS = the canvas, minus whatever part of it sits above the reserved
 	// chrome band. offY is only >= top while the canvas FITS the room under the band:
 	// Crop scales UP on purpose and Custom's pan can push the canvas anywhere, so in
@@ -302,6 +281,84 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	}
 	lay.valid = true
 	return lay
+}
+
+// themeCanvasFit is where ONE design canvas lands inside a window box: the
+// per-axis scale, and the scaled canvas rect at its centred origin. Returned by
+// value — a plain struct of four words, so the shared arithmetic costs neither
+// caller an allocation on its rebuild path (hard rule 4's spirit, and both
+// callers' rebuilds sit under AllocsPerRun gates).
+type themeCanvasFit struct {
+	scaleX, scaleY float64
+	area           sdl.Rect
+}
+
+// fitDesignCanvas places a designW×designH design canvas inside the (w, h) box
+// with `top` px reserved along its top edge, under ThemeFit mode `fit`.
+//
+// SHARED, DELIBERATELY NOT FORKED. AO2 has TWO fixed-size canvases, not one: the
+// courtroom (Courtroom::set_courtroom_size) and character select
+// (`this->setFixedSize(f_charselect.width, f_charselect.height)`, AO2-Client
+// src/charselect.cpp:83, falling back to setFixedSize(714, 668) at :79). The
+// locked product decision is that both honour the same ThemeFit, so both come
+// through here. A second copy of this arithmetic would drift the moment a mode is
+// added or a rounding rule changes — and a char-select backdrop that disagreed
+// with the grid drawn on top of it, even by one pixel, is literally what issue
+// #20 reported.
+func (a *App) fitDesignCanvas(designW, designH, w, h, top int32, fit int) themeCanvasFit {
+	// Everything below lays the canvas out inside the box UNDER the reserved band;
+	// `top` is added back to the vertical origin at the end. A band taller than the
+	// window would invert the box, so floor the usable height at one pixel — the
+	// scale then collapses toward zero and the callers' minThemedElementPx floor
+	// hides the widgets, which is the same degenerate handling a 0×0 theme gets.
+	availH := h - top
+	if availH < 1 {
+		availH = 1
+	}
+	var f themeCanvasFit
+	// Per-axis scale by fit mode: Native pins scale at 1.0 and only ever shrinks;
+	// Stretch fills both axes independently (no bars, slight distortion); Crop
+	// scales UP uniformly and lets the overflow run off-screen; Letterbox scales
+	// DOWN uniformly with centered bars.
+	sx, sy := float64(w)/float64(designW), float64(availH)/float64(designH)
+	switch fit {
+	case config.ThemeFitNative:
+		// Stock AO2 never scales: setFixedSize makes the window BE the canvas
+		// (AO2-Client charselect.cpp:83 for char select, set_courtroom_size() for the
+		// courtroom), so a theme's art lands on screen pixels untouched. Our window is
+		// resizable, so we reproduce that at scale exactly 1.0 and only ever scale
+		// DOWN — a window smaller than the theme's canvas shrinks uniformly rather
+		// than clipping anything, which matters because config.MinWindowW/H (640×480)
+		// is BELOW several real themes' design sizes and ABOVE several others'. The
+		// centring below already supplies the bars.
+		s := math.Min(1, math.Min(sx, sy))
+		f.scaleX, f.scaleY = s, s
+	case config.ThemeFitStretch:
+		f.scaleX, f.scaleY = sx, sy
+	case config.ThemeFitCrop:
+		s := math.Max(sx, sy)
+		f.scaleX, f.scaleY = s, s
+	case config.ThemeFitCustom:
+		s := math.Min(sx, sy) * float64(a.d.Prefs.ThemeZoom()) / 100 // manual zoom over the fit
+		f.scaleX, f.scaleY = s, s
+	default: // ThemeFitLetterbox
+		s := math.Min(sx, sy)
+		f.scaleX, f.scaleY = s, s
+	}
+	f.area.W = int32(float64(designW) * f.scaleX)
+	f.area.H = int32(float64(designH) * f.scaleY)
+	f.area.X = (w - f.area.W) / 2
+	// Centred in the room UNDER the band, then pushed past it. With top==0 this is
+	// byte-identical to plain window centring. It puts the canvas below the band
+	// whenever the canvas FITS that room; Crop and Custom deliberately overflow, and
+	// each caller's own clamp/clip is what keeps their widgets out of the band.
+	f.area.Y = top + (availH-f.area.H)/2
+	if fit == config.ThemeFitCustom { // pan to crop where you like
+		px, py := a.d.Prefs.ThemePan()
+		f.area.X += int32(px) * w / 100
+		f.area.Y += int32(py) * availH / 100
+	}
+	return f
 }
 
 // angle returns a key's baked rotation angle in degrees (0 = unrotated → the

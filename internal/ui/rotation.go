@@ -205,6 +205,6 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 	} else {
 		a.d.Prefs.SetThemeRectRotation(themeName, key, next)
 	}
-	a.themeLay.valid = false // re-bake ang so the new angle reaches the draw path
+	a.invalidateThemeCanvases() // re-bake ang so the new angle reaches the draw path
 	a.pushDebug("layout edit: " + key + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }

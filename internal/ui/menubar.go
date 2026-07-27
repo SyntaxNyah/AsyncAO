@@ -590,7 +590,7 @@ func menuThemeFitIs(a *App, mode int) bool { return a.d.Prefs.ThemeFitMode() == 
 
 func menuSetThemeFit(a *App, mode int) {
 	a.d.Prefs.SetThemeFit(mode)
-	a.themeLay.valid = false // rebuild the layout cache with the new fit (the settings.go idiom)
+	a.invalidateThemeCanvases() // both canvases re-fit under the new mode (the settings.go idiom)
 }
 
 // --- per-frame latch ----------------------------------------------------------------

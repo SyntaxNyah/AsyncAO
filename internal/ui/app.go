@@ -773,6 +773,14 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+	// Char select's SEPARATE design geometry and canvas cache (#20,
+	// charselectlayout.go). Deliberately not folded into themeRects/themeLay: those
+	// twelve keys live in a different design space (char_select, commonly 714×668,
+	// against the courtroom's 714×579) and everything in themeRects becomes an
+	// editable box in the courtroom layout editor. charSelDesign is the resolved
+	// design-space table, charSelLay its window-scaled cache.
+	charSelDesign charSelectDesign
+	charSelLay    charSelectLayoutCache
 	// tabBarSeeded records that the active theme did NOT declare "asyncao_tabbar" and
 	// seedTabBarDesignRect synthesized the entry (tabs.go). It is what lets
 	// tabStripThemeParked tell a theme author's own placement — which must move the
@@ -1489,6 +1497,21 @@ type sessionState struct {
 	charSearch string
 	charScroll int32
 	charTab    int // charTabServer | charTabWardrobe (grid contents swap)
+	// charShowTaken is AO2's char_taken FILTER checkbox (charselect.cpp:99 seeds it
+	// CHECKED; :360-364 hides taken characters when it is cleared). It is not an
+	// indicator and it is not persisted: AO2 resets it per join, and so does a fresh
+	// session here. Only the themed canvas draws the checkbox, so the classic screen
+	// passes `true` explicitly rather than reading this — a filter with no control
+	// would be a trap.
+	charShowTaken bool
+	// charListSel is the roster index highlighted in the themed name column
+	// (char_list), -1 for none. It also outlines the matching grid cell, which is the
+	// whole point of drawing the column: the two views are one selection. Reset on a
+	// tab switch, because the two tabs index different slices.
+	charListSel int
+	// charListScroll is the name column's own scroll offset. Independent of the
+	// grid's: the column is one name per row and scrolls far faster.
+	charListScroll int32
 	// wardrobeMembers is the lowercased wardrobe set for the current server,
 	// powering the ★ star state in the Characters grid. Rebuilt only when the
 	// server or the wardrobe generation changes (ensureWardrobeMembers), so the
@@ -1508,6 +1531,17 @@ type sessionState struct {
 	// without it a 4000-char grid pays two ToLower allocations per char
 	// per frame while a query is active. Invalidated on EventCharsUpdated.
 	charLower []string
+	// charHoverIDs caches the char-select grid's per-cell HoverPreview id
+	// ("char:"+name). It was a runtime concat at the call site, i.e. one heap
+	// allocation per VISIBLE CELL per frame — 63 of them on a themed 7x9 page and
+	// more on a big classic window, for a string that only changes when the roster
+	// does. Built and invalidated in lockstep with charLower.
+	charHoverIDs []string
+	// charSelTitle caches the char-select heading ("Choose a character — <server>"),
+	// which was two allocations per frame for a string that changes once per connect.
+	// charSelTitleFor is the serverName it was built for.
+	charSelTitle    string
+	charSelTitleFor string
 	// Generation-keyed texture page caches (the viewport's animState
 	// trick applied to grids): while the store generation is unchanged a
 	// grid redraw costs ZERO LRU lookups/locks for resident icons.
@@ -1937,6 +1971,12 @@ type sessionState struct {
 	iniServerMem []bool   // parallel to iniList: is in the server's iniswap.txt (Iniswaps tab filter)
 	iniLower     []string // lowercased names for the search filter
 	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
+	// iniHoverIDs caches each wardrobe cell's HoverPreview id ("iniswap:"+name),
+	// parallel to iniList. It was a runtime concat inside the cell draw, i.e. one heap
+	// allocation per VISIBLE CELL per frame on three grids — the exact twin of the
+	// Characters grid's charHoverIDs, and it has to be the twin now that both tabs of
+	// char select lay out on one plan. Rebuilt with the list (rebuildIniMenu).
+	iniHoverIDs []string
 	// A wardrobe ★ toggle is DEFERRED out of the cell to after the grid loop: it
 	// rebuilds (and shrinks) the iniList/iniWardrobe/iniFolders slices the loop is
 	// ranging, so toggling mid-loop panicked on a remove (the crash report).
@@ -2260,6 +2300,13 @@ type themeApply struct {
 	layout    map[string]theme.Rect
 	emoteCell [2]int // emote_button_size (w, h)
 	emoteGap  [2]int // emote_button_spacing (x, y)
+	// charSel is char select's OWN geometry (#20), read from the same
+	// courtroom_design.ini but kept apart from `layout` — see charselectlayout.go
+	// for why it must never join a.themeRects. Every one of its twelve keys is
+	// already resolved here (theme value, else the embedded default-theme table),
+	// because AO2's per-key fallback needs a base/themes/ tree a streaming client
+	// does not have.
+	charSel charSelectDesign
 	// palette is the courtroom_stylesheets.css color scheme (the "css
 	// stuff"): applied over the kit colors, restored on theme switch.
 	palette theme.Palette
@@ -2285,6 +2332,11 @@ type themeApply struct {
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
 const themeStemChatbox = "chatbox"
+
+// themeStemCharSelectBG is the char-select backdrop's stem in themeTex / T1
+// (charselect_background.* on disk). Named because two files reach for it: the
+// loader here and the canvas blit in charselectlayout.go, which must not drift.
+const themeStemCharSelectBG = "charselect_bg"
 
 // Readability guard for theme ink (playtest: "displaying black text even
 // when I choose white"). A theme's message/showname colors are designed
@@ -2365,7 +2417,14 @@ func themeImageStems() map[string][]string {
 		// Screen backdrops: the single biggest "the theme applied" signal.
 		"courtroombackground": {"courtroombackground"},
 		"lobbybackground":     {"lobbybackground", "loadingbackground"},
-		"charselect_bg":       {"charselect_background"},
+		themeStemCharSelectBG: {"charselect_background"},
+		// The two char-select cell overlays AOCharButton ships as theme art (#20):
+		// char_taken covers a taken button, char_selector is the 62x62 hover halo
+		// (AO2-Client aocharbutton.cpp). Both optional — 40 and 38 of the 74 reference
+		// themes ship them — and both tiny (60x60 / 62x62), so pinning them costs a few
+		// KiB for the two most visible pieces of char-select parity.
+		themeStemCharTaken:    {"char_taken"},
+		themeStemCharSelector: {"char_selector"},
 	}
 	for i := 0; i <= courtroom.HPBarMax; i++ {
 		d := "defensebar" + strconv.Itoa(i)
@@ -2865,9 +2924,45 @@ func (a *App) ensureCharLower() {
 		return
 	}
 	a.charLower = make([]string, len(a.sess.Chars))
+	a.charHoverIDs = make([]string, len(a.sess.Chars))
 	for i := range a.sess.Chars {
 		a.charLower[i] = strings.ToLower(a.sess.Chars[i].Name)
+		a.charHoverIDs[i] = charHoverIDPrefix + a.sess.Chars[i].Name
 	}
+}
+
+// charHoverIDPrefix namespaces the char-select grid's HoverPreview ids. The kit keys
+// dwell state by id across the whole frame, so a bare character name could collide
+// with any other widget id built from the same name (the pair menu, the wardrobe).
+const charHoverIDPrefix = "char:"
+
+// charHoverID is char i's cached HoverPreview id. The out-of-range arm rebuilds the
+// string rather than indexing past the cache: every live caller runs behind
+// ensureCharLower, but this is a DRAW loop, and paying one allocation on a path that
+// should be unreachable beats panicking the client if it ever is reached.
+func (a *App) charHoverID(i int) string {
+	if i >= 0 && i < len(a.charHoverIDs) {
+		return a.charHoverIDs[i]
+	}
+	if a.sess == nil || i < 0 || i >= len(a.sess.Chars) {
+		return charHoverIDPrefix
+	}
+	return charHoverIDPrefix + a.sess.Chars[i].Name
+}
+
+// charSelectTitle is the char-select heading, rebuilt only when the server name
+// changes. The concat used to run every frame on a screen that is otherwise pure
+// integer layout.
+func (a *App) charSelectTitle() string {
+	if a.charSelTitle != "" && a.charSelTitleFor == a.serverName {
+		return a.charSelTitle
+	}
+	a.charSelTitleFor = a.serverName
+	a.charSelTitle = charSelectHeading
+	if a.serverName != "" {
+		a.charSelTitle = charSelectHeading + " — " + a.serverName
+	}
+	return a.charSelTitle
 }
 
 // Background runs the per-frame engine work without drawing — the main
@@ -6766,10 +6861,12 @@ func (a *App) rebuildIniMenu() {
 	a.iniLower = make([]string, len(names))
 	folders := a.d.Prefs.WardrobeFolderMap(a.serverKey)
 	a.iniFolders = make([]string, len(names))
+	a.iniHoverIDs = make([]string, len(names))
 	for i, n := range names {
 		lower := strings.ToLower(n)
 		a.iniLower[i] = lower
 		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
+		a.iniHoverIDs[i] = iniHoverIDPrefix + n
 	}
 	a.iniAsk = nil
 	// Toggling a star reorders the list at the SAME length (wardrobe entries
@@ -6777,6 +6874,26 @@ func (a *App) rebuildIniMenu() {
 	// the URL — so drop the idx→page cache here or a reorder would paint the
 	// previous name's icon. Icons re-resolve from T1 next frame (a map hit).
 	a.iniPages = nil
+}
+
+// iniHoverIDPrefix namespaces a wardrobe cell's HoverPreview id, exactly as
+// charHoverIDPrefix does for the Characters grid: the kit keys dwell state by id
+// across the whole frame, and the two grids can be on screen at the same time (the
+// wardrobe modal over the courtroom), so their ids must not collide.
+const iniHoverIDPrefix = "iniswap:"
+
+// iniHoverID is wardrobe entry i's cached HoverPreview id. The out-of-range arm
+// rebuilds rather than indexing past the cache: every caller draws behind
+// rebuildIniMenu, but this is a DRAW loop, and paying one allocation on a path that
+// should be unreachable beats panicking the client if it ever is reached.
+func (a *App) iniHoverID(i int) string {
+	if i >= 0 && i < len(a.iniHoverIDs) {
+		return a.iniHoverIDs[i]
+	}
+	if i < 0 || i >= len(a.iniList) {
+		return iniHoverIDPrefix
+	}
+	return iniHoverIDPrefix + a.iniList[i]
 }
 
 // applyPendingFav applies a wardrobe ★ toggle that a cell DEFERRED this frame. It
@@ -8066,6 +8183,10 @@ func (a *App) applyThemeAsync() uint64 {
 			}
 			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
 			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
+			// Char select's twelve keys, resolved against the embedded default-theme
+			// table (#20). Off-thread with the rest of the INI work — hard rules 1
+			// and 2 — and landed by pollThemeApply.
+			res.charSel = readCharSelectDesign(t)
 			// The QSS palette ("css stuff"): AO2 ≥ 2.10 themes color the
 			// client through courtroom_stylesheets.css.
 			if path, ok := t.FindAsset("courtroom_stylesheets", []string{".css"}); ok {
@@ -8161,7 +8282,12 @@ func (a *App) pollThemeApply() {
 	}
 	a.themeRects = a.applyRectOverrides(rects)
 	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
-	a.themeLay.valid = false
+	// Char select's own geometry lands beside the courtroom's (#20). No
+	// applyRectOverrides pass: these keys are deliberately not editable — they are not
+	// in a.themeRects, so the layout editor never sees them and there is nothing to
+	// re-apply. Both scaled caches then go together (invalidateThemeCanvases).
+	a.charSelDesign = res.charSel
+	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
 	a.themeAt = time.Now() // restart the theme-art animation clock
 	// Apply (or restore) the stylesheet palette; label textures are

@@ -1368,6 +1368,12 @@ func (a *App) resetSessionState() {
 		// always-play-the-emote's-preanim behavior; selectEmote then
 		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
 		icPreanim: true,
+		// AO2 seeds char select's "Taken" filter CHECKED on every join
+		// (charselect.cpp:99) — the roster shows everyone, taken or not — and never
+		// persists it. Seeded here for the same reason every other session toggle is:
+		// the zero value would silently hide half the character list on a fresh join.
+		charShowTaken: true,
+		charListSel:   -1, // no name-column selection yet
 	}
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change
