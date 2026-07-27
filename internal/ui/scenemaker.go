@@ -790,7 +790,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	press := c.mouseDown && !a.makerPrevDown
 	a.makerPrevDown = c.mouseDown
 
-	y := tabBarH + int32(8)
+	// The maker is a full-window overlay: menuBarShows() is false for it, so the
+	// band below is just the server-tab strip's — which still paints over the maker
+	// (app.go draws it after the screen dispatch). Was a bare tabBarH+8 (#14).
+	y := a.topChromeH() + int32(8)
 	c.Label(pad, y, "🎬 Scene Maker — build or edit a scene, then Preview / Save", ColText)
 	if c.Button(sdl.Rect{X: winW - pad - 92, Y: y - 4, W: 92, H: btnH}, "✖ Close") {
 		a.closeSceneMaker()

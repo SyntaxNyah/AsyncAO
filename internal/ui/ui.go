@@ -509,10 +509,15 @@ type Ctx struct {
 	// still occlude the owner, because registry order is paint order.
 	// Zeroed every BeginFrame, so an un-released fence can't freeze the UI the
 	// way a stranded modalOn would.
-	overlayFences    [overlayFenceCap]sdl.Rect
-	overlayFenceN    int
-	overlayOwner     bool
-	overlayOwnerMark int
+	// overlayFenceDrops counts publications refused this frame because the registry
+	// was full. Dropping is silent by construction (the occluder still paints; only
+	// the input protection is missing), so the counter is the only way the condition
+	// can ever be detected — the tests assert it stays zero across a real frame.
+	overlayFences     [overlayFenceCap]sdl.Rect
+	overlayFenceN     int
+	overlayFenceDrops int
+	overlayOwner      bool
+	overlayOwnerMark  int
 
 	// Pointer fence (fencePointer/unfencePointer): the non-blocking floating
 	// panel runs the courtroom pass pointer-blind while the cursor sits over it,
@@ -1585,7 +1590,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	// still starts the next frame with a clear registry. overlayOwner is a scoped
 	// suspend that never outlives its draw, but it resets with them so a panic
 	// unwinding an owner bracket can't leave the fence permanently disabled.
-	c.overlayFenceN = 0
+	c.overlayFenceN, c.overlayFenceDrops = 0, 0
 	c.overlayOwner, c.overlayOwnerMark = false, 0
 
 	// prevMouseDown snapshots LAST frame's held state before this frame's
@@ -2428,20 +2433,40 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 }
 
 // Checkbox draws a toggle; returns the (possibly flipped) value.
+// checkboxBoxPx is the tick box's side, checkboxLabelGapPx the gap between it and
+// the label, and checkboxTickInsetPx the inset of the filled tick inside the box.
+// Named (hard rule 9) so CheckboxWidth below can measure a checkbox WITHOUT drawing
+// it — the lobby's direct-connect row has to know how much space two of them take
+// before it can place the Connect button on a 640 px window.
+const (
+	checkboxBoxPx       = int32(16)
+	checkboxLabelGapPx  = int32(6)
+	checkboxTickInsetPx = int32(4)
+)
+
+// CheckboxWidth is the total width Checkbox(x, y, label, …) will occupy, box and
+// label together. Alloc-free (TextWidth is memoized), so a layout pass may call it.
+func (c *Ctx) CheckboxWidth(label string) int32 {
+	return checkboxBoxPx + checkboxLabelGapPx + c.TextWidth(label)
+}
+
 func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 	if c.onRow != nil {
 		c.onRow(label, y) // settings-search collect pass (#26 gather): record and draw as normal
 	}
-	const box = 16
+	const box = checkboxBoxPx
 	r := sdl.Rect{X: x, Y: y, W: box, H: box}
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	if value {
-		inner := sdl.Rect{X: x + 4, Y: y + 4, W: box - 8, H: box - 8}
+		inner := sdl.Rect{
+			X: x + checkboxTickInsetPx, Y: y + checkboxTickInsetPx,
+			W: box - 2*checkboxTickInsetPx, H: box - 2*checkboxTickInsetPx,
+		}
 		c.Fill(inner, ColAccent)
 	}
-	w := c.Label(x+box+6, y, label, ColText)
-	hit := sdl.Rect{X: x, Y: y, W: box + 6 + w, H: box}
+	w := c.Label(x+box+checkboxLabelGapPx, y, label, ColText)
+	hit := sdl.Rect{X: x, Y: y, W: box + checkboxLabelGapPx + w, H: box}
 	if c.hovering(hit) && c.clicked {
 		return !value
 	}

@@ -17,11 +17,14 @@ import (
 // (headless SDL) and asserts the draw survives and the list shrank by one.
 //
 // Geometry (must reproduce the OLD panic, so it needs 2+ favorites and a click
-// on a NON-last row): with a.lobbyScroll==0 the rows start at listTop == dcY+40
-// == (pad+56)+40 == 104 and step by rowH. Row 0's ★ rect is
-// {X: pad+22, Y: listTop+2, W: 22, H: rowH-6} == {30, 106, 22, 16}; its centre
-// (41, 114) sits inside row 0's star only (row 1's star is at Y 128+), so
-// exactly one toggle fires.
+// on a NON-last row): with a.lobbyScroll==0 the rows start at
+// listTop == dcY+40 == (hdrY+56)+40, where hdrY == topChromeH()+pad is the lobby's
+// header row under the app-chrome band (#14, chrometop.go), and step by rowH. Row 0's
+// ★ rect is {X: pad+22, Y: listTop+2, W: 22, H: rowH-6}; its centre sits inside row
+// 0's star only (row 1's star is a full rowH lower), so exactly one toggle fires.
+// The coordinates are DERIVED from the same accessor the draw uses rather than
+// written out, so the band moving cannot silently turn this into a click on nothing —
+// which is precisely what a hardcoded (41, 114) did the moment the band appeared.
 func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -55,7 +58,8 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	// Point the mouse at row 0's ★ and arm a left-click release. The ★ handler is
 	// a plain `hovering(star) && c.clicked` (not ClickedIn), so setting the
 	// logical mouse + clicked directly is enough — no down/up event replay needed.
-	ctx.mouseX, ctx.mouseY = 41, 114
+	listTop := (a.topChromeH() + pad + 56) + 40
+	ctx.mouseX, ctx.mouseY = pad+22+11, listTop+2+(rowH-6)/2
 	ctx.clicked = true
 
 	// drawLobby has no internal recover (Frame's crash-log guard is above it and

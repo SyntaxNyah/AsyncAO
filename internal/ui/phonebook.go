@@ -17,6 +17,25 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
+// setPhoneBookPage switches the lobby between the full server list and the Phone
+// Book page. Extracted from drawLobby's toggle button so the header button and the
+// Servers menu row (menubar.go) share ONE implementation: swapping the page also has
+// to drop the row selection and its cached description (the list is re-filtered, so
+// every index moves), reset the scroll, and abandon any half-finished row edit —
+// four things a second copy of the toggle would eventually forget one of.
+//
+// Idempotent on purpose: the menu's "Direct connect…" row leaves the Phone Book page
+// unconditionally, and doing that from the all-servers page must not clear a
+// selection the user is reading.
+func (a *App) setPhoneBookPage(on bool) {
+	if a.phoneBookPage == on {
+		return
+	}
+	a.phoneBookPage = on
+	a.selServer, a.descLines, a.descLinks, a.lobbyScroll = -1, nil, nil, 0
+	a.cancelPhoneBookEdit()
+}
+
 // drawPhoneBookBar draws the Phone Book page's controls (add a server + clipboard
 // export/import), in place of the all-servers direct-connect row.
 func (a *App) drawPhoneBookBar(w, dcY int32) {

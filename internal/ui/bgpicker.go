@@ -245,7 +245,11 @@ func (a *App) requestBackground(name string) {
 func (a *App) drawBgPanel(w, h int32) {
 	c := a.ctx
 	a.pollBgList()
-	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
+	// Kept clear of the app-chrome band (#14, chrometop.go): the menu bar and the
+	// docked server-tab strip paint AFTER the screens, so a panel starting at the raw
+	// pad*3 would have its top edge and title covered by the strip.
+	top := a.topChromeH()
+	panel := sdl.Rect{X: pad * 3, Y: top + pad*3, W: w - pad*6, H: h - top - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+8, "Backgrounds — preview & change", ColText)

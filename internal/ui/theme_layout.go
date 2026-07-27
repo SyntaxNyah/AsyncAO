@@ -90,8 +90,39 @@ type themeLayoutCache struct {
 	designW        int32
 	scaleX, scaleY float64 // per-axis: equal for Native/Letterbox/Crop/Custom, independent for Stretch
 	offX, offY     int32
-	fit            int                 // ThemeFit mode it was built for (rebuild on change)
-	r              map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
+	// topOff is the app-chrome band reserved ABOVE the canvas (#14; topChromeH).
+	// Part of the cache key: the live courtroom builds with the band, an export
+	// frame builds without it, and both share this one cache — so a stale entry
+	// built for the other would silently draw the canvas at the wrong height.
+	topOff int32
+	// tabStripW is the server-tab strip's INTRINSIC width (tabStripIntrinsicW) at build
+	// time, and part of the cache key. The strip is the one entry in r that is not a
+	// transform of a design rect — it is sized by its chips — so opening, closing or
+	// renaming a tab resizes it with no window, band, fit or theme change to invalidate
+	// on. Without this the themed editor would keep handing out a box the strip has
+	// outgrown, and a box that is not on the widget is worse than no box.
+	tabStripW int32
+	// tabStripParked is tabStripThemeParked() at build time, and part of the key for
+	// exactly the same reason as the width: it selects which of the strip's TWO
+	// completely different placements r holds (the docked chrome band, or the theme
+	// canvas), and it can flip with no window, band, fit or theme change behind it.
+	//
+	// The flip that proved it: a press-move-release whose net design delta rounds to
+	// nothing is discarded at release, so parked-ness goes true (the in-flight drag
+	// arm) → false, and the cache kept the parked box for good. Measured at Letterbox
+	// 1000x900, the editor's box sat at {459,23,79,22} while the strip painted
+	// {460,22,79,22}, and idle editor frames never healed it — only a window, fit,
+	// theme or chip-width change did. The two reset paths and restoreLayout already
+	// invalidated by hand; the release was the one mutation of parked-ness that did
+	// not. In the key it cannot be forgotten again.
+	tabStripParked bool
+	// area is the canvas: the scaled "courtroom" design rect at (offX, offY). Stored
+	// rather than re-derived, because the old `W: w-2*offX, H: h-2*offY` trick only
+	// worked while the bars were symmetric — with a band reserved at the top they
+	// are not, and that arithmetic would stretch the backdrop past the bottom edge.
+	area sdl.Rect
+	fit  int                 // ThemeFit mode it was built for (rebuild on change)
+	r    map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
 	// ang holds each rotatable key's persisted rotation angle byte (A4), baked in
 	// alongside r at rebuild time from the active theme's ThemeRectRotations so the
 	// draw path resolves angles lock-free (a plain map probe, never a prefs read).
@@ -99,26 +130,66 @@ type themeLayoutCache struct {
 	ang map[string]uint8
 }
 
-// themeLayout returns the cache for the current window, rebuilding on
-// window resize or theme swap (pollThemeApply invalidates).
+// themeLayout builds the cache for a canvas laid out inside the FULL (w, h) box,
+// origin-anchored — no client chrome reserved. That is what an offscreen export
+// frame wants (gifexport.go: a video frame is not the window and must never carry
+// the client's own furniture), and it is the plain geometry the fit-mode tests pin.
+// The live window goes through themeWindowLayout instead.
 func (a *App) themeLayout(w, h int32) *themeLayoutCache {
+	return a.themeLayoutIn(w, h, 0)
+}
+
+// themeWindowLayout is the WINDOW's layout: the design canvas is fitted into the
+// height LEFT under the app-chrome band and offset down by it (#14).
+//
+// In the three modes that cannot overflow — Native, Letterbox, Stretch — that puts
+// the canvas itself wholly below the band. Crop scales UP by design and Custom can be
+// panned anywhere, so in those two the ART may run up behind the band and the band's
+// owners simply paint over it. What holds in ALL FIVE modes is the property that
+// matters: no widget the theme places is ever laid out above the band, where it would
+// be both painted over and fenced out of every hit test (see themeLayoutIn's bounds).
+func (a *App) themeWindowLayout(w, h int32) *themeLayoutCache {
+	return a.themeLayoutIn(w, h, a.topChromeH())
+}
+
+// themeLayoutIn returns the cache for a (w, h) box with `top` px reserved at its top
+// edge, rebuilding on window resize, band change, fit change or theme swap
+// (pollThemeApply invalidates).
+func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	lay := &a.themeLay
 	fit := a.d.Prefs.ThemeFitMode()
-	if lay.valid && lay.winW == w && lay.winH == h && lay.fit == fit {
+	// Measured before the validity test, because they ARE part of the key (see
+	// themeLayoutCache.tabStripW / .tabStripParked). Both are alloc-free and
+	// independent of every value built below, so neither can recurse into this
+	// rebuild — and parked-ness is resolved ONCE here and handed down to
+	// tabStripCacheRect rather than probed twice per rebuild.
+	stripW := a.tabStripIntrinsicW()
+	stripParked := a.tabStripThemeParked()
+	if lay.valid && lay.winW == w && lay.winH == h && lay.topOff == top && lay.fit == fit &&
+		lay.tabStripW == stripW && lay.tabStripParked == stripParked {
 		return lay
 	}
-	*lay = themeLayoutCache{winW: w, winH: h, fit: fit}
+	*lay = themeLayoutCache{winW: w, winH: h, topOff: top, fit: fit, tabStripW: stripW, tabStripParked: stripParked}
 	court, okCourt := a.themeRects["courtroom"]
 	_, okVP := a.themeRects["viewport"]
 	if !okCourt || !okVP || court.W <= 0 || court.H <= 0 {
 		return lay
+	}
+	// Everything below lays the canvas out inside the box UNDER the reserved band;
+	// `top` is added back to the vertical origin at the end. A band taller than the
+	// window would invert the box, so floor the usable height at one pixel — the
+	// scale then collapses toward zero and the rect() floor hides the widgets, which
+	// is the same degenerate handling a 0×0 theme already gets.
+	availH := h - top
+	if availH < 1 {
+		availH = 1
 	}
 	lay.designW = int32(court.W)
 	// Per-axis scale by fit mode: Native pins scale at 1.0 and only ever shrinks;
 	// Stretch fills both axes independently (no bars, slight distortion); Crop
 	// scales UP uniformly and lets the overflow run off-screen; Letterbox scales
 	// DOWN uniformly with centered bars.
-	sx, sy := float64(w)/float64(court.W), float64(h)/float64(court.H)
+	sx, sy := float64(w)/float64(court.W), float64(availH)/float64(court.H)
 	switch fit {
 	case config.ThemeFitNative:
 		// Stock AO2 never scales: setFixedSize makes the window BE the canvas
@@ -144,16 +215,35 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 		lay.scaleX, lay.scaleY = s, s
 	}
 	lay.offX = (w - int32(float64(court.W)*lay.scaleX)) / 2
-	lay.offY = (h - int32(float64(court.H)*lay.scaleY)) / 2
+	// Centred in the room UNDER the band, then pushed past it. With top==0 this is
+	// byte-identical to the plain window centring it replaces. It puts the canvas
+	// below the band whenever the canvas FITS that room; Crop and Custom deliberately
+	// overflow, and the widget clamp below is what keeps their widgets out of the band.
+	lay.offY = top + (availH-int32(float64(court.H)*lay.scaleY))/2
 	if fit == config.ThemeFitCustom { // pan to crop where you like
 		px, py := a.d.Prefs.ThemePan()
 		lay.offX += int32(px) * w / 100
-		lay.offY += int32(py) * h / 100
+		lay.offY += int32(py) * availH / 100
 	}
-	courtArea := sdl.Rect{
+	lay.area = sdl.Rect{
 		X: lay.offX, Y: lay.offY,
 		W: int32(float64(court.W) * lay.scaleX),
 		H: int32(float64(court.H) * lay.scaleY),
+	}
+	// WIDGET BOUNDS = the canvas, minus whatever part of it sits above the reserved
+	// chrome band. offY is only >= top while the canvas FITS the room under the band:
+	// Crop scales UP on purpose and Custom's pan can push the canvas anywhere, so in
+	// those two modes the centring term goes negative and the canvas top rises past
+	// the band. That is fine for the ART — the band's owners (menu bar, tab strip)
+	// paint over it afterwards — but NOT for widgets: lay.area is the clamp target
+	// below, so a themed button could be clamped up under an opaque strip, where it is
+	// painted over AND fenced out of every hit test. Clamping offY itself would be the
+	// wrong cure: it would forbid Custom's upward pan (the whole point of the mode) and
+	// re-anchor Crop's overflow to the top edge.
+	bounds := lay.area
+	if bounds.Y < top {
+		bounds.H -= top - bounds.Y
+		bounds.Y = top
 	}
 	lay.r = make(map[string]sdl.Rect, len(a.themeRects))
 	for key, r := range a.themeRects {
@@ -172,7 +262,7 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 		if key != "showname" && key != "message" {
 			sr.X += lay.offX
 			sr.Y += lay.offY
-			clamped, ok := clampRectInto(sr, courtArea)
+			clamped, ok := clampRectInto(sr, bounds)
 			if !ok {
 				continue // never touched the stage: hidden
 			}
@@ -182,6 +272,26 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 			}
 		}
 		lay.r[key] = sr
+	}
+	// The server-tab strip (#14) is INTRINSICALLY SIZED CLIENT chrome that happens to
+	// carry a design-space key, so the generic transform above is never right for it:
+	// its size comes from the chips (so a stored W/H is meaningless), and while nobody
+	// has parked it its home is the reserved band ABOVE this canvas — a place design
+	// coordinates cannot name. tabStripCacheRect therefore OVERWRITES the transform
+	// with the live painted rect in both states, which is the invariant the themed
+	// editor depends on: its drag box, its drag origin, its Tab-cycle stacking order,
+	// its resize-grip probe and its right-click reset all read lay.r[themeTabBarKey],
+	// and a box that is not on the widget is worse than no box.
+	//
+	// A degenerate strip (no tabs, or chips too small to be a usable drag target) drops
+	// the key entirely rather than leaving the stale transform behind — nothing is
+	// painted there, so nothing may be editable there either.
+	if _, present := a.themeRects[themeTabBarKey]; present {
+		if strip, ok := a.tabStripCacheRect(lay, w, h, stripW, stripParked); ok {
+			lay.r[themeTabBarKey] = strip
+		} else {
+			delete(lay.r, themeTabBarKey)
+		}
 	}
 	// Bake the per-key rotation angles for the active theme (A4). Read once here
 	// on the cold rebuild path (win/theme/fit change) — the R-key sets
@@ -386,10 +496,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Stage: letterbox fill, then the theme's window art over the design
 	// area (this alone makes the whole screen read as "themed").
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	court := sdl.Rect{
-		X: lay.offX, Y: lay.offY,
-		W: w - 2*lay.offX, H: h - 2*lay.offY,
-	}
+	// The canvas comes from the cache (lay.area). It used to be re-derived here as
+	// `w-2*offX, h-2*offY`, which silently assumed the letterbox bars were symmetric
+	// — they are not once the app-chrome band is reserved at the top (#14), and the
+	// backdrop would have run that far past the bottom edge.
+	court := lay.area
 	if page, ok := a.themePage("courtroombackground"); ok {
 		// &court into cgo would heap-allocate court on EVERY themed frame (escape
 		// analysis is static, so the plain-fill else-branch pays it too) — the same
@@ -439,7 +550,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).
-	if a.drawCourtroomModals(w, h) {
+	//
+	// And the same EDITOR GUARD as the classic path, which this return never had: a
+	// modal open when the themed editor armed ended the pass here, so the editor never
+	// drew — no banner, no Done chip, no Esc handler — while its fence had already
+	// killed the modal's own buttons and the menu bar and tab strip had both stood
+	// down for it. See modalReturnSkippedWhileEditing (screens.go).
+	if !a.modalReturnSkippedWhileEditing() && a.drawCourtroomModals(w, h) {
 		return
 	}
 
@@ -842,6 +959,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Layout editor overlay: last, above everything it edits.
+	//
+	// The server-tab strip paints HERE while an editor is armed — the twin of the
+	// classic path's site in screens.go, and the reason App.Frame's over-everything
+	// paint stands down. Drawn before the overlay so the editor's banner and its Done /
+	// Reset all / Snap chips sit on top of the chips instead of under them.
+	//
+	// It replays the frame's paint-site latch (chrometop.go) rather than the layoutEdit
+	// flag, so the two sites are exact complements of ONE decision taken at the top of
+	// the pass: a mid-pass arm (the command palette draws after this site) or disarm
+	// (Done / Esc, below) can no longer make both sites paint or neither.
+	a.drawTabBarInPass(w, h)
 	if a.layoutEdit {
 		a.drawLayoutEditor(w, h, lay)
 	}

@@ -218,11 +218,12 @@ func (a *App) MaybeRelaunch() {
 	_ = cmd.Start()
 }
 
-// updateChipRect is the persistent reopen chip, top-right and clear of the
-// centre tab strip.
+// updateChipRect is the persistent reopen chip, top-right and just under the
+// app-chrome band (#14, chrometop.go) — it used to be a bare tabBarH+4, which the
+// docked server-tab strip now sits on top of.
 func (a *App) updateChipRect(w int32) sdl.Rect {
 	cw := a.ctx.TextWidth(a.updateChipLabel) + 18
-	return sdl.Rect{X: w - cw - pad, Y: tabBarH + 4, W: cw, H: updateChipH}
+	return sdl.Rect{X: w - cw - pad, Y: a.topChromeH() + 4, W: cw, H: updateChipH}
 }
 
 // updateModalRects lays out the What's New panel and its hit targets (shared by

@@ -222,12 +222,20 @@ const (
 func (a *App) drawServerHelp(w, h int32) {
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
-	c.Heading(pad, pad, "For server owners — the AsyncAO-ready ecosystem", ColText)
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
-		a.screen = ScreenLobby
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "For server owners — the AsyncAO-ready ecosystem", ColText)
+	// Back returns to whatever opened this — prevScreen, exactly like the other
+	// full-screen menus and like this screen's own Esc arm (App.Frame). It used to be
+	// a hardcoded ScreenLobby, which was indistinguishable while the ONLY entry point
+	// was the lobby's legacy-server row; the Help menu (#14) can open it from the
+	// courtroom, where a Back that silently left the courtroom would disagree with
+	// the Esc that does not.
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
+		a.screen = a.prevScreen
 		return
 	}
-	top := pad + 44
+	top := hdrY + 44
 	c.Fill(sdl.Rect{X: 0, Y: top - 8, W: w, H: 1}, ColPanelHi) // hairline under the header
 	view := sdl.Rect{X: 0, Y: top, W: w, H: h - top - pad}
 

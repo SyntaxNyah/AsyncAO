@@ -72,23 +72,190 @@ const (
 	// tighter than boxBodyInsetPx for no reason beyond history; named rather than
 	// unified so this stays a naming change and not a pixel move.
 	cleanOOCBottomInsetPx int32 = 4
+	// courtBottomFurnitureH is the vertical budget the classic courtroom keeps below
+	// the stage for the furniture it always draws there: the IC input row, the two
+	// control-button rows and the emote grid. The stage is capped so it can never eat
+	// that band. Historical value (it was a bare `h-220` in two places), named here
+	// per hard rule 9 — and now measured against the height left UNDER the app-chrome
+	// band rather than the raw window.
+	courtBottomFurnitureH int32 = 220
 )
 
 // --- LOBBY ------------------------------------------------------------------------
+
+// The lobby header's right-hand utility cluster. It is laid out by a RIGHT-TO-LEFT
+// cursor rather than the raw `w - <literal> - pad` rects it used to carry, because
+// those literals ran off the left edge of the window long before config.MinWindowW:
+// "What's New" landed at x=-78 and "Logs" at x=-198 on a 640-wide window.
+//
+// It used to be seven buttons — Refresh / Settings / About / Ping / Phone Book /
+// What's New / Logs — which is what made the row crowded enough to run off the
+// window in the first place. Six of them are now rows of the app-wide menu bar
+// (menubar.go): Refresh, Ping and Direct-connect focus under Servers; Settings under
+// Extras; About, What's New and Logs under Help.
+//
+// PHONE BOOK STAYS. Its label flips to "← All servers" on the phone-book page, so it
+// is not really a command — it is that page's only way BACK, and burying a back
+// affordance inside a menu strands anyone who does not know the menu is there. It is
+// in the Servers menu as well; both surfaces call setPhoneBookPage, so they agree.
+// Privacy and Glossary stay too, deliberately centre-stage for newcomers.
+const (
+	// lobbyUtilBtnW is the comfortable width when the window has room for the whole
+	// cluster — the historical width, so a normal window is pixel-identical.
+	lobbyUtilBtnW int32 = 110
+	// lobbyUtilBtnGap separates two buttons of the cluster. Also the historical
+	// value (the old literals stepped by 120 = width + gap).
+	lobbyUtilBtnGap int32 = 10
+	// lobbyUtilBtnMinW is the floor the shared-width shrink stops at, so a squeezed
+	// button still shows a few glyphs (Ctx.Button clips its own label) instead of
+	// collapsing to a sliver.
+	lobbyUtilBtnMinW int32 = 64
+	// lobbyUtilBtnCount is how many buttons the cluster lays out. It MUST match the
+	// number of cursor steps in drawLobby; it is what turns "does the row fit?" into
+	// arithmetic instead of a measured pass. One, now that the other six live in the
+	// menu bar — the shared-width shrink below is therefore inert at every window
+	// size the client can be, and is kept only so the row cannot regress if an entry
+	// ever comes back.
+	lobbyUtilBtnCount int32 = 1
+	// directConnectFieldID is the lobby's direct-connect TextField id. Named because
+	// the Servers menu focuses it by id from outside this file, and FocusField
+	// silently drops an id nothing draws.
+	directConnectFieldID = "direct"
+)
+
+// The direct-connect row, the OTHER half of the lobby's off-screen arithmetic. The
+// utility cluster above was pinned by `w - <literal> - pad`; this row was pinned by
+// `fieldX + <literal>` walking the opposite way, with the same result at the small
+// end: on a config.MinWindowW window the TLS checkbox started past the right edge and
+// "Save to phone book" and Connect were entirely outside the window. Connect is the
+// row's whole point, so it is the one thing that may never leave.
+const (
+	// dcFieldWMax is the input's comfortable width — the historical 280, so a normal
+	// window is pixel-identical to before. dcFieldWMin is the floor a squeeze stops
+	// at: still enough for "127.0.0.1:50001".
+	dcFieldWMax int32 = 280
+	dcFieldWMin int32 = 120
+	// dcGapPx is the gap between any two controls of the row. It is the historical
+	// input→checkbox spacing (the field ended at +280, the first checkbox began at
+	// +290), now applied uniformly; the caption→input gap was 12, so it tightens by
+	// two pixels — the only pixel change this rewrite makes at a normal window size.
+	dcGapPx int32 = 10
+	// dcConnectW is the Connect button's width (historical).
+	dcConnectW int32 = 100
+	// dcLabelFull / dcLabelShort are the row's caption. The long one spells out every
+	// accepted form, which is worth the width when there is width; the short one is
+	// what a squeezed window gets instead of losing the button.
+	dcLabelFull  = "Direct connect (ip:port, url:port, ws:// or wss://):"
+	dcLabelShort = "Direct connect:"
+)
+
+// directRowLayout is one frame's direct-connect geometry: where each control goes and
+// which caption survived. All absolute X in window space.
+type directRowLayout struct {
+	label          string // "" when even the short caption had to go
+	labelX, fieldX int32
+	fieldW         int32
+	tlsX, saveX    int32
+	connX          int32
+}
+
+// lobbyDirectRow places the row inside w, shedding width in the order that costs the
+// user least: the long caption first, then the input, then the caption entirely. The
+// controls' own widths are measured by the caller and passed in, so this stays pure
+// and alloc-free — which is what makes the "nothing leaves the window" property a
+// unit test rather than a screenshot.
+func lobbyDirectRow(w, fullW, shortW, tlsW, saveW int32) directRowLayout {
+	// The tail is fixed: two checkboxes and the button, all measured, none droppable.
+	tail := tlsW + dcGapPx + saveW + dcGapPx + dcConnectW
+	room := w - 2*pad - tail - dcGapPx // what is left for caption + input
+	lay := directRowLayout{label: dcLabelFull, fieldW: dcFieldWMax}
+	labelW := fullW
+	if labelW+dcGapPx+lay.fieldW > room {
+		lay.label, labelW = dcLabelShort, shortW // step 1: the short caption
+	}
+	if labelW+dcGapPx+lay.fieldW > room {
+		lay.fieldW = room - labelW - dcGapPx // step 2: squeeze the input
+	}
+	if lay.fieldW < dcFieldWMin { // step 3: drop the caption and give the input its floor
+		lay.label, labelW = "", -dcGapPx // -gap cancels the gap a caption would have needed
+		if lay.fieldW = room; lay.fieldW > dcFieldWMax {
+			lay.fieldW = dcFieldWMax
+		}
+		if lay.fieldW < dcFieldWMin {
+			lay.fieldW = dcFieldWMin
+		}
+	}
+	lay.labelX = pad
+	lay.fieldX = pad + labelW + dcGapPx
+	lay.tlsX = lay.fieldX + lay.fieldW + dcGapPx
+	lay.saveX = lay.tlsX + tlsW + dcGapPx
+	lay.connX = lay.saveX + saveW + dcGapPx
+	// Hard guarantee for an absurdly narrow window (below MinWindowW the shrink above
+	// can still run out of room): pull the tail back onto the window and let the
+	// controls overlap rather than disappear — visible beats invisible, the same rule
+	// lobbyUtilStop's clamp applies to the cluster.
+	if over := lay.connX + dcConnectW - (w - pad); over > 0 {
+		lay.connX -= over
+		if lay.saveX -= over; lay.saveX < pad {
+			lay.saveX = pad
+		}
+		if lay.tlsX -= over; lay.tlsX < pad {
+			lay.tlsX = pad
+		}
+		if lay.connX < pad {
+			lay.connX = pad
+		}
+	}
+	return lay
+}
+
+// lobbyUtilWidth is the width every button of the cluster shares at window width w:
+// the comfortable default when the whole row fits, otherwise the room that exists
+// split evenly, floored at lobbyUtilBtnMinW. Pure + alloc-free, so the "nothing
+// leaves the window" property below is unit-pinnable.
+func lobbyUtilWidth(w int32) int32 {
+	bw := lobbyUtilBtnW
+	room := w - 2*pad
+	if lobbyUtilBtnCount*(bw+lobbyUtilBtnGap)-lobbyUtilBtnGap <= room {
+		return bw
+	}
+	if bw = (room - (lobbyUtilBtnCount-1)*lobbyUtilBtnGap) / lobbyUtilBtnCount; bw < lobbyUtilBtnMinW {
+		bw = lobbyUtilBtnMinW
+	}
+	return bw
+}
+
+// lobbyUtilStop is the X of the i-th cluster button counting from the RIGHT edge
+// (0 = rightmost, lobbyUtilBtnCount-1 = leftmost). The clamp is the hard guarantee
+// that no button can leave the window: the shared-width shrink already makes the
+// cluster fit at config.MinWindowW, and this floors the cursor for anything narrower
+// still (the width floor means an absurd window overlaps rather than disappears —
+// visible beats invisible).
+func lobbyUtilStop(w, i int32) int32 {
+	btnW := lobbyUtilWidth(w)
+	x := w - pad - btnW - i*(btnW+lobbyUtilBtnGap)
+	if x < pad {
+		return pad
+	}
+	return x
+}
 
 func (a *App) drawLobby(w, h int32) {
 	a.pollLobbyFetch()
 	a.pollPing() // drain connect-time probes (no-op unless a sweep is running)
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
-	c.Heading(pad, pad, "AsyncAO", ColText)
-	c.Label(pad, pad+30, a.lobbyStatus, ColTextDim)
+	// The lobby's own content starts below the app-chrome band (#14, chrometop.go);
+	// hdrY is this screen's header row, and every offset below is relative to it.
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "AsyncAO", ColText)
+	c.Label(pad, hdrY+30, a.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
-		c.Label(pad+220, pad+30, a.connErr, ColDanger)
+		c.Label(pad+220, hdrY+30, a.connErr, ColDanger)
 		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
 			label := "Reconnect to " + a.lastConnName
 			bw := c.TextWidth(label) + 20
-			if c.Button(sdl.Rect{X: pad + 220, Y: pad + 50, W: bw, H: btnH}, label) {
+			if c.Button(sdl.Rect{X: pad + 220, Y: hdrY + 50, W: bw, H: btnH}, label) {
 				a.connErr = ""
 				a.Connect(a.lastConnName, a.lastConnURL)
 			}
@@ -97,43 +264,25 @@ func (a *App) drawLobby(w, h int32) {
 	// M2 auto-reconnect status (when a retry is pending): the cached message
 	// (rebuilt per attempt, not per frame) + a Stop button to bail out.
 	if !a.autoReconnectAt.IsZero() {
-		c.Label(pad+220, pad+78, a.autoReconnectMsg, ColAccent)
+		c.Label(pad+220, hdrY+78, a.autoReconnectMsg, ColAccent)
 		sx := pad + 220 + c.TextWidth(a.autoReconnectMsg) + 12
-		if c.Button(sdl.Rect{X: sx, Y: pad + 74, W: c.TextWidth("Stop") + 20, H: btnH}, "Stop") {
+		if c.Button(sdl.Rect{X: sx, Y: hdrY + 74, W: c.TextWidth("Stop") + 20, H: btnH}, "Stop") {
 			a.cancelAutoReconnect()
 		}
 	}
 
-	// Top bar buttons.
-	if c.Button(sdl.Rect{X: w - 110 - pad, Y: pad, W: 110, H: btnH}, "Refresh") {
-		a.RefreshServers()
-	}
-	if c.Button(sdl.Rect{X: w - 230 - pad, Y: pad, W: 110, H: btnH}, "Settings") {
-		a.prevScreen = ScreenLobby
-		a.screen = ScreenSettings
-	}
-	if c.Button(sdl.Rect{X: w - 350 - pad, Y: pad, W: 110, H: btnH}, "About") {
-		a.prevScreen = ScreenLobby
-		a.screen = ScreenAbout
-	}
-	// "What's New" — the full, always-available version history (the post-update
-	// modal only shows the latest release's notes). A green unread dot nags after an
-	// app update until you open it (#23).
-	wnBtn := sdl.Rect{X: w - 710 - pad, Y: pad, W: 110, H: btnH}
-	if c.Button(wnBtn, "What's New") {
-		a.prevScreen = ScreenLobby
-		a.screen = ScreenChangelog
-		a.markChangelogSeen() // opening it clears the unread dot
-	}
-	if a.changelogUnread() {
-		a.drawUnreadDot(wnBtn)
-	}
-	// Log browser: search your saved transcripts (any server, any session).
-	if c.Button(sdl.Rect{X: w - 830 - pad, Y: pad, W: 110, H: btnH}, "Logs") {
-		a.prevScreen = ScreenLobby
-		a.openLogBrowser()
-		a.screen = ScreenLogs
-	}
+	// Top bar buttons, laid out RIGHT TO LEFT by lobbyUtilStop (stop 0 = rightmost).
+	// They used to be pinned by raw `w - <literal> - pad` rects
+	// (110/230/350/470/590/710/830); at config.MinWindowW those literals put "What's
+	// New" at x=-78 and "Logs" at x=-198, i.e. clean off the left edge of the window.
+	// Six of the seven now live in the menu bar (see the constants above); the Phone
+	// Book page toggle takes its rect here, in cursor order, but draws further down
+	// where its dynamic label and tooltip live.
+	utilW := lobbyUtilWidth(w)
+	pbBtn := sdl.Rect{X: lobbyUtilStop(w, 0), Y: hdrY, W: utilW, H: btnH}
+	// The leftmost of the cluster: its X is what the centred Privacy/Glossary pair
+	// below measures its room against.
+	utilLeft := lobbyUtilStop(w, lobbyUtilBtnCount-1)
 	// Privacy + Glossary: the two things a newcomer most needs — what the server can see,
 	// and what the AO jargon means. They sit CENTRE STAGE in the header (larger + accent-
 	// styled) instead of buried in the right-hand utility cluster, and replace the old
@@ -147,7 +296,6 @@ func (a *App) drawLobby(w, h int32) {
 		headerTitleZone = int32(180) // reserved width for the "AsyncAO" heading on the left
 	)
 	titleRight := pad + headerTitleZone
-	utilLeft := w - 830 - pad // Logs is the leftmost utility button
 	helpBtnW := helpBtnWMax
 	if zoneW := utilLeft - titleRight; helpBtnW*2+helpBtnGap > zoneW {
 		if helpBtnW = (zoneW - helpBtnGap) / 2; helpBtnW < helpBtnWMin {
@@ -159,7 +307,7 @@ func (a *App) drawLobby(w, h int32) {
 	if helpX < titleRight { // narrow window: anchor just after the title
 		helpX = titleRight
 	}
-	helpY, helpH := pad-2, btnH+4 // a touch taller than the utility buttons
+	helpY, helpH := hdrY-2, btnH+4 // a touch taller than the utility buttons
 	if c.ButtonCol(sdl.Rect{X: helpX, Y: helpY, W: helpBtnW, H: helpH}, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(1)
@@ -168,48 +316,35 @@ func (a *App) drawLobby(w, h int32) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(0)
 	}
-	// Connect-time ("ping") sort: probe joinable servers and sort by RTT. A
-	// second press goes back to the player-count sort. Off until pressed.
-	pingBtn := sdl.Rect{X: w - 470 - pad, Y: pad, W: 110, H: btnH}
-	pingLabel := "Ping"
-	if a.pinging {
-		pingLabel = "Pinging…"
-	} else if a.pingMode {
-		pingLabel = "Ping ✓"
-	}
-	if c.Button(pingBtn, pingLabel) {
-		if a.pingMode {
-			a.pingMode = false
-			a.applyServerSort() // back to player-count order
-		} else {
-			a.startPinging()
-		}
-	}
-	c.Tooltip(pingBtn, "Sort by connect time (rough TCP latency, not ICMP ping) — press again for player-count order")
-	// Phone Book page toggle: a dedicated view of just YOUR saved servers.
-	pbBtn := sdl.Rect{X: w - 590 - pad, Y: pad, W: 110, H: btnH}
+	// Phone Book page toggle: a dedicated view of just YOUR saved servers. Kept on
+	// screen (see the cluster comment) because "← All servers" is this page's only
+	// way back; the Servers menu carries the same toggle through the same setter.
 	pbLabel := "★ Phone Book"
 	if a.phoneBookPage {
 		pbLabel = "← All servers"
 	}
 	if c.Button(pbBtn, pbLabel) {
-		a.phoneBookPage = !a.phoneBookPage
-		a.selServer, a.descLines, a.descLinks, a.lobbyScroll = -1, nil, nil, 0
-		a.cancelPhoneBookEdit() // drop any half-finished row edit on page change
+		a.setPhoneBookPage(!a.phoneBookPage)
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
-	dcY := pad + 56
+	dcY := hdrY + 56
 	if a.phoneBookPage {
 		a.drawPhoneBookBar(w, dcY)
 	} else {
-		// Direct connect row.
-		c.Label(pad, dcY+4, "Direct connect (ip:port, url:port, ws:// or wss://):", ColText)
-		fieldX := pad + c.TextWidth("Direct connect (ip:port, url:port, ws:// or wss://):") + 12
-		a.directInput, _ = c.TextField("direct", sdl.Rect{X: fieldX, Y: dcY, W: 280, H: fieldH}, a.directInput, "127.0.0.1:50001")
-		a.directSecure = c.Checkbox(fieldX+290, dcY+4, "TLS (wss)", a.directSecure)
-		a.directSave = c.Checkbox(fieldX+390, dcY+4, "Save to phone book", a.directSave)
-		if c.Button(sdl.Rect{X: fieldX + 560, Y: dcY, W: 100, H: btnH}, "Connect") {
+		// Direct connect row, laid out by lobbyDirectRow so nothing walks off the right
+		// edge of a config.MinWindowW window (the old `fieldX + 290/390/560` literals
+		// put both checkboxes and the whole Connect button outside it).
+		const tlsLabel, saveLabel = "TLS (wss)", "Save to phone book"
+		row := lobbyDirectRow(w, c.TextWidth(dcLabelFull), c.TextWidth(dcLabelShort),
+			c.CheckboxWidth(tlsLabel), c.CheckboxWidth(saveLabel))
+		if row.label != "" {
+			c.Label(row.labelX, dcY+4, row.label, ColText)
+		}
+		a.directInput, _ = c.TextField(directConnectFieldID, sdl.Rect{X: row.fieldX, Y: dcY, W: row.fieldW, H: fieldH}, a.directInput, "127.0.0.1:50001")
+		a.directSecure = c.Checkbox(row.tlsX, dcY+4, tlsLabel, a.directSecure)
+		a.directSave = c.Checkbox(row.saveX, dcY+4, saveLabel, a.directSave)
+		if c.Button(sdl.Rect{X: row.connX, Y: dcY, W: dcConnectW, H: btnH}, "Connect") {
 			a.directConnect()
 		}
 	}
@@ -258,6 +393,7 @@ func (a *App) drawLobby(w, h int32) {
 					bx = w - pad - helpBtnW
 				}
 				if c.Button(sdl.Rect{X: bx, Y: y, W: helpBtnW, H: 24}, "For server owners…") {
+					a.prevScreen = ScreenLobby // the guide's Back / Esc both return here
 					a.screen = ScreenServerHelp
 				}
 			}
@@ -652,11 +788,13 @@ func (a *App) drawCharSelect(w, h int32) {
 	// drain: without it the parse goroutine parks on the one-slot result channel
 	// and the portrait never learns the pack has no "normal" emote.
 	a.pollPreviewEmotes()
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
 	title := "Choose a character"
 	if a.serverName != "" {
 		title += " — " + a.serverName
 	}
-	c.Heading(pad, pad, title, ColText)
+	c.Heading(pad, hdrY, title, ColText)
 
 	// Top-right is the consistent "leave this screen" slot (matches Settings/About/
 	// Help/etc.) so muscle memory doesn't land on Disconnect (playtest: "in char select
@@ -667,7 +805,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	if a.room != nil {
 		backW := int32(90)
 		rightX -= backW
-		if c.Button(sdl.Rect{X: rightX, Y: pad, W: backW, H: btnH}, "Back") {
+		if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: backW, H: btnH}, "Back") {
 			a.screen = ScreenCourtroom
 			return
 		}
@@ -675,7 +813,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	dcW := int32(120)
 	rightX -= dcW
-	if c.ButtonCol(sdl.Rect{X: rightX, Y: pad, W: dcW, H: btnH}, "Disconnect", ColPanel, ColPanelHi, ColDanger, ColDanger) {
+	if c.ButtonCol(sdl.Rect{X: rightX, Y: hdrY, W: dcW, H: btnH}, "Disconnect", ColPanel, ColPanelHi, ColDanger, ColDanger) {
 		a.requestDisconnect() // confirm first unless instant-disconnect is set
 		return
 	}
@@ -684,20 +822,20 @@ func (a *App) drawCharSelect(w, h int32) {
 	// me?" is one click away before you commit to playing here.
 	privW := int32(120)
 	rightX -= privW
-	if c.Button(sdl.Rect{X: rightX, Y: pad, W: privW, H: btnH}, "Privacy") {
+	if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: privW, H: btnH}, "Privacy") {
 		a.prevScreen = ScreenCharSelect
 		a.openHelp(1)
 	}
 	if a.sess == nil {
-		c.Label(pad, pad+40, "Loading...", ColTextDim)
+		c.Label(pad, hdrY+40, "Loading...", ColTextDim)
 		return
 	}
 	if a.sess.Phase() != courtroom.PhaseReady {
-		c.Label(pad, pad+40, "Handshaking with server...", ColTextDim)
+		c.Label(pad, hdrY+40, "Handshaking with server...", ColTextDim)
 		return
 	}
 
-	a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: pad + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
+	a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
 
 	// Grid tabs right of the search: the same grid swaps between the
 	// server's list and your wardrobe (favourites + server customs), so
@@ -710,9 +848,9 @@ func (a *App) drawCharSelect(w, h int32) {
 	for _, tb := range tabs {
 		bw := c.TextWidth(tb.label) + 20
 		if a.charTab == tb.id {
-			c.Fill(sdl.Rect{X: tabX - 2, Y: pad + 34, W: bw + 4, H: btnH + 4}, ColAccent)
+			c.Fill(sdl.Rect{X: tabX - 2, Y: hdrY + 34, W: bw + 4, H: btnH + 4}, ColAccent)
 		}
-		if c.Button(sdl.Rect{X: tabX, Y: pad + 36, W: bw, H: btnH}, tb.label) {
+		if c.Button(sdl.Rect{X: tabX, Y: hdrY + 36, W: bw, H: btnH}, tb.label) {
 			a.charTab = tb.id
 			if tb.id == charTabWardrobe {
 				a.ensureIniList()
@@ -721,7 +859,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		tabX += bw + 6
 	}
 	specX := tabX + 8
-	if c.Button(sdl.Rect{X: specX, Y: pad + 36, W: 90, H: btnH}, "Spectate") {
+	if c.Button(sdl.Rect{X: specX, Y: hdrY + 36, W: 90, H: btnH}, "Spectate") {
 		if !a.sess.Rehearsal {
 			a.sess.PickCharacter(protocol.UnpairedCharID)
 		}
@@ -731,10 +869,10 @@ func (a *App) drawCharSelect(w, h int32) {
 	// (Re-pick "Back" → courtroom now lives in the top-right header slot above, so it
 	// matches every other screen instead of sitting mid-row.)
 	if a.warnActive() {
-		c.LabelClipped(specX+200, pad+42, w-specX-200-pad, a.warnLine, ColDanger)
+		c.LabelClipped(specX+200, hdrY+42, w-specX-200-pad, a.warnLine, ColDanger)
 	}
 
-	gridTop := pad + 76
+	gridTop := hdrY + 76
 	gridW := w - 2*pad - scrollBarW - scrollBarGap
 	cols := gridW / (iconCell + iconGap)
 	if cols < 1 {
@@ -1402,6 +1540,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	// last frame's answer — and the post-courtroom draw site can trust !set as
 	// "the in-pass site did not own the toolbox this frame".
 	a.toolboxFence = compactToolboxLatch{}
+	// The server-tab strip's paint site is decided ONCE here, at the top of the pass,
+	// and replayed by both sites (chrometop.go). It must be taken BEFORE anything can
+	// arm or disarm an editor mid-pass — handleHotkeys, the force-stops below, and the
+	// editors' own Done/Esc all run later — or the two sites can disagree and paint the
+	// strip twice or not at all.
+	a.latchTabStripPaint()
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
 		if a.classicEdit {
@@ -1422,7 +1566,10 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
-	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+	// themeWindowLayout, not themeLayout: the design canvas is fitted into the height
+	// left UNDER the app-chrome band and offset down by it, so it can never slide
+	// beneath the menu bar / server-tab strip (#14).
+	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
 		if a.classicEdit {
 			a.stopClassicEdit() // a themed layout took over; classic edit is default-only
 		}
@@ -1448,11 +1595,14 @@ func (a *App) drawCourtroom(w, h int32) {
 	// handleHotkeys and the modal return both run in between.
 	a.fenceCompactToolbox(w, h)
 
+	// The app-chrome band (menu bar + docked server-tab strip) owns the top of the
+	// window; everything the classic courtroom lays out starts below it (#14).
+	top := a.topChromeH()
 	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
 	vpW := w * int32(a.vpPct) / DefaultScalePct
 	vpH := vpW * 3 / 4
-	if vpH > h-220 {
-		vpH = h - 220
+	if vpH > h-top-courtBottomFurnitureH {
+		vpH = h - top - courtBottomFurnitureH
 		vpW = vpH * 4 / 3
 	}
 	// Precise (exact-px) sizing overrides the % knob: the native stage art is
@@ -1462,8 +1612,8 @@ func (a *App) drawCourtroom(w, h int32) {
 	// to raw px would re-introduce the very blur this control removes.
 	if ew := int32(a.d.Prefs.ViewportExactWidth()); ew > 0 {
 		vpW, vpH = ew, ew*config.ViewportArtH/config.ViewportArtW
-		if vpW > w-2*pad || vpH > h-220 {
-			fitM := (h - 220) / config.ViewportArtH
+		if vpW > w-2*pad || vpH > h-top-courtBottomFurnitureH {
+			fitM := (h - top - courtBottomFurnitureH) / config.ViewportArtH
 			if wM := (w - 2*pad) / config.ViewportArtW; wM < fitM {
 				fitM = wM
 			}
@@ -1473,7 +1623,7 @@ func (a *App) drawCourtroom(w, h int32) {
 			vpW, vpH = fitM*config.ViewportArtW, fitM*config.ViewportArtH
 		}
 	}
-	vpDef := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
+	vpDef := sdl.Rect{X: pad, Y: top + pad, W: vpW, H: vpH}
 	// Movable + resizable stage. With no override the View knob / divider own its
 	// 4:3 size (vpDef); once you drag a viewport handle in the editor, that override
 	// wins (free position + size; the scene fills it) until you reset the box.
@@ -1501,7 +1651,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
 	// as the iniswap menu. Shared with the themed path (drawCourtroomModals).
-	if !a.classicEdit && a.drawCourtroomModals(w, h) {
+	//
+	// layoutEditorArmed, not classicEdit: the same guard has to hold in BOTH passes
+	// (its absence from the themed twin is what made a modal-plus-editor state an
+	// unrecoverable lock), and only one predicate can hold in both without drifting.
+	// See modalReturnSkippedWhileEditing for the whole rule.
+	if !a.modalReturnSkippedWhileEditing() && a.drawCourtroomModals(w, h) {
 		return // skipped while editing: modals are closed on entry, so the editor is never stranded
 	}
 
@@ -1512,11 +1667,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	// slot ("rightcol"), draggable/resizable on BOTH the default and Legacy themes.
 	rx := vpDef.X + vpDef.W + pad
 	rw := w - rx - pad
-	a.dockLeftX = w // log hidden ⇒ no dock strip; the server-tab strip falls back to window-centre
 	if !a.panelHidden(panelLog) {
-		rcolDef := sdl.Rect{X: rx, Y: pad, W: rw, H: vpDef.H}
+		rcolDef := sdl.Rect{X: rx, Y: vpDef.Y, W: rw, H: vpDef.H}
 		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
-		a.dockLeftX = rcol.X // keep the floating server-tab strip LEFT of the dock tabs (issue #2)
 		// OOC lives in its own box by default; the Legacy theme — or the opt-in
 		// "OOC in the log tab" toggle (the old layout, set in the layout editor) —
 		// instead routes the whole column to the tabbed log with an OOC tab.
@@ -1548,10 +1701,16 @@ func (a *App) drawCourtroom(w, h int32) {
 	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
 	// so you see what you're arranging. In normal play they draw post-courtroom (app.go) where the
 	// content is interactive and the pointer is fenced over them. (torntabs.go)
+	//
+	// The strip is painted just BEFORE it, replaying the frame's paint-site latch
+	// (chrometop.go) rather than riding the classicEdit flag: this pass force-stops the
+	// classic editor when a themed layout takes over, and the latch — taken at the top,
+	// while the flag was still set — is what keeps the strip painted exactly once even
+	// on that frame. App.Frame's over-everything site replays the same latch.
+	a.drawTabBarInPass(w, h)
 	if a.classicEdit {
 		a.drawTornTabs(w, h)
 		a.drawMessagesSlotGhost(w, h) // Group Chat panel: inert placeholder so the editor gives it handles
-		a.drawTabBar(w, h)            // the server-tab strip paints UNDER the editor while editing (app.go skips its usual over-everything paint)
 		a.drawClassicEditor(w, h)
 	}
 }
@@ -1612,29 +1771,66 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	}, true)
 }
 
-// courtroomModal is one return-to-top courtroom popup: the flag that opens it and
-// the draw that paints it. A TABLE rather than a switch so the "is one open?"
-// question and the "draw it" action are literally the same list — the fence a
-// later-drawn occluder publishes has to agree with whether the pass reaches its
-// draw at all, and a second hand-maintained copy of this set is exactly how the
-// two drift (a fence over pixels nothing painted eats clicks, the mirror of the
-// leak the fence exists to stop).
+// courtroomModal is one return-to-top courtroom popup: the flag that opens it, the
+// draw that paints it, and the close that dismisses it. A TABLE rather than a switch
+// so the "is one open?" question and the "draw it" action are literally the same list
+// — the fence a later-drawn occluder publishes has to agree with whether the pass
+// reaches its draw at all, and a second hand-maintained copy of this set is exactly
+// how the two drift (a fence over pixels nothing painted eats clicks, the mirror of
+// the leak the fence exists to stop).
+//
+// `close` joins them for the same reason. The layout editors have to shut every one
+// of these before they arm — a modal that survives ends the courtroom pass at
+// drawCourtroomModals, so the editor's own overlay never draws — and the hand-listed
+// copy of the set they used to close had drifted three entries behind this table
+// (showTimer, pairPopupOpen and showSfxBrowser were all missing), which is a HARD
+// LOCK: no Done chip, no banner, and a modal whose own kit buttons the editor's
+// input fence has already killed.
 type courtroomModal struct {
-	open func(*App) bool
-	draw func(*App, int32, int32)
+	open  func(*App) bool
+	draw  func(*App, int32, int32)
+	close func(*App)
 }
 
 // courtroomModals is that list, in the switch's original priority order. Package
 // level with plain function values, so walking it allocates nothing per frame (the
 // compactToolboxChips precedent).
 var courtroomModals = []courtroomModal{
-	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel},
-	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel},
-	{func(a *App) bool { return a.showTimer }, (*App).drawTimerPanel},
-	{func(a *App) bool { return a.showLogin }, (*App).drawLoginDialog},
-	{func(a *App) bool { return a.pairPopupOpen }, (*App).drawPairPopup},
-	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser}, // #12 SFX Browser (preview + favourites)
+	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel, func(a *App) { a.showIni = false }},
+	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
+	{func(a *App) bool { return a.showTimer }, (*App).drawTimerPanel, func(a *App) { a.showTimer = false }},
+	{func(a *App) bool { return a.showLogin }, (*App).drawLoginDialog, func(a *App) { a.showLogin = false }},
+	{func(a *App) bool { return a.pairPopupOpen }, (*App).drawPairPopup, func(a *App) { a.pairPopupOpen = false }},
+	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
 }
+
+// closeCourtroomModals shuts EVERY return-to-top courtroom popup by walking the one
+// table that defines the set. Both layout editors call it as they arm.
+//
+// Exhaustive BY CONSTRUCTION rather than by hand: a new row added to courtroomModals
+// is closed by the editors the moment it exists, so the set that can strand an editor
+// and the set the editors clear can never diverge again.
+func (a *App) closeCourtroomModals() {
+	for i := range courtroomModals {
+		courtroomModals[i].close(a)
+	}
+}
+
+// modalReturnSkippedWhileEditing reports whether the courtroom pass must SKIP its
+// return-to-top modal check this frame because a layout editor owns the screen.
+//
+// Both courtroom passes end at `if drawCourtroomModals(...) { return }`, and both
+// editors' overlays draw at the very END of their pass — so an open modal deletes the
+// editor from the frame entirely. That is not merely cosmetic: the editor's input
+// fence (c.modalOn) has already made every kit widget in the frame inert, so the
+// modal that took the screen cannot be clicked away either, the menu bar and the
+// server-tab strip have both stood down for the editor, and the editor's own Esc
+// handler lives inside the draw that never ran. Nothing on screen answers.
+//
+// The classic pass has carried this guard since the editor existed; the themed twin
+// never did. Sharing ONE predicate is the point — a guard that holds in one pass and
+// not the other is exactly how the lock was reachable.
+func (a *App) modalReturnSkippedWhileEditing() bool { return a.layoutEditorArmed() }
 
 // courtroomModalUp reports whether drawCourtroomModals will take the screen — the
 // predicate half of the table above, for anything that must decide BEFORE the pass
@@ -3686,7 +3882,11 @@ const (
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm; shared)
-	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
+	// Kept clear of the app-chrome band (#14, chrometop.go): the menu bar and the
+	// docked server-tab strip paint AFTER the screens, so a panel starting at the raw
+	// pad*3 would have its top edge and title covered by the strip.
+	top := a.topChromeH()
+	panel := sdl.Rect{X: pad * 3, Y: top + pad*3, W: w - pad*6, H: h - top - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe", ColText)

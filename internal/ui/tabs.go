@@ -36,6 +36,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 const (
@@ -49,7 +50,8 @@ const (
 	tabPumpBudget = 64
 	// tabChipMaxName clips server names on tab chips.
 	tabChipMaxName = 14
-	// tabBarH is the floating tab strip's height.
+	// tabBarH is the server-tab strip's height — and, docked under the menu bar, the
+	// second half of the app-chrome band every screen offsets by (chrometop.go).
 	tabBarH = 22
 	// addTabChipW is the "+" new-session chip at the end of the strip — the
 	// discoverable way to open another server (the active-chip-park gesture
@@ -61,9 +63,55 @@ const (
 	tabDragThreshold = 6
 	// tabTearOffY is the Y (logical px) below which an in-progress chip drag stops
 	// reordering and becomes a TEAR-OFF: releasing there pops a background tab out
-	// as a floating client window at the cursor. Comfortably below the tabBarH strip
-	// so a horizontal reorder never trips it; pulling the chip down is the gesture.
-	tabTearOffY = tabBarH + 34
+	// as a floating client window at the cursor. Comfortably below the DOCKED strip
+	// (menu bar + strip, #14) so a horizontal reorder never trips it; pulling the
+	// chip down is the gesture. Sized for the docked case rather than measured per
+	// frame: when the menu bar is hidden (gif export / replay / scene maker /
+	// theater) the strip sits menuBarH higher, so the only effect of the constant
+	// being generous there is a slightly longer pull — never a misfire.
+	tabTearOffY = menuBarH + tabBarH + 34
+	// themeTabBarKey is the courtroom_design.ini rect that parks the server-tab strip
+	// inside a theme's design canvas — the twin of "asyncao_toolbox" for the toolbox,
+	// registered in themeLayoutKeys (app.go).
+	//
+	// UNITS. Unlike every other key in the map, this rect's X/Y are CANVAS-RELATIVE
+	// CLIENT px — an offset from the canvas origin in the pixels the strip is drawn
+	// in, NOT design px scaled by the layout. tabStripCacheRect carries the full
+	// argument; the short version is that the strip is intrinsically sized client
+	// chrome (its W/H are already unscaled) and that an unscaled origin is the only
+	// map an integer preimage can invert exactly, which is what a hand-placed widget
+	// needs. At the shipped default fit — Native, scale 1 — the two readings coincide.
+	//
+	// It is an AsyncAO invention, so NO shipped theme declares it (the 74-theme
+	// reference corpus has zero). Registering the key therefore bought nothing on its
+	// own: the apply path only copies keys the theme actually declares, the layout
+	// cache is built by ranging that map, and the THEMED editor's editable set is
+	// built from the layout cache — so under every real theme the strip still had no
+	// drag box, which is issue #14's literal complaint. seedTabBarDesignRect closes
+	// that by SYNTHESIZING the key whenever the theme is silent (see it for the
+	// default's geometry and for why the strip nevertheless stays in the chrome band
+	// until it is moved).
+	themeTabBarKey = "asyncao_tabbar"
+	// tabBarDesignSeedW is the width the synthesized entry is BORN with, in design px.
+	//
+	// It is deliberately inert: the strip is INTRINSICALLY SIZED (its width comes from
+	// the chips — tab count, names — and changes as tabs open, close and get renamed),
+	// so nothing ever paints or hit-tests at this number. Every consumer re-derives the
+	// size live: tabStripCacheRect builds the editor's box and the layout cache entry
+	// from tabStripTotalW, and tabStripOrigin keeps only X/Y from the stored rect. The
+	// value survives purely so the seeded rect is a plausible-looking record (and so
+	// the magnet's sibling list and the editor's readout have a sane number), sized for
+	// a couple of server chips on the 714 px stock AO2 canvas and clamped to a smaller
+	// one.
+	//
+	// It used to be the width the editor's drag box was drawn at, which is what made
+	// the box disagree with the strip the moment either changed.
+	tabBarDesignSeedW = 240
+	// tabChipTextPadX is a chip's padding around its label — room for the text plus
+	// the trailing "✕" the active chip draws. tabChipGapX is the gap between chips.
+	// Named per hard rule 9 so tabBarRects and tabStripTotalW cannot drift.
+	tabChipTextPadX = 28
+	tabChipGapX     = 4
 )
 
 // courtTab is one parked server session. While a tab is ACTIVE its state
@@ -647,38 +695,39 @@ func (a *App) backgroundMusicFollow(s *sessionState) (url string, ok bool) {
 	return s.urls.MusicURL(s.sess.MusicTrack), true
 }
 
-// --- tab bar (floating strip, drawn over every screen) ----------------------
+// --- tab bar (docked strip, drawn over every screen) ------------------------
 
 // tabBarRects computes the chip rects for the current frame plus the "+"
-// new-session chip (add.W == 0 when at the tab cap). The strip floats over the
-// stage (a move-only "tabbar" slot — see tabStripDefaultX) so no screen layout
-// has to move; it used to float dead-centre, on top of the dock tabs (issue #2).
+// new-session chip (add.W == 0 when at the tab cap). The strip DOCKS under the menu
+// bar in the top chrome band (chrometop.go), window-centred, and every screen keeps
+// its content below that band — so it can no longer sit on top of anything (#14). It
+// is still a move-only "tabbar" slot, so a layout-editor drag lifts it out of the
+// band, and a theme that ships "asyncao_tabbar" parks it inside its design canvas.
 func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 	if len(a.tabs) == 0 {
 		return nil, sdl.Rect{}
 	}
-	c := a.ctx
 	rects = make([]sdl.Rect, len(a.tabs))
 	total := int32(0)
 	for i := range a.tabs {
-		rects[i].W = c.TextWidth(a.tabChipLabel(i)) + 28 // label + ✕ pad
-		total += rects[i].W + 4
+		rects[i].W = a.tabChipW(i)
+		total += rects[i].W + tabChipGapX
 	}
 	showAdd := len(a.tabs) < a.d.Prefs.TabCap() // no "+" once every slot is full
 	if showAdd {
-		total += addTabChipW + 4
+		total += addTabChipW + tabChipGapX
 	}
-	// Default origin: centred in the space LEFT of the dock tabs (over the stage), so
-	// the strip no longer sits ON the Log/Music/Areas tabs (issue #2). The whole strip
-	// is a MOVE-ONLY layout slot — drag it anywhere in the Edit Layout editor; un-edited
-	// it uses this default. ensureClassicOv loads the override map slotRect reads.
+	// Default origin: DOCKED — window-centred, directly under the menu bar, in the
+	// band chrometop.go reserves for it. The whole strip is a MOVE-ONLY layout slot,
+	// so an Edit Layout drag still lifts it anywhere; un-edited it uses this default.
+	// ensureClassicOv loads the override map slotRect reads.
 	a.ensureClassicOv()
-	defX := tabStripDefaultX(total, a.dockLeftX, w)
-	origin := a.slotRect(slotTabBar, sdl.Rect{X: defX, Y: 0, W: total, H: tabBarH}, w, h)
+	def := a.tabStripDockedRect(total, w)
+	origin := a.tabStripOrigin(def, w, h)
 	x, y := origin.X, origin.Y
 	for i := range rects {
 		rects[i].X, rects[i].Y, rects[i].H = x, y, tabBarH
-		x += rects[i].W + 4
+		x += rects[i].W + tabChipGapX
 	}
 	if showAdd {
 		add = sdl.Rect{X: x, Y: y, W: addTabChipW, H: tabBarH}
@@ -686,22 +735,302 @@ func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 	return rects, add
 }
 
-// tabStripDefaultX centres the server-tab strip in the gap LEFT of the dock tabs
-// (dockLeftX = the docked log strip's left edge), so its default no longer overlaps
-// the Log/Music/Areas tabs (issue #2). dockLeftX<=0 (pre-courtroom) or a hidden log
-// (dockLeftX>=w) falls back to the original window-centre. Clamped to the left edge so
-// a very narrow stage can't push it off-screen — it stays clear of the dock tabs (the
-// actual bug) even then. Pure + alloc-free so the non-overlap invariant is unit-pinnable.
-func tabStripDefaultX(total, dockLeftX, w int32) int32 {
-	right := dockLeftX
-	if right <= 0 || right > w {
-		right = w
-	}
-	x := (right - total) / 2
+// tabStripDefaultX centres the server-tab strip in the WINDOW — issue #14's "it
+// doesn't even center itself".
+//
+// It used to centre in the gap LEFT of the docked log column instead (issue #2: the
+// strip floated over the stage and landed ON the Log/Music/Areas tabs), which is why
+// the reporter's screenshot shows it parked well off to one side. That constraint is
+// gone because the reason for it is gone: the strip now docks in its own reserved
+// band (chrometop.go) and every screen — dock tabs included — starts below that band,
+// so no X can make the two collide. Clamped to the left edge so a strip wider than
+// the window still starts on-screen. Pure + alloc-free, so the centring is
+// unit-pinnable.
+func tabStripDefaultX(total, w int32) int32 {
+	x := (w - total) / 2
 	if x < 0 {
 		x = 0
 	}
 	return x
+}
+
+// tabChipW is the i-th chip's width: its (memoized) label plus the padding that
+// holds the trailing ✕. Alloc-free — tabChipLabel and TextWidth are both memoized.
+func (a *App) tabChipW(i int) int32 {
+	return a.ctx.TextWidth(a.tabChipLabel(i)) + tabChipTextPadX
+}
+
+// tabStripTotalW is the whole strip's intrinsic width — every chip, the gaps, and
+// the "+" chip when it shows. Factored out of tabBarRects so the layout cache can
+// measure the strip WITHOUT building the per-chip rect slice (which allocates) and
+// without calling back into tabStripOrigin (which would read the very cache being
+// built).
+func (a *App) tabStripTotalW() int32 {
+	if len(a.tabs) == 0 {
+		return 0
+	}
+	total := int32(0)
+	for i := range a.tabs {
+		total += a.tabChipW(i) + tabChipGapX
+	}
+	if len(a.tabs) < a.d.Prefs.TabCap() {
+		total += addTabChipW + tabChipGapX
+	}
+	return total
+}
+
+// tabStripDockedRect is the strip's HOME: window-centred, directly under the menu
+// bar, inside the band chrometop.go reserves for it (#14). `total` is the strip's
+// intrinsic width.
+func (a *App) tabStripDockedRect(total, w int32) sdl.Rect {
+	return sdl.Rect{X: tabStripDefaultX(total, w), Y: a.menuBarHeight(), W: total, H: tabBarH}
+}
+
+// seedTabBarDesignRect inserts a DEFAULT "asyncao_tabbar" design rect into a freshly
+// loaded theme layout when the theme itself is silent about the key, and reports
+// whether it had to. Call it on the PRISTINE map (the one that becomes
+// App.themeRectsOrig) and BEFORE the override overlay, so all four consumers line up:
+//
+//   - themeLayoutIn ranges the design map, so the key finally enters the layout cache;
+//   - the themed editor builds its editable key set from that cache, so the strip
+//     finally gets a drag box (issue #14's "I don't think this bar is rearrangable",
+//     which was true under every real theme — none declares the key);
+//   - applyRectOverrides only rewrites keys that ALREADY EXIST, so without the seed a
+//     dragged position could never be re-applied after a theme reload;
+//   - right-click reset and the editor's "Reset all" both restore from the pristine
+//     map, so the seed is what they put the strip back to.
+//
+// GEOMETRY. Centred at the TOP of the canvas, which is where a strip of server tabs
+// belongs on one. Only X/Y are ever consumed, and only once the strip is PARKED; W/H
+// are inert (tabBarDesignSeedW). The X/Y are canvas-relative CLIENT px like every
+// other value stored under this key (see themeTabBarKey), so "centred" here means
+// centred at scale 1 — which is the shipped default fit, and in any case this seed's
+// coordinates are overwritten by the first drag. In practice even X/Y are rarely read —
+// parking happens through a drag, which overwrites them — so the seeded rect's real
+// jobs are to put the key in the map (the editor's editable set and applyRectOverrides
+// are both built by ranging it) and to give right-click reset / "Reset all" something
+// to restore to.
+//
+// The seeded default does NOT move the strip on its own — tabStripThemeParked keeps
+// it in the client chrome band until the theme declares the key or the user drags it.
+// The band is above the canvas and has no design-space coordinates, so it cannot be
+// expressed here; what CAN be guaranteed is that the box the editor hands out sits on
+// the painted strip (tabStripCacheRect substitutes the live docked rect while
+// unparked).
+func seedTabBarDesignRect(layout map[string]theme.Rect) bool {
+	if layout == nil {
+		return false
+	}
+	if _, declared := layout[themeTabBarKey]; declared {
+		return false
+	}
+	court, ok := layout["courtroom"]
+	if !ok || court.W <= 0 || court.H <= 0 {
+		return false // no canvas ⇒ no themed layout at all ⇒ nothing to seed into
+	}
+	w := tabBarDesignSeedW
+	if w > court.W {
+		w = court.W
+	}
+	layout[themeTabBarKey] = theme.Rect{X: (court.W - w) / 2, Y: 0, W: w, H: int(tabBarH)}
+	return true
+}
+
+// tabStripThemeParked reports whether the THEME's design layout owns where the strip
+// sits, as opposed to the client chrome band it docks in by default.
+//
+// Parked-ness is RECORDED, never inferred from geometry. It used to be "the live
+// design rect differs from the pristine seed", and that quietly threw away any drag
+// that happened to land on the seed's own coordinates: the override was written, the
+// comparison then said "unchanged", and the strip snapped back into the chrome band as
+// if the user had never moved it. Two EXPLICIT sources answer it instead:
+//
+//   - the theme DECLARED asyncao_tabbar (tabBarSeeded is false): that rect is the
+//     theme author's own placement, so it is parked from the moment the theme loads;
+//   - a per-key rect override is PERSISTED for the active theme. The editor writes one
+//     on drag release and both reset paths delete it, so the override's presence IS
+//     the placement flag — recorded with the placement it belongs to, which is why a
+//     theme reload cannot disagree with it.
+//
+// Those two are the RECORDED placement — tabStripPlacementRecorded below, which is
+// what a caller asking "where does this strip belong" (as opposed to "where is it
+// being drawn this instant") must use.
+//
+// Plus one IN-FLIGHT arm: a themed-editor drag that has grabbed the strip is a
+// placement in progress. Nothing is persisted until the release (a press that never
+// moves must leave the strip docked, like every other widget), so without this arm the
+// live design rect the drag is rewriting would be ignored for the whole gesture and the
+// strip would sit frozen in the band until the mouse came up.
+//
+// Cheap enough for the draw path: the recorded ladder short-circuits first, so an
+// ordinary frame still costs one map probe on latched state plus two RLock'd prefs
+// probes and no allocation (that is what HasThemeRectOverride is for). Only a frame
+// with a strip drag in flight pays the extra map probe.
+func (a *App) tabStripThemeParked() bool {
+	if a.tabStripPlacementRecorded() {
+		return true
+	}
+	if !a.layoutEdit || a.editDrag == 0 || a.editKey != themeTabBarKey {
+		return false
+	}
+	_, present := a.themeRects[themeTabBarKey]
+	return present // a placement is happening right now
+}
+
+// tabStripPlacementRecorded is tabStripThemeParked WITHOUT the in-flight arm: the
+// placement as it is RECORDED right now, in the two places that outlive a frame — the
+// theme's own declaration and the persisted per-key override.
+//
+// The distinction exists because the two questions have different answers exactly when
+// a drag is in flight, and one caller needs the recorded one: layoutSnapshotNow. An
+// undo step's job is to describe state that can be WRITTEN BACK, and restoreLayout
+// writes this flag straight to the persisted override — so a snapshot must carry what
+// was recorded, never a transient "the user's hand is on it".
+//
+// Nothing but ordering made that visible: drawLayoutEditor assigns editKey/editDrag and
+// only THEN pushes the pre-press snapshot, so the in-flight arm was already true when
+// the state it was supposed to describe was still "docked, un-parked". The first drag's
+// undo therefore re-placed the strip at its synthesized seed instead of sending it home
+// to the chrome band. Fixed HERE rather than by moving the push above the assignment:
+// the ordering fix would have to be re-established at every future pushLayoutUndo call
+// site, invisibly, whereas the accessor states which question the snapshot is asking at
+// the place the answer is defined.
+func (a *App) tabStripPlacementRecorded() bool {
+	if _, present := a.themeRects[themeTabBarKey]; !present {
+		return false // no key at all ⇒ no themed home
+	}
+	if !a.tabBarSeeded {
+		return true // the theme author placed it
+	}
+	name, _ := a.d.Prefs.Theme()
+	return a.d.Prefs.HasThemeRectOverride(name, themeTabBarKey)
+}
+
+// tabStripIntrinsicW is the strip's chip-driven width for the layout cache: the same
+// number tabBarRects lays the chips out with, with the headless guard the cache needs
+// (themeLayoutIn runs in unit fixtures and export paths that may not have built a Ctx).
+// Alloc-free — tabChipLabel and TextWidth are both memoized.
+func (a *App) tabStripIntrinsicW() int32 {
+	if a.ctx == nil || len(a.tabs) == 0 {
+		return 0
+	}
+	return a.tabStripTotalW()
+}
+
+// tabStripCacheRect is the strip's entry in the themed layout cache: THE LIVE PAINTED
+// RECT, parked or not.
+//
+// The strip is the one key in the cache that is not a plain transform of a design
+// rect, because it is intrinsically sized CLIENT chrome:
+//
+//   - its W/H come from the chips, never from the stored rect — the same reason the
+//     classic layout system registers the same widget move-only
+//     (slotResizeEdges(slotTabBar) == 0);
+//   - while nobody has parked it its home is the reserved band ABOVE the canvas, a
+//     place design coordinates cannot name, so the docked rect stands in.
+//
+// Everything the editor does to this key reads this one rect — the drag box, the
+// Tab-cycle stacking order (sorted by box AREA), the resize-grip probe, right-click
+// reset — so deriving it here, live, is what keeps box == widget. The window clamp is
+// applied HERE rather than in tabStripOrigin so the box and the paint clamp the same
+// way and can never disagree.
+//
+// PLACEMENT UNITS. A parked strip's stored X/Y are CANVAS-RELATIVE CLIENT px — the
+// offset from the canvas origin in the SAME pixels the strip is drawn in — not design
+// px scaled by the layout. Three reasons, in order of weight:
+//
+//   - It makes the forward map (below) and its inverse (editBaseFor) an EXACT pair by
+//     construction: one addition and one subtraction, no rounding on either side. A
+//     scaled map is not invertible over integers once the scale exceeds 1 — its image
+//     has gaps — so at Letterbox 1000x900 (scale 1.4006) a one-pixel drag was simply
+//     not expressible, and the editor's box drifted a constant −2 px from the cursor
+//     for the whole gesture. Client chrome the user is placing by hand has to land
+//     where the hand put it.
+//   - The strip's SIZE is already unscaled: its width comes from the chips and its
+//     height is tabBarH, both client px. Scaling only the origin was half a transform.
+//   - No shipped theme declares asyncao_tabbar (the 74-theme reference corpus has
+//     zero), and at the shipped default fit — Native, scale exactly 1 — the two
+//     readings are byte-identical anyway. A theme that does declare it gets its rect
+//     read as an offset from the canvas origin, which is what it looks like it means.
+//
+// Takes the half-built cache, the already-measured width and the already-resolved
+// parked flag explicitly: it runs inside themeLayoutIn before lay.valid, so it must
+// neither recurse into the rebuild nor re-measure or re-probe what the caller has.
+func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked bool) (sdl.Rect, bool) {
+	if total < minThemedElementPx {
+		return sdl.Rect{}, false // no chips (or a degenerate strip): nothing to place
+	}
+	def := a.tabStripDockedRect(total, w)
+	if !parked {
+		// Unparked: whatever tabStripOrigin's fallback resolves, arm for arm — the
+		// classic slot override when the user moved the strip in the DEFAULT-layout
+		// editor (that override outlives a switch TO a theme, and it also zeroes the
+		// chrome band, so the strip really is floating there), else the docked home.
+		// Only the origin survives: the slot's persisted W/H are window fractions and
+		// the strip is move-only, so its size is always the chips'.
+		a.ensureClassicOv()
+		r := a.slotRect(slotTabBar, def, w, h)
+		r.W, r.H = def.W, def.H
+		return r, true
+	}
+	// THE FORWARD MAP. Its exact inverse is editBaseFor (layoutedit.go) and its clamp
+	// twin is clampTabStripScreen; all three must keep the same form and the same
+	// order of operations or the grab point drifts again.
+	r := def
+	d := a.themeRects[themeTabBarKey]
+	r.X = clampI32(lay.offX+int32(d.X), 0, maxI32(w-r.W, 0))
+	r.Y = clampI32(lay.offY+int32(d.Y), 0, maxI32(h-r.H, 0))
+	return r, true
+}
+
+// tabStripOrigin resolves the strip's top-left for this frame: a theme's
+// "asyncao_tabbar" rect first, then a layout-editor override, else the docked
+// default.
+//
+// The theme arm mirrors compactToolboxStripRect's asyncao_toolbox handling exactly,
+// including WHY only X/Y are taken: the strip is move-only (slotResizeEdges), its
+// width is chip-driven, so honouring a design W/H would smear it. The cache entry is
+// already the live painted rect — origin transformed, chip-sized, window-clamped
+// (tabStripCacheRect) — so this takes its X/Y verbatim rather than re-clamping against
+// a second, possibly different width. Re-deriving the clamp here is exactly how the
+// editor's box and the painted strip used to drift apart.
+//
+// It reads the layout cache directly rather than a latched flag because — unlike the
+// toolbox — this strip paints on EVERY screen, and a flag armed inside
+// drawCourtroomThemed would still be set on the next lobby frame and teleport the strip
+// into a courtroom rect. The screen/room/theater gate makes the answer false everywhere
+// the themed courtroom is not what is on screen.
+func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
+	if tr, ok := a.tabStripThemeRect(); ok {
+		cur := def
+		cur.X, cur.Y = tr.X, tr.Y
+		return cur
+	}
+	return a.slotRect(slotTabBar, def, w, h)
+}
+
+// tabStripThemeRect returns the active theme's home for the strip, when the themed
+// courtroom is the thing actually on screen.
+//
+// The gate excludes gif export, replay and the scene maker as well as theater mode:
+// all three PREEMPT the screen dispatch while leaving a.screen == Courtroom and
+// a.room non-nil, and — worse — they rebuild the SHARED layout cache at the export
+// frame's own dimensions with no chrome band (themeLayout vs themeWindowLayout). The
+// strip would read export-space geometry and teleport for the whole export.
+func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
+	if a.screen != ScreenCourtroom || a.room == nil || a.theaterOn || a.screenDispatchPreempted() {
+		return sdl.Rect{}, false
+	}
+	if !a.themeLay.valid || !a.d.Prefs.ThemeLayoutEnabled() {
+		return sdl.Rect{}, false
+	}
+	if !a.tabStripThemeParked() {
+		// The key exists (seedTabBarDesignRect guarantees it) but nobody has placed it:
+		// the strip belongs in the chrome band, so hand the decision back to the classic
+		// slot override / docked default rather than to the synthesized rect.
+		return sdl.Rect{}, false
+	}
+	return a.themeLay.rect(themeTabBarKey)
 }
 
 // buildTabChipLabel formats a chip's text from its key: the (clipped) name,

@@ -773,6 +773,13 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+	// tabBarSeeded records that the active theme did NOT declare "asyncao_tabbar" and
+	// seedTabBarDesignRect synthesized the entry (tabs.go). It is what lets
+	// tabStripThemeParked tell a theme author's own placement — which must move the
+	// strip — from a synthesized default nobody has touched, which must leave the strip
+	// in the client chrome band. Written on the render thread, in pollThemeApply,
+	// beside the geometry it describes.
+	tabBarSeeded bool
 	// themeResizeArmGen is the one-shot that arms the #35 auto-resize. It holds the
 	// themeGen of the ONE apply allowed to move the window; 0 = disarmed.
 	//
@@ -817,9 +824,11 @@ type App struct {
 	editPickIdx int
 	editPickSig string
 	// Layout-editor undo/redo: each edit snapshots the whole rect map (≈40
-	// entries) before changing it; Ctrl+Z restores, Ctrl+Y redoes. Bounded.
-	editUndo []map[string]theme.Rect
-	editRedo []map[string]theme.Rect
+	// entries) plus the server-tab strip's placed flag before changing it (see
+	// layoutSnapshot for why the flag cannot be re-derived from the rects);
+	// Ctrl+Z restores, Ctrl+Y redoes. Bounded.
+	editUndo []layoutSnapshot
+	editRedo []layoutSnapshot
 
 	// --- classic-layout slot editor (the default/non-themed courtroom) ---
 	// Mirrors the themed editor's feel, but edits SCREEN-space "slots" persisted
@@ -840,13 +849,8 @@ type App struct {
 	// path when resolving a texture-backed classic element's angle (the HP bar);
 	// an absent entry means angle 0 → the plain Copy path (byte-identical to the
 	// unrotated draw). The editor is the sole writer thereafter.
-	classicRot map[string]uint8
-	slotReg    map[string]slotInfo
-	// dockLeftX caches the docked log/tab strip's left edge (rcol.X), refreshed by
-	// drawCourtroom each frame. The floating server-tab strip centres its DEFAULT
-	// position in the space LEFT of it (over the stage) so it no longer overlaps the
-	// dock tabs (issue #2). Zero until the first courtroom frame ⇒ window-centre.
-	dockLeftX        int32
+	classicRot       map[string]uint8
+	slotReg          map[string]slotInfo
 	classicEditKey   string
 	classicEditDrag  int // 0 none, 1 move, 2 resize
 	classicEditStart [2]int32
@@ -930,6 +934,33 @@ type App struct {
 	// theater / lobby / dropped-session frame can never replay a stale one. Value
 	// type, App-level (the toolbox is client chrome, not per-tab state).
 	toolboxFence compactToolboxLatch
+	// tabStripPaint is THIS FRAME's answer to which of the server-tab strip's two draw
+	// sites paints it (chrometop.go). Taken once at the top of the courtroom pass and
+	// replayed by both sites, so a mid-frame arm/disarm can neither paint it twice nor
+	// drop it. Reset by App.Frame, so a frame with no courtroom pass falls back to the
+	// over-everything site. Value type, App-level — the strip is client chrome.
+	tabStripPaint tabStripPaintLatch
+	// App-wide menu bar (#14, menubar.go). menuOpen is the TITLE of the open
+	// top-level menu and menuSub the LABEL of the open submenu row — strings, not
+	// indices, so the &App{} zero value is "closed" (index 0 would mean "Servers is
+	// open" on every freshly built App, test fixtures included) and so reordering
+	// the model can't silently reinterpret which pane is up. menuFenceOn records
+	// that WE set c.modalOn; because that flag is SHARED with four sibling popups,
+	// the release also has to check that none of them is holding it (see
+	// menuBarModalFence / otherModalFenceHeld).
+	// menuBar is THIS FRAME's latched decision: menuBarFrame computes it above the
+	// screen dispatch (the fence-ordering precondition — see menubar.go's header)
+	// and drawMenuBar replays it after the screens. All value types, App-level (the
+	// bar is client chrome, not per-tab state).
+	menuOpen    string
+	menuSub     string
+	menuFenceOn bool
+	menuBar     menuBarLatch
+	// editorBannerPainted is "a layout editor's banner reached the screen this
+	// frame" — set by the editors' own banner paint, reset by App.Frame, and read
+	// once by drawMenuBar (menuBarPaintsNow). See noteEditorBanner in menubar.go for
+	// why the paint decision needs this rather than the armed flags.
+	editorBannerPainted bool
 	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
 	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
 	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
@@ -2393,6 +2424,13 @@ var themeLayoutKeys = []string{
 	// editor (A1 Phase 2). Absent ⇒ the toolbox uses its classic slotToolbox
 	// override / bottom-right default. The twin of asyncao_ic_fx for the toolbox.
 	"asyncao_toolbox",
+	// OPTIONAL, same shape (#14): "asyncao_tabbar" parks the server-tab strip inside
+	// the theme's design canvas and — because the themed layout editor builds its
+	// editable key set from the layout cache — makes it DRAGGABLE there, which is the
+	// affordance issue #14's reporter did not have under a theme. Absent ⇒ the strip
+	// stays docked in the top chrome band (chrometop.go), where it overlaps nothing.
+	// Consumed by tabStripOrigin (tabs.go); the constant is themeTabBarKey.
+	"asyncao_tabbar",
 	"pos_dropdown", "pair_button",
 	"hold_it", "objection", "take_that", "custom_objection",
 	"witness_testimony", "cross_examination", "not_guilty", "guilty",
@@ -3538,13 +3576,51 @@ func (a *App) themeDesignSizeOffer() (int, int, bool) {
 	return w, h, ok && a.d.Prefs.ThemeLayoutEnabled()
 }
 
+// themeDesignWindowInset is the extra window HEIGHT a snap-to-canvas has to ask for
+// so the canvas itself still lands 1:1: the app-chrome band (#14, chrometop.go) sits
+// above the design canvas, so a window exactly designH tall would leave the canvas
+// designH-band and force it to scale down — quietly breaking the one promise this
+// affordance makes.
+//
+// Deliberately the FULL band (menu bar + docked server-tab strip) rather than
+// a.topChromeH(): the live band depends on how many sessions are open and on whether
+// the strip has been dragged out, and the promise is specifically "the COURTROOM
+// draws this theme 1:1" — the courtroom is the screen where both strips show. A
+// constant also keeps the snap deterministic, so pressing the button twice from two
+// different screens can never give two different window sizes.
+//
+// It DOES push 44 more px into config.ClampWindowSize, so a theme whose canvas exactly
+// filled a display now clamps where it previously would not have. The inset is still
+// right, because the clamp is not the comparison that matters — what the CANVAS ends
+// up with is:
+//
+//	without the inset  canvas height = window - 44, i.e. scaled down ALWAYS, on every
+//	                   display, even one with room to spare;
+//	with the inset     the same downscale — never worse — only on a display that
+//	                   genuinely cannot fit canvas + band, and EXACTLY 1:1 whenever it
+//	                   can.
+//
+// So it costs no display anything it would otherwise have had, and it is the only
+// version that can deliver the 1:1 this affordance promises.
+const themeDesignWindowInset = menuBarH + tabBarH
+
+// themeDesignWindowTarget is the window size a snap-to-canvas asks for: the theme's
+// declared canvas plus the chrome band above it.
+func (a *App) themeDesignWindowTarget() (int, int, bool) {
+	w, h, ok := a.themeDesignWindowSize()
+	if !ok {
+		return 0, 0, false
+	}
+	return w, h + int(themeDesignWindowInset), true
+}
+
 // applyThemeDesignWindowSize snaps the window to the active theme's design size,
 // reporting whether there was one to snap to. The MANUAL half of #35 (Settings →
 // Window, and any future menu entry): an explicit user command, so unlike the
 // automatic path it deliberately does not second-guess a maximized or fullscreen
 // window — applyWindowSize leaves both states, clamps and persists.
 func (a *App) applyThemeDesignWindowSize() bool {
-	w, h, ok := a.themeDesignWindowSize()
+	w, h, ok := a.themeDesignWindowTarget()
 	if !ok {
 		return false
 	}
@@ -3603,7 +3679,7 @@ func (a *App) maybeResizeToThemeDesign(gen uint64) {
 	if a.d.Prefs.WindowFullscreen() || a.ctx.WindowMaximized() || !a.d.Prefs.ThemeLayoutEnabled() {
 		return
 	}
-	w, h, ok := a.themeDesignWindowSize()
+	w, h, ok := a.themeDesignWindowTarget()
 	if !ok {
 		return
 	}
@@ -7424,11 +7500,20 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// it closes a dropdown / field then leaves; on the courtroom or lobby it closes
 	// the topmost popup or floating panel (Group Chat, Voice, Evidence, Pair, Mod,
 	// CM, Call Mod, Timer, …) via closeTopOverlay. Skipped while a key-bind capture
-	// or the layout editor owns Esc.
+	// owns Esc — and ONLY that; the layout editors are handled by closeTopOverlay,
+	// never by a guard here (see the NOTE below, which is load-bearing).
 	// NOTE: Esc arrives as ctx.escPressed (HandleEvent maps K_ESCAPE there, NOT to
 	// keyPressed) — the old keyPressed==K_ESCAPE test never fired, which is why "Esc
 	// did nothing". Gate on escPressed.
-	if a.ctx.escPressed && !a.capturingKey() && !a.classicEdit {
+	// NO EDITOR GUARD HERE. Esc must ALWAYS have somewhere to go, and a bare guard is
+	// the one shape that cannot promise that: it swallows the key on the assumption
+	// that a draw-time handler will answer, which is false on any frame the editor's
+	// draw does not run (a return-to-top modal used to end the themed pass before it —
+	// a hard lock with no Done chip, no banner and every kit widget fenced dead).
+	// closeTopOverlay owns the editors instead, at the priority their pixels sit at,
+	// so the key is consumed by whoever is actually on top and the editors' own
+	// draw-time escPressed checks become a second guarantee rather than the only one.
+	if a.ctx.escPressed && !a.capturingKey() {
 		// Close the topmost popup / panel first (works on any screen — e.g. the
 		// reset-confirm or a dropdown over Settings); only if nothing was open do we
 		// fall back to leaving a full-screen menu (drop a focused field, then exit).
@@ -7674,6 +7759,28 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
 	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
+	// App-wide menu bar (#14, menubar.go), phase 1: publish its overlay fences and
+	// resolve its own input. THIS CALL MUST STAY ABOVE THE SCREEN DISPATCH BELOW.
+	// drawCourtroom takes an overlayFenceMark at the top of its pass and releases
+	// back to it, and the compact toolbox's owner-suspend is MARK-SCOPED — so a
+	// fence published after (or inside) a pass cannot occlude that pass, and an open
+	// menu pane published late would be suspended by the toolbox along with its own
+	// strip: issue #26's click-through, one level up. The paint half runs after the
+	// screens (single-pass kit: last painted is on top).
+	a.menuBarFrame(winW, winH)
+
+	// Reset the server-tab strip's paint-site latch (chrometop.go). Only a courtroom
+	// pass takes the decision; every other frame — lobby, char select, and the three
+	// full-window modes below — leaves it clear, which reads as "the over-everything
+	// site owns the paint". Same reset discipline as the toolbox latch, one level up,
+	// because this one is decided inside a pass that does not always run.
+	a.tabStripPaint = tabStripPaintLatch{}
+	// Same discipline for "a layout editor's banner reached the screen this frame"
+	// (menubar.go). It is published by the editors' own banner paints, below, and read
+	// once by drawMenuBar to settle who owns the top band — so it must be cleared AFTER
+	// phase 1 and BEFORE the dispatch, or the bar would replay a stale answer.
+	a.editorBannerPainted = false
+
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
 		// batch of frames on the render thread, behind a progress overlay, instead
@@ -7757,17 +7864,29 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 	}
 	// The tab strip floats over every screen (input was consumed at the
-	// top of the frame; this is just paint) — EXCEPT while the classic layout
-	// editor is armed: there it paints inside drawCourtroom, under the editor
-	// overlay, so its chips can't cover the editor's banner and controls (the
-	// "layering mess" playtest shot: a server chip parked top-right sat on the
-	// Snap/Done buttons).
-	if !a.classicEdit {
+	// top of the frame; this is just paint) — EXCEPT while a layout editor owns the
+	// courtroom: there it paints inside the courtroom pass, under the editor overlay,
+	// so its chips can't cover the editor's banner and controls (the "layering mess"
+	// playtest shot: a server chip parked top-right sat on the Snap/Done buttons).
+	// It REPLAYS the per-frame latch the courtroom pass took (chrometop.go) rather
+	// than re-deriving the predicate here: this site runs after the whole screen
+	// dispatch, so a re-test saw an editor that the pass had already dismissed (Done,
+	// Esc, a lost theme) and painted the strip a SECOND time over the banner that was
+	// still up. The two sites are exact complements of one latched bool, so exactly
+	// one of them paints per frame.
+	if a.tabStripPaintsOverEverything() {
 		a.drawTabBar(winW, winH)
 	}
 	// Download progress chip floats under the strip while a grab runs.
 	a.drawDownloadIndicator(winW)
 	a.drawPingChip(8, winH-16) // #128 connection-quality chip (bottom-left; off by default)
+	// Menu bar (#14), phase 2 — the PAINT half of a.menuBarFrame above. It draws
+	// after the screens because the kit is single-pass, and before the diagnostics
+	// overlays / floating sheet / blocking modals below, which legitimately sit on
+	// top of client chrome. It paints over EMPTY pixels: the strip owns the top
+	// a.menuBarHeight() px of the window, the server-tab strip docks directly under
+	// it, and every screen starts its content below the pair (chrometop.go).
+	a.drawMenuBar(winW, winH)
 	// Perf HUD (F3) and the debug overlay paint over every screen
 	// (allocs acceptable: opt-in diagnostics paths, never on by default).
 	if a.perfHUD {
@@ -8028,6 +8147,13 @@ func (a *App) pollThemeApply() {
 	a.themeChatbox = a.themeTex[themeStemChatbox]
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
+	//
+	// The server-tab strip's key is synthesized FIRST, into the pristine map, when the
+	// theme is silent about it (#14): it has to be in themeRectsOrig for reset/undo to
+	// have something to restore, and in the copy below for applyRectOverrides — which
+	// only rewrites keys that already exist — to be able to re-apply a drag after a
+	// reload. See seedTabBarDesignRect (tabs.go).
+	a.tabBarSeeded = seedTabBarDesignRect(res.layout)
 	a.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
 	for k, v := range res.layout {

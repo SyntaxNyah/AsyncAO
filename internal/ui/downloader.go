@@ -208,7 +208,9 @@ func (a *App) drawDownloadIndicator(w int32) {
 	if x < 0 {
 		x = 0
 	}
-	chip := sdl.Rect{X: x, Y: tabBarH + 4, W: bw, H: btnH}
+	// Just under the app-chrome band (#14, chrometop.go) — this used to be a bare
+	// tabBarH+4, which the docked server-tab strip now sits on top of.
+	chip := sdl.Rect{X: x, Y: a.topChromeH() + 4, W: bw, H: btnH}
 	c.Fill(chip, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 240})
 	col := ColAccent
 	if a.dlPaused.Load() {

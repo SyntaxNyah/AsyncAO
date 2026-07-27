@@ -80,9 +80,17 @@ func (a *App) removePendingInvite(gid uint32) {
 	a.pendingInvites = out
 }
 
-// drawGroupInviteToast shows the newest pending invite as a top-centre banner with
-// Accept / Decline. Non-blocking; drawn over the courtroom only, and only when an
-// invite is pending (zero cost otherwise).
+// inviteToastGapY is the breathing room between the app-chrome band and the invite
+// banner. The banner used to be pinned at a bare Y=8, which put its first line under
+// the menu bar and the group's NAME under the centred server-tab chips — it is a
+// window-centred banner drawn from the COURTROOM arm, i.e. before either strip paints
+// (#14). Everything the client draws at the top of the window now starts below
+// topChromeH; this is that rule for the toast.
+const inviteToastGapY = int32(8)
+
+// drawGroupInviteToast shows the newest pending invite as a banner under the top
+// chrome band, with Accept / Decline. Non-blocking; drawn over the courtroom only,
+// and only when an invite is pending (zero cost otherwise).
 func (a *App) drawGroupInviteToast(w, h int32) {
 	if len(a.pendingInvites) == 0 {
 		return
@@ -90,7 +98,7 @@ func (a *App) drawGroupInviteToast(w, h int32) {
 	c := a.ctx
 	inv := a.pendingInvites[len(a.pendingInvites)-1]
 	const bw, bh = int32(430), int32(58)
-	r := sdl.Rect{X: (w - bw) / 2, Y: 8, W: bw, H: bh}
+	r := sdl.Rect{X: (w - bw) / 2, Y: a.topChromeH() + inviteToastGapY, W: bw, H: bh}
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	c.LabelClipped(r.X+10, r.Y+8, bw-20, inv.ownerName+" invited you to a group chat:", ColTextDim)

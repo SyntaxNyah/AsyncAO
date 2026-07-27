@@ -182,13 +182,15 @@ func (a *App) drawAbout(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
 	// --- header band ---------------------------------------------------------
-	c.Heading(pad, pad, "About AsyncAO", ColText)
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "About AsyncAO", ColText)
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
 		a.mayoRoamers = a.mayoRoamers[:0] // #234: leave the loose Mayos behind
 		a.screen = a.prevScreen
 		return
 	}
-	top := pad + 48
+	top := hdrY + 48
 	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 	viewH := h - top - pad
 

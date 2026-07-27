@@ -450,10 +450,7 @@ func (a *App) startClassicEdit() {
 	// into edit mode — it's the clean replacement for the retired top-band chip strip,
 	// so toolboxPinned/toolboxPieces are left as the user set them (they draw
 	// post-courtroom with the fence released; the strip is gone).
-	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
-	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
-	a.showDebugPanel, a.showFxPicker = false, false
-	a.bgPick.show = false
+	a.closeEditorBlockingOverlays() // table-driven, shared with startLayoutEdit (layoutedit.go)
 	a.classicEditKey = ""
 	a.classicEditDrag = 0
 	a.classicEditEdges = 0
@@ -968,6 +965,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// (you can drag boxes up there — playtest: "make use of that space"). A
 	// side effect of painting after the click handlers: the Snap/4:3 labels
 	// show the state a click just set, not last frame's.
+	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.Label(pad, 6, "Edit Layout", ColTierYellow)
 	snapLabel := "Snap: off"

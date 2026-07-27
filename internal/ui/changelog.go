@@ -148,17 +148,19 @@ func (a *App) drawChangelog(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
 	// --- header band ---------------------------------------------------------
-	c.Heading(pad, pad, "What's New — Version History", ColText)
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "What's New — Version History", ColText)
 	sub := "You're running AsyncAO " + strings.TrimSpace(update.Version)
 	if update.IsDev() {
 		sub = "You're running a development build"
 	}
-	c.Label(pad, pad+30, sub, ColTextDim)
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+	c.Label(pad, hdrY+30, sub, ColTextDim)
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return
 	}
-	top := pad + 56
+	top := hdrY + 56
 	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 	viewH := h - top - pad
 

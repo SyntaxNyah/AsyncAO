@@ -158,14 +158,16 @@ func (a *App) openHelp(tab int) {
 func (a *App) drawHelp(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	c.Heading(pad, pad, "Help", ColText)
-	c.Label(pad, pad+30, "What the words mean — and what a server can see about you.", ColTextDim)
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "Help", ColText)
+	c.Label(pad, hdrY+30, "What the words mean — and what a server can see about you.", ColTextDim)
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return
 	}
 
-	top := pad + 56
+	top := hdrY + 56
 	// Section tabs — shown only once there's more than one section.
 	if len(helpSectionNames) > 1 {
 		tx := pad

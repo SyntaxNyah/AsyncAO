@@ -423,22 +423,24 @@ func (a *App) drawSettings(w, h int32) {
 	}
 
 	// --- header band: title, search, Back -----------------------------------
-	c.Heading(pad, pad, "Settings", ColText)
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "Settings", ColText)
 	// Search (#26 gather): type a term and the page becomes a live list of EVERY
 	// matching setting across every tab — click (or Enter for the top hit) jumps
 	// straight to that row. The old jump-to-tab hint is superseded.
-	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: pad + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
+	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: hdrY + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
 	settings.search = q
 	if strings.TrimSpace(q) != "" {
-		c.LabelClipped(pad+382, pad+6, w-pad-382-110, "showing every match — click one (or Enter for the top hit)", ColTextDim)
+		c.LabelClipped(pad+382, hdrY+6, w-pad-382-110, "showing every match — click one (or Enter for the top hit)", ColTextDim)
 	}
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
 		a.screen = a.prevScreen
 		return
 	}
-	contentTop := pad + settContentTop
+	contentTop := hdrY + settContentTop
 	c.Fill(sdl.Rect{X: 0, Y: contentTop - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 
 	// --- left sidebar: a vertical category list (replaces the old chip row) --
@@ -1354,8 +1356,14 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		// themeDesignSizeOffer, not themeDesignWindowSize: it also gates on the
 		// themed courtroom layout being the one actually drawn, so this row and the
 		// automatic snap agree about when a theme canvas is meaningful.
-		if dw, dh, ok := a.themeDesignSizeOffer(); ok {
-			label := fmt.Sprintf("Theme's design size (%d×%d)", dw, dh)
+		// The label carries the size the button APPLIES, not the theme's raw canvas.
+		// They are not the same number: the canvas sits below the app-chrome band, so
+		// the snap asks for canvas + themeDesignWindowInset (44 px) — the stock theme's
+		// 714×579 canvas needs a 714×623 window. Printing the canvas here while
+		// applying the window size made the button describe a resize it never performed.
+		if _, _, ok := a.themeDesignSizeOffer(); ok {
+			tw, th, _ := a.themeDesignWindowTarget()
+			label := fmt.Sprintf("Theme's design size (%d×%d)", tw, th)
 			bw := c.TextWidth(label) + labelBtnPadX
 			if c.Button(sdl.Rect{X: pad, Y: y, W: bw, H: btnH}, label) {
 				a.applyThemeDesignWindowSize()
@@ -1365,7 +1373,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			// drop it rather than draw it into a negative width at a narrow window.
 			if hintW := w - pad - bw - designSizeHintGap - scrollBarW; hintW > 0 {
 				c.LabelClipped(pad+bw+designSizeHintGap, y+4, hintW,
-					"the canvas this theme was drawn for — the window becomes the canvas, like the stock AO2 client", ColTextDim)
+					"this theme's canvas plus the menu bar and tab strip above it — the courtroom then draws 1:1, like the stock AO2 client", ColTextDim)
 			}
 			y += btnH + 10
 		}

@@ -309,6 +309,15 @@ func (a *App) pollVoicePTT() {
 func (a *App) closeTopOverlay() bool {
 	c := a.ctx
 	switch {
+	// The app-wide menu bar's open pane (menubar.go) is the TOPMOST piece of client
+	// chrome — published App-level, above every screen — so Esc resolves it first.
+	// It MUST answer Esc HERE: the bar holds c.modalOn while a pane is open, and an
+	// Esc falling through to the ScreenSettings / ScreenLobby / ScreenCourtroom arms
+	// in app.go would leave the screen with the pane still open (and its fence still
+	// held) — exactly the bug documented for the .demo browser below. The fence is
+	// released by menuBarModalFence on the next frame, like every sibling popup.
+	case a.menuBarOpen():
+		a.closeMenuBar()
 	case c.ddOpen != "":
 		c.ddOpen = "" // an open dropdown first
 	case a.paletteOpen: // #39: the palette sits above everything it launches
@@ -359,6 +368,23 @@ func (a *App) closeTopOverlay() bool {
 		a.banBoxKind = 0
 	case a.showReset:
 		a.showReset = false
+	// The two LAYOUT EDITORS, immediately below the blocking window modals above and
+	// above everything else. That is exactly where their pixels sit: the six modals
+	// above are painted by App.Frame AFTER the screen dispatch, so they cover an
+	// editor's banner, while every popup and floating panel below is painted by (or
+	// under) the courtroom pass that the editor's own overlay closes on top of.
+	//
+	// They MUST be answered here rather than by a guard around this whole function.
+	// Esc is the editor's documented exit; a guard consumed the key and left the exit
+	// to a draw-time handler, which is dead on any frame the editor's draw does not
+	// run — and if nothing here answers, Esc falls into the ScreenCourtroom arm below
+	// and pops the LEAVE-THE-SERVER confirm over a screen the user was arranging.
+	// Each editor gets its own case so each runs its own teardown (both release the
+	// kit's modal fence, which app.go warns freezes the UI if it is ever stranded).
+	case a.layoutEdit:
+		a.stopLayoutEdit()
+	case a.classicEdit:
+		a.stopClassicEdit()
 	case a.updateShow:
 		a.updateShow = false
 	case a.showLogin:

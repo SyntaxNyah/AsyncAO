@@ -123,6 +123,13 @@ const (
 	// Native had it kept clamping to ThemeFitCustom.
 	themeFitModeMax = ThemeFitNative
 	defaultThemeFit = ThemeFitNative
+	// DefaultThemeFit exports that default for the UI surfaces that have to RETURN
+	// to it rather than to a remembered previous choice — the menu bar's "Keep
+	// aspect ratio" tick, which un-ticks to Stretch and re-ticks to whichever mode
+	// currently holds the default job. An alias, so there is still exactly ONE
+	// definition: hard-coding ThemeFitNative at a call site would quietly stop
+	// tracking the default the day it moves again.
+	DefaultThemeFit = defaultThemeFit
 )
 
 // Custom theme-fit knobs: a manual zoom (percent of the letterbox-fit scale,
@@ -8583,6 +8590,25 @@ func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
 		out[k] = v
 	}
 	return out
+}
+
+// HasThemeRectOverride reports whether one widget carries a persisted layout-editor
+// override under a theme — the allocation-free probe ThemeRectOverrides cannot be
+// (it copies the whole map, so a per-frame caller would allocate every frame).
+//
+// It exists because for one key the override's PRESENCE is itself the state: the
+// server-tab strip is client chrome whose "the user has placed this on the theme's
+// canvas" flag cannot be recovered from its geometry (a legitimate drag can land
+// exactly on the pristine seed position). The strip's placement is therefore read
+// back from the same record that persists it, once per frame.
+func (p *AssetPreferences) HasThemeRectOverride(theme, key string) bool {
+	if theme == "" || key == "" {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.ThemeRectOv[theme][key]
+	return ok
 }
 
 // SetThemeRectOverride stores one widget's edited design rect.

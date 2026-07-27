@@ -71,13 +71,21 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // overlayFenceCap bounds the registry — hard rule 4, no unbounded anything. It is a
 // fixed-size array on Ctx, so publishing never grows a slice and never allocates on
-// the render hot path. Four is already generous for what can legitimately occlude a
-// single pass: the app-wide menu bar strip, one open menu dropdown, and the compact
-// toolbox strip, with one spare. A publication past the cap is DROPPED rather than
-// growing the array: the degraded behaviour is then "the click leaks through", which
-// is exactly today's behaviour and recoverable, whereas an unbounded array on a
-// per-frame path is a standing rule violation.
-const overlayFenceCap = 4
+// the render hot path. A publication past the cap is DROPPED rather than growing the
+// array: the degraded behaviour is "the click leaks through", which is exactly the
+// pre-fence behaviour and is recoverable, whereas an unbounded array on a per-frame
+// path is a standing rule violation.
+//
+// SIZING. Today's live publishers are four and they can all be up at once: the menu
+// bar strip, its open pane, that pane's open submenu, and the compact toolbox strip.
+// The cap was FOUR — exactly the live count and no headroom at all — and because the
+// toolbox publishes LAST (inside the courtroom pass, long after the App-level bar) it
+// is the one a fifth publisher would silently push out, quietly restoring the very
+// click-through issue #26 fixed. Six leaves room for two more occluders before that
+// can happen; overlayFenceDrops makes an overflow visible instead of silent, and
+// TestOverlayFenceHasHeadroomForEveryLivePublisher fails the moment the live count
+// eats the headroom.
+const overlayFenceCap = 6
 
 // fenceOverlay publishes r as an occluding rect for the rest of this pass: every
 // hovering()-BASED test inside r reads false, so widgets drawn BENEATH the overlay
@@ -94,6 +102,11 @@ func (c *Ctx) fenceOverlay(r sdl.Rect) {
 		return
 	}
 	if c.overlayFenceN >= overlayFenceCap {
+		// Count it. A dropped fence is a SILENT input leak — the occluder still paints,
+		// the widgets under it still fire — so the only way it ever gets noticed is by
+		// being counted and asserted on (BeginFrame clears the counter with the
+		// registry; the gates below read it after a full frame).
+		c.overlayFenceDrops++
 		return
 	}
 	c.overlayFences[c.overlayFenceN] = r

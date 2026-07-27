@@ -189,6 +189,21 @@ func TestOverlayFenceResetsPerFrame(t *testing.T) {
 	}
 }
 
+// TestOverlayFenceHasHeadroomForEveryLivePublisher pins that the cap is not exactly
+// the live publisher count. A publication past the cap is dropped SILENTLY, and the
+// one that loses is whoever publishes LAST — which is the compact toolbox, because it
+// publishes from inside the courtroom pass while the menu bar publishes App-level,
+// above the screen dispatch. With zero headroom the next occluder anyone adds
+// re-opens issue #26's click-through with no test failing.
+func TestOverlayFenceHasHeadroomForEveryLivePublisher(t *testing.T) {
+	// The menu bar strip, its open pane, that pane's open submenu, the toolbox strip.
+	const livePublishers = 4
+	if overlayFenceCap <= livePublishers {
+		t.Fatalf("overlayFenceCap = %d with %d publishers that can all be up at once — no headroom, and the drop is silent",
+			overlayFenceCap, livePublishers)
+	}
+}
+
 // TestOverlayFenceBounded pins hard rule 4: the registry is a fixed array, so
 // publishing past overlayFenceCap drops the extra rect instead of growing anything.
 // The degraded behaviour is a click leaking through (today's behaviour), never a
@@ -202,6 +217,12 @@ func TestOverlayFenceBounded(t *testing.T) {
 	if c.overlayFenceN != overlayFenceCap {
 		t.Errorf("registry depth = %d, want the cap %d — publication must be bounded", c.overlayFenceN, overlayFenceCap)
 	}
+	// The drop must be COUNTED. It is invisible otherwise: the occluder still paints,
+	// only the input protection under it silently disappears.
+	if c.overlayFenceDrops != overshoot {
+		t.Errorf("dropped-publication count = %d, want %d — an overflow that nothing records can never be noticed", c.overlayFenceDrops, overshoot)
+	}
+	c.overlayFenceDrops = 0
 	// An empty rect paints nothing, so fencing it would only eat live clicks.
 	c.overlayFenceN = 0
 	c.fenceOverlay(sdl.Rect{X: 5, Y: 5, W: 0, H: 20})

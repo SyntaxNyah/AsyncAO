@@ -90,6 +90,24 @@ func (a *App) startPinging() {
 	}()
 }
 
+// toggleConnectTimeSort flips the lobby between connect-time order and the default
+// player-count order — the body of the old lobby "Ping" button, lifted here when that
+// button moved into the Servers menu (menubar.go, #14). Turning the sort OFF has to
+// re-sort immediately (applyServerSort), because pingMode alone only decides which
+// comparator the NEXT sort uses; without it the list would stay in RTT order with the
+// toggle reading "off".
+//
+// Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
+// this is safe to call repeatedly.
+func (a *App) toggleConnectTimeSort() {
+	if a.pingMode {
+		a.pingMode = false
+		a.applyServerSort()
+		return
+	}
+	a.startPinging()
+}
+
 // pollPing drains probe results into a.pings on the render thread — a
 // non-blocking drain called from the lobby each frame, so it costs nothing idle.
 func (a *App) pollPing() {

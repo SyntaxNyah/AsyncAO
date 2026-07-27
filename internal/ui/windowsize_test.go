@@ -145,26 +145,47 @@ func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 
 // TestThemeDesignResizeDeliversOneToOne is the product-level assertion behind
 // the whole feature: after the snap the layout engine draws the theme at scale
-// exactly 1.0 with no bars — pixel-for-pixel stock AO2, no settings touched.
+// exactly 1.0 with no leftover bars — pixel-for-pixel stock AO2, no settings touched.
+//
+// CHANGED BY #14. The snap target is now the canvas PLUS themeDesignWindowInset (the
+// menu bar + docked server-tab strip band that sits above it), and the canvas is
+// centred in the room under that band. The old expectations — persisted window ==
+// 714x579 and offY == 0 — would now mean the courtroom got only 579-band px for a
+// 579px canvas and had to scale DOWN, i.e. the affordance would no longer deliver
+// the 1:1 it promises. The assertion below is the same promise re-stated against the
+// band: scale exactly 1, no horizontal bars, and the vertical origin sitting exactly
+// on the band with nothing left over.
 func TestThemeDesignResizeDeliversOneToOne(t *testing.T) {
 	a := testTabApp(t)
+	// One session, strip undragged: the live band then equals themeDesignWindowInset,
+	// which is the state the snap target is computed for (a real courtroom).
+	a.tabs = []*courtTab{{}}
+	a.activeTab = 0
 	stageThemeCanvas(a, 714, 579)
 	if !a.applyThemeDesignWindowSize() {
 		t.Fatal("applyThemeDesignWindowSize reported no design size")
 	}
 	w, h := a.d.Prefs.WindowSize()
-	if w != 714 || h != 579 {
-		t.Fatalf("persisted window = %dx%d, want the theme's 714x579", w, h)
+	if w != 714 || h != 579+int(themeDesignWindowInset) {
+		t.Fatalf("persisted window = %dx%d, want the theme's 714x579 plus the %d px chrome band",
+			w, h, themeDesignWindowInset)
 	}
-	lay := a.themeLayout(int32(w), int32(h))
+	if band := a.topChromeH(); band != themeDesignWindowInset {
+		t.Fatalf("live chrome band = %d, want %d — the fixture is not in the state the snap targets", band, themeDesignWindowInset)
+	}
+	lay := a.themeWindowLayout(int32(w), int32(h))
 	if !lay.valid {
-		t.Fatal("themeLayout did not validate")
+		t.Fatal("themeWindowLayout did not validate")
 	}
 	if lay.scaleX != 1 || lay.scaleY != 1 {
 		t.Errorf("scale = (%v,%v), want 1:1 after snapping to the design size", lay.scaleX, lay.scaleY)
 	}
-	if lay.offX != 0 || lay.offY != 0 {
-		t.Errorf("letterbox bars = (%d,%d), want none — the window IS the canvas", lay.offX, lay.offY)
+	if lay.offX != 0 || lay.offY != themeDesignWindowInset {
+		t.Errorf("canvas origin = (%d,%d), want (0,%d) — flush under the chrome band, no bars",
+			lay.offX, lay.offY, themeDesignWindowInset)
+	}
+	if want := (sdl.Rect{X: 0, Y: themeDesignWindowInset, W: 714, H: 579}); lay.area != want {
+		t.Errorf("canvas = %+v, want %+v", lay.area, want)
 	}
 }
 
@@ -196,13 +217,16 @@ func TestThemeResizeOneShotFiresOnceThenClears(t *testing.T) {
 	if a.themeResizeArmGen != 0 {
 		t.Error("the one-shot survived its landing — a later heal would resize again")
 	}
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != 579 {
-		t.Fatalf("armed landing gave window %dx%d, want 714x579", w, h)
+	// The target is the canvas PLUS the chrome band above it (themeDesignWindowInset,
+	// #14) — that is what leaves the canvas itself at 1:1.
+	wantH := 579 + int(themeDesignWindowInset)
+	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+		t.Fatalf("armed landing gave window %dx%d, want 714x%d", w, h, wantH)
 	}
 	// A second theme lands DISARMED — a server binding a theme, a heal, a
 	// filter-purge recovery. The window must not follow it.
 	landThemeApply(a, designCanvas(1280, 720))
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != 579 {
+	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
 		t.Errorf("an unarmed landing resized to %dx%d — boot/heal/server binds must never move the window", w, h)
 	}
 }
@@ -235,10 +259,12 @@ func TestThemeResizeArmingIsNotSpentByAnOlderApply(t *testing.T) {
 		t.Fatalf("a stale apply consumed the arming (%d, want %d) — the user's pick would never snap", a.themeResizeArmGen, picked)
 	}
 
-	// The armed apply lands second and still snaps, to ITS canvas.
+	// The armed apply lands second and still snaps, to ITS canvas (plus the chrome
+	// band above it — themeDesignWindowInset, #14).
 	landThemeApplyGen(a, picked, designCanvas(714, 579))
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != 579 {
-		t.Errorf("the armed apply gave window %dx%d, want the picked theme's 714x579", w, h)
+	wantH := 579 + int(themeDesignWindowInset)
+	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+		t.Errorf("the armed apply gave window %dx%d, want the picked theme's 714x%d", w, h, wantH)
 	}
 	if a.themeResizeArmGen != 0 {
 		t.Error("the arming survived its own landing")
@@ -614,8 +640,10 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 		t.Fatalf("boot arming = %d, want the boot apply's gen %d", a.themeResizeArmGen, gen)
 	}
 	landThemeApplyGen(a, gen, designCanvas(714, 579))
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != 579 {
-		t.Errorf("the upgrade snap gave window %dx%d, want the theme's 714x579", w, h)
+	// Canvas + the chrome band above it (themeDesignWindowInset, #14).
+	wantH := 579 + int(themeDesignWindowInset)
+	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+		t.Errorf("the upgrade snap gave window %dx%d, want the theme's 714x%d", w, h, wantH)
 	}
 
 	// SECOND LAUNCH: the stamp is on disk now, so the signal is gone forever and
@@ -633,7 +661,7 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	}
 	b := testTabApp(t)
 	b.d.Prefs = relaunched
-	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != 579 {
+	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != wantH {
 		t.Fatalf("the snapped window did not persist: reloaded %dx%d", w, h)
 	}
 	b.armBootThemeResize(startThemeApply(b))
@@ -643,7 +671,7 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	// The user has since switched to a theme with a different canvas. Nothing may
 	// follow it: the upgrade snap is spent, and this is an ordinary boot apply.
 	landThemeApply(b, designCanvas(1280, 720))
-	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != 579 {
+	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != wantH {
 		t.Errorf("a second launch resized to %dx%d — it must fire once and only once", w, h)
 	}
 }

@@ -587,21 +587,23 @@ func (a *App) drawLogBrowser(w, h int32) {
 	a.drawScreenBackdrop(w, h, "lobbybackground")
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 150}) // dim for readability
 
-	c.Heading(pad, pad, "Logs — search your saved transcripts", ColText)
-	if c.Button(sdl.Rect{X: w - 110 - pad, Y: pad, W: 110, H: btnH}, "Back") {
+	// Content starts below the app-chrome band (#14, chrometop.go).
+	hdrY := a.topChromeH() + pad
+	c.Heading(pad, hdrY, "Logs — search your saved transcripts", ColText)
+	if c.Button(sdl.Rect{X: w - 110 - pad, Y: hdrY, W: 110, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return
 	}
 
 	idx := a.logFiltered()
-	if c.Button(sdl.Rect{X: w - 230 - pad, Y: pad, W: 110, H: btnH}, "Export") {
+	if c.Button(sdl.Rect{X: w - 230 - pad, Y: hdrY, W: 110, H: btnH}, "Export") {
 		a.exportLogView(idx)
 	}
 	statsLabel := "Stats"
 	if lb.showStats {
 		statsLabel = "Hide stats"
 	}
-	if c.Button(sdl.Rect{X: w - 350 - pad, Y: pad, W: 110, H: btnH}, statsLabel) {
+	if c.Button(sdl.Rect{X: w - 350 - pad, Y: hdrY, W: 110, H: btnH}, statsLabel) {
 		lb.showStats = !lb.showStats
 	}
 	scope := "All servers"
@@ -618,9 +620,9 @@ func (a *App) drawLogBrowser(w, h int32) {
 	case len(lb.lines) >= maxLogScopeLines:
 		status += fmt.Sprintf(" (showing the first %d — narrow the scope or filter)", maxLogScopeLines)
 	}
-	c.Label(pad, pad+30, status, ColTextDim)
+	c.Label(pad, hdrY+30, status, ColTextDim)
 
-	top := pad + 58
+	top := hdrY + 58
 	bottom := h - pad
 	leftX := pad
 	mainX := leftX + logBrowserColW + 16

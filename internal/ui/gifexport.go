@@ -1160,6 +1160,9 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comi
 // path, so a themed session that "played" with its layout exported to a video
 // that looked like the stock layout. The layout is computed for the EXPORT
 // frame's size (dst is origin-anchored at 0,0), not the window's.
+// An export frame is NOT the window: it deliberately goes through themeLayout (no
+// app-chrome band reserved) rather than themeWindowLayout, so the menu bar / tab
+// strip band can never appear as a black stripe across an exported video or comic.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
 	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
 		if _, ok := lay.rect("viewport"); ok {
@@ -1181,7 +1184,9 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black
 	// letterbox bars are the capture's own clear). Mirrors drawCourtroomThemed.
-	court := sdl.Rect{X: lay.offX, Y: lay.offY, W: dst.W - 2*lay.offX, H: dst.H - 2*lay.offY}
+	// lay.area is the cached canvas — the same rect drawCourtroomThemed paints into.
+	// (It used to be re-derived from symmetric bars here too; see theme_layout.go.)
+	court := lay.area
 	if page, ok := a.themePage("courtroombackground"); ok {
 		c.cgoRect = court
 		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
