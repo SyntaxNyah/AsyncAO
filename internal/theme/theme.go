@@ -104,6 +104,25 @@ func Load(name string, roots []string) (*Theme, error) {
 		}
 		t.dirs = append(t.dirs, filepath.Join(root, ThemesDirName, name))
 	}
+	// FLAT TIER (#21): themes ship as a zip holding one folder, and users drop
+	// that folder straight onto the window. AO2 never sees this shape — its root
+	// is always base/, so get_theme_path always joins "themes/" — but a streaming
+	// client's content root is whatever the user pointed at. Probing <root>/<name>
+	// AFTER every <root>/themes/<name> means a real base can never lose to it:
+	// loadFirstINI takes the FIRST hit per key and FindAsset walks dirs in order.
+	// A well-formed base simply misses here (the dir does not exist) and pays two
+	// os.Open per INI on the theme-apply goroutine — never on a render, decode or
+	// resolver path (hard rule 2).
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		t.dirs = append(t.dirs, filepath.Join(root, name))
+	}
+	// No flat tier for the DEFAULT fallback, deliberately: a bare-folder import
+	// supplies exactly one theme, and synthesising <root>/default would let a
+	// stray folder named "default" sitting beside the drop hijack every key the
+	// real theme leaves unresolved.
 	for _, root := range roots {
 		if root == "" || name == DefaultThemeName {
 			continue

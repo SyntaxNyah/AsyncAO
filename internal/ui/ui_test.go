@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // TestInputSnapshotOrder pins the Ctx frame contract main.go's loop relies
@@ -448,8 +450,47 @@ func TestNormalizeThemeRoot(t *testing.T) {
 	if got, pick := normalizeThemeRoot(`"` + themes + `"`); got != root || pick != "" {
 		t.Errorf("quoted themes form → %q/%q, want %q", got, pick, root)
 	}
-	if names := scanThemeDirs([]string{root}); len(names) != 2 || names[1] != "themeexample1" {
+	if names := scanThemeDirs([]string{root}, ""); len(names) != 2 || names[1] != "themeexample1" {
 		t.Errorf("scan = %v, want [default themeexample1]", names)
+	}
+}
+
+// TestNormalizeThemeRootBareFolder pins the shape issue #21 was filed from: a
+// theme downloaded as a zip unpacks to a bare folder with NO themes/ parent, and
+// the user drops that folder on the window. Going two up invented a root whose
+// themes/<name> has never existed, so the theme silently resolved to nothing.
+// The root is the folder's own parent, and scanThemeDirs must still list the
+// pick — it can't be found by walking themes/.
+func TestNormalizeThemeRootBareFolder(t *testing.T) {
+	downloads := t.TempDir()
+	bare := filepath.Join(downloads, "aceattorney2x")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bare, "courtroom_design.ini"), []byte("courtroom = 0, 0, 944, 600\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, pick := normalizeThemeRoot(bare)
+	if got != downloads || pick != "aceattorney2x" {
+		t.Errorf("bare form → %q/%q, want %q/aceattorney2x", got, pick, downloads)
+	}
+	// theme.Load's flat tier is what makes that root resolve. Without it the
+	// pick names a theme no dir in t.dirs can reach, and every key misses.
+	th, err := theme.Load(pick, []string{got})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := th.DesignValue("courtroom"); !ok || v != "0, 0, 944, 600" {
+		t.Errorf("flat tier did not resolve courtroom_design.ini: got %q/%v", v, ok)
+	}
+	// A bare-folder pick has no themes/ parent, so only the explicit pick puts
+	// it in the dropdown; without it the theme applies once and then vanishes.
+	if names := scanThemeDirs([]string{downloads}, pick); len(names) != 2 || names[1] != "aceattorney2x" {
+		t.Errorf("scan = %v, want [default aceattorney2x]", names)
+	}
+	if names := scanThemeDirs([]string{downloads}, ""); len(names) != 1 {
+		t.Errorf("scan without a pick = %v, want [default] only", names)
 	}
 }
 

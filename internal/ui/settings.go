@@ -4539,7 +4539,7 @@ func (a *App) scanThemes(fromUser bool) {
 		if exe, err := os.Executable(); err == nil {
 			roots = append(roots, filepath.Dir(exe))
 		}
-		settings.themeRes <- themeScan{names: scanThemeDirs(roots), root: root, pickName: pick, in: customRoot, fromUser: fromUser}
+		settings.themeRes <- themeScan{names: scanThemeDirs(roots, pick), root: root, pickName: pick, in: customRoot, fromUser: fromUser}
 	}()
 }
 
@@ -4618,12 +4618,21 @@ func normalizeThemeRoot(path string) (root, pickName string) {
 		return "", ""
 	}
 	path = filepath.Clean(path)
-	// A single theme folder? Its name is the pick; the root is two up
-	// (…/root/themes/<name> → …/root).
+	// A single theme folder? Its name is the pick. The root is two up when the
+	// folder really sits under a themes/ dir (…/root/themes/<name> → …/root); it
+	// is ONE up otherwise, because a theme downloaded as a zip unpacks to a bare
+	// folder with no themes/ parent, and inventing one made theme.Load probe a
+	// directory that never existed — literally the import path in issue #21's
+	// title. theme.Load's flat tier resolves <root>/<name> for that case.
 	for _, ini := range themeINIFiles {
-		if _, err := os.Stat(filepath.Join(path, ini)); err == nil {
-			return filepath.Dir(filepath.Dir(path)), filepath.Base(path)
+		if _, err := os.Stat(filepath.Join(path, ini)); err != nil {
+			continue
 		}
+		parent := filepath.Dir(path)
+		if strings.EqualFold(filepath.Base(parent), theme.ThemesDirName) {
+			return filepath.Dir(parent), filepath.Base(path)
+		}
+		return parent, filepath.Base(path)
 	}
 	// The themes folder itself → its parent is the root.
 	if strings.EqualFold(filepath.Base(path), theme.ThemesDirName) {
@@ -5064,7 +5073,12 @@ const pickFailed = "\x00"
 
 // scanThemeDirs collects theme names across roots, "default" always first
 // (the built-in fallback theme.Load uses even when no folder exists).
-func scanThemeDirs(roots []string) []string {
+//
+// pick is the bare-folder import normalizeThemeRoot just resolved (#21). It has
+// no themes/ parent, so the ReadDir below can never find it; without appending
+// it the theme applies once and then vanishes from the dropdown, and stepping
+// the ◀ ▶ arrows would walk off it with no way back.
+func scanThemeDirs(roots []string, pick string) []string {
 	names := []string{theme.DefaultThemeName}
 	seen := map[string]bool{theme.DefaultThemeName: true}
 	for _, root := range roots {
@@ -5079,6 +5093,9 @@ func scanThemeDirs(roots []string) []string {
 			seen[e.Name()] = true
 			names = append(names, e.Name())
 		}
+	}
+	if pick != "" && !seen[pick] {
+		names = append(names, pick)
 	}
 	return names
 }
