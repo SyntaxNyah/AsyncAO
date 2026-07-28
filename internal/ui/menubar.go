@@ -645,10 +645,13 @@ func newMenuBarLatch(mark int) menuBarLatch {
 
 // menuBarShows reports whether the strip RESERVES its band at all. It is FALSE for
 // the modes that take the whole window instead of a screen (App.Frame's
-// gif > replay > maker precedence) and for theater mode, which exists precisely to
-// get every piece of client chrome off the stage.
+// gif > replay > maker precedence), for theater mode, which exists precisely to
+// get every piece of client chrome off the stage, and when the user hid the strip
+// from the Hide-UI list (panelMenuBar). The hidden case belongs HERE rather than in
+// menuBarPaints because a user who turned the band off wants the pixels back — the
+// layout-editor exception below is about not MOVING a band that is still reserved.
 func (a *App) menuBarShows() bool {
-	return !a.screenDispatchPreempted() && !a.theaterOn
+	return !a.screenDispatchPreempted() && !a.theaterOn && !a.panelHidden(panelMenuBar)
 }
 
 // menuBarPaints is PHASE 1's answer to whether the strip paints. It is menuBarShows

@@ -59,6 +59,45 @@ func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 	}
 }
 
+// TestHidingTheMenuBarGivesTheBandBack pins the Hide-UI entry for the menu strip:
+// hiding it must not merely stop the paint, it must surrender the reserved band, or
+// every screen would keep offsetting its content past a strip that is not there. The
+// tab strip is unaffected — it docks under the bar and reads topChromeH itself.
+func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
+	a := testTabApp(t)
+	a.seedHiddenFromPrefs() // the production path that builds a.hidden
+	a.tabs = []*courtTab{{}}
+	a.activeTab = 0
+	if got, want := a.topChromeH(), menuBarH+tabBarH; got != want {
+		t.Fatalf("band = %d before hiding, want %d", got, want)
+	}
+	a.setPanelHidden(panelMenuBar, true)
+	if a.menuBarShows() {
+		t.Error("a hidden menu bar must not reserve its band")
+	}
+	if got := a.menuBarHeight(); got != 0 {
+		t.Errorf("menuBarHeight = %d while hidden, want 0", got)
+	}
+	if got, want := a.topChromeH(), int32(tabBarH); got != want {
+		t.Errorf("band = %d while hidden, want just the tab strip (%d)", got, want)
+	}
+	// Reversible, and the hide survives a prefs round trip like every other piece.
+	a.setPanelHidden(panelMenuBar, false)
+	if got, want := a.topChromeH(), menuBarH+tabBarH; got != want {
+		t.Errorf("band = %d after unhiding, want %d", got, want)
+	}
+	a.setPanelHidden(panelMenuBar, true)
+	a.seedHiddenFromPrefs()
+	if !a.panelHidden(panelMenuBar) {
+		t.Error("hiding the menu bar did not survive seedHiddenFromPrefs")
+	}
+	// The no-strand invariant is about the toolbox/Settings pair, so hiding the bar
+	// must never be "corrected" away the way a stranded pair is.
+	if a.panelHidden(panelToolbox) {
+		t.Error("hiding the menu bar must not disturb the toolbox lifeline")
+	}
+}
+
 // TestFloatingChipsClearTheChromeBand pins the two chips that used to be anchored at
 // a bare tabBarH+4 and would otherwise be buried under the relocated strip.
 func TestFloatingChipsClearTheChromeBand(t *testing.T) {

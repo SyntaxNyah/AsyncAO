@@ -56,6 +56,17 @@ const (
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
 	panelExtras    = "extras"
+	// panelMenuBar hides the top menu strip (#14). Same spirit as panelToolbox:
+	// client furniture a user may not want, and on a themed courtroom it is the
+	// one band that sits ABOVE the theme's design canvas, so hiding it hands the
+	// canvas the whole window. menuBarHeight() already reports 0 whenever the bar
+	// is not shown and every screen offsets by topChromeH(), so nothing else has
+	// to learn about this.
+	//
+	// It cannot strand anyone: seedHiddenFromPrefs's invariant keeps at least one
+	// of the toolbox grip / toolbar Settings button alive, and the Ctrl+Space
+	// palette reaches Hide-UI pieces from any screen.
+	panelMenuBar = "menubar"
 	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
 	// grip that reveals Theater / Edit-layout / Hide-UI icon chips on hover. It's
 	// hideable from the very dialog one of its chips opens, so a user who prefers
@@ -108,6 +119,7 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelTestimony, "Testimony recording badge", "Testimony"},
 	{panelJudge, "Judge controls (even when granted)", "Judge"},
 	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)", "Extras btn"},
+	{panelMenuBar, "Top menu bar (Servers / View / Window / Extras / Help)", "Menu bar"},
 	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
 }
 
