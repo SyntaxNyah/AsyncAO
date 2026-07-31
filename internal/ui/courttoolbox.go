@@ -724,30 +724,50 @@ func (a *App) toolboxPiecesContentH() int32 {
 	return rows*toolboxPiecesRowPitch + 8
 }
 
-// setPanelHiddenGuarded is drawToolboxPieces' setPanelHidden with the
-// no-strand guard (A6): hiding the SECOND of the two mouse lifelines — the
-// toolbox grip (panelToolbox) and the toolbar Settings button
-// (ctrlSettingsSlot), each a mouse route back to chrome recovery — is refused
-// with a toast explaining why, instead of applied-then-silently-undone. Every
-// other toggle passes straight through. Wholesale hidden-set writes (profile
-// apply, prefs import/reset) normalize the same invariant in
-// seedHiddenFromPrefs instead.
+// mouseLifelines are the chrome routes a pure-mouse user has back to the client's
+// own controls. Hiding the LAST surviving one is refused (A6, #21).
+//
+// The set is three, not two, and the third is why: ctrlSettingsSlot is drawn only
+// by drawICControls, which runs on the CLASSIC path — a themed courtroom returns
+// long before it. So for a themed user that lifeline never exists to be hidden,
+// the old two-way guard could never fire, and hiding the toolbox and then the menu
+// bar left no mouse chrome at all. The themed ★ Extras chip row that used to be
+// the fallback was deleted in this arc (rule (c): it painted over the canvas).
+var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
+
+// setPanelHiddenGuarded is drawToolboxPieces' setPanelHidden with the no-strand
+// guard: hiding the last mouse lifeline is refused with a toast explaining why,
+// instead of applied-then-silently-undone. Every other toggle passes straight
+// through. Wholesale hidden-set writes (profile apply, prefs import/reset)
+// normalize the same invariant in seedHiddenFromPrefs instead.
 func (a *App) setPanelHiddenGuarded(id string, hide bool) {
-	if hide {
-		other := ""
-		switch id {
-		case panelToolbox:
-			other = ctrlSettingsSlot
-		case ctrlSettingsSlot:
-			other = panelToolbox
-		}
-		if other != "" && a.panelHidden(other) {
-			a.warnLine = "Kept: hiding both the toolbox and the Settings button would leave no mouse way back. (Ctrl+F reopens this panel.)"
-			a.warnAt = time.Now()
-			return
-		}
+	if hide && a.lastMouseLifeline(id) {
+		a.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
+		a.warnAt = time.Now()
+		return
 	}
 	a.setPanelHidden(id, hide)
+}
+
+// lastMouseLifeline reports whether hiding id would leave every mouse lifeline
+// hidden. A id that is not a lifeline is never refused.
+func (a *App) lastMouseLifeline(id string) bool {
+	isLifeline := false
+	for _, l := range mouseLifelines {
+		if l == id {
+			isLifeline = true
+			break
+		}
+	}
+	if !isLifeline {
+		return false
+	}
+	for _, l := range mouseLifelines {
+		if l != id && !a.panelHidden(l) {
+			return false // something else still gets them back
+		}
+	}
+	return true
 }
 
 // drawToolboxPieces paints the pinned per-piece hide/show panel (A1) — the

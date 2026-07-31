@@ -301,30 +301,53 @@ func (a *App) drawLobby(w, h int32) {
 		helpBtnCount    = int32(3)
 		headerTitleZone = int32(180) // reserved width for the "AsyncAO" heading on the left
 	)
-	helpGapTotal := helpBtnGap * (helpBtnCount - 1)
 	titleRight := pad + headerTitleZone
-	helpBtnW := helpBtnWMax
-	if zoneW := utilLeft - titleRight; helpBtnW*helpBtnCount+helpGapTotal > zoneW {
-		if helpBtnW = (zoneW - helpGapTotal) / helpBtnCount; helpBtnW < helpBtnWMin {
-			helpBtnW = helpBtnWMin
+	// SHED from the right when the zone cannot hold the row even at the minimum
+	// width. The width clamp alone is not enough: at the 96 px floor three buttons
+	// plus their gaps need 312 px, and a 150% DPI user on a 768 px window has a
+	// 206 px logical zone — the row would paint and CLICK over the Phone Book
+	// button beside it. Two fitted before the third button was added, which is why
+	// this only became reachable now. Same shed-order discipline as the direct-
+	// connect row: drop the least essential first.
+	shown := helpBtnCount
+	helpBtnW, helpX, helpPitch := helpBtnWMax, titleRight, int32(0)
+	for ; shown > 0; shown-- {
+		gaps := helpBtnGap * (shown - 1)
+		helpBtnW = helpBtnWMax
+		if zoneW := utilLeft - titleRight; helpBtnW*shown+gaps > zoneW {
+			if helpBtnW = (zoneW - gaps) / shown; helpBtnW < helpBtnWMin {
+				helpBtnW = helpBtnWMin
+			}
+		}
+		rowW := helpBtnW*shown + gaps
+		if helpX = (titleRight+utilLeft)/2 - rowW/2; helpX < titleRight {
+			helpX = titleRight
+		}
+		if helpX+rowW <= utilLeft {
+			break // fits without touching the utility cluster
 		}
 	}
-	rowW := helpBtnW*helpBtnCount + helpGapTotal
-	helpX := (titleRight+utilLeft)/2 - rowW/2
-	if helpX < titleRight { // narrow window: anchor just after the title
-		helpX = titleRight
-	}
-	helpPitch := helpBtnW + helpBtnGap
+	helpPitch = helpBtnW + helpBtnGap
 	helpY, helpH := hdrY-2, btnH+4 // a touch taller than the utility buttons
-	if c.ButtonCol(sdl.Rect{X: helpX, Y: helpY, W: helpBtnW, H: helpH}, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+	// helpSlot places button i, or reports false once the row has shed that far.
+	helpSlot := func(i int32) (sdl.Rect, bool) {
+		if i >= shown {
+			return sdl.Rect{}, false
+		}
+		return sdl.Rect{X: helpX + i*helpPitch, Y: helpY, W: helpBtnW, H: helpH}, true
+	}
+	if r, ok := helpSlot(0); ok && c.ButtonCol(r, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(1)
 	}
-	if c.ButtonCol(sdl.Rect{X: helpX + helpPitch, Y: helpY, W: helpBtnW, H: helpH}, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+	if r, ok := helpSlot(1); ok && c.ButtonCol(r, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(0)
 	}
-	if c.ButtonCol(sdl.Rect{X: helpX + 2*helpPitch, Y: helpY, W: helpBtnW, H: helpH}, "What's New", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+	// What's New sheds FIRST: Privacy and Glossary are what a newcomer needs before
+	// they play, and the release notes are also reachable from the changelog the
+	// updater offers. It stays in the Extras menu's reach either way.
+	if r, ok := helpSlot(2); ok && c.ButtonCol(r, "What's New", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.screen = ScreenChangelog
 		a.markChangelogSeen() // opening the notes is what stamps this build as read

@@ -91,10 +91,131 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 	if !a.panelHidden(panelMenuBar) {
 		t.Error("hiding the menu bar did not survive seedHiddenFromPrefs")
 	}
-	// The no-strand invariant is about the toolbox/Settings pair, so hiding the bar
-	// must never be "corrected" away the way a stranded pair is.
+	// Hiding the bar alone must never be "corrected" away — the toolbox is still a
+	// route back, so there is nothing to protect against yet.
 	if a.panelHidden(panelToolbox) {
 		t.Error("hiding the menu bar must not disturb the toolbox lifeline")
+	}
+}
+
+// TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster pins the overlap an
+// adversarial review computed. The header's help row is centred between the title
+// zone and the right-hand utility cluster, and the width clamp alone does not save
+// it: at the 96 px floor three buttons plus gaps need 312 px, while a 150% DPI user
+// on a 768 px window has a 206 px logical zone. Both the row and the Phone Book
+// button would then hit-test, so one click would open the changelog AND toggle the
+// page. Two buttons fitted, which is why adding the third made it reachable.
+//
+// This mirrors the production arithmetic rather than calling drawLobby, which needs
+// a live renderer — so it is a geometry pin, not a proof the draw uses it. The
+// shed loop it mirrors is small and directly above the three ButtonCol calls.
+func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
+	const (
+		helpBtnWMax     = int32(132)
+		helpBtnWMin     = int32(96)
+		helpBtnGap      = int32(12)
+		helpBtnCount    = int32(3)
+		headerTitleZone = int32(180)
+	)
+	// shedCount replays drawLobby's loop for a given logical window width.
+	shedCount := func(w int32) (shown int32, x, bw int32) {
+		utilLeft := w - lobbyUtilBtnW - 8 // pad
+		titleRight := int32(8) + headerTitleZone
+		for shown = helpBtnCount; shown > 0; shown-- {
+			gaps := helpBtnGap * (shown - 1)
+			bw = helpBtnWMax
+			if zoneW := utilLeft - titleRight; bw*shown+gaps > zoneW {
+				if bw = (zoneW - gaps) / shown; bw < helpBtnWMin {
+					bw = helpBtnWMin
+				}
+			}
+			rowW := bw*shown + gaps
+			if x = (titleRight+utilLeft)/2 - rowW/2; x < titleRight {
+				x = titleRight
+			}
+			if x+rowW <= utilLeft {
+				return shown, x, bw
+			}
+		}
+		return 0, x, bw
+	}
+
+	for _, tc := range []struct {
+		name     string
+		w        int32
+		wantShed bool
+	}{
+		{"fullscreen", 1920, false},
+		{"1280 default", 1280, false},
+		// MinWindowW still fits, and only just: the zone is 334 px against a
+		// 312 px row at the floor width. That 22 px of slack is why the overlap
+		// was invisible until a THIRD button was added.
+		{"MinWindowW", int32(config.MinWindowW), false},
+		// The reachable case: 768 physical px at 150% scale is 512 logical, which
+		// leaves a 206 px zone — 106 px short of the row.
+		{"768px at 150% DPI", 512, true},
+		{"very narrow", 400, true},
+	} {
+		shown, x, bw := shedCount(tc.w)
+		utilLeft := tc.w - lobbyUtilBtnW - 8
+		rowW := bw*shown + helpBtnGap*(shown-1)
+		if shown > 0 && x+rowW > utilLeft {
+			t.Errorf("%s (lw=%d): row spans to %d, past the utility cluster at %d — it would click through Phone Book",
+				tc.name, tc.w, x+rowW, utilLeft)
+		}
+		if shed := shown < helpBtnCount; shed != tc.wantShed {
+			t.Errorf("%s (lw=%d): shows %d/%d buttons, wantShed=%v", tc.name, tc.w, shown, helpBtnCount, tc.wantShed)
+		}
+		// Whatever survives, Privacy must: it is the first slot, and shedding is
+		// right-to-left so a newcomer never loses the privacy notice first.
+		if tc.w >= int32(config.MinWindowW) && shown == 0 {
+			t.Errorf("%s (lw=%d): shed everything — Privacy must survive at any supported width", tc.name, tc.w)
+		}
+	}
+}
+
+// TestMenuBarIsAMouseLifeline pins the strand an adversarial review found. Under a
+// THEME the menu bar is the only mouse route back to the client's own controls:
+// ctrlSettingsSlot is drawn by drawICControls, which the themed path returns long
+// before, and the ★ Extras chip row that used to be the themed fallback was
+// deleted in #21 because it painted over the design canvas. So hiding the toolbox
+// and then the menu bar left a themed user with no mouse chrome at all, while the
+// old two-way guard could never fire.
+func TestMenuBarIsAMouseLifeline(t *testing.T) {
+	a := testTabApp(t)
+	a.seedHiddenFromPrefs()
+
+	// Hiding two of the three is allowed — one route survives.
+	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
+	a.setPanelHiddenGuarded(panelToolbox, true)
+	if !a.panelHidden(panelToolbox) || !a.panelHidden(ctrlSettingsSlot) {
+		t.Fatal("hiding two lifelines while a third survives must be allowed")
+	}
+	// The LAST one is refused, with a toast rather than a silent undo.
+	a.warnLine = ""
+	a.setPanelHiddenGuarded(panelMenuBar, true)
+	if a.panelHidden(panelMenuBar) {
+		t.Error("hiding the last mouse lifeline was allowed — a themed user would have no chrome left")
+	}
+	if a.warnLine == "" {
+		t.Error("the refusal must say why, not silently do nothing")
+	}
+	// Order must not matter: the menu bar is not privileged, it is just one of three.
+	b := testTabApp(t)
+	b.seedHiddenFromPrefs()
+	b.setPanelHiddenGuarded(panelMenuBar, true)
+	b.setPanelHiddenGuarded(ctrlSettingsSlot, true)
+	b.setPanelHiddenGuarded(panelToolbox, true)
+	if b.panelHidden(panelToolbox) {
+		t.Error("the guard is order-dependent — hiding the toolbox last slipped through")
+	}
+	// A wholesale write that strands (a saved set predating the guard, a profile
+	// apply, a prefs import) is normalised on load instead of refused.
+	c := testTabApp(t)
+	c.d.Prefs.SetHiddenPanels([]string{panelToolbox, ctrlSettingsSlot, panelMenuBar})
+	c.seedHiddenFromPrefs()
+	if c.panelHidden(panelToolbox) {
+		t.Error("a stranded saved set must un-hide the toolbox on load")
 	}
 }
 

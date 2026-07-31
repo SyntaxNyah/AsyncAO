@@ -70,9 +70,10 @@ const (
 	// is not shown and every screen offsets by topChromeH(), so nothing else has
 	// to learn about this.
 	//
-	// It cannot strand anyone: seedHiddenFromPrefs's invariant keeps at least one
-	// of the toolbox grip / toolbar Settings button alive, and the Ctrl+Space
-	// palette reaches Hide-UI pieces from any screen.
+	// It is a MOUSE LIFELINE (mouseLifelines, courttoolbox.go) — under a theme it
+	// is the only one of the three that draws at all, because ctrlSettingsSlot
+	// belongs to the classic IC row and the themed ★ Extras chip row was deleted
+	// in #21. Hiding the last surviving lifeline is refused.
 	panelMenuBar = "menubar"
 	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
 	// grip that reveals Theater / Edit-layout / Hide-UI icon chips on hover. It's
@@ -203,7 +204,19 @@ func (a *App) seedHiddenFromPrefs() {
 	for _, id := range a.d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
-	if a.hidden[panelToolbox] && a.hidden[ctrlSettingsSlot] {
+	// Every mouse lifeline hidden at once — a saved set that predates the guard, a
+	// layout profile, or a prefs import — un-hides the toolbox, which is the one
+	// that works in BOTH layouts. See mouseLifelines for why the set is three:
+	// ctrlSettingsSlot only ever draws on the classic path, so a themed user who
+	// hid the toolbox and the menu bar had no mouse chrome left.
+	stranded := true
+	for _, l := range mouseLifelines {
+		if !a.hidden[l] {
+			stranded = false
+			break
+		}
+	}
+	if stranded {
 		a.setPanelHidden(panelToolbox, false)
 	}
 	// panelExtras is retired (#21): the row it hid no longer exists, so a stale
