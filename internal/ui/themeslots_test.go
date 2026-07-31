@@ -399,3 +399,73 @@ func TestEnsureEmoteChoicesIsAllocFreeWhenSettled(t *testing.T) {
 			"the guard must compare plain fields, never a built key string", n)
 	}
 }
+
+// TestButtonArtStemsMatchAO2 pins the image stems for the buttons a theme is most
+// likely to notice, because the failure mode is silent and looks like a layout bug.
+//
+// drawThemeButton falls back to a TEXT CHIP when a row carries no art, so five
+// rows that draw but declared none were painting "Pair", "D+", "D-", "P+", "P-"
+// into AO2 icon rects — pair_button is 42x42 and the HP steppers are 9x9 — while
+// the stock base ships pair_button.png, defplus.png, defminus.png, proplus.png and
+// prominus.png right beside them and the theme fallback already reaches that
+// folder. Nothing was broken enough to fail; it just looked wrong.
+//
+// evidence_button is a different failure: it listed "addevidence" as a fallback,
+// which is a DIFFERENT WIDGET's art. AO2 uses it for an empty evidence SLOT
+// (evidence.cpp:356 setThemeImage("addevidence.png")), not for the button
+// (evidence.cpp:103 setImage("evidence_button")). In the stock base
+// evidence_button.png and evidencebutton.png are byte-identical while
+// addevidence.png is a distinct "+" glyph — so a theme shipping only addevidence
+// drew a plus sign where the Evidence button belongs.
+func TestButtonArtStemsMatchAO2(t *testing.T) {
+	// stem -> the AO2 call it mirrors, so a wrong value fails with its own citation.
+	want := map[string]struct {
+		stems []string
+		cite  string
+	}{
+		"defense_plus":      {[]string{"defplus"}, "courtroom.cpp:1123"},
+		"defense_minus":     {[]string{"defminus"}, "courtroom.cpp:1127"},
+		"prosecution_plus":  {[]string{"proplus"}, "courtroom.cpp:1131"},
+		"prosecution_minus": {[]string{"prominus"}, "courtroom.cpp:1135"},
+		"pair_button":       {[]string{"pair_button"}, "courtroom.cpp:861"},
+		// Upstream's current spelling first, the pre-2.9 one as fallback.
+		"evidence_button": {[]string{"evidence_button", "evidencebutton"}, "evidence.cpp:103"},
+	}
+	for key, w := range want {
+		s := themeSlotFor(key)
+		if s == nil {
+			t.Errorf("%q has no registry row", key)
+			continue
+		}
+		if len(s.art) != len(w.stems) {
+			t.Errorf("%q art = %v, want %v (AO2 %s)", key, s.art, w.stems, w.cite)
+			continue
+		}
+		for i, stem := range w.stems {
+			if s.art[i] != stem {
+				t.Errorf("%q art[%d] = %q, want %q (AO2 %s)", key, i, s.art[i], stem, w.cite)
+			}
+		}
+	}
+
+	// The specific regression: addevidence must never be an evidence_button stem.
+	if s := themeSlotFor("evidence_button"); s != nil {
+		for _, stem := range s.art {
+			if stem == "addevidence" {
+				t.Error("evidence_button lists \"addevidence\", which is the empty-SLOT art " +
+					"(evidence.cpp:356) — a theme shipping only that file draws a \"+\" where the button goes")
+			}
+		}
+	}
+
+	// Every row that DRAWS and names art must name it non-empty; an empty string
+	// would resolve to a stem of "" and silently fall through to the text chip.
+	for i := range themeSlots {
+		s := &themeSlots[i]
+		for j, stem := range s.art {
+			if stem == "" {
+				t.Errorf("%q art[%d] is empty", s.key, j)
+			}
+		}
+	}
+}

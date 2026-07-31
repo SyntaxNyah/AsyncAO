@@ -185,13 +185,13 @@ var themeSlots = [...]themeSlot{
 	{key: "cross_examination", art: []string{"crossexamination"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "guilty", art: []string{"guilty"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "not_guilty", art: []string{"notguilty"}, phase: phasePanels, state: slotStateHandDrawn},
-	{key: "defense_bar", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:982
-	{key: "prosecution_bar", phase: phasePanels, state: slotStateHandDrawn},   // courtroom.cpp:985
-	{key: "defense_plus", phase: phasePanels, state: slotStateHandDrawn},      // courtroom.cpp:1122
-	{key: "defense_minus", phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1126
-	{key: "prosecution_plus", phase: phasePanels, state: slotStateHandDrawn},  // courtroom.cpp:1130
-	{key: "prosecution_minus", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1134
-	{key: "pair_button", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:860
+	{key: "defense_bar", phase: phasePanels, state: slotStateHandDrawn},                                  // courtroom.cpp:982
+	{key: "prosecution_bar", phase: phasePanels, state: slotStateHandDrawn},                              // courtroom.cpp:985
+	{key: "defense_plus", art: []string{"defplus"}, phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:1123 setImage("defplus")
+	{key: "defense_minus", art: []string{"defminus"}, phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1127 setImage("defminus")
+	{key: "prosecution_plus", art: []string{"proplus"}, phase: phasePanels, state: slotStateHandDrawn},   // courtroom.cpp:1131 setImage("proplus")
+	{key: "prosecution_minus", art: []string{"prominus"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1135 setImage("prominus")
+	{key: "pair_button", art: []string{"pair_button"}, phase: phasePanels, state: slotStateHandDrawn},    // courtroom.cpp:861 setImage("pair_button")
 	{key: "call_mod", art: []string{"call_mod", "callmod"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "change_character", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:1036
 	{key: "reload_theme", phase: phasePanels, state: slotStateInert},     // courtroom.cpp:1041
@@ -201,7 +201,7 @@ var themeSlots = [...]themeSlot{
 	{key: "emotes", phase: phasePanels, state: slotStateHandDrawn},                                    // emotes.cpp:45
 	{key: "emote_left", art: []string{"arrow_left"}, phase: phasePanels, state: slotStateHandDrawn},   // emotes.cpp:47
 	{key: "emote_right", art: []string{"arrow_right"}, phase: phasePanels, state: slotStateHandDrawn}, // emotes.cpp:50
-	{key: "evidence_button", art: []string{"evidencebutton", "addevidence"}, phase: phasePanels, state: slotStateHandDrawn},
+	{key: "evidence_button", art: []string{"evidence_button", "evidencebutton"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "left_evidence_icon", rel: relViewport, phase: phasePanels, state: slotStateInert},
 	{key: "right_evidence_icon", rel: relViewport, phase: phasePanels, state: slotStateInert},
 	{key: "clock_0", phase: phasePanels, state: slotStateInert}, // courtroom.cpp loops clock_N
