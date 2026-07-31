@@ -59,8 +59,13 @@ type CharINI struct {
 	// Chat is the [Options] chat= misc folder: the character's own chatbox
 	// skin lives at misc/<Chat>/chatbox (AO2-Client get_chat). Empty = the
 	// client's normal chatbox.
-	Chat   string
-	Emotes []Emote
+	Chat string
+	// Scaling is the [Options] scaling= filter this character asks for:
+	// "pixel"/"fast" = point-sample (hand-pixelled art must not be blurred),
+	// "smooth" = filter, anything else (including absent) = let the automatic
+	// rule decide. Raw here, resolved by ScalingMode.
+	Scaling string
+	Emotes  []Emote
 	// CustomName renames the character's base "custom" shout ([Shouts]
 	// custom_name); empty when the ini doesn't define it.
 	CustomName string
@@ -124,7 +129,8 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 		// Legacy key.
 		out.Blips, _ = ini.GetSection(charINIOptionsSection, "gender")
 	}
-	out.Chat, _ = ini.GetSection(charINIOptionsSection, "chat") // per-character chatbox skin (misc folder)
+	out.Chat, _ = ini.GetSection(charINIOptionsSection, "chat")       // per-character chatbox skin (misc folder)
+	out.Scaling, _ = ini.GetSection(charINIOptionsSection, "scaling") // per-character texture filter (get_scaling)
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
 	count := atoiOr(countRaw, 0)
