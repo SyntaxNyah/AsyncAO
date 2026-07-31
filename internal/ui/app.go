@@ -7898,6 +7898,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
+			a.applySpriteOverridesTo(a.splitRoom) // Hide-desk / Missingno / offsets are user choices, not per-room ones
 			a.splitVP.SetSpriteFX(a.spriteFX())
 			a.splitVP.SetSpriteLoadMode(a.vpSpriteLoadMode())
 			a.splitVP.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())
@@ -8907,12 +8908,27 @@ func (a *App) postFX() render.PostFX {
 // applySpriteOverrides lets the user's drag positions win over the
 // message's offsets every frame (one map probe per visible layer; free
 // while no overrides exist).
-func (a *App) applySpriteOverrides() {
+// applySpriteOverrides applies them to the ACTIVE room. Every other live room
+// goes through applySpriteOverridesTo — see there for why they must.
+func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.room) }
+
+// applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
+//
+// Parameterised because these are USER-level choices — the Hide-desk toggle and
+// keybind, the per-character Missingno hides, the per-character offsets — and a
+// user who hides the desk means everywhere, not "in whichever room happens to be
+// a.room". The pinned/split pane, the replay room and the scene-maker preview all
+// drive their own Update and were silently exempt, so the desk stayed visible in
+// the pinned pane with the toggle on and the keybind pressed.
+func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
+	if room == nil {
+		return
+	}
 	hideDesk := a.d.Prefs.HideDeskOn()
 	if !hideDesk && len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
 		return // nothing hidden/moved (the common case): one pref read, then out
 	}
-	sc := &a.room.Scene
+	sc := &room.Scene
 	if hideDesk {
 		sc.ShowDesk = false // hide-desk option (Settings toggle + keybind)
 	}

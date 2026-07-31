@@ -789,6 +789,7 @@ func (a *App) driveReplay(dt time.Duration) {
 	if a.replayWarming() {
 		a.tickReplayWarm()
 		a.replayRoom.Update(dt)
+		a.applySpriteOverridesTo(a.replayRoom) // the warm-up stage draws under the overlay — apply here too
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.SetPostFX(a.postFX())
 		a.d.Viewport.Update(&a.replayRoom.Scene, dt)
@@ -799,6 +800,7 @@ func (a *App) driveReplay(dt time.Duration) {
 	}
 	a.advanceReplay(dt)
 	a.replayRoom.Update(dt)
+	a.applySpriteOverridesTo(a.replayRoom) // a hidden sprite / hidden desk stays hidden in playback too
 	a.d.Viewport.SetSpriteFX(a.spriteFX())
 	a.d.Viewport.SetPostFX(a.postFX()) // #10 retro overlays in replay viewing
 	a.d.Viewport.Update(&a.replayRoom.Scene, dt)

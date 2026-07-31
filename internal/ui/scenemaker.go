@@ -327,6 +327,7 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 	}
 	a.makerPreviewRoom.Update(dt)
+	a.applySpriteOverridesTo(a.makerPreviewRoom) // the preview must match what a real room would draw
 	if a.d.Viewport != nil {
 		a.d.Viewport.Update(&a.makerPreviewRoom.Scene, dt)
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -170,6 +171,78 @@ func TestMakerDrawNoPanic(t *testing.T) {
 		a.drawSceneMaker(1280, 720)
 		if !a.makerOpen {
 			t.Fatalf("drawSceneMaker (exportPanel=%v) panicked — recoverMaker closed the maker; edit crash reproduced", exp)
+		}
+	}
+}
+
+// TestSpriteOverridesReachEveryLiveRoom pins that the session's hide/move choices
+// are USER-level, not per-room.
+//
+// applySpriteOverrides hard-coded a.room, so the pinned/split pane, the replay
+// room and the scene-maker preview were all silently exempt: turning Hide desk on
+// (toggle or keybind) left the desk drawn in the pinned pane, and a character
+// hidden with Missingno reappeared there.
+func TestSpriteOverridesReachEveryLiveRoom(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetHideDesk(true)
+
+	rooms := map[string]*courtroom.Courtroom{
+		"active": newRoomForTest(t),
+		"split":  newRoomForTest(t),
+		"replay": newRoomForTest(t),
+		"maker":  newRoomForTest(t),
+	}
+	for name, r := range rooms {
+		r.Scene.ShowDesk = true
+		a.applySpriteOverridesTo(r)
+		if r.Scene.ShowDesk {
+			t.Errorf("%s room: Hide desk is on but the desk still draws", name)
+		}
+	}
+	// A nil room is the normal state for three of the four — it must not panic.
+	a.applySpriteOverridesTo(nil)
+}
+
+// TestEverySecondaryRoomDrawPathAppliesOverrides is the WIRING half of the test
+// above, and it has to read source to do its job: the behaviour test proves the
+// helper works on any room, but the actual bug was a call site that was never
+// written. Only a census of the draw paths can see that.
+//
+// Rule: every Update of a room that is NOT a.room must be followed closely by
+// applySpriteOverridesTo for that same room. a.room is exempt — it goes through
+// the applySpriteOverrides() wrapper, and its Background-loop Update draws
+// nothing (Frame re-applies before the viewport ever sees the scene).
+func TestEverySecondaryRoomDrawPathAppliesOverrides(t *testing.T) {
+	// How far after the Update the apply may sit. The call belongs directly
+	// after it; the slack absorbs a comment line without inviting a whole block.
+	const applyWithinLines = 3
+
+	secondary := []string{"splitRoom", "replayRoom", "makerPreviewRoom"}
+	for _, file := range []string{"app.go", "replay.go", "scenemaker.go"} {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		lines := strings.Split(string(src), "\n")
+		for i, line := range lines {
+			for _, room := range secondary {
+				if !strings.Contains(line, "a."+room+".Update(dt)") {
+					continue
+				}
+				want := "a.applySpriteOverridesTo(a." + room + ")"
+				found := false
+				for j := i + 1; j < len(lines) && j <= i+applyWithinLines; j++ {
+					if strings.Contains(lines[j], want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s:%d updates %s but never applies the user's hide/move overrides "+
+						"within %d lines — add %s. A desk hidden by the toggle would still draw there.",
+						file, i+1, room, applyWithinLines, want)
+				}
+			}
 		}
 	}
 }
