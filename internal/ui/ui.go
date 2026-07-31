@@ -2473,6 +2473,103 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 	return value
 }
 
+// truncateChopRunes / truncateEllipsis mirror AO2's own truncation step: it chops
+// TWO characters and appends a single-character ellipsis, so each pass nets one
+// character narrower (AO2-Client courtroom.cpp:6750-6754). Named per hard rule 9 —
+// "chop(2)" at a call site says nothing about why two.
+const (
+	truncateChopRunes = 2
+	truncateEllipsis  = "…"
+)
+
+// truncateLabelTo shortens label until it fits avail, AO2's way: chop two runes,
+// append "…", re-measure, repeat (AO2-Client courtroom.cpp:6749-6774
+// truncate_label_text, called for guard/pre/flip/slide at :1167-1170 and for
+// immediate at :1078). A theme is free to give a toggle a 51x19 rect, and AO2
+// sizes the widget to the rect and shortens the LABEL rather than overflowing it.
+//
+// Two AO2 behaviours worth keeping verbatim. A label that measures EXACTLY avail
+// is left alone — AO2's loop condition is `> label_theme_width`, so equality never
+// enters it. And if chopping would collapse the label to nothing but the ellipsis,
+// AO2 abandons the truncation and keeps the ORIGINAL text: a lone "…" reads as a
+// broken widget, and the guard also stops an infinite loop when the ellipsis is
+// itself wider than the rect.
+//
+// Pure, and measure is injected, so it is testable without a renderer. Called at
+// layout-build time rather than per frame; the happy path returns before the loop
+// allocates anything.
+func truncateLabelTo(label string, avail int32, measure func(string) int32) string {
+	if avail <= 0 || measure(label) <= avail {
+		return label
+	}
+	out := label
+	for measure(out) > avail && out != truncateEllipsis {
+		r := []rune(out)
+		// Drop the ellipsis added by the previous pass before chopping again, so
+		// each pass removes truncateChopRunes of the ORIGINAL text.
+		if len(r) > 0 && string(r[len(r)-1:]) == truncateEllipsis {
+			r = r[:len(r)-1]
+		}
+		if len(r) <= truncateChopRunes {
+			return label // would collapse to "…" — AO2 keeps the original
+		}
+		out = string(r[:len(r)-truncateChopRunes]) + truncateEllipsis
+	}
+	if out == truncateEllipsis {
+		return label
+	}
+	return out
+}
+
+// CheckboxLabelAvail is how much width a label has inside an AO2 design rect once
+// the tick box and its gap are taken out. The layout pass hands this to
+// truncateLabelTo; the draw site clips to the same number.
+func (c *Ctx) CheckboxLabelAvail(r sdl.Rect) int32 {
+	return r.W - checkboxBoxPx - checkboxLabelGapPx
+}
+
+// CheckboxIn is Checkbox fitted to a RECT rather than anchored at an (x, y).
+// AO2 places every toggle by design rect (set_size_and_pos), and several are far
+// narrower than their label — aceattorney2x gives `flip` 51x19 — so a checkbox
+// that grows to its text cannot honour a theme.
+//
+// The box is vertically centred in the rect and the label is clipped to what is
+// left. The centring offset is FLOORED AT ZERO: under ThemeFitNative a downscaled
+// canvas can hand this a rect shorter than the 16 px box, and a negative offset
+// would lift the box out of its own row.
+//
+// No id parameter: Checkbox has none either, c.onRow collects by label, and an
+// unused parameter is a staticcheck finding.
+func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
+	if c.onRow != nil {
+		c.onRow(label, r.Y) // settings-search collect pass, as Checkbox does
+	}
+	box := checkboxBoxPx
+	off := (r.H - box) / 2
+	if off < 0 {
+		off = 0
+	}
+	b := sdl.Rect{X: r.X, Y: r.Y + off, W: box, H: box}
+	c.Fill(b, ColPanel)
+	c.Border(b, ColAccent)
+	if value {
+		inner := sdl.Rect{
+			X: b.X + checkboxTickInsetPx, Y: b.Y + checkboxTickInsetPx,
+			W: box - 2*checkboxTickInsetPx, H: box - 2*checkboxTickInsetPx,
+		}
+		c.Fill(inner, ColAccent)
+	}
+	if avail := c.CheckboxLabelAvail(r); avail > 0 {
+		c.LabelClipped(r.X+box+checkboxLabelGapPx, b.Y, avail, label, ColText)
+	}
+	// The hit area is the THEME'S rect, not the ink: AO2's widget is the rect, and
+	// a truncated label would otherwise shrink the click target below its box.
+	if c.hovering(r) && c.clicked {
+		return !value
+	}
+	return value
+}
+
 // FocusField queues keyboard focus onto a TextField id (e.g. the IC input
 // after an emote pick — AO2-Client's focus_ic_input parity).
 func (c *Ctx) FocusField(id string) { c.focusNext = id }
