@@ -342,8 +342,8 @@ func TestThemeTabBarKeyIsAThemeLayoutKey(t *testing.T) {
 	if !found {
 		t.Fatalf("themeLayoutKeys is missing %q — a theme could not place the server-tab strip (#14)", themeTabBarKey)
 	}
-	if layoutEditSkip[themeTabBarKey] {
-		t.Errorf("%q is in layoutEditSkip — the themed editor would refuse to drag it, which is the reported bug", themeTabBarKey)
+	if !themeKeyEditable(themeTabBarKey) {
+		t.Errorf("%q is not editable — the themed editor would refuse to drag it, which is the reported bug", themeTabBarKey)
 	}
 }
 
@@ -418,7 +418,7 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 	// The editable key set, exactly as drawLayoutEditor builds it.
 	editable := false
 	for k := range lay.r {
-		if k == themeTabBarKey && !layoutEditSkip[k] {
+		if k == themeTabBarKey && themeKeyEditable(k) {
 			editable = true
 		}
 	}

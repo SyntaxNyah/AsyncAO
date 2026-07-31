@@ -93,12 +93,18 @@ func TestICOptionalDrawsOverrideWins(t *testing.T) {
 
 // TestThemeKeysExposeAsyncICControls pins #4b: the AsyncAO-only IC controls are listed
 // in themeLayoutKeys, so a custom theme that defines asyncao_ic_<x> in its design.ini has
-// those rects loaded — letting theme-makers place colour/SFX/buttons separately instead
-// of having AsyncAO cram them into ao2_ic_chat_message.
+// those rects loaded — letting theme-makers place colour/SFX/buttons separately.
+//
+// asyncao_ic_react is deliberately NOT in that list any more (#21). The React button was
+// removed by request and the key was left ingested "as a no-op for compatibility"
+// (theme_layout.go), which meant the themed layout editor kept offering a drag box for a
+// widget that does not exist — the ghost-box class the themeSlots registry exists to end.
+// A theme may still declare the key; it simply resolves to nothing, exactly as it did when
+// the button was live-but-removed.
 func TestThemeKeysExposeAsyncICControls(t *testing.T) {
 	want := []string{
 		"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_pre", "asyncao_ic_sfx",
-		"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
+		"asyncao_ic_emoji", "asyncao_ic_fx",
 	}
 	have := map[string]bool{}
 	for _, k := range themeLayoutKeys {
@@ -107,6 +113,16 @@ func TestThemeKeysExposeAsyncICControls(t *testing.T) {
 	for _, k := range want {
 		if !have[k] {
 			t.Errorf("themeLayoutKeys missing %q — a theme can't position it (#4b)", k)
+		}
+	}
+	if have["asyncao_ic_react"] {
+		t.Error("asyncao_ic_react is back in themeLayoutKeys — nothing paints it, so the editor would offer a ghost box")
+	}
+	// Every asyncao_* key is an AUTHOR OVERRIDE tier, so each must be a real painted
+	// slot: a key that reached no widget could never win over the AO2 key it overrides.
+	for _, k := range want {
+		if !themeKeyEditable(k) {
+			t.Errorf("%q is ingested but not editable — an override tier with no painter", k)
 		}
 	}
 }

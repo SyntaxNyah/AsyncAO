@@ -208,7 +208,7 @@ func (a *App) editorNudgeKeys(w, h int32) bool {
 // arrow it — needs nothing new. A drag in flight keeps the mouse in charge.
 func (a *App) nudgeThemedRect(dx, dy int, coarse bool, w, h int32) {
 	key := a.editKey
-	if key == "" || layoutEditSkip[key] || a.editDrag != 0 {
+	if key == "" || !themeKeyEditable(key) || a.editDrag != 0 {
 		return
 	}
 	themeName, _ := a.d.Prefs.Theme()

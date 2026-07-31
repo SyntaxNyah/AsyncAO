@@ -2502,66 +2502,46 @@ func themeImageStems() map[string][]string {
 const themeBtnPrefix = "btn/"
 
 // themeButtonStems maps courtroom_design.ini element keys to their AOButton
-// art file stems (courtroom.cpp set_widgets setImage calls). Loaded with a
-// PNG-FIRST ext order: the bare splash names ("crossexamination.gif") and
-// these button files ("crossexamination.png") collide by stem, and on
-// every real theme the button is the png.
+// art file stems (courtroom.cpp set_widgets setImage calls). DERIVED from the
+// themeSlots registry (themeslots.go) so a key cannot carry art without a row.
+// Loaded with a PNG-FIRST ext order: the bare splash names
+// ("crossexamination.gif") and these button files ("crossexamination.png")
+// collide by stem, and on every real theme the button is the png.
 func themeButtonStems() map[string][]string {
-	return map[string][]string{
-		"hold_it":           {"holdit"},
-		"objection":         {"objection"},
-		"take_that":         {"takethat"},
-		"custom_objection":  {"custom"},
-		"witness_testimony": {"witnesstestimony"},
-		"cross_examination": {"crossexamination"},
-		"not_guilty":        {"notguilty"},
-		"guilty":            {"guilty"},
-		"call_mod":          {"call_mod", "callmod"},
-		"evidence_button":   {"evidencebutton", "addevidence"},
-		"emote_left":        {"arrow_left"},
-		"emote_right":       {"arrow_right"},
+	m := make(map[string][]string, len(themeSlots))
+	for i := range themeSlots {
+		if s := &themeSlots[i]; len(s.art) > 0 {
+			m[s.key] = s.art
+		}
 	}
+	return m
 }
 
 // themeButtonExts: png first — see themeButtonStems.
 var themeButtonExts = []string{".png", ".webp", ".apng", ".gif"}
 
 // themeLayoutKeys are the courtroom_design.ini rects the themed courtroom
-// consumes (names exactly as AO2-Client set_size_and_pos reads them).
-// "courtroom" + "viewport" are mandatory for the layout to activate;
-// everything else falls back per element.
-var themeLayoutKeys = []string{
-	"courtroom", "viewport", "ao2_chatbox", "showname", "message",
-	"ic_chatlog", "server_chatlog", "ms_chatlog",
-	"music_list", "music_search",
-	"ooc_chat_message", "ooc_chat_name",
-	"ao2_ic_chat_message", "ao2_ic_chat_name",
-	// AsyncAO-only IC controls (#4b, Crystalwarrior): OPTIONAL keys a theme can add to
-	// place these where it likes instead of having AsyncAO cram them into
-	// ao2_ic_chat_message. Absent ⇒ the classic crammed row (every existing theme is
-	// unchanged). x,y,w,h in design space, same as any AO2 element.
-	"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_pre", "asyncao_ic_sfx",
-	"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
-	// OPTIONAL: a theme that ships "asyncao_toolbox" positions the compact
-	// bottom-right toolbox grip where it likes and makes it draggable in the themed
-	// editor (A1 Phase 2). Absent ⇒ the toolbox uses its classic slotToolbox
-	// override / bottom-right default. The twin of asyncao_ic_fx for the toolbox.
-	"asyncao_toolbox",
-	// OPTIONAL, same shape (#14): "asyncao_tabbar" parks the server-tab strip inside
-	// the theme's design canvas and — because the themed layout editor builds its
-	// editable key set from the layout cache — makes it DRAGGABLE there, which is the
-	// affordance issue #14 reported missing under a theme. Absent ⇒ the strip
-	// stays docked in the top chrome band (chrometop.go), where it overlaps nothing.
-	// Consumed by tabStripOrigin (tabs.go); the constant is themeTabBarKey.
-	"asyncao_tabbar",
-	"pos_dropdown", "pair_button",
-	"hold_it", "objection", "take_that", "custom_objection",
-	"witness_testimony", "cross_examination", "not_guilty", "guilty",
-	"defense_plus", "defense_minus", "prosecution_plus", "prosecution_minus",
-	"defense_bar", "prosecution_bar",
-	"call_mod", "evidence_button",
-	"emotes", "emote_left", "emote_right",
-}
+// ingests, named exactly as AO2-Client set_size_and_pos reads them, DERIVED from
+// the themeSlots registry (themeslots.go). "courtroom" + "viewport" are mandatory
+// for the layout to activate; every other key resolves per element, and a key the
+// theme omits simply has no widget — AO2 hides it too (courtroom.cpp:1334-1338).
+//
+// The AsyncAO-only asyncao_* opt-ins are rows in that table like everything else;
+// they are an AUTHOR OVERRIDE tier, not the layout mechanism (see themeslots.go).
+//
+// Sorted so a failing table test names a stable key rather than a map-order one.
+var themeLayoutKeys = func() []string {
+	keys := make([]string, 0, 2*len(themeSlots))
+	for i := range themeSlots {
+		s := &themeSlots[i]
+		keys = append(keys, s.key)
+		if s.alt != "" {
+			keys = append(keys, s.alt)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}()
 
 // themeBtnStems is the precomputed theme:// stem ("btn/<design key>") for every
 // courtroom_design.ini key the themed courtroom can draw as a button.

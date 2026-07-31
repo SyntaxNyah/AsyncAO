@@ -192,14 +192,6 @@ func (a *App) restoreLayout(themeName string, snap layoutSnapshot) {
 	a.invalidateThemeCanvases()
 }
 
-// layoutEditSkip are rects the editor never touches: the stage frame
-// itself and the chatbox-relative children (they ride the chatbox).
-var layoutEditSkip = map[string]bool{
-	"courtroom": true,
-	"showname":  true,
-	"message":   true,
-}
-
 // startLayoutEdit arms the editor (UI... panel; themed layout only).
 // Open modals close — they'd be fenced shut and the editor overlay only
 // draws when the themed path runs to its end.
@@ -383,7 +375,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// Editable keys (skip the design canvas + chatbox children).
 	keys := make([]string, 0, len(lay.r))
 	for k := range lay.r {
-		if !layoutEditSkip[k] {
+		if themeKeyEditable(k) {
 			keys = append(keys, k)
 		}
 	}
@@ -554,7 +546,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			case screenDrag:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
 				for k, sr := range lay.r {
-					if k == a.editKey || layoutEditSkip[k] {
+					if k == a.editKey || !themeKeyEditable(k) {
 						continue
 					}
 					a.themeAlignScratch = append(a.themeAlignScratch, sr)
@@ -568,7 +560,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			case ok:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
 				for k, tr := range a.themeRects {
-					if k == a.editKey || layoutEditSkip[k] {
+					if k == a.editKey || !themeKeyEditable(k) {
 						continue
 					}
 					a.themeAlignScratch = append(a.themeAlignScratch, a.magnetSiblingRect(k, tr, lay))
@@ -837,7 +829,7 @@ func (a *App) applyRectOverrides(rects map[string]theme.Rect) map[string]theme.R
 		return rects
 	}
 	for k, v := range ov {
-		if _, exists := rects[k]; exists && !layoutEditSkip[k] {
+		if _, exists := rects[k]; exists && themeKeyEditable(k) {
 			rects[k] = theme.Rect{X: v[0], Y: v[1], W: v[2], H: v[3]}
 		}
 	}

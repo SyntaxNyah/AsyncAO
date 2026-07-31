@@ -276,10 +276,14 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 			W: int32(float64(r.W) * lay.scaleX),
 			H: int32(float64(r.H) * lay.scaleY),
 		}
-		// showname/message are children of the chatbox in AO2 — keep them
-		// chatbox-relative; everything else becomes window-absolute and
-		// clamps into the stage like Qt's window edge clipped it.
-		if key != "showname" && key != "message" {
+		// AO2 declares FOUR coordinate systems in courtroom_design.ini — its own
+		// section banners say so. Only courtroom-relative rects become
+		// window-absolute here and clamp into the stage the way Qt's window edge
+		// clipped them; chatbox-, viewport- and music_display-relative rects stay
+		// raw and are re-based by whichever widget owns their parent. This was a
+		// hard-coded `key != "showname" && key != "message"` before the themeSlots
+		// registry, which had no way to express the other two.
+		if themeSlotRel(key) == relCourtroom {
 			sr.X += lay.offX
 			sr.Y += lay.offY
 			clamped, ok := clampRectInto(sr, bounds)
@@ -624,7 +628,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// cgoRect: themedRotationDeg reads a map, themeFrame indexes a slice.
 		c.cgoRect = court
 		// A4: structured angle==0 → Copy / else CopyEx. courtroombackground is the
-		// stage frame (in layoutEditSkip), so it's not editor-hoverable and resolves
+		// stage frame (a `fixed` themeSlots row), so it's not editor-hoverable and resolves
 		// 0 every frame — themedRotationDeg reads the baked cache map (NOT prefs), so
 		// this stays alloc-free on the always-drawn themed path.
 		if ang := a.themedRotationDeg("courtroombackground"); ang == 0 {
@@ -674,16 +678,22 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		return
 	}
 
-	// Logs: IC at ic_chatlog; OOC log prefers server_chatlog (AO2's joint
-	// log) and falls back to ms_chatlog. Themes that stack the two on the
-	// same rect meant them as one toggled widget (AO2's ooc_toggle) —
-	// detect the overlap and draw them tabbed instead of on top of each
-	// other.
+	// Logs: IC at ic_chatlog, OOC at server_chatlog. Themes that stack the two on
+	// the same rect meant them as one toggled widget (AO2's ooc_toggle) — detect
+	// the overlap and draw them tabbed instead of on top of each other.
+	//
+	// ms_chatlog is NOT a server_chatlog alias, and the fallback that treated it
+	// as one is gone. AO2 places the DEBUG log there — set_size_and_pos(
+	// ui_debug_log, "ms_chatlog"); // Old name, still use it to not break
+	// compatibility (courtroom.cpp:831) — and the server chatlog at its own key
+	// (:834). A theme declaring only ms_chatlog gets NO server chatlog in AO2,
+	// because set_size_and_pos hides a widget whose rect is missing
+	// (courtroom.cpp:1334-1338); falling back drew the OOC log in the debug log's
+	// box instead. Measured before removing it: of the courtroom_design.ini files
+	// AO2-Client ships, every single one declares BOTH keys, so this fallback was
+	// unreachable for every shipped theme.
 	icRect, okIC := lay.rect("ic_chatlog")
 	oocRect, okOOC := lay.rect("server_chatlog")
-	if !okOOC {
-		oocRect, okOOC = lay.rect("ms_chatlog")
-	}
 	merged := okIC && okOOC && rectOverlapFrac(icRect, oocRect) >= logMergeOverlapFrac
 	if merged && !a.panelHidden(panelLog) {
 		// ONE inset for the whole panel (#25): the chip strip and the list body both

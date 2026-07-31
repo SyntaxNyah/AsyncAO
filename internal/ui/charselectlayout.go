@@ -27,7 +27,7 @@ package ui
 //
 //  1. Every key in a.themeRects becomes a draggable, persistable box in the
 //     COURTROOM layout editor — its editable set is built from the layout cache
-//     (layoutedit.go) and layoutEditSkip holds only courtroom/showname/message. The
+//     (layoutedit.go) and the only `fixed` themeSlots rows are courtroom/showname/message. The
 //     twelve char-select keys would drop eleven ghost boxes onto the courtroom.
 //  2. The courtroom DESIGN SPACE mangles them. themeLayoutIn drops any key with
 //     X > courtroom.W || Y > courtroom.H, so under the stock courtroom = 0,0,714,579
