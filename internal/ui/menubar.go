@@ -349,6 +349,14 @@ var menuWindowItems = []menuItem{
 var menuExtrasItems = []menuItem{
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
+	// Text FX and the emoji picker have NO AO2 design key, so under #21 rule (c)
+	// this menu is their home. They are not optional rows: the themed IC bar draws
+	// them only at the asyncao_ic_fx / asyncao_ic_emoji override rects, which no
+	// stock AO2 theme declares — without these two rows a themed player cannot
+	// reach either control at all, and icEffect is sticky, so an effect armed in
+	// the classic layout would wrap every line with no way to clear it.
+	{kind: menuItemCheck, label: "Text FX…", checked: menuFxPickerOpen, enabled: menuInCourtroom, act: menuToggleFxPicker},
+	{kind: menuItemCheck, label: "Emoji picker…", checked: menuEmojiPickerOpen, enabled: menuInCourtroom, act: menuToggleEmojiPicker},
 	{kind: menuItemSeparator},
 	{kind: menuItemCheck, label: "Mod dashboard", checked: menuModDashOpen, enabled: menuAmIMod, act: menuActModDash},
 	{kind: menuItemCheck, label: "CM area controls", checked: menuCMPanelOpen, enabled: menuAmICM, act: menuActCMPanel},
@@ -539,6 +547,14 @@ func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
 
 func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
+
+// Text FX and the emoji picker: the two IC controls with no AO2 design key, so
+// this menu is the only place a themed player can reach them (#21 rule (c)).
+func menuFxPickerOpen(a *App, _ int) bool { return a.showFxPicker }
+func menuToggleFxPicker(a *App, _ int)    { a.showFxPicker = !a.showFxPicker }
+
+func menuEmojiPickerOpen(a *App, _ int) bool { return a.showEmojiPicker }
+func menuToggleEmojiPicker(a *App, _ int)    { a.showEmojiPicker = !a.showEmojiPicker }
 
 // Mod / CM are ENABLED-gated rather than hidden, so the row still says the
 // command exists and simply greys out until the server grants it — the chips

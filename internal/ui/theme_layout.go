@@ -949,11 +949,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// classic row. Forced off when hidden so a stale check cannot ride a message —
 	// the same rule the classic row applies, and the reason the crammed bar used to
 	// clear it unconditionally (it had nowhere to draw the toggle at all).
+	// The force-off is a plain `else`, matching the classic row. An earlier
+	// `else if !ok` was DEAD CODE: applyAO2DefaultRects supplies an `additive` rect
+	// for every theme that reaches this path at all (its gate is courtroom+viewport,
+	// exactly themeLayoutIn's validity pair), so !ok never fired — and turning the
+	// master pref off, or moving to a server without the feature, hid the box while
+	// icAdditive stayed true and kept riding every message.
 	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
 		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
 		a.icAdditive = c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive)
 		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
-	} else if !ok {
+	} else {
 		a.icAdditive = false
 	}
 
@@ -974,6 +980,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		show := !a.d.Prefs.ForceCharNamesOn()
 		if next := c.CheckboxIn(r, lay.themedToggleLabel("showname_enable", "Shownames"), show); next != show {
 			a.d.Prefs.SetForceCharNames(!next)
+			// Push the LIVE room too, as the Settings surface does. Without this the
+			// pref lands but nothing re-reads it until an unrelated applyPrefsToRoom,
+			// so the toggle appears to do nothing for the rest of the session.
+			if a.room != nil {
+				a.room.ForceCharNames = !next
+			}
 		}
 		c.Tooltip(r, "Shownames: show players' custom shownames. Off falls back to character names, which makes impersonation obvious.")
 	}

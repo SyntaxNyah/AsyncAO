@@ -25,9 +25,14 @@ func TestTruncateLabelToMatchesAO2(t *testing.T) {
 		// "> label_theme_width", so equality never enters it — an off-by-one here
 		// would ellipsise a label that fits.
 		{"fits exactly", "Preanim", 7, "Preanim"},
-		// One px short: one pass drops 2 runes and adds 1, netting 6.
+		// Each pass chops 2 runes off the CURRENT string and appends 1, so the
+		// ellipsis a previous pass added is one of the two chopped: pass 1 nets one
+		// rune narrower, and so does every pass after it. Getting this wrong (by
+		// stripping the ellipsis before chopping) silently drops an extra character
+		// per pass from the second pass onward.
 		{"one short", "Preanim", 6, "Prean…"},
-		{"two short", "Preanim", 5, "Pre…"},
+		{"two short", "Preanim", 5, "Prea…"},
+		{"three short", "Preanim", 4, "Pre…"},
 		// A rect so narrow the text would collapse to a bare ellipsis: AO2 abandons
 		// the truncation and keeps the original rather than draw a lone "…".
 		{"collapses to ellipsis", "Preanim", 1, "Preanim"},

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -387,6 +389,55 @@ func TestAsyncAOChromeLivesOutsideTheCanvas(t *testing.T) {
 		if strings.Contains(string(src), gone+"(") {
 			t.Errorf("theme_layout.go still calls %q — AsyncAO chrome is back inside the design canvas", gone)
 		}
+	}
+}
+
+// TestFxAndEmojiAreReachableUnderATheme pins the regression that the themed IC-bar
+// rewrite introduced and an adversarial review caught.
+//
+// Text FX and the emoji picker are the only two IC controls with NO AO2 design
+// key. The themed bar draws them solely at the asyncao_ic_fx / asyncao_ic_emoji
+// override rects, which no stock AO2 theme declares — and the cram row that used
+// to host them was deleted. For one commit they were unreachable under every real
+// theme: no menu row, no hotkey, no Extras-box entry. icEffect is sticky session
+// state, so an effect armed in the classic layout would then wrap every line with
+// no way to clear it.
+func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
+	a := stageMenuBarApp(t)
+	for _, label := range []string{"Text FX…", "Emoji picker…"} {
+		row := menuRow(t, menuExtrasTitle, label) // fatals when missing
+		if row.act == nil {
+			t.Errorf("%q has no action", label)
+		}
+	}
+	// The rows must actually toggle the pickers, not merely exist.
+	fx := menuRow(t, menuExtrasTitle, "Text FX…")
+	before := a.showFxPicker
+	fx.act(a, fx.arg)
+	if a.showFxPicker == before {
+		t.Error("the Text FX row did not toggle the picker")
+	}
+	em := menuRow(t, menuExtrasTitle, "Emoji picker…")
+	beforeEm := a.showEmojiPicker
+	em.act(a, em.arg)
+	if a.showEmojiPicker == beforeEm {
+		t.Error("the Emoji row did not toggle the picker")
+	}
+}
+
+// TestFxPickerAnchorsOnScreenWithoutAButton pins the other half: opened from the
+// menu there is no FX button on screen, so fxBtnRect is the zero value and the
+// on-screen clamps would pin the list to the top-left corner.
+func TestFxPickerAnchorsOnScreenWithoutAButton(t *testing.T) {
+	a := stageMenuBarApp(t)
+	a.fxBtnRect = sdl.Rect{} // never drawn: a theme that declares no asyncao_ic_fx
+	const w, h = 1280, 720
+	r := a.fxPickerRect(w, h)
+	if r.X <= 8 && r.Y <= 8 {
+		t.Errorf("picker pinned to the corner at %+v — it should centre when it has no anchor", r)
+	}
+	if r.X < 0 || r.Y < 0 || r.X+r.W > w || r.Y+r.H > h {
+		t.Errorf("picker %+v is off-screen in a %dx%d window", r, w, h)
 	}
 }
 

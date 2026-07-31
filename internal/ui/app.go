@@ -8537,7 +8537,11 @@ func unboundDesignKeys(t *theme.Theme) string {
 		if _, ok := t.ElementRect(key); !ok {
 			continue // pairs, colours and scalars are not widget rects
 		}
-		if themeSlotFor(key) != nil {
+		// A row that exists but paints NOTHING is exactly what this report is for —
+		// "reaches no widget" is about pixels, not about table membership. Skipping
+		// every key with a row made the report blind to the theme in the issue,
+		// which has a row for all ~100 of its rects and paints barely half.
+		if s := themeSlotFor(key); s != nil && s.state != slotStateInert {
 			continue
 		}
 		if _, deferred := themeSlotDeferred[key]; deferred {

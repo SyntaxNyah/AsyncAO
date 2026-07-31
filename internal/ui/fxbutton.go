@@ -121,6 +121,13 @@ const fxPickerRow = int32(20)
 func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 	pw := int32(120)
 	ph := int32(len(fxEffectOrder))*fxPickerRow + 8
+	// Opened from the Extras menu with no button on screen (#21: a themed layout
+	// draws the FX button only where the theme asks for it), fxBtnRect is the zero
+	// value and the clamps below would pin the list to the top-left corner. Anchor
+	// it near the middle instead, which is where a menu-opened popup belongs.
+	if a.fxBtnRect.W == 0 && a.fxBtnRect.H == 0 {
+		return sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	}
 	x := a.fxBtnRect.X
 	if x+pw > w-4 {
 		x = w - 4 - pw

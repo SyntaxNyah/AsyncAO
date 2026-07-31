@@ -2504,12 +2504,11 @@ func truncateLabelTo(label string, avail int32, measure func(string) int32) stri
 	}
 	out := label
 	for measure(out) > avail && out != truncateEllipsis {
+		// Chop two runes off the CURRENT string and append one, exactly as AO2
+		// does. The ellipsis a previous pass appended is therefore one of the two
+		// chopped, so each pass nets ONE original rune narrower — stripping it
+		// first would net two and diverge from AO2 from the second pass onward.
 		r := []rune(out)
-		// Drop the ellipsis added by the previous pass before chopping again, so
-		// each pass removes truncateChopRunes of the ORIGINAL text.
-		if len(r) > 0 && string(r[len(r)-1:]) == truncateEllipsis {
-			r = r[:len(r)-1]
-		}
 		if len(r) <= truncateChopRunes {
 			return label // would collapse to "…" — AO2 keeps the original
 		}
@@ -2564,7 +2563,15 @@ func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	}
 	// The hit area is the THEME'S rect, not the ink: AO2's widget is the rect, and
 	// a truncated label would otherwise shrink the click target below its box.
+	//
+	// The click is CONSUMED, unlike Checkbox's. AO2 design rects legitimately
+	// overlap — aceattorney2x puts guard at 425,473,61x19 and additive at
+	// 428,473,80x19, 58 px of overlap, and AO2's own stock default overlaps pre and
+	// flip by 21 px. Qt resolves that by delivering the press to one widget;
+	// immediate mode would fire BOTH, so one click would flip two toggles. Same
+	// idiom the phone-book rows use.
 	if c.hovering(r) && c.clicked {
+		c.clicked = false
 		return !value
 	}
 	return value
