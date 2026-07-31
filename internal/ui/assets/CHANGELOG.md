@@ -4,13 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.85.0 — 2026-07-31
+## v1.85.0 — 2026-08-01
 
-The second theme release, and one change in it reaches everyone whether or not
-they use a theme: characters drawn as pixel art stop being blurred. Alongside
-that, more of an imported AO2 theme's own controls are wired to what they were
-meant to control, a disconnection no longer throws you out of the room you were
-in, and the lobby gets its own actions back.
+The second theme release. One change in it reaches everyone whether or not they
+use a theme: characters drawn as pixel art stop being blurred. The rest is an
+imported AO2 theme finally getting its own controls back — the emote and iniswap
+dropdowns, the volume sliders, the search box, the music plate and a row of
+buttons that were all reserved space the client painted nothing into. Alongside
+that, a disconnection no longer throws you out of the room you were in, and the
+lobby gets its own actions back.
+
+The rule this release follows: inside a theme's own canvas it is the theme's
+layout and AO2's controls, with nothing of ours crammed in beside them. Anything
+of ours with no place in an AO2 theme lives on the Extras box instead.
 
 Thanks again to Crystalwarrior for the theme-import report this continues from.
 
@@ -62,6 +68,50 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
   client re-derives whether a desk exists on every background change, and heals
   the moment a desk that was missing turns up — a server repack, or a local folder
   added mid-session, no longer needs a restart.
+- **The emote, iniswap and position controls a theme declares now work.** A theme
+  reserves space for an emote dropdown, an iniswap dropdown with a remove button,
+  and a button that puts you back on your character's own position. All four were
+  read and then painted over with nothing. They now do what AO2 does: the emote
+  list matches the button grid, your own character is always the first iniswap
+  entry, and the remove buttons appear only when there is something to remove.
+- **Buttons that ship art now draw it instead of a text label.** Pair, the four
+  health-bar steppers and the Evidence button were drawing words into icon-sized
+  boxes — Pair into 42 by 42 pixels, the health steppers into 9 by 9 — while the
+  matching images sat unused right beside the theme. Evidence was worse: it looked
+  for the wrong file entirely, so a theme that shipped only one of the two spellings
+  drew a plus sign where the button belongs.
+- **Change character, Reload theme and Settings.** Three more declared buttons
+  that were blank space. Each does what its keyboard shortcut already did.
+- **The theme's own volume sliders.** Music, Sfx and Blip now sit where the theme
+  put them. Inside a theme's canvas those are the volume controls, so the music
+  panel's own Volume toggle steps aside there — Master and blip rate have no place
+  in an AO2 theme and stay on the Extras box, which already carried them.
+- **The search box moved to the space reserved for it.** A theme sets aside a band
+  for searching music; ours was crammed into the top of the track list instead,
+  costing about 27 pixels of the height the theme budgeted for tracks. The list
+  gets those back.
+- **The music plate draws, with the track name on it.** The plate a theme declares
+  above its track list, and the now-playing name AO2 places inside that plate,
+  were both ignored. Long names are clipped rather than scrolled — a marquee is
+  constant motion on an otherwise still panel, and the full name is in the list
+  anyway.
+- **A theme that only sets text SIZES no longer has white forced on it.** Sizes
+  and colours are separate settings, and the client was treating "this theme
+  mentioned the chatbox at all" as "this theme asked for white text" — so a theme
+  that merely picked a size lost the client's own colour for no reason.
+
+### Not changed, on purpose
+
+- **Sharp (non-antialiased) theme fonts stay unimplemented.** Measuring the theme
+  in the report showed the setting would change nothing where it was meant to: the
+  pixel-art faces it applies to already render with hard edges at the sizes the
+  client opens them. Where it *would* take effect is small text in the side panels,
+  where switching antialiasing off makes it harder to read, and the method
+  available to us also tints the edges of every letter. Documented rather than
+  shipped.
+- **Screen effects declared by a theme still do nothing.** This one is a missing
+  feature rather than a layout fault — nothing is drawn in the wrong place — and it
+  needs a manifest reader and an overlay renderer that do not exist yet.
 
 ## v1.84.0 — 2026-07-27
 
