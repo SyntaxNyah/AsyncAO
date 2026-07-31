@@ -337,6 +337,15 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	return lay
 }
 
+// sessHasCCCC reports whether the server advertises cccc_ic_support, the 2.6
+// feature that carries pairing, shownames and the immediate flag. AO2 shows or
+// hides ui_pair_button / ui_immediate / ui_ic_chat_name together on it
+// (courtroom.cpp:747-759); a toggle for a field the wire drops is a control that
+// silently does nothing.
+func (a *App) sessHasCCCC() bool {
+	return a.sess != nil && a.sess.Features.Has(protocol.FeatureCCCCIC)
+}
+
 // themedSwatchW is the colour swatch's width inside AO2's text_color rect. AO2
 // draws no separate swatch — its combo box tints itself — but AsyncAO's free-hex
 // wheel anchors on one (icSwatchRect), so the swatch takes a fixed bite off the
@@ -926,7 +935,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// immediate (AO2 ui_immediate, courtroom.cpp:1072-1084 — it reads "immediate"
 	// first and falls back to "pre_no_interrupt"; aceattorney2x declares only the
 	// latter, which is exactly why the alt spelling has to be probed).
-	if r, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); ok {
+	//
+	// Gated on cccc_ic_support: the Immediate FIELD only exists on the 2.6 wire, so
+	// AO2 hides ui_immediate (with ui_pair_button and ui_ic_chat_name) when the
+	// server does not advertise it (courtroom.cpp:747-759). Offering the toggle on
+	// a server that drops the field is a control that silently does nothing.
+	if r, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); ok && a.sessHasCCCC() {
 		a.icImmediate = c.CheckboxIn(r, lay.themedToggleLabel("immediate", "Immediate"), a.icImmediate)
 		c.Tooltip(r, "Immediate: the preanim plays without holding back the text")
 	}
@@ -1003,8 +1017,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// sends on the NEXT message; the send site clears them (courtroom.cpp:2328).
 	// Bordered while armed, which is how the evidence chip already signals the same
 	// "rides your next line" state.
+	// Drawn through drawThemeButton so the theme's own realization.png /
+	// screenshake.png is used where it ships one (AO2 setImage, courtroom.cpp:1109
+	// and :1114) — these are 42x42 ICON rects, and a text chip in one is the
+	// AsyncAO-inside-an-AO2-rect the parity rule exists to stop. drawThemeButton
+	// falls back to a text chip when the art is missing, which is AOButton's own
+	// behaviour, so a theme without the files still gets a usable control.
 	if r, ok := themedToggleRect(lay, "realization", "", ""); ok {
-		if c.Button(r, "Flash") {
+		if a.drawThemeButton("realization", "Flash", r) {
 			a.icRealize = !a.icRealize
 		}
 		if a.icRealize {
@@ -1013,7 +1033,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		c.Tooltip(r, "Realization: a white flash + sound on your next message. Clears after it sends.")
 	}
 	if r, ok := themedToggleRect(lay, "screenshake", "", ""); ok {
-		if c.Button(r, "Shake") {
+		if a.drawThemeButton("screenshake", "Shake", r) {
 			a.icShake = !a.icShake
 		}
 		if a.icShake {

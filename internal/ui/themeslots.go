@@ -178,8 +178,8 @@ var themeSlots = [...]themeSlot{
 	{key: "objection", art: []string{"objection"}, phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1001
 	{key: "take_that", art: []string{"takethat"}, phase: phasePanels, state: slotStateHandDrawn},      // courtroom.cpp:1007
 	{key: "custom_objection", art: []string{"custom"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1100
-	{key: "realization", phase: phasePanels, state: slotStateHandDrawn},                               // courtroom.cpp:1108
-	{key: "screenshake", phase: phasePanels, state: slotStateHandDrawn},                               // courtroom.cpp:1113
+	{key: "realization", art: []string{"realization"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1108
+	{key: "screenshake", art: []string{"screenshake"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1113
 	{key: "mute_button", phase: phasePanels, state: slotStateInert},                                   // courtroom.cpp:1117
 	{key: "witness_testimony", art: []string{"witnesstestimony"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "cross_examination", art: []string{"crossexamination"}, phase: phasePanels, state: slotStateHandDrawn},

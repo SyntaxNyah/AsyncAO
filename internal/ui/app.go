@@ -4844,6 +4844,14 @@ const fontFileMaxBytes = 64 << 20
 // else the manual font-path chain (read off-thread), else the built-in font.
 // Called at launch and on every change to either source.
 func (a *App) applyFontConfig() {
+	// The themed layout bakes each AO2 toggle's label truncated against the CHROME
+	// face (themeLayoutCache.toggleLabel), and the cache key knows nothing about
+	// fonts. Changing the face without this leaves every label measured against the
+	// old one until an unrelated resize or theme apply: LabelClipped then hard-cuts
+	// mid-glyph where the new face is wider, or shows a needless ellipsis where it
+	// is narrower. Theme applies already invalidate; this covers the font sources.
+	defer a.invalidateThemeCanvases()
+
 	switch fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) {
 	case fontSourceDyslexia:
 		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})

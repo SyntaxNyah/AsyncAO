@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
 // The themed IC bar is AO2's own (#21, the issue's headline complaint).
@@ -164,6 +167,53 @@ func TestAceAttorney2xUsesTheAltImmediateSpelling(t *testing.T) {
 	lay := fixtureLayout(t)
 	if _, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); !ok {
 		t.Error("the Immediate toggle resolved nothing — AO2 falls back to pre_no_interrupt (courtroom.cpp:1072-1084)")
+	}
+}
+
+// TestImmediateIsGatedOnCCCC pins AO2's own gate. The immediate flag only exists
+// on the 2.6 wire, so AO2 shows ui_immediate — together with ui_pair_button and
+// ui_ic_chat_name — only when the server advertises cccc_ic_support, and hides all
+// three otherwise (courtroom.cpp:747-759). Offering the toggle on a server that
+// drops the field is a control that silently does nothing.
+func TestImmediateIsGatedOnCCCC(t *testing.T) {
+	a := &App{}
+	if a.sessHasCCCC() {
+		t.Error("a nil session must not report CCCC support")
+	}
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	if a.sessHasCCCC() {
+		t.Error("a session with no advertised features must not report CCCC support")
+	}
+	a.sess.Features = protocol.ParseFeatures([]string{protocol.FeatureCCCCIC})
+	if !a.sessHasCCCC() {
+		t.Error("a server advertising cccc_ic_support must report it")
+	}
+}
+
+// TestShoutAdjacentIconsUseThemeArt pins that realization and screenshake resolve
+// the theme's own art rather than painting an AsyncAO text chip into a 42x42 AO2
+// icon rect. AO2 loads them with setImage (courtroom.cpp:1109, :1114); a text chip
+// there is exactly the AsyncAO-inside-an-AO2-rect the parity rule exists to stop.
+// drawThemeButton still falls back to a chip when the file is absent, which is
+// AOButton's own behaviour.
+func TestShoutAdjacentIconsUseThemeArt(t *testing.T) {
+	stems := themeButtonStems()
+	for _, key := range []string{"realization", "screenshake"} {
+		got, ok := stems[key]
+		if !ok {
+			t.Errorf("%q has no art stem — it would draw a text chip in an AO2 icon rect", key)
+			continue
+		}
+		if len(got) == 0 || got[0] != key {
+			t.Errorf("%q art stems = %v, want the AO2 file name first", key, got)
+		}
+	}
+	// And the draw site must actually route through the art path.
+	src := readSourceFile(t, "theme_layout.go")
+	for _, want := range []string{`a.drawThemeButton("realization"`, `a.drawThemeButton("screenshake"`} {
+		if !strings.Contains(src, want) {
+			t.Errorf("the draw site does not call %s — the art stem would never be used", want)
+		}
 	}
 }
 
