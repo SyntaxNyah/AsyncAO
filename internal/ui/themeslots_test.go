@@ -253,21 +253,47 @@ func TestThemeSlotRelSpaces(t *testing.T) {
 	}
 }
 
-// TestMsChatlogIsTheDebugLog pins the one deliberate behaviour change in the
-// registry commit. AO2 places the DEBUG log at ms_chatlog — set_size_and_pos(
-// ui_debug_log, "ms_chatlog"); // Old name, still use it to not break compatibility
-// (AO2-Client courtroom.cpp:831) — and the server chatlog at its own key (:834).
-// Treating ms_chatlog as a server_chatlog alias drew the OOC log in the debug log's
-// box. It must stay ingested (so the key is not "unbound") but inert.
+// TestMsChatlogIsTheDebugLog pins that ms_chatlog is the DEBUG log, not a
+// server_chatlog alias. AO2: set_size_and_pos(ui_debug_log, "ms_chatlog"); //
+// Old name, still use it to not break compatibility (AO2-Client courtroom.cpp:831),
+// with the server chatlog at its own key (:834). Treating the two as one drew the
+// OOC log in the debug log's box.
+//
+// The row started INERT — ingested so the key wasn't reported unbound, but with
+// nothing painting it. It is now hand-drawn: drawThemedDebugLog paints the failure
+// ring there, and ooc_toggle swaps the two panels per on_ooc_toggle_clicked (:5197).
 func TestMsChatlogIsTheDebugLog(t *testing.T) {
 	s := themeSlotFor("ms_chatlog")
 	if s == nil {
 		t.Fatal("ms_chatlog lost its row — it would be reported as an unbound key")
 	}
-	if s.state != slotStateInert {
-		t.Errorf("ms_chatlog state = %d, want inert until the debug log is bound to it", s.state)
+	if s.state != slotStateHandDrawn {
+		t.Errorf("ms_chatlog state = %d, want hand-drawn (drawThemedDebugLog paints it)", s.state)
 	}
-	if themeKeyEditable("ms_chatlog") {
-		t.Error("ms_chatlog is editable but nothing paints it — a ghost box")
+	if !themeKeyEditable("ms_chatlog") {
+		t.Error("ms_chatlog draws a real panel, so the layout editor must offer a drag box for it")
+	}
+	// The button that swaps it in must be drawn too, or the debug log is unreachable.
+	if tg := themeSlotFor("ooc_toggle"); tg == nil || tg.state != slotStateHandDrawn {
+		t.Error("ooc_toggle must be hand-drawn — without the button nothing can reach the debug log")
+	}
+}
+
+// TestOOCToggleLabelNamesTheVisiblePanel pins the direction of AO2's label, which
+// is the easy thing to invert: ui_ooc_toggle reads "Server" WHILE server chat is
+// showing (courtroom.cpp:1014) and flips to "Debug" once the debug log is up
+// (:5203). It names what you are looking at, not what clicking will do.
+//
+// It also pins the zero value. debugOOC is stored inverted from AO2's server_ooc
+// precisely so a fresh sessionState needs no seeding — a default-true field that
+// resetSessionState forgets is a standing bug class in this package.
+func TestOOCToggleLabelNamesTheVisiblePanel(t *testing.T) {
+	var s sessionState
+	if got := s.oocToggleLabel(); got != "Server" {
+		t.Errorf("a fresh session must open on server chat and read %q, got %q", "Server", got)
+	}
+	s.debugOOC = true
+	if got := s.oocToggleLabel(); got != "Debug" {
+		t.Errorf("with the debug log showing the button must read %q, got %q", "Debug", got)
 	}
 }

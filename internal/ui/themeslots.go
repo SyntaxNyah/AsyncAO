@@ -127,10 +127,10 @@ var themeSlots = [...]themeSlot{
 	// ---- phasePanels: logs and OOC ------------------------------------------
 	{key: "ic_chatlog", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:827
 	{key: "server_chatlog", phase: phasePanels, state: slotStateHandDrawn},   // courtroom.cpp:834
-	{key: "ms_chatlog", phase: phasePanels, state: slotStateInert},           // courtroom.cpp:831 — the DEBUG log, not a server_chatlog alias
+	{key: "ms_chatlog", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:831 — the DEBUG log, not a server_chatlog alias
 	{key: "ooc_chat_message", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:918
 	{key: "ooc_chat_name", phase: phasePanels, state: slotStateHandDrawn},    // courtroom.cpp:920
-	{key: "ooc_toggle", phase: phasePanels, state: slotStateInert},           // courtroom.cpp:1013
+	{key: "ooc_toggle", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:1013 — swaps server_chatlog <-> the ms_chatlog debug log
 
 	// ---- phasePanels: the jukebox -------------------------------------------
 	{key: "music_list", phase: phasePanels, state: slotStateHandDrawn},                   // courtroom.cpp:864 (areas) + :867 (music) — ONE rect, two widgets

@@ -814,8 +814,28 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	} else if okIC && !a.panelHidden(panelLog) {
 		a.drawICLogList(insetThemedBody(icRect))
 	}
-	if okOOC && !merged && !a.panelHidden(panelOOC) {
+	// ooc_toggle swaps the server chat panel for the debug log, exactly as AO2
+	// does (on_ooc_toggle_clicked, courtroom.cpp:5197). The debug log draws at
+	// ms_chatlog — AO2's kept-for-compatibility key for ui_debug_log (:831) — and
+	// a theme declaring only one of the two rects gets only that panel, per
+	// set_size_and_pos's hide-when-missing rule.
+	dbgRect, okDbg := lay.rect("ms_chatlog")
+	showDebug := a.debugOOC && okDbg
+	if okOOC && !merged && !showDebug && !a.panelHidden(panelOOC) {
 		a.drawOOCLogList(insetThemedBody(oocRect))
+	}
+	if showDebug && !a.panelHidden(panelOOC) {
+		a.drawThemedDebugLog(insetThemedBody(dbgRect))
+	}
+	if tr, ok := lay.rect("ooc_toggle"); ok && !a.panelHidden(panelOOC) {
+		// The label names the panel currently ON SCREEN, not what the click will do
+		// (AO2 writes "Server" while server chat is up, courtroom.cpp:1014). The
+		// button is inert without an ms_chatlog rect: with nowhere to draw the debug
+		// log, toggling would just blank the panel.
+		if c.Button(tr, a.oocToggleLabel()) && okDbg {
+			a.debugOOC = !a.debugOOC
+			a.debugOOCScroll = 0
+		}
 	}
 	// OOC inputs draw wherever the theme put them — independent of how
 	// the log rects resolved (merged tabs still need a send box).
