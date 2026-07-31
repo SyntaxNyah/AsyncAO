@@ -15,7 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // stockChatboxRects is AO2's shipped `default` theme, the same source
-// ao2DefaultDesignRects (wholescreenalloc_test.go) is transcribed from:
+// ao2DefaultDesignRects (ao2defaultrects.go) is transcribed from:
 //
 //	ao2_chatbox = 0, 114, 256, 78
 //	showname    = 1, 0, 46, 15

@@ -145,6 +145,103 @@ func TestAceAttorney2xEveryRectIsAccountedFor(t *testing.T) {
 	}
 }
 
+// TestAO2DefaultRectsCoverEveryBoundSlot pins the fallback tier's completeness.
+// It is what makes "a missing rect draws nothing" survivable: a theme that
+// declares only courtroom+viewport must still resolve a whole AO2 courtroom,
+// because AO2 itself falls through to its bundled base/themes/default and a
+// streaming client has no such tree on disk.
+//
+// The three exemptions are stated, not silent: player_list is absent from AO2's
+// own stock file, the asyncao_* opt-ins are AsyncAO's and have no AO2 default,
+// and "immediate" is spelled pre_no_interrupt there (the row carries both).
+func TestAO2DefaultRectsCoverEveryBoundSlot(t *testing.T) {
+	var missing []string
+	for i := range themeSlots {
+		s := &themeSlots[i]
+		if s.key == "player_list" || strings.HasPrefix(s.key, "asyncao_") {
+			continue
+		}
+		if _, ok := ao2DefaultDesignRects[s.key]; ok {
+			continue
+		}
+		if s.alt != "" {
+			if _, ok := ao2DefaultDesignRects[s.alt]; ok {
+				continue
+			}
+		}
+		missing = append(missing, s.key)
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("%d bound slot(s) have no AO2 stock default, so a theme omitting them draws nothing: %v",
+			len(missing), missing)
+	}
+	// Every default must be a real rect — a zero-size fallback would resolve and
+	// then paint nothing, which is worse than not resolving at all.
+	for k, r := range ao2DefaultDesignRects {
+		if r.W <= 0 || r.H <= 0 {
+			t.Errorf("ao2DefaultDesignRects[%q] = %+v has no area", k, r)
+		}
+		if themeSlotFor(k) == nil {
+			t.Errorf("ao2DefaultDesignRects[%q] has no themeSlots row — nothing reads it", k)
+		}
+	}
+}
+
+// TestAO2DefaultRectsBackstopAPartialTheme drives the tier the way the ingest
+// does: a theme declaring only the two mandatory keys still resolves a whole
+// courtroom.
+func TestAO2DefaultRectsBackstopAPartialTheme(t *testing.T) {
+	layout := map[string]theme.Rect{
+		ao2CanvasKey:   {X: 0, Y: 0, W: 944, H: 600}, // this theme's own canvas
+		ao2ViewportKey: {X: 216, Y: 0, W: 512, H: 384},
+	}
+	applyAO2DefaultRects(layout)
+
+	// The IC bar, the shouts and the chatbox children must all be there, or a
+	// sparse theme renders as an empty canvas under the parity rule.
+	for _, k := range []string{"ao2_ic_chat_message", "ao2_chatbox", "showname", "message", "hold_it", "emotes", "text_color", "pre"} {
+		if r, ok := layout[k]; !ok || r.W <= 0 {
+			t.Errorf("a partial theme did not resolve %q (%+v ok=%v)", k, r, ok)
+		}
+	}
+	// The theme's OWN declaration always wins over the default.
+	if got := layout[ao2CanvasKey]; got != (theme.Rect{X: 0, Y: 0, W: 944, H: 600}) {
+		t.Errorf("the default overrode the theme's own canvas: %+v", got)
+	}
+}
+
+// TestAO2DefaultRectsNeverInventACanvas is the load-bearing half. The stock table
+// declares courtroom AND viewport, and themeLayoutIn validates on exactly that
+// pair — so an UNGATED fill would hand a themed 714x579 layout to every user
+// whose theme directory has no courtroom_design.ini at all. The backstop
+// reproduces AO2's per-key fallback for a theme that HAS a design INI; it must
+// never manufacture one.
+func TestAO2DefaultRectsNeverInventACanvas(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		layout map[string]theme.Rect
+	}{
+		{"no design INI at all", map[string]theme.Rect{}},
+		{"a canvas but no viewport", map[string]theme.Rect{ao2CanvasKey: {W: 944, H: 600}}},
+		{"a viewport but no canvas", map[string]theme.Rect{ao2ViewportKey: {W: 512, H: 384}}},
+		{"some other key only", map[string]theme.Rect{"hold_it": {W: 76, H: 28}}},
+	} {
+		layout := map[string]theme.Rect{}
+		for k, v := range tc.layout {
+			layout[k] = v
+		}
+		applyAO2DefaultRects(layout)
+		if len(layout) != len(tc.layout) {
+			t.Errorf("%s: backstop added %d key(s) — it manufactured a themed layout for a user who has none",
+				tc.name, len(layout)-len(tc.layout))
+		}
+		if _, ok := layout[ao2CanvasKey]; ok && tc.layout[ao2CanvasKey] == (theme.Rect{}) {
+			t.Errorf("%s: the backstop invented a canvas", tc.name)
+		}
+	}
+}
+
 // TestAceAttorney2xFontDeclarations pins what the typography commits have to
 // honour, read off the checked-in courtroom_fonts.ini rather than a memory of it.
 // FOUR families, not three: evidence_description_font = Times New Roman is a

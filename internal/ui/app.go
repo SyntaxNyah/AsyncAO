@@ -8289,12 +8289,16 @@ func (a *App) applyThemeAsync() uint64 {
 			// Courtroom geometry (the part that makes a theme LOOK like
 			// itself): rects in design-space pixels, plus the emote grid
 			// cell metrics.
-			res.layout = map[string]theme.Rect{}
+			res.layout = make(map[string]theme.Rect, len(themeLayoutKeys))
 			for _, key := range themeLayoutKeys {
 				if r, ok := t.ElementRect(key); ok {
 					res.layout[key] = r
 				}
 			}
+			// Then AO2's own per-key fallback (#21). Must run BEFORE the unbound
+			// report below, or that report would describe a layout the client
+			// never actually used.
+			applyAO2DefaultRects(res.layout)
 			// Unbound-key report (#21), to the DEBUG LOG and never to the player's
 			// screen. AO2 does the same thing inverted: set_size_and_pos qWarns for
 			// every identifier the THEME is silent about (courtroom.cpp:1336), while

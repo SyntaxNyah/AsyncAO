@@ -196,55 +196,6 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 	}
 }
 
-// ao2DefaultDesignRects is AO2's stock `default` theme courtroom_design.ini,
-// transcribed verbatim from AO2-Client/bin/base/themes/default/courtroom_design.ini
-// (courtroom :3, viewport :11, ic_chatlog :14, ms_chatlog/server_chatlog :17/:20,
-// ooc_chat_message :24, ooc_chat_name :27, music_list :38, emotes :62,
-// hold_it/objection/take_that :91-93, custom_objection :100, pos_dropdown :105,
-// the judge strip — defense/prosecution ± :126-129 and witness_testimony /
-// cross_examination :132-133 — call_mod :138, ao2_ic_chat_name :170,
-// pair_button :205, ao2_chatbox :243, showname :250, message :274,
-// ao2_ic_chat_message :284, evidence_button :304).
-//
-// It is a TABLE, not a pile of magic numbers: the point of the themed gate is
-// that the geometry it measures is the geometry real players run, so inventing
-// rects would gate a layout nobody has. `courtroom` + `viewport` are the two
-// keys themeLayout() requires (theme_layout.go), and the rest are picked to make
-// every always-drawn themed region resolve: the merged/split chatlogs, the OOC
-// inputs, the music/areas/players panel, the whole IC control row, the shout and
-// judge button strips, the emote grid, and the chatbox with its chatbox-relative
-// showname/message children.
-var ao2DefaultDesignRects = map[string]theme.Rect{
-	"courtroom":           {X: 0, Y: 0, W: 714, H: 579},
-	"viewport":            {X: 0, Y: 0, W: 256, H: 192},
-	"ic_chatlog":          {X: 260, Y: 0, W: 231, H: 220},
-	"ms_chatlog":          {X: 490, Y: 1, W: 224, H: 277},
-	"server_chatlog":      {X: 490, Y: 1, W: 224, H: 277},
-	"ooc_chat_message":    {X: 492, Y: 281, W: 222, H: 19},
-	"ooc_chat_name":       {X: 492, Y: 300, W: 85, H: 19},
-	"music_list":          {X: 490, Y: 342, W: 224, H: 236},
-	"emotes":              {X: 5, Y: 253, W: 490, H: 98},
-	"hold_it":             {X: 10, Y: 221, W: 76, H: 28},
-	"objection":           {X: 90, Y: 221, W: 76, H: 28},
-	"take_that":           {X: 170, Y: 221, W: 76, H: 28},
-	"custom_objection":    {X: 250, Y: 221, W: 76, H: 28},
-	"pos_dropdown":        {X: 222, Y: 380, W: 60, H: 20},
-	"witness_testimony":   {X: 290, Y: 380, W: 85, H: 42},
-	"cross_examination":   {X: 290, Y: 425, W: 85, H: 42},
-	"defense_plus":        {X: 183, Y: 476, W: 9, H: 9},
-	"defense_minus":       {X: 5, Y: 476, W: 9, H: 9},
-	"prosecution_plus":    {X: 183, Y: 492, W: 9, H: 9},
-	"prosecution_minus":   {X: 5, Y: 492, W: 9, H: 9},
-	"call_mod":            {X: 104, Y: 547, W: 64, H: 23},
-	"pair_button":         {X: 104, Y: 425, W: 42, H: 42},
-	"evidence_button":     {X: 627, Y: 322, W: 85, H: 18},
-	"ao2_ic_chat_name":    {X: 200, Y: 444, W: 78, H: 23},
-	"ao2_ic_chat_message": {X: 0, Y: 192, W: 256, H: 23},
-	"ao2_chatbox":         {X: 0, Y: 114, W: 256, H: 78},
-	"showname":            {X: 1, Y: 0, W: 46, H: 15},
-	"message":             {X: 10, Y: 13, W: 242, H: 57},
-}
-
 // stageThemedCourtroom is stageSettledCourtroom plus the theme geometry that
 // makes screens.go dispatch to drawCourtroomThemed instead of the classic path.
 // The classic gates never reach that function: their fixture leaves themeRects
