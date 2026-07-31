@@ -1247,6 +1247,29 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.showModcall = true
 		}
 	}
+	// The three utility buttons AO2 puts beside Call Mod. Labels match AO2's own
+	// setText so a theme with no art still reads the same (courtroom.cpp:1036-1056),
+	// and each action is the one the equivalent hotkey already runs — these are
+	// bindings, not second implementations.
+	if r, ok := lay.rect("change_character"); ok {
+		if a.drawThemeButton("change_character", "Change character", r) {
+			a.screen = ScreenCharSelect // hotkeyCharMenu (qol.go)
+		}
+	}
+	if r, ok := lay.rect("reload_theme"); ok {
+		if a.drawThemeButton("reload_theme", "Reload theme", r) {
+			// applyThemeAsync alone: pollThemeApply refreshes the rects and
+			// invalidates the canvases when the apply lands, so re-deriving
+			// anything here would race its own result.
+			a.applyThemeAsync()
+		}
+	}
+	if r, ok := lay.rect("settings"); ok {
+		if a.drawThemeButton("settings", "Settings", r) {
+			a.prevScreen = ScreenCourtroom // hotkeySettings, so Back returns to the room
+			a.screen = ScreenSettings
+		}
+	}
 	evLabel := "Evidence"
 	if a.evidPresent {
 		evLabel = "Evidence ●"

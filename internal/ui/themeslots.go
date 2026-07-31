@@ -193,9 +193,9 @@ var themeSlots = [...]themeSlot{
 	{key: "prosecution_minus", art: []string{"prominus"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1135 setImage("prominus")
 	{key: "pair_button", art: []string{"pair_button"}, phase: phasePanels, state: slotStateHandDrawn},    // courtroom.cpp:861 setImage("pair_button")
 	{key: "call_mod", art: []string{"call_mod", "callmod"}, phase: phasePanels, state: slotStateHandDrawn},
-	{key: "change_character", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:1036
-	{key: "reload_theme", phase: phasePanels, state: slotStateInert},     // courtroom.cpp:1041
-	{key: "settings", phase: phasePanels, state: slotStateInert},         // courtroom.cpp:1051
+	{key: "change_character", art: []string{"change_character"}, phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:1038 setImage("change_character")
+	{key: "reload_theme", art: []string{"reload_theme"}, phase: phasePanels, state: slotStateHandDrawn},               // courtroom.cpp:1043 setImage("reload_theme")
+	{key: "settings", art: []string{"courtroom_settings", "settings"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1053-1057: courtroom_settings, then the pre-2.10 "settings"
 
 	// ---- phasePanels: emotes, evidence icons, clocks ------------------------
 	{key: "emotes", phase: phasePanels, state: slotStateHandDrawn},                                    // emotes.cpp:45

@@ -428,6 +428,12 @@ func TestButtonArtStemsMatchAO2(t *testing.T) {
 		"prosecution_plus":  {[]string{"proplus"}, "courtroom.cpp:1131"},
 		"prosecution_minus": {[]string{"prominus"}, "courtroom.cpp:1135"},
 		"pair_button":       {[]string{"pair_button"}, "courtroom.cpp:861"},
+		"change_character":  {[]string{"change_character"}, "courtroom.cpp:1038"},
+		"reload_theme":      {[]string{"reload_theme"}, "courtroom.cpp:1043"},
+		// AO2 probes courtroom_settings and only falls back to the pre-2.10 "settings"
+		// when that icon comes back null (courtroom.cpp:1053-1057), so the order is
+		// INVERTED relative to the design key and easy to write backwards.
+		"settings": {[]string{"courtroom_settings", "settings"}, "courtroom.cpp:1053"},
 		// Upstream's current spelling first, the pre-2.9 one as fallback.
 		"evidence_button": {[]string{"evidence_button", "evidencebutton"}, "evidence.cpp:103"},
 	}
