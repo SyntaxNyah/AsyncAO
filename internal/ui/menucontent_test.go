@@ -114,14 +114,30 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 	}
 }
 
-// TestLobbyUtilRowShedTheMigratedButtons is the other half of the migration: the
-// cluster that used to carry seven buttons keeps exactly one, and every command that
-// left has a home in the bar. Without this the "row" and the "menu" could both grow
-// their own copy of a button and nobody would notice.
-func TestLobbyUtilRowShedTheMigratedButtons(t *testing.T) {
+// TestLobbyListActionsAreOnTheLobby pins where the SERVER-LIST actions live.
+//
+// Refresh and the connect-time sort came back out of the menu by request: they act
+// on the server list, so a menu carrying them is dead weight the moment you are in
+// a server, and a refresh button belongs beside the thing it refreshes. The
+// cluster's count MUST match the number of cursor steps drawLobby takes, because
+// that constant is what turns "does the row fit?" into arithmetic instead of a
+// measured pass.
+//
+// Both surfaces survive on purpose and call the same setters, so they cannot
+// drift — this test is what stops one of them quietly growing a second copy.
+func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
+	// The HEADER cluster keeps exactly one button. Refresh and Sort deliberately do
+	// NOT join it: that row is shared with the Privacy/Glossary/What's New trio, and
+	// three buttons there squeezed the trio to nothing at MinWindowW — which would
+	// strand What's New, whose only other home is that row. They live on the list's
+	// own strip instead. TestLobbyHeaderRowSheds... is what caught that.
 	if lobbyUtilBtnCount != 1 {
-		t.Errorf("the lobby utility cluster lays out %d buttons, want 1 (Phone Book, whose label is the page's way back)", lobbyUtilBtnCount)
+		t.Errorf("the header cluster lays out %d buttons, want 1 — Refresh/Sort belong on the list strip", lobbyUtilBtnCount)
 	}
+	if !strings.Contains(readSourceFile(t, "screens.go"), "lobbyListActionsDropY") {
+		t.Error("the server list's action strip is gone — Refresh/Sort would be menu-only again")
+	}
+	// Still reachable from the menu, for the keyboard and for muscle memory.
 	for _, tc := range []struct{ menuTitle, label string }{
 		{menuServersTitle, "Refresh server list"},
 		{menuServersTitle, "Sort by connect time"},
@@ -131,6 +147,16 @@ func TestLobbyUtilRowShedTheMigratedButtons(t *testing.T) {
 		{menuHelpTitle, "Chat logs"},
 	} {
 		menuRow(t, tc.menuTitle, tc.label) // fatals when the row is missing
+	}
+	// The Servers menu keeps only what is useful FROM a server. Anything else there
+	// is the dead weight this change set out to remove.
+	for _, row := range menuServersItems {
+		switch row.label {
+		case "Disconnect", "Quit AsyncAO", "Direct connect…",
+			"Refresh server list", "Sort by connect time", "Phone Book", "":
+		default:
+			t.Errorf("unexpected Servers row %q — decide whether it is lobby-only and move it", row.label)
+		}
 	}
 }
 

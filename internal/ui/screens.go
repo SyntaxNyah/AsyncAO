@@ -112,11 +112,27 @@ const (
 	lobbyUtilBtnMinW int32 = 64
 	// lobbyUtilBtnCount is how many buttons the cluster lays out. It MUST match the
 	// number of cursor steps in drawLobby; it is what turns "does the row fit?" into
-	// arithmetic instead of a measured pass. One, now that the other six live in the
-	// menu bar — the shared-width shrink below is therefore inert at every window
-	// size the client can be, and is kept only so the row cannot regress if an entry
-	// ever comes back.
+	// arithmetic instead of a measured pass.
+	//
+	// One. Refresh and the connect-time sort came back from the Servers menu by
+	// request, but NOT to this cluster: it shares the header row with the
+	// Privacy/Glossary/What's New trio, and three utility buttons squeezed that row
+	// to nothing at config.MinWindowW — which would strand What's New, whose only
+	// other home is that row. They sit on their own strip above the server list
+	// instead, which is both where they act and out of the header's way.
 	lobbyUtilBtnCount int32 = 1
+	// lobbyDirectRowDropY is how far below the header the direct-connect row sits;
+	// lobbyListActionsDropY is how far below THAT the server list's own action strip
+	// (Refresh / Sort) sits; lobbyListActionW is each button's width there. The
+	// strip owns the full window width, so unlike the header cluster it needs no
+	// shrink ladder. Named so lobbyListTop can be the single source both drawLobby
+	// and its tests read — the star-remove test used to duplicate this arithmetic
+	// as a literal and broke the moment the strip pushed the list down.
+	lobbyDirectRowDropY   int32 = 56
+	lobbyListActionsDropY int32 = 34
+	lobbyListActionW      int32 = 110
+	// lobbyListActionsGapY is the breathing room under the action strip.
+	lobbyListActionsGapY int32 = 8
 	// directConnectFieldID is the lobby's direct-connect TextField id. Named because
 	// the Servers menu focuses it by id from outside this file, and FocusField
 	// silently drops an id nothing draws.
@@ -238,6 +254,16 @@ func lobbyUtilStop(w, i int32) int32 {
 		return pad
 	}
 	return x
+}
+
+// lobbyDirectRowY and lobbyListTop derive the lobby's two lower rows from the
+// chrome band, so drawLobby and its tests read ONE source. The star-remove test
+// used to re-derive the list's top as a literal `(topChromeH+pad+56)+40` and broke
+// the moment the list's action strip pushed it down — a duplicated layout constant
+// is a test that fails for the wrong reason.
+func lobbyDirectRowY(topChrome int32) int32 { return topChrome + pad + lobbyDirectRowDropY }
+func lobbyListTop(topChrome int32) int32 {
+	return lobbyDirectRowY(topChrome) + lobbyListActionsDropY + btnH + lobbyListActionsGapY
 }
 
 func (a *App) drawLobby(w, h int32) {
@@ -364,7 +390,7 @@ func (a *App) drawLobby(w, h int32) {
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
-	dcY := hdrY + 56
+	dcY := lobbyDirectRowY(a.topChromeH())
 	if a.phoneBookPage {
 		a.drawPhoneBookBar(w, dcY)
 	} else {
@@ -385,10 +411,49 @@ func (a *App) drawLobby(w, h int32) {
 		}
 	}
 
+	// The server list's own action strip. Refresh and the connect-time sort came
+	// back out of the Servers menu by request: they act on the LIST, so a menu
+	// carrying them is dead weight the moment you are in a server, and a refresh
+	// button belongs beside the thing it refreshes.
+	//
+	// They sit HERE rather than in the header's utility cluster because that
+	// cluster shares its row with the Privacy/Glossary/What's New trio; three
+	// buttons there squeezed the trio to nothing at config.MinWindowW, and What's
+	// New has no other home. This strip has the full window width to itself.
+	//
+	// Both still exist as Servers-menu rows and call the same setters, so the two
+	// surfaces cannot drift. The LABEL carries the in-flight state rather than the
+	// button grey­ing or vanishing: a control that disappears under the cursor
+	// mid-click is worse than one that says what it is doing, and the click is
+	// guarded on the same predicate the menu row's `enabled` uses.
+	listActY := dcY + lobbyListActionsDropY
+	refreshLabel := "Refresh"
+	if a.lobbyFetching {
+		refreshLabel = "Refreshing…"
+	}
+	refreshBtn := sdl.Rect{X: pad, Y: listActY, W: lobbyListActionW, H: btnH}
+	if c.Button(refreshBtn, refreshLabel) && !a.lobbyFetching {
+		a.RefreshServers()
+	}
+	c.Tooltip(refreshBtn, "Re-fetch the master server list")
+
+	sortLabel := "Sort: name"
+	if a.pingMode {
+		sortLabel = "Sort: speed"
+	}
+	if a.pinging {
+		sortLabel = "Pinging…"
+	}
+	sortBtn := sdl.Rect{X: pad + lobbyListActionW + lobbyUtilBtnGap, Y: listActY, W: lobbyListActionW, H: btnH}
+	if c.Button(sortBtn, sortLabel) && !a.pinging {
+		a.toggleConnectTimeSort()
+	}
+	c.Tooltip(sortBtn, "Order the list by how fast each server answers, instead of by name")
+
 	// Server rows. Click once: expand the full description under the
 	// row; click the selected row again: join (Join button still works).
 	// Wheel scrolls only over the list itself (never the connect row).
-	listTop := dcY + 40
+	listTop := lobbyListTop(a.topChromeH())
 	a.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
 	if a.lobbyScroll < 0 {
 		a.lobbyScroll = 0

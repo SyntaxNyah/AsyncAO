@@ -117,9 +117,13 @@ func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
 		helpBtnCount    = int32(3)
 		headerTitleZone = int32(180)
 	)
-	// shedCount replays drawLobby's loop for a given logical window width.
+	// shedCount replays drawLobby's loop for a given logical window width. utilLeft
+	// comes from the REAL lobbyUtilStop, not a hand-rolled `w - btnW - pad`: the
+	// cluster is three buttons wide now and shrinks its own width when squeezed, so
+	// a hand-rolled edge would model a lobby that does not exist and pass while the
+	// real header overlapped.
 	shedCount := func(w int32) (shown int32, x, bw int32) {
-		utilLeft := w - lobbyUtilBtnW - 8 // pad
+		utilLeft := lobbyUtilStop(w, lobbyUtilBtnCount-1)
 		titleRight := int32(8) + headerTitleZone
 		for shown = helpBtnCount; shown > 0; shown-- {
 			gaps := helpBtnGap * (shown - 1)
@@ -157,7 +161,7 @@ func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
 		{"very narrow", 400, true},
 	} {
 		shown, x, bw := shedCount(tc.w)
-		utilLeft := tc.w - lobbyUtilBtnW - 8
+		utilLeft := lobbyUtilStop(tc.w, lobbyUtilBtnCount-1)
 		rowW := bw*shown + helpBtnGap*(shown-1)
 		if shown > 0 && x+rowW > utilLeft {
 			t.Errorf("%s (lw=%d): row spans to %d, past the utility cluster at %d — it would click through Phone Book",

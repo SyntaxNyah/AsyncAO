@@ -58,7 +58,9 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	// Point the mouse at row 0's ★ and arm a left-click release. The ★ handler is
 	// a plain `hovering(star) && c.clicked` (not ClickedIn), so setting the
 	// logical mouse + clicked directly is enough — no down/up event replay needed.
-	listTop := (a.topChromeH() + pad + 56) + 40
+	// The SAME helper drawLobby uses. This was a duplicated literal and broke the
+	// moment the list's Refresh/Sort strip pushed the list down.
+	listTop := lobbyListTop(a.topChromeH())
 	ctx.mouseX, ctx.mouseY = pad+22+11, listTop+2+(rowH-6)/2
 	ctx.clicked = true
 
