@@ -111,6 +111,13 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 		Height:   target,
 		Frames:   make([]*image.RGBA, 0, len(d.Frames)),
 		Delays:   d.Delays,
+		// Carried, not dropped: a downscale resizes PIXELS and never removes a
+		// frame, so the source frame space is unchanged. Rebuilding the struct
+		// without it left SourceFrames at 0, and FrameKeepIndex reads a
+		// non-positive sourceTotal as "no decimation happened" and returns the
+		// identity — silently mis-mapping #17 networked frame effects on any
+		// animation that was BOTH decimated and downscaled.
+		SourceFrames: d.SourceFrames,
 	}
 	for _, frame := range d.Frames {
 		small, token := newPooledRGBA(target, target)
@@ -142,11 +149,12 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 		newW = 1
 	}
 	out := &Decoded{
-		Animated: d.Animated,
-		Width:    newW,
-		Height:   maxH,
-		Frames:   make([]*image.RGBA, 0, len(d.Frames)),
-		Delays:   d.Delays,
+		Animated:     d.Animated,
+		Width:        newW,
+		Height:       maxH,
+		Frames:       make([]*image.RGBA, 0, len(d.Frames)),
+		Delays:       d.Delays,
+		SourceFrames: d.SourceFrames, // see downscaleDecoded: pixels shrink, the frame space does not
 	}
 	for _, frame := range d.Frames {
 		small, token := newPooledRGBA(newW, maxH)

@@ -555,3 +555,73 @@ func TestDecoderThumbnailsFixedCellTypes(t *testing.T) {
 	}
 	exact.Release()
 }
+
+// TestDownscaleKeepsSourceFrames pins that resizing an animation preserves its
+// SOURCE frame space.
+//
+// Both downscalers rebuilt Decoded as a fresh struct literal and listed every
+// field except SourceFrames, so a decimated animation that was ALSO taller than
+// the display came out of fit() with SourceFrames == 0. FrameKeepIndex reads a
+// non-positive sourceTotal as "no decimation happened" and returns the identity,
+// so the viewport mapped kept-frame ordinals straight onto source indices and
+// #17 networked frame effects fired on the wrong frames — silently, and only for
+// animations that hit both paths, which is why it survived.
+//
+// The two conditions are independent: a downscale changes PIXELS, decimation
+// changes FRAME COUNT. Neither downscaler drops a frame, so SourceFrames must
+// come through untouched.
+func TestDownscaleKeepsSourceFrames(t *testing.T) {
+	// A long preanim decimated 100 -> 4, then shrunk to fit the display.
+	const (
+		sourceFrames = 100
+		keptFrames   = 4
+		bigW, bigH   = 400, 800
+	)
+	newDecoded := func() *Decoded {
+		d := &Decoded{Animated: true, Width: bigW, Height: bigH, SourceFrames: sourceFrames}
+		for i := 0; i < keptFrames; i++ {
+			d.Frames = append(d.Frames, image.NewRGBA(image.Rect(0, 0, bigW, bigH)))
+			d.Delays = append(d.Delays, time.Millisecond*40)
+		}
+		return d
+	}
+
+	t.Run("aspect", func(t *testing.T) {
+		out := downscaleDecodedAspect(newDecoded(), bigH/4)
+		if out.SourceFrames != sourceFrames {
+			t.Fatalf("SourceFrames = %d after an aspect downscale, want %d — "+
+				"FrameKeepIndex will fall back to the identity and mis-map frame effects",
+				out.SourceFrames, sourceFrames)
+		}
+		if len(out.Frames) != keptFrames {
+			t.Errorf("a downscale must not change the frame COUNT: got %d, want %d", len(out.Frames), keptFrames)
+		}
+		if out.Height != bigH/4 {
+			t.Errorf("test setup: the downscale must have actually run, height = %d", out.Height)
+		}
+	})
+
+	t.Run("square", func(t *testing.T) {
+		out := downscaleDecoded(newDecoded(), 64)
+		if out.SourceFrames != sourceFrames {
+			t.Fatalf("SourceFrames = %d after a square downscale, want %d", out.SourceFrames, sourceFrames)
+		}
+		if len(out.Frames) != keptFrames {
+			t.Errorf("a downscale must not change the frame COUNT: got %d, want %d", len(out.Frames), keptFrames)
+		}
+	})
+
+	// The end-to-end consequence, so the test names the symptom and not just the
+	// field: with the count carried, frame 3 of 4 maps deep into the source clip;
+	// with it lost it maps to source frame 3, near the very start.
+	mapped := FrameKeepIndex(keptFrames-1, sourceFrames, keptFrames)
+	if mapped <= keptFrames {
+		t.Errorf("the last kept frame mapped to source %d — that is the identity, "+
+			"which is exactly the bug this test exists to catch", mapped)
+	}
+	if identity := FrameKeepIndex(keptFrames-1, 0, keptFrames); identity != keptFrames-1 {
+		t.Errorf("a zero sourceTotal must read as the identity (%d), got %d — "+
+			"if this changes, the failure above stops being silent and this comment is stale",
+			keptFrames-1, identity)
+	}
+}
