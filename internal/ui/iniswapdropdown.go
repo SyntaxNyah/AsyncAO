@@ -109,3 +109,31 @@ func (a *App) ensureIniswapChoices() {
 	}
 	a.iniswapChoices = buildIniswapChoices(a.iniswapChoices, own, wardrobe, worn)
 }
+
+// pos_remove: the little X beside the position dropdown that reverts to the
+// character's own declared side.
+
+// defaultSide is the active character's char.ini side, AO2's default_side
+// (courtroom.cpp:4723-4726, which is get_char_side). An empty charDefaultSide
+// means "not known yet, or none declared", and get_char_side answers "wit" in
+// exactly that case (text_file_functions.cpp:480-483) — so the loading window
+// resolves to the same value AsyncAO's mySide() already falls back to, which is
+// what makes pos_remove correctly HIDDEN while a char.ini is in flight.
+func (a *App) defaultSide() string {
+	if a.charDefaultSide != "" {
+		return a.charDefaultSide
+	}
+	return "wit"
+}
+
+// posRemoveVisible reports whether the revert-position button should be offered:
+// only when the current side differs from the character's own default. AO2:
+// `p_side.isEmpty() || p_side == default_side()` hides it (courtroom.cpp:5285-5292).
+//
+// The isEmpty arm is kept even though AsyncAO's mySide() never returns "" (it
+// falls back to "wit"). It mirrors AO2's guard for a combobox that genuinely can
+// be empty, and costs nothing; dropping it would make this a different predicate
+// from the one being cited.
+func posRemoveVisible(side, def string) bool {
+	return side != "" && side != def
+}

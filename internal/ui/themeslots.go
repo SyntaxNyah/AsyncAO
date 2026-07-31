@@ -157,7 +157,7 @@ var themeSlots = [...]themeSlot{
 	{key: "iniswap_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:937
 	{key: "iniswap_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "pos_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:928
-	{key: "pos_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
+	{key: "pos_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateHandDrawn},
 	// AO2 reads "immediate" first and falls back to "pre_no_interrupt".
 	{key: "immediate", alt: "pre_no_interrupt", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "pre", phase: phasePanels, state: slotStateHandDrawn},          // courtroom.cpp:1065

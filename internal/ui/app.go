@@ -1735,6 +1735,16 @@ type sessionState struct {
 	sfxChoices         []string
 	sfxChoicesForName  string
 	sfxChoicesForCount int
+	// charDefaultSide is the side the ACTIVE character's char.ini declares — AO2's
+	// default_side (courtroom.cpp:4723-4726 = get_char_side). Empty means "not
+	// known yet or none declared", which defaultSide() reports as "wit", matching
+	// get_char_side's own fallback (text_file_functions.cpp:480-483).
+	//
+	// It MUST be cleared whenever the active character changes, before the new
+	// char.ini lands. pos_remove is shown by comparing the current side against
+	// this, and clicking it SENDS /pos — so a stale value is a wrong packet on the
+	// wire, not a cosmetic glitch.
+	charDefaultSide string
 	// emote_dropdown's option list (#21 label 11), cached with the same
 	// plain-field guard as sfxChoices above and for the same reason: it is
 	// rebuilt from a draw site that runs every frame. Per-tab, like a.emotes
@@ -5000,6 +5010,7 @@ func (a *App) enterCourtroom() {
 	a.iniChar = a.pendingIni
 	a.pendingIni = ""
 	a.sidePref = ""
+	a.charDefaultSide = "" // a fresh character declares its own default; the old one must not outlive it
 	// FRESH entry / character switch starts at the first emote (page 0). The
 	// reactivation path (activateTab → buildRoom) deliberately skips this so each
 	// tab keeps its own emote selection; pollCharINI then clamps rather than
@@ -6781,6 +6792,7 @@ func (a *App) activeCharName() string {
 // character) and reloads the emote list for the new active folder.
 func (a *App) setIniswap(name string) {
 	a.iniChar = name
+	a.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
 	a.emoteAsk = nil
 	a.emoteIdx, a.emotePage = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
@@ -7435,6 +7447,14 @@ func (a *App) pollCharINI() {
 			a.warnAt = time.Now()
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
 			a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
+			// The char.ini never arrived, so this character declares no default side.
+			// CLEARING is the whole point: without it the PREVIOUS character's default
+			// survives, pos_remove paints for a side the user never overrode, and one
+			// click sends a /pos the character never asked for. AO2 has no such window —
+			// get_char_side simply returns "wit" for an unreadable ini
+			// (text_file_functions.cpp:480-483), which is what defaultSide() reports for
+			// an empty value.
+			a.charDefaultSide = ""
 			return
 		}
 		a.emotes = res.ini.Emotes
@@ -7443,7 +7463,13 @@ func (a *App) pollCharINI() {
 		}
 		// OUR side comes from our char.ini (AO2-Client semantics), never
 		// from whoever spoke last; /pos overrides it.
-		if side := strings.ToLower(strings.TrimSpace(res.ini.Side)); side != "" {
+		// Lifted out of the if-init so BOTH fields can be written: charDefaultSide
+		// records what this character declares (AO2's default_side, courtroom.cpp:4723),
+		// and it must be assigned even when the value is empty so a previous
+		// character's default cannot survive an iniswap.
+		side := strings.ToLower(strings.TrimSpace(res.ini.Side))
+		a.charDefaultSide = side
+		if side != "" {
 			a.sidePref = side
 		}
 		a.charBlips = res.ini.Blips

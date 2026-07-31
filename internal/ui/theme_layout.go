@@ -1180,6 +1180,16 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if next, changed := c.Dropdown("posdd", r, choices, cur); changed {
 			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 		}
+		// pos_remove reverts to the character's OWN declared side, and is offered
+		// only while the current side differs from it (AO2-Client courtroom.cpp:5285-5292).
+		// While a char.ini is still in flight defaultSide() reads "wit", which is
+		// get_char_side's own fallback — so this stays hidden rather than offering to
+		// revert to a side we have not read yet.
+		if rr, ok := lay.rect("pos_remove"); ok && posRemoveVisible(a.mySide(), a.defaultSide()) {
+			if a.drawThemeButton("pos_remove", "X", rr) {
+				a.applySide(a.defaultSide())
+			}
+		}
 	}
 	// emote_dropdown: the same emote list as the button grid, as a dropdown at the
 	// theme's own rect (AO2-Client courtroom.cpp:925-926; emotes.cpp:314-317
