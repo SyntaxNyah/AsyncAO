@@ -133,3 +133,63 @@ func TestMissingDesksBounded(t *testing.T) {
 		t.Errorf("missingDesks grew to %d entries, want the %d cap", got, missingDesksCap)
 	}
 }
+
+// TestBackgroundChangeReDerivesDesk pins the reported "the background is missing
+// its desk on purpose, but the default desk appears anyway".
+//
+// ShowDesk is derived from the DESK BASE's residency. setBackground rewrites that
+// base and used to leave ShowDesk alone, so a room whose desk 404s inherited the
+// PREVIOUS room's answer and kept drawing its desk — for the rest of the message,
+// because a settled message has no further phase edge to correct it.
+//
+// It also pins the hazard: applyDeskMods recomputes PairActive and the speaker
+// offsets from c.current too, so re-deriving at the WRONG phase would flip pair
+// state mid-preanim. Passing the current phase must leave both untouched.
+func TestBackgroundChangeReDerivesDesk(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+
+	// A settled message with a desk, a live pair and a speaker offset.
+	room.current = &protocol.ChatMessage{
+		DeskMod:     protocol.DeskShow,
+		SelfOffsetX: 37,
+		SelfOffsetY: 11,
+		Pair:        protocol.PairInfo{CharID: 4, Name: "partner"},
+	}
+	room.phase = PhaseTalking
+	room.Scene.Position = "wit"
+	room.setBackground("hasdesk")
+	if !room.Scene.ShowDesk {
+		t.Fatal("fixture: a DeskShown message on an unknown-but-not-missing desk should draw one")
+	}
+	pairBefore, offXBefore, offYBefore := room.Scene.PairActive, room.Scene.Speaker.OffsetX, room.Scene.Speaker.OffsetY
+
+	// Now move to a room whose desk is conclusively missing, exactly as the
+	// warning relay reports it.
+	room.Scene.Position = "wit"
+	nextDesk := room.urls.Background("nodesk", func() string { _, d := PositionScene("wit"); return d }())
+	room.recordMissingDesk(nextDesk)
+	room.setBackground("nodesk")
+
+	if room.Scene.ShowDesk {
+		t.Error("the new room's desk is conclusively missing, but the desk still draws — the previous room's answer survived")
+	}
+	// The pair and the offsets are NOT the desk's business.
+	if room.Scene.PairActive != pairBefore {
+		t.Errorf("PairActive flipped to %v on a background change", room.Scene.PairActive)
+	}
+	if room.Scene.Speaker.OffsetX != offXBefore || room.Scene.Speaker.OffsetY != offYBefore {
+		t.Errorf("speaker offset moved to (%d,%d), want (%d,%d) — the phase argument is wrong",
+			room.Scene.Speaker.OffsetX, room.Scene.Speaker.OffsetY, offXBefore, offYBefore)
+	}
+}
+
+// TestBackgroundChangeWithNoMessageIsSafe pins the guard: joining a room before
+// any message has landed must not dereference a nil c.current.
+func TestBackgroundChangeWithNoMessageIsSafe(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.Scene.Position = "wit"
+	room.setBackground("somewhere") // must not panic
+	if room.Scene.BackgroundBase == "" {
+		t.Error("setBackground did not resolve a background base")
+	}
+}

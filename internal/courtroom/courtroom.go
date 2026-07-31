@@ -752,6 +752,21 @@ func (c *Courtroom) setBackground(bg string) {
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
 	c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh)      // AssetType: DeskOverlay
+	// ShowDesk is derived from the DESK BASE's residency, and that base just
+	// changed — so re-derive it here or the new room inherits the old room's
+	// answer. This is the reported "the background is missing its desk on purpose,
+	// but the default desk appears anyway": a room whose desk 404s kept drawing the
+	// PREVIOUS room's desk until the next phase edge, and a settled message has no
+	// further edge.
+	//
+	// Passing the CURRENT phase is what makes this safe. applyDeskMods also
+	// recomputes PairActive and the speaker offsets from c.current, so a wrong
+	// phase argument would flip pair state mid-preanim; at the current phase it
+	// recomputes exactly what is already there. Same call, and the same "no further
+	// edge" reasoning, as NotifyDeskMissing.
+	if c.current != nil {
+		c.applyDeskMods(c.phase == PhasePreanim)
+	}
 }
 
 // begin starts one message: prefetch everything in parallel at HIGH priority
