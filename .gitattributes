@@ -3,3 +3,10 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.md text eol=lf
+
+# Test fixtures are checked in VERBATIM — they are third-party files a test reads
+# back and compares against measured counts. `* text=auto` above would normalise
+# them on commit and hand this box CRLF on checkout, so the bytes on disk would
+# not be the bytes that were copied in (courtroom_fonts.ini has no trailing
+# newline, which is part of the fixture).
+internal/ui/testdata/** -text

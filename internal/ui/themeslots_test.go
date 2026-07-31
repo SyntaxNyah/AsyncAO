@@ -103,6 +103,26 @@ func TestThemeSlotTableIsTotal(t *testing.T) {
 	}
 }
 
+// TestNoSlotHasGraduatedToTheTableYet pins where the registry currently sits in
+// the #21 arc, and keeps the two forward-looking fields honest. Rows land inert or
+// hand-drawn; the harvest commit is what moves the hand-ordered draw bodies into
+// `draw` and flips those rows to slotStateTable. Until then EVERY row must still
+// have a nil draw — a row that carried one while the dispatcher does not exist yet
+// would simply never paint.
+//
+// When the harvest lands, this test is what tells you to rewrite it.
+func TestNoSlotHasGraduatedToTheTableYet(t *testing.T) {
+	for i := range themeSlots {
+		s := &themeSlots[i]
+		if s.draw != nil {
+			t.Errorf("%q carries a draw func, but no dispatcher reads it yet", s.key)
+		}
+		if s.state == slotStateTable {
+			t.Errorf("%q is slotStateTable before the harvest commit — nothing would paint it", s.key)
+		}
+	}
+}
+
 // TestBoundButInertSlotsAreNotEditable pins the rule that ends the ghost box: the
 // themed layout editor may only offer a drag box for a rect something actually
 // paints. music_search was in themeLayoutKeys from the day it was written and has

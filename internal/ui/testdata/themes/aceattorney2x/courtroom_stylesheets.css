@@ -1,0 +1,86 @@
+QFrame {
+	color: white;
+	background-color: transparent;
+}
+
+AOClockLabel {
+	border: 1px solid rgba(255, 255, 255, 135);
+	border-radius: 2px;
+	background-color: rgba(0, 0, 7, 135);
+	padding: 0px;
+}
+
+QCheckBox {
+	color: white;
+	background-color: transparent;
+}
+
+QComboBox {
+	border: 1px solid black;
+	border-radius: 3px;
+	background-color: darkgray;
+	color: black;
+}
+
+QAbstractItemView {
+	border: 0px solid darkgray;
+	background-color: transparent;
+	color: black;
+	border-radius: 0px;
+	selection-background-color: darkgreen;
+}
+
+QListView {
+	color: black;
+	background-color: white;
+	selection-background-color: darkgreen;
+}
+
+QLineEdit {
+	color: white;
+	background-color: transparent;
+}
+
+QScrollBar {
+	height: 12px;
+	width: 12px;
+	background-color: transparent;
+}
+
+QScrollBar::add-page {
+	background: rgba(200, 255, 255, 24)
+}
+
+QScrollBar::sub-page {
+	background: none
+}
+
+AOButton {
+	background: darkgray;
+}
+
+QSlider::handle {
+	background: darkgray;
+	border: 1px solid #5c5c5c;
+	border-radius: 3px;
+}
+
+
+QTextBrowser#ui_debug_log {
+	background-color: rgba(20, 20, 20, 255);
+}
+
+QLineEdit#ui_ic_chat_name {
+	color: white;
+	background-color: darkgray;
+}
+
+QLabel#ui_size_label {
+	color: lime;
+	background-color: black;
+}
+
+AOEmotePreview {
+	background: rgb(0, 0, 0);
+	background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1, stop:0 slategray, stop:1 darkslategray);
+}

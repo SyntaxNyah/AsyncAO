@@ -225,10 +225,11 @@ var themeSlots = [...]themeSlot{
 
 // themeSlotDeferred names every courtroom_design.ini rect key AsyncAO KNOWINGLY
 // does not ingest, with the reason. It is not a to-do list — it is the other half
-// of the totality oracle: a key a real theme declares must be in exactly one of
-// themeSlots, this map, charSelectDefaultRects or the non-rect design keys, or
-// the fixture test fails. Adding a key to a theme corpus without deciding about
-// it is what made issue #21 possible.
+// of the totality oracle: a rect key a real theme declares must be in exactly one
+// of themeSlots, this map, or charSelectDefaultRects, or the fixture test fails.
+// (Non-rect keys — colours, pairs, scalars — are filtered by ElementRect before
+// the classification runs, so they need no set of their own.) Adding a key to a
+// theme corpus without deciding about it is what made issue #21 possible.
 var themeSlotDeferred = map[string]string{
 	"chatbox":                  "legacy spelling: AO2 places the chatbox from ao2_chatbox unconditionally (courtroom.cpp:3301). Reading it too would double-place.",
 	"ic_chat_message":          "legacy spelling: AO2 uses ao2_ic_chat_message (courtroom.cpp:906).",
