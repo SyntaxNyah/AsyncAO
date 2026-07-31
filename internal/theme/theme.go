@@ -235,9 +235,28 @@ func (t *Theme) HasFont(name string) bool {
 // The default-theme fallback dirs are skipped — only the active theme may impose
 // a font. "" = none found (keep the client font). FontFileFor / FontFiles resolve
 // the OTHER elements the same way (#39).
+// NamesAnyFontFamily reports whether courtroom_fonts.ini declares a "<id>_font"
+// family for ANY element. A theme that does is dressing its elements
+// individually, so nothing may impose a face on the whole client on its behalf.
+func (t *Theme) NamesAnyFontFamily() bool {
+	for _, id := range FontElements {
+		if t.Font(id).Font != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Theme) FontFile() string {
-	if p := t.FontFileFor("message", nil); p != "" {
-		return p
+	// A theme that NAMES families dresses its elements one by one (FontFiles, #39)
+	// and must not also impose a face on the whole client. This used to return the
+	// declared MESSAGE family first, which predates per-element fonts: it meant
+	// aceattorney2x's chatbox family became the app font — menus, lobby, settings
+	// and all — while the per-element table was separately applying the same face
+	// to the message anyway. The client-wide install is now only for the case that
+	// motivated it: a theme that ships one .ttf and declares nothing.
+	if t.NamesAnyFontFamily() {
+		return ""
 	}
 	// (3): any font file bundled in the active theme's own dir — a theme that
 	// ships one .ttf but declares no family (the original #6 case). Deliberately

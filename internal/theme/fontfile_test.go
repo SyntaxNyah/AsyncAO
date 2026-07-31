@@ -6,6 +6,56 @@ import (
 	"testing"
 )
 
+// TestFontFileIsOnlyForThemesThatNameNothing pins FontFile's SCOPE, which is the
+// whole client's font chain — not any one element's.
+//
+// A theme that names families dresses its elements individually (FontFiles, #39)
+// and must not also impose a face on menus, the lobby and settings. FontFile used
+// to return the declared MESSAGE family first, which predates per-element fonts:
+// aceattorney2x's chatbox family became the app font, while the per-element table
+// was separately applying that same face to the message anyway.
+//
+// The case it exists for survives: a theme that ships one .ttf and declares no
+// family at all still restyles the client (the original #6 request).
+func TestFontFileIsOnlyForThemesThatNameNothing(t *testing.T) {
+	// (a) Names a family → dresses that element, imposes nothing globally.
+	root := t.TempDir()
+	writeTheme(t, root, "Named", aoDefaultDesign, "message = 12\nmessage_font = Igiari\n")
+	if err := os.WriteFile(filepath.Join(root, ThemesDirName, "Named", "Igiari.ttf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th, err := Load("Named", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !th.NamesAnyFontFamily() {
+		t.Error("a theme declaring message_font must report naming a family")
+	}
+	if got := th.FontFileFor("message", nil); filepath.Base(got) != "Igiari.ttf" {
+		t.Errorf("the ELEMENT still resolves its own face: got %q", got)
+	}
+	if got := th.FontFile(); got != "" {
+		t.Errorf("FontFile = %q, want none — a naming theme must not become the app font", got)
+	}
+
+	// (b) Names nothing but ships a font → the #6 client-wide install still works.
+	root2 := t.TempDir()
+	writeTheme(t, root2, "Bundled", aoDefaultDesign, "message = 12\n")
+	if err := os.WriteFile(filepath.Join(root2, ThemesDirName, "Bundled", "OneFace.ttf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th2, err := Load("Bundled", []string{root2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th2.NamesAnyFontFamily() {
+		t.Error("a theme declaring only sizes must not report naming a family")
+	}
+	if got := th2.FontFile(); filepath.Base(got) != "OneFace.ttf" {
+		t.Errorf("FontFile = %q, want the bundled OneFace.ttf (#6 must still work)", got)
+	}
+}
+
 // TestFontFileResolvesBundledTTF: a theme that ships its own font, declared via
 // message_font, resolves to the matching .ttf in the theme dir (family match wins
 // over an unrelated font file).
@@ -25,8 +75,8 @@ func TestFontFileResolvesBundledTTF(t *testing.T) {
 	if got := th.Font("message").Font; got != "Igiari" {
 		t.Errorf("message_font = %q, want Igiari", got)
 	}
-	if got := th.FontFile(); filepath.Base(got) != "Igiari.ttf" {
-		t.Errorf("FontFile = %q, want the family-matching Igiari.ttf", got)
+	if got := th.FontFileFor("message", nil); filepath.Base(got) != "Igiari.ttf" {
+		t.Errorf("FontFileFor(message) = %q, want the family-matching Igiari.ttf", got)
 	}
 }
 
@@ -50,8 +100,8 @@ func TestFontFileResolvesFromBaseFonts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := th.FontFile(); filepath.Base(got) != "ace_attorney.ttf" {
-		t.Errorf("FontFile = %q, want base/fonts/ace_attorney.ttf", got)
+	if got := th.FontFileFor("message", nil); filepath.Base(got) != "ace_attorney.ttf" {
+		t.Errorf("FontFileFor(message) = %q, want base/fonts/ace_attorney.ttf", got)
 	}
 }
 
@@ -101,8 +151,10 @@ func TestFontFileFromThemeFontsSubdir(t *testing.T) {
 	if got := th.FontFileFor("message", nil); filepath.Base(got) != "IBMPlexSerif-Regular.otf" {
 		t.Errorf("FontFileFor(message) = %q, want the theme's own fonts/IBMPlexSerif-Regular.otf", got)
 	}
-	if got := th.FontFile(); filepath.Base(got) != "IBMPlexSerif-Regular.otf" {
-		t.Errorf("FontFile = %q, want the same file (the #6 entry point must agree)", got)
+	// FontFile is the CLIENT-WIDE chain, and a theme that names families dresses its
+	// elements individually instead — see NamesAnyFontFamily.
+	if got := th.FontFile(); got != "" {
+		t.Errorf("FontFile = %q, want none: this theme names a family, so it must not also become the app font", got)
 	}
 }
 
