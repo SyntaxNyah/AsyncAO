@@ -985,6 +985,31 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		c.Tooltip(r, "Guard: silence the modcall sound and window flash. The OOC line and the auto-clip still arrive.")
 	}
 
+	// realization (AO2 ui_realization, courtroom.cpp:1108) and screenshake
+	// (:1113) — ONE-SHOT arms for the next message: the white flash and the camera
+	// shake. Both are toggles rather than fire-buttons because AO2 arms them and
+	// sends on the NEXT message; the send site clears them (courtroom.cpp:2328).
+	// Bordered while armed, which is how the evidence chip already signals the same
+	// "rides your next line" state.
+	if r, ok := themedToggleRect(lay, "realization", "", ""); ok {
+		if c.Button(r, "Flash") {
+			a.icRealize = !a.icRealize
+		}
+		if a.icRealize {
+			c.Border(r, ColAccent)
+		}
+		c.Tooltip(r, "Realization: a white flash + sound on your next message. Clears after it sends.")
+	}
+	if r, ok := themedToggleRect(lay, "screenshake", "", ""); ok {
+		if c.Button(r, "Shake") {
+			a.icShake = !a.icShake
+		}
+		if a.icShake {
+			c.Border(r, ColAccent)
+		}
+		c.Tooltip(r, "Screenshake: shake the courtroom on your next message. Clears after it sends.")
+	}
+
 	// sfx_dropdown (AO2 ui_sfx_dropdown, courtroom.cpp:952): a sound for your NEXT
 	// message, overriding the emote's own until set back to "auto". Picking one
 	// previews it.

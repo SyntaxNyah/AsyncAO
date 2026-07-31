@@ -1688,6 +1688,13 @@ type sessionState struct {
 	// resets it after each send — "Slides can't be sticky for nausea reasons"
 	// (courtroom.cpp:2362) — which the send site does, not this field.
 	icSlide bool
+	// icRealize / icShake are AO2's realization_state / screenshake_state (#21):
+	// ONE-SHOT arms that ride the next message — the white flash and the camera
+	// shake. AO2 clears both the instant the packet is built, next to
+	// objection_state (courtroom.cpp:2327-2329), which is what stops a stuck arm
+	// firing on every following line.
+	icRealize bool
+	icShake   bool
 	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
 	// session. sessionState rather than a preference because AO2's ui_guard is a
 	// bare QCheckBox with no Options read (courtroom.cpp:316-319) — it is a

@@ -137,22 +137,51 @@ func TestAceAttorney2xDeclaresTheWholeToggleRow(t *testing.T) {
 	}
 }
 
-// TestSlideIsNotStickyAfterSend pins AO2's own rule. ui_slide is cleared right
-// after the packet is built — "Slides can't be sticky for nausea reasons"
-// (AO2-Client courtroom.cpp:2362) — and a stuck slide makes every subsequent line
-// lurch, which is far more noticeable than losing one slide to a swallowed send.
-func TestSlideIsNotStickyAfterSend(t *testing.T) {
-	if !strings.Contains(readSourceFile(t, "screens.go"), "a.icSlide = false") {
-		t.Error("sendIC does not clear icSlide — the slide would ride every following message")
+// TestOneShotArmsClearOnSend is the regression that matters most about
+// realization and screenshake. AO2 clears realization_state and screenshake_state
+// the instant the packet is built, beside objection_state
+// (AO2-Client courtroom.cpp:2327-2329). Miss that and the arm is STICKY: every
+// following line flashes and shakes, which is both obnoxious and hard to trace
+// back to its cause.
+func TestOneShotArmsClearOnSend(t *testing.T) {
+	src := readSourceFile(t, "screens.go")
+	// Matched loosely on purpose: gofmt realigns struct literals and multi-assign
+	// statements, so pinning exact spacing makes the test fail on formatting rather
+	// than on behaviour. (It did, once.)
+	if !strings.Contains(src, "a.icSlide, a.icRealize, a.icShake = false, false, false") {
+		t.Error("the one-shot arms are not all cleared after a send — a stuck arm rides every following message")
+	}
+	// All three must reach the wire too, or they are decorative toggles.
+	for _, field := range []string{"Slide:", "Realization:", "Screenshake:"} {
+		if !strings.Contains(src, field) {
+			t.Errorf("the OutgoingMS literal does not set %s", field)
+		}
+	}
+	for _, backing := range []string{"a.icSlide", "a.icRealize", "a.icShake"} {
+		if !strings.Contains(src, backing) {
+			t.Errorf("%s never reaches the send path", backing)
+		}
 	}
 }
 
-// TestSlideReachesTheWire pins that the toggle is not decorative: OutgoingMS has
-// carried a Slide field and serialized it all along, and only the UI literal never
-// set it. A toggle that changes nothing is worse than an absent one.
-func TestSlideReachesTheWire(t *testing.T) {
-	if !strings.Contains(readSourceFile(t, "screens.go"), "Slide:     a.icSlide") {
-		t.Error("the OutgoingMS literal does not carry icSlide — the toggle would do nothing")
+// TestArmsAreClearedOptimistically pins the deliberate asymmetry with the input
+// field. The IC text is cleared only on the server's own echo, because a
+// tsuserver-family server silently swallows a message that lands inside another's
+// delay window and an optimistic clear would lose the typed line. The one-shot
+// arms take the opposite trade on purpose: losing one flash to a swallowed send is
+// invisible, a stuck arm is not.
+func TestArmsAreClearedOptimistically(t *testing.T) {
+	src := readSourceFile(t, "screens.go")
+	arm := strings.Index(src, "a.icSlide, a.icRealize, a.icShake = false, false, false")
+	if arm < 0 {
+		t.Fatal("the one-shot clear moved — re-check it is still on the send path")
+	}
+	echo := strings.Index(src, "func (s *sessionState) noteOwnICEcho")
+	if echo < 0 {
+		t.Fatal("noteOwnICEcho moved")
+	}
+	if arm > echo {
+		t.Error("the arms are cleared in the ECHO handler — a swallowed send would leave them armed forever")
 	}
 }
 

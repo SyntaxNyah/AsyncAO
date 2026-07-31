@@ -7261,20 +7261,22 @@ func (a *App) sendIC(shout int) {
 		// (scenemaker.go's pre := EmoteMod==Preanim…) follows the same decision
 		// — what you see matches what you sent. immediate stays false here:
 		// a.icImmediate rides the separate OutgoingMS.Immediate field.
-		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features),
-		CharID:    a.sess.MyCharID,
-		Objection: shout,
-		TextColor: msgColor, // swatch cycler, or M61 random-per-message colour
-		Showname:  a.effectiveShowname(),
-		PairWith:  a.pairWith,
-		PairOrder: a.pairOrder,
-		OffsetX:   a.pairOffX,
-		OffsetY:   a.pairOffY,
-		Flip:      a.pairFlip,
-		Immediate: a.icImmediate,      // non-interrupting preanim (IC-row toggle)
-		Additive:  a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
-		Slide:     a.icSlide,          // #21: slide into position instead of cutting (AO2 ui_slide)
-		KFOCompat: a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
+		EmoteMod:    protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features),
+		CharID:      a.sess.MyCharID,
+		Objection:   shout,
+		TextColor:   msgColor, // swatch cycler, or M61 random-per-message colour
+		Showname:    a.effectiveShowname(),
+		PairWith:    a.pairWith,
+		PairOrder:   a.pairOrder,
+		OffsetX:     a.pairOffX,
+		OffsetY:     a.pairOffY,
+		Flip:        a.pairFlip,
+		Immediate:   a.icImmediate,      // non-interrupting preanim (IC-row toggle)
+		Additive:    a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
+		Slide:       a.icSlide,          // #21: slide into position instead of cutting (AO2 ui_slide)
+		Realization: a.icRealize,        // #21: white flash + sound on this message (AO2 realization_state)
+		Screenshake: a.icShake,          // #21: shake the courtroom on this message (AO2 screenshake_state)
+		KFOCompat:   a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
 	// (formatObjection assembles it; courtroom.cpp:2142).
@@ -7298,12 +7300,14 @@ func (a *App) sendIC(shout int) {
 	// evidPresent stays armed for the same reason (AO2 resets it on the echo):
 	// a swallowed send must not disarm the evidence you presented.
 	a.icPendingSent = a.icInput
-	// Slide is deliberately NOT sticky. AO2 clears ui_slide right after building
-	// the packet — "Slides can't be sticky for nausea reasons"
-	// (AO2-Client courtroom.cpp:2362) — and unlike the input above it is cleared
-	// optimistically, because a swallowed send costs a slide nobody notices
-	// whereas a stuck slide makes every subsequent line lurch.
-	a.icSlide = false
+	// The ONE-SHOT arms clear here, exactly where AO2 clears them — beside
+	// objection_state the moment the packet is built (courtroom.cpp:2327-2329,
+	// and :2362 for the slide, "Slides can't be sticky for nausea reasons").
+	//
+	// Unlike the input above, these are cleared OPTIMISTICALLY rather than on the
+	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
+	// fires on every following line, which is the failure everyone notices.
+	a.icSlide, a.icRealize, a.icShake = false, false, false
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
