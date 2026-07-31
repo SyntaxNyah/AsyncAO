@@ -96,18 +96,29 @@ func TestCheckboxLabelAvailSubtractsTheBox(t *testing.T) {
 	}
 }
 
-// TestCheckboxInSurvivesADownscaledRect pins the ThemeFitNative hazard: a
+// TestCheckboxBoxYSurvivesADownscaledRect pins the ThemeFitNative hazard: a
 // downscaled canvas can hand CheckboxIn a rect SHORTER than the 16 px tick box, and
-// an un-floored (r.H-box)/2 would lift the box out of its own row.
-func TestCheckboxInSurvivesADownscaledRect(t *testing.T) {
+// an un-floored (r.H-box)/2 would lift the box out of its own row and into whatever
+// is drawn above it.
+//
+// It calls the REAL checkboxBoxY. An earlier version recomputed the formula in the
+// test body and asserted on its own copy, which would have passed with the floor
+// deleted from production — the arithmetic was extracted precisely so this test has
+// something to be wrong about.
+func TestCheckboxBoxYSurvivesADownscaledRect(t *testing.T) {
 	for _, h := range []int32{19, 16, 12, 8, 6, 1, 0} {
 		r := sdl.Rect{X: 4, Y: 100, W: 51, H: h}
-		off := (r.H - checkboxBoxPx) / 2
-		if off < 0 {
-			off = 0
+		got := checkboxBoxY(r)
+		if got < r.Y {
+			t.Errorf("H=%d: box at y=%d, above its own rect at %d", h, got, r.Y)
 		}
-		if got := r.Y + off; got < r.Y {
-			t.Errorf("H=%d: box drawn at y=%d, above its own rect at %d", h, got, r.Y)
+		// Where there IS room, it must actually centre rather than just clamp.
+		if h > checkboxBoxPx {
+			if want := r.Y + (h-checkboxBoxPx)/2; got != want {
+				t.Errorf("H=%d: box at y=%d, want it centred at %d", h, got, want)
+			}
+		} else if got != r.Y {
+			t.Errorf("H=%d: box at y=%d, want the rect's own top %d", h, got, r.Y)
 		}
 	}
 }

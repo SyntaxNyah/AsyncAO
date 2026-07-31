@@ -32,10 +32,14 @@ func fixtureLayout(t *testing.T) *themeLayoutCache {
 	return lay
 }
 
-// TestThemedICInputKeepsItsFullDesignWidth is the headline regression. The input
-// must resolve to the whole rect the theme declared — nothing may take a bite out
-// of it for a control that has a rect of its own.
-func TestThemedICInputKeepsItsFullDesignWidth(t *testing.T) {
+// TestThemedICControlsHaveTheirOwnRows pins the theme's INTENT: every control the
+// old bar crammed into the message rect has a rect of its own, on another row.
+//
+// This is a fixture assertion, not a proof about the draw — see
+// TestThemedICInputAcceptsAClickWhereTheCramUsedToBe for that half. Kept separate
+// because a reviewer correctly pointed out that this one passed before the fix
+// too: the cram lived entirely in draw code, never in the layout.
+func TestThemedICControlsHaveTheirOwnRows(t *testing.T) {
 	lay := fixtureLayout(t)
 
 	in, ok := lay.rect("ao2_ic_chat_message")
@@ -45,10 +49,6 @@ func TestThemedICInputKeepsItsFullDesignWidth(t *testing.T) {
 	if want := (sdl.Rect{X: 216, Y: 384, W: 512, H: 23}); in != want {
 		t.Fatalf("ao2_ic_chat_message = %+v, want %+v", in, want)
 	}
-
-	// Every control that used to be crammed into that rect has one of its own, at
-	// a DIFFERENT y — i.e. on another row, which is what "the IC bar is a bar"
-	// means. If any of these resolved inside the input's row, the cram is back.
 	for _, key := range []string{"text_color", "sfx_dropdown", "pre", "pre_no_interrupt", "flip"} {
 		r, ok := lay.rect(key)
 		if !ok {
@@ -61,6 +61,49 @@ func TestThemedICInputKeepsItsFullDesignWidth(t *testing.T) {
 		if r.X >= in.X && r.X < in.X+in.W && r.Y < in.Y+in.H && r.Y+r.H > in.Y {
 			t.Errorf("%q overlaps the input rect %+v — that is the cram", key, in)
 		}
+	}
+}
+
+// TestThemedICInputAcceptsAClickWhereTheCramUsedToBe is the headline regression,
+// pinned behaviourally.
+//
+// The cram took a bite out of the LEFT of the message rect: 14 px of colour
+// swatch plus a 64 px colour dropdown plus a 4 px gap, so the first 82 px of the
+// theme's own input rect belonged to something else, and the field started after
+// it. Clicking there therefore did NOT focus the IC input. Now it must.
+//
+// A geometry assertion cannot catch this — the cram was entirely in draw code, so
+// the layout cache looked identical before and after. Driving a real themed frame
+// and clicking is the only thing that distinguishes them.
+func TestThemedICInputAcceptsAClickWhereTheCramUsedToBe(t *testing.T) {
+	a, cleanup := stageThemedCourtroom(t)
+	defer cleanup()
+
+	const w, h = 1280, 720
+	lay := a.themeWindowLayout(w, h)
+	if !lay.valid {
+		t.Fatal("the staged theme did not produce a canvas")
+	}
+	in, ok := lay.rect("ao2_ic_chat_message")
+	if !ok {
+		t.Fatal("the staged theme declares no ao2_ic_chat_message")
+	}
+	// The widest bite the old cram ever took off the left edge (swatch + dropdown
+	// + gap). Clicking inside it is the discriminator.
+	const cramLead = 14 + 64 + 4
+	if in.W <= cramLead {
+		t.Skipf("the staged rect is %d px wide, too narrow for the cram lead to be meaningful", in.W)
+	}
+	a.ctx.focusID = ""
+	a.ctx.mouseX = in.X + cramLead/2
+	a.ctx.mouseY = in.Y + in.H/2
+	a.ctx.mouseDown, a.ctx.prevMouseDown, a.ctx.clicked = true, false, true
+
+	a.drawCourtroom(w, h)
+
+	if a.ctx.focusID != icFieldID {
+		t.Errorf("clicking %d px into the theme's own input rect focused %q, want the IC field — the cram is back",
+			cramLead/2, a.ctx.focusID)
 	}
 }
 

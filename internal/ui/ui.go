@@ -2527,6 +2527,21 @@ func (c *Ctx) CheckboxLabelAvail(r sdl.Rect) int32 {
 	return r.W - checkboxBoxPx - checkboxLabelGapPx
 }
 
+// checkboxBoxY vertically centres the tick box in an AO2 design rect, FLOORED at
+// the rect's own top. ThemeFitNative can downscale a canvas until the rect is
+// shorter than the 16 px box, and a negative offset would lift the box out of its
+// own row and into whatever is drawn above it.
+//
+// Extracted so a test can drive the real arithmetic: the first version of that
+// test recomputed the formula in its own body and would have passed with the floor
+// deleted from production.
+func checkboxBoxY(r sdl.Rect) int32 {
+	if off := (r.H - checkboxBoxPx) / 2; off > 0 {
+		return r.Y + off
+	}
+	return r.Y
+}
+
 // CheckboxIn is Checkbox fitted to a RECT rather than anchored at an (x, y).
 // AO2 places every toggle by design rect (set_size_and_pos), and several are far
 // narrower than their label — aceattorney2x gives `flip` 51x19 — so a checkbox
@@ -2544,11 +2559,7 @@ func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 		c.onRow(label, r.Y) // settings-search collect pass, as Checkbox does
 	}
 	box := checkboxBoxPx
-	off := (r.H - box) / 2
-	if off < 0 {
-		off = 0
-	}
-	b := sdl.Rect{X: r.X, Y: r.Y + off, W: box, H: box}
+	b := sdl.Rect{X: r.X, Y: checkboxBoxY(r), W: box, H: box}
 	c.Fill(b, ColPanel)
 	c.Border(b, ColAccent)
 	if value {
