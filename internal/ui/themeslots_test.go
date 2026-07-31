@@ -157,20 +157,66 @@ func TestNoSlotHasGraduatedToTheTableYet(t *testing.T) {
 	}
 }
 
-// TestBoundButInertSlotsAreNotEditable pins the rule that ends the ghost box: the
-// themed layout editor may only offer a drag box for a rect something actually
-// paints. music_search was in themeLayoutKeys from the day it was written and has
-// never had a draw site, so the editor offered a box that moved nothing.
-func TestBoundButInertSlotsAreNotEditable(t *testing.T) {
+// TestEveryHandDrawnKeyHasAPainter is the gate that actually ends the ghost box,
+// and it is the INVERSE of TestEveryDrawnKeyIsMarkedHandDrawn above. That one
+// catches "paints but is marked inert" (the editor refuses a box for a visible
+// widget). This one catches "marked hand-drawn but nothing paints it" — which is
+// the failure #21 is named for: music_search sat in the old themeLayoutKeys from
+// the day it was written with no draw site, so the editor offered a drag box that
+// moved nothing.
+//
+// It replaces a test that could not fail. The old TestBoundButInertSlotsAreNotEditable
+// asserted `s.state == slotStateInert && themeKeyEditable(s.key)` and
+// `s.fixed && themeKeyEditable(s.key)`, but themeKeyEditable is DERIVED from
+// exactly those two fields — `s.state != slotStateInert && !s.fixed` — so both
+// conjunctions are structurally unreachable. It reported the ghost-box rule as
+// covered while covering nothing, which is worse than no test: every later commit
+// that flipped a row to hand-drawn believed it was guarded.
+func TestEveryHandDrawnKeyHasAPainter(t *testing.T) {
+	// Themed draw sites resolve a rect through one of two helpers, and they live
+	// in more than one file — the chatbox fitter and the GIF exporter read theme
+	// rects too, so scanning only theme_layout.go would report false ghosts.
+	var body strings.Builder
+	for _, f := range []string{"theme_layout.go", "court_extras.go", "chatboxfit.go", "gifexport.go"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		body.Write(src)
+	}
+	painters := body.String()
+
 	for i := range themeSlots {
 		s := &themeSlots[i]
-		if s.state == slotStateInert && themeKeyEditable(s.key) {
-			t.Errorf("%q is inert but editable — a ghost box", s.key)
+		if s.state == slotStateInert {
+			continue // inert is a declared "ingested, nothing paints it" — the other test's job
 		}
-		if s.fixed && themeKeyEditable(s.key) {
-			t.Errorf("%q is fixed but editable — it rides its parent, it is not placeable", s.key)
+		if s.external {
+			continue // drawn outside the design canvas by its own chrome path
+		}
+		if s.fixed {
+			continue // never editable by derivation, so it cannot become a ghost box
+		}
+		// Probe for the key as a QUOTED LITERAL anywhere in the painter sources,
+		// not for a particular call shape. Real draw sites take three forms and a
+		// shape-matching probe only sees the first: a direct lay.rect("key"), a
+		// TABLE of keys walked by a loop (the shouts at theme_layout.go:1116, the
+		// HP buttons at :1156), and the OVERRIDE argument of themedToggleRect (the
+		// asyncao_* tier, e.g. :928). All three mention the key verbatim, so the
+		// literal is the honest signal that something references it.
+		if !strings.Contains(painters, `"`+s.key+`"`) {
+			t.Errorf("%q is marked non-inert (state %d) but its key appears in no painter source — "+
+				"the layout editor will offer a drag box that moves nothing (the music_search ghost)",
+				s.key, s.state)
 		}
 	}
+}
+
+// TestDerivedEditabilityHoldsForTheNamedExceptions covers what is left of the old
+// test once its two tautological arms are gone: the specific keys the editor must
+// never offer, and the unknown-key path. These are real assertions — they read the
+// TABLE's `fixed` field through the derivation, so unfixing one here fails.
+func TestDerivedEditabilityHoldsForTheNamedExceptions(t *testing.T) {
 	// The three rects the editor must never offer, named explicitly so a future
 	// table edit that unfixes one fails here rather than in the field. These are
 	// exactly the old layoutEditSkip.
