@@ -1196,6 +1196,34 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.selectEmote(next)
 		}
 	}
+	// iniswap_dropdown + iniswap_remove (AO2-Client courtroom.cpp:937-939, :945-950).
+	// Index 0 is always the player's own folder, so "remove" is offered only while
+	// something else is worn — AO2 resets the box to 0 on remove (:5436-5452).
+	if r, ok := lay.rect("iniswap_dropdown"); ok {
+		a.ensureIniswapChoices()
+		cur := iniswapCurrentIndex(a.iniswapChoices, a.activeCharName())
+		if next, changed := c.Dropdown("inidd", r, a.iniswapChoices, cur); changed {
+			if next == 0 {
+				a.setIniswap("") // back to the player's own character
+			} else if next < len(a.iniswapChoices) {
+				a.setIniswap(a.iniswapChoices[next])
+			}
+			// AO2 refocuses IC on EVERY iniswap change, not only on remove
+			// (courtroom.cpp:5361-5363, the first statement of the handler).
+			c.FocusField("ic")
+		}
+		if rr, ok := lay.rect("iniswap_remove"); ok && cur != 0 && cur < len(a.iniswapChoices) {
+			if a.drawThemeButton("iniswap_remove", "X", rr) {
+				// Drop it from the saved wardrobe AND stop wearing it. RemoveWardrobe
+				// is a no-op for a folder that was only ever worn (a server
+				// iniswap.txt entry never added to the wardrobe), which is exactly
+				// the case the trailing choices entry exists for.
+				a.d.Prefs.RemoveWardrobe(a.serverKey, a.iniswapChoices[cur])
+				a.setIniswap("")
+				c.FocusField("ic")
+			}
+		}
+	}
 	if r, ok := lay.rect("pair_button"); ok {
 		if a.drawThemeButton("pair_button", "Pair", r) {
 			a.showPair = !a.showPair

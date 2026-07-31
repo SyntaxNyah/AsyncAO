@@ -1743,6 +1743,13 @@ type sessionState struct {
 	emoteChoices         []string
 	emoteChoicesForName  string
 	emoteChoicesForCount int
+	// iniswap_dropdown's option list (#21 label 11), same guarded-cache shape.
+	// The wardrobe guard is a generation counter because WardrobeList CLONES —
+	// rebuilding unguarded would allocate every frame on the settled path.
+	iniswapChoices        []string
+	iniswapChoicesForChar string
+	iniswapChoicesWorn    string
+	iniswapChoicesGen     uint64
 	// #12 SFX Browser: an opt-in modal that expands the dropdown with persisted favourites,
 	// per-row preview, and a free-text "use any sound name" entry. It picks into the SAME
 	// sfxChoiceIdx override (find-or-append), so the dropdown reflects whatever it chose.
