@@ -134,7 +134,7 @@ var themeSlots = [...]themeSlot{
 
 	// ---- phasePanels: the jukebox -------------------------------------------
 	{key: "music_list", phase: phasePanels, state: slotStateHandDrawn},                   // courtroom.cpp:864 (areas) + :867 (music) — ONE rect, two widgets
-	{key: "music_search", phase: phasePanels, state: slotStateInert},                     // courtroom.cpp:923
+	{key: "music_search", phase: phasePanels, state: slotStateHandDrawn},                 // courtroom.cpp:923
 	{key: "switch_area_music", phase: phasePanels, state: slotStateInert},                // courtroom.cpp:1060
 	{key: "player_list", phase: phasePanels, state: slotStateInert},                      // courtroom.cpp:879
 	{key: "music_display", phase: phasePanels, state: slotStateInert},                    // courtroom.cpp:888

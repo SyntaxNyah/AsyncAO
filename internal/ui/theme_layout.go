@@ -866,6 +866,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 
+	// music_search is its OWN rect in AO2 (a frameless QLineEdit outside the track
+	// list — courtroom.cpp:219-222), and this theme puts it in a dedicated band
+	// between the IC log and the list. Drawing it here rather than inside
+	// drawMusicList both fills that band and gives the list back the ~27px our own
+	// search row was taking out of the theme's budgeted height.
+	searchExternal := false
+	if r, ok := lay.rect("music_search"); ok && !a.panelHidden(panelLog) {
+		searchExternal = true
+		a.musicSearch, _ = c.TextField("musicsearch", r, a.musicSearch, "Search")
+	}
+
 	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
 		// One inset for chips AND body, exactly as the log panel above (#25):
@@ -891,7 +902,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		case logTabPlayers:
 			a.drawPlayerList(inner)
 		default:
-			a.drawMusicList(inner, true)
+			a.drawMusicList(inner, true, searchExternal)
 		}
 	}
 	// The theme's own volume band. Independent of the music panel above — AO2

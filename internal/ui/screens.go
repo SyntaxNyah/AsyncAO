@@ -3042,7 +3042,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
 	case logTabMusic:
-		a.drawMusicList(inner, false)
+		a.drawMusicList(inner, false, false)
 		return
 	case logTabAreas:
 		a.drawAreaList(inner)
@@ -5135,7 +5135,7 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 // win (issue #21, owner decision). The Volume toggle is AsyncAO's own affordance for
 // the same job, so offering both would put two sets of volume controls on one screen.
 // Master volume and blip rate have no AO2 rect and stay reachable in Settings.
-func (a *App) drawMusicList(r sdl.Rect, themed bool) {
+func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal bool) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.musicPct = a.logPct
@@ -5205,7 +5205,15 @@ func (a *App) drawMusicList(r sdl.Rect, themed bool) {
 
 	// Search filter (AO2/webAO parity): type to narrow the server's track list.
 	// Memoized so the O(N) scan runs only when the query or the list changes.
-	a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
+	//
+	// searchExternal means the THEME declared its own music_search rect and the
+	// themed pass already drew the field there (AO2 puts it outside music_list —
+	// courtroom.cpp:219-222). The row is then skipped entirely rather than merely
+	// hidden, so the track list gets those pixels back instead of leaving a gap the
+	// theme never budgeted for.
+	if !searchExternal {
+		a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
+	}
 	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
 	total := len(a.sess.Music)
 	shown := total
@@ -5213,9 +5221,11 @@ func (a *App) drawMusicList(r sdl.Rect, themed bool) {
 		a.refreshMusicFilter(query)
 		shown = len(a.musicFiltered)
 	}
-	c.Label(r.X+r.W-142, r.Y+5, a.musicCount.text(shown, total), ColTextDim)
-	r.Y += fieldH + 6
-	r.H -= fieldH + 6
+	if !searchExternal {
+		c.Label(r.X+r.W-142, r.Y+5, a.musicCount.text(shown, total), ColTextDim)
+		r.Y += fieldH + 6
+		r.H -= fieldH + 6
+	}
 
 	// Category fold controls (Issue #17 — AO2/KFO parity: the track list used
 	// to be one flat list with no way to fold a category, unlike AO2-Client/
