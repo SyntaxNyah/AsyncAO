@@ -4,6 +4,65 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.85.0 — 2026-07-31
+
+The second theme release, and one change in it reaches everyone whether or not
+they use a theme: characters drawn as pixel art stop being blurred. Alongside
+that, more of an imported AO2 theme's own controls are wired to what they were
+meant to control, a disconnection no longer throws you out of the room you were
+in, and the lobby gets its own actions back.
+
+Thanks again to Crystalwarrior for the theme-import report this continues from.
+
+### Everyone
+
+- **Pixel-art characters are no longer smoothed into a blur.** AsyncAO picked one
+  texture filter for the entire client. AO2 picks one per *sprite*, from two
+  places: the character's own file can ask for `pixel` or `smooth`, and failing
+  that, art drawn *smaller* than the space it fills is being enlarged and gets
+  point-sampled so its pixels stay square. Both rules are now in, in AO2's order —
+  a character's request is honoured, and your own explicit choice overrides it,
+  never the other way round. The automatic rule is what actually fixes a character
+  you downloaded, since nobody edits a stranger's character file, and hand-pixelled
+  art is small enough that it is always the enlarging case. Every speaker's request
+  is honoured, not just your own, and at no extra loading cost — the client already
+  reads their character file for their blip set. **Settings → Sprite filtering**
+  has the three choices; existing installs move to Auto once. The older client-wide
+  smooth-scaling toggle stays, and still governs backgrounds, desks and chrome.
+- **A frame effect on a long animation fires at the right moment again.** A long
+  animation that is both trimmed to fit memory *and* shrunk to fit your display
+  lost the mapping back to its original frames, so a screenshake, realization
+  flash or sound effect pinned to a particular frame went off at the wrong point
+  in the clip. Only animations hitting both conditions at once were affected,
+  which is why it was easy to miss.
+- **Losing your connection keeps you in the room.** A drop used to throw you back
+  to the lobby, taking the log and the stage with it. Now the room freezes exactly
+  as it was, behind a box that says what happened and offers to reconnect — so you
+  can read back *why* you were disconnected instead of guessing. This already
+  worked for a tab you were not looking at; it now works for the one you are.
+- **Hiding the desk, or a character, applies everywhere.** The pinned side pane,
+  replay playback and the scene maker's preview each ignored those choices, so the
+  desk stayed visible in the pinned pane with the toggle on. They are your
+  choices, so they now reach every stage the client draws.
+- **The lobby's own actions are back on the lobby.** Refresh and Sort sat in a
+  menu that is only useful before you join a server; they are now beside the
+  server list where they belong, and What's New has moved to the lobby header
+  alongside Privacy and Glossary. The status dot that sat over the Help menu is
+  gone; Hotkeys and About are still in that menu.
+
+### If you use an AO2 theme
+
+- **The theme's Server/Debug button works.** An AO2 theme can declare a button
+  that swaps the server chat panel for the client's own failure log, plus a panel
+  for that log to draw in. Both were read and then ignored, so the button did
+  nothing and the panel sat empty. Both now behave as AO2 does — including the
+  small detail that the button is labelled with the panel you are *looking at*
+  rather than the one you would switch to.
+- **A background that ships no desk stops borrowing the previous room's.** The
+  client re-derives whether a desk exists on every background change, and heals
+  the moment a desk that was missing turns up — a server repack, or a local folder
+  added mid-session, no longer needs a restart.
+
 ## v1.84.0 — 2026-07-27
 
 The theme release. An AO2 theme you import now draws the way the stock AO2
