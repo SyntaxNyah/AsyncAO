@@ -551,7 +551,15 @@ func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 			declared := clampInt(themeFontPct(tc.points), themeFontMinPct, themeFontMaxPct)
 			// AO2 draws the theme's rect and the theme's point size, both times the
 			// same factor, so its capacity is the authored one at any scale.
-			capAO2 := tc.msgW / float64(tc.points)
+			//
+			// In PIXELS. This divided the rect's pixel width by a POINT size, which
+			// overstated AO2's capacity by 96/72 — and the 15% tolerance below was
+			// widened to absorb exactly that, its comment naming "themeFontPct's
+			// point-size-to-pixel truncation" as known residue. It was not residue,
+			// it was the bug: a declared 8 pt opened a 7 px face where Qt gives 11.
+			// With the reference corrected, AceAttorney2x also stops reading as
+			// "already at parity" — it is divergent, which is what issue #21 says.
+			capAO2 := tc.msgW / float64(themeFontPx(tc.points))
 			capBefore := tc.msgW * scale / float64(faceSizeFor(declared, DefaultScalePct))
 			folded := foldCanvasFontPct(declared, canvasTextScalePct(scale, scale), DefaultScalePct)
 			capAfter := tc.msgW * scale / float64(faceSizeFor(folded, DefaultScalePct))
@@ -560,9 +568,10 @@ func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 			if before >= 0.9 && before <= 1.1 {
 				t.Fatalf("%s was already at parity (%.2fx) — this row proves nothing; pick a divergent theme", tc.theme, before)
 			}
-			// 15%: the residue is themeFontPct's point-size-to-pixel truncation (a
-			// declared 10 pt resolves to 83%, which opens a 9 px face, not a 10 px
-			// one), which predates this work and is not the fold's to fix.
+			// 15%: what is left is the percent scale's own integer rounding, which
+			// cannot resolve every point size to a whole pixel exactly. The larger
+			// share this tolerance used to absorb — the point-size-to-pixel
+			// truncation — is fixed rather than tolerated now.
 			if after < 0.85 || after > 1.15 {
 				t.Fatalf("%s: capacity ratio %.2fx before, %.2fx after — the fold must land inside 15%% of AO2", tc.theme, before, after)
 			}

@@ -82,22 +82,51 @@ type themeFontTable struct {
 // element keeps the client font rather than growing the cache (hard rule 4).
 const themeFaceCap = 4
 
-// themeFontPct converts a courtroom_fonts.ini point size to AsyncAO's percent
-// scale. Every scaled face is opened at UIFontSize×pct/100 (see buildSet), so P
-// points is exactly pct = P×100/UIFontSize. AO2 renders the INI's point sizes
-// through QFont::setPointSize (courtroom.cpp:1217) times a FIXED user option
-// (Options::themeScalingFactor, default 1.0) — it does NOT scale them with the
-// window, which is why AsyncAO doesn't either; the per-panel Ctrl+wheel zoom is
-// the user's equivalent knob and folds in through elemPct below.
-func themeFontPct(points int) int { return points * DefaultScalePct / UIFontSize }
-
-// themeFontMinPct / themeFontMaxPct bound the FOLDED per-element scale (3 pt …
-// 48 pt at UIFontSize = 12). Deliberately NOT the per-panel user clamps
-// (config.MinLogScalePercent = 75): real themes ship music_list = 6 (3DS
-// Widescreen), which is legitimately below the user zoom floor and must survive.
+// qtLogicalDPI / qtPointsPerInch are Qt's own point-to-pixel conversion. A POINT
+// is 1/72 inch and Qt renders at a logical 96 DPI, so P points is P×96/72 pixels —
+// 8 pt is 11 px, not 8. courtroom_fonts.ini declares POINTS (QFont::setPointSize,
+// AO2-Client courtroom.cpp:1217) and AsyncAO's percent scale is in PIXELS, so the
+// conversion has to happen or every themed element renders a third too small.
 const (
-	themeFontMinPct = 25
-	themeFontMaxPct = 400
+	qtLogicalDPI    = 96
+	qtPointsPerInch = 72
+)
+
+// themeFontPx is a courtroom_fonts.ini point size in pixels, rounded as Qt rounds.
+func themeFontPx(points int) int {
+	return (points*qtLogicalDPI + qtPointsPerInch/2) / qtPointsPerInch
+}
+
+// themeFontPct converts a courtroom_fonts.ini point size to AsyncAO's percent
+// scale. AO2 renders the INI's point sizes through QFont::setPointSize times a
+// FIXED user option (Options::themeScalingFactor, default 1.0) — it does NOT
+// scale them with the window, which is why AsyncAO doesn't either; the per-panel
+// Ctrl+wheel zoom is the user's equivalent knob and folds in through elemPct.
+//
+// TWO truncations used to eat the size and they compounded. Points were treated
+// as pixels (8 pt → 8 px instead of 11), and then the percent was rounded DOWN
+// again when the face was opened at UIFontSize×pct/100 — so this theme's 8 pt
+// music list resolved to a 7 px face, and its 24 pt message to 24 px where Qt
+// gives 32. Rounding UP here is what makes the round trip exact: 11 px wants
+// 91.67%, and 91% reopens at 10 px while 92% reopens at 11.
+func themeFontPct(points int) int {
+	px := themeFontPx(points)
+	return (px*DefaultScalePct + UIFontSize - 1) / UIFontSize
+}
+
+// themeFontMinPct / themeFontMaxPct bound the FOLDED per-element scale, holding
+// the SAME 3 pt … 48 pt range they always documented. They moved with the
+// point-to-pixel fix rather than in spite of it: 48 pt is 64 px, which is 534% of
+// a 12 px base, so the old 400 would have silently capped every element above
+// 36 pt — the corpus's 50 pt outlier lands at 534 now instead of being cut to
+// three quarters of its authored size.
+//
+// Deliberately NOT the per-panel user clamps (config.MinLogScalePercent = 75):
+// real themes ship music_list = 6 (3DS Widescreen), which is legitimately below
+// the user zoom floor and must survive.
+const (
+	themeFontMinPct = 34  // 3 pt → 4 px
+	themeFontMaxPct = 534 // 48 pt → 64 px
 )
 
 // elemPct is the draw scale for element el: the theme's declared point size

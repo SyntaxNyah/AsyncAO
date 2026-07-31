@@ -66,14 +66,42 @@ func TestThemeFontElemOrder(t *testing.T) {
 	}
 }
 
-// TestThemeFontPct pins the point-size ↔ percent identity: every scaled face is
-// opened at UIFontSize×pct/100, so P points must be exactly P×100/UIFontSize.
-func TestThemeFontPct(t *testing.T) {
+// TestThemeFontPxIsQtsConversion pins the half that was simply missing: a POINT is
+// 1/72 inch and Qt renders at a logical 96 DPI, so courtroom_fonts.ini's point
+// sizes are P×96/72 PIXELS. Treating them as pixels rendered every themed element
+// a third too small — aceattorney2x's 24 pt message opened at 24 px where AO2
+// gives 32, which is most of "the text is the wrong size".
+func TestThemeFontPxIsQtsConversion(t *testing.T) {
+	// Every size aceattorney2x actually declares, plus the corpus boundaries.
 	for _, tc := range []struct{ points, want int }{
-		{12, 100}, {18, 150}, {24, 200}, {8, 66}, {6, 50}, {9, 75}, {13, 108},
+		{24, 32}, // message
+		{12, 16}, // showname
+		{10, 13}, // ic_chatlog, evidence_description
+		{8, 11},  // ms/server_chatlog, music_list, music_name, area_list
+		{14, 19}, // evidence_name
+		{16, 21}, // clock_N
+		{6, 8},   // 3DS Widescreen's music_list — the smallest in the corpus
+		{9, 12},
 	} {
-		if got := themeFontPct(tc.points); got != tc.want {
-			t.Errorf("themeFontPct(%d) = %d, want %d", tc.points, got, tc.want)
+		if got := themeFontPx(tc.points); got != tc.want {
+			t.Errorf("themeFontPx(%d pt) = %d px, want %d", tc.points, got, tc.want)
+		}
+	}
+}
+
+// TestThemeFontPctRoundTripsToThePixelSize is the SECOND truncation. The percent is
+// resolved back to a face at UIFontSize×pct/100, which rounds DOWN — so a percent
+// that is merely close reopens a pixel short, and the two truncations compounded
+// into a 7 px face for a declared 8 pt.
+//
+// It asserts the ROUND TRIP rather than a magic percent: whatever the scale is,
+// asking for P points must reopen at exactly themeFontPx(P).
+func TestThemeFontPctRoundTripsToThePixelSize(t *testing.T) {
+	for points := 6; points <= 32; points++ {
+		pct := themeFontPct(points)
+		reopened := UIFontSize * pct / 100 // exactly what buildSet does
+		if want := themeFontPx(points); reopened != want {
+			t.Errorf("%d pt → %d%% → reopens at %d px, want %d", points, pct, reopened, want)
 		}
 	}
 }
