@@ -351,6 +351,10 @@ var themedToggles = [...]struct{ key, alt, override, label string }{
 	{key: "pre", override: "asyncao_ic_pre", label: "Pre"},
 	{key: "immediate", alt: "pre_no_interrupt", override: "asyncao_ic_immediate", label: "Immediate"},
 	{key: "flip", label: "Flip"},
+	{key: "additive", label: "Additive"},
+	{key: "slide_enable", label: "Slide"},
+	{key: "showname_enable", label: "Shownames"},
+	{key: "guard", label: "Guard"},
 }
 
 // bakeToggleLabels shortens each toggle's label to the rect the theme gave it,
@@ -937,6 +941,48 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		!a.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
 		a.pairFlip = c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip)
 		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
+	}
+
+	// additive (AO2 ui_additive, courtroom.cpp:1089): the next message APPENDS to
+	// your last instead of replacing it. AO2 shows it whenever the server
+	// advertises additive; AsyncAO also honours its master pref, matching the
+	// classic row. Forced off when hidden so a stale check cannot ride a message —
+	// the same rule the classic row applies, and the reason the crammed bar used to
+	// clear it unconditionally (it had nowhere to draw the toggle at all).
+	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
+		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
+		a.icAdditive = c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive)
+		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
+	} else if !ok {
+		a.icAdditive = false
+	}
+
+	// slide_enable (AO2 ui_slide, courtroom.cpp:1096): slide the character into
+	// position rather than cutting. The send site clears it afterwards — AO2 says
+	// "Slides can't be sticky for nausea reasons" (courtroom.cpp:2362).
+	if r, ok := themedToggleRect(lay, "slide_enable", "", ""); ok {
+		a.icSlide = c.CheckboxIn(r, lay.themedToggleLabel("slide_enable", "Slide"), a.icSlide)
+		c.Tooltip(r, "Slide: the character slides into position for this message instead of cutting.")
+	}
+
+	// showname_enable: show custom shownames, or always fall back to character
+	// names. AsyncAO stores the INVERSE (ForceCharNames), so the checkbox reads and
+	// writes the negation — binding to the AO2 key rather than inventing a second
+	// setting is rule (b). The live room is pushed too, so the change shows on the
+	// next line without waiting for a rejoin.
+	if r, ok := themedToggleRect(lay, "showname_enable", "", ""); ok {
+		show := !a.d.Prefs.ForceCharNamesOn()
+		if next := c.CheckboxIn(r, lay.themedToggleLabel("showname_enable", "Shownames"), show); next != show {
+			a.d.Prefs.SetForceCharNames(!next)
+		}
+		c.Tooltip(r, "Shownames: show players' custom shownames. Off falls back to character names, which makes impersonation obvious.")
+	}
+
+	// guard (AO2 ui_guard, courtroom.cpp:1092): silence modcall ALERTS for this
+	// session. Mod-only, as AO2 shows it only once you hold the role.
+	if r, ok := themedToggleRect(lay, "guard", "", ""); ok && a.amIMod() {
+		a.modcallGuard = c.CheckboxIn(r, lay.themedToggleLabel("guard", "Guard"), a.modcallGuard)
+		c.Tooltip(r, "Guard: silence the modcall sound and window flash. The OOC line and the auto-clip still arrive.")
 	}
 
 	// sfx_dropdown (AO2 ui_sfx_dropdown, courtroom.cpp:952): a sound for your NEXT

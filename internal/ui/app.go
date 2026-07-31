@@ -1683,6 +1683,17 @@ type sessionState struct {
 	icPreanim   bool  // "Pre" toggle: send the selected emote's preanimation (session toggle; AUTO-FOLLOWS each emote pick — set when the new emote defines a usable preanim, mirroring AO2-Client ui_pre; the user can override until the next pick). Seeded true in resetSessionState so an untouched fresh join reproduces today's always-play-preanim behavior.
 	icAdditive  bool  // #14 2.8 ADDITIVE: this message appends to your last (session toggle; shown only when the server advertises additive + the pref is on)
 	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
+	// icSlide is AO2's ui_slide (#21): the next message SLIDES the character into
+	// position rather than cutting. Session-scoped like every other IC toggle. AO2
+	// resets it after each send — "Slides can't be sticky for nausea reasons"
+	// (courtroom.cpp:2362) — which the send site does, not this field.
+	icSlide bool
+	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
+	// session. sessionState rather than a preference because AO2's ui_guard is a
+	// bare QCheckBox with no Options read (courtroom.cpp:316-319) — it is a
+	// per-session mute, not a setting, and a mod watching two servers wants it per
+	// tab. The OOC line and the auto-clip still land; only the noise stops.
+	modcallGuard bool
 	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
 	// resetSessionState, so it can't leak across tabs like the App-global version
 	// did). pairOffXText/Y are the typed edit buffers (commit on valid parse).
@@ -4219,8 +4230,14 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.voiceReconcilePeers() // someone joined/left voice — sync the decoder set
 		case courtroom.EventModcall:
 			a.pushOOC("[MOD CALL] "+ev.Text, "")
-			a.playThemeSFX("mod_call")
-			a.ctx.FlashWindow()
+			// AO2's ui_guard silences the modcall ALERT only (courtroom.cpp:4997-5001
+			// gates the sound and the window flash on !ui_guard->isChecked()). The OOC
+			// line above and the auto-clip below still land, so a guarded mod loses the
+			// interruption, never the report.
+			if !a.modcallGuard {
+				a.playThemeSFX("mod_call")
+				a.ctx.FlashWindow()
+			}
 			a.signalModcall(a.serverName, ev.Text)            // desktop toast (opt-in)
 			a.autoClipModcall(a.serverName, a.icLog, ev.Text) // freeze IC context for mods (opt-out)
 		case courtroom.EventAuth:

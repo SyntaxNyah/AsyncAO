@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -120,6 +122,109 @@ func TestAceAttorney2xUsesTheAltImmediateSpelling(t *testing.T) {
 	if _, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); !ok {
 		t.Error("the Immediate toggle resolved nothing — AO2 falls back to pre_no_interrupt (courtroom.cpp:1072-1084)")
 	}
+}
+
+// TestAceAttorney2xDeclaresTheWholeToggleRow pins that every toggle this commit
+// binds has a rect in the real theme, on its own row — the "completely missing
+// toggles here" complaint. If any of these stopped resolving, the toggle would
+// silently vanish under rule (e) with no test noticing.
+func TestAceAttorney2xDeclaresTheWholeToggleRow(t *testing.T) {
+	lay := fixtureLayout(t)
+	for _, tc := range themedToggles {
+		if _, ok := themedToggleRect(lay, tc.key, tc.alt, tc.override); !ok {
+			t.Errorf("%q resolves no rect — the toggle would not draw at all", tc.key)
+		}
+	}
+}
+
+// TestSlideIsNotStickyAfterSend pins AO2's own rule. ui_slide is cleared right
+// after the packet is built — "Slides can't be sticky for nausea reasons"
+// (AO2-Client courtroom.cpp:2362) — and a stuck slide makes every subsequent line
+// lurch, which is far more noticeable than losing one slide to a swallowed send.
+func TestSlideIsNotStickyAfterSend(t *testing.T) {
+	if !strings.Contains(readSourceFile(t, "screens.go"), "a.icSlide = false") {
+		t.Error("sendIC does not clear icSlide — the slide would ride every following message")
+	}
+}
+
+// TestSlideReachesTheWire pins that the toggle is not decorative: OutgoingMS has
+// carried a Slide field and serialized it all along, and only the UI literal never
+// set it. A toggle that changes nothing is worse than an absent one.
+func TestSlideReachesTheWire(t *testing.T) {
+	if !strings.Contains(readSourceFile(t, "screens.go"), "Slide:     a.icSlide") {
+		t.Error("the OutgoingMS literal does not carry icSlide — the toggle would do nothing")
+	}
+}
+
+// TestGuardSilencesOnlyTheAlert pins the half of ui_guard that is easy to get
+// wrong. AO2 gates the SOUND and the window flash on the checkbox
+// (courtroom.cpp:4997-5001); the OOC line and the auto-clip are not gated, so a
+// guarded moderator loses the interruption but never the report itself.
+func TestGuardSilencesOnlyTheAlert(t *testing.T) {
+	arm, ok := sourceBlockAfter(readSourceFile(t, "app.go"), "case courtroom.EventModcall:", "case courtroom.")
+	if !ok {
+		t.Fatal("the modcall handler moved")
+	}
+	// The guard's body is the run of lines indented one level deeper than the `if`,
+	// which is what distinguishes "inside the guard" from "after it" — an index
+	// comparison cannot tell those apart.
+	var guarded []string
+	inGuard := false
+	for _, line := range strings.Split(arm, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "if !a.modcallGuard {":
+			inGuard = true
+		case inGuard && trimmed == "}":
+			inGuard = false
+		case inGuard && trimmed != "":
+			guarded = append(guarded, trimmed)
+		}
+	}
+	if len(guarded) == 0 {
+		t.Fatal("the modcall alert is not gated on modcallGuard")
+	}
+	body := strings.Join(guarded, "\n")
+	// Only the two ALERT calls may be silenced.
+	for _, want := range []string{"a.playThemeSFX(", "a.ctx.FlashWindow()"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the guard does not silence %s", want)
+		}
+	}
+	// The report itself must never be. AO2 gates only the sound and the flash
+	// (courtroom.cpp:4997-5001).
+	for _, mustSurvive := range []string{"a.pushOOC(", "a.autoClipModcall(", "a.signalModcall("} {
+		if strings.Contains(body, mustSurvive) {
+			t.Errorf("%s is INSIDE the guard — a guarded mod would lose the report, not just the noise", mustSurvive)
+		}
+		if !strings.Contains(arm, mustSurvive) {
+			t.Errorf("the modcall handler no longer calls %s at all", mustSurvive)
+		}
+	}
+}
+
+// sourceBlockAfter returns the source between start and the next occurrence of
+// end, which is enough to isolate one arm of a switch.
+func sourceBlockAfter(src, start, end string) (string, bool) {
+	i := strings.Index(src, start)
+	if i < 0 {
+		return "", false
+	}
+	arm := src[i+len(start):]
+	if j := strings.Index(arm, end); j > 0 {
+		arm = arm[:j]
+	}
+	return arm, true
+}
+
+// readSourceFile is the source probe the structural pins above share.
+func readSourceFile(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // TestThemedToggleLabelFallsBackToTheConstant pins the memo's contract: an absent

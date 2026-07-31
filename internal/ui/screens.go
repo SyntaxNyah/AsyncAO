@@ -7273,6 +7273,7 @@ func (a *App) sendIC(shout int) {
 		Flip:      a.pairFlip,
 		Immediate: a.icImmediate,      // non-interrupting preanim (IC-row toggle)
 		Additive:  a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
+		Slide:     a.icSlide,          // #21: slide into position instead of cutting (AO2 ui_slide)
 		KFOCompat: a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
@@ -7297,6 +7298,12 @@ func (a *App) sendIC(shout int) {
 	// evidPresent stays armed for the same reason (AO2 resets it on the echo):
 	// a swallowed send must not disarm the evidence you presented.
 	a.icPendingSent = a.icInput
+	// Slide is deliberately NOT sticky. AO2 clears ui_slide right after building
+	// the packet — "Slides can't be sticky for nausea reasons"
+	// (AO2-Client courtroom.cpp:2362) — and unlike the input above it is cleared
+	// optimistically, because a swallowed send costs a slide nobody notices
+	// whereas a stuck slide makes every subsequent line lurch.
+	a.icSlide = false
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
