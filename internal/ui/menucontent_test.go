@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -124,7 +126,6 @@ func TestLobbyUtilRowShedTheMigratedButtons(t *testing.T) {
 		{menuServersTitle, "Phone Book"},
 		{menuExtrasTitle, "Settings"},
 		{menuHelpTitle, "About AsyncAO"},
-		{menuHelpTitle, menuWhatsNewLabel},
 		{menuHelpTitle, "Chat logs"},
 	} {
 		menuRow(t, tc.menuTitle, tc.label) // fatals when the row is missing
@@ -357,45 +358,53 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	}
 }
 
-// TestMenuHelpWhatsNewClearsTheUnreadStamp pins that the moved row kept the second
-// half of the lobby button's behaviour (#23): opening the history is what clears the
-// nag, so a row that only navigated would leave the badge on forever.
-func TestMenuHelpWhatsNewClearsTheUnreadStamp(t *testing.T) {
-	a := stageMenuBarApp(t)
-	a.screen = ScreenLobby
-	a.d.Prefs.SetChangelogSeen("0.0.0-not-this-build")
-	if !a.changelogUnread() {
-		t.Skip("dev build: changelogUnread is always false, so there is no badge to clear")
+// TestWhatsNewLeftTheHelpMenu pins where the release notes live. They moved to the
+// LOBBY header beside Privacy and Glossary, because notes are read between sessions
+// rather than mid-trial, and the unread badge the Help row carried sat on the Help
+// TITLE where it overlapped the last glyph and read as a rendering defect.
+//
+// Hotkeys and About AsyncAO deliberately STAY in the menu: they are useful from any
+// screen, which release notes are not.
+func TestWhatsNewLeftTheHelpMenu(t *testing.T) {
+	for _, row := range menuHelpItems {
+		if row.label == "What's New" {
+			t.Error("What's New is back in the Help menu — it belongs on the lobby header")
+		}
 	}
-	a.fireMenuItem(menuRow(t, menuHelpTitle, menuWhatsNewLabel))
-	if a.screen != ScreenChangelog {
-		t.Fatalf("What's New → screen %v, want the version history", a.screen)
-	}
-	if a.changelogUnread() {
-		t.Error("opening the history must clear the unread stamp")
+	for _, keep := range []string{"Hotkeys", "About AsyncAO"} {
+		menuRow(t, menuHelpTitle, keep) // fatals when the row is missing
 	}
 }
 
-// TestMenuBarUnreadBadgeStaysInsideTheStrip pins the badge placement. drawUnreadDot
-// hangs its dot ABOVE its anchor, which is right for a button mid-screen and wrong
-// for a strip whose Y is zero — half the badge would be off the top of the window.
-func TestMenuBarUnreadBadgeStaysInsideTheStrip(t *testing.T) {
+// TestMarkChangelogSeenStampsTheBuild pins the half of the old badge mechanism that
+// survived: opening the notes records which build was read. Nothing displays
+// "unread" any more, but the stamp is the only record of it and a future
+// notification would need it.
+func TestMarkChangelogSeenStampsTheBuild(t *testing.T) {
 	a := stageMenuBarApp(t)
-	hi := menuBarIndexOf(menuHelpTitle)
-	if hi < 0 {
-		t.Fatal("the badge rides the Help title, so the Help menu has to exist")
+	const stale = "0.0.0-not-this-build"
+	a.d.Prefs.SetChangelogSeen(stale)
+
+	a.markChangelogSeen()
+	if got := a.d.Prefs.ChangelogSeenVersion(); got == stale {
+		t.Error("markChangelogSeen must stamp the current build as seen")
 	}
-	// drawUnreadDot's own geometry (changelog.go): a dotD-wide dot whose top-left is
-	// (anchor.X+anchor.W-dotD+dotLift, anchor.Y-dotLift), inside a 1px halo.
-	const dotD, dotLift, halo = int32(10), int32(2), int32(1)
-	title := a.menuBarTitleRect(hi)
-	anchor := menuBarBadgeAnchor(title)
-	x, y := anchor.X+anchor.W-dotD+dotLift, anchor.Y-dotLift
-	if y-halo < 0 || y+dotD+halo > menuBarH {
-		t.Errorf("badge spans y %d..%d, outside the %d-tall strip", y-halo, y+dotD+halo, menuBarH)
+}
+
+// TestMenuBarDrawsNoUnreadBadge pins the removal. A green dot rode the Help title
+// and hung off its top-right corner, so it overlapped the title's last glyph and
+// read as a rendering defect in the strip rather than as a notification. It also
+// nagged about something nobody asked to be told. This guards the whole mechanism
+// staying gone rather than just the draw call: a reintroduced badge would need one
+// of these symbols back.
+func TestMenuBarDrawsNoUnreadBadge(t *testing.T) {
+	src, err := os.ReadFile("menubar.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if x-halo < title.X || x+dotD+halo > title.X+title.W {
-		t.Errorf("badge spans x %d..%d, outside the Help title %d..%d — it would sit on the neighbouring title",
-			x-halo, x+dotD+halo, title.X, title.X+title.W)
+	for _, gone := range []string{"drawUnreadDot", "menuBarBadgeAnchor", "menuBarBadgeDropY", "menuBarBadgeInsetX", "changelogUnread"} {
+		if strings.Contains(string(src), gone) {
+			t.Errorf("menubar.go still references %q — the unread badge is back on the strip", gone)
+		}
 	}
 }

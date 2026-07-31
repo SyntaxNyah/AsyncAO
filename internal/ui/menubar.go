@@ -163,14 +163,6 @@ const (
 	// menuBarHairlineH is the 1px rule along the strip's bottom edge that separates
 	// the bar from whatever the screen draws under it.
 	menuBarHairlineH = int32(1)
-	// menuBarBadgeDropY / menuBarBadgeInsetX place an unread badge (drawUnreadDot,
-	// changelog.go) inside the strip. That helper hangs a 10 px dot off its anchor's
-	// TOP-RIGHT corner and two pixels ABOVE it — right for a button in the middle of
-	// a screen, but on a strip whose Y is 0 it would put half the badge off the top
-	// of the window. The drop keeps the dot inside the 22 px band; the inset keeps it
-	// off the neighbouring title's padding.
-	menuBarBadgeDropY  = int32(5)
-	menuBarBadgeInsetX = int32(4)
 )
 
 // Named indices into activeKitColors / defaultKitColors (ui.go), which is a fixed
@@ -355,9 +347,13 @@ var menuExtrasItems = []menuItem{
 	{kind: menuItemAction, label: "Settings", act: menuOpenSettings},
 }
 
+// menuHelpItems keeps the reference material — Hotkeys and About AsyncAO stay here
+// because they are useful from any screen. "What's New" deliberately does NOT: it
+// lives on the LOBBY header beside Privacy and Glossary (screens.go), because
+// release notes are read between sessions rather than mid-trial, and the unread
+// badge it used to carry sat on the Help title where it read as a rendering defect.
 var menuHelpItems = []menuItem{
 	{kind: menuItemAction, label: "Hotkeys", shortcut: "F1", act: menuToggleHotkeys},
-	{kind: menuItemAction, label: menuWhatsNewLabel, act: menuOpenChangelog},
 	{kind: menuItemSeparator},
 	// arg is openHelp's section index — the Help screen's own tab order.
 	{kind: menuItemAction, label: "Privacy", arg: helpTabPrivacy, act: menuOpenHelpTab},
@@ -372,10 +368,6 @@ const (
 	// menuThemeFitLabel is the submenu row's label, which is ALSO the key menuSub
 	// remembers the open child by (menuItemIndexOf). Named so the two uses agree.
 	menuThemeFitLabel = "Theme fit"
-	// menuWhatsNewLabel names the row the unread badge belongs to (#23). The badge
-	// itself rides the Help TITLE — see drawMenuBar — because a nag inside a closed
-	// pane is not a nag; the label is named so the two can never name different rows.
-	menuWhatsNewLabel = "What's New"
 	// helpTabGlossary / helpTabPrivacy are openHelp's section indexes, i.e. positions
 	// in helpSectionNames (help.go). Named per hard rule 9: openHelp(1) at a call
 	// site says nothing about which document opens.
@@ -536,10 +528,6 @@ func menuOpenAbout(a *App, _ int) { a.menuGoto(ScreenAbout) }
 
 // menuOpenChangelog opens the full version history AND clears the unread badge, the
 // same pair the lobby's "What's New" button ran before it moved in here.
-func menuOpenChangelog(a *App, _ int) {
-	a.menuGoto(ScreenChangelog)
-	a.markChangelogSeen()
-}
 
 // menuOpenHelpTab opens the Help screen on one of its sections. openHelp assigns the
 // screen itself and documents that callers set prevScreen first, so re-picking a
@@ -1214,15 +1202,6 @@ func (a *App) drawMenuBar(w, _ int32) {
 		}
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
-	// The unread "What's New" badge (#23) rides the Help TITLE, because the row it
-	// belongs to now lives inside a closed pane and a nag nobody can see is not a
-	// nag. Same predicate and same dot the lobby button carried before the row moved
-	// in here, so opening What's New still clears it.
-	if a.changelogUnread() {
-		if hi := menuBarIndexOf(menuHelpTitle); hi >= 0 {
-			a.drawUnreadDot(menuBarBadgeAnchor(a.menuBarTitleRect(hi)))
-		}
-	}
 	if a.menuBar.open < 0 {
 		return
 	}
@@ -1243,14 +1222,6 @@ func (a *App) drawMenuBar(w, _ int32) {
 // lie menuPaneRowFits exists to prevent one level down.
 func (a *App) menuBarHot(r sdl.Rect) bool {
 	return a.menuBar.live && !a.menuBar.inert && pointIn(a.ctx.mouseX, a.ctx.mouseY, r)
-}
-
-// menuBarBadgeAnchor turns a strip title's rect into the anchor drawUnreadDot wants.
-// That helper hangs its dot off the anchor's top-right corner and two pixels ABOVE
-// it — fine on a button mid-screen, but on a strip whose Y is 0 half the badge would
-// be off the top of the window. See menuBarBadgeDropY / menuBarBadgeInsetX.
-func menuBarBadgeAnchor(r sdl.Rect) sdl.Rect {
-	return sdl.Rect{X: r.X, Y: r.Y + menuBarBadgeDropY, W: r.W - menuBarBadgeInsetX, H: r.H}
 }
 
 // menuBarTextY is the y OFFSET inside a rowH-tall row that vertically centres the

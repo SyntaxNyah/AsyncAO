@@ -283,38 +283,51 @@ func (a *App) drawLobby(w, h int32) {
 	// The leftmost of the cluster: its X is what the centred Privacy/Glossary pair
 	// below measures its room against.
 	utilLeft := lobbyUtilStop(w, lobbyUtilBtnCount-1)
-	// Privacy + Glossary: the two things a newcomer most needs — what the server can see,
-	// and what the AO jargon means. They sit CENTRE STAGE in the header (larger + accent-
-	// styled) instead of buried in the right-hand utility cluster, and replace the old
-	// generic "Help" button — each opens its Help-screen tab. Centred in the gap between the
-	// title and that cluster; the width shrinks and anchors after the title on a narrow
-	// window so the pair never overlaps either side.
+	// Privacy + Glossary + What's New: the three things worth reading before you play —
+	// what the server can see, what the AO jargon means, and what changed in this build.
+	// They sit CENTRE STAGE in the header (larger + accent-styled) instead of buried in
+	// the right-hand utility cluster. Centred in the gap between the title and that
+	// cluster; the width shrinks and anchors after the title on a narrow window so the
+	// row never overlaps either side.
+	//
+	// What's New is here rather than in the menu bar because release notes are a LOBBY
+	// concern: you read them between sessions, not mid-trial. It previously lived in the
+	// Help menu with a green unread dot riding the Help title, which overlapped the
+	// title's last glyph and read as a rendering defect rather than a notification.
 	const (
 		helpBtnWMax     = int32(132) // prominent width when there's room (fullscreen)
-		helpBtnWMin     = int32(96)  // floor so "Glossary" stays readable when squeezed
+		helpBtnWMin     = int32(96)  // floor so "What's New" stays readable when squeezed
 		helpBtnGap      = int32(12)
+		helpBtnCount    = int32(3)
 		headerTitleZone = int32(180) // reserved width for the "AsyncAO" heading on the left
 	)
+	helpGapTotal := helpBtnGap * (helpBtnCount - 1)
 	titleRight := pad + headerTitleZone
 	helpBtnW := helpBtnWMax
-	if zoneW := utilLeft - titleRight; helpBtnW*2+helpBtnGap > zoneW {
-		if helpBtnW = (zoneW - helpBtnGap) / 2; helpBtnW < helpBtnWMin {
+	if zoneW := utilLeft - titleRight; helpBtnW*helpBtnCount+helpGapTotal > zoneW {
+		if helpBtnW = (zoneW - helpGapTotal) / helpBtnCount; helpBtnW < helpBtnWMin {
 			helpBtnW = helpBtnWMin
 		}
 	}
-	pairW := helpBtnW*2 + helpBtnGap
-	helpX := (titleRight+utilLeft)/2 - pairW/2
+	rowW := helpBtnW*helpBtnCount + helpGapTotal
+	helpX := (titleRight+utilLeft)/2 - rowW/2
 	if helpX < titleRight { // narrow window: anchor just after the title
 		helpX = titleRight
 	}
+	helpPitch := helpBtnW + helpBtnGap
 	helpY, helpH := hdrY-2, btnH+4 // a touch taller than the utility buttons
 	if c.ButtonCol(sdl.Rect{X: helpX, Y: helpY, W: helpBtnW, H: helpH}, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(1)
 	}
-	if c.ButtonCol(sdl.Rect{X: helpX + helpBtnW + helpBtnGap, Y: helpY, W: helpBtnW, H: helpH}, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+	if c.ButtonCol(sdl.Rect{X: helpX + helpPitch, Y: helpY, W: helpBtnW, H: helpH}, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(0)
+	}
+	if c.ButtonCol(sdl.Rect{X: helpX + 2*helpPitch, Y: helpY, W: helpBtnW, H: helpH}, "What's New", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+		a.prevScreen = ScreenLobby
+		a.screen = ScreenChangelog
+		a.markChangelogSeen() // opening the notes is what stamps this build as read
 	}
 	// Phone Book page toggle: a dedicated view of just YOUR saved servers. Kept on
 	// screen (see the cluster comment) because "← All servers" is this page's only
