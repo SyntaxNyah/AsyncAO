@@ -1,9 +1,66 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
+
+// TestUnboundDesignKeysNamesOnlyTheOrphans pins the observability that makes
+// "a missing rect draws nothing" supportable: a theme author must be able to
+// learn which of their declared rects AsyncAO does not read. The report must
+// name a genuinely unread key and must stay silent about the three kinds of key
+// that ARE accounted for — a bound slot, a documented deferral, and a
+// char-select rect.
+func TestUnboundDesignKeysNamesOnlyTheOrphans(t *testing.T) {
+	dir := t.TempDir()
+	themeDir := filepath.Join(dir, "themes", "probe")
+	if err := os.MkdirAll(themeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const design = "" +
+		"courtroom = 0, 0, 944, 600\n" + // bound
+		"viewport = 216, 0, 512, 384\n" + // bound
+		"evidence_name = 112, 4, 264, 19\n" + // deliberately deferred
+		"char_select = 0, 0, 714, 668\n" + // char-select key
+		"found_song_color = 144, 238, 144\n" + // a colour, not a rect
+		"showname_extra_width = 48\n" + // a scalar, not a rect
+		"wobbulator = 1, 2, 3, 4\n" // an orphan: no widget reads this
+	if err := os.WriteFile(filepath.Join(themeDir, "courtroom_design.ini"), []byte(design), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th, err := theme.Load("probe", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := unboundDesignKeys(th)
+	if !strings.Contains(got, "wobbulator") {
+		t.Errorf("report %q does not name the orphan key — the diagnostic is blind", got)
+	}
+	for _, quiet := range []string{"courtroom", "viewport", "evidence_name", "found_song_color", "showname_extra_width"} {
+		if strings.Contains(got, quiet) {
+			t.Errorf("report %q names %q, which is accounted for", got, quiet)
+		}
+	}
+	// A fully-covered theme must report nothing at all, or the debug log would
+	// carry a line on every apply for every theme.
+	const covered = "courtroom = 0, 0, 944, 600\nviewport = 216, 0, 512, 384\n"
+	if err := os.WriteFile(filepath.Join(themeDir, "courtroom_design.ini"), []byte(covered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th2, err := theme.Load("probe", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line := unboundDesignKeys(th2); line != "" {
+		t.Errorf("a fully-covered theme reported %q, want silence", line)
+	}
+}
 
 // TestThemeSlotTableIsTotal pins the registry's structural invariants. The table is
 // the contract every later #21 commit binds against, so a duplicate row or a

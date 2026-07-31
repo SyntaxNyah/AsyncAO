@@ -18,8 +18,8 @@ import (
 )
 
 // nudgeWidgetKey is the themed key the tests move. It is a real courtroom_design.ini
-// element name so nothing about the fixture is special-cased, and it is deliberately NOT
-// in layoutEditSkip.
+// element name so nothing about the fixture is special-cased, and it is deliberately a
+// PAINTED, non-fixed themeSlots row — themeKeyEditable("emotes") is true.
 const nudgeWidgetKey = "emotes"
 
 // nudgeThemeLayout is the stock 714×579 canvas plus one small widget parked OFF the

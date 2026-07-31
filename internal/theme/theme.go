@@ -534,6 +534,15 @@ func (t *Theme) KeyCount() int {
 	return t.design.Len() + t.fonts.Len() + t.sounds.Len()
 }
 
+// DesignKeys returns every ROOT-SECTION courtroom_design.ini key the theme
+// resolved (lowercased, values raw). Keys under a [section] are excluded, which
+// is what the caller wants: AO2 reads courtroom_design.ini's widget rects from
+// the root only.
+//
+// Diagnostics only — it allocates a map, so it must never be called from a draw
+// path. The one caller runs on the theme-apply goroutine.
+func (t *Theme) DesignKeys() map[string]string { return t.design.SectionKeys("") }
+
 // atoiTrim discards the parse error ON PURPOSE — that is AO2 parity, not
 // sloppiness. Every design/font tuple in AO2 is read with QString::toInt(),
 // which returns 0 for anything it cannot parse (verified against Qt 6.5.3:

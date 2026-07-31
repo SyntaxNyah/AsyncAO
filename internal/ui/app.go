@@ -2358,9 +2358,14 @@ type themeApply struct {
 	// differently.
 	chatboxStem string
 	iniKeys     int
-	probed      []string
-	inkGuard    string // readability guard verdict ("" = colors kept)
-	fontPath    string // the active theme's bundled font file (.ttf/.otf), "" = none (#6)
+	// unbound is the #21 unbound-design-key report: rect-shaped keys this theme
+	// declares that reach no widget at all. "" when the theme is fully covered.
+	// Built on the apply goroutine (it walks every design key), pushed to the
+	// DEBUG LOG on land — never to the player's screen.
+	unbound  string
+	probed   []string
+	inkGuard string // readability guard verdict ("" = colors kept)
+	fontPath string // the active theme's bundled font file (.ttf/.otf), "" = none (#6)
 
 	// Per-element courtroom_fonts.ini parity (#39): the resolved size/face/bold
 	// table plus the DISTINCT face files it points at (≤ themeFaceCap), read
@@ -3679,7 +3684,7 @@ func (a *App) applyWindowSize(w, h int) {
 // reference theme corpus, whereas char_select is absent on 21 of 74 themes and
 // differs from courtroom on 41 of them (stock AO2 genuinely resizes its window
 // between the two screens). Reads the PRISTINE geometry, so a layout-editor
-// override can't drag the window with it — and `courtroom` is in layoutEditSkip
+// override can't drag the window with it — and `courtroom` is a `fixed` themeSlots row
 // anyway, so the two maps agree here by construction.
 //
 // `viewport` must be declared too, because that is the SECOND half of
@@ -8290,6 +8295,12 @@ func (a *App) applyThemeAsync() uint64 {
 					res.layout[key] = r
 				}
 			}
+			// Unbound-key report (#21), to the DEBUG LOG and never to the player's
+			// screen. AO2 does the same thing inverted: set_size_and_pos qWarns for
+			// every identifier the THEME is silent about (courtroom.cpp:1336), while
+			// the defect this issue found is keys the theme HAS and the client
+			// ignores. Runs here, on the apply goroutine, once per theme apply.
+			res.unbound = unboundDesignKeys(t)
 			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
 			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
 			// showname_align: a plain string design value, so DesignValue rather
@@ -8440,6 +8451,23 @@ func (a *App) pollThemeApply() {
 	if res.inkGuard != "" {
 		a.pushDebug(res.inkGuard)
 	}
+	// #21: name the rects this theme declares that no widget reads. Debug log
+	// only — it is a theme-author diagnostic, not something a player needs on
+	// screen (owner decision).
+	if res.unbound != "" {
+		a.pushDebug(res.unbound)
+	}
+	// #21: drop a stale ms_chatlog drag override. Before the themeSlots registry
+	// that key was ingested AND editable, so a user could drag it — and it fed the
+	// OOC log, because the layout treated it as a server_chatlog alias. It is now
+	// AO2's debug-log rect (courtroom.cpp:831) and inert, so a saved override
+	// would silently place a box for a different widget. Self-limiting rather than
+	// stamped: the key is no longer editable, so it cannot come back, and the
+	// probe is one map read per theme apply.
+	if res.name != "" && a.d.Prefs.HasThemeRectOverride(res.name, "ms_chatlog") {
+		a.d.Prefs.ClearThemeRectOverride(res.name, "ms_chatlog")
+		a.pushDebug("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
+	}
 	// Theme chrome uploads PINNED (above), so applying a theme can evict
 	// emote-button art from T1. The gen-keyed page cache re-Gets on the
 	// bumped generation, but evicted slots then sit in the text fallback
@@ -8468,6 +8496,54 @@ func (a *App) ensureThemeForSession() {
 	if want != "" && want != a.themeAppliedName {
 		a.applyThemeAsync()
 	}
+}
+
+// themeUnboundReportCap bounds the unbound-key debug line (hard rule 4). Twelve
+// names plus a "+N more" tail fits one debug row at every window width and is
+// enough to recognise WHICH family of keys a theme is losing; the exact list is a
+// fixture test's job, not a log line's.
+const themeUnboundReportCap = 12
+
+// unboundDesignKeys lists the theme's rect-shaped design keys that reach no
+// widget: not a themeSlots row, not a deliberate deferral, not a char-select key.
+// "" when the theme is fully covered.
+//
+// This is the observability that makes "a missing rect draws nothing" supportable
+// — a player who loses a control can be told which key their theme declares that
+// AsyncAO does not read. Allocates, and walks every design key: apply goroutine
+// only (hard rule 2).
+func unboundDesignKeys(t *theme.Theme) string {
+	var names []string
+	for key := range t.DesignKeys() {
+		if _, ok := t.ElementRect(key); !ok {
+			continue // pairs, colours and scalars are not widget rects
+		}
+		if themeSlotFor(key) != nil {
+			continue
+		}
+		if _, deferred := themeSlotDeferred[key]; deferred {
+			continue
+		}
+		if _, charSel := charSelectDefaultRects[key]; charSel {
+			continue
+		}
+		names = append(names, key)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	total := len(names)
+	extra := 0
+	if total > themeUnboundReportCap {
+		extra = total - themeUnboundReportCap
+		names = names[:themeUnboundReportCap]
+	}
+	line := fmt.Sprintf("theme declares %d design rect(s) no widget reads: %s", total, strings.Join(names, ", "))
+	if extra > 0 {
+		line += fmt.Sprintf(" (+%d more)", extra)
+	}
+	return line
 }
 
 // themeApplySummary turns one apply into a human-readable verdict, so
