@@ -475,3 +475,49 @@ func TestButtonArtStemsMatchAO2(t *testing.T) {
 		}
 	}
 }
+
+// TestMusicNameIsFixedToItsPlate pins the one rect in the registry whose
+// coordinates are NOT window-absolute once resolved.
+//
+// AO2 parents ui_music_name inside ui_music_display (courtroom.cpp:171), so its
+// declared rect is relative to the plate — which is why the registry marks it
+// relMusicDisplay and why the layout transform deliberately leaves such rects RAW
+// (no offX/offY, no clamp). The themed layout editor builds its drag boxes
+// straight from the resolved rect for every editable key and converts a drag back
+// to design space by subtracting the same offsets unconditionally. So a
+// music_name that is editable offers a box in the window's top-left corner that
+// moves the wrong thing — the ghost box the registry exists to end, in the one
+// place the usual painter check cannot see it.
+//
+// fixed:true is what keeps it out, exactly as showname and message are held out
+// of the editor for the same relative-rect reason.
+func TestMusicNameIsFixedToItsPlate(t *testing.T) {
+	s := themeSlotFor("music_name")
+	if s == nil {
+		t.Fatal("music_name lost its row")
+	}
+	if s.rel != relMusicDisplay {
+		t.Errorf("music_name rel = %d, want relMusicDisplay — AO2 parents it in the plate", s.rel)
+	}
+	if s.state == slotStateInert {
+		t.Error("music_name is painted by drawThemedMusicPlate; leaving it inert misreports the registry")
+	}
+	if !s.fixed {
+		t.Error("music_name must be fixed:true — its rect is plate-relative, so an editor " +
+			"drag box built from it lands in the window's top-left corner and moves the wrong thing")
+	}
+	if themeKeyEditable("music_name") {
+		t.Error("music_name must never be editable — a ghost box the painter check cannot catch")
+	}
+	// Every relative-rect row carries the same hazard, so hold the whole class.
+	for i := range themeSlots {
+		row := &themeSlots[i]
+		if row.rel == relCourtroom || row.state == slotStateInert {
+			continue
+		}
+		if themeKeyEditable(row.key) {
+			t.Errorf("%q has a NON-courtroom-relative rect (rel %d) but is editable — the editor "+
+				"treats every box as window-absolute", row.key, row.rel)
+		}
+	}
+}

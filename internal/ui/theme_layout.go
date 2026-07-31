@@ -15,6 +15,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -876,6 +877,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		searchExternal = true
 		a.musicSearch, _ = c.TextField("musicsearch", r, a.musicSearch, "Search")
 	}
+	// The music plate, and the now-playing name AO2 parents inside it. Drawn before
+	// the panel so the panel can drop its own row when this one has taken over.
+	plateDrew := false
+	if !a.panelHidden(panelLog) {
+		plateDrew = a.drawThemedMusicPlate(lay)
+	}
 
 	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
@@ -902,7 +909,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		case logTabPlayers:
 			a.drawPlayerList(inner)
 		default:
-			a.drawMusicList(inner, true, searchExternal)
+			a.drawMusicList(inner, true, searchExternal, plateDrew)
 		}
 	}
 	// The theme's own volume band. Independent of the music panel above — AO2
@@ -1779,4 +1786,66 @@ func (a *App) drawThemedVolumeSliders(lay *themeLayoutCache) {
 		a.setEffectiveVolumes(master, music, sfx, blip)
 		a.applyAudioVolumes()
 	}
+}
+
+// The theme's music plate (#21 label 2).
+//
+// AO2 builds ui_music_display as an InterfaceAnimationLayer at the music_display
+// rect and parents ui_music_name — a ScrollText — INSIDE it
+// (courtroom.cpp:166-173, :885). That parenting is why music_name's declared
+// coordinates are relative to the plate and not to the courtroom, which the
+// registry records as relMusicDisplay.
+//
+// Returns whether the plate drew, so the music panel can skip its own
+// "Now playing" row and give those pixels back to the track list.
+func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
+	c := a.ctx
+	md, ok := lay.rect("music_display")
+	if !ok {
+		return false // rule (e): no rect, no plate — and no rebase target for music_name
+	}
+	page, resident := a.themePage("music_display")
+	if !resident {
+		return false // art still streaming, or the theme ships none
+	}
+	// &md into cgo would heap-allocate the parameter every frame — the same escape
+	// class drawThemeButton documents.
+	c.cgoRect = md
+	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+
+	// music_name is a CHILD rect, so it is offset by the plate's origin. Resolved
+	// only inside this branch: without the plate there is nothing to be relative to.
+	mn, ok := lay.rect("music_name")
+	if !ok {
+		return true // the plate alone is a legitimate theme choice
+	}
+	label, col := "Nothing playing", ColTextDim
+	if now := a.nowPlayingName(); now != "" {
+		label, col = now, ColAccent
+	}
+	font := a.elemLabelFont(elemMusicName, DefaultScalePct)
+	dst := sdl.Rect{X: md.X + mn.X, Y: md.Y + mn.Y, W: mn.W, H: mn.H}
+	// Clipped, not scrolled: AO2's ScrollText marquees an overlong track name, and
+	// that is a deliberate deviation — a marquee is per-frame motion on a surface
+	// that is otherwise static, and ReduceMotion users would need an opt-out for it.
+	// Clipping keeps the plate honest at rest; the full name stays in the list.
+	if a.elemBold(elemMusicName) {
+		c.LabelClippedFont(font, dst.X+1, dst.Y, dst.W, label, col)
+	}
+	c.LabelClippedFont(font, dst.X, dst.Y, dst.W, label, col)
+	return true
+}
+
+// nowPlayingName is the short display name of the current track, or "" when
+// nothing is playing — the same name the list rows and the IC "has played a song"
+// line use, so all three agree.
+func (a *App) nowPlayingName() string {
+	if a.room == nil {
+		return ""
+	}
+	now := a.room.Scene.MusicTrack
+	if now == "" {
+		return ""
+	}
+	return courtroom.MusicDisplayName(now)
 }

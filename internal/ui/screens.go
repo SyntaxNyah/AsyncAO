@@ -3042,7 +3042,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
 	case logTabMusic:
-		a.drawMusicList(inner, false, false)
+		a.drawMusicList(inner, false, false, false)
 		return
 	case logTabAreas:
 		a.drawAreaList(inner)
@@ -5135,7 +5135,7 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 // win (issue #21, owner decision). The Volume toggle is AsyncAO's own affordance for
 // the same job, so offering both would put two sets of volume controls on one screen.
 // Master volume and blip rate have no AO2 rect and stay reachable in Settings.
-func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal bool) {
+func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExternal bool) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.musicPct = a.logPct
@@ -5173,6 +5173,11 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal bool) {
 	}
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
+	//
+	// nowPlayingExternal means the THEME declared a music_display plate and the
+	// themed pass already painted the name on it (AO2 parents ui_music_name inside
+	// that plate — courtroom.cpp:171). Skipped rather than blanked, so the track
+	// list reclaims the row instead of showing a gap.
 	now := ""
 	if a.room != nil {
 		now = a.room.Scene.MusicTrack
@@ -5181,23 +5186,25 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal bool) {
 	// courtroom.cpp:1201). elemLabelFont keeps the fixed chrome face when the theme
 	// says nothing, so an undressed client draws exactly what it did before; real
 	// themes set music_name_bold = 1, hence the faux-bold second pass.
-	nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
-	if now != "" {
-		// Same short name the list rows and the IC "has played a song" line use
-		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
-		label := "Now playing: " + courtroom.MusicDisplayName(now)
-		if a.elemBold(elemMusicName) {
-			c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, ColAccent)
+	if !nowPlayingExternal {
+		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
+		if now != "" {
+			// Same short name the list rows and the IC "has played a song" line use
+			// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
+			label := "Now playing: " + courtroom.MusicDisplayName(now)
+			if a.elemBold(elemMusicName) {
+				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, ColAccent)
+			}
+			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, ColAccent)
+		} else {
+			if a.elemBold(elemMusicName) {
+				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
+			}
+			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
 		}
-		c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, ColAccent)
-	} else {
-		if a.elemBold(elemMusicName) {
-			c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
-		}
-		c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
+		r.Y += 28
+		r.H -= 28
 	}
-	r.Y += 28
-	r.H -= 28
 	if volMode { // pure volume menu in place of the track list
 		a.drawMusicVolume(r)
 		return

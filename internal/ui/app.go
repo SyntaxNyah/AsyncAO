@@ -2528,6 +2528,12 @@ func themeImageStems() map[string][]string {
 		"testimony":        {"testimony"},
 		// Screen backdrops: the single biggest "the theme applied" signal.
 		"courtroombackground": {"courtroombackground"},
+		// The music plate (#21 label 2). It rides themeImageStems and NOT a slot's art
+		// field on purpose: art feeds themeButtonStems, whose extension order is
+		// PNG-first, and this is an animation layer in AO2 (InterfaceAnimationLayer,
+		// courtroom.cpp:166) that themes often ship as a .gif. themeImageExts walks
+		// webp -> apng -> gif -> png, which is the right ladder for a plate.
+		"music_display":       {"music_display"},
 		"lobbybackground":     {"lobbybackground", "loadingbackground"},
 		themeStemCharSelectBG: {"charselect_background"},
 		// The two char-select cell overlays AOCharButton ships as theme art (#20):

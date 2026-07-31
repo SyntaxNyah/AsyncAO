@@ -145,7 +145,7 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 func (a *App) drawTabContent(id int, inner sdl.Rect) {
 	switch id {
 	case logTabMusic:
-		a.drawMusicList(inner, false, false)
+		a.drawMusicList(inner, false, false, false)
 	case logTabAreas:
 		a.drawAreaList(inner)
 	case logTabPlayers:
