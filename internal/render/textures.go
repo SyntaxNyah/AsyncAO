@@ -104,6 +104,14 @@ type TexturePage struct {
 	SourceFrames int
 	W, H         int32
 	bytes        int64
+	// scaleMode/scaleModeSet memoise the per-texture filter this page's frames
+	// currently carry (scalemode_cgo.go). Per PAGE rather than per texture
+	// because every frame of one animation is the same art at the same size, and
+	// because the cgo call plus its mandatory renderer flush must not happen once
+	// per frame per draw. A variant page keeps its OWN memo — it holds different
+	// textures — which is correct and needs no special case.
+	scaleMode    sdl.ScaleMode
+	scaleModeSet bool
 	// variants holds lazily-built per-pixel transforms of this page (invert /
 	// grayscale / the hue-paint colorize) — a transmitted sprite style needs a
 	// genuinely transformed texture (SetColorMod can't invert/desaturate). They live

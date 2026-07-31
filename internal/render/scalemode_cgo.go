@@ -61,6 +61,8 @@ import (
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // scaleModeSupported reports whether this build can override a texture's filter
@@ -81,6 +83,56 @@ func setTextureScaleMode(tex *sdl.Texture, mode sdl.ScaleMode) bool {
 		return false
 	}
 	return C.asyncaoSetTextureScaleMode((*C.SDL_Texture)(unsafe.Pointer(tex)), C.int(mode)) == 0
+}
+
+// spriteScaleMode settles one layer's filter, finishing the resolution chain
+// that internal/courtroom/scaling.go starts.
+//
+// nativeH is the page's own height and targetH the height it is being drawn at.
+// The final fallback is AO2's automatic rule (AnimationLayer::calculateFrameGeometry,
+// ../AO2-Client/src/animationlayer.cpp:229-273): the default is smooth, but art
+// SHORTER than the space it fills is being enlarged, and enlarging is point-sampled
+// so the pixels stay square. That single rule is what fixes the reported character
+// with no pref and no char.ini edit — hand-pixelled art is small, and small art on a
+// 1080p stage is always being enlarged.
+func (v *Viewport) spriteScaleMode(layer *courtroom.SpriteLayer, nativeH, targetH int32) sdl.ScaleMode {
+	switch courtroom.ResolveScalingMode(v.fx.UserScaling, layer.Scaling) {
+	case courtroom.ScalingPixel:
+		return sdl.ScaleModeNearest
+	case courtroom.ScalingSmooth:
+		return sdl.ScaleModeLinear
+	}
+	if nativeH > 0 && nativeH < targetH {
+		return sdl.ScaleModeNearest
+	}
+	return sdl.ScaleModeLinear
+}
+
+// applyScaleMode points every frame of a page at one filter, memoised so the
+// steady state costs one comparison per draw and no cgo at all.
+//
+// The ren.Flush() is load-bearing, not defensive. HINT_RENDER_BATCHING is on
+// (cmd/asyncao/main.go), so SDL queues copies and resolves each texture's state
+// when the batch is submitted — changing a texture's filter while copies of it
+// are still queued would retroactively re-filter those too. Flushing first ends
+// the batch at the old mode. It only runs when the mode actually CHANGES, so a
+// stage of stable sprites never flushes.
+//
+// Render thread only.
+func (p *TexturePage) applyScaleMode(ren *sdl.Renderer, mode sdl.ScaleMode) {
+	if !scaleModeSupported || p == nil || ren == nil {
+		return
+	}
+	if p.scaleModeSet && p.scaleMode == mode {
+		return
+	}
+	_ = ren.Flush()
+	for _, tex := range p.Frames {
+		setTextureScaleMode(tex, mode)
+	}
+	// Latched even if some frame failed: retrying every draw would flush every
+	// frame forever, and the failure is a property of the SDL build, not the page.
+	p.scaleMode, p.scaleModeSet = mode, true
 }
 
 // textureScaleMode reads a texture's filter back. Production never needs this —

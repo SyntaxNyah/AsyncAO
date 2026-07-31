@@ -1803,3 +1803,80 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 		t.Error("a deliberate post-stamp Stretch reported a move")
 	}
 }
+
+// TestSpriteScalingMigratesEveryoneToAuto pins owner decision D2: the move to
+// Auto reaches EXISTING users, not just fresh installs.
+//
+// The old client had one client-wide linear filter, so a saved smoothScaling:true
+// is not a considered choice about per-sprite behaviour — it is the default nobody
+// touched. Respecting it as if it were a decision would leave every character
+// issue #21 reports as blurry exactly as blurry after the update, which is the
+// whole point of the change.
+func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
+	// A file from before the tri-state existed: smooth scaling on, no stamp.
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"smoothScaling": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(old)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if got := p.SpriteScalingMode(); got != SpriteScalingAuto {
+		t.Errorf("an existing user must land on Auto, got %d", got)
+	}
+	if !p.SpriteScalingMigrated {
+		t.Error("the move must stamp itself, or it re-fires and overwrites the user's later choice")
+	}
+
+	// Once stamped, an explicit pick is theirs and must survive.
+	stamped := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(stamped, []byte(`{"spriteScaling": 2, "spriteScalingMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(stamped)
+	if err != nil {
+		t.Fatalf("load stamped file: %v", err)
+	}
+	if got := q.SpriteScalingMode(); got != SpriteScalingPixel {
+		t.Errorf("a stamped file's explicit choice must be respected, got %d", got)
+	}
+
+	// A value this build doesn't have (hand-edited, or written by a newer
+	// version) must read as Auto rather than index past the UI's label tables.
+	future := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(future, []byte(`{"spriteScaling": 99, "spriteScalingMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := load(future)
+	if err != nil {
+		t.Fatalf("load future file: %v", err)
+	}
+	if got := r.SpriteScalingMode(); got != SpriteScalingAuto {
+		t.Errorf("an out-of-range mode must clamp to Auto, got %d", got)
+	}
+}
+
+// TestSpriteScalingRoundTrips is the save→load half: a new pref that joins
+// prefsJSON but not the load overlay saves and silently never comes back (the
+// standing trap in this file — see the v1.54.5 batch).
+func TestSpriteScalingRoundTrips(t *testing.T) {
+	for _, mode := range []int{SpriteScalingAuto, SpriteScalingSmooth, SpriteScalingPixel} {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		p, err := newWithDebounce(path, testDebounce)
+		if err != nil {
+			t.Fatalf("newWithDebounce: %v", err)
+		}
+		p.SetSpriteScalingMode(mode)
+		if err := p.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		q, err := load(path)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if got := q.SpriteScalingMode(); got != mode {
+			t.Errorf("mode %d did not survive save→load, got %d", mode, got)
+		}
+	}
+}

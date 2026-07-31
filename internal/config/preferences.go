@@ -224,8 +224,35 @@ const defaultRightClickHideSprite = true
 const defaultDragLayout = true
 
 // defaultSmoothScaling turns on linear texture filtering (SDL render
-// scale quality): sprites stretched to the viewport stop shimmering.
+// scale quality): sprites stretched to the viewport stop shimmering. This is
+// the CLIENT-WIDE hint, which still governs backgrounds, desks and chrome;
+// sprites are filtered per-character by SpriteScaling below.
 const defaultSmoothScaling = true
+
+// Per-sprite texture filter (issue #21 label 15), mirroring courtroom.ScalingMode
+// as an int so it round-trips through JSON. Auto is the shipped default AND the
+// value every existing user is migrated to: it honours each character's char.ini
+// scaling= request and otherwise point-samples art that is being ENLARGED, which
+// is what stops hand-pixelled characters rendering as a blur. Smooth and Pixel
+// override both.
+const (
+	SpriteScalingAuto   = 0
+	SpriteScalingSmooth = 1
+	SpriteScalingPixel  = 2
+
+	defaultSpriteScaling = SpriteScalingAuto
+)
+
+// ClampSpriteScaling keeps a hand-edited or future-version prefs file from
+// selecting a mode this build doesn't have: anything unrecognised reads as Auto,
+// the safe default, rather than indexing off the end of the UI's label table.
+// Exported because the settings UI indexes its own label tables by this value.
+func ClampSpriteScaling(v int) int {
+	if v < SpriteScalingAuto || v > SpriteScalingPixel {
+		return defaultSpriteScaling
+	}
+	return v
+}
 
 // defaultUpdateCheck enables the one-shot GitHub-Releases update check at
 // launch (M13). On by default per the user's intent; the check is a single
@@ -862,10 +889,18 @@ type AssetTypePrefs struct {
 // AssetPreferences is the persisted user configuration for asset resolution
 // and pairing. All exported methods are safe for concurrent use.
 type AssetPreferences struct {
-	GlobalFallbacksEnabled bool                         `json:"globalFallbacksEnabled"`
-	PreferAnimated         bool                         `json:"preferAnimated"`
-	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
-	SmoothScaling          bool                         `json:"smoothScaling"`
+	GlobalFallbacksEnabled bool `json:"globalFallbacksEnabled"`
+	PreferAnimated         bool `json:"preferAnimated"`
+	EmoteButtonImages      bool `json:"emoteButtonImages"`
+	SmoothScaling          bool `json:"smoothScaling"`
+	// SpriteScaling is the tri-state per-sprite texture filter (issue #21 label
+	// 15): 0 Auto / 1 Smooth / 2 Pixel, mirroring courtroom.ScalingMode. Auto is
+	// the shipped default and means "let each character's char.ini decide, then
+	// the enlarging-is-point-sampled rule" — AO2's own AUTO_RESIZE_MODE.
+	SpriteScaling int `json:"spriteScaling"`
+	// SpriteScalingMigrated stamps that the one-shot move to Auto has run for this
+	// file (see load). Absent in files written before the tri-state existed.
+	SpriteScalingMigrated  bool                         `json:"spriteScalingMigrated"`
 	UpdateCheck            bool                         `json:"updateCheck"`
 	UpdateExperimental     bool                         `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
 	HighlightColor         int                          `json:"highlightColor"`
@@ -1327,11 +1362,13 @@ type prefsJSON struct {
 	PreferAnimated         *bool            `json:"preferAnimated"`
 	EmoteButtonImages      *bool            `json:"emoteButtonImages"`
 	SmoothScaling          *bool            `json:"smoothScaling"`
-	UpdateCheck            *bool            `json:"updateCheck"`        // absent = default ON
-	UpdateExperimental     bool             `json:"updateExperimental"` // default OFF (opt-in test channel)
-	HighlightColor         *int             `json:"highlightColor"`     // absent = default accent
-	ICCustomColor          *int             `json:"icCustomColor"`      // absent = defaultICCustomColor
-	BgSlideshow            bool             `json:"bgSlideshow"`        // default OFF (zero value)
+	SpriteScaling          *int             `json:"spriteScaling"`         // absent = Auto
+	SpriteScalingMigrated  *bool            `json:"spriteScalingMigrated"` // absent = the move to Auto has not run for this file
+	UpdateCheck            *bool            `json:"updateCheck"`           // absent = default ON
+	UpdateExperimental     bool             `json:"updateExperimental"`    // default OFF (opt-in test channel)
+	HighlightColor         *int             `json:"highlightColor"`        // absent = default accent
+	ICCustomColor          *int             `json:"icCustomColor"`         // absent = defaultICCustomColor
+	BgSlideshow            bool             `json:"bgSlideshow"`           // default OFF (zero value)
 	BgSlideshowSecs        int              `json:"bgSlideshowSecs"`
 	DownloadKBps           int              `json:"downloadKBps"`         // 0 = unlimited (default)
 	ForceCharNames         bool             `json:"forceCharNames"`       // default OFF
@@ -1862,6 +1899,8 @@ func defaultPrefs(path string) *AssetPreferences {
 		RainbowSpriteVividness: defaultRainbowVivid,
 		SpriteTintColor:        defaultSpriteTintColor,
 		SmoothScaling:          defaultSmoothScaling,
+		SpriteScaling:          defaultSpriteScaling,
+		SpriteScalingMigrated:  true,
 		UpdateCheck:            defaultUpdateCheck,
 		ShowAssetWarnings:      defaultShowAssetWarnings,
 		SpriteMoveOn:           defaultSpriteMove,
@@ -2006,6 +2045,22 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.SmoothScaling != nil {
 		p.SmoothScaling = *onDisk.SmoothScaling
+	}
+	// Sprite scaling moves EVERY existing user to Auto once, not just new installs.
+	// The old client had a single client-wide linear filter, so a saved
+	// smoothScaling:true is not a considered choice about per-sprite behaviour — it
+	// is the default nobody touched, and leaving people on it would mean the
+	// characters issue #21 reports as blurry stay blurry after updating. One-shot
+	// and stamped, so anyone who then picks Smooth or Pixel outright keeps it.
+	if onDisk.SpriteScalingMigrated != nil && *onDisk.SpriteScalingMigrated {
+		p.SpriteScalingMigrated = true
+		if onDisk.SpriteScaling != nil {
+			p.SpriteScaling = ClampSpriteScaling(*onDisk.SpriteScaling)
+		}
+	} else {
+		p.SpriteScaling = defaultSpriteScaling
+		p.SpriteScalingMigrated = true
+		p.markDirty() // persist the stamp promptly so the move never re-fires
 	}
 	if onDisk.UpdateCheck != nil {
 		p.UpdateCheck = *onDisk.UpdateCheck
@@ -2982,6 +3037,30 @@ func (p *AssetPreferences) SetEmoteButtonImages(enabled bool) {
 }
 
 // --- Smooth scaling -----------------------------------------------------------
+
+// SpriteScalingMode reports the per-sprite texture filter (SpriteScalingAuto /
+// Smooth / Pixel). Clamped on read as well as on load, so a value written by a
+// newer build can never index past this build's options.
+func (p *AssetPreferences) SpriteScalingMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return ClampSpriteScaling(p.SpriteScaling)
+}
+
+// SetSpriteScalingMode picks the per-sprite texture filter. Applies live: the
+// mode is resolved at DRAW time from the page memo, so unlike SmoothScaling this
+// needs no texture purge and no re-stream.
+func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
+	mode = ClampSpriteScaling(mode)
+	p.mu.Lock()
+	if p.SpriteScaling == mode {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteScaling = mode
+	p.mu.Unlock()
+	p.markDirty()
+}
 
 // SmoothScalingEnabled reports the linear texture-filtering toggle.
 func (p *AssetPreferences) SmoothScalingEnabled() bool {

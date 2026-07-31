@@ -298,6 +298,14 @@ type SpriteFX struct {
 	ReflectStrength int // reflection opacity [0,100] (higher = more visible)
 
 	SolidR, SolidG, SolidB uint8 // fixed tint colour (Solid)
+
+	// UserScaling is the viewer's own texture-filter choice (issue #21 label 15).
+	// It rides HERE rather than on its own setter deliberately: SpriteFX already
+	// reaches all seven draw paths — live, split pane, replay, scene maker, comic
+	// and GIF export — and a separate setter would be seven new call sites to keep
+	// in sync, which is exactly how the pinned pane ended up exempt from the
+	// hide/move overrides. Zero value is courtroom.ScalingAuto, the shipped default.
+	UserScaling courtroom.ScalingMode
 }
 
 // tinted reports whether any wash is active (so drawSprite skips all colour-mod
@@ -1338,6 +1346,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		flip = sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
+	// drawPage tracks which page owns the texture actually being blitted, so the
+	// scale-mode memo below lands on THAT page's frames. A variant / hue-paint page
+	// holds different textures with their own filter state; memoising on the base
+	// would leave every recoloured sprite on the client-wide filter.
+	drawPage := page
 	// Hue paint (Tint+Grayscale, the v1.53.5 composition) draws from a dedicated
 	// luma-preserving colorize variant instead of multiplying the tint over the
 	// grayscale variant — a multiply can only remove light, so the old composition
@@ -1353,7 +1366,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		st.Variant() == courtroom.VariantGrayscale {
 		if pp, ok := v.store.PaintPage(layer.Active, st.R, st.G, st.B,
 			st.Paint2R, st.Paint2G, st.Paint2B, st.PaintSplit); ok && frame < len(pp.Frames) {
-			tex = pp.Frames[frame]
+			tex, drawPage = pp.Frames[frame], pp
 			huePainted = true
 		}
 	}
@@ -1365,9 +1378,14 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// couldn't build, the old grayscale×tint composition still renders.)
 	if eff := layer.Style.Variant(); eff != courtroom.VariantNone && !huePainted {
 		if vpg, ok := v.store.VariantPage(layer.Active, eff); ok && frame < len(vpg.Frames) {
-			tex = vpg.Frames[frame]
+			tex, drawPage = vpg.Frames[frame], vpg
 		}
 	}
+	// AO2 filters per SPRITE, not per client (issue #21 label 15). page.H is the
+	// native art height here: both decoder downscalers are downscale-only and capped
+	// at the display height, so a sprite being ENLARGED was never resampled and this
+	// is exactly AO2's m_frame_size.height() vs widget_size.height() test.
+	drawPage.applyScaleMode(ren, v.spriteScaleMode(layer, page.H, v.dstRect.H))
 
 	// Resolve the effective per-layer effects into plain locals (no allocation; a
 	// no-FX layer leaves them all neutral and the blit byte-identical). A

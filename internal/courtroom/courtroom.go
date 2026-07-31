@@ -123,6 +123,12 @@ type SpriteLayer struct {
 	// see begin()). Zero value = none; the renderer leaves the blit
 	// byte-identical when it's inactive.
 	Style SpriteStyle
+	// Scaling is this layer's texture filter, per AO2's per-sprite model (each
+	// AnimationLayer carries its own resize mode, so a pixel-art speaker and a
+	// smooth pair partner each get what they asked for). Zero value is
+	// ScalingAuto, which is both the default and the case the renderer settles
+	// with the geometry rule — see scaling.go.
+	Scaling ScalingMode
 }
 
 // Scene is the renderer's entire input: plain data, no SDL types, mutated
@@ -324,6 +330,15 @@ type Courtroom struct {
 	SpriteWait        bool
 	SpriteWaitTimeout time.Duration
 	SpriteReady       func(base string) bool
+	// SpriteScaling reports a character's char.ini [Options] scaling= request
+	// (get_scaling). Same shape as SpriteReady — a nil hook means "nobody asked",
+	// which resolves to ScalingAuto and lets the renderer's geometry rule decide.
+	//
+	// The App answers it from the same per-speaker char.ini cache that already
+	// backs BlipNameFor / ChatSkinFor (ui/charmeta.go), so every speaker's filter
+	// is honoured for no extra network probe. Called once per message when the
+	// sprite layers are built, never per render frame.
+	SpriteScaling func(charName string) ScalingMode
 	// SpriteWaitPair / SpriteWaitPreanim widen the gate (power-user strictness
 	// knobs, both default off): also hold until the pair partner's idle sprite /
 	// the message's preanimation have decoded. The timeout caps the whole hold
@@ -1139,6 +1154,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		OffsetY:     msg.SelfOffsetY,
 		Visible:     true,
 		Style:       style, // transmitted recolour / glow / opacity / motion
+		Scaling:     c.scalingFor(speakerName),
 	}
 
 	// #17 networked frame effects: parse this message's FRAME_* fields into the
@@ -1169,7 +1185,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			// passed. RecalledStyle returns the zero (inactive) style for a negative
 			// char id, and filterStyleForViewer honours the viewer's opt-outs for the
 			// pair sprite too.
-			Style: c.filterStyleForViewer(c.RecalledStyle(msg.Pair.CharID)),
+			Style:   c.filterStyleForViewer(c.RecalledStyle(msg.Pair.CharID)),
+			Scaling: c.scalingFor(msg.Pair.Name),
 		}
 	} else {
 		c.Scene.Pair = SpriteLayer{}

@@ -30,13 +30,17 @@ const (
 type charMeta struct {
 	blips string // [Options] blips / legacy gender ("" = none declared)
 	chat  string // [Options] chat — the misc chatbox-skin folder ("" = none)
-	done  bool   // fetch settled (hit or miss) — misses cache too (no refetch loop)
+	// scaling is [Options] scaling — the texture filter this character asks for
+	// (get_scaling). ScalingAuto until the fetch lands and when none is declared.
+	scaling courtroom.ScalingMode
+	done    bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 }
 
 type charMetaFetch struct {
-	url   string
-	blips string
-	chat  string
+	url     string
+	blips   string
+	chat    string
+	scaling courtroom.ScalingMode
 }
 
 // charMetaFor answers from the cache and fires ONE async fetch on a miss.
@@ -76,6 +80,7 @@ func (a *App) charMetaFetchOne(url string) {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
 				res.chat = strings.TrimSpace(ini.Chat)
+				res.scaling = ini.ScalingMode()
 			}
 		}
 		select {
@@ -97,7 +102,7 @@ func (a *App) pollCharMeta() {
 			if a.charMetaCache == nil {
 				a.charMetaCache = make(map[string]charMeta, charMetaCap)
 			}
-			a.charMetaCache[res.url] = charMeta{blips: res.blips, chat: res.chat, done: true}
+			a.charMetaCache[res.url] = charMeta{blips: res.blips, chat: res.chat, scaling: res.scaling, done: true}
 		default:
 			return
 		}
@@ -126,4 +131,17 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	}
 	room.BlipNameFor = a.remoteBlipFor
 	room.ChatSkinFor = a.remoteChatSkinFor
+	room.SpriteScaling = a.remoteScalingFor
+}
+
+// remoteScalingFor is the courtroom's SpriteScaling callback: the speaker's own
+// char.ini [Options] scaling= request (issue #21 label 15). It rides the SAME
+// cache and the SAME single fetch as blips and chat skins, so honouring every
+// character's declared filter costs no extra network probe.
+//
+// Auto until the fetch lands — the speaker's NEXT message picks it up, and the
+// renderer's geometry rule covers the gap meanwhile, so a first message is never
+// wrong, only potentially less specific than the author asked for.
+func (a *App) remoteScalingFor(char string) courtroom.ScalingMode {
+	return a.charMetaFor(char).scaling
 }

@@ -8876,6 +8876,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		BreathAmp:       a.d.Prefs.BreathAmp(),
 		BreathSpeed:     a.d.Prefs.BreathSpeed(),
 		ReflectStrength: a.d.Prefs.ReflectStrength(),
+		UserScaling:     courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode()), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
 	}
 	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
 		rgb := a.d.Prefs.SpriteTintColorRGB()

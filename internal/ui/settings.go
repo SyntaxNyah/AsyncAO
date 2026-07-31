@@ -1264,6 +1264,22 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
+	// Per-character sprite filtering (#21). Separate from the client-wide toggle
+	// above, which still governs backgrounds, desks and chrome. This one applies
+	// live — the filter is resolved at draw time from the page memo — so unlike
+	// the hint it needs no purge and no re-stream.
+	spriteScale := config.ClampSpriteScaling(a.d.Prefs.SpriteScalingMode())
+	c.Label(pad, y+4, "Sprite filtering:", ColText)
+	if next, changed := c.Dropdown("spritescale",
+		sdl.Rect{X: pad + spriteScaleDDX, Y: y, W: spriteScaleDDW, H: fieldH},
+		spriteScalingLabels[:], spriteScale); changed {
+		a.d.Prefs.SetSpriteScalingMode(next)
+		spriteScale = config.ClampSpriteScaling(next)
+		settings.statusLine = "Sprite filtering: " + spriteScalingLabels[spriteScale]
+	}
+	y += 26
+	c.Label(pad, y+2, spriteScalingHints[spriteScale], ColTextDim)
+	y += 24
 	y = a.settingsSection(y, w, "Scale & text size")
 	// Global scale: DPI-driven by default, manual spinbox when auto is off.
 	scaleAuto := a.d.Prefs.UIScaleAuto()
@@ -5098,4 +5114,25 @@ func scanThemeDirs(roots []string, pick string) []string {
 		names = append(names, pick)
 	}
 	return names
+}
+
+// Per-character sprite filtering (#21 label 15). Indices MUST match
+// config.SpriteScaling* — the pref is mirrored straight into the dropdown row.
+const (
+	spriteScaleDDX = 110 // dropdown x, past the "Sprite filtering:" label
+	spriteScaleDDW = 230 // wide enough for the longest label below
+)
+
+var spriteScalingLabels = [...]string{
+	config.SpriteScalingAuto:   "Auto (recommended)",
+	config.SpriteScalingSmooth: "Always smooth",
+	config.SpriteScalingPixel:  "Always crisp pixels",
+}
+
+// One line of plain why-would-I-pick-this under the row. Short and factual —
+// settings text stays descriptive, never chatty.
+var spriteScalingHints = [...]string{
+	config.SpriteScalingAuto:   "Follows each character's own char.ini, and keeps small pixel-art sprites crisp when they're enlarged.",
+	config.SpriteScalingSmooth: "Blurs enlarged pixel art. Ignores what characters ask for.",
+	config.SpriteScalingPixel:  "Crisp everywhere, including art that was drawn to be smooth.",
 }
