@@ -149,8 +149,8 @@ var themeSlots = [...]themeSlot{
 	// ---- phasePanels: the IC bar --------------------------------------------
 	{key: "ao2_ic_chat_message", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:906
 	{key: "ao2_ic_chat_name", phase: phasePanels, state: slotStateHandDrawn},    // courtroom.cpp:907
-	{key: "text_color", phase: phasePanels, state: slotStateInert},              // courtroom.cpp:1138
-	{key: "sfx_dropdown", phase: phasePanels, state: slotStateInert},            // courtroom.cpp:952
+	{key: "text_color", phase: phasePanels, state: slotStateHandDrawn},          // courtroom.cpp:1138
+	{key: "sfx_dropdown", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:952
 	{key: "sfx_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
 	{key: "effects_dropdown", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:968
 	{key: "emote_dropdown", phase: phasePanels, state: slotStateInert},   // courtroom.cpp:925
@@ -159,18 +159,18 @@ var themeSlots = [...]themeSlot{
 	{key: "pos_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:928
 	{key: "pos_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
 	// AO2 reads "immediate" first and falls back to "pre_no_interrupt".
-	{key: "immediate", alt: "pre_no_interrupt", phase: phasePanels, state: slotStateInert},
-	{key: "pre", phase: phasePanels, state: slotStateInert},          // courtroom.cpp:1065
-	{key: "flip", phase: phasePanels, state: slotStateInert},         // courtroom.cpp:1086
-	{key: "additive", phase: phasePanels, state: slotStateInert},     // courtroom.cpp:1089
-	{key: "guard", phase: phasePanels, state: slotStateInert},        // courtroom.cpp:1092
-	{key: "slide_enable", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:1096
+	{key: "immediate", alt: "pre_no_interrupt", phase: phasePanels, state: slotStateHandDrawn},
+	{key: "pre", phase: phasePanels, state: slotStateHandDrawn},          // courtroom.cpp:1065
+	{key: "flip", phase: phasePanels, state: slotStateHandDrawn},         // courtroom.cpp:1086
+	{key: "additive", phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1089
+	{key: "guard", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:1092
+	{key: "slide_enable", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1096
 	// showname_enable and casing are NOT placed by upstream AO2-Client:
 	// ui_showname_enable is a bare declaration (courtroom.h) and there is no
 	// set_size_and_pos for it or for "casing" anywhere in src/. They are
 	// KFO-Client / 2.9-era elements, so the only citation we can honestly give is
 	// the theme itself (aceattorney2x courtroom_design.ini:162 and :213).
-	{key: "showname_enable", phase: phasePanels, state: slotStateInert},
+	{key: "showname_enable", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "casing", phase: phasePanels, state: slotStateInert},
 
 	// ---- phasePanels: shouts, judge strip, utility buttons ------------------
@@ -178,8 +178,8 @@ var themeSlots = [...]themeSlot{
 	{key: "objection", art: []string{"objection"}, phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1001
 	{key: "take_that", art: []string{"takethat"}, phase: phasePanels, state: slotStateHandDrawn},      // courtroom.cpp:1007
 	{key: "custom_objection", art: []string{"custom"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1100
-	{key: "realization", phase: phasePanels, state: slotStateInert},                                   // courtroom.cpp:1108
-	{key: "screenshake", phase: phasePanels, state: slotStateInert},                                   // courtroom.cpp:1113
+	{key: "realization", phase: phasePanels, state: slotStateHandDrawn},                               // courtroom.cpp:1108
+	{key: "screenshake", phase: phasePanels, state: slotStateHandDrawn},                               // courtroom.cpp:1113
 	{key: "mute_button", phase: phasePanels, state: slotStateInert},                                   // courtroom.cpp:1117
 	{key: "witness_testimony", art: []string{"witnesstestimony"}, phase: phasePanels, state: slotStateHandDrawn},
 	{key: "cross_examination", art: []string{"crossexamination"}, phase: phasePanels, state: slotStateHandDrawn},
