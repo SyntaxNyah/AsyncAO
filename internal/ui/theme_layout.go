@@ -152,6 +152,14 @@ type themeLayoutCache struct {
 	// draw path resolves angles lock-free (a plain map probe, never a prefs read).
 	// nil / an absent key means angle 0 = the plain, byte-identical Copy path.
 	ang map[string]uint8
+	// toggleLabel holds each AO2 toggle's label already shortened to its own design
+	// rect (truncateLabelTo, ui.go — AO2's truncate_label_text). Baked here rather
+	// than computed at draw time because a theme legitimately declares rects too
+	// narrow for their labels — aceattorney2x gives `flip` 51x19, leaving 29 px —
+	// and truncation allocates, which the themed frame's zero-alloc gate forbids.
+	// An absent key means "the label fits": the draw site falls back to the
+	// constant, which is the byte-identical path for every theme with roomy rects.
+	toggleLabel map[string]string
 }
 
 // themeLayout builds the cache for a canvas laid out inside the FULL (w, h) box,
@@ -324,8 +332,75 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	if themeName, _ := a.d.Prefs.Theme(); themeName != "" {
 		lay.ang = a.d.Prefs.ThemeRectRotationSnapshot(themeName)
 	}
+	a.bakeToggleLabels(lay)
 	lay.valid = true
 	return lay
+}
+
+// themedSwatchW is the colour swatch's width inside AO2's text_color rect. AO2
+// draws no separate swatch — its combo box tints itself — but AsyncAO's free-hex
+// wheel anchors on one (icSwatchRect), so the swatch takes a fixed bite off the
+// left of the rect and the dropdown gets the remainder. Named per hard rule 9.
+const themedSwatchW = int32(14)
+
+// themedToggles are the AO2 checkbox rects whose labels have to survive a rect the
+// theme sized for a shorter word. key is the AO2 design key, alt its second
+// spelling (AO2 probes "immediate" then "pre_no_interrupt", courtroom.cpp:1072),
+// and override the asyncao_* author-override rect, which WINS when declared.
+var themedToggles = [...]struct{ key, alt, override, label string }{
+	{key: "pre", override: "asyncao_ic_pre", label: "Pre"},
+	{key: "immediate", alt: "pre_no_interrupt", override: "asyncao_ic_immediate", label: "Immediate"},
+	{key: "flip", label: "Flip"},
+}
+
+// bakeToggleLabels shortens each toggle's label to the rect the theme gave it,
+// once per cold rebuild. See themeLayoutCache.toggleLabel for why this cannot
+// happen at draw time.
+func (a *App) bakeToggleLabels(lay *themeLayoutCache) {
+	lay.toggleLabel = nil
+	for _, t := range themedToggles {
+		r, ok := themedToggleRect(lay, t.key, t.alt, t.override)
+		if !ok {
+			continue
+		}
+		short := truncateLabelTo(t.label, a.ctx.CheckboxLabelAvail(r), a.ctx.TextWidth)
+		if short == t.label {
+			continue // fits: leave the key absent so the draw site uses the constant
+		}
+		if lay.toggleLabel == nil {
+			lay.toggleLabel = make(map[string]string, len(themedToggles))
+		}
+		lay.toggleLabel[t.key] = short
+	}
+}
+
+// themedToggleRect resolves one toggle's rect in AO2's own precedence, with the
+// AsyncAO override on top (#21 rule (d)): the asyncao_* key WINS when a theme
+// author declares it, then the AO2 key, then AO2's own second spelling. A theme
+// that declares none of the three draws nothing (rule (e)).
+func themedToggleRect(lay *themeLayoutCache, key, alt, override string) (sdl.Rect, bool) {
+	if override != "" {
+		if r, ok := lay.rect(override); ok {
+			return r, true
+		}
+	}
+	if r, ok := lay.rect(key); ok {
+		return r, true
+	}
+	if alt != "" {
+		if r, ok := lay.rect(alt); ok {
+			return r, true
+		}
+	}
+	return sdl.Rect{}, false
+}
+
+// themedToggleLabel is the baked label for key, or the constant when it fits.
+func (lay *themeLayoutCache) themedToggleLabel(key, full string) string {
+	if s, ok := lay.toggleLabel[key]; ok {
+		return s
+	}
+	return full
 }
 
 // themeCanvasFit is where ONE design canvas lands inside a window box: the
@@ -787,22 +862,39 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 
-	// IC input row: color swatch + name dropdown + the message field at
-	// its design rect (the dropdown's open list auto-widens past 64px). Shares
-	// the classic row's full colour list + helpers (palette, extended #98,
-	// Rainbow/Random) so the two layouts stay in lock-step.
+	// THE IC BAR IS AO2'S, NOT A CRAM OF ASYNCAO CHROME (#21, rules (a)/(b)/(e)).
+	//
+	// ao2_ic_chat_message is a bar of its OWN in every AO2 theme — aceattorney2x
+	// gives it 216,384,512,23, the full width of the stage — and AO2 places the
+	// colour picker, the SFX picker and the Pre/Immediate/Flip toggles at their own
+	// design rects on the rows below it. AsyncAO used to pack all of them INTO the
+	// message rect, so the input the theme sized at 512 px ended up a ~136 px
+	// leftover on the right. That is the issue's headline complaint.
+	//
+	// Each control now resolves its own rect in AO2's precedence with the AsyncAO
+	// author-override on top (themedToggleRect): asyncao_* wins when a theme
+	// declares it, then the AO2 key, then AO2's second spelling. A theme that
+	// declares none of them draws nothing there — it does NOT fall back to
+	// AsyncAO's old arrangement, which is rule (e) and is what AO2 does too
+	// (set_size_and_pos hides a widget whose rect is missing, courtroom.cpp:1334).
+	// Commit 5's AO2 stock-default backstop is what keeps that honest: a theme that
+	// omits text_color still gets AO2's own rect for it.
 	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
-		icSel, sw := a.icColorSelected()
-		const themedColorW = 64
-		// Colour swatch + dropdown: at its OWN theme rect (asyncao_ic_color, #4b) if the
-		// theme places it there, else crammed at the message rect's left edge (classic).
-		colorR, ownColor := lay.rect("asyncao_ic_color")
-		lead := int32(0)
-		if !ownColor {
-			colorR = sdl.Rect{X: in.X, Y: in.Y, W: 14 + themedColorW, H: in.H}
-			lead = 14 + themedColorW + 4 // crammed: the field starts after the colour
+		var send bool
+		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+		// AO2's own placeholder (courtroom.cpp ui_ic_chat_message).
+		a.icInput, send = c.TextFieldEmoji(icFieldID, in, a.icInput, "Message in-character", icPrimary, icEmoji)
+		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
+		a.drawMsgCounter(in, a.d.Prefs.MessageCounterOn())
+		if send {
+			a.sendIC(0)
 		}
-		swatch := sdl.Rect{X: colorR.X, Y: colorR.Y, W: 12, H: colorR.H}
+	}
+
+	// text_color (AO2 ui_text_color, courtroom.cpp:1138) — swatch + dropdown.
+	if r, ok := themedToggleRect(lay, "text_color", "", "asyncao_ic_color"); ok {
+		icSel, sw := a.icColorSelected()
+		swatch := sdl.Rect{X: r.X, Y: r.Y, W: themedSwatchW, H: r.H}
 		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
 		a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
@@ -811,134 +903,60 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		// Freeze the IC field's selection so a picked colour can wrap it (§3.8,
 		// folded into the dropdown to match AO2's on_text_color_changed); shared
-		// with the classic row so the two can't drift. See captureICColorSel.
+		// with the classic row so the two can't drift.
 		a.captureICColorSel()
-		if next, changed := c.Dropdown(icColorDDID, sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
+		dd := sdl.Rect{X: r.X + themedSwatchW, Y: r.Y, W: r.W - themedSwatchW, H: r.H}
+		if next, changed := c.Dropdown(icColorDDID, dd, icColorChoices, icSel); changed {
 			a.applyICColorPick(next)
 		}
-		fieldX, fieldW := in.X+lead, in.W-lead
-		// Immediate toggle: at its OWN theme rect (asyncao_ic_immediate, #4b) if placed,
-		// else crammed into the field (only when the message rect is wide enough after it).
-		const (
-			themedImmedW    = 96  // space reserved for the "Immediate" checkbox
-			themedImmedKeep = 120 // min field width to still host the checkbox
-		)
-		// The classic theme IC bar doesn't host the #14 Additive toggle, so force it
-		// off here — otherwise a check left on in the default layout could silently
-		// ride a message sent from this layout.
-		a.icAdditive = false
-		if ir, ownImmed := lay.rect("asyncao_ic_immediate"); ownImmed {
-			a.icImmediate = c.Checkbox(ir.X, ir.Y+(ir.H-16)/2, "Immediate", a.icImmediate)
-			c.Tooltip(ir, "Immediate: the preanim plays without holding back the text")
-		} else if fieldW > themedImmedW+themedImmedKeep {
-			a.icImmediate = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Immediate", a.icImmediate)
-			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedImmedW, H: in.H}, "Immediate: the preanim plays without holding back the text")
-			fieldX += themedImmedW
-			fieldW -= themedImmedW
-		}
-		// "Pre" toggle (AO2-Client ui_pre): its OWN theme rect (asyncao_ic_pre, #4b)
-		// if placed, else crammed into the field after Immediate — only when the
-		// field stays wide enough (same keep-room rule) and the piece isn't hidden.
-		// AUTO-FOLLOWS each emote pick (selectEmote); unchecked forces idle at the
-		// send site so the intro is skipped even when the emote defines one.
-		const (
-			themedPreW    = 60  // space reserved for the "Pre" checkbox
-			themedPreKeep = 120 // min field width to still host it
-		)
-		if pr, ownPre := lay.rect("asyncao_ic_pre"); ownPre {
-			a.icPreanim = c.Checkbox(pr.X, pr.Y+(pr.H-16)/2, "Pre", a.icPreanim)
-			c.Tooltip(pr, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-		} else if !a.panelHidden(slotICPre) && fieldW-themedPreW >= themedPreKeep {
-			// Pre is a CORE crammed piece (v1.63.0+ redesign): it crams FIRST (right after
-			// Immediate) and only needs the field to stay hostable (>= themedPreKeep) after
-			// its own width — mirroring the classic row, where Pre's guard prices in only its
-			// own width + the input floor. FX crams next, then SFX, then emoji, so those three
-			// yield BEFORE Pre on a narrow field (the reverse of the pre-redesign order, where
-			// Pre self-sacrificed to the whole SFX+emoji+FX tail). The own-rect Pre branch
-			// above is independent and unchanged. Inline (no closure) — 0-alloc draw path.
-			a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
-			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-			fieldX += themedPreW
-			fieldW -= themedPreW
-		}
-		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
-		// FX / SFX / emoji buttons: each at its OWN theme rect (asyncao_ic_fx / _sfx /
-		// _emoji, #4b) if the theme places it there, else crammed into the field
-		// left-to-right (only when there's room — #M5 / #M2 S1). CRAM ORDER mirrors the
-		// classic row (v1.63.0+ redesign): FX first (a core button beside Pre), then the
-		// SFX dropdown, then the emoji button — so on a narrow field emoji yields first,
-		// then SFX, then FX (the reverse of the pre-redesign SFX→emoji→FX cram, which made
-		// FX the first to drop). themedFieldKeep keeps the field hostable after each cram.
-		const themedFieldKeep = 120 // min field width to still host the input after a crammed piece
-		if fr, ownFX := lay.rect("asyncao_ic_fx"); ownFX {
-			a.fxButton(fr)
-		} else if field.W > fxBtnW+themedFieldKeep {
-			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
-			field.X += fxBtnW + 4
-			field.W -= fxBtnW + 4
-		}
-		// "Flip" toggle (AO2-Client ui_flip, courtroom.cpp:1629-1636): mirror your
-		// character's emotes. Shown only when the server advertises the FLIPPING feature —
-		// AO2 hides ui_flip otherwise. ONE bool, TWO views: it mirrors a.pairFlip (the Pair
-		// panel's checkbox), so an unclicked Checkbox just rewrites the same value and the
-		// two can't drift (single source of truth: a.pairFlip). UNLIKE icAdditive above
-		// (forced off at line 489 because it's ephemeral IC-row state), pairFlip is real
-		// pair state that parks/resets per tab, so the field is left ALONE when the toggle
-		// is hidden — a stale flip simply stops being shown, never silently cleared. Crammed
-		// after FX (a theme-placeable own rect would need "asyncao_ic_flip" added to
-		// themeLayoutKeys in app.go; only the crammed form is provided here). themedFlipW
-		// mirrors the classic icFlipW band.
-		const themedFlipW = 60 // crammed "Flip" checkbox width (matches classic icFlipW — box+gap+label with slack)
-		// Flip: unconditional (v1.80.2) — crammed whenever the server advertises flipping,
-		// no field-width guard. Matches classic-layout parity and AO2-Client ui_flip behaviour.
-		// flipDrewOrAbsent is kept only for the SFX/emoji cram branches below, which remain
-		// width-guarded (own-theme-rect placements for SFX/emoji are independent and untouched).
-		flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
-		flipDrewOrAbsent := !flipInChain
-		if flipInChain && !a.panelHidden(slotICFlip) && field.W > themedFlipW {
-			a.pairFlip = c.Checkbox(field.X, in.Y+(in.H-16)/2, "Flip", a.pairFlip)
-			c.Tooltip(sdl.Rect{X: field.X, Y: in.Y, W: themedFlipW, H: in.H}, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
-			field.X += themedFlipW
-			field.W -= themedFlipW
-			flipDrewOrAbsent = true
-		}
-		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's
-		// own until set back to "auto". Picking one previews it.
+	}
+
+	// pre (AO2 ui_pre, courtroom.cpp:1065). AUTO-FOLLOWS each emote pick
+	// (selectEmote); unchecked forces idle at the send site so the intro is
+	// skipped even when the emote defines one.
+	if r, ok := themedToggleRect(lay, "pre", "", "asyncao_ic_pre"); ok && !a.panelHidden(slotICPre) {
+		a.icPreanim = c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.icPreanim)
+		c.Tooltip(r, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+	}
+
+	// immediate (AO2 ui_immediate, courtroom.cpp:1072-1084 — it reads "immediate"
+	// first and falls back to "pre_no_interrupt"; aceattorney2x declares only the
+	// latter, which is exactly why the alt spelling has to be probed).
+	if r, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); ok {
+		a.icImmediate = c.CheckboxIn(r, lay.themedToggleLabel("immediate", "Immediate"), a.icImmediate)
+		c.Tooltip(r, "Immediate: the preanim plays without holding back the text")
+	}
+
+	// flip (AO2 ui_flip, courtroom.cpp:1629-1636) — shown only when the server
+	// advertises FLIPPING, as AO2 hides ui_flip otherwise. ONE bool, TWO views: it
+	// mirrors a.pairFlip (the Pair panel's checkbox), so an unclicked CheckboxIn
+	// just rewrites the same value and the two cannot drift. The field is left
+	// ALONE when the toggle is hidden — a stale flip stops being shown, never
+	// silently cleared, because pairFlip is real pair state that parks per tab.
+	if r, ok := themedToggleRect(lay, "flip", "", ""); ok &&
+		!a.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
+		a.pairFlip = c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip)
+		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
+	}
+
+	// sfx_dropdown (AO2 ui_sfx_dropdown, courtroom.cpp:952): a sound for your NEXT
+	// message, overriding the emote's own until set back to "auto". Picking one
+	// previews it.
+	if r, ok := themedToggleRect(lay, "sfx_dropdown", "", "asyncao_ic_sfx"); ok {
 		a.ensureSFXChoices()
-		const themedSFXW = 92                                 // crammed SFX dropdown width
-		if sr, ownSFX := lay.rect("asyncao_ic_sfx"); ownSFX { // own theme rect (#4b) — independent of the cram-width priority
-			a.drawThemedSFXPicker(sr)
-		} else if flipDrewOrAbsent && field.W > themedSFXW+themedFieldKeep {
-			a.drawThemedSFXPicker(sdl.Rect{X: field.X, Y: field.Y, W: themedSFXW, H: field.H})
-			field.X += themedSFXW + 4
-			field.W -= themedSFXW + 4
-		}
-		if a.panelHidden(slotICEmoji) {
-			// hideable in both layouts (playtest: some players don't want it)
-		} else if er, ownEmoji := lay.rect("asyncao_ic_emoji"); ownEmoji {
-			if a.drawEmojiBarButton(er) {
-				a.showEmojiPicker = !a.showEmojiPicker
-			}
-		} else if flipDrewOrAbsent && field.W > field.H+themedFieldKeep {
-			if a.drawEmojiBarButton(sdl.Rect{X: field.X, Y: field.Y, W: field.H, H: field.H}) {
-				a.showEmojiPicker = !a.showEmojiPicker
-			}
-			field.X += field.H + 4
-			field.W -= field.H + 4
-		}
-		// The #2 React BUTTON was removed by request (playtest: unused); the
-		// asyncao_ic_react theme key is now a no-op for compatibility.
-		var send bool
-		icCounterOn := a.d.Prefs.MessageCounterOn()
-		// The counter draws INSIDE the field's right edge now (drawMsgCounter), so the
-		// themed field no longer carves off msgCounterReserve — the input keeps its full
-		// crammed width and the count overlays its right edge, yielding to the muted chip.
-		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
-		a.icInput, send = c.TextFieldEmoji(icFieldID, field, a.icInput, "Talk in-character here…", icPrimary, icEmoji)
-		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
-		a.drawMsgCounter(field, icCounterOn)
-		if send {
-			a.sendIC(0)
+		a.drawThemedSFXPicker(r)
+	}
+
+	// Text FX and the emoji picker have NO AO2 design key, so under rule (c) their
+	// home is the Extras menu — they are not crammed into an AO2 rect any more. A
+	// theme author who WANTS them inside the canvas still can, via the asyncao_*
+	// override rects, which is the whole point of that tier (rule (d)).
+	if r, ok := lay.rect("asyncao_ic_fx"); ok {
+		a.fxButton(r)
+	}
+	if r, ok := lay.rect("asyncao_ic_emoji"); ok && !a.panelHidden(slotICEmoji) {
+		if a.drawEmojiBarButton(r) {
+			a.showEmojiPicker = !a.showEmojiPicker
 		}
 	}
 	if nameR, ok := lay.rect("ao2_ic_chat_name"); ok {
