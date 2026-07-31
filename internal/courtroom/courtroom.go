@@ -1846,12 +1846,27 @@ func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 }
 
 // deskResolution reports what this room knows about the live Scene.DeskBase.
-// The courtroom has no view of the texture store, and does not need one: only
-// DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
-// is missing is simply DeskUnresolved. Plain map read, game-thread only.
+// Only DeskAbsent changes the outcome of DeskDrawn, so a base we have not been
+// told about is simply DeskUnresolved. Game-thread only: a map read plus, where
+// the room was wired one, the same T1 residency probe the sprite wait-gate uses.
 func (c *Courtroom) deskResolution() DeskResolution {
 	if c.Scene.DeskBase == "" {
 		return DeskUnresolved
+	}
+	// RESIDENT beats a remembered miss, and clears it. missingDesks used to be
+	// insert-only, so a desk that 404'd once stayed absent for the life of the
+	// Courtroom even after it actually arrived — a server repack, a local mount
+	// added, or a format learned. The render side already self-heals
+	// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
+	// there and ShowDesk still said no. This is also what makes DeskResolved a
+	// real state rather than a declared-but-unreachable one.
+	//
+	// SpriteReady is the same same-thread T1 map probe the sprite wait-gate uses,
+	// and it is nil in rigs that never wired it — an unwired room simply keeps the
+	// old two-state answer.
+	if c.SpriteReady != nil && c.SpriteReady(c.Scene.DeskBase) {
+		delete(c.missingDesks, c.Scene.DeskBase)
+		return DeskResolved
 	}
 	if _, ok := c.missingDesks[c.Scene.DeskBase]; ok {
 		return DeskAbsent

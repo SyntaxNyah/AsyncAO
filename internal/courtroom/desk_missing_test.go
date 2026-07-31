@@ -193,3 +193,49 @@ func TestBackgroundChangeWithNoMessageIsSafe(t *testing.T) {
 		t.Error("setBackground did not resolve a background base")
 	}
 }
+
+// TestLateDeskUploadHealsTheMissingSet pins the other half of the desk state.
+//
+// missingDesks was insert-only, so a desk that 404'd once stayed absent for the
+// life of the Courtroom — even after it actually arrived (a server repack, a
+// local mount added, a format learned). The RENDER side already self-heals
+// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
+// resident and ShowDesk still said no, for the rest of the session.
+//
+// It also makes DeskResolved a real state. It was declared and unreachable.
+func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.current = &protocol.ChatMessage{DeskMod: protocol.DeskShow}
+	room.phase = PhaseTalking
+	room.Scene.Position = "wit"
+	room.setBackground("repacked")
+
+	desk := room.Scene.DeskBase
+	room.NotifyDeskMissing(desk)
+	if room.Scene.ShowDesk {
+		t.Fatal("a conclusively-missing desk must stop drawing")
+	}
+	if got := room.deskResolution(); got != DeskAbsent {
+		t.Fatalf("deskResolution = %v, want DeskAbsent", got)
+	}
+
+	// The desk lands after all. The residency probe is the same one the sprite
+	// wait-gate uses; an unwired room keeps the old two-state answer.
+	resident := map[string]bool{}
+	room.SpriteReady = func(base string) bool { return resident[base] }
+	if got := room.deskResolution(); got != DeskAbsent {
+		t.Error("a probe that reports NOT resident must leave the miss standing")
+	}
+	resident[desk] = true
+
+	if got := room.deskResolution(); got != DeskResolved {
+		t.Errorf("deskResolution = %v after the desk uploaded, want DeskResolved", got)
+	}
+	if _, stale := room.missingDesks[desk]; stale {
+		t.Error("the miss survived the upload — it would re-assert on the next re-derive")
+	}
+	room.applyDeskMods(false)
+	if !room.Scene.ShowDesk {
+		t.Error("the desk is resident but still hidden — the render and courtroom sides disagree")
+	}
+}

@@ -47,6 +47,18 @@ func deskSwapRig(t *testing.T) (*sdl.Renderer, *TextureStore, *Viewport) {
 // deskDraws reports whether drawFill actually blitted the desk layer. drawFill
 // writes v.fillRect only on the path that reaches ren.Copy, so a zero rect after
 // a cleared start means "nothing was drawn" — AO2's ui_vp_desk->hide().
+//
+// SCOPE, because this is easy to mistake for end-to-end coverage: it calls
+// drawFill DIRECTLY, so it deliberately bypasses the `if scene.ShowDesk` gate at
+// the real desk draw site (viewport.go). What it proves is the RESIDENCY half —
+// that the store binds, releases and re-binds the desk layer correctly.
+//
+// The STATE half — whether Scene.ShowDesk says yes at all — lives in the
+// courtroom and is pinned there (TestBackgroundChangeReDerivesDesk,
+// TestLateDeskUploadHealsTheMissingSet). Both halves had to be wrong together to
+// produce issue #21's "the default desk appears anyway": the store healed on
+// upload while the courtroom's own missing set stayed insert-only, so the two
+// disagreed and the texture was resident while ShowDesk still said no.
 func deskDraws(t *testing.T, ren *sdl.Renderer, v *Viewport, deskBase string) bool {
 	t.Helper()
 	vp := sdl.Rect{X: 0, Y: 0, W: 640, H: 480}
