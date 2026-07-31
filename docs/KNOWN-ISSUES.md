@@ -36,6 +36,54 @@ of the leak it fixes. Closing this entry means sweeping every remaining overlay
 onto the primitive and deciding, per raw `pointIn()` site, whether it should honour
 a fence — an audit across the whole kit rather than a localized change.
 
+## Theme font `_sharp` is parsed and deliberately not applied
+
+AO2's `set_font` reads `<element>_sharp` and, when it is the literal string `1`,
+builds the font with `QFont::NoAntialias` (`../AO2-Client/src/courtroom.cpp:1237`,
+`:1268-1274`). AsyncAO parses the flag into `theme.FontSpec.Sharp` and stops
+there. That looks like a trivial gap — branch `RenderUTF8Blended` to
+`RenderUTF8Solid` — and it was specced as such. **Measurement killed it.** Keeping
+the numbers here so it is not re-attempted from the same wrong premise.
+
+**It is a no-op where it was supposed to matter.** `aceattorney2x` sets `_sharp`
+on `showname` and `message`, in pixel-art faces it ships itself
+(`ace_name_regular.ttf`, `igiari-cyrillic.ttf`) — which is why it looked like the
+fix for "rendered it badly". But AsyncAO opens those at 16 px and 32 px
+(`themeFontPx` × `themeFontPct`, `UIFontSize` = 12), and at those sizes the faces
+already rasterise fully binary: `ace_name_regular` @16 px measures 1204 opaque /
+**0 antialiased** pixels under *both* Blended and Solid, and `igiari-cyrillic`
+@32 px measures 1712 / 0 under both. Identical censuses. These are pixel-grid
+faces at a design-multiple ppem, so FreeType's normal rasteriser is already
+producing what `_sharp` asks for.
+
+**Where it does bite, it makes things worse.** The only elements with real
+antialiasing are the ones resolving to system Arial — `server_chatlog`,
+`music_list`, `area_list` at 8 pt → 11 px (657 antialiased pixels → 0). Those are
+the small-text list panels, and rendering 11 px Arial with antialiasing off is a
+legibility regression, not a fidelity win.
+
+**And Solid carries a colour artefact.** SDL_ttf writes the INVERSE of the
+foreground colour into its transparent texels, where Blended writes the
+foreground colour itself: measured `rgb@alpha0` = `000000` under Solid for white
+text, `FFFFFF` under Blended (and the reverse for black text). AsyncAO runs
+`SDL_HINT_RENDER_SCALE_QUALITY = "1"` (`cmd/asyncao/main.go`), so at any non-1:1
+blit those texels bleed into the glyph edges — a dark halo on the white showname,
+a light halo on the black message body. An alpha-only census cannot see this,
+which is how the first feasibility probe missed it.
+
+Two further implementation hazards, recorded because they are not obvious:
+colour emoji renders **completely blank** under Solid (measured 576/576 fully
+transparent pixels, zero chroma, on the bundled COLRv0 Twemoji), so any
+implementation needs an exact carve-out for the emoji face; and the showname
+MEASURE path (`chatboxfit.go`) rasterises through the same cache as the draw
+path, so threading only the draw sites silently doubles the raster and desyncs
+the widen ladder from what is drawn.
+
+Also unimplemented in the same `set_font` body, and a *larger* visible delta on
+the same widget: `outlined` / `outline_color` / `outline_width`
+(`courtroom.cpp:1239-1256`), which `FontSpec` does not model at all. If theme
+typography is picked up again, that is the better first target.
+
 ## A missing BACKGROUND still holds the previous room's, unlike the desk
 
 The desk layer releases when its image is conclusively missing — that was issue

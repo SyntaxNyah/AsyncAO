@@ -360,3 +360,45 @@ func TestFontFileNoneWhenThemeShipsNoFont(t *testing.T) {
 		t.Errorf("FontFile = %q, want empty (no bundled font)", got)
 	}
 }
+
+// TestSharpAcceptsOnlyLiteralOne pins the exact polarity of the _sharp read.
+//
+// The key reads like a boolean and every instinct says to parse it as one, but
+// AO2 is `bool antialias = get_design_element(id + "_sharp", ...) != "1"`
+// (courtroom.cpp:1237). Only the literal string "1" disables antialiasing —
+// "true", "yes" and "0" all leave it ON. Widening this to a boolean parser would
+// flip exactly the elements a theme deliberately left smooth: aceattorney2x
+// writes ic_chatlog_sharp = 0 and music_name_sharp = 0 on purpose, and under a
+// permissive parser "0" would read as "declared, therefore sharp".
+//
+// Goes red if theme.go's `raw == "1"` becomes strconv.ParseBool, `raw != "0"`, or
+// anything that trims and re-interprets the value.
+func TestSharpAcceptsOnlyLiteralOne(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want bool
+	}{
+		{"1", true},
+		{"0", false},
+		{"true", false}, // NOT a spelling AO2 accepts
+		{"yes", false},
+		{"", false},
+		{"11", false},
+		{"1.0", false},
+	} {
+		root := t.TempDir()
+		fonts := "showname = 14\n"
+		if tc.raw != "" {
+			fonts += "showname_sharp = " + tc.raw + "\n"
+		}
+		writeTheme(t, root, "Polarity", aoDefaultDesign, fonts)
+		th, err := Load("Polarity", []string{root})
+		if err != nil {
+			t.Fatalf("load %q: %v", tc.raw, err)
+		}
+		if got := th.Font("showname").Sharp; got != tc.want {
+			t.Errorf("showname_sharp = %q parsed as Sharp=%v, want %v "+
+				"(AO2 courtroom.cpp:1237 compares against the literal \"1\")", tc.raw, got, tc.want)
+		}
+	}
+}

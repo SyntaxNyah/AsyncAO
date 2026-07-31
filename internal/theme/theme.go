@@ -45,8 +45,20 @@ type FontSpec struct {
 	Color RGB
 	Font  string // optional "<name>_font" family (AO2); used to find a bundled .ttf
 	// Sharp mirrors "<id>_sharp = 1" — AO2 renders that element WITHOUT
-	// antialiasing (courtroom.cpp:1237, QFont::NoAntialias). Parsed for parity;
-	// AsyncAO's label cache has no solid-render dimension yet, so it is unused.
+	// antialiasing (courtroom.cpp:1237, QFont::NoAntialias).
+	//
+	// Parsed and DELIBERATELY not applied, on measurement rather than effort:
+	// the faces themes set it on already rasterise fully binary at the sizes
+	// AsyncAO opens them, so honouring it changes nothing where it was meant to,
+	// while SDL_ttf's Solid path adds an inverse-colour halo under the client's
+	// linear filtering and blanks colour emoji outright. The numbers, and the
+	// better target in the same set_font body (outline_*), are in
+	// docs/KNOWN-ISSUES.md — read that before wiring this up.
+	//
+	// Only the literal string "1" counts (courtroom.cpp:1237 is `!= "1"`), so
+	// "true"/"yes"/"0" all leave antialiasing ON. Do not "improve" the read below
+	// into a boolean parser: it would flip the elements a theme deliberately left
+	// smooth.
 	Sharp bool
 	// SizeSet reports that the theme actually declared "<id>" — Size otherwise
 	// carries the parser's default and must NOT override the client's own scale.
