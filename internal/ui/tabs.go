@@ -344,18 +344,16 @@ func (a *App) activateTab(i int) {
 		// routeBackgroundEvent nilled s.conn and marked dead), so there's no network
 		// teardown to do here — just rebuild the room to draw and open the dialog.
 		a.buildRoom() // rebuild WITHOUT fresh-entry resets (parked iniswap/pos survive)
-		// buildRoom re-seeds the area's music (it assumes a live session); a dead tab
-		// must not start playing — stop it and clear any await, mirroring Disconnect's
-		// audio teardown so a frozen tab is silent like an active-tab freeze.
-		if a.d.Audio != nil {
-			a.d.Audio.StopMusic()
-			a.musicTabDucked = false
-			a.musicAwaitURL = ""
-			a.musicAwaitSince = time.Time{}
-		}
-		a.openDisconnectDialog(a.serverName, a.serverKey, t.deadReason, time.Time{}) // no grace: it already died a while ago
-		t.dead = false                                                               // consumed: the dialog now owns this drop (Back to lobby / Reconnect finish it)
-		t.deadReason = ""                                                            // and the latched reason has been shown
+		// The SAME freeze the active-tab drop runs (freezeSessionUnderDialog), so the
+		// two arms cannot drift again. Its conn guards make the network half a no-op
+		// here — pumpBackgroundTabs already nilled s.conn and latched the reason — and
+		// its audio teardown is what this arm did by hand, because buildRoom re-seeds
+		// the area's music assuming a live session and a dead tab must not start
+		// playing. Sharing it additionally silences a parked tab's leaked voice
+		// devices, which the hand-rolled version never did.
+		a.freezeSessionUnderDialog(t.deadReason)
+		t.dead = false    // consumed: the dialog now owns this drop (Back to lobby / Reconnect finish it)
+		t.deadReason = "" // and the latched reason has been shown
 		a.ensureThemeForSession()
 		a.updatePresence()
 		return

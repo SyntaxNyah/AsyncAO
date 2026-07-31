@@ -105,6 +105,81 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	}
 }
 
+// TestPumpConnectionFreezesAnInCourtDrop is the INTEGRATION twin of the test above:
+// the same real transport drop, but with a courtroom on screen. It pins the whole
+// user-facing path — socket dies → pumpConnection → handleInvoluntaryDrop → freeze —
+// rather than the tail in isolation, because the tests either side of it run on a
+// roomless app and so can never reach the freeze branch at all.
+//
+// This is the behaviour two playtesters reported missing: a background tab showed
+// the disconnect box while the tab they were looking at was slammed to the server
+// list.
+func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		_ = ws.Write(r.Context(), websocket.MessageText, []byte("decryptor#34#%"))
+		_, _, _ = ws.Read(r.Context())
+		_ = ws.CloseNow() // yank the socket — a transport drop, not a kick
+	}))
+	defer srv.Close()
+
+	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	a := testTabApp(t)
+	a.d.Prefs.SetAutoReconnect(true)
+	name, _ := a.d.Prefs.Theme()
+	a.themeAppliedName = name
+	a.serverName, a.serverKey = "Test Server", "ws://test.example"
+	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn = conn
+	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
+		return conn.Send(context.Background(), p)
+	}, "test-hdid")
+	// The difference from the test above: a courtroom the user is looking at.
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.screen = ScreenCourtroom
+
+	if err := conn.Send(context.Background(), protocol.NewPacket("HI", "x")); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for a.conn != nil && time.Now().Before(deadline) {
+		a.pumpConnection()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.conn != nil {
+		t.Fatal("a dropped socket should have stopped the pump")
+	}
+
+	if !a.disconnectDlg.open {
+		t.Error("an in-court drop must freeze under the disconnect dialog, not boot to the lobby")
+	}
+	if a.screen != ScreenCourtroom {
+		t.Errorf("the courtroom must stay on screen, got %v", a.screen)
+	}
+	if a.sess == nil || a.room == nil {
+		t.Error("sess/room were torn down — the logs and last frame the user wanted to read are gone")
+	}
+	if a.connErr == "" {
+		t.Error("the dialog must be able to name the reason (connErr is empty)")
+	}
+	// The redial target must be THIS server, re-captured before the conn was
+	// nilled — lastConn* is global and a second tab would otherwise steal it.
+	if a.disconnectDlg.url != "ws://test.example" {
+		t.Errorf("dialog redial url = %q, want this server's", a.disconnectDlg.url)
+	}
+	if !a.autoReconnectAt.IsZero() {
+		t.Error("a frozen session must not arm a countdown pollAutoReconnect can never fire off the lobby")
+	}
+}
+
 // TestPumpConnectionSurfacesHalfDeadWrite pins #7a: once Session.SendErr is
 // non-nil (the write side detected a dead socket), pumpConnection surfaces it —
 // disconnecting and arming a reconnect — instead of silently swallowing every

@@ -65,34 +65,84 @@ func TestFriendlyDisconnectReason(t *testing.T) {
 	}
 }
 
-// TestHandleInvoluntaryDropGoesToLobby is the load-bearing table for the restored
-// v1.70.0 behaviour: for a connection ending on the ACTIVE tab, handleInvoluntaryDrop
-// always runs the plain teardown to the LOBBY with the reason shown — it never
-// freezes the courtroom under the dialog. Auto-reconnect arms only for a genuine
-// transport drop (not a kick/ban, not a deliberate close).
-func TestHandleInvoluntaryDropGoesToLobby(t *testing.T) {
+// TestHandleInvoluntaryDropFreezesALiveCourtroom is the load-bearing table for the
+// active-tab drop. A LIVE courtroom freezes under the dialog — logs and last frame
+// stay readable, the reason is named, Reconnect is one click — which is the same end
+// state a PARKED tab reaches via activateTab. Playtesters reported the two arms
+// disagreeing: a background tab showed the box while the tab they were looking at
+// was slammed to the server list.
+//
+// Auto-reconnect is deliberately NOT armed while frozen: pollAutoReconnect returns
+// early off the lobby, so a countdown here would tick to zero and never fire, and a
+// background retry is exactly the v1.81.4 regression that dumped users at
+// char-select while minimized.
+func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reason string
+	}{
+		{"transport drop", "connection closed"},
+		{"kick", "Kicked: rude"},
+		{"ban", "Banned: cheating"},
+	} {
+		a := froomApp(t)
+		a.d.Prefs.SetAutoReconnect(true)
+		a.handleInvoluntaryDrop(tc.reason)
+
+		if !a.disconnectDlg.open {
+			t.Errorf("%s: a live courtroom must freeze under the dialog, not vanish", tc.name)
+		}
+		if a.screen != ScreenCourtroom {
+			t.Errorf("%s: the courtroom must stay on screen, got %v", tc.name, a.screen)
+		}
+		// The whole point: the session and room survive so the logs and the last
+		// rendered frame are still there to read.
+		if a.sess == nil || a.room == nil {
+			t.Errorf("%s: sess/room were torn down — the logs and last frame are gone", tc.name)
+		}
+		if a.conn != nil {
+			t.Errorf("%s: the conn must be nilled so the pump stops and the room freezes", tc.name)
+		}
+		if a.connErr != tc.reason {
+			t.Errorf("%s: connErr=%q, want %q", tc.name, a.connErr, tc.reason)
+		}
+		if !a.autoReconnectAt.IsZero() {
+			t.Errorf("%s: armed a countdown pollAutoReconnect can never fire off the lobby", tc.name)
+		}
+	}
+}
+
+// TestHandleInvoluntaryDropWithNoRoomGoesToLobby pins the other half of the fork.
+// A deliberate close, or a drop with no courtroom to freeze (char-select, an
+// already-torn-down session), keeps the plain teardown to the lobby — and still
+// arms auto-reconnect for a genuine transport drop. shouldAutoReconnect suppresses
+// ban/kick and deliberate closes.
+func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 	cases := []struct {
 		name        string
 		reason      string
 		deliberate  bool
+		roomless    bool
 		wantAutoArm bool
 	}{
-		{"transport drop → lobby + arms", "connection closed", false, true},
-		{"kick → lobby, no auto-reconnect", "Kicked: rude", false, false},
-		{"ban → lobby, no auto-reconnect", "Banned: cheating", false, false},
-		{"deliberate close → lobby, no arm", "connection closed", true, false},
+		{"deliberate close → lobby, no arm", "connection closed", true, false, false},
+		{"roomless transport drop → lobby + arms", "connection closed", false, true, true},
+		{"roomless kick → lobby, no arm", "Kicked: rude", false, true, false},
 	}
 	for _, tc := range cases {
 		a := froomApp(t)
 		a.d.Prefs.SetAutoReconnect(true)
 		a.deliberateClose = tc.deliberate
-		a.connErr = tc.reason // the caller sets connErr before the shared tail
+		if tc.roomless {
+			a.room = nil // char-select, or a session that never reached a courtroom
+		}
 		a.handleInvoluntaryDrop(tc.reason)
+
 		if a.disconnectDlg.open {
-			t.Errorf("%s: an active-tab drop must NEVER freeze under the dialog", tc.name)
+			t.Errorf("%s: nothing to freeze, so no dialog", tc.name)
 		}
 		if a.screen != ScreenLobby {
-			t.Errorf("%s: a drop must land on the lobby, got %v", tc.name, a.screen)
+			t.Errorf("%s: must land on the lobby, got %v", tc.name, a.screen)
 		}
 		if a.connErr != tc.reason {
 			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.connErr, tc.reason)

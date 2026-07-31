@@ -8,15 +8,22 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// Involuntary-disconnect dialog (BACKGROUND/parked tabs only).
+// Involuntary-disconnect dialog.
 //
-// An ACTIVE tab's connection ending without the user asking goes straight to the
-// lobby with the reason shown and auto-reconnect armed there (the v1.70.0 behaviour
-// restored by user request — see handleInvoluntaryDrop). This dialog now serves
-// only a DIFFERENT case: a PARKED tab that died in the background can't boot the
-// user off whatever tab they're actually looking at, so it latches its reason and
-// surfaces this modal when the user later reactivates that tab (see tabs.go,
-// activateTab). It keeps that tab's courtroom on screen — FROZEN, the IC/OOC log
+// BOTH drop arms reach it, through the one shared freeze
+// (freezeSessionUnderDialog). An ACTIVE tab whose link dies under the user
+// freezes in place; a PARKED tab that died in the background can't boot the user
+// off whatever tab they're actually looking at, so it latches its reason and
+// surfaces the same modal when the user later reactivates it (tabs.go,
+// activateTab).
+//
+// The two used to diverge: v1.81.4 made an active-tab drop tear straight down to
+// the lobby, so the tab you were LOOKING at vanished while a background tab got a
+// dialog. Playtesters hit exactly that and reported it. The freeze was collateral
+// damage in that commit — what actually needed removing was its 5-minute grace
+// window and its background auto-retry, both of which are gone and stay gone.
+//
+// The dialog keeps the tab's courtroom on screen — FROZEN, the IC/OOC log
 // TAIL still readable around the modal (the whole frozen pass is pointer-fenced, so
 // scrolling back through history is not available while it's up) — under a modal
 // that says what happened and offers one-click Reconnect / Back to lobby.
@@ -120,28 +127,77 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 	return r
 }
 
+// freezeSessionUnderDialog is the ONE freeze both drop arms use: the active tab's
+// link dying under the user, and a parked tab's death surfaced later by
+// activateTab. It performs the NETWORK + AUDIO subset of Disconnect() — the part
+// that must happen the instant the link dies — and deliberately not the session
+// reset, tab close or navigation, which wait for the dialog's Back to lobby /
+// Reconnect so the room stays drawable underneath.
+//
+// Its guards make it a no-op for the half a parked tab has already done (its
+// socket was nilled when it died), so both arms can call it unconditionally.
+func (a *App) freezeSessionUnderDialog(raw string) {
+	// Re-capture the redial target BEFORE nilling the conn, exactly as Disconnect
+	// does and for the same reason: lastConn* is GLOBAL and in a multi-tab session
+	// may hold whatever server connected most recently rather than THIS one.
+	if a.conn != nil {
+		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
+	}
+	// Close any courtroom-owned confirm that could be open at freeze time — it
+	// would stack with this modal for a frame. confirmDisconnect: the user clicked
+	// Disconnect with instant-disconnect off and the link died before they
+	// answered, so the pending question is moot. hidePrompt: a sprite-hide confirm;
+	// clearing it cancels a moot confirm and leaves hiddenSprites alone. We do NOT
+	// clear showQuitConfirm (a GLOBAL quit choice) or pendingCloseTab (a DIFFERENT
+	// tab's confirm) — neither is ours to cancel on a drop.
+	a.confirmDisconnect = false
+	a.hidePrompt = ""
+	if a.conn != nil {
+		a.conn.Close() // idempotent: the socket is already dead on every drop path
+	}
+	a.conn = nil // pumpConnection early-returns on a nil conn, so the room freezes
+	if a.d.Audio != nil {
+		// The server's area music must not outlive the connection (as Disconnect does).
+		a.d.Audio.StopMusic()
+		a.musicTabDucked = false
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
+	}
+	a.stopVoiceAudio() // free the voice devices with the connection
+	a.voiceJoined, a.voiceMicOn = false, false
+	// hiddenUntil is deliberately the zero value: ALWAYS visible immediately. The
+	// 5-minute grace window this function used to take is half of what made
+	// v1.81.4 rip the freeze out — a drop hid itself, self-healed in the
+	// background, and dumped the user at char-select without ever saying why.
+	a.openDisconnectDialog(a.serverName, a.serverKey, raw, time.Time{})
+}
+
 // handleInvoluntaryDrop is the SHARED tail every active-tab drop path runs once its
 // reason is known: pumpConnection's SendErr (half-dead write) and closed-Incoming
 // (transport drop) branches, and handleSessionEvents' EventDisconnect (kick/ban).
-// It always runs the plain teardown to the lobby with the reason shown, then arms
-// auto-reconnect for a genuine transport drop (shouldAutoReconnect suppresses
-// ban/kick and deliberate closes). The involuntary-disconnect dialog is no longer
-// reached from here — it now serves only a background/parked tab's death, surfaced
-// on reactivation via activateTab.
 func (a *App) handleInvoluntaryDrop(reason string) {
 	deliberate := a.deliberateClose
-	// v1.70.0 behaviour (restored by user request): a drop tears down to the LOBBY
-	// with the reason shown, then arms auto-reconnect for a genuine transport drop.
-	// No frozen-courtroom dialog and no background reconnect — the v1.80.0 rework
-	// that added those is what made a drop-while-minimized silently reconnect and
-	// dump the user at char-select before they even restored the window. Now a drop
-	// returns to the phone book (reason + "Auto-reconnecting…" countdown visible),
-	// and pollAutoReconnect fires only from the foreground Frame loop, so a drop
-	// taken while minimized waits at the lobby until the user comes back rather than
-	// churning reconnects in the background. A kick/ban (shouldAutoReconnect false)
-	// lands on the lobby with its reason and never retries.
-	a.Disconnect()     // → lobby; nils conn/sess and cancels any pending retry
-	a.connErr = reason // App-level, survives Disconnect — the lobby's reason line
+	a.connErr = reason // set FIRST: it must survive whichever branch runs below
+	// A live courtroom FREEZES under the dialog instead of being torn down: the
+	// logs and the last frame stay readable, the reason is named, and Reconnect is
+	// one click. That is the same end state a PARKED tab reaches via activateTab,
+	// and playtesters reported the inconsistency directly — a background tab showed
+	// the box while the tab they were looking at was slammed to the server list.
+	//
+	// This restores the freeze v1.81.4 removed, WITHOUT the two things that made it
+	// a bug then: there is no grace window (see freezeSessionUnderDialog), and no
+	// auto-reconnect is armed here. Arming would paint a countdown that
+	// pollAutoReconnect can never fire — it returns early off the lobby — and
+	// re-adding a background retry is exactly the regression that dumped users at
+	// char-select while minimized. The dialog's Reconnect button is the action.
+	if !deliberate && a.room != nil && a.sess != nil && a.screen == ScreenCourtroom {
+		a.freezeSessionUnderDialog(reason)
+		return
+	}
+	// No room to freeze (char-select, already torn down) or a deliberate close:
+	// today's plain teardown to the lobby, which still arms auto-reconnect for a
+	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
+	a.Disconnect() // → lobby; nils conn/sess and cancels any pending retry
 	if shouldAutoReconnect(reason, deliberate) {
 		a.scheduleAutoReconnect() // re-arm the countdown the teardown just cancelled
 	}
@@ -150,11 +206,11 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 // openDisconnectDialog is the single place the dialog's open state is set, so the
 // two entry paths (ACTIVATING a tab that died in the background via activateTab,
 // and a failed retry re-surfacing it) can't diverge in what the modal shows. It
-// is now reached only for a background/parked tab's death — an active-tab drop
-// goes straight to the lobby (see handleInvoluntaryDrop). name/url are the redial
-// target captured for Reconnect (see the disconnectDialog field doc for why
+// is reached for BOTH a background/parked tab's death and an active-tab drop,
+// through the one shared freeze (see freezeSessionUnderDialog). name/url are the
+// redial target captured for Reconnect (see the disconnectDialog field doc for why
 // they're frozen here rather than read from lastConn* at click time). hiddenUntil
-// is the zero value for immediate display.
+// is the zero value for immediate display, which is what both arms now pass.
 func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time) {
 	a.disconnectDlg = disconnectDialog{
 		open:        true,
