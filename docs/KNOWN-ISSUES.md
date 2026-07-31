@@ -36,6 +36,42 @@ of the leak it fixes. Closing this entry means sweeping every remaining overlay
 onto the primitive and deciding, per raw `pointIn()` site, whether it should honour
 a fence — an audit across the whole kit rather than a localized change.
 
+## A missing BACKGROUND still holds the previous room's, unlike the desk
+
+The desk layer releases when its image is conclusively missing — that was issue
+#44, and `syncAnimDesk` (`internal/render/viewport.go`) documents its two release
+conditions. The background layer deliberately does **not**: `syncAnimSticky` holds
+the current background until the incoming one is resident, so a background that
+404s leaves the previous room on screen indefinitely.
+
+This was considered during the issue #21 work and **deliberately not changed**,
+because the obvious fix is wrong. AO2 does not hide a missing background — it
+falls back to `wit` *within the same background folder* first, and hides the layer
+only if that is missing too (`../AO2-Client/src/courtroom.cpp:4613-4625`):
+
+```cpp
+if (file_exists(... get_background_path(pos.background))) { show(); load(pos.background); }
+else if (file_exists(... get_background_path("wit"))) { show(); load(... "wit"); }
+else { ui_vp_background->hide(); }
+```
+
+Releasing the held background would therefore replace a stale-but-plausible room
+with a black stage — strictly worse than today, *and* still not what AO2 does.
+Closing this properly means implementing the `wit` fallback: on a conclusive
+background miss, probe `<same folder>/wit`, bind that, and release to black only
+when both are gone.
+
+Two things make that more than a localized change. The probe is a second network
+request on a path the client otherwise keeps to exactly one probe per asset, so it
+needs the same conclusively-missing bookkeeping the desk already has to avoid
+re-probing inside the 404 TTL. And the desk is derived from the same `pos` pair, so
+a background that fell back to `wit` should arguably take `wit`'s desk with it
+rather than the requested position's — a courtroom-side question about
+`deskResolution`, not a renderer one.
+
+Until then the current behaviour stands, and it is the safer of the two wrong
+answers.
+
 ## Automated senders whose wire rate depends on whether a frame was drawn
 
 A producer that runs in `App.Background` (which keeps ticking while the window
