@@ -139,12 +139,12 @@ var themeSlots = [...]themeSlot{
 	{key: "player_list", phase: phasePanels, state: slotStateInert},                      // courtroom.cpp:879
 	{key: "music_display", phase: phasePanels, state: slotStateInert},                    // courtroom.cpp:888
 	{key: "music_name", rel: relMusicDisplay, phase: phasePanels, state: slotStateInert}, // courtroom.cpp:885
-	{key: "music_label", phase: phasePanels, state: slotStateInert},                      // courtroom.cpp:988
-	{key: "sfx_label", phase: phasePanels, state: slotStateInert},                        // courtroom.cpp:990
-	{key: "blip_label", phase: phasePanels, state: slotStateInert},                       // courtroom.cpp:992
-	{key: "music_slider", phase: phasePanels, state: slotStateInert},                     // courtroom.cpp:1144
-	{key: "sfx_slider", phase: phasePanels, state: slotStateInert},                       // courtroom.cpp:1145
-	{key: "blip_slider", phase: phasePanels, state: slotStateInert},                      // courtroom.cpp:1146
+	{key: "music_label", phase: phasePanels, state: slotStateHandDrawn},                  // courtroom.cpp:988
+	{key: "sfx_label", phase: phasePanels, state: slotStateHandDrawn},                    // courtroom.cpp:990
+	{key: "blip_label", phase: phasePanels, state: slotStateHandDrawn},                   // courtroom.cpp:992
+	{key: "music_slider", phase: phasePanels, state: slotStateHandDrawn},                 // courtroom.cpp:1144
+	{key: "sfx_slider", phase: phasePanels, state: slotStateHandDrawn},                   // courtroom.cpp:1145
+	{key: "blip_slider", phase: phasePanels, state: slotStateHandDrawn},                  // courtroom.cpp:1146
 
 	// ---- phasePanels: the IC bar --------------------------------------------
 	{key: "ao2_ic_chat_message", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:906

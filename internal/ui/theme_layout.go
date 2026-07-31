@@ -891,9 +891,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		case logTabPlayers:
 			a.drawPlayerList(inner)
 		default:
-			a.drawMusicList(inner)
+			a.drawMusicList(inner, true)
 		}
 	}
+	// The theme's own volume band. Independent of the music panel above — AO2
+	// declares these six rects outside music_list, and each resolves on its own.
+	a.drawThemedVolumeSliders(lay)
 
 	// THE IC BAR IS AO2'S, NOT A CRAM OF ASYNCAO CHROME (#21, rules (a)/(b)/(e)).
 	//
@@ -1672,3 +1675,74 @@ func (a *App) themedExtrasHint() {
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.
+
+// The theme's own volume sliders (#21 labels 12/13).
+//
+// AO2 declares music_slider / sfx_slider / blip_slider with a matching
+// music_label / sfx_label / blip_label beside each, and drives them from
+// on_music_slider_moved and friends (courtroom.cpp:1163-1175). AsyncAO ingested
+// all six rects and painted none, so a 216px band of the theme's canvas was blank.
+//
+// OWNER DECISION: inside a theme's canvas these ARE the volume surface, and the
+// music panel's own Volume toggle is not offered (drawMusicList's themed flag).
+// Master volume and blip rate have no AO2 rect and stay in Settings.
+const (
+	// Stable widget ids. Ctx.Slider keys its drag state by id, and the classic
+	// strips build theirs by concatenation ("volstrip:"+id) — doing that here
+	// would allocate three strings per slider per frame on the settled render
+	// path, which the whole-screen zero-alloc gate would catch.
+	themedMusicSliderID = "themed:music_slider"
+	themedSFXSliderID   = "themed:sfx_slider"
+	themedBlipSliderID  = "themed:blip_slider"
+
+	// themedVolumeMax is the slider range. AO2's sliders are 0..100
+	// (courtroom.cpp:1165 setMaximum) and so are AsyncAO's volume prefs.
+	themedVolumeMax = 100
+)
+
+// drawThemedVolumeSliders paints the three declared sliders and their labels.
+// Each rect resolves INDEPENDENTLY — rule (e) means a theme that declares only
+// some of them gets only those, never a synthesised row.
+func (a *App) drawThemedVolumeSliders(lay *themeLayoutCache) {
+	c := a.ctx
+	master, music, sfx, blip := a.effectiveVolumes()
+	changed := false
+
+	// Labels are CLIPPED, not plain. AO2 runs truncate_label_text on all three
+	// (courtroom.cpp:1173-1175), and the geometry is why: in the theme under test
+	// music_label is 41px wide and its slider starts 3px later, so an unclipped
+	// label bleeds straight across the track.
+	for _, l := range [...]struct{ key, text string }{
+		{"music_label", "Music"},
+		{"sfx_label", "Sfx"},
+		{"blip_label", "Blip"},
+	} {
+		if r, ok := lay.rect(l.key); ok {
+			c.LabelClipped(r.X, r.Y, r.W, l.text, ColText)
+		}
+	}
+
+	// Channels map one-to-one. AO2's SFX handler also drives the ambience streams
+	// and the objection player, but AsyncAO has no separate ambience stream
+	// (applyAudioVolumes mixes music/sfx/blip/alert only), so there is nothing to
+	// mirror — do not "fix" this by routing sfx into music.
+	if r, ok := lay.rect("music_slider"); ok {
+		if v := int(c.Slider(themedMusicSliderID, r, int32(music), themedVolumeMax)); v != music {
+			music, changed = v, true
+		}
+	}
+	if r, ok := lay.rect("sfx_slider"); ok {
+		if v := int(c.Slider(themedSFXSliderID, r, int32(sfx), themedVolumeMax)); v != sfx {
+			sfx, changed = v, true
+		}
+	}
+	if r, ok := lay.rect("blip_slider"); ok {
+		if v := int(c.Slider(themedBlipSliderID, r, int32(blip), themedVolumeMax)); v != blip {
+			blip, changed = v, true
+		}
+	}
+	if changed {
+		a.setEffectiveVolumes(master, music, sfx, blip)
+		a.applyAudioVolumes()
+	}
+}

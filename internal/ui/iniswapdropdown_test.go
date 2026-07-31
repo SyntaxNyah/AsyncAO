@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // TestIniswapCurrentIndexIsAbsolute pins the index mapping, which is the one
 // destructive thing in this feature: it feeds RemoveWardrobe, which PERSISTS.
@@ -177,5 +181,40 @@ func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 	}
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("pos_remove must be hidden in the window between an iniswap and its char.ini")
+	}
+}
+
+// TestThemedMusicPanelForcesTheTrackList pins the trap in dropping the Volume
+// toggle under a theme: musicVolMode PERSISTS across restarts.
+//
+// Hiding the button alone would strand anyone who left the panel in volume mode
+// and then applied a theme — they would open to a volume view with no control to
+// leave it, because the only way back is the button that is no longer drawn. So
+// themed mode forces the track list rather than merely hiding the toggle.
+//
+// Goes red if the themed branch stops forcing volMode false, or if the draw site
+// starts reading a.musicVolMode directly again instead of the local.
+func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
+	src, err := os.ReadFile("screens.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+
+	// The themed branch must force the local false...
+	if !strings.Contains(body, "volMode = false") {
+		t.Error("the themed branch no longer forces the track list — a user who left the " +
+			"panel in volume mode and then applied a theme has no control to get back")
+	}
+	// ...and the render must consult the LOCAL, not the persisted field, or the
+	// force is dead code.
+	if !strings.Contains(body, "if volMode {") {
+		t.Error("drawMusicList renders from a.musicVolMode rather than the themed-adjusted " +
+			"local, so forcing it has no effect")
+	}
+	// The classic path must still persist the user's choice — dropping that would
+	// turn a themed-only rule into a global behaviour change.
+	if !strings.Contains(body, "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
+		t.Error("the classic Volume toggle must still persist the user's choice")
 	}
 }

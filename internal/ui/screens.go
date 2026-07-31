@@ -3042,7 +3042,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
 	case logTabMusic:
-		a.drawMusicList(inner)
+		a.drawMusicList(inner, false)
 		return
 	case logTabAreas:
 		a.drawAreaList(inner)
@@ -5130,7 +5130,12 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	}
 }
 
-func (a *App) drawMusicList(r sdl.Rect) {
+// themed reports that this panel is drawing INSIDE a theme's design canvas, where
+// the theme declares its own music_slider / sfx_slider / blip_slider rects and those
+// win (issue #21, owner decision). The Volume toggle is AsyncAO's own affordance for
+// the same job, so offering both would put two sets of volume controls on one screen.
+// Master volume and blip rate have no AO2 rect and stay reachable in Settings.
+func (a *App) drawMusicList(r sdl.Rect, themed bool) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.musicPct = a.logPct
@@ -5146,16 +5151,26 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	// Toggle this panel between the track list and a pure volume-sliders menu.
 	// It lives in drawMusicList, which the THEMED courtroom draws directly too, so
 	// volume is reachable on a legacy AO2 theme as well (no Extras box needed).
-	volLabel := "Volume"
-	if a.musicVolMode {
-		volLabel = "Track list"
+	volMode := a.musicVolMode
+	if themed {
+		// Inside a theme's canvas the theme's own slider rects are the volume
+		// surface, so this toggle is not offered. volMode is forced FALSE rather than
+		// just hiding the button: musicVolMode persists across restarts, so a user who
+		// left it on and then applied a theme would otherwise open to a volume view
+		// with no control to leave it.
+		volMode = false
+	} else {
+		volLabel := "Volume"
+		if a.musicVolMode {
+			volLabel = "Track list"
+		}
+		volRect := sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}
+		if c.Button(volRect, volLabel) {
+			a.musicVolMode = !a.musicVolMode
+			a.d.Prefs.SetMusicVolMode(a.musicVolMode) // persist so the volume view survives a restart
+		}
+		c.Tooltip(volRect, "Swap the track list for volume sliders (Master/Music/SFX/Blip) and back — chat stays live.")
 	}
-	volRect := sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}
-	if c.Button(volRect, volLabel) {
-		a.musicVolMode = !a.musicVolMode
-		a.d.Prefs.SetMusicVolMode(a.musicVolMode) // persist so the volume view survives a restart
-	}
-	c.Tooltip(volRect, "Swap the track list for volume sliders (Master/Music/SFX/Blip) and back — chat stays live.")
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
 	now := ""
@@ -5183,7 +5198,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	}
 	r.Y += 28
 	r.H -= 28
-	if a.musicVolMode { // pure volume menu in place of the track list
+	if volMode { // pure volume menu in place of the track list
 		a.drawMusicVolume(r)
 		return
 	}
