@@ -56,12 +56,19 @@ type FontSpec struct {
 	ColorSet bool
 }
 
-// FontElements are the courtroom_fonts.ini identifiers AsyncAO honours, in
-// AO2-Client Courtroom::set_fonts order (courtroom.cpp:1188-1210). AO2 also sets
-// "debug_log" and "clock_N"; AsyncAO has no surface for either (its debug panel
-// is chrome, and there is no themed clock widget), and "ms_chatlog" folds into
-// server_chatlog here. Order is load-bearing: internal/ui indexes its resolved
-// per-element table by position in this list.
+// FontElements are the courtroom_fonts.ini identifiers AsyncAO honours, drawn
+// from AO2-Client Courtroom::set_fonts (courtroom.cpp:1195-1207).
+//
+// Order is load-bearing but is NOT AO2's call order: internal/ui indexes its
+// resolved per-element table by position in this list, so the pairing that must
+// hold is with the themeFontElem enum there (pinned by TestThemeFontElemOrder).
+// New identifiers are APPENDED for exactly that reason — inserting one at AO2's
+// position would silently hand every later element another's family and size.
+//
+// Still unhonoured, each for its own reason: "clock_N" has no themed clock
+// widget, and "evidence_name" / "evidence_image_name" / "evidence_description"
+// are set from a different translation unit (evidence.cpp:94-96) onto a surface
+// AsyncAO does not dress yet.
 var FontElements = [...]string{
 	"showname",
 	"message",
@@ -70,6 +77,15 @@ var FontElements = [...]string{
 	"music_list",
 	"music_name",
 	"area_list",
+	// debug_log dresses the panel drawn at the ms_chatlog RECT. It was skipped
+	// while AsyncAO's debug log was chrome-only; the themed debug panel gave it a
+	// surface inside the design canvas, so it needs its own font like every other
+	// widget in there. AO2: set_font(ui_debug_log, "", "debug_log", p_char)
+	// (courtroom.cpp:1198) — note this is NOT server_chatlog's font, which is the
+	// neighbouring key it is easiest to mistake it for, and NOT "ms_chatlog":
+	// set_fonts never reads that identifier, it survives only as the RECT key
+	// (courtroom.cpp:831).
+	"debug_log",
 }
 
 // RGB is a theme color tuple.

@@ -58,6 +58,7 @@ func TestThemeFontElemOrder(t *testing.T) {
 		elemMusicList:     "music_list",
 		elemMusicName:     "music_name",
 		elemAreaList:      "area_list",
+		elemDebugLog:      "debug_log",
 	}
 	for el, id := range want {
 		if theme.FontElements[el] != id {
@@ -200,9 +201,13 @@ area_list = 6
 func TestBuildThemeFontTableFaceCap(t *testing.T) {
 	fonts := ""
 	files := map[string]string{}
-	fams := []string{"Fam A", "Fam B", "Fam C", "Fam D", "Fam E", "Fam F", "Fam G"}
+	// Families are DERIVED from the element list, not a literal sized to match it.
+	// A hand-written slice indexed by element position panics the moment an
+	// identifier is appended to theme.FontElements — which is what adding
+	// debug_log did — and the panic reads like a production bug rather than a
+	// stale fixture.
 	for i, id := range theme.FontElements {
-		fonts += id + " = 12\n" + id + "_font = " + fams[i] + "\n"
+		fonts += id + " = 12\n" + id + "_font = Fam " + string(rune('A'+i)) + "\n"
 		files["fonts/fam"+string(rune('a'+i))+".ttf"] = "x"
 	}
 	th, _ := writeThemeFonts(t, "Many", fonts, files)

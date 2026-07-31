@@ -48,7 +48,14 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 		W: list.W - 2*debugPanelPad,
 		H: list.H - 2*debugPanelPad,
 	}
-	font := a.elemFont(elemServerChatlog, a.oocPct) // it stands in for that panel, so it reads like it
+	// debug_log, NOT server_chatlog. The two panels swap places so borrowing the
+	// neighbour's font looks harmless, but AO2 dresses this widget from its own
+	// identifier — set_font(ui_debug_log, "", "debug_log", p_char),
+	// courtroom.cpp:1198 — and a theme can size or colour the two differently.
+	// aceattorney2x is exactly that case: it declares server_chatlog_sharp = 1 and
+	// no debug_log_sharp at all, so sharing the key would render this panel with a
+	// treatment its author asked for somewhere else.
+	font := a.elemFont(elemDebugLog, a.oocPct)
 	lineH := int32(font.Height()) + debugPanelLineGap
 	wrapW := body.W - scrollBarW - scrollBarGap
 	if wrapW <= 0 {

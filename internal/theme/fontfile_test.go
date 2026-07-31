@@ -313,17 +313,37 @@ music_name_color = 4, 5, 6
 	}
 }
 
-// TestFontElementsCoverAO2SetFonts pins the element list against AO2-Client's
-// Courtroom::set_fonts order — internal/ui indexes its resolved table by position
-// here, so a reorder would silently apply the wrong element's font.
-func TestFontElementsCoverAO2SetFonts(t *testing.T) {
-	want := []string{"showname", "message", "ic_chatlog", "server_chatlog", "music_list", "music_name", "area_list"}
+// TestFontElementsIsAppendOnly pins the property that actually matters:
+// internal/ui indexes its resolved per-element table by POSITION in this list, so
+// an identifier inserted or reordered silently hands every later element another's
+// family, size, bold and colour.
+//
+// Expressed as a frozen prefix rather than one flat expected list on purpose. A
+// flat list makes an append and an insert look identical — both are just "the
+// literal changed", and the reviewer's only defence is noticing which line moved.
+// This way an APPEND is a deliberate one-line addition to `added`, while an INSERT
+// fails loudly against the frozen prefix.
+//
+// The order is NOT AO2's set_fonts call order, and never was — AO2 calls
+// music_name after area_list (courtroom.cpp:1201-1202). It does not need to be:
+// the pairing that must hold is with internal/ui's themeFontElem enum, which
+// TestThemeFontElemOrder pins from the other side.
+func TestFontElementsIsAppendOnly(t *testing.T) {
+	// Frozen: these seven shipped first, in this order. Never edit this slice —
+	// only ever append to `added`.
+	frozen := []string{"showname", "message", "ic_chatlog", "server_chatlog", "music_list", "music_name", "area_list"}
+	// Appended since, in the order they were added.
+	added := []string{"debug_log"}
+
+	want := append(append([]string{}, frozen...), added...)
 	if len(FontElements) != len(want) {
-		t.Fatalf("FontElements = %v, want %v", FontElements, want)
+		t.Fatalf("FontElements has %d entries %v, want %d %v — a NEW identifier must be appended to `added`, never inserted",
+			len(FontElements), FontElements, len(want), want)
 	}
 	for i, id := range want {
 		if FontElements[i] != id {
-			t.Errorf("FontElements[%d] = %q, want %q", i, FontElements[i], id)
+			t.Errorf("FontElements[%d] = %q, want %q — reordering shifts every later element's resolved font",
+				i, FontElements[i], id)
 		}
 	}
 }

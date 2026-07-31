@@ -43,6 +43,11 @@ const (
 	elemMusicList
 	elemMusicName
 	elemAreaList
+	// elemDebugLog dresses the themed debug panel drawn at the ms_chatlog rect.
+	// AO2 gives that widget its OWN identifier, not server_chatlog's
+	// (courtroom.cpp:1198). APPENDED, never inserted: the slot index is the
+	// position in theme.FontElements.
+	elemDebugLog
 	themeFontElemCount // array size — keep last
 )
 
