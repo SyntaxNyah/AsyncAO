@@ -55,7 +55,14 @@ const (
 	panelTimers    = "timers"
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
-	panelExtras    = "extras"
+	// panelExtras is RETIRED (#21). It hid the bottom-left ★ Extras chip row in
+	// themed mode; that row was deleted because it painted over the theme's own
+	// design canvas, and its commands are Extras-menu rows now. The const stays
+	// because it is a PERSISTED prefs key: a user who hid the row still has
+	// "extras" in HiddenPanels, and seedHiddenFromPrefs reads that set back
+	// verbatim. Dropping the name would not delete their saved entry, it would
+	// only make it unnameable. Nothing may hide behind it again.
+	panelExtras = "extras"
 	// panelMenuBar hides the top menu strip (#14). Same spirit as panelToolbox:
 	// client furniture a user may not want, and on a themed courtroom it is the
 	// one band that sits ABOVE the theme's design canvas, so hiding it hands the
@@ -118,7 +125,6 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelTimers, "Server timers", "Timers"},
 	{panelTestimony, "Testimony recording badge", "Testimony"},
 	{panelJudge, "Judge controls (even when granted)", "Judge"},
-	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)", "Extras btn"},
 	{panelMenuBar, "Top menu bar (Servers / View / Window / Extras / Help)", "Menu bar"},
 	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
 }
@@ -199,6 +205,13 @@ func (a *App) seedHiddenFromPrefs() {
 	}
 	if a.hidden[panelToolbox] && a.hidden[ctrlSettingsSlot] {
 		a.setPanelHidden(panelToolbox, false)
+	}
+	// panelExtras is retired (#21): the row it hid no longer exists, so a stale
+	// entry would sit in HiddenPanels forever hiding nothing. Dropped on load
+	// rather than migrated, because there is no successor to move it to — the
+	// Extras MENU is not hideable, it is the chrome home those commands moved to.
+	if a.hidden[panelExtras] {
+		a.setPanelHidden(panelExtras, false)
 	}
 }
 

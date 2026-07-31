@@ -338,7 +338,21 @@ var menuWindowItems = []menuItem{
 // turns the strip off from a surface that is reachable on every screen. Before this
 // menu existed the only ways to hide it were the very chips it was covering, a
 // hotkey, or the Settings screen.
+// menuExtrasItems is the chrome home for AsyncAO's own controls (#21, rule (c)).
+//
+// The first three rows replace a chip row that used to be pinned at the raw
+// window's bottom-left in themed mode (drawThemedExtrasButton, deleted). Under a
+// real AO2 theme that row painted and clicked straight through the theme's own
+// music_list rect, and no design key existed for a theme author to move it — so
+// the commands moved out of the canvas instead. They are reachable from every
+// screen here, which the pinned row never was.
 var menuExtrasItems = []menuItem{
+	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
+	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
+	{kind: menuItemSeparator},
+	{kind: menuItemCheck, label: "Mod dashboard", checked: menuModDashOpen, enabled: menuAmIMod, act: menuActModDash},
+	{kind: menuItemCheck, label: "CM area controls", checked: menuCMPanelOpen, enabled: menuAmICM, act: menuActCMPanel},
+	{kind: menuItemSeparator},
 	{kind: menuItemAction, label: "Theater mode", enabled: menuInCourtroom, act: menuActTheater},
 	{kind: menuItemAction, label: "Edit layout…", enabled: menuInCourtroom, act: menuActEditLayout},
 	{kind: menuItemCheck, label: "Hide UI pieces…", checked: menuToolboxPiecesOpen, enabled: menuInCourtroom, act: menuActHideUIPieces},
@@ -515,6 +529,28 @@ func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.too
 // the chrome. (That guard predates this menu, which is now a third route; it is left
 // in force rather than relaxed here, where relaxing it could not be tested against
 // every profile/import path that also writes the hidden set.)
+// The chrome home for AsyncAO's own controls (#21 rule (c)) — each reaches the
+// SAME code the deleted bottom-left chip row did, so nothing about the commands
+// themselves changed, only where you find them. Package-level funcs, never method
+// values: a method value in the menu table would allocate a closure the first time
+// the table is read, and the themed frame is gated at zero allocations.
+func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
+func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
+
+func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
+func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
+
+// Mod / CM are ENABLED-gated rather than hidden, so the row still says the
+// command exists and simply greys out until the server grants it — the chips
+// they replace vanished entirely, which read as the feature being missing.
+func menuAmIMod(a *App, _ int) bool      { return a.amIMod() }
+func menuModDashOpen(a *App, _ int) bool { return a.showModDash }
+func menuActModDash(a *App, _ int)       { a.toggleModDash() }
+
+func menuAmICM(a *App, _ int) bool       { return a.amICMNow }
+func menuCMPanelOpen(a *App, _ int) bool { return a.showCMPanel }
+func menuActCMPanel(a *App, _ int)       { a.toggleCMPanel() }
+
 func menuToolboxShown(a *App, _ int) bool { return !a.panelHidden(panelToolbox) }
 func menuToggleToolbox(a *App, _ int) {
 	a.setPanelHiddenGuarded(panelToolbox, !a.panelHidden(panelToolbox))

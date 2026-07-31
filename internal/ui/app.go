@@ -1276,16 +1276,6 @@ type App struct {
 	jukeFavRev      int64    // library revision the favorites list was built for
 	jukeFavLbl      string   // cached "★ Favorites (N)" toggle label (rebuilt only on change)
 
-	// extrasTip caches the themed Extras button's tooltip, which splices in the
-	// live Extras hotkey: unmemoized that concat is one heap allocation on EVERY
-	// themed frame (the themed whole-screen gate measures it), and the bind only
-	// moves when the user rebinds it. extrasTipKey is the bind the text was built
-	// for. App-level, not sessionState: the hotkey is a global pref, so parking it
-	// per tab would only re-derive the same string after every tab switch. Same
-	// idiom as jukeRecentLbl / jukeFavLbl above.
-	extrasTip    string
-	extrasTipKey string
-
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
 	// can't be copied). The Pause button flips it; the worker polls it. It is
@@ -8295,9 +8285,10 @@ func (a *App) applyThemeAsync() uint64 {
 					res.layout[key] = r
 				}
 			}
-			// Then AO2's own per-key fallback (#21). Must run BEFORE the unbound
-			// report below, or that report would describe a layout the client
-			// never actually used.
+			// Then AO2's own per-key fallback (#21). It must run AFTER the loop
+			// above so a theme's own rect always wins over the stock default.
+			// Its position relative to the unbound report below is immaterial —
+			// unboundDesignKeys reads the *theme.Theme, not this map.
 			applyAO2DefaultRects(res.layout)
 			// Unbound-key report (#21), to the DEBUG LOG and never to the player's
 			// screen. AO2 does the same thing inverted: set_size_and_pos qWarns for

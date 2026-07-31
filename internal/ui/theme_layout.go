@@ -1065,9 +1065,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.drawEmoteGridThemed(r, lay, vp)
 	}
 
-	// Extras: ONE compact button (bottom-left) opening the box of every AsyncAO
-	// feature this AO2 theme has no slot for. Hideable; the hotkey opens it too.
-	a.drawThemedExtrasButton(w, h)
+	// NOTHING of AsyncAO's own draws inside the design canvas (#21, rule (c)).
+	// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned
+	// here at the raw window's bottom-left, which under a theme like
+	// aceattorney2x painted AND clicked straight through
+	// music_list = 0,323,216,277. No design key existed for a theme author to
+	// move it, so relocating was the only answer: those commands now live in the
+	// menu bar, above the canvas, reachable from every screen.
 
 	// Compact hover toolbox (#27/A1): slim bottom-right grip → Theater / Edit /
 	// Hide-UI icon chips on hover or pin. Normal play only — skipped while the
@@ -1457,105 +1461,20 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 }
 
 // themedExtrasHint fires a one-time-per-session toast when a themed (AO2) layout
-// is in use, pointing players at the Extras button/hotkey — legacy AO2 themes
-// carry no element keys for AsyncAO's own features, so they'd otherwise be lost.
+// is in use, pointing players at where AsyncAO's own features live — a legacy AO2
+// theme carries no element key for any of them, so they would otherwise be lost.
+//
+// It names the Extras MENU now, not a button: the bottom-left chip row this used
+// to point at was deleted because it painted over the theme's own canvas (#21,
+// rule (c)). The hotkey still opens the box directly, so it stays in the line.
 func (a *App) themedExtrasHint() {
 	if a.themedHintShown {
 		return
 	}
 	a.themedHintShown = true
-	hint := "AO2 theme — Wardrobe, Jukebox & all AsyncAO extras are in the ★ Extras button (bottom-left)"
-	if a.panelHidden(panelExtras) {
-		hint = "AO2 theme — press [" + a.hotkeyFor(hotkeyExtras) + "] for AsyncAO extras (Wardrobe, Jukebox…)"
-	}
-	a.warnLine = clampLine(hint)
+	a.warnLine = clampLine("AO2 theme — Wardrobe, Jukebox & all AsyncAO extras are in the Extras menu (or press [" +
+		a.hotkeyFor(hotkeyExtras) + "])")
 	a.warnAt = time.Now()
-}
-
-// extrasTipBody is the fixed half of the themed Extras tooltip; the live Extras
-// hotkey is appended to it. Split out so the concat can be memoized (see
-// extrasTipText) instead of running once per themed frame.
-const extrasTipBody = "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "
-
-// extrasTipText is the Extras tooltip with the CURRENT bind spliced in, rebuilt
-// only when that bind changes. Unmemoized this was one heap allocation on every
-// themed frame — the themed whole-screen gate measured it. Same
-// memoize-on-change idiom as emotePageCounter (screens.go).
-func (a *App) extrasTipText() string {
-	key := a.hotkeyFor(hotkeyExtras)
-	if a.extrasTip == "" || key != a.extrasTipKey {
-		a.extrasTip, a.extrasTipKey = extrasTipBody+key, key
-	}
-	return a.extrasTip
-}
-
-// drawThemedExtrasButton places the bottom-left affordances for themed mode:
-// the "Extras" button — the one entry point to every AsyncAO feature an AO2
-// theme has no slot for (the box of widgets) — plus a sibling "Hotkeys" button
-// (#96). Two compact buttons pinned bottom-left so they barely touch the theme
-// art; both hideable via panelExtras (the Extras hotkey still opens the box).
-// The classic (non-themed) layout exposes all of this as real buttons already,
-// so this exists for themed mode only.
-func (a *App) drawThemedExtrasButton(w, h int32) {
-	c := a.ctx
-	if a.panelHidden(panelExtras) {
-		return // hidden — the Extras hotkey still opens the box
-	}
-	const bh int32 = 24
-	label := "★ Extras"
-	bw := c.TextWidth(label) + 14
-	r := sdl.Rect{X: 4, Y: h - bh - 2, W: bw, H: bh}
-	if c.Button(r, label) {
-		a.showWidgets = true
-	}
-	c.Border(r, ColAccent)
-	c.Tooltip(r, a.extrasTipText())
-
-	// Sibling "Hotkeys" button (#96): one click to the cheat sheet of every
-	// shortcut + your custom binds, so themed users needn't open Extras or
-	// recall F1. Constant labels → the two TextWidth probes stay alloc-free.
-	hkLabel := "Hotkeys"
-	hk := sdl.Rect{X: r.X + r.W + 4, Y: r.Y, W: c.TextWidth(hkLabel) + 14, H: bh}
-	if c.Button(hk, hkLabel) {
-		a.openHotkeyCheatSheet()
-	}
-	c.Border(hk, ColPanelHi)
-	c.Tooltip(hk, "Show all your hotkeys & custom binds (also F1)")
-
-	// Sibling "Restyle" button (#103/#104): one click to the floating Sprite Style
-	// box, so themed users can recolour/glow their character without opening Extras.
-	stLabel := "Restyle"
-	st := sdl.Rect{X: hk.X + hk.W + 4, Y: r.Y, W: c.TextWidth(stLabel) + 14, H: bh}
-	if c.Button(st, stLabel) {
-		a.openSpriteStyle()
-	}
-	c.Border(st, ColAccent)
-	c.Tooltip(st, "Recolour / glow your character on the fly — other AsyncAO players see it")
-
-	// "Edit Layout" sibling retired (A1): the live layout editor is the Edit chip
-	// on the bottom-right toolbox now (drawCompactToolbox), so both themed entries
-	// no longer duplicate it here.
-
-	// Mod / CM launchers (only while you hold the role), chained after Restyle — in the row, so
-	// they never float over the emote sprites.
-	prev := st
-	if a.amIMod() {
-		m := sdl.Rect{X: prev.X + prev.W + 4, Y: r.Y, W: c.TextWidth("Mod") + 14, H: bh}
-		if c.Button(m, "Mod") {
-			a.toggleModDash()
-		}
-		c.Border(m, ColDanger)
-		c.Tooltip(m, "Moderation tools — server-aware ban / kick")
-		prev = m
-	}
-	if a.amICMNow {
-		cm := sdl.Rect{X: prev.X + prev.W + 4, Y: r.Y, W: c.TextWidth("CM") + 14, H: bh}
-		if c.Button(cm, "CM") {
-			a.toggleCMPanel()
-		}
-		c.Border(cm, chipCMColor)
-		c.Tooltip(cm, "CM area controls — lock / kick-from-area")
-	}
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.

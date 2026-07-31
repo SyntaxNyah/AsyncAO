@@ -358,6 +358,56 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	}
 }
 
+// TestAsyncAOChromeLivesOutsideTheCanvas pins issue #21 rule (c): AsyncAO's own
+// controls do not draw inside a theme's design canvas.
+//
+// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned at the
+// raw window's bottom-left whenever a theme was active. Under aceattorney2x that
+// is inside music_list = 0,323,216,277, so it painted AND clicked through the
+// theme's own jukebox. No design key existed for a theme author to move it, so the
+// commands moved out of the canvas entirely.
+func TestAsyncAOChromeLivesOutsideTheCanvas(t *testing.T) {
+	// Every command the deleted chip row carried must still be reachable.
+	for _, row := range []struct{ menuTitle, label string }{
+		{menuExtrasTitle, "AsyncAO Extras box"},
+		{menuExtrasTitle, "Restyle character…"},
+		{menuExtrasTitle, "Mod dashboard"},
+		{menuExtrasTitle, "CM area controls"},
+		{menuHelpTitle, "Hotkeys"}, // the chip row's sibling; Help is its home
+	} {
+		menuRow(t, row.menuTitle, row.label) // fatals when the row is missing
+	}
+	// And the row itself must stay gone, along with the memo that existed only to
+	// keep its tooltip alloc-free.
+	src, err := os.ReadFile("theme_layout.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"drawThemedExtrasButton", "extrasTipText", "extrasTipBody"} {
+		if strings.Contains(string(src), gone+"(") {
+			t.Errorf("theme_layout.go still calls %q — AsyncAO chrome is back inside the design canvas", gone)
+		}
+	}
+}
+
+// TestModAndCMRowsGreyOutRatherThanVanish pins the one behaviour change in moving
+// those two commands. The chips DISAPPEARED when you did not hold the role, which
+// reads as the feature not existing; a menu row that greys out says the command is
+// there and the server has not granted it.
+func TestModAndCMRowsGreyOutRatherThanVanish(t *testing.T) {
+	a := stageMenuBarApp(t)
+	for _, label := range []string{"Mod dashboard", "CM area controls"} {
+		row := menuRow(t, menuExtrasTitle, label)
+		if row.enabled == nil {
+			t.Errorf("%q has no enabled predicate — it would always be clickable", label)
+			continue
+		}
+		if row.enabled(a, row.arg) {
+			t.Errorf("%q is enabled without the role", label)
+		}
+	}
+}
+
 // TestWhatsNewLeftTheHelpMenu pins where the release notes live. They moved to the
 // LOBBY header beside Privacy and Glossary, because notes are read between sessions
 // rather than mid-trial, and the unread badge the Help row carried sat on the Help

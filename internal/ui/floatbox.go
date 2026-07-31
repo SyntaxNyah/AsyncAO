@@ -1007,7 +1007,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		a.showWidgets = false
 		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
 			a.extrasCloseHintShown = true
-			a.warnLine = clampLine("Extras hidden — press Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyExtras)) + " or the ★ Extras button to reopen")
+			a.warnLine = clampLine("Extras hidden — press Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyExtras)) + " or Extras → AsyncAO Extras box to reopen")
 			a.warnAt = a.now()
 		}
 		return
