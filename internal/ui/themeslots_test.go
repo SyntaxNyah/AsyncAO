@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -341,5 +342,60 @@ func TestOOCToggleLabelNamesTheVisiblePanel(t *testing.T) {
 	s.debugOOC = true
 	if got := s.oocToggleLabel(); got != "Debug" {
 		t.Errorf("with the debug log showing the button must read %q, got %q", "Debug", got)
+	}
+}
+
+// TestEmoteDropdownRowIndexIsTheEmoteIndex pins the invariant that makes the
+// dropdown safe to wire straight into selectEmote: row N must BE emote N.
+//
+// The list is built from a.emotes, and the tempting "improvement" is to build it
+// from a.emoteVisible instead so favourites filtering applies. That would be
+// silently wrong in the worst way — the dropdown would keep showing sensible
+// labels while every pick selected a different emote — because selectEmote indexes
+// the unfiltered slice.
+//
+// Also pins the 1-based label, which is AO2's (emotes.cpp:176 builds
+// QString::number(n + 1) + ": " + comment), and the empty-comment fallback, which
+// is deliberately NOT AO2's — see the comment at ensureEmoteChoices.
+func TestEmoteDropdownRowIndexIsTheEmoteIndex(t *testing.T) {
+	a := testTabApp(t)
+	a.emotes = []courtroom.Emote{
+		{Comment: "normal", Anim: "normal"},
+		{Comment: "", Anim: "pointing"}, // no comment: falls back to the anim name
+		{Comment: "thinking", Anim: "think"},
+	}
+	a.ensureEmoteChoices()
+
+	want := []string{"1: normal", "2: pointing", "3: thinking"}
+	if len(a.emoteChoices) != len(want) {
+		t.Fatalf("built %d rows %v, want %d — a filtered list would desync row index from emote index",
+			len(a.emoteChoices), a.emoteChoices, len(want))
+	}
+	for i, w := range want {
+		if a.emoteChoices[i] != w {
+			t.Errorf("row %d = %q, want %q", i, a.emoteChoices[i], w)
+		}
+	}
+
+	// The guard must rebuild when the emote COUNT changes (an iniswap to a
+	// character with a different sheet), not just when the name does.
+	a.emotes = a.emotes[:2]
+	a.ensureEmoteChoices()
+	if len(a.emoteChoices) != 2 {
+		t.Errorf("a shorter emote list must rebuild the rows, got %d", len(a.emoteChoices))
+	}
+}
+
+// TestEnsureEmoteChoicesIsAllocFreeWhenSettled pins the cache guard itself. The
+// draw site calls this EVERY frame, so a guard that misses would rebuild three
+// strings per frame forever on the zero-allocation render path.
+func TestEnsureEmoteChoicesIsAllocFreeWhenSettled(t *testing.T) {
+	a := testTabApp(t)
+	a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal"}, {Comment: "point", Anim: "point"}}
+	a.ensureEmoteChoices() // prime
+
+	if n := testing.AllocsPerRun(100, func() { a.ensureEmoteChoices() }); n != 0 {
+		t.Errorf("ensureEmoteChoices allocates %v/op when nothing changed, want 0 — "+
+			"the guard must compare plain fields, never a built key string", n)
 	}
 }

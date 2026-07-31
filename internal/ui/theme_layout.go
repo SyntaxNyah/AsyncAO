@@ -1181,6 +1181,21 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 		}
 	}
+	// emote_dropdown: the same emote list as the button grid, as a dropdown at the
+	// theme's own rect (AO2-Client courtroom.cpp:925-926; emotes.cpp:314-317
+	// `on_emote_dropdown_changed(int p_index) { select_emote(p_index); }`).
+	//
+	// AO2 wires `activated`, not `currentIndexChanged` (emotes.cpp:30) — it acts on
+	// a USER pick and not on a programmatic reselect, which is exactly what
+	// Ctx.Dropdown's `changed` already reports. selectEmote IS AO2's select_emote,
+	// down to the Pre checkbox following the pick, so this is a binding and not a
+	// reimplementation.
+	if r, ok := lay.rect("emote_dropdown"); ok {
+		a.ensureEmoteChoices()
+		if next, changed := c.Dropdown("emotedd", r, a.emoteChoices, a.emoteIdx); changed {
+			a.selectEmote(next)
+		}
+	}
 	if r, ok := lay.rect("pair_button"); ok {
 		if a.drawThemeButton("pair_button", "Pair", r) {
 			a.showPair = !a.showPair

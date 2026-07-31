@@ -1735,6 +1735,14 @@ type sessionState struct {
 	sfxChoices         []string
 	sfxChoicesForName  string
 	sfxChoicesForCount int
+	// emote_dropdown's option list (#21 label 11), cached with the same
+	// plain-field guard as sfxChoices above and for the same reason: it is
+	// rebuilt from a draw site that runs every frame. Per-tab, like a.emotes
+	// itself — the zero values are correct for a fresh session, so
+	// resetSessionState needs no seeding.
+	emoteChoices         []string
+	emoteChoicesForName  string
+	emoteChoicesForCount int
 	// #12 SFX Browser: an opt-in modal that expands the dropdown with persisted favourites,
 	// per-row preview, and a free-text "use any sound name" entry. It picks into the SAME
 	// sfxChoiceIdx override (find-or-append), so the dropdown reflects whatever it chose.

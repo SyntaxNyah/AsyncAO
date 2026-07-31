@@ -152,9 +152,9 @@ var themeSlots = [...]themeSlot{
 	{key: "text_color", phase: phasePanels, state: slotStateHandDrawn},          // courtroom.cpp:1138
 	{key: "sfx_dropdown", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:952
 	{key: "sfx_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
-	{key: "effects_dropdown", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:968
-	{key: "emote_dropdown", phase: phasePanels, state: slotStateInert},   // courtroom.cpp:925
-	{key: "iniswap_dropdown", phase: phasePanels, state: slotStateInert}, // courtroom.cpp:937
+	{key: "effects_dropdown", phase: phasePanels, state: slotStateInert},   // courtroom.cpp:968
+	{key: "emote_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:925
+	{key: "iniswap_dropdown", phase: phasePanels, state: slotStateInert},   // courtroom.cpp:937
 	{key: "iniswap_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
 	{key: "pos_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:928
 	{key: "pos_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},

@@ -7956,3 +7956,40 @@ func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorS
 	}
 	return out
 }
+
+// emoteDropdownLabelSep separates the 1-based ordinal from the emote's comment
+// in the emote_dropdown row, matching AO2's QString::number(n + 1) + ": " + comment.
+const emoteDropdownLabelSep = ": "
+
+// ensureEmoteChoices rebuilds the emote_dropdown option list when the character
+// or its emote count changes (AO2-Client emotes.cpp:176 —
+// `addItem(QString::number(n + 1) + ": " + get_emote_comment(current_char, n))`).
+//
+// Same plain-field guard as ensureSFXChoices: this is called from a draw site that
+// runs every frame, and building a "<char>:<n>" comparison key would allocate on
+// the settled path.
+//
+// It walks a.emotes, NOT the favourites-filtered a.emoteVisible — the dropdown's
+// index is the emote index that selectEmote takes, so filtering here would make
+// picking row N select a different emote.
+func (a *App) ensureEmoteChoices() {
+	name := a.activeCharName()
+	if a.emoteChoicesForName == name && a.emoteChoicesForCount == len(a.emotes) {
+		return
+	}
+	a.emoteChoicesForName, a.emoteChoicesForCount = name, len(a.emotes)
+	a.emoteChoices = a.emoteChoices[:0]
+	for i := range a.emotes {
+		// DIVERGENCE, deliberate: AO2's get_emote_comment returns the comment field
+		// verbatim and never falls back, so an emote with an empty comment shows as
+		// a bare "2: " there. We fall back to the animation name, matching what the
+		// themed emote GRID already does, because a list of bare ordinals is
+		// unusable and the two surfaces must agree on what an emote is called.
+		label := a.emotes[i].Comment
+		if label == "" {
+			label = a.emotes[i].Anim
+		}
+		a.emoteChoices = append(a.emoteChoices,
+			strconv.Itoa(i+1)+emoteDropdownLabelSep+label)
+	}
+}
