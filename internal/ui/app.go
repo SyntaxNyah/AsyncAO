@@ -8264,14 +8264,8 @@ func (a *App) applyThemeAsync() uint64 {
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
 			res.buildThemeFontTable(t, systemFontDirs())
-			if msg := t.Font("message"); t.HasFont("message") {
-				res.msgCol = sdl.Color{R: msg.Color.R, G: msg.Color.G, B: msg.Color.B, A: 255}
-				res.hasMsg = true
-			}
-			if sn := t.Font("showname"); t.HasFont("showname") {
-				res.nameCol = sdl.Color{R: sn.Color.R, G: sn.Color.G, B: sn.Color.B, A: 255}
-				res.hasName = true
-			}
+			res.msgCol, res.hasMsg = declaredFontInk(t.Font("message"))
+			res.nameCol, res.hasName = declaredFontInk(t.Font("showname"))
 			// loadOne decodes ONE already-located file into the stem's slot. Split out
 			// of loadStem because the chatbox ladder below locates its files a
 			// different way (one fixed directory, no candidate list) but must decode

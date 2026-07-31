@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -330,4 +331,25 @@ func systemFontDirs() []string {
 		return nil
 	}
 	return []string{filepath.Join(win, "Fonts")}
+}
+
+// declaredFontInk converts a parsed courtroom_fonts.ini entry into an ink colour,
+// reporting false when the theme declared no "<id>_color" at all.
+//
+// The gate is FontSpec.ColorSet and NOT Theme.HasFont, which is the whole reason
+// this is a named function instead of two inline conditions. HasFont answers
+// "did the theme mention this element at all — size OR colour", and FontSpec.Color
+// carries the parser's WHITE default whenever no colour was declared. Gating on
+// HasFont therefore made a theme that only SIZES its chatbox — "message = 20" with
+// no message_color, an entirely ordinary thing to write — force white message and
+// showname ink it never asked for, discarding the client's own.
+//
+// AO2 cannot make that mistake because it reads the colour from its own key and
+// lets the size key imply nothing: courtroom.cpp:1223-1225 starts from a local
+// default and overwrites it only when that key actually parsed.
+func declaredFontInk(spec theme.FontSpec) (sdl.Color, bool) {
+	if !spec.ColorSet {
+		return sdl.Color{}, false
+	}
+	return sdl.Color{R: spec.Color.R, G: spec.Color.G, B: spec.Color.B, A: 255}, true
 }

@@ -364,3 +364,82 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 		t.Fatal("SetThemeFonts(true) did not stick")
 	}
 }
+
+// TestChatboxInkNeedsAnActualColourKey pins the gate on the chatbox ink, which
+// used to be Theme.HasFont and had to become FontSpec.ColorSet.
+//
+// HasFont answers "did the theme mention this element AT ALL — size or colour",
+// and FontSpec.Color carries the parser's WHITE default whenever no colour was
+// declared. Together those meant a theme that only SIZED its chatbox — a very
+// ordinary thing to write — silently forced white message and showname ink,
+// discarding whatever the client had. AO2 cannot make this mistake: it reads the
+// colour from its own key and the size key implies nothing (courtroom.cpp:1223-1225).
+//
+// Goes red if either gate drifts back to HasFont, or if some later refactor
+// starts trusting FontSpec.Color without consulting ColorSet.
+func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
+	// Size only. HasFont says yes, ColorSet says no — and no is correct.
+	sized, _ := writeThemeFonts(t, "SizeOnly", "message = 20\nshowname = 14\n", nil)
+	if !sized.HasFont("message") {
+		t.Fatal("test setup: HasFont must be true for a size-only theme, or this proves nothing")
+	}
+	if spec := sized.Font("message"); spec.ColorSet {
+		t.Error("a theme that declared no message_color must not report ColorSet")
+	}
+	if spec := sized.Font("message"); spec.Color != (theme.RGB{R: 255, G: 255, B: 255}) {
+		t.Errorf("the parser default is white (%v) — that is exactly why ColorSet has to be "+
+			"consulted rather than the colour itself", spec.Color)
+	}
+	if spec := sized.Font("showname"); spec.ColorSet {
+		t.Error("a theme that declared no showname_color must not report ColorSet")
+	}
+
+	// Colour declared: honoured, and reported as declared.
+	coloured, _ := writeThemeFonts(t, "Coloured",
+		"message = 20\nmessage_color = 10, 20, 30\nshowname_color = 40, 50, 60\n", nil)
+	msg := coloured.Font("message")
+	if !msg.ColorSet || msg.Color != (theme.RGB{R: 10, G: 20, B: 30}) {
+		t.Errorf("message spec = %+v, want the declared colour with ColorSet", msg)
+	}
+	// Colour WITHOUT a size must still count — the two keys are independent.
+	sn := coloured.Font("showname")
+	if !sn.ColorSet || sn.Color != (theme.RGB{R: 40, G: 50, B: 60}) {
+		t.Errorf("showname spec = %+v, want the declared colour even with no size key", sn)
+	}
+	if sn.SizeSet {
+		t.Error("showname declared no size — SizeSet must stay false")
+	}
+}
+
+// TestDeclaredFontInkIgnoresTheParserDefault asserts the GATE directly, which the
+// test above cannot: that one pins the parser behaviour that makes the gate
+// correct, but would stay green if the gate itself reverted to Theme.HasFont.
+//
+// Goes red the moment declaredFontInk trusts spec.Color without consulting
+// spec.ColorSet — which is precisely the bug, since the parser's default colour is
+// opaque white and would be reported as the theme's deliberate choice.
+func TestDeclaredFontInkIgnoresTheParserDefault(t *testing.T) {
+	// The exact shape a size-only theme produces: the WHITE parser default, unset.
+	sizeOnly := theme.FontSpec{Size: 20, SizeSet: true, Color: theme.RGB{R: 255, G: 255, B: 255}}
+	if _, ok := declaredFontInk(sizeOnly); ok {
+		t.Error("a spec with ColorSet=false must report no ink — the white it carries is the " +
+			"parser's default, not the theme's choice, and honouring it discards the client's own")
+	}
+
+	declared := theme.FontSpec{Color: theme.RGB{R: 10, G: 20, B: 30}, ColorSet: true}
+	got, ok := declaredFontInk(declared)
+	if !ok {
+		t.Fatal("a declared colour must be reported")
+	}
+	if got.R != 10 || got.G != 20 || got.B != 30 || got.A != 255 {
+		t.Errorf("ink = %+v, want the declared RGB at full alpha", got)
+	}
+
+	// A theme is allowed to declare white ON PURPOSE, and that must survive — it is
+	// indistinguishable from the default by value, which is the whole point of the
+	// separate flag.
+	white := theme.FontSpec{Color: theme.RGB{R: 255, G: 255, B: 255}, ColorSet: true}
+	if _, ok := declaredFontInk(white); !ok {
+		t.Error("an explicitly declared white must be honoured, not mistaken for the default")
+	}
+}
