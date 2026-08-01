@@ -17,6 +17,9 @@ import (
 // AO has; the reply comes back in the OOC log). Friends are stored per-server by
 // showname (added via the player list / IC-log "+ Friend"), so no new storage.
 func (a *App) drawFriendsTab(r sdl.Rect) {
+	// See drawPlayerList. The Friends panel has no zoom of its own, so the element
+	// size stands alone at the client's base scale.
+	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemFriends, DefaultScalePct)))
 	c := a.ctx
 	if a.serverKey == "" {
 		c.Label(r.X+4, r.Y+6, "Connect to a server to see its friends.", ColTextDim)

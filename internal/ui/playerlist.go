@@ -145,6 +145,11 @@ func playerSortLabel(mode int) string {
 // /ga · /gas · /getarea fetch buttons, a sort toggle, a snapshot time, and
 // per-row icon + highlights + Pair / Copy actions.
 func (a *App) drawPlayerList(r sdl.Rect) {
+	// The user's own font for this panel, if they set one — every label, button,
+	// checkbox and field below follows it, so the panel changes as a whole rather
+	// than in halves. nil (the overwhelmingly common case) writes nothing and
+	// leaves the chrome face exactly as it was.
+	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemPlayerList, a.playerPct)))
 	c := a.ctx
 	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.playerPct = a.logPct

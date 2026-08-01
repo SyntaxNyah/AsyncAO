@@ -50,6 +50,8 @@ func (a *App) pollNotebook() {
 // drawNotesTab renders the notebook list (wrapped, newest at the bottom),
 // per-row delete, the free-form input, and a copy-all button.
 func (a *App) drawNotesTab(r sdl.Rect) {
+	// See drawPlayerList: the whole panel follows the user's pick, or nothing does.
+	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemNotes, a.logPct)))
 	c := a.ctx
 	if a.notebook == nil {
 		c.Label(r.X+4, r.Y+4, "Notebook loading...", ColTextDim)

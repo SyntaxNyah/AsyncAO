@@ -82,6 +82,14 @@ type themeElemFont struct {
 	// readability guards.
 	color    sdl.Color
 	colorSet bool
+	// userFont marks that the USER — not the theme — gave this element a font or a
+	// size. It is what arms the panel-wide chrome scope, and it is deliberately
+	// narrower than dressed(): a theme that merely SIZES music_list must not have
+	// the jukebox's buttons and search box resized for a user who set nothing.
+	// AO2 stamps its element stylesheet on the list widget, not on the toolbar
+	// around it, and the first requirement for this feature was that an unset
+	// override changes nothing at all.
+	userFont bool
 }
 
 // dressed reports whether the theme said ANYTHING about this element.
@@ -242,6 +250,25 @@ func (a *App) elemEmoji(el themeFontElem, userPct int) *ttf.Font {
 // faux-bold gate.
 func (a *App) elemBold(el themeFontElem) bool { return a.themeFonts.e[el].bold }
 
+// elemChromeFont is the face a PANEL should dress its whole self in, or nil to
+// leave the client's chrome alone. Handed straight to Ctx.pushPanelFont.
+//
+// Armed only when the USER picked a font or a size for that element — never on a
+// theme's own dressing. That is what makes the feature opt-in: with nothing set
+// this returns nil, pushPanelFont writes nothing, and every widget inside the
+// panel reads the identical chrome pointer it always did.
+//
+// ⚠ NOT a replacement for elemFont/elemFontFor at a ROW site. Those zoom with
+// Ctrl+wheel even when the element is undressed, because they route through the
+// element's own set; this one returns the fixed chrome face in that case. Swap a
+// row over to it and that row silently stops responding to the panel's zoom.
+func (a *App) elemChromeFont(el themeFontElem, userPct int) *ttf.Font {
+	if !a.themeFonts.e[el].userFont {
+		return nil
+	}
+	return a.elemFont(el, userPct)
+}
+
 // themeFaceNameFor is the FILE NAME of the face element el resolved to, or ""
 // when it is using the client's own chain. Settings-only: it tells a user what
 // an empty per-panel font box is currently giving them, which is the difference
@@ -389,6 +416,15 @@ func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 		}
 		if faces && res.panelFace[i] != 0 {
 			tbl.e[i].face = res.panelFace[i]
+		}
+		// Stamped OUTSIDE the faces gate, and that placement is the whole point.
+		// Under the dyslexia switch landThemeFonts passes faces=false, so a user
+		// who picked only a FAMILY for a panel would otherwise get no scope at all
+		// and see that panel render half in the accessibility font and half in the
+		// chrome one. The user asked for that panel to be their own; the switch
+		// only decides WHICH face it gets.
+		if res.panelPct[i] != 0 || res.panelFace[i] != 0 {
+			tbl.e[i].userFont = true
 		}
 	}
 }

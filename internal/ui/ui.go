@@ -272,6 +272,31 @@ type Ctx struct {
 	// change (SetTextDevScale), never per frame.
 	fontDev, fontBigDev *ttf.Font
 
+	// panelFont is the CHROME face for the panel currently being drawn, or nil for
+	// the client's own. A panel the user gave a font brackets its draw with
+	// pushPanelFont/popPanelFont, and every chrome-faced widget inside it — labels,
+	// buttons, checkboxes, dropdowns, text fields — follows, because they all read
+	// chromeFace() rather than c.font directly.
+	//
+	// AN OVERRIDE, NEVER A SWAP OF c.font, and that distinction is load-bearing
+	// rather than stylistic: c.font is the IDENTITY every font-lifetime guard
+	// compares against. buildSet passes it as the chromeShare that decides whether
+	// a set adopts it as an embedded last resort, and dropThemeElemSets, Destroy
+	// and SetChromeFont each refuse to Close a face while `f == c.font`. Assigning
+	// a panel's face over c.font would point those guards at the wrong pointer and
+	// Close a face still in use — a use-after-free, not a cosmetic bug.
+	//
+	// Zeroed by BeginFrame as well as by the panels' own defers, for the same
+	// reason the overlay fence documents: a panic unwinding a bracket must not
+	// leave the whole client dressed in one panel's font.
+	panelFont *ttf.Font
+	// panelWidth memoises TextWidth while a panel face is armed. widthCache is
+	// keyed by STRING alone and belongs to the chrome face, so a panel face must
+	// never write into it; this one is keyed by face AND string. Nil until a
+	// bracket is actually armed, so a session with no per-panel font never
+	// allocates it.
+	panelWidth map[panelWidthKey]int32
+
 	// User-scaled font sets (chat box, log/OOC lists): the user's
 	// override chain (CJK fallback) plus the embedded last resort,
 	// rebuilt only when the percent or the chain changes — settings
@@ -775,7 +800,59 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 }
 
 // Font exposes the chrome font (typewriter rasterizer reuse).
+//
+// Deliberately NOT panel-scoped: the typewriter rasterizer and the other callers
+// of this want the client's own face regardless of which panel is mid-draw.
 func (c *Ctx) Font() *ttf.Font { return c.font }
+
+// panelWidthKey keys the panel-face width memo. The chrome memo is keyed by
+// string alone because it only ever holds one face's measurements; this one has
+// to carry the face too, or two panels at different sizes would read each
+// other's widths.
+type panelWidthKey struct {
+	font *ttf.Font
+	text string
+}
+
+// chromeFace is the face every chrome widget draws and measures in: the panel's
+// own when one is armed, the client's otherwise.
+//
+// One always-false, perfectly-predicted branch on the unset path, returning the
+// identical c.font pointer — so textTexture receives the identical
+// textKey{text, color, font}, hits the identical cache entry and the identical
+// atlas slot. Identical pointer in, identical pixels out.
+func (c *Ctx) chromeFace() *ttf.Font {
+	if c.panelFont != nil {
+		return c.panelFont
+	}
+	return c.font
+}
+
+// pushPanelFont arms f as the chrome face and RETURNS THE PREVIOUS ONE, which
+// the caller hands straight back to popPanelFont:
+//
+//	defer c.popPanelFont(c.pushPanelFont(face))
+//
+// By value rather than returning a restore closure, and that is measured rather
+// than assumed: the closure form costs 1 allocation per call, and these brackets
+// sit on the per-frame panel draws that the whole-screen allocation gates cover.
+// Same idiom, and the same reason, as pushClip.
+//
+// A nil face (the overwhelmingly common case — no override set) writes nothing.
+// So is a face that IS the chrome face: arming it would only add a pointless
+// non-nil panelFont for every later branch to test.
+func (c *Ctx) pushPanelFont(f *ttf.Font) *ttf.Font {
+	prev := c.panelFont
+	if f != nil && f != c.font {
+		c.panelFont = f
+	}
+	return prev
+}
+
+// popPanelFont restores what pushPanelFont returned. Always via defer, so an
+// early return — a panel with an empty roster, a Notes tab with no notebook, a
+// music panel in volume mode — cannot leak the face into whatever draws next.
+func (c *Ctx) popPanelFont(prev *ttf.Font) { c.panelFont = prev }
 
 // fontSet is one scaled font chain: override fonts in order, the
 // embedded font, then any broad-Unicode fallbacks. cover holds the sfnt
@@ -1551,6 +1628,11 @@ func coverAt(s []*sfnt.Font, i int) *sfnt.Font {
 // seed predates the frame's event pump; mouse events override it as they
 // arrive.
 func (c *Ctx) BeginFrame(dt time.Duration) {
+	// Belt and braces on the panel font: every bracket restores it with defer, so
+	// this should always already be nil. It is zeroed anyway for the reason the
+	// overlay fence below documents — a panic unwinding a bracket must not leave
+	// the whole client permanently dressed in one panel's font.
+	c.panelFont = nil
 	// Tab focus cycling runs on the PREVIOUS frame's field order — by now
 	// the draw pass that followed the keypress has recorded every visible
 	// TextField (one frame of latency, imperceptible at frame rate).
@@ -2206,6 +2288,15 @@ func (c *Ctx) purgeTextCache() {
 	}
 	c.atlas = c.atlas[:0]
 	c.purgeEmojiCache() // emoji rasters carry the same now-dead primary-font pointers
+	// The panel-face width memo is keyed BY FONT POINTER, so it has to die with the
+	// faces — and it is cleared HERE rather than beside the widthCache clears for a
+	// specific reason. This is the one choke point every face-invalidating path
+	// reaches (SetThemeFaces, SetChromeFont, buildSet's rebuild, SetTextDevScale),
+	// and SetThemeFaces is NOT one of the sites that clears widthCache even though
+	// it calls dropThemeElemSets, which Closes every per-element face. A
+	// per-element face is exactly what a panel bracket arms, so anywhere else this
+	// map would hold dangling pointers across a theme swap.
+	clear(c.panelWidth)
 }
 
 // logicalW is the label's LOGICAL width (#77): the device texture width divided
@@ -2275,7 +2366,7 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 
 // Label draws text at (x, y) and returns its LOGICAL pixel width.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
-	t, ok := c.textTexture(text, col, c.font)
+	t, ok := c.textTexture(text, col, c.chromeFace())
 	if !ok {
 		return 0
 	}
@@ -2295,7 +2386,7 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 
 // LabelClipped draws text clipped to maxW.
 func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
-	c.LabelClippedFont(c.font, x, y, maxW, text, col)
+	c.LabelClippedFont(c.chromeFace(), x, y, maxW, text, col)
 }
 
 // LabelClippedFont is LabelClipped with an explicit font (scaled log/OOC
@@ -2332,6 +2423,13 @@ func (c *Ctx) TextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
 	}
+	// A panel face measures in its OWN memo. widthCache is keyed by string alone
+	// and holds the chrome face's advances, so letting a panel face write into it
+	// would hand the next chrome label a width measured in a different font — and
+	// layout, not just drawing, would be wrong.
+	if c.panelFont != nil {
+		return c.panelTextWidth(text)
+	}
 	if w, ok := c.widthCache[text]; ok {
 		return w
 	}
@@ -2343,6 +2441,27 @@ func (c *Ctx) TextWidth(text string) int32 {
 		c.widthCache = make(map[string]int32, textCacheMax)
 	}
 	c.widthCache[text] = int32(w)
+	return int32(w)
+}
+
+// panelTextWidth is TextWidth on the armed panel face. Same cap and the same
+// wholesale-reset-on-overflow rule as widthCache; created lazily, so it costs
+// nothing until a panel is actually dressed.
+func (c *Ctx) panelTextWidth(text string) int32 {
+	k := panelWidthKey{font: c.panelFont, text: text}
+	if w, ok := c.panelWidth[k]; ok {
+		return w
+	}
+	w, _, err := c.panelFont.SizeUTF8(text)
+	if err != nil {
+		return 0
+	}
+	if c.panelWidth == nil {
+		c.panelWidth = make(map[panelWidthKey]int32, textCacheMax)
+	} else if len(c.panelWidth) >= textCacheMax {
+		c.panelWidth = make(map[panelWidthKey]int32, textCacheMax)
+	}
+	c.panelWidth[k] = int32(w)
 	return int32(w)
 }
 
@@ -2411,7 +2530,7 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 		c.Fill(r, col)
 		c.Border(r, border)
 	}
-	if t, ok := c.textTexture(label, text, c.font); ok {
+	if t, ok := c.textTexture(label, text, c.chromeFace()); ok {
 		// Clip to the button: tiny themed rects must never leak their
 		// label over the neighbors (Qt elided these). All #77-LOGICAL px.
 		lw, lh := t.logicalW(), uiLogicalFromDevice(t.h, t.devPct)
@@ -3014,7 +3133,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		show = placeholder
 		col = ColTextDim
 	}
-	textY := r.Y + (r.H-int32(c.font.Height()))/2
+	textY := r.Y + (r.H-int32(c.chromeFace().Height()))/2
 	// Horizontal scroll keeps the CARET visible (roughly centered) once the text
 	// overflows the box — type or arrow anywhere and you can see it, instead of
 	// typing blind past the right edge. Unfocused/fitting fields stay head-aligned.
@@ -3177,7 +3296,7 @@ func (c *Ctx) devFieldValue(r sdl.Rect, padX, avail, scroll, caretXDev, textY in
 	// Value texture, blitted 1:1 from its DEVICE-sized cache entry at the projected
 	// text origin — zero resampling, so the string can't shimmer as the scroll
 	// (hence the origin's sub-pixel phase) advances per keystroke.
-	if t, ok := c.textTexture(show, col, c.font); ok {
+	if t, ok := c.textTexture(show, col, c.chromeFace()); ok {
 		oy := uiDeviceFromLogical(textY, dev)
 		c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: t.w, H: t.h}
 		c.drawDst = sdl.Rect{X: ox, Y: oy, W: t.w, H: t.h} // device→device 1:1
@@ -3443,14 +3562,14 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 		thumb(cur, sdl.Rect{X: r.X + 2, Y: r.Y + 2, W: tw, H: r.H - 4})
 		labelX = r.X + 2 + tw + 4
 	}
-	if t, ok := c.textTexture(options[cur], ColText, c.font); ok {
+	if t, ok := c.textTexture(options[cur], ColText, c.chromeFace()); ok {
 		w := t.logicalW() // #77-LOGICAL px
 		if maxW := r.X + r.W - 16 - labelX; w > maxW && maxW > 0 {
 			w = maxW
 		}
 		c.blitLabel(t, labelX, r.Y+(r.H-uiLogicalFromDevice(t.h, t.devPct))/2, w)
 	}
-	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.font.Height()))/2, "▾", ColTextDim)
+	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.chromeFace().Height()))/2, "▾", ColTextDim)
 
 	if !open {
 		if c.hovering(r) && c.clicked {
@@ -3464,8 +3583,8 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 	// stay usable), drops below the control, flips above at the window's
 	// bottom edge, and shifts left at the right edge.
 	rowH := r.H
-	if rowH < int32(c.font.Height())+6 {
-		rowH = int32(c.font.Height()) + 6
+	if rowH < int32(c.chromeFace().Height())+6 {
+		rowH = int32(c.chromeFace().Height()) + 6
 	}
 	if rowHWant > rowH { // thumbnail rows want to be taller than the closed control
 		rowH = rowHWant
@@ -3695,7 +3814,7 @@ func (c *Ctx) FinishFrame() {
 				d.thumb(idx, sdl.Rect{X: row.X + 2, Y: row.Y + 2, W: d.thumbW, H: d.rowH - 4})
 				labelX = row.X + d.thumbW + 8
 			}
-			if t, ok := c.textTexture(opt, ColText, c.font); ok {
+			if t, ok := c.textTexture(opt, ColText, c.chromeFace()); ok {
 				w := t.logicalW() // #77-LOGICAL px
 				if maxW := row.X + row.W - labelX - 6; w > maxW && maxW > 0 {
 					w = maxW

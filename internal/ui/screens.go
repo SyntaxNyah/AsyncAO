@@ -3213,6 +3213,9 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 // a parameter rather than being read off App.
 func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
+	// See drawPlayerList: the user's pick dresses this panel's chrome too — its
+	// search row, its export buttons — not just the scrollback rows.
+	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemICChatlog, a.logPct)))
 	// #21 label 16: "ic_chatlog_color" is the log's DEFAULT ink. Resolved once per
 	// frame, outside the row loop.
 	icInk := a.elemInkOr(elemICChatlog, canvasInk, ColText)
@@ -3445,6 +3448,8 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 // leaks canvas ink into chrome without saying so.
 func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
+	// See drawPlayerList.
+	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemServerChatlog, a.oocPct)))
 	// #21 label 16: "server_chatlog_color" is this panel's default foreground. AO2
 	// reads it through set_font's own key (courtroom.cpp:1199 → :1300); the
 	// per-sender tint is a SEPARATE server_chatlog_sender_color read through
@@ -3904,6 +3909,9 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.areaPct = a.logPct
 	}
+	// See drawPlayerList. AFTER the zoom is settled, so the face is opened at the
+	// scale this frame actually draws at.
+	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemAreaList, a.areaPct)))
 	// #21 label 16: "area_list_color" replaces only the NEUTRAL row inks — the
 	// population dim/full pair and the detail block. AsyncAO's status, locked,
 	// current and hover colours stay: they are this client's status affordance, and
@@ -5187,6 +5195,9 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.musicPct = a.logPct
 	}
+	// See drawPlayerList. AFTER the zoom is settled, and BEFORE the volume-mode
+	// early return, so the sliders and their labels are dressed too.
+	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemMusicList, a.musicPct)))
 	// Ctrl+wheel (or wheel-button) resizes the track text (musicPct). Lives HERE
 	// — not just the classic log panel — so it also works on the THEMED courtroom
 	// (which draws drawMusicList directly). In classic the panel already took the
