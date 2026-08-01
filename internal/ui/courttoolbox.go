@@ -735,6 +735,28 @@ func (a *App) toolboxPiecesContentH() int32 {
 // the fallback was deleted in this arc (rule (c): it painted over the canvas).
 var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 
+// toggleChromePanel flips one chrome piece from the keyboard and says which way
+// it went. The feedback is not decoration: these binds exist precisely for when
+// you cannot see or reach the panel that owns the switch, so pressing one and
+// getting no response at all would be its own dead end.
+//
+// Routed through setPanelHiddenGuarded rather than setPanelHidden, so the
+// keyboard is held to the same no-strand rule as the panel. A hotkey that can
+// strand you is worse than no hotkey: the person who pressed it is by definition
+// the one who could not find the way back.
+func (a *App) toggleChromePanel(id, label string) {
+	hide := !a.panelHidden(id)
+	a.setPanelHiddenGuarded(id, hide)
+	if a.panelHidden(id) != hide {
+		return // refused by the guard, which has set its own explanatory toast
+	}
+	a.warnLine = label + " shown"
+	if hide {
+		a.warnLine = label + " hidden"
+	}
+	a.warnAt = time.Now()
+}
+
 // setPanelHiddenGuarded is drawToolboxPieces' setPanelHidden with the no-strand
 // guard: hiding the last mouse lifeline is refused with a toast explaining why,
 // instead of applied-then-silently-undone. Every other toggle passes straight

@@ -178,6 +178,13 @@ func (a *App) panelHidden(id string) bool { return a.hidden[id] }
 // setPanelHidden flips one region and persists the full set.
 func (a *App) setPanelHidden(id string, hide bool) {
 	if hide {
+		// Created on demand rather than assumed. The map is normally seeded from
+		// preferences at startup, but this is now reachable from a HOTKEY, and a key
+		// pressed before that seeding — or on any path that never ran it — would
+		// otherwise be a nil-map write, which is a panic and not a no-op.
+		if a.hidden == nil {
+			a.hidden = make(map[string]bool, 4)
+		}
 		a.hidden[id] = true
 	} else {
 		delete(a.hidden, id)

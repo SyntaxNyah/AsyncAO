@@ -4026,15 +4026,7 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	if hx != pad {
 		y += 30 // finish a partial row
 	}
-	// Capture: the next keypress binds to the armed action; Esc cancels. Consume
-	// the key so it can't also act elsewhere (mirrors the hold-to-clear capture).
-	if a.hkCapture != "" && c.keyPressed != 0 {
-		if c.keyPressed != sdl.K_ESCAPE {
-			a.d.Prefs.SetHotkey(a.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
-		}
-		a.hkCapture = ""
-		c.keyPressed = 0
-	}
+	a.consumeHotkeyCapture()
 	y += 8
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Reset all to defaults") {
 		for _, def := range hotkeyDefs {

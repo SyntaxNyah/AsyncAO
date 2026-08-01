@@ -78,6 +78,13 @@ const (
 	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
+	// Hide/show the two chrome bars from the keyboard. They were reachable only
+	// through the UI-chrome panel, which is itself a piece of chrome — so anything
+	// that covered it (or a layout that put it awkwardly) left no way back except
+	// the mouse. A key that does not depend on being able to click the thing it
+	// controls is the point.
+	hotkeyToggleMenuBar = "toggle_menu_bar"
+	hotkeyToggleToolbox = "toggle_toolbox"
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -144,6 +151,15 @@ var hotkeyDefs = []struct {
 	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
+	// Chrome toggles. The FUNCTION-KEY band for the same reason Edit Layout uses
+	// it (see the sweep above): every Ctrl+letter, Ctrl+digit and Ctrl+symbol is
+	// already claimed by a row here or by the clipboard / editor-undo chords, and
+	// the only Ctrl+Fn taken is F2. Both are rebindable like every other row.
+	// f5/f6 rather than f3/f4: the cheat sheet already lists PLAIN F1, F3 and F8 as
+	// fixed keys, and a Ctrl+F3 sitting next to a plain F3 in the same window reads
+	// as a mistake even though the two are different namespaces.
+	{hotkeyToggleMenuBar, "Show / hide the menu bar", "f5"},
+	{hotkeyToggleToolbox, "Show / hide the toolbox", "f6"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -412,6 +428,10 @@ func (a *App) handleHotkeys() {
 			a.setTheater(false)
 		}
 		a.toolboxPinned, a.toolboxPieces = true, true
+	case a.hotkeyFor(hotkeyToggleMenuBar):
+		a.toggleChromePanel(panelMenuBar, "Menu bar")
+	case a.hotkeyFor(hotkeyToggleToolbox):
+		a.toggleChromePanel(panelToolbox, "Toolbox")
 	case a.hotkeyFor(hotkeyEditLayout):
 		// FIX 2b: keyboard un-strand path for the layout editor. openLayoutEditor
 		// picks classic vs themed itself — the same entry the toolbox Edit chip and
@@ -854,6 +874,9 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 		return
 	}
 	c.Label(r.X+r.W-150, r.Y+10, "F1 to close", ColTextDim)
+	// The sheet does its own capture, so a rebind started HERE completes here —
+	// without this the row would sit on "press a key…" until Settings was opened.
+	a.consumeHotkeyCapture()
 	wasManip := a.hkWin.dragging || a.hkWin.resizing
 	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
 	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
@@ -892,7 +915,38 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				if e.custom {
 					keyCol = ColStar // a binding you remapped or created
 				}
-				c.Label(x, y, e.key, keyCol)
+				// A row that names an action is REBINDABLE right here. The sheet is
+				// where people actually go to find out what a key does, so it is also
+				// where they want to change it — sending them to Settings to act on
+				// what they are already looking at is the long way round.
+				//
+				// Same capture the Settings rows arm (a.hkCapture), so there is one
+				// rebinding path and not two that can disagree.
+				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
+				if e.action != "" {
+					if c.hovering(row) {
+						c.Fill(row, ColPanelHi)
+						c.Tooltip(row, "Click to rebind · right-click to reset to the default")
+					}
+					if c.ClickedIn(row) {
+						a.hkCapture = e.action // the next keypress binds this action
+						a.bindingFor = ""      // don't also arm a character keybind
+						c.focusID = ""         // the capture owns that keypress
+					}
+					if c.rightClicked && c.hovering(row) {
+						a.d.Prefs.SetHotkey(e.action, "")
+						if a.hkCapture == e.action {
+							a.hkCapture = ""
+						}
+						a.hkCache = nil // the row's key changed; rebuild on the next frame
+					}
+				}
+				shown := e.key
+				if e.action != "" && a.hkCapture == e.action {
+					shown = "press a key…"
+					keyCol = ColStar
+				}
+				c.Label(x, y, shown, keyCol)
 				c.LabelClipped(x+hkKeyGap, y, labelW, e.label, ColText)
 			}
 		}

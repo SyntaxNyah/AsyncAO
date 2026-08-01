@@ -3,6 +3,8 @@ package ui
 import (
 	"sort"
 	"strings"
+
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 // Hotkey cheat-sheet (#79): a one-glance window of every keyboard shortcut,
@@ -19,6 +21,35 @@ type hkEntry struct {
 	label  string
 	custom bool
 	header bool // a section header row (label only)
+	// action is the hotkeyDefs id this row rebinds, or "" for a row that is not
+	// rebindable — the fixed function keys, the layout-editor gestures, and the
+	// macro / character / showname sections, which are bound elsewhere and own
+	// their own editors. Non-empty is what makes a row clickable in the sheet.
+	action string
+}
+
+// consumeHotkeyCapture binds the next keypress to whichever action armed the
+// capture; Esc cancels. The key is consumed so it cannot also fire something
+// else on its way past.
+//
+// Shared by BOTH rebinding surfaces — the Settings rows and the F1 sheet — and
+// that sharing is the point rather than tidiness: it used to live inside the
+// Settings draw, so a capture armed anywhere else would simply never complete,
+// leaving a row stuck on "press a key…" until the user opened Settings.
+//
+// Invalidates the sheet's cached rows on a real change, since one of them now
+// shows a key that just moved.
+func (a *App) consumeHotkeyCapture() {
+	c := a.ctx
+	if a.hkCapture == "" || c.keyPressed == 0 {
+		return
+	}
+	if c.keyPressed != sdl.K_ESCAPE {
+		a.d.Prefs.SetHotkey(a.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+		a.hkCache = nil
+	}
+	a.hkCapture = ""
+	c.keyPressed = 0
 }
 
 // hotkeyCheatEntries gathers every binding into display order: built-in actions
@@ -31,7 +62,15 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	out = append(out, hkEntry{label: "Shortcuts", header: true})
 	for _, def := range hotkeyDefs {
 		k := a.hotkeyFor(def.id)
-		out = append(out, hkEntry{key: "Ctrl+" + strings.ToUpper(k), label: def.label, custom: k != def.def})
+		// action carries the id so the sheet itself can rebind the row. Only this
+		// section gets one: everything below is either a fixed key or lives in its
+		// own editor.
+		out = append(out, hkEntry{
+			key:    "Ctrl+" + strings.ToUpper(k),
+			label:  def.label,
+			custom: k != def.def,
+			action: def.id,
+		})
 	}
 	for _, fx := range [...]struct{ key, label string }{
 		{"F1", "show / hide this list"},
