@@ -216,8 +216,36 @@ per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
   (assets are pre-compressed), TLS session cache, 2 s TLS handshake cap.
   HTTP/2 engages automatically on https hosts; plain-http AO hosts ride tuned
   HTTP/1.1 keep-alive.
-- DNS pre-resolve at server connect + lazy 5 min refresh inside the dialer.
+- DNS pre-resolve at server connect + lazy 5 min refresh inside the dialer —
+  **skipped entirely when a proxy would carry that host.** Behind a proxy the
+  transport dials the *proxy* and the proxy resolves the origin, so warming the
+  local cache would publish the server's name to this machine's resolver for no
+  benefit. Privacy property, not an optimisation.
 - Per-host exponential backoff (500 ms → 30 s) on transport failure.
+
+### Proxy (`internal/netproxy`)
+
+One immutable `Policy` published through an `atomic.Pointer`, read by every dial
+without a lock; a refresh builds a new one and swaps. Resolved at boot (before
+`sdl.Init`, so a registry read or a WPAD round trip costs boot latency and never
+frames) and on an explicit Settings change — **never per request** (hard rule 2).
+
+- **Every** `http.Transport` in the repo sets `Proxy`. A nil `Proxy` means *never
+  proxy*, not "use the default", and a `go/ast` census over the tree fails the
+  build gate on any literal without it. Before that gate, the asset transport and
+  the game socket were both nil-`Proxy` while the lobby and updater inherited
+  `http.DefaultTransport` — a split tunnel worse than either extreme.
+- Order inside "use the system's setting": **environment first, OS second.** An
+  env var is an explicit per-launch instruction; the OS setting is ambient.
+- Discovery: Windows registry + WinHTTP (with `WinHttpGetProxyForUrl` actually
+  *resolving* WPAD/PAC rather than assuming — the auto-detect flag is ON by
+  default on machines with no proxy at all, so assuming would strand them);
+  macOS `scutil --proxy`; elsewhere env only.
+- **Fail closed** when a proxy is configured but its destination is unknowable (a
+  PAC script off Windows). Falling back to direct is the leak this exists to
+  close. Bypassed destinations are exempt — we know where those go.
+- Bypass matching is hand-written; see the dependency table for the measurements
+  that rule out every library alternative.
 - Fetch pool: 16 workers (fetches are RTT-bound; the transport is sized
   for 16 conns/host and h2 bases multiplex them over one connection —
   spec §7's original 8 halved cold-viewport fill for nothing), HIGH lane
@@ -445,4 +473,5 @@ a solo sprite.
 | MSYS2 `libavif` (CGO, no Go module) | **addition (user request):** `.avif` as a probe format — native dav1d/aom decode for stills *and* AV1 image sequences, bound exactly like the libwebp CGO shim (~100 lines). The pure-Go alternatives embed a WASM runtime (gen2brain/avif → wazero), the opposite of this project's soul. CGO-less builds degrade to a descriptive decode error; sniffing (`ftyp` + `avif`/`avis` brands) stays pure Go. |
 | System `ffmpeg` (runtime, no Go module, no CGO) | **addition (user request, #99 scene video export):** the **🎥 Video** button streams captured frames into an external `ffmpeg` process (`internal/videoenc`, pure Go) for H.264/MP4 or VP9/WebM. It is **runtime-optional by design** (a user requirement: the client must still boot without ffmpeg installed) — `Available()` is a cached PATH lookup, a missing ffmpeg only disables that one action, and there is **no build-time dependency** and nothing linked. Audio (music/SFX) muxing into the video is reserved for a follow-up pass. |
 | OpenDyslexic font (embedded asset, no Go module) | **addition (user request, M9):** the "dyslexia-friendly font" toggle bundles `internal/ui/fonts/OpenDyslexic-Regular.otf` via `//go:embed` (~172 KB) so it works for every user with no separate install — a path-on-disk preset only helped the few who'd installed it. SIL OFL 1.1 (license shipped alongside as `OpenDyslexic-LICENSE-OFL.txt`; embedded unmodified, so the Reserved Font Name clause is satisfied). Applied only to the IC/OOC chat + log text (the existing override-chain scope), so chrome widget metrics are untouched. |
+| **Proxy support — NO dependency added** (`internal/netproxy`, stdlib only) | **rejection record, because this rule exists to capture rejections as much as additions.** Honouring the OS proxy needs three things: OS discovery, a bypass matcher, and SOCKS. SOCKS is free — `net/http` dials `http`, `https`, `socks5` and `socks5h` natively. Discovery is free too: stdlib `syscall` on Windows exports `RegOpenKeyEx`/`RegQueryValueEx`/`RegCloseKey`/`HKEY_*`, and WinHTTP is reached through kernel32's `LoadLibraryExW(LOAD_LIBRARY_SEARCH_SYSTEM32)`; macOS uses `os/exec` + `scutil`; Linux has no OS setting to read. **`golang.org/x/net` and `golang.org/x/sys` are NOT in `go.mod`** — either would be a brand-new direct require, so neither is "already there". Rejected candidates, all permissive and therefore AGPLv3-compatible (licence was never the deciding factor): `x/net/http/httpproxy` — the stdlib copy is *vendored* and unimportable, and it is measurably wrong for this job (against a real Windows `ProxyOverride`, `<local>` is inexpressible and `10.*`/`172.16.*`/`192.168.*` can never match an IP literal, so a LAN AO server silently goes to the proxy); `mattn/go-ieproxy` — needs cgo on macOS, so a `CGO_ENABLED=0` mac build silently reports "no proxy", is a no-op on Linux, pulls three x/ modules, and ships that same broken bypass translation; `rapid7/go-get-proxied` — cleanest of the bunch, but its API is a per-call `GetProxy()` with a fresh WinHTTP round trip each time, which cannot sit on an asset transport under hard rule 2, so it would have to be wrapped in the snapshot we are writing anyway; any PAC-evaluating library (`darren/gpac`, `saucelabs/pacman`) — each embeds a JavaScript VM (otto/goja) against a 256 MiB budget, to do what `WinHttpGetProxyForUrl` does in-process for free on Windows; `libproxy` — LGPL C library, so cgo plus a runtime `.so` plus relinking obligations, for a Linux case that env vars already solve. |
 | `josephspurrier/goversioninfo` (BUILD-TIME tool, NOT a linked dependency) | **addition (Defender false-positive mitigation):** generates the committed Windows VERSIONINFO resource (`cmd/asyncao/versioninfo_windows.syso` from `versioninfo.json`) that gives the `.exe` real CompanyName/ProductName/FileDescription/LegalCopyright metadata. A blank-provenance unsigned Go binary is a small heuristic signal in the `Bearfoos.A!ml` false positive (docs/DEFENDER-FALSE-POSITIVE.md); the resource lowers that surface at zero runtime cost. Run via `go run …@v1.4.0` (the same pin as `.github/workflows/release.yml`; never imported — it does not enter `go.mod` and nothing links it); the syso is committed so a normal build needs no tooling, and the release workflow regenerates it per-tag best-effort. |

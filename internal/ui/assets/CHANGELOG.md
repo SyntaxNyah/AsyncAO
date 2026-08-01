@@ -6,13 +6,17 @@ tagged "installed" below.
 
 ## v1.85.0 — 2026-08-01
 
-The second theme release. One change in it reaches everyone whether or not they
-use a theme: characters drawn as pixel art stop being blurred. The rest is an
+The second theme release, with two changes in it that reach everyone whether or
+not they use a theme: AsyncAO now honours the proxy your computer is configured
+with, and characters drawn as pixel art stop being blurred. The rest is an
 imported AO2 theme finally getting its own controls back — the emote and iniswap
 dropdowns, the volume sliders, the search box, the music plate and a row of
 buttons that were all reserved space the client painted nothing into. Alongside
 that, a disconnection no longer throws you out of the room you were in, and the
 lobby gets its own actions back.
+
+If you use a proxy or a VPN and AsyncAO has never worked for you, the first entry
+below is the one to read.
 
 The rule this release follows: inside a theme's own canvas it is the theme's
 layout and AO2's controls, with nothing of ours crammed in beside them. Anything
@@ -22,6 +26,30 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
 
 ### Everyone
 
+- **AsyncAO now uses the proxy your computer is set to use.** It did not, and the
+  half of it that did was worse than neither: the server list and updates went
+  through your proxy while the connection to the server itself, and every
+  character sprite, background and track, went straight around it. If you use a
+  proxy, that meant the lobby looked perfectly healthy and nothing would load —
+  and traffic you believed was going through it was not. All of it now follows
+  the same route. Windows, macOS and the standard proxy environment variables are
+  all read, including the bypass rules that keep a server on your own network
+  reachable. **Settings → Power user → Proxy** shows what was found and where it
+  came from, and has one switch to turn it off for AsyncAO alone — worth knowing
+  about, because some proxies block the ports community AO servers use, and that
+  switch is the fix if nothing connects after updating. If your computer gets its
+  proxy from a script that AsyncAO cannot read, connections are blocked rather
+  than quietly sent around it, and that screen tells you the two ways forward.
+- **The address you are connecting to is no longer looked up locally when a proxy
+  is in use.** The client used to resolve a server's asset host ahead of time to
+  save a moment on the first image. Behind a proxy that is the one lookup that
+  should not happen here — it hands your own network the name of the server you
+  went through a proxy to keep to yourself. It is skipped now whenever a proxy
+  would carry that traffic, and unchanged otherwise.
+- **A setting for servers with capitalised character folders stopped forgetting
+  itself.** It saved correctly and was never read back, so anyone who needed it
+  had it silently reset every launch — and the wrong value makes every character
+  on that server fail to load, with nothing to say why.
 - **Pixel-art characters are no longer smoothed into a blur.** AsyncAO picked one
   texture filter for the entire client. AO2 picks one per *sprite*, from two
   places: the character's own file can ask for `pixel` or `smooth`, and failing
