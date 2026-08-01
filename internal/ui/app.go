@@ -1122,6 +1122,12 @@ type App struct {
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
 	hkScroll   int32 // hotkey cheat-sheet scroll offset (it's a scrollable list now)
+	// piecesWin / piecesPrevDown are the Hide-UI-pieces panel's floating window and
+	// its own press edge. It used to be nailed to the bottom-right corner with no
+	// way to move it — dragging did nothing and the layout editor did not offer it
+	// — so a panel that landed awkwardly could not be shifted at all.
+	piecesWin      floatWin
+	piecesPrevDown bool
 	// Multi-server split (pass 2a): splitTab pins a BACKGROUND tab whose live stage
 	// renders in the RIGHT pane (splitRoom over that tab's own session + URL builder
 	// on courtroom.NopAudio so only the focused left pane makes sound; splitVP over

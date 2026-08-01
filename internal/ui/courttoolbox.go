@@ -635,6 +635,22 @@ func (a *App) editOverToolbox(w, h int32) bool {
 // the bottom-right above the toolbox strip. Factored out so boxFencesPointer and
 // the draw agree on frame one (the click-leak class the recon flagged: a fence
 // rect that disagrees with the draw rect leaks a click through the panel).
+// toolboxPiecesMinW / toolboxPiecesMinH bound a dragged-and-resized panel. Wide
+// enough for the filter box and the Close button — the no-strand lifeline —
+// side by side, and tall enough for the header, one row and the footer.
+const (
+	toolboxPiecesMinW = 200
+	toolboxPiecesMinH = toolboxPiecesHeaderH + toolboxPiecesFooterH + toolboxPiecesRowPitch
+)
+
+// toolboxPiecesRect is where the Hide-UI-pieces panel sits: wherever the user
+// last dragged it, or its old bottom-right home the first time.
+//
+// It was fixed in that corner with no way to move it — dragging did nothing, and
+// the layout editor did not offer it either — so a panel that landed awkwardly,
+// or underneath something else, could not be shifted at all. It is a floatWin
+// now, which brings the drag, the cross-session position and the de-overlap
+// cascade with it (panelSlotTable, floatbox.go).
 func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	panelH := a.toolboxPiecesContentH() + toolboxPiecesHeaderH + toolboxPiecesFooterH
 	if panelH > toolboxPiecesMaxH {
@@ -645,19 +661,27 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	if panelH > maxH {
 		panelH = maxH
 	}
-	if panelH < toolboxPiecesHeaderH+toolboxPiecesFooterH+toolboxPiecesRowPitch {
-		panelH = toolboxPiecesHeaderH + toolboxPiecesFooterH + toolboxPiecesRowPitch
+	if panelH < toolboxPiecesMinH {
+		panelH = toolboxPiecesMinH
 	}
 	pw := toolboxPiecesW
 	if pw > w-2*compactToolboxMargin {
 		pw = w - 2*compactToolboxMargin
 	}
-	x := w - pw - compactToolboxMargin
-	y := h - compactGripH - compactToolboxMargin - toolboxPiecesTopGap - panelH
-	if y < compactToolboxMargin {
-		y = compactToolboxMargin
+	// Never placed and nothing saved: keep the original corner, so an existing
+	// user's panel does not move on them just because it became draggable.
+	if !a.piecesWin.placed {
+		if r, ok := a.seedPanelFromSlot(&a.piecesWin, slotPanelPieces, pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h); ok {
+			return r
+		}
+		x := w - pw - compactToolboxMargin
+		y := h - compactGripH - compactToolboxMargin - toolboxPiecesTopGap - panelH
+		if y < compactToolboxMargin {
+			y = compactToolboxMargin
+		}
+		return sdl.Rect{X: x, Y: y, W: pw, H: panelH}
 	}
-	return sdl.Rect{X: x, Y: y, W: pw, H: panelH}
+	return a.piecesWin.rect(pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h)
 }
 
 const (
@@ -825,6 +849,22 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+6, "Hide UI pieces", ColText)
+
+	// The TITLE strip is the drag handle — the band above the filter box, not the
+	// whole header, so grabbing it can never swallow a click meant for the filter
+	// field. (The Close button lives in the footer, so it is clear either way.)
+	// piecesPressed is this panel's OWN press edge: it draws over other surfaces
+	// and so cannot share the frame's click.
+	piecesPressed := c.mouseDown && !a.piecesPrevDown
+	a.piecesPrevDown = c.mouseDown
+	wasManip := a.piecesWin.dragging
+	a.floatWinDrag(&a.piecesWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: toolboxFilterY}, &piecesPressed)
+	if wasManip && !a.piecesWin.dragging {
+		a.persistPanelSlot(slotPanelPieces, panel, w, h) // remember where, across sessions
+	}
+	if !c.mouseDown && wasManip {
+		c.clicked = false // a finished drag is not a click on whatever is underneath
+	}
 
 	// Filter box (Phase 3): narrows the per-piece list across the same three-section
 	// grouping. It lives in the header strip, OUTSIDE the scroll body, so it never

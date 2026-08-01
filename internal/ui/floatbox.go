@@ -126,6 +126,12 @@ var panelSlotTable = []panelSlot{
 	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
 	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
 	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
+	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
+	// it — not by dragging, and not in the layout editor either — so a panel that
+	// landed somewhere awkward, or under something else, could not be shifted.
+	// Joining this table gives it the drag, the position persistence and the
+	// de-overlap cascade every other floating panel already has.
+	{slotPanelPieces, func(a *App) *floatWin { return &a.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
