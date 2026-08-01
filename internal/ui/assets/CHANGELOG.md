@@ -50,6 +50,19 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
   itself.** It saved correctly and was never read back, so anyone who needed it
   had it silently reset every launch — and the wrong value makes every character
   on that server fail to load, with nothing to say why.
+- **Your own font and text size, for each panel separately.** A theme picks a
+  font and a size for every part of the courtroom, and AsyncAO follows them — but
+  a theme author chose those for their design, and only you know whether you can
+  read it. **Settings → Theme → Font and size per panel** now lets you set your
+  own for the chat message, the character name, the IC log, the OOC log, the
+  music list, the now-playing line, the area list and the debug log. The font and
+  the size are separate, so you can make one panel bigger without changing how it
+  looks; leaving a box empty keeps the theme's choice, and the greyed-out text
+  tells you what that currently is. On Windows a family name like "Arial" is
+  enough; anywhere else give the full path to a font file. There's one button to
+  put every panel back, which is worth knowing about *before* you try a font you
+  can't read. The dyslexia-friendly font still overrides all of it — it's an
+  accessibility switch, so it wins.
 - **Pixel-art characters are no longer smoothed into a blur.** AsyncAO picked one
   texture filter for the entire client. AO2 picks one per *sprite*, from two
   places: the character's own file can ask for `pixel` or `smooth`, and failing
