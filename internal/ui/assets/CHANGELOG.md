@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.86.0 — 2026-08-01
+
+Fonts you set now change a whole panel instead of half of one, the two chrome
+bars have keyboard shortcuts, and the Hide UI panel can finally be moved — and no
+longer hides behind a torn-off player list.
+
+Thanks to find and EuPGenuis for the reports behind all of it.
+
+### Fonts
+
+- **Setting a panel's font now changes the whole panel.** Picking a font for the
+  player list moved the names but left the headers, the chips and the buttons
+  around them in the client's font — so it looked like the setting was ignored.
+  Every piece of a panel follows your choice now: its labels, its buttons, its
+  tick boxes and its text boxes. Panels you have *not* set are untouched, exactly
+  as before.
+- **The player list, Notes and Friends kept their new fonts** — they were added in
+  v1.85.2 but only their rows were wired up.
+
+### Keyboard and layout
+
+- **Ctrl+F5 hides or shows the menu bar, Ctrl+F6 the toolbox.** There was no key
+  for either, only a button — and if something covered that button there was no
+  way back. Both are rebindable like every other shortcut, and neither will let
+  you hide the last route back to the client's controls; it refuses and says why.
+- **You can rebind shortcuts from the F1 list itself.** That window is where you
+  go to find out what a key does, so it is now where you change it: click a
+  shortcut and press a new key, or right-click to put it back. No trip to
+  Settings — though the Settings page still works exactly as it did.
+- **The Hide UI pieces panel can be dragged.** It was stuck in the bottom-right
+  corner, unmovable even in the layout editor. Drag it by its title and it stays
+  where you put it, across restarts. If you never move it, it does not move.
+- **…and it no longer hides underneath a torn-off player list.** The panel was
+  drawn *before* torn-off tabs, so a floating player list covered the one panel
+  you would open to fix your layout. It draws on top now.
+
 ## v1.85.2 — 2026-08-01
 
 - **The player list, Notes and Friends can have their own font and size too.**
