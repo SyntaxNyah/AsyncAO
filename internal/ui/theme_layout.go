@@ -883,6 +883,25 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if !a.panelHidden(panelLog) {
 		plateDrew = a.drawThemedMusicPlate(lay)
 	}
+	// switch_area_music is AO2's "A/M" button (courtroom.cpp:1060-1061). AO2 places
+	// ui_area_list at the SAME music_list rect (:864), so this button is how it
+	// swaps the two — a declared rect that painted nothing until now.
+	//
+	// The chip strip below stays rather than being replaced by this button, and the
+	// reason is Players: AsyncAO's roster shares that panel, AO2 has no equivalent
+	// at this rect (its player_list is a separate rect and a documented deferral),
+	// and the Extras box has no roster to move it to. Collapsing the chips would
+	// therefore delete the only way to reach the roster inside a theme. Two ways to
+	// flip between Music and Areas is the smaller cost.
+	if r, ok := lay.rect("switch_area_music"); ok && !a.panelHidden(panelLog) {
+		if a.drawThemeButton("switch_area_music", "A/M", r) {
+			if a.logTab == logTabAreas {
+				a.logTab = logTabMusic
+			} else {
+				a.logTab = logTabAreas
+			}
+		}
+	}
 
 	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {

@@ -133,18 +133,18 @@ var themeSlots = [...]themeSlot{
 	{key: "ooc_toggle", phase: phasePanels, state: slotStateHandDrawn},       // courtroom.cpp:1013 — swaps server_chatlog <-> the ms_chatlog debug log
 
 	// ---- phasePanels: the jukebox -------------------------------------------
-	{key: "music_list", phase: phasePanels, state: slotStateHandDrawn},                                    // courtroom.cpp:864 (areas) + :867 (music) — ONE rect, two widgets
-	{key: "music_search", phase: phasePanels, state: slotStateHandDrawn},                                  // courtroom.cpp:923
-	{key: "switch_area_music", phase: phasePanels, state: slotStateInert},                                 // courtroom.cpp:1060
-	{key: "player_list", phase: phasePanels, state: slotStateInert},                                       // courtroom.cpp:879
-	{key: "music_display", phase: phasePanels, state: slotStateHandDrawn},                                 // courtroom.cpp:888
-	{key: "music_name", rel: relMusicDisplay, phase: phasePanels, state: slotStateHandDrawn, fixed: true}, // courtroom.cpp:885 — a CHILD of the plate (:171), so its rect is plate-relative and the editor must never offer it a box
-	{key: "music_label", phase: phasePanels, state: slotStateHandDrawn},                                   // courtroom.cpp:988
-	{key: "sfx_label", phase: phasePanels, state: slotStateHandDrawn},                                     // courtroom.cpp:990
-	{key: "blip_label", phase: phasePanels, state: slotStateHandDrawn},                                    // courtroom.cpp:992
-	{key: "music_slider", phase: phasePanels, state: slotStateHandDrawn},                                  // courtroom.cpp:1144
-	{key: "sfx_slider", phase: phasePanels, state: slotStateHandDrawn},                                    // courtroom.cpp:1145
-	{key: "blip_slider", phase: phasePanels, state: slotStateHandDrawn},                                   // courtroom.cpp:1146
+	{key: "music_list", phase: phasePanels, state: slotStateHandDrawn},                                            // courtroom.cpp:864 (areas) + :867 (music) — ONE rect, two widgets
+	{key: "music_search", phase: phasePanels, state: slotStateHandDrawn},                                          // courtroom.cpp:923
+	{key: "switch_area_music", art: []string{"switch_area_music"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1060
+	{key: "player_list", phase: phasePanels, state: slotStateInert},                                               // courtroom.cpp:879
+	{key: "music_display", phase: phasePanels, state: slotStateHandDrawn},                                         // courtroom.cpp:888
+	{key: "music_name", rel: relMusicDisplay, phase: phasePanels, state: slotStateHandDrawn, fixed: true},         // courtroom.cpp:885 — a CHILD of the plate (:171), so its rect is plate-relative and the editor must never offer it a box
+	{key: "music_label", phase: phasePanels, state: slotStateHandDrawn},                                           // courtroom.cpp:988
+	{key: "sfx_label", phase: phasePanels, state: slotStateHandDrawn},                                             // courtroom.cpp:990
+	{key: "blip_label", phase: phasePanels, state: slotStateHandDrawn},                                            // courtroom.cpp:992
+	{key: "music_slider", phase: phasePanels, state: slotStateHandDrawn},                                          // courtroom.cpp:1144
+	{key: "sfx_slider", phase: phasePanels, state: slotStateHandDrawn},                                            // courtroom.cpp:1145
+	{key: "blip_slider", phase: phasePanels, state: slotStateHandDrawn},                                           // courtroom.cpp:1146
 
 	// ---- phasePanels: the IC bar --------------------------------------------
 	{key: "ao2_ic_chat_message", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:906
