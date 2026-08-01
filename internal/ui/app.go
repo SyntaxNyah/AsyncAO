@@ -465,6 +465,12 @@ type App struct {
 	// off-thread on theme apply; applyFontConfig uses it when no manual font / the
 	// dyslexia toggle is set (#6).
 	themeFontFile string
+	// themeFaceNames / panelFontMissing are Settings-screen diagnostics for the
+	// per-panel font overrides: the file each element resolved to, and the
+	// families that resolved to NOTHING. Landed on theme apply and read only
+	// while the Settings screen is open — never on a draw path.
+	themeFaceNames   []string
+	panelFontMissing []string
 	// Color-emoji fallback face: the system emoji font (e.g. Segoe UI Emoji) is read
 	// off-thread the FIRST time a message needs it (emojiLoadStarted gates the one
 	// read), landing on emojiFontRes → ctx.SetEmojiFont. Lazy so a user who never
@@ -2419,6 +2425,20 @@ type themeApply struct {
 	faceData  [][]byte
 	facePaths []string
 	faceNames []string
+	// Per-panel USER font overrides: how many were applied, and the ones whose
+	// family did not resolve to a file. The second is reported to the Settings
+	// screen — a font name that silently does nothing is the single most likely
+	// way this feature confuses someone, so it has to be visible where they typed
+	// it rather than only in a debug log.
+	panelFontsAsked   int
+	panelFontsMissing []string
+	// panelFace / panelPct are the RESOLVED per-panel overrides: a 1-based index
+	// into faceData and a percent, both 0 for "the user said nothing about this
+	// element". Recorded here rather than written straight into fontTable so the
+	// precedence ladder lives in one readable place on the render thread — see
+	// landThemeFonts.
+	panelFace [themeFontElemCount]int
+	panelPct  [themeFontElemCount]int
 	// backdropLuma is the average luma of the theme's own art behind each font
 	// element's rect, and backdropSampled says whether there was any art to
 	// measure. Filled here (res.images is only reachable on the apply goroutine —
@@ -8278,6 +8298,11 @@ func (a *App) applyThemeAsync() uint64 {
 		name = a.themeBound
 	}
 	anims := a.d.Prefs.AnimationsEnabled()
+	// Snapshot the per-panel overrides HERE, on the render thread, not inside the
+	// goroutine: PanelFonts takes the preferences' read lock, and reading them
+	// off-thread while the debounced saver marshals under its own lock is exactly
+	// the interleaving -race exists to catch. The map returned is already a copy.
+	panelFonts := a.d.Prefs.PanelFonts()
 	gen := a.themeGen.Add(1)
 	go func() {
 		res := themeApply{
@@ -8304,6 +8329,10 @@ func (a *App) applyThemeAsync() uint64 {
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
 			res.buildThemeFontTable(t, systemFontDirs())
+			// The user's own per-panel font and size, on top of the theme's. Same
+			// goroutine because it resolves families and reads face files, and it
+			// must run AFTER the theme's table so the user's pick is what survives.
+			res.applyPanelFonts(panelFonts, t.Dirs(), systemFontDirs())
 			res.msgCol, res.hasMsg = declaredFontInk(t.Font("message"))
 			res.nameCol, res.hasName = declaredFontInk(t.Font("showname"))
 			// loadOne decodes ONE already-located file into the stem's slot. Split out
@@ -8562,6 +8591,12 @@ func (a *App) pollThemeApply() {
 		a.themeFontFile = res.fontPath
 		a.applyFontConfig()
 	}
+	// Per-panel font diagnostics, for the Settings screen: the file names each
+	// element resolved to (so an empty box can say what it is already using) and
+	// the families that resolved to nothing (so a typo is visible where it was
+	// typed, not only in the debug log).
+	a.themeFaceNames = res.faceNames
+	a.panelFontMissing = res.panelFontsMissing
 	a.landThemeFonts(res)
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)

@@ -28,6 +28,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -236,6 +237,18 @@ func (a *App) elemEmoji(el themeFontElem, userPct int) *ttf.Font {
 // faux-bold gate.
 func (a *App) elemBold(el themeFontElem) bool { return a.themeFonts.e[el].bold }
 
+// themeFaceNameFor is the FILE NAME of the face element el resolved to, or ""
+// when it is using the client's own chain. Settings-only: it tells a user what
+// an empty per-panel font box is currently giving them, which is the difference
+// between "this setting does nothing" and "this setting is already set".
+func (a *App) themeFaceNameFor(el themeFontElem) string {
+	i := a.themeFonts.e[el].faceIdx()
+	if i < 0 || i >= len(a.themeFaceNames) {
+		return ""
+	}
+	return a.themeFaceNames[i]
+}
+
 // messagePct is the chatbox message's resolved draw scale — the theme's
 // "message" point size folded with the Text zoom knob (a.chatPct).
 func (a *App) messagePct() int { return a.elemPct(elemMessage, a.chatPct) }
@@ -279,6 +292,109 @@ func (res *themeApply) buildThemeFontTable(t *theme.Theme, sysDirs []string) {
 	}
 }
 
+// applyPanelFonts overlays the USER's per-panel font and size on top of whatever
+// the theme asked for. Runs on the same off-thread pass and immediately after
+// buildThemeFontTable, because both the family resolution and the face read
+// touch the disk (hard rule 2).
+//
+// The user's pick wins over the theme's, and that is the whole point: a theme
+// author chose a font for their own design, but only the person reading it knows
+// whether they can read it. Sizes and families are INDEPENDENT — someone who
+// only wants bigger text keeps the theme's family, and the reverse.
+//
+// Colour and bold are deliberately untouched. Those are the theme's design
+// (and, for colour, already guarded for readability), while size and family are
+// the two an accessibility need actually turns on.
+func (res *themeApply) applyPanelFonts(overrides map[string]config.PanelFont, contentDirs, sysDirs []string) {
+	if len(overrides) == 0 {
+		return
+	}
+	// Resolve every requested family in ONE bounded walk rather than one per
+	// element, the same reason theme.FontFiles takes the whole set at once.
+	var wanted []string
+	for _, pf := range overrides {
+		if pf.Family != "" {
+			wanted = append(wanted, pf.Family)
+		}
+	}
+	paths := theme.ResolveFamilies(wanted, contentDirs, sysDirs)
+	for i, id := range theme.FontElements {
+		pf, ok := overrides[id]
+		if !ok {
+			continue
+		}
+		res.panelFontsAsked++
+		if pf.SizePx > 0 {
+			res.panelPct[i] = pxToScalePct(pf.SizePx)
+		}
+		if pf.Family == "" {
+			continue
+		}
+		p := paths[pf.Family]
+		if p == "" {
+			res.panelFontsMissing = append(res.panelFontsMissing, id+" ("+pf.Family+")")
+			continue
+		}
+		// Interned HERE because reading the file is disk work; the decision about
+		// whether it wins lives in landThemeFonts, on the render thread, where the
+		// rest of the preference ladder is already read. A face that fails to
+		// intern (unreadable, oversized, past the cap) records nothing, which
+		// leaves the theme's own face in place — the user asked to CHANGE the
+		// font, not to lose one.
+		if face := res.internFace(p); face != 0 {
+			res.panelFace[i] = face
+		} else {
+			res.panelFontsMissing = append(res.panelFontsMissing, id+" ("+pf.Family+", could not be loaded)")
+		}
+	}
+}
+
+// facesIfReferenced returns data when at least one element in tbl actually
+// points into it, and nil otherwise.
+//
+// The distinction matters because face bytes are not free: Ctx.SetThemeFaces
+// holds them for the theme's lifetime, parses a cmap coverage table per face,
+// and purges every cached label. A table where every element fell back to the
+// client's chain — the theme-fonts opt-out with no per-panel picks, or a global
+// font override — must hand back nil so none of that is paid.
+func facesIfReferenced(tbl *themeFontTable, data [][]byte) [][]byte {
+	for i := range tbl.e {
+		if tbl.e[i].face != 0 {
+			return data
+		}
+	}
+	return nil
+}
+
+// mergePanelFonts stamps the user's per-panel picks onto a table, AFTER whatever
+// the theme contributed to it has been decided. Separate from the resolution
+// above so the whole precedence ladder is readable in one place (landThemeFonts)
+// instead of being split across a thread boundary.
+func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
+	for i := range tbl.e {
+		if res.panelPct[i] != 0 {
+			tbl.e[i].pct = res.panelPct[i]
+		}
+		if faces && res.panelFace[i] != 0 {
+			tbl.e[i].face = res.panelFace[i]
+		}
+	}
+}
+
+// pxToScalePct converts a pixel size the user typed into the percent scale the
+// table stores, the same conversion themeFontPct does for a theme's points —
+// minus the point-to-pixel step, because a user picks the pixels directly.
+//
+// Rounds UP for the same reason themeFontPct does: the percent is applied to
+// UIFontSize with integer division when the face is opened, so rounding down
+// here reopens one pixel small and the round trip is not exact.
+func pxToScalePct(px int) int {
+	if px <= 0 {
+		return 0
+	}
+	return clampInt((px*DefaultScalePct+UIFontSize-1)/UIFontSize, themeFontMinPct, themeFontMaxPct)
+}
+
 // internFace returns the 1-based slot of an already-read face path, else reads
 // the file and appends it. 0 = unreadable, oversized, or past themeFaceCap — the
 // element then falls back to the client's own chain.
@@ -306,14 +422,28 @@ func (res *themeApply) internFace(path string) int {
 // themeAppliedGen stale-generation guard (a slower older-gen load can never
 // revert a newer theme's fonts — the "applies then reverts" class of bug).
 func (a *App) landThemeFonts(res *themeApply) {
+	// THE PRECEDENCE LADDER, most specific last, because the last write wins:
+	//
+	//   1. the theme's own table (below)
+	//   2. a global user font — the dyslexia toggle or a manual font path —
+	//      which drops the theme's FAMILIES but keeps its SIZES
+	//   3. the user's PER-PANEL pick, which is more specific than either
+	//
+	// with one deliberate exception: the dyslexia toggle beats even a per-panel
+	// pick. It is an accessibility switch, not a preference — someone who turns
+	// it on and still cannot read one panel because of an override they set weeks
+	// ago would be right to call that broken.
 	tbl := res.fontTable
+	dyslexia := fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) == fontSourceDyslexia
 	switch {
 	case !a.d.Prefs.ThemeFontsOn():
-		// Opt-out: the zero table restores pre-#39 behaviour everywhere.
+		// Opt-out: the zero table restores pre-#39 behaviour for the THEME's
+		// contribution. The user's own per-panel picks are re-applied below —
+		// that checkbox says "use the theme's fonts", and reading it as "use no
+		// fonts but the client's" would silently disable a setting the user made
+		// somewhere else entirely.
 		tbl = themeFontTable{}
-		a.ctx.SetThemeFaces(nil)
-	case fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) == fontSourceDyslexia,
-		strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
+	case dyslexia, strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
 		// A manual font override / the dyslexia toggle is the USER's pick and
 		// outranks the theme's FAMILIES — the same ladder applyFontConfig uses for
 		// the global chain. The theme's SIZES still apply: AO2 has no user font
@@ -321,10 +451,14 @@ func (a *App) landThemeFonts(res *themeApply) {
 		for i := range tbl.e {
 			tbl.e[i].face = 0
 		}
-		a.ctx.SetThemeFaces(nil)
-	default:
-		a.ctx.SetThemeFaces(res.faceData)
 	}
+	// Sizes always; faces unless the dyslexia switch has claimed them.
+	res.mergePanelFonts(&tbl, !dyslexia)
+	// Install the face bytes ONLY if something now points at them. Both branches
+	// above can leave every element on the client's own chain, and handing Ctx a
+	// set nothing references would keep those megabytes alive, re-parse a cmap
+	// cover per face and purge the whole text cache for nothing.
+	a.ctx.SetThemeFaces(facesIfReferenced(&tbl, res.faceData))
 	// Readability guard for the per-element ink, on the RENDER thread and not the
 	// apply goroutine: it compares against ColPanel for any element with no theme
 	// art behind it, and ColPanel is only final once applyThemePalette has landed

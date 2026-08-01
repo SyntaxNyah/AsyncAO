@@ -1902,6 +1902,10 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		a.applyThemeAsync()
 	}
 	y += 28
+	// The user's own per-panel font and size, which override the checkbox above
+	// for the panels they name. Placed directly under it because that is the
+	// question this answers: "yes, use the theme's — except here."
+	y = a.drawPanelFontSettings(y, w)
 
 	// Theme fit: how the theme's FIXED design size fills your (differently
 	// shaped) window — the cause of those borders.

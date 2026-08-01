@@ -332,6 +332,83 @@ var systemFontAliases = map[string]string{
 	"microsoftsansserif":   "micross",
 }
 
+// ResolveFamilies resolves arbitrary family NAMES to font files, for callers
+// choosing a font that no theme declared — the per-panel font a USER picks in
+// Settings, rather than one courtroom_fonts.ini asked for.
+//
+// It is the same ladder and the same bounded index FontFiles walks, exported
+// because the alternative was a second, subtly different resolver: this one
+// already knows that "Arial" means arial.ttf on Windows (systemFontAliases),
+// already caps the walk at fontScanMaxFiles, and is already covered by tests.
+//
+// An entry that is already a PATH to an existing file is taken verbatim and
+// never resolved, so a user can point at a font the walk would not find — which
+// on macOS and Linux is the only route, since those platforms hand no font
+// directories to sysDirs (their stores are laid out per-family and per-user, and
+// probing them by file stem resolves the wrong cut more often than the right
+// one).
+//
+// Off-thread only (hard rule 2): this walks the disk. Returns a map from the
+// requested name to its resolved path, omitting whatever did not resolve.
+func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[string]string {
+	out := make(map[string]string, len(families))
+	want := make(map[string]struct{}, len(families))
+	for _, fam := range families {
+		fam = strings.TrimSpace(fam)
+		if fam == "" {
+			continue
+		}
+		// A usable path wins outright — no walk, no alias table, no surprises.
+		if looksLikeFontPath(fam) {
+			if st, err := os.Stat(fam); err == nil && !st.IsDir() {
+				out[fam] = fam
+				continue
+			}
+		}
+		want[fam] = struct{}{}
+	}
+	if len(want) == 0 {
+		return out
+	}
+	idx := &fontIndex{budget: fontScanMaxFiles}
+	for _, dir := range contentDirs {
+		idx.scan(dir, fontScanMaxDepth)
+	}
+	resolve := func() int {
+		missing := 0
+		for fam := range want {
+			if out[fam] != "" {
+				continue
+			}
+			if p := idx.match(fam); p != "" {
+				out[fam] = p
+			} else {
+				missing++
+			}
+		}
+		return missing
+	}
+	if resolve() == 0 {
+		return out
+	}
+	for _, dir := range sysDirs {
+		idx.scan(dir, 1) // flat, like FontFiles: no per-family subdirs there
+	}
+	resolve()
+	return out
+}
+
+// looksLikeFontPath reports whether s should be treated as a file path rather
+// than a family name. Deliberately generous — a family name never contains a
+// separator, and never ends in a font extension.
+func looksLikeFontPath(s string) bool {
+	if strings.ContainsAny(s, `/\`) {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(s))
+	return ext == ".ttf" || ext == ".otf" || ext == ".ttc"
+}
+
 // FontFileFor resolves ONE courtroom_fonts.ini element's declared family
 // ("<id>_font") to a font file on disk. The ladder mirrors what AO2-Client gets
 // from Qt — main.cpp:44-55 registers <base>/fonts RECURSIVELY into the

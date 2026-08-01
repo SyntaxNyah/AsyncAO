@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -157,6 +158,112 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	}
 	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeDirect {
 		t.Errorf("mode after reload = %d, want ProxyModeDirect — the escape hatch must survive a restart", got)
+	}
+}
+
+// TestPanelFontsRoundTrip: these are eight separate settings a user tunes once
+// and expects to keep. Losing them on restart would be worse than not having the
+// feature — they would have to be re-typed every launch.
+func TestPanelFontsRoundTrip(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	if len(p.PanelFonts()) != 0 {
+		t.Fatalf("a fresh install has overrides: %v", p.PanelFonts())
+	}
+	p.SetPanelFont("ic_chatlog", PanelFont{Family: "  Comic Sans MS  ", SizePx: 18})
+	p.SetPanelFont("music_list", PanelFont{SizePx: 22}) // size only
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	back := loadPrefs(t, path)
+	if got := back.PanelFontFor("ic_chatlog"); got.Family != "Comic Sans MS" || got.SizePx != 18 {
+		t.Errorf("ic_chatlog = %+v, want the trimmed family and 18 px", got)
+	}
+	if got := back.PanelFontFor("music_list"); got.Family != "" || got.SizePx != 22 {
+		t.Errorf("music_list = %+v, want a size-only override", got)
+	}
+	// Keyed case-insensitively, since the identifier is also a theme INI key.
+	if got := back.PanelFontFor("IC_CHATLOG"); got.SizePx != 18 {
+		t.Errorf("lookup is case-sensitive: %+v", got)
+	}
+}
+
+// TestPanelFontsClearRemovesTheKey: an element the user RESET must look
+// identical on disk to one they never touched, or a later change to the default
+// would never reach them.
+func TestPanelFontsClearRemovesTheKey(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	p.SetPanelFont("ic_chatlog", PanelFont{Family: "Arial", SizePx: 14})
+	p.SetPanelFont("ic_chatlog", PanelFont{}) // the user emptied both boxes
+	if got := p.PanelFonts(); len(got) != 0 {
+		t.Errorf("an emptied override was stored as a zero value: %v", got)
+	}
+	p.SetPanelFont("music_list", PanelFont{SizePx: 20})
+	p.SetPanelFont("area_list", PanelFont{SizePx: 20})
+	p.ClearPanelFonts()
+	if got := p.PanelFonts(); len(got) != 0 {
+		t.Errorf("ClearPanelFonts left %v — it is the way out of a font you cannot read", got)
+	}
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, path).PanelFonts(); len(got) != 0 {
+		t.Errorf("cleared overrides came back after a reload: %v", got)
+	}
+}
+
+// TestPanelFontsAreBounded: the map comes off disk, so a hand-edited or corrupt
+// file must not produce an unbounded map or an unusable size (hard rule 4).
+func TestPanelFontsAreBounded(t *testing.T) {
+	huge := map[string]PanelFont{}
+	for i := 0; i < PanelFontMaxEntries*3; i++ {
+		huge["elem"+strconv.Itoa(i)] = PanelFont{SizePx: 14}
+	}
+	if got := len(sanitizePanelFonts(huge)); got > PanelFontMaxEntries {
+		t.Errorf("sanitised to %d entries, cap is %d", got, PanelFontMaxEntries)
+	}
+	out := sanitizePanelFonts(map[string]PanelFont{
+		"tiny":    {SizePx: 1},                                     // below the floor -> dropped
+		"huge":    {SizePx: 100000},                                // above the ceiling -> dropped
+		"longfam": {Family: strings.Repeat("x", 5000), SizePx: 14}, // absurd family -> family dropped, size kept
+		"blank":   {},                                              // nothing at all -> no entry
+		"good":    {Family: "Arial", SizePx: 14},
+	})
+	if _, ok := out["tiny"]; ok {
+		t.Error("a 1 px size survived — it is not legible at any DPI")
+	}
+	if _, ok := out["huge"]; ok {
+		t.Error("a 100000 px size survived")
+	}
+	if _, ok := out["blank"]; ok {
+		t.Error("an entirely empty override was kept")
+	}
+	if got := out["longfam"]; got.Family != "" || got.SizePx != 14 {
+		t.Errorf("longfam = %+v, want the family dropped and the size kept", got)
+	}
+	if got := out["good"]; got.Family != "Arial" || got.SizePx != 14 {
+		t.Errorf("a valid entry was mangled: %+v", got)
+	}
+	if sanitizePanelFonts(nil) != nil {
+		t.Error("an empty map must sanitise to nil, not to an allocated empty one")
+	}
+}
+
+// TestPanelFontsHandsOutACopy: the caller reads this off the render thread while
+// the debounced saver marshals the original under its own lock. Handing out the
+// live map is a data race that only shows up on an unlucky interleaving.
+func TestPanelFontsHandsOutACopy(t *testing.T) {
+	p := loadPrefs(t, tempPrefsPath(t))
+	p.SetPanelFont("ic_chatlog", PanelFont{SizePx: 14})
+	got := p.PanelFonts()
+	got["ic_chatlog"] = PanelFont{SizePx: 99}
+	got["injected"] = PanelFont{SizePx: 99}
+	if p.PanelFontFor("ic_chatlog").SizePx != 14 {
+		t.Error("mutating the returned map reached the live preferences")
+	}
+	if _, ok := p.PanelFonts()["injected"]; ok {
+		t.Error("a key added to the returned map reached the live preferences")
 	}
 }
 
