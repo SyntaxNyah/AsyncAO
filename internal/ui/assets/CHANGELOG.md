@@ -95,6 +95,21 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
   were both ignored. Long names are clipped rather than scrolled — a marquee is
   constant motion on an otherwise still panel, and the full name is in the list
   anyway.
+- **The theme's Music/Areas button draws.** AO2 puts its area list and its track
+  list in the same box and gives the theme a button to swap them. The button was
+  reserved space that painted nothing. The chips above the list stay as well, since
+  they are also how you reach the player list, which has no button of its own.
+- **The colours a theme picks for its panels are used.** A theme sets a text colour
+  for each part of the courtroom separately — the IC log, the server log, the track
+  list, the area list, the now-playing name — and only two of those were ever read.
+  All of them now are, but only inside the theme's own layout: a torn-off window or
+  a docked panel draws on the client's background, not the theme's, so it keeps the
+  client's colours. Where a colour would be unreadable on the theme's own artwork
+  it is dropped rather than drawn — the stock AO2 client fills each row with a
+  solid colour first, which is what makes black text work there, and doing that
+  needs a per-track disk check a streaming client cannot make. For the theme in the
+  report this means its server log finally reads black-on-parchment as intended,
+  while its track list keeps the client's colour instead of turning invisible.
 - **A theme that only sets text SIZES no longer has white forced on it.** Sizes
   and colours are separate settings, and the client was treating "this theme
   mentioned the chatbox at all" as "this theme asked for white text" — so a theme
