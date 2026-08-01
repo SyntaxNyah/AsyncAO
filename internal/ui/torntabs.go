@@ -147,7 +147,7 @@ func (a *App) drawTabContent(id int, inner sdl.Rect) {
 	case logTabMusic:
 		a.drawMusicList(inner, false, false, false)
 	case logTabAreas:
-		a.drawAreaList(inner)
+		a.drawAreaList(inner, false)
 	case logTabPlayers:
 		a.drawPlayerList(inner)
 	case logTabNotes:

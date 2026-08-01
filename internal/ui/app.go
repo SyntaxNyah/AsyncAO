@@ -2418,6 +2418,19 @@ type themeApply struct {
 	faceData  [][]byte
 	facePaths []string
 	faceNames []string
+	// backdropLuma is the average luma of the theme's own art behind each font
+	// element's rect, and backdropSampled says whether there was any art to
+	// measure. Filled here (res.images is only reachable on the apply goroutine —
+	// hard rule 2) and consumed by the render-thread ink guard.
+	//
+	// TWO arrays rather than one plus a sentinel, because the ZERO VALUE has to
+	// mean "unknown": an int sentinel makes an unfilled themeApply — a theme that
+	// failed to load, or one a test built by hand — read as a BLACK backdrop, and
+	// black is the one value that silently KEEPS black ink. Unsampled falls back to
+	// ColPanel, which is what AsyncAO actually fills those panels with when the
+	// theme ships no background (theme_layout.go's stage else-branch).
+	backdropLuma    [themeFontElemCount]int
+	backdropSampled [themeFontElemCount]bool
 }
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
@@ -2480,7 +2493,19 @@ func colLuma(c sdl.Color) int {
 // avgSkinLuma samples a decoded skin frame's average luma, compositing
 // alpha against the dark backdrop the chatbox actually draws over.
 func avgSkinLuma(img *image.RGBA, step int) int {
-	b := img.Bounds()
+	return avgSkinLumaRect(img, img.Bounds(), step)
+}
+
+// avgSkinLumaRect is the same average over ONE sub-rectangle of img — what the
+// per-element ink guard needs, because a courtroom background is one image and
+// each font element sits over its own patch of it.
+//
+// Takes the rect rather than an (*image.RGBA).SubImage: SubImage allocates a
+// fresh header per call, and this runs once per element per theme apply.
+// PixOffset already accounts for the image origin, so the sampling body is
+// unchanged from the whole-image case.
+func avgSkinLumaRect(img *image.RGBA, r image.Rectangle, step int) int {
+	b := r.Intersect(img.Bounds())
 	if b.Empty() {
 		return transparentSkinLuma
 	}
@@ -8374,6 +8399,11 @@ func (a *App) applyThemeAsync() uint64 {
 			// Its position relative to the unbound report below is immaterial —
 			// unboundDesignKeys reads the *theme.Theme, not this map.
 			applyAO2DefaultRects(res.layout)
+			// #21 label 16: measure the theme's own art behind each font element, so
+			// the render thread can guard the per-element ink without touching a
+			// decode buffer. AFTER the defaults, so an element positioned by AO2's
+			// stock rect is measured where it will actually draw.
+			res.sampleThemeBackdrops()
 			// Unbound-key report (#21), to the DEBUG LOG and never to the player's
 			// screen. AO2 does the same thing inverted: set_size_and_pos qWarns for
 			// every identifier the THEME is silent about (courtroom.cpp:1336), while

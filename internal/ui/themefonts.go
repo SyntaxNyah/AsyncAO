@@ -65,6 +65,17 @@ type themeElemFont struct {
 	// faux-bold second pass, not a separate bold face (AO2 uses QFont::setBold,
 	// which synthesises the weight the same way when the family has no bold cut).
 	bold bool
+	// color / colorSet are "<id>_color" — the element's foreground ink. AO2 stamps
+	// it as `<class> { color: rgba(...) }` on the widget (courtroom.cpp:1300), i.e.
+	// one FOREGROUND per element and never a background. colorSet false = the theme
+	// named no colour for this element and the draw site keeps the kit's own.
+	//
+	// elemShowname / elemMessage are deliberately left UNPOPULATED here: their
+	// colours already ride a.themeMsgCol / a.themeNameCol behind the chatbox-skin
+	// guard, and filling both would apply one colour twice through two different
+	// readability guards.
+	color    sdl.Color
+	colorSet bool
 }
 
 // dressed reports whether the theme said ANYTHING about this element.
@@ -260,6 +271,11 @@ func (res *themeApply) buildThemeFontTable(t *theme.Theme, sysDirs []string) {
 		if p := files[id]; p != "" {
 			slot.face = res.internFace(p)
 		}
+		// "<id>_color" (#21 label 16). Skipped for the two chatbox elements — see
+		// themeElemFont.color for why they must not be filled from here.
+		if !elemChat(themeFontElem(i)) {
+			slot.color, slot.colorSet = declaredFontInk(spec)
+		}
 	}
 }
 
@@ -309,6 +325,13 @@ func (a *App) landThemeFonts(res *themeApply) {
 	default:
 		a.ctx.SetThemeFaces(res.faceData)
 	}
+	// Readability guard for the per-element ink, on the RENDER thread and not the
+	// apply goroutine: it compares against ColPanel for any element with no theme
+	// art behind it, and ColPanel is only final once applyThemePalette has landed
+	// this theme's stylesheet (pollThemeApply calls that just above us). The pixel
+	// sampling that feeds it already happened off-thread; what is left here is
+	// integer arithmetic on a landed struct.
+	guardThemeInk(res, &tbl)
 	a.themeFonts = tbl
 	// The chatbox message raster bakes its face and scale; re-raster it so a
 	// theme swap doesn't leave the old size on screen until the next message.

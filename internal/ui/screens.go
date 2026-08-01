@@ -3045,7 +3045,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.drawMusicList(inner, false, false, false)
 		return
 	case logTabAreas:
-		a.drawAreaList(inner)
+		a.drawAreaList(inner, false)
 		return
 	case logTabPlayers:
 		a.drawPlayerList(inner)
@@ -3093,7 +3093,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 			a.exportICLog(true)
 		}
 	}
-	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + rowH + logSearchRowGap, W: inner.W, H: inner.H - rowH - logSearchRowGap})
+	// false: this is the classic docked Log tab, AsyncAO chrome outside any theme's
+	// design canvas (#21 label 16).
+	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + rowH + logSearchRowGap, W: inner.W, H: inner.H - rowH - logSearchRowGap}, false)
 }
 
 const (
@@ -3205,8 +3207,15 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
-func (a *App) drawICLogList(list sdl.Rect) {
+//
+// canvasInk is true only when this IS the themed ic_chatlog element, i.e. drawn
+// inside the theme's design canvas; see themeink.go for why the flag travels as
+// a parameter rather than being read off App.
+func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
+	// #21 label 16: "ic_chatlog_color" is the log's DEFAULT ink. Resolved once per
+	// frame, outside the row loop.
+	icInk := a.elemInkOr(elemICChatlog, canvasInk, ColText)
 	// #39: the theme's "ic_chatlog" size/family/bold, folded with the log zoom.
 	// icPct is the RESOLVED scale — everything below (the wrap cache key, the
 	// per-row pick, the emoji face) must use the same one or the wrap and the draw
@@ -3315,7 +3324,12 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		}
 		if y >= list.Y-lineH {
 			row := &rows[ri]
-			col := ColText
+			// The theme's ink substitutes the DEFAULT colour only — an explicit \cN
+			// still wins. That is AO2's own order: filter_ic_text bakes every explicit
+			// code before the log line is built, and ic_chatlog_color is substituted
+			// into the leftover "$c0" placeholder (courtroom.cpp:3929/:3972), so it can
+			// never overwrite a colour the message actually asked for.
+			col := icInk
 			if ecol := a.icLog[row.entry].color; ecol > 0 {
 				col = render.TextColor(ecol)
 			}
@@ -3423,8 +3437,19 @@ func (a *App) drawICLogList(list sdl.Rect) {
 // drawOOCLogList renders the OOC scrollback into rect (themed
 // server_chatlog element; the classic OOC tab keeps its own copy with the
 // identity fields).
-func (a *App) drawOOCLogList(list sdl.Rect) {
+//
+// canvasInk carries the caller's "am I the themed server_chatlog element", the
+// same contract as drawICLogList. Both of today's callers are the themed pass,
+// but the flag stays explicit: drawOOCPanel is the chrome twin of this function
+// and passes ColText, and nothing should be able to grow a third caller that
+// leaks canvas ink into chrome without saying so.
+func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
+	// #21 label 16: "server_chatlog_color" is this panel's default foreground. AO2
+	// reads it through set_font's own key (courtroom.cpp:1199 → :1300); the
+	// per-sender tint is a SEPARATE server_chatlog_sender_color read through
+	// AOApplication::get_color, and is not in scope here.
+	oocInk := a.elemInkOr(elemServerChatlog, canvasInk, ColText)
 	// #39: the theme's "server_chatlog" size/family/bold (AO2 folds ms_chatlog in
 	// here), folded with the OOC zoom.
 	font := a.elemFont(elemServerChatlog, a.oocPct)
@@ -3487,7 +3512,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			// wrap hard-split still opens whole.
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
-			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames)
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, oocInk)
 		}
 		y += lineH
 	}
@@ -3557,12 +3582,14 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 //
 // Per-frame cost: the common (nothing hovered) case is the single draw it always
 // was; a hovered link costs at most two extra clipped draws on its rows.
-func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool) {
+// base is the row's plain-text colour: the themed server_chatlog_color when this
+// is the canvas panel, ColText when it is the chrome OOC box (drawOOCPanel).
+func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool, base sdl.Color) {
 	c := a.ctx
 	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
 	spans := a.oocRowLinks(li)
 	if hoverID < 0 || len(spans) == 0 {
-		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, ColText, nameOn, sat, val, bold)
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, nameOn, sat, val, bold)
 		return
 	}
 	seg := func(lo, hi int32, col sdl.Color) {
@@ -3578,15 +3605,15 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 		if spans[k].link != hoverID {
 			continue
 		}
-		seg(drawn, spans[k].x0, ColText) // plain text before the link
+		seg(drawn, spans[k].x0, base) // plain text before the link
 		seg(spans[k].x0, spans[k].x1, ColAccent)
 		drawn = spans[k].x1
 	}
 	if drawn == 0 { // the hovered link isn't on this row after all
-		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, ColText, nameOn, sat, val, bold)
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, nameOn, sat, val, bold)
 		return
 	}
-	seg(drawn, textW, ColText) // the remainder of the row
+	seg(drawn, textW, base) // the remainder of the row
 }
 
 // oocLinkActions handles the hover interactions for an OOC link: a one-click
@@ -3707,7 +3734,11 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
-			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames)
+			// ColText, not the theme's server_chatlog_color: this box is the classic
+			// docked OOC tab / the Legacy bottom panel, i.e. AsyncAO chrome OUTSIDE any
+			// theme's design canvas, and it fills its own ColPanel background rather than
+			// drawing over the theme art that colour was authored against (#21 label 16).
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, ColText)
 		}
 		y += lineH
 	}
@@ -3866,11 +3897,27 @@ func areaRowLineHN(fontH, lines int32) int32 {
 // swap. AO area transfers ride the MC packet with the area name in place
 // of a track (AO2-Client sends areas from the same list — the courtroom's
 // isAreaTransfer filter keeps them out of the audio path client-side).
-func (a *App) drawAreaList(r sdl.Rect) {
+// canvasInk is true only for the themed area_list element; the classic panel and
+// a torn-off Areas tab pass false (themeink.go).
+func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.areaPct = a.logPct
 	}
+	// #21 label 16: "area_list_color" replaces only the NEUTRAL row inks — the
+	// population dim/full pair and the detail block. AsyncAO's status, locked,
+	// current and hover colours stay: they are this client's status affordance, and
+	// AO2's own analogue of them is the row BACKGROUND brush
+	// (courtroom.cpp:1851-1882), not the text colour, so the theme's single
+	// foreground key has no claim on them.
+	//
+	// A theme that sets the key therefore paints empty and populated names alike,
+	// which is AO2's own behaviour: it has ONE area_list foreground and puts the
+	// population in the row's second COLUMN as text. AsyncAO's detail block already
+	// carries that count, so the information survives the flattening — and a theme
+	// that sets no colour keeps the dim/full pair exactly as before.
+	areaIdleCol := a.elemInkOr(elemAreaList, canvasInk, ColTextDim)
+	areaLiveCol := a.elemInkOr(elemAreaList, canvasInk, ColText)
 	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Lives HERE
 	// — not just the classic log panel — so it also works on the TORN tab and the
 	// THEMED courtroom, both of which draw drawAreaList directly. In the classic
@@ -3951,12 +3998,12 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			// word-wrapped (Issue #22). A locked room tints the whole row red, the
 			// area you're IN is accent. Fixes "it's all gray, I can't tell what's
 			// busy or where I am / every area looked the same".
-			nameCol := ColTextDim
+			nameCol := areaIdleCol
 			locked := false
 			if row.idx < len(a.sess.AreaInfo) {
 				info := &a.sess.AreaInfo[row.idx]
 				if info.Players > 0 {
-					nameCol = ColText // populated reads at full strength
+					nameCol = areaLiveCol // populated reads at full strength
 				}
 				if info.Status != "" && strings.ToUpper(info.Status) != "IDLE" {
 					nameCol = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
@@ -3988,9 +4035,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			dy := ny + 2
 			for _, line := range row.detailLines {
 				if areaBold {
-					c.LabelClippedFont(font, card.X+19, dy, card.W-24, line, ColTextDim)
+					c.LabelClippedFont(font, card.X+19, dy, card.W-24, line, areaIdleCol)
 				}
-				c.LabelClippedFont(font, card.X+18, dy, card.W-24, line, ColTextDim)
+				c.LabelClippedFont(font, card.X+18, dy, card.W-24, line, areaIdleCol)
 				dy += subH
 			}
 			if c.ClickedIn(card) { // press+release in-card: a drag-in release must not transfer areas
@@ -5188,14 +5235,17 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// themes set music_name_bold = 1, hence the faux-bold second pass.
 	if !nowPlayingExternal {
 		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
+		// #21 label 16: "music_name_color". themed IS the canvas flag here — the two
+		// mean the same thing at every call site (see the doc comment above).
+		nameInk := a.elemInkOr(elemMusicName, themed, ColAccent)
 		if now != "" {
 			// Same short name the list rows and the IC "has played a song" line use
 			// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
 			label := "Now playing: " + courtroom.MusicDisplayName(now)
 			if a.elemBold(elemMusicName) {
-				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, ColAccent)
+				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, nameInk)
 			}
-			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, ColAccent)
+			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, nameInk)
 		} else {
 			if a.elemBold(elemMusicName) {
 				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
@@ -5257,6 +5307,10 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// (independent of the IC log scale).
 	font := a.elemFont(elemMusicList, a.musicPct)
 	musicBold := a.elemBold(elemMusicList) // music_list_bold → the faux-bold second pass
+	// #21 label 16: "music_list_color" is the TRACK rows' ink. Category headers keep
+	// ColAccent — they are filled ColPanelHi and the [-]/[+] marker is AsyncAO's own
+	// collapse affordance, not one of AO2's tree items.
+	trackInk := a.elemInkOr(elemMusicList, themed, ColText)
 	lineH := int32(font.Height()) + 10
 	a.refreshMusicGroups(query) // grouped + (search: auto-expanded) row layout — cached, see screens.go
 	rows := a.musicRows
@@ -5310,9 +5364,9 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 				// built from the raw name.
 				display := courtroom.MusicDisplayName(entry)
 				if musicBold {
-					c.LabelClippedFont(font, r.X+21, y+4, row.W-24, display, ColText)
+					c.LabelClippedFont(font, r.X+21, y+4, row.W-24, display, trackInk)
 				}
-				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, display, ColText) // indented under its category, tree-style
+				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, display, trackInk) // indented under its category, tree-style
 				if hover {
 					c.Tooltip(row, entry) // the RAW entry on hover — the full path is still one hover away
 				}

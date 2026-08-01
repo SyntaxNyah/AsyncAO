@@ -806,14 +806,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
 		switch a.logTab {
 		case logTabOOC:
-			a.drawOOCLogList(inner)
+			a.drawOOCLogList(inner, true)
 		case logTabNotes:
 			a.drawNotesTab(inner)
 		default:
-			a.drawICLogList(inner)
+			a.drawICLogList(inner, true)
 		}
 	} else if okIC && !a.panelHidden(panelLog) {
-		a.drawICLogList(insetThemedBody(icRect))
+		a.drawICLogList(insetThemedBody(icRect), true)
 	}
 	// ooc_toggle swaps the server chat panel for the debug log, exactly as AO2
 	// does (on_ooc_toggle_clicked, courtroom.cpp:5197). The debug log draws at
@@ -823,7 +823,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	dbgRect, okDbg := lay.rect("ms_chatlog")
 	showDebug := a.debugOOC && okDbg
 	if okOOC && !merged && !showDebug && !a.panelHidden(panelOOC) {
-		a.drawOOCLogList(insetThemedBody(oocRect))
+		a.drawOOCLogList(insetThemedBody(oocRect), true)
 	}
 	if showDebug && !a.panelHidden(panelOOC) {
 		a.drawThemedDebugLog(insetThemedBody(dbgRect))
@@ -924,7 +924,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
 		switch a.logTab {
 		case logTabAreas:
-			a.drawAreaList(inner)
+			a.drawAreaList(inner, true)
 		case logTabPlayers:
 			a.drawPlayerList(inner)
 		default:
@@ -1838,9 +1838,15 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	if !ok {
 		return true // the plate alone is a legitimate theme choice
 	}
+	// #21 label 16: "music_name_color" is this line's ink, and it is the case the
+	// colour key most obviously exists for — the theme drew the plate underneath, so
+	// it knows exactly what the text sits on. sampleThemeBackdrops measures THIS
+	// art, not the courtroom background, for the same reason. The empty state keeps
+	// ColTextDim: "Nothing playing" is AsyncAO's own placeholder (AO2 leaves the
+	// label blank), so the theme's colour has no claim on it.
 	label, col := "Nothing playing", ColTextDim
 	if now := a.nowPlayingName(); now != "" {
-		label, col = now, ColAccent
+		label, col = now, a.elemInkOr(elemMusicName, true, ColAccent)
 	}
 	font := a.elemLabelFont(elemMusicName, DefaultScalePct)
 	dst := sdl.Rect{X: md.X + mn.X, Y: md.Y + mn.Y, W: mn.W, H: mn.H}

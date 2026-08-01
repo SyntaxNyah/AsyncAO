@@ -56,6 +56,15 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// no debug_log_sharp at all, so sharing the key would render this panel with a
 	// treatment its author asked for somewhere else.
 	font := a.elemFont(elemDebugLog, a.oocPct)
+	bold := a.elemBold(elemDebugLog)
+	// #21 label 16: "debug_log_color". This panel only ever draws inside the
+	// theme's design canvas (it IS the ms_chatlog element), so canvasInk is
+	// unconditionally true here — unlike the log lists, which have chrome twins.
+	//
+	// AO2's debug_log_error_color / _warning_color etc. are a DIFFERENT family: they
+	// go through AOApplication::get_color rather than set_font's per-element key,
+	// and are out of scope (this ring is not severity-tagged).
+	ink := a.elemInkOr(elemDebugLog, true, ColTextDim)
 	lineH := int32(font.Height()) + debugPanelLineGap
 	wrapW := body.W - scrollBarW - scrollBarGap
 	if wrapW <= 0 {
@@ -81,7 +90,10 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	}
 
 	if len(lines) == 0 {
-		c.LabelClipped(body.X, body.Y, wrapW, "No failures logged this session.", ColTextDim)
+		// LabelClippedFont, not LabelClipped: the row pitch above is measured in the
+		// theme's debug_log face, so drawing in the client's chrome face instead
+		// would space the panel for one font and fill it with another.
+		c.LabelClippedFont(font, body.X, body.Y, wrapW, "No failures logged this session.", ColTextDim)
 		return
 	}
 	// Clip so the partially-scrolled top and bottom rows stop at the panel edge
@@ -90,7 +102,10 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	y := body.Y - a.debugOOCScroll
 	for _, ln := range lines {
 		if y+lineH > body.Y && y < body.Y+body.H { // skip rows scrolled out of view
-			c.LabelClipped(body.X, y, wrapW, ln, ColTextDim)
+			if bold {
+				c.LabelClippedFont(font, body.X+1, y, wrapW, ln, ink)
+			}
+			c.LabelClippedFont(font, body.X, y, wrapW, ln, ink)
 		}
 		y += lineH
 	}
