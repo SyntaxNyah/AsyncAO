@@ -128,15 +128,18 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 		// The size box shows the size actually in use when nothing is set, so the
 		// starting point is what the user is looking at rather than a blank.
+		//
+		// WHILE THE FIELD HAS FOCUS ITS OWN TEXT IS AUTHORITATIVE, and that is the
+		// whole fix rather than a nicety. This used to clamp on every keystroke and
+		// feed the clamped number straight back in, so typing the "1" of "18" became
+		// a 6 (the minimum) before the "8" could be typed, and no size below ten was
+		// reachable at all. A field must never rewrite what someone is in the middle
+		// of typing.
+		sizeID := "panelsize-" + row.id
 		sizeRect := sdl.Rect{X: pad + panelFontLabelW + panelFontFamilyW + 8, Y: y, W: panelFontSizeW, H: fieldH}
-		shown := ""
-		if cur.SizePx > 0 {
-			shown = strconv.Itoa(cur.SizePx)
-		}
-		if next, _ := c.TextField("panelsize-"+row.id, sizeRect, shown, strconv.Itoa(a.currentPanelSizePx(row.el))); next != shown {
-			cur.SizePx = parsePanelSize(next)
-			a.d.Prefs.SetPanelFont(row.id, cur)
-			a.applyPanelFontPrefs()
+		shown := a.panelSizeText(sizeID, row.id, cur.SizePx)
+		if next, _ := c.TextField(sizeID, sizeRect, shown, strconv.Itoa(a.currentPanelSizePx(row.el))); next != shown {
+			a.commitPanelSize(sizeID, row.id, cur, next)
 		}
 		y += fieldH + 4
 	}
@@ -164,6 +167,64 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	return y
 }
 
+// panelSizeText is what the size box should display this frame: the text the
+// user is typing while the box has focus, and the SAVED value otherwise.
+//
+// The two differ on purpose, and only while typing. A half-typed number is not a
+// size — "1" on the way to "18" is below the minimum, and "1" on the way to "120"
+// is below it too — so it is held as text and never round-tripped through the
+// clamp. The moment focus leaves, the saved value is the truth again, which is
+// also what discards a box left holding something unusable.
+func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
+	if a.ctx.focusID == fieldID {
+		if s, editing := a.panelSizeEdit[rowID]; editing {
+			return s
+		}
+	}
+	if saved > 0 {
+		return strconv.Itoa(saved)
+	}
+	return ""
+}
+
+// commitPanelSize takes one keystroke's worth of typing: it always remembers the
+// raw text, and saves a size only when the text actually is one.
+//
+// Emptying the box CLEARS the override — that is how a panel is put back — so an
+// empty string commits immediately. Anything below the minimum is treated as
+// incomplete rather than wrong: it is almost always a number mid-typing, and
+// rejecting it outright is the same trap as clamping it.
+func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text string) {
+	if a.panelSizeEdit == nil {
+		a.panelSizeEdit = make(map[string]string, len(panelFontRows))
+	}
+	a.panelSizeEdit[rowID] = text
+
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		if cur.SizePx == 0 {
+			return // already cleared; don't re-apply the theme for nothing
+		}
+		cur.SizePx = 0
+		a.d.Prefs.SetPanelFont(rowID, cur)
+		a.applyPanelFontPrefs()
+		return
+	}
+	n, err := strconv.Atoi(trimmed)
+	if err != nil || n < config.PanelFontMinPx {
+		return // not a size yet — keep the text, change nothing
+	}
+	if n > config.PanelFontMaxPx {
+		n = config.PanelFontMaxPx
+	}
+	if n == cur.SizePx {
+		return // re-applying the whole theme for an unchanged value is pure cost
+	}
+	cur.SizePx = n
+	a.d.Prefs.SetPanelFont(rowID, cur)
+	a.applyPanelFontPrefs()
+}
+
 // panelFontPlaceholder shows what the panel is using NOW — the theme's family
 // when it declared one, otherwise the client's own — so an empty box reads as
 // "currently X" rather than as "nothing".
@@ -172,21 +233,6 @@ func (a *App) panelFontPlaceholder(el themeFontElem) string {
 		return "theme: " + name
 	}
 	return "the client's own font"
-}
-
-// parsePanelSize reads a size the user typed. Anything unusable means "no
-// override" rather than an error: the field is cleared by emptying it, and a
-// half-typed number must not be rejected mid-keystroke.
-func parsePanelSize(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return clampInt(n, config.PanelFontMinPx, config.PanelFontMaxPx)
 }
 
 // panelFontElementIndex is the position of id in theme.FontElements, or -1.

@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.85.1 — 2026-08-01
+
+A fix for one thing in v1.85.0.
+
+- **The per-panel font size boxes can be typed in properly.** The box forced
+  whatever you had typed so far into the allowed range on every single keystroke
+  and put the result back in front of you — so typing the "1" of "18" turned into
+  a 6 before you could reach the "8", and no size under ten could be entered at
+  all. A half-typed number is now left alone until it is actually a number, the
+  box keeps what you typed while you are typing it, and the saved value comes back
+  the moment you click away. Emptying the box still clears that panel's override.
+
 ## v1.85.0 — 2026-08-01
 
 The second theme release, with two changes in it that reach everyone whether or

@@ -482,6 +482,12 @@ type App struct {
 	// a theme is global to the client — one theme, one warning, whichever tab
 	// happens to be in front when it applies.
 	fontWarnDlg fontWarnDialog
+	// panelSizeEdit is the RAW text of each per-panel size box while it is being
+	// typed in, keyed by the AO2 element id. It exists because a half-typed number
+	// is not a size, and clamping one into range mid-keystroke made anything below
+	// ten impossible to enter. Read only while that box has focus; the saved
+	// preference is the truth otherwise, so nothing here has to be cleaned up.
+	panelSizeEdit map[string]string
 	// Color-emoji fallback face: the system emoji font (e.g. Segoe UI Emoji) is read
 	// off-thread the FIRST time a message needs it (emojiLoadStarted gates the one
 	// read), landing on emojiFontRes → ctx.SetEmojiFont. Lazy so a user who never

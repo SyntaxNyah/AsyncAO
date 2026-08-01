@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -61,23 +62,96 @@ func TestPxToScalePctRoundTrips(t *testing.T) {
 	}
 }
 
-// TestParsePanelSizeIsForgiving: the box is cleared by emptying it, and a
-// half-typed number must not be rejected mid-keystroke or the field fights the
-// user as they type.
-func TestParsePanelSizeIsForgiving(t *testing.T) {
-	for _, s := range []string{"", "   ", "abc", "0", "-4", "12px"} {
-		if got := parsePanelSize(s); got != 0 {
-			t.Errorf("parsePanelSize(%q) = %d, want 0 (no override)", s, got)
-		}
+// typePanelSize replays a size being typed one character at a time, exactly as
+// the field delivers it, and returns what the box would SHOW after each
+// keystroke. Driving it character by character is the entire point: the bug this
+// pins was invisible to any test that handed over a finished string.
+func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
+	t.Helper()
+	fieldID := "panelsize-" + rowID
+	a.ctx.focusID = fieldID // the box has focus for the whole run, as when typing
+	var shown []string
+	for i := 1; i <= len(typed); i++ {
+		cur := a.d.Prefs.PanelFontFor(rowID)
+		a.commitPanelSize(fieldID, rowID, cur, typed[:i])
+		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.PanelFontFor(rowID).SizePx))
 	}
-	if got := parsePanelSize(" 18 "); got != 18 {
-		t.Errorf("parsePanelSize(\" 18 \") = %d, want 18", got)
+	return shown
+}
+
+// TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
+// fault: the size box "defaults to weird numbers, you can't set it correctly".
+//
+// It clamped on EVERY keystroke and fed the clamped number straight back into the
+// box, so typing the "1" of "18" became a 6 — the minimum — before the "8" could
+// be typed. Every size below ten was unreachable, and every one above it had to
+// be arrived at through a number the box had already rewritten.
+func TestPanelSizeAcceptsATwoDigitNumber(t *testing.T) {
+	a := testTabApp(t)
+	shown := typePanelSize(t, a, "ic_chatlog", "18")
+
+	if shown[0] != "1" {
+		t.Errorf("after typing \"1\" the box shows %q — it must not rewrite a half-typed number", shown[0])
 	}
-	if got := parsePanelSize("9999"); got != config.PanelFontMaxPx {
-		t.Errorf("an absurd size = %d, want the %d clamp", got, config.PanelFontMaxPx)
+	if shown[1] != "18" {
+		t.Errorf("after typing \"18\" the box shows %q, want \"18\"", shown[1])
 	}
-	if got := parsePanelSize("1"); got != config.PanelFontMinPx {
-		t.Errorf("a tiny size = %d, want the %d clamp", got, config.PanelFontMinPx)
+	if got := a.d.Prefs.PanelFontFor("ic_chatlog").SizePx; got != 18 {
+		t.Errorf("saved size = %d, want 18", got)
+	}
+	// A one-character size below the minimum must not have been saved on the way
+	// through — that is the clamp coming back in a different disguise.
+	if shown[0] == strconv.Itoa(config.PanelFontMinPx) {
+		t.Error("the first keystroke was clamped to the minimum")
+	}
+}
+
+// TestPanelSizeHoldsIncompleteInput: a number on its way somewhere is not a size,
+// and must change nothing until it is one.
+func TestPanelSizeHoldsIncompleteInput(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetPanelFont("music_list", config.PanelFont{SizePx: 20})
+
+	fieldID := "panelsize-music_list"
+	a.ctx.focusID = fieldID
+	a.commitPanelSize(fieldID, "music_list", a.d.Prefs.PanelFontFor("music_list"), "1")
+	if got := a.d.Prefs.PanelFontFor("music_list").SizePx; got != 20 {
+		t.Errorf("a half-typed \"1\" overwrote the saved size with %d", got)
+	}
+	if got := a.panelSizeText(fieldID, "music_list", 20); got != "1" {
+		t.Errorf("the box shows %q while typing, want the raw \"1\"", got)
+	}
+	// ...and the saved value comes back the moment focus leaves, so a box left
+	// holding something unusable discards it rather than persisting it.
+	a.ctx.focusID = ""
+	if got := a.panelSizeText(fieldID, "music_list", 20); got != "20" {
+		t.Errorf("unfocused the box shows %q, want the saved \"20\"", got)
+	}
+}
+
+// TestPanelSizeClearsAndClamps: emptying the box is how a panel is put back, and
+// a genuinely over-large number still lands on the ceiling.
+func TestPanelSizeClearsAndClamps(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetPanelFont("area_list", config.PanelFont{SizePx: 20})
+	fieldID := "panelsize-area_list"
+	a.ctx.focusID = fieldID
+
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "")
+	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 0 {
+		t.Errorf("emptying the box left %d, want the override cleared", got)
+	}
+
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "500")
+	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != config.PanelFontMaxPx {
+		t.Errorf("an over-large size saved as %d, want the %d ceiling", got, config.PanelFontMaxPx)
+	}
+
+	// Non-numeric text is not a size and must not be saved as one.
+	a.d.Prefs.SetPanelFont("area_list", config.PanelFont{SizePx: 20})
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "abc")
+	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 20 {
+		t.Errorf("garbage text changed the saved size to %d", got)
 	}
 }
 
