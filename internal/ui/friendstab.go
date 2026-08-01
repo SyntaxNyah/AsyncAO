@@ -113,7 +113,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		if strings.EqualFold(a.pmTarget, name) {
 			c.Border(pmR, ColAccent) // active-conversation cue
 		}
-		a.labelName(r.X+6, y+5, bx-r.X-12, disp, nameCol) // CJK-safe friend name
+		a.labelNameElem(elemFriends, r.X+6, y+5, bx-r.X-12, disp, nameCol) // CJK-safe friend name, in the Friends font
 		y += rowH
 	}
 }

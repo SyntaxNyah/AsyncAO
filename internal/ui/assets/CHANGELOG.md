@@ -4,6 +4,23 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.85.2 — 2026-08-01
+
+- **The player list, Notes and Friends can have their own font and size too.**
+  They were left out of v1.85.0's per-panel fonts for no good reason — they are
+  panels exactly like the music and area lists, and now they get their own rows in
+  **Settings → Theme → Font and size per panel**, working the same way. Themes can
+  set them as well, which AsyncAO's own theme format will use later.
+
+### Still on the client's own font
+
+The volume slider labels, the text boxes you type in, and the courtroom's buttons
+(Change character, Reload theme, and the rest) are drawn by the shared interface
+font rather than by any one panel, so they need a different change to become
+settable — it is coming, just not in a patch release. The whole-client font and
+size are already adjustable under **Settings → General → Fonts** and **Scale &
+text size** in the meantime.
+
 ## v1.85.1 — 2026-08-01
 
 A fix for one thing in v1.85.0.

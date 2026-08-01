@@ -133,6 +133,26 @@ func (a *App) labelName(x, y, maxW int32, text string, col sdl.Color) {
 	a.labelEmoji(primary, emoji, x, y, maxW, text, col)
 }
 
+// labelNameElem is labelName dressed by ONE per-element font — the user's
+// per-panel override, or a theme's if it set one.
+//
+// A separate entry point rather than a parameter on labelName, because that
+// helper has a dozen callers across the log browser, the messaging panels and
+// settings: surfaces with no element of their own, which must keep the shared log
+// face they have always drawn in. Only a panel that owns a font calls this one.
+func (a *App) labelNameElem(el themeFontElem, x, y, maxW int32, text string, col sdl.Color) {
+	primary := a.elemFontFor(el, DefaultScalePct, text)
+	var emoji *ttf.Font
+	if render.NeedsEmojiFallback(text) {
+		a.ensureEmojiFontLoad()
+		// The emoji baseline must match the text face's RESOLVED scale, or a name
+		// with an emoji in it draws the two at different sizes — #39's rule for
+		// every element-dressed row.
+		emoji = a.elemEmoji(el, DefaultScalePct)
+	}
+	a.labelEmoji(primary, emoji, x, y, maxW, text, col)
+}
+
 // icFieldFonts returns the fallback faces for an IC / OOC input box, or (nil, nil) for plain
 // ASCII — so a normal message keeps the field's exact single-font fast path with no per-frame
 // font work. For non-ASCII it kicks the colour-emoji load (NeedsEmojiFallback) and returns a

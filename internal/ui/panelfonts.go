@@ -45,6 +45,9 @@ var panelFontRows = [...]panelFontRow{
 	{id: "music_list", el: elemMusicList, label: "Music list", hint: "track names in the jukebox"},
 	{id: "music_name", el: elemMusicName, label: "Now playing", hint: "the current track's name"},
 	{id: "area_list", el: elemAreaList, label: "Area list", hint: "room names and their details"},
+	{id: "player_list", el: elemPlayerList, label: "Player list", hint: "the roster of who is in the room"},
+	{id: "notes", el: elemNotes, label: "Notes", hint: "your own notes tab"},
+	{id: "friends", el: elemFriends, label: "Friends", hint: "the friends and ignored lists"},
 	{id: "debug_log", el: elemDebugLog, label: "Debug log", hint: "the failure log a theme can show"},
 }
 

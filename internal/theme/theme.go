@@ -98,6 +98,27 @@ var FontElements = [...]string{
 	// set_fonts never reads that identifier, it survives only as the RECT key
 	// (courtroom.cpp:831).
 	"debug_log",
+
+	// --- AsyncAO's own panels, below AO2's set -------------------------------
+	//
+	// AO2 has no identifier for any of these because it has no such panel: the
+	// player roster, the notes tab and the friends list are AsyncAO's. They are
+	// here, in the same table, because everything downstream of it — the INI
+	// parse, the off-thread family resolution, the user's per-panel override and
+	// the Settings rows — is identical whether an element came from AO2 or from
+	// us, and a second parallel table would have to duplicate all of it to say
+	// nothing new.
+	//
+	// APPENDED, never inserted: the position in this list IS the persisted index
+	// for internal/ui's enum, and TestFontElementsIsAppendOnly holds that.
+	//
+	// A theme MAY set them ("player_list = 12", "notes_font = Arial") and nothing
+	// stops it, which is deliberate — AsyncAO's own theme format will want to.
+	// Until then they are set by the user in Settings and no shipped AO2 theme
+	// mentions them, so they resolve to nothing and cost nothing.
+	"player_list",
+	"notes",
+	"friends",
 }
 
 // RGB is a theme color tuple.

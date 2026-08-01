@@ -50,6 +50,11 @@ const (
 	// (courtroom.cpp:1198). APPENDED, never inserted: the slot index is the
 	// position in theme.FontElements.
 	elemDebugLog
+	// AsyncAO's own panels, which AO2 has no identifier for. Same machinery, same
+	// table, appended for the same reason — the index is persisted.
+	elemPlayerList
+	elemNotes
+	elemFriends
 	themeFontElemCount // array size — keep last
 )
 

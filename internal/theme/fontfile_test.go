@@ -332,8 +332,10 @@ func TestFontElementsIsAppendOnly(t *testing.T) {
 	// Frozen: these seven shipped first, in this order. Never edit this slice —
 	// only ever append to `added`.
 	frozen := []string{"showname", "message", "ic_chatlog", "server_chatlog", "music_list", "music_name", "area_list"}
-	// Appended since, in the order they were added.
-	added := []string{"debug_log"}
+	// Appended since, in the order they were added. The last three are AsyncAO's
+	// own panels rather than AO2 identifiers — see FontElements for why they share
+	// this table — and they are appended for exactly the reason above.
+	added := []string{"debug_log", "player_list", "notes", "friends"}
 
 	want := append(append([]string{}, frozen...), added...)
 	if len(FontElements) != len(want) {

@@ -64,7 +64,10 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 		a.noteCache, a.noteCacheRev = a.notebook.Lines(), rev
 	}
 	lines := a.noteCache
-	font := c.LogFont(a.logPct)
+	// The Notes panel's own font and size. Resolved through the same per-element
+	// table the chatlogs use, so the user's Settings override reaches it — the
+	// panel was left on the shared log font when the rest gained one.
+	font := a.elemFont(elemNotes, a.logPct)
 	lineH := int32(font.Height()) + 4
 	wrapW := list.W - scrollBarW - scrollBarGap - 18 // room for the ✕ hit zone
 	contentH := int32(len(lines)) * lineH
@@ -99,7 +102,7 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 					removeIdx = i
 				}
 			}
-			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X+2, y+2, wrapW, line, ColText)
+			c.LabelClippedFont(a.elemFontFor(elemNotes, a.logPct, line), list.X+2, y+2, wrapW, line, ColText)
 		}
 		y += lineH
 	}

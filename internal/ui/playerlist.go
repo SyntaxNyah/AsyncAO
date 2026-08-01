@@ -564,7 +564,10 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
 	}
-	c.LabelClippedFont(c.LogFontFor(a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, nameCol)
+	// The roster's own font and size, through the same per-element table the
+	// chatlogs use. a.playerPct stays the per-panel zoom on top of it, exactly as
+	// a.logPct does for the IC log.
+	c.LabelClippedFont(a.elemFontFor(elemPlayerList, a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, nameCol)
 	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
 	// display name above (no showname → OOC was promoted to the identity line).
 	sub := ""
@@ -578,7 +581,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		sub += "IPID: " + p.ipid
 	}
 	if sub != "" {
-		c.LabelClippedFont(c.LogFontFor(a.playerPct, sub), textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
+		c.LabelClippedFont(a.elemFontFor(elemPlayerList, a.playerPct, sub), textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
 	}
 }
 
