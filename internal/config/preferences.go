@@ -1415,6 +1415,7 @@ type prefsJSON struct {
 	ValidateTLSCerts       bool             `json:"validateTLSCerts"`           // Security: strict wss cert check; default OFF (accept self-signed)
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
 	WSOrigin               string           `json:"wsOrigin,omitempty"`         // Security: Origin override for the WS handshake
+	AssetCharCase          uint8            `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing; SAVED since it shipped but never read back until now
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
 	PrefetchAggro          int              `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (#100)
@@ -2158,6 +2159,12 @@ func load(path string) (*AssetPreferences, error) {
 	p.ValidateTLSCerts = onDisk.ValidateTLSCerts
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
 	p.WSOrigin = strings.TrimSpace(onDisk.WSOrigin)
+	// Clamped on the way in, exactly as SetAssetCharCasing clamps on the way out:
+	// a hand-edited file is the one place an out-of-range value can enter, and a
+	// wrong casing 404s every character on the server.
+	if onDisk.AssetCharCase <= AssetCharCaseMax {
+		p.AssetCharCase = onDisk.AssetCharCase
+	}
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
 	p.PrefetchAggro = onDisk.PrefetchAggro
@@ -4653,16 +4660,28 @@ func (p *AssetPreferences) SetWSOriginHeader(s string) {
 	p.markDirty()
 }
 
+// AssetCharCaseMax is the highest valid character-folder casing mode. It mirrors
+// courtroom.CharCaseCount-1 (lowercase / first-cap / title / auto) and is spelled
+// out here rather than imported, because internal/config sits BELOW
+// internal/courtroom and must not depend on it. A test in internal/ui — which
+// imports both — pins the two together.
+const AssetCharCaseMax uint8 = 3
+
 // AssetCharCasing returns the character-folder casing mode (0 lowercase default / 1 first-cap /
-// 2 title). A POWER-USER setting: the wrong value 404s every character asset.
+// 2 title / 3 auto-detect). A POWER-USER setting: the wrong value 404s every character asset.
 func (p *AssetPreferences) AssetCharCasing() uint8 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.AssetCharCase
 }
 
-// SetAssetCharCasing sets the character-folder casing mode.
+// SetAssetCharCasing sets the character-folder casing mode. Out-of-range falls
+// back to lowercase, which is the safe answer for almost every server — the same
+// thing URLBuilder.WithCharCase does with a value it does not recognise.
 func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
+	if c > AssetCharCaseMax {
+		c = 0
+	}
 	p.mu.Lock()
 	if p.AssetCharCase == c {
 		p.mu.Unlock()
