@@ -8363,21 +8363,7 @@ func (a *App) applyThemeAsync() uint64 {
 			// #39: per-element families/sizes/bold (AO2-Client Courtroom::set_fonts,
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
-			// Create the user's font drop folder before resolving, so it is both a
-			// real search tier on this very pass and a path the warning can name.
-			res.userFontsDir = ensureUserFontsDir()
 			res.buildThemeFontTable(t, systemFontDirs())
-			// The user's own per-panel font and size, on top of the theme's. Same
-			// goroutine because it resolves families and reads face files, and it
-			// must run AFTER the theme's table so the user's pick is what survives.
-			res.applyPanelFonts(panelFonts, t.Dirs(), systemFontDirs())
-			// The wording of the missing-font warning depends on whether this
-			// installation has ANY fonts on disk, which is a disk probe — so it is
-			// decided here and not on the render thread. Skipped entirely when
-			// nothing is missing, which is the overwhelmingly common case.
-			if len(res.themeFontsMissing) > 0 {
-				res.themeFontWarn = themeFontWarning(res.themeFontsMissing, t.HasAnyFontFile(), res.userFontsDir)
-			}
 			res.msgCol, res.hasMsg = declaredFontInk(t.Font("message"))
 			res.nameCol, res.hasName = declaredFontInk(t.Font("showname"))
 			// loadOne decodes ONE already-located file into the stem's slot. Split out
@@ -8541,6 +8527,34 @@ func (a *App) applyThemeAsync() uint64 {
 					res.sounds[pk] = v
 				}
 			}
+		}
+		// The USER's own per-panel fonts, OUTSIDE the theme-loaded branch — which is
+		// the whole point of it living here.
+		//
+		// These belong to the user, not to the theme, and until now they were
+		// resolved inside `if err == nil` alongside the theme's own table. Anyone
+		// whose theme failed to load — no theme configured, a moved folder, the
+		// stock default with no tree on disk — therefore had the setting save
+		// perfectly and do absolutely nothing, with no way to tell why. Reported as
+		// the font simply not changing.
+		//
+		// The theme's directories are used when there IS one, so a font it ships can
+		// still be picked; with no theme, the user's own font folder and the system
+		// folders are the search path, and both work on their own.
+		var themeDirs []string
+		if t != nil {
+			themeDirs = t.Dirs()
+		}
+		// Created before resolving, so the drop folder is a real search tier on this
+		// very pass and a path the warning below can name.
+		res.userFontsDir = ensureUserFontsDir()
+		res.applyPanelFonts(panelFonts, themeDirs, systemFontDirs())
+		// The missing-font warning's wording depends on whether this installation
+		// has ANY fonts on disk, which is a disk probe — decided here rather than on
+		// the render thread. Skipped when nothing is missing, the common case.
+		if len(res.themeFontsMissing) > 0 {
+			anyOnDisk := t != nil && t.HasAnyFontFile()
+			res.themeFontWarn = themeFontWarning(res.themeFontsMissing, anyOnDisk, res.userFontsDir)
 		}
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).

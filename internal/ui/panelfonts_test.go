@@ -3,8 +3,10 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -77,6 +79,114 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.PanelFontFor(rowID).SizePx))
 	}
 	return shown
+}
+
+// TestPanelFontsApplyWithNoThemeLoaded is the regression pin for the report that
+// the per-panel fonts "just don't work".
+//
+// They were resolved inside the branch that runs only when a theme LOADS, next to
+// the theme's own font table. Anyone whose theme failed to load — none configured,
+// a folder since moved, the stock default with no tree on disk — had the setting
+// save perfectly and do nothing at all, with nothing on screen to say why. The
+// user's fonts are the USER's, not the theme's, and must not need one to be
+// present.
+//
+// Driven through applyThemeAsync + pollThemeApply, the real path, because the
+// defect was entirely in WHERE the call sat rather than in what it did.
+func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
+	a := testTabApp(t)
+	// Point the client at a theme that cannot possibly load.
+	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
+	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{SizePx: 40})
+	a.d.Prefs.SetPanelFont("ic_chatlog", config.PanelFont{SizePx: 30})
+
+	awaitThemeApply(t, a)
+
+	if got := a.themeFonts.e[elemPlayerList].pct; got != pxToScalePct(40) {
+		t.Errorf("player_list pct = %d, want %d — a user's own font must not need a theme to load",
+			got, pxToScalePct(40))
+	}
+	if got := a.themeFonts.e[elemICChatlog].pct; got != pxToScalePct(30) {
+		t.Errorf("ic_chatlog pct = %d, want %d", got, pxToScalePct(30))
+	}
+	// And it reaches the accessor every draw site actually calls.
+	if got := a.elemPct(elemPlayerList, DefaultScalePct); got != pxToScalePct(40) {
+		t.Errorf("elemPct = %d, want the override to reach the draw sites", got)
+	}
+}
+
+// TestPanelFontsCoverEveryPanelRow: every row the Settings screen offers has to
+// survive the apply, or the row is a control that does nothing. Cheap insurance
+// against a row being added to the table and nowhere else.
+func TestPanelFontsCoverEveryPanelRow(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
+	for i := range panelFontRows {
+		a.d.Prefs.SetPanelFont(panelFontRows[i].id, config.PanelFont{SizePx: 40})
+	}
+	awaitThemeApply(t, a)
+	for i := range panelFontRows {
+		row := &panelFontRows[i]
+		if got := a.themeFonts.e[row.el].pct; got != pxToScalePct(40) {
+			t.Errorf("row %q (element %d) resolved to pct %d, want %d — the Settings row does nothing",
+				row.id, row.el, got, pxToScalePct(40))
+		}
+	}
+}
+
+// awaitThemeApply kicks a theme apply and lands it, so a test can assert on what
+// the render thread would actually be holding.
+func awaitThemeApply(t *testing.T, a *App) {
+	t.Helper()
+	gen := a.applyThemeAsync()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if res := a.themeRes.Load(); res != nil && res.gen >= gen {
+			a.pollThemeApply()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("theme apply did not publish a result")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestPanelFontFamilyReachesTheDrawSite drives a real FAMILY the whole way —
+// preference, apply, resolution, landed table, and the accessor the roster's draw
+// actually calls — because a report that the setting "does nothing" can only be
+// answered by checking every link, and the family path had only ever been tested
+// at the resolution step.
+func TestPanelFontFamilyReachesTheDrawSite(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
+
+	// Arial resolves from the system font folder on Windows; elsewhere there is
+	// no reliable system family, so the family half is skipped rather than faked.
+	if runtime.GOOS != "windows" {
+		t.Skip("no dependable system font family off Windows")
+	}
+	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{Family: "Arial", SizePx: 26})
+	awaitThemeApply(t, a)
+
+	got := a.themeFonts.e[elemPlayerList]
+	if got.pct != pxToScalePct(26) {
+		t.Errorf("player_list pct = %d, want %d", got.pct, pxToScalePct(26))
+	}
+	if got.face == 0 {
+		t.Fatalf("player_list resolved NO face for Arial; missing report = %v", a.panelFontMissing)
+	}
+	if len(a.panelFontMissing) != 0 {
+		t.Errorf("Arial was reported missing: %v", a.panelFontMissing)
+	}
+	// The face bytes have to have been handed to the kit, or the index points at
+	// nothing and the draw silently falls back to the client chain.
+	if len(a.ctx.themeFaceData) == 0 {
+		t.Error("the resolved face was never installed on Ctx — the draw would fall back")
+	}
+	if got.faceIdx() < 0 || got.faceIdx() >= len(a.ctx.themeFaceData) {
+		t.Errorf("face index %d is outside the installed set of %d", got.faceIdx(), len(a.ctx.themeFaceData))
+	}
 }
 
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported

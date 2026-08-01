@@ -273,7 +273,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 				hint += " Run /ga for names."
 			}
 		}
-		c.LabelClipped(r.X, r.Y+4, r.W, hint, ColTextDim)
+		c.LabelClippedFont(a.elemFont(elemPlayerList, a.playerPct), r.X, r.Y+4, r.W, hint, ColTextDim)
 		return
 	}
 
@@ -877,7 +877,12 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 		}
 		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "click to jump →", ColTextDim)
 	}
-	c.LabelClipped(r.X+8, r.Y+6, r.W-132, name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", nameCol)
+	// The header is part of the roster, so it takes the roster's font. Wiring only
+	// the name rows left the panel changing in halves — the names moved and the
+	// headers above them did not, which reads as the setting not working at all
+	// rather than as working on some of it.
+	c.LabelClippedFont(a.elemFont(elemPlayerList, a.playerPct), r.X+8, r.Y+6, r.W-132,
+		name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", nameCol)
 }
 
 // jumpToArea transfers us to area by name (AO switches areas through the music
