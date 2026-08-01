@@ -88,6 +88,37 @@ func PortableConfigDir() string {
 	return filepath.Join(exeDir, PortableDirName)
 }
 
+// FontsDirName is the folder inside the config directory where a user may drop
+// font files for themes to use.
+const FontsDirName = "fonts"
+
+// UserFontsDir is where AsyncAO looks for fonts the USER supplied — the last
+// resort before the operating system's own font folders.
+//
+// It exists because of how AO themes are actually distributed. A theme names its
+// families ("Ace Name", "Igiari Cyrillic", "DangitSpeaker") and ships none of the
+// files, because in AO2 they live in the BASE's fonts/ folder and Qt registers
+// that folder globally at startup. Themes, however, are shared on their own — a
+// themes-only repository, a zip from a friend — so a user who has never
+// downloaded a full base has the theme and none of its fonts, and every string
+// in it renders in the wrong face with nothing to say why.
+//
+// Putting the folder beside the preferences rather than beside a content root is
+// deliberate: it belongs to the USER, not to any one asset pack, so it keeps
+// working when they switch packs, add a second one, or have none at all. It
+// follows a portable install onto the stick with everything else.
+//
+// Empty string if the config location cannot be resolved, which callers treat as
+// "no such tier" rather than as an error — a missing font folder is the normal
+// state, not a fault.
+func UserFontsDir() string {
+	base, err := ConfigBaseDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	return filepath.Join(base, FontsDirName)
+}
+
 // OSConfigDir returns the classic OS config location (<os.UserConfigDir>/AsyncAO),
 // independent of which location is active. Empty string if it can't be resolved.
 func OSConfigDir() string {

@@ -283,6 +283,13 @@ func (res *themeApply) buildThemeFontTable(t *theme.Theme, sysDirs []string) {
 		slot.bold = spec.Bold
 		if p := files[id]; p != "" {
 			slot.face = res.internFace(p)
+		} else if fam := strings.TrimSpace(spec.Font); fam != "" {
+			// The theme NAMED a family and nothing on this machine answers to it.
+			// Recorded rather than shrugged off, because the symptom a user sees is
+			// "the showname font is wrong" — the text still renders, in the client's
+			// own face, with nothing anywhere to say why. Reported live on two
+			// separate themes before this existed.
+			res.noteMissingFamily(fam)
 		}
 		// "<id>_color" (#21 label 16). Skipped for the two chatbox elements — see
 		// themeElemFont.color for why they must not be filled from here.
@@ -395,6 +402,61 @@ func pxToScalePct(px int) int {
 	return clampInt((px*DefaultScalePct+UIFontSize-1)/UIFontSize, themeFontMinPct, themeFontMaxPct)
 }
 
+// themeMissingFamilyCap bounds the reported list. A theme names at most one
+// family per element, so this cannot realistically be reached — it exists so a
+// corrupt INI cannot grow the slice, and so the warning stays one readable line
+// rather than a wall (hard rule 4).
+const themeMissingFamilyCap = 8
+
+// noteMissingFamily records a declared font family that resolved to no file,
+// deduped and in declaration order. Order matters for the message: showname and
+// message come first in theme.FontElements, and they are the two a user notices.
+func (res *themeApply) noteMissingFamily(fam string) {
+	for _, have := range res.themeFontsMissing {
+		if strings.EqualFold(have, fam) {
+			return
+		}
+	}
+	if len(res.themeFontsMissing) >= themeMissingFamilyCap {
+		return
+	}
+	res.themeFontsMissing = append(res.themeFontsMissing, fam)
+}
+
+// themeFontWarning is the line the user is shown when a theme asks for fonts
+// this machine does not have, or "" when everything resolved.
+//
+// It names the remedy rather than just the fault, and WHICH remedy depends on
+// what we found. AO2 keeps its fonts in the base's own fonts/ folder and
+// registers that folder globally at startup (main.cpp), so a theme downloaded on
+// its own — from a themes-only repository, which is how most of them are shared
+// — arrives with its families named and none of the files. That is the common
+// case and it is not the theme author's mistake, so the wording does not read as
+// one.
+//
+// anyFontsOnDisk distinguishes the two situations that need different advice: a
+// content root that HAS a fonts folder means the pack is set up correctly and
+// this particular family is simply not in it, while no fonts folder anywhere
+// means the user has the themes but not a base to go with them.
+func themeFontWarning(missing []string, anyFontsOnDisk bool, dropDir string) string {
+	if len(missing) == 0 {
+		return ""
+	}
+	msg := "This theme asks for fonts you don't have: " + strings.Join(missing, ", ") + ". "
+	if !anyFontsOnDisk {
+		// No fonts anywhere in this installation — almost certainly a themes-only
+		// download with no base beside it. Say that, because it is the actual
+		// situation and it is nobody's mistake.
+		msg += "AO themes name their fonts but don't include them — in AO2 they live in the base's fonts folder. "
+	}
+	if dropDir != "" {
+		msg += "Put the font files in " + dropDir + " (or in the theme's own folder) and reload the theme."
+	} else {
+		msg += "Put the font files in the theme's own folder and reload the theme."
+	}
+	return msg
+}
+
 // internFace returns the 1-based slot of an already-read face path, else reads
 // the file and appends it. 0 = unreadable, oversized, or past themeFaceCap — the
 // element then falls back to the client's own chain.
@@ -472,22 +534,76 @@ func (a *App) landThemeFonts(res *themeApply) {
 	a.rasterText = ""
 }
 
-// systemFontDirs lists the OS font folders theme.FontFiles falls back to for a
-// family the theme doesn't ship — the tier that makes a theme declaring plain
-// "Arial" (DRRetribution, KFO qHD) resolve at all. AO2 gets this free from Qt's
-// system font database (get_qfont, courtroom.cpp:1263). Windows only: the mac /
-// Linux font stores are laid out per-family and per-user, so probing them by
-// file stem would resolve the wrong cut more often than the right one — those
-// platforms keep the client font, exactly as today. Called off-thread.
+// systemFontDirs lists the fallback font folders theme.FontFiles searches for a
+// family the theme itself does not ship, IN ORDER:
+//
+//  1. AsyncAO's own fonts folder, where the user may drop font files. First,
+//     because dropping a file in there is an explicit act and should beat an
+//     ambient system font of the same name.
+//  2. the OS font folders — the tier that makes a theme declaring plain "Arial"
+//     (DRRetribution, KFO qHD) resolve at all. AO2 gets this free from Qt's
+//     system font database (get_qfont, courtroom.cpp:1263). Windows only: the
+//     mac / Linux font stores are laid out per-family and per-user, so probing
+//     them by file stem would resolve the wrong cut more often than the right
+//     one, and those platforms keep the client font.
+//
+// Both are scanned FLAT (theme.FontFiles gives this tier depth 1), which is why
+// the user folder is documented as a drop folder: files go directly in it, not
+// into subfolders. That is also what keeps the scan cheap on a Windows\Fonts
+// with several hundred files.
+//
+// Called off-thread — it walks the disk.
 func systemFontDirs() []string {
-	if runtime.GOOS != "windows" {
-		return nil
+	var dirs []string
+	if d := config.UserFontsDir(); d != "" {
+		dirs = append(dirs, d)
 	}
-	win := os.Getenv("WINDIR")
-	if win == "" {
-		return nil
+	if runtime.GOOS == "windows" {
+		if win := os.Getenv("WINDIR"); win != "" {
+			dirs = append(dirs, filepath.Join(win, "Fonts"))
+		}
 	}
-	return []string{filepath.Join(win, "Fonts")}
+	return dirs
+}
+
+// userFontsReadme is written into the fonts folder the first time it is created,
+// because an empty folder in a config directory explains nothing. It names the
+// families the user's own themes are asking for at that moment, which is the
+// difference between "put fonts here" and "put THESE fonts here".
+const userFontsReadme = `Put font files (.ttf, .otf, .ttc) in this folder.
+
+AsyncAO looks here when a theme asks for a font you do not have. AO2 themes name
+their fonts but usually do not include them - in AO2 they live in the base's
+"fonts" folder, so a theme downloaded on its own arrives with none of them.
+
+Drop the files straight into this folder (not into sub-folders), then use
+Settings -> Theme -> Reload theme. The file name is what is matched, so a theme
+asking for "Ace Name" wants a file called "Ace Name.ttf" or "acename.ttf".
+`
+
+// ensureUserFontsDir creates the drop folder and its README if they are absent,
+// and returns the folder path ("" if it could not be resolved or created).
+//
+// Created EAGERLY on theme apply rather than on first use, because the whole
+// point is discoverability: a folder that only appears once you have already
+// worked out that you need it has not helped anyone. Off-thread, and cheap — a
+// stat on the common path where both already exist.
+func ensureUserFontsDir() string {
+	dir := config.UserFontsDir()
+	if dir == "" {
+		return ""
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	readme := filepath.Join(dir, "README.txt")
+	if _, err := os.Stat(readme); err == nil {
+		return dir
+	}
+	// Best-effort: a read-only config dir still gets the folder path reported in
+	// Settings, which is the part the user needs.
+	_ = os.WriteFile(readme, []byte(userFontsReadme), 0o644)
+	return dir
 }
 
 // declaredFontInk converts a parsed courtroom_fonts.ini entry into an ink colour,

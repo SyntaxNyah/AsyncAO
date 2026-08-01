@@ -957,7 +957,8 @@ type AssetPreferences struct {
 	AssetCharCase          uint8                        `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
 	ProxyModeVal           int                          `json:"proxyMode"`                  // Network: 0 = use the machine's setting (default), 1 = never proxy, 2 = the URL below. NOT omitempty — 0 is the default, but an explicit 0 written by a user who switched back must persist.
 	ProxyURL               string                       `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy, used only in mode 2.
-	PanelFontsVal          map[string]PanelFont         `json:"panelFonts,omitempty"`       // per-panel font/size the USER picked, keyed by the AO2 element identifier ("ic_chatlog"), which beats whatever the theme asked for Empty in every other mode.
+	PanelFontsVal          map[string]PanelFont         `json:"panelFonts,omitempty"`       // per-panel font/size the USER picked, keyed by the AO2 element identifier ("ic_chatlog"), which beats whatever the theme asked for
+	FontWarnThemes         []string                     `json:"fontWarnThemes,omitempty"`   // themes already warned about for missing fonts — the warning is once per theme, and it has to survive a restart or it is once per LAUNCH Empty in every other mode.
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
 	PrefetchAggro          int                          `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
@@ -1422,6 +1423,7 @@ type prefsJSON struct {
 	ProxyMode              *int                 `json:"proxyMode"`                  // *int, NOT int: 0 is a REAL choice here ("never proxy" is mode 1, but a user who returns to 0 must not be indistinguishable from a file that predates the setting)
 	ProxyURL               string               `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy URL
 	PanelFonts             map[string]PanelFont `json:"panelFonts,omitempty"`       // per-panel user font/size overrides
+	FontWarnThemes         []string             `json:"fontWarnThemes,omitempty"`   // themes already warned about for missing fonts
 	VoiceInputDevice       string               `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int                  `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
 	PrefetchAggro          int                  `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (#100)
@@ -2180,6 +2182,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.ProxyURL = strings.TrimSpace(onDisk.ProxyURL)
 	p.PanelFontsVal = sanitizePanelFonts(onDisk.PanelFonts)
+	p.FontWarnThemes = clampStrings(onDisk.FontWarnThemes, FontWarnThemesCap)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
 	p.PrefetchAggro = onDisk.PrefetchAggro
@@ -4741,6 +4744,81 @@ func sanitizePanelFonts(in map[string]PanelFont) map[string]PanelFont {
 		return nil
 	}
 	return out
+}
+
+// FontWarnThemesCap bounds the remembered "already warned" set. It grows by one
+// per THEME with missing fonts — a handful in practice — and the cap keeps the
+// preferences file from growing without limit (hard rule 4). Oldest first out, so
+// someone who cycles through many themes is eventually re-warned about one they
+// saw long ago, which is the right way round.
+const FontWarnThemesCap = 64
+
+// clampStrings trims a list read off disk to the newest n entries, dropping
+// blanks. Shared by the bounded string lists loaded from preferences.
+func clampStrings(in []string, n int) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// FontWarnShownFor reports whether the missing-font warning has already been
+// shown for this theme.
+func (p *AssetPreferences) FontWarnShownFor(theme string) bool {
+	theme = strings.TrimSpace(theme)
+	if theme == "" {
+		return true // nothing to key on: never warn rather than warn every apply
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, t := range p.FontWarnThemes {
+		if strings.EqualFold(t, theme) {
+			return true
+		}
+	}
+	return false
+}
+
+// MarkFontWarnShown records that this theme has been warned about. Idempotent.
+func (p *AssetPreferences) MarkFontWarnShown(theme string) {
+	theme = strings.TrimSpace(theme)
+	if theme == "" {
+		return
+	}
+	p.mu.Lock()
+	for _, t := range p.FontWarnThemes {
+		if strings.EqualFold(t, theme) {
+			p.mu.Unlock()
+			return
+		}
+	}
+	p.FontWarnThemes = append(p.FontWarnThemes, theme)
+	if len(p.FontWarnThemes) > FontWarnThemesCap {
+		p.FontWarnThemes = p.FontWarnThemes[len(p.FontWarnThemes)-FontWarnThemesCap:]
+	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearFontWarnThemes forgets every warned theme, so the warnings come back. The
+// way out for someone who dismissed one by reflex and wants it again.
+func (p *AssetPreferences) ClearFontWarnThemes() {
+	p.mu.Lock()
+	had := len(p.FontWarnThemes) > 0
+	p.FontWarnThemes = nil
+	p.mu.Unlock()
+	if had {
+		p.markDirty()
+	}
 }
 
 // PanelFonts returns a COPY of the per-panel overrides. A copy because the

@@ -332,6 +332,45 @@ var systemFontAliases = map[string]string{
 	"microsoftsansserif":   "micross",
 }
 
+// HasAnyFontFile reports whether ANY font file is reachable through this theme's
+// ladder — its own directory tree, or a fonts/ folder beside the content roots.
+//
+// It answers one question and only one: is this installation set up with fonts
+// at all? A theme downloaded on its own, from a themes-only repository, arrives
+// with its families NAMED and none of the files, because AO2 keeps them in the
+// base's fonts/ folder. That user needs different advice ("point AsyncAO at your
+// base") from one whose base is present but simply lacks this family ("put the
+// file in the theme folder"), and nothing else in the resolver distinguishes the
+// two — FontFiles returns an absent key for both.
+//
+// Off-thread only: it walks the disk. Stops at the FIRST hit, so the common
+// healthy case is cheap.
+func (t *Theme) HasAnyFontFile() bool {
+	idx := &fontIndex{budget: fontScanMaxFiles}
+	for _, dir := range t.dirs {
+		if filepath.Base(dir) != t.Name {
+			continue // the active theme's own tree only, as FontFiles does
+		}
+		idx.scan(dir, fontScanMaxDepth)
+		if len(idx.ents) > 0 {
+			return true
+		}
+	}
+	seen := make(map[string]struct{}, len(t.dirs))
+	for _, dir := range t.dirs {
+		fontsDir := filepath.Join(filepath.Dir(filepath.Dir(dir)), "fonts")
+		if _, dup := seen[fontsDir]; dup {
+			continue
+		}
+		seen[fontsDir] = struct{}{}
+		idx.scan(fontsDir, fontScanMaxDepth)
+		if len(idx.ents) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolveFamilies resolves arbitrary family NAMES to font files, for callers
 // choosing a font that no theme declared — the per-panel font a USER picks in
 // Settings, rather than one courtroom_fonts.ini asked for.

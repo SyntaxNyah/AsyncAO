@@ -77,6 +77,34 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 
+	// The theme's OWN missing fonts, before the override rows — because if this is
+	// showing, it is almost certainly why the user came to this screen, and the
+	// answer is to install the fonts rather than to override every panel by hand.
+	// Persistent here, unlike the toast on apply, which is gone by the time anyone
+	// goes looking.
+	if a.themeFontWarn != "" {
+		y = a.settingsSection(y, w, "This theme's fonts are missing")
+		y = a.settingsDesc(pad, y, a.themeFontWarn, ColDanger)
+		y += 6
+	} else {
+		y = a.settingsSection(y, w, "Your font folder")
+		y = a.settingsDesc(pad, y, "AO themes name the fonts they want but usually don't include them — in AO2 those live in the base's fonts folder, so a theme downloaded on its own arrives with none of them. Drop font files (.ttf, .otf, .ttc) straight into the folder below and any theme can use them. The file name is what's matched, so a theme asking for \"Ace Name\" wants a file called \"Ace Name.ttf\".", ColTextDim)
+		y += 6
+	}
+	if dir := config.UserFontsDir(); dir != "" {
+		c.Label(pad, y+4, "Folder:", ColText)
+		c.LabelClipped(pad+60, y+4, w-60-190, dir, ColTextDim)
+		if c.Button(sdl.Rect{X: pad + w - 186, Y: y, W: 86, H: btnH}, "Open") {
+			openInFileManager(dir) // windows→explorer / darwin→open / else→xdg-open (openpath.go)
+		}
+		if c.Button(sdl.Rect{X: pad + w - 96, Y: y, W: 92, H: btnH}, "Reload theme") {
+			a.applyThemeAsync()
+		}
+		c.Tooltip(sdl.Rect{X: pad + w - 96, Y: y, W: 92, H: btnH},
+			"Read the theme again — use this after adding font files, so you don't have to restart.")
+		y += btnH + 10
+	}
+
 	y = a.settingsSection(y, w, "Font and size per panel")
 	y = a.settingsDesc(pad, y, "Your own font and text size for each part of the courtroom, overriding whatever the theme picked. Leave a box empty to keep the theme's choice for that panel — the two are independent, so you can make one panel bigger without changing its font.", ColTextDim)
 	y += 6

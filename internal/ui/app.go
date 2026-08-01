@@ -471,6 +471,17 @@ type App struct {
 	// while the Settings screen is open — never on a draw path.
 	themeFaceNames   []string
 	panelFontMissing []string
+	// themeFontsMissing / themeFontWarn are the THEME's own unresolved families and
+	// the ready-made sentence about them. Kept after the toast has faded so the
+	// Settings screen can still explain it — the toast is gone by the time anyone
+	// goes looking for why the font is wrong.
+	themeFontsMissing []string
+	themeFontWarn     string
+	// fontWarnDlg is the missing-fonts modal. On App and NOT on sessionState,
+	// unlike disconnectDlg: that dialog belongs to one tab's frozen session, while
+	// a theme is global to the client — one theme, one warning, whichever tab
+	// happens to be in front when it applies.
+	fontWarnDlg fontWarnDialog
 	// Color-emoji fallback face: the system emoji font (e.g. Segoe UI Emoji) is read
 	// off-thread the FIRST time a message needs it (emojiLoadStarted gates the one
 	// read), landing on emojiFontRes → ctx.SetEmojiFont. Lazy so a user who never
@@ -2432,6 +2443,16 @@ type themeApply struct {
 	// it rather than only in a debug log.
 	panelFontsAsked   int
 	panelFontsMissing []string
+	// themeFontsMissing are families the THEME declared that resolved to no file
+	// on this machine, and themeFontWarn is the ready-made sentence about them.
+	// Built off-thread because deciding the wording needs a disk probe
+	// (theme.HasAnyFontFile).
+	themeFontsMissing []string
+	themeFontWarn     string
+	// userFontsDir is AsyncAO's own font drop folder, created on this pass so the
+	// warning can name a path that actually exists — telling someone to put files
+	// somewhere that is not there yet is most of the way to telling them nothing.
+	userFontsDir string
 	// panelFace / panelPct are the RESOLVED per-panel overrides: a 1-based index
 	// into faceData and a percent, both 0 for "the user said nothing about this
 	// element". Recorded here rather than written straight into fontTable so the
@@ -8259,6 +8280,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ctx.unfencePointer()
 		a.drawDisconnectDialog(winW, winH)
 	}
+	// The missing-theme-fonts notice, same family and the same rule: drawn
+	// unconditionally-while-open so its fence is always released here. Last of the
+	// modals because it is the least urgent — a disconnect dialog up at the same
+	// time is about the session, and must be the one in front.
+	if a.fontWarnDlg.open {
+		a.ctx.unfencePointer()
+		a.drawFontWarnDialog(winW, winH)
+	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()
 	// Hover hints paint last so they sit above every cell/overlay.
@@ -8328,11 +8357,21 @@ func (a *App) applyThemeAsync() uint64 {
 			// #39: per-element families/sizes/bold (AO2-Client Courtroom::set_fonts,
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
+			// Create the user's font drop folder before resolving, so it is both a
+			// real search tier on this very pass and a path the warning can name.
+			res.userFontsDir = ensureUserFontsDir()
 			res.buildThemeFontTable(t, systemFontDirs())
 			// The user's own per-panel font and size, on top of the theme's. Same
 			// goroutine because it resolves families and reads face files, and it
 			// must run AFTER the theme's table so the user's pick is what survives.
 			res.applyPanelFonts(panelFonts, t.Dirs(), systemFontDirs())
+			// The wording of the missing-font warning depends on whether this
+			// installation has ANY fonts on disk, which is a disk probe — so it is
+			// decided here and not on the render thread. Skipped entirely when
+			// nothing is missing, which is the overwhelmingly common case.
+			if len(res.themeFontsMissing) > 0 {
+				res.themeFontWarn = themeFontWarning(res.themeFontsMissing, t.HasAnyFontFile(), res.userFontsDir)
+			}
 			res.msgCol, res.hasMsg = declaredFontInk(t.Font("message"))
 			res.nameCol, res.hasName = declaredFontInk(t.Font("showname"))
 			// loadOne decodes ONE already-located file into the stem's slot. Split out
@@ -8598,6 +8637,20 @@ func (a *App) pollThemeApply() {
 	a.themeFaceNames = res.faceNames
 	a.panelFontMissing = res.panelFontsMissing
 	a.landThemeFonts(res)
+	// A theme whose fonts are missing renders in the client's own face and says
+	// nothing about it — from the user's side that reads as "the client got the
+	// font wrong", which is exactly how it was reported. Say so, once per apply,
+	// on screen AND in the debug log, and name the fix rather than the fault.
+	a.themeFontsMissing = res.themeFontsMissing
+	a.themeFontWarn = res.themeFontWarn
+	if res.themeFontWarn != "" {
+		// The debug log ALWAYS, the modal at most once per theme. A theme with
+		// missing fonts has them missing on every apply, so warning every time
+		// would make the client unusable for anyone not intending to fix it — and
+		// the second showing is what teaches people to dismiss without reading.
+		a.pushDebug(res.themeFontWarn)
+		a.maybeWarnMissingFonts(res.name, res.themeFontsMissing, res.themeFontWarn, res.userFontsDir)
+	}
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
 	a.pushDebug(line)
