@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 const (
@@ -182,14 +184,21 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	// Only wss:// is affected — ws:// upgrades over plain TCP and ignores the TLS
 	// config. We install a custom client ONLY when skipping verification, so the
 	// verifying default keeps coder/websocket's shared default client untouched.
+	//
+	// The transport is CLONED from the stdlib default rather than built from an
+	// empty literal, and that is the whole point of this branch's rewrite. An
+	// empty literal inherits nothing: it dropped Proxy (a nil Proxy means NEVER
+	// proxy, so the game socket went direct while the lobby list did not), and it
+	// dropped the dial, TLS-handshake and idle-connection timeouts with it. Since
+	// skip-verify is the SHIPPED DEFAULT — most community AO servers use
+	// self-signed certificates — that was the path essentially everyone took.
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
-		dialOpts.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				// Opt-in, gated behind the power-user Security toggle (default OFF =
-				// accept self-signed, which most community AO servers use).
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		}
+		transport := netproxy.Transport()
+		// Opt-in, gated behind the power-user Security toggle (default OFF =
+		// accept self-signed). Set on the CLONE's own config, so nothing here can
+		// reach http.DefaultTransport's shared one.
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		dialOpts.HTTPClient = &http.Client{Transport: transport}
 	}
 
 	ws, _, err := websocket.Dial(ctx, wsURL, dialOpts)

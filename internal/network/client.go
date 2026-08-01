@@ -17,6 +17,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
@@ -204,6 +206,12 @@ func NewClientNotFoundTTL(ttl time.Duration) *Client {
 func newClient(timeout, notFoundTTL time.Duration) *Client {
 	dns := newDNSCache()
 	transport := &http.Transport{
+		// Every asset in the app rides this one transport, and a zero Proxy field
+		// means NEVER proxy — not "use the default". Without this line a user
+		// behind a proxy fetched their lobby list through it (that path inherits
+		// http.DefaultTransport) and then streamed every sprite, background and
+		// track around it.
+		Proxy:                 netproxy.Proxy,
 		MaxConnsPerHost:       defaultMaxConnsPerHost,
 		MaxIdleConnsPerHost:   defaultMaxIdleConnsPerHost,
 		MaxIdleConns:          defaultMaxIdleConnsTotal,
@@ -237,8 +245,38 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 
 // PreResolve warms the DNS cache for host so the first asset probe never
 // blocks on a lookup. Call it at server connect with the asset host.
+//
+// A NO-OP when a proxy carries traffic to that host, and this is a privacy
+// property rather than an optimisation. Behind a proxy the transport dials the
+// PROXY and the proxy resolves the origin, so the origin's name never needs to
+// reach this machine's resolver — warming it anyway would publish to the local
+// (and often the ISP's) DNS exactly the server name the user routed through a
+// proxy in order not to disclose. The proxy's own hostname still resolves
+// locally, which is unavoidable and is not the thing being protected.
+//
+// It is also useless work in that case: DialContext's cached-IP substitution
+// applies to the address the transport asks for, which is the proxy's.
 func (c *Client) PreResolve(ctx context.Context, host string) {
+	if proxiedHost(host) {
+		return
+	}
 	c.dns.preResolve(ctx, host)
+}
+
+// proxiedHost reports whether a proxy would carry asset traffic to host. Probed
+// for both schemes because NO_PROXY-style rules and the http/https split make
+// the answer per-scheme, and warming the cache is only safe when NEITHER is
+// proxied.
+func proxiedHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	for _, scheme := range [...]string{"https", "http"} {
+		if netproxy.ForURL(&url.URL{Scheme: scheme, Host: host}) != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Fetch returns the asset bytes at url. Concurrent fetches of the same URL
