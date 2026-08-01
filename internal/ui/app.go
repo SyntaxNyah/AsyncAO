@@ -8192,13 +8192,31 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				savedModal := a.ctx.modalOn
 				a.ctx.modalOn = false
 				a.drawCompactToolboxOverEditor(winW, winH)
+				a.ctx.modalOn = savedModal
+			}
+			if a.extrasSurfaceLive() { // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
+				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
+			}
+			// The pieces panel draws AFTER the torn-off tabs, and that ordering is the
+			// fix for a reported fault rather than a preference. The Players tab can be
+			// TORN OFF into a floating panel (torntabs.go), and it used to draw after
+			// this one — so a torn roster sat squarely on top of the panel, which is
+			// the surface you reach for when the layout has gone wrong. Being unable
+			// to see the rescue control because of the thing you were trying to rescue
+			// yourself from is the worst possible ordering, and the comment above
+			// already claimed this should "sit on top"; it simply was not true against
+			// torn tabs.
+			if editingLayout {
+				// modalOn (unlike ptrFenced) is NOT cleared by the deferred unfence, so
+				// hovering() would read false and the panel would draw click-dead while
+				// an editor fence is up. Released just for this draw, then restored so
+				// FinishFrame, the palette and the tooltips see what they expect.
+				savedModal := a.ctx.modalOn
+				a.ctx.modalOn = false
 				a.drawToolboxPieces(winW, winH)
 				a.ctx.modalOn = savedModal
 			} else {
 				a.drawToolboxPieces(winW, winH)
-			}
-			if a.extrasSurfaceLive() { // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
-				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}
 			a.drawPalette(winW, winH)          // #39: command palette (Ctrl+Space), above panels, below pickers
 			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
