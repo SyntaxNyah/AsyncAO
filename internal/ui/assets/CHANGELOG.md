@@ -22,7 +22,8 @@ The rule this release follows: inside a theme's own canvas it is the theme's
 layout and AO2's controls, with nothing of ours crammed in beside them. Anything
 of ours with no place in an AO2 theme lives on the Extras box instead.
 
-Thanks again to Crystalwarrior for the theme-import report this continues from.
+Thanks again to Crystalwarrior for the theme-import reports this continues from,
+and to the playtesters who caught the layout faults below on real themes.
 
 ### Everyone
 
@@ -136,10 +137,31 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
   were both ignored. Long names are clipped rather than scrolled — a marquee is
   constant motion on an otherwise still panel, and the full name is in the list
   anyway.
-- **The theme's Music/Areas button draws.** AO2 puts its area list and its track
-  list in the same box and gives the theme a button to swap them. The button was
-  reserved space that painted nothing. The chips above the list stay as well, since
-  they are also how you reach the player list, which has no button of its own.
+- **The theme's Music/Areas button draws, and the chips beside it stopped hanging
+  out of the panel.** AO2 puts its area list and its track list in the same box
+  and gives the theme a button to swap them; that button was reserved space the
+  client painted nothing into. Now that it works, the Music and Areas chips beside
+  it were doing its job twice — so the strip carries just the player-list chip,
+  which is also what finally makes it fit. A panel's width is the theme's decision,
+  and three chips wanted more of it than the stock themes give, so the strip is now
+  sized to the panel it is in rather than to a number that happened to fit one
+  theme.
+- **A Slide checkbox no longer lands on top of the Pre/Flip row.** Slide is a
+  feature AO2 added in 2.11, and the overwhelming majority of themes were made for
+  2.10 or earlier — through no fault of their authors, they say nothing about where
+  it goes. AsyncAO filled that silence with the position from AO2's own default
+  theme, which is a coordinate on a 714x580 screen being dropped onto themes built
+  at 944x600 or 1262x700. It landed on whatever the author had put there. The
+  client now leaves a control out rather than guessing at a position for it, which
+  is what AO2 itself does for anything a theme doesn't place. On those older themes
+  the Slide tickbox is simply absent for now; it belongs on the Extras box, which
+  is where it will turn up.
+- **The player list's own buttons stopped sitting on top of each other.** Refresh
+  and the snapshot button, and the Sort/Status/Pairs/Follow row, were laid out from
+  opposite edges with nothing checking they met in the middle — so in a theme's
+  narrow panel they overlapped, and Status covered Pairs at *every* width, even
+  full screen. They now wrap onto as many lines as they need, and shorten their
+  labels before they run out of room.
 - **The colours a theme picks for its panels are used.** A theme sets a text colour
   for each part of the courtroom separately — the IC log, the server log, the track
   list, the area list, the now-playing name — and only two of those were ever read.
@@ -155,6 +177,19 @@ Thanks again to Crystalwarrior for the theme-import report this continues from.
   and colours are separate settings, and the client was treating "this theme
   mentioned the chatbox at all" as "this theme asked for white text" — so a theme
   that merely picked a size lost the client's own colour for no reason.
+- **AsyncAO now tells you when a theme's fonts are missing, instead of quietly
+  using the wrong one.** Themes name the fonts they want but almost never include
+  them — in AO2 those live in the base's `fonts` folder, so a theme downloaded on
+  its own arrives with every font named and none of the files. The text still drew,
+  in the client's font, with nothing to say why it looked wrong. A box now names
+  exactly which fonts are missing and where to put them, **once per theme** — it
+  won't nag you every time that theme loads, and it stays gone after a restart.
+  There is also an AsyncAO **fonts folder** now, with a button to open it: drop any
+  `.ttf`, `.otf` or `.ttc` in there and every theme can use it, which is the
+  simplest fix if you don't keep a full AO base around. It's searched after the
+  theme's own folder and your base, and before your installed system fonts. No
+  fonts are bundled with AsyncAO — the ones these themes want are fan-made and
+  can't be redistributed.
 
 ### Not changed, on purpose
 
