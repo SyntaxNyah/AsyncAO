@@ -284,20 +284,30 @@ items move to `docs/FEATURES.md` as they ship.
   a recursive base `fonts/`, and the OS font folder for a theme that just says
   "Arial"). What is still deliberately NOT applied:
   - **`<id>_sharp`** — AO2 renders a "sharp" element with `QFont::NoAntialias`
-    (`courtroom.cpp:1237`). It is parsed into `theme.FontSpec.Sharp` but unused:
-    honouring it needs `RenderUTF8_Solid` instead of `RenderUTF8Blended`
-    (`ui.go` `textTexture`), i.e. a new dimension on the label cache key.
+    (`courtroom.cpp:1237`). Parsed into `theme.FontSpec.Sharp` and deliberately
+    NOT applied: measured to be a no-op at the sizes it targets and a legibility
+    regression where it would actually bite, with a colour artefact on top. Full
+    reasoning and measurements in `docs/KNOWN-ISSUES.md` — do not rebuild it from
+    an older spec without reading that first.
   - **`<id>_outlined` / `_outline_color` / `_outline_width`** — AO2 outlines only
-    `AOChatboxLabel` (`courtroom.cpp:1282-1290`).
-  - **Per-element COLOUR for the list surfaces.** Real themes set
-    `music_list_color = 0,0,0` / `area_list_color = 0,0,0` (DRRetribution, KFO qHD,
-    DR Theme, default) — black on AsyncAO's dark panels is invisible. The chatbox
-    `message`/`showname` ink already has the luma guard (`app.go` `avgSkinLuma`);
-    extending colour to the panels needs the same guard per panel background and
-    is its own slice. `ic_chatlog_selfname_color`, `*_sender_color`,
-    `ic_chatlog_timestamp_color` and `label_color` ride with it.
-  - **`debug_log`, `clock_N`, `ms_chatlog`, `evidence_*`** — no distinct AsyncAO
-    surface (`ms_chatlog` folds into `server_chatlog`; the debug panel is chrome).
+    `AOChatboxLabel` (`courtroom.cpp:1282-1290`). Unmodelled in `FontSpec`
+    entirely, and the better next target in the same `set_font` body now that
+    colour has landed: a bigger visible delta on the same widget than `_sharp`.
+  - ~~Per-element COLOUR for the list surfaces~~ — **shipped** (#21 label 16,
+    `internal/ui/themeink.go`). `<id>_color` now drives `ic_chatlog`,
+    `server_chatlog`, `music_list`, `music_name`, `area_list` and `debug_log`,
+    canvas-only, behind a per-element backdrop-luma guard that reuses
+    `minInkSkinContrast`. What did NOT ride with it, and why: AO2's opaque per-row
+    brushes (`found_song_color`, the seven `area_*_color`) are a deliberate
+    non-goal — the found/missing split is a synchronous local disk stat per row.
+    Still open in the neighbouring `get_color` family:
+    `ic_chatlog_selfname_color`, `*_sender_color`, `ic_chatlog_timestamp_color`
+    and `label_color`. Note those go through `AOApplication::get_color`
+    (`text_file_functions.cpp`), NOT `set_font`'s per-element key, so they do not
+    belong on `FontSpec`.
+  - **`clock_N`, `evidence_*`** — no distinct AsyncAO surface yet.
+    (`debug_log` and the `ms_chatlog` rect DID gain one — the themed debug panel —
+    and both are wired.)
   - **Per-character `get_chat(p_char)` font overlay** (AO2
     `text_file_functions.cpp:562`) — a character's `misc/` folder can override the
     chatbox fonts; AsyncAO applies only the theme's.
