@@ -155,121 +155,112 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		a.liveDetailsArea = a.curArea
 		a.fetchRoster()
 	}
-	// Row 1: live indicator (default) OR the legacy fetch buttons, plus the
-	// "Legacy snapshot" tick box that switches the two. Live = no traffic; legacy
-	// = a /getarea snapshot whose hand fetch REPLACES the roster (clean restart).
-	if a.rosterLegacy {
-		c.Label(r.X, r.Y+5, "Fetch:", ColTextDim)
-		bx := r.X + 48
-		for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
-			bw := c.TextWidth(cmd) + 14
-			if c.Button(sdl.Rect{X: bx, Y: r.Y, W: bw, H: 22}, cmd) {
+	// The toolbar is ONE wrapping strip (playerlisttoolbar.go), not two rows of
+	// hardcoded offsets. It used to anchor half its controls left and half right,
+	// which collided the moment the panel was narrower than the two halves put
+	// together — a theme's music_list rect gives it 212 px — and its Status button
+	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
+	// width. The plan below cannot overlap: it is one cursor.
+	//
+	// Labels are built HERE, not in the planner: they come from App state, and
+	// building them at the call site keeps the planner pure (and testable without a
+	// renderer) while allocating no more than the old inline concatenations did.
+	labels := plToolbarLabels{
+		sort:   "Sort: " + playerSortLabel(a.playerSort),
+		roster: a.playerRosterStatusLine(),
+		// #M1: your own cross-client status — the button cycles none → AFK → Busy →
+		// Writing → LFRP. Send-on-change transmits it on your next IC message;
+		// AsyncAO players see a coloured chip on your row, standard clients see nothing.
+		status: playerStatusButtonLabel(a.myStatus),
+	}
+	// Rooms orders the /gas AREA GROUPS (a second axis from Sort, which orders
+	// players). Only built when the roster spans areas — there is nothing to order
+	// in a single-area /ga list, and an unused label would be a wasted per-frame
+	// concatenation on the render path.
+	multiArea := a.rosterMultiArea()
+	if multiArea {
+		labels.rooms = "Rooms: " + areaSortLabel(a.playerAreaSort)
+	}
+	// Both toggles are read ONCE here rather than inside their checkbox branches:
+	// drawPlayerRow consults followShow/pairStatusShow for every row, so a panel too
+	// narrow to fit a tick box must still report the pref's real value — otherwise a
+	// theme would silently turn the features off instead of merely hiding the switch.
+	followOn := a.d.Prefs.FollowEnabledOn()
+	pairOn := a.d.Prefs.ShowPairStatusOn()
+	a.followShow, a.pairStatusShow = followOn, pairOn
+	plan := planPlayerToolbar(r, labels, a.rosterLegacy, multiArea, c.TextWidth)
+	for i := 0; i < plan.n; i++ {
+		it := &plan.items[i]
+		switch it.id {
+		case plItemLive:
+			c.Label(it.r.X, it.r.Y+plStripLabelOffY, it.label, ColTierGreen)
+		case plItemRefresh:
+			if c.Button(it.r, it.label) {
 				a.pairAreaReset = true
-				a.queueOOCLines([]string{cmd})
-				a.warnLine = clampLine("Sent " + cmd + " — the list fills from the reply.")
+				a.queueOOCLines([]string{"/getarea"})
+				a.warnLine = clampLine("Fetching UIDs / IPIDs for this area…")
 				a.warnAt = a.now()
 			}
-			bx += bw + 5
-		}
-	} else {
-		c.Label(r.X, r.Y+5, "● LIVE", ColTierGreen)
-		rb := sdl.Rect{X: r.X + 52, Y: r.Y, W: 116, H: 22}
-		if c.Button(rb, "Refresh details") {
-			a.pairAreaReset = true
-			a.queueOOCLines([]string{"/getarea"})
-			a.warnLine = clampLine("Fetching UIDs / IPIDs for this area…")
-			a.warnAt = a.now()
-		}
-		c.Tooltip(rb, "Pull UIDs, IPIDs, OOC names + Pair/Copy onto the live rows (one /getarea). The list stays live — refresh again to fill in new joiners.")
-	}
-	const legLabel = "Legacy snapshot"
-	legW := int32(22) + c.TextWidth(legLabel)
-	legX := r.X + r.W - legW - 4
-	if next := c.Checkbox(legX, r.Y+3, legLabel, a.rosterLegacy); next != a.rosterLegacy {
-		a.setRosterLegacy(next)
-	}
-	c.Tooltip(sdl.Rect{X: legX, Y: r.Y + 3, W: legW, H: 16},
-		"Off (default): live roster from the server's join/leave signals — no commands sent, spectators come & go by head-count. On: the classic /getarea snapshot with names, UIDs & IPIDs (Pair/Copy), fetched on demand.")
-	r.Y += 26
-	r.H -= 26
-	// Row 2: sort toggle + status (live head-count vs. legacy snapshot time).
-	sortBtn := "Sort: " + playerSortLabel(a.playerSort)
-	sw := c.TextWidth(sortBtn) + 16
-	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: sw, H: 22}, sortBtn) {
-		a.playerSort = (a.playerSort + 1) % playerSortModes
-		a.d.Prefs.SetPlayerListSort(a.playerSort) // remember it across sessions
-	}
-	statusX := r.X + sw + 10
-	// Rooms button: orders the /gas AREA GROUPS (a second axis from Sort, which
-	// orders players). Default keeps the server's /gas order; only shown when the
-	// roster spans areas — there's nothing to order in a single-area /ga list.
-	if a.rosterMultiArea() {
-		roomsBtn := "Rooms: " + areaSortLabel(a.playerAreaSort)
-		rw := c.TextWidth(roomsBtn) + 16
-		rb := sdl.Rect{X: statusX, Y: r.Y, W: rw, H: 22}
-		if c.Button(rb, roomsBtn) {
-			a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
-			a.d.Prefs.SetPlayerListAreaSort(a.playerAreaSort) // remember it across sessions
-		}
-		c.Tooltip(rb, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
-		statusX += rw + 10
-	}
-	// Follow toggle (M3, opt-in / OFF by default): when on, every row gets a
-	// Follow button that auto-jumps you to that player's area as they move.
-	const followLabel = "Follow"
-	follW := int32(22) + c.TextWidth(followLabel)
-	follX := r.X + r.W - follW - 4
-	followOn := a.d.Prefs.FollowEnabledOn()
-	a.followShow = followOn // cache for the per-row Follow buttons (one read per frame, no per-row lock)
-	if next := c.Checkbox(follX, r.Y+3, followLabel, followOn); next != followOn {
-		a.d.Prefs.SetFollowEnabled(next)
-		a.followShow = next
-		if !next {
-			a.followUID = "" // turning it off stops any active trailing
-		}
-	}
-	c.Tooltip(sdl.Rect{X: follX, Y: r.Y + 3, W: follW, H: 16},
-		"Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
-	// Pair-status toggle (#20, opt-in / OFF by default): when on, a row shows who that player is
-	// currently paired with (⇄), tracked from IC messages. Sits left of Follow on the right edge.
-	const pairLbl = "Pairs"
-	pairW := int32(22) + c.TextWidth(pairLbl)
-	pairX := follX - pairW - 12
-	pairOn := a.d.Prefs.ShowPairStatusOn()
-	a.pairStatusShow = pairOn // cache once per frame (no per-row lock)
-	if next := c.Checkbox(pairX, r.Y+3, pairLbl, pairOn); next != pairOn {
-		a.d.Prefs.SetShowPairStatus(next)
-		a.pairStatusShow = next
-	}
-	c.Tooltip(sdl.Rect{X: pairX, Y: r.Y + 3, W: pairW, H: 16},
-		"Off (default). On: each row shows who that player is currently paired with (⇄), updated as they speak.")
-	// #M1: your own cross-client status — a cycle button (none → AFK → Busy → Writing →
-	// LFRP). Send-on-change transmits it on your next IC message; AsyncAO players see a
-	// coloured chip on your row, standard clients see nothing.
-	statLbl := statusLabel(a.myStatus)
-	if statLbl == "" {
-		statLbl = "none"
-	}
-	statBtnW := c.TextWidth("Status: Writing") + 18 // size to the widest label so it doesn't jump
-	statBtnX := follX - statBtnW - 12
-	statBtn := sdl.Rect{X: statBtnX, Y: r.Y, W: statBtnW, H: 22}
-	if c.Button(statBtn, "Status: "+statLbl) {
-		a.myStatus = (a.myStatus + 1) % courtroom.StatusCount
-	}
-	c.Tooltip(statBtn, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
-	status := strconv.Itoa(len(a.rosterView())) + " here · live"
-	if !a.rosterLegacy && !a.livePlayersOn && len(a.areaPlayers) == 0 {
-		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
-	}
-	if a.rosterLegacy {
-		status = strconv.Itoa(len(a.rosterView())) + " players"
-		if !a.areaListAt.IsZero() {
-			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
+			c.Tooltip(it.r, "Pull UIDs, IPIDs, OOC names + Pair/Copy onto the live rows (one /getarea). The list stays live — refresh again to fill in new joiners.")
+		case plItemFetchLabel:
+			c.Label(it.r.X, it.r.Y+plStripLabelOffY, it.label, ColTextDim)
+		case plItemFetch:
+			// The button's label IS the command (plItemFetch is shared by all three).
+			if c.Button(it.r, it.label) {
+				a.pairAreaReset = true
+				a.queueOOCLines([]string{it.label})
+				a.warnLine = clampLine("Sent " + it.label + " — the list fills from the reply.")
+				a.warnAt = a.now()
+			}
+		case plItemLegacy:
+			// CheckboxIn, not Checkbox: it fits the tick box to a RECT and truncates the
+			// label AO2-style, where Checkbox grows to its text and would overflow the
+			// strip's line the moment the panel got narrow.
+			if next := c.CheckboxIn(it.r, it.label, a.rosterLegacy); next != a.rosterLegacy {
+				a.setRosterLegacy(next)
+			}
+			c.Tooltip(it.r, "Off (default): live roster from the server's join/leave signals — no commands sent, spectators come & go by head-count. On: the classic /getarea snapshot with names, UIDs & IPIDs (Pair/Copy), fetched on demand.")
+		case plItemSort:
+			if c.Button(it.r, it.label) {
+				a.playerSort = (a.playerSort + 1) % playerSortModes
+				a.d.Prefs.SetPlayerListSort(a.playerSort) // remember it across sessions
+			}
+		case plItemRooms:
+			if c.Button(it.r, it.label) {
+				a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
+				a.d.Prefs.SetPlayerListAreaSort(a.playerAreaSort) // remember it across sessions
+			}
+			c.Tooltip(it.r, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
+		case plItemStatusText:
+			c.LabelClipped(it.r.X, it.r.Y+plStripLabelOffY, it.r.W, it.label, ColTextDim)
+		case plItemStatus:
+			if c.Button(it.r, it.label) {
+				a.myStatus = (a.myStatus + 1) % courtroom.StatusCount
+			}
+			c.Tooltip(it.r, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
+		case plItemPairs:
+			// Pair-status toggle (#20, opt-in / OFF by default): when on, a row shows who
+			// that player is currently paired with (⇄), tracked from IC messages.
+			if next := c.CheckboxIn(it.r, it.label, pairOn); next != pairOn {
+				a.d.Prefs.SetShowPairStatus(next)
+				a.pairStatusShow = next
+			}
+			c.Tooltip(it.r, "Off (default). On: each row shows who that player is currently paired with (⇄), updated as they speak.")
+		case plItemFollow:
+			// Follow toggle (M3, opt-in / OFF by default): when on, every row gets a
+			// Follow button that auto-jumps you to that player's area as they move.
+			if next := c.CheckboxIn(it.r, it.label, followOn); next != followOn {
+				a.d.Prefs.SetFollowEnabled(next)
+				a.followShow = next
+				if !next {
+					a.followUID = "" // turning it off stops any active trailing
+				}
+			}
+			c.Tooltip(it.r, "Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
 		}
 	}
-	c.LabelClipped(statusX, r.Y+5, statBtnX-statusX-8, status, ColTextDim)
-	r.Y += 28
-	r.H -= 28
+	r.Y += plan.h
+	r.H -= plan.h
 
 	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
@@ -357,6 +348,25 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		c.unfencePointer() // the card's own pass (Close button) gets the real pointer
 	}
 	a.drawProfileCardOverlay(r) // #101: the profile popover sits on top of the list
+}
+
+// playerRosterStatusLine is the toolbar's roster summary: a live head-count, or the
+// legacy snapshot's size and the time it was taken. Split out of the draw so the
+// toolbar planner can measure the very string that will be drawn (the old code
+// measured nothing at all and clipped the label to whatever gap was left).
+func (a *App) playerRosterStatusLine() string {
+	if a.rosterLegacy {
+		status := strconv.Itoa(len(a.rosterView())) + " players"
+		if !a.areaListAt.IsZero() {
+			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
+		}
+		return status
+	}
+	status := strconv.Itoa(len(a.rosterView())) + " here · live"
+	if !a.livePlayersOn && len(a.areaPlayers) == 0 {
+		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
+	}
+	return status
 }
 
 // rowHeight is the display height of one roster row (area headers are shorter);

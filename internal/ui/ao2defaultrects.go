@@ -36,6 +36,12 @@ const (
 	ao2ViewportKey = "viewport"
 )
 
+// ao2DefaultCanvas is the canvas the table's coordinates were authored in —
+// line 3 of AO2's own base/themes/default/courtroom_design.ini. Every rect below
+// is a position ON THIS CANVAS, and that is the fact the placement rule turns on:
+// carried onto a canvas of another size they are not a layout, just numbers.
+var ao2DefaultCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
+
 // applyAO2DefaultRects fills AO2's per-key default for every courtroom key the
 // theme was silent about.
 //
@@ -46,18 +52,81 @@ const (
 // Every user whose theme ships no design INI would be silently moved onto AO2's
 // 714x579 layout. This reproduces AO2's fallback for a theme that HAS a design
 // INI; it is not a way to invent one.
+//
+// SECOND GATE: a default is refused when it would land on a widget the theme's
+// author placed themselves, unless the theme is working on AO2's own canvas.
+//
+// The reason is generational, and it is the defect this gate was added for.
+// Widgets arrive in AO2 over time — slide_enable is a 2.11 addition — and the
+// enormous majority of themes in circulation were authored for 2.10 or earlier,
+// so they are silent about it through no fault of their own. AO2 fills that
+// silence from its own default file and gets away with it because those
+// coordinates are native there. AsyncAO carries the same numbers onto a canvas
+// the theme chose: aceattorney2x is 944x600, VA-11 HALL-A is 1262x700. On those,
+// slide_enable's stock {200,464} is not "where the Slide box goes" — it is a
+// point that happens to sit on top of the author's Pre row, their colour
+// dropdown and their music panel. Reported from a live run as a Slide checkbox
+// colliding with the toggle row, on two different themes.
+//
+// Scaling the rect instead was rejected: a proportional guess is still a guess,
+// and it would land somewhere equally unrelated to the author's arrangement,
+// only less obviously wrong. Drawing nothing is what AO2's own rule for a
+// missing rect says (set_size_and_pos hides a widget the theme is silent about,
+// courtroom.cpp:1334-1338) and what #21's rule (e) demands.
+//
+// On AO2's OWN canvas the defaults go in verbatim, overlaps included — the stock
+// file overlaps itself (slide_enable 200,464 against casing 200,470; pre 5,400
+// against flip 64,400), so a theme that adopts that canvas is asking for exactly
+// that arrangement and must get it.
 func applyAO2DefaultRects(layout map[string]theme.Rect) {
-	if _, ok := layout[ao2CanvasKey]; !ok {
+	canvas, ok := layout[ao2CanvasKey]
+	if !ok {
 		return
 	}
 	if _, ok := layout[ao2ViewportKey]; !ok {
 		return
 	}
-	for key, def := range ao2DefaultDesignRects {
-		if _, declared := layout[key]; !declared {
-			layout[key] = def
+	// Only the AUTHOR's rects count as occupied. Filling in key order would make
+	// the result depend on map iteration order — one default could block another —
+	// so the occupancy set is snapshotted before anything is added.
+	native := canvas.W == ao2DefaultCanvas.W && canvas.H == ao2DefaultCanvas.H
+	authored := make([]theme.Rect, 0, len(layout))
+	if !native {
+		for key, r := range layout {
+			// courtroom and viewport are CONTAINERS, not widgets: the canvas
+			// contains everything by definition and AO2 overlays the chatbox, the
+			// shouts and the desk on the stage on purpose (courtroom.cpp:3301).
+			// Counting either as occupied would refuse almost every stock rect and
+			// leave a theme that declares only those two — the exact case the
+			// backstop exists for — with no courtroom at all.
+			if key == ao2CanvasKey || key == ao2ViewportKey {
+				continue
+			}
+			if r.Valid() {
+				authored = append(authored, r)
+			}
 		}
 	}
+	for key, def := range ao2DefaultDesignRects {
+		if _, declared := layout[key]; declared {
+			continue
+		}
+		if !native && rectHitsAny(def, authored) {
+			continue
+		}
+		layout[key] = def
+	}
+}
+
+// rectHitsAny reports whether r overlaps any of rs. Plain integer comparisons on
+// a slice built once per theme apply — this is not a draw path.
+func rectHitsAny(r theme.Rect, rs []theme.Rect) bool {
+	for _, o := range rs {
+		if r.X < o.X+o.W && o.X < r.X+r.W && r.Y < o.Y+o.H && o.Y < r.Y+r.H {
+			return true
+		}
+	}
+	return false
 }
 
 // ao2DefaultDesignRects is AO2's stock default courtroom_design.ini, restricted

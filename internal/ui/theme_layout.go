@@ -790,20 +790,16 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// between them is exactly themedChipGap. Insetting only the body would leave
 		// the chips flush against the theme's panel art and silently double the gap.
 		panelBody := insetThemedBody(icRect)
-		tab := sdl.Rect{X: panelBody.X, Y: panelBody.Y, W: themedLogTabW, H: themedChipH}
-		if c.Button(tab, "IC") {
-			a.logTab = logTabLog
+		// fitThemedChips owns the strip's geometry (themechips.go): a design rect's
+		// width is theme data, and a straight line of chip constants ran past the
+		// panel's right edge the moment a theme sized this log narrower than 152 px.
+		chips, n := fitThemedChips(panelBody, themedLogViews[:], themedLogViews[:], a.logTab)
+		for i := int32(0); i < n; i++ {
+			if c.Button(chips[i].r, chips[i].label) {
+				a.logTab = chips[i].tab
+			}
 		}
-		tab.X += themedLogTabW + themedChipGap
-		if c.Button(tab, "OOC") {
-			a.logTab = logTabOOC
-		}
-		tab.X += themedLogTabW + themedChipGap
-		tab.W = themedNotesTabW
-		if c.Button(tab, "Notes") {
-			a.logTab = logTabNotes
-		}
-		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
+		inner := themedStripBody(panelBody, n)
 		switch a.logTab {
 		case logTabOOC:
 			a.drawOOCLogList(inner, true)
@@ -887,19 +883,19 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// ui_area_list at the SAME music_list rect (:864), so this button is how it
 	// swaps the two — a declared rect that painted nothing until now.
 	//
-	// The chip strip below stays rather than being replaced by this button, and the
-	// reason is Players: AsyncAO's roster shares that panel, AO2 has no equivalent
-	// at this rect (its player_list is a separate rect and a documented deferral),
-	// and the Extras box has no roster to move it to. Collapsing the chips would
-	// therefore delete the only way to reach the roster inside a theme. Two ways to
-	// flip between Music and Areas is the smaller cost.
+	// Whether the theme placed it decides what the chip strip below carries
+	// (themedListStrip): with AO2's own switch on screen, a Music chip and an Areas
+	// chip beside it are duplicate controls inside the design canvas (#21's parity
+	// rule), and dropping them is what finally fits the strip inside a stock
+	// 216–224 px music_list. The ROSTER chip stays either way — AsyncAO's roster
+	// shares that panel, AO2 has no equivalent at this rect (its player_list is a
+	// separate rect and a written deferral), and the Extras box has no roster to
+	// move it to, so removing it would delete the only way to reach the roster
+	// inside a theme. themedSwitchAreaMusic is what guarantees the way back OUT of
+	// the roster, and the strip's own cycle rule the way back IN.
 	if r, ok := lay.rect("switch_area_music"); ok && !a.panelHidden(panelLog) {
 		if a.drawThemeButton("switch_area_music", "A/M", r) {
-			if a.logTab == logTabAreas {
-				a.logTab = logTabMusic
-			} else {
-				a.logTab = logTabAreas
-			}
+			a.logTab = themedSwitchAreaMusic(a.logTab)
 		}
 	}
 
@@ -909,19 +905,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// drawMusicList / drawAreaList / drawPlayerList also place their first widget
 		// at r.X/r.Y, so without it a theme showed padded logs beside a flush list.
 		panelBody := insetThemedBody(r)
-		toggle := sdl.Rect{X: panelBody.X, Y: panelBody.Y, W: themedListTabW, H: themedChipH}
-		if c.Button(toggle, "Music") {
-			a.logTab = logTabMusic
+		// The strip carries only what AO2's own buttons cannot reach (themechips.go):
+		// the roster alone when switch_area_music drew, all three views when it did
+		// not — and in EITHER case fitThemedChips keeps it inside the panel. Three
+		// chips at their natural widths want 224 px; this theme's music_list body is
+		// 212 and AO2's own stock default is 220, which is the reported overflow.
+		chips, n := fitThemedChips(panelBody, themedListStrip(lay), themedListViews[:], a.logTab)
+		for i := int32(0); i < n; i++ {
+			if c.Button(chips[i].r, chips[i].label) {
+				a.logTab = chips[i].tab
+			}
 		}
-		toggle.X += themedListTabW + themedChipGap
-		if c.Button(toggle, "Areas") {
-			a.logTab = logTabAreas
-		}
-		toggle.X += themedListTabW + themedChipGap
-		if c.Button(sdl.Rect{X: toggle.X, Y: toggle.Y, W: themedPlayersTabW, H: toggle.H}, "Player List") {
-			a.logTab = logTabPlayers
-		}
-		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
+		inner := themedStripBody(panelBody, n)
 		switch a.logTab {
 		case logTabAreas:
 			a.drawAreaList(inner, true)

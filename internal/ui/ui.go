@@ -2447,7 +2447,15 @@ const (
 // CheckboxWidth is the total width Checkbox(x, y, label, …) will occupy, box and
 // label together. Alloc-free (TextWidth is memoized), so a layout pass may call it.
 func (c *Ctx) CheckboxWidth(label string) int32 {
-	return checkboxBoxPx + checkboxLabelGapPx + c.TextWidth(label)
+	return checkboxWidthFor(label, c.TextWidth)
+}
+
+// checkboxWidthFor is CheckboxWidth with the measurement injected, for a layout pass
+// that runs without a renderer (the player-list toolbar planner). Shared with the
+// method above so a font-free plan and the drawn widget can never disagree about how
+// wide a tick box is — they would silently drift apart as two copies of the sum.
+func checkboxWidthFor(label string, measure func(string) int32) int32 {
+	return checkboxBoxPx + checkboxLabelGapPx + measure(label)
 }
 
 func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
