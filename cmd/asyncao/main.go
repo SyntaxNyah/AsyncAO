@@ -19,6 +19,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -136,6 +137,24 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		thumbs.SetParams(prefs.ThumbHeightPx(), prefs.ThumbQuality())
 		thumbs.SetBudget(int64(prefs.ThumbBudgetMiB()) << 20)
 	}
+
+	// Proxy: resolve where traffic goes BEFORE anything can dial. Every outbound
+	// transport reads netproxy's published policy, so this has to run ahead of
+	// the asset client below and well ahead of the first master-list fetch,
+	// otherwise the launch's earliest requests would go direct while everything
+	// after them was proxied — the split tunnel this exists to remove.
+	//
+	// Synchronous on purpose. On Windows it may read the registry and ask WinHTTP
+	// to run a WPAD discovery, which is a network round trip; the justification
+	// for doing that here is that it is before sdl.Init below, so no window or
+	// renderer exists yet and a slow answer costs BOOT LATENCY rather than
+	// frames. (Note it is NOT "before the render loop exists" —
+	// runtime.LockOSThread is the first statement of main, so this goroutine is
+	// already pinned to the render thread.) Nothing on a request path repeats it:
+	// the answer is a snapshot, refreshed only when the user changes the setting
+	// or asks for a re-check.
+	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.ProxyMode()), prefs.ProxyURLValue())
+	log.Printf("proxy: %s", proxyPolicy.Describe())
 
 	// Power-user network knobs: the 404 TTL is boot-applied (the negative-cache
 	// LRU takes its TTL at construction — the Settings row says "restart");

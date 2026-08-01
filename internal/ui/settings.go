@@ -324,12 +324,18 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"clear settings", "clear data", "defaults",
 	},
 	tabPowerUser: {
-		// sections: TLS, Asset Origin, character-folder casing, and the render/GPU
-		// knobs. (Image formats moved to the Formats tab — see tabFormats.)
+		// sections: TLS, Asset Origin, character-folder casing, Proxy, and the
+		// render/GPU knobs. (Image formats moved to the Formats tab — see tabFormats.)
 		"power user", "advanced", "expert",
 		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
+		// Someone looking for this is usually looking for it because nothing will
+		// connect, so the terms they might actually type all belong here.
+		"proxy", "socks", "socks5", "vpn", "tunnel", "corporate network", "work network",
+		"wpad", "proxy script", "pac file", "system proxy", "no proxy", "bypass",
+		// NOT the bare "pac": the search matches forward, so it is a substring of
+		// General's "opacity" and would silently steal the query for that tab.
 	},
 }
 
@@ -3929,6 +3935,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += btnH + 6
 	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright. \"Auto-detect\" (OFF unless you pick it) probes one character per server once and learns the casing, staying on lowercase unless lowercase actually fails.", ColDanger)
 	y += 10
+
+	y = a.drawProxySettings(y, w)
 
 	// Image formats lived here from v1.70.1 until they got their own tab. They are
 	// NOT power-user knobs: art failing to render is a first-week problem, and

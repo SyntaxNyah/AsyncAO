@@ -955,6 +955,8 @@ type AssetPreferences struct {
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
 	WSOrigin               string                       `json:"wsOrigin,omitempty"`         // power-user: Origin header sent on the WebSocket HANDSHAKE (servers that allowlist their own web client's origin); empty = none
 	AssetCharCase          uint8                        `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
+	ProxyModeVal           int                          `json:"proxyMode"`                  // Network: 0 = use the machine's setting (default), 1 = never proxy, 2 = the URL below. NOT omitempty — 0 is the default, but an explicit 0 written by a user who switched back must persist.
+	ProxyURL               string                       `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy, used only in mode 2. Empty in every other mode.
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
 	PrefetchAggro          int                          `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
@@ -1416,6 +1418,8 @@ type prefsJSON struct {
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
 	WSOrigin               string           `json:"wsOrigin,omitempty"`         // Security: Origin override for the WS handshake
 	AssetCharCase          uint8            `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing; SAVED since it shipped but never read back until now
+	ProxyMode              *int             `json:"proxyMode"`                  // *int, NOT int: 0 is a REAL choice here ("never proxy" is mode 1, but a user who returns to 0 must not be indistinguishable from a file that predates the setting)
+	ProxyURL               string           `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy URL
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
 	PrefetchAggro          int              `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (#100)
@@ -2165,6 +2169,14 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.AssetCharCase <= AssetCharCaseMax {
 		p.AssetCharCase = onDisk.AssetCharCase
 	}
+	// Proxy: clamped on the way in exactly as SetProxyMode clamps on the way out.
+	// An out-of-range mode would index past the label table, and the safe landing
+	// is ProxyModeSystem — the shipped default — rather than "never proxy", which
+	// would silently turn the feature off for someone whose file got mangled.
+	if onDisk.ProxyMode != nil && *onDisk.ProxyMode >= 0 && *onDisk.ProxyMode < ProxyModeCount {
+		p.ProxyModeVal = *onDisk.ProxyMode
+	}
+	p.ProxyURL = strings.TrimSpace(onDisk.ProxyURL)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
 	p.PrefetchAggro = onDisk.PrefetchAggro
@@ -4656,6 +4668,75 @@ func (p *AssetPreferences) SetWSOriginHeader(s string) {
 		return
 	}
 	p.WSOrigin = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Proxy modes. The values are persisted, so their ORDER is load-bearing and new
+// modes must be appended.
+//
+// The mirror of netproxy.Mode, spelled out here rather than imported, because
+// internal/config sits below internal/netproxy and a preference package that
+// depends on a network package would invert the layering. A test in internal/ui,
+// which imports both, pins the two together.
+const (
+	// ProxyModeSystem takes the machine's own configuration — the default,
+	// because a client that ignores it is the defect this exists to fix.
+	ProxyModeSystem = 0
+	// ProxyModeDirect never proxies, whatever the machine says. This is the
+	// escape hatch, and it has to be one click: a detected proxy that cannot
+	// carry AO traffic would otherwise leave a user with no way back.
+	ProxyModeDirect = 1
+	// ProxyModeManual uses ProxyURL and nothing else.
+	ProxyModeManual = 2
+	// ProxyModeCount bounds the Settings cycle button and both clamps.
+	ProxyModeCount = 3
+)
+
+// ProxyMode reports which proxy source is in effect.
+func (p *AssetPreferences) ProxyMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ProxyModeVal
+}
+
+// SetProxyMode picks the proxy source. An unknown mode falls back to System
+// rather than to Direct: a mangled value must not silently switch the feature
+// off for someone who never asked it to.
+func (p *AssetPreferences) SetProxyMode(mode int) {
+	if mode < 0 || mode >= ProxyModeCount {
+		mode = ProxyModeSystem
+	}
+	p.mu.Lock()
+	if p.ProxyModeVal == mode {
+		p.mu.Unlock()
+		return
+	}
+	p.ProxyModeVal = mode
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ProxyURLValue is the operator's own proxy address (mode Manual only).
+func (p *AssetPreferences) ProxyURLValue() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ProxyURL
+}
+
+// SetProxyURL stores the operator's proxy address. Validation deliberately does
+// NOT happen here: an address that cannot be parsed has to reach netproxy, which
+// fails closed and says so in the readout. Rejecting it at the setter would put
+// the user back to whatever was there before with no explanation, which is how a
+// field silently refuses to hold what you typed.
+func (p *AssetPreferences) SetProxyURL(s string) {
+	s = strings.TrimSpace(s)
+	p.mu.Lock()
+	if p.ProxyURL == s {
+		p.mu.Unlock()
+		return
+	}
+	p.ProxyURL = s
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -7618,6 +7699,8 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.WSOrigin = ""
 	p.UpdateExperimental = false // back to the stable update channel
 	p.AssetCharCase = 0
+	p.ProxyModeVal = ProxyModeSystem // back to "use the machine's setting"
+	p.ProxyURL = ""
 	p.SpriteLoadModeVal = defaultSpriteLoadMode
 	p.SpriteWaitMsVal = 0
 	p.SpriteWaitPair = false

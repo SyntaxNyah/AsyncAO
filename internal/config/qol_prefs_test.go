@@ -1192,12 +1192,24 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetFrameLimiterDisabled(true)  // #5 bypass — must revert to OFF on nuke
 	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — must revert to its default (ON) on nuke
 	p.SetClipSpritesToStage(false)
+	p.SetProxyMode(ProxyModeManual)
+	p.SetProxyURL("http://proxy.example:8080")
+	p.SetAssetCharCasing(2)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
 	p.ResetPowerUser()
 
 	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
+	}
+	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
+	// return to shipped defaults, and shipping with the proxy ignored is the
+	// defect the setting exists to fix.
+	if p.ProxyMode() != ProxyModeSystem || p.ProxyURLValue() != "" {
+		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.ProxyMode(), p.ProxyURLValue())
+	}
+	if p.AssetCharCasing() != 0 {
+		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.AssetCharCasing())
 	}
 	if p.SpriteLoadMode() != SpriteLoadHoldPrev || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {

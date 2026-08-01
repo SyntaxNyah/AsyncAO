@@ -23,6 +23,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/hwid"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -3495,6 +3496,14 @@ func (a *App) Connect(name, wsURL string) {
 func friendlyConnError(wsURL string, err error) string {
 	s := strings.ToLower(err.Error())
 	switch {
+	// Proxy cases come FIRST and it matters. The websocket library wraps every
+	// dial failure with its own name, so a proxy error falls into the "not a
+	// WebSocket server" arm below and tells the user to blame a server that is
+	// working perfectly.
+	case errors.Is(err, netproxy.ErrProxyUnresolvable):
+		return "This computer is set to find its proxy from a script AsyncAO can't run, so connections are blocked rather than sent around it. Settings → Power user → Proxy: enter the proxy yourself, or choose \"never use one\"."
+	case strings.Contains(s, "proxyconnect") || strings.Contains(s, "proxy"):
+		return "Couldn't reach the proxy this computer is configured to use. Settings → Power user → Proxy shows which one that is; \"never use one\" connects directly instead."
 	case strings.Contains(s, "no such host") || strings.Contains(s, "lookup"):
 		return "Couldn't find that server — double-check the address."
 	case strings.Contains(s, "refused"):

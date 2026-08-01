@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -118,6 +119,77 @@ func TestAssetCharCasingRoundTrips(t *testing.T) {
 	}
 	if got := loadPrefs(t, path).AssetCharCasing(); got != 2 {
 		t.Errorf("casing after reload = %d, want 2 — it saved but did not load back", got)
+	}
+}
+
+// TestProxyPrefsRoundTrip: the whole point of the proxy setting is that it
+// survives a restart. A user who switches to "never use a proxy" because the
+// detected one cannot carry AO traffic must not find themselves back on it the
+// next time they launch.
+func TestProxyPrefsRoundTrip(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	if p.ProxyMode() != ProxyModeSystem {
+		t.Fatalf("default proxy mode = %d, want ProxyModeSystem — ignoring the machine's setting is the bug", p.ProxyMode())
+	}
+	if p.ProxyURLValue() != "" {
+		t.Fatalf("default proxy URL = %q, want empty", p.ProxyURLValue())
+	}
+	p.SetProxyMode(ProxyModeManual)
+	p.SetProxyURL("  socks5://box.example:1080  ") // trimmed on the way in
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	back := loadPrefs(t, path)
+	if back.ProxyMode() != ProxyModeManual {
+		t.Errorf("mode after reload = %d, want ProxyModeManual", back.ProxyMode())
+	}
+	if got := back.ProxyURLValue(); got != "socks5://box.example:1080" {
+		t.Errorf("url after reload = %q, want it trimmed and preserved", got)
+	}
+
+	// The escape hatch specifically: mode 1 is not the zero value, but mode 0 is,
+	// and a user switching BACK to 0 must persist that rather than be
+	// indistinguishable from a file written before the setting existed.
+	back.SetProxyMode(ProxyModeDirect)
+	if err := back.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeDirect {
+		t.Errorf("mode after reload = %d, want ProxyModeDirect — the escape hatch must survive a restart", got)
+	}
+}
+
+// TestProxyModeClampsGarbage: an out-of-range mode indexes past the label table,
+// and the safe landing is System — the shipped default — rather than Direct,
+// which would silently turn the feature off for someone whose file got mangled.
+func TestProxyModeClampsGarbage(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	for _, bad := range []int{-1, ProxyModeCount, ProxyModeCount + 50} {
+		p.SetProxyMode(bad)
+		if got := p.ProxyMode(); got != ProxyModeSystem {
+			t.Errorf("SetProxyMode(%d) landed on %d, want ProxyModeSystem", bad, got)
+		}
+	}
+	// ...and on the way in too, because a hand-edited file is the other door.
+	p.SetProxyMode(ProxyModeManual)
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mangled := strings.Replace(string(raw), `"proxyMode": 2`, `"proxyMode": 99`, 1)
+	if mangled == string(raw) {
+		t.Fatalf("could not find the proxyMode value to mangle in:\n%s", raw)
+	}
+	if err := os.WriteFile(path, []byte(mangled), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeSystem {
+		t.Errorf("a hand-edited mode of 99 loaded as %d, want the System fallback", got)
 	}
 }
 
