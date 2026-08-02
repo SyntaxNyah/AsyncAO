@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.3-test1 — 2026-08-02
+
+A test build. It carries one switch and one safety net for the report that the
+in-character text box shows nothing at all, plus fixes for names rendering as
+empty boxes in a few places.
+
+### If your message text is missing, please try this
+
+- **Settings → Interface → "Use fonts installed on this computer".** Turn it
+  OFF and restart the client. This stops AsyncAO borrowing fonts from your
+  system for letters its own fonts don't cover, and is the one part of the text
+  system that behaves differently on macOS, Windows and Linux. If your message
+  text comes back with it off, that tells us exactly where the fault is. If it
+  makes no difference, that is just as useful to know — it rules the whole thing
+  out. Leave it on if your text is fine.
+
+### Message text
+
+- **The message box no longer goes silently blank.** If the client failed to
+  prepare a message for drawing, it left the box completely empty — showing the
+  speaker's name and nothing else, on every following message too, with no
+  explanation. It now falls back to drawing the words plainly instead. They
+  appear without the type-out animation and without any text effects, but they
+  appear. The underlying error is written to the debug log so it can be
+  diagnosed rather than guessed at.
+
+### Names showing as empty boxes
+
+- **The player list draws names it needs two fonts for.** A name mixing an
+  emoji, or a script the main font lacks, with ordinary letters came out as
+  boxes in the roster while the exact same name drew correctly in the chat box
+  and the log.
+- **So do the showname picker and the server labels.** Same cause: those
+  widgets could only ever use one font at a time, and no single font can draw a
+  name whose characters live in two of them.
+
 ## v1.87.2 — 2026-08-02
 
 Emote buttons stop all showing the same picture, and there is now one switch
