@@ -2319,6 +2319,20 @@ type sessionState struct {
 	// draws no text at all under a showname that still paints — which reads as
 	// "the client stopped receiving IC" rather than as a font/texture fault.
 	rasterFailedText string
+	// chatDiag is the last frame's chatbox geometry, shown in Debug → Session.
+	// It exists because the "message text is cut off at a scaled UI" report could
+	// not be reproduced on the machines the developers have: every candidate was
+	// eliminated by measurement EXCEPT the numbers on the reporter's own screen,
+	// which nobody could see. Printing them turns the affected machine into the
+	// measuring instrument instead of asking it for another screenshot.
+	chatDiag struct {
+		vpH, boxY, boxH     int32
+		textY, wrapW        int32
+		lines, lineH        int32
+		devScale, renderPct int32
+		visible, total      int32
+		grew                bool
+	}
 	// rasterRaw is the pre-strip message the cached raster was built from — the
 	// cache key, since two differently-colored messages can share the same
 	// stripped MessageText (the cachedPage index-key class of bug).

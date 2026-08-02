@@ -2519,6 +2519,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
+			a.chatDiag.grew = true
+		} else {
+			a.chatDiag.grew = false
 		}
 	}
 	// Skin priority: the speaker's own art, else the theme's, else the flat
@@ -2592,6 +2595,20 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
 	textRect := sdl.Rect{X: box.X + chatOverlayPadX, Y: box.Y + chatBoxTopStrip, W: wrapW, H: box.H - chatBoxTopStrip}
 	a.handleChatSelect(textRect, sc)
+	// Snapshot the geometry for Debug → Session. Plain field stores, no allocation,
+	// so it costs the draw nothing; it is the only way to see these numbers on a
+	// machine we can't run.
+	a.chatDiag.vpH, a.chatDiag.boxY, a.chatDiag.boxH = vp.H, box.Y, box.H
+	a.chatDiag.textY, a.chatDiag.wrapW = textRect.Y, wrapW
+	a.chatDiag.renderPct, a.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct
+	a.chatDiag.visible = int32(sc.VisibleRunes)
+	if a.msRaster != nil {
+		a.chatDiag.lines = int32(a.msRaster.Lines())
+		a.chatDiag.lineH = a.msRaster.LineH()
+		a.chatDiag.total = int32(a.msRaster.TotalRunes())
+	} else {
+		a.chatDiag.lines, a.chatDiag.lineH, a.chatDiag.total = 0, 0, 0
+	}
 	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it. Via the Ctx
 		// scratch rect — &box into cgo would heap-allocate box at its creation

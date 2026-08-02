@@ -140,6 +140,29 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		st := a.conn.Stats()
 		line(fmt.Sprintf("Conn packets: %d sent · %d received", st.Sent, st.Received), ColTextDim)
 	}
+	// Chatbox geometry. Every candidate for the "message text is cut off at a
+	// scaled UI" report was eliminated by measurement except the numbers on the
+	// affected screen, which nobody could see — so print them. "fits" is the whole
+	// question: the room under the showname strip versus what the wrapped message
+	// actually needs. A CUT verdict here says the box is too short; "fits" with
+	// text still missing says the fault is in the drawing, not the layout.
+	d := &a.chatDiag
+	need := d.lines * d.lineH
+	room := d.boxY + d.boxH - d.textY
+	grew := ""
+	if d.grew {
+		grew = " GREW"
+	}
+	line(fmt.Sprintf("Chatbox: vp.H=%d box=(y%d h%d)%s text.y=%d wrap=%d",
+		d.vpH, d.boxY, d.boxH, grew, d.textY, d.wrapW), ColTextDim)
+	verdict, col := "fits", ColTierGreen
+	if need > room {
+		verdict, col = fmt.Sprintf("CUT by %dpx", need-room), ColAccent
+	}
+	line(fmt.Sprintf("  text: %d lines x %dpx = %d need - %d room -> %s",
+		d.lines, d.lineH, need, room, verdict), col)
+	line(fmt.Sprintf("  scale: render=%d%% fontDev=%d%% - revealed %d/%d runes",
+		d.renderPct, d.devScale, d.visible, d.total), ColTextDim)
 }
 
 // drawDebugPackets renders the packet inspector (#333): the in/out totals for

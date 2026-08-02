@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.3-test2 — 2026-08-02
+
+A second test build for the cut-off message text. The last one ruled things
+out; this one asks your client to show its working.
+
+### Please open this and send a screenshot
+
+- **Extras → Debug → Session, while a message that is cut off is on screen.**
+  The bottom three lines now report the chat box's actual measurements: how tall
+  the stage is, where the box sits, how many lines the message wrapped to, how
+  much room there is for them, and whether the client thinks the text **fits**
+  or is **CUT**. That one readout separates the two possible faults — a box that
+  is too short, or text that is drawn wrongly inside a box that was big enough —
+  which cannot be told apart from an ordinary screenshot.
+- It also shows the render scale and the font scale side by side, so a
+  mismatch between them is visible rather than inferred.
+
+### Ruled out so far
+
+- The system-font setting from the previous test build made no difference, so
+  the fonts on your machine are not the cause. It stays available, but it is not
+  the problem.
+- The way scaled text is drawn was measured against the old drawing path at
+  125% and covers exactly the same pixels, so the message is not being drawn
+  short. That points at how much room the box is given, which is what the new
+  readout measures.
+
 ## v1.87.3-test1 — 2026-08-02
 
 A test build. It carries one switch and one safety net for the report that the
