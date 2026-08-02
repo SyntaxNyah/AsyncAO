@@ -136,7 +136,7 @@ func TestCrawlPrefixIsPixelStable(t *testing.T) {
 		t.Helper()
 		img, err := cap.Capture(ren, func(sdl.Rect) {
 			_ = ren.SetScale(scale, scale)
-			m.DrawScaled(ren, visible, originX, originY, uiPct)
+			m.DrawScaled(ren, visible, originX, originY, uiPct, nil)
 			_ = ren.SetScale(1, 1)
 		})
 		if err != nil {
@@ -216,7 +216,7 @@ func TestDrawScaledAllocatesNothing(t *testing.T) {
 	} {
 		half := m.TotalRunes() / 2
 		if allocs := testing.AllocsPerRun(200, func() {
-			m.DrawScaled(ren, half, 4, 4, tc.renderPct)
+			m.DrawScaled(ren, half, 4, 4, tc.renderPct, nil)
 		}); allocs != 0 {
 			t.Errorf("%s DrawScaled allocates %v per call, want 0", tc.name, allocs)
 		}

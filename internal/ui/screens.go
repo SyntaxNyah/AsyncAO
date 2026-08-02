@@ -2639,7 +2639,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
 			// time its width changes parity, and the settled text wobbles as it types.
-			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y, c.RenderScalePct())
+			// box, not textRect: it is the clip actually set above, and the
+			// device-exact path must re-assert THAT one inside its 1:1 bracket or
+			// the backend may read it against the wrong scale (see draw()).
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y, c.RenderScalePct(), &box)
 		}
 		_ = c.Ren.SetClipRect(nil)
 	} else if a.rasterFailedText != "" && sc.MessageText != "" {

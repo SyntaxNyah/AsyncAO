@@ -180,6 +180,7 @@ type MessageRaster struct {
 	devScale int32
 	srcGet   sdl.Rect // scratch
 	dstGet   sdl.Rect // scratch
+	cgoClip  sdl.Rect // scratch for the device-exact clip re-assert (&local would escape through cgo)
 }
 
 // Center aligns every wrapped line to the centre of alignW px — the webAO "~~"
@@ -467,15 +468,26 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xO
 // pixel-stable (see deviceExact). Draw keeps the scaled projection, which is what
 // the offscreen/export passes want — they render at a scale of their own.
 func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
-	m.draw(ren, visibleRunes, x, y, false)
+	m.draw(ren, visibleRunes, x, y, false, nil) // scaled path never brackets the scale, so no clip to re-assert
 }
 
 // DrawScaled is Draw told renderPct — the scale percent ren is currently set to,
 // as a percent (100 = 1:1). When it matches the scale the glyphs were rasterized
 // at, the blit goes device-exact and every revealed glyph lands on a fixed device
 // pixel for the whole crawl.
-func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, renderPct int32) {
-	m.draw(ren, visibleRunes, x, y, m.deviceExact(renderPct))
+// clip is the LOGICAL clip rect the caller currently has set, or nil if none. It
+// is required, not optional, because the device-exact bracket changes the scale
+// underneath an already-set clip and SDL backends do NOT agree on when a clip is
+// converted to device pixels: the software and GL renderers bake it at SET time
+// (so the bracket is harmless), while macOS's Metal renderer evaluates it against
+// the scale in force when it is USED. Under Metal the bracket therefore shrank
+// the clip to 1/scale of its intended height, and text drawn in device
+// coordinates fell outside it — at 125% a chatbox line drawn at device y454 was
+// clipped to y432 and vanished completely, while the showname above it (drawn
+// before the clip) kept rendering. Passing the rect lets draw re-assert it in
+// device pixels inside the bracket, which is correct on every backend.
+func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, renderPct int32, clip *sdl.Rect) {
+	m.draw(ren, visibleRunes, x, y, m.deviceExact(renderPct), clip)
 }
 
 // deviceExact reports whether the 1:1 device blit is both SAFE and WORTH IT for a
@@ -533,14 +545,31 @@ func (m *MessageRaster) linePitch(exact bool) int32 {
 
 // draw is the shared body of Draw / DrawScaled. exact selects the device-exact
 // projection; at exact=false every rect is byte-identical to the pre-fix path.
-func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, exact bool) {
+func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, exact bool, clip *sdl.Rect) {
 	if exact {
 		// The origin projects through the SAME rule RuneAt maps mouse points with, so
-		// a click still lands on the glyph it points at. SetScale(1,1) does NOT disturb
-		// an already-set clip rect: SDL bakes the clip into device pixels when it is
-		// set, not when it is used (this is the devFieldValue idiom).
+		// a click still lands on the glyph it points at.
 		x, y = m.deviceFromLogical(x), m.deviceFromLogical(y)
+		// Drop to 1:1 FIRST, then re-assert the clip in device pixels. The order is
+		// the whole point: a clip set while the renderer was scaled means different
+		// physical rows depending on when the backend converts it, and the backends
+		// disagree. Setting it here, at 1:1, in device pixels, means both readings
+		// land on the same rows — the rows the caller actually asked for.
+		//
+		// This was a real, total failure on macOS (Metal), not a theoretical one: the
+		// clip evaluated against the bracketed 1:1 scale covered only 1/scale of its
+		// height, so at 125% chatbox text drawn at device y454 was clipped at y432
+		// and NOTHING rendered, while the showname — drawn before the clip was set —
+		// still appeared. The geometry was correct throughout, which is what made it
+		// so hard to see: the client reported the text as drawn and fitting.
 		_ = ren.SetScale(1, 1)
+		if clip != nil {
+			m.cgoClip = sdl.Rect{
+				X: m.deviceFromLogical(clip.X), Y: m.deviceFromLogical(clip.Y),
+				W: m.deviceFromLogical(clip.W), H: m.deviceFromLogical(clip.H),
+			}
+			_ = ren.SetClipRect(&m.cgoClip) // scratch field: &local would escape through cgo
+		}
 	}
 	if m.styled != nil {
 		m.drawStyled(ren, visibleRunes, x, y, exact)
@@ -555,6 +584,13 @@ func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, ex
 		// and this is the same float32(pct)/100 the frame loop set the scale with.
 		s := float32(m.devScale) / float32(DefaultDevScale)
 		_ = ren.SetScale(s, s)
+		if clip != nil {
+			// Hand the caller back the LOGICAL rect it set, under the restored scale,
+			// so everything drawn after this is clipped exactly as it was before —
+			// whichever way the backend reads it.
+			m.cgoClip = *clip
+			_ = ren.SetClipRect(&m.cgoClip)
+		}
 	}
 }
 

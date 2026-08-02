@@ -4,6 +4,29 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.3-test3 — 2026-08-02
+
+Found it. The message text should be back on macOS at any UI scale.
+
+### Message text
+
+- **The chat box no longer loses its text when the interface is scaled.** At any
+  scale other than 100%, the client draws the message through a faster path that
+  briefly switches the renderer to 1:1 so the letters land on exact pixels. That
+  switch happened while a clip was already in place — and macOS's graphics
+  backend measures a clip at the moment it is *used*, not when it is set, unlike
+  the Windows and Linux ones. So the region the text was allowed to draw into
+  shrank to a fraction of the box, and at 125% every line fell outside it and
+  vanished. The showname kept drawing because it is painted before the clip is
+  set, which is why the box looked like it had simply stopped receiving text.
+- The client no longer relies on that difference at all: it now re-states the
+  clip itself, in exact pixels, so every graphics backend agrees. The crisp
+  scaled text this path exists for is unchanged.
+
+**This is the fix for the cut-off / missing message text.** If you turned off
+"Use fonts installed on this computer" while testing the last build, you can
+turn it back on.
+
 ## v1.87.3-test2 — 2026-08-02
 
 A second test build for the cut-off message text. The last one ruled things

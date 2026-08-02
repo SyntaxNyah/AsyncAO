@@ -61,7 +61,7 @@ func TestDrawScaledCoversSameExtentAsDraw(t *testing.T) {
 		_ = ren.Clear()
 		_ = ren.SetScale(float32(pct)/100, float32(pct)/100)
 		if exact {
-			m.DrawScaled(ren, m.TotalRunes(), 4, 4, pct)
+			m.DrawScaled(ren, m.TotalRunes(), 4, 4, pct, nil)
 		} else {
 			m.Draw(ren, m.TotalRunes(), 4, 4)
 		}
