@@ -5654,7 +5654,13 @@ func (a *App) renderFullClientTexture(w, h int32) {
 			s = 1 // never strand the renderer at scale 0 (UIScale unset)
 		}
 		_ = c.Ren.SetScale(s, s)
+		c.endRenderScaleOverride()
 	}()
+	// Tell the kit the renderer is at 1:1 for the duration. The chatbox's device-exact
+	// message blit keys off RenderScalePct; without this it would still read the live
+	// UI scale, match the raster's device scale, and blit the message at device size
+	// into this LOGICAL-sized target — i.e. draw a pinned tab's chat text scale× too big.
+	c.beginRenderScaleOverride(DefaultScalePct)
 	_ = c.Ren.SetScale(1, 1)
 	_ = c.Ren.SetDrawColor(0, 0, 0, 255)
 	_ = c.Ren.Clear()

@@ -2610,7 +2610,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			}
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, textRect.Y, reduce)
 		} else {
-			a.msRaster.Draw(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y)
+			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
+			// device-exact or the crawl re-stretches the whole run by a pixel every
+			// time its width changes parity, and the settled text wobbles as it types.
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y, c.RenderScalePct())
 		}
 		_ = c.Ren.SetClipRect(nil)
 	}

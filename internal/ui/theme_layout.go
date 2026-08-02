@@ -1512,7 +1512,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 			}
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, reduce)
 		} else {
-			a.msRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, msgX, msgY, c.RenderScalePct()) // device-exact crawl — see the classic chatbox (screens.go)
 		}
 		_ = c.Ren.SetClipRect(nil)
 	}

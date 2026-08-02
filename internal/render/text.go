@@ -461,14 +461,108 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xO
 // Draw blits the first visibleRunes runes at (x, y). Full lines blit whole;
 // the partial line reveals via src-rect width — O(lines) per frame, zero
 // allocations, zero texture churn.
+//
+// Callers that know the scale the renderer is CURRENTLY at should prefer
+// DrawScaled: it unlocks the device-exact blit that keeps a typing-out message
+// pixel-stable (see deviceExact). Draw keeps the scaled projection, which is what
+// the offscreen/export passes want — they render at a scale of their own.
 func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
-	if m.styled != nil {
-		m.drawStyled(ren, visibleRunes, x, y)
-		return
+	m.draw(ren, visibleRunes, x, y, false)
+}
+
+// DrawScaled is Draw told renderPct — the scale percent ren is currently set to,
+// as a percent (100 = 1:1). When it matches the scale the glyphs were rasterized
+// at, the blit goes device-exact and every revealed glyph lands on a fixed device
+// pixel for the whole crawl.
+func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, renderPct int32) {
+	m.draw(ren, visibleRunes, x, y, m.deviceExact(renderPct))
+}
+
+// deviceExact reports whether the 1:1 device blit is both SAFE and WORTH IT for a
+// renderer currently scaled to renderPct.
+//
+// THE BUG IT FIXES. The scaled path blits a DEVICE-px source rect into a LOGICAL
+// dst rect that SetScale multiplies back up — but the dst width is rounded to a
+// whole logical pixel INDEPENDENTLY of the source, so the two rects can describe
+// different physical widths. At 200% a revealed prefix of 101 device px becomes
+// ceil(101/2) = 51 logical px = 102 device px: SDL stretches the whole revealed
+// run by one pixel, resampling every glyph in it. The crawl walks that width one
+// glyph at a time, so the stretch switches on and off with its parity and the
+// text visibly wobbles by a pixel or two every few letters — exactly the reported
+// artifact, and invisible at 100% where the projection is the identity.
+//
+// Under the device-exact blit dst.W IS src.W, so no resample is even possible.
+// Gated on the renderer scale MATCHING the raster's font device scale, because
+// that equality is what makes a 1:1 device blit reproduce the intended on-screen
+// size. The offscreen passes that bracket their own SetScale (the pinned-tab
+// client, the exports) break that equality and correctly stay on the scaled path.
+func (m *MessageRaster) deviceExact(renderPct int32) bool {
+	return renderPct > 0 && renderPct != DefaultDevScale && renderPct == m.devScale
+}
+
+// proj maps a DEVICE-px raster measurement into the space the blit is happening
+// in: itself under the device-exact 1:1 blit, or divided down to LOGICAL px for
+// SetScale to multiply back up. Inlinable and allocation-free — it runs per line
+// and per span on the draw path.
+func (m *MessageRaster) proj(v int32, exact bool) int32 {
+	if exact {
+		return v
 	}
+	return logicalFromDevice(v, m.devScale)
+}
+
+// linePitch is the vertical step between wrapped lines, in the blit's own units.
+//
+// The device-exact case is deliberately NOT the raw device lineH. Every other
+// consumer of this block's vertical geometry — Height(), LineH(), the selection
+// highlight that steps rows by LineH(), the chatbox auto-grow — derives from the
+// FOLDED logical pitch, and Height()'s contract says in as many words that it must
+// match Draw's per-line step. Stepping by the raw device lineH instead differs by
+// up to a pixel per line and, unlike a one-off origin rounding, that error
+// ACCUMULATES down the message: by line three a selection highlight would sit
+// visibly off its text. So the exact path projects the LOGICAL pitch back to
+// device and steps by that — horizontal reveal width is the only thing that had to
+// change, and vertical layout stays bit-for-bit what it was.
+func (m *MessageRaster) linePitch(exact bool) int32 {
+	logical := logicalFromDevice(m.lineH, m.devScale)
+	if exact {
+		return m.deviceFromLogical(logical)
+	}
+	return logical
+}
+
+// draw is the shared body of Draw / DrawScaled. exact selects the device-exact
+// projection; at exact=false every rect is byte-identical to the pre-fix path.
+func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, exact bool) {
+	if exact {
+		// The origin projects through the SAME rule RuneAt maps mouse points with, so
+		// a click still lands on the glyph it points at. SetScale(1,1) does NOT disturb
+		// an already-set clip rect: SDL bakes the clip into device pixels when it is
+		// set, not when it is used (this is the devFieldValue idiom).
+		x, y = m.deviceFromLogical(x), m.deviceFromLogical(y)
+		_ = ren.SetScale(1, 1)
+	}
+	if m.styled != nil {
+		m.drawStyled(ren, visibleRunes, x, y, exact)
+	} else {
+		m.drawLines(ren, visibleRunes, x, y, exact)
+	}
+	if exact {
+		// Restore by recomputing the scale, not by reading it back: go-sdl2's GetScale
+		// takes the address of its named returns for cgo, so every call heap-allocates
+		// two float32s — a per-frame alloc the draw loop can't have. devScale is the
+		// right source because deviceExact only returns true when it EQUALS renderPct,
+		// and this is the same float32(pct)/100 the frame loop set the scale with.
+		s := float32(m.devScale) / float32(DefaultDevScale)
+		_ = ren.SetScale(s, s)
+	}
+}
+
+// drawLines is draw's single-colour body: one texture per wrapped line.
+func (m *MessageRaster) drawLines(ren *sdl.Renderer, visibleRunes int, x, y int32, exact bool) {
 	remaining := visibleRunes
 	lineY := y
-	logLineH := logicalFromDevice(m.lineH, m.devScale) // #77: step lines in LOGICAL px
+	lineStep := m.linePitch(exact) // #77: the folded logical pitch, in the blit's units
 	for i := range m.lines {
 		line := &m.lines[i]
 		if remaining <= 0 {
@@ -479,32 +573,32 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 			show = remaining
 		}
 		if line.tex != nil && show > 0 {
-			// src stays in DEVICE px (the atlas/texture is device-sized); dst is the
-			// LOGICAL rect (÷devScale) — the renderer's SetScale multiplies it back up
-			// 1:1 onto device pixels, so the glyphs stay crisp (no bilinear stretch).
+			// src stays in DEVICE px (the atlas/texture is device-sized); dst is either
+			// the same rect 1:1 (device-exact) or the LOGICAL rect (÷devScale) for the
+			// renderer's SetScale to multiply back up.
 			width := line.advances[show]
 			m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: line.h}
-			m.dstGet = sdl.Rect{X: x + logicalFromDevice(m.lineOffset(i), m.devScale), Y: lineY,
-				W: logicalFromDevice(width, m.devScale), H: logicalFromDevice(line.h, m.devScale)}
+			m.dstGet = sdl.Rect{X: x + m.proj(m.lineOffset(i), exact), Y: lineY,
+				W: m.proj(width, exact), H: m.proj(line.h, exact)}
 			_ = ren.Copy(line.tex, &m.srcGet, &m.dstGet)
 		}
 		remaining -= line.runes
-		lineY += logLineH
+		lineY += lineStep
 	}
 }
 
-// drawStyled is Draw for a multi-color message: walk lines, then the spans
-// within each line, revealing by rune count (same zero-alloc src-rect trick).
-func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int32) {
+// drawStyled is draw's multi-colour body: walk lines, then the spans within each
+// line, revealing by rune count (same zero-alloc src-rect trick).
+func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int32, exact bool) {
 	remaining := visibleRunes
 	lineY := y
-	logLineH := logicalFromDevice(m.lineH, m.devScale) // #77: step lines in LOGICAL px
+	lineStep := m.linePitch(exact) // #77: the folded logical pitch, in the blit's units
 	for li := range m.styled {
 		spans := m.styled[li]
 		if remaining <= 0 {
 			return
 		}
-		lineX := x + logicalFromDevice(m.lineOffset(li), m.devScale)
+		lineX := x + m.proj(m.lineOffset(li), exact)
 		for i := range spans {
 			sp := &spans[i]
 			if remaining <= 0 {
@@ -515,18 +609,18 @@ func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int
 				show = remaining
 			}
 			if sp.tex != nil && show > 0 {
-				// src device-px, dst the LOGICAL rect (÷devScale) — see Draw. xOffset/yOff
-				// are device-px layout offsets so they divide too (yOff baseline-aligns the
-				// emoji fallback; 0 for plain color spans).
+				// src device-px, dst per the mode — see drawLines. xOffset/yOff are device-px
+				// layout offsets so they project too (yOff baseline-aligns the emoji fallback;
+				// 0 for plain color spans).
 				width := sp.advances[show]
 				m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: sp.h}
-				m.dstGet = sdl.Rect{X: lineX + logicalFromDevice(sp.xOffset, m.devScale), Y: lineY + logicalFromDevice(sp.yOff, m.devScale),
-					W: logicalFromDevice(width, m.devScale), H: logicalFromDevice(sp.h, m.devScale)}
+				m.dstGet = sdl.Rect{X: lineX + m.proj(sp.xOffset, exact), Y: lineY + m.proj(sp.yOff, exact),
+					W: m.proj(width, exact), H: m.proj(sp.h, exact)}
 				_ = ren.Copy(sp.tex, &m.srcGet, &m.dstGet)
 			}
 			remaining -= sp.runes
 		}
-		lineY += logLineH
+		lineY += lineStep
 	}
 }
 
@@ -705,7 +799,16 @@ func (m *MessageRaster) RuneAt(relX, relY int32) int {
 	// px (#77), so scale the incoming point UP to device once, here, and the whole
 	// walk below stays in the raster's native units.
 	relX, relY = m.deviceFromLogical(relX), m.deviceFromLogical(relY)
-	li := int(relY / m.lineH)
+	// Divide by the pitch Draw actually STACKS lines at, not the raw device lineH.
+	// Those differ by up to a pixel per line at a scaled UI (the folded logical
+	// pitch is what Height()/LineH()/the highlight all use), and the error
+	// accumulates — so on a tall message a drag near the bottom used to pick the
+	// neighbouring line. Falls back to lineH if the pitch degenerates to 0.
+	pitch := m.linePitch(true)
+	if pitch <= 0 {
+		pitch = m.lineH
+	}
+	li := int(relY / pitch)
 	if relY < 0 {
 		li = 0
 	}

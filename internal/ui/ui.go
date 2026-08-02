@@ -389,6 +389,13 @@ type Ctx struct {
 	// unproject through it so logical hit-tests stay exact.
 	uiPct int32
 
+	// renderPctOverride, when non-zero, is the scale percent Ren is ACTUALLY at,
+	// for the offscreen passes that bracket a SetScale of their own (the pinned-tab
+	// client texture). Outside such a bracket the frame loop has the renderer at
+	// uiPct/100, so RenderScalePct falls back to uiPct. Only the device-exact
+	// message blit consults it, and it only ever costs that blit its fast path.
+	renderPctOverride int32
+
 	mouseX, mouseY int32
 	downX, downY   int32     // left-press origin (logical px); ClickedIn gates on it
 	clicked        bool      // left released this frame
@@ -1933,6 +1940,25 @@ func (c *Ctx) SetUIScale(pct int) {
 	c.uiPct = int32(pct)
 	c.SetTextDevScale(pct) // fold the global scale into font point size (#77 Part A)
 }
+
+// RenderScalePct reports the scale percent Ren is currently drawing at — what the
+// frame loop passed to SetScale, unless an offscreen pass has bracketed one of its
+// own (renderPctOverride). The device-exact message blit needs this and NOT
+// textDevPct: the two normally agree, but the export bracket moves textDevPct
+// alone and the pinned-tab pass moves the renderer alone, and a blit that assumed
+// they always matched would draw at the wrong size in both. Reading it here also
+// avoids a per-frame Ren.GetScale(), which heap-allocates through cgo.
+func (c *Ctx) RenderScalePct() int32 {
+	if c.renderPctOverride > 0 {
+		return c.renderPctOverride
+	}
+	return c.uiPct
+}
+
+// beginRenderScaleOverride / endRenderScaleOverride bracket an offscreen pass that
+// sets its own renderer scale, so RenderScalePct keeps telling the truth inside it.
+func (c *Ctx) beginRenderScaleOverride(pct int32) { c.renderPctOverride = pct }
+func (c *Ctx) endRenderScaleOverride()            { c.renderPctOverride = 0 }
 
 // SetTextDevScale sets the DEVICE font scale (#77) used to rasterize text, and
 // rebuilds the device chrome faces + bumps the set generation so device sets
