@@ -1476,6 +1476,15 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
 	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
 	// takes precedence over the manual override below.
+	// The census reads the machine's OWN fonts, so it is the only text path whose
+	// behaviour differs per operating system. Exposed so a player seeing wrong or
+	// missing text can take the whole subsystem out of the picture in one click
+	// instead of waiting for a build.
+	census := a.d.Prefs.FontCensusOn()
+	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
+		a.d.Prefs.SetFontCensus(next)
+	}
+	y += 26
 	dys := a.d.Prefs.DyslexiaFontOn()
 	if next := c.Checkbox(pad, y, "Dyslexia-friendly font (bundled OpenDyslexic) — applies to the chat & log text", dys); next != dys {
 		a.d.Prefs.SetDyslexiaFont(next)

@@ -2312,6 +2312,13 @@ type sessionState struct {
 	showPair   bool
 	msRaster   *render.MessageRaster
 	rasterText string
+	// rasterFailedText is the message whose raster could NOT be built, arming the
+	// chatbox's plain-label fallback. Empty in the normal case. It exists because
+	// the failure is otherwise invisible AND permanent: msRaster stays nil, the
+	// cache key is never recorded, so every frame retries, fails the same way, and
+	// draws no text at all under a showname that still paints — which reads as
+	// "the client stopped receiving IC" rather than as a font/texture fault.
+	rasterFailedText string
 	// rasterRaw is the pre-strip message the cached raster was built from — the
 	// cache key, since two differently-colored messages can share the same
 	// stripped MessageText (the cachedPage index-key class of bug).

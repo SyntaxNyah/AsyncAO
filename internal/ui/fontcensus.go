@@ -344,6 +344,15 @@ func (a *App) drainMissingRunes() {
 	if len(a.missingBuf) == 0 {
 		return
 	}
+	// The census reads whatever fonts the MACHINE has, so it is the one subsystem
+	// here whose behaviour is not the same on two operating systems — and it
+	// installs what it finds into the live chat font chain, bumping the chain
+	// generation and purging the text caches as it goes. That makes it the first
+	// thing to eliminate when text misbehaves on a platform we cannot reproduce
+	// on, and an off switch turns a long guessing game into one A/B.
+	if !a.d.Prefs.FontCensusOn() {
+		return
+	}
 	if len(a.ctx.censusData) >= censusFaceCap {
 		return // the chain is already at its cap; more faces would be evicted anyway
 	}

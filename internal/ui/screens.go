@@ -2625,6 +2625,25 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y, c.RenderScalePct())
 		}
 		_ = c.Ren.SetClipRect(nil)
+	} else if a.rasterFailedText != "" && sc.MessageText != "" {
+		// Last resort: the raster could not be built at all. Draw the words with the
+		// ordinary wrapped label path so the player still reads the message. It gets
+		// no typewriter and no per-glyph effects — but a chatbox that silently shows
+		// NOTHING while the showname above it draws normally is the worst possible
+		// failure, because it looks like the client simply stopped receiving IC.
+		c.cgoRect = box
+		_ = c.Ren.SetClipRect(&c.cgoRect)
+		msgFont := a.messageFontFor(a.messagePct(), sc.MessageText)
+		lineH := int32(msgFont.Height())
+		y := textRect.Y
+		for _, line := range c.WrapText(sc.MessageText, wrapW, 0) {
+			if y+lineH > box.Y+box.H {
+				break
+			}
+			a.labelEmoji(msgFont, a.elemEmoji(elemMessage, a.messagePct()), textRect.X, y, wrapW, line, chatBaseColor(a, sc, themeSkinned, false))
+			y += lineH
+		}
+		_ = c.Ren.SetClipRect(nil)
 	}
 
 	a.chatZoomWheel(box)
@@ -2870,9 +2889,23 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	} else {
 		raster, err := renderRaster(a, sc, wrapW, skinned, pct, false)
 		if err != nil {
+			// A raster that fails to build used to return here with msRaster nil AND
+			// without recording rasterText, so every later frame re-entered, failed
+			// identically, and drew NOTHING — a permanently blank chatbox under a
+			// showname that still painted, with no message anywhere and no diagnostic.
+			// Whatever makes one face fail on one machine (a system face the census
+			// found that SDL_ttf can't size, a texture the backend refuses), losing
+			// the player's text silently is never the right answer.
+			//
+			// Arm the plain-label fallback so drawChatOverlay still puts the words on
+			// screen, and say so in the debug log so the next report carries the
+			// actual SDL error instead of "the text is invisible".
+			a.pushDebug("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
+			a.rasterFailedText = sc.MessageText
 			return
 		}
 		a.msRaster = raster
+		a.rasterFailedText = ""
 	}
 	a.rasterText = sc.MessageText
 	a.rasterRaw = sc.MessageRaw

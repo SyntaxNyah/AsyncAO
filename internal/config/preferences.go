@@ -341,6 +341,19 @@ const (
 // their session is authenticated. Toggleable off in Settings.
 const defaultAutoLoginToast = true
 
+// defaultFontCensus ships ON: text in a script the bundled chain can't draw finds
+// a font already installed on the machine instead of rendering as empty boxes.
+//
+// It is a preference at all because it is the one font path whose INPUT is the
+// user's operating system rather than anything AsyncAO ships — it indexes the
+// system font directories and installs what it finds into the live chat chain.
+// That makes it the first suspect whenever text misbehaves on a platform the
+// developers can't reproduce on, and being able to switch it off settles in one
+// try what would otherwise be a long remote guessing game. Off, the client falls
+// back to the bundled chain: Latin and the curated scripts still render, the rest
+// go back to boxes.
+const defaultFontCensus = true
+
 // defaultScreenEffects ships ON: the AO2 screenshake (\s) and realization flash
 // (\f) — both the codes typed into a message and the field-based shake/realization
 // — render by default like the AO2 client. A dedicated Settings toggle turns them
@@ -1078,6 +1091,7 @@ type AssetPreferences struct {
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	DisableEffects         bool                         `json:"disableEffects"`       // master off-switch for every visual extra; default OFF (zero value)
+	FontCensus             bool                         `json:"fontCensus"`           // index the machine's own fonts for scripts the bundled chain lacks; default ON
 	ScreenEffects          bool                         `json:"screenEffects"`        // AO2 \s/\f + field shake/flash; default ON
 	WordDelete             bool                         `json:"wordDelete"`           // Ctrl+Backspace deletes a word in any text field; default ON
 	RecordingsKeepAssets   bool                         `json:"recordingsKeepAssets"` // an in-app .aorec recording auto-packages its warm assets into a self-contained bundle on stop; default ON
@@ -1556,6 +1570,7 @@ type prefsJSON struct {
 	ReduceMotion           bool                 `json:"reduceMotion"`         // default OFF (zero value)
 	DisableEffects         bool                 `json:"disableEffects"`       // default OFF (zero value) — master visual-effects off-switch
 	ScreenEffects          *bool                `json:"screenEffects"`        // absent = default ON
+	FontCensus             *bool                `json:"fontCensus"`           // absent = default ON (pointer: an explicit OFF must persist)
 	WordDelete             *bool                `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
 	RecordingsKeepAssets   *bool                `json:"recordingsKeepAssets"` // absent = default ON (pointer: an explicit OFF must persist)
 	AdditiveText           *bool                `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
@@ -1950,6 +1965,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		EmoteGridGapPx:         DefaultEmoteGridGapPx,
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
+		FontCensus:             defaultFontCensus,
 		WordDelete:             defaultWordDelete,
 		RecordingsKeepAssets:   defaultRecordingsKeepAssets,
 		AdditiveText:           defaultAdditiveText,
@@ -2310,6 +2326,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
+	}
+	if onDisk.FontCensus != nil {
+		p.FontCensus = *onDisk.FontCensus
 	}
 	if onDisk.ScreenEffects != nil {
 		p.ScreenEffects = *onDisk.ScreenEffects
@@ -8133,6 +8152,27 @@ func (p *AssetPreferences) SetDisableEffects(on bool) {
 		return
 	}
 	p.DisableEffects = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FontCensusOn reports the system-font census toggle (ON by default). Off, the
+// client uses only the fonts it ships and stops reading the machine's own — the
+// one lever that takes a whole platform-specific font path out of the picture.
+func (p *AssetPreferences) FontCensusOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FontCensus
+}
+
+// SetFontCensus toggles the system-font census.
+func (p *AssetPreferences) SetFontCensus(on bool) {
+	p.mu.Lock()
+	if p.FontCensus == on {
+		p.mu.Unlock()
+		return
+	}
+	p.FontCensus = on
 	p.mu.Unlock()
 	p.markDirty()
 }
