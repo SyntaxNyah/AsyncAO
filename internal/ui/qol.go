@@ -1858,15 +1858,25 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 	}
 	width := measure
 	for _, word := range strings.Fields(text) {
-		// Hard-split single words wider than the column.
-		for width(word) > maxW && len(word) > 1 {
-			cut := len(word) / 2
-			for cut > 1 && width(word[:cut]) > maxW {
+		// Hard-split single words wider than the column, bisecting on RUNE indices.
+		//
+		// This bisected on BYTE indices, which is fine for the Latin text it was
+		// written against and corrupts everything else. Japanese, Chinese and Thai do
+		// not put spaces between words, so strings.Fields hands a whole sentence over
+		// as one "word" and this split ALWAYS runs on them; halving a 3-bytes-per-rune
+		// run lands off a rune boundary most of the time, and the invalid UTF-8 that
+		// produced was then measured and drawn — mojibake at the wrap point of every
+		// long CJK/Thai line in the IC log, the OOC log and the area list.
+		rw := []rune(word)
+		for width(word) > maxW && len(rw) > 1 {
+			cut := len(rw) / 2
+			for cut > 1 && width(string(rw[:cut])) > maxW {
 				cut /= 2
 			}
 			flush()
-			lines = append(lines, word[:cut])
-			word = word[cut:]
+			lines = append(lines, string(rw[:cut]))
+			rw = rw[cut:]
+			word = string(rw)
 			if len(lines) >= maxLines {
 				return lines
 			}

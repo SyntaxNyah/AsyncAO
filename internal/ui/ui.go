@@ -309,6 +309,15 @@ type Ctx struct {
 	// deviceFontFor maps a logical set face to its device sibling by set+index.
 	chatSetDev fontSet
 	logSetDev  fontSet
+	// The CHROME set: the same chain again, but headed by the chrome face and at the
+	// fixed chrome point size. It exists so plain Label/LabelClipped/Heading — the
+	// ~800 call sites that draw menus, buttons, tab titles, character names, area
+	// names, tooltips — can fall back to a covering face instead of rendering
+	// whatever the embedded Latin font makes of a non-Latin string, which was tofu.
+	// Built lazily on the first non-ASCII chrome label, so a Latin-only session
+	// never pays for it.
+	chromeSet    fontSet
+	chromeSetDev fontSet
 	// textDevPct is the DEVICE font scale for text rasterization (#77): device px
 	// = logical px × textDevPct/100. Normally == the global UI scale (uiPct); the
 	// export/offscreen paths BRACKET it to DefaultScalePct (100) so the live UI
@@ -370,6 +379,21 @@ type Ctx struct {
 	cjkData  [][]byte
 	cjkCover []*sfnt.Font
 	wantCJK  bool
+	// Census tier: faces the system-font census supplied on demand, because a rune
+	// reached the draw that NOTHING in the curated chain covered (fontcensus.go).
+	// Appended last, so it never outranks a curated pick — the census answers "some
+	// font here has this glyph", the tiers answer "this is the right face for this
+	// script", and the second question is the better one when both can.
+	censusData  [][]byte
+	censusCover []*sfnt.Font
+	// missingRunes is the render thread's fixed-size record of runes nothing could
+	// draw, drained once a frame by the App and handed to the census goroutine. A
+	// FIXED ARRAY, not a slice or map: this is written from coverRunes, which the
+	// whole-screen zero-allocation gates cover, so it must never allocate. Once full
+	// it simply stops recording — a paragraph of unknown runes needs one answer, not
+	// four hundred, and the next frame picks up whatever is still missing.
+	missingRunes [censusQueueCap]rune
+	missingN     int
 	// Per-element theme faces (#39): the font FILES the active theme's
 	// courtroom_fonts.ini named, read off-thread on theme apply (≤ themeFaceCap)
 	// and installed via SetThemeFaces. RWFromMem aliases the bytes, so they must
@@ -835,6 +859,46 @@ func (c *Ctx) chromeFace() *ttf.Font {
 	return c.font
 }
 
+// chromeFaceFor is chromeFace for a KNOWN string: the same face when it can draw
+// the text, otherwise the first face in the fallback chain that can.
+//
+// Plain chrome labels used to render straight from one face with no chain at all,
+// so every non-Latin string outside the chat/log paths — character names in the
+// picker, area names, tab titles, menu entries, tooltips, player names — drew as
+// .notdef boxes no matter how many fallback faces were loaded. This is a
+// single-face pick rather than the per-glyph raster the message paths use: a
+// chrome label is nearly always one script, the pick is memoized, and it keeps
+// the label on the shared texture atlas instead of giving every name its own
+// textures.
+//
+// Pure ASCII short-circuits before anything is built, so the common case is a
+// one-pass byte scan and nothing else. A panel-dressed face is left alone: its
+// whole point is that the user chose that family for that panel.
+func (c *Ctx) chromeFaceFor(text string) *ttf.Font {
+	face := c.chromeFace()
+	if c.panelFont != nil || !hasNonASCII(text) {
+		return face
+	}
+	c.noteScript(text) // latch the off-thread fallback load, exactly as ChatFontFor does
+	fonts := c.buildSet(&c.chromeSet, c.fontChain, c.chainCover, DefaultScalePct, DefaultScalePct, c.font, false)
+	if len(fonts) <= 1 {
+		return face // nothing loaded yet; the text re-draws when a face lands
+	}
+	return c.pickIn(&c.chromeSet, fonts, DefaultScalePct, text)
+}
+
+// hasNonASCII is the cheap gate in front of every chrome fallback decision: one
+// byte pass, no rune decode, no allocation. A pure-ASCII label — the overwhelming
+// majority — costs this and nothing more.
+func hasNonASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return true
+		}
+	}
+	return false
+}
+
 // pushPanelFont arms f as the chrome face and RETURNS THE PREVIOUS ONE, which
 // the caller hands straight back to popPanelFont:
 //
@@ -1097,9 +1161,9 @@ func (c *Ctx) coversFace(primary *ttf.Font, text string) bool {
 	return !ok || r.covered
 }
 
-// setPairCount is every (logical, device) fontSet pair: the two global sets
-// (chat, log) plus one per theme-dressable element (#39).
-const setPairCount = 2 + int(themeFontElemCount)
+// setPairCount is every (logical, device) fontSet pair: the three global sets
+// (chat, log, chrome) plus one per theme-dressable element (#39).
+const setPairCount = 3 + int(themeFontElemCount)
 
 // setPairs returns every (logical, device) pair in ONE place, so setOf /
 // setIndexOf / Destroy / SetChromeFont can never miss a set as sets are added.
@@ -1110,8 +1174,9 @@ func (c *Ctx) setPairs() [setPairCount][2]*fontSet {
 	var out [setPairCount][2]*fontSet
 	out[0] = [2]*fontSet{&c.chatSet, &c.chatSetDev}
 	out[1] = [2]*fontSet{&c.logSet, &c.logSetDev}
+	out[2] = [2]*fontSet{&c.chromeSet, &c.chromeSetDev}
 	for i := 0; i < int(themeFontElemCount); i++ {
-		out[2+i] = [2]*fontSet{&c.themeElemSets[i], &c.themeElemSetsDev[i]}
+		out[3+i] = [2]*fontSet{&c.themeElemSets[i], &c.themeElemSetsDev[i]}
 	}
 	return out
 }
@@ -1146,14 +1211,56 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 	}
 	for i, r := range runes {
 		out[i] = primary
+		found := false
 		for j, cov := range s.cover {
 			if coverHasRune(cov, &c.sfntBuf, r) {
 				out[i] = s.fonts[j]
+				found = true
 				break
 			}
 		}
+		// Nothing in the chain has this glyph, so it is about to draw as .notdef —
+		// a tofu box. Queue it: the census will look for an installed font that has
+		// it and, if one exists, this same text re-rasters with real glyphs a frame
+		// or two later. Zero-width formatting runes are skipped, both because no
+		// font is expected to "cover" them and because chasing them would waste the
+		// queue on characters that are invisible when they work.
+		if !found && !isInvisibleRune(r) {
+			c.noteUncovered(r)
+		}
 	}
 	return out
+}
+
+// isInvisibleRune reports the formatting characters that are SUPPOSED to render as
+// nothing — joiners, variation selectors, directional marks, the BOM. They rarely
+// appear in a cmap, so a coverage miss on them is not a missing font and must not
+// spend a census slot (or, once the last-resort draw lands, put a visible box
+// where the text intends a seam).
+func isInvisibleRune(r rune) bool {
+	switch {
+	case r == 0x00AD: // soft hyphen
+		return true
+	case r == 0x200B, r == 0x200C, r == 0x200D: // ZWSP / ZWNJ / ZWJ
+		return true
+	case r >= 0x200E && r <= 0x200F: // LRM / RLM
+		return true
+	case r >= 0x202A && r <= 0x202E: // bidi embedding / override
+		return true
+	case r >= 0x2060 && r <= 0x2064: // word joiner and invisible operators
+		return true
+	case r >= 0x2066 && r <= 0x2069: // bidi isolates
+		return true
+	case r == 0xFEFF: // BOM / zero-width no-break space
+		return true
+	case r >= 0xFE00 && r <= 0xFE0F: // variation selectors
+		return true
+	case r >= 0xE0000 && r <= 0xE007F: // tag characters (emoji tag sequences)
+		return true
+	case r >= 0xE0100 && r <= 0xE01EF: // variation selectors supplement
+		return true
+	}
+	return false
 }
 
 // setIndexOf resolves a picked LOGICAL face to its set, that set's DEVICE sibling
@@ -1455,7 +1562,65 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 			s.cover = append(s.cover, coverAt(c.cjkCover, i))
 		}
 	}
+	// Census faces after even that: they exist only because something reached the
+	// draw that no curated tier covered, so they must never win a rune a curated
+	// face could have drawn better (fontcensus.go explains the ranking).
+	for i, data := range c.censusData {
+		if f, err := memFont(data, size); err == nil {
+			s.fonts = append(s.fonts, f)
+			s.cover = append(s.cover, coverAt(c.censusCover, i))
+		}
+	}
 	return s.fonts
+}
+
+// noteUncovered records a rune that no face in the chain could draw, so the App
+// can ask the census whether anything installed on this machine can. Called from
+// the raster BUILD path only (coverRunes), never per frame, and allocation-free:
+// the queue is a fixed array that stops accepting once full.
+func (c *Ctx) noteUncovered(r rune) {
+	if c.missingN >= len(c.missingRunes) {
+		return
+	}
+	for i := 0; i < c.missingN; i++ {
+		if c.missingRunes[i] == r {
+			return // already queued this frame
+		}
+	}
+	c.missingRunes[c.missingN] = r
+	c.missingN++
+}
+
+// TakeMissingRunes copies out (and clears) the runes nothing could draw. dst is
+// the caller's reusable buffer so the drain allocates nothing; the returned slice
+// aliases it. Render thread.
+func (c *Ctx) TakeMissingRunes(dst []rune) []rune {
+	dst = dst[:0]
+	for i := 0; i < c.missingN; i++ {
+		dst = append(dst, c.missingRunes[i])
+	}
+	c.missingN = 0
+	return dst
+}
+
+// AddCensusFace installs one face the census found for a rune the chain could not
+// draw. Mirrors SetFallbackFonts: the bytes must outlive the faces (RWFromMem
+// aliases them), the chain generation bumps so every per-size set rebuilds, and
+// the pointer-keyed caches purge because their baked per-rune picks — including
+// the cached "nothing to add" verdicts — were decided against the old chain.
+// Bounded by censusFaceCap; past it the call is a no-op. Render thread.
+func (c *Ctx) AddCensusFace(data []byte) {
+	if len(data) == 0 || len(c.censusData) >= censusFaceCap {
+		return
+	}
+	cover := parseCover(data)
+	if cover == nil {
+		return // unparseable: adding it could only displace a face that works
+	}
+	c.censusData = append(c.censusData, data)
+	c.censusCover = append(c.censusCover, cover)
+	c.fontChainGen++
+	c.purgeEmojiCache()
 }
 
 // memFont opens a TTF/TTC from bytes the caller keeps alive.
@@ -2392,7 +2557,7 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 
 // Label draws text at (x, y) and returns its LOGICAL pixel width.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
-	t, ok := c.textTexture(text, col, c.chromeFace())
+	t, ok := c.textTexture(text, col, c.chromeFaceFor(text))
 	if !ok {
 		return 0
 	}
@@ -2412,7 +2577,7 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 
 // LabelClipped draws text clipped to maxW.
 func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
-	c.LabelClippedFont(c.chromeFace(), x, y, maxW, text, col)
+	c.LabelClippedFont(c.chromeFaceFor(text), x, y, maxW, text, col)
 }
 
 // LabelClippedFont is LabelClipped with an explicit font (scaled log/OOC
@@ -2455,6 +2620,18 @@ func (c *Ctx) TextWidth(text string) int32 {
 	// layout, not just drawing, would be wrong.
 	if c.panelFont != nil {
 		return c.panelTextWidth(text)
+	}
+	// Non-Latin measures on the face it will actually DRAW with (chromeFaceFor).
+	// widthCache holds the embedded chrome face's advances, and a fallback face's
+	// are different — measuring one and painting the other is how a label ends up
+	// clipped, mis-centred, or overlapping its neighbour. The font-keyed memo is
+	// used instead, so a chain change can never leave a stale width behind: its key
+	// carries the face pointer, and a rebuilt chain means new pointers.
+	if hasNonASCII(text) {
+		if f := c.chromeFaceFor(text); f != c.font {
+			w, _ := c.fontTextWidth(f, text)
+			return w
+		}
 	}
 	if w, ok := c.widthCache[text]; ok {
 		return w

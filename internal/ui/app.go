@@ -507,6 +507,17 @@ type App struct {
 	// comes first). 13-35 MB, so kept out of the common non-ASCII path.
 	cjkFontRes     chan [][]byte
 	cjkLoadStarted bool
+	// System-font census (fontcensus.go): the LAST resort, reached only when a rune
+	// nothing in the curated chain covers actually reaches the draw. The render
+	// thread sends those runes on censusReq and installs whatever face comes back on
+	// censusRes; the goroutine that walks the machine's font directories is started
+	// on the first miss, so a session that never hits one never scans anything.
+	// missingBuf is the reusable drain buffer — the drain runs every frame, so it
+	// must not allocate.
+	censusReq     chan rune
+	censusRes     chan []byte
+	censusStarted bool
+	missingBuf    []rune
 
 	// Custom missingno placeholder (user-chosen image path, default = the embedded
 	// AO2 glitch). The file read + decode runs OFF-THREAD (rule §17.2 — no
@@ -7991,6 +8002,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ensureCJKFontLoad()
 	}
 	a.pollCJKFont()
+	a.drainMissingRunes() // a rune NOTHING covered → ask the census for an installed face
+	a.pollCensusFont()
 	a.pollErrorSprite() // land an off-thread custom missingno image → UploadPinned over MissingKey
 	a.pollNotebook()
 	a.pollJukebox()

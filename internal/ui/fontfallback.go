@@ -82,20 +82,55 @@ func parseCover(data []byte) *sfnt.Font {
 // per-glyph colour path; this is whole-message script coverage via the existing
 // pickFont "first chain font that covers every rune" rule.
 
-// fallbackFontCandidates lists the system fonts to try, broadest first. Windows ships
-// Segoe UI (Latin / Cyrillic / Greek / Armenian / Hebrew / Arabic / Thai / many
-// symbols — always present) and, where installed, Microsoft YaHei (CJK). Other OSes
-// return none (this is a Windows client), so the embedded font stays the only face,
-// exactly as before.
+// fallbackFontCandidates lists the system fonts to try, broadest first — the
+// CURATED core, deliberately small. It is not trying to cover Unicode: each entry
+// costs an open FreeType face in every per-size font set, so this holds only the
+// few faces that answer most non-Latin text in one go, and the system-font census
+// (fontcensus.go) supplies anything else on demand, from whatever is actually
+// installed. Absent files are skipped, so an unusual install just leans on the
+// census sooner.
+//
+// Every OS gets a list. Returning nil off Windows — which this used to do — left
+// macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
+// Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
+// there. Those paths cannot be verified from a Windows dev box; the census is the
+// safety net that makes a wrong guess harmless rather than fatal.
 func fallbackFontCandidates() []string {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
-	return []string{
-		`C:\Windows\Fonts\segoeui.ttf`,  // broad Latin / Cyrillic / Greek / Hebrew / Arabic / Thai
-		`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats
-		`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh (the reported gap)
-		`C:\Windows\Fonts\Nirmala.ttc`,  // Nirmala UI (a .ttc collection) — Indic (Devanagari, Tamil, ...)
+	switch runtime.GOOS {
+	case "windows":
+		return []string{
+			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic.
+			// NOT Thai, despite what this comment used to claim: segoeui.ttf has no
+			// U+0E01. Thai, Lao and Khmer live in Leelawadee UI / Khmer UI, and the
+			// census finds them.
+			`C:\Windows\Fonts\segoeui.ttf`,
+			`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats / Braille
+			`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh and Ethiopic
+			`C:\Windows\Fonts\Nirmala.ttc`,  // Nirmala UI (a .ttc) — Indic (Devanagari, Tamil, Bengali, Sinhala, ...)
+		}
+	case "darwin":
+		return []string{
+			// Arial Unicode is the single broadest face Apple ships when it is present;
+			// the SF/Helvetica pair is what the system UI itself draws with, and Apple
+			// Symbols carries the technical/arrow blocks Segoe UI Symbol does on Windows.
+			"/Library/Fonts/Arial Unicode.ttf",
+			"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+			"/System/Library/Fonts/SFNS.ttf",
+			"/System/Library/Fonts/Helvetica.ttc",
+			"/System/Library/Fonts/Apple Symbols.ttf",
+		}
+	default: // linux and the other unixes
+		return []string{
+			// DejaVu is near-universal and covers Latin/Cyrillic/Greek/Armenian/Georgian
+			// plus a lot of symbols; Noto is the distro answer for everything else and is
+			// split per script, so the census does the rest.
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/TTF/DejaVuSans.ttf",
+			"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+			"/usr/share/fonts/noto/NotoSans-Regular.ttf",
+			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+		}
 	}
 }
 
@@ -217,6 +252,9 @@ func firstReadableFunc(cands []string, exists func(string) bool) string {
 // near ~50 MB, lazy and only on a CJK line. os.Stat (disk) — called only off-thread.
 func cjkFontList() []string {
 	if runtime.GOOS != "windows" {
+		// Off Windows the census answers CJK too — it finds whatever Noto CJK /
+		// PingFang / Hiragino the machine actually has, instead of guessing at paths
+		// that vary by distro and macOS release.
 		return nil
 	}
 	var out []string

@@ -54,10 +54,27 @@ func needsEmojiFallback(s string) bool {
 // the single-font fast path. Exported gate over the cheap byte scan.
 func NeedsEmojiFallback(s string) bool { return needsEmojiFallback(s) }
 
-// isEmojiBase reports a rune that on its own selects an emoji glyph: the
-// supplementary plane (pictographs, U+1F3FB.. skin tones, U+1F1E6.. regional
-// indicators). VS15 forces text presentation, so it never counts as a base.
-func isEmojiBase(r rune) bool { return r > 0xFFFF && r != runeVS15 }
+// emojiBlockLo / emojiBlockHi bound the supplementary-plane range where emoji
+// actually live: U+1F000 (Mahjong Tiles) through U+1FAFF (Symbols and Pictographs
+// Extended-A). That span holds the pictographs, the U+1F1E6.. regional indicators
+// and the U+1F3FB.. skin-tone modifiers. Nothing outside it in the supplementary
+// planes is emoji.
+const (
+	emojiBlockLo rune = 0x1F000
+	emojiBlockHi rune = 0x1FAFF
+)
+
+// isEmojiBase reports a rune that on its own selects an emoji glyph. VS15 forces
+// text presentation, so it never counts as a base.
+//
+// This used to read "any rune above U+FFFF", which quietly broke every other
+// supplementary-plane script. The routing this feeds is an unconditional OVERRIDE
+// of the covering text face, and the bundled colour-emoji face holds emoji and
+// nothing else — so Linear B, Gothic, Old Italic, Deseret, cuneiform, Egyptian
+// hieroglyphs, the mathematical alphanumerics, Adlam and CJK Extension B were all
+// forced onto a face that had no glyph for them, and drew its .notdef box even
+// when a face already in the chain could have rendered them.
+func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15 }
 
 // assignEmoji marks which runes render from the EMOJI font (true) vs the text font
 // (false). Supplementary-plane runes are emoji; VS16 promotes the BMP char before
