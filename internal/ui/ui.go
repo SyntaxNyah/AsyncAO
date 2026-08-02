@@ -466,6 +466,12 @@ type Ctx struct {
 	// settings search's collect pass (#26 gather) uses it to index all tabs'
 	// rows. nil in normal play: the hook costs one nil check per checkbox.
 	onRow func(label string, y int32)
+	// emojiLoad kicks the one-shot colour-emoji face read. It lives on the App
+	// (it owns the off-thread read and the result channel), but the KIT needs to
+	// trigger it too: a dropdown row or a lobby label can be the first thing on
+	// screen to contain an emoji, and a widget that can't ask for the face would
+	// draw tofu forever while the chatbox got colour. nil in tests.
+	emojiLoad func()
 	// muted, while set, renders Checkbox rows greyed and inert: a master toggle
 	// upstream has already overruled them, so showing them live would invite a
 	// click that visibly does nothing. They still draw (the player can SEE what
@@ -3856,13 +3862,10 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 		thumb(cur, sdl.Rect{X: r.X + 2, Y: r.Y + 2, W: tw, H: r.H - 4})
 		labelX = r.X + 2 + tw + 4
 	}
-	if t, ok := c.textTexture(options[cur], ColText, c.chromeFace()); ok {
-		w := t.logicalW() // #77-LOGICAL px
-		if maxW := r.X + r.W - 16 - labelX; w > maxW && maxW > 0 {
-			w = maxW
-		}
-		c.blitLabel(t, labelX, r.Y+(r.H-uiLogicalFromDevice(t.h, t.devPct))/2, w)
-	}
+	// The pick can be SERVER/USER text (the showname presets, a server name), so it
+	// goes through the covering path — a fixed single face boxed anything it
+	// couldn't draw. Plain ASCII keeps the identical texture blit.
+	c.labelCoveringCentered(labelX, r.Y, r.H, r.X+r.W-16-labelX, options[cur], ColText)
 	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.chromeFace().Height()))/2, "▾", ColTextDim)
 
 	if !open {
@@ -4108,13 +4111,9 @@ func (c *Ctx) FinishFrame() {
 				d.thumb(idx, sdl.Rect{X: row.X + 2, Y: row.Y + 2, W: d.thumbW, H: d.rowH - 4})
 				labelX = row.X + d.thumbW + 8
 			}
-			if t, ok := c.textTexture(opt, ColText, c.chromeFace()); ok {
-				w := t.logicalW() // #77-LOGICAL px
-				if maxW := row.X + row.W - labelX - 6; w > maxW && maxW > 0 {
-					w = maxW
-				}
-				c.blitLabel(t, labelX, row.Y+(d.rowH-uiLogicalFromDevice(t.h, t.devPct))/2, w)
-			}
+			// Same as the closed control: an open row is the one place a saved
+			// showname or a server name is READ, so it must not box.
+			c.labelCoveringCentered(labelX, row.Y, d.rowH, row.X+row.W-labelX-6, opt, ColText)
 		}
 	}
 	c.ddDraws = c.ddDraws[:0]

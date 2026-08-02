@@ -72,6 +72,57 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 	c.popClip(cp, ch)
 }
 
+// labelCoveringCentered draws CHROME text that may need a face the fixed chrome
+// font doesn't have — another script, or colour emoji — vertically centred in a
+// rowH-tall row and clipped to maxW. It is labelEmoji's logic for the widget kit,
+// which has no App to reach labelEmoji through.
+//
+// The kit needed its own entry because the widgets that show SERVER-supplied text
+// (the showname picker's rows, the lobby's server labels) draw through Ctx alone.
+// They resolved a single face and blitted it, so a name whose glyphs live in two
+// faces came out as boxes there while the identical string drew correctly in the
+// chatbox and the log. Picking a covering face (chromeFaceFor) fixes the script
+// half; only a per-glyph raster can fix a string that needs the emoji face TOO.
+//
+// The plain-text branch is the byte-identical textTexture/blitLabel path the
+// widgets already used, behind the same cheap gate labelEmoji uses, so ASCII
+// chrome — nearly every label in the client — keeps its allocations and its speed.
+func (c *Ctx) labelCoveringCentered(x, rowY, rowH, maxW int32, text string, col sdl.Color) {
+	face := c.chromeFaceFor(text)
+	needEmoji := render.NeedsEmojiFallback(text)
+	if face == nil || (!needEmoji && c.coversFace(face, text)) {
+		c.blitCenteredLabel(face, x, rowY, rowH, maxW, text, col)
+		return
+	}
+	if needEmoji && c.emojiLoad != nil {
+		c.emojiLoad() // first emoji on screen may well be a roster/dropdown row
+	}
+	m := c.emojiRaster(text, col, face, c.EmojiFont(DefaultScalePct))
+	if m == nil { // build failed → the single-face (tofu) path, as before
+		c.blitCenteredLabel(face, x, rowY, rowH, maxW, text, col)
+		return
+	}
+	h := m.Height()
+	y := rowY + (rowH-h)/2
+	cp, ch := c.pushClip(sdl.Rect{X: x, Y: y, W: maxW, H: h})
+	m.Draw(c.Ren, m.TotalRunes(), x, y)
+	c.popClip(cp, ch)
+}
+
+// blitCenteredLabel is the single-face row label the dropdown always drew:
+// cached texture, clipped to maxW, centred on the row's LOGICAL height.
+func (c *Ctx) blitCenteredLabel(face *ttf.Font, x, rowY, rowH, maxW int32, text string, col sdl.Color) {
+	t, ok := c.textTexture(text, col, face)
+	if !ok {
+		return
+	}
+	w := t.logicalW() // #77-LOGICAL px
+	if w > maxW && maxW > 0 {
+		w = maxW
+	}
+	c.blitLabel(t, x, rowY+(rowH-uiLogicalFromDevice(t.h, t.devPct))/2, w)
+}
+
 // labelEmojiWidth is the LOGICAL width labelEmoji would draw text at, measured
 // through the SAME two paths and the same caches as the draw itself — so a
 // caller that aligns a label inside a box can never measure on one face and

@@ -2863,6 +2863,10 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		hidden:              map[string]bool{},
 	}
 	a.resetSessionState()
+	// Let the widget kit kick the colour-emoji face read. A dropdown row or a
+	// lobby label can be the first emoji on screen, and a widget with no way to
+	// ask for the face would box it forever while the chatbox got colour.
+	ctx.emojiLoad = a.ensureEmojiFontLoad
 	// Wake the render loop when a decode/audio payload delivers (experimental
 	// event-driven loop): the pump uploads it on the very next pass instead of
 	// waiting out an idle tick. A queued no-op event when the loop pref is off.
