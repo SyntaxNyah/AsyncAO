@@ -4,6 +4,47 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.2 — 2026-08-02
+
+Emote buttons stop all showing the same picture, and there is now one switch
+that turns off every visual effect at once.
+
+### Emote buttons
+
+- **Characters whose emote icons were all the same picture show their real
+  icons.** Some servers store emote button art as PNG for some characters and
+  WebP for others. AsyncAO could only remember ONE of those per server, and
+  whichever character you opened most recently decided which — so every
+  character stored the other way lost all of its button art, and the grid filled
+  every slot with that character's face instead. On the Witches Tea Party server
+  that is **563 of its 1119 characters**. AsyncAO now remembers every file type a
+  server says it uses and tries the others if the first one isn't there, so both
+  halves work no matter what order you open them in.
+- **It stays fixed while you switch characters.** The old behaviour could not
+  recover: once a server had settled on the wrong type, nothing could move it
+  back. Now the type that last worked is simply tried first, and the others stay
+  available behind it.
+- **This costs nothing when art loads normally.** The first request for a file is
+  unchanged; the extra try only happens after a file genuinely isn't there.
+- **Settings → Assets shows the full picture.** The per-server list used to show
+  a single file type per asset kind. It now shows all of them — the one asked for
+  first highlighted, the backups dimmed behind it.
+
+### Effects
+
+- **One switch to turn off every visual effect.** Settings → Stage & viewport
+  effects now starts with "Disable all visual effects". It stops other players'
+  spinning, glowing and moving character art, screen shake and flash, animated
+  text, entrance slides, the sprite colour washes and the post-processing
+  overlays — without changing how big characters are drawn. Your individual
+  settings are remembered rather than rewritten, so unticking it puts everything
+  back exactly as you had it. The settings it overrules grey out while it is on,
+  so you can still see what it is switching off.
+- **The setting that hides other players' effects says what it does.** It was
+  described as ignoring "recolour / glow", which is why people looking to stop
+  characters spinning at them never found it. It now names the spinning, wobble,
+  motion paths and glitch effects too.
+
 ## v1.87.1 — 2026-08-02
 
 Emoji from the last four years render now.
