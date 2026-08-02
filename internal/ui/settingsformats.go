@@ -51,6 +51,10 @@ const (
 	// learnedRowH is one learned-table row's height — tighter than a settings
 	// row because the table is read-only text, not clickable widgets.
 	learnedRowH = 20
+	// learnedExtGapPx separates the extensions in the "learned here" cell when a
+	// class has learned more than one. Small: the ladder must read as one cell,
+	// not spill toward the neighbouring "otherwise asks for" column at x=250.
+	learnedExtGapPx = 6
 	// formatPresetGap separates the per-server "pin one format" preset buttons.
 	formatPresetGap = 6
 )
@@ -334,9 +338,16 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 // fastest way to see WHY an asset is missing: a class showing a type the server
 // doesn't serve is the whole diagnosis.
 //
-// Zero allocation per frame by construction: Resolver.Learned is one atomic
-// load plus a map lookup and returns an interned extension string, and the
-// probe-order column comes from the generation-cached formatOrderText.
+// A class can have learned MORE than one type — a server whose extensions.json
+// declares two formats for a class really does serve both, and the whole point
+// of keeping the list is that the second is reachable when the first 404s. The
+// preferred one (probed first) is drawn in the accent colour, the rest of the
+// ladder dimmed behind it.
+//
+// Zero allocation per frame by construction: Resolver.LearnedList is one atomic
+// load plus a map lookup and returns interned extension strings, drawn as
+// separate labels rather than joined (joining would allocate every frame), and
+// the probe-order column comes from the generation-cached formatOrderText.
 func (a *App) drawLearnedTable(y int32, host string) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -347,8 +358,15 @@ func (a *App) drawLearnedTable(y int32, host string) int32 {
 	orders := formatOrderText(a.d.Prefs)
 	for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 		c.Label(pad+learnedColName, y, t.Name(), ColTextDim)
-		if ext, ok := a.d.Resolver.Learned(host, t); ok {
-			c.Label(pad+learnedColLearned, y, ext, ColAccent)
+		if exts := a.d.Resolver.LearnedList(host, t); len(exts) > 0 {
+			x := pad + learnedColLearned
+			for i, ext := range exts {
+				col := ColAccent // the preferred format — the one actually probed
+				if i > 0 {
+					col = ColTextDim // the recovery ladder behind it
+				}
+				x += c.Label(x, y, ext, col) + learnedExtGapPx
+			}
 		} else {
 			c.Label(pad+learnedColLearned, y, "—", ColTextDim)
 		}
@@ -358,7 +376,7 @@ func (a *App) drawLearnedTable(y int32, host string) int32 {
 		y += learnedRowH
 	}
 	y += 4
-	y = a.settingsDesc(pad, y, "\"Learned here\" is the file type this server actually served for that kind of asset; \"—\" means nothing of that kind has loaded yet. A dash that never fills in — on emote buttons, say — is the sign that the type being asked for isn't the one the server has.", ColTextDim)
+	y = a.settingsDesc(pad, y, "\"Learned here\" is the file type this server actually served for that kind of asset; \"—\" means nothing of that kind has loaded yet. A server can serve more than one — the highlighted type is the one asked for first, the dimmed ones are tried if it isn't there, so a server that mixes (some characters PNG, some WebP) works either way. A dash that never fills in — on emote buttons, say — is the sign that the type being asked for isn't the one the server has.", ColTextDim)
 	y += 10
 	return y
 }

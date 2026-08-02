@@ -24,14 +24,63 @@ type Candidates struct {
 	Learned bool
 }
 
+// learnedExtCap bounds one (host, type) learned list (rule §17.4). A server
+// declares at most a handful of formats per class; the cap keeps a hostile or
+// buggy extensions.json from growing the probe list without limit.
+const learnedExtCap = 4
+
 // learnedTable is the immutable snapshot behind the resolver's atomic
-// pointer: host → fixed per-type extension array. Lookups are one atomic
+// pointer: host → fixed per-type extension list. Lookups are one atomic
 // load, one map access, one array index — no locks (spec §17.5).
+//
+// Each entry is an ORDERED list, front = the format to probe first, rather
+// than the single string it used to be. A host can genuinely serve more than
+// one format for the same class — umineko.online declares
+// "emotions_extensions": [".png", ".webp"] and really does ship ~560 PNG-button
+// and ~490 WebP-button characters — and a one-slot table could only ever hold
+// one of them. Worse, it held whichever loaded LAST: the first WebP character
+// flipped the slot for the whole host, and every PNG character then 404'd its
+// only candidate and had nothing left to probe, because the type's configured
+// list (config.defaultFormatOrders) is itself the single entry .webp. That is
+// the "every emote button shows the same icon" report — the grid falls back to
+// the character icon in every cell (internal/ui/screens.go, drawEmoteImageButton).
+//
+// The list is read-only by contract: writers copy-on-write (see promoteExt).
 type learnedTable struct {
-	hosts map[string]*[AssetTypeCount]string
+	hosts map[string]*[AssetTypeCount][]string
 }
 
-var emptyLearnedTable = &learnedTable{hosts: map[string]*[AssetTypeCount]string{}}
+var emptyLearnedTable = &learnedTable{hosts: map[string]*[AssetTypeCount][]string{}}
+
+// promoteExt returns prev with ext moved to the FRONT, as a fresh slice — the
+// published table is immutable, so this never writes through to prev.
+//
+// Promote, not overwrite. Overwriting is what made the old single-slot table an
+// absorbing state: once it held .webp, a PNG-only character probed .webp, 404'd,
+// found nothing else to try, and could never record the .png success that would
+// have corrected the slot. Keeping the loser in the list means both halves of a
+// mixed fleet stay reachable no matter which one loaded most recently; only the
+// ORDER churns, and the front is always the last format that actually worked.
+//
+// Returns prev unchanged (same backing array) when ext is already the front, so
+// the steady-state hit does no allocation and RecordSuccess can skip its CAS.
+func promoteExt(prev []string, ext string) []string {
+	if len(prev) > 0 && prev[0] == ext {
+		return prev
+	}
+	next := make([]string, 0, min(len(prev)+1, learnedExtCap))
+	next = append(next, ext)
+	for _, e := range prev {
+		if e == ext { // already at the front
+			continue
+		}
+		if len(next) == learnedExtCap {
+			break
+		}
+		next = append(next, e)
+	}
+	return next
+}
 
 // formatListCache is an immutable per-generation snapshot of every type's
 // effective probe list, so the unlearned (miss) path costs one atomic load
@@ -77,7 +126,7 @@ func (r *Resolver) WarmFromPrefs() {
 	if len(snapshot) == 0 {
 		return
 	}
-	hosts := map[string]*[AssetTypeCount]string{}
+	hosts := map[string]*[AssetTypeCount][]string{}
 	for key, exts := range snapshot {
 		host, typeName, ok := splitLearnedKey(key)
 		if !ok || len(exts) == 0 {
@@ -89,10 +138,18 @@ func (r *Resolver) WarmFromPrefs() {
 		}
 		arr := hosts[host]
 		if arr == nil {
-			arr = new([AssetTypeCount]string)
+			arr = new([AssetTypeCount][]string)
 			hosts[host] = arr
 		}
-		arr[t] = exts[0]
+		// The whole persisted list, not just exts[0]: a host that learned two
+		// formats for a class must come back with both, or the second session
+		// re-enters the single-candidate dead end the list exists to prevent.
+		// The snapshot is already a copy, but clamp it to the cap in case an
+		// older / hand-edited prefs file carries a longer one.
+		if len(exts) > learnedExtCap {
+			exts = exts[:learnedExtCap]
+		}
+		arr[t] = exts
 	}
 	r.table.Store(&learnedTable{hosts: hosts})
 }
@@ -108,15 +165,25 @@ func splitLearnedKey(key string) (host, typeName string, ok bool) {
 	return "", "", false
 }
 
-// Learned returns the learned extension for (host, t), if any.
+// Learned returns the PREFERRED learned extension for (host, t), if any — the
+// front of the list, i.e. the format that most recently worked. Callers that
+// need the whole list (the stale-learned re-probe) use LearnedList.
 func (r *Resolver) Learned(host string, t AssetType) (string, bool) {
-	tbl := r.table.Load()
-	arr := tbl.hosts[host]
-	if arr == nil {
+	exts := r.LearnedList(host, t)
+	if len(exts) == 0 {
 		return "", false
 	}
-	ext := arr[t]
-	return ext, ext != ""
+	return exts[0], true
+}
+
+// LearnedList returns every format learned for (host, t), preferred first. The
+// returned slice is the published, immutable one — callers must not write to it.
+func (r *Resolver) LearnedList(host string, t AssetType) []string {
+	arr := r.table.Load().hosts[host]
+	if arr == nil {
+		return nil
+	}
+	return arr[t]
 }
 
 // BuildCandidates returns the URLs to probe for base (the full URL without
@@ -133,10 +200,15 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 
 	tbl := r.table.Load()
 	if arr := tbl.hosts[host]; arr != nil {
-		if ext := arr[t]; ext != "" {
+		// Deliberately the FRONT of the learned list only, never the whole list:
+		// the zero-fallback pillar is "exactly one network probe per asset by
+		// default", and the front is the format that most recently worked on this
+		// host. The rest of the list is the recovery ladder, spent only after this
+		// one actually 404s — see BuildFullListCandidates.
+		if exts := arr[t]; len(exts) > 0 {
 			r.learnedHits.Add(1)
 			c.Learned = true
-			c.URLs = append(c.URLs, base+ext)
+			c.URLs = append(c.URLs, base+exts[0])
 			return c
 		}
 	}
@@ -165,14 +237,40 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 // that missed, and this method performs no table lookup — counting it would
 // double-count the same asset (BuildCandidates already recorded the miss that
 // sent the manager here) and skew the hit-rate metric.
-func (r *Resolver) BuildFullListCandidates(base string, t AssetType) *Candidates {
+func (r *Resolver) BuildFullListCandidates(base string, t AssetType, host string) *Candidates {
 	c := r.pool.Get().(*Candidates)
 	c.URLs = c.URLs[:0]
 	c.Learned = false
+	// The host's OTHER learned formats come first, then the type's configured
+	// list. Without the learned half this method could only offer what the client
+	// already believed globally, and for a type whose configured list is a single
+	// entry (config.defaultFormatOrders: EmoteButton, CharSprite, Background,
+	// DeskOverlay, ShoutBubble are all one format) that entry is precisely the one
+	// that just 404'd — the caller filters it out as already-tried and is left
+	// with an EMPTY list, so a format the server openly declares in its
+	// extensions.json is never requested even once. That empty-rest dead end is
+	// the umineko.online emote-button bug.
+	for _, ext := range r.LearnedList(host, t) {
+		c.URLs = append(c.URLs, base+ext)
+	}
 	for _, ext := range r.formatList(t) {
+		if containsExt(r.LearnedList(host, t), ext) {
+			continue // already queued above; probing it twice wastes a round trip
+		}
 		c.URLs = append(c.URLs, base+ext)
 	}
 	return c
+}
+
+// containsExt reports whether exts holds ext. A linear scan over a list capped
+// at learnedExtCap, on the recovery path only — no map, no allocation.
+func containsExt(exts []string, ext string) bool {
+	for _, e := range exts {
+		if e == ext {
+			return true
+		}
+	}
+	return false
 }
 
 // formatList returns the cached probe list for t, rebuilding the snapshot
@@ -212,11 +310,17 @@ func (r *Resolver) RecordSuccess(host string, t AssetType, ext string) {
 	}
 	for {
 		old := r.table.Load()
-		if arr := old.hosts[host]; arr != nil && arr[t] == ext {
-			return // already learned; no write, no churn
+		var prev []string
+		if arr := old.hosts[host]; arr != nil {
+			prev = arr[t]
+		}
+		// Already the preferred format: the steady state, and by far the common
+		// case (every asset after the first). No write, no churn, no CAS.
+		if len(prev) > 0 && prev[0] == ext {
+			return
 		}
 		next := cloneTableForHost(old, host)
-		next.hosts[host][t] = ext
+		next.hosts[host][t] = promoteExt(prev, ext)
 		if r.table.CompareAndSwap(old, next) {
 			break
 		}
@@ -236,11 +340,11 @@ func (r *Resolver) Invalidate(host string, t AssetType) {
 	for {
 		old := r.table.Load()
 		arr := old.hosts[host]
-		if arr == nil || arr[t] == "" {
+		if arr == nil || len(arr[t]) == 0 {
 			return
 		}
 		next := cloneTableForHost(old, host)
-		next.hosts[host][t] = ""
+		next.hosts[host][t] = nil
 		if r.table.CompareAndSwap(old, next) {
 			return
 		}
@@ -256,12 +360,16 @@ func (r *Resolver) InvalidateAll() {
 
 // cloneTableForHost shallow-copies the host map and deep-copies only the
 // touched host's array, guaranteeing the published table is immutable.
+// The per-type element is a slice header, so the array copy shares the LISTS
+// with the old table. That is safe and deliberate: a published list is never
+// written in place — promoteExt always builds a fresh slice — so sharing costs
+// one header copy per type and keeps concurrent readers on a valid snapshot.
 func cloneTableForHost(old *learnedTable, host string) *learnedTable {
-	hosts := make(map[string]*[AssetTypeCount]string, len(old.hosts)+1)
+	hosts := make(map[string]*[AssetTypeCount][]string, len(old.hosts)+1)
 	for h, arr := range old.hosts {
 		hosts[h] = arr
 	}
-	fresh := new([AssetTypeCount]string)
+	fresh := new([AssetTypeCount][]string)
 	if prev := old.hosts[host]; prev != nil {
 		*fresh = *prev
 	}

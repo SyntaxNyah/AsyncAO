@@ -804,7 +804,7 @@ func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (d
 	// via a single old-valid -> new-valid CAS (a genuine repack heals here). If
 	// nothing answers, the asset is simply absent — and absence says nothing
 	// about the host's formats, so the learned entry is left exactly as it was.
-	cands = m.resolver.BuildFullListCandidates(base, t)
+	cands = m.resolver.BuildFullListCandidates(base, t, host)
 	rest := make([]string, 0, len(cands.URLs))
 	for _, url := range cands.URLs {
 		if !containsString(tried404, url[len(base):]) {

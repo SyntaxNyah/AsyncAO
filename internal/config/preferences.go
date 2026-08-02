@@ -8869,22 +8869,85 @@ func LearnedKey(host, typeName string) string {
 	return host + LearnedKeySeparator + typeName
 }
 
-// RecordLearned persists ext as the known-working format for (host, type).
-// The resolver calls this on the first successful probe; persistence is lazy
-// via the debounced saver.
+// LearnedExtCap bounds one (host, type) persisted learned list (rule §17.4).
+// It mirrors the resolver's in-memory cap; the two must agree or a reload would
+// silently drop formats the running session had learned.
+const LearnedExtCap = 4
+
+// RecordLearned persists ext as the known-working format for (host, type),
+// moving it to the FRONT of whatever was already learned instead of replacing
+// the list. The resolver calls this on every successful probe; persistence is
+// lazy via the debounced saver.
+//
+// Promote, not overwrite: a host can serve more than one format for the same
+// class, and dropping the others is what stranded ~560 PNG-button characters on
+// umineko.online behind a lone .webp candidate. Mirrors assets.promoteExt — the
+// two must stay in step or a restart would resurrect the truncated list.
 func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
+	if ext == "" {
+		return
+	}
 	key := LearnedKey(host, typeName)
 	p.mu.Lock()
-	if existing, ok := p.LearnedFormats[key]; ok && len(existing) == 1 && existing[0] == ext {
+	existing := p.LearnedFormats[key]
+	if len(existing) > 0 && existing[0] == ext {
 		p.mu.Unlock()
-		return
+		return // already preferred; no write, no dirty
+	}
+	next := make([]string, 0, len(existing)+1)
+	next = append(next, ext)
+	for _, e := range existing {
+		if e == ext || len(next) == LearnedExtCap {
+			continue
+		}
+		next = append(next, e)
 	}
 	if p.LearnedFormats == nil {
 		p.LearnedFormats = map[string][]string{}
 	}
-	p.LearnedFormats[key] = []string{ext}
+	p.LearnedFormats[key] = next
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// RecordLearnedList persists the full ordered format list for (host, type) —
+// the extensions.json seed path, where the SERVER is the authority on what it
+// serves and in what preference order. Unlike RecordLearned this replaces the
+// list rather than promoting into it, because a re-read manifest supersedes
+// whatever earlier probing inferred. A no-op when exts is empty, so a manifest
+// that omits a class leaves what was already learned alone.
+func (p *AssetPreferences) RecordLearnedList(host, typeName string, exts []string) {
+	if len(exts) == 0 {
+		return
+	}
+	if len(exts) > LearnedExtCap {
+		exts = exts[:LearnedExtCap]
+	}
+	key := LearnedKey(host, typeName)
+	p.mu.Lock()
+	if equalStrings(p.LearnedFormats[key], exts) {
+		p.mu.Unlock()
+		return // unchanged; no write, no dirty
+	}
+	if p.LearnedFormats == nil {
+		p.LearnedFormats = map[string][]string{}
+	}
+	p.LearnedFormats[key] = cloneStrings(exts) // caller's slice must not alias the stored one
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// equalStrings reports whether two string slices are element-wise equal.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // CallwordsOOCOn reports whether callwords also alert on OOC messages (default

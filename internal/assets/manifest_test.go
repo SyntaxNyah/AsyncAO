@@ -66,8 +66,12 @@ func TestBundledVanillaManifest(t *testing.T) {
 // TestManifestSeedLearned pins the seeding fan-out: emote art covers
 // sprites + shout bubbles (NOT misc — extensions.json has no misc key, and
 // live mirrors ship png misc art beside webp emotes), backgrounds cover desk
-// overlays, empty classes seed nothing, and the learned slot gets the FIRST
-// extension.
+// overlays, empty classes seed nothing, and the learned entry keeps EVERY
+// declared extension in the manifest's own order.
+//
+// The full list, not just the first: a server declaring two formats for a class
+// serves both, and truncating to exts[0] left the other half of its fleet behind
+// a single candidate with no way to fall back (see learnedTable / promoteExt).
 func TestManifestSeedLearned(t *testing.T) {
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -88,16 +92,25 @@ func TestManifestSeedLearned(t *testing.T) {
 		t.Fatalf("seeded %d, want 4 (desk exempt by default, misc never)", n)
 	}
 	snap := prefs.LearnedSnapshot()
-	checks := map[string]string{
-		config.LearnedKey(host, config.TypeCharIcon):    config.ExtPNG,
-		config.LearnedKey(host, config.TypeCharSprite):  config.ExtWebP,
-		config.LearnedKey(host, config.TypeShoutBubble): config.ExtWebP,
-		config.LearnedKey(host, config.TypeBackground):  config.ExtPNG,
+	// The emote class declares TWO formats, so sprites and shout bubbles must
+	// carry both — .webp first (probed), .gif behind it (the recovery ladder).
+	checks := map[string][]string{
+		config.LearnedKey(host, config.TypeCharIcon):    {config.ExtPNG},
+		config.LearnedKey(host, config.TypeCharSprite):  {config.ExtWebP, config.ExtGIF},
+		config.LearnedKey(host, config.TypeShoutBubble): {config.ExtWebP, config.ExtGIF},
+		config.LearnedKey(host, config.TypeBackground):  {config.ExtPNG},
 	}
 	for key, want := range checks {
 		got := snap[key]
-		if len(got) != 1 || got[0] != want {
-			t.Errorf("learned[%s] = %v, want [%s]", key, got, want)
+		if len(got) != len(want) {
+			t.Errorf("learned[%s] = %v, want %v", key, got, want)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("learned[%s] = %v, want %v (order matters: front is probed first)", key, got, want)
+				break
+			}
 		}
 	}
 	if _, ok := snap[config.LearnedKey(host, config.TypeMisc)]; ok {

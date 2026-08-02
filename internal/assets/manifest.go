@@ -132,10 +132,17 @@ func (m *Manifest) manifestSeedTargets() []struct {
 	}
 }
 
-// SeedLearned writes each class's primary extension into the learned table
-// for host: the learned slot holds exactly one ext per (host, type), and
-// the manifest's first valid entry IS that ext. Returns how many types
+// SeedLearned writes each class's declared extensions into the learned table
+// for host, in the order the manifest lists them: the first is what gets probed,
+// the rest are the recovery ladder for when it 404s. Returns how many types
 // were seeded. Call Resolver.WarmFromPrefs afterwards to publish.
+//
+// ALL of them, not just the first. A server declaring
+// "emotions_extensions": [".png", ".webp"] is telling us its emote-button fleet
+// is genuinely mixed — umineko.online ships ~560 PNG-button and ~490
+// WebP-button characters — and keeping only exts[0] threw that away: the half
+// that didn't match sat behind a single candidate that could never fall back,
+// because the type's own configured list is one entry too (see learnedTable).
 func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int {
 	if prefs == nil || host == "" {
 		return 0
@@ -154,7 +161,7 @@ func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int 
 			if t == AssetTypeDeskOverlay && !deskFollows {
 				continue
 			}
-			prefs.RecordLearned(host, t.Name(), target.exts[0])
+			prefs.RecordLearnedList(host, t.Name(), target.exts)
 			seeded++
 		}
 	}
