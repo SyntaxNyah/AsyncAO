@@ -305,6 +305,7 @@ func (a *App) startCensus() {
 		fc := &fontCensus{}
 		defer fc.close()
 		sent := make(map[string]bool, censusFaceCap) // never hand back the same file twice
+		delivered := 0
 		for r := range req {
 			path := fc.find(r)
 			if path == "" || sent[path] {
@@ -314,11 +315,22 @@ func (a *App) startCensus() {
 			if err != nil || len(data) == 0 || len(data) > fontFileMaxBytes {
 				continue
 			}
-			sent[path] = true
 			select {
 			case res <- data:
-			default: // the render thread hasn't drained yet; it will re-ask
-				sent[path] = false
+				sent[path] = true
+				delivered++
+			default:
+				continue // the render thread hasn't drained yet; it will re-ask
+			}
+			if delivered >= censusFaceCap {
+				// The chain is full, so no further answer could be installed. Release the
+				// indexed file handles now rather than at process exit: holding a hundred
+				// or so system font files open for a whole session serves nothing, and on
+				// Windows an open handle is enough to stop the user replacing a font.
+				// The render side stops asking at the same cap, so this cannot strand a
+				// pending request.
+				fc.close()
+				return
 			}
 		}
 	}()

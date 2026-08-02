@@ -1125,6 +1125,23 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 		return r.font
 	}
 	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
+	if !covered {
+		// Nothing in this set can draw the whole string, so some of it is about to
+		// come out as .notdef — hand those runes to the census.
+		//
+		// This sits in the memo-MISS branch on purpose. Every single-face pick lands
+		// here (chat, log, the per-element theme sets, and now chrome labels), and a
+		// chrome label is re-picked for every frame it is on screen — but only the
+		// first of those frames reaches this line, because the memo returns above.
+		// That keeps noteUncovered's contract intact: raster/pick BUILD path only,
+		// never per frame.
+		//
+		// Without it the chrome path could never feed the census at all, so a Thai or
+		// Cherokee character name in the picker drew boxes forever and only ever came
+		// right by accident — if some MESSAGE elsewhere in the session happened to
+		// contain the same script and pulled the face in through coverRunes.
+		c.noteUncoveredIn(s, text)
+	}
 	if c.pickMemo == nil {
 		c.pickMemo = make(map[pickKey]pickResult, 256)
 	} else if len(c.pickMemo) >= textCacheMax {
@@ -1133,6 +1150,27 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	c.pickMemo[key] = pickResult{font: f, covered: covered}
 	c.noteCoverHint(f, text, covered)
 	return f
+}
+
+// noteUncoveredIn queues every rune of text that no face in set s covers. Called
+// only from pickIn's memo-miss branch, so it runs once per (string, set) rather
+// than once per frame.
+func (c *Ctx) noteUncoveredIn(s *fontSet, text string) {
+	for _, r := range text {
+		if r < 0x80 || isInvisibleRune(r) {
+			continue
+		}
+		covered := false
+		for _, cov := range s.cover {
+			if coverHasRune(cov, &c.sfntBuf, r) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			c.noteUncovered(r)
+		}
+	}
 }
 
 // noteCoverHint records the pick just made so the covers() gate every caller runs
@@ -1317,11 +1355,21 @@ func (c *Ctx) deviceCoverRunes(logicalPrimary *ttf.Font, pct int, runes []rune) 
 	}
 	for i, r := range runes {
 		out[i] = devPrimary
+		found := false
 		for j, cov := range log.cover { // cover is size-independent → shared with the device set
 			if j < len(df) && coverHasRune(cov, &c.sfntBuf, r) {
 				out[i] = df[j]
+				found = true
 				break
 			}
+		}
+		// Same census hand-off as coverRunes, and it has to be here too: this branch
+		// runs at every UI scale EXCEPT 1:1, the 1:1 case is the only one that
+		// delegates upward, and auto-scale ships ON — so a typical maximised window
+		// sits at ~130% and the IC chatbox, the single surface this was written for,
+		// would never once ask the census for a font it was missing.
+		if !found && !isInvisibleRune(r) {
+			c.noteUncovered(r)
 		}
 	}
 	return out

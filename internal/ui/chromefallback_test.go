@@ -86,6 +86,54 @@ func TestChromeFallbackLeavesPanelFacesAlone(t *testing.T) {
 	}
 }
 
+// TestUncoveredChromeLabelAsksTheCensus pins the hand-off that makes the chrome
+// fallback self-healing rather than a one-shot.
+//
+// The chrome path is the ONE path that could not feed the census: it resolves
+// through a single-face pick, not the per-glyph raster, so a character name in a
+// script nothing loaded covers drew boxes and never asked for a font. It only came
+// right by accident — if some MESSAGE elsewhere in the session happened to use the
+// same script and pulled the face in.
+func TestUncoveredChromeLabelAsksTheCensus(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Skipf("Ctx unavailable: %v", err)
+	}
+	defer c.Destroy()
+
+	// A chain with something in it, so the pick has more than one face to consider
+	// (a single-face set short-circuits before the pick runs at all).
+	var loaded [][]byte
+	for _, p := range fallbackFontCandidates() {
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+			loaded = append(loaded, b)
+		}
+	}
+	if len(loaded) == 0 {
+		t.Skip("no system fallback face installed")
+	}
+	c.SetFallbackFonts(loaded)
+
+	// U+13000 (Egyptian hieroglyph) is not in the embedded face or in the curated
+	// broad tier — precisely the case the census exists for.
+	const hieroglyph = "\U00013000"
+	c.missingN = 0
+	c.chromeFaceFor(hieroglyph)
+	if c.missingN == 0 {
+		t.Error("an uncoverable chrome label queued nothing — the census will never be asked, so it draws a box forever")
+	}
+
+	// And the SECOND frame must queue nothing: the pick is memoized, so this must
+	// not become per-frame work.
+	c.missingN = 0
+	c.chromeFaceFor(hieroglyph)
+	if c.missingN != 0 {
+		t.Errorf("the same label queued %d rune(s) again — the census hand-off leaked onto the per-frame path", c.missingN)
+	}
+}
+
 // TestChromeFallbackIsFreeForASCII pins the perf contract: the gate in front of
 // every chrome fallback decision is one byte pass, so a pure-ASCII label — the
 // overwhelming majority, drawn hundreds of times per frame — must allocate

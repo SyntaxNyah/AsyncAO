@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -166,6 +167,49 @@ func TestMissingRuneQueueIsBoundedAndDedupes(t *testing.T) {
 		buf = c.TakeMissingRunes(buf)
 	}); n != 0 {
 		t.Errorf("the missing-rune drain allocates %v per frame, want 0", n)
+	}
+}
+
+// TestScaledChatboxStillAsksTheCensus pins the census hand-off on the DEVICE
+// resolver, not just the 1:1 one.
+//
+// deviceCoverRunes delegates upward only at exactly 100%; every other UI scale
+// runs its own loop. Auto-scale ships ON and a maximised 1080p window lands
+// around 130%, so the un-delegated branch is the COMMON case — leaving the
+// hand-off out of it meant the IC chatbox, the surface the whole fix was written
+// for, never once asked the census for a font it was missing.
+func TestScaledChatboxStillAsksTheCensus(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Skipf("Ctx unavailable: %v", err)
+	}
+	defer c.Destroy()
+
+	var loaded [][]byte
+	for _, p := range fallbackFontCandidates() {
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+			loaded = append(loaded, b)
+		}
+	}
+	if len(loaded) == 0 {
+		t.Skip("no system fallback face installed")
+	}
+	c.SetFallbackFonts(loaded)
+
+	const hieroglyph = '\U00013000' // in no curated face — the census's whole reason to exist
+	for _, pct := range []int{100, 125, 150, 200} {
+		c.SetUIScale(pct)
+		primary := c.ChatFontFor(DefaultScalePct, "warm the set")
+		if primary == nil {
+			t.Skip("no chat face")
+		}
+		c.missingN = 0
+		c.deviceCoverRunes(primary, DefaultScalePct, []rune{hieroglyph})
+		if c.missingN == 0 {
+			t.Errorf("at %d%% UI scale an uncoverable chatbox rune queued nothing — the census is never asked at this scale", pct)
+		}
 	}
 }
 
