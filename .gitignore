@@ -29,3 +29,8 @@ coverage.out
 # Flatpak generated manifest (scripts/build-flatpak.sh substitutes the template)
 /packaging/flatpak/_build.yaml
 *.flatpak
+
+# Emoji font build scratch (nanoemoji venv + ~4000 upstream SVGs + a 10 MB zip).
+# Reproduced from scratch by scripts/build-emoji-font.ps1; never committed.
+/_emojibuild/
+/_wfsalv/

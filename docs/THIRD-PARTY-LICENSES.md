@@ -69,12 +69,18 @@ Shipped next to `asyncao.exe` so it runs without MSYS2 on `PATH` (staged by
   font, embedded via `//go:embed`. **SIL Open Font License 1.1**; the licence
   ships unmodified at `internal/ui/fonts/OpenDyslexic-LICENSE-OFL.txt`, so the
   Reserved Font Name clause is satisfied.
-- **[Twemoji](https://github.com/twitter/twemoji)** — the bundled colour-emoji
-  fallback face (`internal/ui/fonts/TwemojiMozilla.ttf`, the COLRv0 build from
-  [mozilla/twemoji-colr](https://github.com/mozilla/twemoji-colr)), embedded via
-  `//go:embed`. It renders emoji in colour even when the OS emoji font isn't
-  SDL_ttf-renderable (e.g. Windows' COLRv1 Segoe UI Emoji). **CC-BY 4.0**; the
-  attribution ships at `internal/ui/fonts/TwemojiMozilla-LICENSE.txt`.
+- **[Twemoji](https://github.com/jdecked/twemoji)** — the bundled colour-emoji
+  fallback face (`internal/ui/fonts/Twemoji.ttf`), embedded via `//go:embed`. It
+  renders emoji in colour even when the OS emoji font isn't SDL_ttf-renderable
+  (e.g. Windows' COLRv1 Segoe UI Emoji). **CC BY 4.0.**
+  This is an **adaptation**, not a verbatim redistribution: the upstream SVG
+  artwork (jdecked/twemoji v17.0.3) is compiled into a COLRv0/CPAL font with
+  [nanoemoji](https://github.com/googlefonts/nanoemoji) (Apache-2.0 — a
+  build-time tool, not redistributed). The recipe is
+  `scripts/build-emoji-font.ps1`. Attribution, the modification statement CC BY
+  4.0 §3(a)(1)(B) requires, and the warranty disclaimer ship at
+  `internal/ui/fonts/Twemoji-LICENSE.txt`, with the full legalcode beside it at
+  `internal/ui/fonts/CC-BY-4.0.txt`.
 - **Mayo** — the mascot / app-icon art (`internal/ui/assets/mayo.png`),
   commissioned by Nyah and illustrated by **hlenbchan** (Instagram @hlenbchan2).
   Used with permission; please credit the artist if you reuse it.

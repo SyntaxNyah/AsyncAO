@@ -6,25 +6,31 @@ import (
 	"runtime"
 )
 
-// twemojiTTF is the bundled Twemoji (Mozilla COLRv0 build, CC-BY 4.0 — see
-// fonts/TwemojiMozilla-LICENSE.txt). It's the colour-emoji fallback face used
-// whenever the OS emoji font isn't renderable by SDL_ttf — notably Windows'
-// 2025 Segoe UI Emoji, which became COLRv1 (SDL_ttf 2.x draws COLRv1 glyphs as
-// empty boxes). COLRv0 is vector, small (~1.4 MB) and is exactly the format
-// SDL_ttf renders in colour, so it also gives Linux/macOS colour emoji for free.
+// twemojiTTF is the bundled Twemoji colour-emoji face (CC BY 4.0 — see
+// fonts/Twemoji-LICENSE.txt). It's the fallback used whenever the OS emoji font
+// isn't renderable by SDL_ttf — notably Windows' 2025 Segoe UI Emoji, which
+// became COLRv1 (SDL_ttf 2.x draws COLRv1 glyphs as empty boxes). COLRv0 is
+// vector, small (~1.7 MB) and is exactly the format SDL_ttf renders in colour,
+// so it also gives Linux/macOS colour emoji for free.
 //
-// KNOWN GAP (#35): this is mozilla/twemoji-colr v0.7.0 (2020) — the only published
-// COLRv0 Twemoji TTF, and that project is dormant. It predates Unicode 14/15, so the
-// NEWEST emoji tofu on a machine with no renderable OS emoji font (e.g. Windows'
-// COLRv1 Segoe): the pink / grey / light-blue hearts (U+1FA75–77), a handful of
-// 2021–22 faces, etc. Verified by cmap probe — the classic set (every standard heart,
-// face and symbol) renders; only the post-2021 additions are missing. A full fix is a
-// newer renderable emoji font: Noto Color Emoji (CBDT bitmap, SDL_ttf-renderable, full
-// coverage) does it but is ~10 MB and restyles every emoji; the maintained Twemoji
-// (jdecked, U16) ships SVG only, so a fresh COLRv0 build would need the nanoemoji
-// pipeline. Left as a deliberate size/style decision, not a silent 7× bundle swap.
+// The old #35 gap is CLOSED. This used to be mozilla/twemoji-colr v0.7.0 — the
+// only published COLRv0 Twemoji TTF, from a dormant project frozen at the 2021
+// emoji set — so everything newer drew as a box: the pink/grey/light-blue hearts
+// (U+1FA75-77) and every addition from Emoji 15.0 on. The note here used to say
+// the real fix "would need the nanoemoji pipeline", so that is what this is: a
+// fresh COLRv0 compile of the maintained jdecked/twemoji artwork, produced by
+// scripts/build-emoji-font.ps1 — committed precisely so a binary blob in the
+// tree is reproducible rather than magic. Metrics are pinned to the old font's
+// glyph box (upem 512, ascender 448, descender -64), so emoji did not change
+// size; nanoemoji's own defaults would have made every one 11% larger.
 //
-//go:embed fonts/TwemojiMozilla.ttf
+// Two properties a replacement MUST keep, both pinned by emojifont_test.go:
+// COLR version 0 (colorFontRenderable silently falls back otherwise, which ships
+// as "emoji stopped working" with nothing in any log), and the GSUB ligatures —
+// Emoji 15.1 added ~118 emoji and ZERO new codepoints, all of them ZWJ
+// sequences, so a cmap probe alone cannot even see whether they work.
+//
+//go:embed fonts/Twemoji.ttf
 var twemojiTTF []byte
 
 // Color-emoji fallback face loader. SDL_ttf 2.20+ renders color emoji, but only

@@ -1,0 +1,44 @@
+Twemoji — colour emoji artwork
+==============================
+
+Bundled file: Twemoji.ttf  (COLRv0 / CPAL colour font)
+
+This font is an ADAPTATION of the Twemoji emoji artwork: the upstream SVG
+sources were compiled into layered COLR/CPAL outlines for use as AsyncAO's
+colour-emoji fallback face. The artwork designs themselves are unchanged.
+
+Artwork (Twemoji), licensed CC BY 4.0:
+    Copyright (c) 2022-present Jason Sofonia & Justine De Caires
+    Copyright (c) 2014-2021 Twitter
+    Source:  https://github.com/jdecked/twemoji  (tag v17.0.3, assets/svg)
+    Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+             https://creativecommons.org/licenses/by/4.0/
+             Full text: CC-BY-4.0.txt in this directory.
+
+Changes made by AsyncAO (CC BY 4.0 section 3(a)(1)(B)):
+  - The 4009 upstream SVGs were compiled into a COLRv0/CPAL OpenType font with
+    googlefonts/nanoemoji (Apache-2.0), a build-time tool that is not itself
+    redistributed here. See scripts/build-emoji-font.ps1 for the exact recipe.
+  - Font metrics were set to upem 512, ascender 448, descender -64, linegap 56,
+    advance width 512, so the glyph box matches the font this replaced and emoji
+    do not change size in existing chat logs.
+  - One source file, 1f349.svg (watermelon), was re-wrapped from its upstream
+    viewBox "0 0 36 25.22" into a "0 0 36 36" square with the artwork vertically
+    centred, so the font builder does not stretch it. No path data was altered.
+  - No previous modifications are carried over: this is a fresh build directly
+    from jdecked/twemoji, not a rebuild of another party's font.
+
+Disclaimer of warranties (CC BY 4.0 section 3(a)(1)(A)(iv)): unless otherwise
+separately undertaken by the Licensor, the Licensed Material is offered as-is
+and as-available, and the Licensor makes no representations or warranties of any
+kind concerning it. See sections 5(a) and 5(b) of CC BY 4.0.
+
+No endorsement (CC BY 4.0 section 2(a)(6)): nothing here implies that Twitter/X,
+Jason Sofonia, Justine De Caires or any other Twemoji contributor sponsors or
+endorses AsyncAO. CC BY 4.0 licenses no trademark rights (section 2(b)(2)); the
+name "Twemoji" is used only to identify the artwork's origin.
+
+This font file remains available to you under CC BY 4.0 independently of
+AsyncAO's GNU AGPL v3 licence. Under AGPL v3 section 7(a)-(e) these attribution,
+modification-marking, warranty-disclaimer and no-endorsement terms are permitted
+supplemental terms, not further restrictions on the Program.

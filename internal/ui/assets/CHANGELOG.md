@@ -4,6 +4,26 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.1 — 2026-08-02
+
+Emoji from the last four years render now.
+
+### Emoji
+
+- **Emoji added since 2021 stopped being empty boxes.** The bundled emoji font
+  was a 2022 build of the 2021 emoji set, so everything newer — 🫨 🪼 🪽 🪿 🫩 🪉
+  🪏 🫟, the pink and grey hearts, and the whole Emoji 15.0 / 15.1 / 16.0 / 17.0
+  run — had no artwork to draw. It is now built from current Twemoji, which adds
+  **432 emoji and sequences**.
+- **Sequences that only exist as combinations work too.** Emoji 15.1 added a
+  hundred-odd emoji without adding a single new character — 🐦‍🔥 phoenix is a bird
+  joined to a flame, not a character of its own. Those now join up into one
+  picture instead of drawing as their separate parts, alongside the flags,
+  families, keycaps and skin tones that already did.
+- **Everything looks exactly as it did.** Same Twemoji artwork, same size, same
+  style — this is the same font brought up to date, not a different one. The
+  download grows by about 0.3 MB.
+
 ## v1.87.0 — 2026-08-02
 
 Text in other languages stops turning into empty boxes, the chatbox stops
