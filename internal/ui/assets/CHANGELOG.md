@@ -4,6 +4,63 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.0 — 2026-08-02
+
+Text in other languages stops turning into empty boxes, the chatbox stops
+shivering while a line types out on a scaled display, OOC gets its own box on a
+fresh install, and you can set how far apart the emote icons sit.
+
+### Unicode
+
+- **Text the client could not draw now finds a font that can.** Thai, Lao,
+  Khmer, Burmese, Tibetan, Mongolian, Cherokee, Syriac, Divehi, Yi, Javanese,
+  the historic scripts and the rarer Chinese characters all rendered as empty
+  boxes, because the client only ever looked at four hardcoded font files. It
+  now searches the fonts already installed on your machine and loads whichever
+  one has the characters on screen. On a stock Windows 11 install that closed
+  every gap tested — nothing new is bundled, the fonts were already there.
+  Install a font for some other script and it starts working too, with no update
+  needed.
+- **macOS and Linux get non-Latin text at all.** Those builds had no fallback
+  fonts whatsoever, so anything outside Latin, Greek and Cyrillic — including all
+  Japanese, Chinese and Korean — was boxes forever.
+- **Names, menus, tabs and tooltips stopped being the exception.** Only the chat
+  and the logs ever looked for a font that could draw a name. Everywhere else —
+  the character picker, the area list, tab titles, buttons, tooltips, the player
+  list — drew boxes even when the right font was already loaded.
+- **Emoji no longer hijack other alphabets.** Everything in the upper range of
+  Unicode was sent to the emoji font, which contains only emoji, so several
+  scripts and the mathematical letters drew as boxes even when a loaded font had
+  them.
+- **Long Japanese, Chinese and Thai lines stop turning to garbage where they
+  wrap.** Those languages do not use spaces, so a whole sentence counts as one
+  word, and the log used to cut it in the middle of a character.
+
+### Chatbox
+
+- **Text no longer shifts while a line types out.** At a scaled display the
+  letters already on screen slid a pixel or two every few characters as the rest
+  of the message crawled in. The chatbox now draws on exact screen pixels, so
+  what is already there stays put — and the settled text is a touch sharper for
+  the same reason. Selecting text in a tall message also picks the line you
+  pointed at.
+
+### Layout
+
+- **OOC gets its own box on a fresh install.** It used to start as a tab in the
+  right-hand column *plus* a second chat bar along the bottom. The layout
+  editor's OOC chip still switches back, and nothing changes if you have used the
+  client before. The bottom bar returns on its own if you hide the right column,
+  so there is always somewhere to type.
+- **You can set the gap between emote icons.** Settings → Interface → "Emote icon
+  spacing", 0 to 48 pixels; 0 puts them flush against each other. Themes keep
+  their own spacing.
+
+### Under the hood
+
+- **Fixed a per-frame allocation in both chat logs** — every message with a name
+  in it re-measured that name on every single frame.
+
 ## v1.86.0 — 2026-08-01
 
 Fonts you set now change a whole panel instead of half of one, the two chrome
