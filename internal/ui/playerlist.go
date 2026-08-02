@@ -572,7 +572,14 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// The roster's own font and size, through the same per-element table the
 	// chatlogs use. a.playerPct stays the per-panel zoom on top of it, exactly as
 	// a.logPct does for the IC log.
-	c.LabelClippedFont(a.elemFontFor(elemPlayerList, a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, nameCol)
+	//
+	// labelEmoji, NOT LabelClippedFont: a roster row is SERVER-supplied text, and a
+	// single face cannot draw a name that needs two of them — an emoji or a script
+	// outside the picked face rendered as tofu here while the very same showname
+	// drew correctly in the chatbox and the log, which take this path already. The
+	// plain-text fast path inside is byte-identical, so a Latin roster is unchanged.
+	rosterEmoji := a.elemEmoji(elemPlayerList, a.playerPct)
+	a.labelEmoji(a.elemFontFor(elemPlayerList, a.playerPct, ic), rosterEmoji, cx, row.Y+5, textW-(cx-textX), ic, nameCol)
 	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
 	// display name above (no showname → OOC was promoted to the identity line).
 	sub := ""
@@ -586,7 +593,8 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		sub += "IPID: " + p.ipid
 	}
 	if sub != "" {
-		c.LabelClippedFont(a.elemFontFor(elemPlayerList, a.playerPct, sub), textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
+		// Same reason as the identity line above: the OOC name is the player's own.
+		a.labelEmoji(a.elemFontFor(elemPlayerList, a.playerPct, sub), rosterEmoji, textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
 	}
 }
 
