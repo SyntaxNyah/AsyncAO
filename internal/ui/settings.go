@@ -1152,6 +1152,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
 	}
+	// Emote-grid icon spacing: how far apart the emote buttons sit, in px.
+	gap := a.d.Prefs.EmoteGridGap()
+	if next := a.emoteGridGapRow(y, gap); next != gap {
+		a.d.Prefs.SetEmoteGridGap(next)
+	}
+	c.Label(pad+340, y+4, "gap between emote icons (default 6 px; 0 butts them together). AO2 themes keep their own spacing.", ColTextDim)
+	y += 30
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
@@ -5000,6 +5007,37 @@ func (a *App) emoteNameDelayRow(y int32, ms int) int {
 	}
 	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
 	return ms
+}
+
+// emoteGridGapRow draws the emote-grid icon-spacing slider and returns the picked
+// gap in LOGICAL px. Same shape as emoteNameDelayRow (slider + wheel-over-the-row
+// nudge + a live readout), and it shadows pad from a.formX like every settings
+// draw helper must — without that shadow the row renders under the sidebar.
+//
+// The range starts at 0 on purpose (icons flush against each other) and the value
+// is NOT snapped to a step, unlike the half-second grid on the delay row above:
+// this setting is specified in pixels, so every pixel in range must be reachable.
+func (a *App) emoteGridGapRow(y int32, gap int) int {
+	c := a.ctx
+	pad := a.formX
+	c.Label(pad, y+4, "Emote icon spacing:", ColText)
+	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
+	if span := config.MaxEmoteGridGapPx - config.MinEmoteGridGapPx; span > 0 {
+		gap = config.MinEmoteGridGapPx + int(c.Slider("emotegridgap", track,
+			int32(gap-config.MinEmoteGridGapPx), int32(span)))
+	}
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		gap += int(c.wheelY)
+	}
+	if gap < config.MinEmoteGridGapPx {
+		gap = config.MinEmoteGridGapPx
+	}
+	if gap > config.MaxEmoteGridGapPx {
+		gap = config.MaxEmoteGridGapPx
+	}
+	c.Label(track.X+track.W+8, y+4, strconv.Itoa(gap)+" px", ColAccent)
+	return gap
 }
 
 // browseForFolder shells the native Windows THEME-folder picker on a goroutine;

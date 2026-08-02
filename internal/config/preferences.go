@@ -300,6 +300,26 @@ const (
 	MaxPreviewHeightPx     = 720
 )
 
+// Emote-grid icon spacing (LOGICAL px), the gap on BOTH axes between cells in the
+// AsyncAO courtroom emote grid. Default is the value that used to be hardcoded, so
+// nobody's grid moves on upgrade.
+//
+// LOGICAL px, not device px: the grid rect it divides is laid out in logical space,
+// so one setting holds the same visual gap at 100% and at 200% UI scale. Device px
+// would make the icons drift closer together as the UI scaled up.
+//
+// Min is 0 ON PURPOSE (butt the icons together — AO2 themes ship "0, 0" spacings
+// for exactly that look), which is why the on-disk DTO carries this as a *int: with
+// a plain int, "0" and "this config predates the setting" are the same bytes, and
+// every existing user's grid would silently collapse to a zero gap on upgrade. Max
+// is bounded so a slider can never starve the grid down to one column — the column
+// arithmetic in drawEmoteRow floors at 1 either way.
+const (
+	DefaultEmoteGridGapPx = 6
+	MinEmoteGridGapPx     = 0
+	MaxEmoteGridGapPx     = 48
+)
+
 // defaultEmoteHoverNames ships ON: resting the cursor on an emote button in the
 // grid shows that emote's name (its char.ini [Emotions] comment) as a tooltip.
 // OFF disables the hint entirely. Distinct from the sprite hover-PREVIEW (which
@@ -1230,6 +1250,12 @@ type AssetPreferences struct {
 	EmoteHoverNamesOn bool `json:"emoteHoverNames"`
 	// EmoteHoverNamesMs is the hover dwell before the emote-name tooltip shows (ms).
 	EmoteHoverNamesMs int `json:"emoteHoverNamesMs"`
+	// EmoteGridGapPx is the gap between emote icons on the AsyncAO grid, in LOGICAL
+	// px, on both axes (DefaultEmoteGridGapPx = the value that used to be a
+	// hardcoded constant). 0 is a legal, meaningful value — see the const block.
+	// AO2 themes are NOT affected: their grid keeps reading the theme's own
+	// emote_button_spacing, so a theme's canvas stays pure AO2.
+	EmoteGridGapPx int `json:"emoteGridGapPx"`
 	// AutoLoginToast notifies (in-app toast + desktop notification) when a
 	// saved auto-login fires on join (ON by default).
 	AutoLoginToast bool `json:"autoLoginToast"`
@@ -1634,6 +1660,7 @@ type prefsJSON struct {
 	PreviewHeightPx              int      `json:"previewHeightPx"`              // 0/absent = shipped default (384)
 	EmoteHoverNames              *bool    `json:"emoteHoverNames"`              // absent = default ON
 	EmoteHoverNamesMs            *int     `json:"emoteHoverNamesMs"`            // absent = default 5 s
+	EmoteGridGapPx               *int     `json:"emoteGridGapPx"`               // absent = DefaultEmoteGridGapPx. A POINTER because 0 ("butt the icons together") is a value a user can legitimately pick, and a plain int could not tell it from a config written before the setting existed
 	AutoLoginToast               *bool    `json:"autoLoginToast"`               // absent = default ON
 	CallwordToast                *bool    `json:"callwordToast"`                // absent = default ON
 	MessageCounter               *bool    `json:"messageCounter"`               // absent = default ON
@@ -1918,6 +1945,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreviewHoverMs:         DefaultPreviewHoverMs,
 		EmoteHoverNamesOn:      defaultEmoteHoverNames,
 		EmoteHoverNamesMs:      DefaultEmoteHoverNamesMs,
+		EmoteGridGapPx:         DefaultEmoteGridGapPx,
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
 		WordDelete:             defaultWordDelete,
@@ -2272,6 +2300,11 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.EmoteHoverNamesMs != nil {
 		p.EmoteHoverNamesMs = clampPercent(*onDisk.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	}
+	// nil (a config written before the setting existed) deliberately keeps the
+	// default seeded above — a present 0 means the user chose a zero gap.
+	if onDisk.EmoteGridGapPx != nil {
+		p.EmoteGridGapPx = clampPercent(*onDisk.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
@@ -3348,6 +3381,24 @@ func (p *AssetPreferences) SetEmoteHoverNamesMs(n int) {
 	p.EmoteHoverNamesMs = n
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
+// LOGICAL px. Read once per grid draw (never per cell) — it takes the pref lock.
+//
+// No "<= 0 means default" rescue here, unlike PreviewHeightPx: zero is a value the
+// user can pick (icons flush against each other), so the only way to get the
+// default back is the slider. defaultPrefs seeds it and the load overlay only
+// overwrites a value the file actually carried, so it can never arrive unset.
+func (p *AssetPreferences) EmoteGridGap() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return clampPercent(p.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+}
+
+// SetEmoteGridGap clamps and persists the emote-grid icon spacing (logical px).
+func (p *AssetPreferences) SetEmoteGridGap(n int) {
+	p.setIntPref(&p.EmoteGridGapPx, n, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 }
 
 // AutoLoginToastOn reports the auto-login notification toggle (ON by default):

@@ -51,8 +51,13 @@ const (
 	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
 	// they page in the same uniform grid as image chips (labels clip).
 	emoteTextCellW int32 = 104
-	// emoteGridGap spaces the classic emote grid (both axes).
-	emoteGridGap int32 = 6
+	// emoteGridGap is the SHIPPED spacing of the classic emote grid (both axes).
+	// Settings → Interface makes it adjustable; the pref (config.EmoteGridGap,
+	// seeded to config.DefaultEmoteGridGapPx == this) is what the grid reads, and
+	// this constant remains the fallback for the paths that have no App/prefs to
+	// consult. Themed (AO2) grids are unaffected — they scale the theme's own
+	// emote_button_spacing (theme_layout.go), which is theirs to own.
+	emoteGridGap int32 = config.DefaultEmoteGridGapPx
 	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
 	scrollBarW   int32 = 12
 	scrollBarGap int32 = 6
@@ -6454,7 +6459,11 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if !useImages {
 		cellW, cellH = emoteTextCellW, btnH
 	}
-	cols := (r.W + emoteGridGap) / (cellW + emoteGridGap)
+	// Icon spacing is the user's (Settings → Interface), read ONCE here and threaded
+	// through the layout maths + the cell loop — never re-read per cell, which would
+	// put a pref RLock in the per-button path.
+	gap := int32(a.d.Prefs.EmoteGridGap())
+	cols := (r.W + gap) / (cellW + gap)
 	if cols < 1 {
 		cols = 1
 	}
@@ -6462,10 +6471,10 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// keep the full height. Two-pass and oscillation-free: reserving height
 	// only shrinks a page, so a list that needed paging still does.
 	gridH := r.H
-	if len(vis) > int(cols*gridRows(gridH, cellH)) {
+	if len(vis) > int(cols*gridRows(gridH, cellH, gap)) {
 		gridH = r.H - (btnH + 4)
 	}
-	perPage := int(cols * gridRows(gridH, cellH))
+	perPage := int(cols * gridRows(gridH, cellH, gap))
 	if perPage < 1 {
 		perPage = 1
 	}
@@ -6497,8 +6506,8 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		}
 		n := int32(slot - start)
 		btn := sdl.Rect{
-			X: r.X + (n%cols)*(cellW+emoteGridGap),
-			Y: r.Y + (n/cols)*(cellH+emoteGridGap),
+			X: r.X + (n%cols)*(cellW+gap),
+			Y: r.Y + (n/cols)*(cellH+gap),
 			W: cellW, H: cellH,
 		}
 		selected := i == a.emoteIdx
@@ -6810,9 +6819,13 @@ func (a *App) cycleEmote(delta int) {
 	}
 }
 
-// gridRows is how many cellH-tall rows (plus emoteGridGap) fit in h, ≥ 1.
-func gridRows(h, cellH int32) int32 {
-	if rows := (h + emoteGridGap) / (cellH + emoteGridGap); rows > 1 {
+// gridRows is how many cellH-tall rows (plus a gap px gap) fit in h, ≥ 1. gap is
+// the user's emote-grid spacing, passed in rather than read from prefs so the
+// arithmetic stays pure — and so the caller takes the pref lock ONCE per grid
+// draw instead of once per call. cellH+gap is ≥ 1 for every reachable input
+// (cellH is a positive constant), so the division cannot trap.
+func gridRows(h, cellH, gap int32) int32 {
+	if rows := (h + gap) / (cellH + gap); rows > 1 {
 		return rows
 	}
 	return 1

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // #33 "Stretching the window stretches the emote buttons": the themed emote
@@ -14,6 +16,50 @@ import (
 // cell always keeps its designed aspect. These tests pin that, plus the two
 // invariants a grid must never break: cells stay inside the rect and never
 // overlap, and the hit-test rect IS the drawn rect (both come from cellRect).
+
+// TestGridRowsHonoursGap pins the classic (AsyncAO) emote grid's row arithmetic
+// against the user-set icon spacing. gridRows takes the gap as an argument rather
+// than reading the pref itself, so the caller pays the pref RLock once per grid
+// draw instead of once per row/column query — this test is what keeps the value
+// actually flowing through instead of silently reverting to the old constant.
+func TestGridRowsHonoursGap(t *testing.T) {
+	const cellH int32 = 40
+	cases := []struct {
+		h, gap, want int32
+	}{
+		// 0 gap: cells butt together, so the rows are a plain division.
+		{200, 0, 5},
+		{199, 0, 4},
+		// The shipped 6 px gap: (h+gap) / (cell+gap).
+		{200, 6, 4},  // 206/46 = 4
+		{240, 6, 5},  // 246/46 = 5
+		{40, 6, 1},   // one cell, no room for a second
+		{0, 6, 1},    // degenerate rect still yields a row (floor of 1)
+		{200, 48, 2}, // max gap: 248/88 = 2
+		// A gap wide enough to squeeze the grid must floor at one row, never zero
+		// (a zero would make perPage 0 and page the grid into nothing).
+		{10, 48, 1},
+	}
+	for _, tc := range cases {
+		if got := gridRows(tc.h, cellH, tc.gap); got != tc.want {
+			t.Errorf("gridRows(h=%d, cellH=%d, gap=%d) = %d, want %d", tc.h, cellH, tc.gap, got, tc.want)
+		}
+		if got := gridRows(tc.h, cellH, tc.gap); got < 1 {
+			t.Errorf("gridRows(h=%d, gap=%d) returned %d — it must never drop below 1", tc.h, tc.gap, got)
+		}
+	}
+}
+
+// TestEmoteGridGapDefaultMatchesPref pins the two halves of the default in step:
+// screens.go's emoteGridGap fallback constant and the preference's shipped value
+// have to agree, or a fresh install's grid would differ from the paths that still
+// read the constant.
+func TestEmoteGridGapDefaultMatchesPref(t *testing.T) {
+	if int(emoteGridGap) != config.DefaultEmoteGridGapPx {
+		t.Errorf("emoteGridGap = %d but config.DefaultEmoteGridGapPx = %d — the shipped spacing must be one number",
+			emoteGridGap, config.DefaultEmoteGridGapPx)
+	}
+}
 
 // aspectSkew is the cross-multiplied aspect error of a cell against its design.
 // Exact equality is impossible after int truncation: cellW = floor(s*dw) and

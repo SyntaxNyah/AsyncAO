@@ -705,6 +705,61 @@ func TestOOCBoxIsTheDefault(t *testing.T) {
 	}
 }
 
+// TestEmoteGridGapPref pins the emote-grid icon spacing end to end. The subtle
+// part is ZERO: "no gap at all" is a legal choice, so the on-disk DTO carries the
+// value as a *int. If it were ever demoted to a plain int, a config written before
+// the setting existed would read back as 0 and every upgrading user's emote grid
+// would silently collapse to flush icons — which is exactly what the
+// absent-key case below catches.
+func TestEmoteGridGapPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if got := p.EmoteGridGap(); got != DefaultEmoteGridGapPx {
+		t.Errorf("fresh EmoteGridGap = %d, want the shipped %d (nobody's grid may move on upgrade)", got, DefaultEmoteGridGapPx)
+	}
+
+	// A deliberate 0 must survive save→reload as 0, not snap back to the default.
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetEmoteGridGap(0)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := r.EmoteGridGap(); got != 0 {
+		t.Errorf("reloaded EmoteGridGap = %d, want 0 — a chosen zero gap must not be mistaken for 'unset'", got)
+	}
+
+	// A config that predates the setting keeps the DEFAULT, not zero.
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"emoteHoverNames": true}`), 0o600); err != nil {
+		t.Fatalf("write legacy prefs: %v", err)
+	}
+	legacy, err := load(old)
+	if err != nil {
+		t.Fatalf("load legacy prefs: %v", err)
+	}
+	if got := legacy.EmoteGridGap(); got != DefaultEmoteGridGapPx {
+		t.Errorf("legacy config EmoteGridGap = %d, want the default %d (absent must not read as a chosen 0)", got, DefaultEmoteGridGapPx)
+	}
+
+	// Out-of-range values clamp on the way in and on the way out.
+	s, _ := newTestPrefs(t)
+	s.SetEmoteGridGap(MaxEmoteGridGapPx + 500)
+	if got := s.EmoteGridGap(); got != MaxEmoteGridGapPx {
+		t.Errorf("over-max EmoteGridGap = %d, want %d", got, MaxEmoteGridGapPx)
+	}
+	s.SetEmoteGridGap(-42)
+	if got := s.EmoteGridGap(); got != MinEmoteGridGapPx {
+		t.Errorf("under-min EmoteGridGap = %d, want %d", got, MinEmoteGridGapPx)
+	}
+}
+
 // TestMusicAcrossTabsPref pins the cross-tab music-continuity toggle: OFF by
 // default (a backgrounded tab's music ducks to silence), and survives save→reload
 // when enabled (the marshal + load overlay must BOTH carry it — the saves-but-does-
