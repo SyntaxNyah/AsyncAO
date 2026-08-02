@@ -4,6 +4,60 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.87.3 — 2026-08-02
+
+Message text comes back on macOS, and names stop rendering as empty boxes in
+the player list, the showname picker and the lobby.
+
+### Message text (macOS)
+
+- **The chat box no longer loses its text when the interface is scaled.** On
+  macOS at any UI scale other than 100%, in-character messages were cut off at
+  the bottom — and often did not appear at all, leaving a box with the speaker's
+  name and nothing under it. It looked exactly like the client had stopped
+  receiving messages.
+  
+  At scales other than 100% the client draws messages through a faster path that
+  briefly switches the renderer to 1:1 so letters land on exact pixels. That
+  switch happened while a clipping region was already in place, and macOS's
+  graphics backend measures a clipping region when it is *used*, while the
+  Windows and Linux ones measure it when it is *set*. So on macOS the region the
+  text was allowed to draw into shrank to a fraction of the box, and the lines
+  fell outside it. The speaker's name kept drawing because it is painted before
+  the clipping region is set — which is what made this look like a network
+  problem rather than a drawing one.
+  
+  The client no longer depends on that difference: it now states the clipping
+  region itself, in exact pixels, so every graphics backend agrees. The crisp
+  scaled text this path exists for is unchanged.
+
+- **A message can no longer fail silently.** If the client cannot prepare a
+  message for drawing, it used to leave the box empty — for that message and
+  every one after it — with nothing written anywhere. It now falls back to
+  drawing the words plainly instead. They appear without the type-out animation
+  and without text effects, but they appear, and the underlying error is written
+  to the debug log.
+
+### Names showing as empty boxes
+
+- **The player list draws names it needs two fonts for.** A name mixing an emoji,
+  or a script the main font doesn't cover, with ordinary letters rendered as
+  boxes in the roster — while the exact same name drew correctly in the chat box
+  and the log. Both roster lines are fixed.
+- **So do the showname picker and the lobby's server labels.** Same cause: those
+  controls could only ever use one font at a time, and no single font can draw a
+  name whose characters live in two of them.
+
+### New settings and tools
+
+- **Settings → Interface → "Use fonts installed on this computer"** (on by
+  default). Lets text in scripts the bundled fonts don't cover borrow a font from
+  your system. Turn it off to make the client use only the fonts it ships with.
+- **Extras → Debug → Session now reports the chat box's measurements** — how tall
+  the stage is, where the box sits, how many lines the message wrapped to, how
+  much room they have, and whether the text fits or is being cut. This is what
+  identified the macOS fault, and it stays in for the next one.
+
 ## v1.87.3-test3 — 2026-08-02
 
 Found it. The message text should be back on macOS at any UI scale.
