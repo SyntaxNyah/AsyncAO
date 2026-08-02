@@ -1036,7 +1036,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// is set in the Extras → Sprite Style picker). Reduce-motion already drops a
 	// received style's wobble/spin; this hides the whole thing.
 	hideStyles := a.d.Prefs.HideSpriteStylesOn()
-	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour / glow)", hideStyles); next != hideStyles {
+	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour, glow, spinning, wobble, motion paths and glitch)", hideStyles); next != hideStyles {
 		a.d.Prefs.SetHideSpriteStyles(next)
 		if a.room != nil {
 			a.room.HideSpriteStyles = next
@@ -2082,6 +2082,25 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	pad := a.formX // rebase every pad-relative box into the content card
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Stage & viewport effects")
+	// The master off-switch leads the section: one tick box for players who want
+	// none of this. It doesn't rewrite the rows below — it overrules them — so
+	// unticking it hands back the exact set-up they had. The rows stay visible but
+	// muted while it's on, which is what tells them what it's actually suppressing.
+	noFX := a.d.Prefs.EffectsDisabled()
+	if next := c.Checkbox(pad, y, "Disable all visual effects (OFF by default): one switch for a calm screen — stops other players' spinning / glowing / moving sprite styles, screen shake and flash, animated text, entrance slides, sprite washes and the post-processing overlays. Your settings below are remembered, just overruled while this is ticked.", noFX); next != noFX {
+		a.d.Prefs.SetDisableEffects(next)
+		noFX = next
+		if a.room != nil { // apply to the live room immediately, like the rows below do
+			a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
+			a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX
+			a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX
+		}
+	}
+	y += 26
+	// Mute only the rows the master actually overrules. The per-character chatbox
+	// skin and the stage frame further down are NOT effects — they're AO2 parity
+	// and decor — so the bracket is reopened around them below.
+	unmute := c.pushMuted(noFX)
 	// Screen effects (AO2 parity, ON by default): the \s screenshake and \f flash
 	// codes you can type into a message, plus the field-based shake / realization.
 	// Off keeps your screen still; "Reduce motion" (accessibility) also suppresses.
@@ -2196,6 +2215,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		a.d.Prefs.SetPostGrain(next)
 	}
 	y += 26
+	c.popMuted(unmute) // the next two rows are parity/decor, not effects — keep them live
 	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
 	// behaviour, default ON; off also stops the misc art fetches.
 	ccb := a.d.Prefs.CharChatboxOn()
@@ -2211,6 +2231,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
 	y += 30
+	defer c.popMuted(c.pushMuted(noFX)) // back under the master for the rest of the section
 	ent := a.d.Prefs.AnimateEntrancesOn()
 	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
 		a.d.Prefs.SetAnimateEntrances(next)

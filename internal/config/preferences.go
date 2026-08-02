@@ -1077,6 +1077,7 @@ type AssetPreferences struct {
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
+	DisableEffects         bool                         `json:"disableEffects"`       // master off-switch for every visual extra; default OFF (zero value)
 	ScreenEffects          bool                         `json:"screenEffects"`        // AO2 \s/\f + field shake/flash; default ON
 	WordDelete             bool                         `json:"wordDelete"`           // Ctrl+Backspace deletes a word in any text field; default ON
 	RecordingsKeepAssets   bool                         `json:"recordingsKeepAssets"` // an in-app .aorec recording auto-packages its warm assets into a self-contained bundle on stop; default ON
@@ -1553,6 +1554,7 @@ type prefsJSON struct {
 	MusicVolMode           bool                 `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	OpenTabs               []OpenTab            `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool                 `json:"reduceMotion"`         // default OFF (zero value)
+	DisableEffects         bool                 `json:"disableEffects"`       // default OFF (zero value) — master visual-effects off-switch
 	ScreenEffects          *bool                `json:"screenEffects"`        // absent = default ON
 	WordDelete             *bool                `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
 	RecordingsKeepAssets   *bool                `json:"recordingsKeepAssets"` // absent = default ON (pointer: an explicit OFF must persist)
@@ -2536,6 +2538,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
+	p.DisableEffects = onDisk.DisableEffects
 	p.MusicDuckingOn = onDisk.MusicDucking
 	p.PerAreaScroll = onDisk.PerAreaScrollback
 	p.DetailedLog = onDisk.DetailedLog
@@ -8101,6 +8104,35 @@ func (p *AssetPreferences) SetReduceMotion(on bool) {
 		return
 	}
 	p.ReduceMotionOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EffectsDisabled reports the master visual-effects off-switch (OFF by default =
+// effects render). It is deliberately ONE preference that WINS over the whole
+// eye-candy family rather than a migration that rewrites the individual toggles:
+// a player who turns it off again gets their old choices back exactly as they
+// left them, and there is a single place to look when "why is nothing moving".
+//
+// What it suppresses is decided at the four render-side choke points, not here —
+// App.spriteFX / App.postFX (the local washes, motion and post-processing),
+// App.applyViewerKnobs (other players' TRANSMITTED sprite styles and the AO2
+// \s/\f screen effects) and the animated-text draw. Keeping the policy at the
+// draw sites means this getter stays a plain flag read on the hot path.
+func (p *AssetPreferences) EffectsDisabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DisableEffects
+}
+
+// SetDisableEffects toggles the master visual-effects off-switch.
+func (p *AssetPreferences) SetDisableEffects(on bool) {
+	p.mu.Lock()
+	if p.DisableEffects == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DisableEffects = on
 	p.mu.Unlock()
 	p.markDirty()
 }

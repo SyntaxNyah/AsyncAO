@@ -617,9 +617,13 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
 	// A maker Preview is authoring (show the scene's screenshake/flash); a normal
 	// replay honours the viewer's reduce-motion accessibility pref.
-	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion() && !a.makerOpen
+	// The master off-switch rides along with the individual prefs, under the same
+	// makerOpen exemption: authoring a scene must still SHOW what is being
+	// authored, or the maker previews a lie.
+	noFX := a.d.Prefs.EffectsDisabled()
+	a.replayRoom.ReduceMotion = (a.d.Prefs.ReduceMotion() || noFX) && !a.makerOpen
 	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
-	a.replayRoom.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() && !a.makerOpen // maker preview shows styles; replay honours the viewer
+	a.replayRoom.HideSpriteStyles = (a.d.Prefs.HideSpriteStylesOn() || noFX) && !a.makerOpen // maker preview shows styles; replay honours the viewer
 
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
 		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone

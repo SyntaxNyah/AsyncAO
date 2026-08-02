@@ -465,7 +465,13 @@ type Ctx struct {
 	// onRow, when non-nil, receives every Checkbox's label + drawn y — the
 	// settings search's collect pass (#26 gather) uses it to index all tabs'
 	// rows. nil in normal play: the hook costs one nil check per checkbox.
-	onRow   func(label string, y int32)
+	onRow func(label string, y int32)
+	// muted, while set, renders Checkbox rows greyed and inert: a master toggle
+	// upstream has already overruled them, so showing them live would invite a
+	// click that visibly does nothing. They still draw (the player can SEE what
+	// the master is suppressing, and what they'll get back when they turn it
+	// off) and still register with onRow, so settings search keeps finding them.
+	muted   bool
 	dropped string      // SDL_DROPFILE path this frame ("" = none)
 	hotkey  sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
 	// clipOn/clipRect mirror the renderer clip set by pushClip so hovering()
@@ -2387,6 +2393,17 @@ func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	return prev, had
 }
 
+// pushMuted greys out and disarms every Checkbox drawn until the matching
+// popMuted, for rows a master toggle has overruled. It returns the previous
+// value rather than assuming false so the brackets nest, matching pushClip.
+func (c *Ctx) pushMuted(on bool) (prev bool) {
+	prev, c.muted = c.muted, c.muted || on
+	return prev
+}
+
+// popMuted restores the mute state captured by pushMuted.
+func (c *Ctx) popMuted(prev bool) { c.muted = prev }
+
 // popClip restores the clip captured by pushClip.
 func (c *Ctx) popClip(prev sdl.Rect, had bool) {
 	c.clipOn, c.clipRect = had, prev
@@ -2852,19 +2869,26 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 		c.onRow(label, y) // settings-search collect pass (#26 gather): record and draw as normal
 	}
 	const box = checkboxBoxPx
+	// A muted row is overruled by a master toggle upstream: draw it in the dim
+	// palette and return the value untouched below, so a click can't set state
+	// the master would immediately override anyway.
+	frame, tick, text := ColAccent, ColAccent, ColText
+	if c.muted {
+		frame, tick, text = ColPanelHi, ColPanelHi, ColTextDim
+	}
 	r := sdl.Rect{X: x, Y: y, W: box, H: box}
 	c.Fill(r, ColPanel)
-	c.Border(r, ColAccent)
+	c.Border(r, frame)
 	if value {
 		inner := sdl.Rect{
 			X: x + checkboxTickInsetPx, Y: y + checkboxTickInsetPx,
 			W: box - 2*checkboxTickInsetPx, H: box - 2*checkboxTickInsetPx,
 		}
-		c.Fill(inner, ColAccent)
+		c.Fill(inner, tick)
 	}
-	w := c.Label(x+box+checkboxLabelGapPx, y, label, ColText)
+	w := c.Label(x+box+checkboxLabelGapPx, y, label, text)
 	hit := sdl.Rect{X: x, Y: y, W: box + checkboxLabelGapPx + w, H: box}
-	if c.hovering(hit) && c.clicked {
+	if !c.muted && c.hovering(hit) && c.clicked {
 		return !value
 	}
 	return value

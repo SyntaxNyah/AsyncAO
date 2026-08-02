@@ -161,10 +161,10 @@ func (a *App) warmReactBadges() {
 
 // onIncomingReaction handles a decoded reaction frame: float it only if its ref matches a
 // recent message we've actually seen (a stray / late-join ref matches nothing — benign).
-// Gated by the HideReactions viewer opt-out.
+// Gated by the HideReactions viewer opt-out, and by the master effects off-switch.
 func (a *App) onIncomingReaction(r courtroom.WireReaction) {
-	if a.d.Prefs.HideReactionsOn() {
-		return
+	if a.d.Prefs.HideReactionsOn() || a.d.Prefs.EffectsDisabled() {
+		return // opted out of reactions specifically, or of every visual extra
 	}
 	if a.reactionTargetKnown(r.Ref) {
 		a.spawnReactionFloat(r.Index)

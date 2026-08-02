@@ -2602,7 +2602,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
-			reduce := a.d.Prefs.ReduceMotion()
+			// The master off-switch implies reduce-motion for text too: the glyphs
+			// still lay out and read normally, they just stop moving (animtext.go
+			// pins everything static under this flag), which is exactly what the
+			// toggle promises — no spinning, no waving, text still legible.
+			reduce := a.d.Prefs.ReduceMotion() || a.d.Prefs.EffectsDisabled()
 			if a.msAnim.Animates(reduce) {
 				// Clock-driven text FX on screen: keep frames coming through the
 				// static skip (idle=0 froze/stuttered them — the FX-at-idle

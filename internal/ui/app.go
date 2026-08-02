@@ -6657,12 +6657,17 @@ func (a *App) applyTimingToRoom() {
 		a.room.QueueCap = n
 	}
 	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
-	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
-	a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() // AO2 \s/\f + field shake/flash (default ON)
-	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()   // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
+	// The master off-switch WINS over both effect knobs below: it implies
+	// reduce-motion, no AO2 \s/\f, and none of another player's transmitted
+	// sprite style. It never writes the individual prefs — turning it back off
+	// restores whatever the player had chosen before.
+	noFX := a.d.Prefs.EffectsDisabled()
+	a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
+	a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX // AO2 \s/\f + field shake/flash (default ON)
+	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()            // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
-	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
-	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()        // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
+	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX // #103: viewer opt-out of others' styles
+	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()                // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
 }
 
 // applyMusicStreaming persists the custom-/play-music streaming toggle and pushes
@@ -9095,6 +9100,13 @@ func (a *App) warnActive() bool {
 // fetched when the solid wash is actually active. Shared by the live + replay
 // render paths.
 func (a *App) spriteFX() render.SpriteFX {
+	if a.d.Prefs.EffectsDisabled() {
+		// Master off-switch: every wash, motion and lighting extra goes, but
+		// UserScaling STAYS — it is how big a sprite is drawn (char.ini / the
+		// enlarging rule), not eye-candy, and zeroing it would silently resize
+		// every character the moment a player asked for a calmer screen.
+		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())}
+	}
 	fx := render.SpriteFX{
 		Rainbow:         a.d.Prefs.RainbowSpritesOn(),
 		Solid:           a.d.Prefs.SpriteSolidTintOn(),
@@ -9139,6 +9151,9 @@ func (a *App) cycleWeather() {
 
 // postFX mirrors the user's #10 post-processing toggles onto the viewport each frame.
 func (a *App) postFX() render.PostFX {
+	if a.d.Prefs.EffectsDisabled() { // master off-switch: no overlay over the stage at all
+		return render.PostFX{}
+	}
 	return render.PostFX{
 		Vignette:  a.d.Prefs.PostVignetteOn(),
 		Scanlines: a.d.Prefs.PostScanlinesOn(),
