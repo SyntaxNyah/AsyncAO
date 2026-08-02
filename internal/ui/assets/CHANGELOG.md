@@ -6,143 +6,21 @@ tagged "installed" below.
 
 ## v1.87.3 — 2026-08-02
 
-Message text comes back on macOS, and names stop rendering as empty boxes in
-the player list, the showname picker and the lobby.
+Message text comes back on macOS, and names stop showing as empty boxes.
 
-### Message text (macOS)
-
-- **The chat box no longer loses its text when the interface is scaled.** On
-  macOS at any UI scale other than 100%, in-character messages were cut off at
-  the bottom — and often did not appear at all, leaving a box with the speaker's
-  name and nothing under it. It looked exactly like the client had stopped
-  receiving messages.
-  
-  At scales other than 100% the client draws messages through a faster path that
-  briefly switches the renderer to 1:1 so letters land on exact pixels. That
-  switch happened while a clipping region was already in place, and macOS's
-  graphics backend measures a clipping region when it is *used*, while the
-  Windows and Linux ones measure it when it is *set*. So on macOS the region the
-  text was allowed to draw into shrank to a fraction of the box, and the lines
-  fell outside it. The speaker's name kept drawing because it is painted before
-  the clipping region is set — which is what made this look like a network
-  problem rather than a drawing one.
-  
-  The client no longer depends on that difference: it now states the clipping
-  region itself, in exact pixels, so every graphics backend agrees. The crisp
-  scaled text this path exists for is unchanged.
-
-- **A message can no longer fail silently.** If the client cannot prepare a
-  message for drawing, it used to leave the box empty — for that message and
-  every one after it — with nothing written anywhere. It now falls back to
-  drawing the words plainly instead. They appear without the type-out animation
-  and without text effects, but they appear, and the underlying error is written
-  to the debug log.
-
-### Names showing as empty boxes
-
-- **The player list draws names it needs two fonts for.** A name mixing an emoji,
-  or a script the main font doesn't cover, with ordinary letters rendered as
-  boxes in the roster — while the exact same name drew correctly in the chat box
-  and the log. Both roster lines are fixed.
-- **So do the showname picker and the lobby's server labels.** Same cause: those
-  controls could only ever use one font at a time, and no single font can draw a
-  name whose characters live in two of them.
-
-### New settings and tools
-
-- **Settings → Interface → "Use fonts installed on this computer"** (on by
-  default). Lets text in scripts the bundled fonts don't cover borrow a font from
-  your system. Turn it off to make the client use only the fonts it ships with.
-- **Extras → Debug → Session now reports the chat box's measurements** — how tall
-  the stage is, where the box sits, how many lines the message wrapped to, how
-  much room they have, and whether the text fits or is being cut. This is what
-  identified the macOS fault, and it stays in for the next one.
-
-## v1.87.3-test3 — 2026-08-02
-
-Found it. The message text should be back on macOS at any UI scale.
-
-### Message text
-
-- **The chat box no longer loses its text when the interface is scaled.** At any
-  scale other than 100%, the client draws the message through a faster path that
-  briefly switches the renderer to 1:1 so the letters land on exact pixels. That
-  switch happened while a clip was already in place — and macOS's graphics
-  backend measures a clip at the moment it is *used*, not when it is set, unlike
-  the Windows and Linux ones. So the region the text was allowed to draw into
-  shrank to a fraction of the box, and at 125% every line fell outside it and
-  vanished. The showname kept drawing because it is painted before the clip is
-  set, which is why the box looked like it had simply stopped receiving text.
-- The client no longer relies on that difference at all: it now re-states the
-  clip itself, in exact pixels, so every graphics backend agrees. The crisp
-  scaled text this path exists for is unchanged.
-
-**This is the fix for the cut-off / missing message text.** If you turned off
-"Use fonts installed on this computer" while testing the last build, you can
-turn it back on.
-
-## v1.87.3-test2 — 2026-08-02
-
-A second test build for the cut-off message text. The last one ruled things
-out; this one asks your client to show its working.
-
-### Please open this and send a screenshot
-
-- **Extras → Debug → Session, while a message that is cut off is on screen.**
-  The bottom three lines now report the chat box's actual measurements: how tall
-  the stage is, where the box sits, how many lines the message wrapped to, how
-  much room there is for them, and whether the client thinks the text **fits**
-  or is **CUT**. That one readout separates the two possible faults — a box that
-  is too short, or text that is drawn wrongly inside a box that was big enough —
-  which cannot be told apart from an ordinary screenshot.
-- It also shows the render scale and the font scale side by side, so a
-  mismatch between them is visible rather than inferred.
-
-### Ruled out so far
-
-- The system-font setting from the previous test build made no difference, so
-  the fonts on your machine are not the cause. It stays available, but it is not
-  the problem.
-- The way scaled text is drawn was measured against the old drawing path at
-  125% and covers exactly the same pixels, so the message is not being drawn
-  short. That points at how much room the box is given, which is what the new
-  readout measures.
-
-## v1.87.3-test1 — 2026-08-02
-
-A test build. It carries one switch and one safety net for the report that the
-in-character text box shows nothing at all, plus fixes for names rendering as
-empty boxes in a few places.
-
-### If your message text is missing, please try this
-
-- **Settings → Interface → "Use fonts installed on this computer".** Turn it
-  OFF and restart the client. This stops AsyncAO borrowing fonts from your
-  system for letters its own fonts don't cover, and is the one part of the text
-  system that behaves differently on macOS, Windows and Linux. If your message
-  text comes back with it off, that tells us exactly where the fault is. If it
-  makes no difference, that is just as useful to know — it rules the whole thing
-  out. Leave it on if your text is fine.
-
-### Message text
-
-- **The message box no longer goes silently blank.** If the client failed to
-  prepare a message for drawing, it left the box completely empty — showing the
-  speaker's name and nothing else, on every following message too, with no
-  explanation. It now falls back to drawing the words plainly instead. They
-  appear without the type-out animation and without any text effects, but they
-  appear. The underlying error is written to the debug log so it can be
-  diagnosed rather than guessed at.
-
-### Names showing as empty boxes
-
-- **The player list draws names it needs two fonts for.** A name mixing an
-  emoji, or a script the main font lacks, with ordinary letters came out as
-  boxes in the roster while the exact same name drew correctly in the chat box
-  and the log.
-- **So do the showname picker and the server labels.** Same cause: those
-  widgets could only ever use one font at a time, and no single font can draw a
-  name whose characters live in two of them.
+- **Chat text no longer disappears on macOS at a scaled interface.** At any UI
+  scale but 100%, messages were cut off at the bottom or missing entirely,
+  leaving just the speaker's name — which looked like the client had stopped
+  receiving. A drawing shortcut clashed with how macOS measures the chat box's
+  clipping region; the client no longer relies on that.
+- **A message can no longer fail silently.** If one can't be prepared for
+  drawing, the words are now shown plainly (no type-out, no text effects)
+  instead of leaving the box empty from then on.
+- **Names needing two fonts render properly** in the player list, the showname
+  picker and the lobby. A name mixing an emoji or another script with ordinary
+  letters used to draw as boxes there while working fine in chat and the log.
+- **New:** Settings → Interface → "Use fonts installed on this computer" (on by
+  default), and a chat box measurement readout in Extras → Debug → Session.
 
 ## v1.87.2 — 2026-08-02
 
