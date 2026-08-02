@@ -37,18 +37,25 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 				a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
 				return
 			}
+			// Both widths come from the MEMO, never font.SizeUTF8 directly: this runs
+			// for every named row of both logs on every frame, and a raw SizeUTF8
+			// heap-allocates through cgo (go-sdl2 hands the out-params' addresses
+			// across the boundary — the same escape the cgoRect idiom exists for).
+			// Measured raw, it cost the whole-screen zero-alloc gates two allocations
+			// per named row per frame — invisible until the OOC box became default and
+			// the gate fixture finally had OOC lines in it.
 			px, used := x, int32(0)
 			if pre := line[:idx]; pre != "" { // timestamp / leading prefix — bold, line colour
-				if pw, _, err := font.SizeUTF8(pre); err == nil {
+				if pw, ok := c.fontTextWidth(font, pre); ok {
 					c.LabelClippedFont(font, px, y, wrapW-used, pre, col)
 					if bold {
 						c.LabelClippedFont(font, px+1, y, wrapW-used, pre, col)
 					}
-					px += int32(pw)
-					used += int32(pw)
+					px += pw
+					used += pw
 				}
 			}
-			if nw, _, err := font.SizeUTF8(speaker); err == nil {
+			if nw, ok := c.fontTextWidth(font, speaker); ok {
 				nameCol := col
 				if nameOn {
 					nameCol = nameColor(speaker, sat, val)
@@ -57,8 +64,8 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 				if bold { // faux-bold: a 1px-shifted second pass thickens the strokes (no bold font needed)
 					c.LabelClippedFont(font, px+1, y, wrapW-used, speaker, nameCol)
 				}
-				used += int32(nw)
-				c.LabelClippedFont(font, px+int32(nw), y, wrapW-used, line[idx+len(speaker):], col)
+				used += nw
+				c.LabelClippedFont(font, px+nw, y, wrapW-used, line[idx+len(speaker):], col)
 				return
 			}
 		}

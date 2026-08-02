@@ -125,6 +125,13 @@ func stageSettledCourtroom(t *testing.T) (*App, func()) {
 	// otherwise allocate every frame (that's a scrolled-up frame, not settled).
 	a.icStick = true
 	a.icReadMark = len(a.icLog)
+	// The OOC scrollback too. Since v1.87.0 the OOC BOX is the default layout, so
+	// drawCleanRightColumn → drawOOCPanel is on the settled frame's critical path
+	// for a fresh install — but with an empty OOC log its per-line raster loop
+	// never runs and the gate would silently stop measuring the panel that just
+	// became default. ASCII only, same reasoning as the IC lines above.
+	a.pushOOC("Judge: welcome to the courtroom", "Judge")
+	a.pushOOC("Witch: an ooc line for the raster", "Witch")
 
 	return a, func() {
 		store.Purge()

@@ -2474,13 +2474,32 @@ func (c *Ctx) TextWidth(text string) int32 {
 // wholesale-reset-on-overflow rule as widthCache; created lazily, so it costs
 // nothing until a panel is actually dressed.
 func (c *Ctx) panelTextWidth(text string) int32 {
-	k := panelWidthKey{font: c.panelFont, text: text}
-	if w, ok := c.panelWidth[k]; ok {
-		return w
+	w, _ := c.fontTextWidth(c.panelFont, text)
+	return w
+}
+
+// fontTextWidth measures text on an EXPLICIT face, memoized in the same
+// font-keyed map panelTextWidth uses (the key already carries the face, so an
+// arbitrary font can share it safely — a rebuilt face is a new pointer and so a
+// new key, never a stale width for a live one). ok is false when the face is nil
+// or SDL_ttf refused, so a caller can keep its measurement-failed branch.
+//
+// This exists because ttf.Font.SizeUTF8 is NOT free to call per frame: go-sdl2
+// hands the out-params' addresses to cgo, so each call heap-allocates — the same
+// escape the cgoRect idiom exists for. Any draw path that measures the same
+// string every frame must come through here, or it shows up as a per-frame
+// allocation in the whole-screen zero-alloc gates.
+func (c *Ctx) fontTextWidth(f *ttf.Font, text string) (int32, bool) {
+	if f == nil {
+		return 0, false
 	}
-	w, _, err := c.panelFont.SizeUTF8(text)
+	k := panelWidthKey{font: f, text: text}
+	if w, ok := c.panelWidth[k]; ok {
+		return w, true
+	}
+	w, _, err := f.SizeUTF8(text)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	if c.panelWidth == nil {
 		c.panelWidth = make(map[panelWidthKey]int32, textCacheMax)
@@ -2488,7 +2507,7 @@ func (c *Ctx) panelTextWidth(text string) int32 {
 		c.panelWidth = make(map[panelWidthKey]int32, textCacheMax)
 	}
 	c.panelWidth[k] = int32(w)
-	return int32(w)
+	return int32(w), true
 }
 
 // devTextWidth measures text on the DEVICE chrome face — the metric the drawn

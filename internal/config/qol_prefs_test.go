@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -657,6 +658,50 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	}
 	if !r.NotifyOnOOCOn() {
 		t.Error("NotifyOnOOC=true lost on reload")
+	}
+}
+
+// TestOOCBoxIsTheDefault pins the v1.87.0 default flip AND the reason it needed no
+// migration stamp. A fresh install must land on the OOC BOX (OOCInLogTab OFF) — the
+// layout every call site already documents as the default — while anyone who had
+// opted into the Legacy-style log tab keeps it across the upgrade. That upgrade
+// safety rests entirely on prefsJSON.OOCInLogTab having NO omitempty: every file
+// ever saved carries an explicit value, so the unconditional load overlay restores
+// it instead of falling back to the (now inverted) seed. Add omitempty there and a
+// tab user silently becomes a box user on upgrade — this test is the tripwire.
+func TestOOCBoxIsTheDefault(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.OOCInLogTabOn() {
+		t.Error("a fresh install must default to the OOC BOX (OOCInLogTab OFF)")
+	}
+
+	// The opt-in survives a save→reload round trip (the upgrade path).
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetOOCInLogTab(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.OOCInLogTabOn() {
+		t.Error("OOCInLogTab=true lost on reload — the opt-in must survive the default flip")
+	}
+
+	// And the serialized form really does carry the key explicitly (what makes the
+	// line above work). A marshalled default must ALSO write it, or a fresh config
+	// saved today would read back as "absent" tomorrow.
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read prefs: %v", err)
+	}
+	if !strings.Contains(string(blob), `"oocInLogTab"`) {
+		t.Error(`saved prefs must always carry "oocInLogTab" (no omitempty) — that is the upgrade guarantee`)
 	}
 }
 

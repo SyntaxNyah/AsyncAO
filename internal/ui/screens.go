@@ -5562,7 +5562,14 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// log tab" toggle), as a SECOND always-visible input alongside the tab's own — the hybrid.
 	// In the new-default OOC BOX the input lives inside the box, so this bar is dropped.
 	oocY := h - fH - 4
-	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()) {
+	// …and it comes BACK as the fallback when the right column is hidden, because
+	// the OOC box lives inside that column (drawCleanRightColumn, guarded by
+	// panelLog above). Without this clause the box-by-default layout would leave a
+	// user who hides the right column with NO OOC input anywhere — no OOC chat and
+	// no way to run a slash command. The invariant is one live OOC input in every
+	// state, and only an explicit "hide OOC chat" may take it away.
+	oocBoxUnreachable := a.panelHidden(panelLog)
+	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn() || oocBoxUnreachable) {
 		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
 		// the bottom row, the row centred within the slot height. Registered only while it
 		// actually draws, so the editor offers a handle for it only when OOC is a tab.

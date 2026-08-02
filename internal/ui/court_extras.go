@@ -115,13 +115,15 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelShouts, "Shout buttons (Hold It / Objection / Take That)", "Shouts"},
 	{panelKnobs, "Layout knobs (View/Text/MsgBox/Log/Input)", "Knobs"},
 	{panelEmotes, "Emote buttons", "Emotes"},
-	{panelLog, "Right column (log/music/areas/OOC tabs)", "Right column"},
+	{panelLog, "Right column (log/music/areas tabs, and the OOC box)", "Right column"},
 	{panelTabMusic, "Music tab", "Music tab"},
 	{panelTabAreas, "Areas tab", "Areas tab"},
 	{panelTabPlayers, "Players tab", "Players tab"},
 	{panelTabNotes, "Notes tab", "Notes tab"},
 	{panelTabFriends, "Friends tab", "Friends tab"},
-	{panelOOC, "Bottom OOC row", "OOC bar"},
+	// short is the string the Hide-UI checkbox actually renders; label only feeds
+	// the search filter, so it carries BOTH names for the box and bar layouts.
+	{panelOOC, "OOC chat box / bottom OOC row / out of character", "OOC chat"},
 	{panelHP, "Penalty bars", "Penalty bars"},
 	{panelTimers, "Server timers", "Timers"},
 	{panelTestimony, "Testimony recording badge", "Testimony"},

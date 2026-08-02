@@ -965,7 +965,7 @@ type AssetPreferences struct {
 	VoicePTTKey            string                       `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
 	QuitConfirmSkip        bool                         `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
-	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
+	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default OFF since v1.87.0 — OOC gets its own box.
 	MyProfile              ProfilePref                  `json:"profile"`                    // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -1430,7 +1430,7 @@ type prefsJSON struct {
 	VoicePTTKey            string               `json:"voicePttKey,omitempty"`      // push-to-talk toggle key
 	QuitConfirmSkip        bool                 `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on quit
 	LegacyDevTheme         bool                 `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
-	OOCInLogTab            bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
+	OOCInLogTab            bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default OFF (= OOC box). No omitempty ON PURPOSE: it is what makes an existing user's opt-in survive the v1.87.0 default flip.
 	Profile                *ProfilePref         `json:"profile"`                    // absent = no profile (#101)
 	ChatboxOpacity         *int                 `json:"chatboxOpacity"`             // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int                 `json:"rainbowSpriteVividness"`     // absent = default (0 is valid → pointer)
@@ -1973,7 +1973,15 @@ func defaultPrefs(path string) *AssetPreferences {
 		OOCScalePct:    DefaultScalePercent,
 		InputHeightPct: DefaultScalePercent,
 		UIScalePct:     DefaultScalePercent,
-		OOCInLogTab:    true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
+		// OOC gets its OWN BOX on a fresh install (v1.87.0). Every call site already
+		// documents the box as "the new default" — only this seed still said otherwise,
+		// so a first-run user got the Legacy-style hybrid (a log tab PLUS a second
+		// always-visible OOC bar at the bottom) the rest of the UI treats as opt-in.
+		// EXISTING configs are untouched: prefsJSON.OOCInLogTab carries no omitempty, so
+		// every file ever saved holds an explicit value that the unconditional load
+		// overlay copies back — no migration stamp needed (unlike ThemeFitDefaultMigrated,
+		// where the sibling field's zero value was ambiguous with "never written").
+		OOCInLogTab: false,
 
 		MusicVol:        defaultStartVolume,
 		SFXVol:          defaultStartVolume,
