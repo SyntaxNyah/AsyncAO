@@ -186,6 +186,10 @@ const (
 	DefaultMultiTabCap = 6
 	minMultiTabCap     = 1
 	maxMultiTabCap     = 99
+	// MaxMultiTabCap is maxMultiTabCap exported for callers that must size a
+	// per-tab structure against the same ceiling (the mount layer's origin list),
+	// so the two can never drift apart.
+	MaxMultiTabCap = maxMultiTabCap
 )
 
 // defaultEmoteButtonImages ships the courtroom emote picker as image
