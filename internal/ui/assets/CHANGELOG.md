@@ -4,6 +4,32 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.88.0 — 2026-08-03
+
+Clicks stop landing on things you can't see, and the Timer stops hiding the
+courtroom.
+
+- **Clicking the sprite preview no longer plays a song.** The preview box that
+  pops up when you hover an emote or a character floats over the music list, and
+  the track underneath was taking the same click that dismissed the box. The box
+  now owns the area it covers: nothing beneath it highlights, and nothing beneath
+  it fires.
+- **Dragging a box no longer selects text behind it.** Moving the sprite preview
+  across the chat log used to highlight the log text as it passed over. Any drag
+  now holds the pointer until you let go.
+- **The Timer, the Login dialog and the Pair window stop taking the whole
+  screen.** Opening the Extras Timer blanked the scene, the logs, the music list
+  and every button until you closed it. All three are ordinary floating windows
+  now — drag them by the title bar, resize them from the corner, and keep
+  watching the room behind them. They remember where you put them.
+- **Extras buttons stay inside the Extras box.** The box has grown to 23 buttons
+  and they had begun spilling out through the bottom edge. The list scrolls now,
+  with a scrollbar and the mouse wheel, and the box can be resized much smaller
+  than before without anything escaping.
+- **The Pair window loses its screen dimming.** Nothing is blocked while it's
+  open, so nothing looks blocked — and you can now read the player list it asks
+  the server for while it's still on screen.
+
 ## v1.87.3 — 2026-08-02
 
 Message text comes back on macOS, and names stop showing as empty boxes.
