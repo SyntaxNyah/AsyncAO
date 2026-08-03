@@ -860,6 +860,12 @@ const (
 // migration on the first post-update connect.
 const WardrobeCap = 1024
 
+// LocalMountCap bounds the ordered local mount list (rule §17.4). Every mount is
+// walked and indexed on a rescan and searched on a miss, so the cost of the list
+// is linear in its length; sixteen folders/zips is far past any real content
+// pack layout and keeps a fat-fingered "add" loop from unbounded work.
+const LocalMountCap = 16
+
 // FavBackgroundCap bounds one SERVER's starred-background list (rule §17.4).
 // Favorites are a curated subset the user pins in the background picker; a
 // few hundred is already generous, so this is well under WardrobeCap.
@@ -1198,6 +1204,7 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // v1.89.0: read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
 	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent). NEVER 0 in memory: defaultPrefs seeds DefaultScalePercent and the load overlay resolves the legacy on-disk 0 (= inherit the IC log size once, then diverge). A 0 here reaches buildSet as a 0% scale and renders the OOC log at 1 px.
@@ -1642,6 +1649,7 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // v1.89.0: read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
 	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
@@ -2723,6 +2731,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.EmoteCaptions = onDisk.EmoteCaptions
 	p.ViewportExactW = clampViewportExactPx(onDisk.ViewportExactW)
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
+	p.LocalAssetsLayered = onDisk.LocalAssetsLayered
+	// Deliberately NOT clamped to LocalMountCap here: a truncation in load() is
+	// persisted by the next debounced flush, which would permanently delete a
+	// Local-only user's asset source. SetLocalAssets refuses GROWTH instead.
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
 	if len(onDisk.Wardrobe) > WardrobeCap {
@@ -2831,6 +2843,7 @@ var resetContentFields = map[string]bool{
 	"OpenTabs":           true,
 	"LocalAssetsPaths":   true, // local mount config
 	"LocalAssetsEnabled": true,
+	"LocalAssetsLayered": true, // ...and the mode that reads them; without this a Reset drops a layered user to stream-only while KEEPING their mounts, which reads as "my pack stopped working"
 	"Showname":           true, // your identity
 	"OOCName":            true,
 }
@@ -10238,15 +10251,62 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 }
 
 // SetLocalAssets toggles no-streaming mode and stores the ordered mount
-// folder list.
-func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) {
+// folder list. It returns false — changing nothing — when the call would GROW
+// the list past LocalMountCap.
+//
+// Refusing only GROWTH is deliberate. A flat `len(mounts) > LocalMountCap`
+// rejection would brick any user who already has more mounts saved than the cap:
+// every caller (the mode toggle, the Remove button, the downloader's add button)
+// routes the WHOLE list through here, so they could never prune back under it.
+func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	p.mu.Lock()
+	if len(mounts) > LocalMountCap && len(mounts) > len(p.LocalAssetsPaths) {
+		p.mu.Unlock()
+		return false
+	}
 	if p.LocalAssetsEnabled == enabled && slices.Equal(p.LocalAssetsPaths, mounts) {
 		p.mu.Unlock()
-		return
+		return true
 	}
 	p.LocalAssetsEnabled = enabled
 	p.LocalAssetsPaths = slices.Clone(mounts)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// LayeredAssets reports the v1.89.0 mode where local mounts are read ALONGSIDE
+// the server's stream, with the user's own files winning at the same path.
+//
+// It is the ONE place the two stored bools are normalized, so the reachable
+// fourth state (both set) has exactly one defined meaning: Local-only WINS, and
+// layering is inert. That matters because the two modes are structurally
+// incompatible — Local-only builds a local-mode Manager whose URLs already carry
+// the local:// origin, and layering a mount origin over a mount origin would
+// double-serve. Everything that gates on layering must call THIS, never the raw
+// field.
+func (p *AssetPreferences) LayeredAssets() (layered bool, mounts []string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]string, len(p.LocalAssetsPaths))
+	copy(out, p.LocalAssetsPaths)
+	return p.LocalAssetsLayered && !p.LocalAssetsEnabled && len(out) > 0, out
+}
+
+// SetLayeredAssets turns layering on or off. Selecting it clears the exclusive
+// no-streaming flag (and vice versa in SetLocalAssets' callers), so the Settings
+// radio's three states map onto the two bools without ever persisting the
+// ambiguous both-set combination.
+func (p *AssetPreferences) SetLayeredAssets(layered bool) {
+	p.mu.Lock()
+	if p.LocalAssetsLayered == layered && !(layered && p.LocalAssetsEnabled) {
+		p.mu.Unlock()
+		return
+	}
+	p.LocalAssetsLayered = layered
+	if layered {
+		p.LocalAssetsEnabled = false // the radio is exclusive; keep the store unambiguous
+	}
 	p.mu.Unlock()
 	p.markDirty()
 }
