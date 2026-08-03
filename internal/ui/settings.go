@@ -228,9 +228,17 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
 		"window", "fullscreen", "window size", "resolution", "extras box", "extras", "tear off",
 		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
+		// The system-font toggle's written path was wrong too ("Interface"); it is
+		// on this tab, under Fonts.
+		"system fonts", "installed fonts", "use fonts installed",
 	},
 	tabTheme: {
 		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
+		// Emote-grid spacing had NO keyword at all and its only written path named
+		// a tab that does not exist, so it was effectively unreachable. Every word
+		// someone would actually type for it lives here, on the tab that owns it.
+		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
+		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
 		"layout", "fit", "courtroom design", "lobby", "preview", "bind", "binding",
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
@@ -1158,13 +1166,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// Emote-grid icon spacing: how far apart the emote buttons sit, in px.
-	gap := a.d.Prefs.EmoteGridGap()
-	if next := a.emoteGridGapRow(y, gap); next != gap {
-		a.d.Prefs.SetEmoteGridGap(next)
-	}
-	c.Label(pad+340, y+4, "gap between emote icons (default 6 px; 0 butts them together). AO2 themes keep their own spacing.", ColTextDim)
-	y += 30
+	// (Emote-grid icon spacing moved to Theme > Layout & fit — it is a layout
+	// measurement and AO2 themes override it, which is where people look for it.)
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
@@ -1902,6 +1905,17 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y += 36
 
 	y = a.settingsSection(y, w, "Layout & fit")
+	// Emote-grid icon spacing lives HERE rather than with the other emote controls
+	// on General: it is a layout measurement, and an AO2 theme overrides it — so
+	// this is where someone looks for it. It shipped on General with a changelog
+	// path naming a tab that does not exist ("Interface") and no search keyword at
+	// all, which made it effectively unreachable.
+	gap := a.d.Prefs.EmoteGridGap()
+	if next := a.emoteGridGapRow(y, gap); next != gap {
+		a.d.Prefs.SetEmoteGridGap(next)
+	}
+	c.Label(pad+340, y+4, "gap between emote icons (default 6 px; 0 butts them together). AO2 themes keep their own spacing.", ColTextDim)
+	y += 30
 	// Built-in look: the new optimal layout (OOC as its own box, etc.) is the main theme; ticking
 	// "Legacy Developer" reverts to the old developer layout exactly (OOC back in a tab).
 	legacy := a.d.Prefs.LegacyDevThemeOn()

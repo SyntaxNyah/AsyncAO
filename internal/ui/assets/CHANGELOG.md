@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.89.1 — 2026-08-03
+
+Making the emote-spacing setting findable.
+
+- **"Emote icon spacing" now lives in Settings → Theme, under "Layout & fit".**
+  It has existed since v1.87.0 and worked fine — but the release notes sent you
+  to an "Interface" tab, which has never existed, and it had no search keyword
+  at all. So the written path led nowhere and searching for it found nothing. It sits with the other layout controls now, which is also where
+  a theme's own spacing is decided.
+- **Searching for it works.** "spacing", "gap", "emote spacing", "emote grid"
+  and friends all jump straight to it.
+- **The "Use fonts installed on this computer" note had the same wrong path.**
+  It is under Settings → General → Fonts.
+
 ## v1.89.0 — 2026-08-03
 
 Your own content works **alongside** a server's, instead of replacing it. Plus
@@ -106,7 +120,7 @@ Message text comes back on macOS, and names stop showing as empty boxes.
 - **Names needing two fonts render properly** in the player list, the showname
   picker and the lobby. A name mixing an emoji or another script with ordinary
   letters used to draw as boxes there while working fine in chat and the log.
-- **New:** Settings → Interface → "Use fonts installed on this computer" (on by
+- **New:** Settings → General → Fonts → "Use fonts installed on this computer" (on by
   default), and a chat box measurement readout in Extras → Debug → Session.
 
 ## v1.87.2 — 2026-08-02
@@ -218,9 +232,10 @@ fresh install, and you can set how far apart the emote icons sit.
   editor's OOC chip still switches back, and nothing changes if you have used the
   client before. The bottom bar returns on its own if you hide the right column,
   so there is always somewhere to type.
-- **You can set the gap between emote icons.** Settings → Interface → "Emote icon
+- **You can set the gap between emote icons.** Settings → Theme → "Emote icon
   spacing", 0 to 48 pixels; 0 puts them flush against each other. Themes keep
-  their own spacing.
+  their own spacing. *(Corrected in v1.89.1 — the original note named a tab that
+  did not exist.)*
 
 ### Under the hood
 
