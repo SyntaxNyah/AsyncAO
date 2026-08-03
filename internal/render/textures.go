@@ -6,6 +6,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -650,6 +651,79 @@ func (s *TextureStore) Remove(base string) {
 	// A key lives in at most one LRU tier; Remove on the other is a no-op.
 	s.small.Remove(base)
 	s.t1.Remove(base)
+}
+
+// reservedKeySchemes are the T1 key namespaces that are NOT server asset URLs:
+// theme chrome, the held-frame scenery bridge, thumbnails, editor shapes and the
+// missingno placeholder. A local-pack sweep must never touch them — they are not
+// something a mount can re-answer, and dropping the pinned placeholder or the
+// theme pages would blank chrome the pack has nothing to do with.
+var reservedKeySchemes = [...]string{"theme://", "held://", "thumb://", "shape://", "missingno://"}
+
+// reservedKey reports whether a T1 key belongs to one of those namespaces.
+func reservedKey(key string) bool {
+	for _, s := range reservedKeySchemes {
+		if strings.HasPrefix(key, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveWhere drops every resident page whose key satisfies pred, and returns how
+// many it dropped. Render thread ONLY, and USER-INITIATED only: it snapshots
+// every key in all three spaces, so it allocates proportionally to the resident
+// set and must never run per frame.
+//
+// It exists because resolution short-circuits on a resident texture: without it,
+// switching the asset source or pressing Rescan would leave the CURRENT speaker
+// and background showing the old source's art until they happened to evict —
+// which is the very first thing anyone tests after adding a pack.
+//
+// The keys are SNAPSHOTTED before anything is removed. Removing while iterating
+// re-enters the cache through the eviction callback, which is exactly what the
+// onEvict contract forbids.
+func (s *TextureStore) RemoveWhere(pred func(key string) bool) int {
+	if pred == nil {
+		return 0
+	}
+	var doomed []string
+	for key := range s.pinned {
+		if !reservedKey(key) && pred(key) {
+			doomed = append(doomed, key)
+		}
+	}
+	for _, key := range append(s.t1.Keys(), s.small.Keys()...) {
+		if !reservedKey(key) && pred(key) {
+			doomed = append(doomed, key)
+		}
+	}
+	for _, key := range doomed {
+		s.Remove(key) // the existing path, so byte accounting and queueDestroy stay correct
+	}
+	return len(doomed)
+}
+
+// ForgetMissing empties the conclusively-404'd set so every previously missingno
+// asset is re-demandable. Render thread only, user-initiated (a mount change or
+// Rescan): a base that 404'd on the server may be exactly what the user just
+// added a pack to supply.
+func (s *TextureStore) ForgetMissing() {
+	clear(s.missing)
+}
+
+// ForgetFailed empties the decode negative cache — the bulk sibling of
+// clearFailed. Render thread, user-initiated.
+//
+// Rescan MUST call this. The prefetch gate consults the failed set BEFORE the
+// mount layer is ever reached, so a base whose SERVER copy is corrupt — the single
+// most plausible reason to deploy a pack in the first place — would stay
+// suppressed for the full decodeFailTTL after the user adds the fixing file and
+// presses Rescan.
+func (s *TextureStore) ForgetFailed() {
+	s.failedMu.Lock()
+	clear(s.failed)
+	s.failedMu.Unlock()
 }
 
 // queueDestroy hands a page to the bounded destroy queue (inline when

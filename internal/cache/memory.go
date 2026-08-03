@@ -159,6 +159,20 @@ func (c *ByteBudgetLRU[K, V]) Purge() {
 	c.lru.Purge()
 }
 
+// Keys returns a SNAPSHOT of the current keys, oldest first.
+//
+// It allocates the whole slice, so it is deliberately NOT a hot-path API: the
+// only callers are user-initiated sweeps (dropping exactly the textures a newly
+// mounted local pack can re-answer), never per frame and never per asset.
+//
+// Snapshotting is also what makes those sweeps safe. Removing while iterating
+// re-enters the cache through the eviction callback, which the texture store
+// documents as forbidden — so a caller must collect the keys it wants first and
+// only then call Remove on each.
+func (c *ByteBudgetLRU[K, V]) Keys() []K {
+	return c.lru.Keys()
+}
+
 // Len returns the current entry count.
 func (c *ByteBudgetLRU[K, V]) Len() int {
 	return c.lru.Len()
