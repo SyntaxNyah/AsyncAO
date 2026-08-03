@@ -459,6 +459,12 @@ type App struct {
 	casingProbedHost string           // host already probed this session (probe once per host)
 	casingRes        chan casingProbeResult
 
+	// --- local-pack layer (v1.89.0): see mountlayer.go ---
+	mountIndex     *assets.MountIndex // the live index (nil = none built); its own Mounts() is the identity, so no separate key can drift
+	mountIndexing  bool               // a walk is in flight (single-flight latch)
+	mountIndexRes  chan mountIndexResult
+	mountIndexErrs []error // per-mount build failures, for the Settings status line
+
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
 	// themeFontFile is the active theme's bundled font path (.ttf/.otf), resolved
@@ -2878,6 +2884,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:              make(chan iniswapFetch, 1),
 		manifestRes:         make(chan manifestFetch, 1),
 		casingRes:           make(chan casingProbeResult, 1),
+		mountIndexRes:       make(chan mountIndexResult, 1),
 		fontRes:             make(chan fontLoad, 1),
 		logBrowserRes:       make(chan logBrowserLoad, 1),
 		emojiFontRes:        make(chan []byte, 1),
@@ -2982,6 +2989,13 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		a.warnLine = clampLine(msg)
 		a.warnAt = time.Now()
 	}
+	// Warm the local-pack index at startup rather than waiting for the first
+	// connect. The walk runs on a goroutine and takes real time on a large pack, so
+	// kicking it here means it is usually already resident by the time the first
+	// room's cold-load storm demands anything; starting it on connect would race
+	// the character-icon prefetch and lose to the resident-texture short-circuit.
+	// A no-op — not even a goroutine — when no mounts are configured.
+	a.applyMountLayer()
 	return a
 }
 
@@ -4609,6 +4623,12 @@ func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, s
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
 // asset URL, in that priority (the no-streaming checkbox wins).
 func (a *App) rebuildAssetOrigin() {
+	// DEFERRED, and first: this function has four exits (the local-mode branch, the
+	// no-asset-URL error branch, the rehearsal branch and the normal tail). A call
+	// at the tail would miss three of them — including rehearsal, which is exactly
+	// where a local pack matters most. The layer needs the origin this function is
+	// about to install, so it runs after the body either way.
+	defer a.applyMountLayer()
 	// Push the configured mounts into the streaming Manager's local:// overlay on
 	// every mounts/pref change (this is the one funnel settings.go routes through),
 	// regardless of the legacy enabled flag: mounts are the recording-resolution
@@ -8054,6 +8074,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollManifest()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
 	a.pollCasingProbe()
+	a.pollMountIndex() // lands a finished local-pack index (no-op when no mounts)
 	a.pollFontChain()
 	a.pollLogBrowser()
 	a.pollEmojiFont()

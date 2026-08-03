@@ -311,6 +311,13 @@ func (a *App) activateTab(i int) {
 	if i < 0 || i >= len(a.tabs) || i == a.activeTab {
 		return
 	}
+	// The URL builder is PER-TAB session state and rebuildAssetOrigin is not called
+	// on a tab switch, so the local-pack layer has to re-register the now-active
+	// tab's origin here or the pack would only work on whichever tab connected
+	// last. Deferred because this function has early returns in its dead-tab arms,
+	// and it is the cheap origins-only transition: the index pointer is reused, so
+	// nothing re-walks.
+	defer a.applyMountLayer()
 	if a.tabs[i] == a.splitTab {
 		a.clearSplit() // the pinned tab is becoming the primary
 	}
