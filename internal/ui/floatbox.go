@@ -21,13 +21,28 @@ import (
 )
 
 const (
-	extrasBoxW    = int32(380) // main box default width
-	extrasBoxH    = int32(452) // main box default height
-	extrasMinW    = int32(300) // resize floor: 2 columns stay readable
-	extrasMinH    = int32(430) // resize floor: 4 volume sliders + all 13 widgets' rows + hint still fit
-	extrasVolRowH = int32(21)  // one volume-slider row at the top of the box
-	extrasTitleH  = int32(26)  // title bar / drag handle height (main + torn boxes)
-	extrasGripSz  = int32(16)  // bottom-right resize grip
+	extrasBoxW = int32(380) // main box default width
+	extrasBoxH = int32(520) // main box default height
+	extrasMinW = int32(300) // resize floor: 2 columns stay readable
+	// extrasMinH is the resize floor. It USED to be 430 — "4 volume sliders + all 13
+	// widgets' rows + hint still fit" — because the widget grid had no scroll
+	// container and the box height was the only thing keeping the cells inside it.
+	// The widget table has since grown to 23 entries, which is 12 rows and about 500px
+	// of grid, so that arithmetic stopped holding long before it was reported (#30).
+	// The grid scrolls now, so this only has to fit the box's FIXED furniture plus a
+	// couple of rows of grid: title + 4 volume rows + 2 cells + the hint line.
+	extrasMinH    = int32(240)
+	extrasVolRowH = int32(21) // one volume-slider row at the top of the box
+	extrasTitleH  = int32(26) // title bar / drag handle height (main + torn boxes)
+	extrasGripSz  = int32(16) // bottom-right resize grip
+	// extrasHintH reserves the "drag a widget out…" line along the box's bottom edge,
+	// so the scrolling grid above stops clear of it instead of painting over it.
+	extrasHintH = int32(24)
+	// extrasScrollW is the grid scrollbar's track width, and extrasScrollStep the
+	// pixels one wheel notch moves — a bit under one 34px cell + 8px gap, so a notch
+	// never skips a whole row out of view.
+	extrasScrollW    = int32(10)
+	extrasScrollStep = int32(38)
 
 	detachedBoxW   = int32(176) // a torn-off widget's own little box (default)
 	detachedBoxH   = int32(66)
@@ -1097,12 +1112,43 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		a.setEffectiveVolumes(master, music, sfx, nv)
 	}
 
+	// The widget grid is a SCROLL CONTAINER (#30). It used to run its rows straight
+	// down from the volume sliders with no clip and no scroll, so the cells simply
+	// drew past the bottom edge and out of the box — reported as "buttons escaping
+	// their container". The box's minimum height was the only thing holding them in,
+	// and that minimum was derived when there were 13 widgets; there are 23 now.
 	widgets := a.extrasWidgets()
-	const cols = int32(2)
-	const cellH, gap = int32(34), int32(8)
-	cellW := (r.W - 20 - gap) / cols
-	gx, gy := r.X+10, volY+6 // grid starts below the volume sliders
-	slot := int32(0)         // visible cells compact past torn-off widgets
+	// Count the cells that will actually draw BEFORE laying any out: the content
+	// height decides whether a scrollbar is needed, and the scrollbar takes width
+	// away from the cells. Torn-off widgets and the voice entry both drop out here.
+	shown := int32(0)
+	for id, wd := range widgets {
+		if a.widgetDetached(id) || (wd.label == voiceExtraLabel && !a.voiceOfferable()) {
+			continue
+		}
+		shown++
+	}
+	g := extrasGridLayout(r, volY, shown)
+
+	// Wheel over the grid scrolls it, and the wheel is CONSUMED: the box draws in the
+	// floating pass over a pointer-fenced courtroom, but the fence is footprint-scoped
+	// and a claimed wheel is what stops a sibling surface reading it too.
+	if c.wheelY != 0 && g.maxScroll > 0 && c.hovering(g.view) {
+		a.extrasScroll = clampI32(a.extrasScroll-c.wheelY*extrasScrollStep, 0, g.maxScroll)
+		c.wheelY, c.wheelTaken = 0, true
+	}
+	a.extrasScroll = clampI32(a.extrasScroll, 0, g.maxScroll) // a tear-off can shrink the content under us
+	if g.barW > 0 {
+		a.extrasScroll = c.VScrollbar("extrasgrid",
+			sdl.Rect{X: g.view.X + g.view.W - extrasScrollW, Y: g.view.Y, W: extrasScrollW, H: g.view.H},
+			a.extrasScroll, g.contentH, g.view.H)
+	}
+
+	// Clip so the grid cannot paint outside the box. pushClip, not a raw
+	// SetClipRect: hovering() honours the mirrored clip, so the hit tests agree with
+	// the pixels and a half-scrolled cell can't be clicked where it isn't drawn.
+	prevClip, hadClip := c.pushClip(g.view)
+	slot := int32(0) // visible cells compact past torn-off widgets
 	for id, wd := range widgets {
 		if a.widgetDetached(id) {
 			continue
@@ -1110,15 +1156,22 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		if wd.label == voiceExtraLabel && !a.voiceOfferable() {
 			continue // voice option only shows on servers that advertise it (Nyathena)
 		}
-		col, row := slot%cols, slot/cols
+		br := g.cellRect(slot, a.extrasScroll)
 		slot++
-		br := sdl.Rect{X: gx + col*(cellW+gap), Y: gy + row*(cellH+gap), W: cellW, H: cellH}
+		if br.Y >= g.view.Y+g.view.H || br.Y+br.H <= g.view.Y {
+			continue // scrolled clean out of the viewport — nothing to draw or hit-test
+		}
 		// Tear-off takes priority: a press-drag past the threshold pops the
-		// widget out; a plain click still runs it via the Button below.
-		if a.extrasTearDetect(id, br, pressed) {
+		// widget out; a plain click still runs it via the Button below. It gets the
+		// cell CLIPPED to the viewport, because it hit-tests with a raw pointIn that
+		// the clip does not reach — without that, the sliver of a cell scrolled under
+		// the volume sliders could still be grabbed and torn.
+		if a.extrasTearDetect(id, clipRectTo(br, g.view), pressed) {
+			c.popClip(prevClip, hadClip)
 			return // grid changed — stop drawing stale cells this frame
 		}
 		if c.ButtonCol(br, wd.label, pal.bg, pal.title, pal.border, pal.text) {
+			c.popClip(prevClip, hadClip)
 			wd.run()
 			return // an action can open a sub-panel / switch screen — stop here
 		}
@@ -1128,8 +1181,88 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		}
 		c.TooltipAfter("fextra:"+wd.label, br, tip)
 	}
+	c.popClip(prevClip, hadClip)
 	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20-extrasGripSz,
 		"Drag a widget out to pop it loose · drag the title to move · × closes", pal.text)
+}
+
+// extrasGrid is the widget grid's resolved geometry for one frame: the scrolling
+// viewport, the cell size the remaining width divides into, and how far the
+// content overflows. Split out of the draw so the containment property — every
+// cell, at every scroll offset, inside the box — is pinned by a test rather than
+// by reading the draw (#30: the cells used to escape through the bottom edge).
+type extrasGrid struct {
+	view      sdl.Rect // the clipped scrolling viewport, inside the box
+	cellW     int32    // column width after the scrollbar takes its cut
+	contentH  int32    // full laid-out height of every visible cell
+	maxScroll int32    // contentH - view.H, floored at 0
+	barW      int32    // scrollbar column width including its gap (0 = everything fits)
+}
+
+// Grid metrics. Two columns of 34px cells is the layout the box has always used;
+// only the clipping and scrolling around it are new.
+const (
+	extrasGridCols = int32(2)
+	extrasCellH    = int32(34)
+	extrasCellGap  = int32(8)
+)
+
+// extrasGridLayout resolves that geometry from the box rect, the Y the volume
+// sliders finished at, and the number of cells that will actually draw.
+//
+// The viewport stops extrasHintH short of the box's bottom edge so the "drag a
+// widget out…" line keeps its row, and it is floored at zero height: a box
+// squeezed by a small window must produce an empty viewport, never a negative one
+// that would invert every containment check downstream.
+func extrasGridLayout(box sdl.Rect, volY, shown int32) extrasGrid {
+	g := extrasGrid{view: sdl.Rect{
+		X: box.X + 10,
+		Y: volY + 6,
+		W: box.W - 20,
+		H: box.Y + box.H - extrasHintH - (volY + 6),
+	}}
+	if g.view.H < 0 {
+		g.view.H = 0
+	}
+	if g.view.W < 0 {
+		g.view.W = 0
+	}
+	if rows := (shown + extrasGridCols - 1) / extrasGridCols; rows > 0 {
+		g.contentH = rows*(extrasCellH+extrasCellGap) - extrasCellGap
+	}
+	if g.contentH > g.view.H {
+		g.barW = extrasScrollW + extrasCellGap
+		g.maxScroll = g.contentH - g.view.H
+	}
+	g.cellW = (g.view.W - g.barW - extrasCellGap) / extrasGridCols
+	if g.cellW < 0 {
+		g.cellW = 0
+	}
+	return g
+}
+
+// cellRect is the slot-th cell's rect at the given scroll offset, in screen
+// coordinates. Row-major across extrasGridCols columns.
+func (g extrasGrid) cellRect(slot, scroll int32) sdl.Rect {
+	col, row := slot%extrasGridCols, slot/extrasGridCols
+	return sdl.Rect{
+		X: g.view.X + col*(g.cellW+extrasCellGap),
+		Y: g.view.Y - scroll + row*(extrasCellH+extrasCellGap),
+		W: g.cellW,
+		H: extrasCellH,
+	}
+}
+
+// clipRectTo intersects r with clip, returning an empty rect when they don't
+// overlap. Used to hand a raw pointIn() hit test the part of a widget that is
+// actually visible inside a scroll container.
+func clipRectTo(r, clip sdl.Rect) sdl.Rect {
+	x0, y0 := max(r.X, clip.X), max(r.Y, clip.Y)
+	x1, y1 := min(r.X+r.W, clip.X+clip.W), min(r.Y+r.H, clip.Y+clip.H)
+	if x1 <= x0 || y1 <= y0 {
+		return sdl.Rect{}
+	}
+	return sdl.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 }
 
 // handleExtrasResize resizes the main box from its bottom-right grip, pinning the

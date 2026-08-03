@@ -1091,6 +1091,10 @@ type App struct {
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
+	// extrasScroll is the widget grid's scroll offset in px (#30). The grid is a
+	// scroll container now — the 23 widgets no longer fit any sane box height, and
+	// without one the cells drew straight out through the bottom edge.
+	extrasScroll int32
 	// pairWin / modWin / cmWin / hkWin / evidWin are floating-window geometries
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
