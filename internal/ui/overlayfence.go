@@ -76,16 +76,16 @@ import "github.com/veandco/go-sdl2/sdl"
 // pre-fence behaviour and is recoverable, whereas an unbounded array on a per-frame
 // path is a standing rule violation.
 //
-// SIZING. Today's live publishers are four and they can all be up at once: the menu
-// bar strip, its open pane, that pane's open submenu, and the compact toolbox strip.
-// The cap was FOUR — exactly the live count and no headroom at all — and because the
-// toolbox publishes LAST (inside the courtroom pass, long after the App-level bar) it
-// is the one a fifth publisher would silently push out, quietly restoring the very
-// click-through issue #26 fixed. Six leaves room for two more occluders before that
-// can happen; overlayFenceDrops makes an overflow visible instead of silent, and
-// TestOverlayFenceHasHeadroomForEveryLivePublisher fails the moment the live count
-// eats the headroom.
-const overlayFenceCap = 6
+// SIZING. Today's live publishers are five and they can all be up at once: the menu
+// bar strip, its open pane, that pane's open submenu, the compact toolbox strip, and
+// the sprite-preview box (#37). The cap was FOUR — exactly the live count of the day
+// and no headroom at all — and because the courtroom-pass publishers go LAST (long
+// after the App-level bar) they are the ones an extra publisher silently pushes out,
+// quietly restoring the very click-through issue #26 fixed. Seven leaves room for two
+// more occluders before that can happen; overlayFenceDrops makes an overflow visible
+// instead of silent, and TestOverlayFenceHasHeadroomForEveryLivePublisher fails the
+// moment the live count eats the headroom.
+const overlayFenceCap = 7
 
 // fenceOverlay publishes r as an occluding rect for the rest of this pass: every
 // hovering()-BASED test inside r reads false, so widgets drawn BENEATH the overlay

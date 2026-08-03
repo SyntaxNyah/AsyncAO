@@ -1216,6 +1216,10 @@ type App struct {
 	previewDragStart         [2]int32
 	previewDragBase          [2]int32
 	previewFrameRect         sdl.Rect
+	// This frame's overlay-fence answer for the box (#37, fenceSpritePreview). Reset
+	// by handlePreviewInput at the top of every frame, so a pass that never publishes
+	// can't replay a stale mark.
+	previewFence previewFenceLatch
 	// Playtest sizing: every character previews at the same height (previewBaseH,
 	// AO's native 192) regardless of source resolution; the corner grip resizes
 	// (previewUserH, 0 = the default) and a caption line reports source × scale.

@@ -191,13 +191,14 @@ func TestOverlayFenceResetsPerFrame(t *testing.T) {
 
 // TestOverlayFenceHasHeadroomForEveryLivePublisher pins that the cap is not exactly
 // the live publisher count. A publication past the cap is dropped SILENTLY, and the
-// one that loses is whoever publishes LAST — which is the compact toolbox, because it
-// publishes from inside the courtroom pass while the menu bar publishes App-level,
-// above the screen dispatch. With zero headroom the next occluder anyone adds
-// re-opens issue #26's click-through with no test failing.
+// one that loses is whoever publishes LAST — which is a courtroom-pass publisher,
+// because those run inside the pass while the menu bar publishes App-level, above the
+// screen dispatch. With zero headroom the next occluder anyone adds re-opens issue
+// #26's click-through with no test failing.
 func TestOverlayFenceHasHeadroomForEveryLivePublisher(t *testing.T) {
-	// The menu bar strip, its open pane, that pane's open submenu, the toolbox strip.
-	const livePublishers = 4
+	// The menu bar strip, its open pane, that pane's open submenu, the toolbox strip,
+	// and the sprite-preview box (#37).
+	const livePublishers = 5
 	if overlayFenceCap <= livePublishers {
 		t.Fatalf("overlayFenceCap = %d with %d publishers that can all be up at once — no headroom, and the drop is silent",
 			overlayFenceCap, livePublishers)

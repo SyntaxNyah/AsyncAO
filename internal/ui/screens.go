@@ -1292,6 +1292,13 @@ func (a *App) randomChar() {
 // controls don't blink. Off the hot path — only drawn when a preview is up.
 func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c := a.ctx
+	// The box is an OCCLUDER: fenceSpritePreview published its footprint at the top
+	// of the courtroom pass (#37), and that fence would blank the box's OWN − / +
+	// zoom buttons and pinned × too. Suspend it for our own widgets, mark-scoped so
+	// anything published AFTER us — the compact toolbox strip, which paints above the
+	// box — still occludes us (overlayfence.go).
+	prevOwner := c.pushOverlayOwner(a.previewOwnerMark())
+	defer c.popOverlayOwner(prevOwner)
 	page, ok := a.d.Store.Get(a.previewBase)
 	ready := ok && len(page.Frames) > 0
 	cycling := cycle && len(a.previewAnims) > 1
@@ -1443,6 +1450,15 @@ func (a *App) closeSpritePreviewOnLeave() {
 	if a.previewPinned {
 		return // pinned: the box stays open until its x is clicked (handlePreviewInput)
 	}
+	// A drag/resize in flight OWNS the box, and while one runs the courtroom pass is
+	// pointer-blind (boxFencesPointer, #36) — so every hovering() test below reads
+	// false and the "used the box, then left it" arm would close the box out from
+	// under the gesture on its very first frame. The gesture is itself proof the
+	// cursor is on the box; handlePreviewInput resolves its own release.
+	if a.previewDrag || a.previewResize {
+		a.previewEntered = true
+		return
+	}
 	if c.clicked {
 		a.closeSpritePreview()
 		return
@@ -1567,6 +1583,65 @@ func unionRect(a, b sdl.Rect) sdl.Rect {
 // grab-drag the box.
 const previewDragBottomReserve = 22
 
+// previewFenceLatch is the sprite-preview box's per-frame overlay-fence answer:
+// the registry depth taken just BEFORE its footprint was published, handed to
+// pushOverlayOwner so the box's own − / + zoom buttons and pinned × stay live
+// while everything painted UNDER the box goes inert (overlayfence.go).
+//
+// A latch rather than a re-derived predicate for the reason compactToolboxLatch
+// documents: the fence is published at the TOP of the courtroom pass (a fence is
+// only consulted at hit-test time, and a single-pass kit hit-tests as it draws)
+// while the box itself paints near the BOTTOM, and a fence that disagrees with
+// the draw eats clicks over pixels nothing painted.
+type previewFenceLatch struct {
+	mark int  // registry depth before our publication (0 when nothing was published)
+	on   bool // we published — so the draw must suspend it for its own widgets
+}
+
+// fenceSpritePreview publishes the sprite-preview box's painted footprint as an
+// overlay fence — issue #37. The box floats over the right-hand column, so with
+// no fence a click on it ALSO fired the music row underneath: the box won the
+// pixels, the row won the click, and a song started playing. The row draws far
+// earlier in the same single pass and has no way to know the box is coming.
+//
+// Called from both courtroom passes immediately AFTER fenceCompactToolbox, and
+// that order is load-bearing in both directions: the toolbox paints ABOVE the
+// preview (it draws at the very bottom of the pass), so its own owner-suspend —
+// which is mark-scoped to "mine and everything after mine" — must cover this
+// fence, while ours must not cover the toolbox's.
+//
+// The footprint is last frame's rect. That is the same one-frame latch
+// handlePreviewInput has always hit-tested against (previewFrameRect is cached
+// for exactly this reason), and it cannot leak in practice: the box only appears
+// after a hover dwell, many frames before any press, and while it is being
+// DRAGGED the whole pointer is fenced instead (boxFencesPointer).
+func (a *App) fenceSpritePreview() {
+	c := a.ctx
+	a.previewFence = previewFenceLatch{mark: c.overlayFenceMark()}
+	// No preview up, or none drawn last frame (drawSpritePreview zeroes the rect
+	// when the sprite isn't ready) — nothing is painted there, and fencing pixels
+	// nothing painted is the mirror image of the leak this fixes.
+	if a.previewBase == "" || a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
+		return
+	}
+	c.fenceOverlay(a.previewFrameRect)
+	a.previewFence.on = true
+}
+
+// previewOwnerMark is the mark drawSpritePreview hands pushOverlayOwner: our own
+// publication when we made one, else the CURRENT registry depth. That fallback is
+// pushOverlayOwner's documented rule for an occluder that published nothing — it
+// suspends nothing at all, so the box drawn on a pass with no preview fence (char
+// select, the wardrobe, the background picker) still yields to the menu bar's
+// open pane above it. Passing the latch's bare zero mark instead would suspend
+// EVERY fence in the registry.
+func (a *App) previewOwnerMark() int {
+	if a.previewFence.on {
+		return a.previewFence.mark
+	}
+	return a.ctx.overlayFenceMark()
+}
+
 // handlePreviewInput drives the sprite-preview box's mouse-wheel zoom and
 // left-drag reposition. It runs in App.Frame BEFORE any screen draws, against
 // last frame's cached box rect, so it claims the wheel and the mouse press ahead
@@ -1574,6 +1649,10 @@ const previewDragBottomReserve = 22
 // Off the hot path — a no-op whenever no preview is up.
 func (a *App) handlePreviewInput() {
 	c := a.ctx
+	// Clear last frame's fence answer FIRST, before any early return: this runs once
+	// per frame above every screen, so a pass that publishes nothing (char select,
+	// settings) can never replay a courtroom frame's stale mark into pushOverlayOwner.
+	a.previewFence = previewFenceLatch{}
 	if a.previewBase == "" {
 		a.previewDrag = false
 		return
@@ -1639,9 +1718,17 @@ func (a *App) handlePreviewInput() {
 			a.previewOffX = a.previewDragBase[0] + dx
 			a.previewOffY = a.previewDragBase[1] + dy
 		} else {
-			if a.previewDragMoved {
-				c.clicked = false // a completed drag isn't a dismiss/selection
+			// A press that STARTED on the box owns its own release, moved or not.
+			// Unmoved, this used to fall through unconsumed: the box dismissed itself
+			// from closeSpritePreviewOnLeave's "any click dismisses" arm, but the very
+			// same click ALSO landed on whatever the box was floating over — over the
+			// right-hand column that is a music row, so dismissing the preview started
+			// playing a track (#37). Dismissing HERE keeps the old feel and makes the
+			// consume unconditional, which is the actual fix.
+			if !a.previewDragMoved && !a.previewPinned {
+				a.closeSpritePreview()
 			}
+			c.clicked = false
 			a.previewDrag = false
 		}
 	}
@@ -1828,6 +1915,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	// than re-deriving it, so the fence and the pixels agree even though
 	// handleHotkeys and the modal return both run in between.
 	a.fenceCompactToolbox(w, h)
+	// …and the sprite-preview box (#37), which floats over the right-hand column.
+	// AFTER the toolbox deliberately: the toolbox paints above the box, so its
+	// mark-scoped owner-suspend must cover this publication and not the reverse.
+	a.fenceSpritePreview()
 
 	// The app-chrome band (menu bar + docked server-tab strip) owns the top of the
 	// window; everything the classic courtroom lays out starts below it (#14).

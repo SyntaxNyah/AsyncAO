@@ -602,6 +602,17 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.ctx.ddOpen != "" && pointIn(a.ctx.mouseX, a.ctx.mouseY, a.ctx.ddOpenList) {
 		return false
 	}
+	// The sprite-preview box joins the in-flight list (#36) but NOT the footprint
+	// list below: dragging it over the IC log used to drag-SELECT the log text
+	// underneath at the same time, because handleLogSelect keeps a live drag alive on
+	// a bare c.mouseDown that nothing had claimed. Fencing the pass for the gesture
+	// blanks mouseDown, which ends that selection cleanly. A merely-hovered box must
+	// NOT fence, though: unlike every panel here it paints from INSIDE the courtroom
+	// pass, so a footprint fence would kill its own − / + zoom buttons. Its resting
+	// occlusion is the overlay fence instead (fenceSpritePreview).
+	if a.previewDrag || a.previewResize {
+		return true
+	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||

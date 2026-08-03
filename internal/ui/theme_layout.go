@@ -698,6 +698,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// are drawn. drawCompactToolboxInPass (bottom of this function) replays the latch
 	// rather than re-deriving it, so the fence and the pixels agree.
 	a.fenceCompactToolbox(w, h)
+	// …and the sprite-preview box (#37), which floats over the theme's music list.
+	// AFTER the toolbox deliberately: the toolbox paints above the box, so its
+	// mark-scoped owner-suspend must cover this publication and not the reverse.
+	a.fenceSpritePreview()
 	a.themedExtrasHint() // one-time-per-session: point players at the Extras box
 
 	// Stage: letterbox fill, then the theme's window art over the design
