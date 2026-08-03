@@ -97,8 +97,13 @@ type formatListCache struct {
 type Resolver struct {
 	table   atomic.Pointer[learnedTable]
 	formats atomic.Pointer[formatListCache]
-	prefs   *config.AssetPreferences
-	pool    sync.Pool // *Candidates
+	// packFormats is formats' sibling for the user's LOCAL MOUNT FOLDERS, cached
+	// the same way and for the same reason: prefs.FormatOrder takes an RLock and
+	// allocates per call, and a cold pack lookup runs once per candidate spelling
+	// per asset. Separate snapshot because the CONTENTS differ — see PackFormatList.
+	packFormats atomic.Pointer[formatListCache]
+	prefs       *config.AssetPreferences
+	pool        sync.Pool // *Candidates
 
 	learnedHits   atomic.Int64
 	learnedMisses atomic.Int64
@@ -287,6 +292,37 @@ func (r *Resolver) formatList(t AssetType) []string {
 		fresh.lists[tt] = r.prefs.FormatList(tt.Name())
 	}
 	r.formats.Store(fresh)
+	return fresh.lists[t]
+}
+
+// PackFormatList returns the probe list to use against the user's LOCAL MOUNT
+// FOLDERS, cached per format generation exactly like formatList.
+//
+// It is deliberately the FULL chain (the configured order plus the legacy
+// fallback chain, deduped) where the network path keeps the zero-fallback single
+// format. That asymmetry is the whole point:
+//
+// The one-probe-per-asset pillar exists to protect NETWORK egress — every extra
+// candidate is a real HTTP round trip against someone's asset host. A mount
+// lookup is an in-memory map hit against a pre-built index, so exhausting every
+// known extension locally costs nothing measurable and issues no request.
+//
+// Without this, layering would be inert for most real content. The shipped
+// defaults are {.webp} per type with fallbacks OFF, and a freshly indexed pack
+// has no learned formats, so a stock AO2 pack full of .png files would be probed
+// for .webp only, miss every time, and report every sprite conclusively missing —
+// while the files sat right there on disk. The user's pack also has no reason to
+// match the server's format, which is exactly the case layering exists to serve.
+func (r *Resolver) PackFormatList(t AssetType) []string {
+	gen := r.prefs.FormatGeneration()
+	if cached := r.packFormats.Load(); cached != nil && cached.gen == gen {
+		return cached.lists[t]
+	}
+	fresh := &formatListCache{gen: gen}
+	for tt := AssetType(0); tt < AssetTypeCount; tt++ {
+		fresh.lists[tt] = fullProbeChain(r.prefs, tt)
+	}
+	r.packFormats.Store(fresh)
 	return fresh.lists[t]
 }
 
