@@ -53,8 +53,8 @@ func TestExtrasGridStaysInsideTheBox(t *testing.T) {
 				// is that the drawn part is non-empty and inside the box; the
 				// HORIZONTAL one is absolute, because nothing clips a column that
 				// runs off the side and the scrollbar lives in that margin.
-				drawn := clipRectTo(cell, g.view)
-				if drawn == (sdl.Rect{}) {
+				drawn := intersectRect(cell, g.view)
+				if drawn.W <= 0 || drawn.H <= 0 {
 					t.Errorf("boxH=%d scroll=%d: cell %d %+v is drawn but clips to nothing", boxH, scroll, slot, cell)
 				}
 				if !containsRect(r, drawn) {
@@ -146,25 +146,32 @@ func TestExtrasMinHeightFitsItsFurniture(t *testing.T) {
 	}
 }
 
-// TestClipRectTo pins the intersection helper the tear-off hit test relies on: it
-// hit-tests with a raw pointIn that pushClip does not reach, so a cell scrolled
-// half under the volume sliders must only be grabbable where it is drawn.
-func TestClipRectTo(t *testing.T) {
-	clip := sdl.Rect{X: 100, Y: 100, W: 200, H: 200}
+// TestExtrasTearHitRectFollowsTheClip pins what the tear-off hit test is handed:
+// it hit-tests with a raw pointIn that pushClip does not reach, so a cell scrolled
+// half under the volume sliders must only be grabbable where it is actually drawn,
+// and one scrolled away entirely must not be grabbable at all.
+func TestExtrasTearHitRectFollowsTheClip(t *testing.T) {
+	view := sdl.Rect{X: 100, Y: 100, W: 200, H: 200}
 	for _, tc := range []struct {
-		name string
-		r    sdl.Rect
-		want sdl.Rect
+		name          string
+		cell          sdl.Rect
+		wantGrabbable bool
+		// probe is a point in the part of the cell that is scrolled OUT of view.
+		probe sdl.Rect
 	}{
-		{"fully inside", sdl.Rect{X: 120, Y: 120, W: 50, H: 50}, sdl.Rect{X: 120, Y: 120, W: 50, H: 50}},
-		{"clipped at the top", sdl.Rect{X: 120, Y: 80, W: 50, H: 50}, sdl.Rect{X: 120, Y: 100, W: 50, H: 30}},
-		{"clipped at the bottom", sdl.Rect{X: 120, Y: 280, W: 50, H: 50}, sdl.Rect{X: 120, Y: 280, W: 50, H: 20}},
-		{"entirely above", sdl.Rect{X: 120, Y: 10, W: 50, H: 50}, sdl.Rect{}},
-		{"entirely below", sdl.Rect{X: 120, Y: 400, W: 50, H: 50}, sdl.Rect{}},
-		{"touching the edge only", sdl.Rect{X: 120, Y: 50, W: 50, H: 50}, sdl.Rect{}},
+		{"fully inside", sdl.Rect{X: 120, Y: 120, W: 50, H: 34}, true, sdl.Rect{}},
+		{"half under the top edge", sdl.Rect{X: 120, Y: 80, W: 50, H: 34}, true, sdl.Rect{X: 120, Y: 85, W: 1, H: 1}},
+		{"half past the bottom edge", sdl.Rect{X: 120, Y: 280, W: 50, H: 34}, true, sdl.Rect{X: 120, Y: 305, W: 1, H: 1}},
+		{"scrolled entirely above", sdl.Rect{X: 120, Y: 10, W: 50, H: 34}, false, sdl.Rect{}},
 	} {
-		if got := clipRectTo(tc.r, clip); got != tc.want {
-			t.Errorf("%s: clipRectTo(%+v) = %+v, want %+v", tc.name, tc.r, got, tc.want)
+		hit := intersectRect(tc.cell, view)
+		if grabbable := hit.W > 0 && hit.H > 0; grabbable != tc.wantGrabbable {
+			t.Errorf("%s: grabbable = %v, want %v (hit rect %+v)", tc.name, grabbable, tc.wantGrabbable, hit)
+		}
+		// The hidden half must NOT accept a press, or a cell could be torn off by
+		// grabbing pixels the clip never painted.
+		if tc.probe.W > 0 && pointIn(tc.probe.X, tc.probe.Y, hit) {
+			t.Errorf("%s: a point at %d,%d is outside the viewport but still hit the cell", tc.name, tc.probe.X, tc.probe.Y)
 		}
 	}
 }

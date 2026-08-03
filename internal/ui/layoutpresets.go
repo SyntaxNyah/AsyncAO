@@ -134,8 +134,10 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// THE CATCH (architect ruling 6): reset .placed on every persistable floatWin
 	// so an already-OPEN panel re-seeds from the applied profile's slots next frame
 	// (classic slots update immediately; floatWins otherwise cache x/y/placed). The
-	// panelSlotTable covers the 10 non-msgWin panels; msgWin + the Extras box are
-	// handled explicitly — 11 floatWins + extrasPlaced.
+	// panelSlotTable covers every non-msgWin panel; msgWin + the Extras box are
+	// handled explicitly below. Deliberately not a hardcoded count — the table has
+	// grown twice (piecesWin, then the three ex-modals in #31) and a number here
+	// only ever goes stale.
 	for i := range panelSlotTable {
 		panelSlotTable[i].fw(a).placed = false // cold-path table use (never a draw path)
 	}

@@ -23,10 +23,17 @@ import "github.com/veandco/go-sdl2/sdl"
 
 const (
 	// panelMagnetCap bounds the reused panelMagnetRects candidate buffer (hard
-	// rule §17.4). Headroom over the 11 floatWin panels + Extras/detached/fav/
-	// style/torn-tab surfaces the census can collect in one frame; excess
-	// candidates past the cap are simply not considered as magnet targets.
-	panelMagnetCap = 24
+	// rule §17.4). Excess candidates past the cap are simply not considered as
+	// magnet targets — a benign degradation, but a silent one, so the cap is sized
+	// to keep real headroom rather than to sit exactly on the live count.
+	//
+	// The fixed surfaces are 19: the 14 table-driven floatWin panels (the three
+	// ex-modals joined them in #31), msgWin, the Extras box, the fav-emote box, the
+	// sprite-style box and the compact toolbox strip. Five torn-off TAB panels take
+	// that to 24 — which is where the cap used to sit, i.e. with nothing left for the
+	// torn-off Extras WIDGETS, of which there can be one per entry in the widget
+	// table. 32 restores a working margin.
+	panelMagnetCap = 32
 )
 
 // snapRectToSiblings snaps r's top-left so an edge/centre lands flush with a
@@ -78,7 +85,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 			a.panelMagnetRects = append(a.panelMagnetRects, r)
 		}
 	}
-	// The 10 table-driven floatWin panels: open per their own flag, skipped while
+	// The table-driven floatWin panels: open per their own flag, skipped while
 	// this panel is the one being dragged.
 	for i := range panelSlotTable {
 		row := &panelSlotTable[i]

@@ -641,7 +641,10 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
 		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
-		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
+		a.hkWin.dragging || a.hkWin.resizing ||
+		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+		a.pairPopWin.dragging || a.pairPopWin.resizing ||
+		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -1165,8 +1168,9 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		// widget out; a plain click still runs it via the Button below. It gets the
 		// cell CLIPPED to the viewport, because it hit-tests with a raw pointIn that
 		// the clip does not reach — without that, the sliver of a cell scrolled under
-		// the volume sliders could still be grabbed and torn.
-		if a.extrasTearDetect(id, clipRectTo(br, g.view), pressed) {
+		// the volume sliders could still be grabbed and torn. A cell clipped away
+		// entirely intersects to zero width, which pointIn already reads as a miss.
+		if a.extrasTearDetect(id, intersectRect(br, g.view), pressed) {
 			c.popClip(prevClip, hadClip)
 			return // grid changed — stop drawing stale cells this frame
 		}
@@ -1251,18 +1255,6 @@ func (g extrasGrid) cellRect(slot, scroll int32) sdl.Rect {
 		W: g.cellW,
 		H: extrasCellH,
 	}
-}
-
-// clipRectTo intersects r with clip, returning an empty rect when they don't
-// overlap. Used to hand a raw pointIn() hit test the part of a widget that is
-// actually visible inside a scroll container.
-func clipRectTo(r, clip sdl.Rect) sdl.Rect {
-	x0, y0 := max(r.X, clip.X), max(r.Y, clip.Y)
-	x1, y1 := min(r.X+r.W, clip.X+clip.W), min(r.Y+r.H, clip.Y+clip.H)
-	if x1 <= x0 || y1 <= y0 {
-		return sdl.Rect{}
-	}
-	return sdl.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 }
 
 // handleExtrasResize resizes the main box from its bottom-right grip, pinning the
