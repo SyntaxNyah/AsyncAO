@@ -922,6 +922,19 @@ func (a *App) jumpToArea(area string) {
 	a.curArea = area             // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
 	a.updatePresence()
 	a.sess.RequestMusic(area)
+	// Wipe the stage on OUR OWN area jump (#23). A deliberate ADDITION to the AO2
+	// path, not a conflict with it: akashi/KFO-family servers put a pos in the
+	// area-change BN, so the reducer's arity test already wipes for them — but the
+	// Athena/Nyathena family sends a ONE-field BN and never would, leaving the
+	// previous area's sprite and chatbox frozen on screen there forever. Clicking an
+	// area row is unambiguous local intent, and this is the one seam that knows the
+	// jump was client-initiated. Server-PUSHED area moves still rely on BN arity,
+	// exactly like AO2.
+	if a.room != nil {
+		a.room.WipeStage()
+	}
+	a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
+	a.sess.LastIC = nil // ...so tabbing back can't re-stage the area we just left
 	a.warnLine = clampLine("Jumping to " + area + "…")
 	a.warnAt = a.now()
 }

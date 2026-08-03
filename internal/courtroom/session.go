@@ -119,6 +119,10 @@ const (
 	evidenceCap = 512
 	// posListCap bounds the SD dropdown for the same reason.
 	posListCap = 64
+	// bnWipeFieldCount is the BN arity at which AO2 re-stages the viewport:
+	// BN#<bg>#<pos>#% carries a pos, BN#<bg>#% does not
+	// (../AO2-Client/src/packet_distribution.cpp — `content.size() >= 2`).
+	bnWipeFieldCount = 2
 	// HPBarMax is the top HP pip count (AO2-Client set_hp_bar guards 0..10;
 	// exported because the UI draws defensebar0..defensebar<HPBarMax>).
 	HPBarMax = 10
@@ -215,6 +219,15 @@ type Event struct {
 	// FADE_IN/FADE_OUT/SYNC_POS/NO_REPEAT). Only EventMusic populates them.
 	Loop         bool
 	MusicEffects int
+	// Wipe is AO2's set_background(bg, display) second parameter
+	// (../AO2-Client/src/packet_distribution.cpp:352, body at courtroom.cpp:1427):
+	// a BN carrying a pos field means "re-stage the viewport too", so the previous
+	// area's sprite, chatbox, shout and message queue are torn down. Only
+	// EventBackground populates it, and ONLY when the reducer saw a real server BN
+	// — the client's own EventBackground constructors (buildRoom's re-seed, the bg
+	// picker, replay, scene maker) must leave it false or they would erase the
+	// stage they are re-seeding (#23).
+	Wipe bool
 }
 
 // LivePlayer is one entry of the server-pushed live player list. Akashi and
@@ -753,8 +766,40 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			Loop: looping, MusicEffects: effects}}
 
 	case "BN":
+		// ../AO2-Client/src/packet_distribution.cpp:342-358. Two things ride this
+		// packet, and both are keyed off its ARITY, not off the pos being non-empty:
+		//   set_side(content.at(1))                  — only when non-empty
+		//   set_background(content.at(0), size >= 2) — the viewport re-stage
+		// The size test is what makes an AREA SWAP wipe the stage while a plain /bg
+		// does not (#23). It must NOT be softened to `Field(1) != ""`: akashi's
+		// area side is empty until someone runs /side (../akashi/src/area_data.cpp),
+		// and KFO's remote-listen form sends BN with an explicitly empty pos
+		// (../KFO-Server/server/area.py) — AO2 wipes on both.
+		if len(p.Fields) == 0 {
+			return nil // AO2's content.isEmpty() guard; "" would burn a probe on background//
+		}
 		s.Background = p.Field(0)
-		return []Event{{Kind: EventBackground, Text: s.Background}}
+		wipe := len(p.Fields) >= bnWipeFieldCount
+		if !wipe {
+			return []Event{{Kind: EventBackground, Text: s.Background}}
+		}
+		// A wiping BN retires the remembered message: a parked tab has no Courtroom
+		// at all (tabs.go remembers only the background), so the reducer is the ONLY
+		// place that can stop buildRoom's RestoreMessage from re-staging the PREVIOUS
+		// area's message when the user tabs back. Same reasoning — and same one-liner
+		// — as the SI handshake's clear above.
+		s.LastIC = nil
+		evs := make([]Event, 0, 2)
+		if pos := p.Field(1); pos != "" {
+			// set_side runs BEFORE set_background upstream, so the re-stage at the end
+			// of set_background already sees the new pos. Order matters here too. The
+			// side itself lives on the UI's per-tab state (there is no Session.Side),
+			// exactly as the SP handler leaves it.
+			evs = append(evs, Event{Kind: EventSetPos, Text: pos})
+		}
+		// Name carries the pos to setBackground so the wiped stage re-scenes at the
+		// NEW position instead of whatever side the last speaker happened to use.
+		return append(evs, Event{Kind: EventBackground, Text: s.Background, Name: p.Field(1), Wipe: true})
 
 	case "PV":
 		s.MyCharID = atoiOr(p.Field(2), protocol.UnpairedCharID)

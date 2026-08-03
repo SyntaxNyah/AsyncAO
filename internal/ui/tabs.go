@@ -638,6 +638,17 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		a.autoClipModcall(s.serverName, s.icLog, ev.Text) // freeze IC context even on a backgrounded server
 	case courtroom.EventBackground:
 		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
+		if ev.Wipe {
+			// The same overlay teardown the live tab does (#23). A parked tab has no
+			// Courtroom, so this is the only place its splash / testimony badge /
+			// evidence popup can be cleared before the user tabs back into it.
+			s.wtceName, s.testimonyOn, s.evShowImg = "", false, ""
+		}
+	case courtroom.EventSetPos:
+		// KFO-family servers carry the pos INSIDE an area change's BN and send no SP
+		// at all, so without this a parked tab keeps whatever side it had when it was
+		// parked. SP had the same hole; one case closes both.
+		s.sidePref = ev.Text
 	case courtroom.EventMusic:
 		// A DJ /play on a BACKGROUNDED tab. HandlePacket already advanced this tab's
 		// s.sess.MusicTrack (the return-switch reads exactly that on activation, via the

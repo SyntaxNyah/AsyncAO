@@ -4254,6 +4254,15 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Remember it for next visit's pre-warm; the room still
 			// consumes the event below (no continue).
 			a.d.Prefs.RememberServerBackground(a.serverKey, ev.Text)
+			if ev.Wipe {
+				// The overlays AO2's set_background teardown also drops, which live on
+				// the App rather than in the Scene: the WT/CE splash and testimony badge
+				// (ui_vp_testimony->stopPlayback) and the evidence popup
+				// (ui_vp_evidence_display->reset). Deliberate deviation: AO2 stops the
+				// testimony overlay on EVERY BN, including the no-pos form; we keep it
+				// inside the wipe branch so a plain /bg behaves exactly as it does today.
+				a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
+			}
 		case courtroom.EventMusic:
 			// Log "<name> has played a song: <song>" in the IC log like webAO and
 			// AO2-Client (handle_song). The room still plays the track below.
@@ -5181,6 +5190,7 @@ func (a *App) buildRoom() {
 	a.wireRoomCharMeta(a.room)                                                            // per-character blips + chatbox skins from the speaker's char.ini
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
+	a.room.LocalSide = a.mySide                                                           // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
 	// two in-court tabs carries each server's own volumes / muted blips.
@@ -5401,6 +5411,16 @@ func (a *App) pinToSplit(t *courtTab) {
 	// class as the main log caches — see logViewEpoch / splitPinEpoch).
 	a.splitPinEpoch++
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
+	// The pinned pane is a DIFFERENT server's session, so a wiping BN there must
+	// re-scene at THAT tab's side, never the active tab's (#23). Reading through t
+	// keeps it correct for the pane's whole lifetime; a.mySide would be the wrong
+	// tab entirely.
+	a.splitRoom.LocalSide = func() string {
+		if t.state.sidePref != "" {
+			return t.state.sidePref
+		}
+		return defaultSide
+	}
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
 	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown              // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)

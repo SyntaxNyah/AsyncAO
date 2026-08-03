@@ -157,7 +157,7 @@ func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 	}
 	room.phase = PhaseTalking
 	room.Scene.Position = "wit"
-	room.setBackground("hasdesk")
+	room.setBackground("hasdesk", "", false)
 	if !room.Scene.ShowDesk {
 		t.Fatal("fixture: a DeskShown message on an unknown-but-not-missing desk should draw one")
 	}
@@ -168,7 +168,7 @@ func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 	room.Scene.Position = "wit"
 	nextDesk := room.urls.Background("nodesk", func() string { _, d := PositionScene("wit"); return d }())
 	room.recordMissingDesk(nextDesk)
-	room.setBackground("nodesk")
+	room.setBackground("nodesk", "", false)
 
 	if room.Scene.ShowDesk {
 		t.Error("the new room's desk is conclusively missing, but the desk still draws — the previous room's answer survived")
@@ -188,7 +188,7 @@ func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 func TestBackgroundChangeWithNoMessageIsSafe(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.Scene.Position = "wit"
-	room.setBackground("somewhere") // must not panic
+	room.setBackground("somewhere", "", false) // must not panic
 	if room.Scene.BackgroundBase == "" {
 		t.Error("setBackground did not resolve a background base")
 	}
@@ -208,7 +208,7 @@ func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
 	room.current = &protocol.ChatMessage{DeskMod: protocol.DeskShow}
 	room.phase = PhaseTalking
 	room.Scene.Position = "wit"
-	room.setBackground("repacked")
+	room.setBackground("repacked", "", false)
 
 	desk := room.Scene.DeskBase
 	room.NotifyDeskMissing(desk)

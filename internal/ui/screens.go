@@ -7781,6 +7781,10 @@ func areaStatusColor(status string) sdl.Color {
 	}
 }
 
+// defaultSide is the side AO assumes when nothing has set one — the same
+// fallback AO2-Client's current_or_default_side() ends on.
+const defaultSide = "wit"
+
 // mySide is OUR position: the char.ini side (or /pos override) — never
 // the last speaker's position. Inheriting Scene.Position teleported us
 // to whoever spoke last AND leaked custom side strings that strict
@@ -7790,7 +7794,7 @@ func (a *App) mySide() string {
 	if a.sidePref != "" {
 		return a.sidePref
 	}
-	return "wit" // the AO default
+	return defaultSide
 }
 
 // handleChatCommand implements /pair <id>, /unpair, /offset <x> [y],

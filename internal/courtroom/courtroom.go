@@ -311,6 +311,16 @@ type Courtroom struct {
 	// behaviour as BlipNameFor. "" = no per-character skin.
 	ChatSkinFor func(char string) string
 
+	// LocalSide, when set, reports OUR OWN side — the pos dropdown's value, with
+	// AO2's default when it is unset. It mirrors AO2-Client's
+	// current_or_default_side(), which is what set_background's re-stage passes to
+	// set_scene. It is consulted ONLY on a wiping BN that carried no pos (the
+	// default form on akashi and on KFO's remote-listen path): without it the
+	// freshly-wiped stage would re-scene at Scene.Position, which tracks the last
+	// SPEAKER's side, and an area jump would drop you at whoever talked last.
+	// nil degrades to that old behaviour, so tests and the split pane are safe.
+	LocalSide func() string
+
 	// InlineEmote, when set, resolves a :shortcode: stem to its emoji (#18). begin()
 	// substitutes known shortcodes in the speaker's text so the chatbox renders them like
 	// the IC log; nil = leave the text as-is. Set by the App (the registry lives in ui).
@@ -537,7 +547,10 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	case EventMessage:
 		c.enqueue(ev.Message)
 	case EventBackground:
-		c.setBackground(ev.Text)
+		// Name carries the BN's pos; Wipe is its arity flag (#23). Both are false/""
+		// for every client-side background change, which is what keeps buildRoom's
+		// re-seed from erasing the message it is about to restore.
+		c.setBackground(ev.Text, ev.Name, ev.Wipe)
 	case EventMusic:
 		switch {
 		case ev.Text == "" || isAreaTransfer(ev.Text):
@@ -759,9 +772,29 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 	}
 }
 
-// setBackground prefetches the new room's scenery for the current position.
+// setBackground prefetches the new room's scenery for the current position, and
+// on a WIPING BN (one that carried a pos field — see Event.Wipe) also tears the
+// viewport down the way AO2's set_background(bg, display=true) does.
+//
+// pos is the BN's pos field ("" when it carried none, or on any client-side
+// background change). It is honoured only on a wipe, because that is the only
+// path AO2 re-scenes on: `set_scene(true, current_or_default_side())` at the end
+// of the display block. When the server sends a wiping BN with an EMPTY pos —
+// the DEFAULT on akashi (its area side is unset until someone runs /side) and on
+// KFO's remote-listen form — AO2 still re-scenes at the LOCAL user's own side, so
+// we fall back to LocalSide rather than to Scene.Position: Scene.Position holds
+// the last SPEAKER's side, and using it would re-stage the freshly-wiped stage at
+// whoever happened to talk last in the room we just left.
 // AssetType: Background
-func (c *Courtroom) setBackground(bg string) {
+func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
+	if wipe {
+		if pos == "" && c.LocalSide != nil {
+			pos = c.LocalSide()
+		}
+		if pos != "" {
+			c.Scene.Position = pos
+		}
+	}
 	bgPart, deskPart := PositionScene(c.Scene.Position)
 	c.Scene.BackgroundBase = c.urls.Background(bg, bgPart)
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
@@ -779,9 +812,93 @@ func (c *Courtroom) setBackground(bg string) {
 	// phase argument would flip pair state mid-preanim; at the current phase it
 	// recomputes exactly what is already there. Same call, and the same "no further
 	// edge" reasoning, as NotifyDeskMissing.
+	if wipe {
+		c.wipeStage()
+		return
+	}
 	if c.current != nil {
 		c.applyDeskMods(c.phase == PhasePreanim)
 	}
+}
+
+// wipeStage ports AO2-Client's set_background(bg, display=true) teardown
+// (../AO2-Client/src/courtroom.cpp — the `if (display)` block) so an AREA SWAP
+// leaves a clean stage instead of the previous area's frozen sprite and chatbox
+// (#23). It runs ONLY from a server BN that carried a pos field; every
+// client-side background change (buildRoom's re-seed, the bg picker, replay, the
+// scene maker) goes through the wipe=false path, which is unchanged.
+//
+// Deliberately NOT cleared, because AO2's block does not touch them and the
+// server re-sends them itself: the IC log, music/ambience, the evidence LIST, HP,
+// missingSprites/missingDesks, and the send-on-change memories. Stopping the
+// music here would fight the music-resume that buildRoom depends on.
+// WipeStage tears the viewport down without a background change, for the ONE
+// client-initiated case the BN arity cannot cover: our own area jump against a
+// server family that sends a one-field BN (Athena/Nyathena). Render-thread only,
+// like every other exported Courtroom mutator.
+func (c *Courtroom) WipeStage() { c.wipeStage() }
+
+func (c *Courtroom) wipeStage() {
+	// Sprites: stopPlayback + hide on the speaker and the pair layer. drawSprite
+	// early-returns on `!Visible || Active == ""` ABOVE the missingno/held/
+	// hold-previous chain, so a zeroed layer cannot leak the previous frame.
+	// SpeakerInFront returns to NewCourtroom's default rather than keeping the
+	// departed pair's order.
+	c.Scene.Speaker = SpriteLayer{}
+	c.Scene.Pair = SpriteLayer{}
+	c.Scene.PairActive = false
+	c.Scene.SpeakerInFront = true
+
+	// Chatbox: ui_vp_message->hide() + the chatbox visibility reset. Clearing both
+	// texts IS the hide — drawChatOverlay returns early when they are both empty,
+	// so no new draw-side flag is needed.
+	c.Scene.ShownameText = ""
+	c.Scene.MessageText = ""
+	c.Scene.MessageRaw = ""
+	c.Scene.MessageStyles = c.Scene.MessageStyles[:0]
+	c.Scene.MessageEffects = c.Scene.MessageEffects[:0]
+	c.Scene.VisibleRunes = 0
+	c.Scene.TextColor = 0
+	c.Scene.ChatSkinBase = ""
+	c.Scene.Centered = false
+	c.Scene.IsBlankPost = false
+
+	// Shout bubble (ui_vp_objection->stopPlayback) and the screen effects the
+	// speedlines/effect hides cover.
+	c.Scene.ShoutBase = ""
+	c.Scene.ShoutFallbackBase = ""
+	c.Scene.ShoutCustom = false
+	c.Scene.FlashLeft = 0
+	c.Scene.ShakeLeft = 0
+
+	// text_queue_timer->stop() + skip_chatmessage_queue(). This loses NO IC log
+	// line: AsyncAO appends to the log at INGEST, before the room ever sees the
+	// message — the same split AO2 achieves by re-logging each dequeued message
+	// DISPLAY_ONLY.
+	c.queue = c.queue[:0]
+
+	// text_state = 2; anim_state = 3 — i.e. "nothing is playing". Nilling current
+	// is load-bearing beyond the phase reset: applyDeskMods and the asynchronous
+	// NotifyDeskMissing both early-return on a nil current, which is what stops a
+	// late desk-404 from recomputing PairActive off the message we just wiped and
+	// resurrecting the pair sprite.
+	c.phase, c.timer = PhaseIdle, 0
+	c.current, c.currentText = nil, ""
+	c.Typewriter.Start("") // chat_tick_timer->stop(); in place, keeps Interval/BlipRate
+
+	// Per-message latches with no AO2 analogue: a Go port has to clear them or a
+	// message held for a cold sprite is stranded, and the next area's first line
+	// inherits this one's delayed SFX, frame triggers or 2.8 additive prefix.
+	c.preanimDone = false
+	c.waitFor, c.waitLeft = nil, 0
+	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
+	c.frameTriggers = frameTriggerTable{}
+	c.pendingEffects = c.pendingEffects[:0]
+	c.additivePrevText, c.additivePrefix = "", ""
+
+	// set_scene(true, …): show_desk is hard-true there, and only a missing file
+	// suppresses it.
+	c.Scene.ShowDesk = c.deskResolution() != DeskAbsent
 }
 
 // begin starts one message: prefetch everything in parallel at HIGH priority
