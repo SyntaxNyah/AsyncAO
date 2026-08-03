@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,5 +297,99 @@ func BenchmarkActiveMountLayerConfigured(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = m.activeMountLayer()
+	}
+}
+
+// TestResolveRawLayeredNeverLearnsOrPersists is the safety gate for pack-aware
+// report/export. Routing pack bytes through ResolveRaw would call RecordSuccess
+// (which persists via prefs.RecordLearned) and bottom out in FetchRaw, which
+// writes T2 AND T3 under the http URL where skipDisk gives no protection. Either
+// would teach the SERVER host a format its own files do not use, and would
+// survive the pack being deleted.
+func TestResolveRawLayeredNeverLearnsOrPersists(t *testing.T) {
+	pr := newPackRig(t,
+		map[string]string{"/base/characters/witch/(a)normal.webp": "SERVER"},
+		map[string]string{"characters/witch/(a)normal.png": "PACK"},
+	)
+	host := HostOf(pr.origin)
+	base := pr.base("characters/witch/(a)normal")
+	before := append([]string(nil), pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite)...)
+
+	url, data, fromPack, ok := pr.rig.manager.ResolveRawLayered(base, AssetTypeCharSprite)
+	if !ok || !fromPack {
+		t.Fatalf("ResolveRawLayered ok=%v fromPack=%v, want the pack to answer", ok, fromPack)
+	}
+	if string(data) != "PACK" {
+		t.Errorf("got %q, want the pack's bytes", data)
+	}
+	if !strings.HasPrefix(url, pr.layer.LocalOrigin()) {
+		t.Errorf("url %q is not a pack transport URL — a caller could mistake it for the server's", url)
+	}
+
+	// (1) the server's learned list is untouched
+	after := pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite)
+	if len(after) != len(before) {
+		t.Errorf("the pack taught the server host a format: %v -> %v", before, after)
+	}
+	// (2) nothing under the SERVER's url in T2
+	for _, ext := range []string{".png", ".webp"} {
+		if _, hit := pr.rig.manager.t2.Get(base + ext); hit {
+			t.Errorf("pack bytes cached under the SERVER url %s", base+ext)
+		}
+	}
+	// (3) the network was never touched for it
+	if n := pr.hits["/base/characters/witch/(a)normal.webp"]; n != 0 {
+		t.Errorf("the server was probed %d time(s) for an asset the pack holds", n)
+	}
+}
+
+// TestResolveRawLayeredFallsThroughToServer pins that the tooling path still
+// reports server truth for anything the pack does not hold, and labels it so.
+func TestResolveRawLayeredFallsThroughToServer(t *testing.T) {
+	pr := newPackRig(t,
+		map[string]string{"/base/characters/other/(a)normal.webp": "SERVER"},
+		map[string]string{"characters/witch/(a)normal.png": "PACK"},
+	)
+	url, data, fromPack, ok := pr.rig.manager.ResolveRawLayered(
+		pr.base("characters/other/(a)normal"), AssetTypeCharSprite)
+	if !ok {
+		t.Fatal("the server's own asset did not resolve")
+	}
+	if fromPack {
+		t.Error("a server asset was labelled as coming from the pack")
+	}
+	if string(data) != "SERVER" || !strings.HasPrefix(url, pr.origin) {
+		t.Errorf("got %q from %q, want the server's copy", data, url)
+	}
+}
+
+// TestResolveRawLayeredIsServerTruthWithoutMounts pins that the tooling path is
+// byte-identical to ResolveRaw when no pack is configured — the default.
+func TestResolveRawLayeredIsServerTruthWithoutMounts(t *testing.T) {
+	pr := newPackRig(t,
+		map[string]string{"/base/characters/witch/(a)normal.webp": "SERVER"},
+		map[string]string{"characters/witch/(a)normal.png": "PACK"},
+	)
+	pr.rig.manager.SetMountLayer(nil) // no mounts configured
+
+	_, data, fromPack, ok := pr.rig.manager.ResolveRawLayered(
+		pr.base("characters/witch/(a)normal"), AssetTypeCharSprite)
+	if !ok || fromPack || string(data) != "SERVER" {
+		t.Errorf("without mounts: ok=%v fromPack=%v data=%q, want the server's copy", ok, fromPack, data)
+	}
+}
+
+// TestPackCoversIsAPureLookup pins that labelling a report row costs no read and
+// no fetch — the report walks every asset a scene touches.
+func TestPackCoversIsAPureLookup(t *testing.T) {
+	pr := newPackRig(t, nil, map[string]string{"characters/witch/(a)normal.png": "PACK"})
+	if !pr.rig.manager.PackCovers(pr.base("characters/witch/(a)normal")) {
+		t.Error("PackCovers missed an asset the pack holds")
+	}
+	if pr.rig.manager.PackCovers(pr.base("characters/nobody/(a)normal")) {
+		t.Error("PackCovers claimed an asset the pack lacks")
+	}
+	if got := pr.rig.manager.Stats().MountFetches; got != 0 {
+		t.Errorf("PackCovers performed %d read(s); it must be a pure index lookup", got)
 	}
 }

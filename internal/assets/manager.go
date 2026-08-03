@@ -996,15 +996,41 @@ func (m *Manager) activeMountLayer() *MountLayer {
 // re-reading it. Only a DECODE failure quarantines, because that is a
 // deterministic property of the bytes (see QuarantinePack).
 func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t AssetType) bool {
+	key, data, ok := m.packBytes(l, base, t)
+	if !ok {
+		return false
+	}
+	m.mountFetches.Add(1)
+	// T2 under the PACK's transport key, which is a disjoint local:// keyspace —
+	// it can never collide with the server's URL. skipDisk keeps it out of T3
+	// for free. Caching matters here: T1 evicts under the texture budget long
+	// before T2 does, so without it every evicted pack background or long
+	// animation would re-read and re-allocate multiple MiB from disk.
+	m.t2.Add(l.LocalURLFor(key), data, int64(len(data)))
+	m.deliver(l.LocalURLFor(key), deliverBase, t, data, true)
+	return true
+}
+
+// packBytes is the shared pack lookup: it walks the pack's format list for base
+// and returns the winning INDEX KEY plus its bytes.
+//
+// It does exactly four things — resolve the rel, walk candidates, skip
+// quarantined entries, read — and deliberately NOTHING else. No learning, no
+// caching, no counters, no delivery. That is what lets both the render path
+// (serveFromMount, which then caches and delivers) and the tooling path
+// (ResolveRawLayered, which must do neither) share one implementation without
+// the tooling path inheriting side effects that would poison the server's
+// learned formats or disk cache.
+func (m *Manager) packBytes(l *MountLayer, base string, t AssetType) (key string, data []byte, ok bool) {
 	idx := l.Index()
 	if idx == nil || !idx.acquire() {
-		return false
+		return "", nil, false
 	}
 	defer idx.release()
 
-	rel, ok := l.RelOf(base)
-	if !ok || mountLayerExcluded(rel) {
-		return false
+	rel, has := l.RelOf(base)
+	if !has || mountLayerExcluded(rel) {
+		return "", nil, false
 	}
 	folded := foldRel(rel)
 	mask, haveStem := idx.LookupStem(folded)
@@ -1016,26 +1042,57 @@ func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t Asse
 		if bit, indexed := extBit(ext); indexed && haveStem && mask&bit == 0 {
 			continue
 		}
-		key := folded + ext
-		f, hit := idx.LookupExact(key)
-		if !hit || idx.IsBad(key) {
+		k := folded + ext
+		f, hit := idx.LookupExact(k)
+		if !hit || idx.IsBad(k) {
 			continue
 		}
-		data, err := idx.ReadFile(f, key)
-		if err != nil || len(data) == 0 {
+		b, err := idx.ReadFile(f, k)
+		if err != nil || len(b) == 0 {
 			continue // fall through to the next candidate, then to the network
 		}
-		m.mountFetches.Add(1)
-		// T2 under the PACK's transport key, which is a disjoint local:// keyspace —
-		// it can never collide with the server's URL. skipDisk keeps it out of T3
-		// for free. Caching matters here: T1 evicts under the texture budget long
-		// before T2 does, so without it every evicted pack background or long
-		// animation would re-read and re-allocate multiple MiB from disk.
-		m.t2.Add(l.LocalURLFor(key), data, int64(len(data)))
-		m.deliver(l.LocalURLFor(key), deliverBase, t, data, true)
-		return true
+		return k, b, true
 	}
-	return false
+	return "", nil, false
+}
+
+// ResolveRawLayered is ResolveRaw for tooling that should see the user's local
+// packs — the content report and the scene exporter.
+//
+// It is a SEPARATE method rather than a flag threaded through ResolveRaw, and
+// that separation is the entire safety argument. ResolveRaw calls
+// resolver.RecordSuccess (which persists through prefs.RecordLearned) and
+// bottoms out in FetchRaw, which writes T2 AND T3 under the http URL where
+// skipDisk offers no protection. Routing pack bytes through either would teach
+// the SERVER host a format its files do not use and leave pack bytes on disk
+// under the server's identity — the v1.61.0 / v1.87.2 regression class, only
+// worse because it would persist across sessions.
+//
+// So the pack arm here does none of that: it reads and returns. Only the
+// fall-through to the server touches the normal machinery, which is correct,
+// because those bytes really are the server's.
+//
+// fromPack reports which arm answered, so callers can label the result honestly
+// — a recipient's experience depends on knowing an asset came from the sender's
+// own folders and not from the server.
+func (m *Manager) ResolveRawLayered(base string, t AssetType) (url string, data []byte, fromPack, ok bool) {
+	if base == "" || !t.Valid() {
+		return "", nil, false, false
+	}
+	if l := m.activeMountLayer(); l != nil {
+		if key, b, hit := m.packBytes(l, base, t); hit {
+			return l.LocalURLFor(key), b, true, true
+		}
+	}
+	u, b, hit := m.ResolveRaw(base, t)
+	return u, b, false, hit
+}
+
+// PackCovers reports whether the user's local packs hold anything for base,
+// WITHOUT reading it. A pure index lookup, for labelling a report row.
+func (m *Manager) PackCovers(base string) bool {
+	l := m.activeMountLayer()
+	return l != nil && l.Covers(base)
 }
 
 // QuarantinePack marks a pack entry whose bytes failed to DECODE, so the next
