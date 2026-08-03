@@ -4,42 +4,64 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.89.0
+## v1.89.0 — 2026-08-03
 
-Your own content packs work **alongside** a server's assets instead of instead
-of them, and swapping areas leaves a clean stage.
+Your own content works **alongside** a server's, instead of replacing it. Plus
+`.zip` packs, and area swaps that leave a clean stage.
 
-- **Use your own folders and the server's assets at the same time.**
-  **Settings → Assets → Asset source** now offers three choices: stream
-  everything, use your folders first and stream the rest, or never stream. The
-  middle one is new — files in your folders replace the server's copies at the
-  same paths, and anything you don't have keeps streaming. Deploy a small
-  private pack alongside a server's full roster, or re-skin one character
-  without hosting anything.
-- **A mount can be a `.zip` pack.** One file to hand someone, laid out exactly
-  like the folder version.
+**Use your folders and the server at the same time**
+
+**Settings → Assets → Asset source** now offers three choices: stream
+everything from the server, use your folders first and stream the rest, or
+never stream at all.
+
+The middle one is new, and it's the interesting one. Files in your folders
+replace the server's copies **at the same paths**, and anything you don't have
+keeps streaming normally. So you can run a small private pack alongside a
+server's full roster, or re-skin a single character, without hosting anything
+and without giving up the rest of the server's content.
+
+- **A mount can be a folder or a `.zip` pack** — one file to hand someone,
+  laid out exactly like the folder version.
 - **Case no longer matters.** A pack authored on Windows resolves the same way
   on Linux and macOS.
-- **Adding a folder takes effect immediately.** Previously the mount list only
-  applied to servers that provide no asset URL at all, so adding a folder while
-  streaming did nothing and said nothing — files kept showing as missing. Local
-  folders now apply live, and **Rescan folders** picks up edits you make on
-  disk. (#19)
-- **A damaged file in your pack no longer breaks that asset.** AsyncAO uses the
-  server's copy for it instead, and tells you how many files that happened to,
-  rather than the asset going missing entirely.
-- **Swapping areas clears the viewport.** The previous area's character and
-  chatbox used to stay frozen on the new background. They now clear the way AO2
-  does — and because some servers don't send the field that signals it, jumping
-  areas yourself clears the stage regardless. (#23)
+- **The format doesn't have to match.** A `.png` pack works over a `.webp`
+  server.
+- **Mounts are searched in order, first hit wins**, so you can stack an
+  override pack above a full base install.
+- **Rescan folders** picks up edits you make on disk.
+
+**Adding a folder now actually does something** *(#19)*
+
+The mount list used to apply only to servers that provide no asset URL at all,
+so adding a folder while streaming did nothing — and said nothing. Files kept
+showing as missing with the pack sitting right there on disk. Local folders now
+apply live, and the panel tells you when folders are configured but not being
+used.
+
+The same release fixes a second cause of that report: a normal PNG pack was
+invisible even in the old folders-only mode, because only one file extension
+was ever looked for.
+
+**Swapping areas clears the viewport** *(#23)*
+
+The previous area's character and chatbox used to stay frozen on top of the new
+background. They now clear the way AO2 does. Some servers don't send the field
+that signals it, so jumping areas yourself clears the stage regardless.
+
+**Everything else**
+
+- **A damaged file in your pack no longer breaks that asset.** AsyncAO falls
+  back to the server's copy for it and tells you how many files that happened
+  to, instead of the asset going missing entirely.
 - **The content report and scene export see your folders.** The report tags
   what came from your own files and counts it separately, so you can tell at a
-  glance what a recipient would be missing. Exporting a self-contained archive
-  includes those files so it plays for them — and asks you first, since that
-  copies your own art into a file you hand to someone else.
+  glance what someone you send it to would be missing. Exporting a
+  self-contained archive includes those files so it plays for them — and asks
+  first, since that copies your own art into a file you hand to someone else.
 - **A new creator easter egg.** Say the right name in IC and see.
 
-If you have no folders configured, none of this costs you anything: no
+**If you have no folders configured, none of this costs you anything** — no
 indexing, no scanning, and the asset pipeline is byte-for-byte what shipped
 before.
 
