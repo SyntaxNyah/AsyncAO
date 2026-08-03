@@ -29,9 +29,18 @@ func TestCreatorEgg(t *testing.T) {
 		{"omnitroid and fanatsors", eggFanat, "fanat outranks omni even when omni appears first"},
 		{"syntaxnyah then omnitroid", eggOmni, "omni outranks nyah even when nyah appears first"},
 		{"fanatsors omnitroid syntaxnyah", eggFanat, "all three → fanat"},
+		// Scatterflower: an inspiration, so it sorts BELOW all three creators.
+		{"ScatterFlower", eggScatter, "mixed-case scatter, bare"},
+		{"big thanks to scatterflower for the idea", eggScatter, "scatter mid-sentence"},
+		{"SCATTERFLOWER!!!", eggScatter, "upper-case scatter"},
+		{"scatterflower and syntaxnyah", eggNyah, "a creator outranks an inspiration"},
+		{"scatterflower fanatsors", eggFanat, "fanat still wins over scatter"},
 		// No false positives.
 		{"you are being fanatic about this", eggNone, "fanatic must not trigger fanat"},
 		{"my android phone", eggNone, "android must not trigger omni"},
+		{"she picked a flower", eggNone, "flower alone must not trigger scatter"},
+		{"scatter the evidence", eggNone, "scatter alone must not trigger scatter"},
+		{"scatter flower", eggNone, "the two halves split by a space must not trigger"},
 		{"plain courtroom banter", eggNone, "ordinary text is inert"},
 		{"", eggNone, "empty text is inert"},
 	}
@@ -242,8 +251,11 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	draw := func() { a.drawCourtroom(w, h) }
 
 	// Each egg has a DISTINCT draw path (rainbow rings, blue<->gold pulse + the
-	// perimeter sweep, pink heartbeat), so all three must be gated — the sweep's
-	// per-edge fill loop is the alloc-prone one. Re-drive the SAME speaker (char 0
+	// perimeter sweep, pink heartbeat, and Scatterflower's palette-drift ring PLUS
+	// its stage petal field), so all four must be gated — the sweep's per-edge fill
+	// loop and the petal loop are the alloc-prone ones. drawCourtroom covers both
+	// halves of the Scatterflower egg: renderViewportZoomed reaches drawStageEgg,
+	// drawChatOverlay reaches drawChatEgg. Re-drive the SAME speaker (char 0
 	// "Witch", whose stage bases the staging already made resident) with each
 	// creator-name message, settle the typewriter, and assert zero allocs.
 	for _, tc := range []struct {
@@ -253,6 +265,7 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		{"shoutout to FanatSors", eggFanat},
 		{"credit to OmniTroid", eggOmni},
 		{"made by SyntaxNyah", eggNyah},
+		{"inspired by Scatterflower", eggScatter},
 	} {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", tc.text)})
 		a.room.SkipToIdle()
@@ -264,5 +277,103 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		if n := testing.AllocsPerRun(200, draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
 		}
+	}
+}
+
+// TestEggSceneTextMirrorsChatboxGate pins the agreement between the egg's two
+// halves. The stage petals refresh from eggSceneText while the chatbox ring
+// refreshes from drawChatEgg, and drawChatOverlay early-returns on a blankpost /
+// empty scene — so if eggSceneText did NOT reproduce that same gate, a blankpost
+// carrying a trigger word would latch the kind and leave petals falling over a
+// stage whose chatbox never drew (and never cleared it).
+func TestEggSceneTextMirrorsChatboxGate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		sc   courtroom.Scene
+		want string
+	}{
+		{"plain message", courtroom.Scene{MessageText: "scatterflower"}, "scatterflower"},
+		{"showname only still displays a box", courtroom.Scene{ShownameText: "Witch"}, ""},
+		{"blankpost hides the box", courtroom.Scene{MessageText: "scatterflower", IsBlankPost: true}, ""},
+		{"idle: no message, no showname", courtroom.Scene{}, ""},
+	} {
+		sc := tc.sc
+		if got := eggSceneText(&sc); got != tc.want {
+			t.Errorf("%s: eggSceneText = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestEggPetalFadeRampsBothEnds pins that petals ease in at the stage's top edge
+// and out at its bottom one: a petal that appeared at full opacity would visibly
+// pop into existence at the clip boundary.
+func TestEggPetalFadeRampsBothEnds(t *testing.T) {
+	if got := eggPetalFade(0); got != 0 {
+		t.Errorf("fade at the very top = %v, want 0 (petals must not pop in)", got)
+	}
+	if got := eggPetalFade(1); got > 1e-9 {
+		t.Errorf("fade at the very bottom = %v, want ~0 (petals must not pop out)", got)
+	}
+	if got := eggPetalFade(0.5); got != 1 {
+		t.Errorf("fade mid-fall = %v, want 1 (full opacity between the ramps)", got)
+	}
+	// Monotone rise across the in-ramp, monotone fall across the out-ramp.
+	for i := 1; i <= 10; i++ {
+		lo, hi := eggPetalFade(float64(i-1)/10*eggScatterFadeFrac), eggPetalFade(float64(i)/10*eggScatterFadeFrac)
+		if hi < lo {
+			t.Fatalf("in-ramp not monotone at step %d: %v then %v", i, lo, hi)
+		}
+	}
+	// Every sample stays a legal alpha multiplier, so the uint8 cast can't wrap.
+	for i := 0; i <= 100; i++ {
+		if f := eggPetalFade(float64(i) / 100); f < 0 || f > 1 {
+			t.Fatalf("fade(%v) = %v, outside [0,1] — the alpha cast would wrap", float64(i)/100, f)
+		}
+	}
+}
+
+// TestEggPaletteAtWrapsContinuously pins that the ring's colour cycle is closed:
+// sampling just before 1 must be close to sampling 0, or the ring would snap
+// colour once per bloom period instead of drifting.
+func TestEggPaletteAtWrapsContinuously(t *testing.T) {
+	near, start := eggPaletteAt(0.9999), eggPaletteAt(0)
+	if d := int(near.R) - int(start.R); d > 2 || d < -2 {
+		t.Errorf("palette seam is discontinuous: R %d then %d", near.R, start.R)
+	}
+	// In-range for the whole cycle (the lerp must never overshoot a channel).
+	for i := 0; i < 100; i++ {
+		_ = eggPaletteAt(float64(i) / 100) // uint8 channels cannot leave range; this pins no panic on index wrap
+	}
+}
+
+// TestEggHashSpreadsPetals guards against a degenerate mixer: the petal field's
+// whole visual depends on the per-index hash decorrelating lane / speed / size /
+// phase. If the hash collapsed, every petal would fall in one column and the egg
+// would read as a single dropping line, which no pixel test would catch.
+func TestEggHashSpreadsPetals(t *testing.T) {
+	// Lanes are the salt-0 draw the petal loop uses for horizontal placement.
+	var buckets [4]int
+	for i := uint32(0); i < eggScatterPetals; i++ {
+		u := eggUnit(eggHash(i * 4))
+		if u < 0 || u >= 1 {
+			t.Fatalf("eggUnit out of [0,1) for petal %d: %v", i, u)
+		}
+		buckets[int(u*4)]++
+	}
+	for q, n := range buckets {
+		if n == 0 {
+			t.Errorf("no petal lands in horizontal quarter %d — the hash is not spreading (buckets=%v)", q, buckets)
+		}
+	}
+	// Distinct salts must not alias: lane and phase sharing a value would lock
+	// every petal's sway to its column.
+	same := 0
+	for i := uint32(0); i < eggScatterPetals; i++ {
+		if eggHash(i*4) == eggHash(i*4+3) {
+			same++
+		}
+	}
+	if same != 0 {
+		t.Errorf("%d petals have lane == phase — salts are aliasing", same)
 	}
 }

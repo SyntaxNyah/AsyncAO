@@ -54,7 +54,8 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	}
 	if a.vpZoom <= 1 {
 		a.d.Viewport.Render(c.Ren, sc, vp)
-		a.drawStageFrame(vp) // #56 decorative frame (Off by default → no-op)
+		a.drawStageEgg(vp, sc) // Scatterflower petals, behind the frame and the chatbox
+		a.drawStageFrame(vp)   // #56 decorative frame (Off by default → no-op)
 		return
 	}
 	// &vp into cgo would heap-allocate the parameter on EVERY call — even at
@@ -64,6 +65,9 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	_ = c.Ren.SetClipRect(&c.cgoRect)
 	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
 	_ = c.Ren.SetClipRect(nil)
+	// Petals ride the STAGE rect, not the zoomed scene rect: like the frame below
+	// they're chrome over the stage, so zooming the camera must not blow them up.
+	a.drawStageEgg(vp, sc)
 	a.drawStageFrame(vp) // frame is chrome — it stays fixed while the camera zooms
 	// Reset chip, top-right of the stage.
 	chip := sdl.Rect{X: vp.X + vp.W - 40, Y: vp.Y + 4, W: 36, H: 20}

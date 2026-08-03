@@ -19,34 +19,43 @@ import (
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// Egg kinds. Each names its honoree — the three people the eggs celebrate, in
-// the order the client lineage was built (Attorney Online → AO2 → AsyncAO),
-// which is also the match-priority order in creatorEgg.
+// Egg kinds. The first three name the client lineage's creators, in the order it
+// was built (Attorney Online → AO2 → AsyncAO), which is also the match-priority
+// order in creatorEgg. eggScatter honours an INSPIRATION rather than a link in
+// that lineage, so it sorts last: a message naming both a lineage creator and an
+// inspiration lights the creator.
 const (
-	eggNone  uint8 = iota // no creator mentioned — the common case, no glow draws
-	eggFanat              // FanatSors — creator of Attorney Online (rainbow ring)
-	eggOmni               // OmniTroid — creator of AO2 (blue<->gold pulse + scanner sweep)
-	eggNyah               // SyntaxNyah — creator of AsyncAO (Mayo-pink heartbeat glow)
+	eggNone    uint8 = iota // no creator mentioned — the common case, no glow draws
+	eggFanat                // FanatSors — creator of Attorney Online (rainbow ring)
+	eggOmni                 // OmniTroid — creator of AO2 (blue<->gold pulse + scanner sweep)
+	eggNyah                 // SyntaxNyah — creator of AsyncAO (Mayo-pink heartbeat glow)
+	eggScatter              // Scatterflower — petals over the STAGE + a petal-toned ring
 )
 
 // Trigger substrings, matched case-insensitively against the displayed message
 // text. These are the FULL handles, deliberately: matching the short suffix
 // ("fanat", "omni") would light up on innocent words like "fanatic" / "android"
-// — the whole point of the negative test rows.
+// — the whole point of the negative test rows. The same reasoning keeps
+// eggNameScatter whole: "flower" alone is an ordinary English word that would
+// fire on any garden-variety line of roleplay.
 const (
-	eggNameFanat = "fanatsors"
-	eggNameOmni  = "omnitroid"
-	eggNameNyah  = "syntaxnyah"
+	eggNameFanat   = "fanatsors"
+	eggNameOmni    = "omnitroid"
+	eggNameNyah    = "syntaxnyah"
+	eggNameScatter = "scatterflower"
 )
 
 // creatorEgg scans a displayed IC message for a creator mention and returns the
 // egg kind (eggNone when none is present). Case-insensitive substring match;
-// priority is fanat > omni > nyah (creation lineage AO → AO2 → AsyncAO), so a
-// message naming two creators lights the earliest in that lineage. Callers cache
-// the result — this allocates one ToLower string, which is fine ONCE per message
-// but must never run per frame (see refreshEggKind's compare guard).
+// priority is fanat > omni > nyah (creation lineage AO → AO2 → AsyncAO) then
+// scatter, so a message naming two people lights the earliest in that lineage and
+// an inspiration never outranks a creator. Callers cache the result — this
+// allocates one ToLower string, which is fine ONCE per message but must never run
+// per frame (see refreshEggKind's compare guard).
 func creatorEgg(text string) uint8 {
 	if text == "" {
 		return eggNone
@@ -59,9 +68,24 @@ func creatorEgg(text string) uint8 {
 		return eggOmni
 	case strings.Contains(low, eggNameNyah):
 		return eggNyah
+	case strings.Contains(low, eggNameScatter):
+		return eggScatter
 	default:
 		return eggNone
 	}
+}
+
+// eggSceneText returns the text the egg scan should see for sc: the DISPLAYED
+// message, or "" when the chatbox is hidden. It mirrors drawChatOverlay's own
+// early-return gate (screens.go — blankpost, or no message and no showname) and
+// the two MUST agree: the stage half of the Scatterflower egg is refreshed from
+// here while the ring half is refreshed from drawChatEgg, so a disagreement would
+// leave petals falling over a stage whose chatbox never drew.
+func eggSceneText(sc *courtroom.Scene) string {
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
+		return ""
+	}
+	return sc.MessageText
 }
 
 // refreshEggKind is the compare-and-store cache guard: if text differs from the
@@ -178,6 +202,57 @@ const (
 // (#ff9ecb-ish). Named so the author's own egg wears the project mascot's hue.
 var MayoPink = sdl.Color{R: 0xff, G: 0x9e, B: 0xcb, A: 255}
 
+const (
+	// eggScatterPetals is how many petals drift over the stage at once. A named
+	// cap (hard rule 4): the draw is exactly this many fills regardless of stage
+	// size, so the egg's per-frame cost is bounded at 4K as it is at 720p. Two
+	// dozen reads as a gentle scatter — a blizzard would bury the sprite the
+	// message is about.
+	eggScatterPetals = 26
+	// eggScatterFallSecs is the base time a petal takes to cross the stage, and
+	// eggScatterFallVary the fraction each petal scales that by. Without the
+	// variance every petal lands in lockstep, which reads as a machine rather
+	// than as falling petals.
+	eggScatterFallSecs = 6.0
+	eggScatterFallVary = 0.6
+	// eggScatterSwayCycles is how many left-right sways a petal completes over one
+	// fall; eggScatterSwayFrac is how far it wanders sideways, as a fraction of
+	// stage width. Together they turn a straight drop into a lazy zig-zag.
+	eggScatterSwayCycles = 2.5
+	eggScatterSwayFrac   = 0.06
+	// eggScatterSizeMin/Max bound a petal's long edge in px. Kept small: these are
+	// petals behind the action, not confetti in front of it.
+	eggScatterSizeMin = int32(2)
+	eggScatterSizeMax = int32(6)
+	// eggScatterSpinSecs is the flutter period. SDL_RenderFillRect cannot rotate,
+	// so a petal "turns" by having its WIDTH squashed toward edge-on by |cos| over
+	// this period — the cheap fake that sells the tumble without a texture.
+	eggScatterSpinSecs = 1.1
+	// eggScatterFadeFrac is the fraction of the fall spent fading in at the top and
+	// out at the bottom, so petals never pop into or out of existence at the clip
+	// edge.
+	eggScatterFadeFrac = 0.15
+	// eggScatterAlphaPeak is a petal's alpha at full opacity — translucent on
+	// purpose, so the stage art underneath still reads.
+	eggScatterAlphaPeak = 210
+	// eggScatterBloomSecs is how long the chatbox ring takes to drift once through
+	// the petal palette, and eggScatterRingStep how far along that cycle each
+	// successive ring sits. Slow and calm: the STAGE petals carry this egg's
+	// motion, so the ring must not compete with them for attention.
+	eggScatterBloomSecs = 5.0
+	eggScatterRingStep  = 0.08
+)
+
+// eggScatterPalette is the Scatterflower petal spread — blossom pinks with one
+// warm cream mote so the fall isn't monochrome. Package-level so the per-frame
+// draw indexes a fixed array instead of building one.
+var eggScatterPalette = [4]sdl.Color{
+	{R: 0xff, G: 0xc2, B: 0xd6, A: 255}, // blossom pink
+	{R: 0xff, G: 0xe4, B: 0xef, A: 255}, // near-white petal
+	{R: 0xf2, G: 0x9c, B: 0xc4, A: 255}, // deeper rose
+	{R: 0xff, G: 0xd9, B: 0xa8, A: 255}, // warm cream — a stray pollen mote
+}
+
 // drawCreatorEgg paints the animated glow ring for the active egg AROUND box,
 // after the skin/panel/border have drawn. Rings are OUTSET (they never cover the
 // chatbox art). Everything is clamped to the window rect (0,0,winW,winH) so an
@@ -196,7 +271,33 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 		a.drawEggOmni(box, win, t)
 	case eggNyah:
 		a.drawEggNyah(box, win, t)
+	case eggScatter:
+		a.drawEggScatter(box, win, t)
 	}
+}
+
+// drawStageEgg paints the VIEWPORT half of the Scatterflower egg: petals drifting
+// down over the stage. It is the only egg that draws outside the chatbox, so it
+// gets its own entry point, called from renderViewportZoomed — the same single
+// site drawStageFrame uses, which is why all three stages (classic, themed,
+// theater) get it without three copies of the call. Drawn BEFORE the frame (that's
+// chrome and belongs on top) and before drawChatOverlay runs later in the frame,
+// so petals fall BEHIND the message box instead of across the words.
+//
+// It refreshes the detection cache itself instead of leaning on drawChatEgg,
+// because drawChatOverlay early-returns on a blankpost and would leave the last
+// kind latched — petals would keep falling after the message was gone. Passing
+// eggSceneText (which mirrors that same gate) keeps the two halves in agreement,
+// and the refresh is idempotent for the chatbox path that runs later in the frame:
+// same text ⇒ one string compare, no rescan, no allocation. Gated on the SAME
+// accessibility pair as the ring eggs and the AO2 screen effects.
+func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
+	a.refreshEggKind(eggSceneText(sc))
+	if a.eggKind != eggScatter || !a.d.Prefs.ScreenEffectsOn() || a.d.Prefs.ReduceMotion() {
+		return
+	}
+	a.drawEggPetals(vp, a.d.Viewport.AnimClock().Seconds())
+	a.NoteAnimating()
 }
 
 // outsetRing returns box grown by step px on every side (an outset ring rect).
@@ -345,6 +446,108 @@ func heartBeat(phase, center float64) float64 {
 	}
 	// Cosine hump: 1 at the centre, 0 at the edges.
 	return 0.5 * (1 + math.Cos(math.Pi*d/eggNyahBeatWidth))
+}
+
+// drawEggScatter — Scatterflower, the chatbox half. Petal-toned rings that DRIFT
+// through the palette on a slow bloom cycle rather than pulsing or sweeping: this
+// egg's motion budget is spent on the stage petals (drawEggPetals), so the ring
+// stays calm and just tints the box to match what's falling behind it.
+func (a *App) drawEggScatter(box, win sdl.Rect, t float64) {
+	c := a.ctx
+	for i := int32(0); i < eggRingCount; i++ {
+		ring := outsetRing(box, (i+1)*eggRingGap)
+		if !ringVisible(ring, win) {
+			continue
+		}
+		// Each ring sits a step further along the same cycle, so the band reads as
+		// one colour drifting outward instead of three independent outlines.
+		col := eggPaletteAt(math.Mod(t/eggScatterBloomSecs+float64(i)*eggScatterRingStep, 1))
+		col.A = eggRingAlpha(i)
+		c.Border(ring, col)
+	}
+}
+
+// eggPaletteAt samples eggScatterPalette at u in [0,1), lerping between adjacent
+// entries (and wrapping the last back to the first) so the cycle is continuous
+// rather than stepping between four flat colours.
+func eggPaletteAt(u float64) sdl.Color {
+	n := len(eggScatterPalette)
+	pos := u * float64(n)
+	i := int(pos) % n
+	return lerpColor(eggScatterPalette[i], eggScatterPalette[(i+1)%n], pos-math.Floor(pos))
+}
+
+// eggHash mixes a petal index into a well-spread uint32. The whole petal field is
+// a pure function of (index, clock): every petal derives its lane, fall speed,
+// size and phase from this hash, so there is no per-petal state to allocate, seed
+// or reset when the message changes — and every AsyncAO client in the room draws
+// the identical fall. math/rand is deliberately NOT used: it would need a seeded
+// source (per-client divergence) and a call into a locked global.
+// Mixer is MurmurHash3's finalizer (public domain).
+func eggHash(i uint32) uint32 {
+	i ^= i >> 16
+	i *= 0x7feb352d
+	i ^= i >> 15
+	i *= 0x846ca68b
+	i ^= i >> 16
+	return i
+}
+
+// eggUnit maps a hashed value onto [0,1). The divisor is 2^32 as a float
+// constant, so this is one multiply — no conversion through a big integer.
+func eggUnit(h uint32) float64 { return float64(h) * (1.0 / 4294967296.0) }
+
+// drawEggPetals paints the Scatterflower petal fall across vp. Clipped to the
+// stage so a petal's sway can never paint over the surrounding chrome, and
+// ZERO-allocation: fixed petal count, no slices, no closures, colours copied from
+// a package-level array, every rect going through the Ctx scratch rect (a &local
+// would escape through cgo and heap-allocate per fill).
+func (a *App) drawEggPetals(vp sdl.Rect, t float64) {
+	c := a.ctx
+	if vp.W <= 0 || vp.H <= 0 {
+		return
+	}
+	prev, had := c.pushClip(vp)
+	for i := uint32(0); i < eggScatterPetals; i++ {
+		// Four independent draws from one index — separate salts rather than slicing
+		// bit-fields out of a single hash, so no two properties ever correlate.
+		lane := eggUnit(eggHash(i*4 + 0))
+		speed := eggUnit(eggHash(i*4 + 1))
+		size := eggUnit(eggHash(i*4 + 2))
+		phase := eggUnit(eggHash(i*4 + 3))
+
+		// p walks 0 (stage top) → 1 (stage bottom) over this petal's own fall time.
+		fall := eggScatterFallSecs * (1 - eggScatterFallVary/2 + speed*eggScatterFallVary)
+		p := math.Mod(t/fall+phase, 1)
+
+		sway := math.Sin((p*eggScatterSwayCycles + phase) * 2 * math.Pi)
+		x := vp.X + int32(lane*float64(vp.W)) + int32(sway*eggScatterSwayFrac*float64(vp.W))
+		y := vp.Y + int32(p*float64(vp.H))
+
+		// Flutter: the petal turns edge-on and back, so only its width moves.
+		h := eggScatterSizeMin + int32(size*float64(eggScatterSizeMax-eggScatterSizeMin))
+		turn := math.Abs(math.Cos((t/eggScatterSpinSecs + phase) * 2 * math.Pi))
+		w := 1 + int32(float64(h)*turn)
+
+		col := eggScatterPalette[i%uint32(len(eggScatterPalette))]
+		col.A = uint8(float64(eggScatterAlphaPeak) * eggPetalFade(p))
+		c.Fill(sdl.Rect{X: x, Y: y, W: w, H: h}, col)
+	}
+	c.popClip(prev, had)
+}
+
+// eggPetalFade returns a 0..1 opacity for a petal at fall position p, ramping in
+// over the first eggScatterFadeFrac of the drop and out over the last, so petals
+// never pop in at the stage's top edge or vanish at its bottom one.
+func eggPetalFade(p float64) float64 {
+	switch {
+	case p < eggScatterFadeFrac:
+		return p / eggScatterFadeFrac
+	case p > 1-eggScatterFadeFrac:
+		return (1 - p) / eggScatterFadeFrac
+	default:
+		return 1
+	}
 }
 
 // lerpColor linearly interpolates two colours by t in [0,1] (alpha left at a.A;
