@@ -48,6 +48,14 @@ type DecodedAsset struct {
 	// origin's backoff window as "failed" for decodeFailTTL (the
 	// "whole server's files go missing in waves" report).
 	Transient bool
+	// FromPack marks bytes that came from the user's LOCAL MOUNT FOLDERS rather
+	// than the server. Base is still the SERVER's URL either way — that is the
+	// whole point of layering, the asset keeps one identity — so the render side
+	// MUST consult this before negative-caching a decode failure. Calling
+	// MarkFailed(Base) for a corrupt PACK file would take the SERVER's perfectly
+	// good copy of that asset offline for decodeFailTTL, because one file in a
+	// hand-assembled pack was damaged.
+	FromPack bool
 }
 
 // AudioAsset is the manager's handoff to the audio system: raw bytes for
@@ -57,6 +65,9 @@ type AudioAsset struct {
 	Base string
 	Type AssetType
 	Data []byte
+	// FromPack marks local-mount bytes; see DecodedAsset.FromPack. Audio never
+	// reaches the upload pump, so the audio loader owns its own quarantine call.
+	FromPack bool
 }
 
 // Warning reports an asset that 404'd in every probed format, for the
@@ -147,11 +158,20 @@ type Manager struct {
 	// render thread swaps it on every mounts/pref change while pool workers read it.
 	localOverlay atomic.Pointer[LocalFetcher]
 
-	t1Hits     atomic.Int64
-	t2Hits     atomic.Int64
-	diskHits   atomic.Int64
-	netFetches atomic.Int64
-	missing    atomic.Int64
+	// mountLayer, when set, answers asset fetches from the user's local mount
+	// folders and .zip packs BEFORE the network, under the SERVER's own URL
+	// (v1.89.0 layering). Nil — the default, and the state for every user who has
+	// never configured a mount — costs exactly one atomic load on the fetch path;
+	// see activeMountLayer for why the nil check is ordered first.
+	mountLayer atomic.Pointer[MountLayer]
+
+	t1Hits          atomic.Int64
+	t2Hits          atomic.Int64
+	diskHits        atomic.Int64
+	netFetches      atomic.Int64
+	missing         atomic.Int64
+	mountFetches    atomic.Int64
+	packQuarantined atomic.Int64
 }
 
 // SetOffline flips rehearsal mode's network gate.
@@ -460,16 +480,24 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		m.t1Hits.Add(1)
 		return
 	}
+	// The pack answers exact URLs too — evidence ships its extension in the LE
+	// name and music tracks are full URLs, so neither goes through the candidate
+	// ladder. Placed after T1 (a resident texture is already the right answer) but
+	// before T2, so a pack file the user just dropped in wins over the server copy
+	// cached from an earlier session.
+	if layer := m.activeMountLayer(); layer != nil && m.serveFromMount(layer, url, url, t) {
+		return
+	}
 	if data, ok := m.t2.Get(url); ok {
 		m.t2Hits.Add(1)
-		m.deliver(url, url, t, data)
+		m.deliver(url, url, t, data, false)
 		return
 	}
 	if !m.skipDisk(url) {
 		if data, ok := m.disk.Get(url); ok {
 			m.diskHits.Add(1)
 			m.t2.Add(url, data, int64(len(data)))
-			m.deliver(url, url, t, data)
+			m.deliver(url, url, t, data, false)
 			return
 		}
 	}
@@ -481,7 +509,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		if !m.skipDisk(url) {
 			m.disk.Put(url, data)
 		}
-		m.deliver(url, url, t, data)
+		m.deliver(url, url, t, data, false)
 	case errors.Is(err, network.ErrAssetNotFound):
 		m.reportMissing(url, t, nil)
 	default:
@@ -747,7 +775,21 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 		return
 	}
 
+	// The local pack is consulted once per PASS, not once per candidate: one
+	// atomic load for the whole resolution. nil is the no-mounts default and
+	// costs nothing measurable.
+	layer := m.activeMountLayer()
+
 	host := hostOf(primary)
+	// Pack-first WITHIN each spelling, in the ladder's own order — NOT the pack
+	// swept across every spelling first. EmoteBare takes no EmoteKind, so the (a)
+	// and (b) chains share a byte-identical bare alt; sweeping provider-major
+	// would let a legacy bare-named pack serve ONE file as both idle and talk,
+	// shadowing a server that ships proper (a)/(b) art. This ordering keeps AO's
+	// specificity ladder intact and leaves the network probe budget unchanged.
+	if layer != nil && m.serveFromMount(layer, primary, primary, t) {
+		return
+	}
 	done, tried := m.tryBase(primary, primary, t, host)
 	if done {
 		return
@@ -755,6 +797,9 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 	for i, alt := range alts {
 		if alt == "" || alt == primary || containsString(alts[:i], alt) {
 			continue // blank / duplicate spelling — nothing new to probe
+		}
+		if layer != nil && m.serveFromMount(layer, alt, primary, t) {
+			return
 		}
 		var altTried []string
 		done, altTried = m.tryBase(alt, primary, t, host)
@@ -826,7 +871,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 		// T2: raw bytes in memory — straight to decode.
 		if data, ok := m.t2.Get(url); ok {
 			m.t2Hits.Add(1)
-			m.deliver(url, deliverBase, t, data)
+			m.deliver(url, deliverBase, t, data, false)
 			return true, tried404
 		}
 		// T3: disk — promote to T2, learn, decode (spec §8). Skipped for a
@@ -837,7 +882,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 				m.diskHits.Add(1)
 				m.t2.Add(url, data, int64(len(data)))
 				m.resolver.RecordSuccess(host, t, ext)
-				m.deliver(url, deliverBase, t, data)
+				m.deliver(url, deliverBase, t, data, false)
 				return true, tried404
 			}
 		}
@@ -852,7 +897,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 				m.disk.Put(url, data)
 			}
 			m.resolver.RecordSuccess(host, t, ext)
-			m.deliver(url, deliverBase, t, data)
+			m.deliver(url, deliverBase, t, data, false)
 			return true, tried404
 		case errors.Is(err, network.ErrAssetNotFound):
 			tried404 = append(tried404, ext)
@@ -870,9 +915,12 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 
 // deliver routes payload bytes onward: audio types skip the decode pool
 // entirely; images are decoded off-thread and land on the decoded channel.
-func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
+// fromPack marks bytes that came from the user's local mounts rather than the
+// server. It rides all the way to the render side because Base stays the
+// SERVER's URL either way — see DecodedAsset.FromPack.
+func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack bool) {
 	if t.IsAudio() {
-		m.audioCh <- AudioAsset{URL: url, Base: base, Type: t, Data: data}
+		m.audioCh <- AudioAsset{URL: url, Base: base, Type: t, Data: data, FromPack: fromPack}
 		m.notifyDelivery()
 		return
 	}
@@ -885,13 +933,135 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 			// Opt-in thumbnail store: every character sprite that decodes leaves a
 			// tiny low-q stand-in behind (ThumbCache gates on its own enable and
 			// Store is a non-blocking enqueue, so this is free when off).
-			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite {
+			//
+			// NEVER for pack bytes. ThumbCache is a PERSISTENT disk cache keyed by
+			// BASE — the server's URL — so storing here would write the user's own
+			// art to disk under the server's identity, where it outlives the pack and
+			// keeps showing as that server's cold-load stand-in after the folder is
+			// gone.
+			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack {
 				m.thumbs.Store(base, d)
 			}
-			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err}
+			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
 			m.notifyDelivery()
 		},
 	})
+}
+
+// SetMountLayer installs (or clears, with nil) the local-pack layer consulted
+// before the network. Safe from the render thread mid-session: readers load the
+// atomic pointer and never lock (rule 5).
+func (m *Manager) SetMountLayer(l *MountLayer) { m.mountLayer.Store(l) }
+
+// MountLayer returns the live layer (nil when no mounts are configured).
+func (m *Manager) MountLayer() *MountLayer { return m.mountLayer.Load() }
+
+// activeMountLayer returns the layer to consult for this pass, or nil.
+//
+// THE NIL CHECK COMES FIRST, and that ordering is the whole no-mounts contract:
+// with no local mounts configured — the overwhelmingly common case — the entire
+// feature costs ONE atomic load and a predicted branch. No index is built, no
+// goroutine runs, no directory is walked, no allocation happens, and no extra
+// probe is issued. Testing localMode or archiveSrc first would spend a second
+// load on every user who has never opened the Settings page.
+func (m *Manager) activeMountLayer() *MountLayer {
+	l := m.mountLayer.Load()
+	if l == nil {
+		return nil
+	}
+	if m.localMode {
+		// Local-only mode's SOURCE already is the mount folders; layering a mount
+		// origin over a mount origin would double-serve. The pref layer normalizes
+		// this too (config.LayeredAssets), but a Manager is mode-locked at
+		// construction while the pref can invert under it, so enforce it here.
+		return nil
+	}
+	if m.archiveSrc.Load() != nil {
+		return nil // a bundled replay stays hermetic: the live pack must not fill its holes
+	}
+	return l
+}
+
+// serveFromMount answers base from the user's local mounts, delivering under
+// deliverBase, and reports whether it did.
+//
+// IT RETURNS NO ERROR, ON PURPOSE. That is what makes "a pack failure is never a
+// server failure" structural instead of conventional: there is no expressible way
+// for a pack read error to reach walkCandidates' pass-aborting default arm, so
+// one unreadable file — a yanked USB mount, an EACCES, a file deleted after
+// indexing — falls through to the network instead of killing the whole pass.
+//
+// A read error deliberately does NOT quarantine: it is environmental and usually
+// transient, and stickily disabling a pack that recovers would be worse than
+// re-reading it. Only a DECODE failure quarantines, because that is a
+// deterministic property of the bytes (see QuarantinePack).
+func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t AssetType) bool {
+	idx := l.Index()
+	if idx == nil || !idx.acquire() {
+		return false
+	}
+	defer idx.release()
+
+	rel, ok := l.RelOf(base)
+	if !ok || mountLayerExcluded(rel) {
+		return false
+	}
+	folded := foldRel(rel)
+	mask, haveStem := idx.LookupStem(folded)
+
+	for _, ext := range m.resolver.PackFormatList(t) {
+		// The mask is a fast reject that costs no map lookup. An extension absent
+		// from indexedExts has no bit, so it falls through to a direct probe rather
+		// than being silently unreachable.
+		if bit, indexed := extBit(ext); indexed && haveStem && mask&bit == 0 {
+			continue
+		}
+		key := folded + ext
+		f, hit := idx.LookupExact(key)
+		if !hit || idx.IsBad(key) {
+			continue
+		}
+		data, err := idx.ReadFile(f, key)
+		if err != nil || len(data) == 0 {
+			continue // fall through to the next candidate, then to the network
+		}
+		m.mountFetches.Add(1)
+		// T2 under the PACK's transport key, which is a disjoint local:// keyspace —
+		// it can never collide with the server's URL. skipDisk keeps it out of T3
+		// for free. Caching matters here: T1 evicts under the texture budget long
+		// before T2 does, so without it every evicted pack background or long
+		// animation would re-read and re-allocate multiple MiB from disk.
+		m.t2.Add(l.LocalURLFor(key), data, int64(len(data)))
+		m.deliver(l.LocalURLFor(key), deliverBase, t, data, true)
+		return true
+	}
+	return false
+}
+
+// QuarantinePack marks a pack entry whose bytes failed to DECODE, so the next
+// demand skips it and the server's copy is fetched instead. url is the pack
+// transport URL from DecodedAsset.URL / AudioAsset.URL.
+//
+// Returns false for a URL that is not this layer's — the layer was swapped, or
+// the URL belongs to an archive replay or a mount overlay whose origin carries a
+// different mount-set hash. A false return means the caller must record NOTHING:
+// bytes that are provably not the server's must never negative-cache the
+// server's base. Render thread only.
+func (m *Manager) QuarantinePack(url string) bool {
+	l := m.activeMountLayer()
+	if l == nil {
+		return false
+	}
+	rel, ok := l.PackRelOf(url)
+	if !ok {
+		return false
+	}
+	idx := l.Index()
+	if idx == nil || !idx.MarkBad(rel) {
+		return false
+	}
+	m.packQuarantined.Add(1)
+	return true
 }
 
 // Thumbs exposes the optional low-q thumbnail store (nil when the app was
@@ -1014,15 +1184,24 @@ type ManagerStats struct {
 	DiskHits   int64
 	NetFetches int64
 	Missing    int64
+	// MountFetches counts assets served from the user's local mounts. Without it a
+	// pack hit would be invisible in the debug overlay, and the Settings status
+	// line would have no honest number to report.
+	MountFetches int64
+	// PackQuarantined counts pack entries withdrawn after a decode failure, so the
+	// UI can say which files it stopped using instead of leaving it mysterious.
+	PackQuarantined int64
 }
 
 // Stats snapshots the manager's counters.
 func (m *Manager) Stats() ManagerStats {
 	return ManagerStats{
-		T1Hits:     m.t1Hits.Load(),
-		T2Hits:     m.t2Hits.Load(),
-		DiskHits:   m.diskHits.Load(),
-		NetFetches: m.netFetches.Load(),
-		Missing:    m.missing.Load(),
+		T1Hits:          m.t1Hits.Load(),
+		T2Hits:          m.t2Hits.Load(),
+		DiskHits:        m.diskHits.Load(),
+		NetFetches:      m.netFetches.Load(),
+		Missing:         m.missing.Load(),
+		MountFetches:    m.mountFetches.Load(),
+		PackQuarantined: m.packQuarantined.Load(),
 	}
 }
