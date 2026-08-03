@@ -158,25 +158,12 @@ func TestMountIndexSkipsSymlinks(t *testing.T) {
 	}
 }
 
-// TestMountIndexRefusesPathEscape pins the guard for both source kinds.
-func TestMountIndexRefusesPathEscape(t *testing.T) {
-	for _, rel := range []string{
-		"../outside.png", "a/../../outside.png", "/etc/passwd",
-		`\windows\system32`, "C:/windows", "",
-	} {
-		if !unsafeRel(rel) {
-			t.Errorf("unsafeRel(%q) = false, want true", rel)
-		}
-	}
-	for _, rel := range []string{
-		"characters/witch/(a)normal.png", "background/court/defenseempty.webp",
-		"sounds/music/track.opus",
-	} {
-		if unsafeRel(rel) {
-			t.Errorf("unsafeRel(%q) = true, want false — a legitimate AO path was refused", rel)
-		}
-	}
-}
+// The path-escape PREDICATE gate moved to internal/safepath with the predicate
+// itself (TestUnsafeRelRefusesPathEscape): it tested a pure function and nothing
+// about mounting, and it now covers the theme packer's entry names too. What
+// stays here are the two gates that exercise the mount PLUMBING —
+// TestMountIndexSkipsSymlinks and TestMountIndexZipSlipRefused — because a guard
+// that is implemented and simply not wired up is the failure this file catches.
 
 // TestMountIndexZipPack pins the .zip mount end to end, with the fixture built in
 // the test so no binary lands in the repo.

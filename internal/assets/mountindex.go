@@ -26,7 +26,6 @@ import (
 	"archive/zip"
 	"errors"
 	"io"
-	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,6 +34,7 @@ import (
 	"sync/atomic"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
 const (
@@ -58,11 +58,10 @@ const (
 	// mountIndexMaxEntries is the cap in entries, derived so the two constants can
 	// never drift apart.
 	mountIndexMaxEntries = mountIndexByteCap / mountIndexEntryBytes
-	// mountIndexMaxDepth bounds directory recursion. AO layouts are three deep
-	// (characters/<char>/(a)<emote>.png); twelve leaves room for oddly nested
-	// packs while stopping a pathological tree (or a symlink loop we did not
-	// already refuse) from walking forever.
-	mountIndexMaxDepth = 12
+	// mountIndexMaxDepth bounds directory recursion. It is safepath's shared
+	// bound, aliased rather than copied so the mount index and the theme packer
+	// can never drift into two different ideas of "too deep" (rule 4).
+	mountIndexMaxDepth = safepath.MaxDepth
 	// mountBadCap bounds the quarantine of pack files that failed to DECODE.
 	//
 	// Eviction is OLDEST-FIRST, deliberately inverting the stop-inserting-when-full
@@ -233,7 +232,10 @@ func (ix *MountIndex) absorb(src mountSource, mount uint8) error {
 			ix.truncated = true
 			return false
 		}
-		if strings.Count(rel, "/") >= mountIndexMaxDepth {
+		// Folder walks are already depth-bounded by safepath.WalkFiles; this
+		// covers the OTHER source kind, whose entry names come straight out of a
+		// zip central directory and never touch a walker.
+		if safepath.TooDeep(rel, mountIndexMaxDepth) {
 			return true
 		}
 		key := foldRel(rel)
@@ -505,48 +507,18 @@ type dirSource struct{ root string }
 func (d *dirSource) name() string { return d.root }
 func (d *dirSource) close() error { return nil }
 func (d *dirSource) read(rel string) ([]byte, error) {
-	if unsafeRel(rel) {
-		return nil, os.ErrInvalid
+	p, err := safepath.Join(d.root, rel)
+	if err != nil {
+		return nil, err
 	}
-	return os.ReadFile(filepath.Join(d.root, filepath.FromSlash(rel)))
+	return os.ReadFile(p)
 }
 
-// walk indexes every regular file under the folder.
-//
-// SYMLINKS ARE SKIPPED. WalkDir reports them via lstat, so a link is visible as a
-// non-regular entry and refused here — which closes an exfiltration route a
-// third-party pack could otherwise use (a link at characters/x/(a)a.png pointing
-// at ~/.ssh/id_rsa would be indexed, read, and uploaded as a texture). The ".."
-// guard alone does not cover it, because the link's own path never contains "..".
+// walk indexes every regular file under the folder. SYMLINKS ARE SKIPPED and the
+// recursion is depth-bounded — both live in safepath.WalkFiles, which is the one
+// implementation this and internal/themepack share.
 func (d *dirSource) walk(fn func(rel string) bool) error {
-	stopped := false
-	err := filepath.WalkDir(d.root, func(p string, e fs.DirEntry, err error) error {
-		if err != nil {
-			if p == d.root {
-				return err
-			}
-			return nil // an unreadable subtree must not abandon the rest of the pack
-		}
-		if e.IsDir() {
-			return nil
-		}
-		if !e.Type().IsRegular() {
-			return nil // symlink, device, socket: never indexed (see the doc comment)
-		}
-		rel, relErr := filepath.Rel(d.root, p)
-		if relErr != nil {
-			return nil
-		}
-		if !fn(filepath.ToSlash(rel)) {
-			stopped = true
-			return fs.SkipAll
-		}
-		return nil
-	})
-	if stopped {
-		return nil
-	}
-	return err
+	return safepath.WalkFiles(d.root, mountIndexMaxDepth, fn)
 }
 
 // zipSource is a .zip pack mount.
@@ -576,7 +548,7 @@ func openZipSource(path string) (mountSource, error) {
 	}
 	z := &zipSource{path: path, rc: rc, byName: make(map[string]*zip.File, len(rc.File))}
 	for _, f := range rc.File {
-		if f.FileInfo().IsDir() || unsafeRel(f.Name) {
+		if f.FileInfo().IsDir() || safepath.UnsafeRel(f.Name) {
 			continue // directory entries index nothing; zip-slip names are refused outright
 		}
 		if _, dup := z.byName[f.Name]; dup {
@@ -636,22 +608,4 @@ func readAllInto(buf []byte, r io.Reader, limit int64) ([]byte, error) {
 			return nil, err
 		}
 	}
-}
-
-// unsafeRel refuses any path that could escape its mount: a "..", an absolute
-// path, or a drive-relative Windows path. Applied to zip entry names (zip-slip)
-// and to every folder read.
-func unsafeRel(rel string) bool {
-	if rel == "" || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) {
-		return true
-	}
-	if filepath.IsAbs(rel) || strings.Contains(rel, ":") {
-		return true
-	}
-	for _, seg := range strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if seg == ".." {
-			return true
-		}
-	}
-	return false
 }

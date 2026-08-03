@@ -10,6 +10,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
 // LocalScheme prefixes asset "URLs" served from local mount folders in
@@ -105,20 +106,27 @@ func (l *LocalFetcher) Fetch(_ context.Context, rawURL string) ([]byte, error) {
 // readRel searches every mount for rel, returning (bytes,nil) on the first
 // non-empty hit, (nil,nil) when rel is missing everywhere (so the caller can
 // try another spelling), and (nil,err) on a real I/O error or a path escape.
-// The ".." guard runs HERE so it re-checks the DECODED rel too — a "%2e%2e"
-// must not slip past the escape check by decoding into "..".
+// The escape guard runs HERE so it re-checks the DECODED rel too — a "%2e%2e"
+// must not slip past by decoding into ".." afterwards.
+//
+// It is safepath's predicate, not a private one: this was the third copy of the
+// same boundary in the tree and the only one that missed absolute paths and
+// Windows drive-relative names.
 func (l *LocalFetcher) readRel(rel string) ([]byte, error) {
-	if strings.Contains(rel, "..") {
+	if safepath.UnsafeRel(rel) {
 		return nil, fmt.Errorf("assets: refusing path escape %q", rel)
 	}
-	relNative := filepath.FromSlash(rel)
 	for _, mount := range l.mounts {
-		data, err := os.ReadFile(filepath.Join(mount, relNative))
+		p, err := safepath.Join(mount, rel)
+		if err != nil {
+			return nil, fmt.Errorf("assets: refusing path escape %q", rel)
+		}
+		data, err := os.ReadFile(p)
 		if err == nil && len(data) > 0 {
 			return data, nil
 		}
 		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("assets: reading local asset %s: %w", filepath.Join(mount, relNative), err)
+			return nil, fmt.Errorf("assets: reading local asset %s: %w", p, err)
 		}
 	}
 	return nil, nil
