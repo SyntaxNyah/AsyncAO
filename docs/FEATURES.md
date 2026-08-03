@@ -1052,8 +1052,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   plays/exports, but silently and with a bare stage, and a warning says so at
   import. Remedies after the fact: open the recording in the **Scene Maker** and
   set its **Origin/CDN** field to any asset base URL that carries the content, or
-  — for a server that's gone — enable **Settings → Assets → Local assets** with a
-  mount of the content folder you have on disk *before* importing, and the
+  — for a server that's gone — set **Settings → Assets → Asset source** to
+  **"Only use my folders"** with a mount of the content folder you have on disk
+  *before* importing, and the
   recording resolves everything (including exported-video music) from your own
   files, no network needed.
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set

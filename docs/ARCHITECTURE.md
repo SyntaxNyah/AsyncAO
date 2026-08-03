@@ -206,6 +206,70 @@ the joined URL). Writes: copy-on-write + CAS retry loop; a successful learn
 marks preferences dirty for the debounced saver. Learned entries persist
 per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
 
+### Local pack layer (`MountIndex` / `MountLayer`, v1.89.0)
+
+Local mount folders and `.zip` packs answer asset fetches **before the network,
+under the server's own URL**. The server's URL stays the asset's identity
+everywhere (T1 key, warnings, scene layers); `local://m-<hash>/<rel>` is only a
+transport label, so nothing downstream ever learns a second spelling.
+
+**Six invariants.** Check each commit against them:
+
+1. **Identity is the server's base.** Pack bytes are delivered under
+   `deliverBase`, never under the pack's own URL.
+2. **A pack hit never teaches the learned table.** Pack formats have nothing to
+   do with the server's, and `RecordSuccess` → `RecordLearned` *persists*.
+   Teaching it from pack bytes is the v1.61.0 / v1.87.2 regression class.
+3. **A pack hit never writes T3 or ThumbCache, and never writes T2 under the
+   server's URL.** It *may* write T2 under its own `local://` key — that
+   keyspace is disjoint, and T1 evicts long before T2, so without it every
+   evicted pack background would be re-read and re-allocated from disk.
+   ThumbCache is a *persistent* disk cache keyed by base, so a pack sprite
+   there would outlive the pack under the server's identity.
+4. **A pack failure is never a server failure.** (4a) `serveFromMount` has **no
+   error return**, so a read error cannot reach `walkCandidates`' pass-aborting
+   default arm. (4b) A *decode* error quarantines the pack entry and never calls
+   `MarkFailed`, whose key is the SERVER's base. (4c) The asymmetry is
+   deliberate: a read error is environmental and usually transient, a decode
+   error is a deterministic property of the bytes.
+5. **The layer is inert during archive replay and in Local-only mode.** A
+   bundled scene must stay hermetic; Local-only's source already *is* the
+   mounts, so layering would double-serve.
+6. **No mounts costs nothing.** `activeMountLayer` loads the layer pointer
+   *first* and returns on nil, so the default path is one atomic load
+   (benchmarked at ~0.9 ns/op, 0 allocs). No index, no goroutine, no disk.
+
+**One key space.** Every map and set is keyed by the *folded rel including its
+extension* (`foldRel`: per-segment percent-decode, then lowercase, returning the
+input unchanged when a byte scan finds nothing to fold). A pack transport URL is
+`LocalOrigin() + <that key>`, so URL→key is a `CutPrefix` and key→URL a
+concatenation. Two earlier drafts shipped a quarantine that was dead code
+because it was written with a URL and read with a rel.
+
+**Ladder order, not provider-major.** The pack is consulted first *within each
+spelling*, not swept across every spelling first. `EmoteBare` takes no
+`EmoteKind`, so the `(a)` and `(b)` chains share a byte-identical bare alt —
+provider-major ordering would let a legacy bare-named pack serve one file as
+both idle and talk, shadowing a server that ships proper `(a)`/`(b)` art. Do
+not "fix" this back to AO-SDL's ordering.
+
+**Named caps:** `mountIndexByteCap` (accounted footprint, enforced *during* the
+walk, sized against real headroom — a hard 256 MiB `SetMemoryLimit` with
+128 MiB already committed to T2), `mountIndexMaxDepth`, `mountBadCap`
+(quarantine; eviction is **oldest-first**, inverting `MarkMissing`'s
+stop-when-full policy, because an unquarantined corrupt file wins forever and
+its asset is permanently missingno), `mountArchiveCap`,
+`mountZipEntryMaxBytes`, `LocalMountCap`, `mountLayerOriginCap`.
+
+**Zip lifetime.** Archive handles are refcounted and closed when the last
+reader releases, **not** when the layer pointer swaps — a Rescan during a read
+would otherwise close the file mid-`ReadAt`. Symlinks are never indexed (a pack
+could otherwise ship a link at a plausible asset path pointing at a private
+file); zip entry names get the same escape guard, and the uncompressed size in
+the header is treated as the attacker-controlled hint it is.
+
+No new module dependency: `archive/zip` is stdlib.
+
 ## Network (§7)
 
 - `singleflight.DoChan` keyed by URL — concurrent identical fetches share one

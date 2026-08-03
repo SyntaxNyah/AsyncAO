@@ -4,6 +4,40 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.89.0
+
+Your own content packs work **alongside** a server's assets instead of instead
+of them, and swapping areas leaves a clean stage.
+
+- **Use your own folders and the server's assets at the same time.**
+  **Settings → Assets → Asset source** now offers three choices: stream
+  everything, use your folders first and stream the rest, or never stream. The
+  middle one is new — files in your folders replace the server's copies at the
+  same paths, and anything you don't have keeps streaming. Deploy a small
+  private pack alongside a server's full roster, or re-skin one character
+  without hosting anything.
+- **A mount can be a `.zip` pack.** One file to hand someone, laid out exactly
+  like the folder version.
+- **Case no longer matters.** A pack authored on Windows resolves the same way
+  on Linux and macOS.
+- **Adding a folder takes effect immediately.** Previously the mount list only
+  applied to servers that provide no asset URL at all, so adding a folder while
+  streaming did nothing and said nothing — files kept showing as missing. Local
+  folders now apply live, and **Rescan folders** picks up edits you make on
+  disk. (#19)
+- **A damaged file in your pack no longer breaks that asset.** AsyncAO uses the
+  server's copy for it instead, and tells you how many files that happened to,
+  rather than the asset going missing entirely.
+- **Swapping areas clears the viewport.** The previous area's character and
+  chatbox used to stay frozen on the new background. They now clear the way AO2
+  does — and because some servers don't send the field that signals it, jumping
+  areas yourself clears the stage regardless. (#23)
+- **A new creator easter egg.** Say the right name in IC and see.
+
+If you have no folders configured, none of this costs you anything: no
+indexing, no scanning, and the asset pipeline is byte-for-byte what shipped
+before.
+
 ## v1.88.0 — 2026-08-03
 
 Clicks stop landing on things you can't see, and the Timer stops hiding the

@@ -305,8 +305,14 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 	if a.d.Manager != nil {
 		ms := a.d.Manager.Stats()
 		line("Asset sources this session:", ColAccent)
-		line(fmt.Sprintf("  T1 %d · T2 %d · disk %d · network %d · missing %d",
-			ms.T1Hits, ms.T2Hits, ms.DiskHits, ms.NetFetches, ms.Missing), ColText)
+		// pack is its own column: a local-mount hit used to be indistinguishable
+		// from a network fetch here, which made "is my pack actually being used?"
+		// unanswerable from the overlay.
+		line(fmt.Sprintf("  T1 %d · T2 %d · disk %d · pack %d · network %d · missing %d",
+			ms.T1Hits, ms.T2Hits, ms.DiskHits, ms.MountFetches, ms.NetFetches, ms.Missing), ColText)
+		if ms.PackQuarantined > 0 {
+			line(fmt.Sprintf("  pack files withdrawn after a decode failure: %d", ms.PackQuarantined), ColTierYellow)
+		}
 	}
 	// T1 — decoded textures (render side).
 	if a.d.Store != nil {
