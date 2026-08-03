@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -25,6 +26,10 @@ type Result struct {
 	Formats map[string]string // AssetType.Name() → ext, e.g. "CharSprite" → ".webp"
 	Files   int
 	Bytes   int64
+	// FromPack counts files that came from the user's own local mounts rather
+	// than the server. The caller warns on it: those bytes are the user's private
+	// art, and a bundle is a file they hand to someone else.
+	FromPack int
 }
 
 // ExportAssets resolves every asset SceneAssets enumerates for the scene through
@@ -44,7 +49,7 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 		if err := ctx.Err(); err != nil {
 			return res, err // cancelled — keep what we wrote
 		}
-		url, data, ok := resolveRef(ctx, mgr, ref)
+		url, data, fromPack, ok := resolveRef(ctx, mgr, ref)
 		if !ok {
 			continue
 		}
@@ -53,6 +58,9 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 			continue // external host (e.g. an http music link) — not part of THIS origin
 		}
 		rel = strings.TrimPrefix(rel, "/")
+		if fromPack {
+			res.FromPack++
+		}
 		if err := writeAsset(destDir, rel, data); err != nil {
 			// One un-writable name (e.g. a decoded segment carrying a
 			// Windows-illegal character like ':' or '?') must not sink the whole
@@ -74,25 +82,38 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 // resolveRef fetches one asset's bytes + the concrete URL it lives at. Exact refs
 // (music) are a direct fetch; bases probe candidates, walking the alternate
 // sprite spellings (bare X, then the "(a)/X" folder — EmoteAlts order).
-func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool) {
+// It resolves through the user's local packs as well as the server (the
+// ResolveRawLayered path, which never teaches the server's learned formats and
+// never writes pack bytes into the server-keyed caches), and reports which
+// answered so the caller can both place the file correctly and warn about
+// bundling private art.
+func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool, bool) {
 	if ref.Exact {
 		if data, err := mgr.FetchRaw(ctx, ref.Base); err == nil && len(data) > 0 {
-			return ref.Base, data, true
+			return ref.Base, data, false, true
 		}
-		return "", nil, false
+		return "", nil, false, false
 	}
-	if url, data, ok := mgr.ResolveRaw(ref.Base, ref.Type); ok {
-		return url, data, true
-	}
-	for _, alt := range ref.Alts {
-		if alt == "" {
+	for _, base := range append([]string{ref.Base}, ref.Alts...) {
+		if base == "" {
 			continue
 		}
-		if url, data, ok := mgr.ResolveRaw(alt, ref.Type); ok {
-			return url, data, true
+		url, data, fromPack, ok := mgr.ResolveRawLayered(base, ref.Type)
+		if !ok {
+			continue
 		}
+		if fromPack {
+			// A pack answers under a local:// transport URL, which is NOT under the
+			// origin. Return the SERVER-side path the asset would have been fetched
+			// at instead — base plus whichever extension the pack file carried — so
+			// the caller's origin cut works uniformly and the bundled file lands
+			// exactly where replay will look for it. Returning the transport URL
+			// would fail that prefix test and silently drop every pack asset.
+			return base + path.Ext(url), data, true, true
+		}
+		return url, data, false, true
 	}
-	return "", nil, false
+	return "", nil, false, false
 }
 
 // writeAsset writes one bundled asset under destDir at its DECODED, human-readable

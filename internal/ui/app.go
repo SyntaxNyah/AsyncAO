@@ -1123,6 +1123,14 @@ type App struct {
 	// (voicemictest.go). micTestSidetone remembers the "hear myself" toggle.
 	micTest         *micTester
 	micTestSidetone bool
+	// makerExportPack > 0: the "include your own files in this bundle?" dialog is
+	// up, holding the scene the user asked to export until they answer.
+	// makerExportPackOK is the one-shot consent it grants.
+	makerExportPack   int
+	makerExportScene  *sceneRecording
+	makerExportName   string
+	makerExportPackOK bool
+
 	// showQuitConfirm: the "Quit AsyncAO?" dialog is up (Esc in the lobby, or a
 	// quit hotkey). Skipped when QuitConfirmSkip ("don't ask again") is set.
 	showQuitConfirm bool
@@ -8191,7 +8199,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.disconnectDlg.open {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -8378,7 +8386,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && !a.disconnectDlg.open {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -8388,9 +8396,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 {
 		a.ctx.unfencePointer()
 		switch {
+		case a.makerExportPack > 0:
+			a.drawExportPackConfirm(winW, winH)
 		case a.showQuitConfirm:
 			a.drawQuitConfirm(winW, winH)
 		case a.confirmDisconnect:

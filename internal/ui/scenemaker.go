@@ -696,7 +696,17 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 		a.warnAt = time.Now()
 		return
 	}
-	snap := cloneScene(scene) // the goroutine must not race the edit buffer
+	// A bundle is a file the user hands to someone else, so bundling art that
+	// exists only in their own folders needs saying out loud FIRST. Counting is a
+	// pure index lookup over the refs the export would resolve — no reads, no
+	// fetches — so asking costs nothing when there is nothing to ask about.
+	if n := a.packContribution(scene); n > 0 && !a.makerExportPackOK {
+		a.makerExportPack = n
+		a.makerExportScene, a.makerExportName = scene, name
+		return
+	}
+	a.makerExportPackOK = false // one confirmation covers one export
+	snap := cloneScene(scene)   // the goroutine must not race the edit buffer
 	stem := sanitizeStem(name) + "-archive-" + time.Now().Format("20060102-150405")
 	if a.makerExportCh == nil {
 		a.makerExportCh = make(chan string, 1)
@@ -1307,5 +1317,68 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		e.Text, _ = c.TextField("mk_mus", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, e.Text, "music filename or full URL, e.g. trial.opus")
 		y += 36
 		c.Label(x, y, "Plays from this point on. Use a full URL for a CDN-hosted track.", ColTextDim)
+	}
+}
+
+// packContribution counts how many of the scene's assets would be bundled from
+// the user's OWN local folders rather than from the server. A pure index lookup
+// per ref — no reads, no fetches — so it is cheap enough to run before every
+// export just to decide whether a warning is warranted.
+func (a *App) packContribution(scene *sceneRecording) int {
+	if a.d.Manager == nil || scene == nil || a.d.Manager.MountLayer() == nil {
+		return 0
+	}
+	events := make([]courtroom.Event, len(scene.Events))
+	for i, e := range scene.Events {
+		events[i] = eventFromRec(e)
+	}
+	urls := courtroom.NewURLBuilder(scene.Origin)
+	n := 0
+	for _, ref := range courtroom.SceneAssets(urls, scene.StartBg, events) {
+		if a.d.Manager.PackCovers(ref.Base) {
+			n++
+			continue
+		}
+		for _, alt := range ref.Alts {
+			if alt != "" && a.d.Manager.PackCovers(alt) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// drawExportPackConfirm asks before a bundle carries the user's private art.
+//
+// It states the consequence rather than the mechanism: the point is not that
+// files are copied, it is that a file they are about to hand to someone else
+// will contain art only they have. Declining exports NOTHING — a partial,
+// server-only bundle would silently produce a recording that plays wrong for the
+// recipient, which is worse than not exporting.
+func (a *App) drawExportPackConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 560, 244
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	c.Heading(m.X+pad, m.Y+pad, "Include your own files in this bundle?", ColText)
+	c.Label(m.X+pad, m.Y+52, fmt.Sprintf("%d of this scene's assets come from your local folders,", a.makerExportPack), ColText)
+	c.Label(m.X+pad, m.Y+74, "not from the server.", ColText)
+	c.Label(m.X+pad, m.Y+104, "Including them makes the bundle play correctly for whoever you", ColTextDim)
+	c.Label(m.X+pad, m.Y+124, "send it to — but it copies your own art into that file.", ColTextDim)
+	c.Label(m.X+pad, m.Y+152, "Only share it with people you're happy to share that art with.", ColTierYellow)
+
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 210, H: btnH}, "Include my files") {
+		scene, name := a.makerExportScene, a.makerExportName
+		a.makerExportPack, a.makerExportScene = 0, nil
+		a.makerExportPackOK = true
+		a.exportSceneArchive(scene, name)
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
+		a.makerExportPack, a.makerExportScene = 0, nil
+		a.makerExportPackOK = false
 	}
 }
