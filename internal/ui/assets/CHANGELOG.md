@@ -32,6 +32,11 @@ of them, and swapping areas leaves a clean stage.
   chatbox used to stay frozen on the new background. They now clear the way AO2
   does — and because some servers don't send the field that signals it, jumping
   areas yourself clears the stage regardless. (#23)
+- **The content report and scene export see your folders.** The report tags
+  what came from your own files and counts it separately, so you can tell at a
+  glance what a recipient would be missing. Exporting a self-contained archive
+  includes those files so it plays for them — and asks you first, since that
+  copies your own art into a file you hand to someone else.
 - **A new creator easter egg.** Say the right name in IC and see.
 
 If you have no folders configured, none of this costs you anything: no

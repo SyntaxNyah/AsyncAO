@@ -61,10 +61,26 @@ file being broken. Fix the file and press Rescan.
 One exception: a damaged music or sound file is only re-tried the next time
 that track plays.
 
+## Sharing a scene that used your pack
+
+The **content report** resolves through your folders too, so it describes what
+*you* actually see. Anything your folders answered is tagged **"your folders"**
+and counted separately from the server's own content — because when you send a
+report or a recording to someone, that count is exactly what they will be
+missing.
+
+**Exporting a self-contained scene archive** will include those files so the
+bundle plays correctly for whoever you send it to. Because that copies your own
+art into a file you hand to someone else, AsyncAO asks first and tells you how
+many files it means. Declining exports nothing at all — a bundle missing
+precisely the art that isn't on the server would play wrong for the recipient,
+which is worse than no bundle.
+
 ## What layering never does
 
 - **Your folders are never uploaded**, and never shared with the server or
-  other players.
+  other players. The one exception is a scene archive you deliberately export
+  after confirming it — see above.
 - **Your files are never written to the disk cache**, so removing a mount
   removes its content completely.
 - Layering **replaces** art for things the server lists; it does not **add**
