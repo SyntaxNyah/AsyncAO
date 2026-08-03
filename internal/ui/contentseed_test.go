@@ -254,7 +254,7 @@ func TestContentSeedLocalMountResolves(t *testing.T) {
 	// mounted .png sprite must resolve through the full-chain walk against the
 	// local mounts (the seed path correctly skips a non-http origin).
 	ref := charSpriteRef(t, origin, "Phoenix", "normal")
-	url, status := probeRef(mgr, ref)
+	url, status, _ := probeRef(mgr, ref)
 	if status != StatusFound {
 		t.Fatalf("mounted .png sprite status = %v, want found (probe must honor local mounts)", status)
 	}

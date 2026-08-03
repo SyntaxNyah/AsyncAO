@@ -42,6 +42,10 @@ const (
 	// and name draw as two separate cached labels (no per-frame concat). Wide
 	// enough for "[unreachable]".
 	cpStatusColW = 96
+	// cpPackTagW reserves the right-hand column for the constant "your folders"
+	// tag, so the tag stays a cached label and the name clips against it rather
+	// than running underneath.
+	cpPackTagW = 90
 	// cpModalMargin is the inset of the centered modal from the window edges (the
 	// demo browser's browseModalMargin sibling).
 	cpModalMargin = 40
@@ -816,7 +820,16 @@ func (a *App) drawContentList(s *contentPanelState, rep *ContentReport, inX, lis
 		it := &rep.Categories[vr.cat].Items[vr.item]
 		// Status tag + name as two separate cached labels (no per-frame concat).
 		c.Label(inX+8, ry+4, cpStatusTag(it.Status), cpStatusColor(it.Status))
-		c.LabelClipped(inX+cpStatusColW, ry+4, rowW-cpStatusColW, it.Name, ColText)
+		nameW := rowW - cpStatusColW
+		if it.FromPack {
+			// A constant label, so it stays a cached draw — and it is the one fact a
+			// recipient of this report needs: this asset came from the sender's own
+			// folders, so they will not have it.
+			const packTag = "your folders"
+			c.Label(inX+inW-cpPackTagW, ry+4, packTag, ColTierYellow)
+			nameW -= cpPackTagW
+		}
+		c.LabelClipped(inX+cpStatusColW, ry+4, nameW, it.Name, ColText)
 	}
 	c.popClip(clipPrev, clipHad)
 
@@ -837,6 +850,11 @@ func contentHeaderLabel(c *CategoryReport) string {
 	}
 	if c.Unreachable > 0 {
 		head += ", " + strconv.Itoa(c.Unreachable) + " unreachable"
+	}
+	if c.FromPack > 0 {
+		// Counted separately from "found" on purpose: these resolved from the
+		// USER's folders, so a recipient of this recording will not have them.
+		head += ", " + strconv.Itoa(c.FromPack) + " from your folders"
 	}
 	return head
 }

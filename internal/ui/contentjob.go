@@ -165,7 +165,12 @@ type AssetItem struct {
 	URL    string // resolved URL once found; the primary candidate before probing
 	Status AssetStatus
 	Cat    ContentCategory
-	ref    courtroom.AssetRef // how to resolve/fetch (base+alts+type, or exact)
+	// FromPack marks an asset the user's own local folders answered rather than
+	// the server. The distinction is not cosmetic: a report is usually read on
+	// behalf of a RECIPIENT, and an asset that exists only in the sender's folders
+	// is one the recipient will not have.
+	FromPack bool
+	ref      courtroom.AssetRef // how to resolve/fetch (base+alts+type, or exact)
 }
 
 // ContentCategory groups assets in the report. Ordered for a stable, readable
@@ -224,7 +229,11 @@ type CategoryReport struct {
 	Found       int
 	Missing     int
 	Unreachable int
-	Items       []AssetItem
+	// FromPack counts items the user's own local folders answered. Tracked
+	// separately from Found because it is the number that matters to a RECIPIENT:
+	// these are the assets they will not have.
+	FromPack int
+	Items    []AssetItem
 }
 
 // Total is the number of enumerated assets in this category.
@@ -264,8 +273,11 @@ func (r *ContentReport) Totals() (found, missing, unreachable, total int) {
 // recount refreshes a category's found/missing/unreachable counts from its
 // items (called after a probe updates an item's status).
 func (cr *CategoryReport) recount() {
-	cr.Found, cr.Missing, cr.Unreachable = 0, 0, 0
+	cr.Found, cr.Missing, cr.Unreachable, cr.FromPack = 0, 0, 0, 0
 	for _, it := range cr.Items {
+		if it.FromPack {
+			cr.FromPack++
+		}
 		switch it.Status {
 		case StatusFound:
 			cr.Found++
@@ -468,10 +480,11 @@ const (
 // holds every found asset in RAM (a big scene could be tens of MB), yet still
 // costs exactly one network probe per asset (the redrain is a cache hit).
 type contentProbeResult struct {
-	cat    ContentCategory
-	idx    int
-	url    string
-	status AssetStatus
+	cat      ContentCategory
+	idx      int
+	url      string
+	status   AssetStatus
+	fromPack bool // the user's local folders answered, not the server
 }
 
 // contentJob is the in-flight report/package state (allocated only while a job
@@ -809,13 +822,14 @@ func (a *App) startProbePhase(j *contentJob) {
 // the render thread only.
 func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, resultCh chan<- contentProbeResult, stop <-chan struct{}) {
 	for item := range workCh {
-		url, status := probeRef(mgr, item.ref)
+		url, status, fromPack := probeRef(mgr, item.ref)
 		select {
 		case resultCh <- contentProbeResult{
-			cat:    item.cat,
-			idx:    item.idx,
-			url:    url,
-			status: status,
+			cat:      item.cat,
+			idx:      item.idx,
+			url:      url,
+			status:   status,
+			fromPack: fromPack,
 		}:
 		case <-stop:
 			return
@@ -844,10 +858,15 @@ func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, res
 // exactly the origin-relative path a bundle writes. A transport failure (dead
 // host) surfaces as StatusUnreachable via the phase hard cap, distinct from a
 // real all-formats-404 (StatusMissing).
-func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus) {
+func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus, bool) {
 	if mgr == nil {
-		return "", StatusUnreachable
+		return "", StatusUnreachable, false
 	}
+	// The user's own folders answer first, exactly as they do while playing, so the
+	// report describes what this client actually renders. PackCovers is a pure
+	// index lookup — no read, no fetch — which matters because the report walks
+	// every asset a scene touches.
+	fromPack := mgr.PackCovers(ref.Base)
 	if ref.Exact {
 		// Bounded, timeout-guarded fetch (a dead host must not stall a worker past
 		// the phase hard cap). A clean not-found is Missing; any other error is a
@@ -857,33 +876,45 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus)
 		defer cancel()
 		data, err := mgr.FetchRaw(ctx, ref.Base)
 		if err != nil {
-			if assetLikelyMissing(err) {
-				return ref.Base, StatusMissing
+			if fromPack {
+				return ref.Base, StatusFound, true // your folders have it even though the server does not
 			}
-			return ref.Base, StatusUnreachable
+			if assetLikelyMissing(err) {
+				return ref.Base, StatusMissing, false
+			}
+			return ref.Base, StatusUnreachable, false
 		}
 		if len(data) == 0 {
-			return ref.Base, StatusMissing
+			if fromPack {
+				return ref.Base, StatusFound, true
+			}
+			return ref.Base, StatusMissing, false
 		}
-		return ref.Base, StatusFound
+		return ref.Base, StatusFound, fromPack
 	}
 	if url, _, ok := mgr.ResolveRawFull(ref.Base, ref.Type); ok {
-		return url, StatusFound
+		return url, StatusFound, fromPack
 	}
 	for _, alt := range ref.Alts {
 		if alt == "" {
 			continue
 		}
 		if url, _, ok := mgr.ResolveRawFull(alt, ref.Type); ok {
-			return url, StatusFound
+			return url, StatusFound, fromPack
 		}
+	}
+	if fromPack {
+		// The server has none of the spellings, but the user's folders do. That is a
+		// legitimate Found for THIS client, and FromPack is what stops the report
+		// from implying a recipient would see it too.
+		return ref.Base, StatusFound, true
 	}
 	// ResolveRawFull returns ok=false both for a genuine all-format 404 and for a
 	// transport failure (it swallows the error). We can't distinguish here, so a
 	// base that didn't resolve is reported Missing — the common, correct case (the
 	// asset isn't on the server). A wholly dead origin surfaces instead via the
 	// phase hard cap, which marks the not-yet-probed tail Unreachable.
-	return ref.Base, StatusMissing
+	return ref.Base, StatusMissing, false
 }
 
 // assetLikelyMissing reports whether a FetchRaw error is a clean 404 (asset
@@ -1007,6 +1038,7 @@ func (a *App) applyProbeResult(j *contentJob, res contentProbeResult) {
 		return // already resulted (shouldn't happen — each item is fed once)
 	}
 	it.Status = res.status
+	it.FromPack = res.fromPack
 	if res.url != "" {
 		it.URL = res.url // the resolved URL — packaging re-drains its bytes from T2/T3
 	}
