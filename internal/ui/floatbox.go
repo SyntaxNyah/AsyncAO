@@ -132,6 +132,12 @@ var panelSlotTable = []panelSlot{
 	// Joining this table gives it the drag, the position persistence and the
 	// de-overlap cascade every other floating panel already has.
 	{slotPanelPieces, func(a *App) *floatWin { return &a.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
+	// The three ex-modals (#31). They were centred blocks that took the screen; as
+	// floatWins they get the same drag, position persistence and de-overlap cascade
+	// every sibling panel has.
+	{slotPanelTimer, func(a *App) *floatWin { return &a.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
+	{slotPanelLogin, func(a *App) *floatWin { return &a.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
+	{slotPanelPairPop, func(a *App) *floatWin { return &a.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairPopupOpen }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -254,8 +260,11 @@ func (a *App) blockingCourtPopup() bool {
 	// behaviour change well beyond a fence question. Anything that needs "will
 	// drawCourtroomModals take the screen?" must ask courtroomModalUp, which is
 	// derived from that draw's own table.
+	// showTimer / showLogin / pairPopupOpen left this set in #31 along with their rows
+	// in courtroomModals: they are non-blocking floatWin panels now, so the Extras box
+	// and the torn-off tabs must NOT hide for them — that is the whole point of the
+	// change. They fence by footprint through boxFencesPointer like every other panel.
 	return a.showIni || a.bgPick.show ||
-		a.showTimer || a.showLogin || a.pairPopupOpen ||
 		a.classicEdit
 }
 
@@ -663,6 +672,18 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
 		return true
 	}
+	// The three ex-modals (#31). They fence by footprint now instead of by taking the
+	// whole pass — the courtroom behind stays live, but a click on one must still not
+	// also land on the scene, the music list or the IC bar underneath.
+	if a.showTimer && pointIn(mx, my, a.timerPanelRect(w, h)) {
+		return true
+	}
+	if a.showLogin && pointIn(mx, my, a.loginPanelRect(w, h)) {
+		return true
+	}
+	if a.pairPopupOpen && pointIn(mx, my, a.pairPopPanelRect(w, h)) {
+		return true
+	}
 	// The pinned per-piece toolbox panel (A1) fences too — its checkboxes must not
 	// leak a click to the scene behind. Not draggable, so no in-flight-block entry;
 	// toolboxPiecesRect is the SAME geometry the draw uses, so the fence and draw
@@ -932,6 +953,8 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
 			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
+			a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+			a.pairPopWin.dragging || a.pairPopWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
@@ -964,6 +987,16 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
 		a.drawEvidencePanel(w, h, &pressed)
+	}
+	// The three ex-modals (#31), drawn like every other floating panel.
+	if a.showTimer {
+		a.drawTimerPanel(w, h, &pressed)
+	}
+	if a.showLogin {
+		a.drawLoginDialog(w, h, &pressed)
+	}
+	if a.pairPopupOpen {
+		a.drawPairPopup(w, h, &pressed)
 	}
 	if a.showModcall { // call-mod is a floating box now — chat stays live behind it
 		a.drawModcallPanel(w, h, &pressed)

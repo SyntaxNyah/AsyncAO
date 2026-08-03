@@ -87,6 +87,9 @@ const (
 	slotPanelDebug   = "panel:debug"   // debugWin (Debug panel)
 	slotPanelClient  = "panel:client"  // clientWin (second-client / pinned server)
 	slotPanelPieces  = "panel:pieces"  // piecesWin (Hide UI pieces)
+	slotPanelTimer   = "panel:timer"   // timerWin (personal countdown, #31)
+	slotPanelLogin   = "panel:login"   // loginWin (auto-login credentials, #31)
+	slotPanelPairPop = "panel:pairpop" // pairPopWin (click-to-pair /pair <UID>, #31)
 	// slotExtras is the Extras box's persisted home. The Extras box keeps its
 	// bespoke drag/resize handlers (it is NOT a floatWin) but rides the classic-slot
 	// mechanism for cross-session position persistence.

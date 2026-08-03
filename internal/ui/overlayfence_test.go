@@ -364,12 +364,6 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			case 1:
 				a.bgPick.show = true
 			case 2:
-				a.showTimer = true
-			case 3:
-				a.showLogin = true
-			case 4:
-				a.pairPopupOpen = true
-			case 5:
 				a.showSfxBrowser = true
 			default:
 				t.Fatalf("courtroomModals grew to %d entries — extend this switch", len(courtroomModals))

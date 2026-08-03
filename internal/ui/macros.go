@@ -271,15 +271,55 @@ func (a *App) autoLoginOnReady() {
 	}
 }
 
+// Login panel geometry — the old modal's fixed block, kept as the floatWin default.
+const (
+	loginPanelDefW = int32(460)
+	loginPanelDefH = int32(262)
+	// "Save & login" (130) + "Save" (90) at a 140 pitch, and "Cancel" (90) pinned to
+	// the right edge: the row needs pad+140+90 before Cancel's own 90+pad can start.
+	loginPanelMinW = int32(360)
+	loginPanelMinH = int32(240) // flow line + both fields + the checkbox + the note + the button row
+)
+
+// loginPanelRect is the panel's screen rect, seeded from its persisted layout slot
+// on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
+func (a *App) loginPanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
+		return r
+	}
+	return a.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
+}
+
 // drawLoginDialog edits this server's credentials (plaintext storage —
 // the dialog says so) and fires the flow.
-func (a *App) drawLoginDialog(w, h int32) {
+//
+// A non-blocking floatWin rather than a return-to-top modal (#31): typing a
+// username should not blank the courtroom behind it, and the flow-preview line
+// describes what the server will be sent — which is easier to trust while you can
+// still see the room you are sending it to.
+func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	c := a.ctx
-	panel := sdl.Rect{X: w/2 - 230, Y: h/2 - 122, W: 460, H: 244}
+	wasActive := a.loginWin.dragging || a.loginWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.loginPanelRect(w, h)
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+10, "Auto-login — "+a.serverName, ColText)
-	y := panel.Y + 40
+	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi)
+	c.Heading(panel.X+pad, panel.Y+6, "Auto-login", ColText) // the server name moves into the body — a narrow panel would clip it off the title bar
+	closeB := sdl.Rect{X: panel.X + panel.W - 30, Y: panel.Y + 3, W: 24, H: btnH}
+	if c.Button(closeB, "X") {
+		a.showLogin = false
+		return
+	}
+	a.floatWinDrag(&a.loginWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+	if wasActive && !a.loginWin.dragging && !a.loginWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelLogin, panel, w, h)
+	}
+	y := panel.Y + floatTitleH + 8
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.serverName, ColText)
+	y += 20
 	// The dialog names the exact flow it will run for THIS server's
 	// software — the automation explains itself.
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.loginFlowPreview(), ColAccent)
@@ -294,8 +334,9 @@ func (a *App) drawLoginDialog(w, h int32) {
 	y += fieldH + 6
 	a.loginAuto = c.Checkbox(panel.X+pad, y, "Auto-login every time I join this server", a.loginAuto)
 	y += 24
-	c.Label(panel.X+pad, y, "Saved per server, in PLAIN TEXT in your prefs file.", ColTextDim)
-	by := panel.Y + panel.H - btnH - 10
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, "Saved per server, in PLAIN TEXT in your prefs file.", ColTextDim)
+	// Clear of the resize grip in the corner (it would otherwise sit on Cancel).
+	by := panel.Y + panel.H - btnH - 18
 	if c.Button(sdl.Rect{X: panel.X + pad, Y: by, W: 130, H: btnH}, "Save & login") {
 		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		a.loginNow()

@@ -2120,12 +2120,15 @@ type courtroomModal struct {
 // courtroomModals is that list, in the switch's original priority order. Package
 // level with plain function values, so walking it allocates nothing per frame (the
 // compactToolboxChips precedent).
+// The Timer, the auto-login dialog and the click-to-pair popup USED to be rows here
+// and are non-blocking floatWin panels now (#31: "bringing up the Extras → Timer
+// hides all the other UI"). A row in this table ends the courtroom pass outright, so
+// a countdown, a two-field credential form and a UID box each blanked the scene, the
+// logs, the music list and every button while they were open. They are drawn from
+// drawFloatingPanels instead, and the courtroom stays live behind them.
 var courtroomModals = []courtroomModal{
 	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel, func(a *App) { a.showIni = false }},
 	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
-	{func(a *App) bool { return a.showTimer }, (*App).drawTimerPanel, func(a *App) { a.showTimer = false }},
-	{func(a *App) bool { return a.showLogin }, (*App).drawLoginDialog, func(a *App) { a.showLogin = false }},
-	{func(a *App) bool { return a.pairPopupOpen }, (*App).drawPairPopup, func(a *App) { a.pairPopupOpen = false }},
 	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
 }
 

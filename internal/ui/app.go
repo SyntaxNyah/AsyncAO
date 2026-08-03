@@ -1096,6 +1096,12 @@ type App struct {
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
 	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin, debugWin floatWin
+	// timerWin / loginWin / pairPopWin are the three that used to be return-to-top
+	// modals (#31: "bringing up the Extras → Timer hides all the other UI"). They took
+	// the whole courtroom pass for a countdown, a two-field credential form and a UID
+	// box, which is exactly the wrong trade — you want to watch the scene while the
+	// timer runs. Same floatWin treatment as the panels above.
+	timerWin, loginWin, pairPopWin floatWin
 	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
 	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
 	showVoice bool

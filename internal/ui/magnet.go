@@ -255,6 +255,8 @@ func (a *App) anyPanelDragging() bool {
 		a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
 		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
 		a.debugWin.dragging || a.debugWin.resizing || a.hkWin.dragging || a.hkWin.resizing ||
+		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+		a.pairPopWin.dragging || a.pairPopWin.resizing ||
 		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning
 }
 

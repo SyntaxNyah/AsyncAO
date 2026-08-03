@@ -27,9 +27,9 @@ var courtroomModalOpeners = []struct {
 }{
 	{"iniswap", func(a *App) { a.showIni = true }},
 	{"background picker", func(a *App) { a.bgPick.show = true }},
-	{"timer", func(a *App) { a.showTimer = true }},
-	{"login", func(a *App) { a.showLogin = true }},
-	{"pair popup", func(a *App) { a.pairPopupOpen = true }},
+	// The timer, the login dialog and the pair popup left this table in #31 — they are
+	// non-blocking floatWin panels now, so they cannot end the pass and cannot strand
+	// an editor. What remains is the set that genuinely takes the screen.
 	{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
 }
 
@@ -141,8 +141,8 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 		name string
 		open func(*App)
 	}{
-		{"timer", func(a *App) { a.showTimer = true }},
-		{"pair popup", func(a *App) { a.pairPopupOpen = true }},
+		{"iniswap", func(a *App) { a.showIni = true }},
+		{"background picker", func(a *App) { a.bgPick.show = true }},
 		{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

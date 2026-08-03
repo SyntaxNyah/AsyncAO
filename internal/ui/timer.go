@@ -164,17 +164,57 @@ func (a *App) drawTimerChip(vp sdl.Rect) {
 	c.Label(r.X+6, r.Y+3, label, col)
 }
 
-// drawTimerPanel is the setup modal: a large remaining readout, Minutes/Seconds
-// sliders + quick presets while idle, and Start/Pause/Resume/Reset + Repeat. Shown
-// from the Extras "Timer" entry; reached via drawCourtroomModals like other popups.
-func (a *App) drawTimerPanel(w, h int32) {
+// Timer panel geometry. The old modal was a fixed 400×270 centred block; as a
+// floatWin it keeps that as its default size and can be resized down to the
+// controls' own footprint.
+const (
+	timerPanelDefW = int32(400)
+	timerPanelDefH = int32(300)
+	timerPanelMinW = int32(320) // the four 62px-pitch preset buttons still fit at this width
+	timerPanelMinH = int32(266) // readout + both sliders + presets + Repeat + the transport row
+	// timerValueColW reserves the right-hand column the slider's numeric readout is
+	// drawn in, so the responsive track width below can never run under it.
+	timerValueColW = int32(62)
+)
+
+// timerPanelRect is the panel's screen rect, seeded from its persisted layout slot
+// on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
+func (a *App) timerPanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.timerWin, slotPanelTimer, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h); ok {
+		return r
+	}
+	return a.timerWin.rect(timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h)
+}
+
+// drawTimerPanel is the countdown's setup surface: a large remaining readout,
+// Minutes/Seconds sliders + quick presets while idle, and Start/Pause/Resume/Reset
+// + Repeat. Opened from the Extras "Timer" entry.
+//
+// It was a return-to-top modal, and that is issue #31: opening a personal
+// countdown blanked the courtroom, the logs, the music list and every button —
+// drawCourtroomModals ends the pass, so nothing under it draws at all. A timer is
+// the LAST thing that should take the screen; you set it precisely so you can
+// watch the scene against it. It is a non-blocking floatWin now (drag the title
+// bar, resize the bottom-right grip) like the Evidence and Call Mod boxes.
+func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	panel := sdl.Rect{X: w/2 - 200, Y: h/2 - 135, W: 400, H: 270}
+	wasActive := a.timerWin.dragging || a.timerWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.timerPanelRect(w, h)
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+10, "Timer", ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 34, Y: panel.Y + 8, W: 26, H: 24}, "X") {
+	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi)
+	c.Heading(panel.X+pad, panel.Y+6, "Timer", ColText)
+	closeB := sdl.Rect{X: panel.X + panel.W - 30, Y: panel.Y + 3, W: 24, H: btnH}
+	if c.Button(closeB, "X") {
 		a.showTimer = false
+		return
+	}
+	a.floatWinDrag(&a.timerWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.timerWin, grip, panel, timerPanelMinW, timerPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+	if wasActive && !a.timerWin.dragging && !a.timerWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelTimer, panel, w, h)
 	}
 
 	// Big remaining / configured readout, plus a paused tag.
@@ -201,16 +241,21 @@ func (a *App) drawTimerPanel(w, h int32) {
 		}
 	} else {
 		// Idle: pick a duration via sliders + presets, then Start.
+		// The tracks follow the panel width now that it is resizable — a fixed 200 px
+		// track with its value label pinned 278 px in would have run straight out of a
+		// panel dragged down to timerPanelMinW.
 		mins := int32(a.timerSetSec / 60)
 		secs := int32(a.timerSetSec % 60)
+		trackX := panel.X + pad + 70
+		trackW := panel.W - pad - 70 - timerValueColW
 		ry := panel.Y + 86
 		c.Label(panel.X+pad, ry+3, "Minutes", ColTextDim)
-		nm := c.Slider("tmin", sdl.Rect{X: panel.X + pad + 70, Y: ry, W: 200, H: 18}, mins, 99)
-		c.Label(panel.X+pad+278, ry+3, fmt.Sprintf("%d", nm), ColText)
+		nm := c.Slider("tmin", sdl.Rect{X: trackX, Y: ry, W: trackW, H: 18}, mins, 99)
+		c.Label(trackX+trackW+8, ry+3, fmt.Sprintf("%d", nm), ColText)
 		ry += 28
 		c.Label(panel.X+pad, ry+3, "Seconds", ColTextDim)
-		ns := c.Slider("tsec", sdl.Rect{X: panel.X + pad + 70, Y: ry, W: 200, H: 18}, secs, 59)
-		c.Label(panel.X+pad+278, ry+3, fmt.Sprintf("%d", ns), ColText)
+		ns := c.Slider("tsec", sdl.Rect{X: trackX, Y: ry, W: trackW, H: 18}, secs, 59)
+		c.Label(trackX+trackW+8, ry+3, fmt.Sprintf("%d", ns), ColText)
 		if nm != mins || ns != secs {
 			a.timerSetSec = int(nm)*60 + int(ns)
 		}
@@ -230,8 +275,10 @@ func (a *App) drawTimerPanel(w, h int32) {
 			a.startTimer()
 		}
 	}
-	// Repeat toggle (both states), persisted so it's remembered next session.
-	if rep := c.Checkbox(panel.X+pad+240, by+4, "Repeat", a.timerRepeat); rep != a.timerRepeat {
+	// Repeat toggle (both states), persisted so it's remembered next session. Sits on
+	// its own row ABOVE the transport buttons rather than beside them: on the bottom
+	// row it collided with the resize grip the moment the panel was dragged narrow.
+	if rep := c.Checkbox(panel.X+pad, by-24, "Repeat", a.timerRepeat); rep != a.timerRepeat {
 		a.timerRepeat = rep
 		a.d.Prefs.SetTimerRepeat(rep)
 	}
