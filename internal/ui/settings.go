@@ -236,10 +236,16 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
 	},
 	tabAssets: {
-		// sections: Predictive prefetch, Missing sprites, Local assets, Downloader,
+		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
 		// Cache. (Everything format-related lives on the Formats tab.)
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
 		"local assets", "local", "mount", "downloader", "download",
+		// The v1.89.0 layered source. Terms stay specific — the table is scanned in
+		// tab order with substring matching, so a broad word would hijack the query.
+		// NB: NOT a bare "stream" — the table is scanned in tab order with substring
+		// matching, and General's "streamer mode" already owns that prefix.
+		"asset source", "layered", "layer", "pack", "content pack", "zip", "override",
+		"rescan", "folders", "my folders",
 		"cache", "disk cache", "disk", "zstd", "clear cache",
 		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
@@ -2533,33 +2539,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// (The per-type audio-format fallbacks moved to the Formats tab, with the
 	// image ones — they are the same control for a different asset class.)
 
-	y = a.settingsSection(y, w, "Local assets")
-	// Local assets (no-streaming legacy mode).
-	enabled, mounts := a.d.Prefs.LocalAssets()
-	if next := c.Checkbox(pad, y, "Read assets from local folders instead of streaming (legacy servers without an asset URL)", enabled); next != enabled {
-		a.d.Prefs.SetLocalAssets(next, mounts)
-		a.rebuildAssetOrigin()
-	}
-	y += 28
-	c.Label(pad, y+4, "Mount folder:", ColText)
-	settings.mountInput, _ = c.TextField("mount", sdl.Rect{X: pad + 130, Y: y, W: 320, H: fieldH}, settings.mountInput, `C:\AO2\base or /home/you/ao2/base`)
-	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 80, H: btnH}, "Add") && strings.TrimSpace(settings.mountInput) != "" {
-		a.d.Prefs.SetLocalAssets(enabled, append(mounts, strings.TrimSpace(settings.mountInput)))
-		settings.mountInput = ""
-		a.rebuildAssetOrigin()
-	}
-	y += 32
-	for i, m := range mounts {
-		c.LabelClipped(pad+20, y+4, a.formW-130, fmt.Sprintf("%d. %s", i+1, m), ColText)
-		if c.Button(sdl.Rect{X: a.formX + a.formW - 90, Y: y, W: 90, H: 24}, "Remove") {
-			next := append(append([]string{}, mounts[:i]...), mounts[i+1:]...)
-			a.d.Prefs.SetLocalAssets(enabled, next)
-			a.rebuildAssetOrigin()
-			break
-		}
-		y += 28
-	}
-	y += 10
+	y = a.settingsSection(y, w, "Asset source")
+	y = a.drawAssetSourceSettings(y, w)
 
 	y = a.settingsSection(y, w, "Downloader")
 	// Built-in single-asset downloader (opt-in).
@@ -4383,10 +4364,21 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 			_ = exec.Command("explorer.exe", root).Start()
 		}
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 180, Y: y, W: 180, H: btnH}, "Add to local mounts") {
-			enabled, mounts := a.d.Prefs.LocalAssets()
-			a.d.Prefs.SetLocalAssets(enabled, append(mounts, root))
-			a.rebuildAssetOrigin()
-			settings.statusLine = "Added the downloads folder to local mounts."
+			mode := a.assetSourceMode()
+			_, mounts := a.d.Prefs.LocalAssets()
+			if !a.d.Prefs.SetLocalAssets(mode == assetSrcLocal, append(append([]string{}, mounts...), root)) {
+				settings.statusLine = "Up to " + strconv.Itoa(config.LocalMountCap) + " folders. Remove one in Asset source first."
+			} else if mode == assetSrcStream {
+				// Clicking a button named "Add to local mounts" right after downloading
+				// a character is unambiguous intent, and adding a mount that is never
+				// read is a silent dead end — so turn layering on and SAY so, rather
+				// than leaving the user to discover the extra step.
+				a.setAssetSourceMode(assetSrcLayered, append(append([]string{}, mounts...), root))
+				settings.statusLine = `Added the downloads folder and switched Asset source to "Use my folders first".`
+			} else {
+				a.rebuildAssetOrigin()
+				settings.statusLine = "Added the downloads folder to local mounts."
+			}
 		}
 		y += 30
 		if a.dl.active || len(a.dl.queue) > 0 {

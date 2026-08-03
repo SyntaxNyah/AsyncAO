@@ -4653,7 +4653,7 @@ func (a *App) rebuildAssetOrigin() {
 		origin = a.sess.AssetURL
 	}
 	if origin == "" {
-		a.connErr = "server provided no asset URL — enable local assets in Settings"
+		a.connErr = `server provided no asset URL — set Settings > Assets > Asset source to "Only use my folders"`
 		return
 	}
 	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
