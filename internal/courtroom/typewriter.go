@@ -23,6 +23,24 @@ const (
 	// hostile message can't freeze the crawl.
 	pauseDefaultMs = 1000
 	pauseMaxMs     = 10000
+
+	// blipSpamCrawlNum/blipSpamCrawlDen express AO2's "overwhelming blip spam
+	// prevention" threshold — chat_tick only raises the blip period while
+	// msg_delay <= 25 ms (AO2-Client courtroom.cpp:4529-4537) — as a FRACTION of
+	// the base crawl it was written against (AO2's text_crawl default, 40 ms).
+	// It is carried as a ratio, not the raw 25 ms, because AsyncAO's base cadence
+	// is DefaultCharInterval (18 ms): an absolute copy would gate at a different
+	// speed step than AO2 does. 25/40 == speed multiplier 0.625 and faster.
+	blipSpamCrawlNum = 25
+	blipSpamCrawlDen = 40
+
+	// instantRevealBlipCap bounds the blips one Update may emit from runes whose
+	// per-character delay is ZERO (speed step 0, i.e. `}}}`), because the whole
+	// remainder of such a message becomes visible inside a single tick. AO2 never
+	// hits this: its chat_tick is a Qt timer that fires once per character, so
+	// "instant" there still walks the string one timer shot at a time. Reveal is
+	// unaffected — only the blip burst is capped.
+	instantRevealBlipCap = 1
 )
 
 // speedMultipliers scales the base interval per AO speed step. Index 3 is
@@ -736,6 +754,7 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 		return 0, 0
 	}
 	t.accumulator += dt
+	instant := 0 // blips already emitted this tick from zero-delay runes
 	for !t.Done() {
 		need := t.intervals[t.visible]
 		if need > 0 && t.accumulator < need {
@@ -748,14 +767,51 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 
 		if (r != ' ' && r != '\n') || t.BlipOnSpaces {
 			t.blipCounter++
-			rate := t.BlipRate
-			if rate < 1 {
-				rate = 1
+			if t.blipCounter%t.effectiveBlipRate(need) != 0 {
+				continue
 			}
-			if t.blipCounter%rate == 0 {
-				blips++
+			if need == 0 {
+				// A 0× run reveals its whole remainder inside this one Update;
+				// firing a blip per rune would machine-gun (see instantRevealBlipCap).
+				if instant >= instantRevealBlipCap {
+					continue
+				}
+				instant++
 			}
+			blips++
 		}
 	}
 	return revealed, blips
+}
+
+// effectiveBlipRate is AO2's per-character blip period for a rune whose delay is
+// need: the user's BlipRate, raised when the crawl is fast enough that firing
+// every BlipRate-th character would machine-gun. AO2-Client courtroom.cpp:
+// 4528-4537 —
+//
+//	int b_rate = blip_rate;
+//	if (msg_delay != 0 && msg_delay <= 25)
+//	  b_rate = qMax(b_rate, qRound(static_cast<float>(text_crawl) / msg_delay));
+//
+// where text_crawl is the base cadence (our Interval) and msg_delay the
+// speed-code-scaled per-character delay (our intervals[i]). The ratio is
+// scale-free, so the only translation needed is the threshold, which rides
+// blipSpamCrawlNum/Den. A \p pause inflates intervals[i] well past the
+// threshold, so pauses correctly leave the rate alone — as does need == 0,
+// matching AO2's `msg_delay != 0` guard.
+func (t *Typewriter) effectiveBlipRate(need time.Duration) int {
+	rate := t.BlipRate
+	if rate < 1 {
+		rate = 1
+	}
+	if need <= 0 || t.Interval <= 0 {
+		return rate
+	}
+	if need*blipSpamCrawlDen > t.Interval*blipSpamCrawlNum {
+		return rate // slower than the spam threshold: the user's rate stands
+	}
+	if r := int((t.Interval + need/2) / need); r > rate { // qRound(text_crawl / msg_delay)
+		rate = r
+	}
+	return rate
 }

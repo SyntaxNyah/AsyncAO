@@ -95,8 +95,8 @@ const (
 	// hitting the client's 404 cache, which never re-probes inside its TTL).
 	charIconRetryInterval = 2 * time.Second
 
-	// warnShowDuration keeps a missing-asset warning readable without
-	// turning the HUD into a ticker.
+	// warnShowDuration keeps a transient toast readable without turning the
+	// HUD into a ticker.
 	warnShowDuration = 12 * time.Second
 
 	// iniswapFileName is the server-curated custom character list at the
@@ -428,9 +428,21 @@ type App struct {
 	oocWrapMask   bool // streamer-mode masking baked into the cache
 	oocWrapGen    int  // font chain generation baked into the wrap
 
-	// last missing-asset warning surfaced to the user (spec §4).
+	// last transient toast surfaced to the user. Missing-asset reports left this
+	// shared channel in #27 — they own the menu-bar chip below (spec §4).
 	warnLine string
 	warnAt   time.Time
+
+	// --- GH #27: missing assets get their own chrome chip, not the shared toast
+	// channel above (assetmisschip.go). The count is what the chip shows; the ring
+	// is the burst suppressor; the label/tip are memoized so the chip's per-frame
+	// draw allocates nothing.
+	assetMissSeen   assetMissRing
+	assetMissCount  int
+	assetMissAt     time.Time
+	assetMissLabel  string
+	assetMissLabelN int // count the memoized label was built for
+	assetMissTip    string
 
 	// dndOn is Do Not Disturb: session-only (resets on launch by design, so it
 	// can't silently kill callwords days later) — silences the personal-ping
@@ -1848,6 +1860,9 @@ type sessionState struct {
 	// they park and restore with the tab exactly like the emote memo above.
 	musicCount shownTotalMemo
 	areaCount  shownTotalMemo
+	// musicNowLabel memoizes the Music header's "Now playing: <track>" readout for
+	// exactly the same reason (nowPlayingMemo, screens.go).
+	musicNowLabel nowPlayingMemo
 	// Emote favourites view (#77): emoteFavSet holds the active character's
 	// favourited emote indices for lock-free O(1) star lookups, and emoteVisible
 	// is the list of emote indices the grid shows (all, or favs-only) — a reused
@@ -2247,17 +2262,25 @@ type sessionState struct {
 	// Player-row action menu (rostermenu.go): the "…" / right-click popup that
 	// replaced the per-row button cluster. Holds an identity SNAPSHOT (the
 	// roster can refresh under an open menu) and the modal-fence latch.
-	rosterMenuOpen        bool
-	rosterMenuFenceOn     bool             // WE hold modalOn for the open menu (released on close)
-	rosterMenuMe          bool             // the snapshot row is our own client
-	rosterMenuAt          sdl.Point        // preferred top-left (clamped at draw)
-	rosterMenuTab         int              // tab the menu opened on — auto-close on switch
-	rosterMenuP           areaPlayer       // identity snapshot (uid/name/showname/ooc/ipid)
-	rosterMenuItems       []rosterMenuItem // built at open; bounded by the action-kind count
-	liveDetailsArea       string           // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch       time.Time        // debounce for the join/leave re-pull (rosterRefetchDebounce)
-	suppressAreaEchoUntil time.Time        // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	rosterCmdUnsupported  bool             // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
+	rosterMenuOpen    bool
+	rosterMenuFenceOn bool             // WE hold modalOn for the open menu (released on close)
+	rosterMenuMe      bool             // the snapshot row is our own client
+	rosterMenuAt      sdl.Point        // preferred top-left (clamped at draw)
+	rosterMenuTab     int              // tab the menu opened on — auto-close on switch
+	rosterMenuP       areaPlayer       // identity snapshot (uid/name/showname/ooc/ipid)
+	rosterMenuItems   []rosterMenuItem // built at open; bounded by the action-kind count
+	// Music panel overflow ("kebab") menu (musicheader.go): the anchored popup that
+	// took the playback flags and the volume-view toggle off the header row. Same
+	// modal-fence + tab-latch discipline as the roster menu above.
+	musicMenuOpen         bool
+	musicMenuFenceOn      bool      // WE hold modalOn for the open menu (released on close)
+	musicMenuAt           sdl.Point // preferred top-left (clamped at draw)
+	musicMenuTab          int       // tab the menu opened on — auto-close on switch
+	musicMenuThemed       bool      // the panel drew inside a theme canvas when it opened (gates the volume-view row)
+	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch       time.Time // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
+	rosterCmdUnsupported  bool      // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -5771,7 +5794,13 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	savedSess := a.sessionState
 	savedVP := a.d.Viewport
 	savedScreen := a.screen // view-only pass must not change the primary's screen…
-	savedTip := c.tipText   // …tooltip…
+	// …tooltip… The companion c.tipAnchor is deliberately NOT saved, and that is
+	// inert rather than a hole: snapshotInput parks the mouse at -30000 for the
+	// whole pass, and tipAnchor is only ever written beside tipText inside
+	// Tooltip/TooltipAfter's `c.hovering(r)` gate — so the pinned pass cannot arm
+	// either one. This save is belt-and-braces; if a future surface ever writes
+	// tipText off the hover gate, tipAnchor has to be saved with it.
+	savedTip := c.tipText
 	savedSeqLen := len(c.fieldSeq)
 	in := a.snapshotInput() // …focus order, or handle any input
 
@@ -8218,7 +8247,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.emojiPickerFence(a.ctx)
 	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
 	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
+	a.musicMenuFence(a.ctx)   // music panel ⋮ menu: same discipline (musicheader.go)
 	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
+
+	// #27 missing-asset chip: claimed just BEFORE the bar publishes its strip
+	// fence, because that fence covers the chip's own rect (it shares the band) and
+	// would blank hovering() for it. Same pre-screen discipline as the update chip.
+	a.handleAssetMissChipInput(winW)
 
 	// App-wide menu bar (#14, menubar.go), phase 1: publish its overlay fences and
 	// resolve its own input. THIS CALL MUST STAY ABOVE THE SCREEN DISPATCH BELOW.
@@ -8334,6 +8369,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
 			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
 			a.drawRosterMenu(winW, winH)       // player-row … menu (modal-fenced; docked AND torn-off players tabs)
+			a.drawMusicMenu(winW, winH)        // music panel ⋮ menu (modal-fenced; same contract)
 			a.drawGroupInviteToast(winW, winH) // group invite Accept/Decline banner (only when one is pending)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
@@ -9060,12 +9096,12 @@ func (a *App) drainThumbs() {
 }
 
 // drainWarnings empties the manager's missing-asset lane (bounded by its
-// channel cap), keeping the newest for the §4 on-screen banner.
+// channel cap), feeding the §4 in-client report (the menu-bar count chip).
 func (a *App) drainWarnings() {
-	// The red banner is opt-in (default OFF — players found it noisy on
+	// The on-screen report is opt-in (default OFF — it reads as noise on
 	// sparse-pack servers); read the toggle once per drain. We still drain
 	// the channel (it's bounded) and log every failure to the debug overlay
-	// regardless, so nothing is lost — only the on-screen banner is gated.
+	// regardless, so nothing is lost — only the chip is gated.
 	show := a.d.Prefs.AssetWarningsOn()
 	for {
 		select {
@@ -9138,10 +9174,11 @@ func (a *App) drainWarnings() {
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.pushDebug(line)
+			a.pushDebug(line) // unconditional: the Debug ▸ Log tab is the detail view
 			if show {
-				a.warnLine = clampLine(line)
-				a.warnAt = time.Now()
+				// #27: the chip, NOT warnLine. See assetmisschip.go for why the
+				// shared toast channel was the wrong surface for this class.
+				a.noteAssetMiss(w.Base, w.Type == assets.AssetTypeDeskOverlay, time.Now())
 			}
 		default:
 			return
@@ -9317,7 +9354,17 @@ func (a *App) healScenery() {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
-	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
+	// IsMissing is checked alongside Contains because a base that 404'd
+	// conclusively can never become Contains: without this the desk arm re-demanded
+	// a known-absent desk every charIconRetryInterval for the whole heal budget,
+	// which is what produced the ×5..×9 runs of the same missing-asset line (#27).
+	// drainWarnings MarkMissing'd that exact base, and the set self-heals
+	// (clearMissing on upload), so a desk that later appears still recovers — the
+	// per-message Prefetch in the courtroom is the re-try, not this loop.
+	// The background arm above deliberately does NOT get the same gate: Background
+	// is never MarkMissing'd (that would change the viewport's hold-previous
+	// semantics), so IsMissing is always false for it anyway.
+	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}

@@ -223,6 +223,14 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
 		"sprite style", "recolour", "recolor", "tint", "glow", "opacity", "hide sprite styles", "hide other",
 		"emote button", "favourite emotes", "favorite emotes", "fav emotes",
+		// The sprite hover-preview cluster had NO keyword on this tab at all. The
+		// bare "preview" is listed DELIBERATELY: the table is scanned in tab order
+		// with substring matching, so any phrase here would swallow that query
+		// anyway (it is a substring of "sprite preview"), and a silent theft is
+		// exactly what the shadow test forbids. This tab owns four preview settings
+		// to Theme's one section, so it takes the bare word and Theme keeps the
+		// qualified "theme preview".
+		"preview", "sprite preview", "hover preview", "preview box", "pin preview", "pinned preview", "preview pin",
 		"application", "streamer mode", "debug", "performance", "perf hud", "fps", "notify ooc", "unread badge",
 		"log colours", "log colors", "selection highlight", "highlight colour", "name colour", "name colours",
 		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
@@ -240,7 +248,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
 		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
-		"layout", "fit", "courtroom design", "lobby", "preview", "bind", "binding",
+		// "theme preview", not a bare "preview": General's sprite-preview cluster
+		// takes that word (see its block above). "bind"/"binding" still reach this
+		// section, and the gather-search matches its ROW LABELS first regardless.
+		"layout", "fit", "courtroom design", "lobby", "theme preview", "bind", "binding",
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
 	},
 	tabAssets: {
@@ -1150,6 +1161,22 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetPreviewHeightPx(nph)
 	}
 	y += 30
+	// Keep the preview pinned: the box's own pin button writes this same preference,
+	// so a player who pins one box discovers the setting and vice versa. A pinned
+	// ANIMATED preview holds the frame pacer at the active cap for as long as it is
+	// up — true of the right-click pin already, but a sticky default makes it the
+	// steady state, hence the note in the label.
+	//
+	// The row says "pin button", never a 📌. This label is drawn through
+	// chromeFaceFor like every other settings string, and U+1F4CC is outside the
+	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
+	// whose whole job is to point at a control. It would also be a lie: the box
+	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
+	pinned := a.d.Prefs.PreviewPinnedOn()
+	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
+		a.d.Prefs.SetPreviewPinned(next)
+	}
+	y += 26
 	// Emote-name hover tooltips: rest the cursor on an emote button to see its
 	// name (independent of the sprite pop-up above). ON by default; the dwell is
 	// tunable. Lightweight — a name-only tooltip, not the full-size art.
@@ -2492,10 +2519,11 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	y += 28
 
-	// Missing-asset banner: opt-in (default OFF). The failures always reach the
-	// debug overlay; this only governs the red on-screen banner.
+	// Missing-asset chip: opt-in (default OFF). The failures always reach the
+	// debug log; this only governs the count chip in the menu bar (GH #27 —
+	// the old red banner it replaced is gone, so the label must not promise one).
 	showWarn := a.d.Prefs.AssetWarningsOn()
-	if next := c.Checkbox(pad, y, "Show missing-asset warnings (red banner naming assets that failed to load — off by default)", showWarn); next != showWarn {
+	if next := c.Checkbox(pad, y, "Show missing-asset warnings (OFF by default): a count chip in the menu bar — click it for Debug ▸ Log", showWarn); next != showWarn {
 		a.d.Prefs.SetAssetWarnings(next)
 	}
 	y += 28

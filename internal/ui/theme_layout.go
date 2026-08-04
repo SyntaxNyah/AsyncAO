@@ -32,6 +32,15 @@ const (
 	// much, the theme meant them as one toggled widget (AO2's ooc_toggle)
 	// — we draw them tabbed in the shared rect.
 	logMergeOverlapFrac = 0.6
+	// ao2MusicNameMarginPx is AO2's ScrollText left/right inset for the
+	// now-playing name. Its source is `leftMargin = height() / 3`
+	// (../AO2-Client/src/scrolltext.cpp:10), computed in the CONSTRUCTOR while the
+	// widget still has Qt's default 100x30 child geometry and never recomputed
+	// (resizeEvent, :104, does not touch it) — so it is a hard 10 px, not a
+	// function of the theme's declared music_name height. It is applied at every
+	// draw (:75 scrolling, :100 static) and reserved on BOTH sides by the fit test
+	// (:47), which is why a name that fits AO2's plate could still clip in ours.
+	ao2MusicNameMarginPx = 10
 )
 
 // clampRectInto shifts r inside bounds, shrinking only when r is larger
@@ -878,10 +887,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.musicSearch, _ = c.TextField("musicsearch", r, a.musicSearch, "Search")
 	}
 	// The music plate, and the now-playing name AO2 parents inside it. Drawn before
-	// the panel so the panel can drop its own row when this one has taken over.
-	plateDrew := false
+	// the panel so the panel can drop its own row when this one has taken over — and
+	// the answer that matters is whether the NAME drew, not the plate art: a plate
+	// with no usable music_name paints nothing readable, so the panel keeps its row.
+	nameDrew := false
 	if !a.panelHidden(panelLog) {
-		plateDrew = a.drawThemedMusicPlate(lay)
+		nameDrew = a.drawThemedMusicPlate(lay)
 	}
 	// switch_area_music is AO2's "A/M" button (courtroom.cpp:1060-1061). AO2 places
 	// ui_area_list at the SAME music_list rect (:864), so this button is how it
@@ -927,7 +938,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		case logTabPlayers:
 			a.drawPlayerList(inner)
 		default:
-			a.drawMusicList(inner, true, searchExternal, plateDrew)
+			a.drawMusicList(inner, true, searchExternal, nameDrew)
 		}
 	}
 	// The theme's own volume band. Independent of the music panel above — AO2
@@ -1677,6 +1688,14 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			a.speculateEmote(me, e)
 			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
 		}
+		// Right-click pins the preview open, exactly as the CLASSIC emote row does.
+		// Without it there was no way at all to pin on an AO2 theme, which is where
+		// the report came from. It adds no pixels to the theme's design canvas: the
+		// preview box is AsyncAO's own floating surface. The LATCH only, never the
+		// preference — see the classic site for why.
+		if c.rightClicked && c.hovering(btn) {
+			a.previewPinned = true
+		}
 		// Same hover-preview behavior as the classic row: the preanim (scrubbed)
 		// when the emote has one, else the talking sprite — warmed on demand.
 		if c.HoverPreview("emote:"+e.Anim, btn) {
@@ -1710,9 +1729,9 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
-		if c.clicked {
-			a.previewBase = ""
-		}
+		// Pin-aware, and routed through closeSpritePreview so the trigger's dwell
+		// id is disarmed (a raw previewBase="" re-opened the box the next frame).
+		a.dismissPreviewOnClick()
 	}
 }
 
@@ -1814,8 +1833,12 @@ func (a *App) drawThemedVolumeSliders(lay *themeLayoutCache) {
 // coordinates are relative to the plate and not to the courtroom, which the
 // registry records as relMusicDisplay.
 //
-// Returns whether the plate drew, so the music panel can skip its own
-// "Now playing" row and give those pixels back to the track list.
+// Returns whether the track NAME was drawn here — not whether the plate art was.
+// That is the only question drawMusicList's caller has: it skips its own "Now
+// playing" readout on a true, and a plate that painted art but no name (no
+// music_name rect, or one too narrow to hold a glyph) would then leave the track
+// name nowhere on screen. The plate can therefore draw and this can still report
+// false; the panel's row takes the name back.
 func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	c := a.ctx
 	md, ok := lay.rect("music_display")
@@ -1835,7 +1858,11 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	// only inside this branch: without the plate there is nothing to be relative to.
 	mn, ok := lay.rect("music_name")
 	if !ok {
-		return true // the plate alone is a legitimate theme choice
+		// The plate alone IS a legitimate theme choice — but then nothing here
+		// draws the track name, so the panel's own "Now playing" row has to take it
+		// back. Reporting true made the plate swallow the name outright: this
+		// return is what drawMusicList skips its row on (nameDrew, not plateDrew).
+		return false
 	}
 	// #21 label 16: "music_name_color" is this line's ink, and it is the case the
 	// colour key most obviously exists for — the theme drew the plate underneath, so
@@ -1843,20 +1870,55 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	// art, not the courtroom background, for the same reason. The empty state keeps
 	// ColTextDim: "Nothing playing" is AsyncAO's own placeholder (AO2 leaves the
 	// label blank), so the theme's colour has no claim on it.
-	label, col := "Nothing playing", ColTextDim
+	label, col := musicNothingPlaying, ColTextDim
 	if now := a.nowPlayingName(); now != "" {
 		label, col = now, a.elemInkOr(elemMusicName, true, ColAccent)
 	}
-	font := a.elemLabelFont(elemMusicName, DefaultScalePct)
+	// The FACE folds the canvas scale in, exactly as the themed chatbox's children
+	// do (themedChatPct). music_name's rect was multiplied by lay.scaleX/scaleY at
+	// build time, so on any fit that isn't 1:1 — Letterbox / Stretch / Crop /
+	// Custom, or Native in a window narrower than the design canvas — leaving the
+	// glyphs at the theme's declared point size clipped the track name early. This
+	// was the only themed text surface that never got the fold.
+	font := a.elemLabelFontAtPct(elemMusicName, a.themedChatPct(elemMusicName, DefaultScalePct, lay))
 	dst := sdl.Rect{X: md.X + mn.X, Y: md.Y + mn.Y, W: mn.W, H: mn.H}
+	// AO2's ScrollText insets its text by leftMargin on BOTH sides and reserves
+	// both in its fit test (../AO2-Client/src/scrolltext.cpp:47, drawn at :75/:78/
+	// :100). leftMargin is height()/3 computed in the CONSTRUCTOR, while the child
+	// still has Qt's default 100x30 geometry, and it is never recomputed — so it is
+	// the constant 10, not a function of the theme's music_name height.
+	inset := int32(float64(ao2MusicNameMarginPx) * lay.scaleX)
+	avail := dst.W - 2*inset
+	if avail <= 0 {
+		// A music_name narrower than its own two margins: nothing legible fits, so
+		// nothing is drawn — and the return has to say so. Reporting true here (the
+		// plate DID draw) suppressed the panel's "Now playing" row as well, hiding
+		// the track name everywhere on that theme.
+		return false
+	}
+	// Vertically centred in music_name's own height, like ScrollText (:78/:100);
+	// we used to pin the label to the rect's top edge.
+	ty := dst.Y + (dst.H-fontLineH(font))/2
+	// Qt clips ui_music_name to its parent ui_music_display. Ours is an intersecting
+	// pushClip, so a theme whose music_name is wider than its plate no longer spills
+	// the name past the plate art onto the background.
+	clipPrev, clipHad := c.pushClip(md)
 	// Clipped, not scrolled: AO2's ScrollText marquees an overlong track name, and
 	// that is a deliberate deviation — a marquee is per-frame motion on a surface
 	// that is otherwise static, and ReduceMotion users would need an opt-out for it.
-	// Clipping keeps the plate honest at rest; the full name stays in the list.
-	if a.elemBold(elemMusicName) {
-		c.LabelClippedFont(font, dst.X+1, dst.Y, dst.W, label, col)
+	// truncateLabelTo ellipsizes so the fallback reads as "there is more" instead of
+	// cutting mid-glyph; the full name stays in the list.
+	// The fits case — every ordinary track name — measures once and allocates
+	// nothing; only an overlong name pays for the ellipsis walk.
+	shown := label
+	if w, ok := c.fontTextWidth(font, label); ok && w > avail {
+		shown = c.fitLabelToFont(font, label, avail)
 	}
-	c.LabelClippedFont(font, dst.X, dst.Y, dst.W, label, col)
+	if a.elemBold(elemMusicName) {
+		c.LabelClippedFont(font, dst.X+inset+1, ty, avail, shown, col)
+	}
+	c.LabelClippedFont(font, dst.X+inset, ty, avail, shown, col)
+	c.popClip(clipPrev, clipHad)
 	return true
 }
 

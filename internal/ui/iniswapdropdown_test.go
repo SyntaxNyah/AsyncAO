@@ -194,6 +194,12 @@ func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 //
 // Goes red if the themed branch stops forcing volMode false, or if the draw site
 // starts reading a.musicVolMode directly again instead of the local.
+//
+// The force used to be a `volMode = false` statement inside an `if themed` block
+// and the persist used to sit in the header's own Volume toggle; the debloat
+// turned the first into one guarded initialiser and moved the second to the
+// overflow menu's action table. Both properties still hold, so this asserts them
+// where they now live rather than against the old spellings.
 func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
 	src, err := os.ReadFile("screens.go")
 	if err != nil {
@@ -201,8 +207,8 @@ func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
 	}
 	body := string(src)
 
-	// The themed branch must force the local false...
-	if !strings.Contains(body, "volMode = false") {
+	// The themed panel must resolve to the track list whatever the pref says...
+	if !strings.Contains(body, "a.musicVolMode && !themed") {
 		t.Error("the themed branch no longer forces the track list — a user who left the " +
 			"panel in volume mode and then applied a theme has no control to get back")
 	}
@@ -212,9 +218,14 @@ func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
 		t.Error("drawMusicList renders from a.musicVolMode rather than the themed-adjusted " +
 			"local, so forcing it has no effect")
 	}
-	// The classic path must still persist the user's choice — dropping that would
-	// turn a themed-only rule into a global behaviour change.
-	if !strings.Contains(body, "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
-		t.Error("the classic Volume toggle must still persist the user's choice")
+	// The user's choice must still be persisted from wherever the control now
+	// lives (musicMenuAct's Volume row). Dropping the write would turn a
+	// themed-only rule into a global behaviour change.
+	menu, err := os.ReadFile("musicheader.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(menu), "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
+		t.Error("the Volume view toggle must still persist the user's choice")
 	}
 }

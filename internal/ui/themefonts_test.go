@@ -139,6 +139,46 @@ func TestElemPctFolds(t *testing.T) {
 	}
 }
 
+// TestMusicNamePctFoldsTheCanvas pins the dominant cause of the clipped
+// now-playing plate: music_name's RECT is multiplied by the canvas scale at layout
+// build time, but its FACE was resolved at the theme's declared point size with no
+// canvas factor at all — so on any fit that is not exactly 1:1 (Letterbox /
+// Stretch / Crop / Custom, or Native in a window narrower than the design canvas)
+// the box shrank and the glyphs did not. It was the only themed text surface that
+// never got the fold the chatbox children have had since #21.
+func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
+	a := testTabApp(t)
+	a.themeFonts = themeFontTable{}
+	a.themeFonts.e[elemMusicName].pct = 100
+
+	full := &themeLayoutCache{textPct: DefaultScalePct} // 1:1 canvas
+	half := &themeLayoutCache{textPct: 50}              // the canvas at half size
+
+	atFull := a.themedChatPct(elemMusicName, DefaultScalePct, full)
+	atHalf := a.themedChatPct(elemMusicName, DefaultScalePct, half)
+	if atFull != 100 {
+		t.Errorf("a 1:1 canvas must be the identity, got %d", atFull)
+	}
+	if atHalf >= atFull {
+		t.Errorf("a half-size canvas must shrink the face: %d vs %d", atHalf, atFull)
+	}
+}
+
+// TestElemLabelFontAtPctKeepsTheUndressedContract pins the #39 guarantee the
+// canvas fold must not break: an element the theme says NOTHING about still draws
+// in the fixed chrome face, byte-identically to a client with no theme at all. The
+// consequence — an undressed music_name cannot shrink with the canvas — is
+// deliberate, not an oversight.
+func TestElemLabelFontAtPctKeepsTheUndressedContract(t *testing.T) {
+	a := testTabApp(t)
+	a.themeFonts = themeFontTable{}
+	for _, pct := range []int{50, 100, 200} {
+		if got := a.elemLabelFontAtPct(elemMusicName, pct); got != a.ctx.font {
+			t.Errorf("undressed at %d%%: got %p, want the chrome face %p", pct, got, a.ctx.font)
+		}
+	}
+}
+
 // TestBuildThemeFontTablePerElement is the end-to-end resolution: a
 // 3DS-Widescreen-shaped INI with two families across five elements produces the
 // right per-element sizes, the right bold flags, and exactly TWO interned faces

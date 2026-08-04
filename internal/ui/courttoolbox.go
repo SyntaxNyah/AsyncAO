@@ -121,6 +121,14 @@ const (
 	iconEyeOff                  // a horizontal lens bar with a slash
 	iconPin                     // a head rect over a vertical stem
 	iconGrid                    // a 2×2 block of small rects
+	// The Music panel's header row (musicheader.go). Axis-aligned like the rest:
+	// AO2 uses Qt pixmaps for these, which we have no equivalent of, and a font
+	// glyph is a tofu risk on any face without Geometric Shapes.
+	iconStop        // an inset filled square (matches KFO's stop button)
+	iconDice        // a bordered square with five pips — "play a random song"
+	iconExpandAll   // a bordered box with a plus bar
+	iconCollapseAll // a bordered box with a minus bar
+	iconKebab       // three stacked squares — the overflow menu
 )
 
 // drawToolIcon paints the vector glyph for k, centred inside r, in col. Pure
@@ -198,6 +206,59 @@ func drawToolIcon(c *Ctx, k iconKind, r sdl.Rect, col sdl.Color) {
 		c.Fill(sdl.Rect{X: ix + cw + gap, Y: iy, W: cw, H: ch}, col)
 		c.Fill(sdl.Rect{X: ix, Y: iy + ch + gap, W: cw, H: ch}, col)
 		c.Fill(sdl.Rect{X: ix + cw + gap, Y: iy + ch + gap, W: cw, H: ch}, col)
+	case iconStop:
+		// One filled square, inset a little so it reads as a symbol rather than a
+		// block fill of the whole chip.
+		in := iw / 6
+		c.Fill(sdl.Rect{X: ix + in, Y: iy + in, W: iw - 2*in, H: ih - 2*in}, col)
+	case iconDice:
+		// A bordered square with five pips (the "5" face) — the smallest die face
+		// that still reads as a die at 22 px.
+		box := sdl.Rect{X: ix, Y: iy, W: iw, H: ih}
+		c.Border(box, col)
+		pip := iw / 5
+		if pip < 2 {
+			pip = 2
+		}
+		cx, cy := ix+(iw-pip)/2, iy+(ih-pip)/2
+		off := iw / 4
+		for _, p := range [...]sdl.Point{
+			{X: cx, Y: cy},
+			{X: cx - off, Y: cy - off}, {X: cx + off, Y: cy - off},
+			{X: cx - off, Y: cy + off}, {X: cx + off, Y: cy + off},
+		} {
+			c.Fill(sdl.Rect{X: p.X, Y: p.Y, W: pip, H: pip}, col)
+		}
+	case iconExpandAll, iconCollapseAll:
+		// A bordered box carrying a minus bar, plus a vertical bar for expand —
+		// deliberately the same +/- language as the per-category fold markers
+		// ("[+]" / "[-]"), so the two affordances read as one idea.
+		box := sdl.Rect{X: ix, Y: iy, W: iw, H: ih}
+		c.Border(box, col)
+		th := ih / 5
+		if th < 2 {
+			th = 2
+		}
+		barW := iw / 2
+		c.Fill(sdl.Rect{X: ix + (iw-barW)/2, Y: iy + (ih-th)/2, W: barW, H: th}, col)
+		if k == iconExpandAll {
+			barH := ih / 2
+			c.Fill(sdl.Rect{X: ix + (iw-th)/2, Y: iy + (ih-barH)/2, W: th, H: barH}, col)
+		}
+	case iconKebab:
+		// Three stacked squares down the centre.
+		sq := iw / 4
+		if sq < 2 {
+			sq = 2
+		}
+		gap := (ih - 3*sq) / 4
+		if gap < 1 {
+			gap = 1
+		}
+		x := ix + (iw-sq)/2
+		for i := int32(0); i < 3; i++ {
+			c.Fill(sdl.Rect{X: x, Y: iy + gap + i*(sq+gap), W: sq, H: sq}, col)
+		}
 	}
 }
 
@@ -210,6 +271,29 @@ type compactChip struct {
 	icon iconKind
 	tip  string
 	run  func(a *App)
+}
+
+// Dwell-tooltip ids for the toolbox. TooltipAfter keys its shared dwell timer on
+// the id, so the ids must be CONSTANT strings: this strip draws inside the
+// courtroom's zero-alloc gate, and building "toolbox:chip:"+n per frame would put
+// a concatenation on that path. A fixed table indexed by chip position costs
+// nothing and cannot drift out of sync with compactToolboxChips (a test pins the
+// two lengths equal).
+const (
+	toolboxTipIDCollapsed = "toolbox:collapsed"
+	toolboxTipIDGrip      = "toolbox:grip"
+)
+
+var toolboxChipTipIDs = [...]string{"toolbox:chip:0", "toolbox:chip:1", "toolbox:chip:2", "toolbox:chip:3"}
+
+// toolboxChipTipID is the dwell id for chip i, falling back to the grip's id if
+// the chip table ever outgrows the id table (a shared id merely makes two chips
+// share one dwell timer — never a crash on the render path).
+func toolboxChipTipID(i int) string {
+	if i < 0 || i >= len(toolboxChipTipIDs) {
+		return toolboxTipIDGrip
+	}
+	return toolboxChipTipIDs[i]
 }
 
 // compactToolboxChips is the fixed chip set, right-to-left from the grip (A1):
@@ -331,7 +415,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 			ring := sdl.Rect{X: grip.X - 1, Y: grip.Y - 1, W: grip.W + 2, H: grip.H + 2}
 			c.Border(ring, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: toolboxRingAlpha})
 		}
-		c.Tooltip(hoverArea, "Toolbox — hover or click for Theater, Edit layout & Hide UI")
+		c.TooltipAfter(toolboxTipIDCollapsed, hoverArea, "Toolbox — hover or click for Theater, Edit layout & Hide UI")
 		return
 	}
 
@@ -376,8 +460,16 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	if editing {
 		gripTip = "Toolbox — drag this grip to move it"
 	}
-	c.Tooltip(grip, gripTip)
-	for _, ch := range compactToolboxChips {
+	// The whole strip is the tooltip's avoid rect, and the hints are DWELL hints.
+	// Both for the same reason: this strip lives in the bottom-right corner, on top
+	// of whatever the theme declared there (AO2's call_mod / change_character /
+	// reload_theme cluster on the reference themes), so an instant ~262x30 hint
+	// thrown at the first hovered frame wallpapered the theme's own buttons as the
+	// cursor swept past. TooltipAfter makes it deliberate; TooltipGroup keeps the
+	// box off the strip AND off its neighbouring chips once it does show.
+	c.TooltipGroup(strip)
+	c.TooltipAfter(toolboxTipIDGrip, grip, gripTip)
+	for i, ch := range compactToolboxChips {
 		cw := compactChipH // square icon chip
 		x -= cw + 4
 		chip := sdl.Rect{X: x, Y: grip.Y + (compactGripH-compactChipH)/2, W: cw, H: compactChipH}
@@ -403,8 +495,9 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 		if hover && c.clicked {
 			ch.run(a) // not consumed — see the grip branch above for why
 		}
-		c.Tooltip(chip, ch.tip)
+		c.TooltipAfter(toolboxChipTipID(i), chip, ch.tip)
 	}
+	c.TooltipGroup(sdl.Rect{}) // the strip's claim ends with its chips
 	// The pinned per-piece panel is NOT drawn here — it draws post-courtroom in
 	// app.go (drawToolboxPieces), where the pointer fence is lifted so its widgets
 	// get real input. Drawing it there also keeps it reachable when the grip itself

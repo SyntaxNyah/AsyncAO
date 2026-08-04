@@ -262,6 +262,16 @@ const livePlayerCap = 1024
 // the looping field. AsyncAO honors FADE_IN, FADE_OUT (stop-path only) and
 // NO_REPEAT; SYNC_POS is skipped (see startMusic — SDL_mixer can't cheaply seek
 // a freshly-loaded stream mid-fetch).
+//
+// These same four wire values exist a second time on the SEND path as
+// config.MusicFlag* (internal/config/preferences.go), which cannot import this
+// package — the preference the Music header writes is what
+// RequestMusicWithFlags transmits. Only the VALUES are shared: the outgoing
+// shape has no fixed index for them (the showname ahead is conditional — see
+// RequestMusicWithFlags), which is why the round-trip test rebuilds the echo
+// field by field. The two copies are held equal by
+// TestMusicEffectBitsMatchTheSendSidePreference (musicflagspin_test.go); change
+// one and that test fails.
 const (
 	musicEffectFadeIn   = 1
 	musicEffectFadeOut  = 2
@@ -1118,9 +1128,42 @@ func (s *Session) SendOOC(name, text string) {
 	s.reply(protocol.NewPacket("CT", name, text))
 }
 
-// RequestMusic asks the server to play a track (or area transfer by name).
+// RequestMusic asks the server to play a track (or area transfer by name), in the
+// bare two-field form. This is the AREA-JUMP shape: AO2's on_area_list_clicked
+// appends nothing at all (courtroom.cpp:6036-6044), and a server that reads field
+// 3 as a showname must not see one for a jump.
 func (s *Session) RequestMusic(track string) {
 	s.reply(protocol.NewPacket("MC", track, strconv.Itoa(s.MyCharID)))
+}
+
+// RequestMusicWithFlags is AO2's TRACK-PLAY shape,
+// MC#<song>#<cid>[#<showname>][#<flags>] — Courtroom::on_music_list_double_clicked
+// (courtroom.cpp:5806-5819).
+//
+// The showname condition is canon's, verbatim and in canon's order:
+//
+//	(!ui_ic_chat_name->text().isEmpty() && CCCC_IC_SUPPORT) || EFFECTS
+//
+// so an EMPTY showname is appended only under `effects`, and a cccc_ic_support
+// server whose user has no showname set sees the bare two-field packet — exactly
+// what AO2 sends it. Positionality is not a reason to pad here: under `effects`
+// the flags follow and the empty placeholder is required (and canon emits it),
+// while without `effects` there is no later field for an omission to shift into.
+//
+// The MUSIC_EFFECT bitmask rides only under `effects`; on a server without it the
+// bits would never leave the client, which is why the Music overflow menu greys
+// those rows rather than hiding them (musicheader.go).
+func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
+	fields := make([]string, 0, 4)
+	fields = append(fields, track, strconv.Itoa(s.MyCharID))
+	effects := s.Features.Has(protocol.FeatureEffects)
+	if (showname != "" && s.Features.Has(protocol.FeatureCCCCIC)) || effects {
+		fields = append(fields, showname)
+	}
+	if effects {
+		fields = append(fields, strconv.Itoa(flags))
+	}
+	s.reply(protocol.NewPacket("MC", fields...))
 }
 
 // Ping sends the CH keepalive AO2-Client fires every 45 s

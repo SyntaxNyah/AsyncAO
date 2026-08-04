@@ -421,6 +421,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showLogin = false
 	case a.rosterMenuOpen:
 		a.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
+	case a.musicMenuOpen:
+		a.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
 	case a.showEmojiPicker:
 		a.showEmojiPicker = false
 	case a.showReactPicker:
@@ -467,6 +469,11 @@ func (a *App) closeTopOverlay() bool {
 	// can't fall through to the courtroom's leave-the-server shortcut while one is open.)
 	case a.showWidgets:
 		a.showWidgets = false
+	// A PINNED sprite preview: it paints INSIDE the courtroom pass, i.e. under
+	// every floating panel above, so its case sits here — below them, above
+	// theater mode. Unpinned boxes need no case: they close on their own leave.
+	case a.previewBase != "" && a.previewIsPinned():
+		a.closeSpritePreview()
 	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
 		a.setTheater(false)
 	// Char-select wardrobe popups: close them on Esc before the char-select screen's own

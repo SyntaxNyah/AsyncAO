@@ -1372,25 +1372,6 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag + resize)
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
-	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
-	// emote it's showing, so the preview surface reports it too — not just the
-	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
-	// nav bar already captions the name) or when no name is supplied (character
-	// previews). A translucent strip across the box top, clipped to the box width.
-	if name != "" && !cycle {
-		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
-		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
-		nameW := frame.W - 8
-		if a.previewPinned {
-			nameW -= 20 // leave room for the pinned close button at the top-right
-		}
-		c.LabelClipped(strip.X+4, strip.Y+3, nameW, name, ColAccent)
-	}
-	if a.previewPinned { // close button for the pinned box (click handled in handlePreviewInput)
-		xb := sdl.Rect{X: frame.X + frame.W - 20, Y: frame.Y + 2, W: 18, H: 18}
-		c.Fill(xb, ColPanelHi)
-		c.Label(xb.X+5, xb.Y+1, "x", ColText)
-	}
 	if ready {
 		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))]
 		if a.previewZoom > 1 {
@@ -1424,6 +1405,44 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	} else {
 		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
 	}
+	// The top-right chrome is painted AFTER the sprite blit, not before it.
+	// The blit covers `dst` — the frame inset by 4 — which swallows all but a
+	// 2 px sliver of both 18 px buttons, and the surfaces that show FULL-BLEED
+	// opaque art (the background pickers, bgpicker.go / wardrobe_bg.go) are
+	// exactly the ones where a preview is hardest to get rid of. Chrome that is
+	// invisible but still clickable is the lie assetmisschip.go's rule forbids,
+	// so draw order follows hit order here. Hit-testing lives in
+	// handlePreviewInput off previewFrameRect and is unaffected by this move.
+	//
+	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
+	// emote it's showing, so the preview surface reports it too — not just the
+	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
+	// nav bar already captions the name) or when no name is supplied (character
+	// previews). A translucent strip across the box top, clipped to the box width.
+	if name != "" && !cycle {
+		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
+		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+		// The chrome reserve is UNCONDITIONAL now: the pin button is always there,
+		// so a name that fit yesterday must not run under it when the box is pinned.
+		c.LabelClipped(strip.X+4, strip.Y+3, frame.W-8-previewChromeW, name, ColAccent)
+	}
+	// Pin toggle — the discoverable half of the feature. Until now the ONLY way to
+	// pin was right-clicking a CLASSIC emote-grid cell, which no AO2 theme even
+	// draws. Lit accent while pinned, exactly the compact toolbox's pin-chip idiom.
+	pinB := previewPinRect(frame)
+	pinBg := ColPanelHi
+	if a.previewIsPinned() {
+		pinBg = ColAccent
+	}
+	c.Fill(pinB, pinBg)
+	drawToolIcon(c, iconPin, pinB, ColText)
+	c.Tooltip(pinB, "Pin the preview open. This also sets it to stay pinned by default — unpin to turn that off.")
+	// Close — drawn always, not only when pinned. Unpinned it does exactly what a
+	// body click already did, so nothing changes there; pinned it is the only exit.
+	closeB := previewCloseRect(frame)
+	c.Fill(closeB, ColPanelHi)
+	c.Label(closeB.X+5, closeB.Y+1, "x", ColText)
+	c.Tooltip(closeB, "Close the preview")
 	if cycling {
 		a.drawPreviewEmoteNav(frame)
 	}
@@ -1433,6 +1452,57 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 // caption strip. Shared by the draw and the input handler.
 func previewGripRect(frame sdl.Rect) sdl.Rect {
 	return sdl.Rect{X: frame.X + frame.W - 16, Y: frame.Y + frame.H - previewCaptionH - 16, W: 16, H: 16}
+}
+
+// The preview box's top-right chrome: a pin toggle and a close button. Both rects
+// live here rather than at their two call sites — the close button's rect used to
+// be written literally in the draw AND again in the input handler, which is one
+// edit away from a control whose pixels and hit box disagree.
+const (
+	previewChromeBtn   = int32(18) // square px per chrome button
+	previewChromeGap   = int32(2)  // inset from the frame edge, and between the two
+	previewChromeSlots = int32(2)  // pin + close
+	// previewChromeW is the width the name strip must keep clear of them.
+	previewChromeW = previewChromeSlots * (previewChromeBtn + previewChromeGap)
+)
+
+// previewCloseRect is the right-most chrome slot.
+func previewCloseRect(frame sdl.Rect) sdl.Rect {
+	return sdl.Rect{X: frame.X + frame.W - previewChromeBtn - previewChromeGap, Y: frame.Y + previewChromeGap, W: previewChromeBtn, H: previewChromeBtn}
+}
+
+// previewPinRect is the slot immediately left of the close button.
+func previewPinRect(frame sdl.Rect) sdl.Rect {
+	r := previewCloseRect(frame)
+	r.X -= previewChromeBtn + previewChromeGap
+	return r
+}
+
+// previewIsPinned is the box's "stays open" state: the per-session latch (set by
+// a right-click open, or by this box's own pin button) OR the sticky preference.
+func (a *App) previewIsPinned() bool {
+	return a.previewPinned || a.d.Prefs.PreviewPinnedOn()
+}
+
+// togglePreviewPin flips BOTH the latch and the preference, so unpinning a box
+// that was pinned by the PREF actually unpins it — clearing the latch alone would
+// leave the pref holding it up and the button would look broken.
+func (a *App) togglePreviewPin() {
+	on := !a.previewIsPinned()
+	a.previewPinned = on
+	a.d.Prefs.SetPreviewPinned(on)
+}
+
+// dismissPreviewOnClick is the click-dismiss shared by the preview surfaces that
+// are NOT on the hover corridor (the background pickers, the wardrobe grids, the
+// AO2 themed emote grid). They each open with a raw `a.previewBase = ""`, which
+// ignored the pin outright AND skipped closeSpritePreview — so the trigger's dwell
+// id was never disarmed and the already-elapsed hover re-opened the box on the very
+// next frame, the exact trap closeSpritePreview documents.
+func (a *App) dismissPreviewOnClick() {
+	if a.ctx.clicked && !a.previewIsPinned() {
+		a.closeSpritePreview()
+	}
 }
 
 // closeSpritePreviewOnLeave dismisses the hover sprite-preview box. The box opens on a
@@ -1447,7 +1517,7 @@ func previewGripRect(frame sdl.Rect) sdl.Rect {
 // state check, called only while a preview is up — off the hot path.
 func (a *App) closeSpritePreviewOnLeave() {
 	c := a.ctx
-	if a.previewPinned {
+	if a.previewIsPinned() {
 		return // pinned: the box stays open until its x is clicked (handlePreviewInput)
 	}
 	// A drag/resize in flight OWNS the box, and while one runs the courtroom pass is
@@ -1661,13 +1731,17 @@ func (a *App) handlePreviewInput() {
 	if box.W == 0 { // no preview drawn yet
 		return
 	}
-	if a.previewPinned { // pinned box: its x claims the click before the drag-start below
-		xb := sdl.Rect{X: box.X + box.W - 20, Y: box.Y + 2, W: 18, H: 18}
-		if c.clicked && c.hovering(xb) {
-			a.closeSpritePreview()
-			c.clicked = false
-			return
-		}
+	// The top-right chrome claims the click before the drag-start below.
+	pinB, closeB := previewPinRect(box), previewCloseRect(box)
+	if c.clicked && c.hovering(pinB) {
+		a.togglePreviewPin()
+		c.clicked = false
+		return
+	}
+	if c.clicked && c.hovering(closeB) {
+		a.closeSpritePreview()
+		c.clicked = false
+		return
 	}
 	// Wheel zoom in/out over the box; claim the wheel so the list/grid under it
 	// doesn't also scroll (same range as the − / + buttons).
@@ -1702,8 +1776,12 @@ func (a *App) handlePreviewInput() {
 	// strip). Claiming the press here keeps a drag from selecting whatever icon is
 	// underneath, and a real move swallows the release so click-to-dismiss/select
 	// doesn't fire.
+	// The chrome buttons are excluded from the drag-start test: a PRESS on one has
+	// c.clicked == false (the click arrives on the release frame), so without this
+	// the press would start a body drag and the release would return through the
+	// branch above with previewDrag still latched.
 	body := sdl.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H - previewDragBottomReserve}
-	if c.mouseDown && !a.previewDrag && c.hovering(body) {
+	if c.mouseDown && !a.previewDrag && c.hovering(body) && !c.hovering(pinB) && !c.hovering(closeB) {
 		a.previewDrag = true
 		a.previewDragMoved = false
 		a.previewDragStart = [2]int32{c.mouseX, c.mouseY}
@@ -1725,7 +1803,7 @@ func (a *App) handlePreviewInput() {
 			// right-hand column that is a music row, so dismissing the preview started
 			// playing a track (#37). Dismissing HERE keeps the old feel and makes the
 			// consume unconditional, which is the actual fix.
-			if !a.previewDragMoved && !a.previewPinned {
+			if !a.previewDragMoved && !a.previewIsPinned() {
 				a.closeSpritePreview()
 			}
 			c.clicked = false
@@ -4391,7 +4469,9 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		c.Label(r.X+12, r.Y+5, t.label, ColText)
 		if c.hovering(r) && c.clicked && a.wardSection != t.id {
 			a.wardSection = t.id
-			a.previewBase = ""   // each section owns its own preview
+			// Each section owns its own preview — and its own dwell, so this goes
+			// through closeSpritePreview rather than blanking previewBase.
+			a.closeSpritePreview()
 			a.iniMenuChar = ""   // close any open character move-to-folder menu
 			a.wardDelFolder = "" // close any open folder-delete confirmation
 			a.jukeBindFor = ""   // cancel any armed jukebox key-capture
@@ -4677,9 +4757,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, true, "") // wardrobe: try-before-wear emote cycle (the nav bar captions the name)
-		if c.clicked {
-			a.previewBase = ""
-		}
+		a.dismissPreviewOnClick()           // pin-aware, and disarms the trigger's dwell id
 	}
 
 	// Move-to-folder menu paints last (above the grid + preview). The shared
@@ -4803,9 +4881,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, true, "") // try-before-wear preview, same as Characters (nav bar captions the name)
-		if c.clicked {
-			a.previewBase = ""
-		}
+		a.dismissPreviewOnClick()           // pin-aware, and disarms the trigger's dwell id
 	}
 }
 
@@ -5362,112 +5438,123 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// (which draws drawMusicList directly). In classic the panel already took the
 	// wheel (wheelTaken), so this no-ops there; no double-step.
 	a.zoomWheel(r, &a.musicPct, config.MinLogScalePercent, config.MaxLogScalePercent)
-	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
-		a.stopMusic()
-	}
-	// Toggle this panel between the track list and a pure volume-sliders menu.
-	// It lives in drawMusicList, which the THEMED courtroom draws directly too, so
-	// volume is reachable on a legacy AO2 theme as well (no Extras box needed).
-	volMode := a.musicVolMode
-	if themed {
-		// Inside a theme's canvas the theme's own slider rects are the volume
-		// surface, so this toggle is not offered. volMode is forced FALSE rather than
-		// just hiding the button: musicVolMode persists across restarts, so a user who
-		// left it on and then applied a theme would otherwise open to a volume view
-		// with no control to leave it.
-		volMode = false
-	} else {
-		volLabel := "Volume"
-		if a.musicVolMode {
-			volLabel = "Track list"
-		}
-		volRect := sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}
-		if c.Button(volRect, volLabel) {
-			a.musicVolMode = !a.musicVolMode
-			a.d.Prefs.SetMusicVolMode(a.musicVolMode) // persist so the volume view survives a restart
-		}
-		c.Tooltip(volRect, "Swap the track list for volume sliders (Master/Music/SFX/Blip) and back — chat stays live.")
-	}
+	// Inside a theme's canvas the theme's own slider rects are the volume surface,
+	// so the volume view is not offered (#21). volMode is forced FALSE rather than
+	// merely hiding its control: musicVolMode persists across restarts, so a user
+	// who left it on and then applied a theme would otherwise open to a volume view
+	// with no way out of it.
+	volMode := a.musicVolMode && !themed
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
 	//
 	// nowPlayingExternal means the THEME declared a music_display plate and the
 	// themed pass already painted the name on it (AO2 parents ui_music_name inside
-	// that plate — courtroom.cpp:171). Skipped rather than blanked, so the track
-	// list reclaims the row instead of showing a gap.
+	// that plate — courtroom.cpp:171), so only the READOUT is dropped. The row
+	// itself belongs to the header buttons and is placed either way; that coupling
+	// is exactly what used to paint Expand all on top of Stop music.
 	now := ""
 	if a.room != nil {
 		now = a.room.Scene.MusicTrack
+	}
+	nowLabel := musicNothingPlaying
+	if now != "" {
+		// Same short name the list rows and the IC "has played a song" line use
+		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
+		nowLabel = a.musicNowLabel.text(now)
+	}
+	// The search row is dropped WHOLE — draw and reserved height — in two cases:
+	// the theme declared its own music_search rect (searchExternal, below), and the
+	// volume view has replaced the track list. Filtering a list that is not on
+	// screen is nothing but ~26 px stolen from the sliders, which is what the old
+	// code's early return used to prevent.
+	hideSearchRow := searchExternal || volMode
+	total := len(a.sess.Music)
+	// planMusicHeader needs the count's WIDTH to size the search field, so a label
+	// has to exist BEFORE the field draws — but the count's NUMBERS must not be
+	// computed up here. The TextField returns this frame's text, so a query read
+	// before it runs is last frame's, and every result (count, filtered rows, the
+	// empty-state hint) then trails typing by a frame. The measurement therefore
+	// uses last frame's outcome — a.musicFiltered is already populated, so no extra
+	// scan — and the live query/filter/label are all evaluated after the draw below.
+	prevShown := total
+	if strings.TrimSpace(a.musicSearch) != "" {
+		prevShown = len(a.musicFiltered)
+	}
+	plan := planMusicHeader(r, nowLabel, a.musicCount.text(prevShown, total), hideSearchRow, nowPlayingExternal, c.TextWidth)
+
+	// --- header row 1: the four actions, the overflow menu, the readout ---
+	if br, ok := plan.rect(musicItemStop); ok {
+		if a.musicIconButton(br, iconStop, "Stop the current song (also the M hotkey)") {
+			a.stopMusic()
+		}
+	}
+	if br, ok := plan.rect(musicItemRandom); ok {
+		if a.musicIconButton(br, iconDice, "Play a random song from the current playlist") {
+			a.playRandomMusic()
+		}
+	}
+	if br, ok := plan.rect(musicItemExpand); ok {
+		if a.musicIconButton(br, iconExpandAll, "Expand all categories") {
+			a.setAllMusicCollapsed(false)
+		}
+	}
+	if br, ok := plan.rect(musicItemCollapse); ok {
+		if a.musicIconButton(br, iconCollapseAll, "Collapse all categories") {
+			a.setAllMusicCollapsed(true)
+		}
+	}
+	if br, ok := plan.rect(musicItemMenu); ok {
+		if a.musicIconButton(br, iconKebab, "More: playback options, volume sliders (right-click the list opens this too)") {
+			// FromButton, not openMusicMenu: the press has to be consumed here or
+			// drawMusicMenu's click-away test closes the menu the same frame it
+			// opened (see openMusicMenuFromButton).
+			a.openMusicMenuFromButton(sdl.Point{X: br.X, Y: br.Y + br.H}, themed)
+		}
 	}
 	// #39: "music_name" is AO2's own id for this line (Courtroom::set_fonts,
 	// courtroom.cpp:1201). elemLabelFont keeps the fixed chrome face when the theme
 	// says nothing, so an undressed client draws exactly what it did before; real
 	// themes set music_name_bold = 1, hence the faux-bold second pass.
-	if !nowPlayingExternal {
+	if br, ok := plan.rect(musicItemNowPlaying); ok {
 		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
 		// #21 label 16: "music_name_color". themed IS the canvas flag here — the two
 		// mean the same thing at every call site (see the doc comment above).
-		nameInk := a.elemInkOr(elemMusicName, themed, ColAccent)
+		nameInk := ColTextDim
 		if now != "" {
-			// Same short name the list rows and the IC "has played a song" line use
-			// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
-			label := "Now playing: " + courtroom.MusicDisplayName(now)
-			if a.elemBold(elemMusicName) {
-				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, nameInk)
-			}
-			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, nameInk)
-		} else {
-			if a.elemBold(elemMusicName) {
-				c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
-			}
-			c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
+			nameInk = a.elemInkOr(elemMusicName, themed, ColAccent)
 		}
-		r.Y += 28
-		r.H -= 28
+		ty := br.Y + (br.H-fontLineH(nameFont))/2
+		if a.elemBold(elemMusicName) {
+			c.LabelClippedFont(nameFont, br.X+1, ty, br.W, nowLabel, nameInk)
+		}
+		c.LabelClippedFont(nameFont, br.X, ty, br.W, nowLabel, nameInk)
 	}
-	if volMode { // pure volume menu in place of the track list
-		a.drawMusicVolume(r)
-		return
-	}
-
-	// Search filter (AO2/webAO parity): type to narrow the server's track list.
-	// Memoized so the O(N) scan runs only when the query or the list changes.
+	// --- header row 2: the search filter and its shown/total count ---
 	//
 	// searchExternal means the THEME declared its own music_search rect and the
 	// themed pass already drew the field there (AO2 puts it outside music_list —
-	// courtroom.cpp:219-222). The row is then skipped entirely rather than merely
-	// hidden, so the track list gets those pixels back instead of leaving a gap the
-	// theme never budgeted for.
-	if !searchExternal {
-		a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
+	// courtroom.cpp:219-222), so the row is skipped entirely and the track list
+	// gets those pixels back. Volume mode skips it for its own reason (hideSearchRow).
+	if br, ok := plan.rect(musicItemSearch); ok {
+		a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: br.X, Y: br.Y, W: br.W, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
 	}
+	// Evaluated AFTER the field, so the filter, the count and the rows below all run
+	// on the text typed THIS frame — see the measurement note above the plan.
 	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
-	total := len(a.sess.Music)
 	shown := total
 	if query != "" {
 		a.refreshMusicFilter(query)
 		shown = len(a.musicFiltered)
 	}
-	if !searchExternal {
-		c.Label(r.X+r.W-142, r.Y+5, a.musicCount.text(shown, total), ColTextDim)
-		r.Y += fieldH + 6
-		r.H -= fieldH + 6
+	if br, ok := plan.rect(musicItemCount); ok {
+		c.Label(br.X, br.Y+plStripLabelOffY, a.musicCount.text(shown, total), ColTextDim)
 	}
-
-	// Category fold controls (Issue #17 — AO2/KFO parity: the track list used
-	// to be one flat list with no way to fold a category, unlike AO2-Client/
-	// KFO-Client. An actual button pair, not a right-click menu, per the
-	// issue's explicit ask for VSCode-style tree controls; per-category
-	// folding is the header row's own click, below.
-	expandW, collapseW := c.TextWidth("Expand all")+16, c.TextWidth("Collapse all")+16
-	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: expandW, H: btnH}, "Expand all") {
-		a.setAllMusicCollapsed(false)
+	r.Y += plan.h
+	r.H -= plan.h
+	if volMode { // pure volume menu in place of the track list
+		a.drawMusicVolume(r)
+		return
 	}
-	if c.Button(sdl.Rect{X: r.X + expandW + 6, Y: r.Y, W: collapseW, H: btnH}, "Collapse all") {
-		a.setAllMusicCollapsed(true)
-	}
-	r.Y += btnH + 6
-	r.H -= btnH + 6
 
 	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
@@ -5541,7 +5628,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 					c.Tooltip(row, entry) // the RAW entry on hover — the full path is still one hover away
 				}
 				if c.ClickedIn(row) { // press+release in-row: a scrollbar-drag release must not play a track
-					a.sess.RequestMusic(entry) // wire name, byte-exact
+					a.requestMusicTrack(entry) // wire name byte-exact, plus AO2's showname/flags tail
 				}
 			}
 		}
@@ -5553,6 +5640,14 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 			hint = "No tracks match your search."
 		}
 		c.Label(r.X+4, r.Y+6, hint, ColTextDim)
+	}
+	// Right-click anywhere in the list opens the same overflow menu the ⋮ button
+	// does — AO2's real entry point for these actions is
+	// on_music_list_context_menu_requested (courtroom.cpp:5821), so the button is
+	// the discoverable route and this is the shortcut.
+	if c.rightClicked && c.hovering(r) {
+		a.openMusicMenu(sdl.Point{X: c.mouseX, Y: c.mouseY}, themed)
+		c.rightClicked = false
 	}
 }
 
@@ -5749,11 +5844,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			a.saveLayout()
 		}
 	}
-	// Missing-asset warning (spec §4: visible in-client, names what was
-	// tried so "enable fallbacks" is an informed fix, not a guess).
-	// Missing-asset warning + the DND badge share this row. When DND is on, clip
-	// the (left-aligned) toast so it can't run under the right-aligned badge —
-	// both stay readable. DND off (the default) draws byte-identical to before.
+	// The shared single-line toast (warnLine) + the DND badge share this row.
+	// Missing-asset reports left this channel in #27 (they own a menu-bar chip
+	// now — assetmisschip.go); what remains here is ordinary transient feedback.
+	// When DND is on, clip the (left-aligned) toast so it can't run under the
+	// right-aligned badge — both stay readable. DND off draws as before.
 	toastW := w - 2*pad
 	dndMsg := ""
 	var dndW int32
@@ -6684,6 +6779,9 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		// sprite — what actually plays when this emote is sent.
 		if c.rightClicked && c.hovering(btn) {
 			a.previewPinned = true // right-click pins the preview open until you close it
+			// The LATCH only, never the pref: right-clicking one cell is a
+			// this-box gesture, not "pin every preview from now on". The box's own
+			// pin button is what writes the sticky preference.
 		}
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
@@ -6805,6 +6903,78 @@ func (m *shownTotalMemo) text(shown, total int) string {
 		m.shown, m.total = shown, total
 	}
 	return m.label
+}
+
+// nowPlayingMemo memoizes the Music header's "Now playing: <track>" readout, the
+// same memoize-on-change idiom as shownTotalMemo — the concatenation was one heap
+// allocation per frame for as long as the Music tab was open.
+type nowPlayingMemo struct {
+	track string // the RAW wire entry the label was built from
+	label string
+}
+
+func (m *nowPlayingMemo) text(track string) string {
+	if m.label == "" || m.track != track {
+		m.label = musicNowPrefix + courtroom.MusicDisplayName(track)
+		m.track = track
+	}
+	return m.label
+}
+
+// musicIconButton is one square icon control of the Music header: a hover plate,
+// a vector glyph and a tooltip carrying the word the icon replaced. Tooltips are
+// the accessible name here — every iconified control gets one.
+func (a *App) musicIconButton(r sdl.Rect, k iconKind, tip string) bool {
+	c := a.ctx
+	hover := c.hovering(r)
+	if hover {
+		c.Fill(r, ColPanelHi)
+	}
+	c.Border(r, ColAccent)
+	drawToolIcon(c, k, r, ColText)
+	c.Tooltip(r, tip)
+	return hover && c.clicked
+}
+
+// playRandomMusic plays a uniformly-random track from what the list currently
+// SHOWS — AO2's music_random picks from the visible, non-header rows
+// (courtroom.cpp:5947-5965), so a collapsed category or an active search filter
+// is excluded exactly as it is there. a.musicRows is already that set.
+func (a *App) playRandomMusic() {
+	if a.sess == nil {
+		return
+	}
+	n := 0
+	for _, mr := range a.musicRows {
+		if !mr.header && mr.ti >= 0 && mr.ti < len(a.sess.Music) {
+			n++
+		}
+	}
+	if n == 0 {
+		return
+	}
+	pick := rand.IntN(n)
+	for _, mr := range a.musicRows {
+		if mr.header || mr.ti < 0 || mr.ti >= len(a.sess.Music) {
+			continue
+		}
+		if pick == 0 {
+			a.requestMusicTrack(a.sess.Music[mr.ti])
+			return
+		}
+		pick--
+	}
+}
+
+// requestMusicTrack is the ONE place a track play leaves the client: AO2's
+// MC#<song>#<cid>[#<showname>][#<flags>] (courtroom.cpp:5806-5819). The area-jump
+// call site deliberately keeps the bare two-field RequestMusic instead — AO2
+// appends nothing at all for a jump (:6036-6044).
+func (a *App) requestMusicTrack(entry string) {
+	if a.sess == nil {
+		return
+	}
+	a.sess.RequestMusicWithFlags(entry, a.effectiveShowname(), a.d.Prefs.MusicFlags())
 }
 
 // nextRandomEmote picks a random emote index for auto-random mode. With more

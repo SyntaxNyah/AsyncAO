@@ -355,9 +355,7 @@ func (a *App) drawBgPanel(w, h int32) {
 
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // background preview: no emote-name caption
-		if c.clicked {
-			a.previewBase = ""
-		}
+		a.dismissPreviewOnClick()            // pin-aware, and disarms the trigger's dwell id
 	}
 }
 

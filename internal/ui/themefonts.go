@@ -240,6 +240,25 @@ func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
 	return a.elemFont(el, userPct)
 }
 
+// elemLabelFontAtPct is elemLabelFont with the scale ALREADY resolved, the split
+// elemFontAtPct makes for the themed chatbox — a surface that folds the theme
+// canvas's scale into the percent before asking for a face.
+//
+// The undressed arm deliberately still returns the fixed chrome face, ignoring
+// pct: that is the #39 contract (a theme that declares nothing for this element
+// must draw byte-identically to a client with no theme at all), and it is the
+// reason the fold is opt-in per element rather than applied inside elemPct. The
+// consequence is explicit: an UNDRESSED music_name cannot shrink with the canvas.
+func (a *App) elemLabelFontAtPct(el themeFontElem, pct int) *ttf.Font {
+	f := a.themeFonts.e[el]
+	if !f.dressed() {
+		return a.ctx.font
+	}
+	// Dressed, so this is elemFont's dressed arm with the pct handed in: the
+	// !dressed && elemChat branch there is unreachable from here by construction.
+	return a.ctx.ThemeFont(el, f.faceIdx(), pct)
+}
+
 // elemEmoji is the colour-emoji face at el's resolved scale — the baseline must
 // match the text face the same row draws in.
 func (a *App) elemEmoji(el themeFontElem, userPct int) *ttf.Font {

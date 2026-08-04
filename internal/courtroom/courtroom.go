@@ -1,6 +1,7 @@
 package courtroom
 
 import (
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -1197,6 +1198,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 
 	blip := msg.Blipname
+	if !validBlipName(blip) {
+		blip = "" // sentinel / path-unsafe: fall through to char.ini, then the default
+	}
 	if blip == "" && c.BlipNameFor != nil {
 		// webAO parity: senders that omit the wire field (pre-2.10.2 clients,
 		// short packets) still blip with THEIR char.ini set, not the default.
@@ -1446,6 +1450,37 @@ func (c *Courtroom) enterAfterShout() {
 		return
 	}
 	c.startTalking()
+}
+
+// validBlipName reports whether a wire BLIPNAME field is a usable blip-set name,
+// i.e. something we are willing to mint a URL (and therefore a network probe)
+// from. There is no such thing as a numeric blip in AO: get_blipname/get_blips
+// resolve a NAME through char.ini [Options] blips → legacy gender → "male"
+// (AO2-Client text_file_functions.cpp:487-514), so anything that parses as a
+// bare number is by definition not a blip. That is exactly what leaks off the
+// KFO family, whose MS reuses index 30 for its "triplex" third_charid and idles
+// it at the sentinel "-1" (and sends "<id>^0" once a third pair is confirmed) —
+// probing it burned the whole audio ladder × 2 spellings per message, forever,
+// on a guaranteed miss. The parse-side feature gate (protocol.ParseMS's
+// getBlips) is the real fix; this is the belt at the prefetch boundary so no
+// server, hostile or merely odd, can mint asset URLs out of that field. Same
+// shape as the SFX sentinel guard in armSFXDelay and the export-side guard in
+// the UI's content job.
+func validBlipName(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Not a plain path segment. '^' is in the list because that is the shape a
+	// triplex-paired KFO client puts in slot 30 ("<id>^0"); the rest are the
+	// traversal / wire-escape characters a name has no business carrying. Unicode
+	// is deliberately NOT restricted — custom blip sets are named by their authors.
+	if strings.ContainsAny(name, `/\^:?#%&$`) || strings.Contains(name, "..") || name[0] == '.' {
+		return false
+	}
+	if _, err := strconv.Atoi(name); err == nil {
+		return false // "-1", "0", "7": a sentinel or an id, never a blip set
+	}
+	return true
 }
 
 // armSFXDelay schedules the message's emote SFX and (for preanim mods) its

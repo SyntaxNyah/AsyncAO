@@ -1128,7 +1128,7 @@ func (a *App) menuBarModalFence(c *Ctx) {
 // the same discipline, and every one of them runs above the menu bar in App.Frame, so
 // their flags are already this frame's answer by the time the bar releases.
 func (a *App) otherModalFenceHeld() bool {
-	return a.emojiFenceOn || a.reactFenceOn || a.rosterMenuFenceOn || a.updateFenceOn
+	return a.emojiFenceOn || a.reactFenceOn || a.rosterMenuFenceOn || a.musicMenuFenceOn || a.updateFenceOn
 }
 
 // menuBarInput resolves the bar's own interaction. Every hit test is raw pointIn:
@@ -1254,6 +1254,10 @@ func (a *App) drawMenuBar(w, _ int32) {
 		}
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
+	// #27: the missing-asset chip rides the bar's empty right half. Drawn here (and
+	// nowhere else) so it can never intrude on an AO2 design canvas or on the
+	// emote grid, which is what the old in-content banner did on both layouts.
+	a.drawAssetMissChip(w)
 	if a.menuBar.open < 0 {
 		return
 	}

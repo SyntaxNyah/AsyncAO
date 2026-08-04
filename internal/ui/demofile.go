@@ -104,7 +104,15 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	}
 	// Demos are recorded by 2.8+ clients from servers with the full feature set
 	// (the demo server itself advertises everything), so extended fields parse.
-	features := protocol.ParseFeatures([]string{protocol.FeatureCCCCIC})
+	// custom_blips is named explicitly because indices 30/31 are only the
+	// blipname/slide pair under that feature (ParseMS's getBlips gate, mirroring
+	// AO2-Client courtroom.cpp:4251) and our own writer — protocol.BuildServerMS,
+	// which defines this file format — always lays them out that way, so omitting
+	// it would silently drop per-emote blips from every re-imported export. A demo
+	// captured off a KFO-family server puts its "triplex" third_charid ("-1") in
+	// slot 30 instead; the sentinel guard at the blip prefetch boundary
+	// (courtroom.validBlipName) is what covers that case.
+	features := protocol.ParseFeatures([]string{protocol.FeatureCCCCIC, protocol.FeatureCustomBlips})
 	rec = &sceneRecording{Version: recordingVersion, Origin: origin}
 	cum := 0
 	// capReached: the scene already holds maxRecordedEvents. We keep a coherent

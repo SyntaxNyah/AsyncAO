@@ -263,10 +263,10 @@ func ClampSpriteScaling(v int) int {
 // async probe fired off the boot path, and a dev build never hits the network.
 const defaultUpdateCheck = true
 
-// defaultShowAssetWarnings ships OFF: the red "Missing asset" banner naming
-// every 404 was a constant annoyance on servers with sparse packs. The
-// failures still reach the debug overlay (the dedicated failure log); this
-// flag only governs the on-screen banner. Settings → Assets turns it back on.
+// defaultShowAssetWarnings ships OFF: surfacing every 404 is constant noise on
+// servers with sparse packs. The failures still reach the debug overlay (the
+// dedicated failure log); this flag only governs the on-screen report — the
+// menu-bar count chip. Settings → Assets turns it back on.
 const defaultShowAssetWarnings = false
 
 // defaultSpriteMove ships OFF: click-drag sprite repositioning is a power
@@ -1098,6 +1098,7 @@ type AssetPreferences struct {
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
+	MusicFlagsVal          int                          `json:"musicFlags"`                     // AO2 MUSIC_EFFECT bitmask sent with a track play (see MusicEffect*). NOT omitempty: 0 ("no effects") is a real choice and must persist, not read back as "absent → the FADE_OUT default".
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	DisableEffects         bool                         `json:"disableEffects"`       // master off-switch for every visual extra; default OFF (zero value)
@@ -1254,8 +1255,8 @@ type AssetPreferences struct {
 	// is fine (a settings reset is a "fresh start", so re-teaching the toolbox fits).
 	ToolboxSeen bool `json:"toolboxSeen"`
 
-	// ShowAssetWarnings governs the red on-screen "Missing asset" banner
-	// (OFF by default — the failures still reach the debug overlay).
+	// ShowAssetWarnings governs the on-screen missing-asset report — the
+	// menu-bar count chip (OFF by default; failures still reach the debug overlay).
 	ShowAssetWarnings bool `json:"showAssetWarnings"`
 	// SpriteMoveOn enables click-drag sprite repositioning (OFF by default).
 	SpriteMoveOn bool `json:"spriteMove"`
@@ -1270,6 +1271,10 @@ type AssetPreferences struct {
 	// shipped DefaultPreviewHeightPx); the corner grip still resizes per
 	// session on top of it.
 	PreviewHeightPxVal int `json:"previewHeightPx"`
+	// PreviewPinned keeps the hover-preview box open until it is explicitly
+	// closed (the box's own pin button toggles this too — a vector icon, not a
+	// glyph). Default OFF (zero value).
+	PreviewPinned bool `json:"previewPinned"`
 	// EmoteHoverNamesOn shows the emote's name as a tooltip when the cursor
 	// rests on its grid button (ON by default). Independent of the sprite
 	// hover-preview above.
@@ -1577,6 +1582,7 @@ type prefsJSON struct {
 	TexBudgetMiB           int                  `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int                  `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
 	MusicVolMode           bool                 `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
+	MusicFlags             *int                 `json:"musicFlags"`           // AO2 MUSIC_EFFECT bitmask; absent = DefaultMusicFlags (pointer: an explicit 0 "no effects" must persist)
 	OpenTabs               []OpenTab            `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool                 `json:"reduceMotion"`         // default OFF (zero value)
 	DisableEffects         bool                 `json:"disableEffects"`       // default OFF (zero value) — master visual-effects off-switch
@@ -1687,6 +1693,7 @@ type prefsJSON struct {
 	SpritePreview                *bool    `json:"spritePreview"`                // absent = default ON
 	PreviewHoverMs               *int     `json:"previewHoverMs"`               // absent = default 5 s
 	PreviewHeightPx              int      `json:"previewHeightPx"`              // 0/absent = shipped default (384)
+	PreviewPinned                bool     `json:"previewPinned"`                // default OFF (zero value)
 	EmoteHoverNames              *bool    `json:"emoteHoverNames"`              // absent = default ON
 	EmoteHoverNamesMs            *int     `json:"emoteHoverNamesMs"`            // absent = default 5 s
 	EmoteGridGapPx               *int     `json:"emoteGridGapPx"`               // absent = DefaultEmoteGridGapPx. A POINTER because 0 ("butt the icons together") is a value a user can legitimately pick, and a plain int could not tell it from a config written before the setting existed
@@ -2012,6 +2019,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		CatchUpOn:                    defaultCatchUpWhenBehind,
 		CatchUpThreshold:             DefaultCatchUpThreshold,
 		MultiTabCap:                  DefaultMultiTabCap,
+		MusicFlagsVal:                DefaultMusicFlags,           // AO2's own default (courtroom.h:551 music_flags = FADE_OUT)
 		SpriteLoadModeVal:            defaultSpriteLoadMode,       // webAO-style hold-previous by default (kills the cold-load flash)
 		MotionRedrawPerEvent:         defaultMotionRedrawPerEvent, // per-event motion redraw ON by default (less GPU on a moving cursor)
 		DiscordRPC:                   defaultDiscordPrefs(),
@@ -2325,6 +2333,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.PreviewHeightPx > 0 { // 0 (absent) keeps the shipped default
 		p.PreviewHeightPxVal = clampPercent(onDisk.PreviewHeightPx, MinPreviewHeightPx, MaxPreviewHeightPx)
 	}
+	p.PreviewPinned = onDisk.PreviewPinned // default-OFF bool: unconditional
 	if onDisk.EmoteHoverNames != nil {
 		p.EmoteHoverNamesOn = *onDisk.EmoteHoverNames
 	}
@@ -2566,6 +2575,9 @@ func load(path string) (*AssetPreferences, error) {
 		p.CrossfadeMsVal = clampPercent(p.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
 	}
 	p.MusicVolMode = onDisk.MusicVolMode
+	if onDisk.MusicFlags != nil { // absent = DefaultMusicFlags; a present value is the user's explicit pick (including 0)
+		p.MusicFlagsVal = *onDisk.MusicFlags & MusicFlagsMask // drop bits no AO2 client defines
+	}
 	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
@@ -3232,17 +3244,18 @@ func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
 	p.markDirty()
 }
 
-// --- Missing-asset warning banner -------------------------------------------
+// --- Missing-asset report ----------------------------------------------------
 
-// AssetWarningsOn reports whether the red on-screen "Missing asset" banner
-// shows (OFF by default — the failures still go to the debug overlay).
+// AssetWarningsOn reports whether the on-screen missing-asset report (the
+// menu-bar count chip) shows (OFF by default — failures still go to the
+// debug overlay).
 func (p *AssetPreferences) AssetWarningsOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.ShowAssetWarnings
 }
 
-// SetAssetWarnings toggles the missing-asset banner.
+// SetAssetWarnings toggles the on-screen missing-asset report.
 func (p *AssetPreferences) SetAssetWarnings(on bool) {
 	p.mu.Lock()
 	if p.ShowAssetWarnings == on {
@@ -3315,6 +3328,27 @@ func (p *AssetPreferences) SetSpritePreviews(on bool) {
 		return
 	}
 	p.SpritePreviewOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PreviewPinnedOn reports whether the hover-preview box stays open until it is
+// explicitly closed. Default OFF.
+func (p *AssetPreferences) PreviewPinnedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PreviewPinned
+}
+
+// SetPreviewPinned persists the sticky pin. Written by the box's own pin button
+// as well as by the Settings row, so the two can never disagree.
+func (p *AssetPreferences) SetPreviewPinned(on bool) {
+	p.mu.Lock()
+	if p.PreviewPinned == on {
+		p.mu.Unlock()
+		return
+	}
+	p.PreviewPinned = on
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -8071,6 +8105,47 @@ func (p *AssetPreferences) SetMusicVolMode(on bool) {
 		return
 	}
 	p.MusicVolMode = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AO2 MUSIC_EFFECT bits, appended to an outgoing MC when the server advertises
+// `effects` — LAST field, whose index depends on whether the conditional showname
+// preceded it (courtroom.Session.RequestMusicWithFlags); the server's echo carries
+// them at field 5. AO2-Client src/datatypes.h:95-101.
+//
+// Duplicated here as plain ints rather than imported from internal/courtroom for
+// the same reason SpriteLoad* is: config must not depend on the packages that
+// consume it.
+const (
+	MusicFlagFadeIn   = 1 // ramp the NEW track up
+	MusicFlagFadeOut  = 2 // ramp the PREVIOUS track down
+	MusicFlagSyncPos  = 4 // start the new track at the previous track's position
+	MusicFlagNoRepeat = 8 // play once regardless of the looping field (KFO's "Loop" off)
+	// MusicFlagsMask is every bit AO2 defines; anything else in a stored value is
+	// dropped on load so a hand-edited or future file can't put junk on the wire.
+	MusicFlagsMask = MusicFlagFadeIn | MusicFlagFadeOut | MusicFlagSyncPos | MusicFlagNoRepeat
+	// DefaultMusicFlags matches AO2-Client's own initial value —
+	// `int music_flags = MUSIC_EFFECT::FADE_OUT;` (src/courtroom.h:551).
+	DefaultMusicFlags = MusicFlagFadeOut
+)
+
+// MusicFlags reports the MUSIC_EFFECT bitmask a track play carries.
+func (p *AssetPreferences) MusicFlags() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicFlagsVal & MusicFlagsMask
+}
+
+// SetMusicFlags persists the MUSIC_EFFECT bitmask.
+func (p *AssetPreferences) SetMusicFlags(flags int) {
+	flags &= MusicFlagsMask
+	p.mu.Lock()
+	if p.MusicFlagsVal == flags {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicFlagsVal = flags
 	p.mu.Unlock()
 	p.markDirty()
 }

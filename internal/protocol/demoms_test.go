@@ -50,7 +50,11 @@ func TestBuildServerMSRoundTrip(t *testing.T) {
 	if pkt.Header != "MS" || len(pkt.Fields) != MSMaximum {
 		t.Fatalf("header/fields = %q/%d, want MS/%d", pkt.Header, len(pkt.Fields), MSMaximum)
 	}
-	got, err := ParseMS(pkt.Fields, ParseFeatures([]string{FeatureCCCCIC}), 0)
+	// custom_blips is named alongside cccc_ic_support because BuildServerMS — which
+	// DEFINES this file format — always lays indices 30/31 out as the AO2 2.9.1
+	// blipname/slide pair, and ParseMS gates that pair on the feature (AO2-Client
+	// courtroom.cpp:4251). Omitting it here would pin a lossy round-trip.
+	got, err := ParseMS(pkt.Fields, ParseFeatures([]string{FeatureCCCCIC, FeatureCustomBlips}), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +74,11 @@ func TestBuildServerMSMinimal(t *testing.T) {
 	if pkt.Fields[MSObjectionMod] != "0" {
 		t.Errorf("no-shout objection = %q, want 0", pkt.Fields[MSObjectionMod])
 	}
-	got, err := ParseMS(pkt.Fields, ParseFeatures([]string{FeatureCCCCIC}), 0)
+	// custom_blips is named alongside cccc_ic_support because BuildServerMS — which
+	// DEFINES this file format — always lays indices 30/31 out as the AO2 2.9.1
+	// blipname/slide pair, and ParseMS gates that pair on the feature (AO2-Client
+	// courtroom.cpp:4251). Omitting it here would pin a lossy round-trip.
+	got, err := ParseMS(pkt.Fields, ParseFeatures([]string{FeatureCCCCIC, FeatureCustomBlips}), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -515,6 +515,15 @@ type Ctx struct {
 	shapeSrcScratch sdl.Rect     // 9-slice source-rect scratch (never &local)
 	shapeDstScratch sdl.Rect     // 9-slice dest-rect scratch (never &local)
 	tipText         string       // hover hint to paint at end-of-frame ("" = none)
+	// tipAnchor is what the armed tip DESCRIBES: the widget's rect, unioned with any
+	// container group rect in force when it armed. drawTooltip keeps the box off it,
+	// so a hint can never cover the control it is explaining (nor its neighbours in
+	// the same strip). Zero rect = no constraint, i.e. exactly today's placement.
+	tipAnchor sdl.Rect
+	// tipGroup is a container's claim ("keep the whole strip visible"), set by
+	// TooltipGroup around a run of child tooltips and cleared after. One rect, not a
+	// registry: only one tooltip can be armed per frame anyway.
+	tipGroup sdl.Rect
 	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
 	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
 	// every frame. See WrapText's "callers cache the result" note.
@@ -1933,6 +1942,10 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.dropped = ""
 	c.hotkey = 0
 	c.tipText = ""
+	// The armed tip's avoid rect and any container's group rect are per-frame too:
+	// a stale anchor would push next frame's tooltip away from a widget that is no
+	// longer there.
+	c.tipAnchor, c.tipGroup = sdl.Rect{}, sdl.Rect{}
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = c.toLogical(x), c.toLogical(y)
 	mods := sdl.GetModState()
@@ -2374,15 +2387,54 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.DrawRect(&c.cgoRect)
 }
 
-// pushClip scissors rendering to r and returns the clip state to restore
-// with popClip (the themed log lists draw inside element rects, so a blind
-// SetClipRect(nil) reset could clobber an outer clip). Scrollable lists wrap
-// their line loop in push/pop so a partially scrolled top/bottom row is cut
-// at the rect edge instead of spilling over neighbouring widgets — that
-// overspill is what struck the tab strip through the first OOC line.
+// clipNowhere is the 1x1 rect parked far off-screen that stands in for an EMPTY
+// clip. SDL_RenderSetClipRect treats a w<=0 || h<=0 rect as "disable clipping"
+// (SDL_render.c: `if (rect && rect->w > 0 && rect->h > 0) … else clipping_enabled
+// = SDL_FALSE`), i.e. handing it a degenerate rect does the exact OPPOSITE of
+// what the caller asked for. Clipping to a rect no draw and no hit test can
+// reach is the only way to say "nothing lands". Same idiom as the settings-index
+// harvest pass (buildSettingsIndex).
+var clipNowhere = sdl.Rect{X: -1 << 14, Y: -1 << 14, W: 1, H: 1}
+
+// clipIntersect is pushClip's rect arithmetic, split out so the nesting
+// contract is testable without a renderer. An inner clip can only ever NARROW
+// the region already in force; a disjoint (or degenerate) result becomes
+// clipNowhere rather than an empty rect, because SDL reads an empty rect as
+// "clipping off".
+func clipIntersect(r, prev sdl.Rect, had bool) sdl.Rect {
+	if had {
+		sect, hit := r.Intersect(&prev)
+		if !hit || sect.W <= 0 || sect.H <= 0 {
+			return clipNowhere
+		}
+		return sect
+	}
+	if r.W <= 0 || r.H <= 0 {
+		return clipNowhere
+	}
+	return r
+}
+
+// pushClip scissors rendering to r INTERSECTED with the clip already in force,
+// and returns the clip state to restore with popClip (the themed log lists draw
+// inside element rects, so a blind SetClipRect(nil) reset could clobber an outer
+// clip). Scrollable lists wrap their line loop in push/pop so a partially
+// scrolled top/bottom row is cut at the rect edge instead of spilling over
+// neighbouring widgets — that overspill is what struck the tab strip through the
+// first OOC line.
+//
+// The intersection is load-bearing, not tidiness. A nested push USED to replace
+// the outer clip outright, so any inner push that deliberately reaches outside
+// the panel — labelEmoji's raster band is exactly the row height at the row's y,
+// which for the partially scrolled top row starts ABOVE the list — punched a
+// hole in the panel's own scissor for the duration of the blit and then restored
+// it, letting that one row paint over the widget's border and the art behind it.
+// Only rows that took the raster path (colour emoji / mixed script) escaped,
+// which is why it looked like a font bug rather than a clip bug.
 //
 // Returns by value (no closure) so the per-frame log/list draws stay
-// allocation-free — the render loop must not heap-allocate.
+// allocation-free — the render loop must not heap-allocate. sdl.Rect.Intersect
+// is pure Go in go-sdl2 (no cgo, nothing escapes).
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	// The previous clip comes from the mirror fields, NOT an SDL query:
 	// GetClipRect's named-return pointer escapes through cgo and heap-allocates
@@ -2391,6 +2443,7 @@ func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	// leaf draw-only regions (the #31 audit) that never pushClip inside their
 	// clip window.
 	prev, had = c.clipRect, c.clipOn
+	r = clipIntersect(r, prev, had)
 	c.cgoRect = r // &local would escape through cgo and heap-allocate per call
 	_ = c.Ren.SetClipRect(&c.cgoRect)
 	// Mirror the clip in plain fields so hovering() can honour it without a cgo
@@ -2945,6 +2998,22 @@ func truncateLabelTo(label string, avail int32, measure func(string) int32) stri
 		return label
 	}
 	return out
+}
+
+// fitLabelToFont is truncateLabelTo measured in a SPECIFIC face — for the themed
+// surfaces that draw in a theme-declared font rather than the chrome one, where
+// c.TextWidth (the chrome face's memo) would ellipsize against the wrong metrics.
+// Callers on a per-frame path should test the fits case with fontTextWidth first:
+// the measure closure here is what would allocate, and only an overlong label
+// needs it.
+func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
+	return truncateLabelTo(label, avail, func(s string) int32 {
+		w, ok := c.fontTextWidth(f, s)
+		if !ok {
+			return 0
+		}
+		return w
+	})
 }
 
 // CheckboxLabelAvail is how much width a label has inside an AO2 design rect once
@@ -3971,8 +4040,16 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 func (c *Ctx) Tooltip(r sdl.Rect, text string) {
 	if text != "" && !c.modalOn && c.hovering(r) {
 		c.tipText = text
+		c.tipAnchor = unionRect(r, c.tipGroup)
 	}
 }
+
+// TooltipGroup declares the SURFACE a run of child tooltips belongs to, so the
+// hint stays clear of the whole thing rather than just the one chip it describes.
+// Set it before the children, clear it (TooltipGroup(sdl.Rect{})) after — the
+// compact toolbox wraps its chip loop this way, because a hint that covers the
+// four chips beside the hovered one is as useless as one covering the chip itself.
+func (c *Ctx) TooltipGroup(r sdl.Rect) { c.tipGroup = r }
 
 // tooltipDwell is how long the pointer must rest on a TooltipAfter target
 // before its hint shows — long enough to stay unobtrusive (the Extras buttons).
@@ -4005,6 +4082,7 @@ func (c *Ctx) TooltipAfterDelay(id string, r sdl.Rect, text string, delay time.D
 	}
 	if time.Since(c.tipHoverSince) >= delay {
 		c.tipText = text
+		c.tipAnchor = unionRect(r, c.tipGroup)
 	}
 }
 
@@ -4021,7 +4099,43 @@ const (
 // and then clamps so the WHOLE box stays inside the w×h window — even when the box
 // is wider/taller than the room on either side (a long server description). Pure, so
 // the "never off-screen" rule (the reported bug) is unit-tested.
-func tipBox(mx, my, boxW, boxH, w, h int32) sdl.Rect {
+//
+// avoid is the armed tip's anchor (Ctx.tipAnchor): the control it describes, plus
+// any container group. tipBox tries the four cursor-relative corners and then two
+// flush placements clear of avoid, taking the first that is fully on-screen AND
+// clear of it. If none qualifies — avoid covering most of the window, a box too
+// big to dodge — it returns the ORIGINAL cursor-relative result unchanged, so the
+// on-screen invariant can never regress in the name of the new one. A zero avoid
+// short-circuits to exactly the old behaviour.
+func tipBox(mx, my, boxW, boxH, w, h int32, avoid sdl.Rect) sdl.Rect {
+	base := tipBoxDefault(mx, my, boxW, boxH, w, h)
+	if avoid.W <= 0 || avoid.H <= 0 {
+		return base
+	}
+	if _, hit := base.Intersect(&avoid); !hit {
+		return base
+	}
+	// Alternatives in preference order: the other three cursor corners, then flush
+	// above and flush below the avoided rect. The last two are what a bottom-corner
+	// icon strip needs, where EVERY cursor-relative corner still lands on the
+	// strip's own neighbours (a 122x22 strip at the window's bottom-right).
+	for _, cand := range [...]sdl.Rect{
+		tipBoxAt(mx+16, my-boxH-6, boxW, boxH, w, h),
+		tipBoxAt(mx-boxW-8, my+18, boxW, boxH, w, h),
+		tipBoxAt(mx-boxW-8, my-boxH-6, boxW, boxH, w, h),
+		tipBoxAt(base.X, avoid.Y-boxH-tooltipMargin, boxW, boxH, w, h),
+		tipBoxAt(base.X, avoid.Y+avoid.H+tooltipMargin, boxW, boxH, w, h),
+	} {
+		if _, hit := cand.Intersect(&avoid); !hit {
+			return cand
+		}
+	}
+	return base // nothing dodges it: staying on-screen wins over staying clear
+}
+
+// tipBoxDefault is the ORIGINAL cursor-relative placement, unchanged: offset to
+// the lower-right, flip to the other side of the pointer on overflow, then clamp.
+func tipBoxDefault(mx, my, boxW, boxH, w, h int32) sdl.Rect {
 	x := mx + 16
 	if x+boxW > w-tooltipMargin {
 		x = mx - boxW - 8 // flip left of the pointer
@@ -4035,6 +4149,26 @@ func tipBox(mx, my, boxW, boxH, w, h int32) sdl.Rect {
 	y := my + 18
 	if y+boxH > h-tooltipMargin {
 		y = my - boxH - 6 // flip above the pointer
+	}
+	if y+boxH > h-tooltipMargin {
+		y = h - tooltipMargin - boxH
+	}
+	if y < tooltipMargin {
+		y = tooltipMargin
+	}
+	return sdl.Rect{X: x, Y: y, W: boxW, H: boxH}
+}
+
+// tipBoxAt clamps one candidate top-left fully inside the window. Split out so
+// every alternative is clamped by the same arithmetic — the clamping IS the
+// on-screen invariant, and a candidate that dodged it would reintroduce the very
+// bug tipBox was written to fix.
+func tipBoxAt(x, y, boxW, boxH, w, h int32) sdl.Rect {
+	if x+boxW > w-tooltipMargin {
+		x = w - tooltipMargin - boxW
+	}
+	if x < tooltipMargin {
+		x = tooltipMargin
 	}
 	if y+boxH > h-tooltipMargin {
 		y = h - tooltipMargin - boxH
@@ -4078,7 +4212,7 @@ func (c *Ctx) drawTooltip(w, h int32) {
 	}
 	boxW += 2 * tooltipPad
 	boxH := int32(len(lines))*tooltipLineH + 2*tooltipPad
-	box := tipBox(c.mouseX, c.mouseY, boxW, boxH, w, h)
+	box := tipBox(c.mouseX, c.mouseY, boxW, boxH, w, h, c.tipAnchor)
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 235})
 	c.Border(box, ColAccent)
 	ty := box.Y + tooltipPad

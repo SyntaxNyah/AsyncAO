@@ -139,6 +139,24 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 		return fields[i]
 	}
 
+	// getBlips is get() with AO2-Client's CUSTOM_BLIPS gate on top
+	// (courtroom.cpp:4249-4255 reads m_chatmessage[BLIPNAME] only when
+	// serverdata advertises BASE_FEATURE_SET::CUSTOM_BLIPS, serverdata.h:64).
+	// Indices 30/31 are the 2.9.1 blipname/slide pair, and BuildFields appends
+	// them as a pair under that same feature. KFO-Server does NOT advertise
+	// custom_blips and reuses both slots for its "triplex" third-pairing
+	// extension — third_charid at 30 (idle value the literal "-1") and
+	// third_folder at 31 — so reading them ungated turned a sentinel into a
+	// blip URL on every incoming message. Gating Slide alongside Blipname is
+	// deliberate: on a server that genuinely advertises custom_blips the two
+	// always ship together, so behaviour is unchanged everywhere else.
+	getBlips := func(i int) string {
+		if !features.Has(FeatureCustomBlips) {
+			return ""
+		}
+		return get(i)
+	}
+
 	charID := atoiDefault(get(MSCharID), UnpairedCharID)
 	if charID < UnpairedCharID || (charListSize > 0 && charID >= charListSize) {
 		return nil, fmt.Errorf("protocol: MS char id %d out of range", charID)
@@ -178,8 +196,8 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 		FrameSFX:     get(MSFrameSFX),
 		Additive:     get(MSAdditive) == "1",
 		Effects:      get(MSEffects),
-		Blipname:     get(MSBlipname),
-		Slide:        get(MSSlide) == "1",
+		Blipname:     getBlips(MSBlipname),
+		Slide:        getBlips(MSSlide) == "1",
 	}
 	return msg, nil
 }
