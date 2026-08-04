@@ -42,7 +42,7 @@ func TestINIDocRoundTripsTheThemeCorpusByteIdentical(t *testing.T) {
 	if root == "" {
 		t.Skipf("set %s to a folder containing themes/ to run the corpus audit", themeCorpusEnv)
 	}
-	files, refused, crlf := 0, 0, 0
+	files, refused, crlf, unread := 0, 0, 0, 0
 	err := filepath.WalkDir(filepath.Join(root, ThemesDirName), func(p string, e fs.DirEntry, err error) error {
 		if err != nil || e.IsDir() || !strings.EqualFold(filepath.Ext(p), ".ini") {
 			return nil // an unreadable subtree must not end the audit
@@ -75,7 +75,14 @@ func TestINIDocRoundTripsTheThemeCorpusByteIdentical(t *testing.T) {
 		if d.Lines() > IniDocLineCap {
 			t.Errorf("%s: %d lines, past IniDocLineCap (%d)", p, d.Lines(), IniDocLineCap)
 		}
-		assertReaderParity(t, p, string(src), d)
+		// A file the READER could not parse (bufio's 64 KiB token limit sits well
+		// under IniDocByteCap) is counted and named, never silently skipped: the
+		// round-trip half above still ran, but no key was ever compared, and a
+		// corpus summary that hid that would report parity it did not measure.
+		if !assertReaderParity(t, p, string(src), d) {
+			unread++
+			t.Logf("%s: the READER refused this file, so only the byte round trip was checked", p)
+		}
 		return nil
 	})
 	if err != nil {
@@ -84,6 +91,6 @@ func TestINIDocRoundTripsTheThemeCorpusByteIdentical(t *testing.T) {
 	if files == 0 {
 		t.Fatalf("%s is set but no .ini files were found under it", themeCorpusEnv)
 	}
-	t.Logf("corpus round trip: %d INI files byte-identical, %d CRLF-authored, %d refused by a cap",
-		files, crlf, refused)
+	t.Logf("corpus round trip: %d INI files byte-identical, %d CRLF-authored, %d refused by a cap, "+
+		"%d unparsed by the reader (parity unchecked)", files, crlf, refused, unread)
 }

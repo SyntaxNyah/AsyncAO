@@ -343,16 +343,21 @@ func (d *INIDoc) appendKey(section, key, value string) error {
 // line-number-keyed maps (index, touched) shift with it.
 func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 	l := iniLine{raw: raw, term: d.eol, section: section, key: key, isKey: isKey}
+	moved := 0
 	if at > 0 && d.lines[at-1].term == "" {
 		// The source did not end with a newline. Keep that property by moving
 		// the missing terminator onto the new last line instead of inventing one.
+		// The line ABOVE gains one it never had, so those bytes are counted here:
+		// the new line's own term is now "", and charging only len(raw) would leave
+		// size short of what Bytes emits and under-Grow its builder.
 		d.lines[at-1].term = d.eol
 		l.term = ""
+		moved = len(d.eol)
 	}
 	d.lines = append(d.lines, iniLine{})
 	copy(d.lines[at+1:], d.lines[at:])
 	d.lines[at] = l
-	d.size += len(raw) + len(l.term)
+	d.size += len(raw) + len(l.term) + moved
 	if len(d.touched) > 0 {
 		shifted := make(map[int]string, len(d.touched))
 		for i, v := range d.touched {
@@ -367,9 +372,21 @@ func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 }
 
 // sectionEnd returns the index one past the last line of section, and whether a
-// header for it has to be created. Comments and blank lines that trail a section
-// stay INSIDE it: a new key lands after them, immediately before the next
-// header, rather than above a comment block that documents the next section.
+// header for it has to be created.
+//
+// THE CONVENTION, stated as it actually behaves: every line up to the next
+// header belongs to the section ABOVE it (classifyINILine assigns the section in
+// effect), trailing comments and blank lines included. A new key therefore lands
+// at the very end of that run — immediately before the next header — and when
+// the author wrote a comment block INTRODUCING the next section, the new key
+// lands underneath that comment.
+//
+// That placement is accepted, not overlooked. Deciding that a trailing comment
+// "really" belongs to the section below means guessing at prose, and a wrong
+// guess moves the author's own words, which is the one thing this type exists to
+// never do. Where a key SITS never changes which key it is: the reader binds it
+// to the section header above it, and that is the property the placement
+// preserves.
 func (d *INIDoc) sectionEnd(section string) (at int, needHeader bool) {
 	end, found := -1, false
 	for i, l := range d.lines {

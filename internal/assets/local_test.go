@@ -56,6 +56,34 @@ func TestLocalFetcherRawStillResolves(t *testing.T) {
 	}
 }
 
+// TestLocalFetcherServesADottedNameThatIsNotATraversal is the LOOSENING half of
+// the safepath unification: ".." only traverses as a whole SEGMENT, so a real
+// on-disk name that merely CONTAINS two dots must still resolve. A guard written
+// as strings.Contains(rel, "..") passes every traversal test above and silently
+// makes files like "a..b" unfetchable — a miss that looks exactly like a missing
+// asset, which is the quietest way for a security tightening to break real packs.
+func TestLocalFetcherServesADottedNameThatIsNotATraversal(t *testing.T) {
+	dir := t.TempDir()
+	// Both a dotted DIRECTORY segment and a dotted FILE stem: the folder name is
+	// the case a segment-blind guard eats, and the file name is the case a
+	// path-cleaning one does.
+	full := filepath.Join(dir, "characters", "a..b", "(a)nor..mal.png")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("DOTS"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lf := NewLocalFetcher([]string{dir})
+	data, err := lf.Fetch(context.Background(), lf.BaseURL()+"characters/a..b/(a)nor..mal.png")
+	if err != nil {
+		t.Fatalf("a dotted, non-traversing name was refused: %v", err)
+	}
+	if string(data) != "DOTS" {
+		t.Errorf("got %q, want DOTS", data)
+	}
+}
+
 // TestLocalFetcherRejectsEncodedTraversal pins the #5 security recheck: a
 // "%2e%2e" that decodes into ".." must still be rejected AFTER decoding — the
 // guard runs on the decoded rel, not only the raw one.

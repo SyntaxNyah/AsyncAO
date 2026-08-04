@@ -72,6 +72,7 @@ driver headlessly (they skip if SDL is unavailable).
 
 | Package | Role | SDL? |
 |---|---|---|
+| `internal/safepath` | the ONE copy of the zip-slip / symlink / `..` / depth guards (shared by mounts and theme bundles) | no |
 | `internal/config` | preferences + debounced atomic saver; favorites; local mounts | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |

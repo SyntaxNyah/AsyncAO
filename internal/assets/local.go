@@ -118,6 +118,9 @@ func (l *LocalFetcher) readRel(rel string) ([]byte, error) {
 	}
 	for _, mount := range l.mounts {
 		p, err := safepath.Join(mount, rel)
+		// Defence in depth, and unreachable today: Join refuses exactly what
+		// UnsafeRel refuses, and that ran above. Kept so this loop stays correct if
+		// the guard above is ever moved or relaxed.
 		if err != nil {
 			return nil, fmt.Errorf("assets: refusing path escape %q", rel)
 		}

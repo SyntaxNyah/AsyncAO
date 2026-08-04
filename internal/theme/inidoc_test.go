@@ -454,6 +454,81 @@ func TestINIDocSetTargetsTheDeclarationTheReaderUses(t *testing.T) {
 	}
 }
 
+// TestINIDocAnInsertMovesAPendingEditWithItsLine pins insertLine's touched-map
+// shift, which is invisible until the two orders collide: a pending edit is keyed
+// by LINE NUMBER, so splicing a new line in ABOVE it must renumber it. Without
+// the shift the pending value lands on whatever line inherited the old index —
+// the edit is silently applied to the author's NEXT line, and the key that was
+// actually edited keeps its old value. Both halves are asserted byte-exactly,
+// because "the file still parses" would pass either way.
+func TestINIDocAnInsertMovesAPendingEditWithItsLine(t *testing.T) {
+	src := strings.Join([]string{
+		"[first]",
+		"alpha = 1",
+		"",
+		"[second]",
+		"beta = 2",
+		"gamma = 3",
+		"",
+	}, "\n")
+	d, err := ParseINIDoc([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Edit LATER, then insert EARLIER — the order that shifts the pending line.
+	if err := d.Set("second", "beta", "22"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Set("first", "added", "9"); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"[first]",
+		"alpha = 1",
+		"", // the blank line trails [first], so the new key lands after it
+		"added = 9",
+		"[second]",
+		"beta = 22",
+		"gamma = 3",
+		"",
+	}, "\n")
+	if got := string(d.Bytes()); got != want {
+		t.Fatalf("insert-after-edit produced:\n%q\nwant:\n%q", got, want)
+	}
+
+	// The same collision with the edit pending on the line IMMEDIATELY after the
+	// insertion point, which is the off-by-one the shift's `i >= at` boundary
+	// decides, and with a SECOND insert stacked on top of the first.
+	d2, err := ParseINIDoc([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d2.Set("second", "gamma", "33"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d2.Set("second", "delta", "4"); err != nil { // appended BELOW the pending line
+		t.Fatal(err)
+	}
+	if err := d2.Set("first", "added", "9"); err != nil {
+		t.Fatal(err)
+	}
+	want2 := strings.Join([]string{
+		"[first]",
+		"alpha = 1",
+		"",
+		"added = 9",
+		"[second]",
+		"beta = 2",
+		"gamma = 33",
+		"delta = 4",
+		"",
+	}, "\n")
+	if got := string(d2.Bytes()); got != want2 {
+		t.Fatalf("two inserts around a pending edit produced:\n%q\nwant:\n%q", got, want2)
+	}
+	assertReaderParity(t, "shifted edits", string(d2.Bytes()), d2)
+}
+
 // TestINIDocRoundTripSeeds runs the fuzz body over its own seed corpus as a
 // PLAIN test, so `go test -race` covers the cases the fuzzer only reaches under
 // `-fuzz` (which the gate does not run).
@@ -527,11 +602,17 @@ func iniDocRoundTrip(t *testing.T, raw string) {
 
 // assertReaderParity checks that the document agrees with ParseINI — the READ
 // path — about every key and value in the source.
-func assertReaderParity(t *testing.T, name, raw string, d *INIDoc) {
+//
+// It reports whether parity was actually CHECKED. bufio's 64 KiB token limit is
+// well under IniDocByteCap (1 MiB), so a legal-to-us file can be unreadable to
+// the reader, and a silent return would let a corpus run report "517 files
+// byte-identical" while never having compared a single key in some of them.
+// Callers that audit a whole corpus count the false and say so.
+func assertReaderParity(t *testing.T, name, raw string, d *INIDoc) bool {
 	t.Helper()
 	ini, err := ParseINI(strings.NewReader(raw))
 	if err != nil {
-		return // bufio's own line-length limit is a valid outcome for the reader
+		return false // bufio's own line-length limit is a valid outcome for the reader
 	}
 	if len(d.index) != ini.Len() {
 		t.Fatalf("%s: document holds %d keys, reader holds %d — classification drifted",
@@ -550,6 +631,7 @@ func assertReaderParity(t *testing.T, name, raw string, d *INIDoc) {
 			t.Fatalf("%s: %q = %q in the document, %q in the reader", name, k, got, want)
 		}
 	}
+	return true
 }
 
 // readFixtureINI reads one file of the checked-in theme fixture.
