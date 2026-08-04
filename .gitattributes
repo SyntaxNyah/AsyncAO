@@ -10,3 +10,12 @@
 # not be the bytes that were copied in (courtroom_fonts.ini has no trailing
 # newline, which is part of the fixture).
 internal/ui/testdata/** -text
+# Same rule, same reason: the theme-format fixtures are hand-authored files a
+# test parses and re-emits byte-for-byte, down to the column alignment, the
+# percent escapes and the trailing newline. `* text=auto` would rewrite them on
+# commit and hand this box back different bytes on checkout, which would turn a
+# statement about the writer into a statement about the checkout. (The CRLF /
+# no-final-newline shape most of the real corpus is in is deliberately NOT
+# checked in — TestASidecarWithWindowsLineEndingsRoundTrips builds it in Go, for
+# exactly that reason.)
+internal/theme/testdata/** -text
