@@ -1,0 +1,83 @@
+island_trial - THE CHARACTER SHOWCASE
+=====================================
+
+This theme keeps one slot beside the nameplate for a character of your choosing:
+
+    [element.showcase]
+
+Out of the box it is a placeholder - a standing figure-shaped plate in the
+theme's ink with a thin magenta edge, rising out of the speech scrim
+immediately to the right of the speaker's name and standing on the scrim's top
+edge, lit from behind by a soft violet glow. It is a stand-in. It is meant to
+be replaced.
+
+WE SHIP NO CHARACTER ART. Not one byte. The showcase is a shape and a glow,
+both computed at load time, so there is nothing here to be anyone's likeness.
+What goes in it is entirely yours.
+
+
+THE EASY WAY - DRAG AND DROP
+----------------------------
+1. Open Settings -> Theme -> Edit theme.
+2. Drag any GIF, animated WebP, PNG or WebP file from your desktop and drop it
+   onto the showcase figure beside the nameplate.
+3. That is it. The editor copies the file into this folder under
+   asyncao/media/, writes the [media] entry with its size and hash, switches the
+   element to kind = image, and keeps the fit and the rect it already had.
+
+Animated files animate. A GIF or an animated WebP plays on the element's own
+clock (this one is clock 2), so you can slow it down or speed it up in the
+inspector without touching anything else in the theme.
+
+
+THE MANUAL WAY - BY HAND
+------------------------
+1. Put your file in this folder under asyncao/media/, e.g.
+       themes/island_trial/asyncao/media/mychar.webp
+2. Add a [media] section to asyncao_theme.ini (bytes and hash are optional - a
+   bare file name is legal):
+
+       [media]
+       mychar = asyncao/media/mychar.webp
+
+3. In [element.showcase], change
+
+       kind      = shape        ->   kind  = image
+       (and add)                     media = mychar
+
+   Leave `fit = contain` as it is: it makes any aspect ratio fit the slot
+   without stretching. Delete `fill`, `stroke` and `stroke_px` if you want the
+   plate behind your art gone, or keep them as a card behind a cut-out sprite.
+
+Paths are theme-relative, forward-slashed, and may never leave this folder: no
+absolute paths, no "..", no symlinks. That is enforced on load, not on trust.
+
+
+SIZE, POSITION AND LIGHT
+------------------------
+- `rect = 52, -190, 74, 175` is a DELTA on the NAMEPLATE's rect, not an
+  absolute box. On the stock 46 x 15 name tag it resolves to 120 x 190 standing
+  at (53, 170) - beside the name, on the scrim's top edge. Widen the figure by
+  raising the third number (94 gives you 140 px wide); raise it by making the
+  second number more negative, which also makes it taller unless you drop the
+  fourth number by the same amount.
+- It is anchored to the nameplate ON PURPOSE: the figure then follows the name
+  wherever a layout puts the speech box, and it can never cover the speaker's
+  own name, which is drawn before this band and would be eaten by an opaque
+  element sitting on it.
+- The element is `locked = no`, so you can just drag and resize it in the
+  editor instead of doing that arithmetic.
+- [element.showcase_glow] is the violet halo behind it. Retint it to suit your
+  character - it is one `tint=` in its gen_params - or widen it by the same
+  delta arithmetic to make the light spill further.
+- Keep the bottom edge on the scrim's top edge if you want the figure cropped
+  the way a visual novel crops a sprite on the box edge. Raise it and the
+  figure simply stands clear on the stage.
+
+
+LICENSING
+---------
+Whatever you drop in is yours to be responsible for. This theme is
+AGPLv3-compatible because everything in it is original and procedural; a
+character image you add is neither, so do not redistribute the folder with
+someone else's art inside it unless you have the right to.

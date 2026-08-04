@@ -1,0 +1,80 @@
+gadget_lab - THE CHARACTER SHOWCASE
+===================================
+
+This theme has a polaroid pinned to the top-right corner of the stage, and the
+photo in it is empty on purpose.
+
+WE SHIP NO CHARACTER ART. Not a sprite, not a silhouette, not a frame of
+anything. What the theme draws today is a placeholder: a standing capsule in
+smoky glass-brown with a thin amber edge, seated on the bottom of the photo
+well, with a soft warm glow breathing behind the whole card. It is a shape and
+a gradient - arithmetic, nothing more.
+
+Put your favourite character there instead. Two ways:
+
+
+1. DRAG AND DROP (the easy way)
+-------------------------------
+Open the theme editor, click the showcase element to select it, and drag any
+GIF or animated WebP from your file manager straight onto it. The editor copies
+the file into this theme's asyncao/media/ folder, adds the [media] entry with
+its size and hash, and switches the element over to it for you.
+
+The element is deliberately NOT locked (locked = no), so you can also drag its
+corners to resize it, or drag it somewhere else entirely.
+
+
+2. BY HAND (if you would rather edit the file)
+----------------------------------------------
+Put your animation in this folder under asyncao/media/, then add two things to
+asyncao_theme.ini.
+
+  a) a [media] section naming it (the size and hash are optional - a bare file
+     name is legal, they just let AsyncAO budget and verify before decoding):
+
+       [media]
+       mychar = asyncao/media/mychar.webp
+
+  b) in [element.showcase], change the kind and point it at that id:
+
+       kind  = image
+       media = mychar
+
+     Leave `fit = contain` if you want the whole character to fit inside the
+     photo well without distortion. Use `fit = cover` to fill the well and crop,
+     or `fit = stretch` to squash it to the rect exactly.
+
+Everything else in [element.showcase] keeps working: `rect` still follows the
+stage wherever a layout puts it, `opacity` still dims it, and `loop = yes`
+plays an animation forever.
+
+
+THE REST OF THE POLAROID
+------------------------
+The card is five more elements around yours, and you can edit any of them:
+
+  showcase_glow    the warm halo behind the card
+  showcase_card    the paper itself (a two-stop gradient)
+  showcase_well    the photo window your character sits in
+  showcase         >>> YOURS <<<
+  showcase_cap     the caption in the chin - change the text to a name
+  showcase_frame   the rust keyline round the card
+
+If you want a bigger picture, grow showcase_well and showcase together. Their
+rects are anchored to the viewport and written as deltas, so the numbers in the
+file are "how far from the stage's own edges", not absolute pixels - which is
+why the whole card stays in the corner at any window size.
+
+The card is NOT tilted. A tilt would need the same `rot` on four separate
+elements rotating about four different centres, and the seams come apart. If
+you want it anyway, the file says exactly where to put `rot = 3`.
+
+
+NOTES
+-----
+* Paths must stay inside this theme folder. Absolute paths, "..", and symlinks
+  are refused by the reader - that is deliberate, and it is what makes a theme
+  safe to share.
+* Whatever you drop in is YOUR file and your responsibility. If you re-share
+  this theme with art inside it, make sure you have the right to do that - the
+  theme as we ship it is entirely original and carries no such condition.

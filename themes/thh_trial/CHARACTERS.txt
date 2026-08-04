@@ -1,0 +1,104 @@
+TRIAL FLOOR — the podium showcase
+=================================
+
+There is a lit stand on the field, dead centre, directly behind the chat box.
+Right now it holds a placeholder: a plain rounded silhouette in a magenta pool
+of light, with the caption "your character here".
+
+That stand is yours. Put your favourite character at the podium.
+
+WE SHIP NO CHARACTER ART. Not one byte. This theme is entirely procedural —
+palette values, flat shapes, two-stop gradients and ten generated tiles — and
+that includes the placeholder, which is a rectangle with round corners and a
+1 px keyline. Nothing in this folder is traced from, copied from, or derived
+from anyone's artwork, and the showcase exists precisely so you can supply your
+own instead of us supplying someone else's.
+
+
+THE EASY WAY — drag and drop
+----------------------------
+1. Open AsyncAO and go to Settings > Theme > Open Theme Editor.
+2. Pick "Trial Floor" and find the element named `showcase` in the left rail.
+3. Drag a GIF or an animated WebP out of your file manager and drop it onto the
+   stand on the canvas.
+
+That is it. The editor copies your file into this theme's own media folder,
+registers it, and switches the element over for you. Animated files animate.
+Save, and it travels with the theme.
+
+The element ships UNLOCKED (`locked = no`) on purpose, so you can also drag it
+around, resize it, and put it somewhere else entirely. It is anchored to the
+viewport, so it keeps its place on the field if a layout preset resizes the
+stage.
+
+
+THE MANUAL WAY — edit the INI
+-----------------------------
+1. Put your file at:   asyncao/media/podium.webp
+   (create the folders if they are not there; AO2-Client never looks inside
+   `asyncao/`, which is why media lives there)
+
+2. Add it to the [media] section of asyncao_theme.ini, which ships empty:
+
+       [media]
+       showcase_art = asyncao/media/podium.webp
+
+   The full form is `id = file, bytes, xxhash64`. The size and hash are optional
+   and let an importer budget and verify the file before decoding it, which is
+   worth doing if you ever share the theme.
+
+3. In [element.showcase], change two lines:
+
+       kind  = image          ; was: shape
+       media = showcase_art
+
+   and delete the now-unused `shape`, `fill`, `stroke` and `stroke_px` lines.
+   Add `fit = contain` if you want the whole figure to fit inside the stand
+   without cropping, or `fit = cover` to fill it and crop the overflow.
+
+4. Delete [element.showcase_hint] to remove the "your character here" caption.
+
+Reload the theme (the reload button in the courtroom, or restart) and there
+they are.
+
+
+WHERE IT SITS, AND WHY
+----------------------
+The stand resolves to 272 x 128 in design space, centred on the field with its
+foot on the chat box's top edge — so whoever stands there is cut off at the
+waist by the box, which is what makes them read as standing BEHIND it rather
+than pasted on top of it.
+
+That is also the busiest spot on the stage: the live character sprite is drawn
+in the same place, and the showcase paints over it. That is deliberate for a
+placeholder and a matter of taste for a real one. If your server's sprites are
+wide and you would rather not cover them, drag the element to one side in the
+editor — the reference this theme is built on puts speakers at the EDGES of the
+field, so a stand at x 20 or x 470 is just as authentic as the centre one.
+
+The magenta pool behind it (`showcase_glow`) is a separate element. Move the
+stand and the pool stays put unless you move it too; delete the pool if you
+would rather your art sat on the bare field.
+
+
+FORMATS AND SIZES
+-----------------
+Animated GIF, animated WebP, PNG, WebP and AVIF all work. 272 x 128 is a wide
+slot, so a bust or an upper-body crop fits it better than a full standing
+sprite — or make the element taller in the editor and use the whole figure.
+Anything much bigger than about 1024 x 512 is wasted: it will be scaled down to
+the stand, and oversized art eats the theme's media budget, which is shared
+across everything in the theme.
+
+Large animations are frame-decimated to fit that budget. If yours matters at
+full frame rate, set `decimate = no` on the element — it is honoured only when
+the undecimated art still fits.
+
+
+A NOTE ON WHOSE ART IT IS
+-------------------------
+Whatever you drop in there is your business, but it becomes part of the theme
+folder, and the theme folder is what gets zipped when you export or share. If
+you did not make the art, do not redistribute it. Keep it local, or ask the
+artist. The theme itself is procedural and AGPLv3-compatible; the moment you
+add a file, that file's licence is the one that matters.

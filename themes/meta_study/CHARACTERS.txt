@@ -1,0 +1,61 @@
+meta_study - THE CHARACTER SHOWCASE
+===================================
+
+This theme has an empty slot for a character, and it is empty on purpose.
+
+WE SHIP NO CHARACTER ART. Not a sprite, not a silhouette, not a frame of
+anything. What the theme draws today is a placeholder: a plain standing capsule
+in walnut with a thin brass edge, sitting behind the textbox on the right side
+of the stage, with a soft warm glow breathing behind it. It is a shape and a
+gradient - arithmetic, nothing more.
+
+Put your favourite character there instead. Two ways:
+
+
+1. DRAG AND DROP (the easy way)
+-------------------------------
+Open the theme editor, click the showcase element to select it, and drag any
+GIF or animated WebP from your file manager straight onto it. The editor copies
+the file into this theme's asyncao/media/ folder, adds the [media] entry with
+its size and hash, and switches the element over to it for you.
+
+The element is deliberately NOT locked (locked = no), so you can also drag its
+corners to resize it, or drag it somewhere else entirely.
+
+
+2. BY HAND (if you would rather edit the file)
+----------------------------------------------
+Put your animation in this folder under asyncao/media/, then add two things to
+asyncao_theme.ini.
+
+  a) a [media] section naming it (the size and hash are optional - a bare file
+     name is legal, they just let AsyncAO budget and verify before decoding):
+
+       [media]
+       mychar = asyncao/media/mychar.webp
+
+  b) in [element.showcase], change the kind and point it at that id:
+
+       kind  = image
+       media = mychar
+
+     Leave `fit = contain` if you want the whole character to fit inside the
+     box without distortion. Use `fit = cover` to fill the box and crop, or
+     `fit = stretch` to squash it to the rect exactly.
+
+Everything else in [element.showcase] keeps working: `rect` still follows the
+textbox wherever a layout puts it, `opacity` still dims it, and `loop = yes`
+plays an animation forever.
+
+
+NOTES
+-----
+* Paths must stay inside this theme folder. Absolute paths, "..", and symlinks
+  are refused by the reader - that is deliberate, and it is what makes a theme
+  safe to share.
+* The showcase's bottom edge is pinned exactly to the top edge of the textbox,
+  so your character is cropped by the box the way a visual novel crops a sprite.
+  If you want them standing clear of it, give the element a smaller height.
+* Whatever you drop in is YOUR file and your responsibility. If you re-share
+  this theme with art inside it, make sure you have the right to do that - the
+  theme as we ship it is entirely original and carries no such condition.

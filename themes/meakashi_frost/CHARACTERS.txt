@@ -1,0 +1,83 @@
+MEAKASHI FROST — the showcase strip
+===================================
+
+There is a tall dark panel to the right of the IC log, lit by a soft pool of
+light. Right now it holds a placeholder: a plain rounded silhouette and the
+caption "your character here".
+
+That panel is yours. Put your favourite character in it.
+
+WE SHIP NO CHARACTER ART. Not one byte. This theme is entirely procedural —
+palette values, flat shapes, two-stop gradients and four generated tiles — and
+that includes the placeholder, which is a rectangle with round corners and a
+1 px keyline. Nothing in this folder is traced from, copied from, or derived
+from anyone's artwork, and the showcase exists precisely so you can supply your
+own instead of us supplying someone else's.
+
+
+THE EASY WAY — drag and drop
+----------------------------
+1. Open AsyncAO and go to Settings > Theme > Open Theme Editor.
+2. Pick "Meakashi Frost" and find the element named `showcase` in the left rail.
+3. Drag a GIF or an animated WebP out of your file manager and drop it onto the
+   panel on the canvas.
+
+That is it. The editor copies your file into this theme's own media folder,
+registers it, and switches the element over for you. Animated files animate.
+Save, and it travels with the theme.
+
+The element ships UNLOCKED (`locked = no`) on purpose, so you can also drag it
+around, resize it, and put it somewhere else entirely. It is anchored to the IC
+log, so if you move the log the strip follows.
+
+
+THE MANUAL WAY — edit the INI
+-----------------------------
+1. Put your file at:   asyncao/media/shion.webp
+   (create the folders if they are not there; AO2-Client never looks inside
+   `asyncao/`, which is why media lives there)
+
+2. Add it to the [media] section of asyncao_theme.ini:
+
+       [media]
+       showcase_art = asyncao/media/shion.webp
+
+   The full form is `id = file, bytes, xxhash64`. The size and hash are optional
+   and let an importer budget and verify the file before decoding it, which is
+   worth doing if you ever share the theme.
+
+3. In [element.showcase], change two lines:
+
+       kind  = image          ; was: shape
+       media = showcase_art
+
+   and delete the now-unused `shape`, `fill`, `stroke` and `stroke_px` lines.
+   Add `fit = contain` if you want the whole figure to fit inside the panel
+   without cropping, or `fit = cover` to fill the panel and crop the overflow.
+
+4. Delete [element.showcase_hint] to remove the "your character here" caption.
+
+Reload the theme (the reload button in the courtroom, or restart) and there
+they are.
+
+
+FORMATS AND SIZES
+-----------------
+Animated GIF, animated WebP, PNG, WebP and AVIF all work. The panel resolves to
+120 x 300 in design space, so it is a tall portrait slot — a standing sprite
+cropped at the knees fits it best. Anything much bigger than about 512 x 1024
+is wasted: it will be scaled down to the panel, and oversized art eats the
+theme's media budget, which is shared across everything in the theme.
+
+Large animations are frame-decimated to fit the budget. If yours matters at
+full frame rate, set `decimate = no` on the element — it is honoured only when
+the undecimated art still fits.
+
+
+A NOTE ON WHOSE ART IT IS
+-------------------------
+Whatever you drop in there is your business, but it becomes part of the theme
+folder, and the theme folder is what gets zipped when you export or share. If
+you did not make the art, do not redistribute it. Keep it local, or ask the
+artist. The theme itself is procedural and AGPLv3-compatible; the moment you
+add a file, that file's licence is the one that matters.
