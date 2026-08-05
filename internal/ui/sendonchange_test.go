@@ -14,7 +14,8 @@ import (
 
 // newRoomForTest builds a real Courtroom over a local-mode Manager (mirrors the
 // courtroom package's rig) so HandleEvent can populate the per-speaker style memory.
-func newRoomForTest(t *testing.T) *courtroom.Courtroom {
+// testing.TB so benchmarks can stage a room too — see newCaptureHarness.
+func newRoomForTest(t testing.TB) *courtroom.Courtroom {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {

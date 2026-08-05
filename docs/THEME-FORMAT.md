@@ -294,7 +294,7 @@ element on screen as something it is not.
 | `rect` | rect | `0, 0, 0, 0` | a **signed delta** from the anchor, or absolute with no anchor — see below |
 | `rot` | angle | `0` | 360/256 |
 | `media` | id | `""` | `kind = image`: an id from `[media]` |
-| `shape` | id | `""` | `kind = shape`: a silhouette name |
+| `shape` | id | `""` | `kind = shape`: a silhouette name — see below |
 | `generator` | id | `""` | `kind = gen`: a generator name (§5) |
 | `gen_params` | list of `k=v` | `""` | ordered; up to 8 |
 | `fit` | enum | `stretch` | `stretch`, `tile`, `contain`, `cover`, `nine` |
@@ -337,12 +337,30 @@ With an empty `anchor`, `rect` is **absolute in its declared space**. That is th
 whole rule, and it is what lets a layout move a widget and a style decorate it
 without either knowing the other exists.
 
+**`shape` names a silhouette.** The vocabulary is the one the client already
+persists for its own chrome, extended:
+
+```
+sharp | rounded | pill | hex | ribbon | tape
+```
+
+`sharp` is a plain box, `rounded` has a modest corner and `pill` is a full-radius
+capsule (its corner is half the short side, which is why it is its own name and
+not `rounded` with a number). `rect` is an accepted alias of `sharp`. An unknown
+name draws as `sharp` and keeps its fill, stroke and position — rule 3.
+
 `visible_when` is **one axis, one value** — deliberately not an expression
 language, because anything richer needs a parser on the frame path:
 
 ```
 always | speaking | pos:<name> | char:<folder> | side:<name> | shout:<name>
 ```
+
+A `shout:` value may be spelled either way AO2 spells a shout: the **design key**
+the rest of the file uses (`hold_it`, `objection`, `take_that`,
+`custom_objection` — the same names `anchor =` takes) or the **asset stem** the
+wire and the art use (`holdit`, `objection`, `takethat`, `custom`). Both resolve
+to the same message.
 
 An unknown axis leaves the element **visible**: an element a future condition
 would have hidden is better shown than lost.

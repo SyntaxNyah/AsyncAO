@@ -580,6 +580,28 @@ func (c *Courtroom) AudioActive() bool {
 // QueueLen exposes the pending message count.
 func (c *Courtroom) QueueLen() int { return len(c.queue) }
 
+// CurrentShout is the shout stem of the message being presented right now —
+// "holdit", "objection", "takethat", "custom" — or "" when the stage is idle or
+// the message carried no shout. It is ShoutName over the live message's
+// objection modifier, i.e. exactly the stem the bubble and the cry resolve from.
+//
+// The whole MESSAGE, not just the bubble's ~800 ms: c.phase leaves PhaseShout
+// long before the line finishes, and a theme element gated on "an objection is
+// happening" means the turn, not the frame the bubble is on screen. Idle is the
+// boundary because c.current deliberately outlives its message (a settled stage
+// still needs the last speaker), so gating on it alone would leave the last
+// shout latched forever.
+//
+// Read-only, allocation-free (ShoutName returns constants) and called at most
+// once per frame — it is the source for a free element's `visible_when =
+// shout:<name>` condition (docs/THEME-FORMAT.md §3).
+func (c *Courtroom) CurrentShout() string {
+	if c.phase == PhaseIdle || c.current == nil {
+		return ""
+	}
+	return ShoutName(c.current.Objection)
+}
+
 // HandleEvent consumes a session event.
 func (c *Courtroom) HandleEvent(ev Event) {
 	switch ev.Kind {

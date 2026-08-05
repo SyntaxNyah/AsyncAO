@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // AO2 themes "hide" elements by flinging them off the design space
@@ -170,6 +171,39 @@ type themeLayoutCache struct {
 	// An absent key means "the label fits": the draw site falls back to the
 	// constant, which is the byte-identical path for every theme with roomy rects.
 	toggleLabel map[string]string
+	// --- free elements (v1.90.0 W3; design §2, docs/THEME-FORMAT.md §4) ---------
+	//
+	// el is the baked, z-resolved, anchor-resolved element array — see bakedElement
+	// (themeelements.go). A FIXED ARRAY, not a slice: the draw loop reads only
+	// values, never a map, never a slice header, never a sort, never a string op.
+	// It is built inside the cold rebuild below, so the cache-HIT path is untouched
+	// and TestThemeLayoutCacheHitIsAllocFreeWithASeededTabStrip stays green for free.
+	//
+	// It sits INLINE (~10 KiB) rather than behind a pointer because a pointer would
+	// be an allocation per rebuild, a nil check per band and a second lifetime to
+	// reason about, and because "a fixed array that never grows" is the property the
+	// whole zero-base-cost argument rests on. A stock AO2 theme leaves it zeroed and
+	// pays nothing for it: elN stays 0, every band range stays {0,0}, and the three
+	// band loops are three `for i := 0; i < 0`.
+	el  [theme.ElementCap]bakedElement
+	elN int
+	// band[b] is the half-open index range into el for one theme.ElementBand,
+	// sorted ONCE at bake (insertion sort over <= 96 entries, cold path). Elements
+	// within a band paint in ascending z, ties broken by declaration order.
+	band [theme.ElementBandCount]elemBandRange
+	// condVal holds the DISTINCT visible_when values this theme names, interned at
+	// bake; bakedElement.cond is an index into it. Bounded by ElementCap because at
+	// most one new value can arrive per element. Interning is what makes the
+	// per-element visibility gate an integer compare (elementVisible) instead of a
+	// string compare inside the band loops.
+	condVal [theme.ElementCap]string
+	condN   int
+	// condGen stamps THIS intern table. App memoises the live value of each
+	// condition axis (App.condSrc / condLive) and the memo must not survive a
+	// rebuild that re-interned the values under it — the indices would point at the
+	// wrong strings. Monotonic on App (themeElemGen), so a cache zeroed by a
+	// rebuild can never collide with the memo's stamp.
+	condGen uint64
 }
 
 // themeLayout builds the cache for a canvas laid out inside the FULL (w, h) box,
@@ -343,6 +377,12 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 		lay.ang = a.d.Prefs.ThemeRectRotationSnapshot(themeName)
 	}
 	a.bakeToggleLabels(lay)
+	// The free-element bake (v1.90.0 W3), LAST in the rebuild: it reads the finished
+	// lay.r (an anchored element resolves against the widget's resolved box) and it
+	// REWRITES lay.r for every pane host before it resolves anything (design §6.6 R8
+	// — decoration follows its widget wherever it lives). Nothing below it may read
+	// a slot rect it has not seen. See themeelementbake.go.
+	a.bakeThemeElements(lay)
 	lay.valid = true
 	return lay
 }
@@ -742,6 +782,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	} else {
 		c.Fill(court, ColPanel)
 	}
+	// visible_when, resolved ONCE for the whole pass: each condition axis's live
+	// value becomes an interned index here, so all three band loops below gate on an
+	// integer compare. Ahead of band 1 because every band reads the same answer, and
+	// a mid-pass change (a message settling between bands) would make one band's
+	// decoration disagree with another's inside a single frame.
+	a.refreshElementConditions(lay)
+
+	// BAND 1 of 3 (design §2; docs/THEME-FORMAT.md §4): above the courtroom
+	// backdrop, below every widget. This is where a theme's wallpaper, vignette or
+	// desk plate goes — anything that must sit UNDER the stage the client draws next.
+	a.drawElementBands(lay, theme.BandBackdrop)
 
 	vp, _ := lay.rect("viewport")
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
@@ -769,6 +820,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	a.drawOverlayChatLayer(vp) // effects.ini layer=chat: over the chatbox (courtroom.cpp:3234-3237)
 	a.drawCourtOverlays(vp, lay)
 	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
+
+	// BAND 2 of 3: between the stage and the panels — over the viewport and the
+	// chatbox, BEHIND the chat logs and every panel widget the second half of this
+	// pass paints.
+	//
+	// BEFORE the modal early-return below, deliberately. The mid band dresses the
+	// STAGE, which is still on screen while a modal is up, so it has to paint on
+	// the frames the return aborts too — decoration that vanished every time a popup
+	// opened would read as a bug. A modal then draws over it, which is the right way
+	// round. (The overlay band is the opposite case and sits after the return: a
+	// modal owns the screen, and nothing of the theme's may cover it.)
+	a.drawElementBands(lay, theme.BandMid)
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).
@@ -1346,6 +1409,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// drawSpritePreviewFallback. Right-clicking an effects-dropdown row must still
 	// show its box.
 	a.drawSpritePreviewFallback(true)
+
+	// BAND 3 of 3: above every AO2 widget this pass painted, and below CLIENT
+	// chrome — the compact toolbox, the warning line, the server-tab strip and the
+	// layout editor all draw after it. That ordering is the AO2-full-parity rule
+	// expressed in paint order: an element may decorate anything inside the design
+	// canvas, but it may never bury the controls that get the player back OUT of it.
+	a.drawElementBands(lay, theme.BandOverlay)
 
 	// NOTHING of AsyncAO's own draws inside the design canvas (#21, rule (c)).
 	// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned

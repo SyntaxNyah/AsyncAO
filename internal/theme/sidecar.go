@@ -423,7 +423,7 @@ type Element struct {
 
 	// --- fill: exactly one is meaningful per Kind --------------------------
 	Media      string // ElemImage: an id into Sidecar.Media
-	Shape      string // ElemShape: shape kind ("rounded", "hex", "ribbon", "tape", …)
+	Shape      string // ElemShape: silhouette name ("sharp", "rounded", "pill", "hex", "ribbon", "tape", …)
 	Gen        string // ElemGen: generator kind
 	GenParams  [GenParamCap]KV
 	Fit        ElementFit

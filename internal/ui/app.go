@@ -853,6 +853,32 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+	// --- free elements (v1.90.0 W3; themeelements.go / themeelementbake.go) -----
+	//
+	// themeSidecar is the applied theme's parsed asyncao_theme.ini, or nil for a
+	// stock AO2 theme — which is every theme that has never been opened in the
+	// editor, so nil is the ordinary case and every read of it is nil-safe. Loaded
+	// on the theme-apply goroutine (theme.Load), landed here by pollThemeApply, and
+	// read ONLY by the cold bake in themeLayoutIn.
+	themeSidecar *theme.Sidecar
+	// themeElemGen stamps each element bake. Monotonic across rebuilds, so the
+	// per-frame condition memo below cannot mistake a fresh (zeroed) cache for the
+	// one its indices were interned against.
+	themeElemGen uint64
+	// elemBakeBand / elemBakeZ are the bake's two SORT KEYS, held beside the baked
+	// array instead of inside it: the draw path has no use for either, and a second
+	// full copy of the array would be 11 KiB of App for one insertion sort.
+	elemBakeBand [theme.ElementCap]theme.ElementBand
+	elemBakeZ    [theme.ElementCap]int16
+	// condSrc / condLive memoise this frame's visible_when resolution: the live
+	// string each axis was last resolved from, and the interned index it resolved
+	// to (condAlwaysVisible = nothing in this theme matches). condGen is the bake
+	// generation they belong to. Refreshed once per themed pass, never per element.
+	condSrc  [theme.ConditionAxisCount]string
+	condLive [theme.ConditionAxisCount]int16
+	condGen  uint64
+	// condSpeaking is the one VALUE-LESS condition axis: a message is on the stage.
+	condSpeaking bool
 	// Char select's SEPARATE design geometry and canvas cache (#20,
 	// charselectlayout.go). Deliberately not folded into themeRects/themeLay: those
 	// twelve keys live in a different design space (char_select, commonly 714×668,
@@ -2060,9 +2086,15 @@ type sessionState struct {
 	// that allocates) every frame. areaFiltered holds matching indices into
 	// a.sess.Areas (which parallels a.sess.AreaInfo, so the ORIGINAL index
 	// is what indexes both).
+	//
+	// ONE SLOT PER QUERY SOURCE (areaQuerySlots, screens.go): the list can be on
+	// screen twice in one frame under two different queries — a torn-off Areas
+	// panel filtered by its own field, and the themed canvas copy filtered by
+	// AO2's music_search — and a single slot would let them evict each other
+	// every frame, which is a memo that never hits.
 	areaSearch     string
-	areaFiltered   []int
-	areaFilterMemo areaFilterKey
+	areaFiltered   [areaQuerySlots][]int
+	areaFilterMemo [areaQuerySlots]areaFilterKey
 	areaScroll     int32
 	// areaInfoSeq bumps on every EventAreasUpdated (ARUP) so areaWrapped
 	// (screens.go) knows when to re-wrap; it deliberately excludes cosmetic
@@ -2072,14 +2104,12 @@ type sessionState struct {
 	// and the player-count/status detail line previously never wrapped and
 	// just clipped off the panel edge). Mirrors the icWrapped idiom — rebuilds
 	// only when the ARUP state, search query, panel width, zoom, or font
-	// chain actually changed, never per frame.
-	areaWrap      []areaWrapRow
-	areaWrapSeq   uint64
-	areaWrapQuery string
-	areaWrapCardW int32
-	areaWrapPct   int
-	areaWrapGen   int
-	logTab        int
+	// chain actually changed, never per frame. One slot per query source, for
+	// the same reason areaFiltered has two: the two drawers differ in WIDTH as
+	// well as query, and re-wrapping every area twice a frame is the expensive
+	// half of that thrash.
+	areaWrap [areaQuerySlots]areaWrapCache
+	logTab   int
 	// debugOOC swaps the themed server_chatlog panel for the debug log — what
 	// AO2's ooc_toggle button does (on_ooc_toggle_clicked, courtroom.cpp:5197:
 	// show ui_debug_log, hide ui_server_chatlog, relabel the button).
@@ -2246,6 +2276,13 @@ type sessionState struct {
 	iniScroll       int32
 	iniBrowseScroll int32       // separate scroll for the Iniswaps (browse-all) tab
 	iniAsk          []time.Time // demand pacing stamps, parallel to iniList
+	// iniBase is the Iniswaps tab's "From your base" source: the server's character
+	// ROSTER plus the character folders found under the user's local mounts. It is a
+	// separate browser (iniswapbase.go) rather than more entries in iniList on
+	// purpose — iniList is the wardrobe's index-keyed backing store, ranged whole by
+	// char select's Wardrobe tab, so a 4000-name roster merged into it would flood
+	// that grid and invalidate every cached icon page.
+	iniBase iniBaseBrowser
 
 	// wardSection selects the open wardrobe tab (wardSectionCharacters /
 	// wardSectionBackgrounds). The Backgrounds section organizes favourite
@@ -2590,6 +2627,10 @@ type themeApply struct {
 	// os.Stat walk. nil when the load failed; the roster then carries the origin
 	// manifest alone, exactly as it did when the theme was unreadable.
 	themeObj *theme.Theme
+	// sidecar is the theme's asyncao_theme.ini, parsed on this goroutine (hard rule
+	// 2 — it walks maps and allocates strings). nil for a stock AO2 theme, which is
+	// most of them; the render side is nil-safe throughout.
+	sidecar *theme.Sidecar
 	// shownameAlign is courtroom_design.ini's `showname_align` — not a rect, so it
 	// cannot ride `layout`. Parsed here, off the render thread, because
 	// parseShownameAlign lowercases the raw value (hard rule 2).
@@ -8651,14 +8692,18 @@ func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 
 // themeSearchRootsNow resolves the live inputs behind themeSearchRoots: the
 // executable's directory and the config base. BLOCKING on a cold process
-// (os.Executable, and whichever config memo is still empty) — goroutine only,
-// never a draw path (hard rule 2). customRoot is the already-normalized custom
-// folder, "" when there is none.
+// (config.ExecutableDir's first resolve, and whichever config memo is still
+// empty) — goroutine only, never a draw path (hard rule 2). customRoot is the
+// already-normalized custom folder, "" when there is none.
+//
+// config.ExecutableDir, never a local os.Executable + filepath.Dir: that raw
+// spelling skips EvalSymlinks, so on a symlinked or junctioned install it names
+// the same directory with a DIFFERENT string than config.UserThemesDir and the
+// catalog scan (themecatalog.go) do — and every "is this the same place?" check
+// downstream (samePath, the write-root backstop, the origin badge) is a string
+// comparison by design. One memoized answer, shared by every caller.
 func themeSearchRootsNow(customRoot string) []string {
-	exeDir := ""
-	if exe, err := os.Executable(); err == nil {
-		exeDir = filepath.Dir(exe)
-	}
+	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
 	return themeSearchRoots(customRoot, exeDir, configBase)
 }
@@ -8718,10 +8763,12 @@ func (a *App) applyThemeAsync() uint64 {
 		// HERE so every apply resolves like the settings scanner does,
 		// not only applies that happened to follow a finished scan.
 		root, _ := normalizeThemeRoot(dir)
-		exeDir := ""
-		if exe, err := os.Executable(); err == nil {
-			exeDir = filepath.Dir(exe)
-		}
+		// config.ExecutableDir, not a raw os.Executable + filepath.Dir: the loader
+		// must walk the SAME root strings the picker (themeSearchRootsNow) and the
+		// catalog scan (themecatalog.go) do, or a symlinked install resolves themes
+		// from one spelling while the browser badges them from another. Memoized, so
+		// this costs a string read after the first apply.
+		exeDir := config.ExecutableDir()
 		// The config root is resolved here, off-thread, like everything else this
 		// goroutine needs. config.ConfigBaseDir is memoized after boot, so this is
 		// a map-free string read in practice — but it is not on a draw path either
@@ -8733,6 +8780,11 @@ func (a *App) applyThemeAsync() uint64 {
 			// walks THIS apply's ladder instead of re-loading the theme per resolve
 			// (spec §2.4). Read-only from here on.
 			res.themeObj = t
+			// The AsyncAO extension tier. theme.Load already parsed it (atomically,
+			// from this theme's own directories — never merged, never inherited from
+			// the default theme), so this is a pointer copy on the goroutine that
+			// owns the load.
+			res.sidecar = t.Sidecar()
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()
 			res.fontPath = t.FontFile() // the theme's own bundled font, if any (#6)
@@ -9018,6 +9070,12 @@ func (a *App) pollThemeApply() {
 	// in a.themeRects, so the layout editor never sees them and there is nothing to
 	// re-apply. Both scaled caches then go together (invalidateThemeCanvases).
 	a.charSelDesign = res.charSel
+	// The free-element tier lands with the geometry it decorates, and BEFORE the
+	// canvases are invalidated: the next themeLayoutIn rebuild is what bakes it, and
+	// a sidecar landing after the invalidation would not be baked until something
+	// else happened to invalidate again. nil (a stock AO2 theme) clears the previous
+	// theme's elements, which is the whole of the theme-swap prune for this tier.
+	a.themeSidecar = res.sidecar
 	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
 	a.themeAt = time.Now() // restart the theme-art animation clock

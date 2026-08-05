@@ -17,7 +17,9 @@ import (
 
 // testTabApp builds a headless App with just enough wiring for the tab
 // machinery (real prefs for callword checks; no SDL, no network).
-func testTabApp(t *testing.T) *App {
+//
+// testing.TB so benchmarks can stage an App too — see newCaptureHarness.
+func testTabApp(t testing.TB) *App {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
 	if err != nil {

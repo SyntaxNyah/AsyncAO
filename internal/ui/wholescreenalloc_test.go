@@ -37,7 +37,7 @@ import (
 // a real font-loaded Ctx over a software renderer, a session + room with an
 // idle (typewriter-finished) message, and every stage base resident in the
 // texture store so no miss fires the (map-allocating) scene heal / warm path.
-func stageSettledCourtroom(t *testing.T) (*App, func()) {
+func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
 	ctx, err := NewCtx(ren)
@@ -213,7 +213,7 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 // consumed in drawCourtroomThemed) so the compact-toolbox region is anchored at a
 // theme rect rather than the classic slot default — that arm is only reachable
 // under a theme, so the classic gates cannot cover it either.
-func stageThemedCourtroom(t *testing.T) (*App, func()) {
+func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
 	a.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)

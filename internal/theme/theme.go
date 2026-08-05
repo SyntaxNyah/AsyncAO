@@ -144,6 +144,32 @@ type Theme struct {
 	fonts   *INI
 	sounds  *INI
 	penalty *INI
+
+	// ownDirN is how many LEADING entries of dirs belong to THIS theme (its
+	// subtheme tier, its own folder and the flat-folder tier). Everything past it
+	// is the DEFAULT-theme fallback, which exists because AO2 falls back per key
+	// in the three design INIs.
+	//
+	// The sidecar deliberately does NOT: see sidecar below.
+	ownDirN int
+	// sidecar is the AsyncAO extension tier (asyncao_theme.ini), read ATOMICALLY
+	// from the first of THIS theme's own directories that has one — never merged
+	// per id across the ladder, and never inherited from the default theme.
+	//
+	// Both halves matter and they fail differently. Merging per id would
+	// materialise a fallback theme's decoration onto rects the author's canvas
+	// does not have; adopting the default theme's file wholesale would do the same
+	// thing to every theme that simply has no sidecar, which is most of them.
+	// AO2's own per-key merge is copied for the three design INIs because AO2 does
+	// it; nothing about the extension tier obliges us to repeat it.
+	// Pinned by ui.TestElementsDoNotInheritFromDefault.
+	sidecar    *Sidecar
+	sidecarDir string
+	// sidecarErr is a sidecar that FAILED to parse (a cap refusal, or a file that
+	// is not INI at all). It never fails Load — rule 1 says a theme still renders
+	// with everything this build understands, and a theme with an unreadable
+	// extension tier is exactly a stock AO2 theme.
+	sidecarErr error
 }
 
 // SubthemeNameLen bounds a subtheme folder name. AO2 has no bound at all (it is
@@ -231,6 +257,10 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 		}
 		t.dirs = append(t.dirs, filepath.Join(root, name))
 	}
+	// Everything appended so far is THIS theme; everything after is the default
+	// fallback. Recorded here rather than re-derived, because the boundary is the
+	// whole of the sidecar's no-inheritance rule (see Theme.sidecar).
+	t.ownDirN = len(t.dirs)
 	// No flat tier for the DEFAULT fallback, deliberately: a bare-folder import
 	// supplies exactly one theme, and synthesising <root>/default would let a
 	// stray folder named "default" sitting beside the drop hijack every key the
@@ -255,7 +285,39 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	t.fonts = t.loadFirstINI(FontsFileName)
 	t.sounds = t.loadFirstINI(SoundsFileName)
 	t.penalty = t.loadFirstINI(filepath.FromSlash(PenaltyFileName))
+	// The AsyncAO extension tier, over this theme's OWN directories only. A parse
+	// failure is recorded and swallowed: rule 1 (docs/THEME-FORMAT.md §7) says
+	// reading never refuses, and a theme whose sidecar cannot be read is a stock
+	// AO2 theme, which is a thing that renders.
+	t.sidecar, t.sidecarDir, t.sidecarErr = LoadSidecarIn(t.dirs[:t.ownDirN])
 	return t, nil
+}
+
+// Sidecar is the parsed asyncao_theme.ini, or nil for a stock AO2 theme. Every
+// Sidecar accessor is nil-safe, so callers need no branch.
+func (t *Theme) Sidecar() *Sidecar {
+	if t == nil {
+		return nil
+	}
+	return t.sidecar
+}
+
+// SidecarDir is the directory the sidecar came out of ("" when there is none).
+// It is where [media] file paths and the theme's own fonts/ resolve from.
+func (t *Theme) SidecarDir() string {
+	if t == nil {
+		return ""
+	}
+	return t.sidecarDir
+}
+
+// SidecarErr reports a sidecar that exists but could not be parsed. Diagnostics
+// only — it never blocks a load, and the import report is where a user sees it.
+func (t *Theme) SidecarErr() error {
+	if t == nil {
+		return nil
+	}
+	return t.sidecarErr
 }
 
 // loadFirstINI merges the named INI across dirs, FIRST hit per key winning

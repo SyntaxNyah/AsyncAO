@@ -13,7 +13,12 @@ import (
 
 // newCaptureHarness spins SDL (dummy video) + ttf + a software renderer for the
 // offscreen-capture tests. Skips (not fails) when SDL/ttf is unavailable.
-func newCaptureHarness(t *testing.T) (*sdl.Renderer, func()) {
+//
+// testing.TB, not *testing.T, so a BENCHMARK can stage the same headless screen
+// (BenchmarkThemedFrameNoElements): the v1.89.0 "0 base = 0 cost" rule is
+// benchmarked, not asserted, and a fixture only tests can build makes that rule
+// unmeasurable. Every call below (Helper/Skipf/Fatalf/TempDir/Cleanup) is on TB.
+func newCaptureHarness(t testing.TB) (*sdl.Renderer, func()) {
 	t.Helper()
 	os.Setenv("SDL_VIDEODRIVER", "dummy")
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
