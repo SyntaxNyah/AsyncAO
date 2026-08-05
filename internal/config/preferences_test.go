@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1544,6 +1545,154 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	}
 	if !q.AutoReconnectOn() {
 		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
+	}
+}
+
+// TestBlipSpeedDefaultMove pins the one-shot 18 ms → 40 ms message-crawl ("blip
+// speed") move. textCrawlMs is a plain int on disk and the saver always wrote it,
+// so a file from an older build carries a baked textCrawlMs:18 that a bare default
+// change would never reach — only the absent stamp can tell "written before the
+// move" from "deliberately 18". Four properties, one per sub-test:
+//
+//  1. it fires exactly once — an un-stamped file lands on the new default;
+//  2. it is VALUE-AWARE — an un-stamped file holding any OTHER value keeps it,
+//     because the saver always wrote the field, so that value is a deliberate pick;
+//  3. a post-move user edit survives the NEXT load (the whole point of the stamp);
+//  4. the stamp itself round-trips, so the move can never fire a second time.
+func TestBlipSpeedDefaultMove(t *testing.T) {
+	// Pinned to the package constant, not a loose literal: if the pre-move default
+	// is ever restated, this test must move with the migration it guards.
+	const oldDefaultCrawlMs = preMoveTextCrawlMs // what every pre-move file has baked in
+
+	t.Run("un-stamped file moves to the new default", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		body := fmt.Sprintf(`{"textCrawlMs": %d}`, oldDefaultCrawlMs)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load old file: %v", err)
+		}
+		if crawl, _, _ := p.Timing(); crawl != DefaultTextCrawlMs {
+			t.Errorf("an older file's %d ms crawl must move to %d ms once, got %d", oldDefaultCrawlMs, DefaultTextCrawlMs, crawl)
+		}
+		if !p.BlipSpeedDefaultMoved() {
+			t.Error("the move must stamp the file so it never runs twice")
+		}
+	})
+
+	// The regression this guards: a value-blind one-shot yanks a user who had
+	// deliberately dialled the crawl somewhere else back to the new default on the
+	// first launch after updating, silently discarding their pick. Because
+	// textCrawlMs has no omitempty and the saver always wrote it, an un-stamped
+	// file holding anything but the old default is provably a deliberate choice.
+	t.Run("an un-stamped deliberate pick survives the move", func(t *testing.T) {
+		// A slow deliberate crawl well clear of BOTH defaults and of either bound, so
+		// a regression cannot pass by clamping or by coinciding with a default.
+		const slowDeliberateCrawlMs = 90
+		for _, deliberate := range []int{MinTextCrawlMs, slowDeliberateCrawlMs, MaxTextCrawlMs} {
+			path := filepath.Join(t.TempDir(), PrefsFileName)
+			body := fmt.Sprintf(`{"textCrawlMs": %d}`, deliberate)
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p, err := load(path)
+			if err != nil {
+				t.Fatalf("load un-stamped %d ms file: %v", deliberate, err)
+			}
+			if crawl, _, _ := p.Timing(); crawl != deliberate {
+				t.Errorf("a deliberate pre-move %d ms pick was clobbered: got %d", deliberate, crawl)
+			}
+			// The stamp is written EITHER WAY, so the move can never fire again and
+			// re-examine a value it has already decided to keep.
+			if !p.BlipSpeedDefaultMoved() {
+				t.Errorf("a preserved %d ms pick must still stamp the file", deliberate)
+			}
+		}
+	})
+
+	t.Run("a user edit after the move survives the next load", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		p, err := newWithDebounce(path, testDebounce)
+		if err != nil {
+			t.Fatalf("newWithDebounce: %v", err)
+		}
+		// Deliberately back to the OLD default: the value the move forces away from
+		// is exactly the one a stamped file must be allowed to keep.
+		_, stay, rate := p.Timing()
+		p.SetTiming(oldDefaultCrawlMs, stay, rate)
+		if err := p.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		q, err := load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+			t.Errorf("a deliberate %d ms pick after the move was overwritten: got %d", oldDefaultCrawlMs, crawl)
+		}
+	})
+
+	t.Run("the stamp round-trips", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		body := fmt.Sprintf(`{"textCrawlMs": %d, "blipSpeedDefaultMigrated": true}`, oldDefaultCrawlMs)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load stamped file: %v", err)
+		}
+		if crawl, _, _ := p.Timing(); crawl != oldDefaultCrawlMs {
+			t.Errorf("a stamped file's explicit %d ms must be respected, got %d", oldDefaultCrawlMs, crawl)
+		}
+		if !p.BlipSpeedDefaultMoved() {
+			t.Error("the stamp was lost on load")
+		}
+		if err := p.SaveNow(); err != nil {
+			t.Fatal(err)
+		}
+		q, err := load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if !q.BlipSpeedDefaultMoved() {
+			t.Error("the stamp did not survive save → load — the move would re-fire on every launch")
+		}
+		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+			t.Errorf("after save→load the crawl is %d, want the stored %d", crawl, oldDefaultCrawlMs)
+		}
+	})
+}
+
+// TestSmoothLogScrollPref pins the IC-log follow-jump toggle: OFF by default (AO2
+// parity — a new message lands instantly), and it survives save → load. The load
+// half is the one that keeps failing across this codebase (a field saved but never
+// copied back in the overlay), which is what TestEverySavedPreferenceIsAlsoLoaded
+// exists for; this pins the behaviour the setting actually promises.
+func TestSmoothLogScrollPref(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.SmoothLogScrollOn() {
+		t.Error("smooth log scrolling must default OFF (the log follows instantly, like AO2)")
+	}
+	p.SetSmoothLogScroll(true)
+	if !p.SmoothLogScrollOn() {
+		t.Fatal("SetSmoothLogScroll(true) did not stick")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.SmoothLogScrollOn() {
+		t.Error("smoothLogScroll=true lost across save/load (missing copy-on-load line?)")
 	}
 }
 

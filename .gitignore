@@ -34,3 +34,18 @@ coverage.out
 # Reproduced from scratch by scripts/build-emoji-font.ps1; never committed.
 /_emojibuild/
 /_wfsalv/
+
+# Work-in-progress dossiers and reference art for the wave in flight. NEVER
+# committed: the folder holds third-party reference material gathered for
+# measurement only, so a stray `git add -A` must not be able to publish it.
+/docs/wip/
+
+# Local gate/dev helpers written per session (the full pre-commit gate runner and
+# its logs). The committed entry point is scripts/, not these.
+/_gate.ps1
+/_w*gate.ps1
+/_w*gate.sh
+/_w*gate.log
+
+# Pre-edit backups left by the wave tooling beside the file they copy.
+*.r3bak

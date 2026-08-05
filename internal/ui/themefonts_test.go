@@ -364,10 +364,11 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	const colW = 240
 	a.icWrapped(colW, false)
 	a.oocWrapped(colW)
-	a.areaWrapped(nil, colW)
-	if a.icWrapPct != DefaultScalePct || a.oocWrapPct != DefaultScalePct || a.areaWrapPct != DefaultScalePct {
+	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)
+	if a.icWrapPct != DefaultScalePct || a.oocWrapPct != DefaultScalePct ||
+		a.areaWrap[areaQuerySlotOwn].pct != DefaultScalePct {
 		t.Fatalf("undressed wrap keys must be the user zoom: ic=%d ooc=%d area=%d",
-			a.icWrapPct, a.oocWrapPct, a.areaWrapPct)
+			a.icWrapPct, a.oocWrapPct, a.areaWrap[areaQuerySlotOwn].pct)
 	}
 	// A theme lands with its own sizes — nothing else changes (same log seq, same
 	// width, same font generation), so ONLY the resolved pct can invalidate.
@@ -376,15 +377,15 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	a.themeFonts.e[elemAreaList].pct = themeFontPct(6)
 	a.icWrapped(colW, false)
 	a.oocWrapped(colW)
-	a.areaWrapped(nil, colW)
+	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)
 	if a.icWrapPct != themeFontPct(18) {
 		t.Errorf("IC wrap kept the stale key %d, want %d", a.icWrapPct, themeFontPct(18))
 	}
 	if a.oocWrapPct != themeFontPct(9) {
 		t.Errorf("OOC wrap kept the stale key %d, want %d", a.oocWrapPct, themeFontPct(9))
 	}
-	if a.areaWrapPct != themeFontPct(6) {
-		t.Errorf("area wrap kept the stale key %d, want %d", a.areaWrapPct, themeFontPct(6))
+	if got := a.areaWrap[areaQuerySlotOwn].pct; got != themeFontPct(6) {
+		t.Errorf("area wrap kept the stale key %d, want %d", got, themeFontPct(6))
 	}
 }
 

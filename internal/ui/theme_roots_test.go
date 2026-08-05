@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -167,6 +168,52 @@ func TestThemePickerBuildsItsRootsFromTheSharedList(t *testing.T) {
 	}
 	if strings.Contains(body, "os.Executable()") {
 		t.Errorf("scanThemes gathers a root of its own again (os.Executable); the shared themeSearchRoots is the only list allowed to grow or shrink")
+	}
+}
+
+// TestThemeRootBuildersShareOneExeDir pins the other half of "the same list":
+// not merely the same ORDER, but the same STRINGS. Three builders resolve the
+// executable's directory — the catalog scan (scanThemeCatalog), the picker's
+// shared list (themeSearchRootsNow) and the loader (applyThemeAsync) — and every
+// downstream "is this the same place?" (samePath, the write-root backstop,
+// themeOriginOf) compares those strings without touching the disk. A raw
+// os.Executable + filepath.Dir skips config.ExecutableDir's EvalSymlinks step,
+// so on a symlinked or junctioned install it yields a DIFFERENT spelling of the
+// same directory: the catalog would scan a root the picker names differently,
+// and a bundled theme could be badged read-only. config.ExecutableDir is the one
+// spelling; this test refuses to let a builder resolve its own again.
+//
+// The seam assertion is behavioural where it can be: themeSearchRootsNow really
+// runs here, and its exe root must be config.ExecutableDir's answer verbatim.
+// The other two resolve inside a goroutine (applyThemeAsync) or need a scanned
+// filesystem (scanThemeCatalog), neither injectable, so they are pinned by the
+// same kind of source census the picker already has above.
+func TestThemeRootBuildersShareOneExeDir(t *testing.T) {
+	exe := config.ExecutableDir()
+	if exe == "" {
+		// Only if the OS cannot name the running binary at all — every platform we
+		// build for can, so this is a genuine "cannot test", not a soft pass.
+		t.Skip("config.ExecutableDir is empty on this host")
+	}
+	roots := themeSearchRootsNow("")
+	if !containsString(roots, exe) {
+		t.Errorf("themeSearchRootsNow roots = %v, none is config.ExecutableDir %q — the picker resolved the exe dir its own way", roots, exe)
+	}
+	// The census spells the forbidden CALL with its parentheses; the comments at
+	// these sites deliberately write "os.Executable + filepath.Dir" without them,
+	// so explaining the trap can never trip it.
+	for _, site := range []struct{ file, decl string }{
+		{"app.go", "func themeSearchRootsNow("},
+		{"app.go", "func (a *App) applyThemeAsync("},
+		{"themecatalog.go", "func scanThemeCatalog("},
+	} {
+		body := funcBodyInFile(t, site.file, site.decl)
+		if !strings.Contains(body, "config.ExecutableDir()") {
+			t.Errorf("%s %q no longer calls config.ExecutableDir()", site.file, site.decl)
+		}
+		if strings.Contains(body, "os.Executable()") {
+			t.Errorf("%s %q resolves the executable itself again — a symlinked install then gets two spellings of one root", site.file, site.decl)
+		}
 	}
 }
 

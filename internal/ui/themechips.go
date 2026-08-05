@@ -39,6 +39,16 @@ type themedChipSpec struct {
 	tab   int
 	label string
 	w     int32
+	// toggle is the label to draw while THIS chip's own view is the one on screen and
+	// the chip has therefore become the way BACK OUT (see fitThemedChips' `n <
+	// len(views)` branch). "" keeps `label` in both states.
+	//
+	// It exists because a one-chip strip is a TOGGLE wearing a button's clothes: the
+	// roster chip says "Player List", you press it, the roster appears — and the chip
+	// still says "Player List", so it reads as an inert button rather than the switch
+	// back to the music list that it is. Naming it for its destination is what every
+	// other toggle in this client does.
+	toggle string
 }
 
 // themedChip is one chip the fitter PLACED: where it goes, what it says, and what
@@ -54,7 +64,11 @@ type themedChip struct {
 var themedListViews = [themedChipsMax]themedChipSpec{
 	{tab: logTabMusic, label: "Music", w: themedListTabW},
 	{tab: logTabAreas, label: "Areas", w: themedListTabW},
-	{tab: logTabPlayers, label: "Player List", w: themedPlayersTabW},
+	// The roster chip is the one that is routinely drawn ALONE (themedRosterStrip), so
+	// it is the one that needs a destination label for its pressed state. It swaps to
+	// the music list, which is where the strip's cycle sends it. "Music List" is
+	// narrower than "Player List", so themedPlayersTabW still fits it.
+	{tab: logTabPlayers, label: "Player List", w: themedPlayersTabW, toggle: "Music List"},
 }
 
 // themedRosterStrip is the strip the music panel draws when the theme's own
@@ -161,13 +175,16 @@ func fitThemedChips(body sdl.Rect, want, views []themedChipSpec, view int) ([the
 		if share > 0 {
 			w = share
 		}
-		tab := want[i].tab
+		tab, label := want[i].tab, want[i].label
 		if n < len(views) && tab == views[cur].tab {
 			tab = views[(cur+1)%len(views)].tab
+			if want[i].toggle != "" {
+				label = want[i].toggle // pressed: name it for where it goes, not where you are
+			}
 		}
 		out[i] = themedChip{
 			r:     sdl.Rect{X: x, Y: body.Y, W: w, H: themedChipH},
-			label: want[i].label,
+			label: label,
 			tab:   tab,
 		}
 		x += w + themedChipGap

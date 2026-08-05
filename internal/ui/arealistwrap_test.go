@@ -20,7 +20,7 @@ func TestAreaWrappedWordWraps(t *testing.T) {
 	}
 
 	const cardW = int32(100) // nameW = 88 → at 8px/char, ~11 chars/line
-	rows := a.areaWrapped(nil, cardW)
+	rows := a.areaWrapped(nil, cardW, "", areaQuerySlotOwn)
 	if len(rows) != 2 {
 		t.Fatalf("areaWrapped rows = %d, want 2", len(rows))
 	}
@@ -47,20 +47,51 @@ func TestAreaWrappedCache(t *testing.T) {
 		AreaInfo: []courtroom.AreaInfo{{Players: -1}, {Players: -1}},
 	}
 
-	first := a.areaWrapped(nil, 200)
+	first := a.areaWrapped(nil, 200, "", areaQuerySlotOwn)
 	if len(first) != 2 {
 		t.Fatalf("first pass: %d rows, want 2", len(first))
 	}
-	a.areaWrap = a.areaWrap[:0] // clobber the cached result
-	second := a.areaWrapped(nil, 200)
+	a.areaWrap[areaQuerySlotOwn].rows = a.areaWrap[areaQuerySlotOwn].rows[:0] // clobber the cached result
+	second := a.areaWrapped(nil, 200, "", areaQuerySlotOwn)
 	if len(second) != 0 {
 		t.Fatalf("memo failed: unchanged inputs re-scanned (got %d rows)", len(second))
 	}
 
 	a.areaInfoSeq++ // simulate an ARUP update
-	third := a.areaWrapped(nil, 200)
+	third := a.areaWrapped(nil, 200, "", areaQuerySlotOwn)
 	if len(third) != 2 {
 		t.Fatalf("areaInfoSeq bump did not invalidate the memo: got %d rows", len(third))
+	}
+}
+
+// TestAreaWrappedSlotsAreIndependent is the wrap half of the two-slot memo. The
+// themed copy of the list is filtered by AO2's music_search and sized by the
+// theme's music_list rect, so it differs from a torn-off Areas panel in QUERY and
+// WIDTH at once. With one slot the two rebuilt each other's rows every frame —
+// and this rebuild word-wraps every area, which allocates.
+func TestAreaWrappedSlotsAreIndependent(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = &courtroom.Session{
+		Areas:    []string{"Alpha", "Beta", "Alabama"},
+		AreaInfo: []courtroom.AreaInfo{{Players: -1}, {Players: -1}, {Players: -1}},
+	}
+
+	// Own slot: unfiltered, one width. Themed slot: filtered to "be", another.
+	if rows := a.areaWrapped(nil, 200, "", areaQuerySlotOwn); len(rows) != 3 {
+		t.Fatalf("own slot: %d rows, want all 3", len(rows))
+	}
+	themed := a.areaWrapped(nil, 120, "be", areaQuerySlotThemed)
+	if len(themed) != 1 || themed[0].name != "Beta" {
+		t.Fatalf("themed slot rows = %v, want just Beta — the passed-in query must drive the wrap", themed)
+	}
+	// Both slots must still be memo HITS for their own inputs (clobber-and-re-ask).
+	a.areaWrap[areaQuerySlotOwn].rows = a.areaWrap[areaQuerySlotOwn].rows[:0]
+	a.areaWrap[areaQuerySlotThemed].rows = a.areaWrap[areaQuerySlotThemed].rows[:0]
+	if rows := a.areaWrapped(nil, 200, "", areaQuerySlotOwn); len(rows) != 0 {
+		t.Errorf("own slot re-wrapped after the themed slot drew: %d rows", len(rows))
+	}
+	if rows := a.areaWrapped(nil, 120, "be", areaQuerySlotThemed); len(rows) != 0 {
+		t.Errorf("themed slot re-wrapped after the own slot drew: %d rows", len(rows))
 	}
 }
 

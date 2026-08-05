@@ -235,27 +235,69 @@ func (a *App) updateJoinFlash(now time.Time) {
 	}
 }
 
-// rosterRefetchDebounce bounds how often a join/leave re-pulls the rich /getarea
-// snapshot in live mode — fresh enough, but never a command per packet.
+// rosterRefetchDebounce bounds how often a join/leave re-pulls the rich all-areas
+// snapshot (rosterCmd, below) in live mode — fresh enough, but never a command
+// per packet.
 const rosterRefetchDebounce = 3 * time.Second
 
 // rosterCmd is the all-areas roster command. Named so the poll can check
 // whether one is already queued before adding another (see fetchRoster).
 const rosterCmd = "/gas"
 
-// fetchRoster pulls /gas (the all-areas UID/showname/IPID detail the live list
-// merges over the PR/PU rows) and stamps the debounce. /gas, NOT /getareas: the
-// live list spans every area (so the IPID source must too), and /gas is the alias
-// EVERY server family registers — Athena/Nyathena only have the short ga/gas
-// form, while Akashi/tsuserver/KFO accept it too (the long /getareas isn't on
-// Athena/Nyathena). Shared by the on-open fetch, the mod IPID refresh, and the
-// on-auth pull.
 // areaEchoSuppressWindow is how long after a /gas we keep incoming area-list
 // messages out of OOC — a multi-area /gas (Athena/Nyathena) replies as SEVERAL
 // messages, and the old single-shot suppression let every line after the first
 // leak into the chat log.
 const areaEchoSuppressWindow = 3 * time.Second
 
+// fetchRoster pulls the all-areas UID/showname/IPID detail the live list merges
+// over the PR/PU rows, and stamps the debounce. It sends rosterCmd ("/gas"), not
+// /getareas, because the live list spans every area, so its IPID source must too.
+//
+// Every family DOES register some all-areas spelling; they just disagree on which.
+// /gas is Nyathena's (Nyathena/internal/athena/commands_registry.go:318) and
+// Whisker's (Whisker/src/commands.c3:79); Akashi and its WAP fork spell it
+// /getareas (akashi/src/aoclient.cpp:29, witches-akashi-party/src/aoclient.cpp:30),
+// as do tsuserver3/KFO (KFO-Server/server/commands/areas.py:288); and on Athena it
+// is the "-a" flag of its one roster command, /players
+// (Athena/internal/athena/commands.go:282, `Usage: /players [-a]`). So a
+// family-aware poll IS constructible — rosterDetailCmd below is that exact
+// pattern — and it would even survive the Athena/stock-Nyathena detection
+// ambiguity, because "/players -a" means all areas on BOTH (Nyathena's own gas
+// handler is literally cmdPlayers(client, []string{"-a"}),
+// commands_registry.go:319).
+//
+// What does not exist is a single UNIVERSAL string, and "/players -a" is the
+// dangerous near-miss: Whisker maps players onto its own cmd_ga and passes no
+// arguments at all (Whisker/src/commands.c3:78), so there it would quietly return
+// only the CURRENT area — a silently wrong roster instead of an error. This poll
+// therefore stays one compile-time constant, and the machinery around it is keyed
+// to that: oocQueuePending(rosterCmd) matches an already-queued copy by exact
+// string equality (macros.go:137), and the refusal latch is spelling-blind — any
+// command error inside the suppression window sets the single rosterCmdUnsupported
+// flag (app.go:9949), which records that THE poll was refused, never which
+// spelling was. Making the poll family-aware is a change to both of those, not a
+// swap of this const.
+//
+// Being WRONG here is not merely inert: it repeats for the life of the session,
+// and an unanswerable command every rosterRefetchDebounce is the flood shape that
+// got clients kicked (docs/KNOWN-ISSUES.md, "Why some servers never showed it").
+// So the fixed spelling ACCEPTS being switched off wherever /gas is unregistered:
+// Akashi/WAP, tsuserver3/KFO and Athena all answer a command error ("Invalid
+// command." — akashi/src/commands/command_helper.cpp:33,
+// Athena/internal/athena/commands.go:392), looksLikeCommandError latches
+// rosterCmdUnsupported, and the poll stops for that session. The cost, stated
+// plainly: on those servers NO all-areas snapshot is ever pulled again.
+//   - Akashi/WAP and KFO push the 2.11 live list (serverhelp.go plist), so the
+//     roster itself is complete anyway; what is lost is the mod-only IPID for
+//     players in OTHER areas.
+//   - Athena and tsuserver3 have no live list at all (serverhelp.go:79, :121), so
+//     there the whole all-areas snapshot is lost. What is left is the pushed
+//     CharsCheck/ARUP rows plus "Refresh roster details" (rosterDetailCmd), which
+//     does ask in that server's own spelling (on Athena the /players this poll
+//     cannot use) — but that is CURRENT-area detail only.
+//
+// Shared by the on-open fetch, the mod IPID refresh, and the on-auth pull.
 func (a *App) fetchRoster() {
 	if a.rosterCmdUnsupported {
 		return // this server rejected /gas earlier — don't re-spam it
@@ -275,6 +317,55 @@ func (a *App) fetchRoster() {
 	a.queueOOCLines([]string{rosterCmd})
 }
 
+// The two spellings of the CURRENT-area detail command. There is no universal
+// one, so a control that sends a fixed string is inert on half the fleet. The
+// split is by lineage, and each side is named after the spelling it registers —
+// read out of the server sources, not assumed:
+//
+//   - rosterCmdPlayers ("/players") is the one current-area spelling the whole
+//     Go/C3 lineage answers, which is why it is NOT the shorter "/ga": Athena
+//     registers only "players" (Athena/internal/athena/commands.go:282,
+//     `Usage: /players [-a]`) — no ga, no gas, no getarea, and its Command struct
+//     has no alias field to hide one (commands.go:39-45). Nyathena registers
+//     "players" too (Nyathena/internal/athena/commands_registry.go:779) and hangs
+//     "ga" off the same cmdPlayers handler as a documented shortcut (:310), and
+//     Whisker's dispatcher maps players onto its own cmd_ga
+//     (Whisker/src/commands.c3:78) and has no getarea case at all (:77-79). So
+//     "/players" is the only string all three answer; "/ga" would be an unknown
+//     command on Athena.
+//   - rosterCmdGetarea ("/getarea") is the AO2-canonical spelling and the only one
+//     the Python/C++ lineage has: Akashi registers getarea/getareas and NOT
+//     players or the short aliases (akashi/src/aoclient.cpp:28-29), and
+//     tsuserver3/KFO define ooc_cmd_getarea/getareas only
+//     (KFO-Server/server/commands/areas.py:271,288). That is why a /gas on those
+//     answers "Invalid command" and latches rosterCmdUnsupported
+//     (docs/KNOWN-ISSUES.md, "Why some servers never showed it").
+const (
+	rosterCmdPlayers = "/players"
+	rosterCmdGetarea = "/getarea"
+)
+
+// rosterDetailCmd is the current-area detail command THIS server answers: the
+// UIDs, IPIDs, OOC names and pair state the pushed CharsCheck/ARUP packets cannot
+// carry. It is family-aware because the Players panel's "Refresh roster details"
+// row is the only roster control the debloated toolbar kept (playerlisttoolbar.go),
+// and a menu row that reliably replies "unknown command" is worse than no row —
+// the degradation contract there is that a control may be absent, never inert.
+//
+// The families with no 2.11 live player list (serverhelp.go) are exactly the ones
+// that depend on this, and Whisker is one of them (plistPlugin) — so each family
+// MUST get a spelling it actually registers, or the one roster control that family
+// has left is the inert row this function exists to prevent. An unrecognised
+// server still gets the canonical /getarea rather than a guess.
+func (a *App) rosterDetailCmd() string {
+	switch a.detectedSoftware() {
+	case courtroom.SoftwareAthena, courtroom.SoftwareNyathena, courtroom.SoftwareWhisker:
+		// All three answer /players; Athena answers ONLY that (see the const block).
+		return rosterCmdPlayers
+	}
+	return rosterCmdGetarea
+}
+
 // looksLikeCommandError reports whether an OOC line is a server "command not
 // recognised" reply (the response to a /gas the server doesn't support). Only
 // consulted inside the post-fetch window, so a real chat line can't trip it.
@@ -286,11 +377,13 @@ func looksLikeCommandError(text string) bool {
 		strings.Contains(t, "command not found")
 }
 
-// maybeRefetchRoster re-pulls /getareas, debounced. On the PR/PU path the ONLY
-// thing /getareas adds over the live roster is mod-only IPID, so it polls only
-// while a mod still has rows without one — once they land (or for a non-mod, who
-// can't see IPIDs at all) the list stays event-driven and quiet. The pre-PR/PU
-// fallback keeps the old always-refresh behaviour (it needs /getareas for UIDs).
+// maybeRefetchRoster re-pulls the all-areas snapshot (fetchRoster, i.e. rosterCmd
+// — NOT /getareas; the two spellings are not interchangeable, see the const block
+// above), debounced. On the PR/PU path the ONLY thing that fetch adds over the
+// live roster is mod-only IPID, so it polls only while a mod still has rows
+// without one — once they land (or for a non-mod, who can't see IPIDs at all) the
+// list stays event-driven and quiet. The pre-PR/PU fallback keeps the old
+// always-refresh behaviour (it needs the fetch for UIDs).
 func (a *App) maybeRefetchRoster() {
 	if a.rosterLegacy || a.sess == nil {
 		return

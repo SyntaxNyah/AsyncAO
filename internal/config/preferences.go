@@ -879,10 +879,28 @@ const FavBackgroundCap = 512
 
 // Message timing knobs (milliseconds), AO2-Client options.ini parity.
 const (
-	// DefaultTextCrawlMs mirrors courtroom.DefaultCharInterval.
-	DefaultTextCrawlMs = 18
+	// DefaultTextCrawlMs is AO2-Client's own `text_crawl` default — 40 ms per
+	// revealed letter (options.cpp:182 `config.value("text_crawl", 40)`, mirrored by
+	// courtroom.h:333 `int text_crawl = 40`). It is ALSO the blip clock: chat_tick
+	// fires one blip every BlipRate letters, so the crawl interval is the "blip
+	// speed" a user actually hears.
+	//
+	// It used to be 18 (courtroom.DefaultCharInterval, spec §1), which crawled well
+	// over twice as fast as every other AO client and machine-gunned the blips.
+	// courtroom.DefaultCharInterval stays at 18 as the LIBRARY's own zero-config
+	// default (its tests are written against it); the shipped client always pushes
+	// this preference into the room (applyTimingToRoom), so this is the value that
+	// reaches a player. Existing installs are moved once by
+	// BlipSpeedDefaultMigrated — see load().
+	DefaultTextCrawlMs = 40
 	MinTextCrawlMs     = 5
 	MaxTextCrawlMs     = 100
+	// preMoveTextCrawlMs is the default this preference shipped with BEFORE the
+	// move to DefaultTextCrawlMs — i.e. the exact value every pre-move file has
+	// baked in, because the saver always wrote textCrawlMs. It is the ONLY saved
+	// value the one-shot in load() is allowed to overwrite: any other value in
+	// [MinTextCrawlMs, MaxTextCrawlMs] is provably a deliberate pick and survives.
+	preMoveTextCrawlMs = 18
 	// DefaultTextStayMs mirrors courtroom.DefaultTextStayTime.
 	DefaultTextStayMs = 200
 	MaxTextStayMs     = 3000
@@ -1333,6 +1351,25 @@ type AssetPreferences struct {
 	// rather than beside ThemeFit itself, because ThemeFit sits inside a long run
 	// of alignment-formatted fields that a doc comment would re-flow wholesale.
 	ThemeFitDefaultMigrated bool `json:"themeFitDefaultMigrated"`
+	// BlipSpeedDefaultMigrated is the third one-shot stamp, for the TextCrawlMs field
+	// below: it records that the 18 ms → AO2-parity 40 ms message-crawl move has RUN
+	// for this file (see load). The crawl is the clock the chat blips ride — one blip
+	// per BlipRate revealed letters, each letter TextCrawlMs apart — so this is the
+	// "blip speed" a user hears. Same shape as its ThemeFit sibling: absent in files
+	// written before the move, stamped either way because the move is value-aware
+	// (only a file still on preMoveTextCrawlMs is overwritten), and once true the
+	// saved TextCrawlMs is respected as-is, so a user edit sticks forever. It lives
+	// here, beside the other stamps,
+	// rather than beside TextCrawlMs, which sits inside a run of alignment-formatted
+	// fields a doc comment would re-flow wholesale.
+	BlipSpeedDefaultMigrated bool `json:"blipSpeedDefaultMigrated"`
+	// SmoothLogScroll eases the IC log's FOLLOW jump when a new message lands
+	// (OFF by default = AO2 parity: the log snaps to the newest line the instant it
+	// arrives, exactly as AO2-Client's QTextEdit auto-scroll does). ON restores the
+	// glide. It governs the sticky-bottom follow ONLY — a wheel step or a scrollbar
+	// drag keeps its own behaviour either way, because that motion is the user's and
+	// the ease is what makes it readable.
+	SmoothLogScroll bool `json:"smoothLogScroll"`
 	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
 	MusicHistory bool `json:"musicHistory"`
 	// MusicStreaming fetches and plays custom /play tracks (ON by default). OFF =
@@ -1715,6 +1752,8 @@ type prefsJSON struct {
 	AutoReconnect                *bool    `json:"autoReconnect"`                // absent = default OFF
 	AutoReconnectDefaultMigrated *bool    `json:"autoReconnectDefaultMigrated"` // absent = the ON→OFF pull-back hasn't run for this file yet
 	ThemeFitDefaultMigrated      *bool    `json:"themeFitDefaultMigrated"`      // absent = the Stretch→Native default move hasn't run for this file yet; a POINTER because the sibling themeFit is a plain int, so "never written" and "deliberately Stretch" are the same bytes
+	BlipSpeedDefaultMigrated     *bool    `json:"blipSpeedDefaultMigrated"`     // absent = the 18 ms → 40 ms message-crawl ("blip speed") move hasn't run for this file yet; a POINTER for the same reason as its ThemeFit sibling — textCrawlMs is a plain int, so "never written" and "deliberately 18" are the same bytes
+	SmoothLogScroll              bool     `json:"smoothLogScroll"`              // default OFF (zero value) — the IC log's new-message follow jumps instantly, AO2-style
 	MusicHistory                 *bool    `json:"musicHistory"`                 // absent = default ON
 	MusicStreaming               *bool    `json:"musicStreaming"`               // absent = default ON
 	MusicHosts                   []string `json:"musicHosts,omitempty"`         // absent = default list
@@ -2003,13 +2042,14 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
-		// Both one-shot default stamps. A fresh install has nothing to move — it
-		// already defaults to auto-reconnect OFF and theme fit Native — so it counts
-		// as already-migrated. Only a file written by an OLDER build lacks these
-		// stamps (absent → nil on load) and triggers the one-shot force-OFF /
-		// Stretch→Native move in the load overlay.
+		// All three one-shot default stamps. A fresh install has nothing to move — it
+		// already defaults to auto-reconnect OFF, theme fit Native and a 40 ms message
+		// crawl — so it counts as already-migrated. Only a file written by an OLDER
+		// build lacks these stamps (absent → nil on load) and triggers the one-shot
+		// force-OFF / Stretch→Native / 18→40 ms move in the load overlay.
 		AutoReconnectDefaultMigrated: true,
 		ThemeFitDefaultMigrated:      true,
+		BlipSpeedDefaultMigrated:     true,
 		MusicHistory:                 defaultMusicHistory,
 		MusicStreaming:               defaultMusicStreaming,
 		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
@@ -2718,9 +2758,52 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ExtrasGradient != nil {
 		p.ExtrasGradient = *onDisk.ExtrasGradient
 	}
-	if onDisk.TextCrawlMs != 0 {
-		p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	// Message-crawl ("blip speed") default pulled 18 ms → 40 ms, which is AO2-Client's
+	// own text_crawl default (options.cpp:182) and therefore the cadence every other
+	// AO client blips at. One-shot, exactly like AutoReconnectDefaultMigrated above: a
+	// file written before this change carries no stamp AND — because the saver always
+	// wrote the field — an explicit textCrawlMs, so honouring it blindly would strand
+	// every existing install on the old fast crawl forever. Only the absent stamp can
+	// tell "written before the move" from "deliberately picked".
+	if onDisk.BlipSpeedDefaultMigrated != nil && *onDisk.BlipSpeedDefaultMigrated {
+		p.BlipSpeedDefaultMigrated = true
+		if onDisk.TextCrawlMs != 0 { // 0 (absent) keeps the default crawl
+			p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		}
+	} else {
+		// Un-migrated. The move is VALUE-AWARE, exactly like the ThemeFit sibling above
+		// and unlike the auto-reconnect one: only a file still sitting on the OLD
+		// default (preMoveTextCrawlMs) moves. The auto-reconnect precedent cannot apply
+		// here — a bool has no state distinguishable from its default, whereas an int
+		// spanning [MinTextCrawlMs, MaxTextCrawlMs] does, and textCrawlMs is written by
+		// the saver on every flush with no omitempty, so any other saved value is
+		// PROVABLY a deliberate pick (a 5 ms speed-reader, a 90 ms slow crawl) and must
+		// survive the update untouched. An absent key is treated as the old default too:
+		// a file that predates the field at all predates the move by definition.
+		//
+		// The STAMP is written either way, so the move can never run twice — the same
+		// save that records a later user edit has already recorded the stamp.
+		//
+		// markDirty here does NOT flush promptly, and must not be read as doing so:
+		// this runs inside load(), where p.dirty is still nil, so its send falls to
+		// the default arm and only the `pending` flag survives. The file is written on
+		// the next unrelated mutation, or by Close(). That is enough HERE, and it is
+		// why this needs no synchronous write like the ThemeFit sibling above
+		// (themeFitStampPending): re-running THIS move after a launch that ended before
+		// any save is idempotent — the file still holds the old default (or a
+		// deliberate value), so the move re-decides identically and nothing is lost.
+		// The ThemeFit stamp cannot say that: it also arms a ONE-TIME window snap,
+		// which a re-run would fire a second time.
+		saved := clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		if onDisk.TextCrawlMs == 0 || saved == preMoveTextCrawlMs {
+			p.TextCrawlMs = DefaultTextCrawlMs
+		} else {
+			p.TextCrawlMs = saved
+		}
+		p.BlipSpeedDefaultMigrated = true
+		p.markDirty()
 	}
+	p.SmoothLogScroll = onDisk.SmoothLogScroll
 	if onDisk.TextStayMs != nil {
 		p.TextStayMs = clampPercent(*onDisk.TextStayMs, 0, MaxTextStayMs)
 	}
@@ -3604,6 +3687,38 @@ func (p *AssetPreferences) SetICTimestamps(on bool) {
 	p.ICTimestamps = on
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// SmoothLogScrollOn reports whether the IC log's NEW-MESSAGE follow glides (opt-in)
+// or snaps (default, AO2 parity). Read once per log draw, like ICTimestampsOn.
+func (p *AssetPreferences) SmoothLogScrollOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SmoothLogScroll
+}
+
+// SetSmoothLogScroll toggles the eased follow jump.
+func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
+	p.mu.Lock()
+	if p.SmoothLogScroll == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SmoothLogScroll = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BlipSpeedDefaultMoved reports whether the one-shot preMoveTextCrawlMs →
+// DefaultTextCrawlMs message-crawl move has RUN for this file — not that it
+// changed the value. Like its ThemeFit sibling the move is value-aware and
+// stamps either way, so a file whose deliberate crawl was preserved reads true
+// here too; the stamp is the whole record. The accessor exists so a test (and
+// any future startup notice) can read it without reaching into the struct.
+func (p *AssetPreferences) BlipSpeedDefaultMoved() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.BlipSpeedDefaultMigrated
 }
 
 // AutoReconnectOn reports the auto-reconnect toggle (ON by default): retry the
@@ -10436,6 +10551,32 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 	}
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// BaseMountsEqual reports whether want is exactly the mount list the asset
+// pipeline is reading right now — the SAME list LocalAssets/LayeredAssets would
+// hand back, in the same order — without copying it out.
+//
+// It exists because both accessors allocate: each takes `make([]string, n)` +
+// copy under the lock, which is correct for a caller that keeps the slice but is
+// pure waste for a caller that only wants to know "did this change since last
+// time?". That caller (internal/ui's local character-folder scan) asks once per
+// FRAME while its tab is open, so with mounts configured the copy was one or two
+// heap allocations per frame for an answer that is a comparison. Comparing under
+// the read lock costs nothing and never escapes the stored slice.
+//
+// The mode logic mirrors ui's baseMounts and is pinned by a parity test there:
+// Local-only wins, layering applies only when it is on with mounts and the
+// exclusive flag is off (LayeredAssets' normalization), and neither mode means
+// no mounts at all — offering folders the pipeline is not reading would list
+// characters that then fail to load.
+func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.LocalAssetsEnabled && !(p.LocalAssetsLayered && len(p.LocalAssetsPaths) > 0) {
+		return len(want) == 0
+	}
+	return slices.Equal(p.LocalAssetsPaths, want)
 }
 
 // --- Favorites -----------------------------------------------------------------

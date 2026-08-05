@@ -29,6 +29,63 @@ package ui
 // The plan is a pure value built from injected measurements (the truncateLabelTo
 // idiom), so the whole strip is testable without a renderer, and it is a fixed-size
 // stack value so the per-frame draw can build one without allocating.
+//
+// WHAT THE STRIP CARRIES (the roster debloat).
+//
+// It used to carry THREE header rows above the roster: a mode row (a "● LIVE" dot,
+// "Refresh details" and a "Legacy snapshot" tick box — or, in legacy mode, a "Fetch:"
+// label and three raw command buttons), a Pairs/Follow row, and a passive
+// "12 here · live" readout. On a theme's 212 px music_list that is most of the panel,
+// spent on chrome for a list that has none of it in AO2 at all.
+//
+// It now carries ONE row: Sort, Rooms (only when the roster spans areas), Status and
+// the ⋮ overflow. NOTHING was deleted:
+//
+//   - "● LIVE" and the head-count readout were pure READOUTS and are gone. The roster
+//     itself is the readout — it is one row per player, live, and the empty-state hint
+//     under it already says which source is filling it.
+//   - Refresh, Legacy, Pairs and Follow are FUNCTIONS with no other home in the UI, so
+//     they moved into the panel's existing ⋮ overflow menu (musicheader.go) rather than
+//     being dropped. That is the same menu the Music header debloated into, and the
+//     roster shares its panel.
+//   - The legacy /ga · /gas · /getarea button trio is the one capability that did not
+//     survive verbatim: three buttons that each typed one OOC command became one menu
+//     row, "Refresh roster details" (musicheader.go). It does NOT inherit the Refresh
+//     button's hardcoded /getarea — it sends rosterDetailCmd (liveroster.go), which
+//     picks the spelling THIS server family registers, because a fixed string is inert
+//     on half the fleet: Athena/Nyathena/Whisker answer /players (Athena answers ONLY
+//     that — no ga/gas/getarea at all), Akashi and KFO only the long /getarea. Losing
+//     the choice of three buttons is acceptable; replacing them with a row that answers
+//     "unknown command" would not be.
+//
+//     That is NOT justified by "the automatic pull already sends /gas". It does
+//     (liveroster.go: fetchRoster), but neither always nor everywhere, and the trio's
+//     own mode is the gap: both call sites are gated on `!a.rosterLegacy` (the on-open
+//     fetch in drawPlayerList and maybeRefetchRoster), so in the LEGACY snapshot mode
+//     these three buttons actually lived in, the automatic pull never runs at all.
+//     rosterCmdUnsupported (liveroster.go, latched in pushOOC when the reply is a
+//     command error) exists precisely because a server can reject /gas, after which
+//     the pull stops for the rest of the session. And serverhelp.go flags five server
+//     entries with no 2.11 player list at all, whose roster it describes as entirely
+//     /getarea-driven.
+//
+//     What actually leaves such a server with a filled list is all of:
+//       · the roster's DEFAULT source, which asks for no command whatsoever — rows are
+//         built from the server-PUSHED CharsCheck and ARUP packets (liveroster.go), so
+//         a server with neither a 2.11 list nor a working /gas still shows one row per
+//         player;
+//       · "Refresh roster details" for the fields those packets cannot carry
+//         (UID / IPID / OOC name / pair), on every family whose spelling
+//         rosterDetailCmd knows — which is every family the client can name;
+//       · and the parse itself, which is bound to the REPLY rather than to our send:
+//         pushOOC hands EVERY incoming OOC line to parseAreaBlock (app.go), so an area
+//         list the user types by hand is harvested exactly like one we asked for. That
+//         is the floor under the whole thing, and it is signposted — the roster's own
+//         empty state still reads "Run /ga (or /gas, /getarea) to list who's in this
+//         area." It is the backstop for a server whose ID string names no family we
+//         recognise, where rosterDetailCmd can only fall back to the canonical
+//         spelling; the toast names whichever command it sent, so the other one is one
+//         keystroke away.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -46,8 +103,8 @@ const (
 	// plStripLinePitch is the vertical step from one toolbar line to the next.
 	plStripLinePitch = plStripRowH + plStripLineGapPx
 	// plStripBodyGapPx is the extra gap between the last toolbar line and the roster.
-	// Pitch plus this gap reproduces the old strip's reservation exactly: two lines
-	// cost 2*26+2 = 54 px, which is what the old `r.Y += 26` then `r.Y += 28` took.
+	// Pitch plus this gap reproduces the old strip's per-line reservation exactly: one
+	// line costs 26+2 = 28 px, which is what the old `r.Y += 28` took.
 	plStripBodyGapPx = int32(2)
 	// plStripItemGapPx separates two controls sharing a line.
 	plStripItemGapPx = int32(8)
@@ -55,53 +112,30 @@ const (
 	// the same +16 the Sort button and the music list's Expand/Collapse pair use.
 	plStripBtnPadPx = int32(16)
 	// plStripLabelOffY drops a plain text label to the optical centre of a
-	// plStripRowH line (the +5 the old fixed rows used for "● LIVE" and the status).
+	// plStripRowH line (the +5 the old fixed rows used). The roster strip no longer
+	// draws a bare label, but the Music header's shown/total count still does and
+	// shares this strip's metrics.
 	plStripLabelOffY = int32(5)
 	// plStripMinItemPx is the narrowest LINE still worth placing a control on: a bare
 	// tick box plus its label gap, i.e. a checkbox with no room for any label. Below
 	// that the strip places nothing rather than paint slivers of overlapping chrome —
-	// a panel that narrow has no usable roster underneath either.
+	// a panel that narrow has no usable roster underneath either. It stays expressed
+	// in checkbox terms even though the strip no longer draws one: it is the kit's
+	// smallest labelled control, which is what the floor is really about.
 	plStripMinItemPx = checkboxBoxPx + checkboxLabelGapPx
 	// plStripMinBodyPx is how much of the panel's HEIGHT the roster keeps no matter
 	// how many toolbar lines want to wrap: one area-header row, the smallest thing
 	// the list can usefully show. Wrapping is the fix for a narrow panel, but an
 	// unbounded wrap in a SHORT panel would eat the list it is a toolbar for.
 	plStripMinBodyPx = playerHeaderH
-	// plStatusTextMinPx is the narrowest the roster status line ("5 here · live") is
-	// still worth drawing at — enough for the head-count and a word of context. It is
-	// the only flexible control in the strip: being a clipped label, shrinking it to
-	// stay on the current line beats spending a whole extra line on it.
-	plStatusTextMinPx = int32(60)
-	// plStripCompactPx is the panel width at or above which controls use their FULL
-	// labels; below it the ones with a short form use that instead. Anchored on
-	// tornTabDefaultW — the width a freshly popped-out tab gets, and the narrowest
-	// panel AsyncAO itself ever hands this list. Below that we are inside someone
-	// else's rect (a theme's music_list, or a tab the user dragged smaller), where a
-	// shorter label is worth far more than the wrapped line it saves: measured on the
-	// aceattorney2x rect, compaction takes the strip from five lines to three.
-	//
-	// It is a PANEL-WIDTH threshold rather than a greedy per-control "does the full
-	// label still fit here" test on purpose. Greedy is order-dependent: the first
-	// control would take its full width and leave the next one unable to fit even
-	// compacted, so the panel would show one long label and then wrap anyway. One
-	// threshold makes the whole strip compact or not — predictable, and testable.
-	plStripCompactPx = tornTabDefaultW
+	// plStripMenuPx is the square ⋮ overflow button. Equal to plStripRowH so it
+	// shares the row's baseline, exactly as musicIconPx does in the Music header.
+	plStripMenuPx = plStripRowH
 )
 
 // Fixed control labels. Named here rather than inline so the planner and the draw
 // loop measure and paint the same strings (they used to be two separate literals).
 const (
-	plLiveLabel   = "● LIVE"
-	plFetchLabel  = "Fetch:"
-	plPairsLabel  = "Pairs"
-	plFollowLabel = "Follow"
-	// The two controls with a compact form. Both are named by their SHORT label
-	// already — "Refresh" and "Legacy" say what they do on their own, and each keeps
-	// a tooltip carrying the full sentence — so compacting costs no meaning.
-	plRefreshLabel      = "Refresh details"
-	plRefreshShortLabel = "Refresh"
-	plLegacyLabel       = "Legacy snapshot"
-	plLegacyShortLabel  = "Legacy"
 	// plStatusPrefix + a statusLabel is the Status button's text; plStatusNoneLabel
 	// stands in for the empty label StatusNone returns.
 	plStatusPrefix    = "Status: "
@@ -114,34 +148,19 @@ const (
 	plStatusWidestLabel = plStatusPrefix + "Writing"
 )
 
-// plFetchCmds are the legacy-mode roster fetch buttons. An array (not a slice) so
-// ranging it copies onto the stack instead of referencing a package-level backing
-// store — the draw path builds a plan every frame.
-var plFetchCmds = [3]string{"/ga", "/gas", "/getarea"}
-
 // Toolbar control ids. The plan carries ids rather than closures so it stays a plain
 // value (no allocation, no captured App) and a test can assert on it with no
-// renderer. plItemFetch is shared by the three legacy buttons — their command IS
-// their label, so the draw site reads it straight off the item.
+// renderer.
 const (
-	plItemLive = iota + 1
-	plItemRefresh
-	plItemFetchLabel
-	plItemFetch
-	plItemLegacy
-	plItemSort
+	plItemSort = iota + 1
 	plItemRooms
-	plItemStatusText
 	plItemStatus
-	plItemPairs
-	plItemFollow
+	plItemMenu
 )
 
-// plToolbarMaxItems is the longest the strip can get, which is the LEGACY branch:
-// the "Fetch:" label, three fetch buttons and the Legacy tick box, then Sort, Rooms,
-// the status line, Status, Pairs and Follow. The live branch is two shorter. Fixed
-// so plToolbarPlan is a stack value.
-const plToolbarMaxItems = 11
+// plToolbarMaxItems is the longest the strip can get: Sort, Rooms, Status and the ⋮.
+// Fixed so plToolbarPlan is a stack value.
+const plToolbarMaxItems = 4
 
 // plToolbarLabels carries the labels that change from frame to frame. The caller
 // builds them (it owns the state they come from) so the planner stays pure and a
@@ -149,7 +168,6 @@ const plToolbarMaxItems = 11
 type plToolbarLabels struct {
 	sort   string // "Sort: UID"
 	rooms  string // "Rooms: /gas" — only placed when the roster spans areas
-	roster string // "5 here · live" / "3 players  ·  as of 14:02"
 	status string // "Status: none" — DRAWN text; the button is sized to plStatusWidestLabel
 }
 
@@ -272,61 +290,23 @@ func (s *plStrip) placeFlex(want, min int32) (sdl.Rect, bool) {
 	return r, true
 }
 
-// plBtnW / plCheckW are a control's natural width under an injected measure. plCheckW
-// mirrors Ctx.CheckboxWidth, which now shares checkboxWidthFor with it so the layout
-// pass and the widget can never disagree about how wide a tick box is.
+// plBtnW is a text button's natural width under an injected measure.
 func plBtnW(label string, measure func(string) int32) int32 {
 	return measure(label) + plStripBtnPadPx
 }
 
-func plCheckW(label string, measure func(string) int32) int32 {
-	return checkboxWidthFor(label, measure)
-}
-
-// plCompactLabel picks a control's full or short label for a panel of this width.
-func plCompactLabel(full, short string, panelW int32) string {
-	if panelW < plStripCompactPx {
-		return short
-	}
-	return full
-}
-
-// planPlayerToolbar lays out every Players-tab toolbar control for one frame.
+// planPlayerToolbar lays every Players-tab toolbar control out for one frame.
 //
-// Order is the reading order the old fixed rows had — where the roster comes from
-// first, then how it is shown, on its own line — with ONE change: the roster status
-// line ("12 here · live") is placed last in its half instead of in the middle. It is
-// a passive readout and the strip's only flexible control, so putting it last lets it
-// soak up whatever a line has left rather than pushing a real control onto a new one.
-// Measured on the aceattorney2x rect that is worth a whole wrapped line.
-func planPlayerToolbar(r sdl.Rect, lb plToolbarLabels, legacyMode, multiArea bool, measure func(string) int32) plToolbarPlan {
+// ONE line, in reading order: how the roster is ORDERED (Sort, then Rooms when there
+// are area groups to order), what YOU are broadcasting (Status), and everything else
+// behind the ⋮. The ⋮ is placed last so it lands at the right end of the row on any
+// panel wide enough to hold the lot — the corner every overflow menu lives in.
+//
+// A panel too narrow for one line wraps rather than clips (plStrip.placeFlex), and a
+// panel too SHORT stops opening lines before the roster falls under plStripMinBodyPx.
+func planPlayerToolbar(r sdl.Rect, lb plToolbarLabels, multiArea bool, measure func(string) int32) plToolbarPlan {
 	var p plToolbarPlan
 	s := newPlStrip(r)
-	if legacyMode {
-		if rc, ok := s.place(measure(plFetchLabel)); ok {
-			p.add(plItemFetchLabel, plFetchLabel, rc)
-		}
-		for _, cmd := range plFetchCmds {
-			if rc, ok := s.place(plBtnW(cmd, measure)); ok {
-				p.add(plItemFetch, cmd, rc)
-			}
-		}
-	} else {
-		if rc, ok := s.place(measure(plLiveLabel)); ok {
-			p.add(plItemLive, plLiveLabel, rc)
-		}
-		refresh := plCompactLabel(plRefreshLabel, plRefreshShortLabel, r.W)
-		if rc, ok := s.place(plBtnW(refresh, measure)); ok {
-			p.add(plItemRefresh, refresh, rc)
-		}
-	}
-	legacyLbl := plCompactLabel(plLegacyLabel, plLegacyShortLabel, r.W)
-	if rc, ok := s.place(plCheckW(legacyLbl, measure)); ok {
-		p.add(plItemLegacy, legacyLbl, rc)
-	}
-	// The sort/status half starts on its own line, as it always has: the first half
-	// is about WHERE the roster comes from, this one about how it is shown.
-	s.newline()
 	if rc, ok := s.place(plBtnW(lb.sort, measure)); ok {
 		p.add(plItemSort, lb.sort, rc)
 	}
@@ -340,16 +320,8 @@ func planPlayerToolbar(r sdl.Rect, lb plToolbarLabels, legacyMode, multiArea boo
 	if rc, ok := s.place(plBtnW(plStatusWidestLabel, measure)); ok {
 		p.add(plItemStatus, lb.status, rc)
 	}
-	if rc, ok := s.place(plCheckW(plPairsLabel, measure)); ok {
-		p.add(plItemPairs, plPairsLabel, rc)
-	}
-	if rc, ok := s.place(plCheckW(plFollowLabel, measure)); ok {
-		p.add(plItemFollow, plFollowLabel, rc)
-	}
-	// Last, and the strip's only FLEXIBLE control: a clipped label would rather be
-	// short than cost a line, so it takes whatever the current line has left.
-	if rc, ok := s.placeFlex(measure(lb.roster), plStatusTextMinPx); ok {
-		p.add(plItemStatusText, lb.roster, rc)
+	if rc, ok := s.place(plStripMenuPx); ok {
+		p.add(plItemMenu, "", rc)
 	}
 	p.h = s.height()
 	return p

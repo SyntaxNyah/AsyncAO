@@ -163,7 +163,13 @@ func planMusicHeader(r sdl.Rect, now string, count string, hideSearchRow, nowPla
 
 // --- the overflow ("kebab") menu ------------------------------------------------
 
-// musicMenuKind enumerates the rows of the Music panel's overflow menu.
+// musicMenuKind enumerates the rows of the LIST PANEL's overflow menu.
+//
+// It is named for the Music header it started on, but the menu belongs to the whole
+// right-hand list panel — Music, Areas and the roster share one rect, one ⋮ and one
+// pane. The roster rows below are the four controls the Players toolbar debloated out
+// of its three header rows (playerlisttoolbar.go); they have no other home in the UI,
+// so they moved here rather than being deleted.
 type musicMenuKind int
 
 const (
@@ -175,6 +181,11 @@ const (
 	musicMenuLoop // the INVERSE of NO_REPEAT (KFO spells it "Loop")
 	musicMenuStop
 	musicMenuRandom
+	// The roster half.
+	musicMenuRosterRefresh // one area-detail pull (rosterDetailCmd): UIDs, IPIDs, OOC names + Pair/Copy onto the rows
+	musicMenuRosterLegacy  // the classic /getarea snapshot instead of the live PR/PU roster
+	musicMenuPairStatus    // #20: show each player's current pair (⇄) on their row
+	musicMenuFollow        // M3: give each row a Follow button
 )
 
 const (
@@ -197,6 +208,10 @@ type musicMenuRow struct {
 // allocates a table. Order follows AO2's own context menu
 // (courtroom.cpp:5822-5875): the view toggle, the four playback flags, then the
 // two immediate actions.
+// The roster block is appended AFTER the music block, behind its own separator, so
+// the menu reads as two named halves rather than one mixed list — and so the music
+// rows keep the exact order (and therefore the exact muscle memory) they had before
+// the roster moved in.
 var musicMenuRows = [...]musicMenuRow{
 	{musicMenuVolumeView, "Volume sliders"},
 	{musicMenuSeparator, ""},
@@ -207,12 +222,25 @@ var musicMenuRows = [...]musicMenuRow{
 	{musicMenuSeparator, ""},
 	{musicMenuStop, "Stop current song"},
 	{musicMenuRandom, "Play random song"},
+	{musicMenuSeparator, ""},
+	// Labels are self-describing sentences, not the toolbar's abbreviations
+	// ("Pairs", "Follow", "Legacy"): Ctx.Tooltip no-ops under modalOn, so a row that
+	// needed a tooltip to be understood would be unexplained here.
+	{musicMenuRosterRefresh, "Refresh roster details"},
+	{musicMenuRosterLegacy, "Legacy roster snapshot"},
+	{musicMenuPairStatus, "Show each player's pair"},
+	{musicMenuFollow, "Follow players"},
 }
 
 // musicMenuRowLive reports whether a row is offered at all this frame. The volume
 // view is not offered inside a theme's design canvas: the theme declares its own
 // music_slider / sfx_slider / blip_slider rects and those win (#21), so offering
 // both would put two sets of volume controls on one screen.
+//
+// The four ROSTER rows are deliberately live in every branch, including from the
+// Music view's own ⋮. They are panel-level settings for a list that shares this rect,
+// and gating them on "the roster happens to be the visible view" would only mean the
+// user has to switch views to reach a switch that is already one menu deep.
 func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
 	if k == musicMenuVolumeView {
 		return !themed
@@ -229,6 +257,9 @@ func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 	switch k {
 	case musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop:
 		return a.musicEffectsSupported()
+	case musicMenuRosterRefresh:
+		// The pull is an OOC command, so it needs a session to send it down.
+		return a.sess != nil
 	}
 	return true
 }
@@ -236,10 +267,18 @@ func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 // musicMenuRowChecked reports a toggle row's state. Loop is the INVERSE of the
 // NO_REPEAT bit: AO2 stores "don't repeat", KFO's UI says "Loop".
 func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
-	flags := a.d.Prefs.MusicFlags()
 	switch k {
 	case musicMenuVolumeView:
 		return a.musicVolMode
+	case musicMenuRosterLegacy:
+		return a.rosterLegacy
+	case musicMenuPairStatus:
+		return a.d.Prefs.ShowPairStatusOn()
+	case musicMenuFollow:
+		return a.d.Prefs.FollowEnabledOn()
+	}
+	flags := a.d.Prefs.MusicFlags()
+	switch k {
 	case musicMenuFadeIn:
 		return flags&config.MusicFlagFadeIn != 0
 	case musicMenuFadeOut:
@@ -258,7 +297,8 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 // a test so it is not "tidied" back to Qt's behaviour later.
 func musicMenuRowIsToggle(k musicMenuKind) bool {
 	switch k {
-	case musicMenuVolumeView, musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop:
+	case musicMenuVolumeView, musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop,
+		musicMenuRosterLegacy, musicMenuPairStatus, musicMenuFollow:
 		return true
 	}
 	return false
@@ -428,6 +468,34 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 		a.stopMusic()
 	case musicMenuRandom:
 		a.playRandomMusic()
+	case musicMenuRosterRefresh:
+		// What the retired "Refresh details" button did, minus its hardcoded
+		// /getarea: that spelling is registered on neither Athena, Nyathena nor
+		// Whisker (liveroster.go, rosterDetailCmd), and two of those three have no
+		// 2.11 live list in the base server to fall back on (serverhelp.go: Athena
+		// plist:false, Whisker plistPlugin), so the button's replacement would have
+		// answered "unknown command" exactly where it is the last roster control —
+		// the inert row playerlisttoolbar.go's degradation contract forbids. The
+		// toast NAMES the command so a mis-detected server can still be driven by
+		// hand.
+		cmd := a.rosterDetailCmd()
+		a.pairAreaReset = true
+		a.queueOOCLines([]string{cmd})
+		a.warnLine = clampLine("Fetching UIDs / IPIDs for this area (" + cmd + ")…")
+		a.warnAt = a.now()
+	case musicMenuRosterLegacy:
+		a.setRosterLegacy(!a.rosterLegacy) // drops the index-keyed icon cache, rebuilds live
+	case musicMenuPairStatus:
+		next := !a.d.Prefs.ShowPairStatusOn()
+		a.d.Prefs.SetShowPairStatus(next)
+		a.pairStatusShow = next
+	case musicMenuFollow:
+		next := !a.d.Prefs.FollowEnabledOn()
+		a.d.Prefs.SetFollowEnabled(next)
+		a.followShow = next
+		if !next {
+			a.followUID = "" // turning it off stops any active trailing
+		}
 	}
 }
 

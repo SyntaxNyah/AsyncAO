@@ -178,6 +178,95 @@ func TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme(t *testing.T) {
 	}
 }
 
+// TestCatalogTruncationMeansAThemeWasReallyDropped — Truncated is a claim ("the
+// list you are looking at is a PREFIX of what is on disk"), so it may only be set
+// when a folder this scan would really have listed was left out. The cap check
+// therefore runs after the is-it-a-directory and already-seen filters: tested
+// before them, a collection of exactly themeCatalogCap themes with one loose FILE
+// beside them reported itself as a prefix of itself, and the row told the user to
+// go looking for themes that were all already there.
+func TestCatalogTruncationMeansAThemeWasReallyDropped(t *testing.T) {
+	// The scan also walks this machine's OWN theme roots, and this is a boundary
+	// test, so measure their contribution first and step aside if it already fills
+	// the cap on its own (a developer with a large collection installed).
+	baseline := scanThemeCatalog(t.TempDir(), nil, false)
+	if baseline == nil {
+		t.Fatal("scan returned no catalog")
+	}
+	if len(baseline.Entries) >= themeCatalogCap {
+		t.Skipf("this machine's own theme roots hold %d themes — the cap boundary cannot be exercised here", len(baseline.Entries))
+	}
+
+	root := t.TempDir()
+	for i := 0; i < themeCatalogCap-len(baseline.Entries); i++ {
+		writeCatalogTheme(t, root, fmt.Sprintf("exact%03d", i), theme.DesignFileName)
+	}
+	// The custom root is walked FIRST, so the two together fill the catalog to
+	// exactly the cap and nothing is dropped. Now a loose file beside them: not a
+	// theme, not a candidate, and not a reason to claim truncation.
+	if err := os.WriteFile(filepath.Join(root, theme.ThemesDirName, "readme.txt"), []byte("not a theme"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cat := scanThemeCatalog(root, nil, false)
+	if cat == nil {
+		t.Fatal("scan returned no catalog")
+	}
+	if len(cat.Entries) != themeCatalogCap {
+		t.Fatalf("catalog holds %d entries, want exactly %d (the fixture fills it to the cap)", len(cat.Entries), themeCatalogCap)
+	}
+	if cat.Truncated {
+		t.Error("exactly-cap themes plus a loose FILE reported truncation — the cap check ran before the filters, so a non-candidate tripped it")
+	}
+}
+
+// TestNativeOnlyFolderIsBadgedNativeEvenThoughItCannotLoadYet pins BOTH halves of
+// the themeKindNative TODO, so the day the sidecar becomes a standalone source
+// (W3's element render model / W7's save path) this test is the one place that
+// says what has to move with it. The badge describes the FILES, which is true
+// now and stays true then; the loader is what is behind, and a sidecar-only
+// folder is still refused on drop.
+func TestNativeOnlyFolderIsBadgedNativeEvenThoughItCannotLoadYet(t *testing.T) {
+	dir := writeCatalogTheme(t, t.TempDir(), "sidecaronly", theme.SidecarFileName)
+	if got := themeKindOf(dir); got != themeKindNative {
+		t.Errorf("a folder holding only %s badges %q, want %q", theme.SidecarFileName, themeKindLabel(got), themeKindLabel(themeKindNative))
+	}
+	if _, pick := normalizeThemeRoot(dir); pick != "" {
+		t.Errorf("normalizeThemeRoot now resolves a sidecar-only folder (pick %q) — the loader caught up with the badge: flip this assertion and drop the TODO on themeKindNative", pick)
+	}
+}
+
+// TestSubthemeScanBoundsItsWorkNotJustItsOutput — the output cap bounds what is
+// KEPT; themeSubthemeScanCap bounds what is STATTED, which is where the cost is
+// (up to four os.Stat per candidate, per theme, per scan). The normal case must
+// survive the bound: a real variant sitting among a theme's ordinary asset
+// folders is still found.
+func TestSubthemeScanBoundsItsWorkNotJustItsOutput(t *testing.T) {
+	dir := writeCatalogTheme(t, t.TempDir(), "huge", theme.DesignFileName)
+	// Twice the candidate cap in plain asset folders, none of them a variant.
+	for i := 0; i < themeSubthemeScanCap*2; i++ {
+		if err := os.MkdirAll(filepath.Join(dir, fmt.Sprintf("assets%03d", i)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One real variant, named so ReadDir's sorted order puts it inside the bound —
+	// which is the case the bound must not break.
+	if err := os.MkdirAll(filepath.Join(dir, "alt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "alt", theme.DesignFileName), []byte("chatbox = 1, 2, 3, 4\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	subs := scanSubthemes(dir)
+	if len(subs) > themeSubthemeCap {
+		t.Errorf("scanSubthemes returned %d variants, cap is %d", len(subs), themeSubthemeCap)
+	}
+	if len(subs) != 1 || subs[0] != "alt" {
+		t.Errorf("subthemes = %v, want [alt] — the candidate bound must not hide a real variant among asset folders", subs)
+	}
+}
+
 // TestThemeCatalogFocusStatOnlyRescansWhenTheRootMoved pins the cheap trigger:
 // focus-gain must cost one os.Stat and nothing else unless the write root's
 // mtime actually changed. A rescan on every alt-tab is exactly the polling the

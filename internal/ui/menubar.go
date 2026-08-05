@@ -347,6 +347,12 @@ var menuWindowItems = []menuItem{
 // the commands moved out of the canvas instead. They are reachable from every
 // screen here, which the pinned row never was.
 var menuExtrasItems = []menuItem{
+	// The Wardrobe's written path from EVERY screen. The band's own Iniswap chip is
+	// the fast route (iniswapchip.go), but that chip is dropped whenever the band gets
+	// tight, and a control that can vanish must not be the only one — same reasoning
+	// as the two rows below it, which exist because the themed IC bar draws Text FX
+	// and the emoji picker only at rects no stock AO2 theme declares.
+	{kind: menuItemAction, label: "Wardrobe / iniswap…", enabled: menuInCourtroom, act: menuActWardrobe},
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
 	// Text FX and the emoji picker have NO AO2 design key, so under #21 rule (c)
@@ -544,6 +550,10 @@ func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.too
 // the table is read, and the themed frame is gated at zero allocations.
 func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
 func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
+
+// menuActWardrobe opens the Wardrobe on its browse tab — the same entry point the
+// band's Iniswap chip uses (iniswapchip.go), so the two can never drift.
+func menuActWardrobe(a *App, _ int) { a.openIniswapBrowse() }
 
 func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
@@ -1031,6 +1041,12 @@ func (a *App) menuBarFrame(w, h int32) {
 	//   - Otherwise publish: the strip really is painted over the top band of every
 	//     screen dispatched below, so those screens must not hit-test underneath it.
 	a.menuBar.live = !c.ptrFenced
+	// The Iniswap chip shares this band, so its click must be claimed BEFORE the
+	// strip's fence covers its rect — the same ordering the missing-asset chip gets
+	// one call site earlier, in App.Frame. (iniswapchip.go.)
+	if a.menuBar.live && !a.menuBar.inert {
+		a.handleIniswapChipInput(w)
+	}
 	if a.menuBar.live {
 		c.fenceOverlay(a.menuBar.strip)
 	}
@@ -1254,9 +1270,12 @@ func (a *App) drawMenuBar(w, _ int32) {
 		}
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
-	// #27: the missing-asset chip rides the bar's empty right half. Drawn here (and
-	// nowhere else) so it can never intrude on an AO2 design canvas or on the
-	// emote grid, which is what the old in-content banner did on both layouts.
+	// The band's two chips, both drawn here (and nowhere else) so neither can ever
+	// intrude on an AO2 design canvas or on the emote grid, which is what the old
+	// in-content banner did on both layouts. The Iniswap button is left-anchored
+	// after the titles (iniswapchip.go); #27's missing-asset chip is right-aligned
+	// and measures its clearance against whatever the left half ended up using.
+	a.drawIniswapChip(w)
 	a.drawAssetMissChip(w)
 	if a.menuBar.open < 0 {
 		return

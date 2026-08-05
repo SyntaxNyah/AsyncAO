@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -120,6 +121,19 @@ type settingsState struct {
 	// resolved nothing can swallow the intent. Render thread only, like the rest of
 	// this struct: the scan goroutine never touches it (hard rules 1 and 8).
 	themeScanUserWant bool
+	// themeDDWasOpen edge-detects the theme dropdown so the catalog is rescanned
+	// once per OPEN rather than once per themeScanMinInterval for as long as the
+	// list is held open. The floor alone made a held-open picker poll the disk
+	// every 5 s, which is exactly what the no-watcher decision (themecatalog.go's
+	// header) exists to avoid; the floor stays on top of this edge, so opening the
+	// picker twice in a second is still one scan. Render thread only.
+	themeDDWasOpen bool
+	// themeCountText memoizes the "(N found)" line beside the picker on the count
+	// it was built from — see themeFoundText.
+	themeCountText string
+	themeCountFor  int
+	// themeRows memoizes every string drawThemeCatalogRows draws. See themeRowText.
+	themeRows themeRowText
 
 	// folder picking: native dialog output / resolved drag-drops land
 	// here from goroutines (never block or stat on the render thread). Still used
@@ -317,6 +331,11 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// players, Mod tools.
 		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
 		"chat log", "ic log", "timestamps", "log", "song url", "song link", "full link", "music url",
+		// The follow-jump toggle. NOT a bare "smooth" — the table is scanned in TAB
+		// ORDER and matches forward, and General's "smooth scaling" already owns that
+		// prefix. Also NOT the "-ing" forms: "scrolling" literally CONTAINS "rolling",
+		// which would hand Studio's rolling-buffer queries to this tab.
+		"log scroll", "smooth log scroll", "scroll", "jump to newest", "auto scroll", "autoscroll",
 		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
 		"do not disturb", "dnd", "messages", "connection", "auto reconnect", "reconnect", "disconnect confirm",
 		"sound effects", "sfx", "mute sfx", "music history", "jukebox history",
@@ -1911,13 +1930,19 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 			break
 		}
 	}
+	// Trigger 2 of four (§Q6): the picker OPENING asks for a fresh catalog. On the
+	// rising EDGE, not while open: the themeScanMinInterval floor alone would let a
+	// list held open walk the disk every 5 s forever, and "never poll the disk" is
+	// the whole reason this feature has no filesystem watcher (themecatalog.go's
+	// header). The floor still applies on top, so flicking the picker open twice in
+	// a second is one scan. The latch is updated OUTSIDE the list-non-empty arm so a
+	// dropdown that stops being drawn while open cannot strand it set.
+	themeDDOpen := c.ddOpen == themeDropdownID
+	if themeDDOpen && !settings.themeDDWasOpen {
+		a.requestThemeCatalog(themeScanOnOpen)
+	}
+	settings.themeDDWasOpen = themeDDOpen
 	if len(settings.themeList) > 0 {
-		// Trigger 2 of four (§Q6): the picker being OPEN asks for a fresh
-		// catalog, floored by themeScanMinInterval so holding it open is one
-		// scan, not one per frame.
-		if c.ddOpen == themeDropdownID {
-			a.requestThemeCatalog(themeScanOnOpen)
-		}
 		if next, changed := c.Dropdown(themeDropdownID, sdl.Rect{X: pad + 60, Y: y, W: 240, H: btnH}, settings.themeList, selIdx); changed {
 			settings.themeName = settings.themeList[next]
 			a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
@@ -1939,7 +1964,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if settings.themeBusy {
 		c.Label(pad+372, y+6, "scanning...", ColTextDim)
 	} else {
-		c.Label(pad+372, y+6, fmt.Sprintf("(%d found)", len(settings.themeList)), ColTextDim)
+		c.Label(pad+372, y+6, themeFoundText(settings.themeList), ColTextDim)
 	}
 	y += 32
 	c.Label(pad, y+4, "Theme folder:", ColText)
@@ -3050,6 +3075,18 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
 		a.d.Prefs.SetShowSongURL(next)
 	}
+	y += 26
+	// Smooth log scrolling (OFF by default = AO2 parity). The default snaps the log
+	// to a newly-arrived line the instant it lands, exactly as AO2-Client does;
+	// turning this on brings back the glide. It governs the FOLLOW only — the wheel
+	// and the scrollbar keep their own easing either way.
+	const smoothLogLabel = "Smooth log scrolling (OFF by default): when a new IC message arrives the log jumps straight to it, like AO2. Turn on to glide instead."
+	smoothLog := a.d.Prefs.SmoothLogScrollOn()
+	if next := c.Checkbox(pad, y, smoothLogLabel, smoothLog); next != smoothLog {
+		a.d.Prefs.SetSmoothLogScroll(next)
+	}
+	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(smoothLogLabel), H: 16},
+		"Only the automatic follow — the jump that keeps the newest message in view — is affected. Scrolling with the wheel or the scrollbar is unchanged.")
 	y += 26
 
 	y = a.settingsSection(y, w, "Area list")
@@ -4310,9 +4347,16 @@ func exportLearnedAsync(a *App) {
 }
 
 // makePortableAsync copies the active config set (settings + notebooks + jukebox)
-// into a config/ folder beside the executable so it travels with a portable copy
-// or USB stick. Off-thread (§17.2: no sync disk I/O on the render thread); the
-// move takes effect on the next launch.
+// into a config/ folder beside the executable, AND your themes folder to the
+// portable write root beside it (<exeDir>/themes — not inside config/, which is
+// not where anything writes themes after the move), so the whole set travels with
+// a portable copy or USB stick. Off-thread (§17.2: no sync disk I/O on the render
+// thread); the move takes effect on the next launch.
+//
+// Themes are the one half that can fail on its own, and MigrateToPortable says so
+// with ErrThemesNotMigrated rather than an opaque error. That case is reported as
+// what it is — the settings DID move — because "Make portable failed" would send
+// the user hunting for settings that are already in place.
 func makePortableAsync(a *App) {
 	go func() {
 		dest, err := a.d.Prefs.MigrateToPortable()
@@ -4320,10 +4364,13 @@ func makePortableAsync(a *App) {
 		switch {
 		case err == config.ErrAlreadyPortable:
 			line = "Config is already portable (" + dest + ")."
+		case errors.Is(err, config.ErrThemesNotMigrated):
+			line = "Copied your settings to " + dest + ", but your themes folder did not travel (" + err.Error() +
+				"). Restart to use the portable settings, and copy your themes folder across by hand."
 		case err != nil:
 			line = "Make portable failed: " + err.Error()
 		default:
-			line = "Copied your settings to " + dest + " — restart AsyncAO to start using the portable copy."
+			line = "Copied your settings to " + dest + " and your themes beside them — restart AsyncAO to start using the portable copy."
 		}
 		select {
 		case settings.ioRes <- line:
@@ -4641,13 +4688,30 @@ const subthemeDropdownID = "subthemedd"
 // because a blank row in a list reads as a broken entry.
 const subthemeNoneLabel = "(none)"
 
+// subthemeMissingSuffix decorates the SYNTHESIZED row the dropdown grows when the
+// saved subtheme names a folder the active theme does not have. AO2 keeps the
+// subtheme across theme changes, so that state is normal, not an error — but a
+// dropdown that quietly fell back to "(none)" told the user their pick was gone
+// while the preference still held it (and would silently return the moment they
+// switched back). The row says both true things at once: the pick, and that this
+// theme has no such folder.
+const subthemeMissingSuffix = " (not in this theme)"
+
+// subthemeHint is the one-line explanation beside the dropdown. A const so the
+// row costs no allocation to draw.
+const subthemeHint = "a variant folder inside the theme — its files win over the theme's, and anything it leaves out still comes from the theme"
+
+// themeDropNote is the line under the write root when nothing is truncated.
+const themeDropNote = "drop a theme folder in here (or anywhere on this screen) and it shows up in the list above"
+
 // themeRowLabelW is the label gutter shared by the catalog rows below, so
 // "Subtheme:" and "Your themes:" line their controls up with each other.
 const themeRowLabelW = 130
 
 // subthemeClearBtnW is the width of the "Clear" button that appears when a
-// subtheme is set but the ACTIVE theme has no such folder — the one state where
-// the pick is invisible and would otherwise be unclearable from this screen.
+// subtheme is set but the ACTIVE theme has no such folder AND that theme ships no
+// variants at all — the one state where the pick has no row of its own to clear
+// from (a theme WITH variants grows the synthesized row above instead).
 const subthemeClearBtnW = 70
 
 const (
@@ -4659,7 +4723,135 @@ const (
 	// UI font pushes the text to the column's edge — the badge clips there rather
 	// than drawing over its neighbour.
 	themeBadgeGap = 8
+	// subthemeDropdownW is the variant picker's width: wide enough for a folder
+	// name plus subthemeMissingSuffix before the row clips.
+	subthemeDropdownW = 200
+	// subthemeHintGap separates that dropdown from the explanation beside it.
+	subthemeHintGap = 10
+	// subthemeClearGap keeps the "no such folder" line off the Clear button.
+	subthemeClearGap = 6
+	// themeFolderBtnsW is the strip on the right of the write-root row reserved
+	// for its two buttons ("Open folder" + "Refresh"), so the path label clips
+	// before it reaches them.
+	themeFolderBtnsW = 200
+	// themeOpenFolderBtnW / themeRefreshBtnW are those two buttons; Refresh is
+	// right-anchored, so its own width doubles as its offset from the edge.
+	themeOpenFolderBtnW = 110
+	themeRefreshBtnW    = 84
 )
+
+const (
+	// Row advances for the three catalog rows and the note under them. Named
+	// per row rather than shared, because they are not the same measurement: the
+	// badge and folder rows are plain label rows, the subtheme row carries a
+	// dropdown, and the note is a trailing hint line.
+	themeBadgeRowH    = 26
+	themeSubthemeRowH = 30
+	themeFolderRowH   = 26
+	themeNoteRowH     = 22
+	// themeFolderErrRowH is the advance of the write-root row when the location
+	// could not be resolved at all: that arm draws no note under it and RETURNS,
+	// so it carries the section's trailing gap itself.
+	themeFolderErrRowH = 30
+)
+
+// themeRowText memoizes every string drawThemeCatalogRows draws. Those rows are a
+// pure function of three inputs — the published catalog snapshot, the selected
+// theme name and the subtheme preference — none of which changes per frame, while
+// building them concatenates two labels, allocates an options slice and formats
+// the truncation note. Uncached that is four allocations on every frame the Theme
+// tab is up, which is exactly what the settings-text doctrine (see fmtOrderText)
+// exists to keep out.
+//
+// The validity key holds the catalog POINTER: the snapshot is immutable and
+// republished by pointer swap (themecatalog.go), so pointer identity is a
+// complete "did the answer change?" test — nil, the pre-first-scan state,
+// included. Render thread only, like the rest of settingsState.
+type themeRowText struct {
+	valid bool
+	cat   *themeCatalog
+	name  string
+	sub   string
+
+	// have reports that the catalog holds an entry for name; badge and dir are
+	// that entry's two label columns.
+	have  bool
+	badge string
+	dir   string
+
+	// subOpts is the subtheme dropdown's option list — subthemeNoneLabel, the
+	// theme's variants, and (when the saved pick is not one of them) the
+	// synthesized row at subStale. Empty when the theme ships no variants, which
+	// is the arm that draws subMsg and the Clear button instead.
+	subOpts  []string
+	subSel   int
+	subStale int // index of the synthesized row, -1 when there is none
+	subMsg   string
+
+	// root is the themes write root as this build resolved it; note is the line
+	// under it (truncation-aware).
+	root string
+	note string
+}
+
+// stale reports whether the memo has to be rebuilt for these inputs. Split from
+// the draw so the memo key is testable without a renderer.
+func (r *themeRowText) stale(cat *themeCatalog, name, sub string) bool {
+	return !r.valid || r.cat != cat || r.name != name || r.sub != sub
+}
+
+// rebuild recomputes the whole row set from the three inputs.
+func (r *themeRowText) rebuild(cat *themeCatalog, name, sub string) {
+	*r = themeRowText{valid: true, cat: cat, name: name, sub: sub, subStale: -1}
+	entry, have := cat.Entry(name)
+	r.have = have
+	if have {
+		r.badge = themeKindLabel(entry.Kind) + " · " + themeOriginLabel(entry.Origin)
+		r.dir = entry.Dir
+	}
+	switch {
+	case have && len(entry.Subthemes) > 0:
+		r.subOpts = make([]string, 0, len(entry.Subthemes)+2) // +2: "(none)" and the possible stale row
+		r.subOpts = append(r.subOpts, subthemeNoneLabel)
+		r.subOpts = append(r.subOpts, entry.Subthemes...)
+		for i, s := range entry.Subthemes {
+			if s == sub {
+				r.subSel = i + 1
+				break
+			}
+		}
+		if sub != "" && r.subSel == 0 {
+			// The saved pick belongs to another theme. Show it as itself rather
+			// than letting the control read "(none)" over a preference that is set.
+			r.subStale = len(r.subOpts)
+			r.subOpts = append(r.subOpts, sub+subthemeMissingSuffix)
+			r.subSel = r.subStale
+		}
+	case sub != "":
+		// No variants at all: there is no list to carry the pick, so the row says
+		// it in words and the Clear button beside it is the way out.
+		r.subMsg = "\"" + sub + "\" is set, but this theme has no such folder"
+	default:
+		r.subMsg = "this theme ships no variant folders"
+	}
+	if cat != nil {
+		r.root = cat.WriteRoot
+	}
+	if r.root == "" {
+		// Fallback for the frames before the first catalog publishes (and forever
+		// on a machine whose config location never resolves). config.UserThemesDir
+		// joins two memoized answers — ConfigBaseDir's probe and executableDir's
+		// EvalSymlinks walk — and BOTH are already warm here: prefs loading resolves
+		// them during boot, long before this screen can be drawn. Reached once per
+		// rebuild, never per frame. Do not "simplify" either memo away, and do not
+		// add a stat/exists check here (hard rule 2).
+		r.root = config.UserThemesDir()
+	}
+	r.note = themeDropNote
+	if cat != nil && cat.Truncated {
+		r.note = fmt.Sprintf("showing the first %d themes found — the rest are still on disk and still load by name", themeCatalogCap)
+	}
+}
 
 // drawThemeCatalogRows draws everything the off-thread theme catalog answers:
 // what the selected theme actually IS (its badge), which AO2 subtheme variant
@@ -4669,12 +4861,17 @@ const (
 //
 // Every value here comes from an atomic snapshot (themecatalog.go). Nothing in
 // this function touches the disk: "Open folder" and the scans are the only disk
-// work and both are goroutines (hard rule 2).
+// work and both are goroutines (hard rule 2). Nothing here builds a string
+// either — every one of them comes from the themeRowText memo.
 func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule: without this the row draws under the sidebar
 	cat := a.themeCatalogSnapshot()
-	entry, haveEntry := cat.Entry(settings.themeName)
+	sub := a.d.Prefs.Subtheme()
+	rows := &settings.themeRows
+	if rows.stale(cat, settings.themeName, sub) {
+		rows.rebuild(cat, settings.themeName, sub)
+	}
 
 	// --- badge: what this theme is, and whether it is ours to edit ----------
 	if c.onRow != nil {
@@ -4684,95 +4881,69 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	switch {
 	case cat == nil:
 		c.Label(pad+themeRowLabelW, y+4, "reading your themes folder…", ColTextDim)
-	case !haveEntry:
+	case !rows.have:
 		// The built-in default has no folder anywhere, and a bare-folder import
 		// (#21) resolves outside themes/ — neither is an error.
 		c.Label(pad+themeRowLabelW, y+4, "built in (no theme folder of its own)", ColTextDim)
 	default:
-		c.LabelClipped(pad+themeRowLabelW, y+4, themeBadgeW-themeBadgeGap,
-			themeKindLabel(entry.Kind)+" · "+themeOriginLabel(entry.Origin), ColAccent)
-		c.LabelClipped(pad+themeRowLabelW+themeBadgeW, y+4, w-pad-themeRowLabelW-themeBadgeW-scrollBarW, entry.Dir, ColTextDim)
+		c.LabelClipped(pad+themeRowLabelW, y+4, themeBadgeW-themeBadgeGap, rows.badge, ColAccent)
+		c.LabelClipped(pad+themeRowLabelW+themeBadgeW, y+4, w-pad-themeRowLabelW-themeBadgeW-scrollBarW, rows.dir, ColTextDim)
 	}
-	y += 26
+	y += themeBadgeRowH
 
 	// --- subtheme: AO2's own variant selector -------------------------------
 	if c.onRow != nil {
 		c.onRow("Subtheme", y)
 	}
 	c.Label(pad, y+4, "Subtheme:", ColText)
-	cur := a.d.Prefs.Subtheme()
-	if haveEntry && len(entry.Subthemes) > 0 {
-		opts := make([]string, 0, len(entry.Subthemes)+1)
-		opts = append(opts, subthemeNoneLabel)
-		opts = append(opts, entry.Subthemes...)
-		sel := 0
-		for i, s := range entry.Subthemes {
-			if s == cur {
-				sel = i + 1
-				break
-			}
-		}
-		if next, changed := c.Dropdown(subthemeDropdownID, sdl.Rect{X: pad + themeRowLabelW, Y: y, W: 200, H: btnH}, opts, sel); changed {
+	if len(rows.subOpts) > 0 {
+		if next, changed := c.Dropdown(subthemeDropdownID, sdl.Rect{X: pad + themeRowLabelW, Y: y, W: subthemeDropdownW, H: btnH}, rows.subOpts, rows.subSel); changed {
 			pick := ""
-			if next > 0 {
-				pick = opts[next]
+			switch {
+			case next == rows.subStale:
+				// The synthesized row is the pick it already holds — re-picking it
+				// must not write the DECORATED label into the preference.
+				pick = sub
+			case next > 0:
+				pick = rows.subOpts[next]
 			}
 			a.d.Prefs.SetSubtheme(pick)
 			a.applyThemeAsync() // the variant changes rects, art and fonts: reload like a theme swap
 		}
-		c.LabelClipped(pad+themeRowLabelW+210, y+4, w-pad-themeRowLabelW-210-scrollBarW,
-			"a variant folder inside the theme — its files win over the theme's, and anything it leaves out still comes from the theme", ColTextDim)
+		c.LabelClipped(pad+themeRowLabelW+subthemeDropdownW+subthemeHintGap, y+4,
+			w-pad-themeRowLabelW-subthemeDropdownW-subthemeHintGap-scrollBarW, subthemeHint, ColTextDim)
 	} else {
-		msg := "this theme ships no variant folders"
-		if cur != "" {
-			// Keep a pick made for another theme visible rather than pretending
-			// it isn't set — AO2 keeps the option across theme changes too.
-			msg = "\"" + cur + "\" is set, but this theme has no such folder"
-		}
 		msgW := w - pad - themeRowLabelW - scrollBarW
-		if cur != "" {
-			msgW -= subthemeClearBtnW + 6 // leave the Clear button its own room
+		if sub != "" {
+			msgW -= subthemeClearBtnW + subthemeClearGap // leave the Clear button its own room
 		}
-		c.LabelClipped(pad+themeRowLabelW, y+4, msgW, msg, ColTextDim)
-		if cur != "" {
+		c.LabelClipped(pad+themeRowLabelW, y+4, msgW, rows.subMsg, ColTextDim)
+		if sub != "" {
 			if c.Button(sdl.Rect{X: w - subthemeClearBtnW - scrollBarW, Y: y, W: subthemeClearBtnW, H: btnH}, "Clear") {
 				a.d.Prefs.SetSubtheme("")
 				a.applyThemeAsync()
 			}
 		}
 	}
-	y += 30
+	y += themeSubthemeRowH
 
 	// --- the write root, and the button that opens it ----------------------
 	if c.onRow != nil {
 		c.onRow("Your themes folder", y)
 	}
 	c.Label(pad, y+4, "Your themes:", ColText)
-	root := ""
-	if cat != nil {
-		root = cat.WriteRoot
-	}
-	if root == "" {
-		// Fallback for the frames before the first catalog publishes (and forever
-		// on a machine whose config location never resolves). config.UserThemesDir
-		// joins two memoized answers — ConfigBaseDir's probe and executableDir's
-		// EvalSymlinks walk — and BOTH are already warm here: prefs loading resolves
-		// them during boot, long before this screen can be drawn. So this is a
-		// string join per frame, not a syscall per frame (hard rule 2). Do not
-		// "simplify" either memo away, and do not add a stat/exists check here.
-		root = config.UserThemesDir()
-	}
+	root := rows.root
 	if root == "" {
 		c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-scrollBarW,
 			"couldn't work out where to keep themes on this machine", ColTextDim)
-		y += 30
+		y += themeFolderErrRowH
 		return y
 	}
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-200-scrollBarW, root, ColAccent)
-	if c.Button(sdl.Rect{X: w - 200 - scrollBarW, Y: y, W: 110, H: btnH}, "Open folder") {
+	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeFolderBtnsW-scrollBarW, root, ColAccent)
+	if c.Button(sdl.Rect{X: w - themeFolderBtnsW - scrollBarW, Y: y, W: themeOpenFolderBtnW, H: btnH}, "Open folder") {
 		openThemesFolder(root)
 	}
-	if c.Button(sdl.Rect{X: w - 84 - scrollBarW, Y: y, W: 84, H: btnH}, "Refresh") {
+	if c.Button(sdl.Rect{X: w - themeRefreshBtnW - scrollBarW, Y: y, W: themeRefreshBtnW, H: btnH}, "Refresh") {
 		a.requestThemeCatalog(themeScanExplicit) // trigger 4: unconditional
 		// fromUser stays FALSE on purpose. It does not gate the rescan — the list
 		// refreshes either way — it arms the #35 window snap (pollThemeScan sets
@@ -4782,13 +4953,9 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 		// the folder picker and a drop.
 		a.scanThemes(false)
 	}
-	y += 26
-	note := "drop a theme folder in here (or anywhere on this screen) and it shows up in the list above"
-	if cat != nil && cat.Truncated {
-		note = fmt.Sprintf("showing the first %d themes found — the rest are still on disk and still load by name", themeCatalogCap)
-	}
-	c.LabelClipped(pad, y, w-pad-scrollBarW, note, ColTextDim)
-	y += 22
+	y += themeFolderRowH
+	c.LabelClipped(pad, y, w-pad-scrollBarW, rows.note, ColTextDim)
+	y += themeNoteRowH
 	return y
 }
 
@@ -5391,33 +5558,109 @@ func (a *App) pollFolderPick() {
 // this is now the theme picker's alone.
 const pickFailed = "\x00"
 
+// themePickerCap bounds the theme dropdown's list (hard rule 4). It is derived
+// from themeCatalogCap, not a second number: the picker and the browser answer
+// the same question about the same directories, and a name in one but not the
+// other is the W2 class of bug where a theme resolves yet cannot be picked.
+// Past it the list stops and the row says so — the themes are still on disk and
+// still load by name, which is what the truncation note tells the user.
+//
+// The +1 is the seed, and it is what makes "same question" true. scanThemeDirs
+// starts the list with the built-in "default" NAME before it reads a single
+// directory (theme.Load falls back to it even when no themes/ folder exists),
+// while the catalog counts directories only. At a plain themeCatalogCap the seed
+// would spend a directory's slot: a machine with exactly themeCatalogCap real
+// themes got 128 catalog entries and 127 picker rows — one theme the browser
+// lists and the dropdown cannot reach, i.e. precisely the bug above.
+const themePickerCap = themeCatalogCap + 1 // +1: the "default" seed is a name, not a directory
+
 // scanThemeDirs collects theme names across roots, "default" always first
-// (the built-in fallback theme.Load uses even when no folder exists).
+// (the built-in fallback theme.Load uses even when no folder exists). BLOCKING
+// (os.ReadDir per root) — goroutine only, never a draw path.
 //
 // pick is the bare-folder import normalizeThemeRoot just resolved (#21). It has
 // no themes/ parent, so the ReadDir below can never find it; without appending
 // it the theme applies once and then vanishes from the dropdown, and stepping
-// the ◀ ▶ arrows would walk off it with no way back.
+// the ◀ ▶ arrows would walk off it with no way back. It is appended even at the
+// cap — a theme the user just picked must never be the one entry the bound drops,
+// or the pick becomes unreachable the moment it is made.
+//
+// Dedup keys on the FOLDED name, matching the catalog scan: on Windows and macOS
+// "Nocturne" and "nocturne" are one directory, and keying case-sensitively listed
+// it twice in the dropdown while the catalog held one entry for it. The name kept
+// is the first spelling seen, which is the one the first root actually holds.
+//
+// On a case-SENSITIVE filesystem (Linux) those are two real directories, and
+// folding costs the second SPELLING ENCOUNTERED its dropdown row (root order,
+// then directory order, decides which). That is deliberate, not an oversight:
+// the catalog scan folds too
+// (themecatalog.go), so the picker and the browser stay one list, and the price
+// is paid by a collection that keeps two themes whose names differ only in case.
+// The hidden one is not lost — theme.Load takes the name as spelled, so a
+// preferences file or a drag-and-drop import still resolves it.
 func scanThemeDirs(roots []string, pick string) []string {
 	names := []string{theme.DefaultThemeName}
-	seen := map[string]bool{theme.DefaultThemeName: true}
+	seen := map[string]bool{strings.ToLower(theme.DefaultThemeName): true}
 	for _, root := range roots {
 		entries, err := os.ReadDir(filepath.Join(root, theme.ThemesDirName))
 		if err != nil {
 			continue // missing themes/ dir is normal
 		}
 		for _, e := range entries {
-			if !e.IsDir() || seen[e.Name()] {
+			if !e.IsDir() {
 				continue
 			}
-			seen[e.Name()] = true
+			key := strings.ToLower(e.Name())
+			if seen[key] {
+				continue
+			}
+			if len(names) >= themePickerCap {
+				return appendThemePick(names, seen, pick)
+			}
+			seen[key] = true
 			names = append(names, e.Name())
 		}
 	}
-	if pick != "" && !seen[pick] {
+	return appendThemePick(names, seen, pick)
+}
+
+// appendThemePick adds the bare-folder import to the list unless a root already
+// produced it. Split out so the cap's early return and the normal end of the walk
+// cannot forget it — the #21 vanishing-theme bug is exactly that omission.
+func appendThemePick(names []string, seen map[string]bool, pick string) []string {
+	if pick != "" && !seen[strings.ToLower(pick)] {
 		names = append(names, pick)
 	}
 	return names
+}
+
+// themeListTruncated reports whether the picker list may be a prefix of what is
+// on disk. Derived rather than returned alongside the list, because the list is
+// carried across a channel to the render thread and one slice is the whole
+// message; a list at the cap is reported as possibly-truncated, which overstates
+// by one collection-size exactly (a machine with EXACTLY themePickerCap themes),
+// always in the honest direction.
+func themeListTruncated(names []string) bool { return len(names) >= themePickerCap }
+
+// themeFoundText is the "(N found)" line beside the picker, memoized on the count
+// it was built from: it draws every frame the Theme tab is up, and a per-frame
+// fmt.Sprintf on a settings row is the allocation the settings-text doctrine
+// exists to keep out. Render thread only (settingsState).
+func themeFoundText(names []string) string {
+	n := len(names)
+	if settings.themeCountFor == n && settings.themeCountText != "" {
+		return settings.themeCountText
+	}
+	settings.themeCountFor = n
+	if themeListTruncated(names) {
+		// At the bound the list IS a prefix: say so rather than implying these are
+		// all the themes there are. They still load by name — only the dropdown
+		// stops here.
+		settings.themeCountText = fmt.Sprintf("(first %d — more are on disk and still load by name)", themePickerCap)
+	} else {
+		settings.themeCountText = fmt.Sprintf("(%d found)", n)
+	}
+	return settings.themeCountText
 }
 
 // Per-character sprite filtering (#21 label 15). Indices MUST match

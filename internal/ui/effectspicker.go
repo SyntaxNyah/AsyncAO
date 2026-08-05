@@ -353,6 +353,16 @@ func (a *App) pollOverlayRosters() {
 					// fix applied to the same class of async landing. overlayRosterFor
 					// has already dropped the whole map for the new gen, so the next ask
 					// re-resolves against the theme that is actually applied.
+					//
+					// `!=`, where the cited precedent writes `<`, is deliberate and the
+					// two coincide: themeAppliedGen only ever moves FORWARD (pollThemeApply
+					// assigns the landing gen, and applyThemeAsync hands out increasing
+					// ones), so a result can never carry a gen NEWER than the applied one
+					// and `res.gen < applied` and `res.gen != applied` name the same set.
+					// The inequality is the honest spelling of the rule being enforced —
+					// "this result belongs to a different theme than the one on screen" —
+					// and it stays correct if the counter ever wraps or is reset, which
+					// `<` would not.
 					continue
 				}
 				if a.overlayRosters == nil {

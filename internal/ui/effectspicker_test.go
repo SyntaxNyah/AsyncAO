@@ -283,6 +283,66 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	}
 }
 
+// TestOverlayIconBakeNeedsAnOrigin — the dropdown's row ICONS are baked from the
+// same rung 8 as the art (bakeOverlayIconKeys), so they carry the same origin
+// guard as the resolve above, and for the same reason: an origin-less URLBuilder
+// hands back the RELATIVE "misc/<folder>/icons/<name>", which the icon painter
+// would arm as a T1 page key and submit to the worker pool. That key can never
+// resolve, and it is baked ONCE per roster and read on every frame the picker
+// draws, so it would sit there for the life of the session.
+//
+// Reachable, not theoretical, in exactly the way the resolve's guard is:
+// App.urls is the ZERO value until a connect assigns one, so a .demo replayed
+// from the LOBBY bakes its icon keys through an origin-less builder.
+func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
+	// Properties but NO local icon, so the origin rung is the only one left —
+	// exactly the shape the guard is about.
+	roster := &overlayRoster{
+		set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on"}}),
+		art:  map[string]string{},
+		icon: map[string]string{},
+	}
+	const folder = "transitions"
+	rows := []string{overlayNoneRow, "tv on"}
+
+	lobby := &App{} // no connect yet: urls is the zero value
+	lobby.overlayRosters = map[string]*overlayRoster{lobby.overlayRosterKey(""): roster}
+	if lobby.urls.Origin() != "" {
+		t.Fatal("fixture: a lobby App must have no origin")
+	}
+	// The roster really does reach the dropdown — the rows the bake is indexed by
+	// are the rows overlayChoices publishes.
+	if got := lobby.overlayChoices(); len(got) != len(rows) {
+		t.Fatalf("choices = %v, want %q plus the one effect", got, overlayNoneRow)
+	}
+	// Driven with an effects FOLDER, because a lobby App's character has none and
+	// an empty folder yields no candidates for any origin — that would test the
+	// wrong thing.
+	lobby.overlayChoicesCache = rows
+	lobby.bakeOverlayIconKeys(folder, roster)
+	if len(lobby.overlayIconKeys) != len(rows) {
+		t.Fatalf("baked %d icon keys for %d rows — the keys are indexed BY ROW", len(lobby.overlayIconKeys), len(rows))
+	}
+	for i, k := range lobby.overlayIconKeys {
+		if k != "" {
+			t.Errorf("row %d baked %q with no origin — a relative url is a permanent junk T1 key and a probe that can never resolve", i, k)
+		}
+	}
+
+	// The same call WITH an origin proves the fixture would otherwise bake
+	// something: the guard has to skip the key, not the feature.
+	live := &App{}
+	live.urls = courtroom.NewURLBuilder("https://one.test/base")
+	live.overlayChoicesCache = rows
+	live.bakeOverlayIconKeys(folder, roster)
+	if live.overlayIconKeys[0] != "" {
+		t.Errorf("the None row baked %q — AO2 asks for its icon too, but no theme in the corpus ships one, so it must not burn a probe per open", live.overlayIconKeys[0])
+	}
+	if !strings.HasPrefix(live.overlayIconKeys[1], "https://one.test/base") {
+		t.Errorf("row 1 key = %q, want an absolute url built off the origin", live.overlayIconKeys[1])
+	}
+}
+
 // effectPreviewApp is the shared fixture for the two preview tests: one landed
 // roster with LOCAL art (so the resolve needs no network) whose effect declares
 // KFO's `sound = 0` no-sound idiom.

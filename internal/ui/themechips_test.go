@@ -173,6 +173,46 @@ func TestThemedListViewsAlwaysReachable(t *testing.T) {
 	}
 }
 
+// TestRosterChipNamesItsDestinationWhenPressed pins the one-chip strip's TOGGLE
+// reading. themedRosterStrip is a single chip that switches the panel to the roster
+// and — because the strip is showing fewer chips than the panel has views — switches
+// it back again. Wearing "Player List" in BOTH states made the pressed chip read as
+// an inert button, so it names where it goes instead: "Music List".
+//
+// It goes red if the toggle label is dropped, if it leaks into the un-pressed state,
+// or if it is ever wider than the width the chip was measured for (which would put
+// the strip back over the edge of a 212 px music_list — the whole reason this file
+// exists).
+func TestRosterChipNamesItsDestinationWhenPressed(t *testing.T) {
+	body := sdl.Rect{X: 0, Y: 0, W: 212, H: 277}
+
+	chips, n := fitThemedChips(body, themedRosterStrip, themedListViews[:], logTabPlayers)
+	if n != 1 {
+		t.Fatalf("roster strip = %d chips, want 1", n)
+	}
+	if chips[0].label != "Music List" {
+		t.Errorf("while the roster is showing the chip reads %q, want the destination %q", chips[0].label, "Music List")
+	}
+	if chips[0].tab != logTabMusic {
+		t.Errorf("the pressed chip goes to tab %d, want the music list (%d) it is named for", chips[0].tab, logTabMusic)
+	}
+
+	// Un-pressed it is still the way IN, and still says so.
+	back, n := fitThemedChips(body, themedRosterStrip, themedListViews[:], logTabMusic)
+	if n != 1 || back[0].label != "Player List" || back[0].tab != logTabPlayers {
+		t.Errorf("from the music list the chip is %+v, want a %q chip to tab %d", back[0], "Player List", logTabPlayers)
+	}
+
+	// A FULL strip (no switch_area_music in the theme) has a chip per view, so no
+	// chip is ever a toggle and the label must not swap.
+	full, n := fitThemedChips(sdl.Rect{X: 0, Y: 0, W: 600, H: 277}, themedListViews[:], themedListViews[:], logTabPlayers)
+	for i := int32(0); i < n; i++ {
+		if full[i].label == "Music List" {
+			t.Errorf("chip %d wore the toggle label in a full strip: %+v", i, full[i])
+		}
+	}
+}
+
 // TestFitThemedChipsZeroAlloc keeps the strip off the heap. It is drawn on every
 // themed frame, under the whole-screen 0-alloc gate (wholescreenalloc_test.go) —
 // returning the array by value rather than filling a caller's pointer is the only

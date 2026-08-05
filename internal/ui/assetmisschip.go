@@ -154,11 +154,12 @@ func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 		W: cw,
 		H: menuBarH - menuBarHairlineH - 2*assetMissChipInsetY,
 	}
-	if len(menuBarMenus) > 0 {
-		last := a.menuBarTitleRect(len(menuBarMenus) - 1)
-		if r.X < last.X+last.W+assetMissChipMinGapX {
-			return sdl.Rect{}, false
-		}
+	// The clearance is measured against everything LEFT-anchored in the band, not
+	// against the menu titles alone: the Iniswap chip sits after them (iniswapchip.go)
+	// and is a permanent control, so a transient badge must give way to it rather than
+	// paint over it.
+	if r.X < a.menuBarLeftContentRight(w)+assetMissChipMinGapX {
+		return sdl.Rect{}, false
 	}
 	return r, true
 }

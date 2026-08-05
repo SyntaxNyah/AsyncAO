@@ -38,6 +38,15 @@ const (
 	// themes ship one or two variants ("night", "alt"); the cap is the format's
 	// own [import] subthemes bound so the catalog and the sidecar agree.
 	themeSubthemeCap = theme.SubthemeCap
+	// themeSubthemeScanCap bounds the WORK scanSubthemes does, as distinct from
+	// the output it keeps: each candidate costs up to four os.Stat calls
+	// (themeKindOf), and the output cap alone bounds nothing when a theme folder
+	// holds hundreds of asset subdirectories that are all rejected. A theme's
+	// own layout — misc/, fonts/, penalty/, sounds/, characters/, evidence/ and
+	// a variant or two — is a couple of dozen directories; 64 is generous for
+	// every theme in the reference corpus and makes the stat count bounded by
+	// construction (hard rule 4) rather than by what a folder happens to hold.
+	themeSubthemeScanCap = 64
 	// themeScanMinInterval floors the on-open rescan, mirroring the lobby's
 	// refresh-on-open-with-a-floor idiom: opening the picker twice in a second
 	// must not walk the disk twice. Explicit refresh ignores it.
@@ -59,6 +68,15 @@ const (
 	// to a dropped folder.
 	themeKindAO2
 	// themeKindNative: asyncao_theme.ini only — native, with no AO2 base.
+	//
+	// TODO(W3/W7): this badge is currently AHEAD of the loader. theme.Load still
+	// needs one of the three AO2 courtroom INIs to consider a folder a theme, and
+	// normalizeThemeRoot (settings.go, themeINIFiles) refuses a sidecar-only folder
+	// on drop — so a folder the catalog badges "native" browses but does not yet
+	// apply. The sidecar becomes a standalone source in the element render model
+	// (W3) and the editor's save path (W7); the badge is deliberately left telling
+	// the truth about the FILES so it does not need changing then.
+	// TestNativeOnlyFolderIsBadgedNativeEvenThoughItCannotLoadYet pins both halves.
 	themeKindNative
 	// themeKindBoth: an AO2 theme carrying the native sidecar. The shape every
 	// theme edited in AsyncAO ends up in, since the sidecar is additive.
@@ -220,10 +238,13 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	}
 
 	root, _ := normalizeThemeRoot(customRoot)
-	exeDir := ""
-	if exe, err := os.Executable(); err == nil {
-		exeDir = filepath.Dir(exe)
-	}
+	// config.ExecutableDir, not a local os.Executable + filepath.Dir: the
+	// write-root backstop below and themeOriginOf both ask samePath whether two
+	// directories are the same place, and samePath is a STRING comparison by
+	// design. config.UserThemesDir resolves symlinks on its way to the write root,
+	// so a raw spelling here would disagree with it on a symlinked or junctioned
+	// install — one root scanned twice, or a bundled theme badged "read-only".
+	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
 
 	out := &themeCatalog{
@@ -234,8 +255,11 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	seen := map[string]bool{}
 	// The SAME list, in the same order, that themeLoadRoots and the picker build:
 	// the catalog must not claim a theme the loader would never find, nor hide one
-	// it would. First hit per name wins, and its origin badge is the root it was
-	// found in.
+	// it would. Same STRINGS too, not merely the same places — all three builders
+	// take their exe root from config.ExecutableDir (see above), which is what makes
+	// the samePath/origin comparisons agree on a symlinked install; the loader and
+	// the picker are pinned to that by TestThemeRootBuildersShareOneExeDir. First
+	// hit per name wins, and its origin badge is the root it was found in.
 	type rootSpec struct {
 		dir    string
 		origin themeOrigin
@@ -262,16 +286,21 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 			continue // a missing themes/ folder is the normal state, not a fault
 		}
 		for _, e := range entries {
-			if len(out.Entries) >= themeCatalogCap {
-				out.Truncated = true
-				break
-			}
 			if !e.IsDir() {
 				continue
 			}
 			key := strings.ToLower(e.Name())
 			if seen[key] {
 				continue // an earlier root already answers this name
+			}
+			// The cap check goes AFTER both filters, so Truncated means what it
+			// says: a theme this scan would really have listed was dropped. Tested
+			// before them it fired on a stray FILE, or on a name an earlier root had
+			// already answered, and a collection of exactly themeCatalogCap themes
+			// with one loose file beside it claimed to be a prefix of itself.
+			if len(out.Entries) >= themeCatalogCap {
+				out.Truncated = true
+				break
 			}
 			seen[key] = true
 			themeDir := filepath.Join(dir, e.Name())
@@ -363,8 +392,9 @@ func scanSubthemes(themeDir string) []string {
 		return nil
 	}
 	var out []string
+	probed := 0 // candidates actually STATTED — the bound on this scan's work
 	for _, e := range entries {
-		if len(out) >= themeSubthemeCap {
+		if len(out) >= themeSubthemeCap || probed >= themeSubthemeScanCap {
 			break
 		}
 		if !e.IsDir() {
@@ -374,6 +404,7 @@ func scanSubthemes(themeDir string) []string {
 		if name == "" {
 			continue // a folder name the pref could never legally hold (dotfiles, over-long)
 		}
+		probed++
 		if themeKindOf(filepath.Join(themeDir, e.Name())) == themeKindBroken {
 			continue // a plain asset folder (misc/, fonts/, penalty/) is not a variant
 		}

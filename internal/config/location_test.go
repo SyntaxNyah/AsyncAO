@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -169,6 +171,70 @@ func TestMigrateToPortableCarriesThemesToTheWriteRoot(t *testing.T) {
 	}
 	if err := migrateThemesToPortable(t.TempDir(), exeDir); err != nil {
 		t.Errorf("no themes to carry should be a no-op, got %v", err)
+	}
+}
+
+// TestCopyTreeExceptFoldsTheSkipName — the skip set names a FOLDER, and on the
+// two platforms this client ships on a folder name folds case: a user whose
+// themes directory is spelled "Themes" holds the very directory the skip set
+// exists to leave behind. An exact-name match copied it into config/, which is
+// the split MigrateToPortable's separate themes step exists to prevent.
+func TestCopyTreeExceptFoldsTheSkipName(t *testing.T) {
+	src, dst := t.TempDir(), filepath.Join(t.TempDir(), "config")
+	odd := strings.ToUpper(ThemesDirName[:1]) + ThemesDirName[1:] // "Themes"
+	if err := os.MkdirAll(filepath.Join(src, odd, "nocturne"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, odd, "nocturne", theme.DesignFileName), []byte("x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, PrefsFileName), []byte(`{"a":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyTreeExcept(src, dst, map[string]bool{ThemesDirName: true}); err != nil {
+		t.Fatalf("copyTreeExcept: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, PrefsFileName)); err != nil {
+		t.Errorf("the tree copy skipped the preferences it exists to move: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, odd)); err == nil {
+		t.Errorf("%q was copied into %s — the skip set must fold case, or the themes collection splits in two", odd, dst)
+	}
+	// The exact spelling is of course still skipped.
+	if !skipEntry(map[string]bool{ThemesDirName: true}, ThemesDirName) {
+		t.Error("the exact name stopped matching")
+	}
+	// And an empty/nil set skips nothing (copyTree's own call).
+	if skipEntry(nil, ThemesDirName) {
+		t.Error("a nil skip set must skip nothing")
+	}
+}
+
+// TestMigrateToPortableReportsThemesAsAPartialFailure — the themes step is the
+// one part of the migration that can fail on its own, and when it does the
+// settings HAVE moved. The caller has to be able to say so; a bare "make portable
+// failed" would send the user looking for settings that are already there.
+func TestMigrateToPortableReportsThemesAsAPartialFailure(t *testing.T) {
+	src, exeDir := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, ThemesDirName, "nocturne"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, ThemesDirName, "nocturne", theme.DesignFileName), []byte("x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A plain FILE where the themes folder must be created: MkdirAll fails, which
+	// is the shape of every real cause (read-only mount, permissions, full disk).
+	if err := os.WriteFile(filepath.Join(exeDir, ThemesDirName), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := migrateThemesToPortable(src, exeDir)
+	if err == nil {
+		t.Fatal("copying themes onto a file must fail")
+	}
+	if !errors.Is(err, ErrThemesNotMigrated) {
+		t.Errorf("error %v does not wrap ErrThemesNotMigrated — the caller cannot tell a partial success from a total one", err)
 	}
 }
 

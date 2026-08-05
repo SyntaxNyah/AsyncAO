@@ -141,9 +141,64 @@ func playerSortLabel(mode int) string {
 	}
 }
 
-// drawPlayerList renders the parsed area roster — one row per UID — with the
-// /ga · /gas · /getarea fetch buttons, a sort toggle, a snapshot time, and
-// per-row icon + highlights + Pair / Copy actions.
+// rosterMenuThemed is the `themed` answer the roster's ⋮ overflow opens with: it
+// reports whether a THEMED music list — AO2's own music_list element — is the list
+// this menu's rows act on.
+//
+// The roster shares the music panel, so its ⋮ is the SAME menu, and one of that
+// menu's rows is the Volume-sliders view. That row's whole effect is
+// `volMode := a.musicVolMode && !themed` inside drawMusicList (screens.go), so a
+// menu opened with themed=false while the canvas music list is the one on screen
+// offers a row that can never draw anything — and SetMusicVolMode still persists the
+// flip, arming a view the user did not ask for in their next un-themed layout. That
+// ghost/inert control is exactly what musicMenuRowLive's `!themed` guard and #21's
+// parity rule exist to prevent, so the roster has to answer the question honestly
+// instead of hardcoding it.
+//
+// It re-derives the answer rather than being handed it, the way themedListSearchDrew
+// already does (screens.go) and for the same reason: drawPlayerList is called from
+// THREE places — the classic docked Players tab (screens.go), a torn-off Players
+// panel (torntabs.go) and the themed music_list rect (theme_layout.go) — so a
+// parameter would have to be threaded through all three, two of which this panel does
+// not own. a.themeLay is the very cache drawCourtroomThemed lays out from
+// (themeLayoutIn returns &a.themeLay), so the two cannot disagree, and the layout is
+// rebuilt before the pass that calls us, so it cannot be stale either.
+//
+// The clauses are the screen's own dispatch, verbatim:
+//   - themeLay.valid + ThemeLayoutEnabled is what hands the courtroom to
+//     drawCourtroomThemed at all (screens.go). Without it the classic docked panel
+//     drew, its Music tab passes themed=false, and the volume view works there.
+//   - music_list + !panelHidden(panelLog) is the exact gate the themed panel is drawn
+//     behind (theme_layout.go). A theme with no music_list rect — or a hidden log
+//     panel — paints no canvas music list at all.
+//
+// Deliberately NOT gated on a.logTab: the canvas music list is what the row targets
+// whether or not the roster happens to be the view currently up, and gating on the
+// visible view is the same mistake musicMenuRowLive already refuses to make for the
+// roster rows.
+//
+// A torn-off Players panel is floating chrome drawn AFTER the courtroom pass, and
+// under CLASSIC geometry it reads false here — which is right, since a torn Music
+// panel honours volMode. Under a THEME it reads true, and that is the correct answer
+// too rather than a miss: the canvas music list is the one the row would have to
+// paint in, and it discards volMode. The one place the volume view still paints under
+// a theme is a torn-off MUSIC panel, and that panel passes themed=false from its own
+// header (torntabs.go), so the view is never made unreachable — only the ghost is.
+func (a *App) rosterMenuThemed() bool {
+	if !a.themeLay.valid || !a.d.Prefs.ThemeLayoutEnabled() {
+		return false // classic geometry: this panel is chrome, and so is any torn panel
+	}
+	if a.panelHidden(panelLog) {
+		return false // the themed panel that hosts the music list is not on screen
+	}
+	_, ok := a.themeLay.rect("music_list")
+	return ok
+}
+
+// drawPlayerList renders the area roster — one row per UID — under a ONE-ROW header
+// (Sort · Rooms · Status · ⋮), with per-row icon + highlights + Pair / Copy actions.
+// Everything the header used to carry and no longer does now lives in the ⋮ overflow
+// (musicheader.go); see playerlisttoolbar.go for what moved and why.
 func (a *App) drawPlayerList(r sdl.Rect) {
 	// The user's own font for this panel, if they set one — every label, button,
 	// checkbox and field below follows it, so the panel changes as a whole rather
@@ -167,12 +222,17 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
 	// width. The plan below cannot overlap: it is one cursor.
 	//
+	// Three header rows are now ONE: the mode row (● LIVE / Refresh / Legacy), the
+	// Pairs/Follow row and the "12 here · live" readout are gone from the strip. The
+	// readouts were deleted outright — the roster IS the readout — and every FUNCTION
+	// moved into the ⋮ overflow the Music header already debloated into
+	// (musicheader.go), which this panel shares.
+	//
 	// Labels are built HERE, not in the planner: they come from App state, and
 	// building them at the call site keeps the planner pure (and testable without a
 	// renderer) while allocating no more than the old inline concatenations did.
 	labels := plToolbarLabels{
-		sort:   "Sort: " + playerSortLabel(a.playerSort),
-		roster: a.playerRosterStatusLine(),
+		sort: "Sort: " + playerSortLabel(a.playerSort),
 		// #M1: your own cross-client status — the button cycles none → AFK → Busy →
 		// Writing → LFRP. Send-on-change transmits it on your next IC message;
 		// AsyncAO players see a coloured chip on your row, standard clients see nothing.
@@ -186,45 +246,15 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if multiArea {
 		labels.rooms = "Rooms: " + areaSortLabel(a.playerAreaSort)
 	}
-	// Both toggles are read ONCE here rather than inside their checkbox branches:
-	// drawPlayerRow consults followShow/pairStatusShow for every row, so a panel too
-	// narrow to fit a tick box must still report the pref's real value — otherwise a
-	// theme would silently turn the features off instead of merely hiding the switch.
-	followOn := a.d.Prefs.FollowEnabledOn()
-	pairOn := a.d.Prefs.ShowPairStatusOn()
-	a.followShow, a.pairStatusShow = followOn, pairOn
-	plan := planPlayerToolbar(r, labels, a.rosterLegacy, multiArea, c.TextWidth)
+	// Both toggles are read ONCE here rather than at their (now menu-side) switches:
+	// drawPlayerRow consults followShow/pairStatusShow for every row, and the switches
+	// live in a menu that is usually closed, so the per-row answer has to come from
+	// the pref itself — otherwise a theme would silently turn the features off.
+	a.followShow, a.pairStatusShow = a.d.Prefs.FollowEnabledOn(), a.d.Prefs.ShowPairStatusOn()
+	plan := planPlayerToolbar(r, labels, multiArea, c.TextWidth)
 	for i := 0; i < plan.n; i++ {
 		it := &plan.items[i]
 		switch it.id {
-		case plItemLive:
-			c.Label(it.r.X, it.r.Y+plStripLabelOffY, it.label, ColTierGreen)
-		case plItemRefresh:
-			if c.Button(it.r, it.label) {
-				a.pairAreaReset = true
-				a.queueOOCLines([]string{"/getarea"})
-				a.warnLine = clampLine("Fetching UIDs / IPIDs for this area…")
-				a.warnAt = a.now()
-			}
-			c.Tooltip(it.r, "Pull UIDs, IPIDs, OOC names + Pair/Copy onto the live rows (one /getarea). The list stays live — refresh again to fill in new joiners.")
-		case plItemFetchLabel:
-			c.Label(it.r.X, it.r.Y+plStripLabelOffY, it.label, ColTextDim)
-		case plItemFetch:
-			// The button's label IS the command (plItemFetch is shared by all three).
-			if c.Button(it.r, it.label) {
-				a.pairAreaReset = true
-				a.queueOOCLines([]string{it.label})
-				a.warnLine = clampLine("Sent " + it.label + " — the list fills from the reply.")
-				a.warnAt = a.now()
-			}
-		case plItemLegacy:
-			// CheckboxIn, not Checkbox: it fits the tick box to a RECT and truncates the
-			// label AO2-style, where Checkbox grows to its text and would overflow the
-			// strip's line the moment the panel got narrow.
-			if next := c.CheckboxIn(it.r, it.label, a.rosterLegacy); next != a.rosterLegacy {
-				a.setRosterLegacy(next)
-			}
-			c.Tooltip(it.r, "Off (default): live roster from the server's join/leave signals — no commands sent, spectators come & go by head-count. On: the classic /getarea snapshot with names, UIDs & IPIDs (Pair/Copy), fetched on demand.")
 		case plItemSort:
 			if c.Button(it.r, it.label) {
 				a.playerSort = (a.playerSort + 1) % playerSortModes
@@ -236,32 +266,21 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 				a.d.Prefs.SetPlayerListAreaSort(a.playerAreaSort) // remember it across sessions
 			}
 			c.Tooltip(it.r, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
-		case plItemStatusText:
-			c.LabelClipped(it.r.X, it.r.Y+plStripLabelOffY, it.r.W, it.label, ColTextDim)
 		case plItemStatus:
 			if c.Button(it.r, it.label) {
 				a.myStatus = (a.myStatus + 1) % courtroom.StatusCount
 			}
 			c.Tooltip(it.r, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
-		case plItemPairs:
-			// Pair-status toggle (#20, opt-in / OFF by default): when on, a row shows who
-			// that player is currently paired with (⇄), tracked from IC messages.
-			if next := c.CheckboxIn(it.r, it.label, pairOn); next != pairOn {
-				a.d.Prefs.SetShowPairStatus(next)
-				a.pairStatusShow = next
+		case plItemMenu:
+			// The panel's overflow, opened from the SAME helper the Music header uses —
+			// including its click consumption, without which the menu's own click-away
+			// test closes it on the frame it opened (musicheader.go documents the trap).
+			// `themed` is DERIVED, never hardcoded: this panel is drawn inside the
+			// theme's own music_list rect, so a hardcoded false would offer the
+			// Volume-sliders row where drawMusicList discards it — see rosterMenuThemed.
+			if a.musicIconButton(it.r, iconKebab, "Roster & playback options — refresh details, legacy snapshot, pair status, follow") {
+				a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())
 			}
-			c.Tooltip(it.r, "Off (default). On: each row shows who that player is currently paired with (⇄), updated as they speak.")
-		case plItemFollow:
-			// Follow toggle (M3, opt-in / OFF by default): when on, every row gets a
-			// Follow button that auto-jumps you to that player's area as they move.
-			if next := c.CheckboxIn(it.r, it.label, followOn); next != followOn {
-				a.d.Prefs.SetFollowEnabled(next)
-				a.followShow = next
-				if !next {
-					a.followUID = "" // turning it off stops any active trailing
-				}
-			}
-			c.Tooltip(it.r, "Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
 		}
 	}
 	r.Y += plan.h
@@ -353,25 +372,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		c.unfencePointer() // the card's own pass (Close button) gets the real pointer
 	}
 	a.drawProfileCardOverlay(r) // #101: the profile popover sits on top of the list
-}
-
-// playerRosterStatusLine is the toolbar's roster summary: a live head-count, or the
-// legacy snapshot's size and the time it was taken. Split out of the draw so the
-// toolbar planner can measure the very string that will be drawn (the old code
-// measured nothing at all and clipped the label to whatever gap was left).
-func (a *App) playerRosterStatusLine() string {
-	if a.rosterLegacy {
-		status := strconv.Itoa(len(a.rosterView())) + " players"
-		if !a.areaListAt.IsZero() {
-			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
-		}
-		return status
-	}
-	status := strconv.Itoa(len(a.rosterView())) + " here · live"
-	if !a.livePlayersOn && len(a.areaPlayers) == 0 {
-		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
-	}
-	return status
 }
 
 // rowHeight is the display height of one roster row (area headers are shorter);

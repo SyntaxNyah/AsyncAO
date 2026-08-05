@@ -50,7 +50,6 @@ func toolbarTestLabels() plToolbarLabels {
 	return plToolbarLabels{
 		sort:   "Sort: " + playerSortLabel(playerSortUID),
 		rooms:  "Rooms: " + areaSortLabel(areaSortGas),
-		roster: "12 here · live",
 		status: playerStatusButtonLabel(courtroom.StatusNone),
 	}
 }
@@ -59,195 +58,146 @@ func toolbarTestLabels() plToolbarLabels {
 // anonymous "item 3 overlaps item 4" would send the reader back to the source.
 func toolbarItemName(id int) string {
 	switch id {
-	case plItemLive:
-		return plLiveLabel
-	case plItemRefresh:
-		return plRefreshLabel
-	case plItemFetchLabel:
-		return plFetchLabel
-	case plItemFetch:
-		return "fetch button"
-	case plItemLegacy:
-		return plLegacyLabel
 	case plItemSort:
 		return "Sort"
 	case plItemRooms:
 		return "Rooms"
-	case plItemStatusText:
-		return "roster status line"
 	case plItemStatus:
 		return "Status"
-	case plItemPairs:
-		return plPairsLabel
-	case plItemFollow:
-		return plFollowLabel
+	case plItemMenu:
+		return "⋮ overflow"
 	}
 	return "unknown"
 }
 
+// toolbarPlanRect is the rect a plan placed for id, or ok=false when it was dropped.
+func toolbarPlanRect(plan plToolbarPlan, id int) (sdl.Rect, bool) {
+	for i := 0; i < plan.n; i++ {
+		if plan.items[i].id == id {
+			return plan.items[i].r, true
+		}
+	}
+	return sdl.Rect{}, false
+}
+
 // TestPlayerToolbarNeverOverlapsAtAnyWidth is the headline pin, and the one the
-// reported bug fails: it sweeps every width from absurd to generous, in both roster
-// modes and with the Rooms button present and absent, and asserts that no two placed
-// controls intersect and that every one of them stays inside the panel.
+// reported bug fails: it sweeps every width from absurd to generous, with the Rooms
+// button present and absent, and asserts that no two placed controls intersect and
+// that every one of them stays inside the panel.
 //
 // It goes red if any control is ever placed on top of another (the reported
 // symptom), if one is allowed to run past the panel's right or bottom edge, or if
 // the strip claims more height than it left the roster.
 func TestPlayerToolbarNeverOverlapsAtAnyWidth(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
-		for _, multiArea := range []bool{false, true} {
-			for w := int32(0); w <= 720; w++ {
-				panel := sdl.Rect{X: 17, Y: 43, W: w, H: toolbarThemeHeightPx} // odd origin: a plan that ignores r.X/r.Y shows up here
-				plan := planPlayerToolbar(panel, toolbarTestLabels(), legacy, multiArea, toolbarTestMeasure)
-				for i := 0; i < plan.n; i++ {
-					it := &plan.items[i]
-					if it.r.W <= 0 || it.r.H <= 0 {
-						t.Fatalf("legacy=%v multi=%v W=%d: %s placed with an empty rect %+v — an invisible but clickable control",
-							legacy, multiArea, w, toolbarItemName(it.id), it.r)
-					}
-					if it.r.X < panel.X || it.r.X+it.r.W > panel.X+panel.W {
-						t.Fatalf("legacy=%v multi=%v W=%d: %s spans x=[%d,%d), outside the panel's [%d,%d)",
-							legacy, multiArea, w, toolbarItemName(it.id),
-							it.r.X, it.r.X+it.r.W, panel.X, panel.X+panel.W)
-					}
-					if it.r.Y < panel.Y || it.r.Y+it.r.H > panel.Y+plan.h {
-						t.Fatalf("legacy=%v multi=%v W=%d: %s spans y=[%d,%d), outside the %d px the strip reserved at %d",
-							legacy, multiArea, w, toolbarItemName(it.id),
-							it.r.Y, it.r.Y+it.r.H, plan.h, panel.Y)
-					}
-					for j := i + 1; j < plan.n; j++ {
-						other := &plan.items[j]
-						if ov := intersectRect(it.r, other.r); ov.W > 0 && ov.H > 0 {
-							t.Fatalf("legacy=%v multi=%v W=%d: %s %+v overlaps %s %+v by %dx%d px",
-								legacy, multiArea, w, toolbarItemName(it.id), it.r,
-								toolbarItemName(other.id), other.r, ov.W, ov.H)
-						}
+	for _, multiArea := range []bool{false, true} {
+		for w := int32(0); w <= 720; w++ {
+			panel := sdl.Rect{X: 17, Y: 43, W: w, H: toolbarThemeHeightPx} // odd origin: a plan that ignores r.X/r.Y shows up here
+			plan := planPlayerToolbar(panel, toolbarTestLabels(), multiArea, toolbarTestMeasure)
+			for i := 0; i < plan.n; i++ {
+				it := &plan.items[i]
+				if it.r.W <= 0 || it.r.H <= 0 {
+					t.Fatalf("multi=%v W=%d: %s placed with an empty rect %+v — an invisible but clickable control",
+						multiArea, w, toolbarItemName(it.id), it.r)
+				}
+				if it.r.X < panel.X || it.r.X+it.r.W > panel.X+panel.W {
+					t.Fatalf("multi=%v W=%d: %s spans x=[%d,%d), outside the panel's [%d,%d)",
+						multiArea, w, toolbarItemName(it.id),
+						it.r.X, it.r.X+it.r.W, panel.X, panel.X+panel.W)
+				}
+				if it.r.Y < panel.Y || it.r.Y+it.r.H > panel.Y+plan.h {
+					t.Fatalf("multi=%v W=%d: %s spans y=[%d,%d), outside the %d px the strip reserved at %d",
+						multiArea, w, toolbarItemName(it.id),
+						it.r.Y, it.r.Y+it.r.H, plan.h, panel.Y)
+				}
+				for j := i + 1; j < plan.n; j++ {
+					other := &plan.items[j]
+					if ov := intersectRect(it.r, other.r); ov.W > 0 && ov.H > 0 {
+						t.Fatalf("multi=%v W=%d: %s %+v overlaps %s %+v by %dx%d px",
+							multiArea, w, toolbarItemName(it.id), it.r,
+							toolbarItemName(other.id), other.r, ov.W, ov.H)
 					}
 				}
-				if plan.h != 0 && plan.h > panel.H-plStripMinBodyPx {
-					t.Fatalf("legacy=%v multi=%v W=%d: the strip took %d of %d px, leaving the roster less than the %d px floor",
-						legacy, multiArea, w, plan.h, panel.H, plStripMinBodyPx)
-				}
+			}
+			if plan.h != 0 && plan.h > panel.H-plStripMinBodyPx {
+				t.Fatalf("multi=%v W=%d: the strip took %d of %d px, leaving the roster less than the %d px floor",
+					multiArea, w, plan.h, panel.H, plStripMinBodyPx)
 			}
 		}
 	}
 }
 
-// TestPlayerToolbarStatusNeverCoversPairs pins the half of the bug that had nothing
-// to do with narrow panels: the Status button was positioned at
-// `follX - statBtnW - 12` — anchored on the FOLLOW checkbox — while the Pairs
-// checkbox sat at `follX - pairW - 12`, i.e. the same anchor. The two therefore
-// occupied the same span at EVERY width, including a maximised window, which is why
-// the report saw a stray "s" (the tail of "Pairs") under "Status: none".
+// TestPlayerToolbarIsOneRowOnARealPanel is the debloat's own pin: three header rows
+// (the ● LIVE / Refresh / Legacy mode row, the Pairs/Follow row and the
+// "12 here · live" readout) had to collapse to ONE. On any panel AsyncAO itself
+// creates — the classic dock, a freshly torn-off tab — the whole toolbar is a single
+// line of Sort · Rooms · Status · ⋮, and it reserves the one row's worth of height
+// (plStripLinePitch + plStripBodyGapPx) that the old strip spent per row.
 //
-// The sweep above already covers this; it is spelled out separately because it is the
-// concrete defect, and because a regression here would otherwise read as one of a
-// thousand anonymous width failures.
-func TestPlayerToolbarStatusNeverCoversPairs(t *testing.T) {
-	for _, w := range []int32{toolbarThemeWidthPx, tornTabDefaultW, toolbarClassicWidthPx, 900, 1600} {
-		panel := sdl.Rect{X: 0, Y: 0, W: w, H: toolbarThemeHeightPx}
-		plan := planPlayerToolbar(panel, toolbarTestLabels(), false, false, toolbarTestMeasure)
-		var status, pairs sdl.Rect
-		var haveStatus, havePairs bool
+// It goes red if a control creeps back into the strip, or if the metrics change so
+// that a comfortable panel starts wrapping again.
+func TestPlayerToolbarIsOneRowOnARealPanel(t *testing.T) {
+	const oneRowHeight = plStripLinePitch + plStripBodyGapPx
+	// A SINGLE-AREA roster (the ordinary case: Sort · Status · ⋮) fits one line from a
+	// freshly torn-off tab upwards. With area groups the Rooms button joins it and the
+	// line needs a docked panel's width — which is where the roster actually lives.
+	for _, tc := range []struct {
+		w         int32
+		multiArea bool
+		want      int
+	}{
+		{tornTabDefaultW, false, 3},
+		{toolbarClassicWidthPx, false, 3},
+		{toolbarClassicWidthPx, true, 4},
+		{900, true, 4},
+		{1600, true, 4},
+	} {
+		panel := sdl.Rect{X: 0, Y: 0, W: tc.w, H: 400}
+		plan := planPlayerToolbar(panel, toolbarTestLabels(), tc.multiArea, toolbarTestMeasure)
+		if plan.h != oneRowHeight {
+			t.Errorf("W=%d multi=%v: reserves %d px of toolbar, want one row (%d)", tc.w, tc.multiArea, plan.h, oneRowHeight)
+		}
+		rows := map[int32]bool{}
 		for i := 0; i < plan.n; i++ {
-			switch plan.items[i].id {
-			case plItemStatus:
-				status, haveStatus = plan.items[i].r, true
-			case plItemPairs:
-				pairs, havePairs = plan.items[i].r, true
-			}
+			rows[plan.items[i].r.Y] = true
 		}
-		if !haveStatus || !havePairs {
-			t.Fatalf("W=%d: Status and Pairs must both be placed at this width (status=%v pairs=%v)", w, haveStatus, havePairs)
+		if len(rows) != 1 {
+			t.Errorf("W=%d multi=%v: laid the toolbar out over %d rows, want 1", tc.w, tc.multiArea, len(rows))
 		}
-		if ov := intersectRect(status, pairs); ov.W > 0 && ov.H > 0 {
-			t.Errorf("W=%d: Status %+v covers Pairs %+v by %dx%d px", w, status, pairs, ov.W, ov.H)
+		if plan.n != tc.want {
+			t.Errorf("W=%d multi=%v: placed %d controls, want %d", tc.w, tc.multiArea, plan.n, tc.want)
 		}
 	}
 }
 
 // TestPlayerToolbarKeepsEveryControlInAThemesPanel is the counterweight to the
 // overlap sweep: laying out nothing would satisfy "no overlaps" trivially. At the
-// width a real theme gives this panel every control must still be REACHABLE, because
-// Pairs, Follow and Status exist nowhere else in the UI — dropping them inside a
-// theme would delete the only way to reach those features, the same argument
-// drawCourtroomThemed makes for keeping the Music/Areas/Player List chips.
+// width a real theme gives this panel every control must still be REACHABLE — and
+// the ⋮ most of all, since it is now the only route to Refresh, the legacy snapshot,
+// pair status and follow.
 //
 // It goes red if the planner ever "fixes" a narrow panel by dropping a control
 // instead of wrapping.
 func TestPlayerToolbarKeepsEveryControlInAThemesPanel(t *testing.T) {
 	panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx}
-	for _, tc := range []struct {
-		name   string
-		legacy bool
-		want   []int
-	}{
-		{"live", false, []int{plItemLive, plItemRefresh, plItemLegacy, plItemSort, plItemStatusText, plItemStatus, plItemPairs, plItemFollow}},
-		{"legacy", true, []int{plItemFetchLabel, plItemFetch, plItemLegacy, plItemSort, plItemStatusText, plItemStatus, plItemPairs, plItemFollow}},
-	} {
-		plan := planPlayerToolbar(panel, toolbarTestLabels(), tc.legacy, true, toolbarTestMeasure)
-		seen := map[int]int{}
-		for i := 0; i < plan.n; i++ {
-			seen[plan.items[i].id]++
-		}
-		for _, id := range tc.want {
-			if seen[id] == 0 {
-				t.Errorf("%s: %s is missing from a %d px panel — a theme user cannot reach it at all",
-					tc.name, toolbarItemName(id), toolbarThemeWidthPx)
-			}
-		}
-		if seen[plItemRooms] == 0 {
-			t.Errorf("%s: the Rooms button is missing although the roster spans areas", tc.name)
-		}
-		if tc.legacy && seen[plItemFetch] != len(plFetchCmds) {
-			t.Errorf("legacy: %d of %d fetch buttons placed", seen[plItemFetch], len(plFetchCmds))
-		}
-		t.Logf("%s @ %dpx: %d controls in %d px of strip", tc.name, toolbarThemeWidthPx, plan.n, plan.h)
-	}
-}
-
-// TestPlayerToolbarWidePanelKeepsTheOldTwoRowShape guards against fixing the narrow
-// case by regressing the wide one. The classic docked panel and a torn-off tab were
-// never broken, and the strip's metrics were chosen so a panel with room lays out in
-// exactly the two rows it always did — 2*plStripLinePitch + plStripBodyGapPx = 54 px,
-// which is what the old `r.Y += 26` then `r.Y += 28` reserved.
-//
-// It goes red if the strip starts wrapping (or stops wrapping to two rows) at a width
-// where it used to fit, silently moving the roster up or down the panel.
-func TestPlayerToolbarWidePanelKeepsTheOldTwoRowShape(t *testing.T) {
-	const oldTwoRowHeight = int32(54) // the pre-strip `+= 26` and `+= 28`
-	panel := sdl.Rect{X: 0, Y: 0, W: toolbarClassicWidthPx, H: 400}
-	plan := planPlayerToolbar(panel, toolbarTestLabels(), false, false, toolbarTestMeasure)
-	if plan.h != oldTwoRowHeight {
-		t.Errorf("a %d px panel reserves %d px for the toolbar, want the historical %d",
-			toolbarClassicWidthPx, plan.h, oldTwoRowHeight)
-	}
-	rows := map[int32]bool{}
-	for i := 0; i < plan.n; i++ {
-		rows[plan.items[i].r.Y] = true
-	}
-	if len(rows) != 2 {
-		t.Errorf("a %d px panel laid the toolbar out over %d rows, want 2", toolbarClassicWidthPx, len(rows))
-	}
-	// The mode half and the sort half must stay on SEPARATE rows even when both would
-	// fit on one: newline() is what keeps "where the roster comes from" apart from
-	// "how it is shown", and losing it would reshuffle the whole strip.
-	var legacyY, sortY int32 = -1, -1
-	for i := 0; i < plan.n; i++ {
-		switch plan.items[i].id {
-		case plItemLegacy:
-			legacyY = plan.items[i].r.Y
-		case plItemSort:
-			sortY = plan.items[i].r.Y
+	plan := planPlayerToolbar(panel, toolbarTestLabels(), true, toolbarTestMeasure)
+	for _, id := range []int{plItemSort, plItemRooms, plItemStatus, plItemMenu} {
+		if _, ok := toolbarPlanRect(plan, id); !ok {
+			t.Errorf("%s is missing from a %d px panel — a theme user cannot reach it at all",
+				toolbarItemName(id), toolbarThemeWidthPx)
 		}
 	}
-	if legacyY < 0 || sortY < 0 {
-		t.Fatalf("a %d px panel must place both halves (legacyY=%d sortY=%d)", toolbarClassicWidthPx, legacyY, sortY)
+	// Single-area rosters have no groups to order, so Rooms is the one control that
+	// may legitimately be absent — and only then.
+	single := planPlayerToolbar(panel, toolbarTestLabels(), false, toolbarTestMeasure)
+	if _, ok := toolbarPlanRect(single, plItemRooms); ok {
+		t.Error("Rooms was placed for a single-area roster — there is nothing for it to order")
 	}
-	if sortY != legacyY+plStripLinePitch {
-		t.Errorf("Sort sits at y=%d, want one line (%d px) below the mode row at y=%d",
-			sortY, plStripLinePitch, legacyY)
+	for _, id := range []int{plItemSort, plItemStatus, plItemMenu} {
+		if _, ok := toolbarPlanRect(single, id); !ok {
+			t.Errorf("%s is missing from a single-area %d px panel", toolbarItemName(id), toolbarThemeWidthPx)
+		}
 	}
+	t.Logf("theme panel %dpx: %d controls in %d px of strip", toolbarThemeWidthPx, plan.n, plan.h)
 }
 
 // TestPlayerToolbarWrapsRatherThanClipsWhenNarrow pins the chosen degradation
@@ -255,14 +205,11 @@ func TestPlayerToolbarWidePanelKeepsTheOldTwoRowShape(t *testing.T) {
 // the strip must gain lines rather than start clamping controls to slivers. A plan
 // that silently narrowed every button to a third of its label would satisfy the
 // overlap sweep and be unusable.
-//
-// It goes red if a control at a theme's width is drawn narrower than the label it was
-// measured for while a further line was still available.
 func TestPlayerToolbarWrapsRatherThanClipsWhenNarrow(t *testing.T) {
 	panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx}
 	wide := planPlayerToolbar(sdl.Rect{X: 0, Y: 0, W: toolbarClassicWidthPx, H: toolbarThemeHeightPx},
-		toolbarTestLabels(), false, false, toolbarTestMeasure)
-	narrow := planPlayerToolbar(panel, toolbarTestLabels(), false, false, toolbarTestMeasure)
+		toolbarTestLabels(), true, toolbarTestMeasure)
+	narrow := planPlayerToolbar(panel, toolbarTestLabels(), true, toolbarTestMeasure)
 	if narrow.h <= wide.h {
 		t.Errorf("a %d px panel took %d px of strip and a %d px panel %d — the narrow one must WRAP, not squeeze",
 			toolbarThemeWidthPx, narrow.h, toolbarClassicWidthPx, wide.h)
@@ -271,21 +218,15 @@ func TestPlayerToolbarWrapsRatherThanClipsWhenNarrow(t *testing.T) {
 		t.Errorf("wrapping lost controls: %d placed at %d px vs %d at %d px",
 			narrow.n, toolbarThemeWidthPx, wide.n, toolbarClassicWidthPx)
 	}
-	// Every fixed-width control must be its full measured width — only the roster
-	// status line (the sole flex item) is allowed to shrink.
+	// Every control must be its full measured width — nothing in this strip flexes.
 	for i := 0; i < narrow.n; i++ {
 		it := &narrow.items[i]
-		if it.id == plItemStatusText {
-			continue
-		}
 		want := plBtnW(it.label, toolbarTestMeasure)
 		switch it.id {
-		case plItemLive, plItemFetchLabel:
-			want = toolbarTestMeasure(it.label)
-		case plItemLegacy, plItemPairs, plItemFollow:
-			want = plCheckW(it.label, toolbarTestMeasure)
 		case plItemStatus:
 			want = plBtnW(plStatusWidestLabel, toolbarTestMeasure) // sized to the widest, not the current
+		case plItemMenu:
+			want = plStripMenuPx
 		}
 		if it.r.W != want {
 			t.Errorf("%s was placed %d px wide, want its full %d px (a clipped label with room to wrap)",
@@ -294,55 +235,6 @@ func TestPlayerToolbarWrapsRatherThanClipsWhenNarrow(t *testing.T) {
 	}
 	t.Logf("theme panel %dpx: %d controls over %d px of strip (wide: %d px)",
 		toolbarThemeWidthPx, narrow.n, narrow.h, wide.h)
-}
-
-// TestPlayerToolbarCompactsLabelsBelowATornTabsWidth pins the step that keeps
-// wrapping affordable. Wrapping alone put FIVE lines of toolbar into a theme's
-// 212 px panel — over half the list's height — because "Refresh details" and
-// "Legacy snapshot" are long enough to own a line each. Below plStripCompactPx the
-// two switch to their short forms and the whole mode half fits on one line again.
-//
-// It goes red if the ladder stops firing (a theme panel goes back to five lines) or
-// if it starts firing on panels AsyncAO itself creates, shortening labels on a wide
-// docked panel that had room for them all along.
-func TestPlayerToolbarCompactsLabelsBelowATornTabsWidth(t *testing.T) {
-	labelOf := func(plan plToolbarPlan, id int) string {
-		for i := 0; i < plan.n; i++ {
-			if plan.items[i].id == id {
-				return plan.items[i].label
-			}
-		}
-		return ""
-	}
-	narrow := planPlayerToolbar(sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx},
-		toolbarTestLabels(), false, false, toolbarTestMeasure)
-	if got := labelOf(narrow, plItemRefresh); got != plRefreshShortLabel {
-		t.Errorf("a %d px panel labels Refresh %q, want the compact %q", toolbarThemeWidthPx, got, plRefreshShortLabel)
-	}
-	if got := labelOf(narrow, plItemLegacy); got != plLegacyShortLabel {
-		t.Errorf("a %d px panel labels the mode box %q, want the compact %q", toolbarThemeWidthPx, got, plLegacyShortLabel)
-	}
-	// The point of compacting: the mode half collapses back onto a single line.
-	modeRows := map[int32]bool{}
-	for i := 0; i < narrow.n; i++ {
-		switch narrow.items[i].id {
-		case plItemLive, plItemRefresh, plItemLegacy:
-			modeRows[narrow.items[i].r.Y] = true
-		}
-	}
-	if len(modeRows) != 1 {
-		t.Errorf("the mode half wrapped over %d lines at %d px even compacted — the short labels are not short enough",
-			len(modeRows), toolbarThemeWidthPx)
-	}
-	// At and above the threshold the full labels come back.
-	wide := planPlayerToolbar(sdl.Rect{X: 0, Y: 0, W: plStripCompactPx, H: toolbarThemeHeightPx},
-		toolbarTestLabels(), false, false, toolbarTestMeasure)
-	if got := labelOf(wide, plItemRefresh); got != plRefreshLabel {
-		t.Errorf("a %d px panel labels Refresh %q, want the full %q", plStripCompactPx, got, plRefreshLabel)
-	}
-	if got := labelOf(wide, plItemLegacy); got != plLegacyLabel {
-		t.Errorf("a %d px panel labels the mode box %q, want the full %q", plStripCompactPx, got, plLegacyLabel)
-	}
 }
 
 // TestPlayerToolbarStopsBeforeEatingTheRoster is the VERTICAL half of the
@@ -356,7 +248,7 @@ func TestPlayerToolbarCompactsLabelsBelowATornTabsWidth(t *testing.T) {
 func TestPlayerToolbarStopsBeforeEatingTheRoster(t *testing.T) {
 	for h := int32(0); h <= 260; h++ {
 		panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: h}
-		plan := planPlayerToolbar(panel, toolbarTestLabels(), false, true, toolbarTestMeasure)
+		plan := planPlayerToolbar(panel, toolbarTestLabels(), true, toolbarTestMeasure)
 		if plan.h == 0 {
 			if plan.n != 0 {
 				t.Fatalf("H=%d: %d controls placed in a zero-height strip", h, plan.n)
@@ -377,13 +269,10 @@ func TestPlayerToolbarStopsBeforeEatingTheRoster(t *testing.T) {
 // tick box and its gap there is no honest way to draw a labelled control, so the
 // strip paints none and hands the whole panel to the roster — insetThemedBody's
 // "a rect too small to hold the margin is returned untouched" rule.
-//
-// It goes red if a sub-tick-box panel ever gets a sliver of chrome painted into it,
-// or if the strip reserves height for controls it did not place.
 func TestPlayerToolbarDegradesToNothingWhenAbsurdlyNarrow(t *testing.T) {
 	for w := int32(0); w < plStripMinItemPx; w++ {
 		panel := sdl.Rect{X: 0, Y: 0, W: w, H: toolbarThemeHeightPx}
-		plan := planPlayerToolbar(panel, toolbarTestLabels(), false, false, toolbarTestMeasure)
+		plan := planPlayerToolbar(panel, toolbarTestLabels(), false, toolbarTestMeasure)
 		if plan.n != 0 || plan.h != 0 {
 			t.Errorf("W=%d (under the %d px floor): placed %d controls in %d px, want nothing at all",
 				w, plStripMinItemPx, plan.n, plan.h)
@@ -392,7 +281,7 @@ func TestPlayerToolbarDegradesToNothingWhenAbsurdlyNarrow(t *testing.T) {
 	// And one pixel above the floor it must start placing again, or the floor is
 	// really a permanent blackout.
 	panel := sdl.Rect{X: 0, Y: 0, W: plStripMinItemPx, H: toolbarThemeHeightPx}
-	if plan := planPlayerToolbar(panel, toolbarTestLabels(), false, false, toolbarTestMeasure); plan.n == 0 {
+	if plan := planPlayerToolbar(panel, toolbarTestLabels(), false, toolbarTestMeasure); plan.n == 0 {
 		t.Errorf("W=%d (exactly the floor): nothing placed, so the floor is off by one", plStripMinItemPx)
 	}
 }
@@ -420,6 +309,103 @@ func TestStatusButtonIsSizedToItsWidestLabel(t *testing.T) {
 	}
 }
 
+// TestRosterDebloatLeftNothingUnreachable is the guard the consolidation owes the
+// user. Four FUNCTIONS left the Players toolbar — Refresh details, the legacy
+// snapshot switch, pair status and follow — and none of them exists anywhere else in
+// the UI, so deleting the row without rehoming them would have deleted the features.
+// They moved into the list panel's ⋮ overflow, which is what this asserts.
+//
+// It goes red if a row is dropped from musicMenuRows, if one loses its self-
+// describing label (Ctx.Tooltip no-ops under modalOn, so the label is the only
+// explanation a menu row gets), or if one stops behaving as a toggle.
+func TestRosterDebloatLeftNothingUnreachable(t *testing.T) {
+	seen := map[musicMenuKind]string{}
+	for _, row := range musicMenuRows {
+		if row.kind == musicMenuSeparator {
+			continue
+		}
+		seen[row.kind] = row.label
+	}
+	for _, k := range []musicMenuKind{musicMenuRosterRefresh, musicMenuRosterLegacy, musicMenuPairStatus, musicMenuFollow} {
+		label, ok := seen[k]
+		if !ok {
+			t.Errorf("roster menu kind %d has no row — the control it replaced is now unreachable", k)
+			continue
+		}
+		if label == "" {
+			t.Errorf("roster menu kind %d has an empty label — menu rows must describe themselves", k)
+		}
+	}
+	// The three toggles must stay toggles: the menu deliberately stays OPEN on a
+	// toggle row so several can be set in one visit (musicMenuRowIsToggle).
+	for _, k := range []musicMenuKind{musicMenuRosterLegacy, musicMenuPairStatus, musicMenuFollow} {
+		if !musicMenuRowIsToggle(k) {
+			t.Errorf("roster menu kind %d is not a toggle — the menu would close on every flip", k)
+		}
+	}
+	// Refresh is a one-shot command, so it must NOT be a toggle (the menu closes).
+	if musicMenuRowIsToggle(musicMenuRosterRefresh) {
+		t.Error("Refresh roster details is a one-shot command, not a toggle")
+	}
+}
+
+// TestRosterDetailCmdIsNeverInert is the other half of that guard: a rehomed
+// control that answers "unknown command" is no more reachable than a deleted one.
+// The trio the toolbar dropped (/ga · /gas · /getarea) existed BECAUSE no single
+// spelling works everywhere, so the one row that replaced it has to choose per
+// family — the same fact rosterCmd encodes when it picks /gas over /getareas.
+func TestRosterDetailCmdIsNeverInert(t *testing.T) {
+	for _, tc := range []struct {
+		software string
+		want     string
+	}{
+		// Athena registers exactly ONE roster command, and it is neither /ga nor
+		// /getarea: "players" (../Athena/internal/athena/commands.go:282,
+		// `Usage: /players [-a]`), with no ga/gas/getarea entry anywhere in
+		// initCommands and no alias field on the Command struct to hide one. A /ga
+		// here would be precisely the inert row this test exists to forbid.
+		{"Athena", rosterCmdPlayers},
+		// Nyathena registers "players" as well (../Nyathena/internal/athena/
+		// commands_registry.go:779), with "ga" as a shortcut onto the same
+		// cmdPlayers handler (:310) — so the spelling that also works on Athena
+		// costs it nothing.
+		{"Nyathena", rosterCmdPlayers},
+		// Whisker's command dispatcher maps players onto its own cmd_ga
+		// (Whisker/src/commands.c3:78) and has NO getarea case whatsoever (:77-79),
+		// so the long spelling falls through to "Unknown command: /getarea".
+		// Whisker is also one of the families with no built-in 2.11 player list
+		// (serverhelp.go, plistPlugin), i.e. exactly a family this row is the last
+		// roster control for.
+		{"Whisker", rosterCmdPlayers},
+		// Akashi (and the WAP fork) register getarea/getareas and neither /players
+		// nor a short alias (../akashi/src/aoclient.cpp:28-29) — the same asymmetry
+		// that makes /gas fail there. tsuserver3/KFO spell it long too
+		// (../KFO-Server/server/commands/areas.py:271,288), and so does an
+		// unrecognised server.
+		{"Akashi 1.8", rosterCmdGetarea},
+		{"WAP-Akashi", rosterCmdGetarea},
+		{"KFO-Server", rosterCmdGetarea},
+		{"", rosterCmdGetarea},
+		{"some-fork-nobody-has-heard-of", rosterCmdGetarea},
+	} {
+		a := &App{}
+		a.sess = &courtroom.Session{Software: tc.software}
+		if got := a.rosterDetailCmd(); got != tc.want {
+			t.Errorf("software %q → %q, want %q", tc.software, got, tc.want)
+		}
+	}
+	// The two spellings must stay DIFFERENT commands: collapsing them to one string
+	// would quietly restore the single hardcoded command this exists to replace.
+	if rosterCmdPlayers == rosterCmdGetarea {
+		t.Error("the two area-detail spellings are the same string")
+	}
+	// And no session at all must not send anything odd — the row is disabled there
+	// (musicMenuRowEnabled), but the accessor still has to answer.
+	if got := (&App{}).rosterDetailCmd(); got != rosterCmdGetarea {
+		t.Errorf("with no session rosterDetailCmd = %q, want %q", got, rosterCmdGetarea)
+	}
+}
+
 // TestPlayerToolbarPlanIsAllocFree is a hard-rule gate: drawPlayerList builds a plan
 // on EVERY frame the Players tab is up, and internal/ui is held to a zero-allocation
 // render loop. The plan is a fixed-size value for exactly this reason.
@@ -432,13 +418,13 @@ func TestPlayerToolbarPlanIsAllocFree(t *testing.T) {
 	panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx}
 	labels := toolbarTestLabels() // built once: the caller owns the label strings
 	if n := testing.AllocsPerRun(200, func() {
-		_ = planPlayerToolbar(panel, labels, false, true, toolbarTestMeasure)
+		_ = planPlayerToolbar(panel, labels, true, toolbarTestMeasure)
 	}); n != 0 {
 		t.Errorf("planPlayerToolbar allocates %.1f/op with a plain measure, want 0", n)
 	}
 	c := &Ctx{} // no font: TextWidth returns 0, which is fine — this measures the CALL, not the text
 	if n := testing.AllocsPerRun(200, func() {
-		_ = planPlayerToolbar(panel, labels, false, true, c.TextWidth)
+		_ = planPlayerToolbar(panel, labels, true, c.TextWidth)
 	}); n != 0 {
 		t.Errorf("planPlayerToolbar allocates %.1f/op with Ctx.TextWidth, want 0 — the measure func is escaping", n)
 	}
@@ -449,7 +435,7 @@ func TestPlayerToolbarPlanIsAllocFree(t *testing.T) {
 // two copies of `box + gap + text` would drift the moment either changed.
 func TestCheckboxWidthHasOneFormula(t *testing.T) {
 	c := &Ctx{}
-	for _, label := range []string{plPairsLabel, plFollowLabel, plLegacyLabel} {
+	for _, label := range []string{"Pairs", "Follow", "Legacy snapshot", ""} {
 		if got, want := c.CheckboxWidth(label), checkboxWidthFor(label, c.TextWidth); got != want {
 			t.Errorf("CheckboxWidth(%q) = %d but checkboxWidthFor = %d — the two have drifted", label, got, want)
 		}

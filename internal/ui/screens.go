@@ -3476,6 +3476,12 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
+	// The scroll offset as this frame FOUND it. Anything that moves it before the
+	// sticky clamp below is the USER's own gesture (a wheel step, a scrollbar drag or
+	// VScrollbar's clamp of a shrunken log); anything the clamp itself moves is the
+	// FOLLOW. The two get different easing, so they have to be told apart — see the
+	// instant-follow branch below.
+	scrollAtEntry := a.icScroll
 	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
 			a.icScroll -= d * scrollStepPx
@@ -3490,6 +3496,22 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// AUTO-SCROLL: while stuck, every new line lands in view no matter
 	// how many wrapped rows it added.
 	if a.icStick {
+		// AO2 PARITY, and the default: the follow jump is INSTANT. AO2-Client's log is
+		// a QTextEdit whose scrollbar is slammed to maximum() the moment a line is
+		// appended — there is no glide — and a message that has already finished
+		// playing being eased into view reads as lag. So unless the user opted into
+		// "Smooth log scrolling", pin the VISUAL offset to the new bottom here, which
+		// makes easeICScroll's "already there" branch take over (no NoteAnimating, so
+		// the follow also costs no extra frames at a low idle cap).
+		//
+		// Guarded on `a.icScroll != maxScroll` (the log actually GREW this frame) and
+		// on the user not having moved the offset first, so a wheel step that lands
+		// exactly at the bottom, a scrollbar drag, and VScrollbar's clamp of a
+		// capped/cleared log all keep whatever smoothing they have today. Only the
+		// on-new-message follow changes.
+		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.SmoothLogScrollOn() {
+			a.icScrollVis = float64(maxScroll)
+		}
 		a.icScroll = maxScroll
 		a.icReadMark = len(a.icLog) // caught up to the bottom: everything is read
 	}
@@ -4018,6 +4040,35 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 // without limit (CLAUDE.md rule: no unbounded growth).
 const areaWrapMaxLines = 3
 
+// The area list can be drawn TWICE in one frame, under two different queries:
+// the themed canvas copy is filtered by AO2's own music_search field (the
+// duplicate-box rule in drawAreaList) while a torn-off Areas panel keeps its own
+// "Search areas…" box. Both memos below are therefore indexed by which box the
+// query came from. One shared slot would be worse than none: each drawer would
+// evict the other's entry every frame, so the O(N) filter scan AND the whole-list
+// re-wrap would run twice per frame forever, and the re-wrap allocates.
+//
+// Two slots is the exact number of simultaneous drawers: a tab that is torn off
+// leaves the docked strip (dockedLogTabs), so "docked + torn" cannot happen, and
+// the classic and themed courtrooms are alternatives, never both.
+const (
+	areaQuerySlotOwn    = iota // the panel's own field (a.areaSearch)
+	areaQuerySlotThemed        // AO2's music_search driving the canvas copy (a.musicSearch)
+	areaQuerySlots
+)
+
+// areaWrapCache is one memo slot for areaWrapped: the rows plus every input they
+// were built from. rows == nil means "never filled" (the [:0] reuse keeps a
+// non-nil empty slice once it has been).
+type areaWrapCache struct {
+	rows  []areaWrapRow
+	seq   uint64 // a.areaInfoSeq at build time
+	query string
+	cardW int32
+	pct   int
+	gen   int // a.ctx.fontChainGen
+}
+
 // areaWrapRow is one ARUP row's word-wrapped display text, cached by
 // areaWrapped below so scrolling/resizing the panel doesn't re-wrap every
 // area every frame.
@@ -4049,26 +4100,33 @@ func (row areaWrapRow) lineCount() int32 {
 // (possibly search-filtered) areas, rebuilding only when the ARUP state
 // (areaInfoSeq), search query, card width, zoom, or font chain changed —
 // never per frame (mirrors icWrapped in qol.go).
-func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
-	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
+//
+// query is passed IN, already lowered and trimmed, rather than read from
+// a.areaSearch here: the themed copy of this list is filtered by AO2's
+// music_search field instead (drawAreaList's duplicate-box rule), and a local
+// read would word-wrap a different set of areas than the count line above it
+// promised. slot is the matching memo slot (areaQuerySlotOwn/Themed).
+func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) []areaWrapRow {
+	m := &a.areaWrap[slot]
 	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
 	// the raw zoom — a theme swap that only changes the point size must re-wrap.
 	pct := a.elemPct(elemAreaList, a.areaPct)
-	if a.areaWrap != nil && a.areaWrapSeq == a.areaInfoSeq && a.areaWrapQuery == query &&
-		a.areaWrapCardW == cardW && a.areaWrapPct == pct && a.areaWrapGen == a.ctx.fontChainGen {
-		return a.areaWrap
+	if m.rows != nil && m.seq == a.areaInfoSeq && m.query == query &&
+		m.cardW == cardW && m.pct == pct && m.gen == a.ctx.fontChainGen {
+		return m.rows
 	}
 	shown := len(a.sess.Areas)
+	var filtered []int
 	if query != "" {
-		a.refreshAreaFilter(query)
-		shown = len(a.areaFiltered)
+		filtered = a.refreshAreaFilter(query, slot)
+		shown = len(filtered)
 	}
 	nameW, detailW := cardW-12, cardW-24
-	out := a.areaWrap[:0]
+	out := m.rows[:0]
 	for vi := 0; vi < shown; vi++ {
 		i := vi
 		if query != "" {
-			i = a.areaFiltered[vi]
+			i = filtered[vi]
 		}
 		if i < 0 || i >= len(a.sess.Areas) {
 			continue
@@ -4105,9 +4163,39 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
 			detailLines: wrapToWidth(constFont(font), detail, detailW, areaWrapMaxLines),
 		})
 	}
-	a.areaWrap, a.areaWrapSeq, a.areaWrapQuery, a.areaWrapCardW, a.areaWrapPct, a.areaWrapGen =
-		out, a.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
-	return a.areaWrap
+	m.rows, m.seq, m.query, m.cardW, m.pct, m.gen = out, a.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
+	return m.rows
+}
+
+// areaCountRowH / areaCountRowLabelOffY size the bare "shown / total" line that
+// replaces the whole search row when the theme's own music_search field is driving
+// the filter (drawAreaList). One dim text line plus a hair of breathing space, and
+// the label sits at its optical centre — the rest of the old row's height goes back
+// to the list, which is the point of dropping the duplicate box.
+const (
+	areaCountRowH         = int32(20)
+	areaCountRowLabelOffY = int32(3)
+)
+
+// themedListSearchDrew reports whether the themed courtroom painted AO2's own
+// `music_search` field this frame, i.e. whether the list panel already has a search
+// box above it.
+//
+// It re-derives drawCourtroomThemed's condition rather than being handed the answer,
+// because drawAreaList is called from THREE places (the classic docked tab in this
+// file, a torn-off Areas tab in torntabs.go, and the themed music_list panel in
+// theme_layout.go — AO2 has no separate area_list rect to draw into; switch_area_music
+// swaps the two views inside music_list) and only the last is inside the canvas — so
+// the flag would have to be threaded through every one of them. a.themeLay is the
+// very cache drawCourtroomThemed lays out from
+// (themeLayoutIn returns &a.themeLay), so the two cannot disagree; a stale cache is
+// impossible because the layout is rebuilt before the pass that calls us.
+func (a *App) themedListSearchDrew() bool {
+	if a.panelHidden(panelLog) {
+		return false
+	}
+	_, ok := a.themeLay.rect("music_search")
+	return ok
 }
 
 // areaRowHeaderPad is the fixed slack added on top of the two text rows of an
@@ -4140,8 +4228,9 @@ func areaRowLineHN(fontH, lines int32) int32 {
 // swap. AO area transfers ride the MC packet with the area name in place
 // of a track (AO2-Client sends areas from the same list — the courtroom's
 // isAreaTransfer filter keeps them out of the audio path client-side).
-// canvasInk is true only for the themed area_list element; the classic panel and
-// a torn-off Areas tab pass false (themeink.go).
+// canvasInk is true only inside the design canvas — the Areas view of the themed
+// music_list panel (theme_layout.go), the one call site that draws on the theme's
+// own art. The classic panel and a torn-off Areas tab pass false (themeink.go).
 func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log
@@ -4195,23 +4284,51 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// Search filter (#20 — parity with the Music tab beside it): type to narrow
 	// a hub server's hundreds of areas. Memoized so the O(N) scan runs only when
 	// the query or the Areas list changes (refreshAreaFilter).
-	// Inset the search field 2px to match the area cards' left edge below (the
-	// cards draw at X: r.X+2). The bordered-card look insets the rows, but the
-	// search box was ported verbatim from drawMusicList (whose rows start at
-	// r.X, no inset), so it sat 2px left of its column and clipped out. Shrinking
-	// width by 2 keeps the right edge exactly where it was (r.X+r.W-150),
-	// preserving the "shown / total" counter-label clearance drawn just past it.
-	a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X + 2, Y: r.Y, W: r.W - 152, H: fieldH}, a.areaSearch, "Search areas…")
-	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
+	//
+	// DUPLICATE-BOX RULE. Inside the theme's design canvas the panel already carries a
+	// search field: AO2's own `music_search` rect, which drawCourtroomThemed paints in
+	// its own band with the A/M (switch_area_music) button beside it. Two search boxes
+	// for the same panel, in a 212 px music_list, is the debloat this pass exists to
+	// remove — so when that field is on screen it drives the AREA filter too and this
+	// row shrinks to its match count alone. Everywhere the theme field is absent (the
+	// classic docked tab, a torn-off Areas tab, a theme that declares no music_search)
+	// the field is drawn here exactly as before.
+	searchExternal := canvasInk && a.themedListSearchDrew()
+	var query string
+	// Both memos below are indexed by which box the query came from, so this
+	// drawer and a torn-off Areas panel filtered by the other box can share a
+	// frame without evicting each other (areaQuerySlots).
+	slot := areaQuerySlotOwn
+	if searchExternal {
+		slot = areaQuerySlotThemed
+		query = strings.ToLower(strings.TrimSpace(a.musicSearch))
+	} else {
+		// Inset the search field 2px to match the area cards' left edge below (the
+		// cards draw at X: r.X+2). The bordered-card look insets the rows, but the
+		// search box was ported verbatim from drawMusicList (whose rows start at
+		// r.X, no inset), so it sat 2px left of its column and clipped out. Shrinking
+		// width by 2 keeps the right edge exactly where it was (r.X+r.W-150),
+		// preserving the "shown / total" counter-label clearance drawn just past it.
+		a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X + 2, Y: r.Y, W: r.W - 152, H: fieldH}, a.areaSearch, "Search areas…")
+		query = strings.ToLower(strings.TrimSpace(a.areaSearch))
+	}
 	total := len(a.sess.Areas)
 	shown := total
 	if query != "" {
-		a.refreshAreaFilter(query)
-		shown = len(a.areaFiltered)
+		shown = len(a.refreshAreaFilter(query, slot))
 	}
-	c.Label(r.X+r.W-142, r.Y+5, a.areaCount.text(shown, total), ColTextDim)
-	r.Y += fieldH + 6
-	r.H -= fieldH + 6
+	if searchExternal {
+		// The count keeps its own (much shorter) line, left-aligned on the card column:
+		// it is the only thing left on this row, and right-aligning a lone "3 / 3"
+		// against a panel edge reads as a stray number.
+		c.Label(r.X+2, r.Y+areaCountRowLabelOffY, a.areaCount.text(shown, total), ColTextDim)
+		r.Y += areaCountRowH
+		r.H -= areaCountRowH
+	} else {
+		c.Label(r.X+r.W-142, r.Y+5, a.areaCount.text(shown, total), ColTextDim)
+		r.Y += fieldH + 6
+		r.H -= fieldH + 6
+	}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
@@ -4220,7 +4337,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	areaBold := a.elemBold(elemAreaList)        // area_list_bold → the faux-bold second pass
 	subH := int32(font.Height())
 	cardW := r.W - scrollBarW - scrollBarGap - 4
-	rows := a.areaWrapped(font, cardW) // word-wrapped name/detail text (Issue #22), cached
+	rows := a.areaWrapped(font, cardW, query, slot) // word-wrapped name/detail text (Issue #22), cached
 	contentH := int32(0)
 	for _, row := range rows {
 		contentH += areaRowLineHN(subH, row.lineCount())
@@ -4770,17 +4887,31 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	}
 }
 
-// drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of the
-// server's full iniswap list. ★ on a cell adds it to your wardrobe (it then
-// appears under Characters); clicking the cell wears it to try it on. No folders
-// — organizing lives in Characters. Renders from the SAME a.iniList with the
-// SAME indices as the Characters grid, so the index-keyed thumbnail cache
-// (a.iniPages) stays valid across a tab switch (the cachedPage reorder
-// invariant — a different list under the same index keys would paint wrong art).
+// drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of every
+// character folder this client knows exists on the base, from TWO sources the
+// chip row switches between.
+//
+//   - "Server list" is the server's published iniswap.txt: art cells, ★ to add one
+//     to your wardrobe (it then appears under Characters), click to try it on. It
+//     renders from the SAME a.iniList with the SAME indices as the Characters grid,
+//     so the index-keyed thumbnail cache (a.iniPages) stays valid across a tab
+//     switch (the cachedPage reorder invariant — a different list under the same
+//     index keys would paint wrong art).
+//   - "From your base" is the server's character ROSTER plus the characters/ folders
+//     in your local mounts — the answer for the many servers that publish no
+//     iniswap.txt at all. It keeps its OWN list and draws name buttons rather than
+//     index-keyed art cells, for exactly the invariant above; see iniswapbase.go.
+//
+// No folders in either — organizing lives in Characters.
 func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
-	a.pollIniswap()     // drain the server list (fetched on open)
-	a.iniHoverChar = "" // recomputed by the cells (quick-file target; unused here)
+	a.pollIniswap()            // drain the server list (fetched on open)
+	a.pollLocalCharFolders()   // ...and the local-mount folder scan (iniswapbase.go)
+	a.ensureLocalCharFolders() // starts one only when the mount list actually changed
+	a.iniHoverChar = ""        // recomputed by the cells (quick-file target; unused here)
+	serverN, baseN := a.baseSourceCounts()
+	// Memoized: this body draws every frame the tab is up (iniswapbase.go).
+	serverLabel, baseLabel, statusLabel := a.iniBase.sourceLabels(serverN, baseN)
 
 	y := panel.Y + 44
 	var iniswapNow bool
@@ -4797,18 +4928,54 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	switch {
 	case a.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
-	case len(a.iniServer) == 0:
-		// No iniswap.txt on this server (404 or none published): show nothing,
-		// calmly — the favourites live on the Characters tab, untouched.
+	case serverN == 0:
+		// No iniswap.txt on this server (404 or none published): say so calmly — the
+		// base browser below is the answer, and the favourites on the Characters tab
+		// are untouched.
 		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, "This server doesn't publish an "+iniswapFileName+" list.", ColTextDim)
 	default:
-		c.Label(statusX, y+4, fmt.Sprintf("%d on this server · ★ adds one to your Characters wardrobe", len(a.iniServer)), ColTextDim)
+		c.Label(statusX, y+4, statusLabel, ColTextDim)
 	}
-	y += 36
+	y += 30
+
+	// TWO SOURCES (iniswapbase.go). The published iniswap.txt is one list of folders
+	// on the base; the server's own character roster plus the user's local mounts are
+	// two more, and on the many servers that publish no iniswap.txt they are the ONLY
+	// ones. A server with no published list opens on the base browser once per server
+	// (the autoDone/autoKey latch) rather than on the empty state this replaces.
+	if !a.iniBusy && (!a.iniBase.autoDone || a.iniBase.autoKey != a.serverKey) {
+		a.iniBase.autoDone, a.iniBase.autoKey = true, a.serverKey
+		a.iniBase.show = serverN == 0 && baseN > 0
+	}
+	for i, src := range [...]struct {
+		show  bool
+		label string
+	}{
+		{false, serverLabel},
+		{true, baseLabel},
+	} {
+		r := sdl.Rect{X: panel.X + pad + int32(i)*(iniBaseSourceChipW+6), Y: y, W: iniBaseSourceChipW, H: btnH}
+		if c.Button(r, src.label) && a.iniBase.show != src.show {
+			a.iniBase.show = src.show
+			a.iniBase.scroll = 0
+			a.iniBrowseScroll = 0
+		}
+		if a.iniBase.show == src.show {
+			c.Border(r, ColAccent) // active source
+		}
+	}
+	c.Tooltip(sdl.Rect{X: panel.X + pad + iniBaseSourceChipW + 6, Y: y, W: iniBaseSourceChipW, H: btnH},
+		"Every character folder this client knows exists on the base: the server's own character roster, plus the characters/ folders in your local mounts.")
+	y += btnH + 6
+
+	if a.iniBase.show {
+		a.drawIniswapBaseBody(panel, y, a.iniQ.get(a.iniSearch))
+		return
+	}
 
 	// No server list yet → a mini guide for owners (where to put iniswap.txt) and
 	// players (they can still wear any folder by name).
-	if !a.iniBusy && len(a.iniServer) == 0 {
+	if !a.iniBusy && serverN == 0 {
 		base := a.urls.Origin()
 		if base == "" {
 			base = "https://your-server.com/base/"
@@ -5349,27 +5516,33 @@ type areaFilterKey struct {
 	first, last string
 }
 
-// refreshAreaFilter recomputes the matching area indices for a non-empty query,
+// refreshAreaFilter returns the matching area indices for a non-empty query,
 // memoized against the query + the list identity — same O(1)-per-frame guard as
-// refreshMusicFilter. The stored indices are ORIGINAL indices into a.sess.Areas,
-// which parallels a.sess.AreaInfo, so a caller uses ti (not the visible index)
-// to look up either.
-func (a *App) refreshAreaFilter(query string) {
+// refreshMusicFilter. The indices are ORIGINAL indices into a.sess.Areas, which
+// parallels a.sess.AreaInfo, so a caller uses ti (not the visible index) to look
+// up either.
+//
+// slot names the query SOURCE (areaQuerySlotOwn/Themed), never the drawer: two
+// panels reading the same box share a slot and hit the same memo entry, while the
+// two boxes cannot evict each other.
+func (a *App) refreshAreaFilter(query string, slot int) []int {
 	n := len(a.sess.Areas)
 	key := areaFilterKey{q: query, n: n}
 	if n > 0 {
 		key.first, key.last = a.sess.Areas[0], a.sess.Areas[n-1]
 	}
-	if key == a.areaFilterMemo {
-		return
+	if key == a.areaFilterMemo[slot] {
+		return a.areaFiltered[slot]
 	}
-	a.areaFilterMemo = key
-	a.areaFiltered = a.areaFiltered[:0]
+	a.areaFilterMemo[slot] = key
+	out := a.areaFiltered[slot][:0]
 	for i, area := range a.sess.Areas {
 		if strings.Contains(strings.ToLower(area), query) {
-			a.areaFiltered = append(a.areaFiltered, i)
+			out = append(out, i)
 		}
 	}
+	a.areaFiltered[slot] = out
+	return out
 }
 
 // drawMusicVolume is the Music tab's pure volume menu (toggled in place of the

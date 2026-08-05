@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -14,6 +15,14 @@ import (
 // ErrAlreadyPortable is returned by MigrateToPortable when the active config is
 // already the portable one (nothing to copy).
 var ErrAlreadyPortable = errors.New("config: already portable")
+
+// ErrThemesNotMigrated marks MigrateToPortable's PARTIAL success: the config set
+// copied, the themes folder did not. It exists so the caller can say the true
+// thing ("your settings moved; your themes did not") instead of reporting a total
+// failure for a migration that actually did most of its job — the user's next
+// action, restarting into the portable copy, is still the right one. Test with
+// errors.Is; the underlying filesystem error stays wrapped behind it.
+var ErrThemesNotMigrated = errors.New("config: settings copied, but the themes folder did not")
 
 // PortableDirName is the folder beside the executable that holds a *portable*
 // config set (asset_preferences.json, notebooks/, jukebox.json). Its presence
@@ -257,7 +266,9 @@ func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	if err := migrateThemesToPortable(src, filepath.Dir(dest)); err != nil {
 		// The settings DID move; say so rather than reporting a total failure,
 		// because the user's next action ("restart to use the portable copy")
-		// is still the right one and only the themes need attention.
+		// is still the right one and only the themes need attention. The error
+		// wraps ErrThemesNotMigrated so the caller can tell this partial success
+		// from a migration that copied nothing at all — dest is valid here.
 		return dest, err
 	}
 	return dest, nil
@@ -280,7 +291,7 @@ func migrateThemesToPortable(srcBase, exeDir string) error {
 		return nil // no themes to carry
 	}
 	if err := copyTree(from, to); err != nil {
-		return fmt.Errorf("config: settings copied, but the themes folder did not: %w", err)
+		return fmt.Errorf("%w: %w", ErrThemesNotMigrated, err)
 	}
 	return nil
 }
@@ -292,6 +303,11 @@ func copyTree(src, dst string) error { return copyTreeExcept(src, dst, nil) }
 // copyTreeExcept is copyTree with a set of TOP-LEVEL entry names to leave behind
 // (matched by name, so only the roots of the copy are filtered — a nested
 // "themes" folder inside a notebook directory is still copied).
+//
+// The match is case-INSENSITIVE (skipEntry): Windows and macOS filesystems fold
+// case, so a user whose folder is spelled "Themes" has the same directory the
+// exact-match set was meant to exclude, and an exact match would copy it into
+// config/ — the very split MigrateToPortable's themes step exists to prevent.
 func copyTreeExcept(src, dst string, skip map[string]bool) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -301,7 +317,7 @@ func copyTreeExcept(src, dst string, skip map[string]bool) error {
 		return fmt.Errorf("config: creating %s: %w", dst, err)
 	}
 	for _, e := range entries {
-		if e.Name() == writeProbeName || skip[e.Name()] {
+		if e.Name() == writeProbeName || skipEntry(skip, e.Name()) {
 			continue
 		}
 		s := filepath.Join(src, e.Name())
@@ -317,6 +333,25 @@ func copyTreeExcept(src, dst string, skip map[string]bool) error {
 		}
 	}
 	return nil
+}
+
+// skipEntry reports whether name is in copyTreeExcept's skip set, folding case.
+// The exact hit is tried first so the common path is one map lookup; the walk is
+// over a set that holds ONE entry today (ThemesDirName) and is bounded by the
+// caller's own literal in every call site, so it can never grow with input.
+func skipEntry(skip map[string]bool, name string) bool {
+	if len(skip) == 0 {
+		return false
+	}
+	if skip[name] {
+		return true
+	}
+	for k := range skip {
+		if strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // copyFile copies a single regular file s to d (overwriting), via a temp file +
@@ -358,6 +393,25 @@ var (
 	executableDirOnce  sync.Once
 	executableDirCache string
 )
+
+// ExecutableDir is executableDir for callers outside this package — the ONE
+// spelling of "the directory the running executable is in".
+//
+// It is exported because internal/ui resolves the same directory to build its
+// theme search roots, and it used to do so with a raw os.Executable +
+// filepath.Dir. That skips the EvalSymlinks step below, so on a symlinked or
+// junctioned install the two answers are different STRINGS for one directory —
+// and every "is this the same place?" test in the theme code (samePath, the
+// write-root backstop, the origin badge) is a string comparison by design. Two
+// spellings there mean a root scanned twice, or a "bundled" theme badged
+// "read-only". One memoized answer, shared, is the fix.
+//
+// All THREE theme root builders now call it — the catalog scan
+// (ui/themecatalog.go), the picker's shared list (ui.themeSearchRootsNow) and
+// the loader (ui.applyThemeAsync) — which is what makes their root lists equal
+// strings rather than merely equal places; ui's TestThemeRootBuildersShareOneExeDir
+// pins that they do.
+func ExecutableDir() string { return executableDir() }
 
 // executableDir returns the directory containing the running executable, with
 // symlinks resolved, or "" if it can't be determined. Memoized (see above): the
