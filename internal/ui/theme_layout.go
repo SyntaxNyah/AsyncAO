@@ -610,7 +610,8 @@ func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
 			a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
 		}
 	}
-	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Extras → SFX Browser for favourites & any sound by name.")
+	a.sfxRowRightClickPreview()
+	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Right-click a row to hear it without picking it. Extras → SFX Browser for favourites & any sound by name.")
 }
 
 // Themed panel body metrics. A theme's design rect is the WHOLE widget (AO2 sizes a
@@ -765,6 +766,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	} else {
 		a.drawChatOverlay(vp, false, 0, 0) // themed layout owns its chatbox geometry
 	}
+	a.drawOverlayChatLayer(vp) // effects.ini layer=chat: over the chatbox (courtroom.cpp:3234-3237)
 	a.drawCourtOverlays(vp, lay)
 	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
 
@@ -1120,6 +1122,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.drawThemedSFXPicker(r)
 	}
 
+	// effects_dropdown (AO2 ui_effects_dropdown, courtroom.cpp:968): the screen
+	// effect that rides your NEXT message, with the theme's own per-effect icons in
+	// the open rows. Hidden while spectating and when the roster is empty, exactly
+	// as AO2 hides it (:5586-5598).
+	if r, ok := themedToggleRect(lay, "effects_dropdown", "", "asyncao_ic_effects"); ok {
+		a.drawEffectsPicker(r)
+	}
+
 	// Text FX and the emoji picker have NO AO2 design key, so under rule (c) their
 	// home is the Extras menu — they are not crammed into an AO2 rect any more. A
 	// theme author who WANTS them inside the canvas still can, via the asyncao_*
@@ -1331,6 +1341,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if r, ok := lay.rect("emotes"); ok && !a.panelHidden(panelEmotes) {
 		a.drawEmoteGridThemed(r, lay, vp)
 	}
+	// A themed layout that declares no `emotes` rect (or a hidden grid, or a
+	// still-loading char.ini) never reaches the grid's own preview site — see
+	// drawSpritePreviewFallback. Right-clicking an effects-dropdown row must still
+	// show its box.
+	a.drawSpritePreviewFallback(true)
 
 	// NOTHING of AsyncAO's own draws inside the design canvas (#21, rule (c)).
 	// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned
@@ -1732,6 +1747,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		// Pin-aware, and routed through closeSpritePreview so the trigger's dwell
 		// id is disarmed (a raw previewBase="" re-opened the box the next frame).
 		a.dismissPreviewOnClick()
+		a.emoteGridDrewPreview = true // tell drawSpritePreviewFallback to stand down
 	}
 }
 

@@ -17,6 +17,9 @@ const (
 	// TypeEmoteButton is the courtroom emote-picker art
 	// (characters/<char>/emotions/button<N>_off|_on).
 	TypeEmoteButton = "EmoteButton"
+	// TypeEffect is AO2 screen-effect overlay art and its dropdown icons
+	// (effects/<name> inside a theme, misc/<folder>/<name> at the origin).
+	TypeEffect = "Effect"
 )
 
 // TypeNames lists every canonical asset-type name, in the same order as the
@@ -32,6 +35,7 @@ var TypeNames = []string{
 	TypeMusic,
 	TypeBlip,
 	TypeEmoteButton,
+	TypeEffect,
 }
 
 // File extensions probed for assets. Extensions always carry the leading dot
@@ -79,6 +83,12 @@ var defaultFormatOrders = map[string][]string{
 	TypeMusic:       {ExtOpus},
 	TypeBlip:        {ExtOpus},
 	TypeEmoteButton: {ExtWebP},
+	// Effect overlays follow get_image_suffix's own first choice (.webp). Real
+	// packs are MIXED (a transitions pack ships 22 .webp beside 4 .png), and
+	// extensions.json has no effects key, so autodetect cannot seed this type —
+	// the ordered learned list plus RecordSuccess's promote is what stops a mixed
+	// roster costing a probe per effect forever (the v1.87.2 mixed-fleet fix).
+	TypeEffect: {ExtWebP},
 }
 
 // legacyFallbackChains is appended (order preserved, deduplicated) to the
@@ -96,6 +106,8 @@ var legacyFallbackChains = map[string][]string{
 	TypeBlip:        {ExtOgg, ExtWAV, ExtMP3},
 	// Legacy packs ship PNG buttons; APNG/GIF cover animated button packs.
 	TypeEmoteButton: {ExtAPNG, ExtGIF, ExtPNG},
+	// get_image_suffix's exact order (text_file_functions.cpp:381-404).
+	TypeEffect: {ExtAPNG, ExtGIF, ExtPNG},
 }
 
 // DefaultFormatOrder returns a copy of the zero-fallback probe list for the

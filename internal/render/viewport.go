@@ -136,6 +136,17 @@ func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 // advance steps frame timing. One-shot animations stop on the last frame
 // and report completion exactly once.
 func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) (justFinished bool) {
+	return a.advanceMax(page, dt, playOnce, 0)
+}
+
+// advanceMax is advance with AO2's per-frame duration clamp
+// (AnimationLayer::setMaximumDurationPerFrame, animationlayer.cpp:281-286): each
+// frame's authored delay is capped at maxDelay before it is spent, so a
+// max_duration = 60 effect plays every frame for at most 60 ms — it does NOT cut
+// the clip to 60 ms total, which is what the shipped effects.ini comment reads
+// like. maxDelay <= 0 = no clamp, which is every caller but the overlay and is
+// why advance() is byte-identical to what it was.
+func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce bool, maxDelay time.Duration) (justFinished bool) {
 	if page == nil || len(page.Frames) <= 1 {
 		if playOnce && !a.finished {
 			// Static "animation": a single frame finishes immediately.
@@ -154,6 +165,9 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 	a.elapsed += dt
 	for {
 		delay := page.Delays[a.frame]
+		if maxDelay > 0 && delay > maxDelay {
+			delay = maxDelay
+		}
 		if delay <= 0 || a.elapsed < delay {
 			return false
 		}
@@ -338,6 +352,13 @@ type Viewport struct {
 	shoutAnim   animState
 	bgAnim      animState
 	deskAnim    animState
+	// overlayAnim plays the AO2 screen-effect overlay (effects.ini). overlayGen
+	// mirrors Scene.Overlay.Gen so the SAME effect fired twice in a row restarts:
+	// animState.reset only fires on a base change, and the second trigger of an
+	// identical base would otherwise keep the first one's frame cursor (or stay
+	// frozen on its held last frame).
+	overlayAnim animState
+	overlayGen  uint32
 
 	// OnPreanimDone forwards one-shot completion to the courtroom state
 	// machine.
@@ -449,6 +470,8 @@ type Viewport struct {
 	reflRect sdl.Rect // #123 reflection blit destination
 	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
 	maskClip sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
+	ovRect   sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
+	ovClip   sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
 
 	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
@@ -629,6 +652,44 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			v.pairAnim.advance(page, dt, false)
 		}
 	}
+	// Screen-effect overlay (effects.ini). loop=true wraps forever and makes cull
+	// inert; loop=false is a one-shot that holds its last frame unless cull
+	// (animationlayer.cpp:342-348, 660-666) — clampFrame already holds, and the
+	// draw skips a finished culled clip.
+	v.syncOverlay(&scene.Overlay)
+	if scene.Overlay.Active() {
+		if page, ok := v.overlayAnim.resolve(v.store); ok {
+			v.overlayAnim.advanceMax(page, dt, !scene.Overlay.Loop, scene.Overlay.MaxFrameDelay)
+		}
+	}
+}
+
+// syncOverlay rebinds the overlay layer. Unlike every other layer it also
+// watches a GENERATION: the courtroom bumps Scene.Overlay.Gen on every trigger,
+// so the same effect name twice in a row restarts instead of continuing (or
+// staying frozen on) the previous play.
+func (v *Viewport) syncOverlay(o *courtroom.SceneOverlay) {
+	if v.overlayAnim.base == o.Base && v.overlayGen == o.Gen {
+		return
+	}
+	v.overlayGen = o.Gen
+	v.overlayAnim.reset(o.Base)
+}
+
+// overlayAnimating reports a LIVE overlay: on stage, resident, multi-frame, and
+// either looping or not yet finished. A draw-site census on state — never on a
+// knob — and deliberately false for a resolved SINGLE-frame overlay, which is a
+// still picture with no next deadline and must not hold the frame pacer up for
+// as long as it is displayed.
+func (v *Viewport) overlayAnimating(scene *courtroom.Scene) bool {
+	if !scene.Overlay.Active() {
+		return false
+	}
+	page := v.overlayAnim.page
+	if page == nil || len(page.Frames) <= 1 {
+		return false
+	}
+	return scene.Overlay.Loop || !v.overlayAnim.finished
 }
 
 // NextAnimDue reports the stage's next scheduled animation deadline: 0 while a
@@ -655,11 +716,14 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 		return 0, true
 	}
 	due := time.Duration(-1)
-	consider := func(a *animState, visible bool) {
+	considerMax := func(a *animState, visible bool, maxDelay time.Duration) {
 		if !visible || a.finished || a.page == nil || len(a.page.Frames) <= 1 {
 			return
 		}
 		delay := a.page.Delays[a.frame]
+		if maxDelay > 0 && delay > maxDelay {
+			delay = maxDelay // the overlay's per-frame clamp shortens its own deadline too
+		}
 		if delay <= 0 {
 			return // advance() treats a non-positive delay as frozen — not animating
 		}
@@ -671,11 +735,16 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 			due = d
 		}
 	}
+	consider := func(a *animState, visible bool) { considerMax(a, visible, 0) }
 	consider(&v.bgAnim, true)
 	consider(&v.deskAnim, true)
 	consider(&v.shoutAnim, v.shoutAnim.base != "")
 	consider(&v.speakerAnim, scene.Speaker.Visible)
 	consider(&v.pairAnim, scene.PairActive)
+	// The overlay's own next frame, so an idle-capped client wakes exactly when
+	// the effect needs a new frame instead of sleeping through the clip (the
+	// ROADMAP's named pacing trap for this feature).
+	considerMax(&v.overlayAnim, scene.Overlay.Active(), scene.Overlay.MaxFrameDelay)
 	if due < 0 {
 		return 0, false
 	}
@@ -748,7 +817,10 @@ func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
 	if scene.PairActive && layerAnimates(&scene.Pair) {
 		return true
 	}
-	return false
+	// A live screen-effect overlay animates on the stage too. NextAnimDue already
+	// schedules its next frame; reporting it here as well is what keeps the
+	// chrome-anim tier awake through a looping wash under the idle cap.
+	return v.overlayAnimating(scene)
 }
 
 func (v *Viewport) syncAnim(a *animState, base string) {
@@ -899,6 +971,11 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.Entrance && v.entranceLeft > 0 {
 		spkVP.X += entranceSlide(v.entranceLeft, vp.W)
 	}
+	// layer = behind: stackUnder(ui_vp_player_char) (courtroom.cpp:3218-3222) —
+	// over the background, under every character sprite. Contained to the stage
+	// (drawOverlayInStage) for the same reason the sprite mask right below exists,
+	// on the very same OFFSET.
+	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerBehind)
 	// Viewport sprite mask (default ON): clip the character sprites to the ORIGINAL
 	// stage rect so a big pair / reposition OFFSET can't spill a sprite over the
 	// chatbox or the log. Only the sprites are clipped (the bg/desk already fill the
@@ -930,9 +1007,15 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.Reflection {
 		v.drawReflections(ren, scene, vp, spkVP)
 	}
+	// layer = character: stackUnder(ui_vp_desk) (courtroom.cpp:3223-3227) — over
+	// the characters, UNDER the desk overlay.
+	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerCharacter)
 	if scene.ShowDesk {
 		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
 	}
+	// layer = over: raise() inside the viewport (courtroom.cpp:3228-3232) — above
+	// the desk, below the shout splash.
+	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerOver)
 	if shoutBase := effectiveShoutBase(scene, v.store); shoutBase != "" {
 		v.drawFill(ren, shoutBase, &v.shoutAnim, vp, noDim)
 	}
@@ -996,6 +1079,176 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if dimPct < 100 {
 		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
 	}
+}
+
+// DrawOverlayChat draws the `chat`-layer overlay — AO2 reparents that one out of
+// the viewport onto the Courtroom and stacks it under ui_vp_objection
+// (courtroom.cpp:3234-3237), i.e. OVER the chatbox. internal/ui owns that
+// surface, so it calls this immediately after the chatbox/message draw with the
+// stage rect (the layer is never resized on reparent: it always covers the
+// viewport rect, only its parent changes).
+//
+// The "under the shout bubble" half of the canon ordering is UNREACHABLE for us:
+// AsyncAO blits the shout inside Viewport.Render, and canon fires the effect at
+// start_chat_ticking — i.e. after the shout splash has already finished — so no
+// real message can put a chat-layer overlay and a live shout on screen together.
+// Documented rather than contorted around.
+//
+// Render thread only.
+func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
+	if scene == nil {
+		return
+	}
+	v.drawOverlay(ren, scene, vp, courtroom.OverlayLayerChat)
+}
+
+// drawOverlay blits the screen-effect overlay when it belongs to `layer`. It is
+// the RAW blit: containment is the caller's — the three in-viewport rungs go
+// through drawOverlayInStage, the `chat` rung (DrawOverlayChat) is uncontained
+// because canon reparents it out of the viewport.
+//
+// Geometry (AnimationLayer::calculateFrameGeometry, animationlayer.cpp:16,
+// 229-273): stretch=true fills the viewport; otherwise the art is scaled to the
+// viewport HEIGHT with its aspect preserved and CENTRED horizontally.
+// respect_offset then shifts it by the speaker's own self-offset, which is
+// already stored as percent of the viewport (courtroom.cpp:3264-3266).
+//
+// Zero-alloc: pointer math on a Scene.Overlay the courtroom precomputed, the
+// persistent v.ovRect scratch for the cgo destination (taking &localRect would
+// heap-escape on EVERY call), and an early return before anything else when no
+// overlay is on stage — so a normal frame is byte-identical to before.
+func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect, layer uint8) {
+	o := &scene.Overlay
+	if o.Base == "" || o.Layer != layer {
+		return
+	}
+	page, ok := v.overlayAnim.resolve(v.store)
+	if !ok || len(page.Frames) == 0 {
+		// Cold (or unresolvable) art draws nothing — pixel-identical to canon's
+		// clear, and the same shape as a cold shout bubble. No blocking, no stall.
+		return
+	}
+	if v.overlayHidden(o) {
+		return
+	}
+	tex := page.Frames[clampFrame(v.overlayAnim.frame, len(page.Frames))]
+	dst := overlayDstRect(o, vp, page.W, page.H)
+	page.applyScaleMode(ren, v.overlayScaleMode(o, page.H, dst.H))
+	v.ovRect = dst
+	if o.Flip {
+		_ = ren.CopyEx(tex, nil, &v.ovRect, 0, nil, sdl.FLIP_HORIZONTAL)
+		return
+	}
+	_ = ren.Copy(tex, nil, &v.ovRect)
+}
+
+// drawOverlayInStage blits one of the three IN-VIEWPORT rungs with the canon
+// containment: do_effect calls setParent(ui_viewport) for behind/character/over
+// (courtroom.cpp:3218-3232) and Qt clips a child widget to its parent's rect, so
+// none of those three can paint a pixel outside the stage. Ours can —
+// overlayDstRect is free to leave the viewport, and does so by DEFAULT:
+//
+//   - the classic stage is 4:3 (config.ViewportArtW/H) while modern effect packs
+//     ship ~16:9 art, so a fit-to-height layer is ~32% wider than the stage and
+//     hangs over the IC log / side panels; and
+//   - respect_offset shifts the whole layer by the speaker's own self-offset
+//     (courtroom.cpp:3264-3266), which can move it off-stage in either axis.
+//
+// Unclipped, that spilled over the chatbox and the log. This is the SAME idiom,
+// and the same restore discipline, as the viewport sprite mask in Render — which
+// exists for exactly this hazard on exactly this offset. Clip to the ORIGINAL
+// stage rect, never the punched/shaken vp (which is itself allowed to leave the
+// stage), and only when nothing else already owns a clip, so the camera-zoom clip
+// (internal/ui/vpzoom.go, itself the stage) is never stomped. v.ovClip is a
+// persistent scratch because &localRect into cgo heap-escapes on every call.
+//
+// The `chat` rung is deliberately NOT routed here: canon reparents it onto the
+// Courtroom widget instead (courtroom.cpp:3234-3237), so the stage is not its
+// clip — DrawOverlayChat blits it uncontained, over the chatbox it now belongs to.
+//
+// Not this rung (or nothing to blit) returns before touching the clip state, so a
+// no-overlay frame still issues no SDL call at all and never dereferences ren.
+func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene, vp, stage sdl.Rect, layer uint8) {
+	o := &scene.Overlay
+	if o.Base == "" || o.Layer != layer || v.overlayHidden(o) {
+		return
+	}
+	clip := !ren.IsClipEnabled()
+	if clip {
+		v.ovClip = stage
+		_ = ren.SetClipRect(&v.ovClip)
+	}
+	v.drawOverlay(ren, scene, vp, layer)
+	if clip {
+		_ = ren.SetClipRect(nil)
+	}
+}
+
+// overlayHidden reports whether a resident overlay must NOT blit this frame.
+// setHideWhenStopped(cull) is honoured ONLY for a play-once clip
+// (animationlayer.cpp:660-666); a looping clip never latches finished, so cull is
+// inert there by construction rather than by a second test. Without cull, a
+// finished one-shot HOLDS its last frame — which clampFrame already does.
+func (v *Viewport) overlayHidden(o *courtroom.SceneOverlay) bool {
+	return o.Cull && v.overlayAnim.finished
+}
+
+// overlayDstRect computes the overlay's destination rect. Pure (no SDL calls, no
+// receiver state) so the geometry is unit-testable headlessly:
+//
+//   - stretch=true fills the viewport (AnimationLayer::setStretchToFit);
+//   - otherwise the art is scaled to the viewport HEIGHT with its aspect kept and
+//     CENTRED horizontally (animationlayer.cpp:16, 246-256);
+//   - respect_offset then shifts by the speaker's own offset, which is already
+//     percent-of-viewport (courtroom.cpp:3264-3266 does the same arithmetic).
+//
+// The layer is NEVER resized on reparent — every rung covers the viewport rect.
+//
+// The result may legitimately EXTEND PAST the viewport (fit-to-height art wider
+// than the stage; any respect_offset shift) — that is canon geometry, and canon
+// then relies on the parent widget to clip it. drawOverlayInStage is that clip
+// for the three in-viewport rungs, so this stays pure and unclamped.
+func overlayDstRect(o *courtroom.SceneOverlay, vp sdl.Rect, pageW, pageH int32) sdl.Rect {
+	dst := vp
+	if !o.Stretch && pageW > 0 && pageH > 0 {
+		dst.H = vp.H
+		dst.W = int32(int64(pageW) * int64(vp.H) / int64(pageH))
+		dst.X = vp.X + (vp.W-dst.W)/2
+	}
+	if o.OffsetX != 0 {
+		dst.X += vp.W * int32(o.OffsetX) / offsetPercentDivisor
+	}
+	if o.OffsetY != 0 {
+		dst.Y += vp.H * int32(o.OffsetY) / offsetPercentDivisor
+	}
+	return dst
+}
+
+// overlayScaleMode settles the overlay's texture filter with the SAME precedence
+// AO2 uses for sprites (internal/courtroom/scaling.go): the user's explicit mode
+// wins, then the effect's own `scaling` key, then the geometry rule (art being
+// ENLARGED is point-sampled so its pixels stay square).
+//
+// The geometry rule is scoped to the NON-STRETCH branch, exactly where canon has
+// it: AnimationLayer::calculateFrameGeometry sets FastTransformation on
+// `m_frame_size.height() < widget_size.height()` INSIDE the else of
+// `if (m_stretch_to_fit)` (animationlayer.cpp:236-262). A stretched layer keeps
+// SmoothTransformation however small its art is — a full-viewport `stretch=true`
+// wash (fire, filmgrain, a 64 px gradient blown up to 1080p) is authored to be
+// smooth, and point-sampling it is the visible defect this scoping avoids. An
+// explicit `scaling` key still overrides, in both branches, as it does in canon
+// (the m_resize_mode block runs after).
+func (v *Viewport) overlayScaleMode(o *courtroom.SceneOverlay, nativeH, targetH int32) sdl.ScaleMode {
+	switch courtroom.ResolveScalingMode(v.fx.UserScaling, o.Scaling) {
+	case courtroom.ScalingPixel:
+		return sdl.ScaleModeNearest
+	case courtroom.ScalingSmooth:
+		return sdl.ScaleModeLinear
+	}
+	if !o.Stretch && nativeH > 0 && nativeH < targetH {
+		return sdl.ScaleModeNearest
+	}
+	return sdl.ScaleModeLinear
 }
 
 // resolveHeld probes the held-frame bridge for a scenery layer whose CURRENT

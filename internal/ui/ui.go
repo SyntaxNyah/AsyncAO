@@ -568,9 +568,18 @@ type Ctx struct {
 	// stacks above widgets drawn later. modalOn persists across frames —
 	// widgets drawn BEFORE the dropdown in draw order are fenced too —
 	// and releases at the BeginFrame after the close.
-	ddOpen       string
-	ddScroll     int32
-	ddOpenList   sdl.Rect // the OPEN dropdown's list rect (flip-adjusted), stashed each draw — read by boxFencesPointer so a list over a floating panel stays clickable
+	ddOpen     string
+	ddScroll   int32
+	ddOpenList sdl.Rect // the OPEN dropdown's list rect (flip-adjusted), stashed each draw — read by boxFencesPointer so a list over a floating panel stays clickable
+	// Row hit-test geometry of the open list, stamped by dropdownEx so
+	// DropdownRowRightClicked can answer "which row is under the pointer" without
+	// widening Dropdown's signature. ddHitID names the owner, so a stale stamp
+	// from a list closed earlier this frame can never answer for another id.
+	ddHitID      string
+	ddHitList    sdl.Rect
+	ddHitRowH    int32
+	ddHitScroll  int32
+	ddHitRows    int
 	modalOn      bool
 	modalRelease bool
 	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
@@ -4029,7 +4038,39 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 		list: list, options: options, cur: next, scroll: c.ddScroll, rowH: rowH,
 		thumbW: thumbW, thumb: thumb,
 	})
+	c.ddHitID, c.ddHitList, c.ddHitRowH, c.ddHitScroll, c.ddHitRows = id, list, rowH, c.ddScroll, len(options)
 	return next, changed
+}
+
+// DropdownRowRightClicked reports the row index under the pointer when the OPEN
+// list belonging to id was right-clicked, and CONSUMES the click.
+//
+// It exists because the dropdown owns row hit-testing inside dropdownEx, not
+// inside the thumb painter — so a caller that wants a per-row secondary action
+// (audition this effect / this sound without selecting it) has no other way to
+// ask. Additive by construction: Dropdown and DropdownThumbs keep their
+// signatures, and a caller that never asks pays nothing.
+//
+// Consuming the click is the fence discipline (app.go's floating-pointer
+// save/restore): an unconsumed right-click would leak through to whatever widget
+// sits under the list, which is exactly what the modal capture exists to stop.
+// Call it in the SAME frame, right after the Dropdown/DropdownThumbs call.
+func (c *Ctx) DropdownRowRightClicked(id string) (int, bool) {
+	if !c.rightClicked || id == "" || c.ddHitID != id || c.ddOpen != id {
+		return 0, false
+	}
+	if !pointIn(c.mouseX, c.mouseY, c.ddHitList) { // raw hit test: the open list owns the pointer
+		return 0, false
+	}
+	if c.ddHitRowH <= 0 {
+		return 0, false
+	}
+	idx := int((c.mouseY - c.ddHitList.Y + c.ddHitScroll) / c.ddHitRowH)
+	if idx < 0 || idx >= c.ddHitRows {
+		return 0, false
+	}
+	c.rightClicked = false
+	return idx, true
 }
 
 // FinishFrame paints deferred overlays (open dropdown lists). Call after

@@ -368,8 +368,26 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   message can fire is capped. Turn the shake/flash off with **Settings → Stage &
   viewport effects → "Enable screen effects"** (on by default; the accessibility
   "Reduce motion" also suppresses them, and the effect sound still plays either
-  way). Custom `effects.ini` overlay effects are the next step (see
-  `docs/ROADMAP.md`).
+  way).
+- **Custom screen effects — AO2 `effects.ini` overlays** (v1.90.0). The named
+  effects your theme (or a character's own `misc/<pack>/` folder) declares now
+  actually **draw**, not just play their sound. A picker sits on the IC bar next
+  to the SFX one — **"None" plus every effect the theme and the speaking
+  character's pack list, in that order** — and each open row shows the effect's
+  own icon. **Right-click a row to preview it** (the art in the preview box and
+  its sound) without picking it; right-clicking an **SFX** row now auditions that
+  sound the same way, without committing it to your next message. Effects arrive
+  from other clients too: the 2.8 `EFFECTS` field carries `name|folder|sound`, so
+  an AO2 player's custom effect plays here exactly where AO2 plays it (as the
+  text starts ticking) at the layer its `effects.ini` asks for — behind the
+  characters, over them but under the desk, over the whole stage, or over the
+  chatbox. `loop`, `cull`, `stretch`, `respect_flip`, `respect_offset`,
+  `scaling` and the per-frame `max_duration` clamp are all honoured, and legacy
+  v1 `effects.ini` files are migrated **in memory** (unlike AO2, AsyncAO never
+  rewrites a file in your theme folder). The art streams like every other asset —
+  nothing is fetched for an effect nobody played — and **Settings → Stage &
+  viewport effects → "Enable screen effects"** (plus "Reduce motion") turns the
+  visual off while the sound still plays.
 - **Random / rainbow message colour** (M61, Settings → General, both OFF):
   **Random colour** picks a fresh palette colour for each IC message you send
   (the standard TextColor field — every client sees it); **Rainbow** prefixes

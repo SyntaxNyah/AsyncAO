@@ -2048,6 +2048,7 @@ func (a *App) drawCourtroom(w, h int32) {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
 	}
 	a.drawChatOverlay(vp, true, w, h) // classic layout: the chatbox is a movable slot
+	a.drawOverlayChatLayer(vp)        // effects.ini layer=chat: over the chatbox (courtroom.cpp:3234-3237)
 	a.drawCourtOverlays(vp, nil)      // HP bars, clocks, badges, splashes
 	a.drawReactionFloats(vp)          // #2: emoji reactions rising over the stage (0-alloc when none)
 
@@ -5806,6 +5807,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
 		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
+	a.drawSpritePreviewFallback(false)
 
 	// OOC row at the very bottom: a FULL-width OOC chat INPUT (no name box — the OOC name
 	// lives in the OOC box/tab now; it used to be duplicated here, which is the redundancy
@@ -6354,6 +6356,15 @@ const (
 	// 48px visual) with breathing room, and keeps the Pre+FX pair inside the 720p bar.
 	preW   = 52
 	sfxDDW = 92 // SFX dropdown width
+	// effectsDDW sizes the AO2 screen-effect picker (ui_effects_dropdown). Sized
+	// like sfxDDW because it holds the same class of value (a short effect name);
+	// AO2's own stock rect is 89x22 (ao2defaultrects.go), so this is that width
+	// rounded to the classic row's scale. Drawn LAST of the optional controls
+	// before the emoji button, so it yields to Pre/FX/SFX on a narrow bar and only
+	// the emoji button yields before it. It draws at ALL only when the roster is
+	// non-empty and you are not spectating (AO2 courtroom.cpp:5586-5598), so a
+	// server/theme with no effects.ini costs the bar nothing.
+	effectsDDW = 92
 	// sfxCompactW is the collapsed SFX picker: a fixed-width button shown where the
 	// full sfxDDW dropdown no longer fits, so the feature never silently VANISHES on
 	// a narrow bar (users concluded it had been removed). It opens the SAME choice
@@ -6576,7 +6587,8 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 				a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
 			}
 		}
-		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it. Extras → SFX Browser for favourites & any sound by name.")
+		a.sfxRowRightClickPreview() // right-click auditions a row without picking it
+		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it; right-click a row to hear it without picking. Extras → SFX Browser for favourites & any sound by name.")
 		icX += sfxDDW + 4
 	case sfxCompactGuardOK:
 		// Compact fallback: the full dropdown didn't fit but this narrow button does.
@@ -6592,6 +6604,17 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		}
 		c.TooltipAfter("sfxcompact-tip", compactRect, "SFX picker (collapsed to fit the bar): opens the SFX Browser to pick the sound for your next message. Widen the window for the inline dropdown.")
 		icX += sfxCompactW + 4
+	}
+	// effects_dropdown (AO2 ui_effects_dropdown, courtroom.cpp:968): the screen
+	// effect that rides your NEXT message. Hidden while spectating and when the
+	// roster is empty, exactly as AO2 hides it (:5586-5598) — which is also why it
+	// needs no panelHidden gate or override escape hatch: on a server with no
+	// effects it simply is not there, and on one with effects it is the only way to
+	// reach them. Not a movable classic slot (yet): it draws in the row's flow,
+	// which keeps it out of the classic slot table entirely.
+	if a.overlayEffectsVisible() && icBarButtonFits(icBar.W, icX-icBar.X, effectsDDW+4, tailReserve) {
+		a.drawEffectsPicker(sdl.Rect{X: icX, Y: rowY, W: effectsDDW, H: fH})
+		icX += effectsDDW + 4
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
@@ -6659,6 +6682,43 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
 	a.previewName, a.previewNameFor = name, a.previewBase
 	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+}
+
+// drawSpritePreviewFallback paints the shared sprite-preview box on the courtroom
+// passes where its PRIMARY draw site — the tail of the emote grid — did not run.
+//
+// The box has always been drawn from inside drawEmoteRow / drawEmoteGridThemed,
+// which is fine for the hover preview that grid itself triggers. It stops being
+// fine now that OTHER surfaces open the box: right-clicking an effects-dropdown
+// row (effectspicker.go) sets previewBase from the IC bar, and the grid is simply
+// not drawn when the user hid the emote panel (ctrl "Emotes" off), when a themed
+// design.ini declares no `emotes` rect, or while char.ini is still loading (both
+// painters return early on charINIBusy). In those states the box was armed,
+// PINNED, and never painted — an invisible modal that only its own x could close,
+// except that its x was invisible too.
+//
+// Exclusive by construction: it draws only when the grid path did NOT, so the box
+// is never composited twice in a frame. Free when nothing is previewing.
+//
+// themed picks the dismissal the layout's own grid site uses, so the fallback is
+// behaviourally identical to the site it stands in for (the themed grid dismisses
+// on click only; the classic one runs the full leave-corridor).
+func (a *App) drawSpritePreviewFallback(themed bool) {
+	if a.previewBase == "" || a.emoteGridDrewPreview {
+		return
+	}
+	// Latch BEFORE drawing, not after reading: the latch is cleared once per frame
+	// by the poll cluster, so a pass that draws the box twice (a layout that ends up
+	// calling both fallbacks, a future second courtroom pass) still composites it
+	// exactly once.
+	a.emoteGridDrewPreview = true
+	// Clamp to the WINDOW, like the grid's own site.
+	a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName())
+	if themed {
+		a.dismissPreviewOnClick()
+		return
+	}
+	a.closeSpritePreviewOnLeave()
 }
 
 // previewedEmoteName returns the display name of whichever emote produced the
@@ -6836,6 +6896,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		a.closeSpritePreviewOnLeave()
+		a.emoteGridDrewPreview = true // tell drawSpritePreviewFallback to stand down
 	}
 }
 
@@ -7806,6 +7867,10 @@ func (a *App) sendIC(shout int) {
 		Realization: a.icRealize,        // #21: white flash + sound on this message (AO2 realization_state)
 		Screenshake: a.icShake,          // #21: shake the courtroom on this message (AO2 screenshake_state)
 		KFOCompat:   a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
+		// AO2 screen effect (ui_effects_dropdown): "<name>|<folder>|<sound>", where
+		// folder is OUR char.ini [Options] effects and sound is the merged property
+		// (courtroom.cpp:2296-2308). "" for the "None" row.
+		Effects: a.outgoingEffectsField(),
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
 	// (formatObjection assembles it; courtroom.cpp:2142).
@@ -7837,6 +7902,11 @@ func (a *App) sendIC(shout int) {
 	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
 	// fires on every following line, which is the failure everyone notices.
 	a.icSlide, a.icRealize, a.icShake = false, false, false
+	// The effects pick is offered the same reset here, in the same place AO2 does
+	// it (courtroom.cpp:2348-2354) — but AO2's `stickyeffects` option defaults TRUE,
+	// so out of the box the pick SURVIVES the send and this is a no-op. See
+	// clearEffectsAfterSend for why the accessor's name reads backwards.
+	a.clearEffectsAfterSend()
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==

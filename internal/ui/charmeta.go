@@ -30,6 +30,17 @@ const (
 type charMeta struct {
 	blips string // [Options] blips / legacy gender ("" = none declared)
 	chat  string // [Options] chat — the misc chatbox-skin folder ("" = none)
+	// effects is [Options] effects — the misc SCREEN-EFFECT folder
+	// (misc/<effects>/effects.ini + art). It rides this same single fetch, so a
+	// character's own effect pack costs no extra network work; it is also the
+	// fallback folder for the 1- and 2-part MS effect fields, which omit it
+	// (AO2 text_file_functions.cpp:836-839).
+	effects string
+	// realization is [Options] realization — the character's OWN realization sound
+	// NAME. Canon overrides the effects.ini `sound` of the "realization" effect
+	// with it outright (text_file_functions.cpp:889-892) and plays it for the
+	// legacy REALIZATION=1 path (courtroom.cpp:4175). Rides this same single fetch.
+	realization string
 	// scaling is [Options] scaling — the texture filter this character asks for
 	// (get_scaling). ScalingAuto until the fetch lands and when none is declared.
 	scaling courtroom.ScalingMode
@@ -37,10 +48,12 @@ type charMeta struct {
 }
 
 type charMetaFetch struct {
-	url     string
-	blips   string
-	chat    string
-	scaling courtroom.ScalingMode
+	url         string
+	blips       string
+	chat        string
+	effects     string
+	realization string
+	scaling     courtroom.ScalingMode
 }
 
 // charMetaFor answers from the cache and fires ONE async fetch on a miss.
@@ -80,6 +93,8 @@ func (a *App) charMetaFetchOne(url string) {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
 				res.chat = strings.TrimSpace(ini.Chat)
+				res.effects = strings.TrimSpace(ini.Effects)
+				res.realization = strings.TrimSpace(ini.Realization)
 				res.scaling = ini.ScalingMode()
 			}
 		}
@@ -102,7 +117,13 @@ func (a *App) pollCharMeta() {
 			if a.charMetaCache == nil {
 				a.charMetaCache = make(map[string]charMeta, charMetaCap)
 			}
-			a.charMetaCache[res.url] = charMeta{blips: res.blips, chat: res.chat, scaling: res.scaling, done: true}
+			a.charMetaCache[res.url] = charMeta{
+				blips: res.blips, chat: res.chat, effects: res.effects,
+				realization: res.realization, scaling: res.scaling, done: true,
+			}
+			// Our own character's effects folder may have just arrived: drop the
+			// picker's per-frame memos so the roster is re-resolved for it.
+			a.overlayInvalidateMemos()
 		default:
 			return
 		}
@@ -132,6 +153,9 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	room.BlipNameFor = a.remoteBlipFor
 	room.ChatSkinFor = a.remoteChatSkinFor
 	room.SpriteScaling = a.remoteScalingFor
+	// Screen-effect overlays ride the same cache and the same single fetch
+	// (effectspicker.go).
+	a.wireRoomOverlay(room)
 }
 
 // remoteScalingFor is the courtroom's SpriteScaling callback: the speaker's own

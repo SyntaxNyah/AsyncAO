@@ -152,7 +152,7 @@ var themeSlots = [...]themeSlot{
 	{key: "text_color", phase: phasePanels, state: slotStateHandDrawn},          // courtroom.cpp:1138
 	{key: "sfx_dropdown", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:952
 	{key: "sfx_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateInert},
-	{key: "effects_dropdown", phase: phasePanels, state: slotStateInert},     // courtroom.cpp:968
+	{key: "effects_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:968 — theme_layout.go drawEffectsPicker
 	{key: "emote_dropdown", phase: phasePanels, state: slotStateHandDrawn},   // courtroom.cpp:925
 	{key: "iniswap_dropdown", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:937
 	{key: "iniswap_remove", art: []string{"evidencex"}, phase: phasePanels, state: slotStateHandDrawn},
@@ -221,6 +221,10 @@ var themeSlots = [...]themeSlot{
 	{key: "asyncao_ic_sfx", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_emoji", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_fx", phase: phasePanels, state: slotStateHandDrawn},
+	// The screen-effect picker's override rect. AO2 has its own key
+	// (effects_dropdown, above) and this is the AsyncAO tier that WINS over it,
+	// exactly like asyncao_ic_sfx over sfx_dropdown.
+	{key: "asyncao_ic_effects", phase: phasePanels, state: slotStateHandDrawn},
 }
 
 // themeSlotDeferred names every courtroom_design.ini rect key AsyncAO KNOWINGLY

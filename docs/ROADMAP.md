@@ -255,27 +255,26 @@ items move to `docs/FEATURES.md` as they ship.
   the paced path?" the standing review question for every new
   `Background`-reachable producer. Zero hot-path cost — a timestamp compare on a
   drain that already runs.
-- **Custom screen effects — AO2 `effects.ini` system (v1.55.7 follow-up).** The
-  inline codes `\s`/`\f`/`\n`/`\p` and a dedicated "Enable screen effects" toggle
-  **shipped in v1.55.7**; the remaining half is AO2's named custom-effect system so
-  people can make their own beyond the built-in shake/flash. Plan (mirrors
-  AO2-Client `AOApplication::get_effect` + `effects.ini`):
-  - **Assets:** add `AssetTypeEffect` (`internal/assets/types.go` + `typeNames`) and
-    `URLBuilder.Effect(name)` → `effects/<name>` (webAO/AO2 convention); stream the
-    overlay sprite like the shout bubble (one probe, `PrefetchWithFallback`).
-  - **Manifest:** parse `effects.ini` (theme + char/misc) via `internal/theme/ini.go`
-    (`ParseINI` / `SectionKeys`) into named effects with properties (sprite, sound,
-    loop / sticky).
-  - **Render:** `Scene.EffectBase` + a `drawFill`-style animated overlay in
-    `internal/render/viewport.go` — **must join the NoteAnimating census and
-    self-clear when the clip ends** (the recurring frame-pacing trap); reduce-motion
-    + the ScreenEffects toggle gate it.
-  - **Trigger + UI:** the 2.8 `EFFECTS` field is already parsed (`courtroom.go`
-    `fireMessageEffects` — today it plays only the named effect's *sound*); hook it to
-    play the `effects.ini` art, and add an effect picker to the IC bar (AO2 effect-
-    dropdown parity) so custom effects are selectable and sendable.
-  Zero hot-path cost (cached-texture overlay blits, free when idle). The inline-code
-  half is done and revert-clean, so this lands cleanly as a follow-up (v1.55.8).
+- ~~**Custom screen effects — AO2 `effects.ini` system (v1.55.7 follow-up).**~~
+  **SHIPPED in v1.90.0.** `effects.ini` v2 + legacy v1 parse (`internal/theme/
+  overlayfx.go`, in-memory migration — canon rewrites the user's file, we never
+  do), the two-pass merge (`get_effects`' first-file-per-tier LIST vs
+  `get_effect_property`'s every-file LAST-WINS properties, including its
+  clobber-to-empty defect), the 11-rung art ladder with `FindAssetMisc` for the
+  theme-local misc rungs and exactly ONE network rung, `AssetTypeEffect`, the
+  four canon layers (`behind` / `character` / `over` / `chat`) with the two
+  documented layer defects reproduced, per-frame `max_duration`, `cull` /
+  `loop` / `stretch` / `respect_flip` / `respect_offset` / `scaling`, the
+  `effects_dropdown` with per-effect icons and right-click preview, and the
+  outgoing `<name>|<folder>|<sound>` field with `sticky`. Overlay art is
+  EVICTABLE T1 (never `UploadPinned` — a theme's effects folder is ~100 MiB
+  decoded), the pacing rides `AmbientAnimating` + `NextAnimDue`, and
+  ReduceMotion / "Enable screen effects" gate the visual while the effect's sound
+  still plays (canon's own ordering). Deliberately still out of scope: HP-bar
+  `hp_increased_effect` / `hp_decreased_effect` driving named effects
+  (`courtroom.cpp:4937-4965`, a one-line hook now the engine exists), per-misc
+  `scaling`, webAO's `rain*` CSS particle special case, and writing migrated v1
+  files back to disk.
 - **Per-element theme fonts — remaining attributes (#39 follow-up).** The main
   slice **shipped**: `courtroom_fonts.ini` now drives the **family, point size and
   bold** of `showname`, `message`, `ic_chatlog`, `server_chatlog`, `music_list`,

@@ -191,6 +191,12 @@ type Scene struct {
 	// effect art pipeline stays render-side.
 	FlashLeft time.Duration
 	ShakeLeft time.Duration
+
+	// Overlay is the active AO2 screen-effect overlay (effects.ini): the art
+	// base plus everything do_effect precomputes for it. Zero value = nothing on
+	// screen. Set only by fireOverlay, cleared at exactly three sites (see
+	// overlayfx.go) — deliberately NOT at message end, matching canon.
+	Overlay SceneOverlay
 }
 
 // AudioSink receives playback triggers; the SDL_mixer implementation lives
@@ -312,6 +318,33 @@ type Courtroom struct {
 	// behaviour as BlipNameFor. "" = no per-character skin.
 	ChatSkinFor func(char string) string
 
+	// EffectsFolderFor resolves a speaker's screen-effect misc folder (char.ini
+	// [Options] effects, AO2-Client get_effect's p_folder default,
+	// text_file_functions.cpp:836-839). It rides the SAME per-URL char.ini cache
+	// as BlipNameFor / ChatSkinFor, so honouring a character's own effects pack
+	// costs zero extra network work. Consulted only for the 1- and 2-part wire
+	// shapes, which omit the folder. "" = the theme's own effects only.
+	EffectsFolderFor func(char string) string
+
+	// CustomRealizationFor resolves a speaker's OWN realization sound to a full
+	// SFX url — char.ini [Options] realization, AO2's get_custom_realization
+	// (text_file_functions.cpp:896-903). Canon calls it from the legacy
+	// REALIZATION=1 path (courtroom.cpp:4175) INSTEAD of the theme's court sfx, so
+	// a character shipping its own realization sound is heard everywhere. It rides
+	// the same per-URL char.ini cache as EffectsFolderFor — zero extra network
+	// work. "" (or nil) = the character declares none; RealizationSFX, the theme's
+	// courtroom_sounds.ini value, is the fallback exactly as it is in canon.
+	CustomRealizationFor func(char string) string
+
+	// OverlayFor resolves an effect NAME + misc FOLDER to its merged effects.ini
+	// properties and the T1 key / URL its art lives under. The App owns it: the
+	// theme tier is disk (theme.FindOverlayElement) and the misc tier is an origin
+	// chain, and neither belongs in an SDL-free state machine. It also OWNS the
+	// demand — the App kicks off the read/prefetch, this side only records the
+	// base. nil = no overlay engine (headless tests, the maker preview), which
+	// leaves the legacy flash/shake fallback in charge.
+	OverlayFor func(name, folder string) (OverlayResolved, bool)
+
 	// LocalSide, when set, reports OUR OWN side — the pos dropdown's value, with
 	// AO2's default when it is unset. It mirrors AO2-Client's
 	// current_or_default_side(), which is what set_background's re-stage passes to
@@ -416,6 +449,11 @@ type Courtroom struct {
 	sfxLeft  time.Duration // countdown to the fire moment (SFXDelay × sfxDelayUnit)
 	sfxBase  string        // resolved SFX URL to play at the deadline ("" = shake only)
 	sfxShake bool          // also fire the screenshake at the deadline (preanim mods)
+
+	// overlayPending is the ONE deferred screen-effect arm: an effect whose misc
+	// folder's roster had not resolved when the message fired, re-asked on the
+	// Update tick until it lands or its TTL expires (overlayfx.go). Zero = none.
+	overlayPending overlayPendingFX
 
 	// frameTriggers holds THIS message's networked frame-synced effects (#17):
 	// the FRAME_* wire fields parsed once at message-begin into a bounded,
@@ -871,6 +909,10 @@ func (c *Courtroom) wipeStage() {
 	c.Scene.ShoutCustom = false
 	c.Scene.FlashLeft = 0
 	c.Scene.ShakeLeft = 0
+	// CLEAR SITE 2 of 3: set_background(bg, display=true) stops and hides the
+	// effect layer with the rest of the stage (courtroom.cpp:1427-1435). An area
+	// swap must not carry the previous room's looping wash across.
+	c.clearOverlay()
 
 	// text_queue_timer->stop() + skip_chatmessage_queue(). This loses NO IC log
 	// line: AsyncAO appends to the log at INGEST, before the room ever sees the
@@ -1264,6 +1306,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// this position stays hidden — AO2's set_scene existence check (#44).
 	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution())
 
+	// CLEAR SITE 1 of 3 (overlayfx.go): AO2 stops and hides ui_vp_effect inside
+	// display_character (courtroom.cpp:2755-2761), i.e. the moment the next IC
+	// message stages its emote — which is exactly here. fireMessageEffects runs
+	// LATER (enterAfterShout), so a message that carries an effect re-arms it
+	// after this clear, and one that does not leaves the stage clean. There is
+	// deliberately no clear at message END.
+	c.clearOverlay()
+
 	c.Scene.Speaker = SpriteLayer{
 		Name:        speakerName,
 		IdleBase:    idle,
@@ -1525,34 +1575,47 @@ func (c *Courtroom) fireSFXDelay() {
 }
 
 // fireMessageEffects triggers the message-display effects exactly where
-// AO2-Client's handle_ic_message does (courtroom.cpp:4154): the 2.8
-// Effects field wins ("fx|sound" or "fx|folder|sound"), plain REALIZATION=1
-// is the fallback flash, and SCREENSHAKE=1 shakes for IDLE/ZOOM emote mods.
-// Named theme-overlay effects beyond flash/shake play their sound only —
-// the overlay art needs the theme effects engine (frame-synced FRAME_*
-// triggers live with the char.ini frame sections, not here).
+// AO2-Client's start_chat_ticking does (courtroom.cpp:4154): the 2.8 Effects
+// field wins ("fx", "fx|sound" or "fx|folder|sound") and SUPPRESSES the legacy
+// realization path entirely (it is an `else if`, :4173-4177); plain
+// REALIZATION=1 is that fallback flash; SCREENSHAKE=1 shakes for IDLE/ZOOM
+// emote mods.
+//
+// The named effect now drives a real OVERLAY (do_effect). The flash/shake
+// name mapping below survives as the fallback for when the overlay does NOT
+// resolve — no theme effects.ini on disk, no origin pack, no engine wired — so a
+// bare install still reacts to "realization"/"screenshake" the way it always
+// has. When the overlay DOES resolve it owns the visual, and the white flash is
+// not fired on top of the theme's own realization art.
 func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 	// Reduce-motion gates the VISUAL effects only — the feedback sounds still
 	// play (accessibility: kill the shake/flash, keep the audio cue).
 	if msg.Effects != "" {
-		fx, sound := parseEffectsField(msg.Effects)
-		if c.effectsVisible() {
-			switch strings.ToLower(fx) {
-			case "screenshake":
-				c.Scene.ShakeLeft = ScreenshakeDuration
-			case "flash", "realization", "realizationflash":
-				c.Scene.FlashLeft = RealizationFlashDuration
-			}
+		fx, folder, sound := parseEffectsField(msg.Effects)
+		if folder == "" {
+			// 1- and 2-part fields omit it: fall back to the SENDER's own char.ini
+			// (text_file_functions.cpp:836-839). Free — charMeta already has it.
+			folder = c.OverlayEffectsFolderFor(msg.CharName)
 		}
-		if sound != "" && sound != "-" {
+		// The overlay when it resolves, the legacy flash/shake mapping when it does
+		// not — one helper (overlayfx.go) so a resolve that had to WAIT for its
+		// roster settles the message identically (tickOverlayPending re-asks).
+		c.applyEffectField(fx, folder, msg.Flip, msg.SelfOffsetX, msg.SelfOffsetY)
+		// The sound plays whenever the field names one, INCLUDING when the art did
+		// not resolve and when the visual gate is off — canon's own ordering
+		// (courtroom.cpp:3196 precedes the effectsEnabled test at :3202).
+		if OverlaySoundPlayable(sound) {
 			c.audio.PlaySFX(c.urls.SFX(sound), 0) // AssetType: SFX (2.8 effect sound)
 		}
 	} else if msg.Realization {
 		if c.effectsVisible() {
 			c.Scene.FlashLeft = RealizationFlashDuration
 		}
-		if c.RealizationSFX != "" {
-			c.audio.PlaySFX(c.RealizationSFX, 0) // AssetType: SFX (realization)
+		// The SENDER's own realization sound wins over the theme's, exactly as canon
+		// plays get_custom_realization(CHAR_NAME) here rather than get_court_sfx
+		// (courtroom.cpp:4175 → text_file_functions.cpp:896-903).
+		if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
+			c.audio.PlaySFX(sfx, 0) // AssetType: SFX (realization)
 		}
 	}
 	if c.effectsVisible() && msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
@@ -1579,18 +1642,6 @@ func (c *Courtroom) fireInlineEffect(m EffectMark) {
 	case EffectFlash:
 		c.Scene.FlashLeft = RealizationFlashDuration
 	}
-}
-
-// parseEffectsField splits the 2.8 EFFECTS field: "fx", "fx|sound", or
-// "fx|folder|sound" (the folder selects custom effect art — sound is
-// always the last element, mirroring courtroom.cpp:4156).
-func parseEffectsField(raw string) (fx, sound string) {
-	parts := strings.Split(raw, "|")
-	fx = parts[0]
-	if len(parts) > 1 {
-		sound = parts[len(parts)-1]
-	}
-	return fx, sound
 }
 
 // startTalking begins the typewriter reveal.
@@ -1842,6 +1893,9 @@ func (c *Courtroom) Update(dt time.Duration) {
 			c.Scene.ShakeLeft = 0
 		}
 	}
+	// A screen effect whose misc roster was still resolving when the message fired
+	// re-asks here until it lands (overlayfx.go). Inert otherwise.
+	c.tickOverlayPending(dt)
 	// Delayed emote SFX + preanim screenshake (#12): fire at SFX_DELAY × 40ms.
 	// Runs independent of the phase machine (armed in enterAfterShout, cleared in
 	// begin), so a delay that outlasts the preanim still lands during the talk

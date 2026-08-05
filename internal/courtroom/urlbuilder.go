@@ -139,6 +139,19 @@ func segPath(name string) string {
 	return strings.Join(parts, "/")
 }
 
+// segPathRaw is segPath WITHOUT the lowercasing — the AUTHORED-case alternate
+// spelling of a multi-segment asset path. Case-preserving mirrors serve
+// misc/Transitions/TV On.webp where a webAO-convention mirror serves
+// misc/transitions/tv on.webp; the lowercase form stays the identity and this is
+// the chain alt, exactly as BlipAuthored is to Blip.
+func segPathRaw(name string) string {
+	parts := strings.Split(name, "/")
+	for i, part := range parts {
+		parts[i] = segRaw(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 // charSeg escapes the CHARACTER-folder segment honouring the builder's casing setting — lowercase
 // by default (the correct choice for almost every server), or the first-cap / title-case forms for
 // the rare capitalised-folder server. Emotes and every other segment stay lowercase (seg).
@@ -381,6 +394,76 @@ func (u URLBuilder) MiscChatboxCandidates(misc string) []string {
 			u.origin+"misc/"+authored+"/chat",
 			u.origin+"misc/"+authored+"/chatbox",
 		)
+	}
+	return cands
+}
+
+// miscDir is the origin folder every per-character misc asset lives under
+// (AO2 get_misc_path, path_functions.cpp:48-51).
+const miscDir = "misc/"
+
+// overlayEffectsManifest is the effects roster a misc pack ships beside its art
+// (AO2 get_effects' second path, text_file_functions.cpp:772).
+const overlayEffectsManifest = "effects.ini"
+
+// overlayIconsDir prefixes the dropdown-row icon element AO2 asks for
+// ("icons/" + itemText, courtroom.cpp:5608).
+const overlayIconsDir = "icons/"
+
+// OverlayEffectMisc returns the ORIGIN candidates for one screen-effect overlay
+// in a character's effects folder — rung 8 of the ladder and the ONLY rung a
+// streaming client has to ask the network for (every other rung is a theme-local
+// directory probe, theme.FindOverlayElement).
+//
+// Same shape as MiscChatboxCandidates: the lowercase spelling is the identity
+// (this client's URL convention and what webAO-convention mirrors serve), the
+// authored spelling follows when it differs (raw content-folder mirrors keep the
+// author's case; AO2's case-insensitive local filesystem never had to choose).
+// ≤ 2 URLs, each miss 404-cached.
+//
+// Effect names carry SPACES in the wild ("fade to black", "tv black-trans") and
+// may nest, so every segment is escaped individually and slashes survive as
+// separators — a whole-value PathEscape would mint a dead "%2F" URL (#40).
+// [0] is the asset's identity everywhere; feed the rest to PrefetchChain.
+// AssetType: Effect
+func (u URLBuilder) OverlayEffectMisc(folder, name string) []string {
+	return u.overlayEffectCandidates(folder, name)
+}
+
+// OverlayEffectMiscIcon is OverlayEffectMisc for the dropdown row icon
+// ("icons/<name>", courtroom.cpp:5608). // AssetType: Effect
+func (u URLBuilder) OverlayEffectMiscIcon(folder, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	return u.overlayEffectCandidates(folder, overlayIconsDir+name)
+}
+
+// OverlayEffectManifest is the EXACT URL of a misc pack's effects.ini. Not an
+// asset: fetch its bytes (FetchRaw), never format-probe it. Lowercase only — a
+// manifest is a fixed filename, so the two-casing chain the ART needs would only
+// buy a second 404 on the mirrors that do not have it at all.
+func (u URLBuilder) OverlayEffectManifest(folder string) string {
+	folder = strings.TrimSpace(folder)
+	if folder == "" {
+		return ""
+	}
+	return u.origin + segPath(miscDir+folder+"/"+overlayEffectsManifest)
+}
+
+// overlayEffectCandidates builds the ≤2 spellings of misc/<folder>/<element>.
+func (u URLBuilder) overlayEffectCandidates(folder, element string) []string {
+	folder = strings.TrimSpace(folder)
+	element = strings.TrimSpace(element)
+	if folder == "" || element == "" {
+		return nil
+	}
+	rel := miscDir + folder + "/" + element
+	lower := segPath(rel)
+	cands := []string{u.origin + lower}
+	if authored := segPathRaw(rel); authored != lower {
+		cands = append(cands, u.origin+authored)
 	}
 	return cands
 }

@@ -27,6 +27,12 @@ const (
 	AssetTypeMusic
 	AssetTypeBlip
 	AssetTypeEmoteButton
+	// AssetTypeEffect is AO2 screen-effect overlay art (effects/<name> in a theme,
+	// misc/<folder>/<name> at the origin) and its dropdown icons. Its own type
+	// because its format policy is get_image_suffix's (.webp → .apng → .gif →
+	// .png) and because extensions.json carries no effects key, so autodetect
+	// cannot seed it — the learned table has to earn it per host.
+	AssetTypeEffect
 	// AssetTypeCount is the sentinel for fixed-size per-type tables.
 	AssetTypeCount
 )
@@ -44,6 +50,7 @@ var typeNames = [AssetTypeCount]string{
 	AssetTypeMusic:       config.TypeMusic,
 	AssetTypeBlip:        config.TypeBlip,
 	AssetTypeEmoteButton: config.TypeEmoteButton,
+	AssetTypeEffect:      config.TypeEffect,
 }
 
 // Valid reports whether t is a concrete asset type (not the sentinel).

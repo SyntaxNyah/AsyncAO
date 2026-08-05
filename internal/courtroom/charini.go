@@ -60,6 +60,21 @@ type CharINI struct {
 	// skin lives at misc/<Chat>/chatbox (AO2-Client get_chat). Empty = the
 	// client's normal chatbox.
 	Chat string
+	// Effects is the [Options] effects= misc folder: the character's own screen-
+	// effect pack lives at misc/<Effects>/ — its effects.ini plus the art in the
+	// folder ROOT (not in an effects/ subfolder) plus icons/. AO2 defaults
+	// get_effect / get_effects / get_effect_property's p_folder to this whenever
+	// the caller passes none (text_file_functions.cpp:772, :836-839, :855-858).
+	// Empty = the theme's own effects only.
+	Effects string
+	// Realization is the [Options] realization= sound NAME: the character's own
+	// realization SFX. Canon gives it two jobs, both of which override whatever
+	// effects.ini says — get_effect_property special-cases fx=="realization" &&
+	// prop=="sound" and replaces the merged value wholesale with
+	// get_custom_realization (text_file_functions.cpp:889-892, :896-903), and the
+	// legacy REALIZATION=1 path plays it directly (courtroom.cpp:4175). Empty = the
+	// theme's own courtroom_sounds.ini "realization".
+	Realization string
 	// Scaling is the [Options] scaling= filter this character asks for:
 	// "pixel"/"fast" = point-sample (hand-pixelled art must not be blurred),
 	// "smooth" = filter, anything else (including absent) = let the automatic
@@ -130,7 +145,13 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 		out.Blips, _ = ini.GetSection(charINIOptionsSection, "gender")
 	}
 	out.Chat, _ = ini.GetSection(charINIOptionsSection, "chat")       // per-character chatbox skin (misc folder)
+	out.Effects, _ = ini.GetSection(charINIOptionsSection, "effects") // per-character screen-effect pack (misc folder)
 	out.Scaling, _ = ini.GetSection(charINIOptionsSection, "scaling") // per-character texture filter (get_scaling)
+	// The character's OWN realization sound. It overrides the effects.ini `sound` of
+	// the "realization" effect outright (get_effect_property,
+	// text_file_functions.cpp:889-892 → get_custom_realization :896-903) and is what
+	// the legacy REALIZATION=1 path plays (courtroom.cpp:4175).
+	out.Realization, _ = ini.GetSection(charINIOptionsSection, "realization")
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
 	count := atoiOr(countRaw, 0)

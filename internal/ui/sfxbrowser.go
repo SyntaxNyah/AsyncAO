@@ -59,6 +59,23 @@ func (a *App) previewSFX(name string) {
 	a.d.Audio.PlaySFX(a.urls.SFX(name), 0)
 }
 
+// sfxRowRightClickPreview auditions the SFX dropdown row under the pointer
+// WITHOUT selecting it (spec 1.e). Left-click picks and previews; before this
+// there was no way to hear a sound without committing it to your next message.
+// Consumes the click (DropdownRowRightClicked does), so it never leaks to the
+// widget under the open list. Row 0 is "SFX: auto" — the emote's own sound, which
+// has no name to play here — so it is refused AFTER that consume, deliberately:
+// the consume is the open list's modal fence and belongs to every in-range row,
+// while "there is nothing to audition" is this caller's business.
+// previewOverlayRow's row-0 ("None") arm is the same shape.
+func (a *App) sfxRowRightClickPreview() {
+	row, ok := a.ctx.DropdownRowRightClicked("sfxdd")
+	if !ok || row <= 0 || row >= len(a.sfxChoices) {
+		return
+	}
+	a.previewSFX(a.sfxChoices[row]) // same origin guard: silent in the lobby
+}
+
 // sfxBrowserRow is one displayed sound: its name and whether it's currently starred.
 type sfxBrowserRow struct {
 	name string
@@ -211,6 +228,17 @@ func (a *App) drawSfxRow(r sdl.Rect, name string, fav bool, useLabel string) {
 		label = useLabel
 	}
 	c.LabelClipped(labelX, r.Y+(r.H-14)/2, r.X+r.W-labelX-4, label, ColText)
+	// Right-click auditions WITHOUT using (spec §1.e, second half — the same
+	// audition-vs-commit split the sfxdd dropdown got). The browser's ▶ button
+	// already previews, but the row BODY commits: a right-click anywhere on the row
+	// is the gesture that reads "just let me hear it", and it rides the same
+	// previewSFX (same origin guard, silent in the lobby). CONSUMED, so it cannot
+	// leak to the modal backdrop's close-on-click underneath.
+	if c.hovering(r) && c.rightClicked {
+		c.rightClicked = false
+		a.previewSFX(name)
+		return
+	}
 	if !consumed && c.hovering(r) && c.clicked {
 		a.selectSFXOverride(name)
 		a.warnLine = clampLine("SFX for your next message: " + name)
