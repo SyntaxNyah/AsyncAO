@@ -133,15 +133,15 @@ var serverProjects = []serverProject{
 		links:   []string{"https://github.com/AttorneyOnline/tsuserver3"},
 	},
 	{
-		name: "KFO-Server", lang: "Python", parent: "tsuserver3", wss: true, plist: false,
+		name: "KFO-Server", lang: "Python", parent: "tsuserver3", wss: true, plist: true,
 		desc: []string{
 			"CrystalWarrior's Python server, forked from the official — now discontinued — tsuserver3, the original AO Python server.",
 			"It carries a huge focus on roleplaying commands and extra features tailored to RP-heavy communities.",
 			"As a long-lived community project it has one of the largest command sets of any AO server.",
 			"Being Python and battle-tested, it is approachable to read and modify and is widely deployed across the casing scene.",
 			"It speaks both plain WS and WSS.",
-			"It does not implement the modern 2.11 player-list tab, so AsyncAO uses /getarea snapshots for the roster there.",
-			"Pick it if your community lives on its rich roleplay command set and you don't need the modern live player list.",
+			"It implements the modern 2.11 live player list, so AsyncAO shows a live roster there.",
+			"Pick it if your community lives on its rich roleplay command set.",
 		},
 		credits: "Alex Noir, Crystalwarrior, argoneus, oldmud0, stonedDiscord, sD, OmniTroid, David Skoland, ghostfeesh, Dev, Lewdton, Jumbowl, BazettFraga, UnDeviato, Pyraq, Parazoid, SymphonyVR, cents02, in1tiate, mastyra, Cerapter, EstatoDeviato, Satoru;1816, windrammer, Mariomagistr, Trey, Denton, Elijah Bansley, Somebody Somebodious, SyntaxNyah, likeawindrammer, scatterflower, AwesomeAim, Chrezm, ElijahZAwesome, Jumblr, Paradox, Rosemary Witchaven, Salanto, deadlestrade, perplexedMurfy, shogun, slavfox, yemt",
 		links:   []string{"https://github.com/Crystalwarrior/KFO-Server"},
