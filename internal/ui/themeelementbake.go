@@ -147,7 +147,7 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 		return
 	}
 	a.bakePanes(lay, sc)
-	if len(sc.Elements) == 0 {
+	if len(sc.Elements) == 0 && len(sc.Effects) == 0 {
 		return
 	}
 
@@ -164,6 +164,22 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 		be, ok := a.bakeOneElement(lay, sc, src, i)
 		if !ok {
 			continue // an absent anchor is INERT, not an error (design §6.6 R10)
+		}
+		lay.el[n] = be.el
+		a.elemBakeBand[n] = be.band
+		a.elemBakeZ[n] = be.z
+		n++
+	}
+	// [effect.<widget key>] LAST, so a theme that filled the array with its own
+	// elements loses its binds rather than its elements — the array is one bound for
+	// both, and the elements are the half the author positioned by hand.
+	for i := range sc.Effects {
+		if n >= len(lay.el) {
+			break
+		}
+		be, ok := a.bakeEffectBind(lay, &sc.Effects[i])
+		if !ok {
+			continue
 		}
 		lay.el[n] = be.el
 		a.elemBakeBand[n] = be.band
@@ -269,6 +285,86 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 	}
 	be.el.cond = a.internCondition(lay, src.VisibleWhen)
 	return be, true
+}
+
+// elemBindZ is the z every [effect.*] bind bakes at: the top of the overlay band.
+//
+// A bind is a HIGHLIGHT ON a widget, so it belongs above the free elements an author
+// placed in the same band — a glow that a decorative plate covered would be a glow
+// nobody can see. int16's maximum rather than a chosen number, because "on top of
+// everything in this band" is the actual intent and any smaller value is a guess that
+// one more element could overtake. Binds keep their declaration order among
+// themselves, because the insertion sort is stable and they all share this key.
+const elemBindZ = int16(32767)
+
+// bakeEffectBind turns one [effect.<widget key>] section into a baked element.
+//
+// A BIND IS ADDITIVE PAINT, exactly like every other element, and the format says so
+// in as many words: "Elements are additive paint only. They cannot move, hide or
+// restyle an AO2 widget" (docs/THEME-FORMAT.md §3). So a bind bakes into a plate over
+// the widget's own rect, driven by the bind's effect — a pulsing highlight on the
+// objection button, a fading wash over the chatbox — and NOT into a transform on the
+// widget itself.
+//
+// That is a correctness decision, not a shortcut. lay.r is the geometry the widget
+// DRAWS at and the geometry it HIT-TESTS at, both: an effect that offset or scaled
+// the entry would slide a button's pixels away from its own click target, which is
+// the draw-versus-hit-test divergence class this client has been bitten by before.
+// The only sanctioned ways to move an AO2 widget stay [overrides] and [pane.*], both
+// explicit and both static.
+//
+// `amp_pct` IS THE WASH'S PEAK OPACITY, folded into the plate's alpha here — and the
+// shipped corpus is what settles that reading. Every `[effect.*]` colour in the
+// fourteen native themes is a bare `#rrggbb`, i.e. fully opaque, at amplitudes from 12
+// to 100; taken literally that is an opaque rectangle over the objection button. What
+// those authors wrote, and say they wrote in their own comments, is "this widget glows
+// at 45%" and "the stage comes up once when the theme applies". Peak opacity × the
+// effect's envelope (bakedElement.wash) is that sentence, and it is the only reading
+// under which a bind can never permanently bury the widget it decorates.
+//
+// ok=false is INERT, for the four reasons a bind cannot paint: it names no effect, it
+// has no amplitude (the wash would be invisible), it names no colour (the format lists
+// `color` as the bind's own key for exactly this), or its target is absent from this
+// layout (design §6.6 R10, skip-if-absent).
+func (a *App) bakeEffectBind(lay *themeLayoutCache, b *theme.EffectBind) (bakeElement, bool) {
+	if b.Effect == theme.FXNone || b.AmpPct <= 0 || !b.Color.Opaque() {
+		return bakeElement{}, false
+	}
+	r, ok := absSlotRect(lay, b.Target)
+	if !ok || r.W <= 0 || r.H <= 0 {
+		return bakeElement{}, false
+	}
+	peak := sdlColorOf(b.Color)
+	peak.A = uint8(int(peak.A) * int(b.AmpPct) / theme.AmpMaxPct)
+	// The baked row, in one piece:
+	//   kind/shape — a flat plate, the silhouette family's most neutral member,
+	//     because a bind's shape is the WIDGET's and not one the author chose;
+	//   col        — the authored hue at its peak opacity (see above);
+	//   wash       — the alpha rule that makes the plate the effect (themeelements.go);
+	//   tint       — opaque white, the neutral value every baked row carries;
+	//   cond       — always visible, so the one-shot resolves off the theme clock's
+	//     own zero and needs no pool slot (fxAlwaysOrigin).
+	return bakeElement{
+		band: theme.BandOverlay,
+		z:    elemBindZ,
+		el: bakedElement{
+			r:        r,
+			kind:     theme.ElemShape,
+			shape:    elemShapeSharp,
+			opacity:  theme.OpacityOpaque,
+			col:      peak,
+			wash:     true,
+			tint:     sdl.Color{R: 255, G: 255, B: 255, A: 255},
+			clock:    b.Clock,
+			cond:     condAlwaysVisible,
+			condAxis: theme.CondAlways,
+			fx: bakedEffect{
+				kind:     b.Effect,
+				periodMs: b.PeriodMs,
+				ampPct:   b.AmpPct,
+			},
+		},
+	}, true
 }
 
 // bakeElementLabel truncates an element's string to its own box, ONCE.

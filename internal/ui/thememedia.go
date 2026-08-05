@@ -277,6 +277,17 @@ func themeMediaPath(dir, file string) (string, bool) {
 // re-shared zips get renamed constantly and a manifest-name identity would make two
 // different themes the same theme, which is precisely the collision the namespace
 // exists to prevent.
+//
+// THE FOLD IS LOSSY AND THAT WAS CONSIDERED. Every rune outside the grammar becomes
+// '_', so "My Theme" and "My_Theme" — two folders that can coexist on disk — share
+// one namespace, and the id is truncated at themeMediaIDMaxLen besides. Benign,
+// because a key is only ever a CACHE key here and only one theme is applied at a
+// time: landThemeMedia prunes every key the incoming theme did not declare and then
+// uploads its own, so a shared key is REPLACED by the theme that is actually on
+// screen rather than read from the other one, and a key whose upload was refused or
+// whose decode failed is pruned rather than left standing. The property the
+// namespace has to carry is "theme A's art cannot be served to theme B", and
+// replace-on-apply gives that even when the two ids fold together.
 func themeSanitizeID(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
@@ -441,6 +452,34 @@ func (res *themeApply) loadThemeMediaSet(anims bool) {
 			Frames: []*image.RGBA{img},
 			Width:  b.Dx(),
 			Height: b.Dy(),
+		}
+	}
+}
+
+// releaseDecoded hands every pixel buffer this apply is still holding back to the
+// decoder's pool, for an apply that will never land.
+//
+// The DROP PATH needs it and the land path does not: an upload copies the pixels
+// into a texture and the store's own accounting takes over from there, but a result
+// that loses the consume-side newest-wins race (pollThemeApply) is dropped whole,
+// and without this its buffers reach the GC as ordinary garbage instead of the pool
+// they came from. W4 is what made that worth a line of code: a stale drop used to
+// strand at most the chrome stems, and it can now strand those PLUS up to
+// render.ThemeMediaCap media pages and render.ThemeGenCap generator tiles, each one
+// of them a full-size RGBA frame set.
+//
+// Release is idempotent (it nils both Frames and the pooled list), so this is safe
+// against a future caller that releases twice, and it is pure memory bookkeeping —
+// no I/O, nothing that could not run on either side of the hand-off.
+func (res *themeApply) releaseDecoded() {
+	for _, d := range res.images {
+		if d != nil {
+			d.Release()
+		}
+	}
+	for _, d := range res.media {
+		if d != nil {
+			d.Release()
 		}
 	}
 }

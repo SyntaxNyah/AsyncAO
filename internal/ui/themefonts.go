@@ -418,10 +418,23 @@ func (res *themeApply) applySidecarFonts(sc *theme.Sidecar, sidecarDir string) {
 // convention; the second is what a hand-authored theme that dropped the .ttf beside
 // its INI actually looks like, and refusing that would be pedantry with a support
 // burden attached.
+//
+// THE AUTHOR'S STRING IS HANDED TO safepath RAW ON BOTH RUNGS, which is the whole
+// reason rung 1 pre-joins its own root instead of writing filepath.Join(fontDir, rel)
+// and passing that. filepath.Join CLEANS, so a `file = ../x.ttf` would arrive at
+// safepath already collapsed to `x.ttf` and sail through a guard that never saw a
+// `..` at all. Nothing escaped the theme folder in that case — but it is one rung of
+// leniency more than the sibling themeMediaPath grants for the same shape of
+// untrusted string, and two resolvers over the same untrusted file disagreeing about
+// what `..` means is exactly how one of them ends up wrong later.
 func themeSidecarFontPath(dir, file string) (string, bool) {
-	rel := filepath.FromSlash(strings.TrimSpace(file))
-	for _, cand := range [2]string{filepath.Join(themeSidecarFontDir, rel), rel} {
-		full, err := safepath.Join(dir, cand)
+	rel := strings.TrimSpace(file)
+	fontDir, err := safepath.Join(dir, themeSidecarFontDir)
+	if err != nil {
+		return "", false // a constant; unreachable, and cheaper to handle than to argue about
+	}
+	for _, root := range [2]string{fontDir, dir} {
+		full, err := safepath.Join(root, rel)
 		if err != nil {
 			continue
 		}

@@ -104,8 +104,10 @@ const (
 	// second 24, for the reason the texture budget already const-aliases its
 	// producer and store caps: two copies of a number are two numbers.
 	//
-	// internal/ui has no FX pool yet. When one lands it must alias THIS
-	// constant rather than restate the value.
+	// The pool landed in W5 as internal/ui's themeFXCap, which aliases this
+	// constant exactly as the sentence that used to stand here asked it to.
+	// TestFXPoolIsFixedAndSelfClears keeps the two equal, so a change to
+	// MediaCap moves both or fails.
 	EffectBindCap = MediaCap
 	// SoundCap bounds [sounds], the AsyncAO-tier sound overrides.
 	SoundCap = 16

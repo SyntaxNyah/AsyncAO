@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -428,6 +429,131 @@ func TestShippedThemesEmitNoDegradeNotesAtAll(t *testing.T) {
 		}
 	}
 	t.Logf("%d shipped sidecars, 0 degrade notes", len(scs))
+}
+
+// TestShippedThemeClocksAndEffectsAllResolve is the W5 sibling of the two gates
+// above, and it exists for the same reason they do: the motion vocabulary is
+// already WRITTEN — all fourteen shipped themes carry `[effect.*]` sections, and
+// all fourteen carry `[clock.N]` groups as well (29 groups across the corpus) —
+// so a resolver that grew no arm for a kind, or a bind pointed at a widget key
+// that does not exist, is content that silently does nothing. There is no note,
+// no fallback and no misplaced box; the theme just "looks a bit plain", which is
+// the class of bug nobody reports.
+//
+// Four failure modes, each of them invisible on screen:
+//
+//  1. a bind whose target is not a themeSlots key — absSlotRect can never find it,
+//     so §6.6 R10's skip-if-absent makes the whole section inert forever;
+//  2. a bind that bakes inert anyway (no effect, no amplitude, no colour) — the
+//     author wrote a section that draws nothing;
+//  3. an effect kind the resolver never moves anything for;
+//  4. a clock group whose speed left the format's range, which would put a
+//     divisor the pool has to defend against into elementElapsed.
+func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
+	scs := loadShippedSidecars(t)
+	binds, moving, clocks := 0, 0, 0
+	kinds := map[string]int{}
+	for name, sc := range scs {
+		for i := range sc.Effects {
+			b := &sc.Effects[i]
+			binds++
+			kinds[b.Effect.String()]++
+			if themeSlotFor(b.Target) == nil {
+				t.Errorf("themes/%s [effect.%s] names no AO2 widget — absSlotRect can never resolve it, so "+
+					"the binding is skip-if-absent FOREVER (§6.6 R10) with nothing on screen to say so",
+					name, b.Target)
+			}
+			if b.Effect == theme.FXNone || b.AmpPct <= 0 || !b.Color.Opaque() {
+				t.Errorf("themes/%s [effect.%s] bakes INERT (effect=%s amp_pct=%d colour opaque=%v) — a "+
+					"binding needs all three, and one that is missing simply does not draw",
+					name, b.Target, b.Effect, b.AmpPct, b.Color.Opaque())
+			}
+			if effectMovesSomething(bakedEffect{kind: b.Effect, periodMs: b.PeriodMs, ampPct: b.AmpPct}) {
+				moving++
+			} else if b.AmpPct > 0 {
+				t.Errorf("themes/%s [effect.%s] names effect %q and the resolver never leaves the neutral "+
+					"transform for it across a whole cycle — the section is decoration that cannot animate",
+					name, b.Target, b.Effect)
+			}
+		}
+		for i := range sc.Elements {
+			el := &sc.Elements[i]
+			if el.Effect == theme.FXNone {
+				continue
+			}
+			kinds[el.Effect.String()]++
+			fx := bakedEffect{kind: el.Effect, periodMs: el.EffectPeriodMs, ampPct: el.EffectAmpPct}
+			if el.EffectAmpPct > 0 && !effectMovesSomething(fx) {
+				t.Errorf("themes/%s [element.%s] names effect %q at amp_pct %d and the resolver never "+
+					"leaves the neutral transform for it — the element is authored to move and does not",
+					name, el.ID, el.Effect, el.EffectAmpPct)
+			}
+			if int(el.Clock) >= theme.ClockCap {
+				t.Errorf("themes/%s [element.%s] clock = %d is outside the pool", name, el.ID, el.Clock)
+			}
+		}
+		// Elements and bindings share ONE array (theme.ElementCap), and the bake fills
+		// it with the elements first — so a theme that crowds the array loses its
+		// bindings, silently and last-declared-first. The count is the only place that
+		// is visible before somebody notices a glow missing. thh_trial is the tight one
+		// today at 78 + 9 = 87 of 96.
+		if n := len(sc.Elements) + len(sc.Effects); n > theme.ElementCap {
+			t.Errorf("themes/%s declares %d elements + %d bindings = %d, past theme.ElementCap (%d) — the "+
+				"bake fills the array with elements first, so this theme's LAST bindings never draw",
+				name, len(sc.Elements), len(sc.Effects), n, theme.ElementCap)
+		}
+		for i := range sc.Clocks {
+			c := sc.Clocks[i]
+			if !c.Declared {
+				continue
+			}
+			clocks++
+			if got := clampClockSpeed(c.SpeedPct); got != c.EffectivePct() {
+				t.Errorf("themes/%s [clock.%d] speed_pct = %d loads as %d but the pool clamps it to %d — "+
+					"the reader and the pool disagree about the same file",
+					name, i, c.SpeedPct, c.EffectivePct(), got)
+			}
+		}
+	}
+	// Non-vacuity, in the direction that actually goes wrong: the corpus is the
+	// reason this gate exists, so a path change that stopped finding the sections
+	// must fail rather than pass silently.
+	if binds == 0 || clocks == 0 {
+		t.Fatalf("found %d effect bindings and %d declared clock groups across %d shipped themes — the "+
+			"gate is reading nothing", binds, clocks, len(scs))
+	}
+	if moving != binds {
+		t.Errorf("%d of %d shipped bindings resolve to motion", moving, binds)
+	}
+	for _, n := range sortedCountKeys(kinds) {
+		t.Logf("shipped effect %q: %d declarations", n, kinds[n])
+	}
+}
+
+// effectMovesSomething reports whether the resolver leaves the neutral transform
+// anywhere in one cycle of an effect.
+//
+// SAMPLED ACROSS THE PERIOD, never at one point: every periodic kind rides a raised
+// cosine that is neutral at its own start, so a single sample would be a coin flip
+// and this gate would fail (or pass) at random.
+func effectMovesSomething(fx bakedEffect) bool {
+	period := time.Duration(effectPeriodMs(fx.periodMs)) * time.Millisecond
+	for step := 1; step <= 16; step++ {
+		if !fxNeutralTerms(resolveElementEffect(fx, period*time.Duration(step)/16, &fxState{})) {
+			return true
+		}
+	}
+	return false
+}
+
+// sortedCountKeys renders a census map in a stable order.
+func sortedCountKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TestShoutConditionTableMatchesCourtroom pins elemShoutConditions against the ONE

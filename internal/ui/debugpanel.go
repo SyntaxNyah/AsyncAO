@@ -30,6 +30,16 @@ const (
 	debugPanelIn   = int32(16)
 	// debugRowH is one text row in the scrollable Packets / Log lists.
 	debugRowH = int32(16)
+	// debugLineH is one text row in the panel's own FLOWED sections (Session, Perf,
+	// Cache): the label height plus its leading. Deliberately NOT debugRowH — that one
+	// is a virtualized LIST row and doubles as the packet list's hit-test and scroll
+	// pitch, so folding the two together would tie a readout's line spacing to scroll
+	// arithmetic. Named because nine sites step by it, and a literal repeated nine
+	// times is a magic number nine times over (hard rule 9).
+	debugLineH = int32(19)
+	// debugSectionGap is the taller step a section HEADING advances by: one line plus
+	// a little air, so a heading reads as a heading rather than as another row.
+	debugSectionGap = int32(22)
 )
 
 // debugSections are the panel's tabs, indexed by a.debugSection.
@@ -113,7 +123,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	y := r.Y
 	line := func(s string, col sdl.Color) {
 		c.LabelClipped(r.X, y, r.W, s, col)
-		y += 19
+		y += debugLineH
 	}
 	if a.sess == nil {
 		line("No session — you're in the lobby.", ColTextDim)
@@ -217,7 +227,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	avg, worst, fps := a.frameStats()
 	y := r.Y
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Frame: %.2f ms avg · %.1f ms worst · %.0f fps", avg, worst, fps), ColText)
-	y += 22
+	y += debugSectionGap
 	graph := sdl.Rect{X: r.X, Y: y, W: r.W, H: 46}
 	c.Border(graph, ColPanelHi)
 	a.drawFrameBars(graph)
@@ -234,17 +244,17 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 				col = ColDanger
 			}
 			c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Heap: %.1f / %d MiB   ·   GC pause p99: %s", heapMiB, perfBudgetBytes>>20, s.GCPauseP99), col)
-			y += 19
+			y += debugLineH
 			c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Assets — cache hit %.0f%%   ·   network probes %d   ·   cached 404s %d",
 				s.CacheHitRate*100, s.Probes, s.Cached404s), ColText)
-			y += 19
+			y += debugLineH
 		} else {
 			c.LabelClipped(r.X, y, r.W, "Profiler warming up (first 1 Hz sample)…", ColTextDim)
-			y += 19
+			y += debugLineH
 		}
 	}
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
-	y += 19
+	y += debugLineH
 
 	// Pacer (#50): the last FramePace tier + WHY it's there — the census pattern
 	// has regressed repeatedly with no readout of the deciding branch. Read-only:
@@ -253,7 +263,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// previous FramePace call, so a focus flip between them can momentarily show a
 	// mismatched pair; diagnostic-only, self-corrects next frame.
 	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
-	y += 19
+	y += debugLineH
 
 	// Pump (#50): GPU upload + transient network errors that reached the upload
 	// pump (previously test-only visibility). A rising uploads count means the
@@ -266,7 +276,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 			col = ColTierYellow
 		}
 		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d transient (network) errors", ps.UploadErrs, ps.TransientErrs), col)
-		y += 19
+		y += debugLineH
 	}
 
 	// Held-frame bridge (#50): steals/releases + how many stolen stage frames are
@@ -275,7 +285,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	if a.d.Store != nil {
 		hs := a.d.Store.HeldStats()
 		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Held-frame bridge: %d steals · %d releases · %d held now", hs.Steals, hs.Releases, hs.Current), ColTextDim)
-		y += 19
+		y += debugLineH
 		// Theme media (W4): the user-art allowance, spent and remaining, plus how many
 		// elements the planner turned into placeholders. It sits beside the held-frame
 		// counters because it answers the same class of question — "is the pinned tier
@@ -287,7 +297,35 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 			col = ColTierYellow
 		}
 		c.LabelClipped(r.X, y, r.W, a.themeMediaDebugLine(), col)
+		y += debugLineH
 	}
+	// Element clocks + effects (W5). It belongs on the PERF tab and nowhere else,
+	// because the only question it answers is a pacing question: a theme with live
+	// elements holds the frame rate at the animation cadence deliberately, and the
+	// pacer line two rows up is where somebody notices that and wants to know who is
+	// asking for it. The pool line also makes exhaustion visible before the editor's
+	// own chip exists — past themeFXCap a stateful effect freezes at its first frame,
+	// which is easy to mistake for "the effect is broken".
+	fxCol := ColTextDim
+	if a.themeFXOver {
+		fxCol = ColTierYellow
+	}
+	c.LabelClipped(r.X, y, r.W, a.themeFXDebugLine(), fxCol)
+}
+
+// themeFXDebugLine is the F8 panel's `theme fx` row. Built only while the panel is
+// open (the diagnostics-path allocation policy at the top of this file).
+func (a *App) themeFXDebugLine() string {
+	state := "live"
+	if a.themeFXFrozen {
+		state = "frozen (reduce motion)"
+	}
+	over := ""
+	if a.themeFXOver {
+		over = " · POOL FULL (further stateful effects freeze at frame 0)"
+	}
+	return fmt.Sprintf("theme fx %d / %d slots · %d elements · %s%s",
+		a.themeFXInUse(), themeFXCap, a.themeLay.elN, state, over)
 }
 
 // focusSuffix annotates the pacer line with the window's focus state (the
@@ -310,7 +348,7 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 	y := r.Y
 	line := func(s string, col sdl.Color) {
 		c.LabelClipped(r.X, y, r.W, s, col)
-		y += 19
+		y += debugLineH
 	}
 
 	// Source breakdown: which tier served each demand this session (the streaming

@@ -380,7 +380,7 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 //
 // APPEND EVERY NEW PAINTER FILE HERE. The gate below fails if a listed file has
 // vanished, so a rename can never silently drop the scan.
-var elementDrawFiles = []string{"themeelements.go"}
+var elementDrawFiles = []string{"themeelements.go", "themeclock.go"}
 
 // elementDrawColdFuncs are functions in those files that do NOT run on a frame —
 // the bake, the editor's own helpers — and may therefore build strings freely.

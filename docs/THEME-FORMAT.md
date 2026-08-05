@@ -347,9 +347,9 @@ element on screen as something it is not.
 | `clock` | 0..15 | `0` | the clock group; out of range falls back to the shared anchor |
 | `phase_ms` | int32, clamped | `0` | per-element phase offset. **Free** — it costs no clock group. |
 | `loop` | bool | `no` | `no` = play once, `yes` = loop |
-| `effect` | enum | `none` | `none`, `fade`, `pulse`, `breathe`, `glow`, `drift`, `spin`, `shake`, `slam` |
-| `effect_period_ms` | int32, clamped | `0` | |
-| `effect_amp_pct` | 0..100 | `0` | |
+| `effect` | enum | `none` | `none`, `fade`, `pulse`, `breathe`, `glow`, `drift`, `spin`, `shake`, `slam` — see below |
+| `effect_period_ms` | int32, clamped | `0` | `0` = the default period (about a second) |
+| `effect_amp_pct` | 0..100 | `0` | `0` is a supported way to author a **still** element that still names its effect |
 | `decimate` | bool | `yes` | `no` is honoured only if the undecimated art fits the media budget |
 | `visible_when` | condition | `always` | see below |
 | `locked` | bool | `no` | editor-only: excluded from marquee and drag |
@@ -401,6 +401,45 @@ Those bind a *file the theme ships* to an AO2 courtroom element, they cost
 nothing per frame, and they are the reason a native theme renders the same on a
 machine that has never heard of the family.
 
+**The nine effects.** Five are **periodic** — they run forever, on the element's
+clock group, at `effect_period_ms` per cycle:
+
+| `effect` | what it does |
+|---|---|
+| `pulse` | rides the element's alpha down to `100 − amp_pct` percent and back |
+| `breathe` | scales the element about its centre, in and out |
+| `glow` | swells *and* brightens back to full on one cycle |
+| `drift` | walks the element around a slow ellipse |
+| `spin` | turns continuously; `amp_pct` scales the **rate** (100 = one turn per period) |
+
+`spin` turns the element's **art**, so it shows on `image` and `gen` — the two
+kinds that blit a texture, and the same two the static `rot =` applies to. On
+`shape`, `gradient`, `text` and `pane` the rotation resolves and there is nothing
+to turn; use `drift` or `breathe` on those.
+
+Four are **one-shot**: they play once, from the moment the element first draws,
+and **decay to nothing** — the element is left exactly as it was authored:
+
+| `effect` | what it does |
+|---|---|
+| `none` | the default: no motion at all |
+| `fade` | fades in from `100 − amp_pct` percent alpha |
+| `shake` | a decaying judder |
+| `slam` | lands oversized and settles |
+
+A one-shot restarts when its element *comes back* — so `visible_when` is also its
+trigger: `visible_when = shout:objection` plus `effect = slam` is a stamp that
+lands with the shout. (An explicit `trigger =` key is reserved and not
+implemented; see §7.)
+
+`amp_pct = 0` is always **still**, whatever the effect names, and a still element
+never holds the frame rate up. A moving one does — deliberately, and the client's
+existing frame-rate settings all still bound it.
+
+**Reduce motion wins over every one of them.** With the client's accessibility
+option on, every effect resolves neutral, every animated element holds its first
+frame, and the screen is genuinely still.
+
 `visible_when` is **one axis, one value** — deliberately not an expression
 language, because anything richer needs a parser on the frame path:
 
@@ -434,10 +473,30 @@ An effect attached to an **existing AO2 widget** rather than to a free element.
 | Key | Type |
 |---|---|
 | `effect` | enum, as above |
-| `color` | colour |
+| `color` | colour — **required**; a binding without one paints nothing |
 | `period_ms` | int32, clamped |
-| `amp_pct` | 0..100 |
+| `amp_pct` | 0..100 — the wash's **peak opacity**; required, `0` is inert |
 | `clock` | 0..15 |
+
+**A binding is additive paint, like every other element** (see the rule above):
+it draws a `color` wash over the widget's own box, above everything else in the
+overlay band, and the effect animates *that*. It does not move, scale, rotate or
+restyle the widget itself — a widget's box is also its **click target**, and an
+effect that slid its pixels away from where it can be clicked would be a bug, not
+a feature. The two sanctioned ways to move an AO2 widget stay `[overrides]` and
+`[pane.*]`, both explicit and both static.
+
+**The wash's alpha is the effect itself.** A free element is on screen whether or
+not its effect runs, so an effect *modulates* it; a binding's plate exists only
+because of the effect, so the effect's strength **is** its opacity. `amp_pct`
+sets the peak that strength reaches — so `glow` at `amp_pct = 45` breathes
+between invisible and a 45 % tint and never buries the widget, and `fade` at
+`amp_pct = 100` is a full-strength curtain that clears completely and stays
+cleared. Write `color` as the hue you want at the peak; a bare `#rrggbb` is
+correct and does not mean "opaque forever".
+
+A binding with no colour, no amplitude, no effect, or a widget key this layout
+does not place is **inert** — it is preserved on save and simply does not draw.
 
 Up to 24 bindings. The widget key is at most **48 runes** — the same bound as
 `anchor`, because it is the same kind of name. A section whose key is empty or

@@ -879,6 +879,30 @@ type App struct {
 	condGen  uint64
 	// condSpeaking is the one VALUE-LESS condition axis: a message is on the stage.
 	condSpeaking bool
+	// --- element clocks + effects (v1.90.0 W5; themeclock.go) -------------------
+	//
+	// themeClocks is the FIXED authoring-clock pool. Clock 0 is the shared themeAt
+	// anchor, so the ZERO VALUE of this array is "every element runs exactly as
+	// themeFrame always has" — which is why nothing has to initialise it and a stock
+	// AO2 theme costs nothing for it. Re-loaded beside a.themeAt in pollThemeApply.
+	themeClocks [theme.ClockCap]themeClock
+	// themeFX is the STATEFUL-effect pool: the three decaying one-shots need an
+	// origin, the five periodic kinds are pure arithmetic and take no slot. Fixed,
+	// self-clearing (see beginThemeFXPass), and zero-value-free by construction —
+	// fxState.owner is the baked index PLUS ONE so that 0 means "free".
+	themeFX [themeFXCap]fxState
+	// themeFXFrame is the pool's own pass counter, and the sweep's only input. Not a
+	// global frame counter: it advances once per ELEMENT pass, which is the only
+	// cadence the pool cares about.
+	themeFXFrame uint64
+	// themeFXOver records that the pool ran out during THIS pass — the editor's chip
+	// (W7) and the F8 line read it. Cleared by every sweep, so it describes the last
+	// pass rather than the session.
+	themeFXOver bool
+	// themeFXFrozen latches ReduceMotion for the pass. ONE prefs read per pass, never
+	// per element (the two AllocsPerRun gates forbid the latter), and it is what makes
+	// the accessibility answer and the pacing census the same decision.
+	themeFXFrozen bool
 	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
 	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
 	// hover text. Both are built on the apply goroutine because both format; "" is a
@@ -9096,6 +9120,7 @@ func (a *App) pollThemeApply() {
 	// boot/global "default" apply carries an empty fontPath — clear the chat font
 	// (the "applies then reverts" bug). Drop anything older than what's applied.
 	if res.gen < a.themeAppliedGen {
+		res.releaseDecoded()
 		return
 	}
 	a.themeAppliedGen = res.gen
@@ -9178,6 +9203,11 @@ func (a *App) pollThemeApply() {
 	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
 	a.themeAt = time.Now() // restart the theme-art animation clock
+	// The element clock groups re-anchor WITH it (design §Q3), so a theme reload
+	// restarts every phase together instead of leaving the incoming theme's motion
+	// mid-cycle. A nil sidecar zeroes the pool, which is what makes a swap back to a
+	// stock AO2 theme run at exactly the shared anchor again.
+	a.applyThemeClocks(res.sidecar)
 	// Apply (or restore) the stylesheet palette; label textures are
 	// color-keyed, so purge the text cache to re-rasterize in new colors.
 	a.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)

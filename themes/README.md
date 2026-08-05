@@ -13,14 +13,26 @@ whole ones you install.
 
 ## Install: drag and drop
 
-1. Drag the theme's **folder** (or a `.aotheme` / `.zip` of it) onto the
-   AsyncAO window, **or** copy it into your themes directory:
+1. Drag the theme's **folder** onto the AsyncAO window, **or** copy it into your
+   themes directory:
    - Windows `%APPDATA%\AsyncAO\themes\`
    - macOS `~/Library/Application Support/AsyncAO/themes/`
-   - Linux `~/.local/share/AsyncAO/themes/`
+   - Linux `$XDG_CONFIG_HOME/AsyncAO/themes/`, or `~/.config/AsyncAO/themes/`
+     when that variable is unset
+   - Portable install (unzipped beside the executable): `themes/` next to
+     `asyncao` itself
 2. Open **Settings → Theme** and pick it by name.
 
-That is the whole install. Nothing to unpack by hand, nothing to configure.
+The client always shows the exact folder it is using — **Settings → Theme → Your
+themes**, with an **Open folder** button beside it. That is the one it writes
+into, and it is the one to copy into if the list above is ambiguous on your
+machine.
+
+**A packed theme has to be unpacked first.** Dropping a `.aotheme` bundle on the
+window today gets you a note naming the folder to unzip it into — one-step bundle
+import arrives with the theme editor — and a plain `.zip` is not claimed at all.
+So: unzip it into your themes folder, or unzip it anywhere and drop the resulting
+**folder** on the window. Everything after that is the same.
 
 Each folder holds exactly two files (three where a showcase is offered):
 

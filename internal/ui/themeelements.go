@@ -59,10 +59,11 @@ import (
 const bakedElementByteCeil = 128
 
 // bakedEffect is an element's motion, resolved at bake time: the effect id plus its
-// two parameters. The RESOLVER that turns this into (offset, scale, alpha, rot,
-// static) is W5 (design §6.6 R2 — the rot term is part of the signature from the
-// start); until then the fields are carried and not read, which is the format's rule
-// 4 in the render model: a zero value behaves exactly as the version before it.
+// two parameters. The RESOLVER that turns it into design §6.6 R2's
+// (offset, scale, alpha, rot, static) is resolveElementEffect (themeclock.go, W5);
+// W3 carried these three fields unread for exactly that wave, which is the format's
+// rule 4 in the render model — a zero value behaves exactly as the version before it,
+// and FXNone still takes drawElement's fast path today.
 type bakedEffect struct {
 	kind     theme.EffectKind
 	periodMs int32
@@ -119,9 +120,30 @@ type bakedElement struct {
 	// on the draw path).
 	shape uint8
 	// align is the resolved theme.TextAlign for ElemText.
-	align  uint8
+	align uint8
+	// fxDim is how much alpha THIS FRAME's effect takes off an ElemText, written by
+	// applyElementFX and put straight back after the painter. 0 is neutral, which is
+	// what makes the zero value — and therefore every baked row — correct without the
+	// bake ever touching it.
+	//
+	// It is a separate field from the folded colours because the LABEL CACHE KEYS ON
+	// COLOUR (ui.go textKey): folding a per-frame alpha into the ink would rasterise a
+	// new texture every frame a fade moved. paintElementText spends it through
+	// LabelClippedFontAlpha instead, which is a texture alpha mod over the same
+	// cached glyphs. The other five kinds have no such cache and take the fold.
+	fxDim  uint8
 	radial bool // gradient: radial instead of linear
 	loop   bool
+	// wash marks an [effect.<widget key>] BIND: a plate over an AO2 widget's own box
+	// that exists ONLY because of its effect (themeelementbake.go bakeEffectBind).
+	//
+	// It changes exactly one rule, and the rule is not a detail: a wash's fill alpha
+	// is the effect's ENVELOPE (elemFX.env × the authored peak), not a modulation of
+	// an alpha it was authored with. A free element is there whether or not its effect
+	// runs; a wash is the effect. `[effect.viewport] effect = fade` is a shipped
+	// theme's scene-transition curtain, and under the modulation rule it would settle
+	// fully opaque over the entire stage rather than clearing.
+	wash bool
 }
 
 // condAlwaysVisible is bakedElement.cond for an element with no condition, and for
@@ -190,20 +212,97 @@ func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 		rg.hi = hi
 	}
 	for i := rg.lo; i < rg.hi; i++ {
-		e := &lay.el[i]
-		// Defence in depth: kind ultimately comes from a file a stranger wrote. The
-		// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
-		// §7.4) so this can only fire on a bug in the bake — but an out-of-range index
-		// here would panic the render thread, and one predictable compare is cheaper
-		// than that risk.
-		if e.kind >= theme.ElementKindCount {
-			continue
-		}
-		if !a.elementVisible(e) {
-			continue
+		a.drawElement(lay, &lay.el[i], i)
+	}
+}
+
+// drawElement paints ONE element: the visibility gate, the motion, the painter.
+//
+// It is the single funnel every element goes through, which is what lets the three
+// self-clear paths of the pacing doctrine be checked in one place (themeclock.go
+// carries the doctrine in full):
+//
+//  1. not visible          → return before touching the page or the FX pool
+//  2. ReduceMotion         → every effect neutral, every page frame 0, nothing noted
+//  3. the effect is static → nothing noted; the element draws its authored form
+//
+// Nothing here allocates. The FX terms are a value, the save is a local that does not
+// escape, and the painter is still handed the SAME &lay.el[i] the two AllocsPerRun
+// gates assert it gets — which is why the motion is applied in place and put back
+// rather than drawn through a scratch copy.
+func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
+	// Defence in depth: kind ultimately comes from a file a stranger wrote. The
+	// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
+	// §7.4) so this can only fire on a bug in the bake — but an out-of-range index
+	// here would panic the render thread, and one predictable compare is cheaper
+	// than that risk.
+	if e.kind >= theme.ElementKindCount {
+		return
+	}
+	if !a.elementVisible(e) {
+		// Self-clear path 3. Its FX slot is NOT released here: the sweep does that
+		// after themeFXIdleFrames, which is what makes a decoration that blinks off and
+		// straight back on keep its place in its one-shot instead of restarting it on
+		// every flicker of the condition.
+		return
+	}
+	// The fast path, and the one every stock element takes: no effect at all. One
+	// compare, then the painter — this is what keeps "0 effects = 0 cost" true inside
+	// a themed frame that already has elements in it.
+	//
+	// The upper bound is the same defence in depth as the kind check above: the
+	// resolver degrades an out-of-range effect on its own, but effectIsStateful below
+	// is indexed with it, and an index panic on the render thread is not a thing to
+	// leave to a stranger's file.
+	if e.fx.kind == theme.FXNone || e.fx.kind >= theme.EffectKindCount || a.themeFXFrozen {
+		if e.wash {
+			// A WASH IS ITS EFFECT, so with no live effect there is nothing to paint —
+			// and this branch is the one that matters, because ReduceMotion reaches it.
+			// Painting the plate here would draw it at the full baked PEAK, forever:
+			// `[effect.viewport] effect = fade, amp_pct = 100` (matsuribayashi_dawn) is
+			// an opaque sheet over the whole stage, and the accessibility option would
+			// be the thing that put it there. Freezing means amp 0 resolved still
+			// (elemFXNeutral, env 0), and env 0 on a wash is exactly this return.
+			return
 		}
 		elemPainters[e.kind](a, e)
+		return
 	}
+	el := a.elementElapsed(e)
+	// A one-shot on an ALWAYS-visible element began when the theme applied, so its
+	// origin is elapsed zero and there is nothing to remember (fxAlwaysOrigin). Only a
+	// CONDITIONAL one needs a pool slot — it has to replay each time its condition
+	// opens, which is what makes `visible_when = shout:objection` + `effect = slam` a
+	// stamp that lands with the shout. Keeping the unconditional majority out of the
+	// pool is also what stops decoration with no state to keep from exhausting it.
+	st := fxAlwaysOrigin
+	if effectIsStateful[e.fx.kind] && e.condAxis != theme.CondAlways {
+		// A nil st (pool exhaustion) is the named graceful degrade: the resolver
+		// freezes the effect at its first frame and reports static.
+		//
+		// lay.condGen IS the bake generation (themeElemGen, stamped in
+		// bakeThemeElements): a cold rebuild re-numbers the baked array, so a slot
+		// stamped with the previous one must not answer for whatever element inherited
+		// its index.
+		st, _ = a.acquireElementFX(idx, lay.condGen, el)
+	}
+	fx := resolveElementEffect(e.fx, el, st)
+	// The census is noted ONLY when the effect will look different next frame. A
+	// decayed one-shot and an amplitude-zero effect are both a still picture, and a
+	// still picture that pinned the frame rate is the idle-CPU-burn defect this
+	// doctrine exists to prevent.
+	if !fx.static {
+		a.NoteAnimating()
+	}
+	// The terms are applied EVEN WHEN STATIC, and that is not a missed optimisation.
+	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade
+	// has finished resolves to env 0 and must paint nothing, where skipping the apply
+	// would leave it drawing at its full authored opacity over an AO2 widget, forever.
+	// A free element's static terms are the neutral transform, so the two lines below
+	// cost it a struct copy and change nothing.
+	saved := applyElementFX(e, fx)
+	elemPainters[e.kind](a, e)
+	restoreElementFX(e, saved)
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +383,13 @@ func (a *App) refreshElementConditions(lay *themeLayoutCache) {
 // Zero allocations: every source is a field read or a switch over constants, and
 // the scan walks strings already resident in the layout cache.
 func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSource) {
+	// The FX pool's own once-per-pass hook rides here rather than getting a second
+	// call site: this function is ALREADY the "start of an element pass" hook both
+	// the live courtroom and the offscreen export share, and two hooks that must fire
+	// together are one hook somebody will forget. Ahead of the nil guard on purpose —
+	// a pass with no layout still has to sweep, or a theme swap would strand every
+	// slot the outgoing theme held.
+	a.beginThemeFXPass()
 	if lay == nil {
 		return
 	}
@@ -737,7 +843,10 @@ func paintElementText(a *App, e *bakedElement) {
 	if lh := int32(f.Height()); lh > 0 && lh < e.r.H {
 		y += (e.r.H - lh) / 2
 	}
-	c.LabelClippedFont(f, x, y, e.r.W, e.label, e.col)
+	// The effect's alpha rides a texture alpha mod rather than the ink colour — see
+	// bakedElement.fxDim and LabelClippedFontAlpha. 0 (the ordinary case, and every
+	// frame with no alpha effect on this element) takes the plain cached path.
+	c.LabelClippedFontAlpha(f, x, y, e.r.W, e.label, e.col, 255-e.fxDim)
 }
 
 // elemTileCap bounds how many blits ONE tiled element may issue in a frame.
@@ -763,7 +872,10 @@ func paintElementArt(a *App, e *bakedElement) {
 	if e.page == nil || e.r.W <= 0 || e.r.H <= 0 || len(e.page.Frames) == 0 {
 		return
 	}
-	tex := a.themeFrame(e.page)
+	// elementFrame, not themeFrame: an element steps on its OWN clock group, at its
+	// own phase, and honours `loop = no` — and it is the site that decides whether
+	// this page still moves (themeclock.go). themeFrame remains the chrome's.
+	tex := a.elementFrame(e)
 	if tex == nil {
 		return
 	}
@@ -773,10 +885,12 @@ func paintElementArt(a *App, e *bakedElement) {
 	// page is SHARED — two elements tinting one generator tile must not see each
 	// other's colour, and the theme's chrome draws from the same store.
 	//
-	// RESTORED INLINE, NOT WITH defer. A deferred closure capturing `tex` is a heap
-	// allocation on every call, which at theme.ElementCap elements a frame is exactly
-	// the class of leak the two AllocsPerRun gates exist to catch — and it would have
-	// been invisible in every fixture whose elements have no page.
+	// RESTORED INLINE, NOT WITH defer — and the reason is style, not allocation. Go
+	// open-codes a single non-escaping defer, so the closure form measures 0 allocs
+	// here and both AllocsPerRun gates stay green either way; what the inline form
+	// buys is the marginally cheaper call and consistency with every other painter in
+	// this file, none of which defers anything. Written down because the opposite
+	// claim ("defer allocates") was here first and is simply false.
 	_ = tex.SetColorMod(e.tint.R, e.tint.G, e.tint.B)
 	_ = tex.SetAlphaMod(e.tint.A)
 	switch e.fit {

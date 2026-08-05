@@ -2737,6 +2737,40 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 	c.blitLabel(t, x, y, w)
 }
 
+// LabelClippedFontAlpha is LabelClippedFont with a per-draw alpha, applied with
+// SetAlphaMod on the cached texture rather than by changing the ink colour.
+//
+// THE DISTINCTION IS LOAD-BEARING ON THE FRAME PATH. textKey includes the COLOUR, so
+// a caller that faded a label by darkening its ink would miss the cache and rasterise
+// a brand-new texture on EVERY frame the fade moved — a TTF render, an atlas insert
+// and an eviction, inside a frame gated at exactly zero allocations. That is precisely
+// what a themed element carrying `effect = pulse` on a text element does 60 times a
+// second. The alpha mod costs two cgo calls and hits the same cached glyphs.
+//
+// It is the glyphcache idiom shapemask.go and the splash draw already use, and the
+// restore is inline for the same reason: the texture is a SHARED atlas page, so the
+// next label must not inherit this one's alpha.
+//
+// alpha 255 takes the ordinary path and skips both calls, so a caller may hand this
+// a neutral alpha without paying for it.
+func (c *Ctx) LabelClippedFontAlpha(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color, alpha uint8) {
+	if alpha == 255 {
+		c.LabelClippedFont(font, x, y, maxW, text, col)
+		return
+	}
+	t, ok := c.textTexture(text, col, font)
+	if !ok {
+		return
+	}
+	w := t.logicalW()
+	if w > maxW {
+		w = maxW
+	}
+	_ = t.tex.SetAlphaMod(alpha)
+	c.blitLabel(t, x, y, w)
+	_ = t.tex.SetAlphaMod(255)
+}
+
 // TextWidth measures a label in the chrome font, memoized — screens call
 // it per frame for fixed labels and each miss is a CGO TTF measure. The
 // memo shares the text cache's lifecycle (purged together, same bound).
