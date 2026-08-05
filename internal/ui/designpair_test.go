@@ -31,7 +31,7 @@ func writeThemeDesign(t *testing.T, design string) *theme.Theme {
 	if err := os.WriteFile(filepath.Join(dir, theme.DesignFileName), []byte(design), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := theme.Load("spacing", []string{root})
+	th, err := theme.Load("spacing", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}

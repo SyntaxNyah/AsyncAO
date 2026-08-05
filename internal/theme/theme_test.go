@@ -54,7 +54,7 @@ func TestThemeLoadsAO2DesignAndFonts(t *testing.T) {
 	root := t.TempDir()
 	writeTheme(t, root, DefaultThemeName, aoDefaultDesign, aoDefaultFonts)
 
-	th, err := Load(DefaultThemeName, []string{root})
+	th, err := Load(DefaultThemeName, "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestThemeOverridesFallBackToDefault(t *testing.T) {
 	writeTheme(t, root, DefaultThemeName, aoDefaultDesign, aoDefaultFonts)
 	writeTheme(t, root, "midnight", "chatbox = 10, 100, 300, 60\n", "")
 
-	th, err := Load("midnight", []string{root})
+	th, err := Load("midnight", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestThemeFindAssetProbesExtensionsAndDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	th, err := Load("midnight", []string{root})
+	th, err := Load("midnight", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestHasFont(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(themes, FontsFileName), []byte(ini), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := Load("x", []string{dir})
+	th, err := Load("x", "", []string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}

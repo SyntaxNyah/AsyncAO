@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // ErrAlreadyPortable is returned by MigrateToPortable when the active config is
@@ -119,6 +121,57 @@ func UserFontsDir() string {
 	return filepath.Join(base, FontsDirName)
 }
 
+// ThemesDirName is the folder holding theme folders (and the .aotheme bundles
+// dropped beside them). It is a CONST ALIAS of theme.ThemesDirName rather than a
+// second spelling of "themes", so config and theme cannot drift: the writer here
+// and the reader there are the same string by construction.
+const ThemesDirName = theme.ThemesDirName
+
+// UserThemesDir is the ONE directory AsyncAO writes themes into — imports,
+// exports, editable copies, saved presets — and the third root theme lookups
+// search (internal/ui's themeLoadRoots, appended LAST so nothing that resolves
+// today resolves differently).
+//
+// Portable-first, exactly like ConfigBaseDir and for the same reason: an
+// unzipped-to-Desktop or USB-stick install must carry its themes with it, and a
+// Program Files install must not try to write beside the exe. In the portable
+// case the folder sits beside the executable — NOT inside config/ — because that
+// is the drop convention the client has always documented (<exeDir>/themes/<name>),
+// so a portable user's write root and their drop folder are the same folder.
+//
+// The writability question is ALREADY answered and memoized by ConfigBaseDir's
+// step-3 probe, and the executable's directory is memoized by executableDir, so
+// every input this joins is resolved at most once per process: no fresh
+// MkdirAll/create/remove per session, no risk of the write root silently
+// relocating between sessions, and after the first call no syscalls at all — a
+// draw path may call it (hard rule 2). The FIRST call, on a cold process, does
+// pay for whichever memo is still empty, so a caller that can avoid it on a
+// draw path still should (see drawThemeCatalogRows, which prefers the scan's
+// published WriteRoot).
+//
+// Empty string if the config location cannot be resolved — callers treat that as
+// "no write root", never as an error, exactly like UserFontsDir.
+func UserThemesDir() string {
+	base, err := ConfigBaseDir()
+	if err != nil {
+		base = ""
+	}
+	return userThemesDir(ConfigIsPortable(), executableDir(), base)
+}
+
+// userThemesDir is the pure policy behind UserThemesDir (no I/O of its own, so
+// it unit-tests directly): portable puts themes beside the exe, everything else
+// beside the config file, and an unresolvable location yields "".
+func userThemesDir(portable bool, exeDir, configBase string) string {
+	if portable && exeDir != "" {
+		return filepath.Join(exeDir, ThemesDirName)
+	}
+	if configBase == "" {
+		return ""
+	}
+	return filepath.Join(configBase, ThemesDirName)
+}
+
 // OSConfigDir returns the classic OS config location (<os.UserConfigDir>/AsyncAO),
 // independent of which location is active. Empty string if it can't be resolved.
 func OSConfigDir() string {
@@ -175,6 +228,16 @@ func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable 
 // All three are copied together because, while resolution keeps them in one
 // place automatically, the migration copy is the single spot where that
 // consistency isn't free — copying only prefs would strand notebooks/jukebox.
+//
+// THEMES travel too, but not into config/. The write root is portable-aware
+// (UserThemesDir): while config lives in AppData the user's themes sit at
+// <AppData>/AsyncAO/themes, and after this migration the client writes them to
+// <exeDir>/themes. Letting the tree copy carry them would land them in
+// <exeDir>/config/themes instead — still readable (it is the config root), but
+// no longer the folder anything WRITES to, so the collection would silently
+// split in two and every later export would land somewhere the old themes are
+// not. The themes folder is therefore excluded from the tree copy and copied to
+// the portable write root instead.
 func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	dest := PortableConfigDir()
 	if dest == "" {
@@ -188,15 +251,48 @@ func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	if err := p.SaveNow(); err != nil {
 		return "", err
 	}
-	if err := copyTree(src, dest); err != nil {
+	if err := copyTreeExcept(src, dest, map[string]bool{ThemesDirName: true}); err != nil {
 		return "", err
+	}
+	if err := migrateThemesToPortable(src, filepath.Dir(dest)); err != nil {
+		// The settings DID move; say so rather than reporting a total failure,
+		// because the user's next action ("restart to use the portable copy")
+		// is still the right one and only the themes need attention.
+		return dest, err
 	}
 	return dest, nil
 }
 
+// migrateThemesToPortable copies <srcBase>/themes to <exeDir>/themes — the
+// portable write root UserThemesDir will resolve on the next launch. A missing
+// source folder is the normal case (no themes yet) and is not an error, and a
+// source that already IS the destination is a no-op rather than a self-copy.
+func migrateThemesToPortable(srcBase, exeDir string) error {
+	if srcBase == "" || exeDir == "" {
+		return nil
+	}
+	from := filepath.Join(srcBase, ThemesDirName)
+	to := filepath.Join(exeDir, ThemesDirName)
+	if filepath.Clean(from) == filepath.Clean(to) {
+		return nil // the two roots already collapsed
+	}
+	if info, err := os.Stat(from); err != nil || !info.IsDir() {
+		return nil // no themes to carry
+	}
+	if err := copyTree(from, to); err != nil {
+		return fmt.Errorf("config: settings copied, but the themes folder did not: %w", err)
+	}
+	return nil
+}
+
 // copyTree recursively copies the contents of src into dst (creating dst), never
 // removing anything from src. The write-probe throwaway is skipped.
-func copyTree(src, dst string) error {
+func copyTree(src, dst string) error { return copyTreeExcept(src, dst, nil) }
+
+// copyTreeExcept is copyTree with a set of TOP-LEVEL entry names to leave behind
+// (matched by name, so only the roots of the copy are filtered — a nested
+// "themes" folder inside a notebook directory is still copied).
+func copyTreeExcept(src, dst string, skip map[string]bool) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("config: reading %s: %w", src, err)
@@ -205,7 +301,7 @@ func copyTree(src, dst string) error {
 		return fmt.Errorf("config: creating %s: %w", dst, err)
 	}
 	for _, e := range entries {
-		if e.Name() == writeProbeName {
+		if e.Name() == writeProbeName || skip[e.Name()] {
 			continue
 		}
 		s := filepath.Join(src, e.Name())
@@ -252,17 +348,32 @@ func copyFile(s, d string) error {
 	return nil
 }
 
+// executableDirOnce memoizes executableDir. The path cannot change while the
+// process runs, and resolving it is NOT free: os.Executable plus
+// filepath.EvalSymlinks is a chain of Lstat syscalls, one per path component.
+// UserThemesDir and PortableConfigDir call executableDir on every invocation and
+// the settings screen calls those from a draw helper, so without this the walk
+// would run every frame — hard rule #2 (no synchronous disk I/O on a draw path).
+var (
+	executableDirOnce  sync.Once
+	executableDirCache string
+)
+
 // executableDir returns the directory containing the running executable, with
-// symlinks resolved, or "" if it can't be determined.
+// symlinks resolved, or "" if it can't be determined. Memoized (see above): the
+// syscalls happen exactly once per process, so callers on a draw path are safe.
 func executableDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	if rp, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = rp
-	}
-	return filepath.Dir(exe)
+	executableDirOnce.Do(func() {
+		exe, err := os.Executable()
+		if err != nil {
+			return
+		}
+		if rp, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = rp
+		}
+		executableDirCache = filepath.Dir(exe)
+	})
+	return executableDirCache
 }
 
 // fileExists reports whether path names an existing file (or anything stat-able).

@@ -32,7 +32,7 @@ func writeDesignINI(t *testing.T, name, body string) *theme.Theme {
 	if err := os.WriteFile(filepath.Join(dir, theme.DesignFileName), []byte(body), 0o644); err != nil {
 		t.Fatalf("write ini: %v", err)
 	}
-	th, err := theme.Load(name, []string{root})
+	th, err := theme.Load(name, "", []string{root})
 	if err != nil {
 		t.Fatalf("theme.Load: %v", err)
 	}

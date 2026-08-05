@@ -34,7 +34,7 @@ func TestUnboundDesignKeysNamesOnlyTheOrphans(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(themeDir, "courtroom_design.ini"), []byte(design), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := theme.Load("probe", []string{dir})
+	th, err := theme.Load("probe", "", []string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestUnboundDesignKeysNamesOnlyTheOrphans(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(themeDir, "courtroom_design.ini"), []byte(covered), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th2, err := theme.Load("probe", []string{dir})
+	th2, err := theme.Load("probe", "", []string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}

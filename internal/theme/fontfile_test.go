@@ -24,7 +24,7 @@ func TestFontFileIsOnlyForThemesThatNameNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ThemesDirName, "Named", "Igiari.ttf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := Load("Named", []string{root})
+	th, err := Load("Named", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestFontFileIsOnlyForThemesThatNameNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root2, ThemesDirName, "Bundled", "OneFace.ttf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th2, err := Load("Bundled", []string{root2})
+	th2, err := Load("Bundled", "", []string{root2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestFontFileResolvesBundledTTF(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	th, err := Load("Aceternia", []string{root})
+	th, err := Load("Aceternia", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestFontFileResolvesFromBaseFonts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	th, err := Load("DRRA", []string{root})
+	th, err := Load("DRRA", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestFontFileBaseFontsNeedsDeclaredFamily(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fontsDir, "some_font.ttf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := Load("Plain", []string{root})
+	th, err := Load("Plain", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestFontFileFromThemeFontsSubdir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	th, err := Load("Lymantriina", []string{root})
+	th, err := Load("Lymantriina", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestFontFileBaseFontsRecursive(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nested, "ace_attorney.ttf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := Load("DRRA", []string{root})
+	th, err := Load("DRRA", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestFontFileBaseFontsRecursive(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(deep, "ace_attorney.ttf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	deepTheme, err := Load("DRRA", []string{deepRoot})
+	deepTheme, err := Load("DRRA", "", []string{deepRoot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestFontFileSystemDirAlias(t *testing.T) {
 	}
 	writeTheme(t, root, "DRRet", aoDefaultDesign,
 		"message = 10\nmessage_font = Arial\nshowname = 8\nshowname_font = Times New Roman\n")
-	th, err := Load("DRRet", []string{root})
+	th, err := Load("DRRet", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ area_list = 6
 			t.Fatal(err)
 		}
 	}
-	th, err := Load("3DS", []string{root})
+	th, err := Load("3DS", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ showname_font = Igiari
 showname_color = 1, 2, 3
 music_name_color = 4, 5, 6
 `)
-	th, err := Load("Full", []string{root})
+	th, err := Load("Full", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestFontElementsIsAppendOnly(t *testing.T) {
 func TestFontFileNoneWhenThemeShipsNoFont(t *testing.T) {
 	root := t.TempDir()
 	writeTheme(t, root, DefaultThemeName, aoDefaultDesign, aoDefaultFonts)
-	th, err := Load(DefaultThemeName, []string{root})
+	th, err := Load(DefaultThemeName, "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestSharpAcceptsOnlyLiteralOne(t *testing.T) {
 			fonts += "showname_sharp = " + tc.raw + "\n"
 		}
 		writeTheme(t, root, "Polarity", aoDefaultDesign, fonts)
-		th, err := Load("Polarity", []string{root})
+		th, err := Load("Polarity", "", []string{root})
 		if err != nil {
 			t.Fatalf("load %q: %v", tc.raw, err)
 		}

@@ -28,7 +28,7 @@ const aceattorney2xName = "aceattorney2x"
 // loadAceAttorney2x opens the fixture the way a real import does.
 func loadAceAttorney2x(t *testing.T) *theme.Theme {
 	t.Helper()
-	th, err := theme.Load(aceattorney2xName, []string{aceattorney2xRoot})
+	th, err := theme.Load(aceattorney2xName, "", []string{aceattorney2xRoot})
 	if err != nil {
 		t.Fatalf("load fixture: %v", err)
 	}

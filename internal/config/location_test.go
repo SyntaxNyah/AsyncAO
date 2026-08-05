@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 func TestResolveConfigBase(t *testing.T) {
@@ -83,6 +85,90 @@ func TestResolveConfigBase(t *testing.T) {
 				t.Errorf("portable = %v, want %v", portable, tc.wantPortable)
 			}
 		})
+	}
+}
+
+// TestUserThemesDirFollowsPortable pins the W2 write root. The property is not
+// "it returns a path" but that it follows the SAME answer ConfigBaseDir already
+// memoized: a portable install writes themes beside the exe (where the drop
+// convention already looks), an AppData install writes them beside the config
+// (so "Make portable" can carry them), and neither ever costs a fresh
+// writability probe — which is why the policy is pure and takes the answer.
+func TestUserThemesDirFollowsPortable(t *testing.T) {
+	const exe, base = "/app", "/home/u/.config/AsyncAO"
+
+	if got, want := userThemesDir(true, exe, "/app/config"), filepath.Join(exe, ThemesDirName); got != want {
+		t.Errorf("portable themes dir = %q, want %q (beside the exe, NOT inside config/)", got, want)
+	}
+	if got, want := userThemesDir(false, exe, base), filepath.Join(base, ThemesDirName); got != want {
+		t.Errorf("classic themes dir = %q, want %q (beside the config file)", got, want)
+	}
+	// Portable but no resolvable exe path (go test, an odd host): fall back to
+	// the config base rather than inventing a relative "themes".
+	if got, want := userThemesDir(true, "", base), filepath.Join(base, ThemesDirName); got != want {
+		t.Errorf("portable-with-no-exe themes dir = %q, want %q", got, want)
+	}
+	if got := userThemesDir(false, "", ""); got != "" {
+		t.Errorf("unresolvable location = %q, want \"\" (callers read that as 'no write root')", got)
+	}
+	// The name is the shared constant, not a second spelling.
+	if ThemesDirName != theme.ThemesDirName {
+		t.Errorf("ThemesDirName = %q but theme.ThemesDirName = %q — the alias drifted", ThemesDirName, theme.ThemesDirName)
+	}
+	// And the live call agrees with the live portable answer.
+	if live := UserThemesDir(); live != "" && filepath.Base(live) != ThemesDirName {
+		t.Errorf("UserThemesDir() = %q, want it to end in %q", live, ThemesDirName)
+	}
+}
+
+// TestMigrateToPortableCarriesThemesToTheWriteRoot pins the themes step: the
+// tree copy must NOT drop themes into config/ (a folder nothing reads themes
+// from after the move), and the write root the next launch will use must have
+// them.
+func TestMigrateToPortableCarriesThemesToTheWriteRoot(t *testing.T) {
+	src := t.TempDir()
+	exeDir := t.TempDir()
+	dest := filepath.Join(exeDir, PortableDirName)
+
+	write := func(base, rel, body string) {
+		full := filepath.Join(base, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(src, PrefsFileName, `{"a":1}`)
+	write(src, filepath.Join(ThemesDirName, "nocturne", "courtroom_design.ini"), "chatbox = 1, 2, 3, 4\n")
+
+	if err := copyTreeExcept(src, dest, map[string]bool{ThemesDirName: true}); err != nil {
+		t.Fatalf("copyTreeExcept: %v", err)
+	}
+	if err := migrateThemesToPortable(src, exeDir); err != nil {
+		t.Fatalf("migrateThemesToPortable: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dest, PrefsFileName)); err != nil {
+		t.Errorf("preferences did not migrate: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, ThemesDirName)); err == nil {
+		t.Errorf("themes were copied into %s — nothing reads themes from there after the move", dest)
+	}
+	moved := filepath.Join(exeDir, ThemesDirName, "nocturne", "courtroom_design.ini")
+	if _, err := os.Stat(moved); err != nil {
+		t.Errorf("theme did not reach the portable write root (%s): %v", moved, err)
+	}
+	// The source is untouched: migration is a copy, never a move.
+	if _, err := os.Stat(filepath.Join(src, ThemesDirName, "nocturne", "courtroom_design.ini")); err != nil {
+		t.Errorf("source theme vanished after copy: %v", err)
+	}
+	// Idempotent, and a no-op when the two roots have collapsed.
+	if err := migrateThemesToPortable(exeDir, exeDir); err != nil {
+		t.Errorf("collapsed-roots migration should be a no-op, got %v", err)
+	}
+	if err := migrateThemesToPortable(t.TempDir(), exeDir); err != nil {
+		t.Errorf("no themes to carry should be a no-op, got %v", err)
 	}
 }
 

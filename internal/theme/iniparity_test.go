@@ -72,7 +72,7 @@ func TestBOMThemeKeepsItsFontSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	th, err := Load("bommed", []string{root})
+	th, err := Load("bommed", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestElementRectTruncatesInlineComment(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, DesignFileName), []byte(design), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := Load("commented", []string{root})
+	th, err := Load("commented", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}

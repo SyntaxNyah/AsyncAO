@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -797,6 +798,19 @@ type App struct {
 	// spawns several loads and completion order is not start order).
 	themeRes atomic.Pointer[themeApply]
 	themeGen atomic.Uint64
+	// themeCat is the off-thread theme CATALOG (themecatalog.go): what themes
+	// exist, where they came from, what shape they are in. Same discipline as
+	// themeRes and for the same reason — the scan reads directories, the draw
+	// path may not (hard rules 2 and 5), so the answer arrives as an immutable
+	// snapshot behind a pointer.
+	themeCat atomic.Pointer[themeCatalog]
+	// themeCatBusy single-flights the scan. Atomic because the scanner
+	// goroutine is the one that clears it.
+	themeCatBusy atomic.Bool
+	// themeCatFocusStat latches a window focus-gain for the settings screen to
+	// consume ("I dropped a theme in Explorer and came back"). Render/event
+	// thread on both ends, so a plain bool is correct.
+	themeCatFocusStat bool
 	// themeAppliedGen is the gen of the newest load pollThemeApply has already
 	// landed. The publish-time newest-wins guard only protects an UNCONSUMED
 	// result; once pollThemeApply Swaps one to nil, a slower older-gen load can
@@ -1161,6 +1175,73 @@ type App struct {
 	// + async fetch results (charmeta.go). Bounded; per-server by key structure.
 	charMetaCache map[string]charMeta
 	charMetaRes   chan charMetaFetch
+	// AO2 screen-effect overlays (effectspicker.go): the per-(origin, misc folder)
+	// roster cache and its async resolve results, the theme-tier art loads, and the
+	// dropdown's icon page cache. All bounded, all keyed so a server switch cannot
+	// hand one origin's rosters to another; overlayRosterGen drops the lot when the
+	// theme changes.
+	overlayRosters map[string]*overlayRoster
+	// overlayRosterInFlight is the in-flight marker set, kept SEPARATE from the
+	// settled cache above. Two reasons, both structural: the cap-reset that keeps
+	// overlayRosters bounded must never wipe a marker (dropping one lets the very
+	// next ask spawn a SECOND goroutine for a key already being resolved, whose
+	// two results then race and let the loser's stale paths win), and a bound on
+	// CONCURRENT resolves (overlayRosterFetchCap) is only expressible when the
+	// in-flight set is countable on its own.
+	overlayRosterInFlight map[string]bool
+	overlayRosterRes      chan overlayRosterFetch
+	overlayRosterGen      uint64
+	// overlayTheme is the APPLIED theme's immutable snapshot, published by
+	// pollThemeApply. The roster resolve reads its ladder off-thread instead of
+	// re-running theme.Load per resolve (spec §2.4: the theme-tier parse rides the
+	// theme apply). *theme.Theme is read-only after Load — dirs + four parsed INIs,
+	// no lazily-filled caches — so sharing it with the fetch goroutine is race-free.
+	overlayTheme      *theme.Theme
+	overlayTexRes     chan overlayTexLoad
+	overlayTexLoading map[string]bool
+	overlayIconPages  []*render.TexturePage
+	overlayIconGen    uint64
+	overlayIconAsk    []time.Time
+	overlayThumbFn    func(idx int, r sdl.Rect)
+	// overlayPreviewBase records the base the right-click effect PREVIEW opened the
+	// shared sprite-preview box on ("" = the picker owns no box). It is the close
+	// edge's ownership check: the box is pinned while the list is open, so it has to
+	// be taken down when the list closes (spec §1.d) — but previewBase is one shared
+	// slot, so only a box that is still OURS may be closed.
+	overlayPreviewBase string
+	// Per-frame memos. drawICInputRow asks "is there an effects roster" on EVERY
+	// frame and the courtroom screen is zero-alloc-gated, so neither the cache key
+	// (a concat), nor the char.ini URL (a concat), nor the choice slice (a copy +
+	// a prepend) may be rebuilt per frame. All three are baked on a state change
+	// and compared with plain string/pointer equality, which allocates nothing.
+	// pollOverlayRosters and pollCharMeta invalidate them when their inputs land.
+	overlayMemoOrigin    string
+	overlayMemoFolder    string
+	overlayMemoValid     bool
+	overlayMemoRoster    *overlayRoster
+	overlayMyFolder      string
+	overlayMyFolderChar  string
+	overlayMyFolderValid bool
+	overlayChoicesCache  []string
+	overlayChoicesRoster *overlayRoster
+	overlayChoicesValid  bool
+	// overlayIconKeys / overlayIconPaths are the per-ROW icon page key and (theme
+	// tier only) the LOCAL file it loads from, baked beside overlayChoicesCache
+	// when the roster changes — spec §3, "icon page keys are precomputed when the
+	// list is built, not per frame". Load-bearing, not tidiness: dropdownEx paints
+	// the CLOSED control's current pick through the same thumb painter on EVERY
+	// frame (ui.go:3938-3942), so building the key inside the painter allocated on
+	// every settled courtroom frame as soon as an effect was picked.
+	overlayIconKeys  []string
+	overlayIconPaths []string
+	// overlayIconFolder is the misc folder those keys were baked for. An iniswap or
+	// character swap into a DIFFERENT effects pack with the same row count would
+	// otherwise leave the old pages in place — cachedPage keys by INDEX.
+	overlayIconFolder string
+	// overlayIconSize is courtroom_design.ini's `effects_icon_size` (AO2
+	// courtroom.cpp:979). Zero = the theme is silent; the picker then sizes the
+	// strip from the row height like every other thumbnail dropdown.
+	overlayIconSize [2]int
 	// #39 command palette (Ctrl+Space): open state, live query, keyboard selection.
 	paletteOpen  bool
 	paletteQuery string
@@ -1252,6 +1333,13 @@ type App struct {
 	previewDragStart         [2]int32
 	previewDragBase          [2]int32
 	previewFrameRect         sdl.Rect
+	// emoteGridDrewPreview latches "the sprite-preview box was already painted this
+	// frame", so drawSpritePreviewFallback can stand in for the emote grid's draw
+	// site on the passes where the grid did not run (panel hidden, no themed
+	// `emotes` rect, char.ini still loading) without ever compositing the box twice.
+	// Set by the two grid painters and by the fallback itself; cleared once per
+	// frame by pollOverlayRosters, ahead of every screen draw.
+	emoteGridDrewPreview bool
 	// This frame's overlay-fence answer for the box (#37, fenceSpritePreview). Reset
 	// by handlePreviewInput at the top of every frame, so a pass that never publishes
 	// can't replay a stale mark.
@@ -1816,6 +1904,13 @@ type sessionState struct {
 	sfxChoices         []string
 	sfxChoicesForName  string
 	sfxChoicesForCount int
+	// effects_dropdown selection for the next message (AO2 ui_effects_dropdown).
+	// Index 0 is the prepended "None" row, which sends "" — so the zero value is
+	// correct for a fresh session and resetSessionState needs no seeding, exactly
+	// like sfxChoiceIdx. It SURVIVES the send: AO2's `stickyeffects` option
+	// defaults true, so courtroom.cpp:2348's reset never fires out of the box (see
+	// clearEffectsAfterSend, which owns the whole rule).
+	overlayChoiceIdx int
 	// charDefaultSide is the side the ACTIVE character's char.ini declares — AO2's
 	// default_side (courtroom.cpp:4723-4726 = get_char_side). Empty means "not
 	// known yet or none declared", which defaultSide() reports as "wit", matching
@@ -2481,6 +2576,20 @@ type themeApply struct {
 	layout    map[string]theme.Rect
 	emoteCell [2]int // emote_button_size (w, h)
 	emoteGap  [2]int // emote_button_spacing (x, y)
+	// effectsIcon is courtroom_design.ini's `effects_icon_size` (AO2
+	// courtroom.cpp:979) — the per-row icon size in the effects dropdown. A PAIR,
+	// not a rect, so like emoteCell it cannot ride `layout` (and is invisible to
+	// the unbound-key report, which only walks 4-component rects). 0,0 = the theme
+	// is silent; the picker then sizes its strip from the row height.
+	effectsIcon [2]int
+	// themeObj is the loaded theme itself, carried through so the effects-overlay
+	// roster resolve can walk its ladder off-thread WITHOUT re-running theme.Load
+	// per resolve (spec §2.4: the theme-tier parse rides the theme apply). Safe to
+	// share: *theme.Theme is read-only after Load — directory list plus four parsed
+	// INIs, no lazily-filled caches — and every method the resolve calls is a pure
+	// os.Stat walk. nil when the load failed; the roster then carries the origin
+	// manifest alone, exactly as it did when the theme was unreadable.
+	themeObj *theme.Theme
 	// shownameAlign is courtroom_design.ini's `showname_align` — not a rect, so it
 	// cannot ride `layout`. Parsed here, off the render thread, because
 	// parseShownameAlign lowercases the raw value (hard rule 2).
@@ -8126,7 +8235,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollCJKFont()
 	a.drainMissingRunes() // a rune NOTHING covered → ask the census for an installed face
 	a.pollCensusFont()
-	a.pollErrorSprite() // land an off-thread custom missingno image → UploadPinned over MissingKey
+	a.pollErrorSprite()    // land an off-thread custom missingno image → UploadPinned over MissingKey
+	a.pollOverlayRosters() // land resolved effects rosters + theme-tier overlay art (effectspicker.go)
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
@@ -8474,30 +8584,108 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.ctx.drawTooltip(winW, winH)
 }
 
-// applyThemeAsync loads the selected theme's visible pieces off-thread —
-// the chatbox skin (chatbox.webp/png in the theme dir, AO2 convention)
-// and the message/showname font colors — and publishes them to the render
-// thread via themeRes. Settings re-triggers it on every theme change.
 // themeLoadRoots orders the content roots theme.Load searches for theme `name`.
 // A custom themes folder (customRoot) is searched FIRST for named themes — but is
 // dropped for the stock "default": theme packs ship their own themes/default, and
 // since the custom root wins, that custom default would otherwise SHADOW the
 // built-in one, making the stock default unreachable once you've set a folder
 // (#87). The app directory is always the built-in fallback. Pure, for testing.
-func themeLoadRoots(name, customRoot, exeDir string) []string {
-	roots := make([]string, 0, 2)
-	if customRoot != "" && name != theme.DefaultThemeName {
+//
+// Everything else about the ordering lives in themeSearchRoots, which the theme
+// PICKER and the catalog build from too: what the loader resolves and what the
+// user can SEE in the dropdown must never disagree about which directories exist
+// (TestThemePickerAndLoaderSearchTheSameRoots).
+func themeLoadRoots(name, customRoot, exeDir, configBase string) []string {
+	if name == theme.DefaultThemeName {
+		// #87, above: the stock default is the one theme a custom root may not answer.
+		customRoot = ""
+	}
+	return themeSearchRoots(customRoot, exeDir, configBase)
+}
+
+// themeSearchRootCap is how many content roots this client knows: the user's
+// custom themes folder, the executable's directory, and the config base. It is
+// the make() bound for every list built from them (hard rule 4 — a named cap,
+// not a bare 3).
+const themeSearchRootCap = 3
+
+// themeSearchRoots is THE ordered list of directories that may hold a themes/
+// folder. The loader (themeLoadRoots), the picker (scanThemes) and the browser
+// catalog (scanThemeCatalog) all build from this one function, so none of the
+// three can drift into searching a root the others don't — the W2 bug where a
+// theme resolved by name, appeared in the catalog, sat in the folder "Open
+// folder" opens, and was still absent from the dropdown.
+//
+// First hit per theme NAME wins downstream, so this order is the precedence.
+//
+// configBase goes LAST on purpose. It is the portable-aware config root
+// (config.UserThemesDir's parent), where a locked-down install (Program Files, an
+// unwritable exe dir) puts the themes the client itself writes — imports,
+// editable copies — so it must be searched; but inserting it any earlier would
+// silently flip which theme wins for anyone holding the same name in two places,
+// which is a live regression traded for nothing. Appended, never inserted:
+// TestThemeLoadRootOrderIsUnchangedForExistingInstalls holds that.
+//
+// The samePath skip is DEFENSIVE — it is not a state production reaches.
+// config.ConfigBaseDir never returns the executable's directory: it resolves to
+// <exeDir>/config when portable and <osConfigDir>/AsyncAO otherwise
+// (config/location.go, resolveConfigBase). In a portable install the WRITE root
+// is <exeDir>/themes, which the exe root above already covers, and this third
+// root then probes <exeDir>/config/themes — a sibling nothing writes to, normally
+// absent, and harmless to miss. Do NOT "align" config.UserThemesDir to
+// <configBase>/themes for portable to make the skip meaningful: that would move
+// every portable user's write root into config/ and strand the themes they have.
+func themeSearchRoots(customRoot, exeDir, configBase string) []string {
+	roots := make([]string, 0, themeSearchRootCap)
+	if customRoot != "" {
 		roots = append(roots, customRoot)
 	}
 	if exeDir != "" {
 		roots = append(roots, exeDir)
 	}
+	if configBase != "" && !samePath(configBase, exeDir) {
+		roots = append(roots, configBase)
+	}
 	return roots
 }
 
-// applyThemeAsync returns the themeGen it allocated for this load, so a caller
-// that means to act on THIS apply's landing (the #35 window snap) can name it.
-// Every other caller ignores it.
+// themeSearchRootsNow resolves the live inputs behind themeSearchRoots: the
+// executable's directory and the config base. BLOCKING on a cold process
+// (os.Executable, and whichever config memo is still empty) — goroutine only,
+// never a draw path (hard rule 2). customRoot is the already-normalized custom
+// folder, "" when there is none.
+func themeSearchRootsNow(customRoot string) []string {
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	configBase, _ := config.ConfigBaseDir()
+	return themeSearchRoots(customRoot, exeDir, configBase)
+}
+
+// samePath compares two directory paths for "the same place" as far as this
+// process is concerned: cleaned, and case-insensitively on Windows, where
+// C:\App and c:\app are one directory. It is a string comparison on purpose —
+// resolving links would be disk I/O on a path that must stay cheap.
+func samePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// applyThemeAsync loads the selected theme's visible pieces off-thread — the
+// chatbox skin (chatbox.webp/png in the theme dir, AO2 convention) and the
+// message/showname font colors — and publishes them to the render thread via
+// themeRes. Settings re-triggers it on every theme change.
+//
+// It returns the themeGen it allocated for this load, so a caller that means to
+// act on THIS apply's landing (the #35 window snap) can name it. Every other
+// caller ignores it.
 func (a *App) applyThemeAsync() uint64 {
 	name, dir := a.d.Prefs.Theme()
 	// Per-server theme binding: while this session declares one, it wins
@@ -8507,6 +8695,11 @@ func (a *App) applyThemeAsync() uint64 {
 		name = a.themeBound
 	}
 	anims := a.d.Prefs.AnimationsEnabled()
+	// The AO2 subtheme folder to prefer inside that theme. Read HERE, on the
+	// render thread, with every other preference this apply needs — the goroutine
+	// below must not take the preferences lock (the -race interleaving against the
+	// debounced saver that PanelFonts is snapshotted for).
+	sub := a.d.Prefs.Subtheme()
 	// Snapshot the per-panel overrides HERE, on the render thread, not inside the
 	// goroutine: PanelFonts takes the preferences' read lock, and reading them
 	// off-thread while the debounced saver marshals under its own lock is exactly
@@ -8529,8 +8722,17 @@ func (a *App) applyThemeAsync() uint64 {
 		if exe, err := os.Executable(); err == nil {
 			exeDir = filepath.Dir(exe)
 		}
-		t, err := theme.Load(name, themeLoadRoots(name, root, exeDir))
+		// The config root is resolved here, off-thread, like everything else this
+		// goroutine needs. config.ConfigBaseDir is memoized after boot, so this is
+		// a map-free string read in practice — but it is not on a draw path either
+		// way (hard rule 2).
+		configBase, _ := config.ConfigBaseDir()
+		t, err := theme.Load(name, sub, themeLoadRoots(name, root, exeDir, configBase))
 		if err == nil {
+			// Publish the loaded theme itself so the effects-overlay roster resolve
+			// walks THIS apply's ladder instead of re-loading the theme per resolve
+			// (spec §2.4). Read-only from here on.
+			res.themeObj = t
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()
 			res.fontPath = t.FontFile() // the theme's own bundled font, if any (#6)
@@ -8655,6 +8857,11 @@ func (a *App) applyThemeAsync() uint64 {
 			res.unbound = unboundDesignKeys(t)
 			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
 			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
+			// effects_icon_size (courtroom.cpp:979). Defaults to 0,0 — "the theme is
+			// silent" — rather than to a stock number, because AO2's own default theme
+			// declares it and a theme that does not simply has no opinion; the picker
+			// then falls back to its own row metrics.
+			res.effectsIcon = designPair(t, "effects_icon_size", 0, 0)
 			// showname_align: a plain string design value, so DesignValue rather
 			// than ElementRect. A missing key yields "" and parseShownameAlign's
 			// default arm, which is AO2's own `else` (courtroom.cpp:3352).
@@ -8794,6 +9001,13 @@ func (a *App) pollThemeApply() {
 	}
 	a.themeRects = a.applyRectOverrides(rects)
 	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
+	// The effects picker's per-row icon size, and a roster/icon-cache drop: the new
+	// theme contributes different names, properties AND art paths, so a cached
+	// roster (or an icon page keyed by row index) from the old one would be wrong.
+	a.overlayIconSize = res.effectsIcon
+	a.overlayTheme = res.themeObj
+	a.overlayRosters = nil
+	a.overlayIconPagesReset()
 	// Lands beside the geometry it belongs to. A themeless apply carries the zero
 	// value, which is Left — so dropping a theme restores AO2's own default rather
 	// than leaving the previous theme's alignment behind.

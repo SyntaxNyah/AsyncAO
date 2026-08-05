@@ -24,6 +24,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 const (
@@ -1164,24 +1166,32 @@ type AssetPreferences struct {
 	StreamerModeOn   bool             `json:"streamerMode"`
 	ThemeName        string           `json:"themeName"`
 	ThemeDir         string           `json:"themeDir"`
-	OOCName          string           `json:"oocName"`
-	ViewportPct      int              `json:"viewportPercent"`
-	ChatScalePct     int              `json:"chatScalePercent"`
-	ChatBoxPct       int              `json:"chatBoxPercent"`
-	LogScalePct      int              `json:"logScalePercent"`
-	InputHeightPct   int              `json:"inputHeightPercent"`
-	UIScalePct       int              `json:"uiScalePercent"`
-	WindowW          int              `json:"windowWidth"`  // 0 = default
-	WindowH          int              `json:"windowHeight"` // 0 = default
-	WindowFull       bool             `json:"windowFullscreen"`
-	MusicVol         int              `json:"musicVolume"`
-	SFXVol           int              `json:"sfxVolume"`
-	BlipVol          int              `json:"blipVolume"`
-	AlertVol         int              `json:"alertVolume"`
-	MasterVol        int              `json:"masterVolume"` // scales all three (default 100)
-	HoldClearOn      bool             `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
-	HoldClearKey     string           `json:"holdClearKey"` // which key (default "Backspace"), rebindable
-	HoldClearMs      int              `json:"holdClearMs"`  // hold duration to clear (default 1500)
+	// SubthemeName is the AO2 subtheme FOLDER inside the active theme to prefer
+	// ("" = none) — AO2-Client's Options::subTheme(), which get_asset_paths
+	// probes as themes/<theme>/<sub>/… ahead of themes/<theme>/…
+	// (path_functions.cpp:190-193). One folder name, never a path: it is
+	// sanitized on the way in (theme.SanitizeSubtheme) so a hand-edited prefs
+	// file cannot walk out of the theme it names. Named ...Name for the same
+	// reason ThemeName is: the accessor is Subtheme().
+	SubthemeName   string `json:"subtheme"`
+	OOCName        string `json:"oocName"`
+	ViewportPct    int    `json:"viewportPercent"`
+	ChatScalePct   int    `json:"chatScalePercent"`
+	ChatBoxPct     int    `json:"chatBoxPercent"`
+	LogScalePct    int    `json:"logScalePercent"`
+	InputHeightPct int    `json:"inputHeightPercent"`
+	UIScalePct     int    `json:"uiScalePercent"`
+	WindowW        int    `json:"windowWidth"`  // 0 = default
+	WindowH        int    `json:"windowHeight"` // 0 = default
+	WindowFull     bool   `json:"windowFullscreen"`
+	MusicVol       int    `json:"musicVolume"`
+	SFXVol         int    `json:"sfxVolume"`
+	BlipVol        int    `json:"blipVolume"`
+	AlertVol       int    `json:"alertVolume"`
+	MasterVol      int    `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn    bool   `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey   string `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs    int    `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
 	ExtrasBg           string                    `json:"extrasBg"`
 	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
@@ -1612,6 +1622,7 @@ type prefsJSON struct {
 	StreamerMode       bool                             `json:"streamerMode"`       // default OFF
 	ThemeName          string                           `json:"themeName"`
 	ThemeDir           string                           `json:"themeDir"`
+	Subtheme           string                           `json:"subtheme"` // AO2 subtheme folder ("" = none)
 	OOCName            string                           `json:"oocName"`
 	ViewportPct        int                              `json:"viewportPercent"`
 	ChatScalePct       int                              `json:"chatScalePercent"`
@@ -2631,6 +2642,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
+	// Sanitized on LOAD as well as on set: the file is user-editable, and the
+	// value is joined onto a filesystem path.
+	p.SubthemeName = theme.SanitizeSubtheme(onDisk.Subtheme)
 	p.OOCName = onDisk.OOCName
 	// Zero percents mean "absent" (no scale is validly 0); volumes use
 	// pointers because 0 = mute is real.
@@ -6119,6 +6133,40 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 	}
 	p.ThemeName = name
 	p.ThemeDir = dir
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Subtheme reports the AO2 subtheme folder to prefer inside the active theme
+// ("" = none). Kept separate from SetTheme because it is a different question
+// with a different lifetime: a subtheme belongs to the theme it lives in, and
+// switching theme leaves the pick alone (a theme with no such folder simply
+// probes a directory that isn't there — AO2 behaves identically).
+func (p *AssetPreferences) Subtheme() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SubthemeName
+}
+
+// SetSubtheme stores the AO2 subtheme folder ("" = none). The value is
+// sanitized here as well as on load: it is joined onto a filesystem path, so a
+// separator or a ".." must never survive the setter either.
+//
+// An EMPTY argument clears the pick; a non-empty one that cannot be a folder
+// name is REFUSED rather than folded into a clear. The two are different user
+// intents ("no subtheme" vs "this subtheme"), and silently turning the second
+// into the first would let one bad value wipe a good one.
+func (p *AssetPreferences) SetSubtheme(sub string) {
+	clean := theme.SanitizeSubtheme(sub)
+	if clean == "" && strings.TrimSpace(sub) != "" {
+		return
+	}
+	p.mu.Lock()
+	if p.SubthemeName == clean {
+		p.mu.Unlock()
+		return
+	}
+	p.SubthemeName = clean
 	p.mu.Unlock()
 	p.markDirty()
 }

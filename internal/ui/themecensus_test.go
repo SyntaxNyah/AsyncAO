@@ -873,7 +873,7 @@ func TestAO2BackstopAcrossTheThemeCorpus(t *testing.T) {
 		if !e.IsDir() {
 			continue
 		}
-		th, err := theme.Load(e.Name(), []string{root})
+		th, err := theme.Load(e.Name(), "", []string{root})
 		if err != nil {
 			continue
 		}

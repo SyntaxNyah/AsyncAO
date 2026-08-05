@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -443,19 +444,66 @@ func importDroppedRecording(path string) string {
 // which then shows the export's "Reading …" banner). Everywhere else the behavior
 // is unchanged (import + play). This is the SINGLE owner of dropped recordings:
 // the Settings-screen c.dropped consumer skips them.
+//
+// It is also the single owner of dropped THEME BUNDLES, which is new and is the
+// point of routing through claimDroppedFile: a .aotheme used to fall through
+// both here (warned as "not a recording") and into the Settings screen's
+// theme-folder arm, which pointed the theme root at the bundle's parent folder.
+// See dropclaim.go.
 func (a *App) HandleFileDrop(path string) {
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext != recordingExt && ext != demoExt {
-		a.warnLine = "Dropped file isn't a recording (.aorec) or an AO2 demo (.demo) — ignored."
+	switch claimDroppedFile(path, settings.importArmed) {
+	case dropClaimRecording:
+		dest := importDroppedRecording(path)
+		if a.Screen() == ScreenSettings && settings.tab == tabStudio {
+			a.importRecordingToVideo(dest) // Studio's dedicated .demo → video entry point
+			return
+		}
+		a.replayFromPath(dest)
+	case dropClaimThemeBundle:
+		a.handleThemeBundleDrop(path)
+	case dropClaimSettingsImport:
+		// The Settings screen armed this and consumes it in the same frame
+		// (importSettingsAsync). Silence here is the correct answer — the old
+		// "isn't a recording" warn fired on a file the user had just been asked
+		// for.
+	default:
+		a.handleUnclaimedDrop(path)
+	}
+}
+
+// handleThemeBundleDrop parks a dropped .aotheme. EXTRACTION is a later wave
+// (it needs the consent sheet and the bounded extractor); what ships now is the
+// half that was actively wrong — the bundle no longer repoints anything — plus
+// the one line that tells the user where the file has to go instead. A dead
+// silent drop would be worse than the bug it replaces.
+func (a *App) handleThemeBundleDrop(path string) {
+	name := filepath.Base(path)
+	if dir := config.UserThemesDir(); dir != "" {
+		a.warnLine = "Theme bundle " + name + " — unpacking bundles arrives with the theme editor. For now, unzip it into " +
+			dir + " and press Refresh in Settings → Theme."
+	} else {
+		a.warnLine = "Theme bundle " + name + " — unpacking bundles arrives with the theme editor. For now, unzip it into your themes folder."
+	}
+	a.warnAt = time.Now()
+}
+
+// handleUnclaimedDrop is the global fallback. A dropped FOLDER is the theme
+// import the Settings screen owns (its c.dropped arm resolves it through
+// normalizeThemeRoot), so this must not warn about one — it points the user at
+// the screen that can take it when they are somewhere else. One os.Stat on the
+// event loop, beside the ones importDroppedRecording already does there; never
+// a render path (hard rule 2).
+func (a *App) handleUnclaimedDrop(path string) {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		if a.Screen() == ScreenSettings {
+			return // the Settings screen consumes this drop itself, this frame
+		}
+		a.warnLine = "Dropped a folder — open Settings → Theme and drop it there to use it as a theme."
 		a.warnAt = time.Now()
 		return
 	}
-	dest := importDroppedRecording(path)
-	if a.Screen() == ScreenSettings && settings.tab == tabStudio {
-		a.importRecordingToVideo(dest) // Studio's dedicated .demo → video entry point
-		return
-	}
-	a.replayFromPath(dest)
+	a.warnLine = "Dropped file isn't a recording (.aorec), an AO2 demo (.demo) or a theme bundle (" + themePackExt + ") — ignored."
+	a.warnAt = time.Now()
 }
 
 // importRecordingToVideo is the shared tail of both Studio entry points (the

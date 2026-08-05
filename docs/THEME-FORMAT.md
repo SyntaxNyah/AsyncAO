@@ -291,7 +291,7 @@ element on screen as something it is not.
 | `z` | int16, clamped | `0` | order **within** the band; ties break on declaration order |
 | `space` | enum | `courtroom` | `courtroom`, `chatbox`, `viewport`, `music_display`, `window`, `pane` |
 | `anchor` | text | `""` | a widget key, or a pane id when `space = pane`; `""` = the space's origin |
-| `rect` | rect | `0, 0, 0, 0` | **relative to the anchor**; all-zero = exactly the anchor's rect |
+| `rect` | rect | `0, 0, 0, 0` | a **signed delta** from the anchor, or absolute with no anchor — see below |
 | `rot` | angle | `0` | 360/256 |
 | `media` | id | `""` | `kind = image`: an id from `[media]` |
 | `shape` | id | `""` | `kind = shape`: a silhouette name |
@@ -323,6 +323,19 @@ element on screen as something it is not.
 | `visible_when` | condition | `always` | see below |
 | `locked` | bool | `no` | editor-only: excluded from marquee and drag |
 | `hidden` | bool | `no` | authored-off; still in the file |
+
+**`rect` against an anchor is a signed delta.** With a non-empty `anchor`, the
+element's box is the anchor's box plus the rect, component by component:
+`X = anchor.X + rect.x`, `Y = anchor.Y + rect.y`, `W = anchor.W + rect.w`,
+`H = anchor.H + rect.h`. Every component is signed, and every component is
+defined independently of the other three — a partly-zero rect is not a special
+case but the ordinary reading of it, so `0, 0, 0, 12` is the anchor's box twelve
+pixels taller and `-6, -6, 12, 12` is the anchor's box inflated by six on every
+side. All-zero is exactly the anchor's rect.
+
+With an empty `anchor`, `rect` is **absolute in its declared space**. That is the
+whole rule, and it is what lets a layout move a widget and a style decorate it
+without either knowing the other exists.
 
 `visible_when` is **one axis, one value** — deliberately not an expression
 language, because anything richer needs a parser on the frame path:

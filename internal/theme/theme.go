@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
 const (
@@ -130,8 +132,13 @@ type RGB struct{ R, G, B uint8 }
 type Theme struct {
 	// Name is the active theme's directory name.
 	Name string
+	// Sub is the AO2 subtheme folder inside the theme ("" = none), already
+	// sanitized. It is a variant selector, not a second theme: it contributes
+	// a HIGHER-priority directory inside the same theme folder.
+	Sub string
 	// dirs are the candidate theme directories in priority order:
-	// <root>/themes/<name>, then <root>/themes/default for every root.
+	// <root>/themes/<name>/<sub>, <root>/themes/<name>, then
+	// <root>/themes/default for every root.
 	dirs    []string
 	design  *INI
 	fonts   *INI
@@ -139,17 +146,70 @@ type Theme struct {
 	penalty *INI
 }
 
+// SubthemeNameLen bounds a subtheme folder name. AO2 has no bound at all (it is
+// a free string in Options), but this one is joined onto a filesystem path from
+// a hand-editable preferences file, so it gets a named cap like every other
+// user-supplied collection member (hard rule 4). 48 is past every subtheme in
+// the reference corpus ("night", "alt", "christmas", "aa_investigations").
+const SubthemeNameLen = 48
+
+// SanitizeSubtheme reduces a user-supplied subtheme to ONE safe folder name, or
+// "" when it cannot be one. A subtheme is a single directory inside the theme
+// folder (AO2: get_theme_path(p_element, p_theme + "/" + p_subtheme),
+// path_functions.cpp:192), so anything with a separator, a drive letter, a ".."
+// segment or a leading dot is refused outright rather than cleaned into
+// something plausible — cleaning is how a guard becomes a suggestion.
+//
+// Refusal is silent by design: the value comes from a preferences file, and the
+// only sane reading of an impossible subtheme is "no subtheme", which resolves
+// exactly like AO2 with the option unset.
+func SanitizeSubtheme(sub string) string {
+	sub = strings.TrimSpace(sub)
+	if sub == "" || safepath.UnsafeRel(sub) {
+		return ""
+	}
+	// One SEGMENT: UnsafeRel allows "night/deep", which would be two folders.
+	if strings.ContainsAny(sub, `/\`) {
+		return ""
+	}
+	// "." and any dotfile: neither names a subtheme, and both are how a probe
+	// gets pointed back at the theme folder itself.
+	if strings.HasPrefix(sub, ".") {
+		return ""
+	}
+	if len([]rune(sub)) > SubthemeNameLen {
+		return ""
+	}
+	return sub
+}
+
 // Load opens the named theme across the given content roots (e.g. the
 // user config dir and the executable's directory). Missing INIs are
 // tolerated; lookups then simply miss into defaults.
-func Load(name string, roots []string) (*Theme, error) {
+//
+// sub is the AO2 subtheme folder to prefer ("" = none). AO2-Client's
+// get_asset_paths puts the subtheme directory AHEAD of the theme directory
+// (path_functions.cpp:190-193) and — deliberately — gives the default-theme
+// fallback NO subtheme tier (:202-205), so a subtheme can only ever add
+// resolutions inside the theme that owns it. That order is reproduced exactly;
+// with sub == "" the directory list is byte-identical to what it was before
+// subthemes existed.
+func Load(name, sub string, roots []string) (*Theme, error) {
 	if name == "" {
 		name = DefaultThemeName
 	}
-	t := &Theme{Name: name}
+	sub = SanitizeSubtheme(sub)
+	t := &Theme{Name: name, Sub: sub}
 	for _, root := range roots {
 		if root == "" {
 			continue
+		}
+		// Per ROOT, not per tier: root order is priority (a custom themes folder
+		// outranks the app directory), so a root's subtheme and its theme stay
+		// together ahead of the next root — the same shape the flat and default
+		// tiers below already have.
+		if sub != "" {
+			t.dirs = append(t.dirs, filepath.Join(root, ThemesDirName, name, sub))
 		}
 		t.dirs = append(t.dirs, filepath.Join(root, ThemesDirName, name))
 	}
@@ -166,12 +226,21 @@ func Load(name string, roots []string) (*Theme, error) {
 		if root == "" {
 			continue
 		}
+		if sub != "" {
+			t.dirs = append(t.dirs, filepath.Join(root, name, sub))
+		}
 		t.dirs = append(t.dirs, filepath.Join(root, name))
 	}
 	// No flat tier for the DEFAULT fallback, deliberately: a bare-folder import
 	// supplies exactly one theme, and synthesising <root>/default would let a
 	// stray folder named "default" sitting beside the drop hijack every key the
 	// real theme leaves unresolved.
+	//
+	// No SUBTHEME tier here either, and that is AO2's call, not a shortcut:
+	// get_asset_paths appends the default theme with no subtheme component
+	// (path_functions.cpp:202-205) while every earlier tier takes one, so
+	// "night" inside your theme must not reach into the bundled default's
+	// "night". Adding it would resolve files AO2 would not.
 	for _, root := range roots {
 		if root == "" || name == DefaultThemeName {
 			continue

@@ -35,7 +35,7 @@ func writeThemeFonts(t *testing.T, name, fonts string, files map[string]string) 
 			t.Fatal(err)
 		}
 	}
-	th, err := theme.Load(name, []string{root})
+	th, err := theme.Load(name, "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}

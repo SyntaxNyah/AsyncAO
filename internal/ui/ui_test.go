@@ -477,7 +477,7 @@ func TestNormalizeThemeRootBareFolder(t *testing.T) {
 	}
 	// theme.Load's flat tier is what makes that root resolve. Without it the
 	// pick names a theme no dir in t.dirs can reach, and every key misses.
-	th, err := theme.Load(pick, []string{got})
+	th, err := theme.Load(pick, "", []string{got})
 	if err != nil {
 		t.Fatal(err)
 	}

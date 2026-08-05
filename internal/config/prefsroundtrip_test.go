@@ -123,6 +123,40 @@ func TestAssetCharCasingRoundTrips(t *testing.T) {
 	}
 }
 
+// TestSubthemeRoundTripsAndIsSanitizedOnBothSides is the v1.90.0 W2 pref. It
+// gets the same round-trip proof every new preference owes (the assetCharCase
+// class above), plus one this preference owes on its own: the value is joined
+// onto a filesystem path, and the file it comes from is hand-editable, so a
+// separator or a ".." must not survive EITHER the setter or the loader.
+func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	if got := p.Subtheme(); got != "" {
+		t.Fatalf("default subtheme = %q, want empty (AO2's own default)", got)
+	}
+	p.SetSubtheme("night")
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, path).Subtheme(); got != "night" {
+		t.Errorf("subtheme after reload = %q, want %q — it saved but did not load back", got, "night")
+	}
+
+	// The setter refuses anything that is not one folder name...
+	p.SetSubtheme("../../secret")
+	if got := p.Subtheme(); got != "night" {
+		t.Errorf("a path-escaping subtheme was accepted (now %q)", got)
+	}
+	// ...and so does the loader, for a file edited by hand outside the client.
+	hand := tempPrefsPath(t)
+	if err := os.WriteFile(hand, []byte(`{"subtheme":"../../secret"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, hand).Subtheme(); got != "" {
+		t.Errorf("hand-edited subtheme loaded as %q, want it refused", got)
+	}
+}
+
 // TestProxyPrefsRoundTrip: the whole point of the proxy setting is that it
 // survives a restart. A user who switches to "never use a proxy" because the
 // detected one cannot carry AO traffic must not find themselves back on it the

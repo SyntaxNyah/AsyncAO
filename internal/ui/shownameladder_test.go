@@ -180,7 +180,7 @@ func TestChatboxLadderArtComesFromTheBaseSkinsOwnDirectory(t *testing.T) {
 	touch(defDir, "chat.png")
 	touch(defDir, "chatbig.png") // the parent's big must NOT be adopted
 
-	th, err := theme.Load("inheritor", []string{root})
+	th, err := theme.Load("inheritor", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestChatboxLadderArtSkippedWithoutABaseSkin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "chatmed.png"), []byte{}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	th, err := theme.Load("orphanmed", []string{root})
+	th, err := theme.Load("orphanmed", "", []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}

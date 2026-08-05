@@ -15,10 +15,20 @@ Copy your theme directory (the one containing `courtroom_design.ini`) into:
 You can also just drop the theme folder itself on the window. A theme downloaded
 as a zip unpacks to a bare folder with no `themes/` parent, and that works too.
 
+The client shows you the exact folder it uses in **Settings → Theme → Your
+themes**, with an **Open folder** button beside it — that is the one it writes
+into, and the config-dir path above is now searched even without setting a custom
+theme folder.
+
 ## What's supported
 
 - `courtroom_design.ini` — element positions/sizes (`element = x, y, w, h`),
   read with AO2's lookup ladder: your theme first, then the `default` theme.
+- **Subthemes** — a folder inside your theme with its own
+  `courtroom_design.ini` (AO2's `subtheme` option). Pick one in **Settings →
+  Theme → Subtheme**; its files win over the theme's, and anything it leaves out
+  still comes from the theme. As in AO2, the `default` theme fallback has no
+  subtheme tier, so a variant only ever reaches inside the theme that owns it.
 - `courtroom_fonts.ini` — sizes, `<element>_color = r, g, b`, `<element>_bold`.
 - `courtroom_sounds.ini` — sound names.
 - Theme images (chatbox, chat arrow, shout bubbles...) in any of

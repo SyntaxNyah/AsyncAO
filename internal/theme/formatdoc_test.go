@@ -150,6 +150,13 @@ func TestPublishedCapsMatchTheConstants(t *testing.T) {
 		{"§3's nominal clock speed", fmt.Sprintf("Absent = %d.", SpeedNominalPct)},
 		{"§3's pane bounds", fmt.Sprintf("Up to %d panes, %d hosts each.", PaneCap, PaneHostCap)},
 		{"§3's element bound", fmt.Sprintf("Up to %d per theme.", ElementCap)},
+		// Ruling R1 (design §6.6): the anchored-rect reading is the one sentence
+		// that keeps a layout preset and a style preset orthogonal, so both halves
+		// of it — the delta formula and the empty-anchor case — are pinned here.
+		// A reader that took an anchored rect as absolute would place every
+		// decoration in a style preset at the top-left of its space.
+		{"§3's anchored-rect delta rule", "`X = anchor.X + rect.x`"},
+		{"§3's empty-anchor absolute rule", "`rect` is **absolute in its declared space**"},
 		{"§3's element text bound", fmt.Sprintf("up to %d runes", TextRuneCap)},
 		{"§3's generator parameter bound", fmt.Sprintf("ordered; up to %d", GenParamCap)},
 		{"§3's effect binding bound", fmt.Sprintf("Up to %d bindings.", EffectBindCap)},

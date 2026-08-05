@@ -465,6 +465,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if e.Event == sdl.WINDOWEVENT_DISPLAY_CHANGED || e.Event == sdl.WINDOWEVENT_MOVED {
 					app.NoteDisplayChanged()
 				}
+				// Coming back to the window is the signal that the user may have
+				// just changed something on disk in another program — the theme
+				// catalog's one-stat trigger (v1.90.0 §Q6). It only latches a
+				// bool; nothing is read here.
+				if e.Event == sdl.WINDOWEVENT_FOCUS_GAINED {
+					app.NoteFocusGained()
+				}
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
