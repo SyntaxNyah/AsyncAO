@@ -494,6 +494,15 @@ type Ctx struct {
 	// the rect during the call and never retains the pointer, and Ctx is
 	// render-thread-only.
 	cgoRect sdl.Rect
+	// cgoSrc is the SECOND persistent scratch rect, for the one call shape that
+	// needs two at once: Renderer.Copy(tex, src, dst) with a NON-NIL source rect.
+	// The free elements' 9-slice painter (themeelements.go) issues nine of those
+	// per element, and reusing cgoRect for both arguments would have the
+	// destination overwrite the source before SDL read it. Identical contract to
+	// cgoRect otherwise — SDL copies during the call and never retains the
+	// pointer, and Ctx is render-thread-only, so the pair is set and consumed one
+	// blit at a time.
+	cgoSrc sdl.Rect
 	// Chrome SHAPE (A5): the App resolves the active shape + its fill/stroke
 	// mask textures into these fields ONCE per frame (refreshShapeMasks) so the
 	// hot per-widget FillShaped / ButtonCol path is a plain field read — no

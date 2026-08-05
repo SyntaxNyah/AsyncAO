@@ -225,6 +225,24 @@ ids (`showname`, `message`, `ic_chatlog`, `server_chatlog`, `music_list`,
 `music_name`, `area_list`, `debug_log`, plus AsyncAO's `player_list`, `notes`,
 `friends`).
 
+A binding names a **file the theme ships**, which is the whole difference from
+`courtroom_fonts.ini`: that file names a *family* and leaves finding it to the
+system font database, so a theme downloaded on its own renders in the client's
+own face and says nothing. A `[fontbind]` row is resolved under
+`<theme>/fonts/<file>` and then `<theme>/<file>`; a path that leaves the theme
+folder is refused. It **overrides** `courtroom_fonts.ini` for that element, and
+the reader's own per-panel font override still wins over both. A family the
+theme's `[fonts]` never declares, or a file that is not there, leaves the
+element on whatever the AO2 tier gave it and is reported by name.
+
+`bold` stays where AO2 puts it — `<id>_bold` in `courtroom_fonts.ini`. There is
+no per-binding style flag in format 1.
+
+**Dropping a `.ttf` / `.otf` on the client** does not install it: the client
+names the folder it belongs in and the two keys to add. It is claimed as a font
+rather than ignored so that it can never be mistaken for a dropped *theme
+folder*, which would repoint your themes root at wherever the font came from.
+
 **Font licensing:** if you bundle a face you did not make, ship its licence
 beside it (`fonts/<NAME>-LICENSE.txt`). OFL specifically requires the licence to
 travel with the font.
@@ -274,6 +292,19 @@ Structural rules, enforced on load:
 
 Up to 8 panes, 8 hosts each.
 
+**A `[pane.*]` paints nothing by itself.** `divider` and `divider_px` are only
+read when an `[element.<id>]` with `kind = pane` is anchored to that pane — the
+element is the thing that draws, and the pane's divider folds into that
+element's `stroke` when the element declares no stroke colour of its own.
+
+That element still has to be worth drawing. A `kind = pane` element with no
+`fill`, no `fill2` **and** no `stroke` of its own is **inert**: it is skipped
+before the divider fold is ever reached, so a theme that writes
+`divider`/`divider_px` and leaves the element otherwise empty paints nothing at
+all. Give the element a `fill` (the plate the divider frames) or its own
+`stroke`, and set `stroke_px` — a stroke of zero width is zero pixels wide
+whatever colour it is.
+
 ### `[element.<id>]`
 
 A free element: a box the AO2 registry has no row for. Up to 96 per theme.
@@ -298,7 +329,7 @@ element on screen as something it is not.
 | `generator` | id | `""` | `kind = gen`: a generator name (§5) |
 | `gen_params` | list of `k=v` | `""` | ordered; up to 8 |
 | `fit` | enum | `stretch` | `stretch`, `tile`, `contain`, `cover`, `nine` |
-| `slice` | 4 × int16, clamped | `0, 0, 0, 0` | 9-slice insets in **source** px, when `fit = nine` |
+| `slice` | 4 × int16, clamped | `0, 0, 0, 0` | 9-slice insets in **source** px, `left, top, right, bottom` — see §5 |
 | `nine_slice` | int16, clamped | — | read-only alias: one inset on all four edges |
 | `fill` | colour | transparent | gradient stop A / shape fill / pane plate |
 | `fill2` | colour | transparent | gradient stop B |
@@ -306,11 +337,11 @@ element on screen as something it is not.
 | `grad_radial` | bool | `no` | radial instead of linear |
 | `stroke` | colour | transparent | outline colour |
 | `stroke_px` | 0..255 | `0` | outline width |
-| `tint` | colour | absent | multiplied into `image`/`gen`; absent = no tint |
-| `opacity` | 0..255 | absent | **`0` means absent and draws opaque** |
+| `tint` | colour | absent | multiplied into `image`/`gen`; absent = no tint. `opacity` folds into its alpha |
+| `opacity` | 0..255 | absent | applies to **every** kind — the colours for the procedural ones, the tint for `image`/`gen`. **`0` means absent and draws opaque** |
 | `text` | free text | `""` | `kind = text`; up to 240 runes |
-| `font` | text | `""` | a `[fontbind]` element id or a `[fonts]` family |
-| `size` | 0..256 | `0` | points; `0` = inherit |
+| `font` | text | `""` | a `[fontbind]` element id or a `[fonts]` family. **Carried, not drawn in format 1** — see below |
+| `size` | 0..256 | `0` | points; `0` = inherit. **Carried, not drawn in format 1** |
 | `color` | colour | absent | text colour; absent = white |
 | `align` | enum | `left` | `left`, `center`, `right` |
 | `clock` | 0..15 | `0` | the clock group; out of range falls back to the shared anchor |
@@ -348,6 +379,27 @@ sharp | rounded | pill | hex | ribbon | tape
 capsule (its corner is half the short side, which is why it is its own name and
 not `rounded` with a number). `rect` is an accepted alias of `sharp`. An unknown
 name draws as `sharp` and keeps its fill, stroke and position — rule 3.
+
+**`font` and `size` are carried, not drawn in format 1.** An element's text is
+rendered in the client's own chrome face at the chrome size. Both keys are
+parsed, bounds-checked and written back unchanged on save — a theme that sets
+them loses nothing and is forward-compatible by construction (rule 4) — but no
+format-1 renderer reads them.
+
+The reason is a cost this format will not pay for decoration. Every face in this
+client lives in a set that holds exactly **one** point size, so an element drawn
+at a different size from the widget it borrows its face from rebuilds that set,
+and purges the text cache with it, on every frame both are on screen. Giving
+elements their own face pool instead spends one of a theme's four face slots.
+Measured against what it would buy: the fourteen themes shipped with this
+release all write `font =`, none of them ships a face *file*, and a family that
+names no file resolves to the client's chain either way — so honouring `font`
+changes nothing on any theme that exists, and only `size` would.
+
+**Type that must render exactly is `[fonts]` + `[fontbind]` territory** (above).
+Those bind a *file the theme ships* to an AO2 courtroom element, they cost
+nothing per frame, and they are the reason a native theme renders the same on a
+machine that has never heard of the family.
 
 `visible_when` is **one axis, one value** — deliberately not an expression
 language, because anything richer needs a parser on the frame path:
@@ -456,14 +508,102 @@ the chrome band — the things that live outside the canvas by design.
 
 `kind = gen` rasterises a **tile**, never a field: at most 256×256, drawn tiled
 or 9-sliced. That is what makes procedural decoration cost kilobytes instead of
-megabytes, and what makes it survive a window resize without re-rastering.
+megabytes, and what makes it survive a window resize without re-rastering — the
+tile's cache key carries no width, no height and no theme, so the same generator
+at any canvas size is the same texture.
 
-Shipped generator names: `scanlines`, `halftone`, `grid`, `hex`, `noise`,
-`woodgrain`, `gradient`, `glow`, `stripes`, `hatch`.
+Parameters are an ordered `k = v` list of at most 8 pairs; a generator ignores
+what it does not use, and an unknown generator name degrades to a flat fill of
+the element's own `fill`. Because the list is ordered and hashed, two elements
+with identical parameters share one texture — across elements and across themes.
 
-Parameters are an ordered `k=v` list; a generator ignores what it does not use,
-and an unknown generator degrades to a flat fill. Because the list is ordered
-and hashed, two elements with identical parameters share one texture.
+### The seventeen generators
+
+| Name | Serves | Key parameters |
+|---|---|---|
+| `scanlines` | VHS/CRT, Steins;Gate, Cyberpunk | `pitch` period, `size` thickness, `fade` |
+| `halftone` | Newspaper, Manga screentone | `dot`/`pitch` cell, `angle` (staggers the lattice) |
+| `grid` | Vaporwave floor, Cyberpunk wireframe, perfboard | `pitch` cell, `size` line, `pct` perspective, `dots` |
+| `hex` | Danganronpa chatbox, Cyberpunk | `pitch` cell, `size` line |
+| `noise` | VHS grain, Higurashi | `density`, `amp`, `size` speck, `seed` |
+| `woodgrain` | Classic Courtroom | `pitch` band period, `pct` contrast |
+| `gradient` | everything | `angle`, `tint` → `accent` |
+| `glow` | Cyberpunk neon, Umineko gold | `radius`, `soft` falloff |
+| `stripes` | Persona 5, warning tape, hairlines | `pitch`, `size`, `angle`, `bloom`, `fade`, `phase` |
+| `hatch` | Manga tone, the over-budget placeholder | `pitch`, `size`, `angle` |
+| `plate` | a filled plate with a decorated edge | `size` edge, `count` mode (bevel/chamfer/capsule/notch), `pitch` groove, `pct` |
+| `frame` | a hollow frame, 9-sliced | `pitch` band, `size` corner, `count` mode, `gap` |
+| `radial` | rays, spikes, rings, discs | `pitch` rays, `size` radius, `count` repeats, `inner`, `squash`, `seed` |
+| `mottle` | cork, newsprint, cloud — smooth low-frequency noise | `pitch` feature size, `size` octaves, `count` specks, `amp`, `fade`, `seed` |
+| `checkerdisc` | a checkered disc inlay in perspective | `cells`, `ring`, `squash`, `angle` |
+| `skyline` | mirrored ridge silhouettes / column bars | `pitch` segment, `size` peak, `count` ranges, `base`, `seed` |
+| `wingmark` | scattered two-lobe wing / arc marks | `size`, `count`, `angle`, `amp` (lobe fullness), `seed` |
+
+Colours are always `tint`, `bg`, `accent`, `shadow`. `checkerdisc` is the one
+generator whose tile is **transparent outside its figure**, so a disc can be
+inlaid over a floor rather than over a square of its own background.
+
+### The parameter vocabulary — complete
+
+There are **25 accepted keys** and they resolve to **11 slots**, globally: the
+same key means the same slot in every generator. A generator reads the slots it
+documents and ignores the rest, so `angle` on a generator with no angle costs
+nothing and is not an error.
+
+| Slot | Accepted spellings | Type |
+|---|---|---|
+| tint | `tint` | colour |
+| bg | `bg` | colour |
+| accent | `accent` | colour |
+| shadow | `shadow` | colour |
+| pitch | `pitch`, `cells`, `dot` | int |
+| size | `size`, `radius`, `ring` | int |
+| count | `count`, `bloom` | int |
+| seed | `seed` | int |
+| angle | `angle` | 360/256 |
+| pct0 | `pct`, `inner`, `density`, `gap`, `soft`, `base`, `fade` | 0..100 |
+| pct1 | `squash`, `amp`, `phase`, `dots` | 0..100 |
+
+**The multiple spellings are deliberate and they are append-only.** Every alias
+here is a word themes already write for that slot — `cells` is what a
+`checkerdisc` author calls its pitch, `ring` is what they call its size,
+`radius` is what a `glow` author calls the same thing. Collapsing them to one
+canonical name each would have been tidier and would have silently dropped the
+parameter out of every theme that used the other word, because an unrecognised
+key is *ignored* rather than reported. So: **a spelling that once resolved keeps
+resolving, forever**, and a new generator picks its keys out of this table
+instead of inventing a twenty-sixth.
+
+Two consequences worth stating out loud:
+
+- **Two spellings of one slot cannot both be set.** `pct = 40, inner = 60` is
+  one slot written twice; the last one wins. No generator's own documented
+  vocabulary contains two spellings of the same slot, so this only arises when
+  an author mixes families.
+- **The hash is over the key list as written, in order.** Two elements share a
+  texture only if their parameter text matches key for key, value for value, in
+  the same order — `cells=6, ring=10` and `ring=10, cells=6` are two tiles that
+  look identical and cost twice. Themes that mean to share a tile say so
+  (`thh_trial`'s two medallions carry a comment to that effect).
+
+Every generator is **deterministic**: the same parameters produce the same
+pixels, always. That is not a nicety — the parameter hash is the texture's cache
+key, so a generator that varied would make a theme's appearance depend on which
+element the client happened to load first.
+
+### 9-slice — normative
+
+`slice = left, top, right, bottom`, in **source** pixels. `nine_slice = N` is an
+accepted alias for the same inset on all four edges.
+
+Corners are drawn at their source size. **Edge regions keep their source
+thickness and stretch only along the edge axis** — the top and bottom bands keep
+their height and stretch horizontally, the left and right bands keep their width
+and stretch vertically — and only the centre stretches on both. That is what
+lets a 1 px rule or a fixed-width bezel keep its weight at any element size.
+
+An element smaller than its own frame scales the four bands down together rather
+than overlapping them, so a 9-slice never produces negative geometry.
 
 ---
 

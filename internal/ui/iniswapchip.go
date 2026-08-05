@@ -83,7 +83,12 @@ func (a *App) iniswapChipRect(w int32) (sdl.Rect, bool) {
 		x = last.X + last.W + iniswapChipGapX
 	}
 	cw := a.ctx.TextWidth(iniswapChipLabel) + 2*iniswapChipPadX
-	if x+cw > w-iniswapChipRightReservePx {
+	// The reserve is taken off menuBarRightContentLeft, not off `w`: the band grew a
+	// third chip (themeerrchip.go) which is right-anchored OUTSIDE the missing-asset
+	// one, so the strip this chip must stay clear of starts where that chip starts.
+	// With no theme error on screen menuBarRightContentLeft is exactly `w` and this
+	// line is byte-identical to what it was.
+	if x+cw > a.menuBarRightContentLeft(w)-iniswapChipRightReservePx {
 		return sdl.Rect{}, false
 	}
 	return sdl.Rect{
@@ -100,11 +105,7 @@ func (a *App) iniswapChipRect(w int32) (sdl.Rect, bool) {
 // be drawn on top of each other — the one thing the band's "drop rather than
 // overlap" rule cannot express with a single anchor.
 func (a *App) menuBarLeftContentRight(w int32) int32 {
-	right := int32(0)
-	if len(menuBarMenus) > 0 {
-		last := a.menuBarTitleRect(len(menuBarMenus) - 1)
-		right = last.X + last.W
-	}
+	right := a.menuBarTitlesRight()
 	if r, ok := a.iniswapChipRect(w); ok {
 		if e := r.X + r.W; e > right {
 			right = e

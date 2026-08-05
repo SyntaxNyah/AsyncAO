@@ -140,6 +140,10 @@ type themeCatalogEntry struct {
 	// Subthemes are the AO2 variant folders found inside it (bounded by
 	// themeSubthemeCap).
 	Subthemes []string
+	// SidecarErr is why this folder's asyncao_theme.ini was REFUSED ("" when there
+	// is none, or when it parses). It is what stops Kind claiming a native tier the
+	// loader will drop on the floor — see themeEntryKind.
+	SidecarErr string
 }
 
 // themeCatalog is an IMMUTABLE snapshot. Nothing mutates one after publish:
@@ -308,12 +312,14 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 			if writeRoot != "" && samePath(dir, writeRoot) {
 				origin = themeOriginYours
 			}
+			kind, sidecarErr := themeEntryKind(themeDir)
 			out.Entries = append(out.Entries, themeCatalogEntry{
-				Name:      e.Name(),
-				Dir:       themeDir,
-				Kind:      themeKindOf(themeDir),
-				Origin:    origin,
-				Subthemes: scanSubthemes(themeDir),
+				Name:       e.Name(),
+				Dir:        themeDir,
+				Kind:       kind,
+				Origin:     origin,
+				Subthemes:  scanSubthemes(themeDir),
+				SidecarErr: sidecarErr,
 			})
 		}
 		if out.Truncated {
@@ -374,6 +380,37 @@ func themeKindOf(dir string) themeKind {
 	default:
 		return themeKindBroken
 	}
+}
+
+// themeEntryKind is themeKindOf for a TOP-LEVEL catalog entry: the same file
+// census, plus one parse of the sidecar so the badge cannot claim a native tier
+// that the loader is going to refuse.
+//
+// It is a separate function from themeKindOf, and that split is a bound rather
+// than a style choice. themeKindOf is also the subtheme filter, called up to
+// themeSubthemeScanCap (64) times per theme — folding a file READ into it would
+// turn a 128-theme scan's handful of stats into up to 8192 parses. Here it runs
+// exactly once per listed theme, off-thread, against a file INIDoc already caps.
+//
+// The downgrade is deliberate and it is the whole point: a refused sidecar
+// contributes NOTHING (theme.Load records the error and carries on with the AO2
+// half — format rule 1), so a folder badged "AO2 + native" on the strength of a
+// file the client will never use is the browser lying about what will happen.
+// Sidecar-only + refused therefore lands on themeKindBroken, which is the honest
+// answer: not one thing in that folder loads. The reason travels beside the badge
+// in themeCatalogEntry.SidecarErr rather than being thrown away.
+func themeEntryKind(dir string) (themeKind, string) {
+	kind := themeKindOf(dir)
+	if kind != themeKindNative && kind != themeKindBoth {
+		return kind, "" // no sidecar to probe
+	}
+	if _, err := theme.LoadSidecar(filepath.Join(dir, theme.SidecarFileName)); err != nil {
+		if kind == themeKindBoth {
+			return themeKindAO2, err.Error()
+		}
+		return themeKindBroken, err.Error()
+	}
+	return kind, ""
 }
 
 // scanSubthemes lists the AO2 subtheme folders inside a theme: a subdirectory

@@ -29,6 +29,19 @@ const themePackExt = ".aotheme"
 // settingsImportExt is the whole-settings bundle the Data tab exports.
 const settingsImportExt = ".json"
 
+// themeFontExts are the face files a native theme can carry (v1.90.0 W4). They are
+// claimed for exactly the reason .aotheme is: a font dropped on the Settings screen
+// fell through to the default arm, which pointed the user's THEME ROOT at the
+// font's parent directory — typically Downloads — while the global handler was
+// meanwhile warning them the file "isn't a recording". A .ttf is not a theme
+// folder; it belongs INSIDE one.
+//
+// The two extensions SDL_ttf opens, and only those. .ttc / .otc (collections) and
+// .woff are deliberately absent: internFace reads a single face out of a file, so
+// claiming a container we cannot open would trade a wrong action for a wrong
+// promise. They fall through to the folder arm exactly as they do today.
+var themeFontExts = [...]string{".ttf", ".otf"}
+
 // dropClaim names the owner of a dropped path.
 type dropClaim uint8
 
@@ -49,6 +62,10 @@ const (
 	// armed. Listed here so the global handler stays quiet about it instead of
 	// warning about a file the user deliberately dropped.
 	dropClaimSettingsImport
+	// dropClaimThemeFont: a .ttf / .otf — HandleFileDrop owns it (v1.90.0 W4's
+	// font intake). Like a bundle it is a FILE, so it must never reach the
+	// Settings screen's theme-folder arm.
+	dropClaimThemeFont
 )
 
 // claimDroppedFile classifies a dropped path by NAME alone — no disk access, so
@@ -64,7 +81,19 @@ func claimDroppedFile(path string, importArmed bool) dropClaim {
 		return dropClaimThemeBundle
 	case importArmed && ext == settingsImportExt:
 		return dropClaimSettingsImport
+	case isThemeFontExt(ext):
+		return dropClaimThemeFont
 	default:
 		return dropClaimNone
 	}
+}
+
+// isThemeFontExt reports whether an already-lowered extension is a theme face file.
+func isThemeFontExt(ext string) bool {
+	for _, e := range themeFontExts {
+		if ext == e {
+			return true
+		}
+	}
+	return false
 }

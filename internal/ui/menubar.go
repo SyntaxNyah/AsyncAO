@@ -1270,13 +1270,16 @@ func (a *App) drawMenuBar(w, _ int32) {
 		}
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
-	// The band's two chips, both drawn here (and nowhere else) so neither can ever
-	// intrude on an AO2 design canvas or on the emote grid, which is what the old
-	// in-content banner did on both layouts. The Iniswap button is left-anchored
+	// The band's three chips, all drawn here (and nowhere else) so none of them can
+	// ever intrude on an AO2 design canvas or on the emote grid, which is what the
+	// old in-content banner did on both layouts. The Iniswap button is left-anchored
 	// after the titles (iniswapchip.go); #27's missing-asset chip is right-aligned
-	// and measures its clearance against whatever the left half ended up using.
+	// and measures its clearance against whatever the left half ended up using; the
+	// theme-sidecar refusal chip (themeerrchip.go) is right-anchored OUTSIDE that
+	// one, which is what the missing-asset chip's own anchor is measured against.
 	a.drawIniswapChip(w)
 	a.drawAssetMissChip(w)
+	a.drawThemeErrChip(w)
 	if a.menuBar.open < 0 {
 		return
 	}

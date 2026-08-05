@@ -442,7 +442,13 @@ type Element struct {
 	Opacity uint8
 
 	// --- text --------------------------------------------------------------
-	Text  string // <= TextRuneCap runes
+	Text string // <= TextRuneCap runes
+	// Font / Size are CARRIED, NOT DRAWN in format 1: read, bounds-checked and
+	// written back unchanged, but no format-1 renderer resolves them (see
+	// internal/ui paintElementText for the measurement and docs/THEME-FORMAT.md §3
+	// for the same sentence in the format's own words). They live here rather than
+	// in the preserved-unknown bag because they ARE format-1 keys with a defined
+	// grammar — a later format starts honouring them with no upgrade path.
 	Font  string // a FontElements id (inherit that element's face) or a [fonts] family
 	Size  int    // points; 0 = inherit
 	Color RGBA

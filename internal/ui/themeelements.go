@@ -105,10 +105,10 @@ type bakedElement struct {
 	condAxis theme.ConditionAxis
 	opacity  uint8
 	ang      uint8 // 360/256 angle byte — the ThemeRectRotations convention
-	// fontIdx is the resolved face index for ElemText. W4 (font intake) fills it;
-	// W3 draws every element string in the client chrome face and leaves it at
-	// elemFontChrome — see paintElementText for why a per-element point size cannot
-	// ride the existing per-element font sets.
+	// fontIdx is the resolved face index for ElemText. Format 1 leaves it at
+	// elemFontChrome and draws every element string in the client chrome face — see
+	// paintElementText for the measurement, and the bake for the ruling. The field
+	// is carried so a later format can fill it without moving anything.
 	fontIdx uint8
 	clock   uint8
 	// grad is the gradient axis as a 360/256 angle byte (0 = left-to-right,
@@ -142,10 +142,10 @@ type elemBandRange struct{ lo, hi int16 }
 // without a nil check: TestEveryElementKindHasAPainter is what keeps that true, and
 // paintElementStub is what a kind whose painter has not landed yet points at.
 var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
-	theme.ElemImage:    paintElementStub,     // W4 — theme://m/<themeid>/<id> media
+	theme.ElemImage:    paintElementArt,      // W4 — theme://m/<themeid>/<id> media
 	theme.ElemShape:    paintElementShape,    // W3 — the banded silhouette family
 	theme.ElemGradient: paintElementGradient, // W3 — two-stop linear/radial plate
-	theme.ElemGen:      paintElementStub,     // W4 — generator tiles (gentex.go)
+	theme.ElemGen:      paintElementArt,      // W4 — generator tiles (gentex.go)
 	theme.ElemText:     paintElementText,     // W3 — a baked, pre-truncated string
 	theme.ElemPane:     paintElementPane,     // W3 — the split-screen plate + divider
 }
@@ -233,10 +233,49 @@ func (a *App) elementVisible(e *bakedElement) bool {
 	return true
 }
 
+// elemCondSource is the live value of every condition axis for ONE pass, gathered
+// before any of it is interned.
+//
+// It exists because there are TWO passes with different truths. The live courtroom
+// reads the session; the GIF/video export (gifexport.go) drives its own
+// courtroom.Room off a recording and must resolve `side` / `shout` / `speaking`
+// against THAT room — an exported frame whose objection glow lit up because the
+// live stage happened to be mid-shout would be showing the viewer a thing that
+// never happened.
+//
+// A plain value struct, four string headers and a bool: it is an argument, it does
+// not escape, and it allocates nothing (the two AllocsPerRun gates over
+// drawElementBands' callers cover it).
+type elemCondSource struct {
+	speaking bool
+	// pos / char are CLIENT-state axes — the local player's own pos dropdown and
+	// character folder. Neither has a recorded counterpart, so both passes read the
+	// same live values.
+	pos, char string
+	// side / shout are STAGE axes: whichever room this pass is drawing.
+	side, shout string
+}
+
+// liveCondSource is the source for the live courtroom pass.
+func (a *App) liveCondSource() elemCondSource {
+	return elemCondSource{
+		speaking: a.room != nil && a.room.Phase() != courtroom.PhaseIdle,
+		pos:      a.mySide(),
+		char:     a.myCharName(),
+		side:     a.stageSide(),
+		shout:    a.stageShout(),
+	}
+}
+
 // refreshElementConditions resolves the LIVE value of every condition axis to its
 // interned index, once per themed frame, before the first band paints.
+func (a *App) refreshElementConditions(lay *themeLayoutCache) {
+	a.refreshElementConditionsFrom(lay, a.liveCondSource())
+}
+
+// refreshElementConditionsFrom is the shared body: intern one pass's axis values.
 //
-// ONCE PER FRAME, NOT PER ELEMENT, and memoised on the live string: the scan below
+// ONCE PER PASS, NOT PER ELEMENT, and memoised on the live string: the scan below
 // only re-runs when the session actually changed pos / character / side / shout, so
 // a settled frame costs one string compare per axis and nothing else. That is what
 // lets the per-element gate be an integer compare (elementVisible) — the design's
@@ -244,12 +283,12 @@ func (a *App) elementVisible(e *bakedElement) bool {
 //
 // Zero allocations: every source is a field read or a switch over constants, and
 // the scan walks strings already resident in the layout cache.
-func (a *App) refreshElementConditions(lay *themeLayoutCache) {
+func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSource) {
 	if lay == nil {
 		return
 	}
 	// Speaking is a flag, not a value: nothing to intern, nothing to memoise.
-	a.condSpeaking = a.room != nil && a.room.Phase() != courtroom.PhaseIdle
+	a.condSpeaking = src.speaking
 	if lay.condN == 0 {
 		return // no valued condition anywhere in this theme — skip the whole pass
 	}
@@ -262,10 +301,10 @@ func (a *App) refreshElementConditions(lay *themeLayoutCache) {
 			a.condLive[i] = condAlwaysVisible
 		}
 	}
-	a.resolveConditionAxis(lay, theme.CondPos, a.mySide())
-	a.resolveConditionAxis(lay, theme.CondChar, a.myCharName())
-	a.resolveConditionAxis(lay, theme.CondSide, a.stageSide())
-	a.resolveConditionAxis(lay, theme.CondShout, a.stageShout())
+	a.resolveConditionAxis(lay, theme.CondPos, src.pos)
+	a.resolveConditionAxis(lay, theme.CondChar, src.char)
+	a.resolveConditionAxis(lay, theme.CondSide, src.side)
+	a.resolveConditionAxis(lay, theme.CondShout, src.shout)
 }
 
 // condSrcUnresolved is the memo's "never resolved" marker. It cannot collide with a
@@ -643,15 +682,35 @@ const elemFontChrome = uint8(255)
 
 // paintElementText draws a baked, already-truncated string.
 //
-// W3 DRAWS EVERY ELEMENT STRING IN THE CLIENT CHROME FACE, and `font`/`size` are
-// W4's (the wave that owns font intake). That is a bounded deferral with a measured
-// reason: every other face in this client lives in a fontSet that holds exactly ONE
-// point size (ui.go buildSet), so an element asking a panel's set for a different
-// size would rebuild that set — and purge the text cache with it — on every frame
-// the panel and the element were both on screen. That is the divergent-zoom defect
-// TestDrawCourtroomThemedDivergentZoomZeroAlloc exists to catch, and it is not worth
-// re-opening for a watermark. The chrome face has no such set: one face, one scale,
-// memoised width, nothing to thrash.
+// FORMAT 1 DRAWS EVERY ELEMENT STRING IN THE CLIENT CHROME FACE. An element's own
+// `font`/`size` are parsed, bounds-checked and preserved on save, and they are not
+// read by this painter. W3 deferred them to W4 as "the wave that owns font intake";
+// W4 shipped the intake the design actually names — `[fonts]`/`[fontbind]`, the
+// theme-carries-its-own-file binding (themefonts.go applySidecarFonts) — and ruled
+// the per-element pair out on the measurement below. Both halves are stated in
+// docs/THEME-FORMAT.md §3 so an author is never guessing.
+//
+// THE COST. Every other face in this client lives in a fontSet that holds exactly
+// ONE point size (ui.go buildSet), so an element asking a panel's set for a
+// different size rebuilds that set — and purges the text cache with it — on every
+// frame the panel and the element are both on screen. That is precisely the
+// divergent-zoom defect TestDrawCourtroomThemedDivergentZoomZeroAlloc exists to
+// catch, and the shipped themes reach for it constantly: `font = music_name` beside
+// a music plate that is drawing at the user's own Ctrl+wheel zoom is a rebuild per
+// frame, forever. Giving elements their own pool instead costs a slot out of
+// themeFaceCap (4 for a whole theme) and a second face lifetime to keep straight —
+// the two threats §6.6 R3 names by name for the sibling escalation.
+//
+// THE PRIZE, measured rather than assumed: all fourteen shipped native themes write
+// `font =`, and not one of them ships a face FILE (their own headers say "CLASSES
+// AND METRICS, never files"). A family that names no file resolves to the client's
+// chain either way, so honouring `font` would change nothing visible on any theme
+// that exists — only `size` would, and `size` is the half that costs the fontSet.
+// A pool built for that trade is machinery bought with the frame gate's budget for
+// no shipped pixel.
+//
+// The chrome face has no such set: one face, one scale, memoised width, nothing to
+// thrash.
 func paintElementText(a *App, e *bakedElement) {
 	if e.label == "" || e.r.W <= 0 || e.r.H <= 0 || e.col.A == 0 {
 		return
@@ -679,6 +738,201 @@ func paintElementText(a *App, e *bakedElement) {
 		y += (e.r.H - lh) / 2
 	}
 	c.LabelClippedFont(f, x, y, e.r.W, e.label, e.col)
+}
+
+// elemTileCap bounds how many blits ONE tiled element may issue in a frame.
+//
+// `fit = tile` repeats a source at its NATIVE size, so a 4x4 generator tile stretched
+// across a 1512x648 canvas is 61 236 draw calls — a number that is a function of the
+// window rather than of the theme, which is exactly the shape hard rule 4 forbids.
+// Past the cap the element falls back to a single stretched blit: it still shows, it
+// just stops being a repeat. 4096 is more repeats than any pattern reads as at any
+// realistic window size, and it is a fixed ceiling on the whole element band.
+const elemTileCap = 4096
+
+// paintElementArt draws an ElemImage's media page or an ElemGen's generator tile —
+// ONE painter for both kinds, because after the bake they are the same thing: a
+// resolved *render.TexturePage plus a fit mode, a tint and a rotation. The only
+// difference is where the page came from, and that question was settled at bake.
+//
+// ZERO ALLOCATIONS, like every other painter here. Every *sdl.Rect handed across cgo
+// is one of the two persistent scratch fields (the ui.go cgoRect contract) — passing
+// &local would heap-allocate on every blit, which at 96 elements is the classic
+// themed-frame leak the whole-screen gate exists to catch.
+func paintElementArt(a *App, e *bakedElement) {
+	if e.page == nil || e.r.W <= 0 || e.r.H <= 0 || len(e.page.Frames) == 0 {
+		return
+	}
+	tex := a.themeFrame(e.page)
+	if tex == nil {
+		return
+	}
+	c := a.ctx
+	// The tint multiplies into the art, and the element's opacity was already folded
+	// into its alpha at bake (fadeColor). Both are restored afterwards, because the
+	// page is SHARED — two elements tinting one generator tile must not see each
+	// other's colour, and the theme's chrome draws from the same store.
+	//
+	// RESTORED INLINE, NOT WITH defer. A deferred closure capturing `tex` is a heap
+	// allocation on every call, which at theme.ElementCap elements a frame is exactly
+	// the class of leak the two AllocsPerRun gates exist to catch — and it would have
+	// been invisible in every fixture whose elements have no page.
+	_ = tex.SetColorMod(e.tint.R, e.tint.G, e.tint.B)
+	_ = tex.SetAlphaMod(e.tint.A)
+	switch e.fit {
+	case theme.FitTile:
+		paintElementTiled(c, e, tex)
+	case theme.FitNine:
+		paintElementNineSlice(c, e, tex)
+	case theme.FitContain, theme.FitCover:
+		paintElementFitted(c, e, tex)
+	default:
+		// FitStretch, and the fall-through for a fit this build does not know: fill
+		// the rect, ignoring aspect. Format rule 3 — an unknown enum degrades to the
+		// nearest safe primitive and the element still draws.
+		paintElementBlit(c, e, tex, e.r)
+	}
+	_ = tex.SetColorMod(255, 255, 255)
+	_ = tex.SetAlphaMod(255)
+}
+
+// paintElementBlit is the one place a rotation is applied, so `rot` cannot be
+// honoured by some fit modes and silently dropped by others.
+func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
+	c.cgoRect = dst
+	if e.ang == 0 {
+		_ = c.Ren.Copy(tex, nil, &c.cgoRect)
+		return
+	}
+	// The 360/256 angle byte, in the ThemeRectRotations convention CopyEx already
+	// proves out for AO2 widget rects.
+	_ = c.Ren.CopyEx(tex, nil, &c.cgoRect, float64(e.ang)*360/float64(theme.AngleCount), nil, sdl.FLIP_NONE)
+}
+
+// paintElementTiled repeats the source at its NATIVE size across the element,
+// clipped to the element's own rect so a partial tile at the edge is cropped rather
+// than overhanging.
+func paintElementTiled(c *Ctx, e *bakedElement, tex *sdl.Texture) {
+	tw, th := e.page.W, e.page.H
+	if tw <= 0 || th <= 0 {
+		return
+	}
+	cols := (e.r.W + tw - 1) / tw
+	rows := (e.r.H + th - 1) / th
+	if cols*rows > elemTileCap {
+		// A repeat count that is a function of the WINDOW rather than of the theme.
+		// One stretched blit instead: the element still shows, and the alternative is
+		// a frame whose draw-call count nobody bounded.
+		paintElementBlit(c, e, tex, e.r)
+		return
+	}
+	prev, had := c.pushClip(e.r)
+	for row := int32(0); row < rows; row++ {
+		for col := int32(0); col < cols; col++ {
+			c.cgoRect = sdl.Rect{X: e.r.X + col*tw, Y: e.r.Y + row*th, W: tw, H: th}
+			_ = c.Ren.Copy(tex, nil, &c.cgoRect)
+		}
+	}
+	c.popClip(prev, had)
+}
+
+// paintElementFitted is `contain` (scale to fit, letterboxed) and `cover` (scale to
+// fill, cropped). Both preserve the source's aspect; they differ only in which of
+// the two scales wins, so they share one body and one rounding rule.
+func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
+	sw, sh := e.page.W, e.page.H
+	if sw <= 0 || sh <= 0 {
+		return
+	}
+	// Integer arithmetic throughout: a float scale that wobbled by a rounding step
+	// between two frames of an unchanged window would shimmer, which is the defect
+	// the device-exact field draw exists to prevent one tier up.
+	byW := e.r.W * sh
+	byH := e.r.H * sw
+	fitW, fitH := e.r.W, e.r.W*sh/sw
+	if (e.fit == theme.FitContain) == (byW > byH) {
+		fitW, fitH = e.r.H*sw/sh, e.r.H
+	}
+	dst := sdl.Rect{
+		X: e.r.X + (e.r.W-fitW)/2,
+		Y: e.r.Y + (e.r.H-fitH)/2,
+		W: fitW,
+		H: fitH,
+	}
+	if e.fit == theme.FitCover {
+		// Cover overflows the rect by construction, so it is clipped to it — that is
+		// the whole difference between "cropped" and "spilling over the neighbours".
+		prev, had := c.pushClip(e.r)
+		paintElementBlit(c, e, tex, dst)
+		c.popClip(prev, had)
+		return
+	}
+	paintElementBlit(c, e, tex, dst)
+}
+
+// paintElementNineSlice draws the source as a 9-slice: corners at SOURCE size, edges
+// keeping their source thickness and stretching only along the edge axis, centre
+// stretched both ways.
+//
+// INSETS ARE (LEFT, TOP, RIGHT, BOTTOM) — design §6.6 R9, ratified from the six
+// preset fragments that independently assumed it. The edge rule is the other half of
+// that ruling (escalation N3): eleven of one preset's elements are hairlines that
+// depend on an edge region keeping its source height, and a 9-slice that stretched
+// edges on both axes would turn every one of them into a smear.
+//
+// Nine blits, two persistent scratch rects, no allocation. The rects are set and
+// consumed one at a time, which is what makes ONE src scratch and ONE dst scratch
+// enough for all nine.
+func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
+	sw, sh := e.page.W, e.page.H
+	if sw <= 0 || sh <= 0 {
+		return
+	}
+	l, t, r, b := e.slice[0], e.slice[1], e.slice[2], e.slice[3]
+	// Insets that overlap collapse the middle to nothing; clamp them so a hostile or
+	// simply careless theme gets a plausible frame rather than negative geometry.
+	if l+r >= sw {
+		l, r = sw/2, sw-sw/2-1
+	}
+	if t+b >= sh {
+		t, b = sh/2, sh-sh/2-1
+	}
+	if l < 0 || t < 0 || r < 0 || b < 0 {
+		paintElementBlit(c, e, tex, e.r)
+		return
+	}
+	// The destination edge bands keep the SOURCE thickness, so the frame reads the
+	// same at any element size — unless the element is smaller than its own frame, in
+	// which case the bands are scaled down together to keep the centre non-negative.
+	dl, dt, dr, db := l, t, r, b
+	if dl+dr > e.r.W && dl+dr > 0 {
+		dl, dr = dl*e.r.W/(dl+dr), e.r.W-dl*e.r.W/(dl+dr)
+	}
+	if dt+db > e.r.H && dt+db > 0 {
+		dt, db = dt*e.r.H/(dt+db), e.r.H-dt*e.r.H/(dt+db)
+	}
+	// The nine regions, as (source, destination) pairs walked in one pass.
+	sx := [3]int32{0, l, sw - r}
+	sWs := [3]int32{l, sw - l - r, r}
+	sy := [3]int32{0, t, sh - b}
+	sHs := [3]int32{t, sh - t - b, b}
+	dx := [3]int32{e.r.X, e.r.X + dl, e.r.X + e.r.W - dr}
+	dWs := [3]int32{dl, e.r.W - dl - dr, dr}
+	dy := [3]int32{e.r.Y, e.r.Y + dt, e.r.Y + e.r.H - db}
+	dHs := [3]int32{dt, e.r.H - dt - db, db}
+	for row := 0; row < 3; row++ {
+		if sHs[row] <= 0 || dHs[row] <= 0 {
+			continue
+		}
+		for col := 0; col < 3; col++ {
+			if sWs[col] <= 0 || dWs[col] <= 0 {
+				continue
+			}
+			c.cgoSrc = sdl.Rect{X: sx[col], Y: sy[row], W: sWs[col], H: sHs[row]}
+			c.cgoRect = sdl.Rect{X: dx[col], Y: dy[row], W: dWs[col], H: dHs[row]}
+			_ = c.Ren.Copy(tex, &c.cgoSrc, &c.cgoRect)
+		}
+	}
 }
 
 // paintElementPane draws a split-screen region's PLATE and its divider frame.

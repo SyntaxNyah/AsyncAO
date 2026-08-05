@@ -879,6 +879,33 @@ type App struct {
 	condGen  uint64
 	// condSpeaking is the one VALUE-LESS condition axis: a message is on the stage.
 	condSpeaking bool
+	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
+	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
+	// hover text. Both are built on the apply goroutine because both format; "" is a
+	// theme whose extension tier loaded (or which has none at all), which is almost
+	// every theme.
+	//
+	// They exist because theme.Theme.SidecarErr had no consumer and a refused sidecar
+	// is INVISIBLE: the theme applies, its AO2 half renders, and every element,
+	// override, palette role and pane in the file is silently gone.
+	themeSidecarErr string
+	themeSidecarTip string
+	// themeSidecarErrAck is the chip's acknowledgement. Re-armed (cleared) by every
+	// apply that still refuses, so dismissing it can never lose the state — and never
+	// cleared on a timer, because the condition does not expire on its own.
+	themeSidecarErrAck bool
+	// --- theme media (v1.90.0 W4; thememedia.go) --------------------------------
+	//
+	// themeMediaKeys is the set of theme:// media and generator keys THIS client
+	// uploaded — the declared set the swap prune reconciles against. It is a UI-side
+	// mirror rather than a store query for the same reason themeTex is: the prune
+	// needs to know what the OUTGOING theme declared, and the store only knows what
+	// is resident.
+	themeMediaKeys map[string]bool
+	// themeMediaPlan is the applied theme's plan, kept so the inspector, the budget
+	// bar and the F8 line can all quote the numbers the PLANNER used rather than
+	// re-deriving them from the store (which cannot say why something is absent).
+	themeMediaPlan themeMediaPlan
 	// Char select's SEPARATE design geometry and canvas cache (#20,
 	// charselectlayout.go). Deliberately not folded into themeRects/themeLay: those
 	// twelve keys live in a different design space (char_select, commonly 714×668,
@@ -2631,6 +2658,26 @@ type themeApply struct {
 	// 2 — it walks maps and allocates strings). nil for a stock AO2 theme, which is
 	// most of them; the render side is nil-safe throughout.
 	sidecar *theme.Sidecar
+	// sidecarErr / sidecarTip are a REFUSED sidecar, rendered here into the two
+	// strings the chip needs (themeerrchip.go). Both empty in the ordinary case.
+	//
+	// The distinction the pair carries is "the file exists and could not be read",
+	// which is emphatically not "there is no file": a theme with no sidecar is a
+	// stock AO2 theme and reports nothing. Rendered on this goroutine because both
+	// format, and because the error's own text is the only place the failing section
+	// and its numbers exist.
+	sidecarErr string
+	sidecarTip string
+	// mediaPlan is the theme's declared art, PLANNED against the media budget before
+	// a byte was read (thememedia.go). media holds what the plan admitted, decoded
+	// and rasterised, keyed by the final theme:// key — so the render thread's job is
+	// an upload loop and nothing else.
+	mediaPlan themeMediaPlan
+	media     map[string]*assets.Decoded
+	// themeID is the folder name sanitized into the cache-key namespace. Resolved on
+	// this goroutine because the folder is what identity IS (docs/THEME-FORMAT.md §1)
+	// and the render thread must not re-derive it differently.
+	themeID string
 	// shownameAlign is courtroom_design.ini's `showname_align` — not a rect, so it
 	// cannot ride `layout`. Parsed here, off the render thread, because
 	// parseShownameAlign lowercases the raw value (hard rule 2).
@@ -3082,6 +3129,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		tabDragFrom:         -1,
 		macroBind:           -1,
 		themeTex:            map[string]bool{},
+		themeMediaKeys:      map[string]bool{},
 		themePages:          map[string]*render.TexturePage{},
 		hidden:              map[string]bool{},
 	}
@@ -8401,9 +8449,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.musicMenuFence(a.ctx)   // music panel ⋮ menu: same discipline (musicheader.go)
 	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
-	// #27 missing-asset chip: claimed just BEFORE the bar publishes its strip
-	// fence, because that fence covers the chip's own rect (it shares the band) and
-	// would blank hovering() for it. Same pre-screen discipline as the update chip.
+	// The band's two right-anchored chips: claimed just BEFORE the bar publishes its
+	// strip fence, because that fence covers their rects (they share the band) and
+	// would blank hovering() for them. Same pre-screen discipline as the update chip.
+	//
+	// OUTERMOST FIRST. The theme-sidecar refusal chip is right-anchored at the window
+	// edge and the missing-asset chip is anchored to ITS left edge, so claiming them
+	// in this order is claiming them right-to-left, which is the order their rects
+	// resolve in (themeerrchip.go).
+	a.handleThemeErrChipInput(winW)
 	a.handleAssetMissChipInput(winW)
 
 	// App-wide menu bar (#14, menubar.go), phase 1: publish its overlay fences and
@@ -8750,6 +8804,10 @@ func (a *App) applyThemeAsync() uint64 {
 	// off-thread while the debounced saver marshals under its own lock is exactly
 	// the interleaving -race exists to catch. The map returned is already a copy.
 	panelFonts := a.d.Prefs.PanelFonts()
+	// The T1 budget, read HERE with every other preference this apply needs: the
+	// theme-media allowance is a function of it (render.ThemeMediaByteCap) and the
+	// goroutine below must not take the preferences lock.
+	texBudgetMiB := a.d.Prefs.TexBudgetMiB()
 	gen := a.themeGen.Add(1)
 	go func() {
 		res := themeApply{
@@ -8785,6 +8843,21 @@ func (a *App) applyThemeAsync() uint64 {
 			// the default theme), so this is a pointer copy on the goroutine that
 			// owns the load.
 			res.sidecar = t.Sidecar()
+			// A sidecar that EXISTS and could not be parsed. theme.Load swallows it by
+			// design (format rule 1 — reading never refuses), so this is the only place
+			// the fact can be picked up at all, and until W4 nothing picked it up: the
+			// theme applied with its whole AsyncAO tier missing and no surface said so.
+			if err := t.SidecarErr(); err != nil {
+				res.sidecarErr = themeSidecarRefusalLine(name, t.SidecarDir(), err)
+				res.sidecarTip = themeSidecarRefusalTip(name, err)
+			}
+			// The theme's own art (W4): PLANNED against the media budget first, then
+			// loaded — so nothing a stranger declared is decoded before it is known to
+			// fit, and an entry that does not fit becomes a self-describing placeholder
+			// instead of a silent absence (design §Q2).
+			res.themeID = themeSanitizeID(name)
+			res.mediaPlan = planThemeMedia(res.sidecar, res.themeID, t.SidecarDir(), texBudgetMiB)
+			res.loadThemeMediaSet(anims)
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()
 			res.fontPath = t.FontFile() // the theme's own bundled font, if any (#6)
@@ -8792,6 +8865,11 @@ func (a *App) applyThemeAsync() uint64 {
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
 			res.buildThemeFontTable(t, systemFontDirs())
+			// W4 font intake: the AsyncAO tier's [fonts]/[fontbind] bind an element to a
+			// FILE INSIDE THE THEME, which is what lets a native theme carry its own
+			// type instead of naming a family and hoping. After the AO2 table, because
+			// it overrides it; before applyPanelFonts, because the USER still wins.
+			res.applySidecarFonts(res.sidecar, t.SidecarDir())
 			res.msgCol, res.hasMsg = declaredFontInk(t.Font("message"))
 			res.nameCol, res.hasName = declaredFontInk(t.Font("showname"))
 			// loadOne decodes ONE already-located file into the stem's slot. Split out
@@ -9076,6 +9154,27 @@ func (a *App) pollThemeApply() {
 	// else happened to invalidate again. nil (a stock AO2 theme) clears the previous
 	// theme's elements, which is the whole of the theme-swap prune for this tier.
 	a.themeSidecar = res.sidecar
+	// The theme's own art (W4), landed BEFORE the canvases are invalidated for the
+	// same reason the sidecar is: the next themeLayoutIn rebuild is what bakes the
+	// elements, and an element resolving its page against a key that has not landed
+	// yet would bake a nil and paint nothing until something else invalidated.
+	a.landThemeMedia(res)
+	// The refusal surface lands with it, and the acknowledgement is keyed on the
+	// REASON rather than re-armed unconditionally.
+	//
+	// Unconditional re-arming was the obvious spelling and it is wrong: applies are
+	// not user-initiated events. healTheme re-kicks one on any T1 eviction of a theme
+	// texture (paced, but ongoing), the texture-filter change kicks one, and boot
+	// kicks two — so a chip re-armed per apply would come back minutes after the user
+	// dismissed it, for a fact they had already read. Keyed on the string, a dismissal
+	// silences exactly the refusal it acknowledged: a DIFFERENT failure re-arms
+	// (fixing one cap and tripping another is new information), and a successful load
+	// clears the fields outright, which is what makes fixing the file visibly fix the
+	// chip. The debug log gets the line on every apply regardless.
+	if a.themeSidecarErr != res.sidecarErr {
+		a.themeSidecarErrAck = false
+	}
+	a.themeSidecarErr, a.themeSidecarTip = res.sidecarErr, res.sidecarTip
 	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
 	a.themeAt = time.Now() // restart the theme-art animation clock
@@ -9122,6 +9221,14 @@ func (a *App) pollThemeApply() {
 	a.pushDebug(line)
 	if res.inkGuard != "" {
 		a.pushDebug(res.inkGuard)
+	}
+	// A refused sidecar goes to the debug log on EVERY apply (pushDebug's ×N collapse
+	// keeps a re-kicked heal from flooding it) and takes over the Settings status
+	// line, which is the surface the user is looking at when they pick a theme. The
+	// chip is the third surface and the only one that survives leaving that screen.
+	if res.sidecarErr != "" {
+		a.pushDebug(res.sidecarErr)
+		settings.statusLine = clampLine(res.sidecarErr)
 	}
 	// #21: name the rects this theme declares that no widget reads. Debug log
 	// only — it is a theme-author diagnostic, not something a player needs on

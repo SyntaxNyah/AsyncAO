@@ -162,7 +162,9 @@ type Theme struct {
 	// thing to every theme that simply has no sidecar, which is most of them.
 	// AO2's own per-key merge is copied for the three design INIs because AO2 does
 	// it; nothing about the extension tier obliges us to repeat it.
-	// Pinned by ui.TestElementsDoNotInheritFromDefault.
+	// Pinned by TestElementsDoNotInheritFromDefault, in THIS package
+	// (sidecarload_test.go) — the loader is what the gate exercises, so it never
+	// needed internal/ui at all.
 	sidecar    *Sidecar
 	sidecarDir string
 	// sidecarErr is a sidecar that FAILED to parse (a cap refusal, or a file that

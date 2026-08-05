@@ -29,6 +29,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -348,6 +349,87 @@ func (res *themeApply) buildThemeFontTable(t *theme.Theme, sysDirs []string) {
 			slot.color, slot.colorSet = declaredFontInk(spec)
 		}
 	}
+}
+
+// themeSidecarFontDir is where a native theme's own font files live, relative to
+// the theme folder. It is AO2's own convention (a theme's fonts/ folder), reused
+// rather than invented so a theme that already ships a face for its AO2 tier does
+// not have to ship it twice.
+const themeSidecarFontDir = "fonts"
+
+// applySidecarFonts binds the AsyncAO tier's [fontbind] rows onto the per-element
+// font table (v1.90.0 W4 — the font-intake half).
+//
+// WHAT IT ADDS OVER courtroom_fonts.ini. AO2's own table names a FAMILY per element
+// and leaves finding it to Qt's system font database — which is why themes shared
+// on their own arrive with every family named and no file to be found (the
+// themeFontWarn case). The sidecar closes that: `[fonts]` maps a family to a FILE
+// INSIDE THE THEME, and `[fontbind]` maps an element id to that family. A native
+// theme therefore carries its own type, and it renders identically on a machine
+// that has never heard of the family.
+//
+// IT RUNS AFTER buildThemeFontTable AND OVERRIDES IT, which is the right precedence
+// for the same reason the whole sidecar is the extension tier: the AsyncAO file is
+// the one the author edited most recently and the only one that can point at a file
+// rather than at a hope. The USER's own per-panel picks still outrank both — that
+// ladder lives in landThemeFonts and is unchanged.
+//
+// Theme-apply goroutine only: it stats and reads files.
+func (res *themeApply) applySidecarFonts(sc *theme.Sidecar, sidecarDir string) {
+	if sc == nil || sidecarDir == "" || len(sc.FontBind) == 0 {
+		return
+	}
+	for i, id := range theme.FontElements {
+		fam, bound := sc.BoundFamily(id)
+		if !bound || strings.TrimSpace(fam) == "" {
+			continue
+		}
+		file, declared := sc.FontFamilyFile(fam)
+		if !declared || strings.TrimSpace(file) == "" {
+			// Bound to a family the theme's own [fonts] never declares. Reported, not
+			// guessed: falling back to a system search would make the theme render one
+			// way on the author's machine and another everywhere else, which is exactly
+			// the failure the sidecar's file-based binding exists to end.
+			res.noteMissingFamily(fam)
+			continue
+		}
+		path, ok := themeSidecarFontPath(sidecarDir, file)
+		if !ok {
+			res.noteMissingFamily(fam)
+			continue
+		}
+		if face := res.internFace(path); face != 0 {
+			res.fontTable.e[i].face = face
+			continue
+		}
+		// internFace refuses an unreadable file, an oversized one, or one past
+		// themeFaceCap. The element keeps whatever the AO2 tier gave it — the author
+		// asked to CHANGE the face, not to lose one — and the family is named so the
+		// reason is visible where it was typed.
+		res.noteMissingFamily(fam)
+	}
+}
+
+// themeSidecarFontPath resolves a [fonts] file inside the theme folder, refusing
+// anything that escapes it (internal/safepath is THE copy of those guards, and a
+// theme is exactly the untrusted-archive shape they exist for).
+//
+// Two rungs, in order: <theme>/fonts/<file>, then <theme>/<file>. The first is the
+// convention; the second is what a hand-authored theme that dropped the .ttf beside
+// its INI actually looks like, and refusing that would be pedantry with a support
+// burden attached.
+func themeSidecarFontPath(dir, file string) (string, bool) {
+	rel := filepath.FromSlash(strings.TrimSpace(file))
+	for _, cand := range [2]string{filepath.Join(themeSidecarFontDir, rel), rel} {
+		full, err := safepath.Join(dir, cand)
+		if err != nil {
+			continue
+		}
+		if info, err := os.Stat(full); err == nil && !info.IsDir() && info.Size() <= fontFileMaxBytes {
+			return full, true
+		}
+	}
+	return "", false
 }
 
 // applyPanelFonts overlays the USER's per-panel font and size on top of whatever

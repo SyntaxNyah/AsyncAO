@@ -201,12 +201,26 @@ func parseCSSColor(v string) (RGB, bool) {
 	return RGB{}, false
 }
 
+// hexNibble decodes one hex digit, in EITHER case.
+//
+// The uppercase arm is not cosmetic. parseCSSColor lowercases its whole input
+// before it gets here, so within the stylesheet it can never fire — but
+// parseRGBAValue (sidecar_read.go) calls hexNibble DIRECTLY on the author's own
+// text, and without this arm every `#1C1C1C` in an asyncao_theme.ini was refused
+// while `#101010` beside it parsed. That is exactly the silent class the sidecar's
+// rule 3 exists to avoid: the value degraded to "the stylesheet's own colour is
+// kept", the note went to an import report nothing displayed, and four of
+// themes/thh_trial's five [palette] roles simply did not apply. Upper-case hex is
+// the spelling humans write and the spelling every one of the 14 shipped themes
+// writes. Pinned by TestSidecarColoursAcceptEitherHexCase.
 func hexNibble(c byte) (uint8, bool) {
 	switch {
 	case c >= '0' && c <= '9':
 		return c - '0', true
 	case c >= 'a' && c <= 'f':
 		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
 	}
 	return 0, false
 }

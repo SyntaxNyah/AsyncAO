@@ -8,6 +8,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // Debug panel (Extras → Debug): the comprehensive, interactive diagnostics view
@@ -274,6 +275,18 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	if a.d.Store != nil {
 		hs := a.d.Store.HeldStats()
 		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Held-frame bridge: %d steals · %d releases · %d held now", hs.Steals, hs.Releases, hs.Current), ColTextDim)
+		y += 19
+		// Theme media (W4): the user-art allowance, spent and remaining, plus how many
+		// elements the planner turned into placeholders. It sits beside the held-frame
+		// counters because it answers the same class of question — "is the pinned tier
+		// doing what it claims" — and because the whole budget is invisible otherwise:
+		// pinned pages are eviction-exempt, so an accounting bug shows up as a client
+		// that is quietly heavier after every theme, with nothing on screen to blame.
+		col := ColTextDim
+		if themeArtOverWarnPct(a.d.Store.ThemeMediaBytes(), render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())) {
+			col = ColTierYellow
+		}
+		c.LabelClipped(r.X, y, r.W, a.themeMediaDebugLine(), col)
 	}
 }
 

@@ -149,7 +149,11 @@ func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 	}
 	cw := a.ctx.TextWidth(a.assetMissChipLabel()) + 2*assetMissChipPadX
 	r := sdl.Rect{
-		X: w - cw - assetMissChipMarginX,
+		// Anchored to menuBarRightContentLeft, not to `w`: the theme-sidecar refusal
+		// chip (themeerrchip.go) is right-anchored OUTSIDE this one, and two chips
+		// both measured from the window edge would draw on top of each other. With no
+		// theme error on screen that helper returns `w` and this is unchanged.
+		X: a.menuBarRightContentLeft(w) - cw - assetMissChipMarginX,
 		Y: assetMissChipInsetY,
 		W: cw,
 		H: menuBarH - menuBarHairlineH - 2*assetMissChipInsetY,

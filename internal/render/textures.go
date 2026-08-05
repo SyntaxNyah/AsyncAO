@@ -176,8 +176,19 @@ type TextureStore struct {
 	// their recency, making it constant).
 	pinned      map[string]*TexturePage
 	pinnedBytes int64
-	destroy     chan *TexturePage
-	generation  atomic.Uint64
+	// themeMediaBytes / themeMediaCount / themeGenCount account for the THEME-MEDIA
+	// subset of `pinned` (thememedia.go): user art and generator tiles. They are a
+	// separate ledger from pinnedBytes because the two answer different questions —
+	// pinnedBytes is "how much eviction-exempt memory is committed", these are "how
+	// much of the USER'S OWN art budget is spent", which is the number the editor's
+	// budget bar shows and the number the admission gate enforces. Chrome the client
+	// pins on the theme's behalf (the chatbox skin, the shout splashes) is not the
+	// user's art and must not count against their allowance.
+	themeMediaBytes int64
+	themeMediaCount int
+	themeGenCount   int
+	destroy         chan *TexturePage
+	generation      atomic.Uint64
 
 	// Held-frame bridge (the black-flash fix): when the LRU must evict the
 	// ON-SCREEN background/desk — a cap-sized incoming sprite page can force it,
@@ -622,7 +633,30 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 // losing the courtroom backdrop to LRU pressure flashed the stage black).
 // Replacing an existing pinned page routes the old one through the
 // destroy queue. Render thread only.
+//
+// IT REFUSES THE TWO THEME-MEDIA SUB-PREFIXES (thememedia.go). Pinned is
+// eviction-exempt and therefore count-uncapped by nature, which is fine for the
+// bounded stem tables the client itself uploads and is not fine at all for art a
+// stranger's theme declares. UploadThemeMedia is the gated door for those, and a
+// second un-gated door beside it would be a budget nobody enforces — so this one is
+// locked rather than documented. Gated by TestUploadPinnedRejectsThemeMediaPrefixes.
 func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
+	if IsThemeMediaKey(base) {
+		d.Release()
+		return fmt.Errorf("render: %q is theme media — use UploadThemeMedia, which is the only gated producer of %s / %s",
+			base, ThemeMediaKeyPrefix, ThemeGenKeyPrefix)
+	}
+	return s.uploadPinnedTracked(base, d, false)
+}
+
+// uploadPinnedTracked is the shared body of UploadPinned and UploadThemeMedia: build
+// the page, replace any predecessor, and keep the theme-media ledger in step.
+//
+// `admitted` says the caller already passed the admission gate. It is a parameter
+// rather than a re-derivation from the key so the two doors cannot both think the
+// other one checked: UploadPinned passes false and has already refused every key
+// this would apply to, UploadThemeMedia passes true and has already measured it.
+func (s *TextureStore) uploadPinnedTracked(base string, d *assets.Decoded, admitted bool) error {
 	defer d.Release()
 	page, err := s.buildPage(d)
 	if err != nil {
@@ -630,10 +664,14 @@ func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 	}
 	if old, ok := s.pinned[base]; ok {
 		s.pinnedBytes -= old.bytes
+		s.noteThemeMediaRemoved(base, old.bytes)
 		s.queueDestroy(old)
 	}
 	s.pinned[base] = page
 	s.pinnedBytes += page.bytes
+	if admitted {
+		s.noteThemeMediaAdded(base, page.bytes)
+	}
 	s.generation.Add(1)
 	return nil
 }
@@ -644,6 +682,11 @@ func (s *TextureStore) Remove(base string) {
 	if page, ok := s.pinned[base]; ok {
 		delete(s.pinned, base)
 		s.pinnedBytes -= page.bytes
+		// The theme-media ledger drains through the SAME path the pinned bytes do —
+		// which is what makes the theme-swap prune (App.pollThemeApply's reconcile
+		// loop, unchanged) return the whole allowance without knowing this tier
+		// exists. A separate removal path would be the leak.
+		s.noteThemeMediaRemoved(base, page.bytes)
 		s.queueDestroy(page)
 		s.generation.Add(1)
 		return
@@ -783,6 +826,10 @@ func (s *TextureStore) Purge() {
 		delete(s.pinned, base)
 	}
 	s.pinnedBytes = 0
+	// The theme-media ledger is a view of the pinned map, so emptying one empties
+	// the other. themePage's generation-keyed negative cache and healTheme's paced
+	// re-kick then bring the theme's art back exactly as they bring its chrome back.
+	s.themeMediaBytes, s.themeMediaCount, s.themeGenCount = 0, 0, 0
 	s.heldKeys = [heldSceneryMax]string{}
 	s.heldNext = 0
 	clear(s.missing) // fresh server = fresh misses; the placeholder page (pinned) was destroyed above and re-uploads via the App's post-purge heal

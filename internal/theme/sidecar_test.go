@@ -1527,6 +1527,54 @@ func TestLoadSidecarTreatsAMissingFileAsAStockTheme(t *testing.T) {
 	}
 }
 
+// TestSidecarColoursAcceptEitherHexCase pins the colour grammar's case-blindness.
+//
+// It exists because it was NOT case-blind and nobody could see the difference.
+// parseRGBAValue hands each digit to hexNibble, which knew '0'-'9' and 'a'-'f' and
+// nothing else, so a sidecar written the way humans write hex — `#1C1C1C` — was
+// refused, degraded to "keep the stylesheet's value", and noted into an import
+// report that had no consumer. `#101010` on the next line parsed, because it
+// happens to be all digits, which is exactly the shape of bug that survives a
+// hand-check of the file.
+//
+// Both the '#rrggbb' and '#rrggbbaa' widths are covered, and a genuinely invalid
+// digit must still fail — a parser that accepted everything would pass the first
+// half of this test and mean nothing.
+func TestSidecarColoursAcceptEitherHexCase(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want RGBA
+	}{
+		{"#1C1C1C", RGBA{0x1C, 0x1C, 0x1C, 255}},
+		{"#1c1c1c", RGBA{0x1C, 0x1C, 0x1C, 255}},
+		{"#E8EAE8", RGBA{0xE8, 0xEA, 0xE8, 255}},
+		{"#eC34e4", RGBA{0xEC, 0x34, 0xE4, 255}}, // mixed, because nothing normalises it
+		{"#101010", RGBA{0x10, 0x10, 0x10, 255}},
+		{"#FF00FF80", RGBA{0xFF, 0x00, 0xFF, 0x80}},
+		{"  #AbCdEf  ", RGBA{0xAB, 0xCD, 0xEF, 255}},
+	} {
+		got, ok := parseRGBAValue(tc.in)
+		if !ok {
+			t.Errorf("parseRGBAValue(%q) refused a legal colour — upper-case hex is the spelling every "+
+				"shipped theme writes, and a refusal here silently drops the author's value", tc.in)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseRGBAValue(%q) = %+v, want %+v", tc.in, got, tc.want)
+		}
+	}
+	// Still a parser: a non-hex digit, a wrong width and an empty value all refuse.
+	for _, bad := range []string{"#GGGGGG", "#12345", "#1234567", "#", "", "not a colour"} {
+		if c, ok := parseRGBAValue(bad); ok {
+			t.Errorf("parseRGBAValue(%q) = %+v, want a refusal", bad, c)
+		}
+	}
+	// The RGB tuple spelling is unaffected by any of this.
+	if c, ok := parseRGBAValue("236, 52, 228"); !ok || c != (RGBA{236, 52, 228, 255}) {
+		t.Errorf("parseRGBAValue on the tuple spelling = %+v/%v", c, ok)
+	}
+}
+
 func containsString(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {

@@ -21,8 +21,10 @@ package ui
 // A vocabulary is only as real as the content written in it. These read the content.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -185,14 +187,6 @@ func TestShippedThemeConditionsCanAllResolve(t *testing.T) {
 					name, el.ID, raw, elemConditionValue(el.VisibleWhen), sortedKeys(live))
 			}
 		}
-		// An axis this build does not know degrades to always-visible and says so in a
-		// note. Ours must not be producing one.
-		for _, note := range sc.Notes() {
-			if strings.Contains(note, "visible_when") {
-				t.Errorf("themes/%s: %s — a theme WE ship must not be writing conditions this build "+
-					"cannot parse", name, note)
-			}
-		}
 	}
 	if shouts == 0 {
 		t.Fatal("no shipped theme gates an element on a shout — the gate is vacuous")
@@ -204,6 +198,236 @@ func TestShippedThemeConditionsCanAllResolve(t *testing.T) {
 	}
 	t.Logf("%d shout conditions across %d shipped themes, %d of them in the design-key spelling",
 		shouts, len(scs), designKeys)
+}
+
+// publishedShapeFence is the line in docs/THEME-FORMAT.md §3 that publishes the
+// silhouette vocabulary, as a pipe-separated list inside a fenced block.
+const publishedShapeHeading = "**`shape` names a silhouette.**"
+
+// TestPublishedShapeVocabularyMatchesTheConstants census-pins the shape names the
+// FORMAT DOCUMENT publishes against elemShapeNames + elemShapeAliases.
+//
+// It is the internal/ui sibling of theme.TestPublishedCapsMatchTheConstants, and it
+// exists for the same reason that one does: docs/THEME-FORMAT.md is the contract a
+// third-party writer implements against, so a name in the code and not the document
+// is undiscoverable, and a name in the document and not the code degrades a
+// conforming file to a flat box with no note (shape is free text — sidecar_read.go
+// never sees it as an enum, so nothing reports the mismatch at runtime).
+//
+// The vocabulary lives in internal/ui rather than internal/theme, which is why the
+// census cannot ride the theme package's own doc gate.
+func TestPublishedShapeVocabularyMatchesTheConstants(t *testing.T) {
+	doc := readFormatDoc(t)
+	head := strings.Index(doc, publishedShapeHeading)
+	if head < 0 {
+		t.Fatalf("docs/THEME-FORMAT.md no longer contains %q — the census is reading nothing; "+
+			"repoint publishedShapeHeading rather than deleting the gate", publishedShapeHeading)
+	}
+	rest := doc[head:]
+	open := strings.Index(rest, "```")
+	if open < 0 {
+		t.Fatal("no fenced block follows the shape heading in docs/THEME-FORMAT.md")
+	}
+	body := rest[open+3:]
+	close := strings.Index(body, "```")
+	if close < 0 {
+		t.Fatal("the shape vocabulary's fenced block is never closed")
+	}
+	published := map[string]bool{}
+	for _, name := range strings.Split(body[:close], "|") {
+		if n := strings.TrimSpace(name); n != "" {
+			published[n] = true
+		}
+	}
+	if len(published) == 0 {
+		t.Fatal("the published shape list parsed empty — the census is vacuous")
+	}
+	// Every canonical name is published, and nothing is published that does not
+	// resolve. Both directions, because each failure mode is silent in its own way.
+	for _, name := range elemShapeNames {
+		if !published[name] {
+			t.Errorf("shape %q resolves in the client but docs/THEME-FORMAT.md does not publish it — "+
+				"a name nobody can discover is a name nobody writes", name)
+		}
+		delete(published, name)
+	}
+	for name := range published {
+		id, ok := elemShapeIDOK(name)
+		if !ok {
+			t.Errorf("docs/THEME-FORMAT.md publishes shape %q and the client does not resolve it — a "+
+				"conforming theme written against the document degrades to %q, silently",
+				name, elemShapeNames[id])
+		}
+	}
+	// The aliases are published as prose, not in the fence — each one has to be
+	// named somewhere in the document or it is an undocumented spelling we can
+	// never remove.
+	for _, al := range elemShapeAliases {
+		if !strings.Contains(doc, "`"+al.name+"`") {
+			t.Errorf("shape alias %q (→ %q) is accepted by the client but appears nowhere in "+
+				"docs/THEME-FORMAT.md — aliases are append-only, so an undocumented one is a "+
+				"permanent obligation nobody wrote down", al.name, elemShapeNames[al.id])
+		}
+		if int(al.id) >= len(elemShapeNames) {
+			t.Errorf("shape alias %q maps to id %d, outside the vocabulary", al.name, al.id)
+		}
+	}
+}
+
+// readFormatDoc loads docs/THEME-FORMAT.md relative to the repository root.
+func readFormatDoc(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(uiRepoRoot(t), "docs", "THEME-FORMAT.md")
+	src, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v — the published format is part of the contract; repoint the path rather "+
+			"than dropping the census", p, err)
+	}
+	return string(src)
+}
+
+// publishedGenParamHeading is the §5 subsection that publishes the generator
+// parameter vocabulary as a slot table.
+const publishedGenParamHeading = "### The parameter vocabulary"
+
+// publishedGenTableHeading is the §5 subsection that publishes the generator names
+// themselves. Deliberately NOT spelled with the count in it — a heading a new
+// generator has to renumber is a heading somebody forgets to renumber.
+const publishedGenTableHeading = "| Name | Serves | Key parameters |"
+
+// docBacktickedWord pulls every `word` out of a table cell.
+var docBacktickedWord = regexp.MustCompile("`([a-z0-9_]+)`")
+
+// TestPublishedGeneratorVocabularyMatchesTheTables is the generator sibling of the
+// shape census above, and it exists because the generator surface is the ONE place
+// in this format where the same slot has several legal spellings.
+//
+// The aliases are not a convenience: `cells` is what a checkerdisc author calls its
+// pitch and `radius` is what a glow author calls its size, and every one of them is
+// a word the shipped themes and the preset drafts already write. That makes them a
+// PERMANENT obligation — an unrecognised parameter key is *ignored*, silently, so
+// removing a spelling deletes the parameter from every theme that used it with
+// nothing anywhere to say so. A permanent obligation nobody wrote down is the worst
+// kind, so the document has to carry the whole list, and this is what keeps it
+// carrying the whole list.
+//
+// Both directions, and both tables: a key in the code and not the document is
+// undiscoverable, a key in the document and not the code degrades a conforming
+// theme silently, and a generator NAME missing from the document is a feature
+// nobody can reach.
+func TestPublishedGeneratorVocabularyMatchesTheTables(t *testing.T) {
+	doc := readFormatDoc(t)
+	head := strings.Index(doc, publishedGenParamHeading)
+	if head < 0 {
+		t.Fatalf("docs/THEME-FORMAT.md no longer contains %q — the census is reading nothing; repoint the "+
+			"heading rather than deleting the gate", publishedGenParamHeading)
+	}
+	published := map[string]bool{}
+	for _, line := range strings.Split(doc[head:], "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			if len(published) > 0 {
+				break // the table ended
+			}
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), "|")
+		if len(cells) != 3 || strings.HasPrefix(strings.TrimSpace(cells[0]), "---") {
+			continue // the separator row, or a table that is not this one
+		}
+		for _, m := range docBacktickedWord.FindAllStringSubmatch(cells[1], -1) {
+			published[m[1]] = true
+		}
+	}
+	if len(published) == 0 {
+		t.Fatal("the published parameter table parsed empty — the census is vacuous")
+	}
+	// The counts in the prose above the table are part of the claim: a document that
+	// says "25 accepted keys" over a table of 26 is worse than one that says nothing,
+	// because a reader trusts the sentence and stops counting.
+	for _, phrase := range []string{
+		fmt.Sprintf("**%d accepted keys**", len(genParamSlots)),
+		fmt.Sprintf("**%d slots**", int(genSlotPct1)+1),
+	} {
+		if !strings.Contains(doc, phrase) {
+			t.Errorf("docs/THEME-FORMAT.md no longer states %q", phrase)
+		}
+	}
+	for key := range genParamSlots {
+		if !published[key] {
+			t.Errorf("generator parameter %q resolves in the client and docs/THEME-FORMAT.md does not "+
+				"publish it — an alias nobody can discover is one nobody writes, and one we can never remove", key)
+		}
+		delete(published, key)
+	}
+	for key := range published {
+		t.Errorf("docs/THEME-FORMAT.md publishes generator parameter %q and the client ignores it — a theme "+
+			"written against the document loses that parameter with no degrade note (an unknown key is "+
+			"skipped by design)", key)
+	}
+
+	// The GENERATOR table, parsed on its own heading — both directions again.
+	listed := map[string]bool{}
+	if h := strings.Index(doc, publishedGenTableHeading); h < 0 {
+		t.Errorf("docs/THEME-FORMAT.md no longer contains %q", publishedGenTableHeading)
+	} else {
+		for _, line := range strings.Split(doc[h:], "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "|") {
+				if len(listed) > 0 {
+					break
+				}
+				continue
+			}
+			cells := strings.Split(strings.Trim(line, "|"), "|")
+			if len(cells) != 3 {
+				continue
+			}
+			if m := docBacktickedWord.FindStringSubmatch(cells[0]); m != nil {
+				listed[m[1]] = true
+			}
+		}
+	}
+	for _, name := range GeneratorNames() {
+		if !listed[name] {
+			t.Errorf("generator %q rasterises and is not in docs/THEME-FORMAT.md's generator table — the "+
+				"table is the only place an author finds out it exists", name)
+		}
+		delete(listed, name)
+	}
+	for name := range listed {
+		t.Errorf("docs/THEME-FORMAT.md lists a generator %q the client does not rasterise — a theme written "+
+			"against the document degrades to a flat fill", name)
+	}
+}
+
+// TestShippedThemesEmitNoDegradeNotesAtAll widens the note check that used to live
+// inside the condition gate above — where it only ever looked for the substring
+// "visible_when" — to EVERY note the reader can produce.
+//
+// The narrow version was blind by construction. A degrade note is the reader saying
+// "this line meant something and I could not use it", and there is no reason the
+// only interesting ones would mention conditions: the defect this widening actually
+// caught was four of themes/thh_trial's five [palette] roles being refused, because
+// parseRGBAValue reached hexNibble with the author's UPPER-CASE hex and hexNibble
+// only knew a-f. `panel = #101010` parsed (all digits), `panel_hi = #1C1C1C` did
+// not, and the theme shipped with the stylesheet's colours where its own were
+// meant to be. Nothing on screen said so — which is precisely why the sidecar's
+// visibility surface (the refusal chip) and this gate landed in the same wave.
+//
+// A note is fine in a STRANGER's theme; it is the format's rule 3 working. In one
+// of ours it is a bug in the theme or a gap in the reader, and either way somebody
+// has to look at it.
+func TestShippedThemesEmitNoDegradeNotesAtAll(t *testing.T) {
+	scs := loadShippedSidecars(t)
+	for name, sc := range scs {
+		for _, note := range sc.Notes() {
+			t.Errorf("themes/%s: %s — a theme WE ship must not degrade anything. Either the theme is "+
+				"writing something this build cannot read, or the reader is refusing something it should "+
+				"accept; both are defects and neither is visible on screen.", name, note)
+		}
+	}
+	t.Logf("%d shipped sidecars, 0 degrade notes", len(scs))
 }
 
 // TestShoutConditionTableMatchesCourtroom pins elemShoutConditions against the ONE

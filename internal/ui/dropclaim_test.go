@@ -56,6 +56,15 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 		// A .json with nothing armed is NOT a settings import: it falls through
 		// to the folder arm exactly as it did before this wave.
 		{`C:\x\asyncao-settings.json`, false, dropClaimNone, true, "unarmed .json keeps its old behaviour"},
+		// W4's font intake: a face file is a FILE, so it carried the same
+		// repoint-the-theme-root bug the bundle did.
+		{`C:\x\Downloads\CourtSerif.ttf`, false, dropClaimThemeFont, false, "a font's parent folder is not a theme root"},
+		{`C:\x\Downloads\Igiari.OTF`, false, dropClaimThemeFont, false, "the extension test is case-blind"},
+		{`C:\x\Downloads\Igiari.otf`, true, dropClaimThemeFont, false, "an armed settings import must not steal a font"},
+		// A collection is deliberately NOT claimed: internFace opens ONE face out
+		// of a file, so claiming a container we cannot open would trade a wrong
+		// action for a wrong promise.
+		{`C:\x\Downloads\Menlo.ttc`, false, dropClaimNone, true, ".ttc keeps its old behaviour"},
 	} {
 		got := claimDroppedFile(tc.path, tc.armed)
 		if got != tc.claim {
@@ -92,6 +101,38 @@ func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 	for _, lie := range []string{"imported", "installed", "added to your themes"} {
 		if containsFold(a.warnLine, lie) {
 			t.Errorf("message %q claims %q, but nothing was imported this wave", a.warnLine, lie)
+		}
+	}
+}
+
+// TestThemeFontDropSaysWhereToPutIt is the same contract for W4's font intake, and
+// it exists for the same reason: the claim alone only stops the WRONG thing (the
+// theme root no longer gets repointed at the font's folder). Without a line, the
+// drop would become silent, which reads as a broken client.
+//
+// It also pins that the message names both INI sections. `[fonts]` alone installs
+// nothing — a family with no `[fontbind]` row binds to no element — and that pair
+// is the single most common way this feature is got wrong.
+func TestThemeFontDropSaysWhereToPutIt(t *testing.T) {
+	a := &App{}
+	a.handleThemeFontDrop(filepath.FromSlash("C:/Users/x/Downloads/CourtSerif.ttf"))
+	if a.warnLine == "" {
+		t.Fatal("a dropped font produced no message at all")
+	}
+	if a.warnAt.IsZero() || a.warnAt.After(time.Now().Add(time.Second)) {
+		t.Errorf("warnAt is %v — the line would never show, never expire, or both", a.warnAt)
+	}
+	if !containsFold(a.warnLine, "CourtSerif.ttf") {
+		t.Errorf("message %q does not name the dropped file", a.warnLine)
+	}
+	for _, key := range []string{"fonts", "fontbind"} {
+		if !containsFold(a.warnLine, key) {
+			t.Errorf("message %q never mentions [%s] — a face the theme ships and binds to nothing does nothing", a.warnLine, key)
+		}
+	}
+	for _, lie := range []string{"imported", "installed", "applied"} {
+		if containsFold(a.warnLine, lie) {
+			t.Errorf("message %q claims %q, but the writer is the editor's (W7)", a.warnLine, lie)
 		}
 	}
 }

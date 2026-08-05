@@ -134,6 +134,8 @@ type settingsState struct {
 	themeCountFor  int
 	// themeRows memoizes every string drawThemeCatalogRows draws. See themeRowText.
 	themeRows themeRowText
+	// themeArt memoizes the theme-art budget bar's label. See themeArtBarText.
+	themeArt themeArtBarText
 
 	// folder picking: native dialog output / resolved drag-drops land
 	// here from goroutines (never block or stat on the render thread). Still used
@@ -511,9 +513,10 @@ func (a *App) drawSettings(w, h int32) {
 		case dropClaimSettingsImport:
 			settings.importArmed = false
 			importSettingsAsync(a, c.dropped)
-		case dropClaimRecording, dropClaimThemeBundle:
-			// no-op: HandleFileDrop is the single owner of dropped recordings
-			// and theme bundles.
+		case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:
+			// no-op: HandleFileDrop is the single owner of dropped recordings,
+			// theme bundles and theme FONTS. A .ttf reaching the default arm
+			// below would repoint the theme root at the font's own folder.
 		default:
 			resolveDroppedFolder(c.dropped)
 		}
@@ -1983,6 +1986,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += 36
 	y = a.drawThemeCatalogRows(y, w)
+	y = a.drawThemeArtBudgetRow(y, w)
 
 	y = a.settingsSection(y, w, "Layout & fit")
 	// Emote-grid icon spacing lives HERE rather than with the other emote controls
@@ -4957,6 +4961,113 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c.LabelClipped(pad, y, w-pad-scrollBarW, rows.note, ColTextDim)
 	y += themeNoteRowH
 	return y
+}
+
+const (
+	// themeArtBarTrackW / themeArtBarTrackH are the budget meter's track. It sits
+	// in the label gutter's right-hand column like every other catalog row, so the
+	// three rows above it and this one line up.
+	themeArtBarTrackW = 220
+	themeArtBarTrackH = 10
+	// themeArtBarLabelGap keeps the "31.4 / 48.0 MiB · …" text off the track.
+	themeArtBarLabelGap = 10
+	// themeArtBarRowH / themeArtNoteRowH are the meter row and the hint under it.
+	themeArtBarRowH  = 24
+	themeArtNoteRowH = 22
+	// themeArtBarTrackYOff centres the 10 px track against the text baseline of the
+	// label beside it (btnH-tall rows put their text at +4).
+	themeArtBarTrackYOff = 5
+)
+
+// themeArtNote is the line under the meter. A const, so the row costs no
+// allocation to draw (the settings-text doctrine — see themeRowText).
+const themeArtNote = "images and generator tiles an AsyncAO theme declares; they are pinned, so this is memory the streaming cache never gets back. The allowance scales with Settings ▸ General ▸ Texture memory budget."
+
+// themeArtBarText memoizes the budget bar's label on the four numbers it is built
+// from. Without it, drawing the Theme tab would format a string every frame — the
+// exact cost the catalog rows above went to some length to avoid.
+//
+// Keyed on the VALUES rather than on a generation, because all four are already
+// integers the store and the plan publish: the label is a pure function of them, so
+// equality IS the validity test and there is no third thing to keep in step.
+type themeArtBarText struct {
+	valid         bool
+	bytes, budget int64
+	images, gens  int
+	label         string
+}
+
+// rebuild recomputes the label if any of the four inputs moved.
+func (r *themeArtBarText) refresh(bytes, budget int64, images, gens int) {
+	if r.valid && r.bytes == bytes && r.budget == budget && r.images == images && r.gens == gens {
+		return
+	}
+	*r = themeArtBarText{
+		valid: true, bytes: bytes, budget: budget, images: images, gens: gens,
+		label: themeArtBarLabel(bytes, images, gens, budget),
+	}
+}
+
+// drawThemeArtBudgetRow is design §Q2's budget bar: what the active theme's own art
+// is spending, out of what, permanently visible.
+//
+// PERMANENT, not shown-at-the-cap, and that is the whole design of it. A pinned
+// tier has no eviction — by construction, because eviction is the black-flash defect
+// UploadPinned exists to prevent — so the ONLY thing standing between a heavy theme
+// and a starved streaming cache is the user being able to see the number before
+// they hit it. A bar that appeared only once the budget was gone would name the
+// problem at the exact moment it was too late to avoid.
+//
+// Zero art draws it too: with no native theme applied the row reads
+// "0.0 MiB / 24.0 MiB", which is also where somebody finds out the feature exists.
+//
+// Both numbers come from internal/render by CALL — the store's live ledger and
+// ThemeMediaByteCap — never from a copy on this side, so the bar cannot quote a
+// budget the admission gate is not using.
+func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
+	c := a.ctx
+	pad := a.formX // the settings-origin shadow rule (see drawThemeCatalogRows)
+	if c.onRow != nil {
+		c.onRow("Theme art budget", y)
+	}
+	budget := render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())
+	// The store is nil in a headless App (and would be during the search index's
+	// harvest pass on one), and the row's HEIGHT must not depend on that: a settings
+	// row that sometimes advances y and sometimes does not is a scroll bug, and this
+	// one is also an index entry the search jumps to by offset. Zeros draw the same
+	// row the pre-first-theme case draws.
+	var bytes int64
+	var images, gens int
+	if a.d.Store != nil {
+		bytes, images, gens = a.d.Store.ThemeMediaBytes(), a.d.Store.ThemeMediaCount(), a.d.Store.ThemeGenCount()
+	}
+	settings.themeArt.refresh(bytes, budget, images, gens)
+
+	c.Label(pad, y+4, "Theme art:", ColText)
+	track := sdl.Rect{X: pad + themeRowLabelW, Y: y + themeArtBarTrackYOff, W: themeArtBarTrackW, H: themeArtBarTrackH}
+	c.Fill(track, ColPanel)
+	col := ColAccent
+	if themeArtOverWarnPct(bytes, budget) {
+		col = ColDanger
+	}
+	if budget > 0 && bytes > 0 {
+		// int64 throughout: bytes × track width overflows int32 at ~2 GiB of art,
+		// which the caps make impossible today and would make this silently negative
+		// the day somebody raised one.
+		fill := int32(bytes * int64(track.W) / budget)
+		if fill > track.W {
+			fill = track.W // a store over its own ceiling still draws a full bar, never a longer one
+		}
+		if fill < 1 {
+			fill = 1 // anything resident at all is visible: "0 px" and "nothing loaded" must not look alike
+		}
+		c.Fill(sdl.Rect{X: track.X, Y: track.Y, W: fill, H: track.H}, col)
+	}
+	labelX := track.X + track.W + themeArtBarLabelGap
+	c.LabelClipped(labelX, y+4, w-labelX-scrollBarW, settings.themeArt.label, col)
+	y += themeArtBarRowH
+	c.LabelClipped(pad, y, w-pad-scrollBarW, themeArtNote, ColTextDim)
+	return y + themeArtNoteRowH
 }
 
 // scanThemes lists themes/<name> directories under every root themeSearchRoots

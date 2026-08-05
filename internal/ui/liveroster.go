@@ -264,7 +264,7 @@ const areaEchoSuppressWindow = 3 * time.Second
 // family-aware poll IS constructible — rosterDetailCmd below is that exact
 // pattern — and it would even survive the Athena/stock-Nyathena detection
 // ambiguity, because "/players -a" means all areas on BOTH (Nyathena's own gas
-// handler is literally cmdPlayers(client, []string{"-a"}),
+// handler is cmdPlayers(client, []string{"-a"}, ""),
 // commands_registry.go:319).
 //
 // What does not exist is a single UNIVERSAL string, and "/players -a" is the

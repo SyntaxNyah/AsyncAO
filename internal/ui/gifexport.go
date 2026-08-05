@@ -16,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
@@ -1163,6 +1164,26 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comi
 // An export frame is NOT the window: it deliberately goes through themeLayout (no
 // app-chrome band reserved) rather than themeWindowLayout, so the menu bar / tab
 // strip band can never appear as a black stripe across an exported video or comic.
+//
+// THE SHARED LAYOUT CACHE IS BORROWED, NOT THRASHED — measured, because the two
+// entry points differ in `top` and there is exactly one cache (a.themeLay), so the
+// obvious worry is a cold rebuild (a 12 KiB struct clear, the rect map and, since
+// W3, the element bake) every time the two alternate. They never alternate:
+//
+//   - an export is a FULL-WINDOW MODE. App.Frame's gif > replay > maker > screen
+//     precedence draws tickGifExport + drawGifProgress INSTEAD of any screen, so
+//     drawCourtroomThemed — the only non-test caller of themeWindowLayout that
+//     builds this cache — does not run for the whole job. chrometop.go's
+//     screenDispatchPreempted is that rule written down, and the tab strip already
+//     depends on it for the same reason.
+//   - within a tick, gifFramesPerTick captures all pass the SAME dst, so the key is
+//     unchanged and every capture after the first is a cache hit.
+//
+// The cost is therefore two cold rebuilds PER JOB (one entering the export, one on
+// the first courtroom frame after it), not two per frame — which is the same price
+// any window resize pays and is not worth a second resident 12 KiB cache to avoid.
+// TestExportBorrowsTheThemeLayoutCacheWithoutThrashing pins it, because the
+// property depends on a precedence rule two files away.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
 	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
 		if _, ok := lay.rect("viewport"); ok {
@@ -1180,6 +1201,25 @@ func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect
 // (falling back to a bottom overlay over the viewport when the theme omits a
 // chatbox rect). Geometry comes from the SAME themeLayout the live themed
 // courtroom uses, so the video matches what Studio playback shows.
+//
+// FREE ELEMENTS PAINT HERE TOO (v1.90.0 W4). The three band calls are the same
+// three drawCourtroomThemed makes, at the analogous points — and they are the whole
+// of export parity for the extension tier. Without them a native theme's wallpaper,
+// its chatbox frame and its masthead are on screen and missing from every GIF, video
+// and Studio render of the same session, which reads as the exporter being broken
+// rather than as a feature boundary.
+//
+// The mapping between the two passes is exact where an export HAS the same surface
+// and collapses where it does not: the export draws no logs, no panels and no
+// modals, so the mid band's "between the stage and the panels" and the overlay
+// band's "above every AO2 widget" both land after the chatbox, in that order. Band
+// ORDER is what the format promises (docs/THEME-FORMAT.md §4); the widgets between
+// the bands are the client's, and an export legitimately has fewer of them.
+//
+// The COMIC exporter is deliberately NOT wired: it composes paper panels with its
+// own speech bubble and never takes the themed path at all (comicexport.go —
+// captureComicPanel renders the bare viewport), so there is no themed frame to be
+// at parity with.
 func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black
@@ -1193,6 +1233,16 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 	} else {
 		c.Fill(court, ColPanel)
 	}
+	// visible_when, resolved ONCE for the whole export frame — against the EXPORT's
+	// room, not the live session's. j.room is what this frame is a picture of, so a
+	// `visible_when = shout:objection` element must light up on the recorded
+	// objection and stay dark otherwise; reading the live stage would decorate the
+	// video with whatever the courtroom behind the progress overlay last did.
+	a.refreshElementConditionsFrom(lay, a.exportCondSource(j))
+
+	// BAND 1 of 3: over the courtroom backdrop, under everything the export draws.
+	a.drawElementBands(lay, theme.BandBackdrop)
+
 	vp, _ := lay.rect("viewport")
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.d.Viewport.Render(c.Ren, sc, vp)
@@ -1201,6 +1251,31 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 	} else {
 		a.drawGifChatbox(j, sc, vp) // theme has no chatbox rect: bottom overlay over the stage
 	}
+
+	// BANDS 2 and 3: over the stage and the chatbox. They are adjacent here because
+	// the widgets the live pass puts between them — the logs, the music list, the
+	// emote grid — are client furniture an export frame deliberately has none of
+	// (drawExportScene's header: "a video frame is not the window").
+	a.drawElementBands(lay, theme.BandMid)
+	a.drawElementBands(lay, theme.BandOverlay)
+}
+
+// exportCondSource is elemCondSource for an export frame: the STAGE axes come from
+// the job's own room, the two CLIENT-state axes from the live client.
+//
+// pos and char are the local player's pos dropdown and character folder. Neither is
+// recorded — a .aorec carries the stage, not the reader's UI state — so there is
+// nothing else they could resolve to, and taking them from the live client is at
+// least the same answer the session that made the recording would have given.
+func (a *App) exportCondSource(j *gifExportJob) elemCondSource {
+	src := elemCondSource{pos: a.mySide(), char: a.myCharName()}
+	if j == nil || j.room == nil {
+		return src
+	}
+	src.speaking = j.room.Phase() != courtroom.PhaseIdle
+	src.side = j.room.Scene.Position
+	src.shout = j.room.CurrentShout()
+	return src
 }
 
 // drawGifThemedChatbox draws the export chatbox at the theme's ao2_chatbox rect:

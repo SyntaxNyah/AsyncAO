@@ -96,9 +96,16 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 
 // TestSidecarSwapClearsThePreviousThemesElements pins the theme-swap prune for this
 // tier: applying a theme with no sidecar after one with elements must leave nothing
-// behind. The baked array is not zeroed on rebuild (it is a fixed array), so elN
-// and the band ranges are the only things standing between a swap and a previous
-// theme's decoration painting over the new one.
+// behind.
+//
+// themeLayoutIn's cold path DOES zero the baked array — `*lay = themeLayoutCache{…}`
+// (theme_layout.go:274) replaces the whole struct, fixed array included — so the
+// stale rows cannot survive a rebuild. The gate is still exactly as load-bearing:
+// what it pins is that the SWAP reaches that rebuild at all and that elN and the
+// three band ranges come back zero, which is the state the draw loop reads. Nothing
+// here relies on the array's contents, so a future cache that recycled its rows
+// (to skip re-baking unchanged elements, say) would keep passing for the right
+// reason rather than by accident.
 func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_order.ini")
 	defer cleanup()
@@ -423,8 +430,20 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 		}
 	}
 	// Bands are contiguous and cover exactly [0, elN).
+	//
+	// EMPTY BANDS ARE SKIPPED, and that is not a loosening. bakeThemeElements leaves
+	// a band nothing sorted into at its zero value {0, 0} (it only ever writes lo/hi
+	// for a band it actually saw), which is correct — the draw loop runs `for i := 0;
+	// i < 0` and paints nothing. Compared against `next` it would read as a band
+	// starting back at 0, so a fixture whose middle band happened to be empty would
+	// fail this assertion for a theme that renders perfectly. The property that
+	// actually matters is that the NON-EMPTY bands tile [0, elN) in band order, and
+	// that is what this now says.
 	next := int16(0)
 	for b, rg := range lay.band {
+		if rg.lo == 0 && rg.hi == 0 {
+			continue // no element sorted into this band
+		}
 		if rg.lo != next {
 			t.Fatalf("band %d starts at %d, want %d — the band ranges must tile [0, elN) with no gap", b, rg.lo, next)
 		}

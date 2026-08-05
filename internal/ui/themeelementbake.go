@@ -68,20 +68,27 @@ func elemShapeID(name string) uint8 {
 // all. ok=false means the caller is holding the DEGRADE value, not a match — which
 // is the distinction a census needs and a draw path does not.
 //
-// Cold path: called once per element per rebuild, which is why it can afford to be
-// forgiving about case — `shape` is read as free text rather than as an enum
-// (sidecar_read.go), so a theme spelling it "Rounded" reaches us verbatim, and
+// Forgiving about case, because `shape` is read as free text rather than as an
+// enum (sidecar_read.go): a theme spelling it "Rounded" reaches us verbatim, and
 // degrading that to a plain box would be a silent downgrade of a file that says
 // exactly what it means.
+//
+// FOLDED PER COMPARE, not lowered once. strings.ToLower ALLOCATES whenever the
+// input has an upper-case rune, and this runs once per element per rebuild —
+// theme.ElementCap of them behind BenchmarkElementBandBake's ceiling, which is the
+// bake's whole allocation budget for a theme of any size. strings.EqualFold does
+// the same fold with no string to allocate, and strings.TrimSpace only ever
+// reslices, so the whole resolve is allocation-free. elemShoutStem is the model,
+// for the same reason and against the same ceiling.
 func elemShapeIDOK(name string) (uint8, bool) {
-	want := strings.ToLower(strings.TrimSpace(name))
+	want := strings.TrimSpace(name)
 	for i, n := range elemShapeNames {
-		if n == want {
+		if strings.EqualFold(n, want) {
 			return uint8(i), true
 		}
 	}
 	for _, al := range elemShapeAliases {
-		if al.name == want {
+		if strings.EqualFold(al.name, want) {
 			return al.id, true
 		}
 	}
@@ -154,7 +161,7 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 		if src.Inert() {
 			continue // hidden, or nothing to paint — never reaches the array at all
 		}
-		be, ok := a.bakeOneElement(lay, sc, src)
+		be, ok := a.bakeOneElement(lay, sc, src, i)
 		if !ok {
 			continue // an absent anchor is INERT, not an error (design §6.6 R10)
 		}
@@ -187,7 +194,7 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 // bakeOneElement resolves ONE element into its baked row. ok=false means inert: the
 // element's anchor or parent space is absent from this layout, so nothing about it
 // can be positioned and it must not paint (design §6.6 R10 — skip-if-absent).
-func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *theme.Element) (bakeElement, bool) {
+func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *theme.Element, idx int) (bakeElement, bool) {
 	r, ok := a.resolveElementRect(lay, sc, src)
 	if !ok || r.W <= 0 || r.H <= 0 {
 		return bakeElement{}, false
@@ -206,7 +213,7 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 			radial:   src.GradRadial,
 			align:    uint8(src.Align),
 			shape:    elemShapeID(src.Shape),
-			fontIdx:  elemFontChrome, // W4 (font intake) resolves a real face here
+			fontIdx:  elemFontChrome, // format 1: `font`/`size` are carried, not drawn (paintElementText)
 			clock:    src.Clock,
 			loop:     src.Loop,
 			phase:    time.Duration(src.PhaseMs) * time.Millisecond,
@@ -214,7 +221,15 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 			col:      fadeColor(src.Fill, op),
 			col2:     fadeColor(src.Fill2, op),
 			stroke:   fadeColor(src.Stroke, op),
-			tint:     sdlColorOf(src.EffectiveTint()),
+			// The tint takes the opacity fold like every other colour on the row, and
+			// it is the ONLY route `opacity` has into image and generator art:
+			// paintElementArt's one alpha knob is SetAlphaMod(tint.A). Read straight
+			// through sdlColorOf, an absent tint resolved to opaque white and a wash
+			// authored at `opacity = 60` drew at full strength — silently, on every
+			// vignette, scrim and overlay tile in the shipped themes, which reach for
+			// exactly that idiom. fadeColor is the same folding the fill, fill2 and
+			// stroke above already take, so all six kinds now mean one thing by it.
+			tint:     fadeColor(src.EffectiveTint(), op),
 			cond:     condAlwaysVisible,
 			condAxis: src.VisibleWhen.Axis,
 			fx: bakedEffect{
@@ -228,6 +243,16 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 		be.el.slice[i] = int32(src.Slice[i])
 	}
 	switch src.Kind {
+	case theme.ElemImage, theme.ElemGen:
+		// The art, resolved ONCE. The KEY comes out of the plan by INDEX rather than
+		// being re-derived here: deriving a generator key means lowercasing a name and
+		// hashing a param list, and the bake's allocation ceiling is a constant rather
+		// than a per-element budget so that a preset swap cannot hitch its frame.
+		//
+		// nil is the ordinary answer for art that has not landed, was evicted by a
+		// window recreate, or was refused by the budget — the painter draws nothing
+		// rather than probing, and themeMediaPage has already kicked the paced heal.
+		be.el.page, _ = a.themeMediaPage(a.themeMediaPlan.ElemKey(idx))
 	case theme.ElemText:
 		// The ink is `color`, not `fill` — and it is the ONE colour an absent value
 		// resolves to white for (EffectiveColor), because a theme that sizes and

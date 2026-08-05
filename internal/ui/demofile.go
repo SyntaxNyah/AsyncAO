@@ -461,6 +461,8 @@ func (a *App) HandleFileDrop(path string) {
 		a.replayFromPath(dest)
 	case dropClaimThemeBundle:
 		a.handleThemeBundleDrop(path)
+	case dropClaimThemeFont:
+		a.handleThemeFontDrop(path)
 	case dropClaimSettingsImport:
 		// The Settings screen armed this and consumes it in the same frame
 		// (importSettingsAsync). Silence here is the correct answer — the old
@@ -484,6 +486,31 @@ func (a *App) handleThemeBundleDrop(path string) {
 	} else {
 		a.warnLine = "Theme bundle " + name + " — unpacking bundles arrives with the theme editor. For now, unzip it into your themes folder."
 	}
+	a.warnAt = time.Now()
+}
+
+// handleThemeFontDrop parks a dropped .ttf / .otf (v1.90.0 W4's font intake).
+//
+// The half that was actively WRONG is fixed by the claim alone: the file no longer
+// repoints the user's theme root at whatever folder it came out of. What it cannot
+// do yet is INSTALL the face, and that boundary is a decision rather than an
+// omission — landing a font means writing two keys into somebody's
+// asyncao_theme.ini, and the sidecar WRITER is wired to the editor's document and
+// its undo stack (W7). Copying a file in and editing an INI behind the user's back,
+// with no editor open and nothing to undo it with, is not the smaller action.
+//
+// So it says exactly what to do, naming the folder and both keys — the same shape,
+// and for the same reason, as handleThemeBundleDrop above. A dead silent drop would
+// be worse than the bug it replaces.
+func (a *App) handleThemeFontDrop(path string) {
+	name := filepath.Base(path)
+	line := "Font " + name + " — drop it in your theme's fonts\\ folder, then add it to [fonts] and point a " +
+		"[fontbind] row at it (Settings → Theme → Open folder)."
+	if dir := config.UserThemesDir(); dir != "" {
+		line = "Font " + name + " — put it in <your theme>\\fonts\\ under " + dir +
+			", then add it to [fonts] and point a [fontbind] row at it."
+	}
+	a.warnLine = line
 	a.warnAt = time.Now()
 }
 

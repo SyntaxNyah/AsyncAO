@@ -18,6 +18,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"image"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,6 +26,9 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -50,6 +54,17 @@ const (
 // whole-screen gates' IC lines follow.
 const seedElemLabel = "AsyncAO"
 
+// seedCondDecoys are interned condition values that match NOTHING live. They exist
+// so lay.condVal is not a one-entry table: resolveConditionAxis walks it linearly,
+// and a scan that finds its answer at index 0 would never exercise the walk.
+var seedCondDecoys = [...]string{"__seed_decoy_a", "__seed_decoy_b"}
+
+// seedGatedEvery is how often a seeded row carries a REAL condition rather than
+// theme.CondAlways. Every third row puts elementVisible's integer-compare arm
+// (CondPos) inside the gates while leaving the row visible, so the dispatch-count
+// assertions still see all theme.ElementCap painters fire.
+const seedGatedEvery = 3
+
 // seedBakedElements fills the layout cache's baked array by hand, exactly as the
 // cold-rebuild bake will.
 //
@@ -60,17 +75,72 @@ const seedElemLabel = "AsyncAO"
 //
 // Elements are spread evenly over the three bands and cycle through every
 // theme.ElementKind, so the gate covers every painter in the table rather than the
-// one kind a fixture happened to pick.
-func seedBakedElements(lay *themeLayoutCache, n int) {
+// one kind a fixture happened to pick. They also cycle through every elemShape
+// silhouette, every theme.TextAlign and both gradient modes, because each of those
+// is a SEPARATE arm of a painter: elemShapeInset's five branches, paintElementText's
+// width probe (which only runs off the left-aligned default) and paintElementRadial
+// are all invisible to a fixture that leaves those fields at their zero values, and
+// an allocation in one of them would ship un-measured.
+//
+// It takes the App so the condition table can be interned against the app's OWN live
+// pos (a.mySide(), which is never empty — screens.go returns defaultSide). That is
+// what puts refreshElementConditions' resolution pass inside the gates: with
+// lay.condN == 0 the function returns after one field write and the whole per-axis
+// memo — four string compares on a settled frame, a linear scan on the frame the
+// session moves — never runs at all.
+// seedElementArt uploads one small theme-media page and returns it, so the seeded
+// ElemImage / ElemGen rows have real art to blit.
+//
+// WITHOUT IT THE ART PAINTER IS NOT MEASURED AT ALL. paintElementArt returns on the
+// first line when page is nil, so a fixture of pageless elements would have run the
+// two AllocsPerRun gates over an early return and reported zero for a painter that
+// had never executed — which is how a deferred colour-mod restore (a heap-allocated
+// closure per element per frame) would have shipped straight through both of them.
+func seedElementArt(t testing.TB, a *App) *render.TexturePage {
+	t.Helper()
+	const side = 8
+	d := &assets.Decoded{Width: side, Height: side}
+	img := image.NewRGBA(image.Rect(0, 0, side, side))
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 0xFF
+	}
+	d.Frames = append(d.Frames, img)
+	key := render.ThemeMediaKey("fixture", "art")
+	if err := a.d.Store.UploadThemeMedia(key, d, config.TexBudgetDefaultMiB); err != nil {
+		t.Fatalf("seeding theme media: %v", err)
+	}
+	page, ok := a.d.Store.Get(key)
+	if !ok {
+		t.Fatal("the seeded theme-media page did not land")
+	}
+	return page
+}
+
+func seedBakedElements(a *App, lay *themeLayoutCache, n int, art *render.TexturePage) {
 	if n > len(lay.el) {
 		n = len(lay.el)
 	}
+	// The decoys first, the live value last, so the memo's linear scan walks the
+	// whole table before it matches.
+	lay.condN = 0
+	for _, decoy := range seedCondDecoys {
+		lay.condVal[lay.condN] = decoy
+		lay.condN++
+	}
+	livePos := int16(lay.condN)
+	lay.condVal[lay.condN] = a.mySide()
+	lay.condN++
+
 	per := n / int(theme.ElementBandCount)
 	for i := 0; i < n; i++ {
 		col := int32(i % seedElemCols)
 		row := int32(i / seedElemCols)
 		x := lay.area.X + col*(seedElemW+seedElemGap)
 		y := lay.area.Y + row*(seedElemH+seedElemGap)
+		axis, cond := theme.CondAlways, condAlwaysVisible
+		if i%seedGatedEvery == 0 {
+			axis, cond = theme.CondPos, livePos
+		}
 		lay.el[i] = bakedElement{
 			r:     sdl.Rect{X: x, Y: y, W: seedElemW, H: seedElemH},
 			kind:  theme.ElementKind(i % int(theme.ElementKindCount)),
@@ -83,9 +153,20 @@ func seedBakedElements(lay *themeLayoutCache, n int) {
 			tint:     sdl.Color{R: 255, G: 255, B: 255, A: 255},
 			strokePx: 1,
 			opacity:  255,
-			fit:      theme.FitStretch,
-			cond:     condAlwaysVisible,
-			condAxis: theme.CondAlways,
+			// Every fit mode in rotation, and real art behind the two kinds that use
+			// one: stretch, tile, contain, cover and 9-slice are five different bodies
+			// in paintElementArt, and a fixture that only ever stretched would leave
+			// four of them — including the nine-blit slice path and the two clipped
+			// ones — outside the gate entirely.
+			fit:      theme.ElementFit(i % int(theme.FitCount)),
+			slice:    [4]int32{2, 2, 2, 2},
+			page:     art,
+			shape:    uint8(i % int(elemShapeCount)),
+			align:    uint8(i % int(theme.AlignCount)),
+			grad:     uint8(i * theme.AngleCount / n), // sweeps all four cardinal quadrants
+			radial:   i%2 == 1,
+			cond:     cond,
+			condAxis: axis,
 		}
 	}
 	lay.elN = n
@@ -203,9 +284,14 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
 	lay := &a.themeLay
-	seedBakedElements(lay, theme.ElementCap)
+	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	if lay.elN != theme.ElementCap {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, theme.ElementCap)
+	}
+	// Non-vacuity for the condition half: with condN == 0 refreshElementConditions
+	// returns immediately and the whole per-axis memo would sit OUTSIDE this gate.
+	if lay.condN == 0 {
+		t.Fatal("the fixture interned no conditions — refreshElementConditions' resolution pass is not being measured")
 	}
 
 	// Every seeded element is dispatched exactly once, in baked order, across all
@@ -402,10 +488,11 @@ func isStringLit(e ast.Expr) bool {
 // the gates first, against a stub draw body" means (design §4 W3). W3's own four
 // painters (shape, gradient, text, pane) have since landed and left this census;
 // the two that need the theme-media texture tier stay until W4 brings it.
-var elemPainterPending = map[theme.ElementKind]string{
-	theme.ElemImage: "W4 — needs theme://m/<themeid>/<id> media pages",
-	theme.ElemGen:   "W4 — generator tiles (gentex.go)",
-}
+// EMPTY since W4: every kind paints. ElemImage and ElemGen share paintElementArt,
+// because after the bake they are the same thing — a resolved *render.TexturePage
+// plus a fit, a tint and a rotation — and the only difference (where the page came
+// from) was settled at bake time.
+var elemPainterPending = map[theme.ElementKind]string{}
 
 // TestEveryElementKindHasAPainter pins the table TOTAL over the enum.
 //
