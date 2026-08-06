@@ -8998,6 +8998,16 @@ func (a *App) applyThemeAsync() uint64 {
 			// Its position relative to the unbound report below is immaterial —
 			// unboundDesignKeys reads the *theme.Theme, not this map.
 			applyAO2DefaultRects(res.layout)
+			// Then the AsyncAO tier's own [overrides], which are the author's edits
+			// laid OVER that result (docs/THEME-FORMAT.md:176-190). AFTER the backstop
+			// for the same reason the backstop runs after the theme's file: an
+			// override binds to "the AO2 design", and for a theme whose
+			// courtroom_design.ini declares only `courtroom` + `viewport` the design
+			// IS the backstop — running it first would leave every row with nothing
+			// to bind to. See foldSidecarOverrides (themeoverrides.go) for why this
+			// tier existed unapplied until now, and what it was doing to the elements
+			// anchored on top of it.
+			foldSidecarOverrides(res.layout, res.sidecar)
 			// #21 label 16: measure the theme's own art behind each font element, so
 			// the render thread can guard the per-element ink without touching a
 			// decode buffer. AFTER the defaults, so an element positioned by AO2's
@@ -9093,12 +9103,31 @@ func (a *App) applyThemeAsync() uint64 {
 		}
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
+		//
+		// BOTH ARMS DROP AN APPLY, and both hand its pixel buffers back to the
+		// decoder's pool for the same reason pollThemeApply's consume-side arm does
+		// (see releaseDecoded): an apply that never lands is holding the chrome
+		// stems PLUS up to render.ThemeMediaCap media pages and render.ThemeGenCap
+		// generator tiles, each a full-size RGBA frame set, and without this they
+		// reach the GC as ordinary garbage instead of the pool they came from.
+		//
+		// OWNERSHIP IS EXCLUSIVE ON BOTH PATHS, which is what makes the release
+		// safe rather than a use-after-free: `res` was never published, so nobody
+		// else can have seen it; and a SUCCESSFUL CAS proves `old` was still in the
+		// slot at the moment of the swap, so the render thread's Swap did not take
+		// it (a Swap would have made the CAS fail). Still on the load goroutine —
+		// this is memory bookkeeping, not I/O, and the render thread never touches
+		// either value again.
 		for {
 			old := a.themeRes.Load()
 			if old != nil && old.gen > gen {
+				res.releaseDecoded() // outraced by a later pick: this load never lands
 				return
 			}
 			if a.themeRes.CompareAndSwap(old, &res) {
+				if old != nil {
+					old.releaseDecoded() // displaced before the render thread consumed it
+				}
 				return
 			}
 		}

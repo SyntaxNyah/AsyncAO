@@ -291,6 +291,26 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// decayed one-shot and an amplitude-zero effect are both a still picture, and a
 	// still picture that pinned the frame rate is the idle-CPU-burn defect this
 	// doctrine exists to prevent.
+	//
+	// TODO(W7 scrub): A PAUSED CLOCK BREAKS THAT, and this is the site it breaks at.
+	// clockElapsed returns themeClock.frozen while `paused`, so `el` stops advancing
+	// while the frame keeps drawing. A CONDITIONAL one-shot that acquires its slot on
+	// a paused clock then has startedAt == el forever: local = 0, t = 0, env = 1, and
+	// static = frozen(false) || amp*(1-0) <= eps = FALSE — so this line notes the
+	// census on every frame, at full amplitude, with nothing moving. The five periodic
+	// kinds reach the same end by a shorter road (resolvePeriodicEffect returns
+	// static=false unconditionally, by design). That is the idle-CPU-burn defect
+	// wearing the editor's scrub as a hat. NO W5 PATH SETS paused — nothing writes it
+	// today, which is why this is a comment and not a fix — but W7's scrub is the
+	// first writer, and it will land on exactly this.
+	//
+	// FIX SHAPE: gate the CENSUS, not the terms. The terms must still apply while
+	// paused (holding the frame is the entire point of a scrub, and a wash's env still
+	// has to paint its held state), so the resolver stays untouched: pass the group's
+	// paused flag down beside `el` and skip NoteAnimating when it is set — the same
+	// `frozen ⇒ static` reading resolveElementEffect already uses for a nil slot. Do
+	// NOT "fix" it by clamping elapsed or by making a paused clock resolve neutral:
+	// that blanks the frame the scrub exists to inspect.
 	if !fx.static {
 		a.NoteAnimating()
 	}
@@ -511,9 +531,10 @@ const elemShapeCornerDiv = int32(6)
 // elemShapePillDiv is the PILL's corner radius as a fraction of the short side: a
 // half, which is the definition of a capsule (shapemask.go's pill preset resolves
 // its corner as min(w,h)/2 for the same reason). It is the one silhouette whose
-// full radius is its identity — themes/thh_trial/asyncao_theme.ini:1200-1209 says
-// so about its own register plate — so it is a separate id rather than "rounded
-// with a big number", and it can never quietly degrade to a rectangle.
+// full radius is its identity — the CAPSULE CHIPS block above
+// themes/thh_trial/asyncao_theme.ini [element.chip_search] says so about its own
+// register plate — so it is a separate id rather than "rounded with a big
+// number", and it can never quietly degrade to a rectangle.
 const elemShapePillDiv = int32(2)
 
 // paintElementShape draws a procedural silhouette: the fill first, then the outline
@@ -910,8 +931,26 @@ func paintElementArt(a *App, e *bakedElement) {
 	_ = tex.SetAlphaMod(255)
 }
 
-// paintElementBlit is the one place a rotation is applied, so `rot` cannot be
-// honoured by some fit modes and silently dropped by others.
+// paintElementBlit is the one place a rotation is applied — but it is NOT the only
+// place art reaches the renderer, so `rot` genuinely does reach some fit modes and
+// not others. Scoped here rather than left as the older, flatly false claim that no
+// fit mode could drop it:
+//
+//   - HONOURED: `stretch` (and any fit a future file names that this build does not
+//     know, which degrades to it), `contain`, `cover`, and `tile`'s over-cap
+//     fallback — all four arrive through this function.
+//   - DROPPED: `tile` and `nine` on their normal paths. Both issue their own
+//     Ren.Copy (paintElementTiled, paintElementNineSlice) because both draw MANY
+//     rects from one page, and CopyEx spins each rect about its own centre: a
+//     rotated 9-slice would skew its nine pieces apart instead of turning the frame,
+//     and a rotated tile field would turn every tile individually and leave gaps at
+//     the seams. Rotating either as a whole means rendering to an intermediate
+//     target first, which is a painter-contract change (and an allocation on the
+//     frame path), not a comment fix.
+//
+// So a theme that wants a spinning frame authors it at `fit = stretch|contain|cover`.
+// Pinned by the R2 rot gate in themeclock_test.go, which covers the angle arithmetic;
+// the fit-mode split above is documentation of the draw path, not of the resolver.
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {

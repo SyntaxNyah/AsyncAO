@@ -577,7 +577,24 @@ func (a *App) elementSpaceRect(lay *themeLayoutCache, space theme.Space) (sdl.Re
 func absSlotRect(lay *themeLayoutCache, key string) (sdl.Rect, bool) {
 	r, ok := lay.rect(key)
 	if !ok {
-		return sdl.Rect{}, false
+		// AO2'S SECOND SPELLING, the same fold the [overrides] applier does
+		// (sidecarOverrideTarget). One widget has two design names, and the one AO2
+		// reads FIRST is the one its own stock file never writes — so a theme that
+		// anchors decoration to `immediate` on a layout the backstop filled as
+		// `pre_no_interrupt` would resolve to nothing and go inert, silently, the
+		// same way an override on that spelling used to.
+		//
+		// Latent when this landed: no shipped theme anchors either spelling. That is
+		// the reason to fold it here rather than to note the asymmetry — the two
+		// tiers reading one design vocabulary differently is a trap that costs
+		// nothing to close now and a bug report to find later.
+		alt, hasAlt := themeSlotOtherSpelling(key)
+		if !hasAlt {
+			return sdl.Rect{}, false
+		}
+		if r, ok = lay.rect(alt); !ok {
+			return sdl.Rect{}, false
+		}
 	}
 	var parent string
 	switch themeSlotRel(key) {

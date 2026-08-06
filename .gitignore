@@ -40,12 +40,20 @@ coverage.out
 # measurement only, so a stray `git add -A` must not be able to publish it.
 /docs/wip/
 
-# Local gate/dev helpers written per session (the full pre-commit gate runner and
-# its logs). The committed entry point is scripts/, not these.
-/_gate.ps1
-/_w*gate.ps1
-/_w*gate.sh
-/_w*gate.log
+# Local gate/dev helpers written per session at the repo root, and their logs
+# (_gate.ps1, _w14gate.sh, _r2checks.ps1, _r2gate.log, ...). The committed entry
+# point is scripts/, not these.
+#
+# Matched by SHAPE, not by name. The patterns here used to spell out the two
+# prefixes that existed when they were written (_gate, _w<N>gate), and a later
+# review round invented a third: _r2checks.ps1 and _r2gate.log sat untracked and
+# stageable because "_r2checks" is neither of them. Every round invents another,
+# so the rule is now "a root-level file whose name starts with _ and is a script
+# or a log" — which needs no upkeep.
+/_*.ps1
+/_*.sh
+/_*.cmd
+/_*.log
 
 # Pre-edit backups left by the wave tooling beside the file they copy.
 *.r3bak

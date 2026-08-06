@@ -189,6 +189,22 @@ ic_chatlog = 64                      ; 360/256 angle byte
 Only keys that already **exist** in the AO2 design and are editable are
 honoured. Up to 160 entries each.
 
+"The AO2 design" here is the **resolved** one: the theme's own
+`courtroom_design.ini` plus the client's stock per-key fallback for the keys that
+file is silent about. That is what lets a theme ship a two-line design INI —
+`courtroom` and `viewport`, the pair a themed canvas requires — and place
+everything else from this section. "Editable" excludes the design canvas itself
+and the widgets that ride a parent (`showname`, `message`, `music_name`): a child
+moves by moving its parent, and the canvas is the coordinate system, not a widget.
+
+An override binds to the **widget**, not to the spelling. AO2 reads one identifier
+for `immediate` and falls back to a second (`pre_no_interrupt`); a row written in
+either spelling lands on that widget.
+
+`[rotations]` is read and preserved but **not yet applied** to AO2 widgets: a
+widget's box is also its click target, and turning one is a change to hit testing,
+not only to paint. Element rotation (`rot`, §3 `[element.*]`) is applied today.
+
 ### `[palette]`
 
 Overlays the palette derived from `courtroom_stylesheets.css`. Absent roles
@@ -461,6 +477,13 @@ element. That is what makes one bake pass enough, with no cycle detection and no
 depth cap — and it is what makes decoration survive a layout change: a frame
 anchored to the chatbox at `-6, -6, 12, 12` follows the chatbox wherever a
 preset puts it.
+
+**Either spelling of the pre-interrupt toggle resolves.** AO2 reads `immediate`
+first and falls back to `pre_no_interrupt` for one widget, and its own stock
+design file spells it the second way. `anchor =` accepts either and finds the
+rect under whichever name the resolved layout carries — the same fold
+`[overrides]` does, so a theme cannot have a row that works and an anchor that
+does not.
 
 **Elements are additive paint only.** They cannot move, hide or restyle an AO2
 widget. The only ways to move an AO2 widget are `[overrides]` and `[pane.*]`,

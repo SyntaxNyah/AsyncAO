@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -114,7 +115,8 @@ func loadShippedSidecars(t *testing.T) map[string]*theme.Sidecar {
 // compared ids could not tell a match from a fall-through. The failure this prevents
 // is the exact one that shipped: `pill` (17 lines, 8 themes) collapsing to a hard
 // rectangle, including the register plate whose own comment says the capsule IS its
-// identity (themes/thh_trial/asyncao_theme.ini:1200-1209).
+// identity (the CAPSULE CHIPS block above themes/thh_trial/asyncao_theme.ini
+// [element.chip_search]).
 func TestShippedThemeShapesAllResolve(t *testing.T) {
 	scs := loadShippedSidecars(t)
 	used := map[string]int{}
@@ -453,6 +455,7 @@ func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
 	scs := loadShippedSidecars(t)
 	binds, moving, clocks := 0, 0, 0
 	kinds := map[string]int{}
+	gens := map[string]int{}
 	for name, sc := range scs {
 		for i := range sc.Effects {
 			b := &sc.Effects[i]
@@ -491,16 +494,53 @@ func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
 			if int(el.Clock) >= theme.ClockCap {
 				t.Errorf("themes/%s [element.%s] clock = %d is outside the pool", name, el.ID, el.Clock)
 			}
+			// The 9-slice insets a theme WRITES must be the ones that PAINT.
+			// paintElementNineSlice clamps a pair that would collapse the middle
+			// (themeelements.go:1044-1052) — silently, and by construction it fires on
+			// the most natural thing an author writes: `size = 6` makes a 12 px plate
+			// tile, and `slice = 6, 6, 6, 6` on it is not "6 px corners", it is
+			// 6, 6, 5, 5 after the clamp. The file then documents a frame the client
+			// never draws, and the next editor tunes the wrong numbers.
+			if !genNineSliceIsLiteral(el) {
+				spec := theme.GeneratorSpecOf(el)
+				w, h := GenTileSize(spec.Name, genParseParams(spec))
+				t.Errorf("themes/%s [element.%s] writes slice = %d, %d, %d, %d on a %dx%d tile, which "+
+					"paintElementNineSlice clamps to %v — write the clamped values so the file says what "+
+					"it paints", name, el.ID, el.Slice[0], el.Slice[1], el.Slice[2], el.Slice[3], w, h,
+					nineSliceClamp(el.Slice, w, h))
+			}
 		}
 		// Elements and bindings share ONE array (theme.ElementCap), and the bake fills
 		// it with the elements first — so a theme that crowds the array loses its
 		// bindings, silently and last-declared-first. The count is the only place that
-		// is visible before somebody notices a glow missing. thh_trial is the tight one
-		// today at 78 + 9 = 87 of 96.
+		// is visible before somebody notices a glow missing. thh_trial is not merely
+		// the tight one today, it is AT the cap: 87 elements + 9 bindings = 96 of 96,
+		// zero headroom. Any new [element.*] there costs a binding — the last one
+		// declared, which is [effect.music_display] — so that theme needs a deletion
+		// before it can take an addition.
 		if n := len(sc.Elements) + len(sc.Effects); n > theme.ElementCap {
 			t.Errorf("themes/%s declares %d elements + %d bindings = %d, past theme.ElementCap (%d) — the "+
 				"bake fills the array with elements first, so this theme's LAST bindings never draw",
 				name, len(sc.Elements), len(sc.Effects), n, theme.ElementCap)
+		}
+		// ...and the SECOND silent cap beside it, which had no gate at all.
+		// planThemeMedia admits at most render.ThemeGenCap DISTINCT gen_params
+		// strings per theme, first come first served in declaration order, and hands
+		// the thirteenth no tile whatsoever (thememedia.go:193-195): the element keeps
+		// its slot, resolves to an empty key, and paints nothing. No note, no report
+		// line, nothing on screen. Three shipped themes already sit exactly AT 12, so
+		// for them the next distinct string is not a budget warning, it is a blanked
+		// element — and the only warning that exists is this count.
+		//
+		// Counted the way the planner counts: by the hash of the resolved spec, and
+		// only for generators this build rasterises (an unknown name degrades to a
+		// flat fill and is never budgeted).
+		n := distinctGenTiles(sc)
+		gens[name] = n
+		if n > render.ThemeGenCap {
+			t.Errorf("themes/%s declares %d distinct generator parameter sets, past render.ThemeGenCap "+
+				"(%d) — every element past the cap resolves to no art at all, silently",
+				name, n, render.ThemeGenCap)
 		}
 		for i := range sc.Clocks {
 			c := sc.Clocks[i]
@@ -528,6 +568,64 @@ func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
 	for _, n := range sortedCountKeys(kinds) {
 		t.Logf("shipped effect %q: %d declarations", n, kinds[n])
 	}
+	for _, n := range sortedCountKeys(gens) {
+		t.Logf("themes/%s: %d of %d generator tiles", n, gens[n], render.ThemeGenCap)
+	}
+}
+
+// nineSliceClamp reproduces paintElementNineSlice's inset clamp
+// (themeelements.go:1044-1052) for a source tile of sw x sh. A mirror, deliberately:
+// the painter takes a *bakedElement and an *sdl.Texture and this gate reads files, so
+// the four lines are written out where a reader can compare them to the call site.
+func nineSliceClamp(sl [4]int16, sw, sh int32) [4]int16 {
+	l, t, r, b := int32(sl[0]), int32(sl[1]), int32(sl[2]), int32(sl[3])
+	if l+r >= sw {
+		l, r = sw/2, sw-sw/2-1
+	}
+	if t+b >= sh {
+		t, b = sh/2, sh-sh/2-1
+	}
+	return [4]int16{int16(l), int16(t), int16(r), int16(b)}
+}
+
+// genNineSliceIsLiteral reports whether the element's authored `slice` is the one
+// that would actually paint.
+//
+// Vacuously true for anything this gate cannot measure — an element that is not a
+// known GENERATOR has no tile size until the media plan lands, and a media page's
+// dimensions are not in the file at all.
+func genNineSliceIsLiteral(el *theme.Element) bool {
+	if el.Kind != theme.ElemGen || el.Fit != theme.FitNine || el.Gen == "" || el.Inert() {
+		return true
+	}
+	spec := theme.GeneratorSpecOf(el)
+	if !GeneratorKnown(spec.Name) {
+		return true
+	}
+	w, h := GenTileSize(spec.Name, genParseParams(spec))
+	return nineSliceClamp(el.Slice, w, h) == el.Slice
+}
+
+// distinctGenTiles counts the generator tiles one sidecar would ask the store for,
+// mirroring planThemeMedia's admission arm (thememedia.go:186-198) rather than
+// calling it: the planner needs an App, a theme id and a landed store, and this gate
+// reads files off disk. The three conditions that decide whether an element costs a
+// tile are the whole of that mirror, so they are written out where a reader can
+// compare them line by line to the call site.
+func distinctGenTiles(sc *theme.Sidecar) int {
+	seen := map[string]struct{}{}
+	for i := range sc.Elements {
+		el := &sc.Elements[i]
+		if el.Kind != theme.ElemGen || el.Gen == "" || el.Inert() {
+			continue
+		}
+		spec := theme.GeneratorSpecOf(el)
+		if !GeneratorKnown(spec.Name) {
+			continue // degrades to a flat fill: nothing to rasterise, nothing to budget
+		}
+		seen[render.ThemeGenKey(spec.Hash())] = struct{}{}
+	}
+	return len(seen)
 }
 
 // effectMovesSomething reports whether the resolver leaves the neutral transform

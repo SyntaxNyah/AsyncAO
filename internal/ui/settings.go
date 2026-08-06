@@ -277,6 +277,23 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"subtheme", "subthemes", "theme variant", "variant",
 		"themes folder", "my themes", "where are my themes", "open themes folder",
 		"aotheme", "theme bundle", "reload themes", "find themes", "theme badge",
+		// The "Get themes" discovery row. Same shadow discipline as the block above
+		// (the table is scanned in TAB ORDER and matches forward, so a term here
+		// swallows every later tab's query hidden inside it): every entry is anchored
+		// on "themes" or on a word no later tab claims. Note the trap the shadow test
+		// CANNOT see: TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE
+		// keywords, so a long term here that merely CONTAINS a later tab's short query
+		// passes the gate while stealing that query for real. Hence three exclusions,
+		// each a word a later tab owns outright:
+		//   - anything containing "download" — Assets owns "download"/"downloader".
+		//   - "source repository" — the bare "source" belongs to Assets' "asset
+		//     source", the only other "source" term and the owner of the real
+		//     "Asset source" section.
+		//   - "new themes" — the bare "new" belongs to Chat's "jump to newest".
+		// "github" and "theme repository" stay: no later tab claims either word.
+		"get themes", "more themes", "free themes", "extra themes",
+		"where to get themes", "drop-in themes", "franchise themes",
+		"github", "theme repository",
 	},
 	tabAssets: {
 		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
@@ -4708,6 +4725,15 @@ const subthemeHint = "a variant folder inside the theme — its files win over t
 // themeDropNote is the line under the write root when nothing is truncated.
 const themeDropNote = "drop a theme folder in here (or anywhere on this screen) and it shows up in the list above"
 
+// themeGetNote is the discovery row's one line. A const, so the row costs no
+// allocation to draw (the settings-text doctrine — see themeRowText).
+//
+// It names the COUNT and the two ways to get the files, because "go to the repo"
+// on its own is the instruction that strands a non-developer: Code ▸ Download ZIP
+// is the path for someone who has never used git, and it is the one this sentence
+// leads with the alternative to.
+const themeGetNote = "the themes/ folder of the source repository holds fourteen free drop-in themes — clone it, or use Code ▸ Download ZIP, then copy the ones you want into the folder below"
+
 // themeRowLabelW is the label gutter shared by the catalog rows below, so
 // "Subtheme:" and "Your themes:" line their controls up with each other.
 const themeRowLabelW = 130
@@ -4742,6 +4768,12 @@ const (
 	// right-anchored, so its own width doubles as its offset from the edge.
 	themeOpenFolderBtnW = 110
 	themeRefreshBtnW    = 84
+	// themeGetBtnW is the "Open the repo" button on the discovery row above the
+	// write root; themeGetBtnsW is the strip it owns — the button plus the gap that
+	// keeps the sentence beside it from touching the button, so the text clips
+	// before it reaches one.
+	themeGetBtnW  = 130
+	themeGetBtnsW = 140
 )
 
 const (
@@ -4753,6 +4785,10 @@ const (
 	themeSubthemeRowH = 30
 	themeFolderRowH   = 26
 	themeNoteRowH     = 22
+	// themeGetRowH is the discovery row's advance. Same measurement as the folder
+	// row — a label, a sentence and a right-anchored button — and named separately
+	// for the same reason the others are: they are not one shared number.
+	themeGetRowH = 26
 	// themeFolderErrRowH is the advance of the write-root row when the location
 	// could not be resolved at all: that arm draws no note under it and RETURNS,
 	// so it carries the section's trailing gap itself.
@@ -4930,6 +4966,34 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 		}
 	}
 	y += themeSubthemeRowH
+
+	// --- where to GET themes, which is the row nobody could find -----------
+	//
+	// THE DISCOVERY POINT. Fourteen finished franchise themes ship in the source
+	// repository's themes/ folder and in nothing else: they are not in the release
+	// archives (they are content, not code), there is no in-app gallery, and the
+	// only surface that ever mentioned the repository at all is a link buried in
+	// About. Someone who reads "drop a theme folder in here" two rows down and has
+	// no theme folder to drop is at a dead end — this row is the answer to the
+	// question that dead end asks, so it sits with the folder rows rather than in a
+	// help screen.
+	//
+	// ABOVE the write root deliberately, for two reasons: the sentence can then say
+	// "the folder below" and mean it, and this row draws even on the arm where the
+	// write root could not be resolved at all — the case where a user needs to know
+	// where themes come from MOST.
+	if c.onRow != nil {
+		c.onRow("Get themes", y)
+	}
+	c.Label(pad, y+4, "Get themes:", ColText)
+	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, themeGetNote, ColTextDim)
+	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, "Open the repo") {
+		// The About screen's own launcher, not a second copy of the per-OS shellout
+		// (about.go) — and aboutRepoURL, so the two surfaces can never drift to
+		// different repositories.
+		openBrowser(aboutRepoURL)
+	}
+	y += themeGetRowH
 
 	// --- the write root, and the button that opens it ----------------------
 	if c.onRow != nil {

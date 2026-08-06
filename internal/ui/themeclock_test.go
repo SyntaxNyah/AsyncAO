@@ -271,6 +271,127 @@ func TestDecayingEffectsSelfClear(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Gate 1b — §6.6 R2's rot term, applied and restored
+// ---------------------------------------------------------------------------
+
+const (
+	// fxRotBakedAngle is a NON-ZERO authored angle, so the gate below measures the
+	// documented behaviour ("the effect's rotation ADDS to the element's own baked
+	// angle") rather than the weaker "the field ended up non-zero". Chosen so the
+	// sum overflows the byte — 200 + 64 = 264 — which makes the same assertion pin
+	// the 360/256 wrap as well.
+	fxRotBakedAngle = uint8(200)
+	// fxRotQuarterTurn is what FXSpin resolves to a quarter of the way through its
+	// period at full amplitude: rot = mod(1 * 0.25, 1) turns, and one turn is
+	// theme.AngleCount units. Written as the arithmetic rather than as 64 so a change
+	// to the angle convention moves the expectation with it.
+	fxRotQuarterTurn = theme.AngleCount / 4
+	// fxRotSamples is how many points of a period the no-rotation half samples. More
+	// than one, because a kind that rotated only at its peak would slip through a
+	// single sample.
+	fxRotSamples = 16
+)
+
+// TestSpinIsTheOnlyEffectThatRotates is the R2 rot gate: design §6.6's ratified
+// escalation had ZERO coverage after W5 shipped it.
+//
+// That is the dangerous shape of untested code, not the harmless one. The rot term
+// is FOUR LINES in two places — resolvePeriodicEffect's FXSpin arm and the one `if
+// fx.rot != 0` block in applyElementFX — with no assertion anywhere pointing at
+// either. A refactor that dropped the apply block would leave every other effect
+// gate green, every shipped theme loading, the resolver still returning a correct
+// rot, and spinning elements simply not spinning: the failure nobody reports because
+// the theme "just looks a bit plain". Proved by mutation before it was written —
+// disabling the branch at themeclock.go's `if fx.rot != 0` must fail this test and
+// nothing else in the package.
+//
+// Three claims, because the term is only honoured if all three hold:
+//
+//  1. FXSpin ADVANCES e.ang, by the resolved amount, added to the baked angle and
+//     wrapped into the byte.
+//  2. restoreElementFX PUTS IT BACK. The baked array is a cache the next frame
+//     re-reads, so an angle left applied would integrate: a spin would accelerate
+//     every frame until it was a strobe. elemFXSave carries `ang` for this reason
+//     alone, and nothing else asserts that it does.
+//  3. The other seven motion kinds LEAVE IT ALONE, across a whole period. Rotation
+//     is spin's identity; a pulse that also turned would be a second, undeclared
+//     effect, and the enum is the theme author's only contract about what a kind
+//     does.
+func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
+	period := time.Duration(fxTestPeriodMs) * time.Millisecond
+
+	// --- 1 + 2: the spin itself -------------------------------------------
+	//
+	// A quarter of the way in, so the expected angle is exact integer arithmetic
+	// rather than a rounding of a sine — the assertion names a number, and a wrong
+	// number is a wrong number rather than "close enough".
+	fx := resolveElementEffect(fxLiveEffect(theme.FXSpin), period/4, nil)
+	if fx.rot == 0 {
+		t.Fatalf("FXSpin resolved rot = 0 a quarter of the way through its period (%+v) — the resolver "+
+			"half of R2 is gone, and the apply half below cannot be measured through it", fx)
+	}
+	e := fxTestElement(theme.FXSpin)
+	e.ang = fxRotBakedAngle
+	saved := applyElementFX(&e, fx)
+	want := uint8((int32(fxRotBakedAngle) + fxRotQuarterTurn) & (theme.AngleCount - 1))
+	if e.ang != want {
+		t.Errorf("a quarter-turn spin on an element baked at angle %d left e.ang = %d, want %d "+
+			"(resolved rot = %v). §6.6 R2's rotation must ADD to the element's own baked angle and wrap "+
+			"into the 360/256 byte — an effect that resolves a rotation nothing applies is a spin that "+
+			"never spins.", fxRotBakedAngle, e.ang, want, fx.rot)
+	}
+	restoreElementFX(&e, saved)
+	if e.ang != fxRotBakedAngle {
+		t.Errorf("after restoreElementFX the element is at angle %d, want its baked %d — the baked array "+
+			"is a CACHE the next frame re-reads, so an angle left applied integrates: the spin would "+
+			"accelerate every frame until it strobed.", e.ang, fxRotBakedAngle)
+	}
+	// The angle must keep MOVING across the period, not stop at one applied value: a
+	// spin whose amplitude clipped its arc (rather than scaling its rate) would snap
+	// back to the same handful of angles every cycle.
+	seen := map[uint8]bool{}
+	for step := 0; step < fxRotSamples; step++ {
+		el := time.Duration(step) * period / fxRotSamples
+		s := fxTestElement(theme.FXSpin)
+		s.ang = fxRotBakedAngle
+		_ = applyElementFX(&s, resolveElementEffect(fxLiveEffect(theme.FXSpin), el, nil))
+		seen[s.ang] = true
+	}
+	if len(seen) < fxRotSamples {
+		t.Errorf("a full-amplitude spin visited %d distinct angles across %d samples of one period, want "+
+			"%d — the rotation is not advancing continuously with elapsed", len(seen), fxRotSamples, fxRotSamples)
+	}
+
+	// --- 3: nothing else touches the angle --------------------------------
+	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
+		if k == theme.FXNone || k == theme.FXSpin {
+			continue
+		}
+		for step := 0; step < fxRotSamples; step++ {
+			el := time.Duration(step) * period / fxRotSamples
+			// A fresh slot per sample so the one-shots are measured from their own
+			// origin rather than from a slot the previous kind advanced.
+			got := resolveElementEffect(fxLiveEffect(k), el, &fxState{startedAt: 0})
+			if got.rot != 0 {
+				t.Errorf("%s resolved rot = %v at %v — rotation is FXSpin's identity, and a kind that "+
+					"also turned would be a second effect the theme author never declared", k, got.rot, el)
+			}
+			o := fxTestElement(k)
+			o.ang = fxRotBakedAngle
+			s := applyElementFX(&o, got)
+			if o.ang != fxRotBakedAngle {
+				t.Errorf("%s moved e.ang from %d to %d at %v — only a spin rotates",
+					k, fxRotBakedAngle, o.ang, el)
+			}
+			restoreElementFX(&o, s)
+			if o.ang != fxRotBakedAngle {
+				t.Errorf("%s left e.ang = %d after restore, want %d", k, o.ang, fxRotBakedAngle)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Gate 2 — determinism (the export / thumbnail contract)
 // ---------------------------------------------------------------------------
 
