@@ -58,8 +58,8 @@ func dragStrip(t *testing.T, a *App, ctx *Ctx, dx, dy int32) (before, after sdl.
 	ctx.mouseX, ctx.mouseY = before.X+before.W/2, before.Y+before.H/2
 	ctx.mouseDown, a.editPrev = true, false
 	a.drawLayoutEditor(stripEditW, stripEditH, lay)
-	if a.editKey != themeTabBarKey || a.editDrag != 1 {
-		t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editKey, a.editDrag)
+	if a.editTgt.designKey() != themeTabBarKey || a.editDrag != 1 {
+		t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editTgt.designKey(), a.editDrag)
 	}
 	ctx.mouseX, ctx.mouseY = ctx.mouseX+dx, ctx.mouseY+dy
 	a.drawLayoutEditor(stripEditW, stripEditH, a.themeWindowLayout(stripEditW, stripEditH))
@@ -260,8 +260,8 @@ func TestThemedEditorRefusesToResizeTheTabStrip(t *testing.T) {
 	if a.editDrag == 2 {
 		t.Fatal("the corner grip started a RESIZE on the server-tab strip, which has no authored size")
 	}
-	if a.editKey != themeTabBarKey || a.editDrag != 1 {
-		t.Fatalf("the same press must still MOVE the strip, got key=%q drag=%d", a.editKey, a.editDrag)
+	if a.editTgt.designKey() != themeTabBarKey || a.editDrag != 1 {
+		t.Fatalf("the same press must still MOVE the strip, got key=%q drag=%d", a.editTgt.designKey(), a.editDrag)
 	}
 	// And dragging from that corner moves it without changing its size.
 	ctx.mouseX, ctx.mouseY = ctx.mouseX+30, ctx.mouseY+120
@@ -367,7 +367,7 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 //
 // TestTabStripPlacementSurvivesAnUnrelatedUndo above pushes its snapshot by hand, with
 // no drag in flight, and asserts a placed strip STAYS placed. It therefore cannot see
-// the press site's ordering: drawLayoutEditor assigns editKey/editDrag and only THEN
+// the press site's ordering: drawLayoutEditor assigns editTgt/editDrag and only THEN
 // calls pushLayoutUndo, so the snapshot of the PRE-PRESS state is taken while
 // tabStripThemeParked's "a placement is happening right now" arm is already true. An
 // un-parked, docked strip is recorded as parked=true, and restoreLayout's parked arm

@@ -43,7 +43,7 @@ func stageThemedNudge(t *testing.T) *App {
 	a.sess = &courtroom.Session{} // editorDrawSiteRuns: an editor only owns a live courtroom
 	applyThemeGeometryForTest(a, nudgeThemeLayout())
 	a.layoutEdit = true
-	a.editKey = nudgeWidgetKey
+	a.editTgt = designTarget(nudgeWidgetKey)
 	a.themeWindowLayout(stripEditW, stripEditH) // the cache the nudge reads is built by the pass
 	return a
 }
@@ -204,7 +204,7 @@ func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 			a.sess = &courtroom.Session{}
 			tc.apply(a)
 			a.layoutEdit = true
-			a.editKey = themeTabBarKey
+			a.editTgt = designTarget(themeTabBarKey)
 			a.themeLay.valid = false
 
 			before, ok := a.themeWindowLayout(tc.w, tc.h).rect(themeTabBarKey)
@@ -237,7 +237,7 @@ func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 
 // TestTabStripNudgeFollowsAClickSelection drives the whole gesture the user performs —
 // click the strip's box to select it, then arrow it — through the real editor, so the
-// selection field the nudge reads (a.editKey) is the one a press actually sets.
+// selection field the nudge reads (a.editTgt) is the one a press actually sets.
 func TestTabStripNudgeFollowsAClickSelection(t *testing.T) {
 	a, ctx, cleanup := stripEditFixture(t)
 	defer cleanup()
@@ -248,8 +248,8 @@ func TestTabStripNudgeFollowsAClickSelection(t *testing.T) {
 	if after != before {
 		t.Fatalf("fixture: a zero-travel click moved the strip %+v → %+v", before, after)
 	}
-	if a.editKey != themeTabBarKey {
-		t.Fatalf("fixture: the click did not leave the strip selected (editKey=%q)", a.editKey)
+	if a.editTgt.designKey() != themeTabBarKey {
+		t.Fatalf("fixture: the click did not leave the strip selected (editKey=%q)", a.editTgt.designKey())
 	}
 	if a.tabStripThemeParked() {
 		t.Fatal("fixture: a discarded click must leave the strip un-parked")
@@ -286,7 +286,7 @@ func stageClassicNudge(t *testing.T) *App {
 	a.room = newRoomForTest(t)
 	a.sess = &courtroom.Session{}
 	a.classicEdit = true
-	a.classicEditKey = slotOOC
+	a.classicTgt = classicTarget(slotOOC)
 	a.regSlot(slotOOC, sdl.Rect{X: 301, Y: 205, W: 320, H: 140}, sdl.Rect{X: 301, Y: 205, W: 320, H: 140})
 	return a
 }
@@ -488,7 +488,7 @@ func TestNudgeConsumesTheKeyItOwns(t *testing.T) {
 		t.Errorf("hotkey = %v after the coarse nudge, want it consumed", a.ctx.hotkey)
 	}
 	// Nothing selected is still a consumed key: a bound action must not fire mid-edit.
-	a.classicEditKey = ""
+	a.classicTgt = noTarget()
 	a.ctx.keyPressed = sdl.K_LEFT
 	if !a.editorNudgeKeys(classicNudgeW, classicNudgeH) || a.ctx.keyPressed != 0 {
 		t.Error("with no widget selected the editor must still swallow its own arrow key")
@@ -509,7 +509,7 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	a.sess = &courtroom.Session{}
 	a.layoutEdit = true
-	a.editKey = themeTabBarKey
+	a.editTgt = designTarget(themeTabBarKey)
 	a.themeLay.valid = false
 	lay := a.themeWindowLayout(stripEditW, stripEditH)
 	if _, ok := lay.rect(themeTabBarKey); !ok {
@@ -646,7 +646,7 @@ func TestArmingAnEditorDropsTheFocusedField(t *testing.T) {
 	a.classicEdit = false
 	a.ctx.focusID = "icmsg"
 	a.startClassicEdit()
-	a.classicEditKey = slotOOC // the arm clears the selection; the user's click re-sets it
+	a.classicTgt = classicTarget(slotOOC) // the arm clears the selection; the user's click re-sets it
 	before := classicNudgeRect(a)
 	if !pressNudge(t, a, sdl.K_RIGHT, false, classicNudgeW, classicNudgeH) {
 		t.Fatal("a freshly armed editor must own its arrow keys")
@@ -698,5 +698,133 @@ func TestGridStepToLandsOnTheLatticeFromAnywhere(t *testing.T) {
 	// A junk grid falls back to the editor's own default rather than dividing by zero.
 	if got := gridStepTo(5, 1, 0); got != layoutGridDesign {
 		t.Errorf("gridStepTo with no grid = %d, want the %d px default", got, layoutGridDesign)
+	}
+}
+
+// --- free elements: the third space (v1.90.0 W6) --------------------------------------
+
+// elemNudgeRect is the element fixture's starting rect. Deliberately the SAME
+// coordinates the themed-widget fixture starts from (nudgeThemeLayout), because the
+// whole point of the parity test below is that one number cannot move differently from
+// the other; off-grid on both axes, so a coarse step is distinguishable from a fine one.
+var elemNudgeRect = theme.Rect{X: 101, Y: 403, W: 90, H: 24}
+
+// stageElementNudge is the THEMED editor armed with a FREE ELEMENT selected — the state
+// W7's editor leaves behind when the user clicks a decoration. W6 ships no UI that can
+// produce it, which is exactly why it is constructed here: the machinery has to be
+// correct before the screen that drives it exists.
+//
+// No layout cache is staged because the element arm needs none: an element's authored
+// rect is the thing being moved, and the bake is what turns it into pixels afterwards.
+func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
+	t.Helper()
+	a := testTabApp(t)
+	a.screen = ScreenCourtroom
+	a.room = newRoomForTest(t)
+	a.sess = &courtroom.Session{}
+	a.layoutEdit = true
+	el := theme.Element{ID: "badge", Kind: theme.ElemShape, Rect: elemNudgeRect}
+	if mutate != nil {
+		mutate(&el)
+	}
+	a.themeSidecar = &theme.Sidecar{Elements: []theme.Element{el}}
+	a.editTgt = elementTarget(0)
+	return a
+}
+
+// TestElementNudgeMatchesTheSlotNudge is the wave's parity requirement: an arrow key
+// must address a free element EXACTLY as it addresses a themed slot.
+//
+// Both arms are driven through the real router from the same off-grid start, and the
+// two deltas are compared rather than each being checked against a hand-written number
+// — a test that asserted "1" twice would still pass if the two arms drifted onto
+// different grids or different modifiers.
+func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
+	for _, coarse := range []bool{false, true} {
+		for _, key := range []sdl.Keycode{sdl.K_LEFT, sdl.K_RIGHT, sdl.K_UP, sdl.K_DOWN} {
+			name := "fine"
+			if coarse {
+				name = "coarse"
+			}
+			t.Run(name, func(t *testing.T) {
+				slotApp := stageThemedNudge(t)
+				slotBefore := slotApp.themeRects[nudgeWidgetKey]
+				if slotBefore != elemNudgeRect {
+					t.Fatalf("fixture drift: the slot starts at %+v, the element at %+v — the two must match for a parity claim",
+						slotBefore, elemNudgeRect)
+				}
+				if !pressNudge(t, slotApp, key, coarse, stripEditW, stripEditH) {
+					t.Fatal("an armed editor must claim the arrow key")
+				}
+				slotAfter := slotApp.themeRects[nudgeWidgetKey]
+
+				elemApp := stageElementNudge(t, nil)
+				if !pressNudge(t, elemApp, key, coarse, stripEditW, stripEditH) {
+					t.Fatal("an element selection must claim the arrow key too")
+				}
+				elemAfter := elemApp.themeSidecar.Elements[0].Rect
+				if elemAfter != slotAfter {
+					t.Fatalf("the element moved to %+v where the slot moved to %+v — same key, same start, same grid",
+						elemAfter, slotAfter)
+				}
+				if elemAfter.W != elemNudgeRect.W || elemAfter.H != elemNudgeRect.H {
+					t.Errorf("a nudge resized the element %+v → %+v", elemNudgeRect, elemAfter)
+				}
+			})
+		}
+	}
+}
+
+// TestElementNudgeIsOnePixelAndReBakes pins the two halves parity alone cannot: the
+// plain step is layoutNudgePx of the element's OWN space, and the move invalidates the
+// layout so the next frame re-bakes the element's absolute rect from it.
+func TestElementNudgeIsOnePixelAndReBakes(t *testing.T) {
+	a := stageElementNudge(t, nil)
+	a.themeLay.valid = true // whatever a previous frame left behind
+	if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
+		t.Fatal("an armed editor must claim the arrow key")
+	}
+	want := elemNudgeRect
+	want.X += layoutNudgePx
+	if got := a.themeSidecar.Elements[0].Rect; got != want {
+		t.Fatalf("one arrow press moved the element %+v → %+v, want %+v", elemNudgeRect, got, want)
+	}
+	if a.themeLay.valid {
+		t.Error("a moved element left the layout cache valid — the bake resolves its absolute rect, so nothing would redraw")
+	}
+}
+
+// TestElementNudgeRefusesALockedElementButStillEatsTheKey pins the editor-only lock
+// (theme.Element.Locked) on the keyboard path. Consuming the key regardless is the same
+// promise every other refused nudge makes: while an editor is armed, a key it owns can
+// never also reach a rebound hotkey or the IC recall ring.
+func TestElementNudgeRefusesALockedElementButStillEatsTheKey(t *testing.T) {
+	a := stageElementNudge(t, func(el *theme.Element) { el.Locked = true })
+	if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
+		t.Fatal("the editor must still CONSUME the key it refuses to act on")
+	}
+	if got := a.themeSidecar.Elements[0].Rect; got != elemNudgeRect {
+		t.Fatalf("a locked element moved %+v → %+v", elemNudgeRect, got)
+	}
+}
+
+// TestElementNudgeSurvivesAThemeWithNoElements is the degenerate case the router must
+// not panic on: a selection left over from a theme that has just been swapped for a
+// stock AO2 one (no sidecar at all), or an index past the end of a shorter list.
+func TestElementNudgeSurvivesAThemeWithNoElements(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		prep func(*App)
+	}{
+		{"no sidecar at all", func(a *App) { a.themeSidecar = nil }},
+		{"an index past the end", func(a *App) { a.editTgt = elementTarget(len(a.themeSidecar.Elements) + 5) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := stageElementNudge(t, nil)
+			tc.prep(a)
+			if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
+				t.Fatal("the editor must still consume its own arrow key")
+			}
+		})
 	}
 }

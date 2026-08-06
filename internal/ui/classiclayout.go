@@ -429,9 +429,13 @@ func slotResizable(name string) bool { return slotResizeEdges(name) != 0 }
 // control block) would steal the grip. Only when the cursor is over NO box (a grip in
 // the outer margin between/around boxes) does it fall back to the smallest gripped
 // RESIZABLE box. Move-only slots are always skipped. Pure + testable.
+//
+// The per-slot edge rule goes through resizeEdgesFor (edittarget.go) rather than
+// straight to slotResizeEdges: one entry point for both editors' spaces, so the design
+// path's 8-handle probe and this one cannot grow different answers for the same widget.
 func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx, my, margin int32) (string, uint8) {
 	if hoverKey != "" { // pointing at a box → only that box may resize (matches move)
-		if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin) & slotResizeEdges(hoverKey); e != 0 {
+		if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin) & resizeEdgesFor(classicTarget(hoverKey)); e != 0 {
 			return hoverKey, e
 		}
 		return "", 0
@@ -440,7 +444,7 @@ func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx,
 	bestKey, bestEdges := "", uint8(0)
 	for _, k := range keys {
 		r := reg[k].cur
-		if e := classicEdgeAt(mx, my, r, margin) & slotResizeEdges(k); e != 0 {
+		if e := classicEdgeAt(mx, my, r, margin) & resizeEdgesFor(classicTarget(k)); e != 0 {
 			if area := int64(r.W) * int64(r.H); best < 0 || area < best {
 				bestKey, bestEdges, best = k, e, area
 			}
@@ -452,11 +456,16 @@ func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx,
 // classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
 // so the editor can paint them — making "drag an edge to resize one dimension"
 // discoverable.
-func classicHandles(r sdl.Rect) [8]sdl.Rect {
+//
+// SHARED WITH THE DESIGN PATH since W6: the themed editor probes and paints these same
+// squares (edittarget.go handleGripAt / handleGripMask), which is what closed the
+// recon's PARTIAL — index handleBottomRight is bit-identical to the single corner grip
+// that editor used to have, so the generalization is a superset of it.
+func classicHandles(r sdl.Rect) [handleCount]sdl.Rect {
 	const hp = layoutHandlePx
 	cx := r.X + r.W/2 - hp/2
 	cy := r.Y + r.H/2 - hp/2
-	return [8]sdl.Rect{
+	return [handleCount]sdl.Rect{
 		{X: r.X, Y: r.Y, W: hp, H: hp},                       // top-left
 		{X: r.X + r.W - hp, Y: r.Y, W: hp, H: hp},            // top-right
 		{X: r.X, Y: r.Y + r.H - hp, W: hp, H: hp},            // bottom-left
@@ -478,7 +487,7 @@ func (a *App) startClassicEdit() {
 	// so toolboxPinned/toolboxPieces are left as the user set them (they draw
 	// post-courtroom with the fence released; the strip is gone).
 	a.closeEditorBlockingOverlays() // table-driven, shared with startLayoutEdit (layoutedit.go)
-	a.classicEditKey = ""
+	a.classicTgt = noTarget()
 	a.classicEditDrag = 0
 	a.classicEditEdges = 0
 	a.classicEditMoved = false
@@ -496,7 +505,7 @@ func (a *App) startClassicEdit() {
 // stopClassicEdit disarms and releases the input fence.
 func (a *App) stopClassicEdit() {
 	a.classicEdit = false
-	a.classicEditKey = ""
+	a.classicTgt = noTarget()
 	a.classicEditDrag = 0
 	a.classicEditEdges = 0
 	a.classicUndo, a.classicRedo = nil, nil // free the history (it's edit-session-scoped)
@@ -727,8 +736,11 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// The pick index resets whenever the stack under the cursor changes.
 	hoverKey := ""
 	var stack []string
+	// The selected slot's key, resolved once: every arm below that used to read the
+	// bare string field reads THIS, so the space is checked exactly once per frame.
+	editKey := a.classicTgt.classicKey()
 	if a.classicEditDrag != 0 {
-		hoverKey = a.classicEditKey // mid-drag: keep the grabbed box highlighted
+		hoverKey = editKey // mid-drag: keep the grabbed box highlighted
 	} else {
 		for _, k := range keys {
 			if pointIn(c.mouseX, c.mouseY, a.slotReg[k].cur) {
@@ -794,13 +806,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 		switch {
 		case resizeKey != "":
-			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = resizeKey, 2, resizeEdges
+			a.classicTgt, a.classicEditDrag, a.classicEditEdges = classicTarget(resizeKey), 2, resizeEdges
+			editKey = resizeKey
 		case hoverKey != "":
-			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = hoverKey, 1, 0
+			a.classicTgt, a.classicEditDrag, a.classicEditEdges = classicTarget(hoverKey), 1, 0
+			editKey = hoverKey
 		}
 		if a.classicEditDrag != 0 {
 			a.classicEditStart = [2]int32{c.mouseX, c.mouseY}
-			a.classicEditBase = a.slotReg[a.classicEditKey].cur
+			a.classicEditBase = a.slotReg[editKey].cur
 			a.classicEditMoved = false
 			a.pushClassicUndo() // snapshot before the move/resize (popped at release if it was a no-op)
 		}
@@ -819,7 +833,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Live drag: screen deltas applied directly (screen space), clamped on-stage,
 	// snapped, then written to the App-local override (px→frac) so the widget
 	// redraws at the new spot NEXT frame.
-	if a.classicEditDrag != 0 && c.mouseDown && a.classicEditKey != "" {
+	if a.classicEditDrag != 0 && c.mouseDown && editKey != "" {
 		dx := c.mouseX - a.classicEditStart[0]
 		dy := c.mouseY - a.classicEditStart[1]
 		if dx != 0 || dy != 0 {
@@ -880,7 +894,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			// grid on the matched axis. Guides draw in the overlay below.
 			a.alignScratch = a.alignScratch[:0]
 			for _, k := range keys {
-				if k != a.classicEditKey {
+				if k != editKey {
 					a.alignScratch = append(a.alignScratch, a.slotReg[k].cur)
 				}
 			}
@@ -891,7 +905,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		// 4:3. Applied AFTER the grid snap — snapping W and H independently used
 		// to re-break the ratio the lock had just computed (the driven dimension
 		// deliberately leaves the grid; the ratio is the point of the lock).
-		if a.layoutAspect && a.classicEditDrag != 1 && a.classicEditKey == slotViewport {
+		if a.layoutAspect && a.classicEditDrag != 1 && editKey == slotViewport {
 			e := a.classicEditEdges
 			if e&(edgeL|edgeR) != 0 { // a side/corner handle → width drives height
 				r.H = r.W * 3 / 4
@@ -907,10 +921,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 			if a.classicOv == nil {
 				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 			}
-			a.classicOv[a.classicEditKey] = rectToFrac(r, w, h)
+			a.classicOv[editKey] = rectToFrac(r, w, h)
 			// A pinned slot's override now describes THIS window size —
 			// re-base the local anchor so resolution round-trips exactly.
-			a.syncAnchorWindow(a.classicEditKey, w, h)
+			a.syncAnchorWindow(editKey, w, h)
 		}
 	}
 
@@ -921,12 +935,12 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// pinned pieces panel (drawToolboxPieces), which is cleaner and reachable in edit.
 	if a.classicEditDrag != 0 && !c.mouseDown {
 		switch {
-		case a.classicEditMoved && a.classicEditKey != "":
-			if ov, ok := a.classicOv[a.classicEditKey]; ok {
-				a.d.Prefs.SetClassicSlot(a.classicEditKey, ov)
+		case a.classicEditMoved && editKey != "":
+			if ov, ok := a.classicOv[editKey]; ok {
+				a.d.Prefs.SetClassicSlot(editKey, ov)
 				// Persist the pin's re-based window size with the override.
-				if m := a.slotAnchorMode(a.classicEditKey); m != "" {
-					a.d.Prefs.SetClassicAnchor(a.classicEditKey, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+				if m := a.slotAnchorMode(editKey); m != "" {
+					a.d.Prefs.SetClassicAnchor(editKey, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 				}
 			}
 		default:
@@ -948,13 +962,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 	dimEdge := blendCol(ColAccent, ColBackground, 0.6)
 	for _, k := range keys {
 		r := a.slotReg[k].cur
-		if a.classicEditDrag != 0 && k == a.classicEditKey {
+		if a.classicEditDrag != 0 && k == editKey {
 			if ov, ok := a.classicOv[k]; ok {
 				r = a.anchoredRect(k, ov, w, h)
 			}
 		}
 		switch {
-		case k == a.classicEditKey:
+		case k == editKey:
 			c.Border(r, ColDanger)
 			a.drawSlotHandles(r, k, ColDanger)
 			a.drawSlotTag(r, k, ColDanger)
@@ -1035,8 +1049,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 
 	switch { // bottom line: the per-box context (kept off the busy top banner)
-	case a.classicEditKey != "":
-		c.Label(pad, h-22, "Moving "+classicSlotLabel(a.classicEditKey)+"  ·  release to save", ColText)
+	case editKey != "":
+		c.Label(pad, h-22, "Moving "+classicSlotLabel(editKey)+"  ·  release to save", ColText)
 	case len(stack) > 1:
 		c.Label(pad, h-22, fmt.Sprintf("%s  ·  %d boxes here — Tab to pick (%d/%d)",
 			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
@@ -1053,7 +1067,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 
 // handleEdgeMask maps each classicHandles index to the edges it grips (same
 // order: 4 corners, then top/bottom/left/right midpoints).
-var handleEdgeMask = [8]uint8{
+var handleEdgeMask = [handleCount]uint8{
 	edgeL | edgeT, edgeR | edgeT, edgeL | edgeB, edgeR | edgeB,
 	edgeT, edgeB, edgeL, edgeR,
 }
@@ -1063,7 +1077,7 @@ var handleEdgeMask = [8]uint8{
 // the affordance never lies), each with a dark outline so the bright squares
 // read on any background underneath. Move-only slots paint none.
 func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
-	allowed := slotResizeEdges(key)
+	allowed := resizeEdgesFor(classicTarget(key))
 	if allowed == 0 {
 		return
 	}

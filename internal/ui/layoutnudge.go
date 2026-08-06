@@ -21,7 +21,13 @@ package ui
 //     (see themeTabBarKey), so one pixel means one SCREEN px at every layout scale.
 //     Its whole gesture — base (editBaseFor), delta, grid (snapTabStripScreen), magnet
 //     and clamp (clampTabStripScreen) — is already screen-space; the nudge simply joins
-//     it rather than re-deriving any of it.
+//     it rather than re-deriving any of it;
+//   - a FREE ELEMENT (v1.90.0 W6) lives in its own declared Space and its rect may be a
+//     signed delta on its anchor — one design px of that space, no canvas clamp. See
+//     nudgeThemeElement.
+//
+// WHICH OF THE THREE is not a question this file asks about the payload: the router
+// switches on the selected editTarget's own space field (edittarget.go).
 //
 // Everything a nudge writes goes through the SAME state a mouse drag's release writes,
 // so a nudged widget persists, undoes with the editor's existing Ctrl+Z, and is put back
@@ -191,23 +197,48 @@ func (a *App) editorNudgeKeys(w, h int32) bool {
 	if !ok {
 		return false
 	}
-	switch {
-	case a.layoutEdit:
-		a.nudgeThemedRect(dx, dy, coarse, w, h)
-	case a.classicEdit:
-		a.nudgeClassicSlot(dx, dy, coarse, w, h)
+	// ONE DISPATCH, ON THE TARGET'S OWN SPACE (edittarget.go, W6). It used to be a
+	// switch over which EDITOR was armed, which answered the same question only while
+	// each editor could hold exactly one kind of thing. The themed editor can hold two
+	// from W7 — a design rect or a free element — and the space says which without
+	// anyone inspecting the payload.
+	tgt := a.editSelection()
+	switch tgt.space {
+	case spaceDesign:
+		a.nudgeThemedRect(tgt, dx, dy, coarse, w, h)
+	case spaceElement:
+		a.nudgeThemeElement(tgt, dx, dy, coarse)
+	case spaceClassic:
+		a.nudgeClassicSlot(tgt, dx, dy, coarse, w, h)
 	}
 	return true
 }
 
-// nudgeThemedRect moves the THEMED editor's selected widget.
+// editSelection is the armed editor's current target.
 //
-// a.editKey is the selection: the editor arms it on the press that grabs a box and
+// The two editors are mutually exclusive by construction (openLayoutEditor arms one or
+// the other, and drawCourtroom force-stops the classic one under a theme), so this is
+// a lookup rather than a priority rule — but it is written as a switch on the armed
+// flag rather than "whichever field is non-empty", because a stale selection left in
+// the OTHER editor's field is exactly the sort of thing that outlives a theme swap.
+func (a *App) editSelection() editTarget {
+	switch {
+	case a.layoutEdit:
+		return a.editTgt
+	case a.classicEdit:
+		return a.classicTgt
+	}
+	return noTarget()
+}
+
+// nudgeThemedRect moves the THEMED editor's selected DESIGN rect.
+//
+// a.editTgt is the selection: the editor arms it on the press that grabs a box and
 // leaves it set after the release (it is the key drawn in ColDanger with the readout at
 // the bottom of the screen), so the gesture the user already knows — click the box, then
 // arrow it — needs nothing new. A drag in flight keeps the mouse in charge.
-func (a *App) nudgeThemedRect(dx, dy int, coarse bool, w, h int32) {
-	key := a.editKey
+func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int32) {
+	key := tgt.designKey()
 	if key == "" || !themeKeyEditable(key) || a.editDrag != 0 {
 		return
 	}
@@ -258,6 +289,49 @@ func (a *App) nudgeThemedRect(dx, dy int, coarse bool, w, h int32) {
 	a.invalidateThemeCanvases()
 }
 
+// nudgeThemeElement moves a FREE ELEMENT — the third space, and the whole reason the
+// nudge dispatches on a target instead of on which editor is armed (W6).
+//
+// ONE UNIT OF THE SAME SPACE, BY CONSTRUCTION. It steps the element's AUTHORED rect
+// through nudgeCoord with the same grid the design arm uses, so "arrow = 1 px, Ctrl =
+// the next grid line" is one implementation rather than two that agree today. An
+// element's rect is design px in its own declared Space (theme.Element), which is the
+// space its authored numbers, its anchor delta and the editor's grid all live in.
+//
+// NO CANVAS CLAMP, deliberately. clampDesignRectToCanvas is a SLOT rule: a widget's
+// rect is absolute in the courtroom, so pushing it off the stage is meaningless. An
+// element's is not — under design §6.6 R1 an anchored element's rect is a signed DELTA
+// on its anchor (negative values are the normal case for a decoration that overhangs
+// its widget), and a SpaceWindow element is measured in window px against no canvas at
+// all. Clamping here would forbid values the format defines.
+//
+// NOT PERSISTED HERE. The live sidecar IS the document for as long as W6 is the whole
+// story: the mutation invalidates the layout so the next frame re-bakes, and that is
+// all a behaviour-neutral wave may do. W7 owns themeDoc, the undo ring and the
+// mtime-guarded autosave, and wraps this same mutation in one coalesced op.
+func (a *App) nudgeThemeElement(tgt editTarget, dx, dy int, coarse bool) {
+	idx, ok := tgt.elemIdx()
+	sc := a.themeSidecar
+	if !ok || sc == nil || idx < 0 || idx >= len(sc.Elements) {
+		return
+	}
+	if a.editDrag != 0 {
+		return // a drag in flight keeps the mouse in charge, exactly as on the design arm
+	}
+	el := &sc.Elements[idx]
+	if el.Locked {
+		return // the editor-only lock (theme.Element.Locked): no drag, no nudge
+	}
+	r := el.Rect
+	r.X = nudgeCoord(r.X, dx, coarse, 0, layoutGridDesign)
+	r.Y = nudgeCoord(r.Y, dy, coarse, 0, layoutGridDesign)
+	if r == el.Rect {
+		return // nothing moved, so nothing to re-bake
+	}
+	el.Rect = r
+	a.invalidateThemeCanvases()
+}
+
 // clampDesignRectToCanvas keeps a themed widget on the stage, in DESIGN px. Shared with
 // drawLayoutEditor's drag so a nudge cannot stop anywhere a drag would not.
 func clampDesignRectToCanvas(r theme.Rect, court theme.Rect) theme.Rect {
@@ -278,8 +352,8 @@ func clampDesignRectToCanvas(r theme.Rect, court theme.Rect) theme.Rect {
 
 // nudgeClassicSlot moves the CLASSIC (default-layout) editor's selected slot, in screen
 // px, through the same override → fraction → prefs path a drag release takes.
-func (a *App) nudgeClassicSlot(dx, dy int, coarse bool, w, h int32) {
-	key := a.classicEditKey
+func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int32) {
+	key := tgt.classicKey()
 	if key == "" || a.classicEditDrag != 0 {
 		return
 	}

@@ -640,8 +640,8 @@ func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	ctx.mouseX, ctx.mouseY = box.X+box.W/2, box.Y+box.H/2
 	ctx.mouseDown, a.editPrev = true, false
 	a.drawLayoutEditor(w, h, lay)
-	if a.editKey != themeTabBarKey || a.editDrag != 1 {
-		t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editKey, a.editDrag)
+	if a.editTgt.designKey() != themeTabBarKey || a.editDrag != 1 {
+		t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editTgt.designKey(), a.editDrag)
 	}
 
 	// Drag it down onto the canvas, then release.

@@ -87,6 +87,83 @@ func snapTabStripScreen(r theme.Rect, lay *themeLayoutCache) theme.Rect {
 // the same strip would be resizable in one and not the other.
 func themedKeyResizable(key string) bool { return key != themeTabBarKey }
 
+// resizeDesignRect applies a resize drag's delta to the GRIPPED EDGES, in design px —
+// the design-space twin of drawClassicEditor's own per-edge arithmetic, which is where
+// this shape (and the anchored-edge floor below it) comes from.
+//
+// BEHAVIOUR-NEUTRAL FOR THE GRIP THAT ALREADY EXISTED. With edges == edgeR|edgeB —
+// which is handleEdgeMask[handleBottomRight], i.e. every press the themed editor could
+// possibly have started before W6 — the two assignments are `W = base.W + dx` and
+// `H = base.H + dy`, exactly what the single-corner path did. The L and T arms are the
+// new ones, and each keeps its ANCHORED edge fixed when the minimum floors, so a drag
+// pushed past layoutMinDesignPx parks against the floor instead of inverting the box.
+//
+// Pure, so the arithmetic is unit-testable without a renderer.
+func resizeDesignRect(base theme.Rect, edges uint8, dx, dy int) theme.Rect {
+	r := base
+	if edges&edgeR != 0 {
+		r.W = base.W + dx
+	}
+	if edges&edgeL != 0 {
+		r.X = base.X + dx
+		r.W = base.W - dx
+	}
+	if edges&edgeB != 0 {
+		r.H = base.H + dy
+	}
+	if edges&edgeT != 0 {
+		r.Y = base.Y + dy
+		r.H = base.H - dy
+	}
+	if r.W < layoutMinDesignPx {
+		if edges&edgeL != 0 {
+			r.X = base.X + base.W - layoutMinDesignPx
+		}
+		r.W = layoutMinDesignPx
+	}
+	if r.H < layoutMinDesignPx {
+		if edges&edgeT != 0 {
+			r.Y = base.Y + base.H - layoutMinDesignPx
+		}
+		r.H = layoutMinDesignPx
+	}
+	return r
+}
+
+// snapDesignResize rounds a resize to the design grid by snapping the SIZE and holding
+// the anchored edge still.
+//
+// Snapping the size rather than the moving edge's coordinate is what the single-corner
+// path did (`W = snapDesign(W)`), and it is right for both directions: a widget a theme
+// authored off-grid keeps its authored origin, and the edge the user is dragging lands
+// on the same lattice in either direction rather than in two different phases depending
+// on which side they grabbed. An axis nobody gripped is not touched at all — before W6
+// both axes were snapped unconditionally, which was harmless only because the one grip
+// always gripped both.
+func snapDesignResize(r theme.Rect, edges uint8) theme.Rect {
+	if edges&(edgeL|edgeR) != 0 {
+		right := r.X + r.W
+		r.W = snapDesign(r.W)
+		if r.W < layoutMinDesignPx {
+			r.W = layoutMinDesignPx
+		}
+		if edges&edgeL != 0 {
+			r.X = right - r.W
+		}
+	}
+	if edges&(edgeT|edgeB) != 0 {
+		bottom := r.Y + r.H
+		r.H = snapDesign(r.H)
+		if r.H < layoutMinDesignPx {
+			r.H = layoutMinDesignPx
+		}
+		if edges&edgeT != 0 {
+			r.Y = bottom - r.H
+		}
+	}
+	return r
+}
+
 // layoutUndoCap bounds the editor's undo/redo stacks (rule §17.4).
 const layoutUndoCap = 64
 
@@ -202,8 +279,9 @@ func (a *App) startLayoutEdit() {
 	// at all. Leave toolboxPinned/toolboxPieces as the user set them; they draw
 	// post-courtroom with the fence released.
 	a.closeEditorBlockingOverlays()
-	a.editKey = ""
+	a.editTgt = noTarget()
 	a.editDrag = 0
+	a.editEdges = 0
 	a.layoutSnap = true        // tidy placement by default; toggle off in the editor
 	a.layoutProfileCursor = -1 // no saved profile applied via the banner chip yet this edit
 	// layoutMagnetOff is NOT reset here (see startClassicEdit): the sibling magnet
@@ -248,8 +326,9 @@ func (a *App) closeEditorBlockingOverlays() {
 // stopLayoutEdit disarms and releases the input fence.
 func (a *App) stopLayoutEdit() {
 	a.layoutEdit = false
-	a.editKey = ""
+	a.editTgt = noTarget()
 	a.editDrag = 0
+	a.editEdges = 0
 	a.ctx.modalOn = false
 }
 
@@ -393,10 +472,15 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		ri, rj := lay.r[stack[i]], lay.r[stack[j]]
 		return int64(ri.W)*int64(ri.H) < int64(rj.W)*int64(rj.H)
 	})
+	// The selected design key, resolved once through the target's own space check
+	// (edittarget.go): an element target — which only W7's editor can produce — is
+	// structurally invisible to every arm of this overlay, which is exactly what "W6
+	// ships no new UI" has to mean in code.
+	editKey := a.editTgt.designKey()
 	hoverKey := ""
 	switch {
 	case a.editDrag != 0:
-		hoverKey = a.editKey // mid-drag: keep the grabbed box highlighted
+		hoverKey = editKey // mid-drag: keep the grabbed box highlighted
 	case len(stack) > 0:
 		if sig := strings.Join(stack, "\x00"); sig != a.editPickSig {
 			a.editPickSig, a.editPickIdx = sig, 0 // a new stack under the cursor
@@ -427,33 +511,41 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// classic editor guards the same way via editOverToolbox.
 	overToolbox := a.editOverToolbox(w, h)
 
-	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose corner grip is
+	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose grip is
 	// under the cursor — so a big box's grip can't be blocked by a small box sitting on its corner.
 	// Otherwise MOVE the armed box (hoverKey, Tab-cyclable).
+	//
+	// EIGHT HANDLES SINCE W6 (design §3.2). The probe is handleGripAt (edittarget.go),
+	// which hit-tests the same squares the overlay paints and masks them with
+	// resizeEdgesFor — so a move-only key still has no grip anywhere, and the
+	// bottom-right corner still grips exactly the rect and exactly the edges it did
+	// when it was the only one. The other seven are what the recon's PARTIAL was
+	// about: the classic editor has had them since v1.52.0 and the themed one had a
+	// single corner, so a themed widget could only ever grow down and right.
 	if pressed && a.editDrag == 0 && c.mouseY > layoutBannerH && !overToolbox {
-		resizeKey := ""
+		resizeKey, resizeEdges := "", uint8(0)
 		var gripArea int64 = -1
 		for _, k := range keys {
-			if !themedKeyResizable(k) {
-				continue // move-only: it has no authored size, so its corner is not a grip
-			}
 			r := lay.r[k]
-			grip := sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}
-			if pointIn(c.mouseX, c.mouseY, grip) {
-				if area := int64(r.W) * int64(r.H); area > gripArea {
-					resizeKey, gripArea = k, area
-				}
+			e := handleGripAt(r, resizeEdgesFor(designTarget(k)), c.mouseX, c.mouseY)
+			if e == 0 {
+				continue
+			}
+			if area := int64(r.W) * int64(r.H); area > gripArea {
+				resizeKey, resizeEdges, gripArea = k, e, area
 			}
 		}
 		switch {
 		case resizeKey != "":
-			a.editKey, a.editDrag = resizeKey, 2 // resize
+			a.editTgt, a.editDrag, a.editEdges = designTarget(resizeKey), 2, resizeEdges // resize
+			editKey = resizeKey
 		case hoverKey != "":
-			a.editKey, a.editDrag = hoverKey, 1 // move
+			a.editTgt, a.editDrag, a.editEdges = designTarget(hoverKey), 1, 0 // move
+			editKey = hoverKey
 		}
 		if a.editDrag != 0 {
 			a.editStart = [2]int32{c.mouseX, c.mouseY}
-			a.editBase = a.editBaseFor(a.editKey, lay)
+			a.editBase = a.editBaseFor(editKey, lay)
 			a.pushLayoutUndo() // snapshot before the move/resize (popped at release if it was a no-op)
 		}
 	}
@@ -482,8 +574,8 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// rather than by two rounding rules agreeing. (Storing it costs one subtraction
 	// and is lossless, so writing it each frame — which is what lets the strip paint
 	// under the cursor mid-gesture — is identical to computing it once at release.)
-	if a.editDrag != 0 && c.mouseDown && a.editKey != "" {
-		screenDrag := a.editKey == themeTabBarKey
+	if a.editDrag != 0 && c.mouseDown && editKey != "" {
+		screenDrag := editKey == themeTabBarKey
 		dx, dy := int(c.mouseX-a.editStart[0]), int(c.mouseY-a.editStart[1])
 		if !screenDrag {
 			dx = int(float64(c.mouseX-a.editStart[0]) / lay.scaleX)
@@ -494,14 +586,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			r.X += dx
 			r.Y += dy
 		} else {
-			r.W += dx
-			r.H += dy
-			if r.W < layoutMinDesignPx {
-				r.W = layoutMinDesignPx
-			}
-			if r.H < layoutMinDesignPx {
-				r.H = layoutMinDesignPx
-			}
+			r = resizeDesignRect(a.editBase, a.editEdges, dx, dy)
 		}
 		a.alignGuides = a.alignGuides[:0] // reset this drag frame's guides (mirror classiclayout.go)
 		// Shift = fully pixel-precise: it bypasses the grid AND the magnet together,
@@ -520,14 +605,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 					r.Y = snapDesign(r.Y)
 				}
 			} else {
-				r.W = snapDesign(r.W)
-				r.H = snapDesign(r.H)
-				if r.W < layoutMinDesignPx {
-					r.W = layoutMinDesignPx
-				}
-				if r.H < layoutMinDesignPx {
-					r.H = layoutMinDesignPx
-				}
+				r = snapDesignResize(r, a.editEdges)
 			}
 			// Piece-to-piece magnet (M3): grid first (above), then snap the dragged
 			// rect's edges/centre flush to the OTHER widgets and to the extent's
@@ -546,7 +624,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			case screenDrag:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
 				for k, sr := range lay.r {
-					if k == a.editKey || !themeKeyEditable(k) {
+					if k == editKey || !themeKeyEditable(k) {
 						continue
 					}
 					a.themeAlignScratch = append(a.themeAlignScratch, sr)
@@ -560,15 +638,22 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			case ok:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
 				for k, tr := range a.themeRects {
-					if k == a.editKey || !themeKeyEditable(k) {
+					if k == editKey || !themeKeyEditable(k) {
 						continue
 					}
 					a.themeAlignScratch = append(a.themeAlignScratch, a.magnetSiblingRect(k, tr, lay))
 				}
 				dr := sdl.Rect{X: int32(r.X), Y: int32(r.Y), W: int32(r.W), H: int32(r.H)}
+				// EVERY HANDLE FEEDS THE MAGNET (design §W6). This mask used to be the
+				// constant edgeR|edgeB, which was true while the bottom-right corner was
+				// the only grip and became a silent hole the moment it stopped being: a
+				// left-edge drag would have rounded to the grid and then aligned to
+				// nothing, so six of the eight handles could not be snapped flush to
+				// anything. It is the gripped edges now, and alignRect already knows how
+				// to move each of the four (growL/growR/growT/growB).
 				var edges uint8
-				if a.editDrag != 1 { // themed resize is bottom-right only (W/H grow from the grip)
-					edges = edgeR | edgeB
+				if a.editDrag != 1 {
+					edges = a.editEdges
 				}
 				dr, a.alignGuides = alignRect(dr, a.themeAlignScratch, int32(court.W), int32(court.H), a.editDrag == 1, edges, a.alignGuides)
 				r.X, r.Y, r.W, r.H = int(dr.X), int(dr.Y), int(dr.W), int(dr.H)
@@ -586,13 +671,13 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		} else if court, ok := a.themeRectsOrig["courtroom"]; ok {
 			r = clampDesignRectToCanvas(r, court) // shared with the arrow-key nudge (layoutnudge.go)
 		}
-		a.themeRects[a.editKey] = r
+		a.themeRects[editKey] = r
 		a.invalidateThemeCanvases()
 	}
 	// Release persists the edit.
 	if a.editDrag != 0 && !c.mouseDown {
-		if a.editKey != "" {
-			r := a.themeRects[a.editKey]
+		if editKey != "" {
+			r := a.themeRects[editKey]
 			if r == a.editBase { // a click with no move: discard the begin snapshot
 				if n := len(a.editUndo); n > 0 {
 					// The tab strip's drag base is the preimage of its PAINTED box, not
@@ -600,18 +685,19 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 					// left a different value in themeRects. Put the pre-press one back,
 					// or a plain click would leave a phantom edit behind for the magnet's
 					// sibling list and the next reset to trip over.
-					if a.editKey == themeTabBarKey {
-						if pre, ok := a.editUndo[n-1].rects[a.editKey]; ok {
-							a.themeRects[a.editKey] = pre
+					if editKey == themeTabBarKey {
+						if pre, ok := a.editUndo[n-1].rects[editKey]; ok {
+							a.themeRects[editKey] = pre
 						}
 					}
 					a.editUndo = a.editUndo[:n-1]
 				}
 			} else {
-				a.d.Prefs.SetThemeRectOverride(themeName, a.editKey, [4]int{r.X, r.Y, r.W, r.H})
+				a.d.Prefs.SetThemeRectOverride(themeName, editKey, [4]int{r.X, r.Y, r.W, r.H})
 			}
 		}
 		a.editDrag = 0
+		a.editEdges = 0
 		// The release is a MUTATION of the layout, so it invalidates like every other
 		// one. Two of its effects are invisible to the cache's other key fields: the
 		// tab strip's in-flight drag arm drops (tabStripThemeParked goes back to what
@@ -623,19 +709,37 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Overlay: every editable rect outlined + named; selection pops.
+	//
+	// HANDLES: the full offered set on the box the user is actually working (selected
+	// or hovered), and the historical single bottom-right grip on every other. That is
+	// the classic editor's own doctrine — a quiet outline at rest, the full treatment
+	// on the box under the cursor (classiclayout.go's overlay comment) — and it is
+	// what keeps a forty-widget theme from becoming three hundred bright squares. The
+	// resting grip is unchanged from before W6, so nothing a user could already grab
+	// moved.
 	for _, k := range keys {
 		r := lay.r[k]
 		col := ColAccent
-		if k == a.editKey {
-			col = ColDanger
-		} else if k == hoverKey {
-			col = ColTierYellow
+		active := false
+		switch k {
+		case editKey:
+			col, active = ColDanger, true
+		case hoverKey:
+			col, active = ColTierYellow, true
 		}
 		c.Border(r, col)
-		if themedKeyResizable(k) {
-			// A move-only key paints no grip, exactly like the classic editor's
-			// drawSlotHandles: an affordance that does nothing is worse than none.
-			c.Fill(sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}, col)
+		// A move-only key paints no grip at all, exactly like the classic editor's
+		// drawSlotHandles: an affordance that does nothing is worse than none.
+		if m := handleGripMask(r, resizeEdgesFor(designTarget(k))); m != 0 {
+			for i, hnd := range classicHandles(r) {
+				if m&(1<<uint(i)) == 0 {
+					continue
+				}
+				if !active && i != handleBottomRight {
+					continue
+				}
+				c.Fill(hnd, col)
+			}
 		}
 		c.LabelClipped(r.X+3, r.Y+2, r.W-6, k, col)
 	}
@@ -646,7 +750,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// on painted pixels, so its guides ARE screen px and scaling them again would put
 	// the hairline nowhere near the edge the strip snapped to.
 	if a.editDrag != 0 {
-		screenGuides := a.editKey == themeTabBarKey
+		screenGuides := editKey == themeTabBarKey
 		for _, g := range a.alignGuides {
 			if g.vertical {
 				x := lay.offX + int32(float64(g.pos)*lay.scaleX)
@@ -663,16 +767,16 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			}
 		}
 	}
-	if a.editKey != "" {
-		r := a.themeRects[a.editKey]
+	if editKey != "" {
+		r := a.themeRects[editKey]
 		// The strip is stored in canvas-relative CLIENT px, not design px
 		// (tabStripCacheRect), so the readout must not claim otherwise — the two agree
 		// only at scale 1.
 		units := "design px"
-		if a.editKey == themeTabBarKey {
+		if editKey == themeTabBarKey {
 			units = "client px from the canvas origin"
 		}
-		c.Label(pad, h-22, fmt.Sprintf("%s: x=%d y=%d w=%d h=%d (%s)", a.editKey, r.X, r.Y, r.W, r.H, units), ColText)
+		c.Label(pad, h-22, fmt.Sprintf("%s: x=%d y=%d w=%d h=%d (%s)", editKey, r.X, r.Y, r.W, r.H, units), ColText)
 	}
 	// Stacked-boxes hint: when several boxes overlap under the cursor, surface that Tab cycles them.
 	if a.editDrag == 0 && len(stack) > 1 {
@@ -683,8 +787,8 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// (after hoverKey resolves) so it reflects the piece under the cursor; the
 	// banner geometry (snapBtn) is still in scope. R rotates, Shift+R fine-steps.
 	rotKey := hoverKey
-	if a.editKey != "" {
-		rotKey = a.editKey
+	if editKey != "" {
+		rotKey = editKey
 	}
 	if rotKey != "" && a.themeLay.ang != nil {
 		if label := rotationChipLabel(a.themeLay.ang[rotKey]); label != "" {

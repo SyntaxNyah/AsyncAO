@@ -886,7 +886,7 @@ func (a *App) tabStripThemeParked() bool {
 	if a.tabStripPlacementRecorded() {
 		return true
 	}
-	if !a.layoutEdit || a.editDrag == 0 || a.editKey != themeTabBarKey {
+	if !a.layoutEdit || a.editDrag == 0 || a.editTgt.designKey() != themeTabBarKey {
 		return false
 	}
 	_, present := a.themeRects[themeTabBarKey]
@@ -903,7 +903,7 @@ func (a *App) tabStripThemeParked() bool {
 // writes this flag straight to the persisted override — so a snapshot must carry what
 // was recorded, never a transient "the user's hand is on it".
 //
-// Nothing but ordering made that visible: drawLayoutEditor assigns editKey/editDrag and
+// Nothing but ordering made that visible: drawLayoutEditor assigns editTgt/editDrag and
 // only THEN pushes the pre-press snapshot, so the in-flight arm was already true when
 // the state it was supposed to describe was still "docked, un-parked". The first drag's
 // undo therefore re-placed the strip at its synthesized seed instead of sending it home

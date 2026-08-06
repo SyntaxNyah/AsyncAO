@@ -355,8 +355,8 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 				ctx.mouseX, ctx.mouseY = before.X+before.W/2, before.Y+before.H/2
 				ctx.mouseDown, a.editPrev = true, false
 				a.drawLayoutEditor(tc.w, tc.h, lay)
-				if a.editKey != themeTabBarKey || a.editDrag != 1 {
-					t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editKey, a.editDrag)
+				if a.editTgt.designKey() != themeTabBarKey || a.editDrag != 1 {
+					t.Fatalf("a press on the strip's box must grab it for a MOVE, got key=%q drag=%d", a.editTgt.designKey(), a.editDrag)
 				}
 				ctx.mouseX, ctx.mouseY = ctx.mouseX+d, ctx.mouseY+d
 				a.drawLayoutEditor(tc.w, tc.h, a.themeWindowLayout(tc.w, tc.h))

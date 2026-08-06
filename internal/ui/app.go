@@ -966,9 +966,23 @@ type App struct {
 	themeResizeArmGen uint64
 
 	// --- live layout editor (themed courtroom; overrides persist per theme) ---
-	layoutEdit   bool
-	editKey      string
-	editDrag     int // 0 none, 1 move, 2 resize
+	layoutEdit bool
+	// editTgt is the themed editor's selection — the generalized "thing being
+	// dragged" (edittarget.go, W6). It replaces the bare design-key string this
+	// field used to be: the space is now carried explicitly, so W7's editor can
+	// select a FREE ELEMENT (spaceElement, identity = the sidecar index) through the
+	// same field, the same nudge router and the same handle machinery. Nothing in
+	// W6 constructs an element target — the wave ships no new UI — so this holds a
+	// spaceDesign key or nothing, exactly as before.
+	editTgt  editTarget
+	editDrag int // 0 none, 1 move, 2 resize
+	// editEdges is which edges a themed RESIZE drags (edgeL/R/T/B), the design-space
+	// twin of classicEditEdges. Before W6 the themed editor had one grip (the
+	// bottom-right corner) and this mask was implicit — hard-coded as edgeR|edgeB at
+	// the two sites that needed it. With all eight handles wired the gripped edges
+	// have to be remembered from the press, because the drag arithmetic, the grid
+	// snap and the magnet all key off them.
+	editEdges    uint8
 	editPrev     bool
 	editStart    [2]int32
 	editBase     theme.Rect
@@ -1014,9 +1028,13 @@ type App struct {
 	// path when resolving a texture-backed classic element's angle (the HP bar);
 	// an absent entry means angle 0 → the plain Copy path (byte-identical to the
 	// unrotated draw). The editor is the sole writer thereafter.
-	classicRot       map[string]uint8
-	slotReg          map[string]slotInfo
-	classicEditKey   string
+	classicRot map[string]uint8
+	slotReg    map[string]slotInfo
+	// classicTgt is the classic editor's selection, the spaceClassic half of the
+	// shared edit-target model (edittarget.go, W6). It was a bare slot-name string;
+	// the space it lives in — SCREEN px, persisted as a window fraction — is now part
+	// of the value rather than something the reader had to know.
+	classicTgt       editTarget
 	classicEditDrag  int // 0 none, 1 move, 2 resize
 	classicEditStart [2]int32
 	classicEditBase  sdl.Rect
