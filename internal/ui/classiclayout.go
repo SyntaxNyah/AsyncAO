@@ -235,7 +235,19 @@ func (a *App) snapViewportTo43(w, h int32) {
 }
 
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
+//
+// AN EMPTY NAME IS REFUSED. "" is the classic editor's own spelling of "nothing
+// selected" (classicEditKey, and editTarget's whole reason for having a space
+// field), so an unnamed registration would put a hoverable, draggable box in
+// slotReg that compares equal to the unselected state — and its release would call
+// config.SetClassicSlot(""), which keys the persisted layout by name. The only way
+// to reach here with one is a caller passing a computed key, which is exactly what
+// W7's element work will be doing; refusing it costs one compare on an edit-only
+// path.
 func (a *App) regSlot(name string, cur, def sdl.Rect) {
+	if name == "" {
+		return
+	}
 	if a.slotReg == nil {
 		a.slotReg = make(map[string]slotInfo, classicSlotRegCap)
 	}

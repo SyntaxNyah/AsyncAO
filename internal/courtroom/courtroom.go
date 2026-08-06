@@ -343,6 +343,23 @@ type Courtroom struct {
 	// demand — the App kicks off the read/prefetch, this side only records the
 	// base. nil = no overlay engine (headless tests, the maker preview), which
 	// leaves the legacy flash/shake fallback in charge.
+	//
+	// IT IS NOT A PURE LOOKUP, and the sentence above reads like one, so the three
+	// clauses a substitute has to honour are written out here — a substitute that
+	// meets only the signature is a map, and a map is wrong on all three:
+	//
+	//  1. RENDER THREAD ONLY. The shipped implementation reads and writes App state
+	//     (the roster cache, the in-flight set, the T1 store). Calling it from a
+	//     goroutine is a -race failure, not a slow path.
+	//  2. IT IS STATEFUL. The first call for an unseen (name, folder) KICKS a resolve
+	//     and reports what it knows so far; later calls answer from the landed
+	//     roster. Two calls with the same arguments may legitimately differ.
+	//  3. ok=true DOES NOT MEAN THE ART IS RESIDENT. The resolved value carries a
+	//     pending state — a promise that the base is being fetched — and the caller
+	//     must tolerate a frame (or many) with nothing to draw yet.
+	//
+	// Substitutes in tests therefore pin BEHAVIOUR, not just shape: a stub that
+	// always answers instantly hides every ordering bug this contract exists around.
 	OverlayFor func(name, folder string) (OverlayResolved, bool)
 
 	// LocalSide, when set, reports OUR OWN side — the pos dropdown's value, with

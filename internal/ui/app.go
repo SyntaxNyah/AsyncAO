@@ -899,9 +899,17 @@ type App struct {
 	// (W7) and the F8 line read it. Cleared by every sweep, so it describes the last
 	// pass rather than the session.
 	themeFXOver bool
-	// themeFXFrozen latches ReduceMotion for the pass. ONE prefs read per pass, never
-	// per element (the two AllocsPerRun gates forbid the latter), and it is what makes
-	// the accessibility answer and the pacing census the same decision.
+	// themeFXFrozen latches ReduceMotion for the FRAME. ONE prefs read per frame,
+	// never per element or per draw site (the two AllocsPerRun gates forbid the
+	// latter, and the theme-chrome draw sites number about ten), and it is what
+	// makes the accessibility answer and the pacing census the same decision.
+	//
+	// TWO latch points, both calling reduceMotionNow so there is one spelling of
+	// the read: App.Frame, because themeFrame is reached from screens that never
+	// open an element pass (char select, settings previews, the export capture);
+	// and beginThemeFXPass, because an offscreen pass may run without a Frame
+	// around it. Latching twice in a frame is harmless — the second read of an
+	// unchanged pref is the same answer.
 	themeFXFrozen bool
 	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
 	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
@@ -2679,9 +2687,14 @@ type themeApply struct {
 	// layout is the courtroom_design.ini geometry (themeLayoutKeys that
 	// the theme defines, design-space pixels; showname/message stay
 	// chatbox-relative exactly as AO2 positions those child widgets).
-	layout    map[string]theme.Rect
-	emoteCell [2]int // emote_button_size (w, h)
-	emoteGap  [2]int // emote_button_spacing (x, y)
+	layout map[string]theme.Rect
+	// tabBarSeeded records that seedTabBarDesignRect had to synthesize
+	// "asyncao_tabbar" because the theme is silent about it (#14). Resolved on
+	// the apply goroutine, WITH the seed itself and before the [overrides] fold,
+	// so an author who writes that row is answered once instead of four times.
+	tabBarSeeded bool
+	emoteCell    [2]int // emote_button_size (w, h)
+	emoteGap     [2]int // emote_button_spacing (x, y)
 	// effectsIcon is courtroom_design.ini's `effects_icon_size` (AO2
 	// courtroom.cpp:979) — the per-row icon size in the effects dropdown. A PAIR,
 	// not a rect, so like emoteCell it cannot ride `layout` (and is invisible to
@@ -5475,10 +5488,9 @@ func (a *App) buildRoom() {
 	if a.sess == nil {
 		return
 	}
-	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
+	a.room = a.newRoom(a.urls, a.sess, a.d.Audio)                                         // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
-	a.wireRoomCharMeta(a.room)                                                            // per-character blips + chatbox skins from the speaker's char.ini
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
 	a.room.LocalSide = a.mySide                                                           // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
@@ -5701,7 +5713,11 @@ func (a *App) pinToSplit(t *courtTab) {
 	// pinned tab's rows when the new tab's seq happens to match (same seq-collision
 	// class as the main log caches — see logViewEpoch / splitPinEpoch).
 	a.splitPinEpoch++
-	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
+	// Through newRoom like every other mode (newroom.go). The pinned pane used to
+	// be built raw, so it was one of the two rooms that never got the overlay
+	// engine: an effect played in the tab you were watching and not in the pane
+	// beside it. NopAudio keeps the pane silent; the visual half is now identical.
+	a.splitRoom = a.newRoom(t.state.urls, t.state.sess, courtroom.NopAudio{})
 	// The pinned pane is a DIFFERENT server's session, so a wiping BN there must
 	// re-scene at THAT tab's side, never the active tab's (#23). Reading through t
 	// keeps it correct for the pane's whole lifetime; a.mySide would be the wrong
@@ -7013,17 +7029,14 @@ func (a *App) applyTimingToRoom() {
 		a.room.QueueCap = n
 	}
 	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
-	// The master off-switch WINS over both effect knobs below: it implies
-	// reduce-motion, no AO2 \s/\f, and none of another player's transmitted
-	// sprite style. It never writes the individual prefs — turning it back off
-	// restores whatever the player had chosen before.
-	noFX := a.d.Prefs.EffectsDisabled()
-	a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
-	a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX // AO2 \s/\f + field shake/flash (default ON)
-	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()            // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
-	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
-	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX // #103: viewer opt-out of others' styles
-	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()                // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
+	// The four pref-driven VISUAL gates (including the master off-switch's
+	// precedence over both effect knobs) live in applyVisualPrefsToRoom, because
+	// newRoom seeds every OTHER room with them at construction and two spellings
+	// of "what a room shows" is how four of the five ended up on a hardcoded
+	// default. This call is the LIVE room's re-push when a setting changes.
+	a.applyVisualPrefsToRoom(a.room)
+	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
+	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn() // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
 }
 
 // applyMusicStreaming persists the custom-/play-music streaming toggle and pushes
@@ -8153,6 +8166,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// stays byte-identical; a non-sharp preset (lazily) builds/heals the pinned
 	// masks here. Runs before the screen draws below consume the resolved state.
 	a.refreshShapeMasks()
+	// ReduceMotion, latched ONCE for the whole frame (themeclock.go's
+	// reduceMotionNow). themeFrame reads it at ~10 theme-chrome draw sites, most
+	// of them on screens that never open an element pass, so the pass-level latch
+	// alone would have left them reading a stale answer — or, before this, no
+	// answer at all: animated chrome kept moving under the accessibility option
+	// AND kept the pacer at the animation cadence.
+	a.themeFXFrozen = a.reduceMotionNow()
 	a.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
@@ -9025,7 +9045,13 @@ func (a *App) applyThemeAsync() uint64 {
 			// to bind to. See foldSidecarOverrides (themeoverrides.go) for why this
 			// tier existed unapplied until now, and what it was doing to the elements
 			// anchored on top of it.
-			foldSidecarOverrides(res.layout, res.sidecar)
+			//
+			// The server-tab strip's synthesized key rides WITH the fold, in the one
+			// order that answers an `asyncao_tabbar` row exactly once — see
+			// seedTabBarThroughOverrides (tabs.go). This used to be two statements
+			// with a goroutine boundary between them, seed LAST, and a theme author's
+			// row got four different answers on its way through.
+			res.tabBarSeeded = seedTabBarThroughOverrides(res.layout, res.sidecar)
 			// #21 label 16: measure the theme's own art behind each font element, so
 			// the render thread can guard the per-element ink without touching a
 			// decode buffer. AFTER the defaults, so an element positioned by AO2's
@@ -9190,12 +9216,12 @@ func (a *App) pollThemeApply() {
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
 	//
-	// The server-tab strip's key is synthesized FIRST, into the pristine map, when the
-	// theme is silent about it (#14): it has to be in themeRectsOrig for reset/undo to
-	// have something to restore, and in the copy below for applyRectOverrides — which
-	// only rewrites keys that already exist — to be able to re-apply a drag after a
-	// reload. See seedTabBarDesignRect (tabs.go).
-	a.tabBarSeeded = seedTabBarDesignRect(res.layout)
+	// The server-tab strip's synthesized key was seeded on the apply goroutine,
+	// into this same pristine map, before the [overrides] fold (see there). It is
+	// in themeRectsOrig for reset/undo to restore from, and in the copy below for
+	// applyRectOverrides — which only rewrites keys that already exist — to
+	// re-apply a drag after a reload. Only the FLAG crosses here.
+	a.tabBarSeeded = res.tabBarSeeded
 	a.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
 	for k, v := range res.layout {
@@ -9477,15 +9503,38 @@ func (a *App) themeElapsed() time.Duration {
 	return a.now().Sub(a.themeAt)
 }
 
-// themeFrame picks the current animation frame for a theme page — static
-// pages cost one len check, animated ones loop on the theme clock (and mark
-// the frame's animated-chrome census so the static skip keeps stepping them).
+// themeFrame picks the current animation frame for a theme page — static pages
+// cost one len check, animated ones loop on the theme clock (and mark the
+// frame's animated-chrome census so the static skip keeps stepping them).
+//
+// ONE BODY WITH elementFrame, not a twin. The two were documented as honouring
+// the same contract and had already stopped: elementFrame respects the
+// ReduceMotion latch and this one did not, so a themed install with the
+// accessibility option ON showed STILL elements over ANIMATING chrome — and,
+// because the census here kept holding the pacer at the animation cadence, the
+// person who turned it on got neither the stillness nor the idle frame rate.
+// Both now share elementFrameIndex (themeclock.go) and both read
+// themeFXFrozen; the only remaining difference is whose clock they read, which
+// is the difference that was always meant to be there.
+//
+// `loop` is true because theme chrome loops by definition — a chatbox skin has
+// no "finished" state. That is what themeFrame always did (pageFrameLoop); it
+// is now said in the shared function's own vocabulary.
 func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
+	if page == nil || len(page.Frames) == 0 {
+		return nil // matches elementFrame: a page with no frames is not a texture
+	}
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
-	a.NoteAnimating()
-	return page.Frames[pageFrameLoop(page, a.themeElapsed())]
+	if a.themeFXFrozen {
+		return page.Frames[0] // ReduceMotion, latched once per frame (reduceMotionNow)
+	}
+	idx, live := elementFrameIndex(page, a.themeElapsed(), true)
+	if live {
+		a.NoteAnimating()
+	}
+	return page.Frames[idx]
 }
 
 // pushRealizationToRoom hands the courtroom the resolved realization sound

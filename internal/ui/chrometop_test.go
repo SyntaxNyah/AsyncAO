@@ -483,13 +483,24 @@ func stockLikeThemeLayout() map[string]theme.Rect {
 	}
 }
 
-// applyThemeGeometryForTest replays pollThemeApply's geometry step verbatim: seed the
-// client-chrome keys into the PRISTINE map, keep that map as themeRectsOrig, and lay
-// the persisted overrides over a copy. Tests that stage a.themeRects by hand skip all
-// three, which is exactly how a key that never entered the apply path could look wired
-// up while being dead in the running client.
+// applyThemeGeometryForTest replays pollThemeApply's geometry step: the
+// client-chrome seed and the theme author's [overrides] through the one function
+// that owns their order, that map kept as themeRectsOrig, and the player's own
+// persisted edits laid over a copy. Tests that stage a.themeRects by hand skip
+// all of it, which is exactly how a key that never entered the apply path could
+// look wired up while being dead in the running client.
+//
+// It calls seedTabBarThroughOverrides rather than restating the two steps, so it
+// cannot get the order right while production has it wrong (or the reverse).
 func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
-	a.tabBarSeeded = seedTabBarDesignRect(layout)
+	applyThemeGeometryWithSidecarForTest(a, layout, nil)
+}
+
+// applyThemeGeometryWithSidecarForTest is the same replay with the theme's
+// AsyncAO tier present — the case where the seed's ORDER is observable.
+func applyThemeGeometryWithSidecarForTest(a *App, layout map[string]theme.Rect, sc *theme.Sidecar) {
+	a.themeSidecar = sc
+	a.tabBarSeeded = seedTabBarThroughOverrides(layout, sc)
 	a.themeRectsOrig = layout
 	rects := make(map[string]theme.Rect, len(layout))
 	for k, v := range layout {
@@ -497,6 +508,64 @@ func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
 	}
 	a.themeRects = a.applyRectOverrides(rects)
 	a.themeLay.valid = false
+}
+
+// TestThemeAuthorCanPlaceTheTabStripFromTheSidecar is L48: an
+// `[overrides] asyncao_tabbar` row is a real placement and must be answered ONCE.
+//
+// It used to be answered four times, all silently. themeKeyEditable passed the
+// row; the fold's PRESENT gate refused it, because the key was not in the design
+// map yet; the client's own seed — which ran later, and on the render thread —
+// then wrote a centred default over the top; and the strip was finally recorded
+// as tabBarSeeded, i.e. "the theme did not declare it", so it stayed docked in
+// the client chrome band. The author's line did nothing and said nothing.
+func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
+	const themeName = "authored-tabbar"
+	a := testTabApp(t)
+	a.d.Prefs.SetTheme(themeName, "")
+	a.d.Prefs.SetThemeLayout(true)
+	a.tabs = []*courtTab{{}}
+	a.activeTab = 0
+	a.room = newRoomForTest(t)
+	a.screen = ScreenCourtroom
+
+	authored := theme.Rect{X: 120, Y: 300, W: 240, H: int(tabBarH)}
+	sc := theme.NewSidecar()
+	sc.Overrides = []theme.KeyRect{{Key: themeTabBarKey, Rect: authored}}
+	applyThemeGeometryWithSidecarForTest(a, stockLikeThemeLayout(), sc)
+
+	if got := a.themeRectsOrig[themeTabBarKey]; got != authored {
+		t.Fatalf("the pristine map holds %+v, want the author's %+v — the client's own seed overwrote an "+
+			"[overrides] row, so reset/undo would restore a rect nobody chose", got, authored)
+	}
+	if got := a.themeRects[themeTabBarKey]; got != authored {
+		t.Errorf("the live map holds %+v, want the author's %+v", got, authored)
+	}
+	if a.tabBarSeeded {
+		t.Error("tabBarSeeded is true although the author placed the strip in the AsyncAO tier — " +
+			"tabStripThemeParked reads that flag as 'the theme has no opinion', so the placement sits in " +
+			"the map while the strip stays docked in the client chrome band")
+	}
+	if !a.tabStripThemeParked() {
+		t.Error("an authored placement must read as PARKED from the moment the theme loads — that is what " +
+			"makes the row do anything at all")
+	}
+
+	// And the silent case is unchanged: a theme with no sidecar still gets the
+	// client seed, still reports it, and still docks.
+	b := testTabApp(t)
+	b.d.Prefs.SetTheme(themeName+"-bare", "")
+	b.d.Prefs.SetThemeLayout(true)
+	b.tabs = []*courtTab{{}}
+	b.activeTab = 0
+	b.room = newRoomForTest(t)
+	applyThemeGeometryForTest(b, stockLikeThemeLayout())
+	if !b.tabBarSeeded {
+		t.Error("a theme that declares the strip nowhere must still be reported as seeded")
+	}
+	if b.tabStripThemeParked() {
+		t.Error("a synthesized default nobody has placed must not count as parked")
+	}
 }
 
 // stageTabbarlessCourtroom builds an App on a themed courtroom whose theme is silent about

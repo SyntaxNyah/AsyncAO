@@ -727,13 +727,19 @@ func NewSidecar() *Sidecar {
 	return &Sidecar{Format: ThemeFormatVersion, doc: d}
 }
 
-// Doc exposes the lossless document (the writer, and diagnostics).
-func (s *Sidecar) Doc() *INIDoc {
-	if s == nil {
-		return nil
-	}
-	return s.doc
-}
+// The lossless document is NOT exposed. It was, as Doc() *INIDoc, with zero
+// production consumers and a nil check for a test — and INIDoc's Set/Bytes/Write
+// are exported, so it handed any caller a second writer with no arbitration:
+// sc.Doc().Set("element.x", "z", "9") is silently reverted by the next Bytes()
+// when the model holds that key and silently persisted when it does not, and
+// os.WriteFile(p, sc.Doc().Bytes(), …) writes a sidecar the guard never saw
+// (ledger L32).
+//
+// W7's undo ring and autosave are the named future callers, and they get a
+// NARROW path — the shape the reader/writer pair can arbitrate, named at the
+// waves' own call sites — rather than this one back. The census that keeps the
+// door shut until then is TestNoExportedPathWritesASidecarWithoutTheGuard
+// (sidecar_validate_test.go).
 
 // IsFutureFormat reports a theme authored by a NEWER AsyncAO. It never blocks
 // reading (rule 1); it is what gates the editor into read-only with a
@@ -925,13 +931,34 @@ type sidecarMigration func(*INIDoc) error
 //
 // TestMigrationChainIsIdentityAtV1 pins both halves: the chain is empty at v1,
 // and running it changes not one byte.
-var sidecarMigrations = [...]sidecarMigration{}
+//
+// A SLICE, NOT AN ARRAY, and the difference is testability rather than taste.
+// `[...]sidecarMigration{}` is a fixed [0]T: nothing can install a probe step
+// into it, so "does ParseSidecar actually RUN the chain?" was a question the
+// suite could not ask — and the answer was that deleting migrateSidecar's call
+// from sidecar_read.go left every migration test green. That is the same
+// parsed-documented-never-invoked shape [overrides] shipped in for four waves,
+// armed to fire on the day the first real migration lands: every migration test
+// would pass and no file would ever be migrated. As a package-level slice a test
+// can install a probe step (restoring it in t.Cleanup), which is exactly what
+// TestParseSidecarRunsTheMigrationChain does.
+//
+// Still bounded and still ships empty: its length is the number of grammars this
+// build knows, which is a compile-time fact either way (hard rule 4).
+var sidecarMigrations = []sidecarMigration{}
 
 // migrateSidecar walks the chain from the file's format up to this build's.
 //
 // It NEVER refuses on version (rule 1). A file NEWER than this build is left
 // exactly as it is: we render what we understand and preserve the rest, which
 // is what makes "your friend upgraded, you did not" a non-event.
+//
+// The bound is the CHAIN'S OWN LENGTH rather than ThemeFormatVersion, and the two
+// are the same number by TestMigrationChainCoversEveryFormatVersion — a step
+// exists to reach each grammar after the first. Reading the length is what lets a
+// test install a probe and prove the chain is invoked at all; reading the constant
+// made that impossible (the loop could never enter at v1), which is why the call
+// site was deletable green.
 func migrateSidecar(from int, d *INIDoc) error {
 	if d == nil {
 		return nil
@@ -941,7 +968,7 @@ func migrateSidecar(from int, d *INIDoc) error {
 		// been a format 0 — so it is read as the first grammar.
 		from = 1
 	}
-	for v := from; v < ThemeFormatVersion; v++ {
+	for v := from; v-1 < len(sidecarMigrations); v++ {
 		step := sidecarMigrations[v-1]
 		if step == nil {
 			continue

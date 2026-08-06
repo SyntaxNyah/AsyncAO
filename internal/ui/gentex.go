@@ -239,24 +239,43 @@ func GeneratorNames() []string {
 	return out
 }
 
+// genLookup is THE registry probe: one spelling of "does this wire name rasterise,
+// and with what". Every one of the three public entry points goes through it.
+//
+// It exists because they did not, and the divergence was live: GeneratorKnown and
+// GenTileSize normalised the name while RasterGenerator indexed the map RAW. A spec
+// named "Scanlines" was therefore known, sized, planned and given one of the twelve
+// ThemeGenCap slots — and then rasterised nil, so the element drew blank with
+// nothing anywhere to say why. Latent only because theme.GeneratorSpecOf (which
+// lower-cases) is today's sole spec producer; W7's editor picker is the second.
+func genLookup(name string) (genEntry, bool) {
+	e, ok := genRegistry[theme.NormalizeGenName(name)]
+	return e, ok
+}
+
 // GeneratorKnown reports whether a wire name rasterises. An unknown one is not an
 // error — the element degrades to a flat fill of its own `fill` colour — but the
 // import report says so, which is the difference between a theme that looks
 // slightly plainer on an older client and one nobody can debug.
 func GeneratorKnown(name string) bool {
-	_, ok := genRegistry[theme.NormalizeGenName(name)]
+	_, ok := genLookup(name)
 	return ok
 }
 
-// GenTileSize is the tile a spec would rasterise to, already clamped into
-// [genTileMinPx, theme.GenTileMaxPx]. Exported so the admission planner can budget
-// a generator without rasterising it.
-func GenTileSize(name string, p GenParams) (int32, int32) {
-	e, ok := genRegistry[theme.NormalizeGenName(name)]
+// genTileSizeOf is the tile ONE SPEC would rasterise to, already clamped into
+// [genTileMinPx, theme.GenTileMaxPx]. The admission planner budgets a generator
+// with it without rasterising anything.
+//
+// It takes the SPEC, not (name, params), because the two-argument form permitted
+// GenTileSize(nameA, paramsOfB) — budget one tile, raster another — and the budget
+// is the only thing standing between a stranger's theme and the texture store. The
+// name and the params of one generator now cannot be separated by a caller.
+func genTileSizeOf(g theme.GeneratorSpec) (int32, int32) {
+	e, ok := genLookup(g.Name)
 	if !ok {
 		return 0, 0
 	}
-	w, h := e.tile(p)
+	w, h := e.tile(genParseParams(g))
 	return clampTilePx(w), clampTilePx(h)
 }
 
@@ -275,7 +294,7 @@ func clampTilePx(v int32) int32 {
 // RasterGenerator rasterises a spec, or returns nil for a name this build does not
 // know. Runs on the theme-apply goroutine (clause 3).
 func RasterGenerator(g theme.GeneratorSpec) *image.RGBA {
-	e, ok := genRegistry[g.Name]
+	e, ok := genLookup(g.Name) // one probe, shared with GeneratorKnown/genTileSizeOf
 	if !ok {
 		return nil
 	}

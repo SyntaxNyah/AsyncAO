@@ -242,6 +242,13 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 		manifestURL = a.urls.OverlayEffectManifest(folder)
 	}
 	mgr := a.d.Manager
+	// The RESULT CHANNEL is captured here, on the render thread, rather than read
+	// as a.overlayRosterRes from inside the goroutine. Race-free today only because
+	// the field is written once (just above) and never reset — any future teardown
+	// that nils it would be an instant -race failure (hard rule 8) on a field a
+	// worker is reading concurrently. A captured local cannot go stale, and it also
+	// says out loud that the goroutine owns nothing on App.
+	res := a.overlayRosterRes
 	go func() {
 		roster := &overlayRoster{
 			art:  map[string]string{},
@@ -307,7 +314,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 			}
 		}
 		select {
-		case a.overlayRosterRes <- overlayRosterFetch{key: key, gen: gen, roster: roster}:
+		case res <- overlayRosterFetch{key: key, gen: gen, roster: roster}:
 		default:
 			// Unreachable by construction (overlayManifestResCap == overlayRosterFetchCap),
 			// kept so a future cap change cannot deadlock the resolver goroutine.
@@ -425,6 +432,9 @@ func (a *App) overlayDemandTheme(path, key string) {
 	}
 	a.overlayTexLoading[key] = true
 	anims := a.d.Prefs.AnimationsEnabled()
+	// Captured on the render thread for the reason overlayRosterFetchOne captures
+	// its own: the worker must read nothing off App (hard rule 8).
+	out := a.overlayTexRes
 	go func() {
 		res := overlayTexLoad{key: key}
 		if data, err := os.ReadFile(path); err == nil {
@@ -433,7 +443,7 @@ func (a *App) overlayDemandTheme(path, key string) {
 			}
 		}
 		select {
-		case a.overlayTexRes <- res:
+		case out <- res:
 		default:
 			if res.dec != nil {
 				res.dec.Release()
@@ -911,9 +921,16 @@ func (a *App) overlayPostSendReset(globalSticky bool) {
 	a.overlayChoiceIdx = 0
 }
 
-// wireRoomOverlay attaches the overlay hooks to a room. Every mode that stages
-// messages (the live courtroom, replays, the scene maker) goes through here, so
-// an effect plays identically in all of them.
+// wireRoomOverlay attaches the overlay hooks to a room.
+//
+// EVERY mode that stages messages goes through here — the live courtroom, the
+// pinned split pane, replays, the scene maker's preview and the comic/video
+// export — so an effect plays identically in all of them. That used to be a
+// claim this comment made and the code did not keep: two of the five were built
+// raw and never reached this function. It is now STRUCTURAL rather than
+// advisory: the only production caller is wireRoomCharMeta, whose only caller
+// is App.newRoom (newroom.go), which is the only production call site of
+// courtroom.NewCourtroom in this package.
 func (a *App) wireRoomOverlay(room *courtroom.Courtroom) {
 	if room == nil {
 		return

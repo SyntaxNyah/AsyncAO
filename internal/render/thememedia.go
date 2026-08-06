@@ -188,15 +188,32 @@ func (s *TextureStore) UploadThemeMedia(key string, d *assets.Decoded, texBudget
 	return s.uploadPinnedTracked(key, d, true)
 }
 
-// ThemeMediaBytes is the resident theme-media payload, in bytes. Feeds the editor's
-// budget bar, the 1 Hz metrics sampler and the F8 debug panel.
+// The three residency readouts.
+//
+// RENDER THREAD ONLY. They read plain ints written by noteThemeMediaAdded /
+// noteThemeMediaRemoved on the upload and prune paths, which are render-thread-only
+// by construction — so these are plain reads rather than atomics, and every caller
+// has to be on that thread too.
+//
+// The doc here used to say they feed "the 1 Hz metrics sampler", which is a
+// GOROUTINE (internal/metrics), and that is the dangerous kind of wrong: the
+// neighbouring store counters are atomics for exactly that reason, so a reader
+// taking the sentence at face value would wire an unsynchronised int read into a
+// sampler and get a -race failure (hard rule 8) that reads like a bug in the
+// sampler. The live callers are the editor's budget bar and the F8 debug panel,
+// both on the render thread. If a sampler ever does want these, PROMOTE the fields
+// to atomics first — do not relax the sentence again.
+//
+// ThemeMediaBytes is the resident theme-media payload, in bytes.
 func (s *TextureStore) ThemeMediaBytes() int64 { return s.themeMediaBytes }
 
 // ThemeMediaCount is how many imported-art pages are resident (generator tiles are
 // counted separately — they are a different cap because they are a different cost).
+// Render thread only; see ThemeMediaBytes.
 func (s *TextureStore) ThemeMediaCount() int { return s.themeMediaCount }
 
-// ThemeGenCount is how many generator tiles are resident.
+// ThemeGenCount is how many generator tiles are resident. Render thread only; see
+// ThemeMediaBytes.
 func (s *TextureStore) ThemeGenCount() int { return s.themeGenCount }
 
 // noteThemeMediaAdded / noteThemeMediaRemoved keep the two counters and the byte

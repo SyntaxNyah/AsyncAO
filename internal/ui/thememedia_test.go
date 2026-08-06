@@ -124,7 +124,7 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 	a.themeMediaPlan = plan
 	a.themeLay.valid = false
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	a.drawCourtroom(1280, 720)
 	restore()
 	if a.themeLay.elN != len(sc.Elements) {

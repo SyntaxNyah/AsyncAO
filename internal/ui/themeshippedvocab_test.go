@@ -503,7 +503,7 @@ func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
 			// never draws, and the next editor tunes the wrong numbers.
 			if !genNineSliceIsLiteral(el) {
 				spec := theme.GeneratorSpecOf(el)
-				w, h := GenTileSize(spec.Name, genParseParams(spec))
+				w, h := genTileSizeOf(spec)
 				t.Errorf("themes/%s [element.%s] writes slice = %d, %d, %d, %d on a %dx%d tile, which "+
 					"paintElementNineSlice clamps to %v — write the clamped values so the file says what "+
 					"it paints", name, el.ID, el.Slice[0], el.Slice[1], el.Slice[2], el.Slice[3], w, h,
@@ -602,7 +602,7 @@ func genNineSliceIsLiteral(el *theme.Element) bool {
 	if !GeneratorKnown(spec.Name) {
 		return true
 	}
-	w, h := GenTileSize(spec.Name, genParseParams(spec))
+	w, h := genTileSizeOf(spec)
 	return nineSliceClamp(el.Slice, w, h) == el.Slice
 }
 

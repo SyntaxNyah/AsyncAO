@@ -229,7 +229,7 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 
 	// --- the draw: every element is dispatched, and the frame is clean ------
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	restore()
@@ -291,7 +291,7 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 
 	const w, h int32 = 1280, 720
 	var live []*bakedElement
-	restore := captureElementPaints(&live)
+	restore := captureElementPaints(t, &live)
 	a.drawCourtroom(w, h)
 	restore()
 	if len(live) == 0 {
@@ -300,7 +300,7 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 
 	j := &gifExportJob{room: newRoomForTest(t), chatPct: DefaultScalePct}
 	var exported []*bakedElement
-	restore = captureElementPaints(&exported)
+	restore = captureElementPaints(t, &exported)
 	a.drawExportScene(j, &j.room.Scene, sdl.Rect{X: 0, Y: 0, W: w, H: h})
 	restore()
 

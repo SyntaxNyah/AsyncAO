@@ -143,9 +143,12 @@ func (a *App) remoteChatSkinFor(char string) string {
 	return a.charMetaFor(char).chat
 }
 
-// wireRoomCharMeta attaches the char.ini-driven callbacks to a room — the
-// live courtroom, replays, and the maker preview all wire through here so a
+// wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
 // speaker blips and skins identically in every mode.
+//
+// ONE production caller: App.newRoom (newroom.go). Construction and wiring are
+// the same step on purpose — this used to be a second line every call site had
+// to remember, and two of the five forgot it.
 func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	if room == nil {
 		return

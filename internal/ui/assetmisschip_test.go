@@ -77,3 +77,63 @@ func TestDebugLogTabIsResolvedByName(t *testing.T) {
 		t.Fatalf("assetMissDebugLogTab() = %d, which is %v, want the Log tab", i, debugSections)
 	}
 }
+
+// TestInvisibleAssetMissChipReportsNoRect pins the shared-geometry helper's honesty
+// (ledger L64, under L20).
+//
+// assetMissChipRect gated on menuBarPaints() ALONE, so a chip that was not on screen
+// — no misses, the preference off, or the 30 s badge expired — still reported a plate
+// roughly its label's width. The band's geometry resolves as a CHAIN
+// (menuBarLeftContentRight → the Iniswap chip → menuBarRightContentLeft → the refusal
+// chip) and every link expects "no rect" from a chip that is not drawing; a phantom
+// answer reserves pixels for nothing. The two shipped callers check Active()
+// themselves, so this changes no painted frame — it makes the helper answerable by a
+// third caller, which is the whole point of a SHARED geometry helper.
+//
+// It does NOT touch the ruled two-answers-per-frame skew between the input pass and
+// drawMenuBar's phase 2; that is a different, deliberate property.
+func TestInvisibleAssetMissChipReportsNoRect(t *testing.T) {
+	a, cleanup := stageThemedCourtroom(t)
+	defer cleanup()
+	a.drawCourtroom(1280, 720) // one frame so the band's own latches are live
+	const w = int32(1280)
+
+	// A FAILURE, never a skip: the frame-driven harness proves a plain courtroom
+	// frame paints the band (frameharness_test.go,
+	// TestSidecarRefusalChipReachesTheScreenAndTakesItsClick), so a bar that is
+	// not painting here means the fixture stopped staging a courtroom — and a
+	// skip would retire every assertion below it in silence.
+	if !a.menuBarPaints() {
+		t.Fatal("the menu bar is not painting in this fixture — the chip's geometry chain has no home, " +
+			"so nothing below measures anything")
+	}
+	// Nothing missing: inactive, so no rect.
+	a.assetMissCount = 0
+	if r, ok := a.assetMissChipRect(w); ok {
+		t.Errorf("an INACTIVE missing-asset chip reported the rect %+v — the band's geometry chain "+
+			"would reserve those pixels for a chip nobody can see", r)
+	}
+	// Armed and inside its window: a real rect, so the gate filters rather than
+	// standing the helper down.
+	a.d.Prefs.SetAssetWarnings(true)
+	a.assetMissCount, a.assetMissAt = 3, a.now()
+	if !a.assetMissChipActive() {
+		t.Fatal("the fixture did not arm the chip — the positive half would be vacuous")
+	}
+	live, ok := a.assetMissChipRect(w)
+	if !ok || live.W <= 0 {
+		t.Fatalf("an ACTIVE chip reported no rect (%+v, ok=%v)", live, ok)
+	}
+	// The preference is the user's own silence switch, and it must reach the GEOMETRY
+	// as well as the paint.
+	a.d.Prefs.SetAssetWarnings(false)
+	if r, ok := a.assetMissChipRect(w); ok {
+		t.Errorf("with missing-asset reporting turned OFF the chip still reported %+v", r)
+	}
+	// And so must the 30 s expiry.
+	a.d.Prefs.SetAssetWarnings(true)
+	a.assetMissAt = a.now().Add(-assetMissChipShowDuration - time.Second)
+	if r, ok := a.assetMissChipRect(w); ok {
+		t.Errorf("an EXPIRED chip still reported %+v", r)
+	}
+}

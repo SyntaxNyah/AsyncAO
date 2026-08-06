@@ -285,12 +285,17 @@ func (a *App) ensureMakerPreview() {
 		a.makerPreviewIdx == sel && a.makerPreviewKey == key {
 		return // unchanged — keep playing the current preview
 	}
-	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(a.makerScene.Origin), a.d.Manager, nil, a.d.Audio)
-	a.wireRoomCharMeta(room) // preview speakers blip/skin like live
+	// Construction IS wiring (newroom.go): preview speakers blip, skin and flash
+	// like live, and the pane starts under the author's own visual prefs — minus
+	// the three effect gates it takes back four lines down.
+	room := a.newRoom(courtroom.NewURLBuilder(a.makerScene.Origin), nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
-	room.ReduceMotion = false // authored WYSIWYG: show the line's screenshake/flash even if live reduce-motion is on
-	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	// POST-CONSTRUCTION override (newroom.go): authored WYSIWYG. The pane shows
+	// the line's screenshake/flash/overlays and any recorded sprite style even
+	// when this author watches with reduce-motion, screen effects or sprite
+	// styles switched off — otherwise the preview lies about what it will export.
+	a.applyAuthoringVisualsToRoom(room)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
 		a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the preview room's sprite

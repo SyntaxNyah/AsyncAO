@@ -192,12 +192,50 @@ func seedBakedElements(a *App, lay *themeLayoutCache, n int, art *render.Texture
 // for a test's benefit, and this way the recorder sees exactly what the band loop
 // dispatched — including the ORDER, which is what proves all three hook positions
 // fire and that the bands paint back-to-front.
-func captureElementPaints(seen *[]*bakedElement) func() {
+// THE RESTORE IS REGISTERED WITH t.Cleanup, not merely returned. elemPainters is a
+// package-level var and this swaps the WHOLE table: a t.Fatal (or a panic, or an
+// early return) between the swap and an inline restore would leave every test that
+// runs after it in this package drawing through no-op recorders — and every one of
+// them would PASS, vacuously, against painters that do nothing. The returned func is
+// still there for the sites that legitimately restore mid-test (a live-vs-export
+// comparison captures twice); calling it twice is harmless because it only ever
+// writes back the table that was live at capture time.
+func captureElementPaints(t testing.TB, seen *[]*bakedElement) func() {
+	t.Helper()
 	saved := elemPainters
 	for k := range elemPainters {
 		elemPainters[k] = func(_ *App, e *bakedElement) { *seen = append(*seen, e) }
 	}
-	return func() { elemPainters = saved }
+	restore := func() { elemPainters = saved }
+	t.Cleanup(restore)
+	return restore
+}
+
+// captureElementPaintValues is captureElementPaints' twin, and the difference is the
+// whole point: it records a COPY of the element as the painter received it, not the
+// pointer.
+//
+// The pointer recorder cannot answer any question about the per-frame effect terms.
+// drawElement applies them, calls the painter, and restores the baked row — so every
+// post-paint read through a *bakedElement sees the RESTORED values, which is why the
+// wash arm, the offset arm, the scale arm and the alpha arm of applyElementFX were
+// all deletable with the suite green, and why the one gate that looked relevant had
+// to recompute its own expected alpha three times instead of reading what the painter
+// got. A value snapshot is the only honest oracle for "the terms reached the pixel".
+//
+// Two recorders rather than one wider one: the pointer form pins IDENTITY and ORDER
+// (the alloc gates assert the painter is handed &lay.el[i] and never a copy), the
+// value form pins CONTENT. Folding them into one struct would make every existing
+// call site carry a field it does not use.
+func captureElementPaintValues(t testing.TB, seen *[]bakedElement) func() {
+	t.Helper()
+	saved := elemPainters
+	for k := range elemPainters {
+		elemPainters[k] = func(_ *App, e *bakedElement) { *seen = append(*seen, *e) }
+	}
+	restore := func() { elemPainters = saved }
+	t.Cleanup(restore)
+	return restore
 }
 
 // indexOfBaked maps a painted element back to its slot in the baked array. A linear
@@ -244,7 +282,7 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	}
 	// Nothing may be dispatched at all: three empty loops, no painter calls.
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	draw()
 	restore()
 	if len(seen) != 0 {
@@ -299,7 +337,7 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 	// drawCourtroomThemed at all — an alloc gate over a loop that never runs would
 	// pass forever.
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	draw()
 	restore()
 	if len(seen) != theme.ElementCap {

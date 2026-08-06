@@ -10,6 +10,7 @@ package ui
 // testdata/sidecars, before any UI exists that could author them.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -51,15 +52,43 @@ func loadW3Sidecar(t testing.TB, name string) *theme.Sidecar {
 func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache, func()) {
 	t.Helper()
 	a, cleanup := stageThemedCourtroom(t)
-	a.themeSidecar = loadW3Sidecar(t, name)
-	a.themeLay.valid = false
-	a.drawCourtroom(1280, 720)
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if err := applyFixtureSidecar(a, loadW3Sidecar(t, name)); err != nil {
 		cleanup()
-		t.Fatal("the fixture did not reach the themed branch — nothing was baked")
+		t.Fatal(err)
 	}
 	return a, &a.themeLay, cleanup
 }
+
+// applyFixtureSidecar lands a sidecar the way pollThemeApply does, in the SAME
+// order, and bakes one frame.
+//
+// The [overrides] fold is not decoration here. In the live client the author's
+// rows are laid over the resolved design map BEFORE the layout cache is built
+// (app.go, foldSidecarOverrides), so by the time anything bakes, a.themeRects
+// already carries the tier's answer — refusals, AO2's second spelling and all.
+// A fixture that skipped the fold left every consumer downstream of it reading a
+// map the client never has, which is how the pane bake came to ask the sidecar a
+// second time and get a different answer.
+//
+// Both maps take it, because both do in the client: the pristine one is what
+// reset/undo restore from, the live one is what the editor's own rung is applied
+// over.
+func applyFixtureSidecar(a *App, sc *theme.Sidecar) error {
+	a.themeSidecar = sc
+	foldSidecarOverrides(a.themeRectsOrig, sc)
+	foldSidecarOverrides(a.themeRects, sc)
+	a.themeLay.valid = false
+	a.drawCourtroom(1280, 720)
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+		return errFixtureNotThemed
+	}
+	return nil
+}
+
+// errFixtureNotThemed is the one way applyFixtureSidecar fails: the fixture never
+// reached drawCourtroomThemed, so nothing was baked and every assertion after it
+// would be measuring the classic path.
+var errFixtureNotThemed = errors.New("the fixture did not reach the themed branch — nothing was baked")
 
 // ---------------------------------------------------------------------------
 // The zero case
@@ -458,7 +487,7 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 
 	// And the draw path hands the painters exactly that array, in that order.
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	a.drawCourtroom(1280, 720)
 	restore()
 	if len(seen) != lay.elN {
@@ -504,7 +533,7 @@ func TestVisibleWhenIsInternedAndGatesTheDraw(t *testing.T) {
 
 	count := func() int {
 		var seen []*bakedElement
-		restore := captureElementPaints(&seen)
+		restore := captureElementPaints(t, &seen)
 		a.drawCourtroom(1280, 720)
 		restore()
 		return len(seen)
@@ -645,7 +674,7 @@ func TestHandAuthoredSidecarRendersEveryW3Painter(t *testing.T) {
 	seen := map[theme.ElementKind]int{}
 	collect := func(app *App) {
 		var got []*bakedElement
-		restore := captureElementPaints(&got)
+		restore := captureElementPaints(t, &got)
 		app.drawCourtroom(1280, 720)
 		restore()
 		for _, e := range got {

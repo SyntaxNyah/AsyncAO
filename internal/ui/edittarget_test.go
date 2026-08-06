@@ -106,12 +106,25 @@ func TestEditTargetSpaceIsExplicitNotInferred(t *testing.T) {
 // the refusals above are worth nothing if any file can sidestep them with a composite
 // literal. Every editTarget outside edittarget.go must come from one of the named
 // constructors (or noTarget), so the space can never be defaulted in by accident.
+//
+// THE ELIDED-TYPE HOLE, which the first version of this matcher had. Go lets the
+// element type be omitted inside an array, slice or map literal:
+//
+//	[]editTarget{{key: "x"}}                 // the inner literal's Type is nil
+//	map[string]editTarget{"a": {elem: 0}}    // ditto
+//	[2]editTarget{{}, {}}                    // ditto
+//
+// Every one of those builds a target with a defaulted space and NONE of them has an
+// `editTarget` Ident to match on. So the matcher now resolves the element type of the
+// enclosing ArrayType / MapType as well, which is the shape a table-driven caller
+// would reach for first.
 func TestEditTargetIsOnlyBuiltByItsConstructors(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("glob the package sources: %v (%d files)", err, len(files))
 	}
 	fset := token.NewFileSet()
+	flagged := 0
 	for _, name := range files {
 		if filepath.Base(name) == "edittarget.go" {
 			continue // the constructors' own home
@@ -120,18 +133,117 @@ func TestEditTargetIsOnlyBuiltByItsConstructors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
+		// elemTypeIsEditTarget answers for the CONTAINER's element type, so an inner
+		// literal that elided its own type is still attributed correctly.
+		report := func(pos token.Pos, how string) {
+			flagged++
+			t.Errorf("%s builds an editTarget %s at %s — use classicTarget / designTarget / "+
+				"elementTarget / noTarget, or the space becomes a default nobody chose.",
+				name, how, fset.Position(pos))
+		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			lit, ok := n.(*ast.CompositeLit)
 			if !ok {
 				return true
 			}
-			if id, ok := lit.Type.(*ast.Ident); ok && id.Name == "editTarget" {
-				t.Errorf("%s builds an editTarget by composite literal at %s — use classicTarget / "+
-					"designTarget / elementTarget / noTarget, or the space becomes a default nobody chose.",
-					name, fset.Position(lit.Pos()))
+			if isEditTargetType(lit.Type) {
+				report(lit.Pos(), "by composite literal")
+				return true
+			}
+			// A container OF targets: every element literal inside it is a target,
+			// written with its type elided.
+			elem, container := editTargetElemType(lit.Type)
+			if !elem {
+				return true
+			}
+			for _, e := range lit.Elts {
+				inner := e
+				if kv, isKV := e.(*ast.KeyValueExpr); isKV {
+					inner = kv.Value
+				}
+				if il, isLit := inner.(*ast.CompositeLit); isLit && il.Type == nil {
+					report(il.Pos(), "inside a "+container+" literal with the element type elided")
+				}
 			}
 			return true
 		})
+	}
+	if flagged > 0 {
+		t.Logf("%d offending literal(s); the constructors are the only sanctioned path", flagged)
+	}
+}
+
+// isEditTargetType reports whether an AST type expression names editTarget directly.
+func isEditTargetType(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "editTarget"
+}
+
+// editTargetElemType reports whether e is an array/slice/map whose ELEMENT type is
+// editTarget, and what kind of container it is (for the message).
+func editTargetElemType(e ast.Expr) (bool, string) {
+	switch t := e.(type) {
+	case *ast.ArrayType: // covers []editTarget and [N]editTarget alike
+		return isEditTargetType(t.Elt), "array/slice"
+	case *ast.MapType:
+		return isEditTargetType(t.Value), "map"
+	}
+	return false, ""
+}
+
+// TestTheEditTargetMatcherSeesElidedLiterals is the matcher's own gate: it feeds the
+// three elided shapes to the same predicates the census uses and requires each to be
+// recognised. Without it, widening the matcher is a change nobody can tell landed —
+// the census passes either way, because the package contains no offending literal.
+func TestTheEditTargetMatcherSeesElidedLiterals(t *testing.T) {
+	const src = `package p
+var a = []editTarget{{}}
+var b = map[string]editTarget{"k": {}}
+var c = [2]editTarget{{}, {}}
+var d = editTarget{}
+var e = []string{"not a target"}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "matcher.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse the probe: %v", err)
+	}
+	direct, elided, ignored := 0, 0, 0
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		if isEditTargetType(lit.Type) {
+			direct++
+			return true
+		}
+		if ok, _ := editTargetElemType(lit.Type); ok {
+			for _, el := range lit.Elts {
+				inner := el
+				if kv, isKV := el.(*ast.KeyValueExpr); isKV {
+					inner = kv.Value
+				}
+				if il, isLit := inner.(*ast.CompositeLit); isLit && il.Type == nil {
+					elided++
+				}
+			}
+			return true
+		}
+		if lit.Type != nil {
+			ignored++
+		}
+		return true
+	})
+	if direct != 1 {
+		t.Errorf("the matcher saw %d direct editTarget literals, want 1", direct)
+	}
+	if elided != 4 {
+		t.Errorf("the matcher saw %d elided element literals, want 4 (one slice, one map, two array) — "+
+			"an elided literal is the shape a table-driven caller writes first", elided)
+	}
+	if ignored != 1 {
+		t.Errorf("the matcher flagged %d unrelated literals, want exactly the one []string", ignored)
 	}
 }
 
@@ -141,6 +253,89 @@ func TestEditTargetIsOnlyBuiltByItsConstructors(t *testing.T) {
 
 // designHandleRect is a themed widget with room for the full handle set on both axes.
 var designHandleRect = sdl.Rect{X: 100, Y: 100, W: 200, H: 200}
+
+// wantHandleEdges is the LITERAL, per-position expectation for handleEdgeMask, in
+// classicHandles' order: four corners (TL, TR, BL, BR), then the four edge midpoints
+// (top, bottom, left, right).
+//
+// It exists because the gate below used to compare handleGripAt's answer against
+// handleEdgeMask itself, which is a tautology: swap any two rows of the production
+// table and every assertion still held, while the editor grew a top-left grip that
+// resized from the bottom-right. A test that reads its expectation out of the thing
+// under test is not measuring it. These eight values are the contract — corners grip
+// two edges, midpoints grip one, and between them they cover each side exactly twice.
+var wantHandleEdges = [handleCount]uint8{
+	edgeL | edgeT, // 0 top-left
+	edgeR | edgeT, // 1 top-right
+	edgeL | edgeB, // 2 bottom-left
+	edgeR | edgeB, // 3 bottom-right — handleBottomRight, the historical single grip
+	edgeT,         // 4 top midpoint
+	edgeB,         // 5 bottom midpoint
+	edgeL,         // 6 left midpoint
+	edgeR,         // 7 right midpoint
+}
+
+// TestHandleEdgeMaskIsTheDocumentedTable is the literal-table gate. It is separate
+// from the behaviour gate below on purpose: this one says WHAT each position means,
+// that one says the editor honours it, and only the pair together survive a mutation
+// of the table.
+func TestHandleEdgeMaskIsTheDocumentedTable(t *testing.T) {
+	if handleEdgeMask != wantHandleEdges {
+		t.Fatalf("handleEdgeMask = %04b, want %04b — classicHandles' order is corners "+
+			"(TL, TR, BL, BR) then midpoints (top, bottom, left, right), and both editors' "+
+			"grips, the magnet's mask and the affordance filter all read this table by INDEX",
+			handleEdgeMask, wantHandleEdges)
+	}
+	// handleBottomRight must name the corner the cramped fallback keeps, or a small
+	// widget's one grip resizes from a corner nobody is looking at.
+	if handleEdgeMask[handleBottomRight] != (edgeR | edgeB) {
+		t.Fatalf("handleBottomRight (%d) grips %04b, want edgeR|edgeB", handleBottomRight, handleEdgeMask[handleBottomRight])
+	}
+	// Each side is reachable from exactly two positions (one corner pair member and
+	// one midpoint), which is what makes "resize from any side" true rather than
+	// "resize from four corners that happen to add up".
+	for _, e := range []uint8{edgeL, edgeR, edgeT, edgeB} {
+		n := 0
+		for _, m := range wantHandleEdges {
+			if m&e != 0 {
+				n++
+			}
+		}
+		if n != 3 {
+			t.Errorf("edge %04b is gripped by %d handles, want 3 (two corners + one midpoint)", e, n)
+		}
+	}
+}
+
+// TestCrampedBoxOffersNoLyingHandle pins handleGripMask's filter ORDER, which is the
+// trap its own doc comment now names: the allowed-edge filter runs BEFORE the cramped
+// fallback, so a target that does not honour edgeR|edgeB gets no grip at all once it
+// is too small for the full set — rather than being offered a bottom-right corner
+// whose drag would move an edge it refuses.
+//
+// No production call site reaches this combination today (both design spaces answer
+// all-four-or-none), which is exactly why it needs a test: the next caller is where
+// it would ship.
+func TestCrampedBoxOffersNoLyingHandle(t *testing.T) {
+	cramped := sdl.Rect{X: 10, Y: 10, W: editHandleRoomPx - 1, H: 24}
+	// A width-only target — slotResizeEdges' shape for the classic control block.
+	const widthOnly = edgeL | edgeR
+	if m := handleGripMask(cramped, widthOnly); m != 0 {
+		t.Fatalf("a cramped width-only box offered handles %08b, want none — the only handle the "+
+			"cramped fallback keeps grips edgeR|edgeB, which this target does not honour, and an "+
+			"affordance that moves an edge the target refuses is worse than no affordance", m)
+	}
+	if e := handleGripAt(cramped, widthOnly, cramped.X+cramped.W-1, cramped.Y+cramped.H-1); e != 0 {
+		t.Errorf("a press on the cramped width-only box's corner gripped %04b, want 0 (a move)", e)
+	}
+	// Roomy, the same target: the two side midpoints and nothing else, so the rule is
+	// "drop what lies", never "drop everything".
+	roomy := sdl.Rect{X: 10, Y: 10, W: 200, H: 200}
+	want := uint8(1<<6 | 1<<7) // left + right midpoints
+	if m := handleGripMask(roomy, widthOnly); m != want {
+		t.Errorf("a roomy width-only box offered %08b, want %08b (the side midpoints only)", m, want)
+	}
+}
 
 // TestThemedEditorHasAllEightHandles closes the recon's PARTIAL at the machinery
 // level: a theme's own widget offers the same four corners and four edge midpoints the
@@ -167,12 +362,15 @@ func TestThemedEditorHasAllEightHandles(t *testing.T) {
 	// Every handle grips its own edges, and the eight between them cover all four
 	// sides — the property that makes "resize from any side" true rather than "resize
 	// from four corners that happen to add up".
+	// Against the LITERAL table, never against handleEdgeMask itself: reading the
+	// expectation out of the production table made this loop a tautology that survived
+	// any permutation of it (see wantHandleEdges).
 	var covered uint8
 	for i, hnd := range classicHandles(designHandleRect) {
 		mx, my := hnd.X+hnd.W/2, hnd.Y+hnd.H/2
 		got := handleGripAt(designHandleRect, allowed, mx, my)
-		if got != handleEdgeMask[i] {
-			t.Errorf("handle %d at (%d,%d) grips %04b, want %04b", i, mx, my, got, handleEdgeMask[i])
+		if got != wantHandleEdges[i] {
+			t.Errorf("handle %d at (%d,%d) grips %04b, want %04b", i, mx, my, got, wantHandleEdges[i])
 		}
 		covered |= got
 	}
@@ -232,7 +430,7 @@ func TestEveryHandleFeedsTheMagnet(t *testing.T) {
 	lowSib := sdl.Rect{X: lowEdge, Y: lowEdge, W: 500, H: 500}
 	highSib := sdl.Rect{X: highEdge, Y: highEdge, W: 500, H: 500}
 
-	for i, mask := range handleEdgeMask {
+	for i, mask := range wantHandleEdges {
 		r := designHandleRect
 		others := make([]sdl.Rect, 0, 2)
 		if mask&(edgeL|edgeT) != 0 {

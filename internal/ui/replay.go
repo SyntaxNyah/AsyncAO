@@ -611,19 +611,23 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 		return
 	}
 	defer a.recoverReplay("start") // building the room / seeding must never crash the app
-	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
-	a.wireRoomCharMeta(a.replayRoom)                                           // speakers blip/skin the same in replays
+	// Constructed AND wired through the one seam (newroom.go): speakers blip,
+	// skin and flash in a replay exactly as they do live, and the room starts
+	// under the viewer's own visual prefs instead of NewCourtroom's defaults.
+	a.replayRoom = a.newRoom(courtroom.NewURLBuilder(rec.Origin), nil, a.d.Audio)
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
 	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
-	// A maker Preview is authoring (show the scene's screenshake/flash); a normal
-	// replay honours the viewer's reduce-motion accessibility pref.
-	// The master off-switch rides along with the individual prefs, under the same
-	// makerOpen exemption: authoring a scene must still SHOW what is being
-	// authored, or the maker previews a lie.
-	noFX := a.d.Prefs.EffectsDisabled()
-	a.replayRoom.ReduceMotion = (a.d.Prefs.ReduceMotion() || noFX) && !a.makerOpen
-	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
-	a.replayRoom.HideSpriteStyles = (a.d.Prefs.HideSpriteStylesOn() || noFX) && !a.makerOpen // maker preview shows styles; replay honours the viewer
+	// POST-CONSTRUCTION OVERRIDE, and the only one this mode needs: a Preview
+	// launched from the maker is authoring (show the scene's screenshake, flash
+	// and overlays), while a normal replay honours the viewer's reduce-motion,
+	// screen-effects and sprite-style choices. The master off-switch rides along
+	// with the individual prefs, under the same makerOpen exemption: authoring a
+	// scene must still SHOW what is being authored, or the maker previews a lie.
+	// The three gates come from newroom.go so this mode cannot answer differently
+	// from the export it is previewing. Everything else newRoom seeded stands.
+	if a.makerOpen {
+		a.applyAuthoringVisualsToRoom(a.replayRoom)
+	}
 
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
 		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone

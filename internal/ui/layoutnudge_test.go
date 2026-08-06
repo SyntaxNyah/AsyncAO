@@ -22,6 +22,88 @@ import (
 // PAINTED, non-fixed themeSlots row — themeKeyEditable("emotes") is true.
 const nudgeWidgetKey = "emotes"
 
+// nudgeCanvas is the stock AO2 design canvas the clamp measures against.
+var nudgeCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
+
+// TestRegSlotRefusesAnUnnamedSlot pins the classic editor's registry guard.
+//
+// "" is the editor's own spelling of "nothing selected" (classicEditKey, and the
+// reason editTarget carries an explicit space field), so an unnamed registration
+// puts a hoverable, draggable box in slotReg that compares EQUAL to the unselected
+// state — and its release would call config.SetClassicSlot(""), which keys the
+// persisted layout by name. Only a caller passing a COMPUTED key can reach it, which
+// is exactly what W7's element work will be doing.
+func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
+	a := testTabApp(t)
+	r := sdl.Rect{X: 10, Y: 20, W: 30, H: 40}
+	a.regSlot("", r, r)
+	if _, present := a.slotReg[""]; present {
+		t.Fatal("regSlot registered an unnamed slot — it is indistinguishable from \"nothing " +
+			"selected\", and persisting it writes a classic-layout entry keyed by the empty string")
+	}
+	// A real name still registers, so the guard is a filter and not a stand-down.
+	a.regSlot(slotOOC, r, r)
+	if got, present := a.slotReg[slotOOC]; !present || got.cur != r {
+		t.Fatalf("a named slot did not register: %+v (present=%v)", got, present)
+	}
+}
+
+// TestOversizeRectIsMovedNotShrunk pins clampDesignRectToCanvas' documented
+// translate-vs-limit choice, which had no test at all and reads as a bug at the call
+// site: a widget WIDER than the canvas comes back at a NEGATIVE X.
+//
+// It is deliberate — the clamp moves boxes and the resize gesture sizes them, so a
+// move that silently changed a theme's authored width would be unrecoverable — but a
+// deliberate surprise with no gate is one refactor away from being "fixed" into a
+// silent resize. This states the whole shape, including the two ordinary arms, so the
+// oversize row cannot be read as an accident of the other two.
+func TestOversizeRectIsMovedNotShrunk(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   theme.Rect
+		want theme.Rect
+	}{{
+		name: "off the top-left corner is pushed back on",
+		in:   theme.Rect{X: -40, Y: -10, W: 90, H: 24},
+		want: theme.Rect{X: 0, Y: 0, W: 90, H: 24},
+	}, {
+		name: "off the bottom-right corner is pulled back on",
+		in:   theme.Rect{X: 700, Y: 570, W: 90, H: 24},
+		want: theme.Rect{X: 624, Y: 555, W: 90, H: 24},
+	}, {
+		name: "already inside is untouched",
+		in:   theme.Rect{X: 101, Y: 403, W: 90, H: 24},
+		want: theme.Rect{X: 101, Y: 403, W: 90, H: 24},
+	}, {
+		// The documented surprise: the box keeps its authored size and parks with its
+		// FAR edge flush, overhanging the near one.
+		name: "wider than the canvas keeps its width and overhangs the left",
+		in:   theme.Rect{X: 10, Y: 100, W: 900, H: 24},
+		want: theme.Rect{X: 714 - 900, Y: 100, W: 900, H: 24},
+	}, {
+		name: "taller than the canvas keeps its height and overhangs the top",
+		in:   theme.Rect{X: 10, Y: 10, W: 90, H: 700},
+		want: theme.Rect{X: 10, Y: 579 - 700, W: 90, H: 700},
+	}} {
+		if got := clampDesignRectToCanvas(tc.in, nudgeCanvas); got != tc.want {
+			t.Errorf("%s: clamp(%+v) = %+v, want %+v", tc.name, tc.in, got, tc.want)
+		}
+	}
+	// And it never changes a size, on any input — the property the two oversize rows
+	// above are instances of.
+	for _, in := range []theme.Rect{
+		{X: -900, Y: -900, W: 2000, H: 2000},
+		{X: 900, Y: 900, W: 1, H: 1},
+		{X: 0, Y: 0, W: 714, H: 579},
+	} {
+		got := clampDesignRectToCanvas(in, nudgeCanvas)
+		if got.W != in.W || got.H != in.H {
+			t.Errorf("clamp(%+v) resized to %dx%d — sizing belongs to the resize gesture, which has "+
+				"its own floor and its own anchored-edge rule", in, got.W, got.H)
+		}
+	}
+}
+
 // nudgeThemeLayout is the stock 714×579 canvas plus one small widget parked OFF the
 // editor grid (101, 403 — neither is a multiple of layoutGridDesign) with clear room on
 // all four sides. Off-grid is what makes the coarse-step assertion mean something, and

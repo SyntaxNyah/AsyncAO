@@ -36,10 +36,16 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 		t.Errorf("upper-case %s was not recognised", themePackExt)
 	}
 
-	// The Settings screen's switch: anything CLAIMED is a no-op there, and only
-	// the unclaimed default reaches resolveDroppedFolder. This mirrors the
-	// switch in drawSettings; if that switch grows an arm, this list is where
-	// the omission shows up.
+	// The Settings screen's routing: anything CLAIMED is a no-op there, and only
+	// the unclaimed default reaches resolveDroppedFolder.
+	//
+	// It DRIVES settingsDropAction (dropclaim.go) rather than restating the
+	// switch. That distinction is the whole gate: the arm used to live inline in
+	// drawSettings, which zero tests call, and the check here used to be
+	// `got == dropClaimNone` — a re-implementation. Deleting the
+	// `case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:` line
+	// therefore left the suite green while a dropped .aotheme or .ttf silently
+	// repointed the user's theme root at their Downloads folder.
 	for _, tc := range []struct {
 		path       string
 		armed      bool
@@ -70,8 +76,38 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 		if got != tc.claim {
 			t.Errorf("claim(%q, armed=%v) = %d, want %d — %s", tc.path, tc.armed, got, tc.claim, tc.whyNotSafe)
 		}
-		if reaches := got == dropClaimNone; reaches != tc.repoints {
+		act := settingsDropAction(got)
+		if reaches := act == settingsDropRepointThemeRoot; reaches != tc.repoints {
 			t.Errorf("%q reaches the theme-folder arm = %v, want %v — %s", tc.path, reaches, tc.repoints, tc.whyNotSafe)
+		}
+		// And the import arm is exactly as narrow: the only path that consumes a
+		// drop into the settings importer is the one the user armed it for.
+		if wantImport := tc.claim == dropClaimSettingsImport; (act == settingsDropImportSettings) != wantImport {
+			t.Errorf("%q routes to the settings importer = %v, want %v", tc.path, act == settingsDropImportSettings, wantImport)
+		}
+	}
+}
+
+// TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction TOTAL over
+// dropClaim, so a claim added later cannot fall through to the theme-folder arm
+// by omission — which is precisely how a dropped file came to repoint the user's
+// theme root in the first place.
+//
+// It walks the enum by VALUE rather than listing the constants: a new claim
+// appended to the iota block joins this gate the moment it exists, and the
+// non-vacuity check below fails if the count is ever restated wrongly.
+func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
+	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
+	// Every other claim names an owner, and an owner means "not this screen".
+	for c := dropClaimNone; c <= dropClaimThemeFont; c++ {
+		act := settingsDropAction(c)
+		if c != dropClaimNone && act == settingsDropRepointThemeRoot {
+			t.Errorf("dropClaim %d has an owner but still reaches the theme-folder arm — a dropped FILE would "+
+				"become 'use its parent folder as the theme root', silently, while its real owner warns about it", c)
+		}
+		if c == dropClaimNone && act != settingsDropRepointThemeRoot {
+			t.Errorf("an UNCLAIMED drop no longer reaches the theme-folder arm — that is the documented folder " +
+				"import path (#21) and dropping a base folder would stop working")
 		}
 	}
 }

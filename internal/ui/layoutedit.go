@@ -522,6 +522,18 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// when it was the only one. The other seven are what the recon's PARTIAL was
 	// about: the classic editor has had them since v1.52.0 and the themed one had a
 	// single corner, so a themed widget could only ever grow down and right.
+	//
+	// TODO(W7 — free-element press priority). This probe walks `keys`, which is the
+	// DESIGN-KEY set only, and resolves ties by LARGEST gripped box. Free elements are
+	// a second, overlapping population in the same pixels, and they invert both rules:
+	// an element is authored ON TOP of the widget it decorates (that is what a
+	// decoration is), and a theme's densest elements are its smallest. So when W7 adds
+	// the element arm here it must NOT simply append them to this loop — largest-wins
+	// would hand every press on a 12x12 badge to the 490x98 emote grid underneath it,
+	// and the badge would be unselectable by mouse for the whole wave. The shape that
+	// works is a SPACE PRIORITY (elements probed first, and only then design keys),
+	// with largest-wins kept as the tie-break WITHIN each space — which is also what
+	// makes the existing behaviour byte-identical for a theme with no elements.
 	if pressed && a.editDrag == 0 && c.mouseY > layoutBannerH && !overToolbox {
 		resizeKey, resizeEdges := "", uint8(0)
 		var gripArea int64 = -1

@@ -526,15 +526,18 @@ func (a *App) drawSettings(w, h int32) {
 		// global handler was meanwhile warning about the very same file.
 		// Anything unclaimed still points the theme folder, which is the
 		// documented folder-import path (#21).
-		switch claimDroppedFile(c.dropped, settings.importArmed) {
-		case dropClaimSettingsImport:
+		// The routing itself is settingsDropAction (dropclaim.go) — a named
+		// function with a table test on it, because this switch used to live
+		// inline in a draw function no test calls, and the arm that stops a .ttf
+		// or a .aotheme from repointing the theme root could be deleted green.
+		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
+		case settingsDropImportSettings:
 			settings.importArmed = false
 			importSettingsAsync(a, c.dropped)
-		case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:
-			// no-op: HandleFileDrop is the single owner of dropped recordings,
-			// theme bundles and theme FONTS. A .ttf reaching the default arm
-			// below would repoint the theme root at the font's own folder.
-		default:
+		case settingsDropIgnore:
+			// HandleFileDrop is the single owner of dropped recordings, theme
+			// bundles and theme FONTS.
+		case settingsDropRepointThemeRoot:
 			resolveDroppedFolder(c.dropped)
 		}
 	}

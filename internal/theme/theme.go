@@ -295,6 +295,20 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	return t, nil
 }
 
+// ownDirs are THIS theme's own directories — its subtheme tier, its own folder
+// and the flat-folder tier — with the default-theme fallback excluded.
+//
+// It is the ONE spelling of that boundary, and it is ownDirN, which Load records
+// while it is building the list. The three font scanners below used to spell it
+// `filepath.Base(dir) != t.Name` instead, and that test is WRONG for a subtheme:
+// dirs[0] is <root>/themes/<name>/<sub>, whose base is the SUBTHEME name, so
+// every subtheme directory fell out of the scan. A subtheme shipping one .ttf
+// and declaring no family was invisible, and a subtheme could not override its
+// parent's face for the same family — inverting the tier order Load exists to
+// guarantee. The effects ladder had already learned this the hard way and says
+// so in its own comment (overlayfx.go's dirIsActiveTheme).
+func (t *Theme) ownDirs() []string { return t.dirs[:t.ownDirN] }
+
 // Sidecar is the parsed asyncao_theme.ini, or nil for a stock AO2 theme. Every
 // Sidecar accessor is nil-safe, so callers need no branch.
 func (t *Theme) Sidecar() *Sidecar {
@@ -444,10 +458,7 @@ func (t *Theme) FontFile() string {
 	// ships one .ttf but declares no family (the original #6 case). Deliberately
 	// NOT recursive: a themes/<name>/fonts/ folder holding a dozen faces must not
 	// hand an arbitrary one to the whole client.
-	for _, dir := range t.dirs {
-		if filepath.Base(dir) != t.Name {
-			continue // skip the default-theme fallback dirs
-		}
+	for _, dir := range t.ownDirs() { // this theme's own tiers, subtheme FIRST (ownDirs)
 		if f := firstFontIn(dir); f != "" {
 			return f
 		}
@@ -501,10 +512,7 @@ var systemFontAliases = map[string]string{
 // healthy case is cheap.
 func (t *Theme) HasAnyFontFile() bool {
 	idx := &fontIndex{budget: fontScanMaxFiles}
-	for _, dir := range t.dirs {
-		if filepath.Base(dir) != t.Name {
-			continue // the active theme's own tree only, as FontFiles does
-		}
+	for _, dir := range t.ownDirs() { // the active theme's own tree only, as FontFiles does
 		idx.scan(dir, fontScanMaxDepth)
 		if len(idx.ents) > 0 {
 			return true
@@ -637,11 +645,10 @@ func (t *Theme) FontFiles(sysDirs []string) map[string]string {
 		return out
 	}
 	idx := &fontIndex{budget: fontScanMaxFiles}
-	// (1) the ACTIVE theme's own directory tree.
-	for _, dir := range t.dirs {
-		if filepath.Base(dir) != t.Name {
-			continue // skip the default-theme fallback dirs: only the active theme imposes fonts
-		}
+	// (1) the ACTIVE theme's own directory tree — subtheme tier first, then the
+	// theme folder, then the flat tier; never the default-theme fallback, because
+	// only the active theme imposes fonts (ownDirs).
+	for _, dir := range t.ownDirs() {
 		idx.scan(dir, fontScanMaxDepth)
 	}
 	// (2) <root>/fonts — a theme dir is "<root>/themes/<name>", so the AO base

@@ -162,7 +162,7 @@ func TestThemePickerAndLoaderSearchTheSameRoots(t *testing.T) {
 // A source census rather than a behavioural test because scanThemes resolves the
 // real machine's executable and config directories, which a test cannot inject.
 func TestThemePickerBuildsItsRootsFromTheSharedList(t *testing.T) {
-	body := funcBodyInFile(t, "settings.go", "func (a *App) scanThemes(")
+	body := funcBodyInPackage(t, "func (a *App) scanThemes(")
 	if !strings.Contains(body, "themeSearchRootsNow(") {
 		t.Errorf("scanThemes no longer builds its roots from themeSearchRootsNow — the picker and the loader can now disagree about which directories exist")
 	}
@@ -202,17 +202,19 @@ func TestThemeRootBuildersShareOneExeDir(t *testing.T) {
 	// The census spells the forbidden CALL with its parentheses; the comments at
 	// these sites deliberately write "os.Executable + filepath.Dir" without them,
 	// so explaining the trap can never trip it.
-	for _, site := range []struct{ file, decl string }{
-		{"app.go", "func themeSearchRootsNow("},
-		{"app.go", "func (a *App) applyThemeAsync("},
-		{"themecatalog.go", "func scanThemeCatalog("},
+	// Named by DECLARATION, not by file: which file each builder lives in is not
+	// part of what this pins (funcBodyInPackage, ledger L53).
+	for _, decl := range []string{
+		"func themeSearchRootsNow(",
+		"func (a *App) applyThemeAsync(",
+		"func scanThemeCatalog(",
 	} {
-		body := funcBodyInFile(t, site.file, site.decl)
+		body := funcBodyInPackage(t, decl)
 		if !strings.Contains(body, "config.ExecutableDir()") {
-			t.Errorf("%s %q no longer calls config.ExecutableDir()", site.file, site.decl)
+			t.Errorf("%q no longer calls config.ExecutableDir()", decl)
 		}
 		if strings.Contains(body, "os.Executable()") {
-			t.Errorf("%s %q resolves the executable itself again — a symlinked install then gets two spellings of one root", site.file, site.decl)
+			t.Errorf("%q resolves the executable itself again — a symlinked install then gets two spellings of one root", decl)
 		}
 	}
 }
@@ -228,25 +230,54 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// funcBodyInFile returns the source text of one function, from its declaration
-// to the next top-level declaration. Deliberately crude: it is a census over a
-// checked-in file in this same package, so a missing file or a renamed function
-// is a failure (the thing being pinned moved), never a skip.
-func funcBodyInFile(t *testing.T, file, decl string) string {
+// funcBodyInPackage returns the source text of one function, from its
+// declaration to the next top-level declaration. Deliberately crude: it is a
+// census over checked-in sources in this same package, so a renamed function is
+// a failure (the thing being pinned moved), never a skip.
+//
+// It searches EVERY production file in the package directory rather than a named
+// one (ledger L53). The filename-pinned predecessor priced this package's fat
+// files into staying fat: moving the theme-root region out of app.go, or the
+// clock pass out of themeclock.go, turned a pure move into two red tests for no
+// behavioural reason. What the censuses actually assert is "the package's copy
+// of this function still calls X" — the file it lives in is not part of that
+// claim, so it is not part of the lookup.
+//
+// A declaration matched in two files is a failure too: the census would be
+// reading one of two answers, and which one is alphabetical luck.
+func funcBodyInPackage(t *testing.T, decl string) string {
 	t.Helper()
-	src, err := os.ReadFile(file)
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("reading %s: %v", file, err)
+		t.Fatalf("reading the package directory: %v", err)
 	}
-	i := strings.Index(string(src), decl)
-	if i < 0 {
-		t.Fatalf("%s no longer contains %q — update this census to name the function that replaced it", file, decl)
+	var body, foundIn string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		i := strings.Index(string(src), decl)
+		if i < 0 {
+			continue
+		}
+		if foundIn != "" {
+			t.Fatalf("%q is declared in both %s and %s — this census would be reading one of two bodies", decl, foundIn, name)
+		}
+		foundIn = name
+		body = string(src)[i+len(decl):]
+		if j := strings.Index(body, "\nfunc "); j >= 0 {
+			body = body[:j]
+		}
 	}
-	rest := string(src)[i+len(decl):]
-	if j := strings.Index(rest, "\nfunc "); j >= 0 {
-		rest = rest[:j]
+	if foundIn == "" {
+		t.Fatalf("no production file in this package declares %q — update this census to name the function that replaced it", decl)
 	}
-	return rest
+	return body
 }
 
 // The subtheme TIER order is pinned where Load lives

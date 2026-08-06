@@ -495,7 +495,7 @@ func fxDrawRig(t *testing.T) (*App, *themeLayoutCache, *[]*bakedElement, func())
 	a, _ := newEffectsRig(t)
 	lay := &themeLayoutCache{condGen: 7}
 	seen := &[]*bakedElement{}
-	restore := captureElementPaints(seen)
+	restore := captureElementPaints(t, seen)
 	return a, lay, seen, restore
 }
 
@@ -1095,7 +1095,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 	lay := &themeLayoutCache{condGen: 3}
 	var seen []*bakedElement
-	restore := captureElementPaints(&seen)
+	restore := captureElementPaints(t, &seen)
 	defer restore()
 
 	prefs.SetReduceMotion(true)
@@ -1209,7 +1209,14 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 		}
 	}
 
-	// The clock pool, loaded the way pollThemeApply loads it.
+	// The HELPER, driven directly — this call is not a stand-in for the wiring
+	// (ledger L5). The shared fixture assigns a.themeSidecar by hand and never runs
+	// pollThemeApply, so nothing here would notice app.go's own
+	// `a.applyThemeClocks(res.sidecar)` being deleted; that call is pinned one level
+	// up, by a real frame, in TestThemeApplyLoadsTheClockPoolThroughAFrame
+	// (frameharness_test.go). What this line buys is the FIXTURE's pool: the
+	// hand-authored file's groups, so the arithmetic below reads the speeds an
+	// author wrote rather than the nominal anchor.
 	a.applyThemeClocks(sc)
 	for _, tc := range []struct{ group, want int }{{1, 250}, {2, 40}, {15, 400}} {
 		if got := a.themeClocks[tc.group].speedPct; int(got) != tc.want {

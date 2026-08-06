@@ -40,6 +40,12 @@ const (
 	secPanePrefix    = "pane."
 	secClockPrefix   = "clock."
 	secEffectPrefix  = "effect."
+
+	// elementTextKey is the wire key ElemText's string rides on. Named because
+	// THREE places spell it — elementFieldKeys (the writer's schema), the
+	// reader's rune-cap message and Sidecar.Validate — and hard rule 9 applies
+	// to strings that carry meaning exactly as it does to numbers.
+	elementTextKey = "text"
 )
 
 // ParseSidecar reads asyncao_theme.ini content into a Sidecar, keeping the
@@ -592,9 +598,25 @@ func forbiddenHost(key string) bool {
 
 var effectBindKeyKnown = keySet("effect", "color", "period_ms", "amp_pct", "clock")
 
+// validEffectTarget is THE rule for an [effect.<target>] section name, and it is
+// deliberately NOT validID: the suffix is an AO2 WIDGET KEY the client resolves
+// against themeSlots, not an author-chosen id, so the only grammar the format can
+// state is "there is one, and it fits the widget-key bound" — AnchorRuneCap, the
+// same bound an element's `anchor` is held to, because both name that same
+// vocabulary.
+//
+// It is a named predicate rather than the inline test it used to be because the
+// WRITER's guard (Sidecar.validateIDs) must ask exactly this question of the
+// model: a target this refuses is preserved in the file and dropped from the
+// model on the next load, so a writer that did not ask it would save an effect
+// the author can no longer see. One spelling, both directions.
+func validEffectTarget(target string) bool {
+	return target != "" && utf8.RuneCountInString(target) <= AnchorRuneCap
+}
+
 func (s *Sidecar) readEffectBind(d *INIDoc, name string, keys []string) error {
 	target := strings.TrimPrefix(name, secEffectPrefix)
-	if target == "" || utf8.RuneCountInString(target) > AnchorRuneCap {
+	if !validEffectTarget(target) {
 		// SKIP path: NoteCap bounds the report, not the load (see note).
 		_ = s.note("[%s] names no AO2 widget — preserved and ignored", name)
 		return s.markUnknownSection(name, keys)
@@ -791,15 +813,23 @@ func (s *Sidecar) enumOrDegrade(section, key, raw string, names []string, fallba
 	return fallback
 }
 
+// checkRuneCap is THE length rule for every bounded text value in the format —
+// the reader's four helpers below and the writer's guard (Sidecar.Validate) all
+// run this one function, so a value the reader refuses is a value the writer
+// refuses, with the same sentinel and the same sentence. A second spelling here
+// is how the editor would come to save a file it cannot load.
+func checkRuneCap(section, key, v string, limit int) error {
+	if n := utf8.RuneCountInString(v); n > limit {
+		return fmt.Errorf("%w: [%s] %s is %d runes, cap is %d", ErrSidecarCap, section, key, n, limit)
+	}
+	return nil
+}
+
 // freeText decodes a percent-encoded value. ONLY the enumerated free-text keys
 // go through here — never an AO2 root-section value.
 func (s *Sidecar) freeText(section, key, raw string) (string, error) {
 	v := decodeFreeText(raw)
-	if utf8.RuneCountInString(v) > NameRuneCap {
-		return "", fmt.Errorf("%w: [%s] %s is %d runes, cap is %d",
-			ErrSidecarCap, section, key, utf8.RuneCountInString(v), NameRuneCap)
-	}
-	return v, nil
+	return v, checkRuneCap(section, key, v, NameRuneCap)
 }
 
 // plainText is a value that is NOT free text: a family name, a file path, an
@@ -807,20 +837,12 @@ func (s *Sidecar) freeText(section, key, raw string) (string, error) {
 // escape where the format does not define one is how two writers stop agreeing.
 func (s *Sidecar) plainText(section, key, raw string) (string, error) {
 	v := strings.TrimSpace(raw)
-	if utf8.RuneCountInString(v) > NameRuneCap {
-		return "", fmt.Errorf("%w: [%s] %s is %d runes, cap is %d",
-			ErrSidecarCap, section, key, utf8.RuneCountInString(v), NameRuneCap)
-	}
-	return v, nil
+	return v, checkRuneCap(section, key, v, NameRuneCap)
 }
 
 func (s *Sidecar) boundedText(section, key, raw string, limit int) (string, error) {
 	v := strings.TrimSpace(raw)
-	if utf8.RuneCountInString(v) > limit {
-		return "", fmt.Errorf("%w: [%s] %s is %d runes, cap is %d",
-			ErrSidecarCap, section, key, utf8.RuneCountInString(v), limit)
-	}
-	return v, nil
+	return v, checkRuneCap(section, key, v, limit)
 }
 
 // elementText is the one free-text ELEMENT value, bounded by TextRuneCap.
@@ -828,10 +850,7 @@ func (s *Sidecar) boundedText(section, key, raw string, limit int) (string, erro
 // back has destroyed the author's line.
 func (s *Sidecar) elementText(section, raw string) (string, error) {
 	v := decodeFreeText(raw)
-	if n := utf8.RuneCountInString(v); n > TextRuneCap {
-		return "", fmt.Errorf("%w: [%s] text is %d runes, cap is %d", ErrSidecarCap, section, n, TextRuneCap)
-	}
-	return v, nil
+	return v, checkRuneCap(section, elementTextKey, v, TextRuneCap)
 }
 
 // genParamsOf parses "k=v, k=v". Ordered, because the generator's parameter

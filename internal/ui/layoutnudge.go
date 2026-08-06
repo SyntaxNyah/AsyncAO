@@ -309,6 +309,18 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 // story: the mutation invalidates the layout so the next frame re-bakes, and that is
 // all a behaviour-neutral wave may do. W7 owns themeDoc, the undo ring and the
 // mtime-guarded autosave, and wraps this same mutation in one coalesced op.
+//
+// TODO(W7 — the nudge EVAPORATES, and silently). a.themeSidecar is replaced wholesale
+// by pollThemeApply (`a.themeSidecar = res.sidecar`), so every unsaved element nudge
+// is discarded by the next apply — and applies are not user-initiated: healTheme
+// re-kicks one on any T1 eviction of a theme texture, the texture-filter row kicks
+// one, and boot kicks two. A user can therefore nudge a decoration into place, take
+// their hand off the keyboard, and watch it jump back with nothing on screen to say
+// why. It is only acceptable while nothing can SAVE (W6 ships no element UI, so the
+// sidecar on disk and the sidecar in memory are the same document either way). W7's
+// autosave closes it by making the model authoritative; until that lands, do not add
+// a second element mutator on this pattern, and do not "fix" it by suppressing
+// applies — the apply is what re-bakes the geometry the nudge is expressed in.
 func (a *App) nudgeThemeElement(tgt editTarget, dx, dy int, coarse bool) {
 	idx, ok := tgt.elemIdx()
 	sc := a.themeSidecar
@@ -334,6 +346,21 @@ func (a *App) nudgeThemeElement(tgt editTarget, dx, dy int, coarse bool) {
 
 // clampDesignRectToCanvas keeps a themed widget on the stage, in DESIGN px. Shared with
 // drawLayoutEditor's drag so a nudge cannot stop anywhere a drag would not.
+//
+// IT TRANSLATES, IT NEVER LIMITS — i.e. it moves the box, it never shrinks it, and for
+// a widget WIDER OR TALLER THAN THE CANVAS that means the result is negative on that
+// axis. The order below is what produces it: the origin is floored at 0 first, then
+// the far edge is pulled back to court.W/H, so an over-wide box ends up at
+// X = court.W - r.W < 0 — its RIGHT edge flush with the canvas edge, overhanging the
+// left.
+//
+// That is the intended answer and not an oversight. Size belongs to the resize
+// gesture (resizeDesignRect, which has its own floor and its own anchored-edge rule);
+// a clamp that quietly resized would mean a MOVE could change a theme's authored
+// width, and the user would have no way to get it back. Preferring the far edge is
+// also the useful half of the two: an over-wide widget's left end is where its content
+// starts, so flushing the right edge keeps the part you are placing on the stage.
+// Pinned by TestOversizeRectIsMovedNotShrunk.
 func clampDesignRectToCanvas(r theme.Rect, court theme.Rect) theme.Rect {
 	if r.X < 0 {
 		r.X = 0

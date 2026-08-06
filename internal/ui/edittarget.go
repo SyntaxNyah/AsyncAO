@@ -231,6 +231,19 @@ const editHandleRoomPx = 5 * layoutHandlePx
 //     corner. That is exactly the single grip the themed editor offered before this
 //     wave, so no small widget loses anything, and none of them becomes unmovable —
 //     which is what 8 grips on a 24-px-tall AO2 button would have meant.
+//
+// THE ORDER OF THE TWO FILTERS IS LOAD-BEARING, and the trap is worth naming because
+// the "obvious" reorder is wrong in a way nothing on screen would show. Filter 1 runs
+// FIRST, so the cramped fallback is not "keep one grip" but "keep the bottom-right
+// grip IF the target honours edgeR|edgeB". A target that honours only some other pair
+// — slotResizeEdges' width-only control block is the live example, edgeL|edgeR —
+// therefore gets NO handle at all once it is cramped, which is correct: every handle
+// it could offer grips an edge it does not honour, and "the affordance never lies"
+// outranks "offer something". Reordering (fallback first, then filter) would offer the
+// bottom-right corner on a width-only widget and a drag on it would silently move an
+// edge the target refuses. No caller reaches that combination today — the two design
+// spaces answer all-four-or-none and elements answer all four — so this is a guard
+// against the next caller, and TestCrampedBoxOffersNoLyingHandle pins it.
 func handleGripMask(r sdl.Rect, allowed uint8) uint8 {
 	if allowed == 0 {
 		return 0

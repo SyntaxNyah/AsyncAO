@@ -88,12 +88,35 @@ var elementFieldKeys = []struct{ field, key string }{
 
 // Bytes serialises the sidecar back through its lossless document.
 //
+// IT VALIDATES FIRST (Sidecar.Validate, sidecar_validate.go) and refuses BEFORE
+// it edits anything, so an editor holding a live model can never write a file
+// the reader would refuse or silently truncate. That check is the writer's
+// precondition, not an option: there is no exported path around it, which is
+// the whole point — a caller that could skip it would skip it.
+//
+// THAT CLAIM IS ENFORCED, NOT ASSERTED (ledger L32).
+// TestNoExportedPathWritesASidecarWithoutTheGuard censuses this package's whole
+// API for a symbol that hands out a writable *INIDoc or emits sidecar bytes
+// without going through the guard. The claim was FALSE when it was first
+// written — Sidecar.Doc() returned the live document and INIDoc.Set/Bytes/Write
+// are all exported — and it survived because nothing executed it.
+//
+// W7 reopens the door deliberately and narrowly: its undo ring and autosave need
+// the document, so the wave that owns those CALL SITES adds the one path they
+// need, guarded, and extends the census's allow-list with the reason. That is
+// the open–closed shape — open to a wave that names its callers, closed against
+// a general-purpose accessor nobody can arbitrate.
+//
 // COLD PATH ONLY (hard rule 2). On error the document may hold a partial edit —
 // the caller discards it rather than writing it, which is why the atomic
 // temp+fsync+rename dance belongs to whoever owns the destination directory.
+// A VALIDATION error leaves the document untouched.
 func (s *Sidecar) Bytes() ([]byte, error) {
 	if s == nil {
 		return nil, nil
+	}
+	if err := s.Validate(); err != nil {
+		return nil, err
 	}
 	if s.doc == nil {
 		d, err := ParseINIDoc(nil)

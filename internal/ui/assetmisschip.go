@@ -144,7 +144,20 @@ func (a *App) assetMissChipLabel() string {
 // draw. Both are self-correcting within one frame and neither leaves live chrome
 // unclickable at rest, which is the property that matters here.
 func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
-	if !a.menuBarPaints() {
+	// ACTIVE FIRST, and this is a correctness gate rather than an optimisation.
+	// The band's geometry is a chain — menuBarLeftContentRight asks the Iniswap
+	// chip, the Iniswap chip asks menuBarRightContentLeft, that asks the refusal
+	// chip — and every link is expected to answer "no rect" for a chip that is not
+	// on screen. Without this, an invisible missing-asset chip still reported a
+	// plate roughly 16 px wider than its (cached, possibly stale) label, which any
+	// sibling that consults it would then keep clear of: reserved pixels for
+	// nothing. The two call sites below already check Active() themselves, so this
+	// changes no painted frame; it makes the helper honest for the third caller,
+	// which is what a SHARED geometry helper is for.
+	//
+	// It does NOT change the two-answers-per-frame skew between the input pass and
+	// drawMenuBar's phase 2 — that is ruled deliberate and documented below.
+	if !a.assetMissChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false
 	}
 	cw := a.ctx.TextWidth(a.assetMissChipLabel()) + 2*assetMissChipPadX

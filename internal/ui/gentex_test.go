@@ -100,6 +100,46 @@ func TestEveryGeneratorKindRasterizes(t *testing.T) {
 	t.Logf("%d generators: %s", len(names), strings.Join(names, ", "))
 }
 
+// TestOneRegistryProbeAnswersKnownSizedAndRastered pins the ledger's L23: the three
+// public entry points must agree about a name, whatever its case.
+//
+// They did not. GeneratorKnown and GenTileSize normalised the wire name while
+// RasterGenerator indexed the registry RAW, so a spec named "Scanlines" was known,
+// sized, planned, and booked one of the twelve ThemeGenCap slots — then rasterised
+// nil. The element drew blank with nothing anywhere to say why, and the whole
+// admission arm above it had spent a slot on it.
+//
+// Latent only because theme.GeneratorSpecOf (which lower-cases) is today's sole spec
+// producer, which is precisely why no existing gate could see it: not one test in the
+// tree builds a mixed-case spec, and no theme in the shipped corpus spells one.
+// W7's editor picker is the second producer.
+func TestOneRegistryProbeAnswersKnownSizedAndRastered(t *testing.T) {
+	for _, name := range GeneratorNames() {
+		// The name as a HAND-WRITTEN spec might spell it, bypassing NormalizeGenName —
+		// which is exactly what a spec built anywhere other than GeneratorSpecOf does.
+		shouty := strings.ToUpper(name[:1]) + name[1:]
+		spec := theme.GeneratorSpec{Name: shouty}
+		spec.Params[0] = theme.KV{Key: "pitch", Value: "9"}
+		spec.NP = 1
+
+		known := GeneratorKnown(spec.Name)
+		w, h := genTileSizeOf(spec)
+		img := RasterGenerator(spec)
+		switch {
+		case !known && (w != 0 || h != 0 || img != nil):
+			t.Errorf("%q: GeneratorKnown says no but it sized %dx%d / rastered %v", shouty, w, h, img != nil)
+		case known && img == nil:
+			t.Errorf("%q: known and sized %dx%d, but rasterised NIL — the three entry points do not "+
+				"share one registry probe, so this spec books a ThemeGenCap slot and then draws "+
+				"nothing, silently", shouty, w, h)
+		case known && img != nil:
+			if b := img.Bounds(); int32(b.Dx()) != w || int32(b.Dy()) != h {
+				t.Errorf("%q: sized %dx%d but rasterised %v", shouty, w, h, b)
+			}
+		}
+	}
+}
+
 // TestEveryGeneratorIsDeterministic is clause 1, and it is the one that makes the
 // content-addressed cache key VALID.
 //
@@ -163,7 +203,7 @@ func TestGeneratorTileNeverExceedsMaxPx(t *testing.T) {
 	for _, name := range GeneratorNames() {
 		for _, kv := range hostile {
 			spec := genFixtureSpec(name, kv...)
-			w, h := GenTileSize(name, genParseParams(spec))
+			w, h := genTileSizeOf(spec)
 			if w < genTileMinPx || h < genTileMinPx {
 				t.Errorf("%q with %v sized %dx%d, below the %d floor", name, kv, w, h, genTileMinPx)
 			}
@@ -176,13 +216,13 @@ func TestGeneratorTileNeverExceedsMaxPx(t *testing.T) {
 				t.Fatalf("%q rasterised nil for %v", name, kv)
 			}
 			if got := img.Bounds(); int32(got.Dx()) != w || int32(got.Dy()) != h {
-				t.Errorf("%q rasterised %v but GenTileSize said %dx%d — the planner would budget the wrong number",
+				t.Errorf("%q rasterised %v but genTileSizeOf said %dx%d — the planner would budget the wrong number",
 					name, got, w, h)
 			}
 		}
 	}
 	// An unknown name has no size, which is how the planner knows not to budget for it.
-	if w, h := GenTileSize("nope", GenParams{}); w != 0 || h != 0 {
+	if w, h := genTileSizeOf(genFixtureSpec("nope")); w != 0 || h != 0 {
 		t.Errorf("an unknown generator reported a %dx%d tile", w, h)
 	}
 	// The worst legal tile is small enough that the whole generator cap fits inside

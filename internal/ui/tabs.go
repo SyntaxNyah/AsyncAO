@@ -805,7 +805,12 @@ func (a *App) tabStripDockedRect(total, w int32) sdl.Rect {
 // seedTabBarDesignRect inserts a DEFAULT "asyncao_tabbar" design rect into a freshly
 // loaded theme layout when the theme itself is silent about the key, and reports
 // whether it had to. Call it on the PRISTINE map (the one that becomes
-// App.themeRectsOrig) and BEFORE the override overlay, so all four consumers line up:
+// App.themeRectsOrig), after the AO2 backstop and BEFORE BOTH override tiers —
+// the theme author's [overrides] fold and the player's applyRectOverrides.
+// BOTH, because each only rewrites keys that ALREADY EXIST: seeding after the
+// author's fold silently discarded an `[overrides] asyncao_tabbar` row, wrote a
+// client-computed rect over it, and then reported the theme as silent about the
+// key. With the seed first, all four consumers line up:
 //
 //   - themeLayoutIn ranges the design map, so the key finally enters the layout cache;
 //   - the themed editor builds its editable key set from that cache, so the strip
@@ -850,6 +855,36 @@ func seedTabBarDesignRect(layout map[string]theme.Rect) bool {
 	}
 	layout[themeTabBarKey] = theme.Rect{X: (court.W - w) / 2, Y: 0, W: w, H: int(tabBarH)}
 	return true
+}
+
+// seedTabBarThroughOverrides is the seed AND the theme author's [overrides] fold,
+// in the one order that answers an `asyncao_tabbar` row exactly once. It returns
+// what tabBarSeeded means: NOBODY BUT THIS CLIENT decided where the strip goes.
+//
+// The order is load-bearing in both directions, which is why the two steps are
+// one function rather than two adjacent lines somebody can reorder:
+//
+//   - SEED FIRST, because foldSidecarOverrides only rewrites keys that already
+//     exist. With the seed second, an author's `[overrides] asyncao_tabbar` row
+//     was accepted by themeKeyEditable, refused by the PRESENT gate (the key was
+//     not in the map yet), and then overwritten by the client's own default.
+//   - RE-READ AFTER, because the seed's return value alone then lies. The theme's
+//     courtroom_design.ini really was silent, so the seed fires and reports true —
+//     but the AUTHOR placed the strip in the AsyncAO tier, and tabStripThemeParked
+//     reads this flag as "the theme has no opinion", so their placement would sit
+//     in the map while the strip stayed docked in the client chrome band.
+//
+// Comparing the rect rather than re-asking the sidecar is deliberate: it reads the
+// [overrides] tier's OUTPUT, so there is no second copy of its policy here to
+// disagree with foldSidecarOverrides about editability or AO2's second spelling.
+func seedTabBarThroughOverrides(layout map[string]theme.Rect, sc *theme.Sidecar) bool {
+	seeded := seedTabBarDesignRect(layout)
+	before := layout[themeTabBarKey]
+	foldSidecarOverrides(layout, sc)
+	if seeded && layout[themeTabBarKey] != before {
+		return false // the author DID place the strip — in the AsyncAO tier, not AO2's
+	}
+	return seeded
 }
 
 // tabStripThemeParked reports whether the THEME's design layout owns where the strip

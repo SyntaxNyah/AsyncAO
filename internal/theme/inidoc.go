@@ -3,7 +3,6 @@ package theme
 import (
 	"errors"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 )
@@ -179,21 +178,12 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 	return d, nil
 }
 
-// LoadINIDoc reads path under IniDocByteCap. BLOCKING — goroutine only (rule 2).
-// The cap is enforced on the STREAM rather than after a stat, so a file that
-// grows between the two cannot get past it.
-func LoadINIDoc(path string) (*INIDoc, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	src, err := io.ReadAll(io.LimitReader(f, IniDocByteCap+1))
-	if err != nil {
-		return nil, err
-	}
-	return ParseINIDoc(src)
-}
+// There is no LoadINIDoc. One existed — an exported open + LimitReader dance
+// with zero callers anywhere, tests included — and it was a SECOND, untested
+// copy of what LoadSidecar already does on the way to a model (ledger L32).
+// Reading a document off the disk means reading a SIDECAR: LoadSidecar owns the
+// cap, the migration and the degrade notes, and a path that skipped it would
+// hand back a document nobody had validated.
 
 // classifyINILine fills l's section/key/value fields and returns the section in
 // effect AFTER it. A leading BOM was taken off the source ahead of the line split

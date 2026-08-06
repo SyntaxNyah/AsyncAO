@@ -639,11 +639,19 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		}}
 		audio = audioCap
 	}
-	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, audio)
+	// Constructed AND wired through the one seam (newroom.go). The export room was
+	// the other of the two that used to be built raw, so every exported comic and
+	// video shipped WITHOUT the screen-effect overlays it explicitly asks for a few
+	// lines below — the resolver was simply never attached.
+	room := a.newRoom(courtroom.NewURLBuilder(scene.Origin), nil, audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
-	room.ReduceMotion = false // export the authored effects (screenshake/flash), not the viewer's accessibility pref
-	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	// POST-CONSTRUCTION override (newroom.go): export the authored effects
+	// (screenshake/flash/overlays), not the viewer's accessibility pref, their
+	// screen-effects toggle or their sprite-style off-switch. All three gates in
+	// one call — ReduceMotion alone leaves effectsVisible() false whenever the
+	// exporter watches with effects off, and the comic ships still and flat.
+	a.applyAuthoringVisualsToRoom(room)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
 		a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the export room's sprite

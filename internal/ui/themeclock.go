@@ -189,6 +189,12 @@ func clampClockSpeed(pct int16) int16 {
 	return pct
 }
 
+// reduceMotionNow is THE read of the accessibility pref — one spelling, shared by
+// the two places that latch it (App.Frame and beginThemeFXPass). Nil-safe on
+// prefs so a hand-built App in a test behaves like the real one: no preferences
+// means nothing was asked for, which is "motion allowed".
+func (a *App) reduceMotionNow() bool { return a.d.Prefs != nil && a.d.Prefs.ReduceMotion() }
+
 // elementElapsed is the element's own animation position: the shared anchor, scaled
 // by its clock group's speed, offset by its own free phase.
 //
@@ -344,8 +350,9 @@ func (a *App) beginThemeFXPass() {
 	// ReduceMotion is the ONLY accessibility gate in this feature, and it is read
 	// ONCE here rather than per element: the two AllocsPerRun gates forbid a prefs
 	// read on the per-element path, and a pass that changed its mind halfway would
-	// freeze half a theme.
-	a.themeFXFrozen = a.d.Prefs != nil && a.d.Prefs.ReduceMotion()
+	// freeze half a theme. App.Frame latches the same answer for the theme-chrome
+	// draw sites, which run outside any pass; both go through reduceMotionNow.
+	a.themeFXFrozen = a.reduceMotionNow()
 	for i := range a.themeFX {
 		s := &a.themeFX[i]
 		if s.owner == fxOwnerNone {

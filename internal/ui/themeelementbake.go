@@ -684,20 +684,26 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			// origin instead of the canvas's — which is the definition of a
 			// reparent, and what makes a toggle pair share a sub-rect by overriding
 			// both to the same box.
+			//
+			// READ FROM lay.r, NEVER FROM sc.Overrides. lay.r already carries the
+			// tier's answer: foldSidecarOverrides laid the author's rows over the
+			// resolved design map (app.go), applyRectOverrides laid the player's own
+			// drags over that, and themeLayoutIn scaled the result into here. Asking
+			// the sidecar again was a SECOND SPELLING of the [overrides] policy, and
+			// it disagreed with the first in three ways for one file: `player_list`
+			// is inert, so themeKeyEditable refuses the row and the pane applied it
+			// anyway; `immediate` gets AO2's alias fold in the layout tier and got
+			// none here; and a player's layout-editor drag on a pane host was
+			// silently overruled by the theme author, inverting the documented
+			// precedence (rung 4 beats rung 3, themeoverrides.go:28-34). One source,
+			// three defects gone, and a fourth prevented — the pane no longer needs
+			// to know the [overrides] tier exists at all.
+			//
+			// A courtroom-relative rect in lay.r is window-absolute; take its
+			// design-space offset back off before re-basing it onto the pane.
 			rel := cur
-			if ov, has := sc.OverrideRect(key); has {
-				rel = sdl.Rect{
-					X: int32(float64(ov.X) * lay.scaleX),
-					Y: int32(float64(ov.Y) * lay.scaleY),
-					W: int32(float64(ov.W) * lay.scaleX),
-					H: int32(float64(ov.H) * lay.scaleY),
-				}
-			} else {
-				// A courtroom-relative rect in lay.r is already window-absolute; take
-				// its design-space offset back off before re-basing it.
-				rel.X -= lay.area.X
-				rel.Y -= lay.area.Y
-			}
+			rel.X -= lay.area.X
+			rel.Y -= lay.area.Y
 			r := sdl.Rect{X: pane.X + rel.X, Y: pane.Y + rel.Y, W: rel.W, H: rel.H}
 			if clamped, fits := clampRectInto(r, pane); fits {
 				r = clamped

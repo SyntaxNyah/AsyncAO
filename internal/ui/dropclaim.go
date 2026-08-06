@@ -88,6 +88,46 @@ func claimDroppedFile(path string, importArmed bool) dropClaim {
 	}
 }
 
+// settingsDropAct is what the SETTINGS SCREEN does with a dropped path, once
+// claimDroppedFile has said who owns it.
+//
+// It is a type rather than three lines inside drawSettings because those three
+// lines are a ship-blocker with no test on them: drawSettings is called by zero
+// tests, so deleting the `case dropClaimRecording, dropClaimThemeBundle,
+// dropClaimThemeFont:` arm left the whole suite green while a dropped .aotheme
+// or .ttf silently repointed the user's theme root at their Downloads folder —
+// the W2 bug, returning unnoticed. The gate beside claimDroppedFile now drives
+// THIS function instead of restating its switch, so the arm cannot go missing.
+type settingsDropAct uint8
+
+const (
+	// settingsDropIgnore: a global owner claimed it (HandleFileDrop imports the
+	// recording, warns about the bundle, points the font at [fonts]/[fontbind]).
+	// The Settings screen must do NOTHING — its theme-folder arm would turn the
+	// dropped FILE into "its parent folder" and store that as the theme root.
+	settingsDropIgnore settingsDropAct = iota
+	// settingsDropImportSettings: the armed .json the Data tab is waiting for.
+	settingsDropImportSettings
+	// settingsDropRepointThemeRoot: nothing global claimed it, so the documented
+	// folder-import path applies (#21) — a dropped folder IS how you point
+	// AsyncAO at a base.
+	settingsDropRepointThemeRoot
+)
+
+// settingsDropAction maps an ownership claim onto the Settings screen's response.
+// TOTAL over dropClaim by construction: the default is the fallback, and every
+// arm above it is a claim some other owner already made.
+func settingsDropAction(claim dropClaim) settingsDropAct {
+	switch claim {
+	case dropClaimSettingsImport:
+		return settingsDropImportSettings
+	case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:
+		return settingsDropIgnore
+	default:
+		return settingsDropRepointThemeRoot
+	}
+}
+
 // isThemeFontExt reports whether an already-lowered extension is a theme face file.
 func isThemeFontExt(ext string) bool {
 	for _, e := range themeFontExts {

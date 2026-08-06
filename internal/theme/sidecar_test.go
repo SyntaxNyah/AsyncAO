@@ -1459,7 +1459,7 @@ func TestASidecarWithWindowsLineEndingsRoundTrips(t *testing.T) {
 // elements, zero cost" needs no branch at any call site.
 func TestSidecarAccessorsAreNilSafe(t *testing.T) {
 	var s *Sidecar
-	if s.IsFutureFormat() || s.Doc() != nil || s.Notes() != nil || s.Unknown() != nil {
+	if s.IsFutureFormat() || s.Notes() != nil || s.Unknown() != nil {
 		t.Error("a nil sidecar claimed to hold something")
 	}
 	if _, ok := s.FindElement("x"); ok {

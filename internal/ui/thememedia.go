@@ -194,7 +194,7 @@ func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) th
 			plan.ElemKeys[i] = "" // past the cap: no tile, so no key to resolve to
 			continue
 		}
-		w, h := GenTileSize(spec.Name, genParseParams(spec))
+		w, h := genTileSizeOf(spec) // ONE spec: the budget and the raster cannot disagree
 		plan.Gens = append(plan.Gens, themeGenPlanEntry{Spec: spec, Key: key, W: w, H: h})
 		plan.GenBytes += int64(w) * int64(h) * 4
 	}
