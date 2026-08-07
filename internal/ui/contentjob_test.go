@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -157,6 +158,63 @@ func TestEnumerateContentEmptyOrigin(t *testing.T) {
 	lines := FormatReport(r)
 	if len(lines) == 0 || !strings.Contains(lines[0], "No server") {
 		t.Errorf("empty-origin report must lead with the no-server line; got %q", lines)
+	}
+}
+
+// TestReportBlipsRideTheOneMint pins that the content report asks
+// courtroom.URLBuilder.BlipRef for its blips instead of building the URL itself.
+// It used to build it inline behind its own sentinel check that knew only "" and
+// "-1", so a KFO "<id>^0" or a bare "0" became a probed URL here (and a "missing"
+// line in the user's report) while the live funnel dropped it — and it probed only
+// the sounds/blips/ spelling, never AO2's legacy sounds/general/sfx-blip<name>
+// (../AO2-Client/src/text_file_functions.cpp:515-527). Driving the real enumerator
+// and comparing against the mint is what keeps the two from drifting again.
+func TestReportBlipsRideTheOneMint(t *testing.T) {
+	const origin = "http://cdn.example/"
+	rec := &sceneRecording{
+		Origin:  origin,
+		StartBg: "courtroom",
+		// One real set (two words, authored case), then every shape that is NOT a
+		// blip name: the KFO third_charid idle sentinel, the same field once a
+		// triplex pair is confirmed, the other family's "no value" spelling, and a
+		// pre-2.10.2 sender that ships no field at all.
+		Events: []recEvent{
+			msgEvent("Phoenix", "normal", "", "", "Deep Voice"),
+			msgEvent("Edgeworth", "normal", "", "", "-1"),
+			msgEvent("Maya", "normal", "", "", "5^0"),
+			msgEvent("Franziska", "normal", "", "", "0"),
+			msgEvent("Godot", "normal", "", "", ""),
+		},
+	}
+	r := enumerateContent(rec.Origin, rec.StartBg, recEvents(rec))
+
+	urls := courtroom.NewURLBuilder(origin)
+	want := urls.BlipRef("Deep Voice")
+	items := r.Categories[CatBlip].Items
+	if len(items) != 1 {
+		t.Fatalf("blip items = %v, want exactly the one real set (sentinels are not assets)", itemURLs(r, CatBlip))
+	}
+	got := items[0].ref
+	if got.Base != want.Base {
+		t.Errorf("blip base = %q, want the mint's %q", got.Base, want.Base)
+	}
+	if !reflect.DeepEqual(got.Alts, want.Alts) {
+		t.Errorf("blip alts = %q, want the mint's whole ladder %q", got.Alts, want.Alts)
+	}
+	if got.Type != assets.AssetTypeBlip {
+		t.Errorf("blip ref type = %v, want AssetTypeBlip", got.Type)
+	}
+	// The legacy general spelling must be IN the chain: that is the half of canon
+	// this client never probed.
+	legacy := origin + "sounds/general/sfx-blipdeep%20voice"
+	found := false
+	for _, alt := range got.Alts {
+		if alt == legacy {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the AO1 legacy spelling %q is not in the report's chain %q", legacy, got.Alts)
 	}
 }
 

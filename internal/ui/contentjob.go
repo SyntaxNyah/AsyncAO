@@ -343,8 +343,9 @@ func enumerateContent(origin, startBg string, events []courtroom.Event) *Content
 
 	// SFX + blips: per-message audio SceneAssets omits. These are BASES needing
 	// format probing (like sprites), not exact URLs — SFXName/Blipname carry no
-	// extension. Mirrors courtroom.go's playSFX (SFXName != "", "0", "1") and the
-	// blip base (urls.Blip(Blipname)).
+	// extension. Mirrors courtroom.go's playSFX (SFXName != "", "0", "1"); the
+	// blip goes through courtroom.URLBuilder.BlipRef, the SAME mint the live
+	// funnel uses, so the report probes exactly the chain a session would.
 	for _, ev := range events {
 		if ev.Kind != courtroom.EventMessage || ev.Message == nil {
 			continue
@@ -355,14 +356,12 @@ func enumerateContent(origin, startBg string, events []courtroom.Event) *Content
 		if sfx := m.SFXName; sfx != "" && sfx != "0" && sfx != "1" && !strings.EqualFold(sfx, "NO-SFX") {
 			add(sfx, urls.SFX(sfx), courtroom.AssetRef{Base: urls.SFX(sfx), Type: assets.AssetTypeSFX})
 		}
-		if blip := m.Blipname; blip != "" && blip != "-1" {
-			// The authored-casing spelling is the chain alt (blips split lowercase
-			// vs raw-case on different mirrors — see URLBuilder.BlipAuthored).
-			add(blip, urls.Blip(blip), courtroom.AssetRef{
-				Base: urls.Blip(blip),
-				Alts: []string{urls.BlipAuthored(blip)},
-				Type: assets.AssetTypeBlip,
-			})
+		// BlipRef carries BOTH halves the report used to hand-roll: the sentinel /
+		// path-safety guard (this site's own copy only knew "" and "-1", so a KFO
+		// "<id>^0" or a bare "0" still became a probed URL here while the live
+		// funnel dropped it) and the full AO2 spelling ladder.
+		if ref := urls.BlipRef(m.Blipname); ref.Base != "" {
+			add(m.Blipname, ref.Base, ref)
 		}
 	}
 

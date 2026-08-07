@@ -1,7 +1,6 @@
 package courtroom
 
 import (
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -485,7 +484,11 @@ type Courtroom struct {
 	// current.Message keeps the marker (recordings share that pointer, so replays
 	// re-decode the style); we never mutate it.
 	currentText string
-	blipBase    string
+	// blipRef is THIS message's blip chain, minted once in begin() by the one
+	// guarded mint (blipurl.go BlipRef): Base is the identity the blip player and
+	// the texture/audio tiers key on, Alts are the further AO2 spellings the
+	// prefetch chain walks on a miss.
+	blipRef AssetRef
 	// pendingEffects holds the current message's decoded animated-text spans (#M5),
 	// set in begin() and copied onto Scene.MessageEffects when the text shows
 	// (startTalking) — effects are per-message content, never recalled.
@@ -1286,15 +1289,20 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		// webAO parity: senders that omit the wire field (pre-2.10.2 clients,
 		// short packets) still blip with THEIR char.ini set, not the default.
 		blip = c.BlipNameFor(speakerName)
+		if !validBlipName(blip) {
+			blip = "" // a char.ini is server bytes too — same one guard, not a second copy
+		}
 	}
 	if blip == "" {
-		blip = "male" // AO default blip set
+		blip = defaultBlipSet // get_blipname's last resort (text_file_functions.cpp:510)
 	}
-	c.blipBase = c.urls.Blip(blip)
-	// Same case chain as the chatbox skin: the lowercase identity leads,
-	// the authored spelling follows for case-preserving mirrors (the chain
-	// dedups when they match). // AssetType: Blip
-	c.mgr.PrefetchChain(c.blipBase, []string{c.urls.BlipAuthored(blip)}, assets.AssetTypeBlip, network.PriorityHigh)
+	// ONE mint for every blip URL in the client (blipurl.go): the guard that
+	// rejects sentinels, and AO2's get_blips ladder — the modern sounds/blips/
+	// set, AO1's sounds/general/sfx-blip<name>, and the plain general sound —
+	// each in the lowercase identity casing then the authored one.
+	// AssetType: Blip
+	c.blipRef = c.urls.BlipRef(blip)
+	c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
 
 	// Per-character chatbox skin (char.ini chat=<misc>, AO2 get_chat): the scene
 	// carries the misc art's base; the ui draws it as the chatbox background
@@ -1539,37 +1547,6 @@ func (c *Courtroom) enterAfterShout() {
 		return
 	}
 	c.startTalking()
-}
-
-// validBlipName reports whether a wire BLIPNAME field is a usable blip-set name,
-// i.e. something we are willing to mint a URL (and therefore a network probe)
-// from. There is no such thing as a numeric blip in AO: get_blipname/get_blips
-// resolve a NAME through char.ini [Options] blips → legacy gender → "male"
-// (AO2-Client text_file_functions.cpp:487-514), so anything that parses as a
-// bare number is by definition not a blip. That is exactly what leaks off the
-// KFO family, whose MS reuses index 30 for its "triplex" third_charid and idles
-// it at the sentinel "-1" (and sends "<id>^0" once a third pair is confirmed) —
-// probing it burned the whole audio ladder × 2 spellings per message, forever,
-// on a guaranteed miss. The parse-side feature gate (protocol.ParseMS's
-// getBlips) is the real fix; this is the belt at the prefetch boundary so no
-// server, hostile or merely odd, can mint asset URLs out of that field. Same
-// shape as the SFX sentinel guard in armSFXDelay and the export-side guard in
-// the UI's content job.
-func validBlipName(name string) bool {
-	if name == "" {
-		return false
-	}
-	// Not a plain path segment. '^' is in the list because that is the shape a
-	// triplex-paired KFO client puts in slot 30 ("<id>^0"); the rest are the
-	// traversal / wire-escape characters a name has no business carrying. Unicode
-	// is deliberately NOT restricted — custom blip sets are named by their authors.
-	if strings.ContainsAny(name, `/\^:?#%&$`) || strings.Contains(name, "..") || name[0] == '.' {
-		return false
-	}
-	if _, err := strconv.Atoi(name); err == nil {
-		return false // "-1", "0", "7": a sentinel or an id, never a blip set
-	}
-	return true
 }
 
 // armSFXDelay schedules the message's emote SFX and (for preanim mods) its
@@ -1972,7 +1949,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 			c.fireInlineEffect(m)
 		}
 		for i := 0; i < blips; i++ {
-			c.audio.PlayBlip(c.blipBase) // AssetType: Blip
+			c.audio.PlayBlip(c.blipRef.Base) // AssetType: Blip
 		}
 		textDone := c.Typewriter.Done()
 		// Immediate mode: a preanim (PlayOnce) is playing over the text crawl.

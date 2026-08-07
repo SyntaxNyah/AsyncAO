@@ -246,9 +246,17 @@ characters/<char>/<shout>.opus         shout cries
 characters/<char>/<shout>_bubble.webp  bubbles (fallback misc/default/)
 background/<bg>/<part>.webp            defenseempty, stand, …
 sounds/general/<sfx>.opus
-sounds/blips/<blip>.opus
+sounds/blips/<blip>.opus               blip set — then sounds/general/sfx-blip<blip>
+                                       (AO1 legacy), then sounds/general/<blip>
 sounds/music/<track>                   track name carries its extension
 ```
+
+A blip name walks all three spellings, each in the lowercase identity casing then
+the authored one: AO2's `get_blips` probes the same three against a
+case-insensitive local disk (`text_file_functions.cpp:515-527`), and the char.ini
+key it came from (`blips` or the legacy `gender`) does not choose between them —
+`get_blipname` returns a bare name (`:487-514`). `URLBuilder.BlipRef` is the only
+place any of it is built.
 
 All segments lowercased and encodeURI-escaped (parentheses literal). Side →
 part mapping and the 2.8 unique-position convention (`<pos>` /

@@ -60,8 +60,8 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	msg.Blipname = ""
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
 	room.SkipToIdle()
-	if !strings.HasSuffix(room.blipBase, "sounds/blips/deep") {
-		t.Errorf("empty wire blip must resolve via BlipNameFor: blipBase = %q", room.blipBase)
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/deep") {
+		t.Errorf("empty wire blip must resolve via BlipNameFor: blip base = %q", room.blipRef.Base)
 	}
 	if !strings.Contains(room.Scene.ChatSkinBase, "misc/dorothybox/chat") {
 		t.Errorf("chat skin base = %q, want misc/dorothybox/chat", room.Scene.ChatSkinBase)
@@ -73,8 +73,8 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	msg2.Blipname = "typewriter"
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg2})
 	room.SkipToIdle()
-	if !strings.HasSuffix(room.blipBase, "sounds/blips/typewriter") {
-		t.Errorf("wire blip must win: blipBase = %q", room.blipBase)
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/typewriter") {
+		t.Errorf("wire blip must win: blip base = %q", room.blipRef.Base)
 	}
 
 	// The identity spelling is LOWERCASE with slashes kept as path
@@ -104,8 +104,8 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	if room.Scene.ChatSkinBase != "" {
 		t.Errorf("skinless speaker must clear ChatSkinBase, got %q", room.Scene.ChatSkinBase)
 	}
-	if !strings.HasSuffix(room.blipBase, "sounds/blips/male") {
-		t.Errorf("unknown speaker with no wire blip must use the AO default: %q", room.blipBase)
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/male") {
+		t.Errorf("unknown speaker with no wire blip must use the AO default: %q", room.blipRef.Base)
 	}
 }
 

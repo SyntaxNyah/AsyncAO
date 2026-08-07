@@ -59,11 +59,11 @@ func TestSentinelBlipnameNeverBecomesAURL(t *testing.T) {
 	}
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
 	room.SkipToIdle()
-	if strings.Contains(room.blipBase, "/-1") {
-		t.Fatalf("the sentinel became a blip URL: %q", room.blipBase)
+	if strings.Contains(room.blipRef.Base, "/-1") {
+		t.Fatalf("the sentinel became a blip URL: %q", room.blipRef.Base)
 	}
-	if !strings.HasSuffix(room.blipBase, "sounds/blips/deep") {
-		t.Errorf("blipBase = %q, want the char.ini set (deep)", room.blipBase)
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/deep") {
+		t.Errorf("blip base = %q, want the char.ini set (deep)", room.blipRef.Base)
 	}
 
 	// With no char.ini answer either, the AO default plays — never the sentinel.
@@ -75,8 +75,8 @@ func TestSentinelBlipnameNeverBecomesAURL(t *testing.T) {
 	}
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg2})
 	room.SkipToIdle()
-	if !strings.HasSuffix(room.blipBase, "sounds/blips/male") {
-		t.Errorf("blipBase = %q, want the AO default set (male)", room.blipBase)
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/male") {
+		t.Errorf("blip base = %q, want the AO default set (male)", room.blipRef.Base)
 	}
 }
 
