@@ -102,10 +102,11 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	y := body.Y - a.debugOOCScroll
 	for _, ln := range lines {
 		if y+lineH > body.Y && y < body.Y+body.H { // skip rows scrolled out of view
-			if bold {
-				c.LabelClippedFont(font, body.X+1, y, wrapW, ln, ink)
-			}
-			c.LabelClippedFont(font, body.X, y, wrapW, ln, ink)
+			// One weighted draw, not a plain draw plus a 1 px-offset second pass: a
+			// LOGICAL pixel offset is multiplied by the UI scale, so the two copies land
+			// on different sub-pixel phases and the row reads doubled rather than bold
+			// (F1b — see Ctx.textTextureBold).
+			c.LabelClippedFontWeight(font, body.X, y, wrapW, ln, ink, bold)
 		}
 		y += lineH
 	}

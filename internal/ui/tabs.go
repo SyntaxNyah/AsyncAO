@@ -223,6 +223,7 @@ func (a *App) tabChipTint(i int) (sdl.Color, bool) {
 // first; at the cap it fails with a visible reason. The caller becomes
 // the active tab with a fresh sessionState.
 func (a *App) allocateTab() bool {
+	reaped := false
 	for i := 0; i < len(a.tabs); i++ {
 		if a.tabs[i].dead && a.tabs[i].state.conn == nil {
 			a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
@@ -230,7 +231,11 @@ func (a *App) allocateTab() bool {
 				a.activeTab--
 			}
 			i--
+			reaped = true
 		}
+	}
+	if reaped {
+		a.reapTranscripts() // a reaped dead tab's transcript writer goes with it (F4)
 	}
 	if lim := a.d.Prefs.TabCap(); len(a.tabs) >= lim {
 		a.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", lim)
@@ -426,6 +431,7 @@ func (a *App) closeActiveTab() {
 		a.tabs = append(a.tabs[:a.activeTab], a.tabs[a.activeTab+1:]...)
 	}
 	a.activeTab = -1
+	a.reapTranscripts() // F4: any session this slot held is over — don't strand its writer
 }
 
 // closeParkedTab disconnects a BACKGROUND tab (chip ✕).
@@ -467,6 +473,7 @@ func (a *App) closeParkedTab(i int) {
 	if a.activeTab > i {
 		a.activeTab--
 	}
+	a.reapTranscripts() // the closed tab's session is gone: release its transcript file + goroutine (F4)
 }
 
 // requestCloseTab gates a MANUAL chip-✕ click (tabs.go handleTabBar) behind the
@@ -612,7 +619,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			if fr {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
 			}
-			a.logDetailed(s.serverName, ev.Message) // detailed transcript (opt-in)
+			a.logDetailed(s.serverName, s.logSession, ev.Message) // detailed transcript (opt-in), the PARKED tab's own file
 			names := a.mentionNamesFor(s)
 			a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 		}
@@ -1388,7 +1395,13 @@ func (l *loweredCache) get(src string) string {
 // initialized, sentinel ids set) — used by NewApp, Disconnect, and the
 // park path.
 func (a *App) resetSessionState() {
+	// A fresh live slot is a fresh transcript session (F4). Minted HERE — the one
+	// place a pristine sessionState is built — so no caller can create a tab that
+	// shares another tab's log file by forgetting to stamp it. Monotonic: park moves
+	// the id into the tab with the rest of the state, so an id is never reused.
+	a.nextLogSession++
 	a.sessionState = sessionState{
+		logSession: a.nextLogSession,
 		// Pair placement is per-session AND session-only: each tab keeps its
 		// own, and a fresh session starts centered/unflipped — the old prefs
 		// seeding made offsets "inexplicably saved" across client restarts
@@ -1443,4 +1456,10 @@ func (a *App) resetSessionState() {
 	if a.ctx != nil {
 		a.ctx.ClearFieldHistories()
 	}
+	// The session that was live a moment ago is over unless park just moved it into
+	// a tab, so let go of its transcript file and writer goroutine (F4). Last, after
+	// the new id is in place, so the reap's liveness question sees the state it is
+	// about to be asked about; parkActive copies the outgoing state into its slot
+	// BEFORE calling this, which is what keeps a backgrounded tab's log open.
+	a.reapTranscripts()
 }

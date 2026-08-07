@@ -2605,11 +2605,16 @@ func (a *App) reshowSprites() {
 // chatBoxTopStrip is the showname strip above the message text (text draws at box.Y+chatBoxTopStrip);
 // chatBoxBottomPad leaves a little air under the last line. Used to grow the box to fit its message.
 //
-// chatOverlayPadX / chatOverlayNameY / chatOverlayBoldNudge name the rest of the
-// classic overlay's inset, which drawChatOverlay used to spell as bare 8 / 4 / 16
-// / 9 literals sprinkled across a dozen expressions (hard rule 9). VALUES ARE
-// UNCHANGED — this is naming only, and TestClassicChatOverlayInsetValuesUnchanged
-// (chatboxfit_test.go) pins the classic box to the exact pixels it drew before.
+// chatOverlayPadX / chatOverlayNameY name the rest of the classic overlay's inset,
+// which drawChatOverlay used to spell as bare 8 / 4 / 16 literals sprinkled across a
+// dozen expressions (hard rule 9). VALUES ARE UNCHANGED — this is naming only, and
+// TestClassicChatOverlayInsetValuesUnchanged (chatboxfit_test.go) pins the classic
+// box to the exact pixels it drew before.
+//
+// There WAS a chatOverlayBoldNudge here — the 1 px right shift of a faux-bold second
+// draw pass. It is gone (F1b): weight belongs in the glyphs, not in a second blit,
+// because a LOGICAL pixel offset is multiplied by the UI scale and the two copies
+// then sit on different sub-pixel phases. See Ctx.textTextureBold.
 //
 // These are AsyncAO's OWN furniture, not AO2 geometry: the classic overlay
 // invents a chatbox where the theme declares none, so nothing here is a
@@ -2623,9 +2628,6 @@ const (
 	chatOverlayPadX = int32(8)
 	// chatOverlayNameY is the showname row's offset from the box's top edge.
 	chatOverlayNameY = int32(4)
-	// chatOverlayBoldNudge is the 1 px right shift of the faux-bold second pass
-	// (no bold cut is opened — the same glyphs are drawn twice, one pixel apart).
-	chatOverlayBoldNudge = int32(1)
 )
 
 // grownChatBoxH is the chatbox height needed to show `lines` lines of `lineH`-tall text in full
@@ -2755,10 +2757,12 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// themes that declare no ao2_chatbox rect, so there is no theme-authored
 	// showname box for a theme-authored alignment to place text across. The themed
 	// chatbox honours it (chatboxfit.go).
-	if a.d.Prefs.BoldNamesOn() || a.elemBold(elemShowname) { // faux-bold the showname (1px-shifted second pass) for readability — default on
-		a.labelEmoji(snFont, snEmoji, box.X+chatOverlayPadX+chatOverlayBoldNudge, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol)
-	}
-	a.labelEmoji(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol)
+	// Bold the showname for readability (default on, plus the theme's showname_bold).
+	// The weight is rasterized into the glyphs — ONE device-exact draw — not a second
+	// pass a logical pixel to the right: that offset multiplied by the UI scale and
+	// read as a doubled, smeared name at 105%+ (F1b).
+	snBold := a.d.Prefs.BoldNamesOn() || a.elemBold(elemShowname)
+	a.labelEmojiWeight(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol, snBold)
 
 	wrapW := box.W - 2*chatOverlayPadX
 	// messagePct, NOT the themed fold: this overlay is AsyncAO's own chatbox, sized
@@ -4334,7 +4338,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	}
 	// #39: the theme's "area_list" size/family, folded with the area zoom.
 	font := a.elemFont(elemAreaList, a.areaPct) // area-list zoom, independent of the IC log
-	areaBold := a.elemBold(elemAreaList)        // area_list_bold → the faux-bold second pass
+	areaBold := a.elemBold(elemAreaList)        // area_list_bold → the row's real bold cut
 	subH := int32(font.Height())
 	cardW := r.W - scrollBarW - scrollBarGap - 4
 	rows := a.areaWrapped(font, cardW, query, slot) // word-wrapped name/detail text (Issue #22), cached
@@ -4386,10 +4390,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 			c.Border(card, border)
 			ny := card.Y + 3
 			for _, line := range row.nameLines {
-				if areaBold {
-					c.LabelClippedFont(font, card.X+7, ny, card.W-12, line, nameCol)
-				}
-				c.LabelClippedFont(font, card.X+6, ny, card.W-12, line, nameCol)
+				c.LabelClippedFontWeight(font, card.X+6, ny, card.W-12, line, nameCol, areaBold)
 				ny += subH
 			}
 			if len(row.nameLines) == 0 { // empty area name (shouldn't happen, but keep the block reserved)
@@ -4397,10 +4398,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 			}
 			dy := ny + 2
 			for _, line := range row.detailLines {
-				if areaBold {
-					c.LabelClippedFont(font, card.X+19, dy, card.W-24, line, areaIdleCol)
-				}
-				c.LabelClippedFont(font, card.X+18, dy, card.W-24, line, areaIdleCol)
+				c.LabelClippedFontWeight(font, card.X+18, dy, card.W-24, line, areaIdleCol, areaBold)
 				dy += subH
 			}
 			if c.ClickedIn(card) { // press+release in-card: a drag-in release must not transfer areas
@@ -5688,7 +5686,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// #39: "music_name" is AO2's own id for this line (Courtroom::set_fonts,
 	// courtroom.cpp:1201). elemLabelFont keeps the fixed chrome face when the theme
 	// says nothing, so an undressed client draws exactly what it did before; real
-	// themes set music_name_bold = 1, hence the faux-bold second pass.
+	// themes set music_name_bold = 1, hence the weighted draw.
 	if br, ok := plan.rect(musicItemNowPlaying); ok {
 		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
 		// #21 label 16: "music_name_color". themed IS the canvas flag here — the two
@@ -5698,10 +5696,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 			nameInk = a.elemInkOr(elemMusicName, themed, ColAccent)
 		}
 		ty := br.Y + (br.H-fontLineH(nameFont))/2
-		if a.elemBold(elemMusicName) {
-			c.LabelClippedFont(nameFont, br.X+1, ty, br.W, nowLabel, nameInk)
-		}
-		c.LabelClippedFont(nameFont, br.X, ty, br.W, nowLabel, nameInk)
+		c.LabelClippedFontWeight(nameFont, br.X, ty, br.W, nowLabel, nameInk, a.elemBold(elemMusicName))
 	}
 	// --- header row 2: the search filter and its shown/total count ---
 	//
@@ -5737,7 +5732,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// #39: the theme's "music_list" size/family, folded with the music zoom
 	// (independent of the IC log scale).
 	font := a.elemFont(elemMusicList, a.musicPct)
-	musicBold := a.elemBold(elemMusicList) // music_list_bold → the faux-bold second pass
+	musicBold := a.elemBold(elemMusicList) // music_list_bold → the row's real bold cut
 	// #21 label 16: "music_list_color" is the TRACK rows' ink. Category headers keep
 	// ColAccent — they are filled ColPanelHi and the [-]/[+] marker is AsyncAO's own
 	// collapse affordance, not one of AO2's tree items.
@@ -5769,10 +5764,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 					glyph = "[+] " // collapsed
 				}
 				header := glyph + musicCategoryLabel(entry)
-				if musicBold {
-					c.LabelClippedFont(font, r.X+5, y+4, row.W-8, header, ColAccent)
-				}
-				c.LabelClippedFont(font, r.X+4, y+4, row.W-8, header, ColAccent)
+				c.LabelClippedFontWeight(font, r.X+4, y+4, row.W-8, header, ColAccent, musicBold)
 				if c.ClickedIn(row) { // toggle just this category, not a track request
 					if a.musicCollapsed == nil {
 						a.musicCollapsed = make(map[int]bool)
@@ -5794,10 +5786,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 				// display is a pure substring, the MC packet and the music URL are
 				// built from the raw name.
 				display := courtroom.MusicDisplayName(entry)
-				if musicBold {
-					c.LabelClippedFont(font, r.X+21, y+4, row.W-24, display, trackInk)
-				}
-				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, display, trackInk) // indented under its category, tree-style
+				c.LabelClippedFontWeight(font, r.X+20, y+4, row.W-24, display, trackInk, musicBold) // indented under its category, tree-style
 				if hover {
 					c.Tooltip(row, entry) // the RAW entry on hover — the full path is still one hover away
 				}

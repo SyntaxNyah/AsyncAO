@@ -302,9 +302,15 @@ func TestShownameSpanLeftIsIdentity(t *testing.T) {
 // whole change there (hard rule 9); a value edit hiding behind it would move every
 // classic chatbox on every screen.
 func TestClassicChatOverlayInsetValuesUnchanged(t *testing.T) {
-	if chatOverlayPadX != 8 || chatOverlayNameY != 4 || chatBoxTopStrip != 26 || chatOverlayBoldNudge != 1 {
-		t.Fatalf("classic overlay inset changed: padX=%d nameY=%d topStrip=%d boldNudge=%d, want 8/4/26/1",
-			chatOverlayPadX, chatOverlayNameY, chatBoxTopStrip, chatOverlayBoldNudge)
+	// chatOverlayBoldNudge is deliberately GONE from this list, and from the client
+	// (F1b): the showname's weight is now rasterized into the glyphs by
+	// labelEmojiWeight instead of drawn a second time one logical pixel to the right.
+	// That offset was the only inset here that was not a layout value — it was a
+	// rendering trick — and at a fractional UI scale it multiplied into a visible
+	// double image. Every remaining inset is unchanged, which is what this test is for.
+	if chatOverlayPadX != 8 || chatOverlayNameY != 4 || chatBoxTopStrip != 26 {
+		t.Fatalf("classic overlay inset changed: padX=%d nameY=%d topStrip=%d, want 8/4/26",
+			chatOverlayPadX, chatOverlayNameY, chatBoxTopStrip)
 	}
 	// Every expression drawChatOverlay builds out of them, against the literals it
 	// used to build them out of. A representative box, not a special one.
@@ -315,7 +321,6 @@ func TestClassicChatOverlayInsetValuesUnchanged(t *testing.T) {
 		want int32
 	}{
 		{"showname x", box.X + chatOverlayPadX, box.X + 8},
-		{"faux-bold showname x", box.X + chatOverlayPadX + chatOverlayBoldNudge, box.X + 9},
 		{"showname y", box.Y + chatOverlayNameY, box.Y + 4},
 		{"showname clip width", box.W - 2*chatOverlayPadX, box.W - 16},
 		{"message wrap width", box.W - 2*chatOverlayPadX, box.W - 16},

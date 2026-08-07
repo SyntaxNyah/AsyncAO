@@ -1554,9 +1554,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	//
 	// showname_align, honoured at last: AO2 places the label's text across its own
 	// widget rect (courtroom.cpp:3338-3354), and half the reference corpus's design
-	// files ask for `center` — which AsyncAO drew hard left. Resolved ONCE for both
-	// draw passes so the faux-bold shadow cannot land on a different offset than
-	// the glyphs it thickens.
+	// files ask for `center` — which AsyncAO drew hard left. Resolved ONCE, for the
+	// single weighted draw below (it used to have to be resolved once for two passes,
+	// so a faux-bold shadow could not land on a different offset than its glyphs).
 	//
 	// The Y is AO2's, unchanged: ui_vp_showname is given a horizontal-only
 	// alignment (courtroom.cpp:93, and again in the block above), which CLEARS
@@ -1565,14 +1565,15 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// the same label in a 232x120 box inks at y=54 with Qt's default alignment and
 	// at y=2 with AlignLeft alone — the value AO2 actually sets.
 	nameX, nameW := a.shownameSpanFor(nameBox, snFont, snEmoji, sc.ShownameText, nameCol)
-	// Only the THEME's showname_bold adds the faux-bold pass here. The classic
-	// overlay also honours the client's "Bold names" pref; the themed box never
-	// has, and quietly turning that on for every themed user is a look change
-	// nobody asked for — kept out of #39's scope deliberately.
-	if a.elemBold(elemShowname) {
-		a.labelEmoji(snFont, snEmoji, nameX+chatOverlayBoldNudge, nameBox.Y, nameW, sc.ShownameText, nameCol)
-	}
-	a.labelEmoji(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol)
+	// Only the THEME's showname_bold bolds here. The classic overlay also honours the
+	// client's "Bold names" pref; the themed box never has, and quietly turning that
+	// on for every themed user is a look change nobody asked for — kept out of #39's
+	// scope deliberately.
+	//
+	// The weight is in the RASTER now, not a second pass one logical pixel right: at a
+	// fractional UI scale that offset scaled with everything else and the two copies
+	// landed on different sub-pixel phases, so the name read doubled (F1b).
+	a.labelEmojiWeight(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol, a.elemBold(elemShowname))
 
 	// The message folds the canvas scale in for the same reason the showname does:
 	// its wrap width came from a design rect that the canvas already scaled, so a
@@ -2000,10 +2001,9 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	if w, ok := c.fontTextWidth(font, label); ok && w > avail {
 		shown = c.fitLabelToFont(font, label, avail)
 	}
-	if a.elemBold(elemMusicName) {
-		c.LabelClippedFont(font, dst.X+inset+1, ty, avail, shown, col)
-	}
-	c.LabelClippedFont(font, dst.X+inset, ty, avail, shown, col)
+	// music_name_bold rides the raster (one weighted draw), not a 1 px-offset second
+	// pass — that offset scaled with the UI and smeared into a double image (F1b).
+	c.LabelClippedFontWeight(font, dst.X+inset, ty, avail, shown, col, a.elemBold(elemMusicName))
 	c.popClip(clipPrev, clipHad)
 	return true
 }

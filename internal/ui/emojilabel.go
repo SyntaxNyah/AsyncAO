@@ -41,6 +41,9 @@ type emojiKey struct {
 	emoji *ttf.Font // the colour-emoji face — DISTINCT per size, so the same emoji at two
 	// sizes (picker vs IC-bar button vs reaction float) can't share one cached raster and
 	// render at the wrong size. Omitting it was a cross-size cache collision (#36).
+	// bold is the raster's WEIGHT (F1b): the spans are built bold or plain, so the same
+	// showname drawn bold in the chatbox and plain elsewhere must not share one raster.
+	bold bool
 }
 
 // labelEmoji draws text that may contain colour emoji, clipped to maxW. Plain
@@ -50,26 +53,68 @@ type emojiKey struct {
 // too, not just a chatbox message). While the face is still loading the label
 // degrades to today's tofu and repaints in colour once it lands.
 func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
+	a.labelEmojiWeight(primary, emoji, x, y, maxW, text, col, false)
+}
+
+// labelEmojiWeight is labelEmoji at a weight. bold draws the face's REAL bold cut —
+// one texture on the plain path, a bold span on the raster path — replacing the
+// 1 px-offset second pass the showname surfaces used to make, which smeared into a
+// visible double at a fractional UI scale (F1b; see Ctx.textTextureBold).
+// bold==false is byte-identical to the old labelEmoji on both branches.
+func (a *App) labelEmojiWeight(primary, emoji *ttf.Font, x, y, maxW int32, text string, col sdl.Color, bold bool) {
 	c := a.ctx
 	needEmoji := render.NeedsEmojiFallback(text)
 	// Per-glyph raster only when the label has emoji OR mixes scripts no single face
 	// covers (covers() reads the pick made by the caller's *FontFor, no rescan). Plain
 	// single-script text — the overwhelming common case — stays on the fast path.
 	if primary == nil || (!needEmoji && c.coversFace(primary, text)) {
-		c.LabelClippedFont(primary, x, y, maxW, text, col)
+		c.LabelClippedFontWeight(primary, x, y, maxW, text, col, bold)
 		return
+	}
+	// F5. We are on the raster branch because the whole-line pick failed, which for a
+	// bare BMP pictograph (♥ ✨ ⭐ ⌛) means no TEXT face on this machine has the glyph.
+	// NeedsEmojiFallback only sees supplementary-plane runes and VS16, so it said no,
+	// the colour face was never requested, and the character drew as a box forever —
+	// beside CJK and Greek that the text tiers answer correctly. Ask for the colour
+	// face now: it is the only one that has these.
+	if !needEmoji && c.uncoveredPictograph(primary, text) {
+		needEmoji = true
+		if emoji == nil {
+			// The caller gated its own emoji face on NeedsEmojiFallback too, so it
+			// handed us nil. Resolve one at the primary's OWN scale — an emoji drawn
+			// at a different size than the row's text is #39's whole complaint.
+			emoji = c.emojiFaceFor(primary)
+		}
 	}
 	if needEmoji {
 		a.ensureEmojiFontLoad() // colour-emoji face; a mixed-script label alone needs none
 	}
-	m := c.emojiRaster(text, col, primary, emoji)
+	m := c.emojiRasterWeight(text, col, primary, emoji, bold)
 	if m == nil { // build failed → single-font (tofu) path
-		c.LabelClippedFont(primary, x, y, maxW, text, col)
+		c.LabelClippedFontWeight(primary, x, y, maxW, text, col, bold)
 		return
 	}
 	cp, ch := c.pushClip(sdl.Rect{X: x, Y: y, W: maxW, H: m.Height()})
 	m.Draw(c.Ren, m.TotalRunes(), x, y)
 	c.popClip(cp, ch)
+}
+
+// emojiFaceFor is the colour-emoji face at PRIMARY's own resolved scale — the one
+// rule #39 states for every element-dressed row: the emoji baseline must match the
+// text face the same row draws in, or a name with a symbol in it renders the two at
+// different sizes. Falls back to the chrome scale when primary belongs to no scaled
+// set (chrome-only / headless).
+func (c *Ctx) emojiFaceFor(primary *ttf.Font) *ttf.Font {
+	return c.EmojiFont(c.emojiPctFor(primary))
+}
+
+// emojiPctFor is emojiFaceFor's scale alone — the device-sibling resolution needs
+// the percent, not the face.
+func (c *Ctx) emojiPctFor(primary *ttf.Font) int {
+	if log, _, idx := c.setIndexOf(primary); log != nil && idx >= 0 {
+		return log.pct
+	}
+	return DefaultScalePct
 }
 
 // labelCoveringCentered draws CHROME text that may need a face the fixed chrome
@@ -230,10 +275,17 @@ func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 // to the single-font path). The colour spans the whole label (one ColorSpan);
 // the slice + the build are paid once per (text, colour, font), never per frame.
 func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) *render.MessageRaster {
+	return c.emojiRasterWeight(text, col, primary, emoji, false)
+}
+
+// emojiRasterWeight is emojiRaster at a weight (F1b) and with the F5 pictograph
+// promotion. bold==false and a line with no uncovered pictograph reproduce the old
+// raster byte for byte.
+func (c *Ctx) emojiRasterWeight(text string, col sdl.Color, primary, emoji *ttf.Font, bold bool) *render.MessageRaster {
 	if primary == nil {
 		return nil
 	}
-	key := emojiKey{text: text, color: col, font: primary, emoji: emoji}
+	key := emojiKey{text: text, color: col, font: primary, emoji: emoji, bold: bold}
 	if m, ok := c.emojiCache[key]; ok {
 		return m
 	}
@@ -245,6 +297,11 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 	// change purges this cache (SetTextDevScale), so a stale-size entry can't leak.
 	dev := c.textDevPct
 	textFonts := c.coverRunes(primary, runes) // per-rune covering face (mixed-script) — logical set
+	// F5: the runes NO text face covers that the colour face can draw (♥ ✨ ⭐ …).
+	// coverRunes left those on `primary`, i.e. pointed at a .notdef box; the mask says
+	// which ones to hand the emoji face instead. nil — no such rune — on every ordinary
+	// label, so this costs one cheap compare per rune and no allocation.
+	picto := c.uncoveredPictographMask(primary, runes)
 	// No emoji face AND every rune covered by primary → nothing this raster can add;
 	// degrade to the single-font path (the caller tofus the emoji until the face lands),
 	// exactly as before. A mixed-script run (textFonts differ) still builds.
@@ -254,6 +311,11 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 	// Self-invalidating: the key embeds the emoji-face pointer (nil→face is a
 	// new key) and SetEmojiFont/SetFallbackFonts/SetCJKFonts/purgeTextCache all
 	// purge this cache when the underlying faces change.
+	//
+	// The pictograph mask is deliberately NOT an escape from this bail: with no
+	// colour face there is nothing to promote TO, so the label keeps today's box and
+	// the key (which carries the face pointer) makes nil→face a new entry that
+	// rebuilds the moment pollEmojiFont lands one.
 	if emoji == nil && allSameFont(textFonts, primary) {
 		return c.cacheEmojiRaster(key, nil)
 	}
@@ -268,14 +330,23 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 			devFonts[i] = c.deviceFontForAnyPct(f)
 		}
 		if emoji != nil {
-			pct := DefaultScalePct
-			if log, _, idx := c.setIndexOf(primary); log != nil && idx >= 0 {
-				pct = log.pct
-			}
-			devEmoji = c.emojiDeviceFont(pct)
+			devEmoji = c.emojiDeviceFont(c.emojiPctFor(primary))
 		}
 	}
-	spans := []render.ColorSpan{{Len: len(runes), Color: col}}
+	// F5: hand the uncovered pictographs to the colour face. Done HERE, on the face
+	// slice RasterizeFallback actually rasterizes from, so the promotion picks up the
+	// device sibling at a fractional UI scale like every other glyph. Skipped when the
+	// colour face isn't loaded yet — the label keeps today's box and repaints when
+	// pollEmojiFont lands it (the key carries the face pointer, so nil→face is a new
+	// entry and the stale one can't be served).
+	if picto != nil && devEmoji != nil {
+		for i, p := range picto {
+			if p {
+				devFonts[i] = devEmoji
+			}
+		}
+	}
+	spans := []render.ColorSpan{{Len: len(runes), Color: col, Bold: bold}}
 	m, err := render.RasterizeFallback(c.Ren, devFonts, devEmoji, text, spans, emojiNoWrap, dev)
 	if err != nil || m == nil {
 		// A failed build is cached as nil too — with these exact faces it fails

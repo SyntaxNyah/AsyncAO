@@ -68,9 +68,11 @@ type themeElemFont struct {
 	// (or it didn't resolve on disk), so the zero value means "use the client's
 	// own font chain" and a zero table is the untouched pre-#39 path.
 	face int
-	// bold mirrors "<id>_bold = 1"; drawn with the existing 1px-shifted
-	// faux-bold second pass, not a separate bold face (AO2 uses QFont::setBold,
-	// which synthesises the weight the same way when the family has no bold cut).
+	// bold mirrors "<id>_bold = 1"; drawn as the face's REAL bold cut — SDL_ttf's
+	// STYLE_BOLD, which synthesises the weight from the same family exactly as AO2's
+	// QFont::setBold does when the family ships no bold file. It used to be a second
+	// draw pass one pixel to the right; that offset was a LOGICAL pixel and smeared
+	// into a doubled image at a fractional UI scale (F1b — see Ctx.textTextureBold).
 	bold bool
 	// color / colorSet are "<id>_color" — the element's foreground ink. AO2 stamps
 	// it as `<class> { color: rgba(...) }` on the widget (courtroom.cpp:1300), i.e.
@@ -267,7 +269,7 @@ func (a *App) elemEmoji(el themeFontElem, userPct int) *ttf.Font {
 }
 
 // elemBold reports el's "<id>_bold", OR'd into each draw site's existing
-// faux-bold gate.
+// bold gate (the weight the site hands LabelClippedFontWeight / labelEmojiWeight).
 func (a *App) elemBold(el themeFontElem) bool { return a.themeFonts.e[el].bold }
 
 // elemChromeFont is the face a PANEL should dress its whole self in, or nil to

@@ -44,26 +44,29 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 			// Measured raw, it cost the whole-screen zero-alloc gates two allocations
 			// per named row per frame — invisible until the OOC box became default and
 			// the gate fixture finally had OOC lines in it.
+			//
+			// The weight rides the RASTER (LabelClippedFontWeight → SDL_ttf
+			// STYLE_BOLD), not a second pass one pixel to the right. The old
+			// faux-bold offset was a LOGICAL pixel, so at a fractional UI scale the
+			// renderer spread the two copies 1×scale device px apart on different
+			// sub-pixel phases and the name read DOUBLED beside message text on the
+			// same row that stayed crisp (F1b). One texture, one blit, device-exact
+			// at every scale — and the widths are measured at the SAME weight, so
+			// the message still starts where the bold name ends.
 			px, used := x, int32(0)
 			if pre := line[:idx]; pre != "" { // timestamp / leading prefix — bold, line colour
-				if pw, ok := c.fontTextWidth(font, pre); ok {
-					c.LabelClippedFont(font, px, y, wrapW-used, pre, col)
-					if bold {
-						c.LabelClippedFont(font, px+1, y, wrapW-used, pre, col)
-					}
+				if pw, ok := c.fontTextWidthWeight(font, pre, bold); ok {
+					c.LabelClippedFontWeight(font, px, y, wrapW-used, pre, col, bold)
 					px += pw
 					used += pw
 				}
 			}
-			if nw, ok := c.fontTextWidth(font, speaker); ok {
+			if nw, ok := c.fontTextWidthWeight(font, speaker, bold); ok {
 				nameCol := col
 				if nameOn {
 					nameCol = nameColor(speaker, sat, val)
 				}
-				c.LabelClippedFont(font, px, y, wrapW-used, speaker, nameCol)
-				if bold { // faux-bold: a 1px-shifted second pass thickens the strokes (no bold font needed)
-					c.LabelClippedFont(font, px+1, y, wrapW-used, speaker, nameCol)
-				}
+				c.LabelClippedFontWeight(font, px, y, wrapW-used, speaker, nameCol, bold)
 				used += nw
 				c.LabelClippedFont(font, px+nw, y, wrapW-used, line[idx+len(speaker):], col)
 				return

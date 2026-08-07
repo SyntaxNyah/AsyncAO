@@ -76,6 +76,78 @@ const (
 // when a face already in the chain could have rendered them.
 func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15 }
 
+// bmpPictographBlocks are the BASIC MULTILINGUAL PLANE blocks whose characters
+// have an emoji presentation and are routinely absent from ordinary text faces:
+// hearts, stars, sparkles, dingbats, the weather/zodiac symbols, arrows and the
+// clock/technical pictographs. They are the F5 gap. Unlike the supplementary-plane
+// emoji isEmojiBase routes, these are plain BMP codepoints — a bare ♥ (U+2665), ✨
+// (U+2728) or ⭐ (U+2B50) carries no VS16 and no 4-byte lead, so needsEmojiFallback
+// says "no emoji here", nothing ever asks for the colour face, and the character
+// draws as the text font's .notdef box. That is exactly what the field report
+// described: hearts and sparkles as boxes while CJK and Greek — which the TEXT
+// tiers and the system-font census answer — came out fine. The v1.87 Unicode census
+// covered SCRIPTS; symbol blocks were never in it.
+//
+// THIS TABLE IS NOT A ROUTING RULE ON ITS OWN. Membership only makes a rune
+// ELIGIBLE for the colour face; the caller promotes it solely when no face in the
+// text chain covers it (Ctx.uncoveredPictographMask). That gate is the whole design:
+// ★, →, ▪ and ™ live in these blocks and every decent text font has them, and they
+// must keep drawing in the row's own face at the row's own weight. Routing by
+// codepoint alone is the exact mistake isEmojiBase's doc records — "any rune above
+// U+FFFF" forced Linear B, cuneiform and CJK Ext-B onto a face with no glyph for
+// them — and doing it here would have handed every arrow and trademark sign to the
+// emoji font.
+//
+// Ranges, not a rune set, because these are contiguous Unicode blocks; a sorted
+// fixed array so the lookup is a short scan with no map and no allocation.
+var bmpPictographBlocks = [...][2]rune{
+	{0x2190, 0x21FF}, // Arrows — ↔ ↕ ↩ ↪ (emoji presentation forms)
+	{0x2300, 0x23FF}, // Miscellaneous Technical — ⌚ ⌛ ⏰ ⏳ ⏩ ⏪
+	{0x25A0, 0x25FF}, // Geometric Shapes — ▪ ▫ ◻ ◼ ◽ ◾
+	{0x2600, 0x27BF}, // Misc Symbols + Dingbats — ☀ ☺ ♥ ★ ✨ ✅ ✂ ➡
+	{0x2900, 0x297F}, // Supplemental Arrows-B — ⤴ ⤵
+	{0x2B00, 0x2BFF}, // Misc Symbols and Arrows — ⭐ ⭕ ⬅ ⬆ ⬇
+}
+
+// bmpPictographRunes are the strays that sit OUTSIDE any of the blocks above but
+// share their problem: an emoji presentation on a codepoint most text faces treat
+// as ordinary punctuation (or don't have at all). Listed individually rather than
+// widening a block, so the table never swallows the letters and digits around them.
+var bmpPictographRunes = [...]rune{
+	0x00A9, // © copyright
+	0x00AE, // ® registered
+	0x2049, // ⁉ exclamation question mark
+	0x203C, // ‼ double exclamation mark
+	0x2122, // ™ trade mark
+	0x2139, // ℹ information source
+	0x24C2, // Ⓜ circled M
+	0x3030, // 〰 wavy dash
+	0x303D, // 〽 part alternation mark
+	0x3297, // ㊗ circled congratulation
+	0x3299, // ㊙ circled secret
+}
+
+// BMPPictograph reports whether r is a BMP character with an emoji presentation —
+// i.e. one the COLOUR-EMOJI face can draw when no text face on the machine can.
+// See bmpPictographBlocks: this is an eligibility test, never a routing decision on
+// its own. Pure; ASCII short-circuits, so a plain line pays one compare per rune.
+func BMPPictograph(r rune) bool {
+	if r < 0x00A9 {
+		return false // ASCII and Latin-1 punctuation: never a pictograph
+	}
+	for _, b := range bmpPictographBlocks {
+		if r >= b[0] && r <= b[1] {
+			return true
+		}
+	}
+	for _, p := range bmpPictographRunes {
+		if r == p {
+			return true
+		}
+	}
+	return false
+}
+
 // assignEmoji marks which runes render from the EMOJI font (true) vs the text font
 // (false). Supplementary-plane runes are emoji; VS16 promotes the BMP char before
 // it (so ❤️ = U+2764 U+FE0F renders as a color heart); a keycap pulls in its base

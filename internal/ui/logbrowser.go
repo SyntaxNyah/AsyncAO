@@ -310,16 +310,34 @@ func cycleChar(chars []string, cur string) string {
 	return ""
 }
 
-// sessionLabel turns a transcript file name (2006-01-02_15-04-05.log) into a
-// readable "2006-01-02 15:04" label; an unrecognized name shows without .log.
-// Pure — unit-tested.
+// sessionLabel turns a transcript file name into a readable label:
+// "2006-01-02_15-04-05.log" → "2006-01-02 15:04", and the per-tab sibling
+// "2006-01-02_15-04-05-2.log" → "2006-01-02 15:04 (tab 2)". An unrecognized name
+// shows without .log. Pure — unit-tested.
+//
+// The "-<n>" suffix is transcriptFilename's second-and-later file for one server in
+// one run (F4: two tabs on the same server are two logs). Without this arm the
+// browser fell through to the raw file name for every tab past the first, which
+// read as a corrupt entry beside its correctly-dated sibling.
 func sessionLabel(file string) string {
 	name := strings.TrimSuffix(file, ".log")
-	if t, err := time.Parse("2006-01-02_15-04-05", name); err == nil {
-		return t.Format("2006-01-02 15:04")
+	if t, err := time.Parse(transcriptStampLayout, name); err == nil {
+		return t.Format(sessionLabelLayout)
+	}
+	if i := strings.LastIndexByte(name, '-'); i > 0 {
+		if seq, err := strconv.Atoi(name[i+1:]); err == nil && seq > 1 {
+			if t, err := time.Parse(transcriptStampLayout, name[:i]); err == nil {
+				return t.Format(sessionLabelLayout) + " (tab " + strconv.Itoa(seq) + ")"
+			}
+		}
 	}
 	return name
 }
+
+// sessionLabelLayout is how a parsed session stamp READS in the browser list —
+// minute precision, because the seconds in the file name exist to make the name
+// unique, not to be shown.
+const sessionLabelLayout = "2006-01-02 15:04"
 
 // truncateRunes caps s at max runes, appending "…" when it cut. Pure.
 func truncateRunes(s string, max int) string {

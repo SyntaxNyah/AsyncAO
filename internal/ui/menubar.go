@@ -96,7 +96,8 @@ package ui
 //	func (a *App) menuBarSuppressed() bool     // paints, but inert (blocking modal)
 //	func (a *App) closeMenuBar()               // close the pane + any submenu (fence released next frame)
 //	func (a *App) menuBarFrame(w, h int32)     // phase 1: fences + input. ABOVE the screen dispatch.
-//	func (a *App) drawMenuBar(w, h int32)      // phase 2: paint. AFTER the screens.
+//	func (a *App) drawMenuBar(w, h int32)      // phase 2a: paint the STRIP + its chips. AFTER the screens.
+//	func (a *App) drawMenuPanes()              // phase 2b: paint the OPEN pane(s). AFTER the diagnostics overlays.
 //	func (a *App) menuGoto(s Screen)           // enter a full-screen menu, remembering prevScreen
 //	func (a *App) fireMenuItem(it *menuItem)   // run one row (disabled/separator no-op)
 //	var menuBarMenus []menu                    // the model, in left-to-right order
@@ -1289,9 +1290,29 @@ func (a *App) drawMenuBar(w, _ int32) {
 	a.drawIniswapChip(w)
 	a.drawAssetMissChip(w)
 	a.drawThemeErrChip(w)
-	if a.menuBar.open < 0 {
+}
+
+// drawMenuPanes is phase 2b: the OPEN dropdown pane (and its submenu), painted as
+// its own z-layer AFTER the diagnostics overlays.
+//
+// It is split from drawMenuBar because the two paint at different DEPTHS, not
+// because they are two features. The strip is flat client chrome and belongs
+// under the F3 performance overlay and the debug overlay, which are meant to sit
+// on top of the client; an open pane is a POPUP and belongs above them, next to
+// the kit's own deferred dropdown lists (Ctx.FinishFrame), which have always
+// painted last. Merged into one call, the single-pass kit painted the pane before
+// the overlays and the performance graph landed on top of whatever menu the user
+// had just opened — the reported defect.
+//
+// Nothing here re-decides anything: menuBarPaintsNow, the open index and both pane
+// rects are the same phase-1 latch drawMenuBar replays, so the strip and the pane
+// can never disagree about whether the bar is up. Safe to call unconditionally —
+// a closed bar returns before it touches the renderer.
+func (a *App) drawMenuPanes() {
+	if !a.menuBarPaintsNow() || a.menuBar.open < 0 {
 		return
 	}
+	col := menuBarColors()
 	items := menuBarMenus[a.menuBar.open].items
 	a.drawMenuPane(a.menuBar.pane, items, col)
 	if a.menuBar.subRow >= 0 {

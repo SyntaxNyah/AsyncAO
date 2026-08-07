@@ -187,6 +187,12 @@ type textKey struct {
 	text  string
 	color sdl.Color
 	font  *ttf.Font
+	// bold selects the REAL bold cut of `font` (SDL_ttf's STYLE_BOLD, synthesised
+	// from the same face). It is part of the key because the two are different
+	// pixels for the same string: without it a bold speaker name and the identical
+	// plain word elsewhere on screen would share one texture, and whichever drew
+	// first would decide the weight of both.
+	bold bool
 }
 
 type cachedText struct {
@@ -643,8 +649,14 @@ type Ctx struct {
 	hoverPreviewOn    bool
 	hoverPreviewDelay time.Duration
 
-	textCache  map[textKey]cachedText
-	atlas      []*atlasPage     // shared label pages (≤ textAtlasMaxPages)
+	textCache map[textKey]cachedText
+	atlas     []*atlasPage // shared label pages (≤ textAtlasMaxPages)
+	// rowLabelRight is the armed right edge for chrome ROW labels (F2), 0 = unarmed.
+	// Set only inside a pushRowLabelLimit / popRowLabelLimit bracket; rowLabelMemo
+	// holds the truncations it produced (lazily created, capped like widthCache).
+	rowLabelRight int32
+	rowLabelMemo  map[rowLabelKey]string
+
 	widthCache map[string]int32 // chrome-font TextWidth memo
 	// devWidthCache memoizes the DEVICE-face prefix width (raw device px) of a
 	// text-field prefix — the metric the drawn field texture actually uses at a
@@ -882,6 +894,11 @@ func (c *Ctx) Font() *ttf.Font { return c.font }
 type panelWidthKey struct {
 	font *ttf.Font
 	text string
+	// bold: SDL_ttf's synthetic emboldening widens the advances, so a bold run
+	// measures wider than the same string plain. The log's named-row layout places
+	// the message text at name-start + name-WIDTH, so measuring the plain width and
+	// drawing the bold one would slide the message left onto the name's last glyph.
+	bold bool
 }
 
 // chromeFace is the face every chrome widget draws and measures in: the panel's
@@ -1307,6 +1324,63 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 		}
 	}
 	return out
+}
+
+// uncoveredPictograph reports whether text holds a BMP pictograph (♥ ✨ ⭐ ⌛ …) that
+// NO face in primary's text chain covers — the F5 gap. Such a rune is not a
+// supplementary-plane emoji and carries no VS16, so render.NeedsEmojiFallback says
+// there is nothing to route and the colour-emoji face is never even loaded, while
+// the text chain has no glyph either: the character draws as a box forever.
+//
+// Cost: one BMPPictograph compare per rune, and a cmap walk only for the runes that
+// pass it — so an ASCII or CJK line pays a byte-cheap scan and no font work. It is
+// called only from the paths that have ALREADY decided the whole-line pick failed
+// (labelEmoji's raster branch), never per frame on the fast path.
+func (c *Ctx) uncoveredPictograph(primary *ttf.Font, text string) bool {
+	s := c.setOf(primary)
+	if s == nil {
+		return false // chrome-only / headless: no chain to be uncovered by
+	}
+	for _, r := range text {
+		if render.BMPPictograph(r) && !c.setCovers(s, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// uncoveredPictographMask is uncoveredPictograph's per-rune answer, for the raster
+// build: true where the colour-emoji face must take over from the text chain. nil
+// when there is nothing to promote — the overwhelming case — so a normal label
+// allocates nothing extra.
+func (c *Ctx) uncoveredPictographMask(primary *ttf.Font, runes []rune) []bool {
+	s := c.setOf(primary)
+	if s == nil {
+		return nil
+	}
+	var mask []bool
+	for i, r := range runes {
+		if !render.BMPPictograph(r) || c.setCovers(s, r) {
+			continue
+		}
+		if mask == nil {
+			mask = make([]bool, len(runes))
+		}
+		mask[i] = true
+	}
+	return mask
+}
+
+// setCovers reports whether ANY face in set s has a glyph for r — the same cmap
+// question coverRunes asks, factored out so the pictograph gate and the per-rune
+// face resolution can never disagree about what "covered" means.
+func (c *Ctx) setCovers(s *fontSet, r rune) bool {
+	for _, cov := range s.cover {
+		if coverHasRune(cov, &c.sfntBuf, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // isInvisibleRune reports the formatting characters that are SUPPOSED to render as
@@ -2499,15 +2573,42 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 	if text == "" || font == nil {
 		return cachedText{}, false
 	}
+	return c.textTextureBold(text, col, font, false)
+}
+
+// textTextureBold is textTexture with an explicit weight: bold rasterizes the
+// SAME face through SDL_ttf's STYLE_BOLD (the emboldening render/text.go's
+// buildSpan already uses for styled message spans) instead of drawing the plain
+// glyphs twice a pixel apart.
+//
+// WHY THE DOUBLE DRAW HAD TO GO (F1b). A 1 px offset is a LOGICAL offset, and at a
+// fractional UI scale the renderer multiplies it: at 105% the two passes land 1.05
+// device px apart, each on its own sub-pixel phase, and the result reads as two
+// smeared copies of the name rather than one bold one — beside message text on the
+// same row that draws once and stays crisp. Rendering the weight into the glyphs
+// makes the label ONE device-exact texture at any scale, which is the same rule the
+// #77 field/message work applies everywhere else.
+//
+// The style is set on the DEVICE face for exactly the RenderUTF8Blended call and
+// restored by defer, so the shared cached face never leaks a weight into the plain
+// text drawn next (buildSpan's idiom, same reason).
+func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold bool) (cachedText, bool) {
+	if text == "" || font == nil {
+		return cachedText{}, false
+	}
 	// Cache by the LOGICAL font (what callers pass) but RASTERIZE with its device
 	// sibling (#77): the texture is device-sized, and cachedText.devPct records
 	// the scale so blitLabel divides it back to logical. A textDevPct change
 	// purges this whole cache (SetTextDevScale), so a stale-size entry can't leak.
-	key := textKey{text: text, color: col, font: font}
+	key := textKey{text: text, color: col, font: font, bold: bold}
 	if t, ok := c.textCache[key]; ok {
 		return t, true
 	}
 	dev := c.deviceTextFont(font) // chrome/set logical face → device-scaled face
+	if bold {
+		dev.SetStyle(ttf.STYLE_BOLD)
+		defer dev.SetStyle(ttf.STYLE_NORMAL) // always restore, even on error/panic
+	}
 	surf, err := dev.RenderUTF8Blended(text, col)
 	if err != nil {
 		return cachedText{}, false
@@ -2698,7 +2799,19 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 }
 
 // Label draws text at (x, y) and returns its LOGICAL pixel width.
+//
+// F2: under an armed row-label limit the text is ellipsised at the container's
+// right edge instead of running past it. Checkbox is not the only row that carries
+// a sentence — the settings form draws roughly a hundred help lines as bare labels,
+// and the card's clip turned each of them into a HARD cut at the border, which is
+// indistinguishable from a rendering fault and is exactly how the overflow was
+// reported. Unarmed (every caller outside a push/popRowLabelLimit bracket — the
+// courtroom, the lobby, every themed screen) fitRowLabel is the identity on one
+// integer compare, so those draws are byte-for-byte what they were.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
+	if shown, fit := c.fitRowLabel(x, text); !fit {
+		text = shown
+	}
 	t, ok := c.textTexture(text, col, c.chromeFaceFor(text))
 	if !ok {
 		return 0
@@ -2718,7 +2831,19 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 }
 
 // LabelClipped draws text clipped to maxW.
+//
+// F2: an armed row-label limit narrows maxW to the container's right edge AND
+// ellipsises, because maxW alone is a HARD cut — the caller's own bound, which for
+// the settings font-chain line is the WINDOW rather than the card it draws in. The
+// two bounds compose: whichever is tighter wins, and unarmed this is the previous
+// call verbatim.
 func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
+	if shown, fit := c.fitRowLabel(x, text); !fit {
+		text = shown
+		if avail := c.rowLabelRight - x; avail > 0 && avail < maxW {
+			maxW = avail
+		}
+	}
 	c.LabelClippedFont(c.chromeFaceFor(text), x, y, maxW, text, col)
 }
 
@@ -2726,7 +2851,16 @@ func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
 // text). Cached like every label; the cache keys by font identity. The
 // clip composes with the label's atlas sub-rect. maxW is LOGICAL px.
 func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
-	t, ok := c.textTexture(text, col, font)
+	c.LabelClippedFontWeight(font, x, y, maxW, text, col, false)
+}
+
+// LabelClippedFontWeight is LabelClippedFont with a weight: bold draws the face's
+// real bold cut ONCE (textTextureBold), replacing the 1 px-offset second pass the
+// bold-name surfaces used to make. bold==false is byte-identical to
+// LabelClippedFont — same key, same texture, same blit — so every plain caller is
+// untouched.
+func (c *Ctx) LabelClippedFontWeight(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color, bold bool) {
+	t, ok := c.textTextureBold(text, col, font, bold)
 	if !ok {
 		return
 	}
@@ -2843,12 +2977,24 @@ func (c *Ctx) panelTextWidth(text string) int32 {
 // string every frame must come through here, or it shows up as a per-frame
 // allocation in the whole-screen zero-alloc gates.
 func (c *Ctx) fontTextWidth(f *ttf.Font, text string) (int32, bool) {
+	return c.fontTextWidthWeight(f, text, false)
+}
+
+// fontTextWidthWeight is fontTextWidth measured at a weight — the metric twin of
+// LabelClippedFontWeight, so a bold name is placed by the width the bold glyphs
+// actually occupy. bold==false takes the identical key and the identical measure
+// as before.
+func (c *Ctx) fontTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, bool) {
 	if f == nil {
 		return 0, false
 	}
-	k := panelWidthKey{font: f, text: text}
+	k := panelWidthKey{font: f, text: text, bold: bold}
 	if w, ok := c.panelWidth[k]; ok {
 		return w, true
+	}
+	if bold {
+		f.SetStyle(ttf.STYLE_BOLD)
+		defer f.SetStyle(ttf.STYLE_NORMAL) // never leave a weight on the shared face
 	}
 	w, _, err := f.SizeUTF8(text)
 	if err != nil {
@@ -2975,9 +3121,75 @@ func checkboxWidthFor(label string, measure func(string) int32) int32 {
 	return checkboxBoxPx + checkboxLabelGapPx + measure(label)
 }
 
+// rowLabelKey keys the truncated-row-label memo: the same label at the same
+// available width always shortens the same way, and the shortening is a chop-and-
+// re-measure LOOP — one pass per rune removed, each allocating a string. A settings
+// row is drawn every frame the screen is up, so without this memo a single 200-
+// character help line would allocate a hundred strings sixty times a second.
+type rowLabelKey struct {
+	label string
+	avail int32
+}
+
+// pushRowLabelLimit arms a RIGHT EDGE (in logical window px) past which a chrome ROW
+// widget's label must not draw, and returns the previous limit for popRowLabelLimit.
+// 0 disarms — the pre-existing "labels grow to their text" behaviour, which every
+// caller outside the bracket keeps.
+//
+// It exists for the settings form (F2). Those rows carry real help text — several
+// are 200+ characters — and Checkbox drew the label at its natural width with
+// nothing to stop it, so on any window narrower than the sentence the line simply
+// ran off the card and out of the window. The FONTS section was the reported case;
+// the census test shows it was one of about forty.
+//
+// A bracket rather than a parameter because Checkbox has hundreds of call sites and
+// the limit is a property of the CONTAINER, not of any one row: the settings card
+// knows its own right edge, and a row inside it should not have to be told twice.
+// Same shape (and same restore-with-defer discipline) as pushPanelFont.
+func (c *Ctx) pushRowLabelLimit(rightX int32) int32 {
+	prev := c.rowLabelRight
+	c.rowLabelRight = rightX
+	return prev
+}
+
+func (c *Ctx) popRowLabelLimit(prev int32) { c.rowLabelRight = prev }
+
+// fitRowLabel is the shortened label a row should DRAW at label-origin x under the
+// armed limit: the label itself when it fits (and always when no limit is armed),
+// otherwise AO2's own chop-two-append-ellipsis truncation. Returns fit=false when it
+// had to shorten, so the caller can offer the full text some other way.
+//
+// The ellipsis matters: a hard clip is indistinguishable from a rendering fault —
+// which is precisely how the overflowing settings text was reported ("cut off at the
+// right border"). A trailing "…" says the sentence continues.
+func (c *Ctx) fitRowLabel(x int32, label string) (string, bool) {
+	if c.rowLabelRight <= 0 || label == "" {
+		return label, true
+	}
+	avail := c.rowLabelRight - x
+	if avail <= 0 {
+		return label, true // degenerate geometry: draw as before rather than blank the row
+	}
+	if c.TextWidth(label) <= avail {
+		return label, true
+	}
+	key := rowLabelKey{label: label, avail: avail}
+	if s, ok := c.rowLabelMemo[key]; ok {
+		return s, false
+	}
+	s := truncateLabelTo(label, avail, c.TextWidth)
+	if c.rowLabelMemo == nil {
+		c.rowLabelMemo = make(map[rowLabelKey]string, 64)
+	} else if len(c.rowLabelMemo) >= textCacheMax {
+		c.rowLabelMemo = make(map[rowLabelKey]string, 64) // wholesale reset, same rule as the width memos
+	}
+	c.rowLabelMemo[key] = s
+	return s, false
+}
+
 func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 	if c.onRow != nil {
-		c.onRow(label, y) // settings-search collect pass (#26 gather): record and draw as normal
+		c.onRow(label, y) // settings-search collect pass (#26 gather): record and draw as normal — the FULL label, so search still matches text the row had to shorten
 	}
 	const box = checkboxBoxPx
 	// A muted row is overruled by a master toggle upstream: draw it in the dim
@@ -2997,8 +3209,15 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 		}
 		c.Fill(inner, tick)
 	}
-	w := c.Label(x+box+checkboxLabelGapPx, y, label, text)
+	labelX := x + box + checkboxLabelGapPx
+	// F2: honour the container's right edge. Unbracketed callers get label back
+	// verbatim, so every non-settings checkbox draws the identical pixels.
+	shown, fit := c.fitRowLabel(labelX, label)
+	w := c.Label(labelX, y, shown, text)
 	hit := sdl.Rect{X: x, Y: y, W: box + checkboxLabelGapPx + w, H: box}
+	if !fit {
+		c.Tooltip(hit, label) // the sentence the row could not fit is one hover away
+	}
 	if !c.muted && c.hovering(hit) && c.clicked {
 		return !value
 	}

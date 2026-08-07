@@ -634,6 +634,30 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	a.formX = cardX + settCardPadX
 	a.formW = cardW - 2*settCardPadX
+	// F2: no chrome label may draw past the card. The settings rows carry sentence-
+	// long help text and the form draws it two ways, both of which overflowed:
+	//
+	//   - Checkbox grew its hit box and its label to whatever the string measured,
+	//     with nothing bounding it, so on a narrow window the row ran off the card
+	//     and out of the WINDOW entirely. That is the FONTS section's system-fonts
+	//     line and about forty siblings.
+	//   - The bare help lines under the rows — roughly a hundred c.Label calls, some
+	//     190 characters, plus the FONTS chain line's c.LabelClipped, whose own maxW
+	//     is the window and not the card — stayed inside the window but were cut dead
+	//     at the card's clip edge, with no ellipsis to say the sentence continued.
+	//     A hard cut reads as a rendering fault; that is the "cut off at the right
+	//     border" half of the report.
+	//
+	// One bracket answers both: Ctx.Label / LabelClipped / Checkbox all consult it,
+	// the card knows its own right edge and the rows do not need to be told. Popped
+	// with defer so the several early returns below cannot strand the limit on the
+	// shared Ctx and truncate the courtroom's labels on the next screen — and popped
+	// AGAIN, explicitly, the moment the card's clip closes, because the chrome after
+	// it (the full-window warn banner, the .demo browser, the content panel) is not
+	// inside the card and must keep its own width. Popping twice with the same saved
+	// value is idempotent.
+	cardLabelLimit := c.pushRowLabelLimit(a.formX + a.formW)
+	defer c.popRowLabelLimit(cardLabelLimit)
 
 	viewH := h - contentTop - pad
 	scroll := &settings.tabScroll[settings.tab]
@@ -684,6 +708,10 @@ func (a *App) drawSettings(w, h int32) {
 		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
 	}
 	c.popClip(clipPrev, clipHad)
+	// The card is drawn: everything below is full-window chrome (the warn banner
+	// spans w-2*pad, the .demo browser and content panel are their own overlays), so
+	// release the card's right edge here rather than letting it shorten their labels.
+	c.popRowLabelLimit(cardLabelLimit)
 
 	contentH := (y + *scroll) - contentTop + pad
 	// !c.modalOn: with the in-app .demo browser open the page must not scroll behind

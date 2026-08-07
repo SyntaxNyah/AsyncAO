@@ -472,6 +472,16 @@ type App struct {
 	loginAt time.Time // when a login flow last fired; a brief callword grace so the server's login replies don't self-ping
 
 	// --- debug overlay (Settings toggle): bounded failure log ---
+	//
+	// DELIBERATELY CLIENT-GLOBAL, unlike the per-tab IC transcripts (translogs).
+	// It is a CLIENT diagnostic, not a chat record: most of what lands in it has no
+	// tab at all (theme apply, extensions.json seeding, asset casing detection, the
+	// updater), and the entries that do — a connect failure, a disconnect reason —
+	// are read while triaging the client, where seeing every tab's failures in one
+	// stream is the point. Splitting it per tab would hide a background tab's drop
+	// behind a tab switch. It is also memory-only (debugLogCap ring, never a file),
+	// so the unbounded-file-handle concern that drove the transcript split does not
+	// apply here.
 	debugLog    []string // ring of stamped failure lines, debugLogCap max
 	debugLast   string   // last raw line, for consecutive-duplicate collapse
 	debugRepeat int      // how many times debugLast repeated
@@ -602,11 +612,21 @@ type App struct {
 	// once in NewApp when RestoreTabs is on, drained one reconnect per frame by
 	// pumpTabRestore so the blocking dials never pile into a single boot freeze.
 	restoreQueue []config.OpenTab
-	// translogs are the detailed-transcript writers (opt-in), ONE PER SERVER:
-	// logs/<server>/<session>.log, opened lazily on that server's first logged
-	// message and closed at shutdown. Bounded by transcriptServerCap. nil/empty
-	// = off / nothing logged yet.
-	translogs map[string]*transcriptWriter
+	// translogs are the detailed-transcript writers (opt-in), ONE PER TAB SESSION:
+	// logs/<server>/<session>.log, opened lazily on that session's first logged
+	// message. Keyed by (server, sessionState.logSession) — keyed by server ALONE,
+	// two tabs on one server shared a writer and interleaved into a single file.
+	// Bounded by transcriptWriterCap. nil/empty = off / nothing logged yet.
+	//
+	// An entry lives exactly as long as the session that owns it: reapTranscripts
+	// retires and deletes it the moment nothing does (tab closed, session reset),
+	// and CloseTranscript drains whatever is left at exit. Holding them to shutdown
+	// instead leaked a file + goroutine per reconnect and hit the cap after 64.
+	translogs map[translogKey]*transcriptWriter
+	// nextLogSession mints sessionState.logSession. Monotonic for the process, so an
+	// id is never reused even after a tab closes — a reused id would let a new tab
+	// adopt a dead tab's still-open writer and start appending to its file.
+	nextLogSession int
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
@@ -1754,10 +1774,22 @@ type sessionState struct {
 	modDurEdit       bool            // the ban box's custom-duration editor is open (× removes a chip)
 	modDurInput      string          // the "add custom duration" field's draft ("45m", "2 days", …)
 	serverName       string
-	serverKey        string    // ws URL: keys the per-server warm state in prefs
-	connAt           time.Time // session start (Rich Presence elapsed timer)
-	curArea          string    // last area WE clicked (Rich Presence, best-effort)
-	presenceInit     bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
+	serverKey        string // ws URL: keys the per-server warm state in prefs
+	// logSession is THIS TAB's transcript identity: a process-unique ordinal minted
+	// by resetSessionState, so two tabs are two sessions even when they are the same
+	// server. Detailed logging keyed on serverName alone, which is why two tabs on
+	// one server interleaved into ONE file (the reported defect) — and, worse, two
+	// tabs on the SAME server had no way to tell their lines apart afterwards.
+	//
+	// It lives on sessionState, not App, because park/activate MOVE the whole struct
+	// between the live slot and the tab: the id then follows its tab automatically,
+	// and a tab that is backgrounded and brought back keeps writing to the same file
+	// instead of starting a new one. A fresh live slot (park, Disconnect, NewApp)
+	// gets a fresh id, which is exactly "a new session is a new file".
+	logSession   int
+	connAt       time.Time // session start (Rich Presence elapsed timer)
+	curArea      string    // last area WE clicked (Rich Presence, best-effort)
+	presenceInit bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
@@ -3401,9 +3433,37 @@ func (a *App) NoteDisplayChanged() {
 // window keeps it proportional (the "text too small on big monitors" reports,
 // and why shrinking the window already looked right). It takes the larger of the
 // DPI scale and the window-height scale, floors at 100 (never shrink), snaps to
-// the step, and caps at the manual bounds. ren.SetScale does the upscale —
-// slightly soft on non-integer factors; crisp resolution-independent scaling is
-// a roadmap item (docs/ROADMAP.md).
+// the step, and caps at the manual bounds.
+//
+// WHAT IS AND IS NOT CRISP ACROSS THIS STEP (the "everything above 1345x840 goes
+// blurry" report; the numbers are this function's arithmetic exactly —
+// 1280x1.05 = 1344, 800x1.05 = 840, and UIScaleStepPercent is 5):
+//
+//   - TEXT is crisp, and re-rasterizes here. SetUIScale → SetTextDevScale reopens
+//     every face at pt x scale and purges the label/width/raster caches, so glyphs
+//     are rasterized at DEVICE size and blitted 1:1 (#77 Part A). The text fields,
+//     the message raster and the emoji rasters each carry their own device-exact
+//     blit on top of that. TestAutoScaleStepRerastersTextAtDeviceScale pins the
+//     wiring at this exact threshold.
+//   - RECT CHROME (panels, borders, bars) is resolution-independent: SDL rasterizes
+//     a filled rect at the scaled coordinates, so there is no resample to soften —
+//     only an edge that can land a pixel either way.
+//   - WHAT WAS NOT: the faux-bold second draw pass. A 1 px LOGICAL offset is
+//     multiplied by this scale, so the two copies of a bold name sat 1.05 device px
+//     apart on different sub-pixel phases and read as a doubled smear beside message
+//     text on the same row that stayed crisp. Fixed by rasterizing the weight into
+//     the glyphs (Ctx.textTextureBold) — this was the one text surface still built
+//     at one scale and drawn at another.
+//   - WHAT STILL IS NOT, deliberately: IMAGE surfaces — character sprites,
+//     backgrounds, theme pages, evidence and character icons. There is no
+//     higher-resolution source to re-rasterize from; the UI scale is one more factor
+//     in a stretch that already happens at 100% (a 256 px icon in a 40 px cell), so
+//     "re-raster at device scale" is not a thing that can be done for them.
+//   - WHAT COULD BE, and is not yet: the PROCEDURAL textures (colorwheel.go,
+//     shapemask.go, the generator tiles) are built at logical size and could be built
+//     at device size instead. They are smooth gradients and flat masks, where a 5%
+//     resample is not visible, so they are not worth a second raster tier today —
+//     recorded here so the next person does not have to re-derive it.
 func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	if !a.d.Prefs.UIScaleAuto() {
 		return // manual scale governs; the detected value is unused
@@ -4710,7 +4770,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
-				a.logDetailed(a.serverName, ev.Message) // detailed transcript (opt-in)
+				a.logDetailed(a.serverName, a.logSession, ev.Message) // detailed transcript (opt-in), this tab's own file
 				a.noteEvidencePresented(ev.Message)
 				names := a.mentionNames()
 				a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
@@ -8304,13 +8364,26 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				handled = true
 			case ScreenThemeEditor:
 				// The editor's own ladder, in the order the design specifies: drop a focused
-				// field, then clear the selection, then leave. Leaving goes through
-				// closeThemeEditor so the return target is the screen the editor was opened
-				// FROM — a.prevScreen belongs to the menu screens and would send a
-				// courtroom-opened editor to whatever menu was last visited.
+				// field, then close the top panel, then clear the selection, then leave.
+				// Leaving goes through closeThemeEditor so the return target is the screen the
+				// editor was opened FROM — a.prevScreen belongs to the menu screens and would
+				// send a courtroom-opened editor to whatever menu was last visited.
+				//
+				// THE PANEL IS A RUNG (design §Q7's Esc row, "close top panel → deselect →
+				// leave"). It was missing while the Fonts panel was cosmetic and became a real
+				// hole the moment W7b made it an input mode that fences BOTH rails: Esc walked
+				// straight past the thing on top of the screen and armed the discard chip
+				// instead. It sits above the selection because while a panel is up the
+				// selection cannot be changed at all (editorPanelUp fences the canvas and the
+				// rails), so the topmost surface is the only one Esc can honestly be about.
+				// (The keyboard map at design line 1891 writes "clear, then close panel"; its
+				// "clear" is this ladder's FOCUS rung, which is the reading that leaves both
+				// lines true.)
 				switch {
 				case a.ctx.focusID != "":
 					a.ctx.focusID = ""
+				case a.editorPanelUp():
+					a.closeEditorPanels()
 				case a.te != nil && a.te.selN > 0:
 					a.te.selectClear()
 				default:
@@ -8755,6 +8828,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.d.Prefs.DebugOverlayEnabled() {
 		a.drawDebugOverlay(winW, winH)
 	}
+	// The menu bar's OPEN pane paints here, above the two diagnostics overlays: a
+	// dropdown is a popup and belongs on the popup layer with the kit's deferred
+	// lists (FinishFrame, below), while the F3 graph is client-level diagnostics.
+	// Painted with the strip it drew FIRST, and the performance overlay covered the
+	// menu the user had just opened. Nothing is re-decided here — drawMenuPanes
+	// replays the same phase-1 latch drawMenuBar does.
+	a.drawMenuPanes()
 	if a.showHotkeys {
 		// Restore the pointer for the sheet's own pass — it was fenced above
 		// while hovered/dragged so the screens beneath drew pointer-blind.
@@ -10164,29 +10244,36 @@ func (a *App) switchAreaScrollback(toArea string) {
 // goroutine, so the message seam never blocks. A no-op (one pref read) when off,
 // so the default path is unaffected. Called at both message seams (active +
 // background tab), so the transcript captures every server you're connected to.
-func (a *App) logDetailed(server string, m *protocol.ChatMessage) {
+//
+// session is the CALLING TAB's sessionState.logSession. It is a parameter rather
+// than read off a.sessionState here because the background seam (tabs.go) routes a
+// parked tab's message while a DIFFERENT tab is live: reading the live session
+// would have filed every backgrounded tab's lines under the foreground tab's log.
+func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
 	if m == nil || !a.d.Prefs.DetailedLogOn() {
 		return
 	}
-	if w := a.transcriptFor(server); w != nil {
+	if w := a.transcriptFor(server, session); w != nil {
 		w.write(detailedLogLine(time.Now(), m))
 	}
 }
 
-// transcriptFor returns this server's transcript writer, opening its session file
-// (logs/<server>/<date_time>.log) on first use. Bounded by transcriptServerCap so
-// a churn of servers can't open unbounded files/goroutines. nil on error / at cap.
-func (a *App) transcriptFor(server string) *transcriptWriter {
+// transcriptFor returns this TAB SESSION's transcript writer, opening its file
+// (logs/<server>/<date_time>[-<session>].log) on first use. Bounded by
+// transcriptWriterCap so a churn of servers/reconnects can't open unbounded files
+// or goroutines. nil on error / at cap.
+func (a *App) transcriptFor(server string, session int) *transcriptWriter {
 	if a.translogs == nil {
-		a.translogs = make(map[string]*transcriptWriter)
+		a.translogs = make(map[translogKey]*transcriptWriter)
 	}
-	if w, ok := a.translogs[server]; ok {
+	key := translogKey{server: server, session: session}
+	if w, ok := a.translogs[key]; ok {
 		return w
 	}
-	if len(a.translogs) >= transcriptServerCap {
+	if len(a.translogs) >= transcriptWriterCap {
 		return nil
 	}
-	path, err := transcriptPathFor(server, time.Now())
+	path, err := transcriptPathFor(server, time.Now(), a.transcriptSeqFor(server))
 	if err != nil {
 		return nil
 	}
@@ -10194,14 +10281,91 @@ func (a *App) transcriptFor(server string) *transcriptWriter {
 	if err != nil {
 		return nil
 	}
-	a.translogs[server] = w
+	a.translogs[key] = w
 	return w
 }
 
-// CloseTranscript flushes and closes every detailed-log writer at shutdown.
+// transcriptSeqFor is the 1-based ordinal of the file about to be opened for
+// `server` in THIS run — how many writers this server already has, plus one. It
+// disambiguates the file NAME, which is a timestamp to the second: two tabs joining
+// one server in the same second would otherwise resolve to the same path and both
+// append to it, which is the very interleaving the per-tab key exists to end.
+//
+// Deliberately NOT sessionState.logSession: that id is process-global, so using it
+// in the name would produce logs/x/…-7.log for a server's first file merely because
+// six other tabs opened first. The ordinal is per server and starts at 1, so the
+// common single-tab case keeps the historical bare-timestamp name.
+//
+// It counts LIVE writers, which is exactly what the collision it guards against
+// needs: two tabs joining one server in the same second are both live, so the second
+// gets ordinal 2. SEQUENTIAL sessions are a different case — a reconnect inside the
+// same second as the session it replaced resolves to that session's name again and
+// APPENDS. That is deliberate and harmless (the first session is over, so the lines
+// are consecutive rather than interleaved) and it is the price of retiring writers
+// at all: a per-run high-water mark per server would be an unbounded map, which
+// hard rule §4 does not allow for a cosmetic file name.
+func (a *App) transcriptSeqFor(server string) int {
+	n := 1
+	for k := range a.translogs {
+		if k.server == server {
+			n++
+		}
+	}
+	return n
+}
+
+// transcriptOwned reports whether a transcript key still belongs to a session that
+// exists: the live one, or a parked tab's. It is the single definition of "this
+// writer still has an owner", so the reap below and any future caller cannot form
+// two different opinions about which files are alive.
+//
+// The live session is checked off App (a.serverName / a.logSession) and the parked
+// ones off their own tab state, which is exactly how the two message seams file
+// their lines (see logDetailed) — so a writer is owned precisely when some seam
+// could still write to it.
+func (a *App) transcriptOwned(k translogKey) bool {
+	if k.server == a.serverName && k.session == a.logSession {
+		return true
+	}
+	for _, t := range a.tabs {
+		if t != nil && t.state.serverName == k.server && t.state.logSession == k.session {
+			return true
+		}
+	}
+	return false
+}
+
+// reapTranscripts retires and forgets every transcript writer no session owns any
+// more — one open file and one goroutine released per ended session.
+//
+// BY LIVENESS, not by call site. resetSessionState mints a fresh session on every
+// park, Disconnect and reconnect, and three separate places drop a tab slot; a
+// "close it here" call in each is a list that goes stale the first time a fourth
+// appears, and the failure mode is silent (the log just stops after 64 cycles).
+// Asking "does anything still own this key?" cannot go stale: a session that is
+// neither live nor parked is over by definition. Cheap enough to call from every
+// lifecycle edge — the map is capped at transcriptWriterCap and the tab list at
+// the tab cap, and these are user-scale events, not frame work.
+//
+// Retire, never close: the goroutine drains and closes the file on its own so the
+// render thread never waits on a disk flush (hard rule §2).
+func (a *App) reapTranscripts() {
+	for k, w := range a.translogs {
+		if a.transcriptOwned(k) {
+			continue
+		}
+		w.retire()
+		delete(a.translogs, k)
+	}
+}
+
+// CloseTranscript flushes and closes every detailed-log writer at shutdown. This is
+// the one path that WAITS for the flush — the process is exiting, so a durable file
+// matters more than a frame.
 func (a *App) CloseTranscript() {
-	for _, w := range a.translogs {
+	for k, w := range a.translogs {
 		w.close()
+		delete(a.translogs, k)
 	}
 }
 
