@@ -54,6 +54,11 @@ const (
 	// ScreenHelp is the newcomer Help screen (glossary of AO terms + a plain-English
 	// privacy explainer), reached from the lobby top bar and the courtroom Extras menu.
 	ScreenHelp
+	// ScreenThemeEditor is the v1.90.0 theme editor: the live courtroom at full
+	// window size with two floating rails over it (themeeditor.go). APPENDED, which
+	// is safe because the enum is not persisted anywhere — no preference, no wire
+	// field and no on-disk cache stores a Screen value.
+	ScreenThemeEditor
 )
 
 const (
@@ -178,6 +183,20 @@ type App struct {
 
 	screen     Screen
 	prevScreen Screen // for settings/about back navigation
+
+	// --- the theme editor (v1.90.0 W7; themeeditor.go) --------------------------
+	//
+	// ONE POINTER, nil while the editor is shut, and that is the whole of its cost
+	// when closed: no goroutine, no timer, no per-frame read from any courtroom draw
+	// site. TestClosedThemeEditorCostsNothing benchmarks the claim rather than
+	// asserting it (the v1.89.0 "0 base = 0 cost" rule).
+	te *themeEditor
+	// editorReturn is where Back goes. The editor carries its OWN return target
+	// rather than joining prevScreen, which is a single field written at ~10 sites
+	// across 8 files and asserted on in menucontent_test.go — a screenStack refactor
+	// is the right long-term fix and is a v1.91 follow-up, not a passenger on the
+	// flagship's riskiest wave.
+	editorReturn Screen
 
 	// --- connection lifecycle (lobby-global; deliberately NOT in sessionState) ---
 	// These outlive any single session: the lobby shows the last disconnect
@@ -6781,6 +6800,16 @@ func (a *App) expScreenSkippable() bool {
 		return !a.lobbyFetching && !a.pinging
 	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
 		return true
+	case ScreenThemeEditor:
+		// ITS OWN CASE, not a join onto the courtroom pair above. That pair returns
+		// `a.sess != nil`, and the editor's headline entry point is Settings ▸ Theme
+		// with no server attached — joining it would make the editor NON-skippable in
+		// exactly the case it is most often opened in, burning full CPU on a screen
+		// where a still theme is a still picture. It relies on the anim-chrome census
+		// (a live element notes it, a still one does not) and on RenderNeeded damage to
+		// force the frames it does need, which is the same contract every other static
+		// screen here runs on.
+		return true
 	default:
 		return false
 	}
@@ -8273,6 +8302,23 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 					a.screen = a.prevScreen // then leave the menu
 				}
 				handled = true
+			case ScreenThemeEditor:
+				// The editor's own ladder, in the order the design specifies: drop a focused
+				// field, then clear the selection, then leave. Leaving goes through
+				// closeThemeEditor so the return target is the screen the editor was opened
+				// FROM — a.prevScreen belongs to the menu screens and would send a
+				// courtroom-opened editor to whatever menu was last visited.
+				switch {
+				case a.ctx.focusID != "":
+					a.ctx.focusID = ""
+				case a.te != nil && a.te.selN > 0:
+					a.te.selectClear()
+				default:
+					// The SAME door the Back button uses, so Esc cannot become the one way
+					// out that discards unsaved work without asking.
+					a.requestEditorExit()
+				}
+				handled = true
 			case ScreenLobby:
 				// Lobby with nothing open: Esc offers to quit — the escape hatch when
 				// you're fullscreen and can't reach the window's close button.
@@ -8333,6 +8379,29 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.ctx.redoReq = true
 			a.ctx.hotkey = 0
 		}
+	}
+	// The v1.90.0 THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
+	// Ctrl+Y here, and the site is the fix rather than a tidy-up.
+	//
+	// editorUndoChord's only other caller is handleHotkeys, which runs from the three
+	// COURTROOM draw passes — so the chord reached the editor only while a live room
+	// was painting behind its canvas. The editor's headline entry point is the
+	// Settings row, which is reachable with NO SERVER ATTACHED (design §3): there
+	// drawEditorGeometryCanvas draws instead, no courtroom pass runs, and the chord
+	// sat in c.hotkey untouched for the whole frame. Present but unreachable, on the
+	// one screen whose entire contract is that every edit is one Ctrl+Z away.
+	//
+	// AFTER the focused-field arm above, deliberately: a focused inspector row (a hex
+	// value, an id) keeps the FIELD's own undo, which is the house rule every other
+	// editor already follows. BEFORE quick-connect and every other pre-screen chord
+	// consumer, because editorUndoChord's promise is that a key an armed editor owns
+	// can never also fire whatever else it happens to be bound to.
+	//
+	// Gated on themeEditorOpen() rather than called bare, so the two LEGACY overlay
+	// editors keep claiming their chord exactly where they always have — inside their
+	// own courtroom pass, via handleHotkeys — and nothing about their dispatch moves.
+	if a.themeEditorOpen() {
+		a.editorUndoChord()
 	}
 	a.pumpTabRestore()  // restore-on-launch: one reconnect/frame, then idle
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
@@ -8650,6 +8719,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawLogBrowser(winW, winH)
 		case ScreenHelp:
 			a.drawHelp(winW, winH)
+		case ScreenThemeEditor:
+			a.drawThemeEditor(winW, winH)
 		}
 	}
 	// The tab strip floats over every screen (input was consumed at the
@@ -9252,6 +9323,14 @@ func (a *App) pollThemeApply() {
 	// else happened to invalidate again. nil (a stock AO2 theme) clears the previous
 	// theme's elements, which is the whole of the theme-swap prune for this tier.
 	a.themeSidecar = res.sidecar
+	// …and immediately back again if the EDITOR owns this theme's model. Applies are
+	// not user-initiated — healTheme re-kicks one on any T1 eviction of a theme
+	// texture, the texture-filter row kicks one, boot kicks two — so without this line
+	// every unsaved edit is discarded by a background event, with nothing on screen to
+	// say why. THE ONE NAMED CALL SITE (themeeditor.go carries the argument); it is
+	// guarded on the theme NAME, so switching themes mid-session correctly loses the
+	// document rather than pasting the old theme's elements onto the new one.
+	a.reclaimThemeDoc()
 	// The theme's own art (W4), landed BEFORE the canvases are invalidated for the
 	// same reason the sidecar is: the next themeLayoutIn rebuild is what bakes the
 	// elements, and an element resolving its page against a key that has not landed

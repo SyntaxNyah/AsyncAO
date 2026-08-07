@@ -727,8 +727,17 @@ func (a *App) menuBarShows() bool {
 // menuBarInput, i.e. after this predicate has already been consulted. menuBarFrame
 // therefore RE-TAKES it once its own input is resolved, and menuBarPaintsNow settles it
 // for good at the paint site.
+//
+// THE THEME EDITOR IS THE THIRD CASE (v1.90.0 W7a), and it needs the whole stand-down
+// rather than just the paint. Its header band carries Undo / Redo / Save / Back at
+// Y=2..24 and it is built from KIT BUTTONS, not from the legacy editors' raw pointIn
+// chips — so a strip that kept phase 1's input would not merely bury those buttons,
+// it would publish a fence over them and they would hit-test dead. The reserved
+// height is untouched for the same reason as above: the editor's whole promise is
+// that the canvas is 1:1 with what will play, and reclaiming 22 px would move every
+// widget the moment you opened it.
 func (a *App) menuBarPaints() bool {
-	return a.menuBarShows() && !a.layoutEditorArmed()
+	return a.menuBarShows() && !a.layoutEditorArmed() && a.screen != ScreenThemeEditor
 }
 
 // menuBarPaintsNow is the FINAL word on the strip's paint, taken at the paint site

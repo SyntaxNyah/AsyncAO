@@ -292,8 +292,35 @@ func (a *App) handleEmoteKeys() {
 // hotkeys), so editor undo was silently dead AND Ctrl+Y fell through to its
 // default bind ("Reshow hidden sprites") mid-edit. Consumes the chord whether
 // or not history exists, so a bound action can never fire while editing.
+//
+// TWO CALL SITES, one per claimant, and the split is not redundancy:
+//
+//   - handleHotkeys, inside the courtroom pass, for the two LEGACY overlay editors —
+//     they only exist while that pass runs, so their chord belongs where their pixels
+//     are;
+//   - App.Frame, pre-screen, gated on themeEditorOpen(), for the v1.90.0 theme
+//     EDITOR SCREEN. It has no courtroom pass to ride when it is opened from Settings
+//     with no server attached, which is the design's headline entry point — dispatching
+//     it only from the courtroom left Ctrl+Z dead in exactly that case.
 func (a *App) editorUndoChord() bool {
 	c := a.ctx
+	// The v1.90.0 theme editor is the THIRD claimant, and it is checked FIRST because
+	// it is the only one that owns a whole screen: the two legacy overlay editors are
+	// force-disarmed when it opens (openThemeEditor), so the arms below cannot be live
+	// at the same time — but a stale flag must not be able to steal the chord from the
+	// screen the user is actually looking at.
+	if a.themeEditorOpen() {
+		if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
+			return false
+		}
+		if c.hotkey == sdl.K_z {
+			a.editorUndo()
+		} else {
+			a.editorRedo()
+		}
+		c.hotkey = 0
+		return true
+	}
 	if !a.classicEdit && !a.layoutEdit {
 		return false
 	}

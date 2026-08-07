@@ -310,17 +310,26 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 // all a behaviour-neutral wave may do. W7 owns themeDoc, the undo ring and the
 // mtime-guarded autosave, and wraps this same mutation in one coalesced op.
 //
-// TODO(W7 — the nudge EVAPORATES, and silently). a.themeSidecar is replaced wholesale
-// by pollThemeApply (`a.themeSidecar = res.sidecar`), so every unsaved element nudge
-// is discarded by the next apply — and applies are not user-initiated: healTheme
-// re-kicks one on any T1 eviction of a theme texture, the texture-filter row kicks
-// one, and boot kicks two. A user can therefore nudge a decoration into place, take
-// their hand off the keyboard, and watch it jump back with nothing on screen to say
-// why. It is only acceptable while nothing can SAVE (W6 ships no element UI, so the
-// sidecar on disk and the sidecar in memory are the same document either way). W7's
-// autosave closes it by making the model authoritative; until that lands, do not add
-// a second element mutator on this pattern, and do not "fix" it by suppressing
-// applies — the apply is what re-bakes the geometry the nudge is expressed in.
+// THE EVAPORATION HAZARD, and where it now stands. a.themeSidecar is replaced
+// wholesale by pollThemeApply (`a.themeSidecar = res.sidecar`), so an unsaved element
+// nudge used to be discarded by the next apply — and applies are not user-initiated:
+// healTheme re-kicks one on any T1 eviction of a theme texture, the texture-filter row
+// kicks one, and boot kicks two.
+//
+// W7a closes it FOR THE EDITOR: reclaimThemeDoc (themeeditor.go), called from
+// pollThemeApply immediately after that assignment, re-installs the editor's document
+// whenever the editor owns the applied theme. The theme editor's own nudge
+// (editorNudgeSelection) additionally runs through themeDoc.apply, so it is undoable
+// and coalesced.
+//
+// THIS path — the LEGACY themed overlay editor's element nudge, reached only from
+// Ctrl+F2 in the courtroom — still mutates the parsed model directly and is still
+// lost to a background apply while no editor document exists. That is deliberate and
+// bounded: this editor cannot SAVE, so the sidecar on disk and the sidecar in memory
+// are the same document either way, and the tool for durable element work is the
+// editor screen. Do not add a second element mutator on this pattern, and do not
+// "fix" it by suppressing applies — the apply is what re-bakes the geometry the nudge
+// is expressed in.
 func (a *App) nudgeThemeElement(tgt editTarget, dx, dy int, coarse bool) {
 	idx, ok := tgt.elemIdx()
 	sc := a.themeSidecar

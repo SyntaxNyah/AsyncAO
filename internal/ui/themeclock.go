@@ -230,6 +230,54 @@ func (a *App) clockElapsed(i uint8) time.Duration {
 	return el
 }
 
+// clockPaused reports that a clock group is HELD — the editor's scrub, and
+// "hold to inspect a frame".
+//
+// Same out-of-range fallback as clockElapsed, and for the same reason: the pair
+// must answer for the SAME group, or a bad index would read time from clock 0 and
+// pausedness from nothing.
+func (a *App) clockPaused(i uint8) bool {
+	if int(i) >= len(a.themeClocks) {
+		i = 0
+	}
+	return a.themeClocks[i].paused
+}
+
+// noteElementAnimating is the ONE census call on the element path — the funnel
+// that makes "a paused clock never pins the frame rate" one line instead of a
+// rule every future draw site has to remember.
+//
+// THE DEFECT IT CLOSES (W5 left it recorded at drawElement's census line, as a
+// TODO, because W5 had no writer for `paused`; W7's scrub is the first). A paused
+// clock returns themeClock.frozen from clockElapsed, so `el` stops advancing while
+// the frame keeps drawing. Everything downstream then reports motion forever with
+// nothing moving:
+//
+//   - a CONDITIONAL one-shot acquires its slot at the frozen elapsed, so
+//     startedAt == el permanently: local 0, t 0, env 1, static = false;
+//   - the five PERIODIC kinds return static=false unconditionally, by design;
+//   - a LOOPING page's elementFrameIndex returns live=true unconditionally, by the
+//     same design.
+//
+// Each of those is correct in isolation and each of them is the idle-CPU-burn
+// defect (the v1.55/v1.56 arc) once the clock stops. Scrubbing to a frame would
+// pin the client at the animation cadence, on a still picture, until the user
+// resumed — and there would be nothing on screen to explain it.
+//
+// GATE THE CENSUS, NOT THE TERMS. The resolver is untouched and the terms are
+// still applied: holding the frame is the entire point of a scrub, and a wash's
+// envelope still has to paint its held state. Clamping elapsed, or making a paused
+// clock resolve neutral, would blank the very frame the scrub exists to inspect.
+//
+// One bounds-checked array read, no allocation, no prefs probe: it is inside both
+// AllocsPerRun gates over the element path.
+func (a *App) noteElementAnimating(clock uint8) {
+	if a.clockPaused(clock) {
+		return
+	}
+	a.NoteAnimating()
+}
+
 // ---------------------------------------------------------------------------
 // Frame advance — themeFrame's twin, with the census contract intact
 // ---------------------------------------------------------------------------
@@ -256,7 +304,11 @@ func (a *App) elementFrame(e *bakedElement) *sdl.Texture {
 	}
 	idx, live := elementFrameIndex(e.page, a.elementElapsed(e), e.loop)
 	if live {
-		a.NoteAnimating()
+		// Through the funnel, never bare: a LOOPING page on a paused clock holds one
+		// frame and elementFrameIndex reports live=true for it unconditionally (that is
+		// its contract — a loop never ends), so this is the second site the scrub would
+		// have pinned the frame rate from. See noteElementAnimating.
+		a.noteElementAnimating(e.clock)
 	}
 	return e.page.Frames[idx]
 }

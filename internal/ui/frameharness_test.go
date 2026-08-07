@@ -184,6 +184,23 @@ func driveClickAt(a *App, x, y int32) {
 	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
 }
 
+// driveHotkey runs one real frame carrying a Ctrl chord.
+//
+// ON c.hotkey, NEVER c.keyPressed, and that is the whole reason it exists: HandleEvent
+// routes every non-clipboard Ctrl combination to c.hotkey and returns (#96 configurable
+// hotkeys), so a gate that stamped keyPressed would be driving a key the client never
+// delivers and would pass against a dispatcher that does not exist. Seeded between
+// BeginFrame (which zeroes hotkey and re-reads the modifier state from SDL) and
+// App.Frame, exactly where the event loop seeds it; ctrlHeld is set for the same
+// fidelity, because BeginFrame derives it from SDL's mod state, which the dummy driver
+// leaves clear.
+func driveHotkey(a *App, key sdl.Keycode) {
+	a.ctx.BeginFrame(frameHarnessDt)
+	a.ctx.hotkey = key
+	a.ctx.ctrlHeld = true
+	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
+}
+
 // driveUntilThemeApplied kicks a theme apply and drives REAL FRAMES until
 // pollThemeApply — App.Frame's own call, not a hand call — has landed it.
 //

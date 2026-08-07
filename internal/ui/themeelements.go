@@ -292,27 +292,15 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// still picture that pinned the frame rate is the idle-CPU-burn defect this
 	// doctrine exists to prevent.
 	//
-	// TODO(W7 scrub): A PAUSED CLOCK BREAKS THAT, and this is the site it breaks at.
-	// clockElapsed returns themeClock.frozen while `paused`, so `el` stops advancing
-	// while the frame keeps drawing. A CONDITIONAL one-shot that acquires its slot on
-	// a paused clock then has startedAt == el forever: local = 0, t = 0, env = 1, and
-	// static = frozen(false) || amp*(1-0) <= eps = FALSE — so this line notes the
-	// census on every frame, at full amplitude, with nothing moving. The five periodic
-	// kinds reach the same end by a shorter road (resolvePeriodicEffect returns
-	// static=false unconditionally, by design). That is the idle-CPU-burn defect
-	// wearing the editor's scrub as a hat. NO W5 PATH SETS paused — nothing writes it
-	// today, which is why this is a comment and not a fix — but W7's scrub is the
-	// first writer, and it will land on exactly this.
-	//
-	// FIX SHAPE: gate the CENSUS, not the terms. The terms must still apply while
-	// paused (holding the frame is the entire point of a scrub, and a wash's env still
-	// has to paint its held state), so the resolver stays untouched: pass the group's
-	// paused flag down beside `el` and skip NoteAnimating when it is set — the same
-	// `frozen ⇒ static` reading resolveElementEffect already uses for a nil slot. Do
-	// NOT "fix" it by clamping elapsed or by making a paused clock resolve neutral:
-	// that blanks the frame the scrub exists to inspect.
+	// A PAUSED CLOCK IS THE SECOND WAY TO BE STILL, and it is the one the resolver
+	// cannot see: it is handed `el` and has no idea the clock stopped producing new
+	// ones. W5 recorded the whole failure here as a TODO because nothing wrote
+	// themeClock.paused yet; W7's scrub is the first writer, so the guard lands with
+	// it — via noteElementAnimating (themeclock.go), which carries the argument and
+	// covers the looping-page site too. The TERMS still apply while paused, which is
+	// the entire point of a scrub.
 	if !fx.static {
-		a.NoteAnimating()
+		a.noteElementAnimating(e.clock)
 	}
 	// The terms are applied EVEN WHEN STATIC, and that is not a missed optimisation.
 	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade

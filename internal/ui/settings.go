@@ -294,6 +294,33 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
+		// v1.90.0 W7: the theme EDITOR. Same shadow discipline as the two blocks
+		// above, and the trap here is sharper than the whole-keyword gate can see —
+		// TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE keywords, so a
+		// term here that merely CONTAINS a later tab's short query passes the gate
+		// while stealing that query for real. Each exclusion below is a word a later
+		// tab owns outright:
+		//   - nothing containing "export" or "import" (tabData 9, tabStudio 8) — hence
+		//     no "export theme" either, which still contains "export".
+		//   - nothing containing "layer" (tabAssets 2 owns "layer"/"layered", the
+		//     v1.89.0 layered assets). THIS is why the editor's noun is "element",
+		//     not "layer".
+		//   - not "grid" (tabGeneral 0's "emote grid" already answers it) and not
+		//     "glow" (tabGeneral 0).
+		// FOUR MORE the design's suggested list carried and this table cannot: each
+		// one is a longer term whose SUBSTRING is a query a later tab answers better,
+		// which the shadow gate compares whole keywords and therefore cannot see.
+		//   - "scanlines" contains "scan" → tabAssets 2's "rescan".
+		//   - "z-order" and "element list" contain "order" and "list" → tabFormats 3's
+		//     "probe order" / "format order", tabAccount 6's "master list".
+		//   - "customise theme" / "customize theme" contain "custom" → tabAudio 5's
+		//     "custom music" and tabAssets 2's "custom error sprite".
+		// None of the four features is lost: the gather-search matches ROW LABELS
+		// first, and the editor's own rows carry the words.
+		"theme editor", "editor", "make a theme", "build a theme", "create a theme",
+		"decorate", "decoration", "element", "elements", "stacking", "inspector",
+		"undo", "shapes", "masks", "animated background", "background art",
+		"split screen", "procedural", "halftone", "generator",
 	},
 	tabAssets: {
 		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
@@ -4995,6 +5022,34 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 		// (about.go) — and aboutRepoURL, so the two surfaces can never drift to
 		// different repositories.
 		openBrowser(aboutRepoURL)
+	}
+	y += themeGetRowH
+
+	// --- the theme EDITOR (v1.90.0 W7) -------------------------------------
+	//
+	// The prominent row the design asks for, and it draws through c.onRow so the
+	// gather-search finds it by its own label — closing the class the v1.89.1
+	// unfindable row opened (TestEveryThemeEditorSettingIsFindable).
+	//
+	// `pad := a.formX` is shadowed by this function's caller, per the settings-form
+	// origin rule: a missing shadow renders the row silently under the sidebar.
+	if c.onRow != nil {
+		c.onRow("Theme editor", y)
+	}
+	c.Label(pad, y+4, "Theme editor:", ColText)
+	editable := a.themeSidecar != nil
+	note := "design this theme's own elements, colours and motion"
+	if !editable {
+		// NAME THE OFFENDER, NAME THE LIMIT, OFFER THE FIX — never a greyed button
+		// with no explanation. An AO2 theme has no native tier until something makes
+		// one, and W8's copy-for-editing is what will.
+		note = "this theme has no AsyncAO tier yet — copy it for editing first"
+	}
+	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, note, ColTextDim)
+	if editable {
+		if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, "Open editor") {
+			a.openThemeEditor(ScreenSettings)
+		}
 	}
 	y += themeGetRowH
 

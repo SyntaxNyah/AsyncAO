@@ -416,7 +416,12 @@ var sidecarGuardCalls = map[string]bool{"Validate": true, "Bytes": true}
 //     if it is on iniDocProducers, and no such symbol may have a Sidecar in
 //     reach (receiver or parameter) — that is what makes it "a new document"
 //     rather than "somebody's live one". Exported *INIDoc struct FIELDS are
-//     refused outright: a field needs no accessor to be assigned through.
+//     refused outright: a field needs no accessor to be assigned through. So are
+//     exported package-level VARS and CONSTS — the arm the census was missing
+//     entirely. `var Scratch = &INIDoc{}` or `var Docs []*INIDoc` needs neither a
+//     method nor a struct to hand every importer a writable document with a
+//     public Set/Bytes/Write on it, and it is the cheapest possible way to
+//     reintroduce Doc() under a name this file had no opinion about.
 //   - EVERY BYTE-EMITTING PATH GOES THROUGH THE GUARD. Any exported function or
 //     method with a Sidecar in reach that returns []byte or takes an io.Writer
 //     must call Validate or Bytes. Sidecar.Write is exactly that shape and
@@ -456,6 +461,42 @@ func TestNoExportedPathWritesASidecarWithoutTheGuard(t *testing.T) {
 			return true
 		})
 
+		// Half one, the package-level VAR / CONST case: no accessor needed at all.
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || (gd.Tok != token.VAR && gd.Tok != token.CONST) {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				exported := false
+				for _, n := range vs.Names {
+					if n.IsExported() {
+						exported = true
+					}
+				}
+				if !exported {
+					continue
+				}
+				hands := vs.Type != nil && mentionsINIDocPtr(vs.Type)
+				for _, v := range vs.Values {
+					if makesINIDoc(v) {
+						hands = true
+					}
+				}
+				if hands {
+					t.Errorf("%s (%s) is an exported package-level *INIDoc — INIDoc.Set, Bytes and Write are "+
+						"exported, so every importer can write the document straight past the guard, with no "+
+						"method for the accessor census above to see. If a wave needs the document, add the "+
+						"narrow path its call sites need and list it in iniDocProducers with the reason",
+						vs.Names[0].Name, fset.Position(vs.Pos()))
+				}
+			}
+		}
+
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Name == nil || !fn.Name.IsExported() {
@@ -485,7 +526,7 @@ func TestNoExportedPathWritesASidecarWithoutTheGuard(t *testing.T) {
 				continue
 			}
 			emitters = append(emitters, fn.Name.Name)
-			if !callsAny(fn.Body, sidecarGuardCalls) {
+			if !callsAnyOn(fn.Body, sidecarIdents(fn), sidecarGuardCalls) {
 				t.Errorf("%s (%s) emits sidecar bytes without calling Validate or Bytes — an editor holding a live "+
 					"model can write a file the reader then refuses, and the failure is silent at the moment of saving",
 					fn.Name.Name, fset.Position(fn.Pos()))
@@ -622,11 +663,60 @@ func funcReturns(fn *ast.FuncDecl, match func(ast.Expr) bool) bool {
 	return false
 }
 
-// callsAny reports a call to any of the named methods or functions anywhere in
+// sidecarIdents names the local variables in a function that ARE a Sidecar: its
+// receiver, and every parameter of Sidecar (or *Sidecar) type.
+//
+// It is the second half of callsAnyOn's question. "Which names is the guard
+// allowed to hang off" cannot be answered by the call site alone, and answering
+// it with "any name" is what let s.doc.Bytes() pass for a guard call.
+func sidecarIdents(fn *ast.FuncDecl) map[string]bool {
+	out := map[string]bool{}
+	add := func(fl *ast.FieldList) {
+		if fl == nil {
+			return
+		}
+		for _, f := range fl.List {
+			if !isSidecar(f.Type) {
+				continue
+			}
+			for _, n := range f.Names {
+				if n != nil {
+					out[n.Name] = true
+				}
+			}
+		}
+	}
+	if fn != nil {
+		add(fn.Recv)
+		if fn.Type != nil {
+			add(fn.Type.Params)
+		}
+	}
+	return out
+}
+
+// callsAnyOn reports a call to any of the named methods ON A SIDECAR anywhere in
 // the body, including inside a closure — a guard reached through a deferred or
 // nested call is still reached.
-func callsAny(body *ast.BlockStmt, names map[string]bool) bool {
-	if body == nil {
+//
+// THE RECEIVER IS PART OF THE QUESTION, and matching on the method name alone was
+// a hole big enough to drive the whole defect back through. `s.doc.Bytes()` is a
+// call to a selector named Bytes — so a probe method that reached PAST the model
+// into the lossless document, which is precisely the bypass
+// TestNoExportedPathWritesASidecarWithoutTheGuard exists to forbid, satisfied the
+// guard census by spelling. Only a call rooted on a name that IS a Sidecar counts:
+// s.Validate() and s.Bytes() pass, s.doc.Bytes() and d.Bytes() do not.
+//
+// A bare function call (an *ast.Ident callee) is deliberately NOT accepted either.
+// There is no package-level Validate, so accepting one would only ever match a
+// future helper that this census could not prove anything about — and the answer
+// to "my emitter reaches the guard through a helper" is to name that helper here,
+// with its reason, exactly as iniDocProducers names its allowances.
+//
+// TestCallsAnyOnRequiresASidecarReceiver drives both halves against synthetic
+// sources, because the production package (correctly) contains no bypass to catch.
+func callsAnyOn(body *ast.BlockStmt, recv map[string]bool, names map[string]bool) bool {
+	if body == nil || len(recv) == 0 {
 		return false
 	}
 	found := false
@@ -635,15 +725,12 @@ func callsAny(body *ast.BlockStmt, names map[string]bool) bool {
 		if !ok {
 			return true
 		}
-		switch fun := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			if fun.Sel != nil && names[fun.Sel.Name] {
-				found = true
-			}
-		case *ast.Ident:
-			if names[fun.Name] {
-				found = true
-			}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || !names[sel.Sel.Name] {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && recv[id.Name] {
+			found = true
 		}
 		return !found
 	})
@@ -653,12 +740,21 @@ func callsAny(body *ast.BlockStmt, names map[string]bool) bool {
 // funcBodySource returns one function's source text, found by declaration across
 // every production file in the package rather than in a named one — the file it
 // lives in is not part of what any census here claims.
+//
+// A SECOND DECLARING FILE IS A FATAL, not a first-match. It scanned in directory
+// order and returned the first hit, so if the string it searches for ever matched
+// in two files (a copy-paste of the doc comment above the real one, or the same
+// declaration text appearing inside a block comment) it would silently census a
+// body nobody meant — and the failure mode is the WORST one available to a source
+// census: a green pass on the wrong text. Its internal/ui twin funcBodyInPackage
+// already refuses that; this is the same refusal, in the same words.
 func funcBodySource(t *testing.T, decl string) string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("reading the package directory: %v", err)
 	}
+	var body, foundIn string
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -672,12 +768,60 @@ func funcBodySource(t *testing.T, decl string) string {
 		if i < 0 {
 			continue
 		}
-		body := string(src)[i+len(decl):]
+		if foundIn != "" {
+			t.Fatalf("%q is declared in both %s and %s — this census would be reading one of two bodies", decl, foundIn, name)
+		}
+		foundIn = name
+		body = string(src)[i+len(decl):]
 		if j := strings.Index(body, "\nfunc "); j >= 0 {
 			body = body[:j]
 		}
-		return body
 	}
-	t.Fatalf("no production file in this package declares %q — update this census to name what replaced it", decl)
-	return ""
+	if foundIn == "" {
+		t.Fatalf("no production file in this package declares %q — update this census to name what replaced it", decl)
+	}
+	return body
+}
+
+// mentionsINIDocPtr reports a type expression that puts a writable *INIDoc in the
+// caller's hands ANYWHERE inside it: the bare pointer, but also []*INIDoc,
+// map[string]*INIDoc, [2]*INIDoc and a struct field of any of those. A container
+// of live documents is exactly as writable as one document.
+func mentionsINIDocPtr(expr ast.Expr) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if e, ok := n.(ast.Expr); ok && isINIDocPtr(e) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// makesINIDoc reports a VALUE expression that constructs or fetches a document:
+// &INIDoc{…}, or a call to one of the allow-listed producers. It is the arm that
+// catches an exported package-level var with no written type —
+// `var Scratch = &INIDoc{}` declares its type in its value.
+func makesINIDoc(expr ast.Expr) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.UnaryExpr:
+			if v.Op == token.AND {
+				if lit, ok := v.X.(*ast.CompositeLit); ok {
+					if id, ok := lit.Type.(*ast.Ident); ok && id.Name == "INIDoc" {
+						found = true
+					}
+				}
+			}
+		case *ast.CallExpr:
+			if id, ok := v.Fun.(*ast.Ident); ok {
+				if _, isProducer := iniDocProducers[id.Name]; isProducer {
+					found = true
+				}
+			}
+		}
+		return !found
+	})
+	return found
 }
