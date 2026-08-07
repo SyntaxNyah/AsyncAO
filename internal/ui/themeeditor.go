@@ -81,6 +81,15 @@ const (
 	editRectSpinStep   = 1
 	editRectSpinCoarse = layoutGridDesign
 
+	// editorHeaderBtnW / editorHeaderBtnGap size the header band's button row (Fonts,
+	// Undo, Redo, Save, Back), laid out from the right edge.
+	//
+	// PACKAGE-LEVEL rather than local to the draw, because the band's geometry is what a
+	// gate has to press to prove the header behaves — and a gate that hard-coded 62
+	// would stop pressing the button the day the row was re-spaced, silently.
+	editorHeaderBtnW   = 62
+	editorHeaderBtnGap = 4
+
 	// editStatusMs is how long a rail chip ("cap reached", "saved") stays up.
 	editStatusMs = 4000
 
@@ -128,6 +137,18 @@ type themeEditor struct {
 	// save is the in-flight write (themeeditorsave.go). One at a time, by
 	// construction: the channel is the flag.
 	save *editSaveJob
+
+	// picks caches the inspector's two DYNAMIC pick lists (themeeditorpick.go). On the
+	// editor, not on App, so it dies with the screen — the closed-editor cost stays one
+	// nil pointer.
+	picks pickCache
+
+	// fontsOpen / font / fontNames are the FONT RAIL (themeeditorfonts.go): whether the
+	// panel is up, the one in-flight face copy (the pointer is the flag, exactly as
+	// `save` is), and the cycler's reusable name buffer.
+	fontsOpen bool
+	font      *editFontJob
+	fontNames []string
 
 	// status / statusAt are the rail chip: what just happened, and when. The chip is
 	// how a refused cap or a graveyard-full delete says so out loud (design §3.3:
@@ -215,6 +236,9 @@ func (a *App) requestEditorExit() {
 	}
 	if !a.te.exitAt.IsZero() && time.Since(a.te.exitAt) < editStatusMs*time.Millisecond {
 		a.te.doc.restoreBaseline()
+		// The GEOMETRY half of putting the baseline back on screen. The ART half — the
+		// media plan the bake resolves each element's page out of — is reconciled by
+		// closeThemeEditor below, for every exit at once.
 		a.invalidateThemeCanvases()
 		a.closeThemeEditor()
 		return
@@ -230,10 +254,27 @@ func (a *App) requestEditorExit() {
 // applied theme. That is what makes "Save, then Back" leave the saved theme on
 // screen and "Back, Back" leave the theme it opened over — requestEditorExit has
 // already put the baseline back in the second case.
+//
+// AND THAT IS WHY THE ART IS RECONCILED HERE, on the way out. The model the app keeps
+// drawing is whatever the document holds RIGHT NOW, so the media plan has to agree with
+// it right now — and this is the last moment anything can make it, because dropping a.te
+// is what stops drawThemeEditor (and with it the per-frame editorSyncArt) from ever
+// running again. The discard-on-exit restore is the case that proved it: restoreBaseline
+// moves the model back, invalidateThemeCanvases only drops the geometry caches, and the
+// courtroom went on drawing the EDITED plan — a generator element whose orphaned tile
+// pruneEditorGenTiles had already released could draw nothing at all until the user
+// switched themes and back. Here rather than in requestEditorExit's discard arm because
+// a.te = nil lives in exactly one function (deliberately — themeeditorop.go's note on the
+// ring), so the one function is the only place that covers the clean exit, the
+// canvas-left exit and whatever W8 adds by construction rather than by remembering.
+//
+// A CLEAN EXIT PAYS ONE HASH AND A COMPARE (themeeditorart.go's settled path), which is
+// what makes covering all of them affordable.
 func (a *App) closeThemeEditor() {
 	if a.te == nil {
 		return
 	}
+	a.editorSyncArt()
 	back := a.editorReturn
 	a.te = nil
 	if back == ScreenThemeEditor { // never bounce back into ourselves
@@ -460,6 +501,7 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// the whole point is to glance.
 	a.te.peek = c.keyHeld(sdl.K_SPACE) && c.focusID == ""
 	a.pollEditorSave()
+	a.pollEditorFont()
 	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
 	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
 	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
@@ -467,6 +509,12 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// cycler — run inside it. An editor key handler that ran after the canvas would be
 	// handed a key that was already spent.
 	a.handleEditorKeys()
+	// THE ART IS RECONCILED BEFORE THE CANVAS DRAWS, because the canvas is what bakes
+	// it: an element's page comes out of a.themeMediaPlan BY INDEX, and every fill row
+	// in the inspector (and every add and delete) changes what that index should
+	// resolve to. Here rather than in editorApply so undo, redo, a grouped paste and
+	// the discard-on-exit restore are covered by the same line — see themeeditorart.go.
+	a.editorSyncArt()
 
 	lay := a.themeWindowLayout(w, h)
 	a.drawEditorCanvas(w, h)
@@ -489,8 +537,68 @@ func (a *App) drawThemeEditor(w, h int32) {
 	lay = a.themeWindowLayout(w, h)
 	a.drawEditorCanvasOverlay(w, h, lay)
 	a.drawEditorHeader(w)
+	// BACK MAY HAVE LEFT. drawEditorHeader's own Back button closes the editor, and
+	// every rail below dereferences a.te — so without this a press on Back with a clean
+	// document is a nil dereference on the render thread rather than an exit.
+	if a.te == nil {
+		return
+	}
+	// THE PANEL FENCE, RAISED HERE AND RELEASED BELOW (design §3.1: every editor
+	// surface but the two modals is a panel under the demoBrowser release-and-restore
+	// fence, so what is behind it goes click-dead without stranding modalOn).
+	//
+	// The rails are what needs it: editorFontPanelRect centres the panel over the
+	// canvas, and below ~928 px it overlaps a rail outright, so a press on a font row's
+	// `<` also reached drawEditorElementRow's ClickedIn underneath. modalOn blanks
+	// hovering(), which is what ClickedIn, Button and WheelIn are all built on.
+	//
+	// The HEADER is deliberately outside the fence and drew above: the panel's own rect
+	// starts below editBannerH by construction, so nothing behind it is at risk there —
+	// and fencing it would kill the Fonts button that closes the panel.
+	savedModal := c.modalOn
+	if a.editorPanelUp() {
+		c.modalOn = true
+	}
 	a.drawEditorElementRail(w, h)
 	a.drawEditorInspector(w, h)
+	c.modalOn = savedModal
+	// LAST, so the panel floats over both rails — it is a panel and not a modal
+	// (design §3.1), so the surface behind it keeps drawing and the theme keeps
+	// animating while a face is picked. It draws with the fence RELEASED, which is what
+	// makes its own buttons live while everything behind them is not.
+	a.drawEditorFontPanel(w, h)
+}
+
+// editorPanelUp reports that an editor PANEL is on screen.
+//
+// ONE PREDICATE FOR BOTH HALVES OF THE FENCE, so the two can never disagree about when
+// it is up. The draw raises c.modalOn over the rails (hovering() honours it); the
+// canvas probe hit-tests with RAW pointIn and therefore sees through every fence, so
+// editorCanvasInput has to ask the same question in its own words — exactly as it
+// already does for the compact toolbox.
+//
+// OPEN to the panels design §3.1 still owes (preset gallery, import report, budget
+// details, export sheet): each joins the OR here and is fenced on both sides for free.
+// CLOSED against the two MODALS, which are not panels — they close the screen's input
+// path rather than floating over it.
+func (a *App) editorPanelUp() bool {
+	return a.te != nil && a.te.fontsOpen
+}
+
+// closeEditorPanels shuts whatever editorPanelUp reports. THE PREDICATE'S INVERSE, and
+// it lives beside it so the two are read together: a panel added to the OR above and
+// not closed here would be a panel Esc walks past — which is exactly the hole the Fonts
+// panel had (app.go's ScreenThemeEditor arm).
+//
+// It closes ALL of them rather than "the top one", because the editor has no panel
+// stack: design §3.1's panels are alternatives, never layers, and a "topmost" that is
+// really a one-element set is a z-order nobody maintains.
+func (a *App) closeEditorPanels() {
+	if a.te == nil {
+		return
+	}
+	a.te.fontsOpen = false
+	a.uiDirty = true
 }
 
 // drawEditorCanvas paints what the theme looks like RIGHT NOW, full bleed.
@@ -560,7 +668,7 @@ func (a *App) drawEditorHeader(w int32) {
 	c.LabelClipped(editRowPad, 5, w/3, name, ColText)
 	c.LabelClipped(w/3+editRowPad, 5, w/4, a.editorStateLabel(), ColTextDim)
 
-	const btnW, btnGap = 62, 4
+	const btnW, btnGap = editorHeaderBtnW, editorHeaderBtnGap
 	x := w - editRowPad - btnW
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Back") {
 		a.requestEditorExit()
@@ -577,6 +685,10 @@ func (a *App) drawEditorHeader(w int32) {
 	x -= btnW + btnGap
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Undo") {
 		a.editorUndo()
+	}
+	x -= btnW + btnGap
+	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Fonts") {
+		a.te.fontsOpen = !a.te.fontsOpen
 	}
 }
 
@@ -730,9 +842,7 @@ func (a *App) drawEditorInspector(w, h int32) {
 	}
 	rows := a.inspectorRowsFor(t)
 	if len(rows) == 0 {
-		// A SLOT selection: geometry only. The AO2 full-parity rule made visible — a
-		// theme may restate an AO2 widget's rect and nothing else about it.
-		c.Label(rail.X+editRowPad, rail.Y+4, "AO2 widget — geometry only", ColTextDim)
+		c.Label(rail.X+editRowPad, rail.Y+4, "Nothing editable here", ColTextDim)
 		return
 	}
 	prev, had := c.pushClip(rail)
@@ -751,7 +861,65 @@ func (a *App) drawEditorInspector(w, h int32) {
 			break
 		}
 	}
+	a.drawInspectorTail(t, rail, y)
 	c.popClip(prev, had)
+}
+
+// drawInspectorTail is what a rail carries BELOW its rows: the widget arm's parity
+// note and its Reset, and the text arm's format-1 note.
+//
+// SEPARATE FROM THE TABLE because neither is a FIELD. Reset is an action (it removes a
+// row rather than setting a value), and the notes are statements about the format. A
+// row invented for either would have to carry a mutator that mutates nothing, which is
+// precisely the shape TestEveryInspectorFieldIsUndoable would then have to be widened
+// to excuse.
+func (a *App) drawInspectorTail(t editTarget, rail sdl.Rect, y int32) int32 {
+	c := a.ctx
+	switch t.space {
+	case spaceDesign:
+		// THE PARITY RULE, STATED WHERE IT BITES (the AO2 full-parity ruling, design §Q1):
+		// a theme may restate an AO2 widget's rect and nothing else about it, so this rail
+		// has one section and always will.
+		c.LabelClipped(rail.X+editRowPad, y+4, rail.W-editRowPad*2,
+			"AO2 widget — geometry only", ColTextDim)
+		y += editFieldRowH
+		_, authored := a.te.doc.side.OverrideRect(t.designKey())
+		btn := sdl.Rect{X: rail.X + editRowPad, Y: y, W: rail.W - editRowPad*2, H: editFieldRowH - 2}
+		if !authored {
+			// Nothing to reset. Drawn DISABLED rather than hidden, so the control does not
+			// appear and disappear as the user drags — a button that moves is a button that
+			// gets mis-clicked.
+			c.Fill(btn, ColPanelHi)
+			c.LabelClipped(btn.X+4, btn.Y+3, btn.W-8, "Reset to theme (unchanged)", ColTextDim)
+			return y + editFieldRowH
+		}
+		if c.Button(btn, "Reset to theme") {
+			a.editorApply(mutateSlotReset(t))
+		}
+		return y + editFieldRowH
+	case spaceElement:
+		el := a.te.doc.element(t)
+		if el == nil || el.Kind != theme.ElemText {
+			return y
+		}
+		// THE DOCUMENTED DEFERRAL, SAID OUT LOUD. `font` and `size` are carried and not
+		// drawn in format 1 (docs/THEME-FORMAT.md §3, paintElementText's measurement:
+		// giving each element its own point size means a fontSet rebuild per frame for
+		// every element that shares a panel's face). W4 wrote that down in the format doc
+		// and in the painter; nothing said it where the author sets the value, so setting
+		// `size = 27` and seeing nothing was a discovery rather than an answer. The
+		// [fontbind] rail below the element list is the tier that DOES render, and this
+		// line points at it.
+		if el.Font != "" || el.Size != 0 {
+			c.LabelClipped(rail.X+editRowPad, y+4, rail.W-editRowPad*2,
+				"font/size are saved, not drawn yet —", ColTierYellow)
+			c.LabelClipped(rail.X+editRowPad, y+4+editFieldRowH-6, rail.W-editRowPad*2,
+				"bind a face in Fonts to see it", ColTierYellow)
+			y += editFieldRowH * 2
+		}
+		return y
+	}
+	return y
 }
 
 // drawInspectorRow draws ONE declarative row and routes its edit through the op the
@@ -811,14 +979,78 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 	case fkText, fkMedia, fkFont:
 		old := a.te.doc.str(cur.s)
 		if s, _ := c.TextField(editFieldID(f.field), ctl, old, ""); s != old {
-			id := a.te.doc.intern(s)
-			if id == editStrNone && s != "" {
-				a.te.note("the editor's string table is full (" + strconv.Itoa(editStrCap) + ") — reopen the editor to clear it")
-				return
+			a.editorWriteStringField(f, t, s)
+		}
+	case fkPick:
+		a.drawInspectorPick(f, t, ctl, a.te.doc.str(cur.s))
+	}
+}
+
+// drawInspectorPick is an fkPick row: two step buttons that walk the LIVE list, then
+// the value itself as free text.
+//
+// THE TEXT FIELD IS NOT A FALLBACK, it is the row's contract. Every fkPick field is
+// read as free text by the format (see fieldKind's own comment), so a build that has
+// never heard of `generator = ripples` must still be able to hold and re-save that
+// line — and an author must be able to type it. The list is an affordance over the
+// same value, never a gate on it.
+func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, old string) {
+	c := a.ctx
+	names := a.editorPickNames(f.pick)
+	field := ctl
+	if len(names) > 0 {
+		// BOTH BUTTONS ARE ALWAYS DRAWN — never `if back { } else if fwd { }`. Ctx.Button
+		// draws AND answers in one call, so short-circuiting the second one would blank it
+		// for exactly the frame the first was pressed on, which is the frame the user is
+		// looking at it (the element rail's own draw-then-probe rule).
+		back := c.Button(sdl.Rect{X: ctl.X, Y: ctl.Y, W: editStepW, H: ctl.H}, "<")
+		fwd := c.Button(sdl.Rect{X: ctl.X + editStepW, Y: ctl.Y, W: editStepW, H: ctl.H}, ">")
+		field.X, field.W = ctl.X+editStepW*2, ctl.W-editStepW*2
+		if back || fwd {
+			// WRAP from the CURRENT value's position, and start at "(none)" when the value
+			// is not offered at all — the ordinary case for a name this build has never
+			// heard of, and the one that must not send the picker to a random entry.
+			step := 1
+			if back {
+				step = -1
 			}
-			a.editorApply(f.mut(t, f.field, editValueStr(id)))
+			i := pickIndexOf(names, old)
+			if i < 0 {
+				i, step = 0, 0
+			}
+			i = ((i+step)%len(names) + len(names)) % len(names)
+			a.editorWriteStringField(f, t, pickValueAt(names, i))
+			return
 		}
 	}
+	if s, _ := c.TextField(editFieldID(f.field), field, old, ""); s != old {
+		a.editorWriteStringField(f, t, s)
+	}
+}
+
+// editorWriteStringField is the ONE path a typed or picked string takes to the
+// document: validate what the FORMAT validates, intern, apply.
+//
+// The validation is here rather than in the setter because a setter cannot say no —
+// it has no return value and the op has already been recorded by the time it runs, so
+// a refusal there is either a silent no-op (an undo step that does nothing) or a
+// truncation nobody was told about. Design §3.3: name the offender, name the limit.
+func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) {
+	if f.field == editFieldGenParams {
+		// The FORMAT'S OWN parser, so the editor and the reader cannot disagree about
+		// what fits (theme.ParseGenParams == the reader's genParamsOf).
+		if _, err := theme.ParseGenParams(s); err != nil {
+			a.te.note("gen_params: at most " + strconv.Itoa(theme.GenParamCap) +
+				" k=v pairs, each under " + strconv.Itoa(theme.GenParamRuneCap) + " characters")
+			return
+		}
+	}
+	id := a.te.doc.intern(s)
+	if id == editStrNone && s != "" {
+		a.te.note("the editor's string table is full (" + strconv.Itoa(editStrCap) + ") — reopen the editor to clear it")
+		return
+	}
+	a.editorApply(f.mut(t, f.field, editValueStr(id)))
 }
 
 // editFieldID is a widget id for one inspector row. Derived from the FIELD, not
@@ -1054,20 +1286,71 @@ func (a *App) editorDeleteSelection() {
 	}
 	a.te.ring.begin()
 	defer a.te.ring.end()
-	removed := 0
+	// TWO REFUSALS, COUNTED APART. "some elements were locked or the undo graveyard is
+	// full" named neither offender and offered no fix, which is precisely what design
+	// §3.3's error-copy rule forbids — and the two have OPPOSITE remedies: a locked
+	// element wants L, a full graveyard wants a save or a reopen. One sentence covering
+	// both taught the user nothing about either.
+	//
+	// The counting needs no second predicate and no new state. The lock is tested here,
+	// before the funnel, so it is known without asking the document twice; a target the
+	// selection outlived is skipped as neither (nothing was prevented — see
+	// applyNoChange); and past those two the ONLY answer opElemDel has left is
+	// themeElemGraveCap, so a false from the funnel means the graveyard and nothing else.
+	locked, full := 0, 0
 	for i := 0; i < n; i++ {
-		if el := a.te.doc.element(elementTarget(idxs[i])); el != nil && el.Locked {
+		t := elementTarget(idxs[i])
+		el := a.te.doc.element(t)
+		if el == nil {
+			continue // the selection outlived the element: nothing was prevented, nothing to say
+		}
+		if el.Locked {
+			locked++
 			continue // the editor-only lock: no drag, no nudge, no delete
 		}
-		if a.editorApply(themeEditOp{kind: opElemDel, target: elementTarget(idxs[i])}) {
-			removed++
+		if !a.editorApply(themeEditOp{kind: opElemDel, target: t}) {
+			full++
 		}
 	}
-	if removed < n {
-		a.te.note("some elements were locked or the undo graveyard is full")
+	if msg := editorDeleteRefusal(locked, full); msg != "" {
+		a.te.note(msg)
 	}
 	a.te.selectClear()
 }
+
+// editorDeleteRefusal is the chip a partly-refused delete posts, or "" when
+// everything the user asked for happened.
+//
+// A PURE FUNCTION so the wording is gate-able without a renderer: the sentence is the
+// feature here, not the arithmetic that reaches it.
+func editorDeleteRefusal(locked, full int) string {
+	switch {
+	case locked > 0 && full > 0:
+		return editorPluralN(locked, "element") + " locked (press L to unlock), and the undo " +
+			"graveyard is full at " + itoa(themeElemGraveCap) + " — save or reopen the editor to clear it"
+	case locked > 0:
+		return editorPluralN(locked, "locked element") + " kept — press L to unlock, then Delete"
+	case full > 0:
+		return "the undo graveyard is full at " + itoa(themeElemGraveCap) +
+			" deleted elements — save or reopen the editor to clear it"
+	}
+	return ""
+}
+
+// editorPluralN is "1 thing" / "3 things". Named because three chips build the same
+// phrase and an inline copy in each is three chances to forget the plural.
+func editorPluralN(n int, noun string) string {
+	s := itoa(n) + " " + noun
+	if n != 1 {
+		s += "s"
+	}
+	return s
+}
+
+// itoa is strconv.Itoa under a name short enough to keep the sentences above
+// readable; the chip path is cold (a refusal, once per gesture), so the allocation
+// it costs is not on any gated path.
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // ---------------------------------------------------------------------------
 // The reclaim seam — what makes an edit durable

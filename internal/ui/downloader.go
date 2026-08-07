@@ -15,6 +15,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -434,10 +435,81 @@ func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, u
 		if ctx.Err() != nil || j.overBudget() || n >= dlSoundCap {
 			return
 		}
-		j.fetchSound(ctx, client, urls.Blip(name), filepath.Join(j.base, "sounds", "blips"), strings.ToLower(name), exts)
+		j.fetchBlip(ctx, client, urls, name, exts)
 		n++
 		j.publish(false)
 	}
+}
+
+// fetchBlip mirrors what the LIVE ladder plays for one blip set.
+//
+// THE GAP IT CLOSES. This used to fetch exactly `urls.Blip(name)` —
+// sounds/blips/<lowercased name> — which is rung 1 of six. The live client walks
+// courtroom.URLBuilder.BlipCandidates: the set folder in both casings, then AO1's
+// legacy sounds/general/sfx-blip<name>, then the plain general sound
+// (blipurl.go, from AO2-Client text_file_functions.cpp:515-527). An AO1-era base
+// serves ONLY the legacy spelling, so the download probed one URL, 404'd, counted a
+// skip — and shipped an offline pack whose blips are silent while the very same base
+// blips fine online. That is the worst shape an offline pack can have: it works until
+// you unplug.
+//
+// RESOLVE-THEN-WRITE, not write-every-spelling. Writing all six spellings would cost
+// up to six fetches per set on a base that serves one, and would leave five copies of
+// one file in the pack. Instead the chain is probed in ITS OWN ORDER and the first
+// format of the first rung that exists is written AT THAT RUNG's own path — which is
+// where the local resolver, walking the identical chain against the pack's own origin,
+// looks for it. The pack therefore reproduces the live ladder's answer by construction
+// rather than by a second table agreeing with it.
+func (j *dlJob) fetchBlip(ctx context.Context, client *network.Client, urls courtroom.URLBuilder, name string, exts []string) {
+	origin := urls.Origin()
+	for _, cand := range urls.BlipCandidates(name) {
+		rel, ok := blipPackRel(origin, cand)
+		if !ok {
+			continue // not under this origin: nothing sane to name it on disk
+		}
+		dest := filepath.Join(j.base, filepath.FromSlash(rel))
+		for _, ext := range exts {
+			if ctx.Err() != nil || j.overBudget() {
+				return
+			}
+			if j.saveURL(ctx, client, cand+ext, dest+ext) {
+				return // first rung, first format that exists wins — exactly as live
+			}
+		}
+	}
+	j.errs++ // the set is missing in every rung and every format
+}
+
+// blipPackRel turns one candidate URL into the pack-relative path the LOCAL resolver
+// will probe for it: strip the origin, un-escape the segments.
+//
+// The un-escape is load-bearing rather than cosmetic. BlipCandidates escapes a set
+// name as one path segment, so a two-word set arrives as `sounds/blips/deep%20voice`;
+// writing that literally would put a file called "deep%20voice" on disk, and the local
+// resolver — which escapes the SAME name the same way and then resolves it against a
+// file:// origin — would ask for "deep voice" and miss. ok=false for anything that is
+// not under the origin, or that un-escapes into a path with a separator or a `..` in a
+// segment, so a hostile origin string cannot steer a write out of the pack (saveURL's
+// containment check is the second line, not the first).
+func blipPackRel(origin, cand string) (string, bool) {
+	if origin == "" || !strings.HasPrefix(cand, origin) {
+		return "", false
+	}
+	rel := strings.TrimPrefix(cand, origin)
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return "", false
+	}
+	parts := strings.Split(rel, "/")
+	for i, p := range parts {
+		dec, err := url.PathUnescape(p)
+		if err != nil || dec == "" || dec == "." || dec == ".." ||
+			strings.ContainsAny(dec, `/\`) {
+			return "", false
+		}
+		parts[i] = dec
+	}
+	return strings.Join(parts, "/"), true
 }
 
 // fetchSound probes the audio formats for one named sound; the first that

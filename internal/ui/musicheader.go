@@ -59,6 +59,26 @@ const (
 	musicNothingPlaying = "Nothing playing"
 	// musicNowPrefix fronts the readout when something IS playing.
 	musicNowPrefix = "Now playing: "
+
+	// musicHeaderMaxLines bounds the header's WRAP however tall the panel is. Two: the
+	// action row and the search row are the header's whole design, and a third line
+	// would be the header eating the track list it is a header for — the same judgement
+	// chromeRowMinBodyPx makes from the other end.
+	musicHeaderMaxLines = 2
+)
+
+// The header's DROP ORDER, highest first (see planMusicHeader for the argument).
+// Named constants rather than bare 1/2/3 so the ranking reads as the reachability
+// decision it is (hard rule 9).
+const (
+	// musicDropOnlyRoute: dropping this control removes the ONLY route to its action.
+	musicDropOnlyRoute uint8 = iota + 1
+	// musicDropShortcut: the action is also a row of the ⋮ menu.
+	musicDropShortcut
+	// musicDropSearch: filtering is a convenience over a list that is still readable.
+	musicDropSearch
+	// musicDropReadout: pure information, no action lost.
+	musicDropReadout
 )
 
 // fontLineH is a face's line height, or 0 when there is no face. Every *ttf.Font
@@ -134,31 +154,76 @@ func (p *musicHeaderPlan) rect(id int) (sdl.Rect, bool) {
 // nowPlayingExternal means a theme's music_display plate already painted the name
 // (AO2 parents ui_music_name inside that plate, courtroom.cpp:171), so the readout
 // is dropped — but NOT the row, which belongs to the buttons.
+// THE REFLOW GUARD (v1.90.0 W7b). The placement runs through planChromeRow
+// (chromerow.go) rather than through a strip of its own, because a THEME chooses this
+// panel's rect and a squeezed rect is data, not a corner case: a tester's imported AO2
+// theme stacked Expand all and Collapse all into the same pixels, which is this file's
+// own opening defect returning through a narrower door. planChromeRow places every
+// control through ONE cursor and, when the cursor runs out, degrades in a stated order
+// — shrink to each control's own minimum, wrap, then DROP BY PRIORITY — so "two
+// controls on top of each other" is not a state it can produce.
+//
+// THE PRIORITIES ARE A REACHABILITY ARGUMENT, not a taste ranking:
+//   - the ⋮ menu is chromeCtlNeverDrop, because every row it hosts (the volume view,
+//     the four MC playback flags, the four roster switches) is reachable ONLY through
+//     it inside a theme's canvas;
+//   - Stop and Random go FIRST, because both are also rows of that menu — dropping
+//     them hides a shortcut, not a feature;
+//   - Expand all / Collapse all go last of the four, because they are in NO menu
+//     (musicMenuRows) and the fold markers are the only other way to reach them;
+//   - the now-playing readout is pure information and goes before any button.
 func planMusicHeader(r sdl.Rect, now string, count string, hideSearchRow, nowPlayingExternal bool, measure func(string) int32) musicHeaderPlan {
-	var p musicHeaderPlan
-	s := newPlStrip(r)
-	for _, id := range [...]int{musicItemStop, musicItemRandom, musicItemExpand, musicItemCollapse, musicItemMenu} {
-		if rc, ok := s.place(musicIconPx); ok {
-			p.add(id, "", rc)
-		}
-	}
+	// A FIXED ARRAY AND AN INDEX, never an `add` closure: this runs on every frame the
+	// music panel draws, and a closure capturing the array and the counter is one heap
+	// allocation per frame on the themed courtroom — the class
+	// TestDrawCourtroomThemedZeroAlloc exists to catch.
+	var want [musicHeaderMaxItems]chromeCtl
+	n := 0
+	want[n] = chromeCtl{id: musicItemStop, w: musicIconPx, min: musicIconPx, prio: musicDropShortcut}
+	n++
+	want[n] = chromeCtl{id: musicItemRandom, w: musicIconPx, min: musicIconPx, prio: musicDropShortcut}
+	n++
+	want[n] = chromeCtl{id: musicItemExpand, w: musicIconPx, min: musicIconPx, prio: musicDropOnlyRoute}
+	n++
+	want[n] = chromeCtl{id: musicItemCollapse, w: musicIconPx, min: musicIconPx, prio: musicDropOnlyRoute}
+	n++
+	want[n] = chromeCtl{id: musicItemMenu, w: musicIconPx, min: musicIconPx, prio: chromeCtlNeverDrop}
+	n++
 	if !nowPlayingExternal {
-		if rc, ok := s.placeFlex(measure(now), musicNameMinPx); ok {
-			p.add(musicItemNowPlaying, now, rc)
-		}
+		want[n] = chromeCtl{id: musicItemNowPlaying, w: measure(now), min: musicNameMinPx, prio: musicDropReadout}
+		n++
 	}
 	if !hideSearchRow {
-		s.newline()
-		countW := measure(count) + plStripItemGapPx
-		if rc, ok := s.placeFlex(r.W-countW-plStripItemGapPx, musicSearchMinPx); ok {
-			p.add(musicItemSearch, "", rc)
+		countW := measure(count)
+		want[n] = chromeCtl{
+			id: musicItemSearch, w: r.W - countW - plStripItemGapPx*2, min: musicSearchMinPx,
+			prio: musicDropSearch, brk: true,
 		}
-		if rc, ok := s.place(measure(count)); ok {
-			p.add(musicItemCount, count, rc)
-		}
+		n++
+		want[n] = chromeCtl{id: musicItemCount, w: countW, min: countW, prio: musicDropReadout}
+		n++
 	}
-	p.h = s.height()
+	plan := planChromeRow(r, want[:n], musicHeaderMaxLines)
+
+	var p musicHeaderPlan
+	for i := 0; i < plan.placed(); i++ {
+		p.add(plan.slot[i].id, musicHeaderItemLabel(plan.slot[i].id, now, count), plan.slot[i].r)
+	}
+	p.h = plan.h
 	return p
+}
+
+// musicHeaderItemLabel is the text a placed item carries. Only two items have any —
+// the icon buttons draw vector glyphs (see the file header) and the search field draws
+// its own contents.
+func musicHeaderItemLabel(id int, now, count string) string {
+	switch id {
+	case musicItemNowPlaying:
+		return now
+	case musicItemCount:
+		return count
+	}
+	return ""
 }
 
 // --- the overflow ("kebab") menu ------------------------------------------------

@@ -54,6 +54,22 @@ const (
 	// element's own declared Space, and under design §6.6 R1 it is a signed DELTA on
 	// its anchor when it has one.
 	spaceElement
+	// spaceFont: ONE ROW OF THE THEME'S TYPE TABLES (v1.90.0 W7b) — a [fonts] family
+	// or a [fontbind] class binding, identified by its INDEX in that table, exactly as
+	// an element is identified by its index in Sidecar.Elements.
+	//
+	// IT CARRIES NO GEOMETRY, and that is a real widening of what a space is, made
+	// deliberately rather than by drift. The alternative was a second, parallel
+	// "editable thing" type with its own selection array, its own inspector dispatch
+	// and its own undo plumbing — i.e. two answers to "what is selected" living beside
+	// each other, which is precisely the duplication W6 collapsed this type out of.
+	// resizeEdgesFor answers 0 for it (a font row has no edges to drag), which is the
+	// same honest answer it gives the server-tab strip, and the payload accessors
+	// below refuse it exactly as they refuse every other foreign space. WHICH table
+	// the index addresses is the OP KIND's business (opFontFamily / opFontBind), never
+	// the target's: the two tables are edited by two different ops and a target that
+	// tried to say which one would be a second, weaker copy of that distinction.
+	spaceFont
 )
 
 // elemTargetNone is the "no element" index. -1 rather than 0 because 0 is a
@@ -96,12 +112,12 @@ func newEditTarget(space editSpace, key string, elem int) editTarget {
 		if elem != elemTargetNone {
 			panic("ui: editTarget in a key space must not carry an element index")
 		}
-	case spaceElement:
+	case spaceElement, spaceFont:
 		if key != "" {
-			panic("ui: an element editTarget has no key — identity is the index")
+			panic("ui: an index editTarget has no key — identity is the index")
 		}
 		if elem < 0 {
-			panic("ui: an element editTarget needs a non-negative index")
+			panic("ui: an index editTarget needs a non-negative index")
 		}
 	default:
 		panic("ui: editTarget needs an explicit space — it is never inferred from the payload")
@@ -124,6 +140,9 @@ func noTarget() editTarget { return editTarget{} }
 func classicTarget(key string) editTarget { return newEditTarget(spaceClassic, key, elemTargetNone) }
 func designTarget(key string) editTarget  { return newEditTarget(spaceDesign, key, elemTargetNone) }
 func elementTarget(idx int) editTarget    { return newEditTarget(spaceElement, "", idx) }
+
+// fontTarget is W7b's one addition: a row of the theme's type tables, by index.
+func fontTarget(idx int) editTarget { return newEditTarget(spaceFont, "", idx) }
 
 // armed reports that something is selected. The zero target is the only unarmed one.
 func (t editTarget) armed() bool { return t.space != spaceNone }
@@ -155,6 +174,15 @@ func (t editTarget) elemIdx() (int, bool) {
 	return elemTargetNone, false
 }
 
+// fontIdx is the type-table row index, with ok=false for every non-font target.
+// WHICH table is the op kind's business — see spaceFont.
+func (t editTarget) fontIdx() (int, bool) {
+	if t.space == spaceFont {
+		return t.elem, true
+	}
+	return elemTargetNone, false
+}
+
 // ---------------------------------------------------------------------------
 // Resize handles, generalized across the spaces
 // ---------------------------------------------------------------------------
@@ -179,6 +207,12 @@ func resizeEdgesFor(t editTarget) uint8 {
 		// is real. Nothing derives an element's size from its content the way the
 		// control block and the tab strip derive theirs.
 		return edgeL | edgeR | edgeT | edgeB
+	case spaceFont:
+		// NO EDGE TO DRAG, said here rather than left to the default so that adding a
+		// space is a decision taken at this table: a [fonts] or [fontbind] row has no
+		// rect at all, which is the same honest 0 the server-tab strip gets for having
+		// no authored size.
+		return 0
 	}
 	return 0
 }

@@ -369,6 +369,18 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 	if !press || !pointIn(c.mouseX, c.mouseY, editorCanvasRect(w, h)) {
 		return
 	}
+	// A PANEL IS UP, so the canvas behind it is CLICK-DEAD (design §3.1). The rails go
+	// dead through c.modalOn, which hovering() honours — but this probe hit-tests with
+	// raw pointIn and would see straight through that, so it refuses the press itself.
+	//
+	// The shape it closes: editorFontPanelRect centres the panel INSIDE the canvas rect,
+	// so every `<` / `>` / `x` on a font row also ran editorProbe + editorBeginGesture
+	// on whatever element or AO2 widget sat beneath it — the art moved while a face was
+	// being picked. A live gesture is untouched (it returned above): the button is still
+	// down, and a drag that started before the panel opened must still be able to end.
+	if a.editorPanelUp() {
+		return
+	}
 	// The compact toolbox hit-tests with raw pointIn and therefore sees through every
 	// fence — the same guard the legacy editor's press site carries, and for the same
 	// reason: a press on its grip must not also grab whatever the theme parked under

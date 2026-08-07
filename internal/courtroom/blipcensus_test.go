@@ -62,7 +62,14 @@ var blipURLLiterals = []blipSite{
 // want ONE spelling rather than the resolution chain.
 var blipBuilderCallers = []blipSite{
 	{"internal/courtroom/blipurl.go", "BlipCandidates composes the ladder out of them"},
-	{"internal/ui/downloader.go", "the offline mirror writes sounds/blips/<name>.<ext> to disk and walks its own extension list instead of resolving, so it wants the single modern spelling"},
+	// internal/ui/downloader.go used to be listed here ("wants the single modern
+	// spelling") — W7b upgraded its offline mirror to walk BlipCandidates, the
+	// sanctioned ladder, so it no longer calls the raw builders at all and an
+	// offline pack now reproduces the live ladder's answer by construction
+	// (downloader.go fetchBlip). BlipCandidates callers are not policed by this
+	// net: the ladder itself is the guarded surface, and its one sentinel gap
+	// (a char.ini author writing blips = -1 enumerates a doomed rung offline)
+	// costs a 404, not a defect.
 }
 
 func TestBlipURLsHaveExactlyOneMint(t *testing.T) {
@@ -114,9 +121,10 @@ func TestBlipURLsHaveExactlyOneMint(t *testing.T) {
 					return true
 				}
 				// The weakest of the three nets: it matches the JOINED literal
-				// only, so filepath.Join(base, "sounds", "blips") evades it —
-				// such a site is caught by the AssetTypeBlip and Blip()-call
-				// nets instead (downloader.go is the live example).
+				// only, so filepath.Join(base, "sounds", "blips") would evade it —
+				// a site shaped that way must surface in the AssetTypeBlip or
+				// Blip()-call nets instead. (downloader.go was the live example
+				// until W7b moved it onto BlipCandidates; none ships today.)
 				if !strings.Contains(v.Value, "sounds/blips") && !strings.Contains(v.Value, "sfx-blip") {
 					return true
 				}

@@ -78,6 +78,36 @@ func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 	}
 }
 
+// TestBackDoesNotOutliveTheRailsThatDrawAfterIt is a crash gate, and it is one a
+// function-level test could not have found.
+//
+// drawThemeEditor's order is header, then both rails. The header's own Back button calls
+// requestEditorExit, which on a CLEAN document releases a.te on the spot — and every
+// rail below dereferences a.te.doc. Pressing Back was therefore a nil dereference on the
+// render thread, i.e. a client crash, on the most ordinary exit there is.
+//
+// It drives the real button through the real frame, so it also fails if the band is
+// re-spaced out from under it (a miss leaves the editor open, which is the assertion).
+func TestBackDoesNotOutliveTheRailsThatDrawAfterIt(t *testing.T) {
+	a, cleanup := stageEditorApp(t)
+	defer cleanup()
+	driveFrame(a)
+	if a.te.doc.dirty {
+		t.Fatal("fixture: the document must be clean, or Back arms a confirmation instead of leaving")
+	}
+	driveClickAt(a, frameHarnessW-editRowPad-editorHeaderBtnW/2, editBannerH/2)
+	if a.te != nil {
+		t.Fatal("the Back button did not leave the editor — the press missed the header band")
+	}
+	if a.screen != ScreenCourtroom {
+		t.Errorf("Back landed on screen %d, want the screen the editor was opened FROM (%d)",
+			a.screen, ScreenCourtroom)
+	}
+	// And the frame after the exit is an ordinary one: the editor released cleanly
+	// rather than half-way through its own draw.
+	driveFrame(a)
+}
+
 // TestEditorEscLadderClearsThenLeaves pins the three-step Esc contract through the
 // real key path. Esc must ALWAYS have somewhere to go — a screen you cannot leave
 // with the keyboard is the hard lock app.go's own Esc comment is about.

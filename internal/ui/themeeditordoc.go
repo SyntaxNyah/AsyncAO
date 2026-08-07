@@ -28,6 +28,8 @@ package ui
 // this file run without a renderer.
 
 import (
+	"strings"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -129,6 +131,20 @@ const (
 	editFieldHidden
 	editFieldLocked
 
+	// Identity and fill detail (v1.90.0 W7b). APPENDED, at the END, per this enum's
+	// own rule — the inspector table is indexed by these and a reorder would silently
+	// re-point every row in it.
+	editFieldKind
+	// (There is deliberately NO editFieldElemID. An element's id is its SECTION
+	// SUFFIX — the writer emits `[element.<id>]` and nothing else carries it — and
+	// INIDoc has no DELETE, so renaming one would append a second section for the same
+	// element and leave the first behind: a file that reads back as TWO elements. A
+	// rename therefore needs a section rename in the lossless carrier, which belongs
+	// with the wave that owns moving bytes around (W8), not with a spinner.)
+	editFieldGenParams
+	editFieldSlice
+	editFieldNoDecimate
+
 	// editFieldCount sizes the get/set tables — fixed arrays indexed by field, never
 	// maps: the tables are read during a drag.
 	editFieldCount
@@ -157,6 +173,9 @@ var editFieldNames = [editFieldCount]string{
 
 	editFieldVisibleAxis: "visible_when.axis", editFieldVisibleValue: "visible_when.value",
 	editFieldHidden: "hidden", editFieldLocked: "locked",
+
+	editFieldKind: "kind", editFieldGenParams: "gen_params",
+	editFieldSlice: "slice", editFieldNoDecimate: "decimate",
 }
 
 func (f editField) String() string {
@@ -227,6 +246,22 @@ var editFieldGet = [editFieldCount]func(*themeDoc, *theme.Element) editValue{
 	},
 	editFieldHidden: func(_ *themeDoc, e *theme.Element) editValue { return editValueBool(e.Hidden) },
 	editFieldLocked: func(_ *themeDoc, e *theme.Element) editValue { return editValueBool(e.Locked) },
+
+	editFieldKind: func(_ *themeDoc, e *theme.Element) editValue { return editValueInt(int32(e.Kind)) },
+	// The params are read back through the FORMAT'S OWN writer, so the string the
+	// inspector shows is the string the file holds — never a second spelling of the
+	// same list that would rewrite somebody's line on a save that changed nothing.
+	editFieldGenParams: func(d *themeDoc, e *theme.Element) editValue {
+		return editValueStr(d.intern(theme.WriteGenParams(e)))
+	},
+	editFieldSlice: func(_ *themeDoc, e *theme.Element) editValue {
+		return editValueRect(int32(e.Slice[0]), int32(e.Slice[1]), int32(e.Slice[2]), int32(e.Slice[3]))
+	},
+	// STORED INVERTED, and the row reads the way the FILE spells it. theme.Element's
+	// NoDecimate is "decimate = no" held inverted so the zero value is version 1's
+	// behaviour; an inspector row labelled "Decimate" that showed the raw bool would
+	// be checked when the key says no. One negation, here, beside the setter's.
+	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element) editValue { return editValueBool(!e.NoDecimate) },
 }
 
 // editFieldSet writes one field back.
@@ -313,6 +348,29 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	},
 	editFieldHidden: func(_ *themeDoc, e *theme.Element, v editValue) { e.Hidden = v.i[0] != 0 },
 	editFieldLocked: func(_ *themeDoc, e *theme.Element, v editValue) { e.Locked = v.i[0] != 0 },
+
+	editFieldKind: func(_ *themeDoc, e *theme.Element, v editValue) {
+		e.Kind = theme.ElementKind(clampInt32(v.i[0], 0, int32(theme.ElementKindCount)-1))
+	},
+	editFieldGenParams: func(d *themeDoc, e *theme.Element, v editValue) {
+		// Parsed by the FORMAT'S OWN parser (theme.ParseGenParams == the reader's
+		// genParamsOf). A string past GenParamCap comes back with the entries that DID
+		// fit plus an error; the draw site refuses it before it ever gets here, so the
+		// error is unreachable for a validated row — and taking the partial array is
+		// still the honest fallback for an op replayed against a changed document.
+		p, _ := theme.ParseGenParams(d.str(v.s))
+		e.GenParams = p
+	},
+	// theme.ZMin/ZMax is the READER's own bound on a slice inset (parseSliceValue
+	// clamps to exactly those), reused rather than restated: a second pair of numbers
+	// here would let the editor author a value the reader then folds, and the file
+	// would stop round-tripping.
+	editFieldSlice: func(_ *themeDoc, e *theme.Element, v editValue) {
+		for i := range e.Slice {
+			e.Slice[i] = int16(clampInt32(v.i[i], theme.ZMin, theme.ZMax))
+		}
+	},
+	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element, v editValue) { e.NoDecimate = v.i[0] == 0 },
 }
 
 // rgbaValue / valueRGBA are the ONE conversion between the format's colour and the
@@ -393,6 +451,26 @@ type themeDoc struct {
 	baseLive  map[string]theme.Rect
 	baseElems []theme.Element
 	baseOv    []theme.KeyRect
+	// baseFonts / baseBind are the TYPE tables as they stood at open, for the same
+	// all-or-nothing reason: W7b made [fonts] and [fontbind] editable, so a snapshot
+	// that covered only the elements and the overrides would let "Back, Back" throw
+	// away a session's geometry and silently keep its font bindings.
+	baseFonts []theme.FontFamily
+	baseBind  []theme.KV
+	// typeSigApplied is typeSig() as of the last theme apply this document caused —
+	// i.e. the tables the SDL_ttf faces on screen were resolved from.
+	//
+	// It exists because a save must be able to answer "did the TYPE change?" without
+	// asking "did anything change?". Geometry and colour are re-baked live by
+	// editorApply's invalidate and the art is re-planned live by editorSyncArt
+	// (themeeditorart.go), but a [fontbind] row is only resolved into real faces by a
+	// theme apply — and an apply re-anchors a.themeAt and purges the text cache, so
+	// kicking one for a rect nudge restarts every animated element in the theme.
+	//
+	// TWO WRITERS, both of which have just made it true: newThemeDoc (the editor opens
+	// over the APPLIED theme) and applyThemeAfterSaveIfTypeChanged (which kicks the
+	// apply in the same breath). It is never set anywhere an apply did not happen.
+	typeSigApplied uint64
 	// dirty is "there are unsaved edits". Set by apply, cleared by a save.
 	//
 	// (There is no savedMtime yet. The external-edit guard belongs with the AUTOSAVE
@@ -428,6 +506,13 @@ func newThemeDoc(name string, sc *theme.Sidecar) *themeDoc {
 	// frame path touches them again until an exit-without-saving asks for them back.
 	d.baseElems = append([]theme.Element(nil), sc.Elements...)
 	d.baseOv = append([]theme.KeyRect(nil), sc.Overrides...)
+	d.baseFonts = append([]theme.FontFamily(nil), sc.Fonts...)
+	d.baseBind = append([]theme.KV(nil), sc.FontBind...)
+	// The faces on screen were resolved from THESE tables: the editor opens over the
+	// APPLIED theme, so the document starts in step with the last apply by definition.
+	// Seeding it here rather than at the first save is what makes a session that never
+	// touches the type kick no applies at all.
+	d.typeSigApplied = d.typeSig()
 	return d
 }
 
@@ -542,9 +627,19 @@ const (
 	// selection that outlived a delete). SILENT: it is the ordinary shape of a held
 	// pointer, not an event.
 	applyNoChange editApplyResult = iota
-	// applyRefused: a NAMED bound said no — theme.OverrideCap, theme.ElementCap, or a
-	// full undo graveyard. The user asked for something the document cannot do, which
-	// is exactly the case that must never be a bare "failed".
+	// applyRefused: the document could not perform the request. In every case the
+	// code actually produces it, that is a NAMED bound — theme.OverrideCap
+	// (applySlotRect), theme.ElementCap (insertAt) or the full undo graveyard
+	// (graveSlot, insertAt's missing body) — which is why the chip names a cap.
+	//
+	// NARROWED DELIBERATELY (W7b). This used to read as though refusal MEANT "a named
+	// bound said no", and applyAdd's own arm quietly disagreed: insertAt also fails for
+	// an out-of-range target index, which is a stale op rather than a limit. The
+	// promise this constant makes is therefore the weaker, true one — "the document
+	// refused, and the caller must say so out loud" — and the CAP is a property of the
+	// three arms that raise it, stated where they raise it. A status code whose doc
+	// comment claims more than its producers deliver is how a chip ends up naming a
+	// limit that was not there, which is the exact defect editApplyResult exists for.
 	applyRefused
 	// applyDone: the model moved, and op carries its own inverse.
 	applyDone
@@ -583,8 +678,202 @@ func (d *themeDoc) apply(op themeEditOp) (themeEditOp, editApplyResult) {
 		return d.applyAdd(op)
 	case opSlotRect:
 		return d.applySlotRect(op)
+	case opSlotReset:
+		return d.applySlotReset(op)
+	case opFontFamily, opFontBind:
+		return d.applyFontRow(op)
 	}
 	return op, applyNoChange
+}
+
+// ---------------------------------------------------------------------------
+// The TYPE tables — [fonts] and [fontbind]
+// ---------------------------------------------------------------------------
+
+// fontRowSep joins a family and its file inside ONE interned string, so a [fonts] row
+// fits the fixed-size editValue that makes the ring allocation-free.
+//
+// U+001F (unit separator) because INIDoc refuses control characters in a value, so
+// neither half can ever contain it — the encoding cannot be ambiguous for any string
+// the reader would accept, which is the property a hand-picked printable separator
+// (':', '|') could not promise.
+const fontRowSep = "\x1f"
+
+// fontRowValue / fontRowOf are the ONE encoding of a [fonts] row, a pair for the same
+// reason editValueSlotRect / slotRectOf are: two halves packed in one order and
+// unpacked in another compiles and is silently wrong.
+func fontRowValue(family, file string) string {
+	if family == "" {
+		return ""
+	}
+	return family + fontRowSep + file
+}
+
+func fontRowOf(s string) (family, file string) {
+	if i := strings.Index(s, fontRowSep); i >= 0 {
+		return s[:i], s[i+len(fontRowSep):]
+	}
+	return s, ""
+}
+
+// typeSigOffset64 / typeSigPrime64 are FNV-1a's published parameters (hard rule 9:
+// named, because nobody may tune them). A 64-bit non-cryptographic hash is the right
+// tool here and the choice is bounded by its use: the value is compared only against
+// another run of this same function inside one editing session, it is never stored,
+// never written to a theme and never a trust boundary.
+const (
+	typeSigOffset64 uint64 = 14695981039346656037
+	typeSigPrime64  uint64 = 1099511628211
+)
+
+// typeSig signs the TYPE tables — [fonts] and [fontbind] — and nothing else.
+//
+// THE NARROWNESS IS THE POINT. Its one consumer asks "would a theme apply resolve
+// different FACES than the ones on screen?", and applySidecarFonts reads exactly these
+// two tables. Signing the whole document instead would answer "did anything change",
+// which is the question that made every save restart the theme's motion.
+func (d *themeDoc) typeSig() uint64 {
+	h := typeSigOffset64
+	if d == nil || d.side == nil {
+		return h
+	}
+	for i := range d.side.Fonts {
+		h = typeSigFold(h, d.side.Fonts[i].Family)
+		h = typeSigFold(h, d.side.Fonts[i].File)
+	}
+	for i := range d.side.FontBind {
+		h = typeSigFold(h, d.side.FontBind[i].Key)
+		h = typeSigFold(h, d.side.FontBind[i].Value)
+	}
+	return h
+}
+
+// typeSigFold folds one string plus a TERMINATOR into the running hash.
+//
+// The terminator is load-bearing: without it {"ab","c"} and {"a","bc"} sign alike, so
+// moving one character between a family and its file would read as no change at all.
+// It is fontRowSep's byte for the reason that constant already argues — INIDoc refuses
+// control characters in a value, so it cannot occur inside either half.
+func typeSigFold(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h = (h ^ uint64(s[i])) * typeSigPrime64
+	}
+	return (h ^ uint64(fontRowSep[0])) * typeSigPrime64
+}
+
+// typeSigFoldByte folds ONE byte — an enum member, a flag — into the running hash,
+// through the same fold so a signature can mix scalars and strings without two
+// disciplines. Its caller is themeArtSig (thememedia.go), which signs `kind` and
+// `hidden` beside four strings.
+func typeSigFoldByte(h uint64, b uint8) uint64 {
+	return (h ^ uint64(b)) * typeSigPrime64
+}
+
+// boolByte is a flag as one hashable byte. Named beside boolToInt32 (themeeditorop.go)
+// rather than inlined at the fold, because an inline `if` inside a hash loop is where a
+// polarity inversion hides.
+func boolByte(on bool) uint8 {
+	if on {
+		return 1
+	}
+	return 0
+}
+
+// applyFontRow writes one row of a type table and returns its inverse.
+//
+// ONE ARM FOR BOTH TABLES, because they are the same operation over two []KV-shaped
+// stores: read the current value at an index, refuse if a cap says no, write, and hand
+// back what was there. Two arms would be two chances to get the add-versus-replace
+// boundary wrong, and that boundary is the whole of undoing an add.
+func (d *themeDoc) applyFontRow(op themeEditOp) (themeEditOp, editApplyResult) {
+	idx, ok := op.target.fontIdx()
+	if !ok || d.side == nil {
+		return op, applyNoChange
+	}
+	cur := d.fontRowAt(op.kind, idx)
+	want := d.str(op.after.s)
+	if cur == want {
+		return op, applyNoChange // the table already says that: not an edit, not a refusal
+	}
+	op.before = editValueStr(d.intern(cur))
+	if !d.writeFontRow(op.kind, idx, want) {
+		return op, applyRefused // theme.FontCap / FontBindCap, or an index past the end
+	}
+	return op, applyDone
+}
+
+// fontRowAt reads one row's encoded value, "" for a row that does not exist.
+func (d *themeDoc) fontRowAt(kind editOpKind, idx int) string {
+	if kind == opFontBind {
+		if idx < 0 || idx >= len(theme.FontElements) {
+			return ""
+		}
+		fam, _ := d.side.BoundFamily(theme.FontElements[idx])
+		return fam
+	}
+	if idx < 0 || idx >= len(d.side.Fonts) {
+		return ""
+	}
+	return fontRowValue(d.side.Fonts[idx].Family, d.side.Fonts[idx].File)
+}
+
+// writeFontRow is the ONE writer of both tables. An empty value REMOVES the row; an
+// index at the end APPENDS. Returns false for a refusal — a cap, or an index that is
+// neither an existing row nor the append slot.
+//
+// THE CAP REFUSES, IT DOES NOT EVICT, exactly as setOverrideRow and insertAt do: a
+// document that dropped somebody else's family to make room for this one would save a
+// theme whose bindings point at nothing.
+func (d *themeDoc) writeFontRow(kind editOpKind, idx int, v string) bool {
+	if kind == opFontBind {
+		if idx < 0 || idx >= len(theme.FontElements) {
+			return false
+		}
+		return d.writeFontBind(theme.FontElements[idx], v)
+	}
+	fam, file := fontRowOf(v)
+	switch {
+	case idx >= 0 && idx < len(d.side.Fonts):
+		if fam == "" {
+			d.side.Fonts = append(d.side.Fonts[:idx], d.side.Fonts[idx+1:]...)
+		} else {
+			d.side.Fonts[idx] = theme.FontFamily{Family: fam, File: file}
+		}
+	case idx == len(d.side.Fonts) && fam != "":
+		if len(d.side.Fonts) >= theme.FontCap {
+			return false
+		}
+		d.side.Fonts = append(d.side.Fonts, theme.FontFamily{Family: fam, File: file})
+	default:
+		return false
+	}
+	d.dirty = true
+	return true
+}
+
+// writeFontBind upserts (or removes) one [fontbind] row.
+func (d *themeDoc) writeFontBind(class, family string) bool {
+	for i := range d.side.FontBind {
+		if d.side.FontBind[i].Key != class {
+			continue
+		}
+		if family == "" {
+			d.side.FontBind = append(d.side.FontBind[:i], d.side.FontBind[i+1:]...)
+		} else {
+			d.side.FontBind[i].Value = family
+		}
+		d.dirty = true
+		return true
+	}
+	if family == "" {
+		return false // nothing to remove: the caller's no-op check should have caught it
+	}
+	if len(d.side.FontBind) >= theme.FontBindCap {
+		return false
+	}
+	d.side.FontBind = append(d.side.FontBind, theme.KV{Key: class, Value: family})
+	d.dirty = true
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +943,34 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 	if !d.writeSlotRect(key, want) {
 		return op, applyRefused // theme.OverrideCap: refuse loudly rather than drop the edit
 	}
+	return op, applyDone
+}
+
+// applySlotReset removes this document's [overrides] row for a widget, putting the
+// geometry back to what the tiers below resolved when the editor opened.
+//
+// A ROW THAT WAS NEVER THERE IS NOT A RESET, and answering applyNoChange for it is
+// the same ruling applySlotRect's equal-rect arm makes: pressing Reset on an
+// untouched widget must not mark the theme edited, and must not chip a refusal for a
+// limit that is not there.
+func (d *themeDoc) applySlotReset(op themeEditOp) (themeEditOp, editApplyResult) {
+	key := op.target.designKey()
+	if !d.slotEditable(key) {
+		return op, applyNoChange
+	}
+	cur, _ := d.slotRect(key)
+	if _, hadRow := d.side.OverrideRect(key); !hadRow {
+		return op, applyNoChange
+	}
+	base, ok := d.baseLive[key]
+	if !ok {
+		base = cur // no baseline for a key that arrived mid-session: keep the pixels put
+	}
+	op.before = editValueSlotRect(cur, true)
+	op.after = editValueSlotRect(base, false)
+	d.dropOverrideRow(key)
+	d.live[key] = base
+	d.dirty = true
 	return op, applyDone
 }
 
@@ -736,8 +1053,15 @@ func (d *themeDoc) revert(op themeEditOp) bool {
 		// put back the same element, not a fresh blank one.
 		_, ok := d.removeAt(op.target, op.after)
 		return ok
-	case opSlotRect:
+	case opSlotRect, opSlotReset:
+		// ONE INVERSE FOR BOTH, and it is not a coincidence: revertSlotRect is
+		// "restore the row named in `before`, or drop it when there was none", which is
+		// exactly what undoing a reset needs (the reset's `before` always carries the
+		// row it removed).
 		return d.revertSlotRect(op)
+	case opFontFamily, opFontBind:
+		idx, ok := op.target.fontIdx()
+		return ok && d.writeFontRow(op.kind, idx, d.str(op.before.s))
 	}
 	return false
 }
@@ -763,6 +1087,22 @@ func (d *themeDoc) redo(op themeEditOp) bool {
 	case opSlotRect:
 		r, _ := slotRectOf(op.after)
 		return d.writeSlotRect(op.target.designKey(), r)
+	case opSlotReset:
+		// Redoing a reset DROPS the row again. Writing `after` into one instead would
+		// re-create the very row the reset removed, so a redo would leave the file
+		// different from the state it claims to restore.
+		key := op.target.designKey()
+		if !d.slotEditable(key) {
+			return false
+		}
+		r, _ := slotRectOf(op.after)
+		d.dropOverrideRow(key)
+		d.live[key] = r
+		d.dirty = true
+		return true
+	case opFontFamily, opFontBind:
+		idx, ok := op.target.fontIdx()
+		return ok && d.writeFontRow(op.kind, idx, d.str(op.after.s))
 	}
 	return false
 }
@@ -787,8 +1127,11 @@ func (d *themeDoc) applyDelete(op themeEditOp) (themeEditOp, editApplyResult) {
 // named by op.after, so add and undo-of-delete are one insert.
 func (d *themeDoc) applyAdd(op themeEditOp) (themeEditOp, editApplyResult) {
 	if !d.insertAt(op.target, op.after) {
-		// theme.ElementCap, or a body the graveyard no longer holds: a bound said no,
-		// and an add that vanished without a word is the worst of both.
+		// THREE CAUSES, and only two of them are bounds: theme.ElementCap, a body the
+		// graveyard no longer holds, or a target index that no longer exists. All three
+		// are refusals rather than no-ops because an add that vanished without a word is
+		// the worst of both — but see editApplyResult for why applyRefused does not
+		// promise that a CAP was the reason.
 		return op, applyRefused
 	}
 	return op, applyDone
@@ -879,6 +1222,8 @@ func (d *themeDoc) restoreBaseline() {
 	}
 	d.side.Elements = append([]theme.Element(nil), d.baseElems...)
 	d.side.Overrides = append([]theme.KeyRect(nil), d.baseOv...)
+	d.side.Fonts = append([]theme.FontFamily(nil), d.baseFonts...)
+	d.side.FontBind = append([]theme.KV(nil), d.baseBind...)
 	for k, v := range d.baseLive {
 		if _, placed := d.live[k]; placed {
 			d.live[k] = v

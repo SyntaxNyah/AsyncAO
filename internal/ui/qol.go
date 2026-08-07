@@ -313,7 +313,18 @@ func (a *App) editorUndoChord() bool {
 		if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
 			return false
 		}
-		if c.hotkey == sdl.K_z {
+		// Ctrl+SHIFT+Z IS REDO TOO (v1.90.0 W7b). Not a preference: it is the second
+		// spelling every editor on this platform answers to, and this client already
+		// spells it once — app.go's focused-field arm routes Ctrl+Shift+Z to
+		// c.redoReq for exactly the same reason. An editor that answered Ctrl+Z and
+		// Ctrl+Y but not Ctrl+Shift+Z would be the only surface in the app that does
+		// not, and the user finds out by losing the thing they just undid.
+		//
+		// The shift test rides c.shiftHeld rather than a second hotkey value because
+		// HandleEvent folds every non-clipboard Ctrl combination into ONE c.hotkey
+		// keysym and keeps the modifier flags beside it (#96) — there is no
+		// "Ctrl+Shift+Z" keysym to compare against.
+		if c.hotkey == sdl.K_z && !c.shiftHeld {
 			a.editorUndo()
 		} else {
 			a.editorRedo()

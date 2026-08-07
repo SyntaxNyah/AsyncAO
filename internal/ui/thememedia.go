@@ -108,6 +108,17 @@ type themeMediaPlan struct {
 	// Budget is the allowance this plan was made against, carried so the budget bar
 	// and the inspector quote the same number the planner used.
 	Budget int64
+	// ArtSig signs the ELEMENTS this plan's keys were derived from (themeArtSig).
+	//
+	// It rides on the plan rather than beside it because a signature that can be set
+	// without deriving the keys is a signature that will one day say the plan is
+	// current when it is not: planElements — the ONE derivation — stamps it in the
+	// same breath as it fills ElemKeys, so the two cannot disagree, and a plan
+	// carried between goroutines carries its own provenance with it.
+	//
+	// Its consumer is the editor (themeeditorart.go), which asks every frame whether
+	// the drawn art still matches the document being edited.
+	ArtSig uint64
 }
 
 // themeGenPlanEntry is one generator tile: its spec, its content-addressed key and
@@ -162,11 +173,41 @@ func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) th
 		}
 		plan.Entries = append(plan.Entries, e)
 	}
-	// Generator tiles, deduplicated by content address. They are planned SECOND and
-	// against their own count cap rather than competing with images for one, because
-	// a tile is 256 KiB at worst and refusing one to keep a wallpaper would be the
-	// wrong trade in every case.
+	plan.planElements(sc, themeID)
+	return plan
+}
+
+// planElements derives the ELEMENT half of a plan: the T1 key every element resolves
+// to, the generator tiles those keys need, and the signature of the model they came
+// from.
+//
+// SPLIT OUT OF planThemeMedia — AND CALLED BY IT, so there is exactly one copy — for
+// the editor (v1.90.0 W7b). The inspector edits an element's `kind`, `media`,
+// `generator` and `gen_params`, and adding or deleting an element shifts every later
+// index; all four therefore change which page an element draws, and the bake resolves
+// that page by INDEX out of this array (themeelementbake.go). Re-deriving this half in
+// place is what makes those rows change the picture instead of the file, and it is the
+// half that CAN be re-derived on a frame: the [media] entries above stat the theme
+// folder, which is disk I/O the render thread may not do (hard rule 2), and they
+// cannot move under the editor anyway because no op writes the [media] table.
+//
+// IDEMPOTENT, and it ALLOCATES its two slices fresh rather than reslicing what it was
+// handed. The editor derives into a COPY of the live plan, so reusing the backing
+// arrays would write through them while the frame that is still drawing reads the old
+// lengths.
+//
+// Generator tiles are deduplicated by content address, and they are planned against
+// their own count cap rather than competing with images for one, because a tile is
+// 256 KiB at worst and refusing one to keep a wallpaper would be the wrong trade in
+// every case.
+func (plan *themeMediaPlan) planElements(sc *theme.Sidecar, themeID string) {
+	if sc == nil {
+		plan.ElemKeys, plan.Gens, plan.GenBytes, plan.ArtSig = nil, nil, 0, themeArtSig(nil)
+		return
+	}
 	plan.ElemKeys = make([]string, len(sc.Elements))
+	plan.Gens = nil
+	plan.GenBytes = 0
 	for i := range sc.Elements {
 		el := &sc.Elements[i]
 		switch {
@@ -198,7 +239,42 @@ func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) th
 		plan.Gens = append(plan.Gens, themeGenPlanEntry{Spec: spec, Key: key, W: w, H: h})
 		plan.GenBytes += int64(w) * int64(h) * 4
 	}
-	return plan
+	plan.ArtSig = themeArtSig(sc)
+}
+
+// themeArtSig signs everything planElements READS out of the elements, and nothing
+// else: the kind, the media id, the generator name and its params, the `hidden` flag
+// that Inert() turns on, and the element COUNT and ORDER (the keys are indexed by
+// position, so a delete that shifts the tail changes the answer).
+//
+// IT IS themeDoc.typeSig's TWIN, and it exists for the same reason: a save has to be
+// able to ask "did the TYPE change" without asking "did anything change", and a frame
+// has to be able to ask "did the ART change" without re-planning for a rect nudge.
+// Same FNV-1a parameters, same terminator-per-field fold, so "ab"+"c" and "a"+"bc"
+// cannot sign alike.
+//
+// ALLOCATION-FREE, which typeSig does not have to be and this does: it is read on
+// EVERY editor frame. That is why it folds the RAW fields instead of building the
+// normalised theme.GeneratorSpec the key is hashed from — GeneratorSpecOf lower-cases
+// and trims, i.e. allocates, and this only has to CHANGE when the spec would, never to
+// agree with it.
+func themeArtSig(sc *theme.Sidecar) uint64 {
+	h := typeSigOffset64
+	if sc == nil {
+		return h
+	}
+	for i := range sc.Elements {
+		el := &sc.Elements[i]
+		h = typeSigFoldByte(h, uint8(el.Kind))
+		h = typeSigFoldByte(h, boolByte(el.Hidden))
+		h = typeSigFold(h, el.Media)
+		h = typeSigFold(h, el.Gen)
+		for j := 0; j < el.GenParamCount(); j++ {
+			h = typeSigFold(h, el.GenParams[j].Key)
+			h = typeSigFold(h, el.GenParams[j].Value)
+		}
+	}
+	return h
 }
 
 // ElemKey is the T1 key element i resolves to, or "" — bounds-checked, because the

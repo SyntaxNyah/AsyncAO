@@ -503,6 +503,15 @@ func (a *App) handleThemeBundleDrop(path string) {
 // and for the same reason, as handleThemeBundleDrop above. A dead silent drop would
 // be worse than the bug it replaces.
 func (a *App) handleThemeFontDrop(path string) {
+	// W7b LANDED THE DEFERRAL. The paragraph above states exactly what was missing —
+	// "the sidecar WRITER is wired to the editor's document and its undo stack (W7)" —
+	// so with the editor OPEN both of those exist and the face INSTALLS: copied into the
+	// theme's fonts\ folder off-thread, then added to [fonts] as one undoable op
+	// (editorTakeFontDrop). With the editor SHUT nothing has changed and the message
+	// below still tells the user what to do by hand.
+	if a.editorTakeFontDrop(path) {
+		return
+	}
 	name := filepath.Base(path)
 	line := "Font " + name + " — drop it in your theme's fonts\\ folder, then add it to [fonts] and point a " +
 		"[fontbind] row at it (Settings → Theme → Open folder)."

@@ -123,12 +123,35 @@ const (
 	// DELETE a row the edit created instead of leaving an override behind that says
 	// exactly what the AO2 tier already said.
 	opSlotRect
+	// opSlotReset: one AO2 widget's [overrides] row REMOVED, putting the widget back
+	// on whatever the tiers below resolve. before carries the row that was there (with
+	// editSlotRowPresent set, or it would not be a reset); after carries the rect the
+	// tiers below give, with the flag CLEAR — which is what makes redo drop the row
+	// again rather than write the baseline into one.
+	opSlotReset
+	// opFontFamily: one [fonts] row — a family name and the file under <theme>/fonts.
+	// The target is a spaceFont target whose index is the row's position in
+	// Sidecar.Fonts; an index equal to len(Fonts) APPENDS. before/after carry
+	// "family<sep>file" as one interned string (fontRowValue), and an EMPTY after
+	// removes the row — which is what makes "delete a family" and "undo an add" the
+	// same code path.
+	opFontFamily
+	// opFontBind: one [fontbind] row — a FontElements class id bound to a [fonts]
+	// family. The target's index is the class's index in theme.FontElements, which is
+	// append-only and therefore a stable identity (TestFontElementsIsAppendOnly);
+	// before/after carry the family, "" meaning "no binding".
+	//
+	// THIS IS THE TIER THAT RENDERS. An element's own `font`/`size` are carried and
+	// not drawn in format 1 (paintElementText's measurement); a class binding is
+	// resolved by applySidecarFonts on every theme apply and changes the real face.
+	opFontBind
 	// editOpKindCount sizes the census tables; never a real kind.
 	editOpKindCount
 )
 
 var editOpKindNames = [editOpKindCount]string{
-	"none", "element field", "element add", "element delete", "widget rect",
+	"none", "element field", "element add", "element delete", "widget rect", "widget reset",
+	"font family", "font binding",
 }
 
 func (k editOpKind) String() string {

@@ -89,6 +89,31 @@ func GeneratorSpecOf(e *Element) GeneratorSpec {
 	return g
 }
 
+// ParseGenParams / WriteGenParams publish the FORMAT'S OWN `gen_params` grammar
+// (v1.90.0 W7b), for the editor's parameter row.
+//
+// WHY PUBLISHED RATHER THAN RE-IMPLEMENTED IN internal/ui. It is the enumnames.go
+// argument applied to a grammar instead of an enum: an editor that split on commas
+// itself would be a SECOND parser of `k = v, k = v` that no gate compares against
+// the first, so the day the reader's trimming, its cap or its empty-key rule
+// changed, the editor would start writing rows the reader silently drops. Here the
+// editor's row round-trips through the very functions the reader and the writer
+// already use — WriteGenParams is formatGenParams, ParseGenParams is genParamsOf —
+// so "what the editor shows" and "what the file means" cannot diverge, and the cap
+// refusal (GenParamCap) reaches the editor as the error it already is.
+//
+// Cold path: an inspector keystroke, never a frame.
+func ParseGenParams(raw string) ([GenParamCap]KV, error) { return genParamsOf(raw) }
+
+// WriteGenParams renders an element's params in the file's own spelling. A nil
+// element is "", which is what a row for a kind with no generator draws.
+func WriteGenParams(e *Element) string {
+	if e == nil {
+		return ""
+	}
+	return formatGenParams(e)
+}
+
 // NormalizeGenName folds a generator name to the spelling the registry is keyed
 // by. Case-insensitive because `generator` is read as free text rather than as an
 // enum (sidecar_read.go), exactly like `shape`: a theme writing "Scanlines" means

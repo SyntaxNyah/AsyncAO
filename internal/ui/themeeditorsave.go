@@ -104,6 +104,45 @@ func (a *App) landEditorSave(err error) {
 	// were already on disk.
 	a.te.doc.dirty = false
 	a.te.note("saved to " + path)
+	a.applyThemeAfterSaveIfTypeChanged()
+}
+
+// applyThemeAfterSaveIfTypeChanged kicks a theme apply when — and ONLY when — the
+// saved file's TYPE tables differ from the ones the faces on screen were resolved from.
+//
+// WHY AN APPLY IS NEEDED AT ALL (v1.90.0 W7b). Geometry and colour are re-baked live by
+// editorApply's own invalidate, and the ART is re-planned and re-landed live by
+// editorSyncArt (themeeditorart.go) — that half is named explicitly because this comment
+// once claimed the whole preview was live while an edited generator went on drawing its
+// OLD tile until the next theme switch. What is left is the TYPE: a [fontbind] row is
+// turned into real SDL_ttf faces by applySidecarFonts, which runs on the theme-apply
+// goroutine against the sidecar ON DISK. Without this, a binding could be edited, saved,
+// and still be drawn in the old face until the user switched themes and back.
+//
+// WHY IT IS GATED ON THE TABLES AND NOT ON "a save happened", which is how it shipped:
+// pollThemeApply re-anchors a.themeAt and re-runs applyThemeClocks (so every clock
+// group in the theme restarts from zero) and calls purgeTextCache(). Design
+// §"Live preview, no Apply button" is normative about it — applyThemeAsync runs only
+// for media/font import and theme switch — so an unconditional kick made saving a rect
+// nudge restart all motion and hitch the text cache, and would do it every two seconds
+// once the design's debounced autosave lands. The comparison is against the last apply
+// THIS DOCUMENT caused (themeDoc.typeSigApplied), not against the last save, so a
+// binding edited and saved twice kicks once.
+//
+// AFTER THE WRITE rather than at the edit, and that ordering is also load-bearing: an
+// apply re-reads the file, so kicking one on an unsaved binding would resolve the OLD
+// file and look like the edit had been thrown away. reclaimThemeDoc re-installs the
+// document over the landed apply, so unsaved geometry in flight survives it.
+func (a *App) applyThemeAfterSaveIfTypeChanged() {
+	if a.te == nil || a.te.doc == nil {
+		return
+	}
+	sig := a.te.doc.typeSig()
+	if sig == a.te.doc.typeSigApplied {
+		return
+	}
+	a.te.doc.typeSigApplied = sig
+	a.applyThemeAsync()
 }
 
 // editorSidecarPath resolves where this theme's asyncao_theme.ini belongs, or the

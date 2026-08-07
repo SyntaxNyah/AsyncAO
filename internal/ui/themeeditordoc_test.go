@@ -47,9 +47,19 @@ func editProbeElement() theme.Element {
 		Rect:   theme.Rect{X: 11, Y: 22, W: 33, H: 44},
 		Rot:    5,
 
-		Media:      "art",
-		Shape:      "hex",
-		Gen:        "grid",
+		Media: "art",
+		Shape: "hex",
+		Gen:   "grid",
+		// GenParams / Slice / NoDecimate are set for the reason the whole fixture is:
+		// the writer's setKey has no DELETE, so a key that started ABSENT and was edited
+		// and reverted keeps the line it grew, and the byte round trip below would fail
+		// for a reason that says nothing about the inverse. `decimate` is the sharpest
+		// case — it is written INVERTED (formatBool(!NoDecimate), default "yes"), so a
+		// probe that left it false would emit nothing, gain `decimate = no` on the edit,
+		// and come back with a line the original never had.
+		GenParams:  [theme.GenParamCap]theme.KV{{Key: "cols", Value: "4"}, {Key: "rows", Value: "2"}},
+		Slice:      [4]int16{3, 4, 5, 6},
+		NoDecimate: true,
 		Fit:        theme.FitContain,
 		Fill:       theme.RGBA{R: 1, G: 2, B: 3, A: 4},
 		Fill2:      theme.RGBA{R: 5, G: 6, B: 7, A: 8},
@@ -102,6 +112,12 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 	return a, doc
 }
 
+// editNonDefaultKind is any element kind that is NOT the writer's default, used to
+// force the `kind` key into a fixture document before its baseline hash is taken (see
+// TestEveryInspectorFieldIsUndoable). ElemImage is the default; index 1 is not, and
+// theme.ElementKindCount is 6, so this is a real kind rather than a wish.
+const editNonDefaultKind = theme.ElementKind(1)
+
 // editUnlockAll clears the probe element's authored lock.
 //
 // The probe is LOCKED by construction (every field non-default, see
@@ -152,7 +168,12 @@ func alterValue(t *testing.T, d *themeDoc, f *inspectorField, v editValue) editV
 		// Alpha forced opaque so the altered colour is unambiguously "present" and the
 		// writer emits it; the revert puts the authored alpha back.
 		out.b = [4]uint8{v.b[0] ^ 0x0F, v.b[1], v.b[2], 255}
-	case fkText, fkMedia, fkFont:
+	case fkText, fkMedia, fkFont, fkPick:
+		// fkPick is altered as free text on purpose, and that is the assertion rather
+		// than a shortcut: every fkPick field is read as FREE TEXT by the format, so a
+		// name outside this build's live list has to survive a write and a read
+		// unchanged. Appending a letter produces exactly such a name ("grid" -> "gridz")
+		// and the hash round trip below is what proves it round-trips.
 		out.s = d.intern(d.str(v.s) + "z")
 	}
 	return out
@@ -229,6 +250,17 @@ func TestEveryInspectorFieldIsUndoable(t *testing.T) {
 		for i := range inspectorFields[k] {
 			f := &inspectorFields[k][i]
 			a, doc := editDocRig(t, 1)
+			// THE `kind` KEY IS FORCED PRESENT BEFORE THE BASELINE, and the reason is the
+			// same one editProbeElement's own comment gives for every other field: setKey
+			// omits a key whose value equals the DEFAULT and which is not already in the
+			// document, but REWRITES it once it is there. The default kind is `image`, so
+			// this loop's image pass would otherwise take its baseline with no `kind` line
+			// at all, gain one on the edit, and come back with a line the original never
+			// had — a false failure that says nothing about the inverse.
+			doc.side.Elements[0].Kind = editNonDefaultKind
+			if _, err := doc.bytes(); err != nil {
+				t.Fatalf("%s/%s: seeding the kind key failed: %v", k, f.label, err)
+			}
 			doc.side.Elements[0].Kind = k
 			if _, err := doc.bytes(); err != nil {
 				t.Fatalf("%s/%s: the fixture does not serialise: %v", k, f.label, err)
