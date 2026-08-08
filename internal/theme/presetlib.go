@@ -128,36 +128,36 @@ func LoadPresetLibrary(src fs.FS) (*PresetLibrary, error) {
 		lib.byID[i] = map[string]*Preset{}
 	}
 	axes := [PresetKindCount]struct {
-		dir  string
 		cap  int
 		into *[]*Preset
 	}{
-		PresetLayout: {presets.LayoutDir, PresetLayoutCap, &lib.layouts},
-		PresetStyle:  {presets.StyleDir, PresetStyleCap, &lib.styles},
+		PresetLayout: {PresetLayoutCap, &lib.layouts},
+		PresetStyle:  {PresetStyleCap, &lib.styles},
 	}
 	for kind, axis := range axes {
-		entries, err := fs.ReadDir(src, axis.dir)
+		dir := presetAxisDir(PresetKind(kind))
+		entries, err := fs.ReadDir(src, dir)
 		if err != nil {
-			return nil, fmt.Errorf("theme: preset dir %s: %w", axis.dir, err)
+			return nil, fmt.Errorf("theme: preset dir %s: %w", dir, err)
 		}
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), presets.FileExt) {
 				continue
 			}
-			p, err := loadOnePreset(src, axis.dir, e.Name())
+			p, err := loadOnePreset(src, dir, e.Name())
 			if err != nil {
 				return nil, err
 			}
 			if PresetKind(kind) != p.Kind {
 				return nil, fmt.Errorf("%w: %s/%s declares kind = %s",
-					ErrPresetAxisDir, axis.dir, e.Name(), p.Kind)
+					ErrPresetAxisDir, dir, e.Name(), p.Kind)
 			}
 			if _, dup := lib.byID[kind][p.ID]; dup {
-				return nil, fmt.Errorf("%w: %s/%s", ErrPresetDuplicate, axis.dir, e.Name())
+				return nil, fmt.Errorf("%w: %s/%s", ErrPresetDuplicate, dir, e.Name())
 			}
 			if len(*axis.into) >= axis.cap {
 				return nil, fmt.Errorf("%w: %s holds more than %d fragments",
-					ErrPresetCap, axis.dir, axis.cap)
+					ErrPresetCap, dir, axis.cap)
 			}
 			lib.byID[kind][p.ID] = p
 			*axis.into = append(*axis.into, p)
@@ -165,6 +165,30 @@ func LoadPresetLibrary(src fs.FS) (*PresetLibrary, error) {
 		sort.Slice(*axis.into, func(i, j int) bool { return (*axis.into)[i].ID < (*axis.into)[j].ID })
 	}
 	return lib, nil
+}
+
+// presetAxisDir is THE mapping from an axis to the directory its fragments live
+// in, and it is a function rather than a pair of literals at each call site
+// because every gate that goes back to a fragment's BYTES has to name the file
+// the loader read. It was spelled out three times before this; the copy that
+// mattered was a corpus lint's, where editing the pair down to one entry quietly
+// halved what got linted. Unknown kinds return "", so a caller outside the enum
+// gets an empty path (and a read error) rather than a plausible-looking one.
+func presetAxisDir(k PresetKind) string {
+	switch k {
+	case PresetLayout:
+		return presets.LayoutDir
+	case PresetStyle:
+		return presets.StyleDir
+	}
+	return ""
+}
+
+// presetFragmentPath is where one fragment ships inside the embedded tree. The
+// id IS the file stem (loadOnePreset refuses any fragment where it is not), so
+// the library's own ids are enough to name every shipped file.
+func presetFragmentPath(k PresetKind, id string) string {
+	return path.Join(presetAxisDir(k), id+presets.FileExt)
 }
 
 // loadOnePreset reads and parses one fragment, checking the stem/id agreement.
@@ -197,33 +221,32 @@ func loadOnePreset(src fs.FS, dir, name string) (*Preset, error) {
 // would allocate 35 pointers on every gallery frame for no property the caller
 // does not already have. Nil-safe, so a library that failed to load renders an
 // empty gallery instead of crashing one.
-func (l *PresetLibrary) Layouts() []*Preset {
-	if l == nil {
-		return nil
-	}
-	return l.layouts
-}
+func (l *PresetLibrary) Layouts() []*Preset { return l.axis(PresetLayout) }
 
 // Styles is Layouts' twin for the other axis.
-func (l *PresetLibrary) Styles() []*Preset {
+func (l *PresetLibrary) Styles() []*Preset { return l.axis(PresetStyle) }
+
+// axis resolves ONE axis by kind, and every other accessor here goes through it.
+// Layouts, Styles and Count used to answer "which slice is this axis" three
+// times; a by-kind caller — the corpus gates walk `k < PresetKindCount` rather
+// than naming the two axes, so that an axis cannot be dropped by editing a list
+// — would have been a fourth. Nil-safe and out-of-range-safe for the same reason
+// Layouts is: a library that failed to load renders an empty gallery.
+func (l *PresetLibrary) axis(k PresetKind) []*Preset {
 	if l == nil {
 		return nil
 	}
-	return l.styles
+	switch k {
+	case PresetLayout:
+		return l.layouts
+	case PresetStyle:
+		return l.styles
+	}
+	return nil
 }
 
 // Count reports how many fragments one axis holds.
-func (l *PresetLibrary) Count(k PresetKind) int {
-	switch {
-	case l == nil:
-		return 0
-	case k == PresetLayout:
-		return len(l.layouts)
-	case k == PresetStyle:
-		return len(l.styles)
-	}
-	return 0
-}
+func (l *PresetLibrary) Count(k PresetKind) int { return len(l.axis(k)) }
 
 // Combinations is the gallery's cell count — the number this wave's headline is.
 func (l *PresetLibrary) Combinations() int {

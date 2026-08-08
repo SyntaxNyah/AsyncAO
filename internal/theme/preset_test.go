@@ -211,11 +211,7 @@ func TestLayoutAndStylePresetKeySetsAreDisjoint(t *testing.T) {
 // that is precisely the kind a disjointness violation would hide in.
 func fragmentSections(t testing.TB, p *Preset) []string {
 	t.Helper()
-	dir := presets.LayoutDir
-	if p.Kind == PresetStyle {
-		dir = presets.StyleDir
-	}
-	raw, err := presets.FS.ReadFile(dir + "/" + p.ID + presets.FileExt)
+	raw, err := presets.FS.ReadFile(presetFragmentPath(p.Kind, p.ID))
 	if err != nil {
 		t.Fatalf("re-read %s: %v", p.ID, err)
 	}
