@@ -133,48 +133,50 @@ perfectly valid AO2 theme that falls through to `default`.
 
 ---
 
-## Dev note
+## What the tests guard
 
-**The parse gate is in.** `TestRepoThemesParse`
-(`internal/theme/repothemes_test.go`) walks every folder here on every run and
-asserts, per theme:
+Every folder here is walked by the suite on each run, so the claims above are
+measured rather than promised.
+
+`TestRepoThemesParse` (`internal/theme/repothemes_test.go`) asserts, per theme:
 
 1. `asyncao_theme.ini` parses with zero errors, zero refusals, **zero degrade
-   notes and zero unknown entries** — in particular the hard caps in
+   notes and zero unknown entries** — including the hard caps in
    `docs/THEME-FORMAT.md` § "Caps — refuse, never truncate", which are
-   **refusals, not truncations**: the audit that asked for this gate found two
-   themes whose `gen_params` lists carried nine entries against the cap of
-   eight, which would have made the whole file unloadable;
+   **refusals, not truncations**: a file over a cap is rejected outright rather
+   than silently trimmed;
 2. `courtroom_design.ini` exists and declares both `courtroom` and `viewport` —
    the pair `applyAO2DefaultRects` gates on. A standalone theme without it gets
    no canvas, and then every `[overrides]` rect and every anchored element is
    silently dropped;
 3. `[media]` is empty in all of them, so the originality claim above is not a
    promise but a test;
-4. and — the property the note could not ask for, because the writer did not
-   exist yet — **every file survives its own writer byte-identically**. These
-   are the only INIs in the tree a human typed, so they are the only round-trip
-   corpus our own writer cannot make self-fulfilling.
+4. **every file survives its own writer byte-identically**. These are the only
+   INIs in the tree a human typed, so they are the only round-trip corpus our
+   own writer cannot make self-fulfilling.
 
-`TestRepoThemesRoundTripThroughTheBundle`
-(`internal/themepack/repothemes_test.go`) is the transport half: each folder is
-bundled into a `.aotheme`, extracted again, and compared file for file. That is
-the drag-a-bundle promise at the top of this file, measured on real themes.
+`TestRepoThemesRoundTripThroughTheBundle` and
+`TestNoRepoThemeBundlesAFontWithoutItsLicence`
+(`internal/themepack/repothemes_test.go`) are the transport half: each folder is
+bundled into a `.aotheme`, extracted again and compared file for file, and no
+bundle may carry a font without its licence. That is the drag-a-bundle promise
+at the top of this file, measured on real themes.
 
-**Still open, and deliberately in `internal/ui` when they land**, because both
-need the slot table that lives there: every `[overrides]` key being in
-`themeSlots` and passing `themeKeyEditable`, and every `[element.*] anchor`
-naming a real slot key with no rect resolving to a zero or negative size.
+The shipped-vocabulary gates in `internal/ui/themeshippedvocab_test.go` read
+these fourteen files directly: every `shape`, `visible_when`, clock and effect
+name they use has to resolve against the live tables, and none of them may emit
+a degrade note.
 
-Three cross-file naming questions are **deliberately left open** for W4, because
-the themes here match the style-preset corpus in `docs/wip/preset-drafts/style/`
-byte for byte and the two must be decided together, not drifted apart:
+## Naming still settling
 
-- `checkerdisc` writes `cells=` / `ring=` where the generator merge doc names
-  the ints `pitch` / `size`;
+These themes and the style presets in `internal/theme/presets/style/` share one
+generator vocabulary, so the two get renamed together rather than drifting
+apart:
+
+- `checkerdisc` writes `cells=` / `ring=` where the generator tables name the
+  ints `pitch` / `size`;
 - `plate`, `grid` and `woodgrain` write `pct=` for `Pcts[0]`, where `grid`'s
   documented extension name is `persp`;
 - `[fonts]` values here are font **classes**, not filenames, and the class
-  vocabulary is not yet pinned (`sans` vs `sans-serif`, `mono` vs `monospace`).
-  Today every one of them degrades identically, so nothing renders wrong — but
-  W4 owns the ladder and should pin the list.
+  vocabulary is not pinned yet (`sans` vs `sans-serif`, `mono` vs `monospace`).
+  Every one of them degrades identically today, so nothing renders wrong.

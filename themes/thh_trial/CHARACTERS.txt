@@ -73,8 +73,8 @@ That is also the busiest spot on the stage: the live character sprite is drawn
 in the same place, and the showcase paints over it. That is deliberate for a
 placeholder and a matter of taste for a real one. If your server's sprites are
 wide and you would rather not cover them, drag the element to one side in the
-editor — the reference this theme is built on puts speakers at the EDGES of the
-field, so a stand at x 20 or x 470 is just as authentic as the centre one.
+editor — this register puts speakers at the EDGES of the field just as often as
+at its centre, so a stand at x 20 or x 470 reads every bit as well.
 
 The magenta pool behind it (`showcase_glow`) is a separate element. Move the
 stand and the pool stays put unless you move it too; delete the pool if you
