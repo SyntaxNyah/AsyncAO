@@ -235,13 +235,36 @@ func (a *App) updateJoinFlash(now time.Time) {
 	}
 }
 
-// rosterRefetchDebounce bounds how often a join/leave re-pulls the rich all-areas
-// snapshot (rosterCmd, below) in live mode — fresh enough, but never a command
-// per packet.
-const rosterRefetchDebounce = 3 * time.Second
+// THE AUTOMATIC ROSTER POLL IS GONE (user order, 2026-08-08, after a live session).
+//
+// There used to be a debounced re-pull (rosterRefetchDebounce, 3 s) driven off the
+// server's own CharsCheck / ARUP / PU packets, so a busy hub re-sent rosterCmd
+// indefinitely. On an old KFO hub that answers it with "You cannot see players in all
+// areas in this hub!" — which is neither an area list nor a command error, so neither
+// the echo suppression nor the unsupported-latch caught it — the client pasted that
+// line into OOC every three seconds for the whole session. The instruction was to
+// delete the legacy poll outright rather than teach it another special case: even a
+// server that will never answer must at least not be spammed.
+//
+// This also CLOSES the v1.82 rate-limit class for good. A timed OOC command queued by
+// a producer that runs while the drain does not is the exact shape that got clients
+// flood-kicked ([[minimized-disconnect-root-cause]]: 68 kicks, /gas bursts of five);
+// the drain-side fix bounded the burst, and with no timed producer left there is
+// nothing to burst.
+//
+// WHAT SURVIVES: the server-pushed PR/PU roster (rebuildLiveRoster — unchanged, and it
+// is the roster wherever the server speaks it), plus the four fetches a PERSON asks
+// for — the Players panel's on-open / area-change pull (playerlist.go), the "Refresh
+// roster details" menu row (musicheader.go), the mod ban box's /getareas
+// (moddashpanel.go), and the one-shot after a successful /login (app.go, EventAuth).
+//
+// THE COST, stated plainly: a server with no PR/PU (old KFO, the Athena/tsuserver
+// family) now has NO self-updating player list beyond the pushed CharsCheck/ARUP rows.
+// Its UIDs/IPIDs refresh only when the user asks. That trade is the user's explicit
+// decision from the field, not an oversight.
 
-// rosterCmd is the all-areas roster command. Named so the poll can check
-// whether one is already queued before adding another (see fetchRoster).
+// rosterCmd is the all-areas roster command. Named so a fetch can check whether one is
+// already queued before adding another (see fetchRoster).
 const rosterCmd = "/gas"
 
 // areaEchoSuppressWindow is how long after a /gas we keep incoming area-list
@@ -270,48 +293,36 @@ const areaEchoSuppressWindow = 3 * time.Second
 // What does not exist is a single UNIVERSAL string, and "/players -a" is the
 // dangerous near-miss: Whisker maps players onto its own cmd_ga and passes no
 // arguments at all (Whisker/src/commands.c3:78), so there it would quietly return
-// only the CURRENT area — a silently wrong roster instead of an error. This poll
-// therefore stays one compile-time constant, and the machinery around it is keyed
-// to that: oocQueuePending(rosterCmd) matches an already-queued copy by exact
-// string equality (macros.go:137), and the refusal latch is spelling-blind — any
-// command error inside the suppression window sets the single rosterCmdUnsupported
-// flag (app.go:9949), which records that THE poll was refused, never which
-// spelling was. Making the poll family-aware is a change to both of those, not a
-// swap of this const.
+// only the CURRENT area — a silently wrong roster instead of an error. This pull
+// therefore stays one compile-time constant, and the one piece of machinery still
+// keyed to that is oocQueuePending(rosterCmd), which matches an already-queued copy
+// by exact string equality (macros.go:137). Making the pull family-aware means
+// revisiting that match, not just swapping this const.
 //
-// Being WRONG here is not merely inert: it repeats for the life of the session,
-// and an unanswerable command every rosterRefetchDebounce is the flood shape that
-// got clients kicked (docs/KNOWN-ISSUES.md, "Why some servers never showed it").
-// So the fixed spelling ACCEPTS being switched off wherever /gas is unregistered:
-// Akashi/WAP, tsuserver3/KFO and Athena all answer a command error ("Invalid
-// command." — akashi/src/commands/command_helper.cpp:33,
-// Athena/internal/athena/commands.go:392), looksLikeCommandError latches
-// rosterCmdUnsupported, and the poll stops for that session. The cost, stated
-// plainly: on those servers NO all-areas snapshot is ever pulled again.
-//   - Akashi/WAP and KFO push the 2.11 live list (serverhelp.go plist), so the
-//     roster itself is complete anyway; what is lost is the mod-only IPID for
-//     players in OTHER areas.
-//   - Athena and tsuserver3 have no live list at all (serverhelp.go:79, :121), so
-//     there the whole all-areas snapshot is lost. What is left is the pushed
-//     CharsCheck/ARUP rows plus "Refresh roster details" (rosterDetailCmd), which
-//     does ask in that server's own spelling (on Athena the /players this poll
-//     cannot use) — but that is CURRENT-area detail only.
+// (There used to be a second: a spelling-blind refusal latch that disabled the pull
+// for the session on any command error. It went with the automatic poll — see
+// maybeRefetchRoster's obituary below — because with every fetch now coming from a
+// button, silently disabling one is worse than letting the server's refusal print.)
 //
-// Shared by the on-open fetch, the mod IPID refresh, and the on-auth pull.
+// Being wrong here used to be a repeating cost, because the poll re-sent it forever;
+// now every caller is a person, so a server that does not register /gas answers once,
+// to a press, and the user sees the answer. Akashi/WAP, tsuserver3/KFO and Athena all
+// reply with a command error ("Invalid command." —
+// akashi/src/commands/command_helper.cpp:33, Athena/internal/athena/commands.go:392),
+// and an old KFO hub may instead reply "You cannot see players in all areas in this
+// hub!". Either way the fallback for those families is the current-area
+// "Refresh roster details" row, which DOES ask in that server's own spelling
+// (rosterDetailCmd).
+//
+// Shared by the Players-panel pull, the mod IPID refresh, and the on-auth pull.
 func (a *App) fetchRoster() {
-	if a.rosterCmdUnsupported {
-		return // this server rejected /gas earlier — don't re-spam it
-	}
 	if a.oocQueuePending(rosterCmd) {
-		// One /gas is already waiting to go out. Stacking another buys nothing
-		// (they'd return the same snapshot) and, if the drain is running behind,
-		// several identical commands leaving close together look like OOC
-		// flooding to the server. Re-stamp the debounce so the poll backs off
-		// until this one has actually been sent.
-		a.lastRosterFetch = a.now()
+		// One /gas is already waiting to go out. Stacking another buys nothing (they
+		// would return the same snapshot) and, if the drain is running behind, several
+		// identical commands leaving close together look like OOC flooding to the
+		// server — so a double-press collapses to one command.
 		return
 	}
-	a.lastRosterFetch = a.now()
 	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
 	a.pairAreaReset = true
 	a.queueOOCLines([]string{rosterCmd})
@@ -338,8 +349,10 @@ func (a *App) fetchRoster() {
 //     players or the short aliases (akashi/src/aoclient.cpp:28-29), and
 //     tsuserver3/KFO define ooc_cmd_getarea/getareas only
 //     (KFO-Server/server/commands/areas.py:271,288). That is why a /gas on those
-//     answers "Invalid command" and latches rosterCmdUnsupported
-//     (docs/KNOWN-ISSUES.md, "Why some servers never showed it").
+//     answers "Invalid command" — which now simply prints in the OOC log next to the
+//     press that caused it. (It used to latch a session-long refusal flag instead;
+//     docs/KNOWN-ISSUES.md, "Why some servers never showed it", is the incident
+//     write-up for the automatic poll that needed one.)
 const (
 	rosterCmdPlayers = "/players"
 	rosterCmdGetarea = "/getarea"
@@ -366,50 +379,17 @@ func (a *App) rosterDetailCmd() string {
 	return rosterCmdGetarea
 }
 
-// looksLikeCommandError reports whether an OOC line is a server "command not
-// recognised" reply (the response to a /gas the server doesn't support). Only
-// consulted inside the post-fetch window, so a real chat line can't trip it.
-func looksLikeCommandError(text string) bool {
-	t := strings.ToLower(text)
-	return strings.Contains(t, "unknown command") ||
-		strings.Contains(t, "invalid command") ||
-		strings.Contains(t, "not a command") ||
-		strings.Contains(t, "command not found")
-}
-
-// maybeRefetchRoster re-pulls the all-areas snapshot (fetchRoster, i.e. rosterCmd
-// — NOT /getareas; the two spellings are not interchangeable, see the const block
-// above), debounced. On the PR/PU path the ONLY thing that fetch adds over the
-// live roster is mod-only IPID, so it polls only while a mod still has rows
-// without one — once they land (or for a non-mod, who can't see IPIDs at all) the
-// list stays event-driven and quiet. The pre-PR/PU fallback keeps the old
-// always-refresh behaviour (it needs the fetch for UIDs).
-func (a *App) maybeRefetchRoster() {
-	if a.rosterLegacy || a.sess == nil {
-		return
-	}
-	if a.livePlayersOn && (!a.sess.ModGranted || !a.liveRosterMissingIPID()) {
-		return
-	}
-	if a.now().Sub(a.lastRosterFetch) < rosterRefetchDebounce {
-		return
-	}
-	a.fetchRoster()
-}
-
-// liveRosterMissingIPID reports whether any live row with a CHARACTER still has a
-// UID but no IPID — the signal a mod needs a /getareas pull to fill them in.
-// Spectators are excluded: a server may omit them from /getareas, and counting
-// them would poll forever.
-func (a *App) liveRosterMissingIPID() bool {
-	for i := range a.liveRoster {
-		r := &a.liveRoster[i]
-		if r.uid != "" && r.ipid == "" && r.name != specName {
-			return true
-		}
-	}
-	return false
-}
+// maybeRefetchRoster is DELETED, and so are looksLikeCommandError and
+// liveRosterMissingIPID, which existed only to serve it. It re-pulled the all-areas
+// snapshot off EventCharsUpdated / EventAreasUpdated / EventPlayersUpdated on a 3 s
+// debounce; the header comment above records why the whole automatic tier is gone and
+// what replaced it. Its mod-IPID self-gate is the part worth naming, because it looked
+// self-limiting and was not: `ModGranted && liveRosterMissingIPID()` never settles on a
+// server whose roster reply carries no IPIDs at all, so a logged-in mod there polled
+// every 3 s for the length of the session. TestOnlyUserActionsFetchTheRoster
+// (rosterpoll_test.go) is the deletion catcher — a new automatic caller of fetchRoster
+// fails it, and TestNoSessionEverFiresATimedRosterPoll in the same file floods the
+// client with the packets that used to drive the poll and asserts nothing goes out.
 
 // rosterView is the player list's active data: the live (CharsCheck/ARUP) roster
 // by default, or the /getarea snapshot in legacy mode. The pair popup always uses

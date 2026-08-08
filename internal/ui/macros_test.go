@@ -56,11 +56,14 @@ func TestMacroQueuePacing(t *testing.T) {
 
 // TestOOCQueueNeverBursts pins the minimized-disconnect fix.
 //
-// The live-roster poll queues a /gas OOC command every rosterRefetchDebounce.
-// Its producer runs in App.Background (which DOES run while the window is
+// The live-roster poll used to queue a /gas OOC command every 3 seconds.
+// Its producer ran in App.Background (which DOES run while the window is
 // minimized); the drain used to run only in Frame (which does NOT). So the
 // queue filled for the whole occlusion and then flushed every due entry in one
-// pass on the first restored frame. Servers count OOC per IP — Nyathena kicks
+// pass on the first restored frame. That timed producer is now DELETED outright
+// (liveroster.go, 2026-08-08) — this pins the drain-side half, which still guards
+// every remaining producer: macros, auto-login, and the manual roster fetches.
+// Servers count OOC per IP — Nyathena kicks
 // at 4/s (and at message_rate_limit ≈ 1.4/s) via KickForRateLimit, which closes
 // the socket synchronously while its explanation is still queued, so the client
 // saw a bare close with no reason.
@@ -102,8 +105,10 @@ func TestOOCQueueNeverBursts(t *testing.T) {
 }
 
 // TestFetchRosterDoesNotStackDuplicates pins the other half of the same bug: a
-// stalled drain must not let the 3-second roster poll pile identical /gas
-// commands into the queue, or clearing the backlog re-creates the burst.
+// stalled drain must not let repeated fetches pile identical /gas commands into the
+// queue, or clearing the backlog re-creates the burst. The 3-second automatic poll
+// this was written against is deleted; the de-dup still matters, because a person
+// can hammer the Players panel's refresh.
 func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
 	a := testTabApp(t)
 	a.sess = courtroom.NewRehearsalSession("", nil)
@@ -114,9 +119,10 @@ func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
 	if len(a.oocQueue) != 1 {
 		t.Fatalf("first fetch queued %d, want 1", len(a.oocQueue))
 	}
-	// Poll repeatedly with the drain stalled — the queue must not grow.
+	// Press repeatedly with the drain stalled — the queue must not grow.
+	const pressGap = time.Second
 	for i := 1; i <= 20; i++ {
-		a.frameNow = t0.Add(time.Duration(i) * rosterRefetchDebounce)
+		a.frameNow = t0.Add(time.Duration(i) * pressGap)
 		a.fetchRoster()
 	}
 	if len(a.oocQueue) != 1 {

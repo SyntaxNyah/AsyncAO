@@ -251,7 +251,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 		if f == nil {
 			continue
 		}
-		if h := int32(f.Height()); h > lineH {
+		if h := FontLineSpacing(f); h > lineH {
 			lineH = h
 		}
 		if a := int32(f.Ascent()); a > ascent {

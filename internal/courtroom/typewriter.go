@@ -34,13 +34,31 @@ const (
 	blipSpamCrawlNum = 25
 	blipSpamCrawlDen = 40
 
-	// instantRevealBlipCap bounds the blips one Update may emit from runes whose
-	// per-character delay is ZERO (speed step 0, i.e. `}}}`), because the whole
-	// remainder of such a message becomes visible inside a single tick. AO2 never
-	// hits this: its chat_tick is a Qt timer that fires once per character, so
-	// "instant" there still walks the string one timer shot at a time. Reveal is
-	// unaffected — only the blip burst is capped.
-	instantRevealBlipCap = 1
+	// blipsPerUpdate bounds the blips ONE Update may emit, and it is the whole of
+	// AsyncAO's departure from AO2's blip timing.
+	//
+	// AO2 sounds its blip from inside a chat_tick delivery (`blip_player->playBlip()`,
+	// AO2-Client courtroom.cpp:4545), and chat_tick is a one-shot QTimer: it STOPS on
+	// entry (:4271) and re-arms from the handling instant on the way out (:4586). So AO2
+	// submits at most one blip per delivery and any two blips are separated by real
+	// time — a blocked Qt event loop makes its crawl LATE, never louder.
+	//
+	// One AsyncAO Update is one delivery, but unlike AO2's it can carry several runes,
+	// because its dt is whatever the caller's step happens to be: a frame that took
+	// 100 ms at the 40 ms default crawl (cmd/asyncao/main.go's maxFrameDelta clamps a
+	// hitch to exactly that), or an exporter stepping the room at 1s/8 fps
+	// (internal/ui/gifexport.go). Sounding every due blip there hands the mixer N chunks
+	// in the SAME INSTANT, which is not a fast rhythm — it is one louder blip with the
+	// cadence gone, the reported symptom. (A `}}}` span also reveals many runes at once
+	// and is NOT why this exists: those runes take AO2's zero-delay fast path in Update
+	// and never reach the blip code at all.)
+	//
+	// The budget therefore sits on the AUDIBLE half ONLY; the reveal stays proportional
+	// to dt (see Update). Capping the reveal instead coupled the crawl to the caller's
+	// step rate: the exporters captured a fraction of the requested crawl and truncated
+	// the line at their frame cap, and the text-speed slider stopped reaching any crawl
+	// faster than the display refresh (config.MinTextCrawlMs is 5 ms = 200 runes/s).
+	blipsPerUpdate = 1
 )
 
 // speedMultipliers scales the base interval per AO speed step. Index 3 is
@@ -749,12 +767,40 @@ func (t *Typewriter) NextEffect() (EffectMark, bool) {
 // Update advances the reveal by dt. It returns how many new runes became
 // visible and how many blips to fire this tick. The render thread's frame
 // cost stays O(revealed) — no per-character layout here (spec §12).
+//
+// REVEAL POLICY. The reveal is PROPORTIONAL to dt and deliberately uncapped: every
+// rune whose accumulated delay has elapsed becomes visible in this call. Update's
+// callers do not share a step size — the frame loop passes real elapsed time (bounded
+// by cmd/asyncao/main.go's maxFrameDelta, 100 ms, precisely so time-driven state
+// "resumes smoothly instead of bursting the backlog"), and the scene/GIF/WebP/video
+// exporters step the room at their own 1s/fps (internal/ui/gifexport.go, presets 8-24
+// fps) — so a per-call rune budget is really a hidden second speed knob keyed to the
+// caller's frame rate. The fractional accumulator is what keeps the AVERAGE cadence
+// exactly on the user's crawl; reveal-and-reset would quantise it onto the step grid.
+//
+// Only the BLIPS carry a per-call budget (blipsPerUpdate), because they are the half a
+// coarse step turns into one overlapping sound instead of a rhythm. That IS AO2's own
+// limit: one blip per chat_tick delivery (courtroom.cpp:4545, timer re-armed at :4586).
+//
+// ZERO-DELAY RUNES (speed step 0, `}}}`) reveal their whole remainder in one call and are
+// SILENT, which is AO2 transcribed rather than a concession: chat_tick's guard
+//
+//	if ((msg_delay <= 0 && tick_pos < f_message.size() - 1) || formatting_char) {
+//	  chat_tick_timer->start(0); ... }   // :4479-4484
+//
+// re-arms immediately and RETURNS before the render branch, so those characters reach
+// neither playBlip nor `++blip_ticker`: a `}}}` span sounds nothing and leaves the line's
+// blip phase exactly where it began. The clause's own exception is transcribed with it —
+// `tick_pos < f_message.size() - 1` means the message's LAST character falls through even
+// at speed 0, so an all-instant message still blips once. Leaving these runes to the
+// per-delivery budget alone (one blip per Update) would both invent a blip AO2 never
+// sounds and, by ticking on every instant rune, shift every later blip by one character
+// after an odd-length span.
 func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 	if t.Done() {
 		return 0, 0
 	}
 	t.accumulator += dt
-	instant := 0 // blips already emitted this tick from zero-delay runes
 	for !t.Done() {
 		need := t.intervals[t.visible]
 		if need > 0 && t.accumulator < need {
@@ -764,24 +810,69 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 		r := t.runes[t.visible]
 		t.visible++
 		revealed++
-
-		if (r != ' ' && r != '\n') || t.BlipOnSpaces {
-			t.blipCounter++
-			if t.blipCounter%t.effectiveBlipRate(need) != 0 {
-				continue
-			}
-			if need == 0 {
-				// A 0× run reveals its whole remainder inside this one Update;
-				// firing a blip per rune would machine-gun (see instantRevealBlipCap).
-				if instant >= instantRevealBlipCap {
-					continue
-				}
-				instant++
-			}
-			blips++
+		if need <= 0 && !t.Done() {
+			continue // AO2's zero-delay fast path: no sound, no ticker (see above)
+		}
+		if t.tickBlip(r, need) && blips < blipsPerUpdate {
+			blips++ // due AND within this delivery's audible budget
 		}
 	}
 	return revealed, blips
+}
+
+// tickBlip advances AO2's blip_ticker for one just-revealed rune and reports whether
+// that rune is DUE to sound a blip. Transcribed from Courtroom::chat_tick
+// (AO2-Client courtroom.cpp:4540-4555):
+//
+//	if ((blip_rate <= 0 && blip_ticker < 1) || (b_rate > 0 && blip_ticker % b_rate == 0)) {
+//	  if (!formatting_char && (f_character != ' ' || blank_blip)) { playBlip(); ++blip_ticker; }
+//	} else { ++blip_ticker; }
+//
+// Four rules fall out of that shape, and all four are load-bearing:
+//
+//   - the ticker is TESTED BEFORE it is advanced and starts at 0 (reset per message at
+//     :4233), so the FIRST printed character blips — not the second;
+//   - whitespace landing on a DUE tick neither blips nor advances: the tick waits for a
+//     letter to land on (AO2's own comment, :4550-4553);
+//   - whitespace landing on a NON-DUE tick DOES advance, so spaces shift the phase of
+//     everything after them. "a b c d" at rate 2 blips on all four letters;
+//   - a line break is NEITHER of those. `\n` is a formatting_char (:4436-4439), so
+//     chat_tick's :4479 guard diverts it before the blip block is ever reached: it hits
+//     neither playBlip (:4545) nor either ++blip_ticker (:4546,:4554). It is silent AND
+//     phase-neutral in every blank_blip setting. Treating it as a space instead lets it
+//     tick when it lands on a non-due rune, which puts every blip after the break one
+//     character out of phase.
+//
+// AO2's `blip_rate <= 0` clause (a rate of 0 sounds exactly once per message) is not
+// reachable here and is deliberately not transcribed: the rate is a preference clamped
+// to config.MinBlipRate == 1, and effectiveBlipRate floors it at 1 for direct callers.
+//
+// Update calls this for the runes that reach AO2's RENDER branch, plus the `\n`s that in
+// AO2 do not: a zero-delay rune short-circuits before this function, exactly as the :4479
+// guard does, so nothing here needs a `need == 0` special case — but a `\n` still arrives
+// with a normal delay, because we deliberately do NOT give it AO2's instant start(0)
+// reveal. That is a reveal-PACING difference (a line break costs one crawl tick here and
+// none in AO2), out of scope for the blip phase this function owns; the guard below
+// restores only the blip half of :4479.
+//
+// Whether the due blip is actually SOUNDED is Update's call (blipsPerUpdate) — the
+// ticker keeps AO2's phase either way, so a blip dropped for being simultaneous with
+// another does not shift the rhythm of the rest of the line.
+func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
+	if r == '\n' {
+		// AO2: `\n` is a formatting_char (:4436-4439) and never reaches the blip
+		// block (:4479) — no sound, no ticker, whatever blank_blip says.
+		return false
+	}
+	if t.blipCounter%t.effectiveBlipRate(need) != 0 {
+		t.blipCounter++ // AO2's else branch: keep ticking, whitespace included
+		return false
+	}
+	if r == ' ' && !t.BlipOnSpaces {
+		return false // due, but there is no letter to sound it on yet
+	}
+	t.blipCounter++
+	return true
 }
 
 // effectiveBlipRate is AO2's per-character blip period for a rune whose delay is

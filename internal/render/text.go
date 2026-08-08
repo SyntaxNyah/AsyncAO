@@ -240,7 +240,7 @@ func Rasterize(ren *sdl.Renderer, font *ttf.Font, text string, wrapW int32, colo
 		devScale = DefaultDevScale
 	}
 	wrapW = wrapW * devScale / DefaultDevScale // measure the wrap against the DEVICE glyphs
-	m := &MessageRaster{text: text, lineH: int32(font.Height()), devScale: devScale}
+	m := &MessageRaster{text: text, lineH: FontLineSpacing(font), devScale: devScale}
 	if strings.TrimSpace(text) == "" {
 		return m, nil
 	}
@@ -313,7 +313,7 @@ func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []Col
 		devScale = DefaultDevScale
 	}
 	wrapW = wrapW * devScale / DefaultDevScale // measure the wrap against the DEVICE glyphs (see Rasterize)
-	m := &MessageRaster{text: text, lineH: int32(font.Height()), styled: [][]rasterSpan{}, devScale: devScale}
+	m := &MessageRaster{text: text, lineH: FontLineSpacing(font), styled: [][]rasterSpan{}, devScale: devScale}
 	runes := []rune(text)
 	if len(runes) == 0 {
 		return m, nil

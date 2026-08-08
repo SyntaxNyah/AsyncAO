@@ -58,14 +58,13 @@ package ui
 //     the choice of three buttons is acceptable; replacing them with a row that answers
 //     "unknown command" would not be.
 //
-//     That is NOT justified by "the automatic pull already sends /gas". It does
-//     (liveroster.go: fetchRoster), but neither always nor everywhere, and the trio's
-//     own mode is the gap: both call sites are gated on `!a.rosterLegacy` (the on-open
-//     fetch in drawPlayerList and maybeRefetchRoster), so in the LEGACY snapshot mode
-//     these three buttons actually lived in, the automatic pull never runs at all.
-//     rosterCmdUnsupported (liveroster.go, latched in pushOOC when the reply is a
-//     command error) exists precisely because a server can reject /gas, after which
-//     the pull stops for the rest of the session. And serverhelp.go flags five server
+//     That was NOT justified by "the automatic pull already sends /gas" even while such
+//     a pull existed: it ran neither always nor everywhere, and the trio's own mode was
+//     the gap — its call sites were gated on `!a.rosterLegacy`, so in the LEGACY snapshot
+//     mode these three buttons actually lived in, the automatic pull never ran at all.
+//     The automatic tier has since been deleted outright (liveroster.go), which only
+//     sharpens the point: every /gas is now a press, a server that does not register it
+//     answers that press with a command error, and serverhelp.go flags five server
 //     entries with no 2.11 player list at all, whose roster it describes as entirely
 //     /getarea-driven.
 //

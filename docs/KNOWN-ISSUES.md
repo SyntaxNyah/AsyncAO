@@ -156,7 +156,9 @@ The Players tab is not fed by a live channel. `drawPlayerList`
 (`internal/ui/playerlist.go`) builds its rows by parsing the server's `/getarea`
 reply, and the pair column comes from there — AO has no per-player packet, only
 ARUP area counts, so the roster is refresh-driven and stamped as of its last
-fetch. `maybeRefetchRoster` re-runs that fetch on join and leave.
+fetch. That fetch used to re-run itself on join and leave (`maybeRefetchRoster`);
+since 2026-08-08 the whole automatic tier is DELETED (see "The automatic roster
+poll is gone" below), so it re-runs only when the user asks.
 
 A pair change is neither a join nor a leave, so nothing re-runs it. The client
 that set the pair renders it immediately because it knows locally; the partner's
@@ -244,8 +246,9 @@ The absence of a reason in fact points the other way: it is the signature of an
 automated guard, whose explanation is queued asynchronously and loses the race
 against a synchronous close.
 
-**The actual mechanism.** The live-roster poll queues a `/gas` OOC command every
-`rosterRefetchDebounce` (3 s, `internal/ui/liveroster.go`). Its **producer** runs
+**The actual mechanism.** The live-roster poll queued a `/gas` OOC command every
+`rosterRefetchDebounce` (3 s, `internal/ui/liveroster.go`) — that poll no longer
+exists, see the next entry. Its **producer** ran
 in `App.Background`, which keeps running while the window is minimized; the
 **drain**, `processOOCQueue`, ran only in `App.Frame`, which does not —
 `cmd/asyncao/main.go` continues the loop before ever reaching `Frame` in that
@@ -266,10 +269,10 @@ that wants real time); it merely removed the accident that had been rate-limitin
 the poll.
 
 **Why some servers never showed it.** Akashi registers only `getareas`
-(`akashi/src/aoclient.cpp`) — there is no `gas` — so it answers "Invalid
-command", the client latches `rosterCmdUnsupported` and disables the poll
-permanently for that session, and the queue never grows. Nyathena registers
-`gas`, so the poll runs for the life of the connection. The server-dependence
+(`akashi/src/aoclient.cpp`) — there is no `gas` — so it answered "Invalid
+command", the client latched `rosterCmdUnsupported` and disabled the poll
+permanently for that session, and the queue never grew. Nyathena registers
+`gas`, so the poll ran for the life of the connection. The server-dependence
 was a command-registration difference, never a transport difference.
 
 **The fix**, three layers, each sufficient on its own: `processOOCQueue` releases
@@ -282,3 +285,38 @@ is already pending (`oocQueuePending`), so a slow drain cannot stack duplicates.
 Deliberately **not** fixed by reconnecting. A correct client should not be
 disconnecting in the first place, so the v1.81.4 behaviour (drop to the lobby,
 auto-reconnect off by default) is unchanged.
+
+## The automatic roster poll is gone — no self-updating player list without PR/PU
+
+**Decision, not a defect** (user order, 2026-08-08, from a live session).
+
+The client used to re-pull the all-areas roster (`/gas`) off the server's own
+`CharsCheck` / `ARUP` / `PU` pushes on a 3 s debounce (`maybeRefetchRoster`,
+`internal/ui/liveroster.go`). On an old KFO hub that answers it with
+"You cannot see players in all areas in this hub!" — a line that is neither an
+area list nor a recognised command error, so neither the echo suppression nor the
+unsupported-command latch caught it — the client pasted that reply into OOC every
+three seconds for the whole session. The instruction was to delete the legacy
+tier outright rather than teach it another special case: even a server that will
+never answer must at least not be spammed.
+
+It also closes the rate-limit class above for good. A timed OOC command whose
+producer runs in `Background` is the exact shape that got clients flood-kicked;
+the drain-side fix bounded the burst, and with no timed producer left there is
+nothing to burst.
+
+**What survives.** The server-pushed PR/PU live roster (unchanged — it is the
+roster wherever the server speaks it), and the four fetches a PERSON asks for:
+the Players panel's on-open / area-change pull, the "Refresh roster details" menu
+row, the mod ban box's `/getareas`, and the one-shot after a successful `/login`.
+A server that refuses the command now says so in OOC, once per press, instead of
+being silently latched off — with nothing sending it on a clock, the answer to a
+button belongs on screen.
+
+**The cost, stated plainly.** A server with no PR/PU (old KFO, the
+Athena/tsuserver family) has NO self-updating player list beyond the pushed
+CharsCheck/ARUP rows: its UIDs, IPIDs and OOC names refresh only when the user
+asks. That is the accepted trade, not an oversight.
+
+Pinned by `TestNoSessionEverFiresATimedRosterPoll` and
+`TestOnlyUserActionsFetchTheRoster` (`internal/ui/rosterpoll_test.go`).

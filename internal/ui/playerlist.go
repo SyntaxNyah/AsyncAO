@@ -209,8 +209,10 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.playerPct = a.logPct
 	}
-	// Pull the rich /getarea snapshot (UIDs/IPIDs/Pair) when the live tab first
-	// opens and on each area change; join/leave refreshes it via maybeRefetchRoster.
+	// Pull the rich /getarea snapshot (UIDs/IPIDs/Pair) when the live tab first opens
+	// and on each area change. Nothing refreshes it on join/leave any more — that was
+	// maybeRefetchRoster, deleted with the whole automatic tier (liveroster.go) — so the
+	// top-up for stale rows is the person pressing "Refresh roster details".
 	if !a.rosterLegacy && a.sess != nil && a.liveDetailsArea != a.curArea {
 		a.liveDetailsArea = a.curArea
 		a.fetchRoster()

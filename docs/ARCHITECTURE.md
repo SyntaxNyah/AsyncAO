@@ -71,8 +71,11 @@ minimized (that branch `continue`s before `Frame` is ever reached). So a produce
 that runs in `Background` while its consumer runs only in `Frame` accumulates for
 the whole occlusion and then flushes as one burst on the first restored frame.
 That is precisely how an idling minimized client disconnected itself: the live
-roster queued a `/gas` OOC command every `rosterRefetchDebounce` (3 s) from
-`Background`, while `processOOCQueue` — the drain — ran only in `Frame`. Servers
+roster queued a `/gas` OOC command every 3 s from `Background`, while
+`processOOCQueue` — the drain — ran only in `Frame`. (That poll was deleted
+outright on 2026-08-08 — see KNOWN-ISSUES.md, "The automatic roster poll is
+gone" — so the class now has no producer left at all; the two invariants below
+still bind every remaining automated sender.) Servers
 count OOC per IP and kick on breach; the kick closes the socket synchronously
 while its explanation is still queued asynchronously, so the client sees a bare
 close carrying no reason at all.

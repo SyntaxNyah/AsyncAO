@@ -113,6 +113,15 @@ func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 	// (full text, still on stage). A huge dt collapses each phase timer; the viewport
 	// advances with it so the sprite shows its talking pose, not a frozen preanim frame.
 	for i := 0; i < comicAdvanceSteps && j.room.Phase() != courtroom.PhaseLinger && j.room.Phase() != courtroom.PhaseIdle; i++ {
+		// A comic panel is a STILL of the FINISHED line, so say that outright rather
+		// than leaning on the step size to collapse the crawl. comicBigStep would in
+		// fact reveal the whole line (Typewriter.Update's reveal is proportional to dt),
+		// but only by ALSO burning one loop iteration per phase — and the blip budget
+		// (courtroom.blipsPerUpdate) means a fast-forwarded line would still be dribbling
+		// blips at the silent-sink boundary. Saying "this line is done" is the honest
+		// instruction and it does not depend on any pacing constant. Idempotent, and
+		// harmless before the text phase begins.
+		j.room.Typewriter.SkipToEnd()
 		j.room.Update(comicBigStep) // collapse the room's phase timers (no spin: it clamps)
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.Update(&j.room.Scene, comicViewportStep) // sane step so a looping sprite can't spin

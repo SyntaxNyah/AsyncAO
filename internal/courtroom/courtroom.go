@@ -1508,8 +1508,15 @@ func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
-	c.fireMessageEffects(msg)
-	c.armSFXDelay(msg)
+	// The emote SFX arms HERE (AO2 starts sfx_delay_timer inside play_preanim,
+	// courtroom.cpp:4054 — before the preanim's own art is even checked), but the
+	// message EFFECTS do not: do_effect lives in start_chat_ticking (:4154-4172), which
+	// a blocking preanim only reaches through preanim_done → handle_ic_speaking
+	// (:4108-4118 → :3506). So the overlay, its sound and the legacy flash/shake fire
+	// when the TEXT starts — see startTalking.
+	if preanimSFXPlays(msg) {
+		c.armSFXDelay(msg)
+	}
 	// !preanimDone: begin() resets the flag, so it can only be true here when
 	// NotifyAssetMissing landed while the shout bubble held the stage — the
 	// preanim conclusively 404'd and hijacking Active with it would draw a
@@ -1547,6 +1554,32 @@ func (c *Courtroom) enterAfterShout() {
 		return
 	}
 	c.startTalking()
+}
+
+// preanimSFXPlays reports whether this message's emote SFX may play at all — the
+// gate AO2 puts on the whole sfx_delay_timer, not on the sound itself.
+//
+// CANON. play_sfx (courtroom.cpp:4590-4607) is wired to exactly one trigger,
+// sfx_delay_timer (:432), and that timer is started in exactly one place:
+// play_preanim (:4054). handle_emote_mod reaches play_preanim only for
+//
+//	PREANIM / PREANIM_ZOOM              → play_preanim(false)   (:2892-2896)
+//	IDLE / ZOOM *with* immediate ticked → play_preanim(true)    (:2897-2910)
+//
+// so a plain IDLE/ZOOM message NEVER plays its SFX_NAME in AO2, whatever the field
+// carries. That is the receive half of the field report: AsyncAO armed the delay for
+// every message, so a "SFX: auto" line sent with Pre unchecked still fired the emote's
+// char.ini sound.
+//
+// Note where the start sits: :4054 is BEFORE the `file_exists(anim_to_find)` check at
+// :4056, so a preanim whose ART is missing still plays the sound. The gate is the emote
+// MOD, never whether the sprite resolved — which is why this deliberately does not reuse
+// enterAfterShout's `playPre` (that one also consults hasPreanim / the missing-sprite
+// cache, both of which are about what to DRAW).
+func preanimSFXPlays(msg *protocol.ChatMessage) bool {
+	return msg.EmoteMod == protocol.EmoteModPreanim ||
+		msg.EmoteMod == protocol.EmoteModPreanimZoom ||
+		msg.Immediate
 }
 
 // armSFXDelay schedules the message's emote SFX and (for preanim mods) its
@@ -1660,12 +1693,24 @@ func (c *Courtroom) fireInlineEffect(m EffectMark) {
 	}
 }
 
-// startTalking begins the typewriter reveal.
+// startTalking begins the typewriter reveal. It IS AO2's start_chat_ticking
+// (courtroom.cpp:4120-4261), so everything canon does there happens here.
 func (c *Courtroom) startTalking() {
 	// Talk/idle desk column (AO2 set_scene at start_chat_ticking,
 	// courtroom.cpp:4134-4152). Restores the pair/offset a preanim's mod-4 hide
 	// may have zeroed, and flips mod-2/3 desk visibility for the talk phase.
 	c.applyDeskMods(false)
+	// The 2.8 EFFECTS field — the overlay, its sound, and the legacy
+	// realization/screenshake fallback — fires HERE, not at message start.
+	// start_chat_ticking runs do_effect at :4154-4172, immediately after that same
+	// set_scene block, and a BLOCKING preanim only reaches start_chat_ticking through
+	// preanim_done → handle_ic_speaking (:4108-4118 → :3506). Firing it in
+	// enterAfterShout instead put a "realization" flash and the effect's sound at the
+	// START of a preanim, one whole preanim ahead of where AO2 puts them. Idle
+	// messages are unaffected: for them enterAfterShout falls straight through to here.
+	if c.current != nil {
+		c.fireMessageEffects(c.current)
+	}
 	// 2.8 additive (#14): an ADDITIVE=1 continuation starts with the prior
 	// accumulated text pre-revealed (StartAppend), so only the appended tail crawls
 	// + blips; a plain message starts from empty. MessageRaw is the concatenation so

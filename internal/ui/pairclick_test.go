@@ -256,18 +256,9 @@ func TestLooksLikeAreaList(t *testing.T) {
 	}
 }
 
-// TestLooksLikeCommandError pins the /gas "unsupported command" detector (#59):
-// server command-error replies match, ordinary chat that merely mentions
-// "command" does not.
-func TestLooksLikeCommandError(t *testing.T) {
-	for _, s := range []string{"Unknown command.", "Invalid command", "that is not a command", "command not found"} {
-		if !looksLikeCommandError(s) {
-			t.Errorf("looksLikeCommandError(%q) = false, want true", s)
-		}
-	}
-	for _, s := range []string{"hey what's up", "the command center is cool", "/gas", ""} {
-		if looksLikeCommandError(s) {
-			t.Errorf("looksLikeCommandError(%q) = true, want false (not an error)", s)
-		}
-	}
-}
+// TestLooksLikeCommandError is DELETED with the detector it drove. looksLikeCommandError
+// existed for one purpose — recognise a "/gas isn't a command here" reply so the AUTOMATIC
+// roster poll could latch itself off (rosterCmdUnsupported) instead of asking forever. The
+// poll is gone (liveroster.go, 2026-08-08), so the refusal now belongs in the OOC log where
+// the person who pressed the button can read it, and there is nothing left to classify.
+// TestNoSessionEverFiresATimedRosterPoll (rosterpoll_test.go) is what guards the new rule.

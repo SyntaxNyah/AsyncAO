@@ -1712,6 +1712,12 @@ type sessionState struct {
 	// since then is the scheduled damage that redraws a focused text field at
 	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
 	drawnCaretOn bool
+	// drawnOverlayGen is Scene.Overlay.Gen as of the last frame that either DREW
+	// the stage or observed the trigger from Background — the latch behind
+	// noteOverlayStart. A screen effect armed while the loop is parked has no draw
+	// site to census it, so its Gen bump is the doorbell that gets the first frame
+	// out on time instead of an idle period late.
+	drawnOverlayGen uint32
 	// drawnScreen is the screen as of the last Frame — noteScreenTransition
 	// compares against it to tear down hover-preview state that would otherwise
 	// ride across a screen switch with no draw site left to close it (the
@@ -2566,9 +2572,12 @@ type sessionState struct {
 	musicMenuTab          int       // tab the menu opened on — auto-close on switch
 	musicMenuThemed       bool      // the panel drew inside a theme canvas when it opened (gates the volume-view row)
 	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch       time.Time // debounce for the join/leave re-pull (rosterRefetchDebounce)
 	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	rosterCmdUnsupported  bool      // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
+	// lastRosterFetch (the 3 s poll debounce) and rosterCmdUnsupported (the "this
+	// server rejected /gas — stop sending it" latch) are DELETED along with the
+	// automatic poll they served; see liveroster.go. The latch could only do harm
+	// now: with every surviving fetch coming from a button, silently disabling one
+	// for the rest of the session would turn a press into nothing at all.
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -3649,14 +3658,15 @@ func (a *App) Background(dt time.Duration) {
 	a.frameNow = time.Now()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	// Drain the OOC automation queue HERE as well as in Frame. The producers
-	// (the live-roster /gas poll, macros, auto-login) are driven by inbound
-	// packets and by the frame clock restamped just above, so they keep queueing
-	// while the window is minimized — but Frame, the queue's only other drain,
-	// never runs in that state. That producer/consumer split let the queue fill
-	// for the whole occlusion and then flush as one burst on the first restored
-	// frame, which servers read as OOC flooding and answer with a silent kick.
-	// Draining on both paths keeps the send rate identical in every window state.
+	// Drain the OOC automation queue HERE as well as in Frame. The producers (macros,
+	// auto-login; historically the live-roster /gas poll, whose deletion is recorded in
+	// liveroster.go) are driven by inbound packets and by the frame clock restamped just
+	// above, so they keep queueing while the window is minimized — but Frame, the queue's
+	// only other drain, never runs in that state. That producer/consumer split let the
+	// queue fill for the whole occlusion and then flush as one burst on the first restored
+	// frame, which servers read as OOC flooding and answer with a silent kick. Draining on
+	// both paths keeps the send rate identical in every window state — and it stays
+	// necessary without the poll, because any producer at all can queue while minimized.
 	a.processOOCQueue()
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
@@ -3679,6 +3689,7 @@ func (a *App) Background(dt time.Duration) {
 		// stays quiet the whole time the window is minimized, healing only on
 		// restore. Same missing-in-Background pattern as the frozen clock above.
 		a.rederiveMessageDuck()
+		a.noteOverlayStart()
 	}
 	a.d.Audio.Frame()
 	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing
@@ -3689,6 +3700,29 @@ func (a *App) Background(dt time.Duration) {
 	a.keepActiveAssetsWarm()
 	a.keepSceneAssetsWarm() // the un-drawn stage must survive the burst too
 	a.d.Store.DrainDestroyQueue()
+}
+
+// noteOverlayStart rings the render doorbell the instant a screen effect is TRIGGERED
+// while nothing is being drawn.
+//
+// The pacing censuses are draw-site censuses by design (Viewport.AmbientAnimating →
+// NoteAnimating, and NextAnimDue's schedule), which means every one of them needs a
+// drawn frame to notice anything. That is fine for something already on screen and
+// wrong for the moment something STARTS: Background advances the room but never calls
+// Viewport.Update, so the viewport is still bound to the previous stage, NextAnimDue
+// still answers for it, and a parked event-driven loop sleeps out its whole idle period
+// before the effect's first frame — an eternity at the 10 fps idle default, and forever
+// at idle=off. Same shape as NotifyPreanimStarted: the thing that begins has to announce
+// itself once, rather than being discovered a tick later.
+//
+// Scene.Overlay.Gen is exactly that announcement and costs one uint32 compare per
+// Background pass: the courtroom bumps it on EVERY trigger (overlayfx.go), including a
+// repeat of the same effect, which is the case a Base comparison would miss.
+func (a *App) noteOverlayStart() {
+	if gen := a.room.Scene.Overlay.Gen; gen != a.drawnOverlayGen {
+		a.drawnOverlayGen = gen
+		a.NoteDeadline() // damage → the main loop renders on the very next pass
+	}
 }
 
 // rederiveMessageDuck dips music to duckMusicPercent while a message is on stage
@@ -4751,19 +4785,21 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// per-server level. Harmless if already "" ; the next real track re-stamps.
 				a.musicOwnerKey = ""
 			}
+		// NOTE (2026-08-08): these three arms used to call maybeRefetchRoster, which
+		// sent a /gas back at the server on a 3 s debounce. That automatic tier is
+		// deleted — see the header comment in liveroster.go for the field report, the
+		// per-site verdict and the trade-off. All three now do nothing but rebuild the
+		// roster from what the server PUSHED.
 		case courtroom.EventCharsUpdated:
-			a.charLower = nil      // names may have changed; rebuild lazily
-			a.rebuildLiveRoster()  // pre-snapshot fallback only
-			a.maybeRefetchRoster() // someone joined/left → re-pull the rich /getarea snapshot (debounced)
+			a.charLower = nil     // names may have changed; rebuild lazily
+			a.rebuildLiveRoster() // pre-snapshot fallback only
 		case courtroom.EventAreasUpdated:
 			a.rebuildLiveRoster()
-			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
 			a.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
 			a.areaInfoSeq++        // invalidate the area-list word-wrap cache (screens.go areaWrapped)
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster()
 			a.amICMNow = a.amICM() // a PU may have moved us to another area — refresh the cached flag  // server-pushed PR/PU: the live roster's primary source
-			a.maybeRefetchRoster() // a mod still missing IPIDs re-pulls /getareas (self-gated, debounced)
 			a.maybeFollowJump()    // follow-a-player (M3): trail the followed UID across areas
 			a.recordAreaHistory()  // area history (M3): note our own area into the MRU list
 		case courtroom.EventCharPicked:
@@ -7069,6 +7105,21 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 			considerRender(rem%time.Second + timerTickSlack)
 		}
 	}
+	// The STAGE's own next frame flip — a live screen effect, an animated sprite,
+	// background or shout. SkipFrame already refuses to skip for these (it consults
+	// NextAnimDue and the anim-chrome census), but refusing to skip only matters on a
+	// pass the loop actually takes: parked on the OS event wait, the ONLY thing that
+	// brought a frame back was the idle-rate tick — so an animation ran at the idle
+	// knob (10 fps by default) and, with idle=off, did not run at all until unrelated
+	// damage arrived. Scheduling the flip here is what makes "wake exactly when the
+	// content needs a frame" true for the parked loop as well as the running one; it
+	// is the same call FramePace makes, and it answers ok=false on a static stage, so
+	// a still screen still parks to zero.
+	if a.d.Viewport != nil && a.room != nil {
+		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+			considerRender(due)
+		}
+	}
 	// Demand-pump keepalive: while a streaming grid still shows blank cells,
 	// re-render at the demand cadence so demandAsset keeps issuing asks. A batch
 	// that all 404s uploads nothing (no generation bump, no self-wake), so without
@@ -8647,6 +8698,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
+		// This frame IS the draw the doorbell exists to force, and the viewport is
+		// now bound to the new overlay, so the draw-site censuses take over from
+		// here — sync the latch instead of ringing (noteOverlayStart).
+		a.drawnOverlayGen = a.room.Scene.Overlay.Gen
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
 			a.applySpriteOverridesTo(a.splitRoom) // Hide-desk / Missingno / offsets are user choices, not per-room ones
@@ -10490,19 +10545,20 @@ func (a *App) pushOOC(line, speaker string) {
 		// (rosterEqual gates it), so an ordinary chat line never pays for this.
 		a.rebuildLiveRoster()
 	}
-	// An AUTO /getarea (the live list's silent fetch) is parsed for its data but
-	// kept OUT of the OOC log so the refresh never spams the channel; a MANUAL
-	// /getarea (the fetch buttons) doesn't set the flag, so it still shows.
+	// A roster pull's own ROSTER reply is parsed for its data but kept OUT of the OOC
+	// log — a multi-area /gas is a wall of text nobody asked to read in chat. Only a
+	// fetch WE sent arms the window (fetchRoster / fetchAreaForBan / the menu row), so
+	// somebody else's /getarea still shows.
 	if isAreaList && a.now().Before(a.suppressAreaEchoUntil) {
 		return // the entire /gas reply burst stays out of OOC, not just its first line
 	}
-	// /gas isn't supported on this server: the reply is a command error, not an
-	// area list. Swallow it AND learn — so fetchRoster stops sending /gas (no
-	// repeat "unknown command" spam); the live PR/PU roster works without it.
-	if a.now().Before(a.suppressAreaEchoUntil) && looksLikeCommandError(text) {
-		a.rosterCmdUnsupported = true
-		return
-	}
+	// A REFUSAL is deliberately NOT swallowed any more. It used to be — swallowed and
+	// latched into rosterCmdUnsupported — because the sender was a 3 s timer and the
+	// refusal would have repeated forever. With the automatic poll deleted
+	// (liveroster.go) every fetch is a button press, so the server's answer belongs on
+	// screen: "Invalid command." or an old KFO hub's "You cannot see players in all
+	// areas in this hub!" is the reason the press did nothing, and hiding it is worse
+	// than printing it once. It cannot spam: nothing sends the command on its own.
 	// Best-effort: mirror a received PM into the Friends-tab DM thread too (it also
 	// stays in the OOC log). On the real-OOC path only — AFTER the /gas suppression
 	// returns above — so a suppressed area burst can't double-fire it.

@@ -2275,7 +2275,12 @@ func TestTypewriterRevealAndBlips(t *testing.T) {
 	if tw.Done() {
 		t.Fatal("done before start")
 	}
-	revealed, blips := tw.Update(4 * DefaultCharInterval)
+	// FOUR frames of one interval, not one frame of four: AO2's chat_tick emits one
+	// grapheme per timer delivery and re-arms from the handling instant
+	// (courtroom.cpp:4271/:4586), so one tick revealing four is not a behaviour this
+	// ever meant to pin. Every assertion below is unchanged — same four runes, same
+	// two blips.
+	revealed, blips, _, _ := stepTypewriter(&tw, DefaultCharInterval, 4)
 	if revealed != 4 || !tw.Done() {
 		t.Errorf("revealed = %d done=%v", revealed, tw.Done())
 	}
@@ -2290,8 +2295,10 @@ func TestTypewriterSpeedCodes(t *testing.T) {
 	if got := tw.Text(); got != "abcde" {
 		t.Fatalf("Text = %q (speed codes must be stripped)", got)
 	}
-	// First two at 1.0×: need 2 intervals. c,d at 0×: instant. e at 0.25×.
-	_, _ = tw.Update(2 * DefaultCharInterval)
+	// First two at 1.0×: one frame each. c,d at 0×: instant — they ride out of the
+	// SAME frame that reveals b, because AO2 burns a 0-delay run inside one event-loop
+	// spin too (`chat_tick_timer->start(0)`, courtroom.cpp:4479-4484). e at 0.25×.
+	_, _, _, _ = stepTypewriter(&tw, DefaultCharInterval, 2)
 	if tw.Visible() < 4 {
 		t.Errorf("visible = %d, want ≥4 (instant chars after }}})", tw.Visible())
 	}
@@ -2640,14 +2647,17 @@ func TestTypewriterInlineEffectCodes(t *testing.T) {
 	if _, ok := tw.NextEffect(); ok {
 		t.Fatal("no effect should be due before any reveal")
 	}
-	tw.Update(2 * DefaultCharInterval) // reveal "ab" → the shake (At=2) is due
+	// Exactly one base interval per call, so the reveal lands one rune at a time and the
+	// mark's position can be checked at each step (Update's reveal is proportional to dt,
+	// so a bigger step would jump past both marks at once).
+	stepTypewriter(&tw, DefaultCharInterval, 2) // reveal "ab" → the shake (At=2) is due
 	if m, ok := tw.NextEffect(); !ok || m.Kind != EffectShake || m.At != 2 {
 		t.Fatalf("first mark = %+v ok=%v, want {At:2 Shake}", m, ok)
 	}
 	if _, ok := tw.NextEffect(); ok {
 		t.Fatal("flash must wait until its position is revealed")
 	}
-	tw.Update(10 * DefaultCharInterval) // reveal the rest → flash (At=4) is due
+	stepTypewriter(&tw, DefaultCharInterval, 10) // reveal the rest → flash (At=4) is due
 	if m, ok := tw.NextEffect(); !ok || m.Kind != EffectFlash || m.At != 4 {
 		t.Fatalf("second mark = %+v ok=%v, want {At:4 Flash}", m, ok)
 	}
@@ -2691,10 +2701,17 @@ func TestTypewriterInlineEffectCodes(t *testing.T) {
 
 func TestTypewriterSpacesDontBlipByDefault(t *testing.T) {
 	tw := NewTypewriter()
-	tw.Start("a b c d") // 4 letters, 3 spaces
-	_, blips := tw.Update(10 * DefaultCharInterval)
-	if blips != 2 { // letters only: 4 letters / rate 2
-		t.Errorf("blips = %d, want 2 (spaces silent)", blips)
+	tw.Start("a b c d")                                            // 4 letters, 3 spaces
+	_, blips, _, _ := stepTypewriter(&tw, DefaultCharInterval, 10) // one frame per character
+	// AO2 blips on all four letters here, and the spaces are the reason. blip_ticker
+	// starts at 0 and is TESTED BEFORE it advances, so 'a' (ticker 0) blips; each space
+	// then lands on a non-due tick and takes the `else { ++blip_ticker; }` branch
+	// (../AO2-Client/src/courtroom.cpp:4549-4555), pushing the next letter back onto a
+	// due tick. Spaces stay SILENT — they never sound one themselves (:4543) — but they
+	// shift the phase. The old count of 2 came from counting letters only and advancing
+	// the ticker BEFORE the test, i.e. blipping the second character of the line.
+	if blips != 4 {
+		t.Errorf("blips = %d, want 4 (spaces silent but phase-shifting, AO2 courtroom.cpp:4540-4555)", blips)
 	}
 }
 
@@ -2730,11 +2747,15 @@ func TestTextStayConfigurable(t *testing.T) {
 func TestSFXDelayDeadline(t *testing.T) {
 	room, _, _, audio := newCourtroomRig(t)
 	// Idle-mod message (no preanim block) so it enters PhaseTalking immediately;
-	// the SFX deadline runs independent of the phase.
+	// the SFX deadline runs independent of the phase. IMMEDIATE is what makes the
+	// sound eligible at all: AO2 starts sfx_delay_timer only from play_preanim, and
+	// IDLE/ZOOM reach play_preanim exactly when immediate is ticked
+	// (courtroom.cpp:2897-2910 → :4054 — see preanimSFXPlays). The subject of this
+	// test, WHEN the armed deadline fires, is unchanged.
 	msg := &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Message: "Take that!", Side: "wit",
-		EmoteMod: protocol.EmoteModIdle,
-		SFXName:  "whack", SFXDelay: 3, // 3 × 40ms = 120ms
+		EmoteMod: protocol.EmoteModIdle, Immediate: true,
+		SFXName: "whack", SFXDelay: 3, // 3 × 40ms = 120ms
 	}
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
 	if !room.sfxArmed {

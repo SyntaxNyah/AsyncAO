@@ -2690,7 +2690,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin && charSkin == nil {
 		// #39: the theme's "message" point size decides the line height, so a
 		// theme-sized message grows the flat panel by the right amount.
-		lineH := int32(a.messageFontFor(a.messagePct(), sc.MessageText).Height())
+		// render.FontLineSpacing, NOT font.Height(): the raster stacks its wrapped rows
+		// by the font's LINE SPACING (leading included — linespacing.go), so sizing the
+		// grow with the shorter glyph box under-grows the panel by one leading per row
+		// and clips the tail of a long message.
+		lineH := render.FontLineSpacing(a.messageFontFor(a.messagePct(), sc.MessageText))
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
@@ -2831,7 +2835,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		c.cgoRect = box
 		_ = c.Ren.SetClipRect(&c.cgoRect)
 		msgFont := a.messageFontFor(a.messagePct(), sc.MessageText)
-		lineH := int32(msgFont.Height())
+		lineH := render.FontLineSpacing(msgFont) // same row pitch the raster would have used
 		y := textRect.Y
 		for _, line := range c.WrapText(sc.MessageText, wrapW, 0) {
 			if y+lineH > box.Y+box.H {
@@ -2965,7 +2969,10 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 		// which folds the canvas scale in (chatboxfit.go). Reaching here means msAnim
 		// is non-nil — this is only called from inside that guard — so ensureChatRaster
 		// has run and rasterScale is the scale on screen.
-		lineH := int32(a.messageFontFor(a.rasterScale, sc.MessageText).Height()) // #39: theme "message" size
+		// #39: theme "message" size, stepped by the raster's own row pitch
+		// (render.FontLineSpacing) — a highlight built on the shorter glyph box would
+		// leave an unpainted stripe between every pair of wrapped rows.
+		lineH := render.FontLineSpacing(a.messageFontFor(a.rasterScale, sc.MessageText))
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
@@ -2985,7 +2992,9 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 }
 
 // sfxAutoLabel is the SFX picker's "no override" entry: use the selected emote's own
-// char.ini sound (the default behaviour).
+// char.ini sound (the default behaviour). It is AO2's "Default" row — index 0 of
+// ui_sfx_dropdown (courtroom.cpp:5488-5493), the row get_char_sfx answers with
+// get_sfx_name(current_char, current_emote) (:5680-5683).
 const sfxAutoLabel = "SFX: auto"
 
 // ensureSFXChoices (re)builds the IC-bar SFX picker list when the character or its emote
@@ -7877,15 +7886,10 @@ func (a *App) sendIC(shout int) {
 		emote = a.emotes[a.emoteIdx]
 	}
 	hasPre := emoteHasPreanim(&emote)
-	// Per-emote audio from char.ini ([SoundN]/[SoundT]/[SoundL]); "1" is
-	// the AO wire value for silence (get_sfx_name's empty default).
-	sfxName := emote.SFXName
-	if a.sfxChoiceIdx > 0 && a.sfxChoiceIdx < len(a.sfxChoices) {
-		sfxName = a.sfxChoices[a.sfxChoiceIdx] // IC-bar SFX picker override (until set back to auto)
-	}
-	if sfxName == "" {
-		sfxName = "1"
-	}
+	// Per-emote audio from char.ini: the emote's own sound accompanies the PREANIM and
+	// nothing else, so a line sent with Pre unticked carries the silence sentinel. The
+	// whole rule (and the canon it is transcribed from) lives in icsfx.go.
+	sfxName := outgoingSFXName(&emote, a.icPreanim, a.sfxChoiceIdx, a.sfxChoices)
 	// Per-emote blip override (2.9.1 custom_blips), else the character's.
 	blip := emote.Blip
 	if blip == "" {

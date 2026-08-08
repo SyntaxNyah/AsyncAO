@@ -163,7 +163,7 @@ const (
 // generation for lazy-tier re-raster (see AnimatedText.chainGen). No textures here — Draw
 // resolves them from the GlyphCache. Render thread; call once per message.
 func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors []sdl.Color, wrapW int32, resolve FontResolver, chainGen int) *AnimatedText {
-	at := &AnimatedText{lineH: int32(font.Height()), chainGen: chainGen}
+	at := &AnimatedText{lineH: FontLineSpacing(font), chainGen: chainGen}
 	runes := []rune(text)
 	// Resolve every rune's face ONCE (layout time). A mixed-script / emoji line thus lays
 	// out glyph-by-glyph on the faces that actually cover it — the wrap, the pen advance and
@@ -188,7 +188,7 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors [
 		if f == nil {
 			continue
 		}
-		if h := int32(f.Height()); h > at.lineH {
+		if h := FontLineSpacing(f); h > at.lineH {
 			at.lineH = h
 		}
 		if a := int32(f.Ascent()); a > ascent {

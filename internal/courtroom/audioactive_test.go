@@ -27,7 +27,15 @@ func TestAudioActive(t *testing.T) {
 		t.Fatal("a typing message must be audio-active (blips streaming)")
 	}
 
-	room.Update(30 * time.Second) // reveal all text → the typewriter finishes → linger/idle
+	// Frame by frame, not one 30-second step. This is the AUDIO-active census and its
+	// blips are budgeted per Update (blipsPerUpdate — AO2 sounds at most one blip per
+	// chat_tick delivery, courtroom.cpp:4545), so one giant step would reveal the whole
+	// line without ever exercising the per-frame blip path the census is about. Bounded
+	// far above the message length, so a regression fails here instead of spinning.
+	for i := 0; i < 500 && !room.Typewriter.Done(); i++ {
+		room.Update(DefaultCharInterval)
+	}
+	room.Update(30 * time.Second) // collapse the linger timer → idle
 	if room.AudioActive() {
 		t.Fatalf("a finished message must not be audio-active (phase %v, done %v)", room.Phase(), room.Typewriter.Done())
 	}

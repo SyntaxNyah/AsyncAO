@@ -106,19 +106,53 @@ func TestEffectiveBlipRateMatchesAO2SpamPrevention(t *testing.T) {
 	}
 }
 
-// TestInstantRevealDoesNotMachineGunBlips pins the one place AsyncAO has to differ
-// from AO2 by construction: AO2's chat_tick is a Qt timer that fires once per
-// character, so even at speed step 0 it walks the string one shot at a time. Our
-// Update reveals the whole zero-delay remainder inside ONE tick, and firing a blip
-// per rune there is the literal machine-gun.
-func TestInstantRevealDoesNotMachineGunBlips(t *testing.T) {
+// TestZeroDelayRunesAreSilentLikeAO2 pins the `}}}` (speed step 0) case against AO2's
+// own fast path rather than against our budget. chat_tick's guard —
+// `if ((msg_delay <= 0 && tick_pos < f_message.size() - 1) || formatting_char)`,
+// ../AO2-Client/src/courtroom.cpp:4479-4484 — re-arms the timer with start(0) and
+// RETURNS, so an instant character reaches neither `blip_player->playBlip()` (:4545) nor
+// either `++blip_ticker` (:4546, :4554). Only the message's last character escapes the
+// clause. So AO2 sounds exactly ONE blip for an all-instant message, and a `}}}` span in
+// the middle of a line is silent AND phase-neutral.
+//
+// Both halves are asserted, because the count alone is satisfiable by accident: a
+// per-delivery budget of one also yields "one blip" for the all-instant fixture while
+// ticking on every instant rune, which moves every blip after an odd-length span.
+func TestZeroDelayRunesAreSilentLikeAO2(t *testing.T) {
 	tw := NewTypewriter()
 	tw.Start("}}}" + strings.Repeat("a", 40)) // }}} → speed step 0 → zero per-char delay
 	_, blips := tw.Update(DefaultCharInterval)
 	if !tw.Done() {
 		t.Fatalf("an instant message must finish in one tick (visible=%d)", tw.Visible())
 	}
-	if blips > instantRevealBlipCap {
-		t.Errorf("blips = %d, want at most %d from a single instant tick", blips, instantRevealBlipCap)
+	if blips != 1 {
+		t.Errorf("an all-instant message sounded %d blips, want exactly 1 — every character but "+
+			"the last takes AO2's start(0) fast path and reaches no blip code (courtroom.cpp:4479-4484), "+
+			"and the last one falls through the `tick_pos < size - 1` clause and blips", blips)
+	}
+
+	// Phase: an ODD-length instant span must not move the blips that follow it. `}}}`
+	// drops to speed step 0, `{{{` climbs back to the default, so the three 'b's crawl
+	// normally. AO2 enters them with blip_ticker still 0 → b1 and b3 blip. If the span
+	// had ticked (three runes at rate 2 → ticker 3) the blip would land on b2 instead.
+	phase := NewTypewriter()
+	phase.Start("}}}aaa{{{bbb")
+	// One nanosecond: far less than a character's worth of crawl, yet the zero-delay
+	// runes are not gated on the accumulator at all, so this call reveals exactly the
+	// span and stops at the first 'b'. Anything it sounds came from the span.
+	if r, b := phase.Update(time.Nanosecond); b != 0 || r != 3 {
+		t.Errorf("the instant span revealed %d runes and sounded %d blips, want 3 and 0 — it is not "+
+			"the end of the message, so AO2 reaches no blip code for any of it", r, b)
+	}
+	var at []int
+	for !phase.Done() {
+		if _, b := phase.Update(DefaultCharInterval); b > 0 {
+			at = append(at, phase.Visible()) // 1-based index of the rune just revealed
+		}
+	}
+	// Runes are "aaabbb": the b's are visible-counts 4, 5, 6.
+	if len(at) != 2 || at[0] != 4 || at[1] != 6 {
+		t.Errorf("blips landed at visible-counts %v, want [4 6] — the crawl after a `}}}` span must "+
+			"resume on AO2's phase (blip_ticker untouched by the instant runes)", at)
 	}
 }
