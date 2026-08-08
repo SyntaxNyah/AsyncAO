@@ -162,6 +162,11 @@ func TestPublishedCapsMatchTheConstants(t *testing.T) {
 		{"§3's effect binding bound", fmt.Sprintf("Up to %d bindings.", EffectBindCap)},
 		{"§3's [effect.<key>] widget-key bound", fmt.Sprintf("at most **%d runes**", AnchorRuneCap)},
 		{"§3's sound bound", fmt.Sprintf("Up to %d entries.", SoundCap)},
+		// GenParamCap is published at three sites and its declaration claims all
+		// three are pinned here: §3 is the row above, §7 is the caps-table row
+		// ("generator parameters"), and §5's prose is this entry — which was the
+		// one the claim was writing a cheque for.
+		{"§5's generator parameter prose", fmt.Sprintf("at most %d pairs", GenParamCap)},
 		{"§7's note-cap paragraph", fmt.Sprintf("%d degrade notes stops recording", NoteCap)},
 		{"§7's worked forward-compat case", fmt.Sprintf("so %d elements from a newer client", ElementCap)},
 		{"§7's one-past-the-cap sentence", fmt.Sprintf("the %dth problem into a refusal", NoteCap+1)},

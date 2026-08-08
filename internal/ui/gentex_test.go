@@ -437,8 +437,8 @@ func TestTheThreeReWiredGenParamsActuallyChangeTheirTile(t *testing.T) {
 // `gap` is "percent of each edge left open", and it measured the distance from
 // the tile centre PERPENDICULAR to the nearest edge — which is ~1 everywhere
 // inside the band, so nothing ever opened: gap = 25 and gap = 50 painted the
-// whole band, and mode 0's "corner brackets" drew a continuous box. Six shipped
-// preset elements write `gap = 22`.
+// whole band, and mode 0's "corner brackets" drew a continuous box. Four shipped
+// preset elements write `gap = 22` (all in terminal.ini).
 //
 // The orientation is pinned by two PIXELS rather than by a count, because a
 // count is what let the swap through: a tile can ink the right number of pixels

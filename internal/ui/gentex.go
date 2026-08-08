@@ -995,10 +995,17 @@ func drawPlate(w, h int32, p GenParams) *image.RGBA {
 // rasterised nothing (see the W9 INK notes in presets/style/cyberpunk.ini and
 // vhs_crt.ini). Corner brackets are what MODE 0 draws with no gap at all — its
 // default open fraction is derived from `size`, the leg length, three lines
-// down. The wording is corrected rather than the arithmetic because six other
-// shipped elements write `gap = 22` and get exactly the caption-sized hole they
-// ask for; re-scaling the fraction to make 100 mean something else would move
-// all six to rescue ten that had a working spelling already.
+// down. The wording is corrected rather than the arithmetic because four other
+// shipped elements (all in terminal.ini, two distinct param strings) write
+// `gap = 22` and get exactly the caption-sized hole they ask for; re-scaling the
+// fraction to make 100 mean something else would move all four to rescue ten
+// that had a working spelling available already.
+//
+// THE COUNT WAS FIRST WRITTEN AS SIX AND IS FOUR, so the true ratio is four to
+// ten and the trade no longer reads as a majority — but it never rested on one.
+// It rests on refusing to move working elements to rescue broken ones, and on
+// the broken ones having a spelling that already worked; W9 moved all ten onto
+// it, so no fragment writes `gap = 100` any more.
 // TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile is what catches the
 // next author who reaches for it.
 //
@@ -1043,9 +1050,16 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 			// The gap opens each edge from its MIDDLE outward, and `open` is the
 			// fraction of the WHOLE half-edge it eats: gap = 100 eats all of it and
 			// leaves the band empty — it is not "corners only" (see the header).
-			// Modes 1-3 draw a continuous box at gap = 0; mode 0 never does, because
-			// with no gap it falls through to the `size`-derived leg default in the
-			// branch below, and that default is what makes mode 0 corner brackets.
+			// Modes 1-3 leave their band unbroken at gap = 0 (mode 2 then keeps only
+			// its horizontal rails — the dy >= dx continue below drops the vertical
+			// edges; six shipped steinsgate elements draw exactly that); mode 0 never
+			// does, because with no gap it falls through to the `size`-derived leg
+			// default in the branch below, and that default is what makes mode 0
+			// corner brackets. (The one exception is corpus-unreachable: from
+			// `size` = GenTileMaxPx/2 = 128 up, clampTilePx pins the tile at 256 while
+			// the leg keeps growing, so the default `open` = 1 - size/128 reaches <= 0
+			// and the brackets close into a continuous box. The widest frame the corpus
+			// ships is size = 32.)
 			if mode == 0 || gap > 0 {
 				along := frameAlong(x, y, w, h, dx, dy)
 				open := gap
@@ -1091,9 +1105,14 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 // inside the band, on every edge. Measured on a 40 px mode-1 tile: gap = 25 and
 // gap = 50 both painted all 816 band pixels (no gap at all), gap = 100 painted 0
 // (it must leave the corners), and mode 0 — "corner brackets" — drew a
-// continuous box. Six shipped preset elements write `gap = 22` and three write
-// `gap = 100` with mode 0, so the corpus was carrying three blank elements and
-// six frames that quietly ignored their own signature.
+// continuous box. Four shipped preset elements write `gap = 22` (all in
+// terminal.ini, two distinct param strings) and ten wrote `gap = 100` with mode
+// 0 (three distinct param strings, so three blank TILES shared between them — an
+// earlier revision of this paragraph counted the tiles and called them ELEMENTS,
+// which is the unit the header counts and the unit used here now). The corpus
+// was therefore carrying ten blank elements and four frames that quietly ignored
+// their own signature. The axis fix cured the four; the ten were fixed in W9 and
+// zero remain — see the next paragraph.
 //
 // THE `gap = 100` HALF OF THAT WAS NOT A BUG IN THIS FUNCTION, and the fix above
 // did not cure it: with the axes correct, 100 still opens the whole half-edge and
