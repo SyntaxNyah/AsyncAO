@@ -646,6 +646,136 @@ func TestGraveyardIsBoundedAndRefusesRatherThanLosingABody(t *testing.T) {
 	}
 }
 
+// TestDeletingAnElementPersistsThroughTheSave closes the gap the preset wave's
+// own carrier bug pointed at: NO element deletion had ever reached the file.
+//
+// The writer edits the lossless document the reader kept, so an element taken out
+// of `side.Elements` and nowhere else is re-emitted from its own surviving
+// [element.<id>] section on the next save and read straight back in — a delete
+// that looks like it worked for the whole session and is undone by reopening the
+// theme. Every existing delete gate stops at the MODEL, which is exactly why this
+// survived: the model is right in all of them.
+func TestDeletingAnElementPersistsThroughTheSave(t *testing.T) {
+	_, doc := editDocRig(t, 2)
+	editUnlockAll(doc)
+	gone := doc.side.Elements[0].ID
+
+	op, res := doc.applyDelete(themeEditOp{kind: opElemDel, target: elementTarget(0)})
+	if res != applyDone {
+		t.Fatalf("the delete did not apply (%d) — the gate cannot run", res)
+	}
+	raw := mustDocBytes(t, doc)
+	if s := "[element." + gone + "]"; strings.Contains(string(raw), s) {
+		t.Fatalf("%s is still in the saved file after the element was deleted — reopening the theme "+
+			"brings it back:\n%s", s, raw)
+	}
+	back, err := theme.ParseSidecar(raw)
+	if err != nil {
+		t.Fatalf("the file we just wrote does not read back: %v", err)
+	}
+	if _, resurrected := back.FindElement(gone); resurrected {
+		t.Fatalf("element %q came back out of the file the delete had already been applied to", gone)
+	}
+	if len(back.Elements) != len(doc.side.Elements) {
+		t.Fatalf("the file holds %d elements, the model holds %d", len(back.Elements), len(doc.side.Elements))
+	}
+	// And UNDO still restores it — the carrier loses the section, the graveyard
+	// keeps the body (theme.Sidecar.RetireElementSection's own note).
+	if !doc.revert(op) {
+		t.Fatal("undoing the delete failed")
+	}
+	restored, err := theme.ParseSidecar(mustDocBytes(t, doc))
+	if err != nil {
+		t.Fatalf("re-read after undo: %v", err)
+	}
+	if _, ok := restored.FindElement(gone); !ok {
+		t.Fatalf("element %q did not come back after undo — a delete that cannot be taken back is not "+
+			"an editor operation", gone)
+	}
+}
+
+// TestDiscardingADeleteLeavesTheFileByteIdentical is the retire seam's OTHER exit,
+// and the only gate in the wave that measures the discard against BYTES.
+//
+// A delete has two halves: the model's, and the lossless carrier's. The second is
+// DEFERRED to the next write (theme.Sidecar.RetireElementSection's own note),
+// because the file has to come back byte-identical when the user changes their
+// mind. insertAt cancels the retirement, so the per-element undo was covered; the
+// EDITOR'S DISCARD — "Back, Back", restoreBaseline — restored the model and left
+// the retirement standing, so the very next save still stripped the author's
+// [element.<id>] lines from where they were written and re-emitted the section
+// canonically at the end of the file.
+//
+// WHY BYTES AND NOT THE MODEL. Every model-level assertion passes either way: the
+// element is present, its fields are right, the count is right, and it reads back.
+// What changes is the section's POSITION, and element declaration order is reload
+// order — so the silent damage is a reordered theme plus the loss of that one
+// section's authored key order and comments. Nothing but a byte comparison can see
+// it, which is how it survived the wave that introduced the seam.
+//
+// It also outlives the editor: d.side and a.themeSidecar are the same object and
+// closeThemeEditor drops only the editor, so the stale retirement reaches disk
+// through internal/themepack's copy and create as readily as through a save.
+func TestDiscardingADeleteLeavesTheFileByteIdentical(t *testing.T) {
+	_, doc := editDocRig(t, 2)
+	editUnlockAll(doc) // the probe is authored LOCKED, and a locked element refuses a delete
+	// RE-OPEN over the unlocked model, because the baseline is taken at construction
+	// and a discard restores it wholesale — including the lock. Without this the gate
+	// would be measuring "the discard threw away my unlock" (which it should, and
+	// TestExitWithoutSavingThrowsAwayTypeEditsToo is where that belongs) instead of
+	// the carrier question it is about.
+	doc = newThemeDoc(doc.name, doc.side)
+
+	// The BASELINE is now this document's own open state, so the pre-delete bytes are
+	// the baseline's bytes. Serialising here also materialises the [element.*]
+	// sections in the carrier, which is what gives the retirement below anything to
+	// take.
+	before := mustDocBytes(t, doc)
+	gone := doc.side.Elements[0].ID
+	if s := "[element." + gone + "]"; !strings.Contains(string(before), s) {
+		t.Fatalf("the fixture file does not carry %s, so there is no section for a retirement to "+
+			"take and this gate would prove nothing:\n%s", s, before)
+	}
+
+	if _, res := doc.applyDelete(themeEditOp{kind: opElemDel, target: elementTarget(0)}); res != applyDone {
+		t.Fatalf("the delete did not apply (%d) — the gate cannot run", res)
+	}
+	if len(doc.side.Elements) != 1 {
+		t.Fatalf("the delete left %d elements in the model, want 1", len(doc.side.Elements))
+	}
+	// NOTHING SERIALISES BETWEEN HERE AND THE DISCARD, deliberately. A write FLUSHES
+	// the pending retirement, and a delete-save-undo is the seam's own stated
+	// residual (RetireElementSection's last paragraph) — the section is gone from
+	// disk by then and holding its lines for the rest of the session would be a
+	// second graveyard for one act. The gesture this gate is about is "delete, then
+	// leave without saving", which never writes. That the carrier half of the delete
+	// is armed at all is TestDeletingAnElementPersistsThroughTheSave's job.
+
+	// ...and the user backs out without saving.
+	doc.restoreBaseline()
+	if len(doc.side.Elements) != 2 {
+		t.Fatalf("the discard restored %d elements, want 2", len(doc.side.Elements))
+	}
+	after := mustDocBytes(t, doc)
+	if string(after) != string(before) {
+		t.Fatalf("delete + discard + save is not byte-identical to the pre-delete file — the "+
+			"discarded element's section was moved to the end of the file, which reorders the theme "+
+			"on the next load and loses that section's authored key order and comments:\n"+
+			"--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+}
+
+// mustDocBytes is docHash's other half: the bytes rather than their digest, for
+// the gates that have to read what was written.
+func mustDocBytes(t *testing.T, d *themeDoc) []byte {
+	t.Helper()
+	b, err := d.bytes()
+	if err != nil {
+		t.Fatalf("serialising the document: %v", err)
+	}
+	return b
+}
+
 // TestStringInterningIsBoundedAndRefusesRatherThanAliasing pins editStrCap: a full
 // table returns editStrNone, which reads as "" — and the drawing path treats that as
 // a refusal with a named chip rather than writing an empty string over the user's

@@ -234,6 +234,32 @@ func TestPerimSegment(t *testing.T) {
 // sibling drives a creator-name message (ScreenEffects on, ReduceMotion off) so
 // the full drawCreatorEgg runs each measured frame. A non-zero count means a
 // per-frame allocation shipped in the egg draw (fix it, don't loosen the gate).
+//
+// ⚠ KNOWN INTERMITTENT — QUANTIFIED, PRE-EXISTING, AND NOT A REGRESSION OF
+// WHATEVER YOU JUST CHANGED. Measured at clean ee17f25 (before the v1.90.0 W8/W9
+// work): 3-4 failures in 60 consecutive runs, ~5-6%. Every observed failure was
+// on the FIRST arm ("shoutout to FanatSors", eggFanat) and every one reported
+// exactly 1.0 allocs/op — which, over AllocsPerRun's 200 iterations, is one real
+// event of >= 200 allocations rather than a drifting average. That shape says a
+// one-shot rebuild lands inside the measured window, not that the egg draw
+// allocates per frame.
+//
+// The likely candidates, in the order a bisect should try them: a text-cache or
+// fontSet rebuild triggered by the typewriter settling a frame later than
+// settle() assumes; the label cache evicting under the four messages this test
+// pushes through it; or a lazy glyph-atlas page for a name the earlier arms did
+// not use. None of them has been confirmed, and confirming one is its own
+// afternoon.
+//
+// WHAT TO DO WITH A RED RUN HERE: re-run the test alone. If it goes green and the
+// failing arm was FanatSors at 1.0/op, it is this. If it is a different arm, a
+// different count, or reproducible, it is NOT this and something did ship.
+//
+// DO NOT WEAKEN OR SKIP IT. The gate is correct and the four egg paths are
+// genuinely alloc-free in the steady state; a t.Skip here would retire a
+// whole-screen zero-alloc gate to hide a 5% flake, and the class of bug it
+// catches (a per-frame allocation in a draw body) is one this codebase has
+// shipped more than once.
 func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()

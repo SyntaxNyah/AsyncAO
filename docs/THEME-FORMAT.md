@@ -372,7 +372,7 @@ element on screen as something it is not.
 | `media` | id | `""` | `kind = image`: an id from `[media]` |
 | `shape` | id | `""` | `kind = shape`: a silhouette name — see below |
 | `generator` | id | `""` | `kind = gen`: a generator name (§5) |
-| `gen_params` | list of `k=v` | `""` | ordered; up to 8 |
+| `gen_params` | list of `k=v` | `""` | ordered; up to 11 |
 | `fit` | enum | `stretch` | `stretch`, `tile`, `contain`, `cover`, `nine` |
 | `slice` | 4 × int16, clamped | `0, 0, 0, 0` | 9-slice insets in **source** px, `left, top, right, bottom` — see §5 |
 | `nine_slice` | int16, clamped | — | read-only alias: one inset on all four edges |
@@ -623,7 +623,7 @@ megabytes, and what makes it survive a window resize without re-rastering — th
 tile's cache key carries no width, no height and no theme, so the same generator
 at any canvas size is the same texture.
 
-Parameters are an ordered `k = v` list of at most 8 pairs; a generator ignores
+Parameters are an ordered `k = v` list of at most 11 pairs; a generator ignores
 what it does not use, and an unknown generator name degrades to a flat fill of
 the element's own `fill`. Because the list is ordered and hashed, two elements
 with identical parameters share one texture — across elements and across themes.
@@ -633,7 +633,7 @@ with identical parameters share one texture — across elements and across theme
 | Name | Serves | Key parameters |
 |---|---|---|
 | `scanlines` | VHS/CRT, Steins;Gate, Cyberpunk | `pitch` period, `size` thickness, `fade` |
-| `halftone` | Newspaper, Manga screentone | `dot`/`pitch` cell, `angle` (staggers the lattice) |
+| `halftone` | Newspaper, Manga screentone | `dot`/`pitch` cell, `pct` dot diameter as a % of the cell, `angle` (staggers the lattice) |
 | `grid` | Vaporwave floor, Cyberpunk wireframe, perfboard | `pitch` cell, `size` line, `pct` perspective, `dots` |
 | `hex` | Danganronpa chatbox, Cyberpunk | `pitch` cell, `size` line |
 | `noise` | VHS grain, Higurashi | `density`, `amp`, `size` speck, `seed` |
@@ -643,12 +643,12 @@ with identical parameters share one texture — across elements and across theme
 | `stripes` | Persona 5, warning tape, hairlines | `pitch`, `size`, `angle`, `bloom`, `fade`, `phase` |
 | `hatch` | Manga tone, the over-budget placeholder | `pitch`, `size`, `angle` |
 | `plate` | a filled plate with a decorated edge | `size` edge, `count` mode (bevel/chamfer/capsule/notch), `pitch` groove, `pct` |
-| `frame` | a hollow frame, 9-sliced | `pitch` band, `size` corner, `count` mode, `gap` |
+| `frame` | a hollow frame, 9-sliced | `pitch` band, `size` corner, `count` mode, `gap`, `bow` (mode 3 only) |
 | `radial` | rays, spikes, rings, discs | `pitch` rays, `size` radius, `count` repeats, `inner`, `squash`, `seed` |
 | `mottle` | cork, newsprint, cloud — smooth low-frequency noise | `pitch` feature size, `size` octaves, `count` specks, `amp`, `fade`, `seed` |
 | `checkerdisc` | a checkered disc inlay in perspective | `cells`, `ring`, `squash`, `angle` |
 | `skyline` | mirrored ridge silhouettes / column bars | `pitch` segment, `size` peak, `count` ranges, `base`, `seed` |
-| `wingmark` | scattered two-lobe wing / arc marks | `size`, `count`, `angle`, `amp` (lobe fullness), `seed` |
+| `wingmark` | scattered two-lobe wing / arc marks | `size`, `count`, `angle`, `amp`/`full` (lobe fullness), `seed` |
 
 Colours are always `tint`, `bg`, `accent`, `shadow`. `checkerdisc` is the one
 generator whose tile is **transparent outside its figure**, so a disc can be
@@ -656,7 +656,7 @@ inlaid over a floor rather than over a square of its own background.
 
 ### The parameter vocabulary — complete
 
-There are **25 accepted keys** and they resolve to **11 slots**, globally: the
+There are **27 accepted keys** and they resolve to **11 slots**, globally: the
 same key means the same slot in every generator. A generator reads the slots it
 documents and ignores the rest, so `angle` on a generator with no angle costs
 nothing and is not an error.
@@ -673,7 +673,7 @@ nothing and is not an error.
 | seed | `seed` | int |
 | angle | `angle` | 360/256 |
 | pct0 | `pct`, `inner`, `density`, `gap`, `soft`, `base`, `fade` | 0..100 |
-| pct1 | `squash`, `amp`, `phase`, `dots` | 0..100 |
+| pct1 | `squash`, `amp`, `phase`, `dots`, `full`, `bow` | 0..100 |
 
 **The multiple spellings are deliberate and they are append-only.** Every alias
 here is a word themes already write for that slot — `cells` is what a
@@ -683,14 +683,22 @@ canonical name each would have been tidier and would have silently dropped the
 parameter out of every theme that used the other word, because an unrecognised
 key is *ignored* rather than reported. So: **a spelling that once resolved keeps
 resolving, forever**, and a new generator picks its keys out of this table
-instead of inventing a twenty-sixth.
+instead of inventing a twenty-eighth.
 
 Two consequences worth stating out loud:
 
 - **Two spellings of one slot cannot both be set.** `pct = 40, inner = 60` is
   one slot written twice; the last one wins. No generator's own documented
   vocabulary contains two spellings of the same slot, so this only arises when
-  an author mixes families.
+  an author mixes families — and it is *silent*, so it is worth saying plainly
+  what that costs. The shipped preset corpus carried eight of them and thirteen
+  keys in no slot at all before W9 measured it: seven halftones wrote
+  `pitch = P, dot = D` meaning two different things by two spellings of one slot
+  and rendered at `D`, and one grid wrote `pct` (its perspective) followed by
+  `fade` and rendered at `fade`. Nothing anywhere reported either. A reader is
+  not required to report it, but an AUTHORING TOOL should: AsyncAO's own gate is
+  `TestEveryShippedGenParamResolvesToASlot`, and a third-party editor wanting the
+  same safety needs only this table.
 - **The hash is over the key list as written, in order.** Two elements share a
   texture only if their parameter text matches key for key, value for value, in
   the same order — `cells=6, ring=10` and `ring=10, cells=6` are two tiles that
@@ -805,7 +813,7 @@ than overlapping them, so a 9-slice never produces negative geometry.
 | widget effect bindings | 24 |
 | sound overrides | 16 |
 | element text | 240 runes |
-| generator parameters | 8 (key and value 48 runes each) |
+| generator parameters | 11 (key and value 48 runes each) |
 | unknown entries carried | 512 |
 | ids (element, pane, media, clock, `media`/`shape`/`generator` names) | 24 characters |
 | `anchor` | 48 runes |
@@ -816,6 +824,23 @@ than overlapping them, so a 9-slice never produces negative geometry.
 
 A file past any of these is **refused, not truncated**: a silently shortened
 theme that then gets saved back has destroyed the author's work.
+
+#### Shipped preset fragments — a tighter set
+
+The built-in gallery's `layout/<id>.ini` and `style/<id>.ini` fragments (§9) are
+ordinary theme files read by the same parser, so every cap above applies
+to them unchanged. Three more apply *only* to them, because they ship inside
+the executable rather than arriving from a stranger:
+
+| Limit | Value |
+|---|---|
+| layout fragments | 32 |
+| style fragments | 24 |
+| bytes per fragment | 64 KiB |
+
+These are **build-time** bounds. Nothing a user does can trip them; a fragment
+past one is a gate failure before the binary exists, which is why they refuse
+where the reader would degrade.
 
 #### The metadata exception — degrade with a note
 
@@ -877,3 +902,120 @@ color = #c8a34a
 That is a complete, valid AsyncAO theme when it sits beside a
 `courtroom_design.ini`. Larger hand-authored examples ship in the source tree
 under `internal/theme/testdata/themes/`.
+
+---
+
+## 9. Preset fragments — the two axes
+
+The theme gallery ships **21 layout** and **14 style** fragments — 294
+combinations — as `go:embed`ed files under `internal/theme/presets/`. They are
+written in **exactly this format**: same grammar, same reader, same caps. That
+is the point. Our own presets are just themes, so a fragment can be opened,
+diffed, copied into a theme folder, or published by anyone with no tooling on
+our side.
+
+A fragment adds one section, `[preset]`, which the ordinary reader classifies as
+unknown and preserves verbatim — so a fragment is a legal theme, and a theme
+with no `[preset]` header is a legal fragment body.
+
+```ini
+[preset]
+kind        = layout | style     ; which axis; REFUSED if absent or unknown
+id          = wide_theater       ; [a-z0-9_-]{1,24}, and the file stem
+name        = Wide Theater       ; the gallery card's title
+description = Stage across the top%3B log and chatbox below.
+credit      = All art procedural. Zero bytes of bundled art.
+design_w    = 714                ; LAYOUT only: the canvas this geometry was authored against
+design_h    = 668
+full_canvas = scanlines, vignette ; STYLE only: the elements exempt from the anchor rule
+```
+
+### The partition — what each axis may declare
+
+The two axes are orthogonal **by construction of their key sets**, which is what
+makes 21 × 14 honest rather than 294 hand-built themes. A fragment declaring a
+section the other axis owns is **refused**.
+
+| Axis | May declare | Element kinds |
+|---|---|---|
+| `layout` | `[overrides]` `[rotations]` `[pane.<id>]` `[element.<id>]` | `pane` only |
+| `style` | `[palette]` `[chrome]` `[fonts]` `[fontbind]` `[media]` `[sounds]` `[clock.N]` `[effect.<key>]` `[element.<id>]` | everything except `pane` |
+
+`[element.<id>]` is the one section both may write; the element's `kind` decides
+which tier it belongs to. Neither axis may declare `[theme]` or `[import]`: a
+fragment is a contribution to a theme, never a theme, and one that could name
+itself the author would overwrite one.
+
+### The anchor rule
+
+> **Every style-preset element MUST set `anchor` to an AO2 slot key.**
+
+An anchored element's `rect` is a **delta** on its anchor (§3), so a hex frame
+written at `-6, -6, +12, +12` fits all twenty-one layouts. The only exception is
+a **canvas-space element**, which must satisfy all four of:
+
+1. an empty `anchor`;
+2. `space = courtroom` or `window` — never `pane`, which moves with a layout;
+3. its own id listed in `[preset] full_canvas`, so the exemption is granted
+   explicitly rather than inferred from the rect;
+4. **layout-invariant placement**: where it lands may depend on the layout's
+   design canvas and on nothing else.
+
+Its `rect` is then **absolute** in that space rather than a delta.
+
+An element whose `anchor` names a key the resolved layout does not have is
+**inert**: no widget, no decoration, not an error.
+
+#### Deviation recorded 2026-08-08: the ≥ 90% coverage clause is withdrawn
+
+Clause 4 replaces a rule this document previously stated, which said the
+exemption was for "a genuinely layout-independent full-canvas overlay —
+scanlines, vignette, grid floor, noise — with a rect covering ≥ 90% of its
+space". The shipped corpus contradicted it **twelve times out of twelve**, and
+the number was wrong rather than the corpus:
+
+| element | coverage of a 714×668 canvas |
+|---|---|
+| `umineko/flare_ghost_2` | 0.02% |
+| `umineko/flare_ghost_1` | 0.04% |
+| `umineko/trim_left`, `trim_right` | 1.40% |
+| `umineko/meta_mark` | 1.74% |
+| `classic_courtroom/wainscot_l`, `wainscot_r` | 5.47% |
+| `umineko/ripple_1` … `ripple_3` | 6.19–7.57% |
+| `newspaper/page_gutter` | 7.98% |
+| `classic_courtroom/crest_disc` | 9.56% |
+
+Not one reaches 90, and not one is an overlay. What happened is that all forty
+*genuine* full-bleed overlays in the corpus took the other road — they anchor to
+the `courtroom` slot key, because `courtroom` IS the canvas, so they stay
+anchored and need no exemption at all. The ≥ 90% clause was therefore guarding
+an empty set, while the twelve real users of the exemption are **edge trims,
+floor ripples, wall panels and a corner caption**: small, canvas-positioned
+ornaments that no widget owns.
+
+The coverage figure was only ever a proxy for the property that matters, which
+is clause 4 — and unlike coverage, clause 4 is *checkable* and is now checked
+(`TestEveryLayoutTimesEveryStyleIsCoherent` resolves every declared ornament
+against all twenty-one layouts and fails if two of them disagree about where it
+lands, at both canvas extremes).
+
+**The known limitation this leaves, stated rather than hidden:** absolute canvas
+geometry cannot say "the right edge" or "the lower third". An ornament authored
+against one design canvas keeps its pixel offsets on every other, so a
+right-edge trim is a right-edge trim only on canvases of the width it was drawn
+for. That is exactly why the exemption stays an explicit allow-list and not an
+inference: it is a tool with a sharp edge, and an author has to name each use.
+
+### Zero bundled art — a contract, not a convention
+
+Every shipped fragment ships **zero bytes of art**: no `[media]` rows, no font
+files (font *classes* like `serif` and `mono` only), no `[sounds]`, no
+`kind = image`. Everything is arithmetic — shapes, gradients, text and the
+generators of §5 — so everything is original by construction, which is the
+cleanest AGPLv3 answer to "evoke, never copy" and makes the whole library cost
+about half a megabyte of text. Every style fragment states this in its `credit`,
+and the gallery shows that line beside the theme it would build.
+
+Both properties are gated: `TestEveryShippedPresetShipsZeroBytesOfArt`,
+`TestLayoutAndStylePresetKeySetsAreDisjoint`,
+`TestStylePresetElementsAlwaysAnchor`, and a 294-combination coherence matrix.

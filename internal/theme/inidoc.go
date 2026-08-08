@@ -357,6 +357,130 @@ func (d *INIDoc) RenameSection(from, to string) error {
 	return nil
 }
 
+// RemoveSection deletes a whole section: its header, its keys, and the comments
+// the author wrote INSIDE it.
+//
+// WHY A LOSSLESS DOCUMENT NEEDS A DELETE AT ALL. "Emit the original bytes on any
+// line I did not deliberately change" is the promise, and it is exactly right for
+// every line the model still MEANS something about. It is wrong for a section the
+// model has DROPPED: without a delete, a removed element's section stays in the
+// file, the next read resurrects it, and the theme on disk is not the theme the
+// user saved. Measured on the preset gallery before this existed: apply a second
+// style to a saved theme and 35 elements are written out and 70 read back; the
+// worst shipped re-style reloads at 97 against ElementCap = 96, which the reader
+// then REFUSES. A delete is a deliberate change like any other — what has to stay
+// narrow is who calls it, and the callers are the tier replace (presetmerge.go)
+// and the editor's element delete, both of which act on an explicit user act.
+//
+// EVERY RUN GOES, not just the first. A file may open one section twice (the
+// reader treats the two runs as one section, last declaration wins per key), so
+// leaving the second behind would leave half the section standing under a header
+// whose keys have vanished.
+//
+// WHAT IT DELIBERATELY KEEPS: the trailing run of blank lines and comments that
+// sits between the section's last KEY and the next header. Those bytes are as
+// likely to be the author's introduction to the section BELOW as a footnote to
+// the one being deleted (sectionEnd's comment already accepts the same ambiguity
+// from the other side), and guessing wrong deletes prose this type exists to
+// preserve. A stale comment left behind is cosmetic; a deleted paragraph is not.
+// The kept lines are re-parented to the section in effect where the run stood,
+// which is exactly where a re-parse would put them — without that, sectionEnd
+// would still find the vanished section and append its next key with no header.
+//
+// ErrINIDocNoSection reports a section the document never declared, which is the
+// ORDINARY case for an element authored this session: nothing to delete is not a
+// failure, and the callers ignore it.
+//
+// COLD PATH (hard rule 2), like every other mutator here.
+func (d *INIDoc) RemoveSection(name string) error {
+	sec := strings.ToLower(strings.TrimSpace(name))
+	if sec == "" || badINIToken(sec) {
+		// The ROOT section is refused with the malformed ones and for the same reason
+		// RenameSection refuses it: it has no header, so "removing" it could only mean
+		// deleting every key above the first header and reparenting nothing.
+		return ErrINIDocBadKey
+	}
+	if !d.hasSection(sec) {
+		return ErrINIDocNoSection
+	}
+	drop := make([]bool, len(d.lines))
+	for i := range d.lines {
+		drop[i] = d.lines[i].section == sec
+	}
+	d.keepTrailingProse(drop)
+	kept := make([]iniLine, 0, len(d.lines))
+	touched := make(map[int]string, len(d.touched))
+	for i := range d.lines {
+		if drop[i] {
+			continue
+		}
+		if v, pending := d.touched[i]; pending {
+			touched[len(kept)] = v
+		}
+		kept = append(kept, d.lines[i])
+	}
+	// The source's own "no final newline" is a property Bytes round-trips, so
+	// deleting the last line must move the missing terminator up rather than invent
+	// one — the mirror of what insertLine does when it splices past the end.
+	if n := len(d.lines); n > 0 && drop[n-1] && d.lines[n-1].term == "" && len(kept) > 0 {
+		kept[len(kept)-1].term = ""
+	}
+	d.lines, d.touched = kept, touched
+	d.reparentOrphans()
+	d.reindex()
+	d.resize()
+	return nil
+}
+
+// keepTrailingProse un-drops the blank lines and comments at the END of each
+// removed run. See RemoveSection's comment for why they are kept; the header
+// itself is never given back, which is what makes the section actually gone.
+func (d *INIDoc) keepTrailingProse(drop []bool) {
+	for i := 0; i < len(drop); i++ {
+		if !drop[i] {
+			continue
+		}
+		end := i
+		for end < len(drop) && drop[end] {
+			end++
+		}
+		for k := end - 1; k > i; k-- {
+			if d.lines[k].isKey || d.lines[k].isHeader {
+				break
+			}
+			drop[k] = false
+		}
+		i = end
+	}
+}
+
+// reparentOrphans re-derives the section in effect for every line, which is what
+// a re-parse of the emitted bytes would compute. Only the kept prose of a removed
+// run can actually change owner, but deriving the whole list is how the answer
+// stays classifyINILine's answer rather than a second opinion about it.
+func (d *INIDoc) reparentOrphans() {
+	section := ""
+	for i := range d.lines {
+		if d.lines[i].isHeader {
+			section = d.lines[i].section
+			continue
+		}
+		d.lines[i].section = section
+	}
+}
+
+// resize re-derives the builder hint after a removal. Bytes uses it only to Grow,
+// so a touched line's new length is not worth tracking here — being short by a
+// value edit costs one reallocation, and being long by a deleted section costs a
+// page of unused capacity on every save.
+func (d *INIDoc) resize() {
+	n := 0
+	for i := range d.lines {
+		n += len(d.lines[i].raw) + len(d.lines[i].term)
+	}
+	d.size = n
+}
+
 // hasSection reports whether a header for name exists. Header-based rather than
 // index-based on purpose: a section whose only content is a comment still exists,
 // and renaming another section onto it would still be a collision.

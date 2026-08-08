@@ -81,6 +81,10 @@ const (
 	// few tile diagonals is mostly outside the tile whatever it does, and the walk is
 	// what turns an absurd length into absurd time.
 	genStampMaxSteps = 4 * theme.GenTileMaxPx
+	// genHalftoneDotPct is halftone's dot diameter as a percent of its cell when the
+	// element does not say. 68 is exactly the 0.34 radius the generator drew before
+	// the knob existed, so adding the parameter changed no shipped pixel by itself.
+	genHalftoneDotPct = int32(68)
 )
 
 // GenParams is the fixed, TYPED view over a generator's `k = v` list. A generator
@@ -188,6 +192,15 @@ var genParamSlots = map[string]genParamSlot{
 	"pct": genSlotPct0, "inner": genSlotPct0, "density": genSlotPct0,
 	"gap": genSlotPct0, "soft": genSlotPct0, "base": genSlotPct0, "fade": genSlotPct0,
 	"squash": genSlotPct1, "amp": genSlotPct1, "phase": genSlotPct1, "dots": genSlotPct1,
+	// `full` (wingmark's lobe fullness) and `bow` (the bezel's barrel) are the two
+	// keys the shipped preset fragments write that this table did not carry. `full`
+	// was already NAMED in drawWingmark's own doc comment as the spelling of
+	// Pcts[1] — the raster implemented it and the parser threw the key away, so
+	// `full = 0` rendered as `full = 100` on all three of umineko's marks. An
+	// unrecognised key is ignored with no note anywhere, which is how a wiring gap
+	// this size survived a whole wave; TestEveryShippedGenParamResolvesToASlot is
+	// the gate that makes the next one impossible.
+	"full": genSlotPct1, "bow": genSlotPct1,
 }
 
 // GenFunc rasterises one tile. See the contract at the top of the file.
@@ -500,6 +513,17 @@ func drawScanlines(w, h int32, p GenParams) *image.RGBA {
 
 // halftone — Newspaper, Manga screentone.
 // pitch/`dot`: cell size px (default 6). Angle staggers the lattice.
+// Pcts[0] (`pct`): DOT DIAMETER as a percent of the cell (default
+// genHalftoneDotPct). Coverage is pi/4 * (pct/100)^2, which is the number every
+// screentone reference is quoted in.
+//
+// THE SECOND KNOB EXISTS BECAUSE FIVE SHIPPED ELEMENTS NEED IT. `pitch` and `dot`
+// are aliases for ONE slot, so `pitch = 6, dot = 2` resolved to pitch 2 and the
+// authored lattice was silently thrown away — in three presets whose comments
+// derive their measured coverage from the RATIO of the two. The ratio is what
+// they were actually specifying, so it gets a slot of its own rather than a
+// second integer; the default is the 0.34 radius the generator always drew, so
+// an element that says nothing renders byte-identically to before.
 //
 // The angle STAGGERS rather than rotates, and that is a deliberate limit rather than
 // an approximation: a rotated dot lattice cannot repeat seamlessly inside an
@@ -514,7 +538,8 @@ func drawHalftone(w, h int32, p GenParams) *image.RGBA {
 	// a third of the cell, and a cell larger than the tile makes it the disc
 	// rasteriser's whole cost with none of it visible.
 	cell := min32(p.pitchOr(6), theme.GenTileMaxPx)
-	radius := float64(cell) * 0.34
+	// Diameter as a percent of the cell, so the radius is pct/200 of it.
+	radius := float64(cell) * float64(p.pctOr(0, genHalftoneDotPct)) / 200
 	// The stagger is the angle's sine, so 0 is a square lattice and 64 (90°) is the
 	// maximum half-cell offset.
 	stagger := math.Abs(math.Sin(genAngleRad(p.Angle))) * float64(cell) / 2
@@ -957,7 +982,30 @@ func drawPlate(w, h int32, p GenParams) *image.RGBA {
 // A hollow frame tile whose band keeps a fixed device size under `fit = nine`.
 // pitch: band thickness px (default 2). size: corner extent px (default 12).
 // count: mode — 0 corner brackets, 1 continuous box, 2 rail, 3 bezel.
-// Pcts[0] (`gap`): percent of each edge left OPEN (100 = corners only).
+// Pcts[0] (`gap`): percent of each edge left OPEN, measured over the whole
+// half-edge from its middle out to the corner.
+// Pcts[1] (`bow`): MODE 3 ONLY — how much the bezel's opening barrels, as the
+// percent by which the moulding thins at the middle of each edge relative to its
+// corners. 0 is a straight-sided bezel, which is what every other mode draws.
+//
+// `gap = 100` OPENS EVERYTHING, and the doc line above used to say it meant
+// "corners only". It does not and cannot: the fraction is measured over the
+// whole half-edge, so at 100 there is no corner left over and the band comes out
+// EMPTY. Ten shipped preset elements were authored against the old sentence and
+// rasterised nothing (see the W9 INK notes in presets/style/cyberpunk.ini and
+// vhs_crt.ini). Corner brackets are what MODE 0 draws with no gap at all — its
+// default open fraction is derived from `size`, the leg length, three lines
+// down. The wording is corrected rather than the arithmetic because six other
+// shipped elements write `gap = 22` and get exactly the caption-sized hole they
+// ask for; re-scaling the fraction to make 100 mean something else would move
+// all six to rescue ten that had a working spelling already.
+// TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile is what catches the
+// next author who reaches for it.
+//
+// It is mode-3-only because that is the only mode with a case to bow: the other
+// three are hollow rules and a rule that changed thickness along its length would
+// read as a mistake. The reservation is the preset fragment's own (terminal's
+// `crt_bezel`), and until W9 the key resolved to nothing at all.
 func tileFrame(p GenParams) (int32, int32) {
 	e := 2 * (p.pitchOr(2) + p.sizeOr(12))
 	return clampTilePx(e), clampTilePx(e)
@@ -969,9 +1017,11 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 	corner := float64(p.sizeOr(12))
 	mode := p.countOr(0) % 4
 	gap := float64(p.pctOr(0, 0)) / float64(genPctMax)
-	// Mode 3 (bezel) is the only one with a case fill: the others are hollow, which
-	// is the whole point of a frame tile.
+	bow := 0.0
 	if mode == 3 {
+		bow = float64(p.pctOr(1, 0)) / float64(genPctMax)
+		// Mode 3 (bezel) is the only one with a case fill: the others are hollow, which
+		// is the whole point of a frame tile.
 		genFill(img, p.bg())
 	}
 	for y := int32(0); y < h; y++ {
@@ -979,18 +1029,25 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 			dx := math.Min(float64(x), float64(w-1-x))
 			dy := math.Min(float64(y), float64(h-1-y))
 			d := math.Min(dx, dy)
-			if d >= band {
+			// The barrel: the moulding keeps its full thickness at the corners and thins
+			// toward the middle of each edge, which is the shape a tube's bezel has. The
+			// square of `along` is what makes the opening a curve rather than a chamfer.
+			thick := band
+			if bow > 0 {
+				a := frameAlong(x, y, w, h, dx, dy)
+				thick = band * (1 - bow*(1-a*a))
+			}
+			if d >= thick {
 				continue
 			}
-			// The gap opens the MIDDLE of each edge, leaving the corners: that is what
-			// makes gap=100 corner brackets and gap=0 a continuous box.
+			// The gap opens each edge from its MIDDLE outward, and `open` is the
+			// fraction of the WHOLE half-edge it eats: gap = 100 eats all of it and
+			// leaves the band empty — it is not "corners only" (see the header).
+			// Modes 1-3 draw a continuous box at gap = 0; mode 0 never does, because
+			// with no gap it falls through to the `size`-derived leg default in the
+			// branch below, and that default is what makes mode 0 corner brackets.
 			if mode == 0 || gap > 0 {
-				alongX := math.Abs(float64(x)+0.5-float64(w)/2) / (float64(w) / 2)
-				alongY := math.Abs(float64(y)+0.5-float64(h)/2) / (float64(h) / 2)
-				along := alongX
-				if dy < dx {
-					along = alongY
-				}
+				along := frameAlong(x, y, w, h, dx, dy)
 				open := gap
 				if mode == 0 && open <= 0 {
 					open = 1 - corner/math.Min(float64(w), float64(h))*2
@@ -1019,6 +1076,36 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 		}
 	}
 	return img
+}
+
+// frameAlong is how far along its NEAREST edge a pixel sits: 0 at the middle of
+// that edge, 1 at a corner. The gap and the bezel's barrel both measure it, and
+// one spelling is what keeps the two from disagreeing about which edge is
+// nearest.
+//
+// THE AXES WERE SWAPPED, and `gap` did not work at all. dy is the distance to the
+// nearest HORIZONTAL edge, so `dy < dx` means the top or the bottom is nearest —
+// and the position along a horizontal edge is the COLUMN. The expression this was
+// factored out of read the ROW there and the column on a vertical edge, which
+// measures distance from the centre PERPENDICULAR to the edge: ~1 everywhere
+// inside the band, on every edge. Measured on a 40 px mode-1 tile: gap = 25 and
+// gap = 50 both painted all 816 band pixels (no gap at all), gap = 100 painted 0
+// (it must leave the corners), and mode 0 — "corner brackets" — drew a
+// continuous box. Six shipped preset elements write `gap = 22` and three write
+// `gap = 100` with mode 0, so the corpus was carrying three blank elements and
+// six frames that quietly ignored their own signature.
+//
+// THE `gap = 100` HALF OF THAT WAS NOT A BUG IN THIS FUNCTION, and the fix above
+// did not cure it: with the axes correct, 100 still opens the whole half-edge and
+// still paints nothing, because the fraction has no corner left over to keep —
+// see the `gap` note on drawFrame. The ten shipped elements that wrote it (three
+// distinct param strings) have dropped the key and use mode 0's own leg-derived
+// default instead; no fragment writes `gap = 100` any more.
+func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
+	if dy < dx {
+		return math.Abs(float64(x)+0.5-float64(w)/2) / (float64(w) / 2)
+	}
+	return math.Abs(float64(y)+0.5-float64(h)/2) / (float64(h) / 2)
 }
 
 // radial — the merge of starburst / spikeburst / spokes / ellipsering / speedlines /

@@ -78,9 +78,40 @@ const (
 	// TextRuneCap bounds an ElemText string: a verdict line, and short enough
 	// that truncating it to its rect at bake stays cheap.
 	TextRuneCap = 240
-	// GenParamCap bounds a generator's parameter list. The widest generator
-	// (halftone: dot, angle, tint, bg, jitter) uses five.
-	GenParamCap = 8
+	// GenParamCap bounds a generator's parameter list. It is EXACTLY the number of
+	// addressable slots in the typed view a generator actually reads
+	// (ui.GenParams: Colors[4] + Ints[4] + Angle + Pcts[2] = 11), so a twelfth
+	// pair is by construction either a repeat of a slot already set — the reader's
+	// "later wins" rule makes it dead — or a key no generator resolves. There is
+	// nothing a file can say in a twelfth pair that it cannot say in eleven.
+	//
+	// IT WAS 8, sized in W1 against the pre-merge generator set ("the widest
+	// generator, halftone: dot, angle, tint, bg, jitter, uses five"). W4's
+	// consolidation then folded between two and six independently-invented
+	// generators into each of `plate`, `frame`, `radial` and `mottle`
+	// (GENERATOR-AND-EFFECT-PROPOSALS.md §1), and a merged generator legitimately
+	// spends every slot: `mottle` alone is four colour roles, four integers and two
+	// percents. W9 found shipped preset elements over the old bound — five
+	// fragments, four different authors — which is a cap that was measured against
+	// the wrong thing, not five authors who overreached.
+	//
+	// THE COUNT WAS FIRST WRITTEN AS TEN AND IS NINE, corrected after W9's
+	// dead-param pass: several of the ten only exceeded 8 because they carried a
+	// key that resolved to no slot at all (`bow`, `glow`, `ratio`, `rough`, `rgb`)
+	// or a pair of aliases that collapsed into one (`pitch`/`dot`, `pct`/`fade`),
+	// so part of the evidence for raising the bound was parameters that were doing
+	// nothing. Nine elements across five fragments still spend 9 or 10 pairs
+	// (`investigation/corkwall` and four of `thh_courtroom`'s are the widest at 10),
+	// so the conclusion survives its own correction — but the load-bearing argument
+	// is the STRUCTURAL one above, not the census: 11 is what the typed view can
+	// hold, and no measurement can move that.
+	//
+	// RAISING IT IS BACKWARD COMPATIBLE in the only direction that matters: every
+	// file that parsed under 8 still parses, and a file authored at 11 read by an
+	// older build is refused with the cap named rather than silently shortened
+	// (hard rule 4's "refuse, never truncate"). Published in docs/THEME-FORMAT.md
+	// §3/§5/§7 and pinned against all three by TestPublishedCapsMatchTheConstants.
+	GenParamCap = 11
 	// ClockCap bounds the authoring clock groups. Clock 0 is the shared theme
 	// anchor and is never declared; the densest style preset wants four.
 	ClockCap = 16
@@ -114,6 +145,17 @@ const (
 	// SubthemeCap bounds [import] subthemes — AO2 subtheme folders are a
 	// handful per pack, and the list is provenance, not configuration.
 	SubthemeCap = 16
+	// ElementRetireCap bounds the pending-deletion list (Sidecar.retire): element
+	// sections a delete has dropped from the model and the next write must remove.
+	//
+	// TWICE ElementCap, because that is what a DOCUMENT can hold and the list only
+	// ever records an id whose section the document actually carries: at most
+	// ElementCap model elements, plus the sections of elements this build skipped
+	// and preserved (a newer client's `kind`, format rule 3), which the reader does
+	// not count against the element cap. Past it the removal is performed
+	// immediately instead of being recorded — the file stays correct and only the
+	// undo's byte-exactness is given up, which is the right thing to lose.
+	ElementRetireCap = 2 * ElementCap
 	// PreservedCap bounds how many unknown keys and sections one file may carry
 	// BEFORE it stops looking like a theme. INIDoc preserves the lines either
 	// way; this caps the enumeration the import report reads.
@@ -715,6 +757,10 @@ type Sidecar struct {
 	// the unknown sections themselves as "section/". They are PRESERVED by doc
 	// regardless; this is the enumeration the editor's read-only card counts.
 	unknown []string
+	// retire lists the element ids whose [element.<id>] lines the next write must
+	// delete from doc. See RetireElementSection for why the removal is deferred
+	// rather than immediate; bounded by ElementRetireCap (hard rule 4).
+	retire []string
 	// doc is the lossless source. Saving goes through it, so every comment,
 	// blank line, key order and unknown section survives byte-identically.
 	doc *INIDoc
@@ -780,6 +826,105 @@ func (s *Sidecar) FindElement(id string) (*Element, bool) {
 		}
 	}
 	return nil, false
+}
+
+// RetireElementSection marks an element's [element.<id>] lines for deletion from
+// the lossless carrier, and reports whether the file was actually carrying any.
+//
+// IT IS THE OTHER HALF OF DROPPING AN ELEMENT, and the model half cannot do it
+// alone: the writer edits the document the reader kept, so an element removed
+// from `Elements` and nowhere else is written back out from its own surviving
+// section and read in again next time. No element deletion of any kind had ever
+// persisted — the editor's delete included — until this existed.
+//
+// IT IS NOT A PRUNE, and that is deliberate. The caller names the ONE id the user
+// deleted; nothing here walks the document looking for sections the model does
+// not claim, because the reader deliberately PRESERVES an element section whose
+// `kind` a newer build invented (format rule 3) and a prune would delete exactly
+// that. Only the act that meant the deletion may cause one.
+//
+// IT IS DEFERRED TO THE WRITE, unlike the tier replace's own clear (which removes
+// immediately, because ITS undo restores the whole document from a snapshot). An
+// element delete's undo is a per-element resurrection out of the editor's
+// graveyard, and the file has to come back BYTE-IDENTICAL when the user changes
+// their mind — which it cannot if the lines are already gone: the writer would
+// re-emit the section canonically, at the end of the file, losing the author's
+// own key order and comments for that one element. Deferring costs nothing (the
+// removal happens inside Sidecar.Bytes, before a single key is written) and
+// UnretireElementSection is how the undo cancels it.
+//
+// The residual limit, stated rather than hidden: a delete, a SAVE, and then an
+// undo does re-emit the section canonically. At that point the removal is on
+// disk, so anything else would mean holding the removed lines for the rest of
+// the session — a second graveyard for one act.
+//
+// COLD PATH (hard rule 2).
+func (s *Sidecar) RetireElementSection(id string) bool {
+	if s == nil || s.doc == nil || !s.doc.hasSection(secElementPrefix+id) {
+		// A section the file never carried needs no retirement, and refusing to
+		// record one is what BOUNDS the list: it can never hold more ids than the
+		// document has element sections.
+		return false
+	}
+	for _, have := range s.retire {
+		if have == id {
+			return true
+		}
+	}
+	if len(s.retire) >= ElementRetireCap {
+		// FAIL SAFE at the bound: the FILE stays correct and only the undo's
+		// byte-exactness is given up, which is the right way round. Reachable only by
+		// retiring more distinct ids than a document can hold sections, between two
+		// writes.
+		_ = s.doc.RemoveSection(secElementPrefix + id)
+		return true
+	}
+	s.retire = append(s.retire, id)
+	return true
+}
+
+// UnretireElementSection cancels a pending retirement — the undo of a delete.
+// Nothing else may call it: "put the element back" is the only act that means
+// "the section was never really going".
+//
+// THERE ARE TWO ACTS THAT MEAN IT, not one, and the second was missed for a wave.
+// The per-element undo (internal/ui's insertAt) is the obvious one; the other is
+// the editor's DISCARD, which replaces the whole element list with an open-time
+// snapshot (restoreBaseline). Both put elements back, so both must cancel, and a
+// discard that did not left the next write stripping a section the theme still
+// holds and re-emitting it canonically at the end of the file — losing that one
+// element's authored key order, comments and declaration position, which is
+// reload order. Idempotent and safe to call for an id that was never retired,
+// which is what lets the discard sweep its whole restored list rather than track
+// which of them had been deleted.
+func (s *Sidecar) UnretireElementSection(id string) {
+	if s == nil {
+		return
+	}
+	for i, have := range s.retire {
+		if have == id {
+			s.retire = append(s.retire[:i], s.retire[i+1:]...)
+			return
+		}
+	}
+}
+
+// flushRetiredSections performs the deferred removals. Called by Bytes, before
+// any key is written, so a retired section cannot be resurrected by the very
+// write that was supposed to delete it.
+//
+// UNCONDITIONAL: an id still in the model is not a reason to keep its lines. The
+// only thing that cancels a retirement is UnretireElementSection, because the
+// caller that re-added the element is the only one that knows the two acts are
+// the same element rather than two elements sharing a name.
+func (s *Sidecar) flushRetiredSections() {
+	if s.doc == nil || len(s.retire) == 0 {
+		return
+	}
+	for _, id := range s.retire {
+		_ = s.doc.RemoveSection(secElementPrefix + id)
+	}
+	s.retire = s.retire[:0]
 }
 
 // FindPane returns the pane with the given id.

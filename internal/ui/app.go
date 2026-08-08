@@ -853,6 +853,12 @@ type App struct {
 	// themeReport is the applied theme's IMPORT REPORT (themereport.go) — every
 	// degrade, missing family and unbound key the last apply noticed. Bounded by
 	// themeReportCap and replaced wholesale at each landing, never appended to.
+	//
+	// TWO READERS, both load-bearing: noteThemeReport says the headline on the warn
+	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go,
+	// W9) show all of it. Before that panel existed this field was written on every
+	// apply and read by one test — the parsed-but-never-applied shape rule 11 names
+	// by example. TestTheImportReportReachesAUserSurface is what keeps it read.
 	themeReport []string
 	// themeImp is the .aotheme TRANSPORT state machine (themeimport.go): the
 	// pending consent, and the one bundle job that may be in flight. On App
@@ -3009,6 +3015,35 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // courtroom.cpp:3328 ("chat" falling back to "chatbox"; "chatblank" last
 // for themes that ship only the blank skin); splash stems mirror
 // handle_wtce's filenames with the bare legacy spelling second.
+//
+// THE PER-CHARACTER MISC CHATBOX IS DEFERRED, and this is where the decision is
+// recorded (design §W8 scoped "FindAssetMisc wired into the chatbox ladder";
+// W9 declines it and says why).
+//
+// What AO2 actually does: `p_misc` is a per-CHARACTER chatbox pack, read from the
+// speaking character's own char.ini (`get_chat(customchar)`, courtroom.cpp:3299)
+// and refreshed on EVERY message (`current_misc = get_chat(m_chatmessage[CHAR_NAME])`,
+// :4243, and only when Options::customChatboxEnabled()). It does not add a stem —
+// the ladder below is unchanged — it changes WHERE each stem is looked up, by
+// inserting `misc/<p_misc>/` in front of the theme rungs (get_asset_paths,
+// path_functions.cpp:181-189). theme.FindAssetMisc is exactly those two rungs and
+// it exists, gated, today.
+//
+// Why it is not wired here. Everything in this table is a PINNED theme texture:
+// resolved once per theme apply, uploaded once, eviction-exempt, and accounted
+// against the theme media budget (risk R2 — the budget is 3/8 of TexBudgetMiB and
+// two of the three "all emote buttons identical" reports were texture exhaustion).
+// A per-character chatbox is not a theme texture: it is resolved per SPEAKER, from
+// a char.ini this client reads over the network, and honouring it means a
+// re-resolve, a decode and an upload on every character change, with its own cap
+// and its own lifetime so a roster of 4000 cannot pin 4000 skins. That is a tier,
+// not a rung — the same shape as the media plan W4 built for [media] — and
+// bolting it onto a table whose whole contract is "one per theme, pinned" would
+// either leak textures or silently stop honouring the pack.
+//
+// What is kept green in the meantime: TestChatboxLadderOrderIsUnchangedWithMisc
+// pins the stem order AND the position the misc rungs must take when the tier is
+// built, so the wave that builds it has a fixed target instead of a guess.
 func themeImageStems() map[string][]string {
 	m := map[string][]string{
 		themeStemChatbox:   {"chat", "chatbox", "chatblank"},

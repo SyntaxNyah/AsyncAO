@@ -1198,6 +1198,14 @@ func (d *themeDoc) buried(v editValue) (theme.Element, bool) {
 // v names. IDENTITY IS THE INDEX (theme.Element's own doc comment), so a removal
 // renumbers every element after it — which is exactly why an op that outlives a
 // structural change is not replayable, and why the ring is reset on theme change.
+//
+// THE CARRIER LOSES THE SECTION TOO, and it did not until W9. The writer edits the
+// lossless document the reader kept, so an element taken out of the model and
+// nowhere else is re-emitted from its own surviving [element.<id>] section on the
+// next save and read straight back in — a delete that looked like it worked until
+// the theme was reopened. theme.Sidecar.RetireElementSection is the narrow act
+// (one named id, never a prune); the removal happens at WRITE time, and insertAt
+// cancels it, so undoing a delete still restores the file byte-identically.
 func (d *themeDoc) removeAt(t editTarget, v editValue) (theme.Element, bool) {
 	idx, ok := t.elemIdx()
 	if !ok || d.side == nil || idx < 0 || idx >= len(d.side.Elements) {
@@ -1206,6 +1214,7 @@ func (d *themeDoc) removeAt(t editTarget, v editValue) (theme.Element, bool) {
 	el := d.side.Elements[idx]
 	d.park(int(v.i[0]), el)
 	d.side.Elements = append(d.side.Elements[:idx], d.side.Elements[idx+1:]...)
+	d.side.RetireElementSection(el.ID)
 	d.dirty = true
 	return el, true
 }
@@ -1231,6 +1240,10 @@ func (d *themeDoc) insertAt(t editTarget, v editValue) bool {
 	d.side.Elements = append(d.side.Elements, theme.Element{})
 	copy(d.side.Elements[idx+1:], d.side.Elements[idx:])
 	d.side.Elements[idx] = el
+	// The section was marked for deletion but not yet deleted (removeAt's note), so
+	// putting the element back takes the mark off and the author's own lines — key
+	// order, spacing, comments — survive the round trip untouched.
+	d.side.UnretireElementSection(el.ID)
 	d.dirty = true
 	return true
 }
@@ -1285,6 +1298,20 @@ func (d *themeDoc) rebaseline() {
 // answer to "throw my changes away". It also cannot fail part-way: three
 // assignments, no I/O, no validation — the document it produces is one that was
 // already live, so it is saveable by construction.
+//
+// IT IS THE RETIRE SEAM'S SECOND EXIT, and for one wave it was an uncovered one.
+// A delete has two halves — the model's and the CARRIER'S (removeAt's note) — and
+// the second is deferred to the next write as a pending retirement. insertAt
+// cancels it, because the per-element undo is one of the two ways an element comes
+// back; this is the other, and it restored the model while leaving the retirement
+// standing. The consequence outlives the session: delete, then "Back, Back", and
+// the very next Sidecar.Bytes still strips the author's [element.<id>] lines from
+// where they were written and re-emits the section canonically at the end of the
+// file. Element declaration order is reload order, so a DISCARD silently reordered
+// the theme and dropped that one section's key order and comments — and it reaches
+// disk from three places (the editor's own save, internal/themepack's copy and its
+// create), because a.themeSidecar and d.side are the same object and
+// closeThemeEditor drops only the editor.
 func (d *themeDoc) restoreBaseline() {
 	if d == nil || d.side == nil {
 		return
@@ -1293,6 +1320,14 @@ func (d *themeDoc) restoreBaseline() {
 	d.side.Overrides = append([]theme.KeyRect(nil), d.baseOv...)
 	d.side.Fonts = append([]theme.FontFamily(nil), d.baseFonts...)
 	d.side.FontBind = append([]theme.KV(nil), d.baseBind...)
+	// Over the RESTORED list rather than over a remembered set of deletions: the
+	// snapshot is the whole truth about which elements the theme has, so "every id
+	// that is back" is exactly the set whose sections must stay. An id the baseline
+	// does not carry keeps its retirement, which is right — a delete of an element
+	// that was authored AND saved this session is a delete the baseline agrees with.
+	for i := range d.side.Elements {
+		d.side.UnretireElementSection(d.side.Elements[i].ID)
+	}
 	for k, v := range d.baseLive {
 		if _, placed := d.live[k]; placed {
 			d.live[k] = v

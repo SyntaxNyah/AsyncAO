@@ -16,13 +16,18 @@ package themepack
 // worse than the original, and the user would find out when they exported it.
 //
 // THE ORIGINAL IS NEVER OPENED FOR WRITING. Every path on the source side is
-// read-only, and that is what TestOriginalThemeIsNeverMutatedByEditing hashes.
+// read-only, and that is what TestCopyForEditingLeavesTheOriginalUntouched
+// hashes (pack_test.go). The name that used to stand here —
+// TestOriginalThemeIsNeverMutatedByEditing — is the DESIGN document's name for
+// the gate and has never been a function in this tree; a comment pointing at a
+// test that does not exist is a claim nobody can check by grepping for it.
 
 import (
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -70,7 +75,9 @@ func CopyForEditing(srcDir, themesRoot, name string) (*Manifest, error) {
 		os.RemoveAll(part)
 		return nil, err
 	}
-	if err := stampProvenance(part, filepath.Base(srcDir)); err != nil {
+	// The spelling the SOURCE actually used, carried across so the stamp lands in
+	// the file the copy has rather than beside it — see stampProvenance.
+	if err := stampProvenance(part, filepath.Base(srcDir), foundSidecarRel(entries)); err != nil {
 		os.RemoveAll(part)
 		return nil, err
 	}
@@ -129,6 +136,23 @@ func copyOneFile(from, to, rel string) error {
 	return nil
 }
 
+// foundSidecarRel is the spelling the SOURCE FOLDER used for its native tier, or
+// "" when it had none. Case-folded, because that is the question: on a
+// case-sensitive filesystem `ASYNCAO_THEME.INI` is a different file from
+// `asyncao_theme.ini`, and the copy has whichever one the source had.
+//
+// It is readFolderSidecar's own probe, factored out rather than repeated: the two
+// callers must agree about which entry IS the sidecar, or one of them reads the
+// author's metadata while the other writes beside it.
+func foundSidecarRel(entries []srcEntry) string {
+	for _, e := range entries {
+		if strings.EqualFold(e.rel, sidecarName) {
+			return e.rel
+		}
+	}
+	return ""
+}
+
 // stampProvenance writes [import] derived_from / derived_at / derived_hash into
 // the copy's sidecar, creating one when the source had none.
 //
@@ -138,8 +162,22 @@ func copyOneFile(from, to, rel string) error {
 //
 // IT GOES THROUGH Sidecar.Bytes, which means it goes through the WRITE GUARD: a
 // provenance stamp cannot be the thing that produces a theme the reader refuses.
-func stampProvenance(dir, from string) error {
-	path := filepath.Join(dir, sidecarName)
+//
+// `rel` IS THE SPELLING THE COPY ACTUALLY HAS, and it is a parameter for a reason
+// this file's two siblings already learned. readPackSidecar folds a mis-cased
+// archive entry onto the canonical name (canonicalSidecarRel) and readFolderSidecar
+// probes with EqualFold, but this function used to open the canonical name
+// unconditionally. On a case-sensitive filesystem, copying a theme whose tier is
+// spelled `ASYNCAO_THEME.INI` therefore read nothing, created a SECOND, empty
+// sidecar beside the author's, and wrote the provenance into that: the copy lost
+// its name, author and licence, the editor showed an empty native tier, and the
+// export refused it under our own one-file-per-name guard. Three call sites, three
+// answers to "which file is the sidecar" — now one.
+func stampProvenance(dir, from, rel string) error {
+	if rel == "" {
+		rel = sidecarName // the source had none; the copy gets one under the format's name
+	}
+	path := filepath.Join(dir, filepath.FromSlash(rel))
 	sc, err := loadSidecarFile(path)
 	if err != nil {
 		// A sidecar this build cannot read is the AUTHOR's file and is left exactly

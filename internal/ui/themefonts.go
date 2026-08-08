@@ -565,10 +565,51 @@ func pxToScalePct(px int) int {
 // rather than a wall (hard rule 4).
 const themeMissingFamilyCap = 8
 
+// themeGenericFontClasses are the CSS/Qt GENERIC family names. A theme naming
+// one of these is not naming a file it forgot to ship — it is naming a CLASS,
+// and Qt resolves the class out of QFont's own alias table, so an AO2 theme
+// writing `serif` in courtroom_fonts.ini renders correctly upstream with no font
+// file anywhere near it.
+//
+// AsyncAO resolves theme faces from FILES — that is the whole point of the
+// sidecar's [fonts] tier: a theme that renders the same on a machine which never
+// heard of the family. So a generic class resolves to nothing here, the element
+// keeps the client's own face, and that is exactly what the author asked for.
+//
+// WITHOUT THIS TABLE the warning fires on data that is behaving correctly. It
+// already did, before any preset existed: any courtroom_fonts.ini writing `serif`
+// produced "this theme asks for fonts this machine does not have". The fourteen
+// shipped style presets bind generic classes deliberately — §6.4 forbids them
+// from bundling a face — so they would have made a false warning the NORMAL state
+// of the feature, and a warning that is usually wrong is one nobody reads the day
+// it is right.
+//
+// Lower-cased spellings only; the probe folds case.
+var themeGenericFontClasses = [...]string{
+	"serif", "sans", "sans-serif", "sansserif",
+	"mono", "monospace", "cursive", "fantasy", "system-ui",
+}
+
+// genericFontClass reports a family name that names a CLASS rather than a face.
+// EqualFold rather than a lowered copy, for the reason elemShapeIDOK gives: this
+// runs once per element per apply and ToLower allocates on any upper-case rune.
+func genericFontClass(fam string) bool {
+	want := strings.TrimSpace(fam)
+	for _, c := range themeGenericFontClasses {
+		if strings.EqualFold(c, want) {
+			return true
+		}
+	}
+	return false
+}
+
 // noteMissingFamily records a declared font family that resolved to no file,
 // deduped and in declaration order. Order matters for the message: showname and
 // message come first in theme.FontElements, and they are the two a user notices.
 func (res *themeApply) noteMissingFamily(fam string) {
+	if genericFontClass(fam) {
+		return // a CLASS, not a missing file — see themeGenericFontClasses
+	}
 	for _, have := range res.themeFontsMissing {
 		if strings.EqualFold(have, fam) {
 			return

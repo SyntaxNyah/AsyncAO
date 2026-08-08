@@ -105,9 +105,18 @@ func (a *App) editorExport() {
 	// this function runs on the RENDER THREAD, from a button. themepack.Write does
 	// the same census itself, before it creates anything — an over-cap theme is
 	// refused with nothing written either way — and the Manifest it returns carries
-	// the font-licence warnings into the receipt below. The design's export SHEET,
-	// which wants those numbers before the click, needs an off-thread pre-flight
-	// stage of its own; that is W9's, on the same primitives.
+	// the font-licence warnings into the receipt below.
+	//
+	// THE OFF-THREAD PRE-FLIGHT STAYS UNBUILT, and W9 ruled it deliberately rather
+	// than running out of wave. It exists to feed design §3.1's export SHEET — "mode
+	// checkbox, consent, font-licence warnings, sizes", the numbers a person wants
+	// BEFORE the click — and that sheet is not built. A producer whose only consumer
+	// is a surface nobody has designed the controls for is speculative generality,
+	// and worse, it is this codebase's own recurring failure: a tier computed, held,
+	// and read by nothing but a test (the sidecar [overrides] tier; App.themeReport
+	// until W9 gave it a panel). The two land together or neither lands. What ships
+	// today is the honest version — Share refuses exactly what Save would refuse, in
+	// the same words, and the receipt names every warning after the write.
 	ao2 := a.ctx != nil && a.ctx.shiftHeld
 	extras, err := a.editorExportExtras(dir, ao2)
 	if err != nil {

@@ -40,13 +40,15 @@ package ui
 // four that ARE reachable, so the day that census exists this file fails until it
 // is wired.
 //
-// ONE SURFACE, DELIBERATELY SMALL. The design's rail footer ("Imported · 4 notes",
-// expanding to an in-canvas panel) is an EDITOR surface, and a theme is imported
-// far more often than it is edited — most people who import one never open the
-// editor at all. So the report lands on the client's own warn line, which every
+// TWO SURFACES, AND THIS FILE OWNS THE SMALL ONE. A theme is imported far more
+// often than it is edited — most people who import one never open the editor at
+// all — so the report lands first on the client's own warn line, which every
 // screen already draws: the count, then the first note, on the apply that produced
-// them. The expandable panel is W9's, on top of the same slice; what is NOT
-// deferred is the silence.
+// them. The design's rail footer ("Imported · 4 notes", expanding to an in-canvas
+// panel) is the EDITOR's half and it shipped in W9 as themereportpanel.go, reading
+// the same App.themeReport slice this file lands. Until it existed that slice was
+// written on every apply and read by nothing, which is why the panel is a rule-11
+// obligation rather than a nicety.
 //
 // BOUNDED (hard rule 4) and built on the theme-apply goroutine, never on a draw.
 

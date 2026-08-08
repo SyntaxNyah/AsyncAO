@@ -152,6 +152,24 @@ type themeEditor struct {
 	// nil pointer.
 	picks pickCache
 
+	// gallery is the PRESET GALLERY panel (themegallery.go), the surface design §3.1
+	// has owed since W7 and editorPanelUp's own comment names. A POINTER, and the
+	// pointer IS the open flag: it carries a bounded miniature cache and a one-deep
+	// preset undo, and neither should exist for a session that never opens it.
+	gallery *themeGallery
+
+	// report is the IMPORT REPORT panel (themereportpanel.go), design §3.1's other
+	// owed surface and the reader App.themeReport did not have until W9. A POINTER
+	// for the same reason gallery is: it carries a 224-entry baked line array, and a
+	// session that never opens it should pay one nil pointer.
+	report *themeReportPanel
+	// reportChip / reportChipN are the rail chip's BAKED label and the note count it
+	// was baked for. On the editor rather than inside the panel because the chip is
+	// drawn whether or not the panel is open, and the rail draws every frame: built
+	// at the draw it would be a per-frame concat inside editorChromeAllocBudget.
+	reportChip  string
+	reportChipN int
+
 	// fontsOpen / font / fontNames are the FONT RAIL (themeeditorfonts.go): whether the
 	// panel is up, the one in-flight face copy (the pointer is the flag, exactly as
 	// `save` is), and the cycler's reusable name buffer.
@@ -513,6 +531,7 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.pollEditorSave()
 	a.pollEditorFont()
 	a.pollEditorExport()
+	a.pollThemeGalleryCreate()
 	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
 	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
 	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
@@ -578,6 +597,8 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// animating while a face is picked. It draws with the fence RELEASED, which is what
 	// makes its own buttons live while everything behind them is not.
 	a.drawEditorFontPanel(w, h)
+	a.drawThemeGallery(w, h)
+	a.drawThemeReportPanel(w, h)
 }
 
 // editorPanelUp reports that an editor PANEL is on screen.
@@ -588,12 +609,13 @@ func (a *App) drawThemeEditor(w, h int32) {
 // editorCanvasInput has to ask the same question in its own words — exactly as it
 // already does for the compact toolbox.
 //
-// OPEN to the panels design §3.1 still owes (preset gallery, import report, budget
-// details, export sheet): each joins the OR here and is fenced on both sides for free.
+// OPEN to the panels design §3.1 still owes (budget details, export sheet): each joins
+// the OR here and is fenced on both sides for free — the preset gallery and the import
+// report took exactly that route in W9.
 // CLOSED against the two MODALS, which are not panels — they close the screen's input
 // path rather than floating over it.
 func (a *App) editorPanelUp() bool {
-	return a.te != nil && a.te.fontsOpen
+	return a.te != nil && (a.te.fontsOpen || a.te.gallery != nil || a.te.report != nil)
 }
 
 // closeEditorPanels shuts whatever editorPanelUp reports. THE PREDICATE'S INVERSE, and
@@ -609,6 +631,8 @@ func (a *App) closeEditorPanels() {
 		return
 	}
 	a.te.fontsOpen = false
+	a.te.gallery = nil
+	a.te.report = nil
 	a.uiDirty = true
 }
 
@@ -701,6 +725,17 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Fonts") {
 		a.te.fontsOpen = !a.te.fontsOpen
 	}
+	// GALLERY (v1.90.0 W9) — the 21 x 14 preset grid. Beside Fonts because they are
+	// the same kind of thing: a panel that changes the whole theme at once, as
+	// against the rails, which change one row.
+	x -= btnW + btnGap
+	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Gallery") {
+		if a.te.gallery != nil {
+			a.te.gallery = nil
+		} else {
+			a.openThemeGallery()
+		}
+	}
 	// SHARE (v1.90.0 W8). It sits in the header rather than behind a menu because
 	// "hand this to a friend" is the whole point of having authored a theme, and a
 	// feature reachable only by knowing it exists is one nobody uses. The two
@@ -747,7 +782,14 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	c.Fill(rail, a.editorPlate(ColPanel))
 	c.Label(editRowPad, rail.Y+4, "Elements", ColText)
 
-	body := sdl.Rect{X: rail.X, Y: rail.Y + editRowH, W: rail.W, H: rail.H - editRowH*2}
+	// The report chip claims its row out of the BODY, not out of the footer, so a
+	// theme with notes shows one row fewer of elements rather than drawing the chip
+	// over the element count (design §3.1: the chip lives in the rail footer).
+	chipH := int32(0)
+	if len(a.themeReport) > 0 {
+		chipH = editRowH
+	}
+	body := sdl.Rect{X: rail.X, Y: rail.Y + editRowH, W: rail.W, H: rail.H - editRowH*2 - chipH}
 	n := a.te.doc.elementCount()
 	// The wheel BEFORE the clip, and through WheelIn — the kit's single-consumer
 	// wheel: taking it here means the courtroom underneath cannot also scroll from the
@@ -774,12 +816,17 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	c.popClip(prev, had)
 
 	// Footer: the count against the cap, so "why can I not add another" is answered
-	// before it is asked.
+	// before it is asked, and above it the import-report chip (design §3.1) when
+	// this client noticed anything about the theme.
 	foot := rail.Y + rail.H - editRowH
+	a.drawEditorReportChip(rail, foot-chipH)
 	c.LabelClipped(editRowPad, foot+3, rail.W-editRowPad*2,
 		strconv.Itoa(n)+" / "+strconv.Itoa(theme.ElementCap)+" elements", ColTextDim)
+	// The status chip stacks ABOVE the report chip rather than at a fixed offset from
+	// the footer: with both drawn at foot-editRowH a theme with notes would paint a
+	// red refusal straight over the button that explains them.
 	if a.te.status != "" && time.Since(a.te.statusAt) < editStatusMs*time.Millisecond {
-		c.LabelClipped(editRowPad, foot-editRowH+3, rail.W-editRowPad*2, a.te.status, ColDanger)
+		c.LabelClipped(editRowPad, foot-chipH-editRowH+3, rail.W-editRowPad*2, a.te.status, ColDanger)
 	}
 }
 

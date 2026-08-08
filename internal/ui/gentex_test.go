@@ -279,14 +279,54 @@ func TestGeneratorKeyIsResizeInvariant(t *testing.T) {
 	}
 }
 
+// assertGenParamsAllResolve is the whole rule, applied to one element list:
+// every `gen_params` key must resolve to a slot, and no two keys in one element
+// may land on the same one.
+//
+// It is a function taking a corpus because there are TWO of them, and the second
+// one arrived with the gate pointed at the first. An unrecognised key is ignored
+// with no note anywhere ("a generator ignores what it does not use"), and aliases
+// like `pitch`/`dot` or `pct`/`fade` share a slot under a later-wins rule, so a
+// dead parameter is invisible from every direction except this one.
+func assertGenParamsAllResolve(t *testing.T, where string, elements []theme.Element) int {
+	t.Helper()
+	checked := 0
+	for i := range elements {
+		el := &elements[i]
+		if el.Gen == "" {
+			continue
+		}
+		checked++
+		spec := theme.GeneratorSpecOf(el)
+		seen := map[genParamSlot]string{}
+		for j := 0; j < spec.NP; j++ {
+			key := spec.Params[j].Key
+			slot, known := genParamSlots[key]
+			if !known {
+				t.Errorf("%s [element.%s] generator %q: param %q is in no slot — it is silently "+
+					"ignored, with no note anywhere", where, el.ID, spec.Name, key)
+				continue
+			}
+			if prev, dup := seen[slot]; dup {
+				t.Errorf("%s [element.%s] generator %q: %q and %q share a GenParams slot, so the "+
+					"author wrote two values and only one survives", where, el.ID, spec.Name, prev, key)
+			}
+			seen[slot] = key
+		}
+		if !GeneratorKnown(spec.Name) {
+			t.Errorf("%s [element.%s] names generator %q, which this build does not rasterise — "+
+				"the element degrades to a flat fill", where, el.ID, spec.Name)
+		}
+	}
+	return checked
+}
+
 // TestGeneratorParamKeysDoNotCollide checks the ONE risk the global slot table
-// carries: two keys landing in the same slot for a generator that writes both.
+// carries, over the SHIPPED THEMES: two keys landing in the same slot for a
+// generator that writes both.
 //
 // The mapping is global because twenty-five keys mapped per-generator would be
-// twenty-five more things to keep in step with the rasters. The price is this test,
-// which walks the SHIPPED THEMES' actual `gen_params` lines and fails if any single
-// element writes two keys that resolve to one slot — i.e. if a parameter the author
-// wrote is silently overwritten by a later one.
+// twenty-five more things to keep in step with the rasters. This is the price.
 func TestGeneratorParamKeysDoNotCollide(t *testing.T) {
 	root := filepath.Join(uiRepoRoot(t), shippedThemeDir)
 	entries, err := os.ReadDir(root)
@@ -306,38 +346,165 @@ func TestGeneratorParamKeysDoNotCollide(t *testing.T) {
 		if err != nil || sc == nil {
 			t.Fatalf("themes/%s: %v", e.Name(), err)
 		}
-		for i := range sc.Elements {
-			el := &sc.Elements[i]
-			if el.Gen == "" {
-				continue
-			}
-			checked++
-			spec := theme.GeneratorSpecOf(el)
-			seen := map[genParamSlot]string{}
-			for j := 0; j < spec.NP; j++ {
-				key := spec.Params[j].Key
-				slot, known := genParamSlots[key]
-				if !known {
-					t.Errorf("themes/%s [element.%s] generator %q: param %q is in no slot — it is silently "+
-						"ignored, with no note anywhere", e.Name(), el.ID, spec.Name, key)
-					continue
-				}
-				if prev, dup := seen[slot]; dup {
-					t.Errorf("themes/%s [element.%s] generator %q: %q and %q share a GenParams slot, so the "+
-						"author wrote two values and only one survives", e.Name(), el.ID, spec.Name, prev, key)
-				}
-				seen[slot] = key
-			}
-			if !GeneratorKnown(spec.Name) {
-				t.Errorf("themes/%s [element.%s] names generator %q, which this build does not rasterise — "+
-					"the element degrades to a flat fill", e.Name(), el.ID, spec.Name)
-			}
-		}
+		checked += assertGenParamsAllResolve(t, "themes/"+e.Name(), sc.Elements)
 	}
 	if checked == 0 {
 		t.Fatal("no shipped element declares a generator — the gate is vacuous")
 	}
 	t.Logf("%d generator elements across the shipped themes, no slot collisions", checked)
+}
+
+// genInkedPixels counts the pixels a tile actually paints. Coverage rather than a
+// pixel-by-pixel expectation: what these knobs claim is "more ink" or "less ink",
+// and a hand-written bitmap would pin the anti-aliasing instead of the parameter.
+//
+// EVERY FIXTURE BELOW USES A TRANSPARENT `bg`, and that is not cosmetic: a tile
+// with an opaque background inks every pixel it has, so this counter reads the
+// tile SIZE and no parameter can move it. Both of the first two arms passed
+// vacuously that way before the fixtures were fixed.
+func genInkedPixels(t *testing.T, g theme.GeneratorSpec) int {
+	t.Helper()
+	img := RasterGenerator(g)
+	if img == nil {
+		t.Fatalf("%s rasterised nil", g.Name)
+	}
+	n := 0
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// TestTheThreeReWiredGenParamsActuallyChangeTheirTile is the anti-regression half
+// of the dead-param pass. `full`, `bow` and `pct` were all written by shipped
+// fragments and all resolved to nothing; wiring them into the slot table is only
+// half a fix, because a key that resolves to a slot NO RASTER READS is dead in
+// exactly the same way and looks identical from
+// TestEveryShippedGenParamResolvesToASlot.
+//
+// So each one is driven to two values and the tile has to differ. That is also
+// what makes the halftone default claim checkable: the knob's default is stated
+// to be the constant the raster used before it existed, so an element that says
+// nothing must rasterise byte-identically.
+func TestTheThreeReWiredGenParamsActuallyChangeTheirTile(t *testing.T) {
+	// wingmark `full`: 0 is a thin gull arc, 100 two full lobes. umineko's `gulls`
+	// asked for 0 and got the default, so it was drawing butterflies.
+	base := []string{"size", "40", "count", "4", "seed", "5", "tint", "#FFFFFF"}
+	gull := genInkedPixels(t, genFixtureSpec("wingmark", append(append([]string{}, base...), "full", "0")...))
+	fly := genInkedPixels(t, genFixtureSpec("wingmark", append(append([]string{}, base...), "full", "100")...))
+	if gull == fly {
+		t.Errorf("wingmark ignores `full` (%d inked pixels either way) — the key resolves to a slot "+
+			"the raster does not read, which is the same dead parameter under a new name", gull)
+	}
+
+	// frame `bow`: mode 3 only, and it must NOT disturb the other modes.
+	bezel := []string{"pitch", "6", "size", "14", "count", "3", "gap", "0",
+		"tint", "#2F2A26", "bg", "#00000000"}
+	straight := genInkedPixels(t, genFixtureSpec("frame", append(append([]string{}, bezel...), "bow", "0")...))
+	bowed := genInkedPixels(t, genFixtureSpec("frame", append(append([]string{}, bezel...), "bow", "35")...))
+	if bowed >= straight {
+		t.Errorf("frame's bezel does not bow: %d inked pixels at bow=35 against %d at bow=0, and the "+
+			"barrel thins the moulding, so it must paint less", bowed, straight)
+	}
+	box := []string{"pitch", "6", "size", "14", "count", "1", "gap", "0", "tint", "#2F2A26"}
+	if a, b := genInkedPixels(t, genFixtureSpec("frame", append(append([]string{}, box...), "bow", "0")...)),
+		genInkedPixels(t, genFixtureSpec("frame", append(append([]string{}, box...), "bow", "90")...)); a != b {
+		t.Errorf("`bow` changed a mode-1 box frame (%d -> %d) — it is reserved for the bezel, and a rule "+
+			"that changed thickness along its length reads as a mistake", a, b)
+	}
+
+	// halftone `pct`: the dot diameter, and a default that reproduces the constant
+	// the raster carried before the knob existed.
+	tone := []string{"pitch", "12", "angle", "0", "tint", "#000000", "bg", "#00000000"}
+	small := genInkedPixels(t, genFixtureSpec("halftone", append(append([]string{}, tone...), "pct", "20")...))
+	big := genInkedPixels(t, genFixtureSpec("halftone", append(append([]string{}, tone...), "pct", "90")...))
+	if small >= big {
+		t.Errorf("halftone ignores `pct`: %d inked pixels at 20%% against %d at 90%%", small, big)
+	}
+	if silent, stated := genInkedPixels(t, genFixtureSpec("halftone", tone...)),
+		genInkedPixels(t, genFixtureSpec("halftone", append(append([]string{}, tone...), "pct", "68")...)); silent != stated {
+		t.Errorf("halftone's default dot size is not genHalftoneDotPct (%d): saying nothing inks %d "+
+			"pixels and saying 68 inks %d, so adding the knob moved every tile that never asked for it",
+			genHalftoneDotPct, silent, stated)
+	}
+}
+
+// TestFrameGapOpensTheMiddleOfEachEdge pins the axis the bezel's barrel and the
+// frame's gap both measure, and it is here because that axis was SWAPPED.
+//
+// `gap` is "percent of each edge left open", and it measured the distance from
+// the tile centre PERPENDICULAR to the nearest edge — which is ~1 everywhere
+// inside the band, so nothing ever opened: gap = 25 and gap = 50 painted the
+// whole band, and mode 0's "corner brackets" drew a continuous box. Six shipped
+// preset elements write `gap = 22`.
+//
+// The orientation is pinned by two PIXELS rather than by a count, because a
+// count is what let the swap through: a tile can ink the right number of pixels
+// in the wrong places.
+func TestFrameGapOpensTheMiddleOfEachEdge(t *testing.T) {
+	img := RasterGenerator(genFixtureSpec("frame",
+		"pitch", "6", "size", "14", "count", "1", "gap", "50", "tint", "#FFFFFF"))
+	if img == nil {
+		t.Fatal("frame rasterised nil")
+	}
+	b := img.Bounds()
+	alpha := func(x, y int) uint8 { return img.Pix[img.PixOffset(x, y)+3] }
+	mid, edge := b.Dx()/2, 1
+	for _, c := range []struct {
+		x, y int
+		ink  bool
+		what string
+	}{
+		{mid, edge, false, "the middle of the TOP edge must be open at gap = 50"},
+		{mid, b.Dy() - 1 - edge, false, "so must the middle of the bottom edge"},
+		{edge, b.Dy() / 2, false, "and the middle of the left edge"},
+		{b.Dx() - 1 - edge, b.Dy() / 2, false, "and the middle of the right edge"},
+		{edge, edge, true, "the top-left CORNER must survive — a gap leaves the corners"},
+		{b.Dx() - 1 - edge, b.Dy() - 1 - edge, true, "so must the bottom-right corner"},
+	} {
+		if got := alpha(c.x, c.y) > 0; got != c.ink {
+			t.Errorf("pixel (%d,%d) inked=%v, want %v — %s", c.x, c.y, got, c.ink, c.what)
+		}
+	}
+	// And the two modes really are different pictures: mode 0 is corner brackets,
+	// so it must paint LESS than the continuous box mode 1 draws at gap = 0.
+	box := genInkedPixels(t, genFixtureSpec("frame", "pitch", "6", "size", "14", "count", "1", "gap", "0", "tint", "#FFFFFF"))
+	brackets := genInkedPixels(t, genFixtureSpec("frame", "pitch", "6", "size", "14", "count", "0", "gap", "0", "tint", "#FFFFFF"))
+	if brackets >= box {
+		t.Errorf("mode 0 inked %d pixels against mode 1's %d — corner brackets are drawing a continuous box",
+			brackets, box)
+	}
+}
+
+// TestEveryShippedGenParamResolvesToASlot is the same rule over the OTHER shipped
+// corpus — the embedded preset fragments — and it is the gate that was missing.
+//
+// The rule was already written and already enforced; it was pointed at
+// `themes/`, and W9 shipped a second body of generator data that nothing checked.
+// The census the day it was written: 13 keys in no slot (`bow`, `full`, `glow`,
+// `ratio`, `rough`, `width`, `rgb`) and 8 collisions where the EARLIER value was
+// the dead one (`pitch` under `dot` on seven halftones, `pct` under `fade` on the
+// one element the file calls THE preset for ruling R6 — so the perspective it
+// documents at 100 was rendering at 45). Twenty-one parameters, five presets,
+// none of them visible from anywhere: an unknown key is dropped in silence and an
+// aliased one is overwritten in silence.
+func TestEveryShippedGenParamResolvesToASlot(t *testing.T) {
+	lib, err := theme.ShippedPresets()
+	if err != nil {
+		t.Fatalf("preset library: %v", err)
+	}
+	checked := 0
+	for _, axis := range [][]*theme.Preset{lib.Layouts(), lib.Styles()} {
+		for _, p := range axis {
+			checked += assertGenParamsAllResolve(t, p.Kind.String()+"/"+p.ID, p.Elements())
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no preset element declares a generator — the gate is vacuous")
+	}
+	t.Logf("%d generator elements across the embedded presets, every param in a slot of its own", checked)
 }
 
 // TestCheckerdiscCornersAreTransparent pins the ADOPTED CLAUSE from the preset

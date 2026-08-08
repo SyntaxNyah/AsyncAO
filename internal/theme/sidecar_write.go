@@ -23,11 +23,17 @@ package theme
 // what the reader saw (Element.ID, Pane.ID, ClockSpec.ID), never rebuilt, or a
 // legal alternative spelling gains a duplicate section beside it.
 //
-// LIMIT, stated plainly: this wave has no DELETE. INIDoc can add and replace a
-// line, not remove one, so dropping an element from the model leaves its
-// section in the file. Nothing in W1 removes anything (the editor lands later),
-// and the alternative — rebuilding the file — is the exact data loss this type
-// exists to prevent.
+// LIMIT, stated plainly: THE WRITER STILL HAS NO DELETE, and the distinction
+// matters now that INIDoc has one. INIDoc.RemoveSection (W9) removes a section
+// on request; nothing in this file calls it, because "the model no longer holds
+// this" and "the author deleted this" are not the same claim — the reader
+// deliberately SKIPS an element whose `kind` a newer build invented and preserves
+// its section, so a writer that pruned every element section the model lacks
+// would delete exactly the forward-compat data rule 3 exists to protect.
+// Deletion is therefore driven by the ACT that meant it: the preset tier replace
+// (presetmerge.go's clearReplacedTier) and the editor's element delete. There is
+// still no KEY delete at all — an empty model value leaves the author's line
+// alone (setKey, below).
 
 import (
 	"io"
@@ -131,6 +137,10 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 		}
 		s.doc = d
 	}
+	// THE DEFERRED DELETIONS, before a single key is written: a section the model
+	// dropped must not be resurrected by the very write that was supposed to
+	// remove it. After Validate, so a refused save leaves the carrier untouched.
+	s.flushRetiredSections()
 	if err := s.writeInto(s.doc); err != nil {
 		return nil, err
 	}
@@ -187,7 +197,7 @@ type canonFunc func(string) string
 // setKey is the whole preservation contract in nine lines.
 //
 //   - want == "": the model has nothing to say. An existing line is left alone
-//     (this wave has no delete) and no line is created.
+//     (there is no KEY delete — see the file header) and no line is created.
 //   - the key is ABSENT: written only when it differs from the format default,
 //     so a fresh file lists what the author chose and nothing else.
 //   - the key is PRESENT: written only when the document does not already mean
