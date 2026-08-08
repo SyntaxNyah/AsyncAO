@@ -169,32 +169,107 @@ func TestNewInspectorFieldsAreAddressableAndNamed(t *testing.T) {
 	}
 }
 
-// TestElementIdIsNotAnInspectorField is a NEGATIVE gate, and it is the more valuable
-// half of the finding it records.
+// TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt is the W7b negative gate
+// turned into its post-condition (v1.90.0 W8).
 //
-// An element's id is its SECTION SUFFIX — the writer emits `[element.<id>]` and no key
-// carries it (sidecar_write.go's elementFieldKeys names ID as "never a key") — and
-// INIDoc has no DELETE. A spinner that renamed one would therefore APPEND a second
-// section for the same element and leave the first behind, and the file would read
-// back as TWO elements: silent duplication, on a save the user asked for.
-//
-// So the row is deliberately absent, and this gate is what stops the next wave from
-// adding it without also adding a section rename to the lossless carrier.
-func TestElementIdIsNotAnInspectorField(t *testing.T) {
-	for f := editFieldNone + 1; f < editFieldCount; f++ {
-		if editFieldNames[f] == "id" {
-			t.Fatalf("editField %d is named \"id\" — renaming an element rewrites its SECTION, and "+
-				"INIDoc cannot remove the old one, so the saved theme would carry the element twice", f)
-		}
-	}
+// THE PRECONDITION IT GUARDED IS GONE, and the property it protected is not. Through
+// W7b the gate said "there must be no Id row", because an element's id is its SECTION
+// SUFFIX — the writer emits `[element.<id>]` and no key carries it (sidecar_write.go's
+// elementFieldKeys names ID as "never a key") — and INIDoc had no way to move a
+// section, so a rename would have APPENDED a second one and left the first: a saved
+// theme carrying the element twice. W8 landed theme.INIDoc.RenameSection and the one
+// funnel that drives it, so the row exists — and the duplication this test was written
+// about is now checked DIRECTLY, by saving and re-reading, which is a stronger claim
+// than the absence of a row ever was.
+func TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt(t *testing.T) {
+	// The row exists and is reachable for every element kind: an id you cannot see is
+	// an id you cannot fix when two themes' elements collide.
 	for k := theme.ElementKind(0); k < theme.ElementKindCount; k++ {
-		for _, row := range inspectorFields[k] {
-			if strings.EqualFold(row.label, "id") {
-				t.Errorf("%s offers an %q row — see this test's comment for why a rename needs a "+
-					"section rename first", k, row.label)
-			}
+		if findInspectorRowOrNil(k, editFieldElemID) == nil {
+			t.Fatalf("%s has no Id row — the rename is unreachable from the rail", k)
 		}
 	}
+
+	a, doc := editDocRig(t, 1)
+	// The rig's own id, and its own section: editDocRig serialises once, so the
+	// carrier really holds `[element.<id>]` and the rename really has a header to
+	// move. Assigning a fresh id here instead would leave the ORIGINAL section in
+	// the carrier and the gate would fail for a reason about the fixture.
+	old := doc.side.Elements[0].ID
+	tgt := elementTarget(0)
+	row := findInspectorRow(t, doc.side.Elements[0].Kind, editFieldElemID)
+	a.editorWriteStringField(row, tgt, "band")
+
+	if got := doc.side.Elements[0].ID; got != "band" {
+		t.Fatalf("the model kept the id %q", got)
+	}
+	// THE FILE IS THE CLAIM. Save the document and read it back: exactly one element,
+	// under exactly the new name.
+	b, err := doc.side.Bytes()
+	if err != nil {
+		t.Fatalf("Bytes after a rename: %v", err)
+	}
+	back, err := theme.ParseSidecar(b)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if len(back.Elements) != 1 || back.Elements[0].ID != "band" {
+		t.Fatalf("a renamed element read back as %d element(s) %v — the old section survived",
+			len(back.Elements), elementIDsIn(back))
+	}
+	if strings.Contains(string(b), "[element."+old+"]") {
+		t.Errorf("the old section is still in the file:\n%s", b)
+	}
+
+	// AND IT UNDOES. A rename that could not be taken back would be the one edit in
+	// the editor with no inverse.
+	if !a.editorUndo() {
+		t.Fatal("undo of a rename did nothing")
+	}
+	if got := doc.side.Elements[0].ID; got != old {
+		t.Errorf("undo left the id at %q, want the original %q", got, old)
+	}
+	if !a.editorRedo() {
+		t.Fatal("redo of a rename did nothing")
+	}
+	if got := doc.side.Elements[0].ID; got != "band" {
+		t.Errorf("redo left the id at %q", got)
+	}
+}
+
+// TestARefusedRenameChangesNothingAndSaysWhy pins the other half: the funnel's
+// refusals reach the user as a chip, and the model does not move.
+func TestARefusedRenameChangesNothingAndSaysWhy(t *testing.T) {
+	a, doc := editDocRig(t, 2)
+	mine, sibling := doc.side.Elements[0].ID, doc.side.Elements[1].ID
+	row := findInspectorRow(t, doc.side.Elements[0].Kind, editFieldElemID)
+
+	for _, tc := range []struct{ name, to, want string }{
+		{"a taken id", sibling, "already has that id"},
+		{"a capital letter", "Box", "a-z0-9_-"},
+		{"an empty id", "", "a-z0-9_-"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a.te.status = ""
+			a.editorWriteStringField(row, elementTarget(0), tc.to)
+			if got := doc.side.Elements[0].ID; got != mine {
+				t.Fatalf("a refused rename still moved the model to %q", got)
+			}
+			if !strings.Contains(a.te.status, tc.want) {
+				t.Errorf("the chip reads %q — it must name the reason (%q)", a.te.status, tc.want)
+			}
+		})
+	}
+}
+
+// elementIDsIn lists a parsed sidecar's ids, for a failure message that names the
+// duplicate rather than merely counting it.
+func elementIDsIn(s *theme.Sidecar) []string {
+	out := make([]string, 0, len(s.Elements))
+	for i := range s.Elements {
+		out = append(out, s.Elements[i].ID)
+	}
+	return out
 }
 
 // TestGenParamsRowUsesTheFormatsOwnParser is the anti-second-grammar gate.
@@ -242,12 +317,21 @@ func TestGenParamsRowUsesTheFormatsOwnParser(t *testing.T) {
 // row of its own, so a row deleted from the table fails the gate that uses it.
 func findInspectorRow(t *testing.T, k theme.ElementKind, f editField) *inspectorField {
 	t.Helper()
+	if r := findInspectorRowOrNil(k, f); r != nil {
+		return r
+	}
+	t.Fatalf("%s has no inspector row for %s", k, f)
+	return nil
+}
+
+// findInspectorRowOrNil is the same probe for a caller that wants to phrase the
+// failure itself (a per-kind census reads better naming the kind that is missing).
+func findInspectorRowOrNil(k theme.ElementKind, f editField) *inspectorField {
 	for i := range inspectorFields[k] {
 		if inspectorFields[k][i].field == f {
 			return &inspectorFields[k][i]
 		}
 	}
-	t.Fatalf("%s has no inspector row for %s", k, f)
 	return nil
 }
 
@@ -434,6 +518,11 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 // the wave. restoreBaseline is "all or nothing"; a snapshot that covered elements and
 // overrides but not the type tables would let "Back, Back" discard a session's
 // geometry and silently KEEP its font bindings.
+//
+// UNCHANGED BY W8's re-baselining, deliberately: this session never saves, so the
+// baseline never moves and "discard" still means "back to when I opened it". That it
+// still passes verbatim is the open–closed evidence for rebaseline — the semantics
+// change only where a SAVE happened, which is TestDiscardAfterASaveGoesBackToTheSave.
 func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	a, doc := editDocRig(t, 1)
 	doc.side.Fonts = []theme.FontFamily{{Family: "Original", File: "o.otf"}}
@@ -554,6 +643,90 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	if got := a.themeGen.Load(); got != kicked {
 		t.Errorf("a second save re-applied unchanged type tables (gen %d → %d) — the gate must compare "+
 			"against the last APPLY, not against whether the tables were ever edited", kicked, got)
+	}
+	drainThemeApply(t, a, kicked)
+}
+
+// TestDiscardAfterASaveGoesBackToTheSave is the W8 exit-contract change, stated as
+// the thing that used to be wrong.
+//
+// THE DEFECT. The baseline was taken once, at open, and nothing moved it. So
+// edit → Save → edit → Back → Back left the MODEL at the pre-save document while
+// DISK held the save — and closeThemeEditor drops the document, not the model, so
+// the courtroom went on drawing a theme that no longer existed anywhere. The two
+// states only reconciled the next time something happened to re-read the file.
+//
+// A DELIBERATE SEMANTICS CHANGE, and this is its evidence: "discard" now means
+// "back to my last save". The gate that pins the OTHER meaning
+// (TestExitWithoutSavingThrowsAwayTypeEditsToo) is unchanged and still passes,
+// because a session with no save has no second meaning to choose between.
+func TestDiscardAfterASaveGoesBackToTheSave(t *testing.T) {
+	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
+	defer cleanup()
+	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
+	doc := a.te.doc
+
+	// EDIT ONE — saved. This is the state a discard must return to.
+	a.te.selectOnly(tgts[0])
+	a.editorNudgeSelection(3, 0, false)
+	a.editorSave()
+	if !a.editorAwaitSave(editorGateSaveWait) {
+		t.Fatalf("the save did not land: %s", a.te.status)
+	}
+	saved, err := doc.bytes()
+	if err != nil {
+		t.Fatalf("serialising the saved document: %v", err)
+	}
+
+	// EDIT TWO — not saved. This is what the discard throws away.
+	a.editorNudgeSelection(0, 5, false)
+	if !doc.dirty {
+		t.Fatal("the second nudge did not dirty the document; the discard below would prove nothing")
+	}
+
+	doc.restoreBaseline()
+	got, err := doc.bytes()
+	if err != nil {
+		t.Fatalf("serialising the restored document: %v", err)
+	}
+	if string(got) != string(saved) {
+		t.Errorf("a discard after a save did not return to the SAVE.\n"+
+			"The file on disk is the theme, and closeThemeEditor keeps whatever the model holds — so a "+
+			"baseline stuck at open time leaves memory and disk holding two different themes with nothing "+
+			"on screen to say so.\n--- want (the save) ---\n%s\n--- got ---\n%s", saved, got)
+	}
+	if doc.dirty {
+		t.Error("restoreBaseline left the document dirty")
+	}
+}
+
+// TestASaveDoesNotStaleTheTypeSignature. rebaseline moves the tables the type
+// signature is computed over, so a save that shifts the baseline and leaves
+// typeSigApplied behind would make the NEXT save kick an apply for a change nobody
+// made — or, in the other direction, skip one that was needed.
+func TestASaveDoesNotStaleTheTypeSignature(t *testing.T) {
+	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
+	defer cleanup()
+	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
+	doc := a.te.doc
+
+	if !a.editorApply(a.mutateFontFamily(len(doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
+		t.Fatal("the fixture family was refused")
+	}
+	a.editorSave()
+	if !a.editorAwaitSave(editorGateSaveWait) {
+		t.Fatalf("the save did not land: %s", a.te.status)
+	}
+	kicked := a.themeGen.Load()
+	if doc.typeSigApplied != doc.typeSig() {
+		t.Fatal("typeSigApplied does not match the tables that were just saved and applied")
+	}
+	// And the baseline the discard would restore signs the SAME tables, so a
+	// discard cannot silently put the faces on screen out of step with the model.
+	doc.restoreBaseline()
+	if doc.typeSigApplied != doc.typeSig() {
+		t.Errorf("after a save and a discard the model's type tables no longer match the faces that " +
+			"were resolved — the baseline and the applied signature moved apart")
 	}
 	drainThemeApply(t, a, kicked)
 }

@@ -135,15 +135,22 @@ const (
 	// own rule — the inspector table is indexed by these and a reorder would silently
 	// re-point every row in it.
 	editFieldKind
-	// (There is deliberately NO editFieldElemID. An element's id is its SECTION
-	// SUFFIX — the writer emits `[element.<id>]` and nothing else carries it — and
-	// INIDoc has no DELETE, so renaming one would append a second section for the same
-	// element and leave the first behind: a file that reads back as TWO elements. A
-	// rename therefore needs a section rename in the lossless carrier, which belongs
-	// with the wave that owns moving bytes around (W8), not with a spinner.)
 	editFieldGenParams
 	editFieldSlice
 	editFieldNoDecimate
+
+	// Identity (v1.90.0 W8). APPENDED, at the END, per this enum's own rule.
+	//
+	// editFieldElemID was deliberately ABSENT through W7b, and the reason is worth
+	// keeping now that it is here: an element's id is its SECTION SUFFIX — the writer
+	// emits `[element.<id>]` and no key carries it — and INIDoc had no way to move a
+	// section, so a rename would have APPENDED a second section for the same element
+	// and left the first behind: a file that reads back as TWO elements, on a save the
+	// user asked for. W8 is the wave that owns moving bytes around, so it landed
+	// theme.INIDoc.RenameSection and the one funnel allowed to drive it
+	// (theme.Sidecar.RenameElement, which moves the model and the header as one act).
+	// The setter below calls exactly that; nothing else in this package may.
+	editFieldElemID
 
 	// editFieldCount sizes the get/set tables — fixed arrays indexed by field, never
 	// maps: the tables are read during a drag.
@@ -176,6 +183,8 @@ var editFieldNames = [editFieldCount]string{
 
 	editFieldKind: "kind", editFieldGenParams: "gen_params",
 	editFieldSlice: "slice", editFieldNoDecimate: "decimate",
+
+	editFieldElemID: "id",
 }
 
 func (f editField) String() string {
@@ -262,6 +271,8 @@ var editFieldGet = [editFieldCount]func(*themeDoc, *theme.Element) editValue{
 	// behaviour; an inspector row labelled "Decimate" that showed the raw bool would
 	// be checked when the key says no. One negation, here, beside the setter's.
 	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element) editValue { return editValueBool(!e.NoDecimate) },
+
+	editFieldElemID: func(d *themeDoc, e *theme.Element) editValue { return editValueStr(d.intern(e.ID)) },
 }
 
 // editFieldSet writes one field back.
@@ -371,6 +382,23 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 		}
 	},
 	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element, v editValue) { e.NoDecimate = v.i[0] == 0 },
+
+	// THE ID GOES THROUGH THE FORMAT'S OWN FUNNEL and never through e.ID directly.
+	// An element's id lives in two places — this struct field and the
+	// `[element.<id>]` header in the lossless carrier — and theme.RenameElement is
+	// the only thing that can move both as one act. Assigning e.ID here would leave
+	// the carrier's header on the old name, and the next save would APPEND a second
+	// section: a file that reads back as two elements (see editFieldElemID).
+	//
+	// The error is dropped HERE and refused THERE: editorWriteStringField asks the
+	// same funnel first and shows the reason as a chip, because a setter cannot say
+	// no — the op is already recorded by the time it runs. What is left at this point
+	// is an id that has already been accepted once, so the only way this fails is a
+	// document that changed underneath a replayed op, and the honest answer to that
+	// is to leave the model alone.
+	editFieldElemID: func(d *themeDoc, e *theme.Element, v editValue) {
+		_ = d.side.RenameElement(e.ID, d.str(v.s))
+	},
 }
 
 // rgbaValue / valueRGBA are the ONE conversion between the format's colour and the
@@ -1207,8 +1235,49 @@ func (d *themeDoc) insertAt(t editTarget, v editValue) bool {
 	return true
 }
 
-// restoreBaseline puts the document back exactly as it stood when the editor
-// opened — the model AND the resolved geometry.
+// rebaseline re-takes the snapshot restoreBaseline restores to. ONE CALLER, and it
+// is the only event that may move the baseline: landEditorSave, after a write landed
+// (themeeditorsave.go).
+//
+// WHY "DISCARD" MEANS "BACK TO THE LAST SAVE" AND NOT "BACK TO WHEN I OPENED THIS".
+// The baseline used to be taken once, at open, and nothing moved it — so
+// edit → Save → edit → Back → Back left MEMORY at the pre-save document while DISK
+// held the save. Two states for one theme: the file on disk is the theme, the model
+// in memory is what the courtroom keeps drawing (closeThemeEditor drops the document,
+// not the model), and they disagreed until the next theme apply happened to read the
+// file back. The user's own words for the gesture are "throw away what I have not
+// saved", and that is what this makes true.
+//
+// typeSigApplied is not touched here and must not be: its one writer after open is
+// applyThemeAfterSaveIfTypeChanged, which runs in the same breath as this and sets it
+// only when it actually kicks an apply. Re-taking it here would claim an apply that
+// never happened. The tables it signs are the same tables this just snapshotted, so
+// after a save the baseline, the model, the file and the signature all agree — which
+// is the property the old shape lost.
+//
+// ALL OF IT OR NONE OF IT, exactly like restoreBaseline: a baseline where the
+// elements had moved on but the type tables had not is a discard that half-works.
+func (d *themeDoc) rebaseline() {
+	if d == nil || d.side == nil {
+		return
+	}
+	d.baseElems = append([]theme.Element(nil), d.side.Elements...)
+	d.baseOv = append([]theme.KeyRect(nil), d.side.Overrides...)
+	d.baseFonts = append([]theme.FontFamily(nil), d.side.Fonts...)
+	d.baseBind = append([]theme.KV(nil), d.side.FontBind...)
+	// The RESOLVED geometry moves with the model. baseLive is what a discard puts on
+	// screen and what applySlotReset falls back to, so leaving it at the open-time
+	// rects while the rows advance to the saved ones would put the pixels and the
+	// table that produced them into disagreement — the same two-states defect one
+	// layer down.
+	if d.live != nil {
+		d.baseLive = cloneRects(d.live)
+	}
+}
+
+// restoreBaseline puts the document back exactly as it stood at the BASELINE — the
+// model AND the resolved geometry. The baseline is the editor's open state until a
+// save lands, and the last save after that (see rebaseline).
 //
 // IT IS THE EXIT-WITHOUT-SAVING PATH, and it is deliberately not an undo replay.
 // The ring is capped, so replaying it would restore most of a long session and stay

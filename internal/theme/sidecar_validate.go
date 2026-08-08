@@ -230,6 +230,16 @@ func (s *Sidecar) validateText() error {
 		{secImport, "derived_at", s.Import.DerivedAt, NameRuneCap},
 		{secImport, "derived_hash", s.Import.DerivedHash, NameRuneCap},
 	} {
+		// THE METADATA CLASS DEGRADES, IT DOES NOT REFUSE (metatext.go). Bytes runs
+		// degradeMeta immediately before this, so these values are already inside the
+		// cap; skipping them here is what makes that the ONE rule rather than two
+		// disagreeing ones — a direct Validate() call on a hand-built model must give
+		// the same verdict the save gives, and the save's verdict is "shortened, noted,
+		// written". The rows stay listed so the census can see the whole surface and so
+		// the skip is visible beside what it skips.
+		if isMetaTextKey(r.section, r.key) {
+			continue
+		}
 		if err := checkRuneCap(r.section, r.key, r.value, r.limit); err != nil {
 			return err
 		}

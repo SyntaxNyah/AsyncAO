@@ -75,6 +75,11 @@ func ParseSidecar(src []byte) (*Sidecar, error) {
 	if err := s.readSections(doc, secs); err != nil {
 		return nil, err
 	}
+	// THE METADATA DEGRADE, after the sections and before the caller sees the model:
+	// an over-long credit shortens the STRING and notes it rather than refusing the
+	// theme (metatext.go). It runs here, once, over the table both directions share,
+	// so no reader of a metadata field ever has to remember to bound it.
+	s.degradeMeta()
 	return s, nil
 }
 
@@ -287,43 +292,30 @@ var themeKeyKnown = keySet(
 	"min_client", "base", "subtheme", "layout_preset", "style_preset", "generated_by",
 )
 
+// readTheme fills [theme]. Every key here except `base` and `subtheme` is
+// METADATA (metatext.go), so it is read UNBOUNDED and degraded once at the end of
+// the parse — a 241-rune credit shortens with a note instead of costing the user
+// the entire theme. The two exceptions name FOLDERS the loader resolves, so a
+// short version means a different theme and the file is refused.
 func (s *Sidecar) readTheme(d *INIDoc, keys []string) error {
 	get := sectionGetter(d, secTheme)
 	s.Revision = atoiTrim(get("revision"))
-	var err error
-	if s.Meta.Name, err = s.freeText(secTheme, "name", get("name")); err != nil {
-		return err
-	}
-	if s.Meta.Author, err = s.freeText(secTheme, "author", get("author")); err != nil {
-		return err
-	}
-	if s.Meta.License, err = s.freeText(secTheme, "license", get("license")); err != nil {
-		return err
-	}
-	if s.Meta.Credit, err = s.freeText(secTheme, "credit", get("credit")); err != nil {
-		return err
-	}
-	if s.Meta.Description, err = s.freeText(secTheme, "description", get("description")); err != nil {
-		return err
-	}
+	s.Meta.Name = metaFree(get("name"))
+	s.Meta.Author = metaFree(get("author"))
+	s.Meta.License = metaFree(get("license"))
+	s.Meta.Credit = metaFree(get("credit"))
+	s.Meta.Description = metaFree(get("description"))
 	// min_client is INFORMATIONAL and never enforced: enforcing it bricks
 	// themes on downgrade for no gain.
-	if s.Meta.MinClient, err = s.plainText(secTheme, "min_client", get("min_client")); err != nil {
-		return err
-	}
+	s.Meta.MinClient = metaPlain(get("min_client"))
+	s.Meta.LayoutPreset = metaPlain(get("layout_preset"))
+	s.Meta.StylePreset = metaPlain(get("style_preset"))
+	s.Meta.GeneratedBy = metaPlain(get("generated_by"))
+	var err error
 	if s.Meta.Base, err = s.plainText(secTheme, "base", get("base")); err != nil {
 		return err
 	}
 	if s.Meta.Subtheme, err = s.plainText(secTheme, "subtheme", get("subtheme")); err != nil {
-		return err
-	}
-	if s.Meta.LayoutPreset, err = s.plainText(secTheme, "layout_preset", get("layout_preset")); err != nil {
-		return err
-	}
-	if s.Meta.StylePreset, err = s.plainText(secTheme, "style_preset", get("style_preset")); err != nil {
-		return err
-	}
-	if s.Meta.GeneratedBy, err = s.plainText(secTheme, "generated_by", get("generated_by")); err != nil {
 		return err
 	}
 	return s.markUnknownKeys(secTheme, keys, themeKeyKnown)
@@ -475,16 +467,11 @@ var importKeyKnown = keySet(
 
 func (s *Sidecar) readImport(d *INIDoc, keys []string) error {
 	get := sectionGetter(d, secImport)
-	var err error
-	if s.Import.DerivedFrom, err = s.plainText(secImport, "derived_from", get("derived_from")); err != nil {
-		return err
-	}
-	if s.Import.DerivedAt, err = s.plainText(secImport, "derived_at", get("derived_at")); err != nil {
-		return err
-	}
-	if s.Import.DerivedHash, err = s.plainText(secImport, "derived_hash", get("derived_hash")); err != nil {
-		return err
-	}
+	// [import] is provenance in its entirety and therefore metadata: read unbounded,
+	// degraded with a note at the end of the parse (metatext.go).
+	s.Import.DerivedFrom = metaPlain(get("derived_from"))
+	s.Import.DerivedAt = metaPlain(get("derived_at"))
+	s.Import.DerivedHash = metaPlain(get("derived_hash"))
 	list, err := parseTextList(get("subthemes"), SubthemeCap)
 	if err != nil {
 		return fmt.Errorf("%w: [import] subthemes holds more than %d entries", ErrSidecarCap, SubthemeCap)
@@ -839,6 +826,15 @@ func (s *Sidecar) plainText(section, key, raw string) (string, error) {
 	v := strings.TrimSpace(raw)
 	return v, checkRuneCap(section, key, v, NameRuneCap)
 }
+
+// metaFree / metaPlain are freeText / plainText WITHOUT the length refusal, for
+// the metadata class alone. The bound is not skipped, it is MOVED: degradeMeta
+// applies it once, at the end of the parse, over the one table both directions
+// share (metatext.go). Splitting it that way is what lets the rule be stated in a
+// single place instead of at a dozen assignment sites that each have to remember
+// which of the two caps they are under.
+func metaFree(raw string) string  { return decodeFreeText(raw) }
+func metaPlain(raw string) string { return strings.TrimSpace(raw) }
 
 func (s *Sidecar) boundedText(section, key, raw string, limit int) (string, error) {
 	v := strings.TrimSpace(raw)

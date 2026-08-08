@@ -32,7 +32,7 @@ func TestFilterBrowseEntries(t *testing.T) {
 		{name: ".secret.demo", dir: false}, // dotfile (even a recording): skipped
 		{name: "Beta", dir: true},
 	}
-	got := filterBrowseEntries(in)
+	got := filterBrowseEntries(in, isRecordingName)
 
 	// Expected: dirs first (apple, Beta, Zebra — case-insensitive), then files
 	// (clip.aorec, scene.DEMO — case-insensitive). Dotfiles and notes.txt gone.
@@ -63,17 +63,17 @@ func TestFilterBrowseEntriesCap(t *testing.T) {
 		// All directories so every one is kept (isolate the cap from the filter).
 		in = append(in, fakeDirEntry{name: dirName(i), dir: true})
 	}
-	got := filterBrowseEntries(in)
+	got := filterBrowseEntries(in, isRecordingName)
 	if len(got) != maxBrowseEntries {
 		t.Fatalf("filter kept %d, want the cap %d", len(got), maxBrowseEntries)
 	}
-	if more := overflowCount(in); more != extra {
+	if more := overflowCount(in, isRecordingName); more != extra {
 		t.Fatalf("overflowCount = %d, want %d", more, extra)
 	}
 
 	// Under the cap: no overflow.
 	few := in[:maxBrowseEntries-1]
-	if more := overflowCount(few); more != 0 {
+	if more := overflowCount(few, isRecordingName); more != 0 {
 		t.Fatalf("overflowCount under cap = %d, want 0", more)
 	}
 }
@@ -107,10 +107,10 @@ func TestFilterBrowseEntriesCapMixed(t *testing.T) {
 			in = append(in, fakeDirEntry{name: "." + dirName(i), dir: true})
 		}
 	}
-	if got := filterBrowseEntries(in); len(got) != maxBrowseEntries {
+	if got := filterBrowseEntries(in, isRecordingName); len(got) != maxBrowseEntries {
 		t.Fatalf("filter kept %d, want the cap %d", len(got), maxBrowseEntries)
 	}
-	if more := overflowCount(in); more != keptExtra {
+	if more := overflowCount(in, isRecordingName); more != keptExtra {
 		t.Fatalf("overflowCount = %d, want %d (dropped entries must not count)", more, keptExtra)
 	}
 }
@@ -178,7 +178,7 @@ func TestLoadBrowseDirFixture(t *testing.T) {
 	must(os.WriteFile(filepath.Join(dir, "c.txt"), []byte("x"), 0o644))
 	must(os.WriteFile(filepath.Join(dir, ".d.demo"), []byte("x"), 0o644))
 
-	entries, more, err := loadBrowseDir(dir)
+	entries, more, err := loadBrowseDir(dir, isRecordingName)
 	if err != nil {
 		t.Fatalf("loadBrowseDir: %v", err)
 	}
@@ -205,8 +205,38 @@ func TestLoadBrowseDirFixture(t *testing.T) {
 // panicking or returning junk.
 func TestLoadBrowseDirError(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	if _, _, err := loadBrowseDir(missing); err == nil {
+	if _, _, err := loadBrowseDir(missing, isRecordingName); err == nil {
 		t.Fatal("loadBrowseDir on a missing dir: want an error, got nil")
+	}
+}
+
+// TestEveryBrowsePurposeHasItsOwnFileFilter is the seam's encapsulation gate
+// (v1.90.0 W8). The browser now serves four purposes and a listing that showed
+// recordings to somebody importing a theme would be a picker with nothing in it —
+// the "button does nothing" report the in-app browser was built to end.
+//
+// It drives browseKeepRule rather than restating the extensions, so a purpose
+// added without a rule fails here instead of silently listing recordings, and the
+// bundle rule is checked against themePackExt (the drop router's own constant)
+// rather than a literal.
+func TestEveryBrowsePurposeHasItsOwnFileFilter(t *testing.T) {
+	if browseKeepRule(purposeThemeBundle)("umineko.aorec") {
+		t.Error("the theme-bundle browser lists recordings")
+	}
+	if !browseKeepRule(purposeThemeBundle)("umineko" + themePackExt) {
+		t.Errorf("the theme-bundle browser does not list %s files", themePackExt)
+	}
+	if !browseKeepRule(purposeThemeBundle)("UMINEKO.ZIP") {
+		t.Error("the theme-bundle browser does not list a plain .zip — a BROWSE is the user " +
+			"pointing at one file, and the importer sniffs the archive's own magic bytes anyway")
+	}
+	for _, p := range []browsePurpose{purposeVideo, purposeCheck, purposePackage} {
+		if browseKeepRule(p)("umineko" + themePackExt) {
+			t.Errorf("purpose %d lists theme bundles — the recording flows must not change", p)
+		}
+		if !browseKeepRule(p)("clip.aorec") {
+			t.Errorf("purpose %d stopped listing recordings", p)
+		}
 	}
 }
 

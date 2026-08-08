@@ -134,9 +134,18 @@ type themeEditor struct {
 	// the chip's own window discards them — a confirmation that costs no modal, in a
 	// screen the design allows exactly two of (and W7a spends neither).
 	exitAt time.Time
+	// copyAt stamps a Save press that found a theme this client may not write. The
+	// SECOND press inside themeCopyConfirmWindow copies it into the user's own
+	// themes folder and saves there (themecopy.go) — the same no-modal confirmation
+	// exitAt is, for the other refusal a Save can produce.
+	copyAt time.Time
 	// save is the in-flight write (themeeditorsave.go). One at a time, by
 	// construction: the channel is the flag.
 	save *editSaveJob
+	// export is the in-flight .aotheme bundle (themeexport.go). Same shape and
+	// same reason as save: the pointer IS the single-flight flag, and a second
+	// Share while one runs is refused with a chip rather than racing it.
+	export *editExportJob
 
 	// picks caches the inspector's two DYNAMIC pick lists (themeeditorpick.go). On the
 	// editor, not on App, so it dies with the screen — the closed-editor cost stays one
@@ -170,8 +179,9 @@ type themeEditor struct {
 // nobody can see.
 //
 // ok=false when the applied theme has no native tier to edit yet. That is not an
-// error and it is not a dead end: W8's copy-for-editing is the answer, and until it
-// lands the caller says so rather than opening an editor over nothing.
+// error and it is not a dead end: copy-for-editing is the answer, and the Settings
+// row draws THAT button instead of this one when it applies (themecopy.go's
+// themeEditorRow). Opening an editor over nothing is the one thing this must not do.
 func (a *App) openThemeEditor(from Screen) bool {
 	if a.themeSidecar == nil {
 		return false
@@ -502,6 +512,7 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.te.peek = c.keyHeld(sdl.K_SPACE) && c.focusID == ""
 	a.pollEditorSave()
 	a.pollEditorFont()
+	a.pollEditorExport()
 	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
 	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
 	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
@@ -689,6 +700,14 @@ func (a *App) drawEditorHeader(w int32) {
 	x -= btnW + btnGap
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Fonts") {
 		a.te.fontsOpen = !a.te.fontsOpen
+	}
+	// SHARE (v1.90.0 W8). It sits in the header rather than behind a menu because
+	// "hand this to a friend" is the whole point of having authored a theme, and a
+	// feature reachable only by knowing it exists is one nobody uses. The two
+	// modes and the whole zip live in themeexport.go.
+	x -= btnW + btnGap
+	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Share") {
+		a.editorExport()
 	}
 }
 
@@ -1042,6 +1061,25 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 		if _, err := theme.ParseGenParams(s); err != nil {
 			a.te.note("gen_params: at most " + strconv.Itoa(theme.GenParamCap) +
 				" k=v pairs, each under " + strconv.Itoa(theme.GenParamRuneCap) + " characters")
+			return
+		}
+	}
+	if f.field == editFieldElemID {
+		// ASKED BEFORE IT IS RECORDED. The rename itself happens in the setter, on the
+		// document's own funnel; what happens here is the FORMAT deciding whether it
+		// would be allowed — a taken id, a `[element.<id>]` this build preserved and
+		// ignored, an id outside the reader's grammar — because a setter cannot say no
+		// and a refusal discovered there would leave an undo entry claiming a rename
+		// that never happened.
+		//
+		// The message is theme's own, so the editor cannot quote a grammar or a cap the
+		// format does not actually have.
+		el := a.te.doc.element(t)
+		if el == nil {
+			return
+		}
+		if err := a.te.doc.side.CanRenameElement(el.ID, s); err != nil {
+			a.te.note(err.Error())
 			return
 		}
 	}

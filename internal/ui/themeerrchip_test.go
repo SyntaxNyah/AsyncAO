@@ -19,33 +19,43 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// overCapCredit is a free-text value one rune past theme.NameRuneCap. It is the
+// overCapBase is a [theme] base value one rune past theme.NameRuneCap. It is the
 // SHAPE of the real defect: the reader refuses the whole file on a named cap
 // (theme.ErrSidecarCap, never a truncation — a truncated theme that then got saved
 // would be data loss), so one long line costs a theme its entire AsyncAO tier.
-func overCapCredit() string { return strings.Repeat("x", theme.NameRuneCap+1) }
+//
+// CHANGED FIXTURE (v1.90.0 W8, the metadata-cap ruling). It used to be `credit`,
+// and `credit` no longer refuses: metadata degrades with a note, precisely so that
+// a stranger's attribution line cannot cost them their whole theme (see
+// internal/theme/metatext.go and THEME-FORMAT §7). The PROPERTY these gates pin —
+// "a refused sidecar reaches a surface the user can see" — is unchanged, so the
+// fixture moves to a [theme] key that is still structural: `base` names the
+// terminal AO2 fallback FOLDER, and a shortened one resolves a different theme or
+// none at all. Everything else about the file, and every assertion below, is
+// untouched.
+func overCapBase() string { return strings.Repeat("x", theme.NameRuneCap+1) }
 
 // refusedSidecarSource is a minimal but otherwise perfectly good sidecar whose
-// [theme] credit trips the cap. Everything else in it is legal and would have
+// [theme] base trips the cap. Everything else in it is legal and would have
 // rendered, which is exactly what makes the failure invisible.
 func refusedSidecarSource() []byte {
 	return []byte(fmt.Sprintf(`[theme]
 name   = Refused
-credit = %s
+base   = %s
 
 [element.plate]
 kind = gradient
 band = mid
 rect = 10, 10, 40, 40
 fill = #ff0000
-`, overCapCredit()))
+`, overCapBase()))
 }
 
-// cleanSidecarSource is the same file with a credit that fits.
+// cleanSidecarSource is the same file with a base that fits.
 func cleanSidecarSource() []byte {
 	return []byte(`[theme]
 name   = Clean
-credit = All original.
+base   = default
 
 [element.plate]
 kind = gradient

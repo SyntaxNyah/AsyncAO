@@ -391,8 +391,23 @@ func TestTheOnlyPlaceTheEditorIsDroppedSyncsTheArt(t *testing.T) {
 	}
 }
 
-// editorReleaseSites names every function in this package that assigns nil to a `.te`
-// field. AST, so prose about the assignment does not count as one.
+// editorReleaseSites names every function in this package that assigns nil to
+// THE APP'S `te` field. AST, so prose about the assignment does not count as one.
+//
+// NARROWED TO THE APP RECEIVER (v1.90.0 W8). It used to match `<anything>.te = nil`,
+// which is a census keyed on a two-letter field NAME rather than on the field: any
+// future type with a `te` of its own — a test rig, a pack job, a per-tab session —
+// would have joined the list and failed a gate about the theme editor's teardown for
+// a reason having nothing to do with it. Worse in the other direction, the looseness
+// hid what the gate is actually about: a.te is what drawThemeEditor keys on, so
+// clearing it is the last instant editorSyncArt can run, and only assignments to
+// THAT field are the event.
+//
+// The receiver is resolved from the enclosing FuncDecl (a method on App or *App) and
+// the assignment's base identifier must be that receiver, so a package-level `x.te =
+// nil` on some other value is not a release site — and a method that shadows the
+// receiver name cannot be smuggled past it either, because the base still has to be
+// spelled with the receiver's identifier.
 func editorReleaseSites(t *testing.T) []string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -411,6 +426,10 @@ func editorReleaseSites(t *testing.T) []string {
 			if !ok || fd.Body == nil {
 				continue
 			}
+			recv, ok := appReceiverName(fd)
+			if !ok {
+				continue // not a method on App: it has no a.te to clear
+			}
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				as, ok := n.(*ast.AssignStmt)
 				if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
@@ -418,6 +437,9 @@ func editorReleaseSites(t *testing.T) []string {
 				}
 				sel, ok := as.Lhs[0].(*ast.SelectorExpr)
 				if !ok || sel.Sel.Name != "te" {
+					return true
+				}
+				if base, ok := sel.X.(*ast.Ident); !ok || base.Name != recv {
 					return true
 				}
 				if id, ok := as.Rhs[0].(*ast.Ident); !ok || id.Name != "nil" {
@@ -429,6 +451,24 @@ func editorReleaseSites(t *testing.T) []string {
 		}
 	}
 	return out
+}
+
+// appReceiverName returns the identifier a method uses for its App receiver.
+// ok=false for a plain function, or for a method on any other type.
+func appReceiverName(fd *ast.FuncDecl) (string, bool) {
+	if fd.Recv == nil || len(fd.Recv.List) != 1 {
+		return "", false
+	}
+	field := fd.Recv.List[0]
+	typ := field.Type
+	if star, ok := typ.(*ast.StarExpr); ok {
+		typ = star.X
+	}
+	id, ok := typ.(*ast.Ident)
+	if !ok || id.Name != "App" || len(field.Names) != 1 {
+		return "", false
+	}
+	return field.Names[0].Name, true
 }
 
 // ---------------------------------------------------------------------------

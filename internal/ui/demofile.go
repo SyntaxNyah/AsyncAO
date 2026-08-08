@@ -473,21 +473,9 @@ func (a *App) HandleFileDrop(path string) {
 	}
 }
 
-// handleThemeBundleDrop parks a dropped .aotheme. EXTRACTION is a later wave
-// (it needs the consent sheet and the bounded extractor); what ships now is the
-// half that was actively wrong — the bundle no longer repoints anything — plus
-// the one line that tells the user where the file has to go instead. A dead
-// silent drop would be worse than the bug it replaces.
-func (a *App) handleThemeBundleDrop(path string) {
-	name := filepath.Base(path)
-	if dir := config.UserThemesDir(); dir != "" {
-		a.warnLine = "Theme bundle " + name + " — unpacking bundles arrives with the theme editor. For now, unzip it into " +
-			dir + " and press Refresh in Settings → Theme."
-	} else {
-		a.warnLine = "Theme bundle " + name + " — unpacking bundles arrives with the theme editor. For now, unzip it into your themes folder."
-	}
-	a.warnAt = time.Now()
-}
+// (handleThemeBundleDrop is themeimport.go's — W2 parked a bundle drop with a
+// "unzip it by hand" note and W8 landed the real extraction. The arm above is
+// unchanged; only what it does is.)
 
 // handleThemeFontDrop parks a dropped .ttf / .otf (v1.90.0 W4's font intake).
 //

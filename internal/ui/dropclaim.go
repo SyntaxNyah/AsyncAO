@@ -17,14 +17,21 @@ package ui
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/themepack"
 )
 
 // themePackExt is the AsyncAO theme bundle: a zip whose single root entry is
-// the theme folder (docs/THEME-FORMAT.md §1). Declared here rather than in a
-// themepack package because the EXTRACTOR does not exist yet — the routing
-// does, and shipping the routing first is what stops the silent repoint above.
-// When internal/themepack lands, this becomes an alias of its PackExt.
-const themePackExt = ".aotheme"
+// the theme folder (docs/THEME-FORMAT.md §1).
+//
+// AN ALIAS OF themepack.PackExt (v1.90.0 W8), exactly as this comment promised
+// when W2 shipped the routing ahead of the extractor. The router and the
+// extractor cannot now disagree about what a bundle is called — and note that
+// the extension is only ever the ROUTING question: themepack sniffs the zip's
+// own magic bytes, so a .aotheme that is really a screenshot is refused by the
+// importer and a friend's plain re-zipped .zip imports identically once it
+// reaches one.
+const themePackExt = themepack.PackExt
 
 // settingsImportExt is the whole-settings bundle the Data tab exports.
 const settingsImportExt = ".json"

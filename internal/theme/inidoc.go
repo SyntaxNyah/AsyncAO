@@ -98,6 +98,14 @@ var (
 	// ErrINIDocBadKey refuses a section or key that could not be written and
 	// read back as itself.
 	ErrINIDocBadKey = errors.New("theme: INI key or section is not writable")
+	// ErrINIDocNoSection reports a rename of a section the document does not
+	// declare. Distinct from a failure: an element authored this session has no
+	// lines in the carrier yet, and renaming it is a no-op rather than a problem.
+	ErrINIDocNoSection = errors.New("theme: INI document declares no such section")
+	// ErrINIDocSectionTaken refuses a rename onto a section that already exists.
+	// Merging two sections is not a rename — the winner of every shared key would
+	// be decided by line order — so the caller has to mean it explicitly.
+	ErrINIDocSectionTaken = errors.New("theme: INI section name is already taken")
 	// ErrINIDocBadValue refuses a value that would not survive its own reader:
 	// a newline splits the line in two, and a ';' truncates it (iniCommentStart).
 	// Free text is percent-encoded by the caller before it gets here.
@@ -121,8 +129,19 @@ type iniLine struct {
 	// do not).
 	key   string
 	isKey bool
-	// valStart/valEnd bound the VALUE inside raw, excluding the whitespace and
-	// any ';' comment that follow it. Set splices here.
+	// isHeader says the line OPENS its section, i.e. it is a "[name]" line. It
+	// is not the negation of isKey — a comment is neither — and it is what
+	// RenameSection edits.
+	isHeader bool
+	// valStart/valEnd bound the SPLICEABLE SPAN inside raw: the VALUE for a key
+	// line, and the section NAME INSIDE THE BRACKETS for a header line. Both
+	// exclude the surrounding whitespace and any ';' comment that follows, which
+	// is what makes an edit preserve a trailing comment on either kind of line.
+	//
+	// ONE SPAN, ONE SPLICER. Bytes replaces raw[valStart:valEnd] with whatever
+	// `touched` holds for the line and re-emits the rest verbatim, so a header
+	// rename and a value edit are the same three writes rather than two
+	// near-identical ones that could drift about whitespace.
 	valStart, valEnd int
 }
 
@@ -207,8 +226,20 @@ func classifyINILine(l *iniLine, section string) string {
 		return section
 	}
 	if strings.HasPrefix(trimmed, iniSectionOpen) && strings.HasSuffix(trimmed, iniSectionClose) {
-		opened := strings.ToLower(strings.TrimSpace(trimmed[1 : len(trimmed)-1]))
+		inner := trimmed[1 : len(trimmed)-1]
+		opened := strings.ToLower(strings.TrimSpace(inner))
 		l.section = opened // a header belongs to the section it opens
+		l.isHeader = true
+		// The NAME's span inside raw, computed the same way the value span below
+		// is: trimmed sits at offset `lead` in body, body is a prefix of raw, and
+		// the name sits one byte past the '[' plus its own leading whitespace. A
+		// header written "[  element.a  ]  ; the box" therefore renames to
+		// "[  element.b  ]  ; the box" — the author's spacing and their comment
+		// both survive, which is the whole reason this type exists.
+		lead := len(body) - len(strings.TrimLeftFunc(body, unicode.IsSpace))
+		nameLead := len(inner) - len(strings.TrimLeftFunc(inner, unicode.IsSpace))
+		l.valStart = lead + 1 + nameLead
+		l.valEnd = l.valStart + len(strings.TrimSpace(inner))
 		return opened
 	}
 	eq := strings.IndexByte(trimmed, iniAssign)
@@ -261,6 +292,81 @@ func (d *INIDoc) Set(section, key, value string) error {
 		return nil
 	}
 	return d.appendKey(sec, k, value)
+}
+
+// RenameSection moves a whole section under a new name, losslessly.
+//
+// THE BYTES DO NOT MOVE — the NAME does. Only the header line's own name span is
+// spliced; every key, comment, blank line and unknown line under it stays exactly
+// where the author put it, in the author's own spelling, and the section keeps its
+// position in the file. That is the difference between a rename and a
+// delete-then-append, and it is the whole reason this primitive exists rather than
+// its two-step imitation: this document has no DELETE, so "write the section again
+// under the new name" leaves the old one behind and the file reads back as TWO of
+// whatever the section described (sidecar_write.go's stated limit, and the exact
+// duplication TestElementIdIsNotAnInspectorField was written to forbid until this
+// function existed).
+//
+// EVERY header for the section is renamed, not just the first. A file may open the
+// same section twice — the reader treats the two runs as one section (last
+// declaration wins per key), so leaving the second header behind would split one
+// section into two under different names and silently strand half its keys.
+//
+// It REFUSES rather than merges when `to` already exists: merging two sections is
+// not a rename, it is a key collision whose winner depends on line order, and a
+// caller that wants it can say so in two calls.
+//
+// COLD PATH (hard rule 2), like every other mutator here.
+func (d *INIDoc) RenameSection(from, to string) error {
+	f := strings.ToLower(strings.TrimSpace(from))
+	t := strings.ToLower(strings.TrimSpace(to))
+	if f == "" || t == "" || badINIToken(f) || badINIToken(t) {
+		// The ROOT section is refused along with the malformed ones, and for a
+		// reason rather than by accident: it has no header line to rename, so
+		// "renaming" it could only mean inventing one and reparenting every key
+		// above the first header into it.
+		return ErrINIDocBadKey
+	}
+	if f == t {
+		return nil
+	}
+	if d.hasSection(t) {
+		return ErrINIDocSectionTaken
+	}
+	found := false
+	for i := range d.lines {
+		if d.lines[i].section != f {
+			continue
+		}
+		if d.lines[i].isHeader {
+			// The splice rides `touched`, which is the SAME mechanism a value edit
+			// uses (see iniLine.valStart), so Bytes needs no header-shaped special
+			// case and a rename cannot emit a line shape a Set could not.
+			d.touched[i] = t
+			found = true
+		}
+		d.lines[i].section = t
+	}
+	if !found {
+		// A section that was never declared is not an error the CALLER can act on
+		// — an element authored this session has no lines yet — so it is reported
+		// as its own condition rather than as a failure.
+		return ErrINIDocNoSection
+	}
+	d.reindex()
+	return nil
+}
+
+// hasSection reports whether a header for name exists. Header-based rather than
+// index-based on purpose: a section whose only content is a comment still exists,
+// and renaming another section onto it would still be a collision.
+func (d *INIDoc) hasSection(name string) bool {
+	for i := range d.lines {
+		if d.lines[i].isHeader && d.lines[i].section == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Dirty reports whether anything has been Set. A clean document serialises to
@@ -319,6 +425,15 @@ func (d *INIDoc) appendKey(section, key, value string) error {
 	}
 	if needHeader {
 		at = d.insertLine(at, iniSectionOpen+section+iniSectionClose, section, "", false) + 1
+		// The header a WRITE created is a header like any other: it carries its own
+		// name span so RenameSection can move it later. Without this, a section this
+		// document authored would be the one section in the file that could not be
+		// renamed — and worse, a splice against a zero span would prepend the new
+		// name in front of the '[' instead of replacing what is inside it.
+		h := &d.lines[at-1]
+		h.isHeader = true
+		h.valStart = len(iniSectionOpen)
+		h.valEnd = h.valStart + len(section)
 	}
 	raw := key + iniAssignSpaced + value
 	// The value span is everything after "key = ".

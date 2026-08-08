@@ -28,11 +28,28 @@ themes**, with an **Open folder** button beside it. That is the one it writes
 into, and it is the one to copy into if the list above is ambiguous on your
 machine.
 
-**A packed theme has to be unpacked first.** Dropping a `.aotheme` bundle on the
-window today gets you a note naming the folder to unzip it into — one-step bundle
-import arrives with the theme editor — and a plain `.zip` is not claimed at all.
-So: unzip it into your themes folder, or unzip it anywhere and drop the resulting
-**folder** on the window. Everything after that is the same.
+**A packed theme installs from the drop too.** Drag a `.aotheme` bundle onto the
+window and the client reads it — without unpacking anything — and tells you what
+is inside: the theme's name, how many files, how big it is packed and unpacked,
+and every font it carries along with whether that font's licence travels with it.
+**Drop it a second time to import**, and the theme unpacks into your themes
+folder and applies immediately. Nothing is written to disk until that second
+drop, and a bundle that is too big, too deep, trying to write outside its own
+folder, or naming one file twice in two spellings that differ only in case is
+refused by name before a single byte lands. That last one matters more than it
+sounds: two such entries are one file on Windows and macOS, so what the client
+told you about the theme's author and licence would not be what ended up
+installed.
+
+A plain `.zip` is not *claimed* by the window (so it cannot steal a drop from
+something else), but the importer never trusts a file extension anyway: if you
+rename it to `.aotheme` it imports identically, whether it was zipped as a folder
+or as the loose files inside one. Unzipping by hand and dropping the resulting
+**folder** still works exactly as it always did.
+
+**Two themes with the same folder name are two themes.** A second import of a
+name you already have lands as `<name> (2)` and says so — nothing you already
+installed is ever overwritten.
 
 Each folder holds exactly two files (three where a showcase is offered):
 
@@ -118,26 +135,36 @@ perfectly valid AO2 theme that falls through to `default`.
 
 ## Dev note
 
-**`themes/` should gain a parse gate once W1's sidecar parser is committed.**
-Add `TestRepoThemesParse` (in `internal/theme`, walking `../../themes/*/`) that
-for every folder here:
+**The parse gate is in.** `TestRepoThemesParse`
+(`internal/theme/repothemes_test.go`) walks every folder here on every run and
+asserts, per theme:
 
-1. parses `asyncao_theme.ini` with zero errors and zero refusals — in
-   particular the hard caps in `docs/THEME-FORMAT.md` § "Caps — refuse, never
-   truncate", which are **refusals, not truncations**: this audit found two
+1. `asyncao_theme.ini` parses with zero errors, zero refusals, **zero degrade
+   notes and zero unknown entries** — in particular the hard caps in
+   `docs/THEME-FORMAT.md` § "Caps — refuse, never truncate", which are
+   **refusals, not truncations**: the audit that asked for this gate found two
    themes whose `gen_params` lists carried nine entries against the cap of
    eight, which would have made the whole file unloadable;
-2. asserts `courtroom_design.ini` exists and declares both `courtroom` and
-   `viewport` — the pair `applyAO2DefaultRects` gates on
-   (`internal/ui/ao2defaultrects.go:48-54`). A standalone theme without it gets
+2. `courtroom_design.ini` exists and declares both `courtroom` and `viewport` —
+   the pair `applyAO2DefaultRects` gates on. A standalone theme without it gets
    no canvas, and then every `[overrides]` rect and every anchored element is
    silently dropped;
-3. asserts every `[overrides]` key is in `themeSlots` and passes
-   `themeKeyEditable`;
-4. asserts every `[element.*] anchor` names a real slot key, and that no rect
-   resolves to a zero or negative width/height;
-5. asserts `[media]` is empty in all fourteen (the originality claim above is
-   testable, so test it).
+3. `[media]` is empty in all of them, so the originality claim above is not a
+   promise but a test;
+4. and — the property the note could not ask for, because the writer did not
+   exist yet — **every file survives its own writer byte-identically**. These
+   are the only INIs in the tree a human typed, so they are the only round-trip
+   corpus our own writer cannot make self-fulfilling.
+
+`TestRepoThemesRoundTripThroughTheBundle`
+(`internal/themepack/repothemes_test.go`) is the transport half: each folder is
+bundled into a `.aotheme`, extracted again, and compared file for file. That is
+the drag-a-bundle promise at the top of this file, measured on real themes.
+
+**Still open, and deliberately in `internal/ui` when they land**, because both
+need the slot table that lives there: every `[overrides]` key being in
+`themeSlots` and passing `themeKeyEditable`, and every `[element.*] anchor`
+naming a real slot key with no rect resolving to a zero or negative size.
 
 Three cross-file naming questions are **deliberately left open** for W4, because
 the themes here match the style-preset corpus in `docs/wip/preset-drafts/style/`

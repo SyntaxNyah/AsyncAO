@@ -30,10 +30,19 @@ coverage.out
 /packaging/flatpak/_build.yaml
 *.flatpak
 
-# Emoji font build scratch (nanoemoji venv + ~4000 upstream SVGs + a 10 MB zip).
-# Reproduced from scratch by scripts/build-emoji-font.ps1; never committed.
-/_emojibuild/
-/_wfsalv/
+# Root-level SCRATCH DIRECTORIES, matched by SHAPE for the same reason the
+# script/log patterns below are: every session invents another name, and naming
+# them one at a time never kept up. Exactly two were ever named — _emojibuild
+# (nanoemoji venv + ~4000 upstream SVGs) and _wfsalv (workflow-journal salvage),
+# both added in a single commit. _prof (pprof output) and _gate (the
+# CGO-environment shim a wave writes when the command classifier is down) were
+# never covered at all: they sat untracked-but-stageable, and a landing had to
+# exclude `_gate/gate.go` BY NAME to keep agent scratch out of a commit. That
+# by-name exclusion is the defect this rule closes.
+#
+# A root directory whose name starts with _ is scratch. The go tool already
+# ignores such directories, so nothing under one can be part of a build.
+/_*/
 
 # Work-in-progress dossiers and reference art for the wave in flight. NEVER
 # committed: the folder holds third-party reference material gathered for

@@ -123,10 +123,21 @@ func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 			why: "ONE over-long line and the theme stops loading — the headline W7 hazard",
 		},
 		{
-			name:  "theme name past NameRuneCap",
+			// CHANGED EXPECTATION (v1.90.0 W8, the metadata-cap ruling). This row used
+			// to be `[theme] name past NameRuneCap → ErrSidecarCap`. [theme] name is now
+			// METADATA and degrades with a note (metatext.go), so the refusal it pinned
+			// is gone deliberately — and the property the row was really guarding, "a
+			// [theme] string past the cap does not silently become a broken save", moves
+			// to the key in that section that is still structural.
+			//
+			// `base` names the terminal AO2 fallback FOLDER: a truncated one resolves a
+			// different theme, or none, so shortening it is not a degrade of the same
+			// value but a silent substitution of another. TestMetadataCapsDegradeAndStructuralCapsRefuse
+			// drives the degrading half from both directions.
+			name:  "theme base past NameRuneCap",
 			want:  ErrSidecarCap,
-			build: func(s *Sidecar) { s.Meta.Name = strings.Repeat("n", NameRuneCap+1) },
-			why:   "[theme] name is length-bounded on read; the writer must not emit past it",
+			build: func(s *Sidecar) { s.Meta.Base = strings.Repeat("n", NameRuneCap+1) },
+			why:   "[theme] base names a folder the loader resolves; a shortened one is a different theme, so it is refused rather than degraded",
 		},
 		{
 			name: "anchor past AnchorRuneCap",
@@ -400,6 +411,30 @@ var iniDocProducers = map[string]string{
 // through: Validate itself, or Bytes (which is the guard's own front door).
 var sidecarGuardCalls = map[string]bool{"Validate": true, "Bytes": true}
 
+// foreignByteEmitters names the exported paths that READ a Sidecar and emit bytes
+// that are NOT a sidecar, and why each is therefore not a way around the guard.
+//
+// AN ALLOW-LIST, and for exactly iniDocProducers' reason: "do these bytes ever
+// become an asyncao_theme.ini?" is a fact about the seam's PURPOSE, and only a
+// human can state it. Both entries below arrived with W8's AO2-compat export,
+// whose whole design is that it produces bytes for a ZIP and never a path to a
+// file — so there is nothing for Validate to guard, and requiring the call would
+// mean validating a model on the way to writing a different file entirely.
+//
+// The rule that keeps this honest is stated once and enforced from the OTHER
+// package: internal/ui's TestTheAO2ExportNeverProducesAPathForTheAuthorsDesignINI
+// forbids any file in the client from joining a path onto theme.DesignFileName and
+// handing it to a writer. If that ever stops being true, these two stop being
+// exempt.
+var foreignByteEmitters = map[string]string{
+	"BakeAO2Design": "emits a courtroom_design.ini — AO2's file, not ours. It never produces sidecar " +
+		"bytes and never a path; the caller puts the result in a bundle. The Sidecar is READ for its " +
+		"[overrides] rows and is not mutated (TestStripForAO2NeverTouchesTheLiveModel covers the one " +
+		"path here that does copy it)",
+	"LostReport": "emits ASYNCAO-LOST.txt — plain English for a human who unzipped a bundle. It reads " +
+		"the model to list what AO2 cannot draw and writes nothing anywhere",
+}
+
 // TestNoExportedPathWritesASidecarWithoutTheGuard is the census behind Bytes'
 // claim that "there is no exported path around it".
 //
@@ -526,6 +561,9 @@ func TestNoExportedPathWritesASidecarWithoutTheGuard(t *testing.T) {
 				continue
 			}
 			emitters = append(emitters, fn.Name.Name)
+			if _, foreign := foreignByteEmitters[fn.Name.Name]; foreign {
+				continue // these bytes never become an asyncao_theme.ini — see the map
+			}
 			if !callsAnyOn(fn.Body, sidecarIdents(fn), sidecarGuardCalls) {
 				t.Errorf("%s (%s) emits sidecar bytes without calling Validate or Bytes — an editor holding a live "+
 					"model can write a file the reader then refuses, and the failure is silent at the moment of saving",
@@ -538,7 +576,12 @@ func TestNoExportedPathWritesASidecarWithoutTheGuard(t *testing.T) {
 	// checking (parsePackageSources already refuses an empty scan). A census that
 	// matched nothing would pass a package with the guard deleted.
 	sort.Strings(emitters)
-	const wantEmitters = "Bytes,Write"
+	// BakeAO2Design and LostReport are W8's AO2-compat export: they see a Sidecar
+	// and emit bytes, so the census must FIND them, and foreignByteEmitters is
+	// where each states why it is not a sidecar write. Listing them here as well is
+	// the non-vacuity half — a census that stopped matching them would pass a
+	// package in which they had grown a file path.
+	const wantEmitters = "BakeAO2Design,Bytes,LostReport,Write"
 	if got := strings.Join(emitters, ","); got != wantEmitters {
 		t.Fatalf("the exported byte-emitting paths with a Sidecar in reach are [%s], want [%s] — a new one is "+
 			"fine, but add it here so this gate is known to be covering it (and zero means the census stopped "+

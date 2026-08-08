@@ -52,7 +52,36 @@ Rules:
 
 The transport form is `.aotheme`: a zip whose single root entry is the theme
 folder, sniffed by the `PK\x03\x04` magic rather than by its extension, so a
-plain `.zip` works identically.
+plain `.zip` works identically. A **flat** archive — the theme's files zipped
+without their folder — is also accepted, and the folder is then named after the
+archive; anything with two top-level folders is refused, because a bundle is one
+theme and choosing between them would be guessing.
+
+An importer must decide every bound from the **central directory**, before
+decompressing anything: entry count, per-entry uncompressed bytes, uncompressed
+total, entry path length and directory depth. A conforming importer refuses past
+any of them **naming the cap, the number and the offending entry**, writes
+nothing on refusal, skips (never materialises) symlink entries, and suffixes
+` (2)`, ` (3)` … on a name collision rather than overwriting. AsyncAO's own
+bounds are 512 entries, 64 MiB per entry, 192 MiB uncompressed, 180-character
+paths and 12 levels of depth.
+
+**One file per name.** Two entries whose bundle-relative paths differ only in
+**case** are refused, naming both spellings: they are a single file on Windows
+and macOS, so accepting both writes one of them over the other, makes the
+importer's own file count describe something that is not on disk, and lets the
+last spelling decide what the theme claims about its author and its licence.
+For the same reason the native tier is installed under the spelling this
+document gives it — a bundle carrying `ASYNCAO_THEME.INI` lands as
+`asyncao_theme.ini` — so the file an importer *describes* before writing and the
+file a loader *opens* afterwards are the same file on every platform.
+
+An **AO2-compat** bundle additionally carries `courtroom_design.ini` with
+`[overrides]` baked into AO2's own keys, an `asyncao_theme.ini` whose
+`[overrides]`/`[rotations]` are consequently empty, and `ASYNCAO-LOST.txt` —
+plain text naming, by id and kind, every element AO2 will not draw. Those three
+files exist **only inside the bundle**: a writer must never bake over the
+author's own `courtroom_design.ini` on disk.
 
 ---
 
@@ -746,6 +775,15 @@ than overlapping them, so a 9-slice never produces negative geometry.
   legal spelling of clock 1; a writer that re-derived the name from its own index
   would append a second `[clock.1]` beside it and the file would say the same
   thing twice.
+- **Renaming an element renames its HEADER; it never re-writes the section.**
+  An element's id is its `[element.<id>]` section suffix and no key carries it,
+  so "write it again under the new name" leaves the old section behind and the
+  file reads back as **two** elements. A conforming writer edits the header
+  line's name in place — keys, comments, blank lines and the section's POSITION
+  all stay exactly where the author put them — and it **refuses** rather than
+  merging when the new name is already taken, including by a section the reader
+  only preserved (an unknown `kind` from a newer build is still somebody's
+  element). The model half and the file half move together or not at all.
 - Preserve the file's own line endings; new files use LF. Never add a final
   newline the author did not write.
 - Never emit a value the reader would not read back: no `;`, no newlines, no
@@ -779,7 +817,37 @@ than overlapping them, so a 9-slice never produces negative geometry.
 A file past any of these is **refused, not truncated**: a silently shortened
 theme that then gets saved back has destroyed the author's work.
 
-**`degrade notes reported` is the one exception, and it is not a load bound.**
+#### The metadata exception — degrade with a note
+
+**Two `[theme]`/`[import]` keys' worth of prose must not cost a reader the whole
+theme.** The caps above split by *consequence*:
+
+| Class | Keys | At the cap |
+|---|---|---|
+| **Metadata** | `[theme]` `name`, `author`, `license`, `credit`, `description`, `min_client`, `layout_preset`, `style_preset`, `generated_by`; `[import]` `derived_from`, `derived_at`, `derived_hash` | **truncated to 240 runes, with a degrade note**; the theme loads |
+| **Everything else** | ids, paths, families, `anchor`, `visible_when`, `[element.*] text`, and `[theme]` `base` / `subtheme` | **refused**, naming the line |
+
+A metadata value is display text: nothing resolves it, nothing paints it into the
+courtroom, and no other value's meaning depends on it. A 241-rune credit line
+losing a stranger their entire theme — elements, palette, fonts and all — is the
+worst outcome the format can produce, and it is produced by the one class of
+value where shortening costs nothing but a sentence. Everything in the second row
+*is* resolved or *is* drawn, so a short version means something **different** from
+what the author wrote, and a substitution is not a degrade.
+
+**The truncation lives in the model, never in the file.** A conforming writer
+canonicalises a metadata value *through the same truncation* before asking §7's
+"does the file already mean this?" question, so an over-long line is left exactly
+as the author typed it and a later build with a larger cap reads all of it back.
+Writing the short version over the author's text would be precisely the
+truncate-then-save data loss this section forbids.
+
+**And a refusal must say why.** Whether a file is refused outright or one value is
+shortened, the import report names the offending section, key, actual length and
+limit. Silence is not an option in either direction.
+
+**`degrade notes reported` is the one exception to the CAP shapes above, and it is
+not a load bound.**
 It caps the *import report*, never the file: a reader that has already collected
 64 degrade notes stops recording them and **keeps loading**. A theme is never
 refused because it had too many things to say about it — that is forced by §7.1

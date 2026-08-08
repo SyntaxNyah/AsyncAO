@@ -16,7 +16,8 @@ package ui
 //     theme (themeCatalogEntry.Dir + Origin), and only themeOriginYours is written.
 //     A bundled or read-only theme is REFUSED with the reason, because editing
 //     somebody else's folder in place is the highest-blast-radius risk the design
-//     names (§6 R3) and W8's copy-for-editing is its answer.
+//     names (§6 R3). The refusal is not a dead end: it OFFERS the copy that fixes
+//     it, and a second Save performs it (offerCopyOnSaveRefusal, themecopy.go).
 //  3. THE FILE IS REPLACED ATOMICALLY. Temp file in the SAME directory, then
 //     os.Rename — the shape config's preference saver and the disk cache's writer
 //     both use. A crash mid-write leaves the previous theme, never half of one.
@@ -29,6 +30,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,6 +41,13 @@ import (
 // editSaveTempSuffix is the in-progress name's tail. It sits in the theme's own
 // folder because os.Rename is only atomic within a filesystem.
 const editSaveTempSuffix = ".asyncao-tmp"
+
+// errThemeNotYours is "this theme is not ours to write". A SENTINEL rather than a
+// string, because one caller has to tell it apart from every other reason a save
+// has nowhere to go: it is the only one with a one-press fix (copy-for-editing),
+// and matching on prose would silently stop offering that fix the day the wording
+// improved.
+var errThemeNotYours = errors.New("this theme is not yours to write")
 
 // editSaveJob is one in-flight write. The channel is buffered so the goroutine
 // finishes and exits whether or not anybody is still listening.
@@ -61,7 +70,7 @@ func (a *App) editorSave() {
 	}
 	path, err := a.editorSidecarPath()
 	if err != nil {
-		a.te.note(err.Error())
+		a.offerCopyOnSaveRefusal(err)
 		return
 	}
 	b, err := a.te.doc.bytes()
@@ -74,6 +83,36 @@ func (a *App) editorSave() {
 	job := &editSaveJob{path: path, done: make(chan error, 1)}
 	a.te.save = job
 	go func() { job.done <- writeFileAtomically(job.path, b) }()
+}
+
+// offerCopyOnSaveRefusal turns "you may not write this theme" into something the
+// user can press (v1.90.0 W8, design §Q5).
+//
+// THE DEFECT IT CLOSES. A bundled or read-only theme opened, took a whole
+// session's work, and only then refused to save — with advice to go and copy a
+// folder in Explorer. The copy is now the second half of the same button:
+//
+//	Save       → the refusal, naming the theme, the reason, and the act that fixes it
+//	Save again → inside themeCopyConfirmWindow: copy, retarget this session, write it
+//
+// PRESS-AGAIN RATHER THAN A MODAL: the design allows exactly two modals in the
+// whole editor and W7 spends neither, so a third here would be the modal misery
+// requirement 10 forbids. It is the same idiom requestEditorExit and the import
+// consent already use, and the window is the CHIP's own lifetime — the offer never
+// outlives the sentence that made it.
+func (a *App) offerCopyOnSaveRefusal(err error) {
+	if !errors.Is(err, errThemeNotYours) {
+		a.te.note(err.Error())
+		return
+	}
+	if a.te.copyAt.IsZero() || time.Since(a.te.copyAt) >= themeCopyConfirmWindow {
+		a.te.copyAt = time.Now()
+		a.te.note(err.Error() + ". Press Save again to copy it into your themes folder and save there")
+		return
+	}
+	// The offer is spent by the act it authorises, exactly as the import's consent is.
+	a.te.copyAt = time.Time{}
+	a.copyThemeForEditing(a.te.doc.name, themeCopyThenSave)
 }
 
 // pollEditorSave lands a finished write. Called once per editor frame, from the
@@ -103,6 +142,12 @@ func (a *App) landEditorSave(err error) {
 	// an exit that raced a failed save would otherwise discard the edits it believed
 	// were already on disk.
 	a.te.doc.dirty = false
+	// AND THE BASELINE MOVES WITH IT (v1.90.0 W8). "Discard" means "back to the last
+	// save", not "back to when I opened the editor": the file now on disk IS the theme,
+	// and a discard that put the model back behind it would leave memory and disk
+	// holding two different themes with nothing on screen to say so. The same landing
+	// owns both because they are one event — see themeDoc.rebaseline.
+	a.te.doc.rebaseline()
 	a.te.note("saved to " + path)
 	a.applyThemeAfterSaveIfTypeChanged()
 }
@@ -166,9 +211,10 @@ func (a *App) editorSidecarPath() (string, error) {
 		return "", errors.New(name + " is not in the theme list — reopen the editor after a refresh")
 	}
 	if entry.Origin != themeOriginYours {
-		// NAME THE OFFENDER, NAME THE LIMIT, OFFER THE FIX (design §3.3).
-		return "", errors.New(name + " is a " + themeOriginLabel(entry.Origin) +
-			" theme — copy it into your themes folder before editing it")
+		// NAME THE OFFENDER, NAME THE LIMIT, OFFER THE FIX (design §3.3) — and the
+		// fix is an ACT, not homework: the sentinel is what lets editorSave turn this
+		// refusal into the copy that resolves it (offerCopyOnSaveRefusal).
+		return "", fmt.Errorf("%s is a %s theme — %w", name, themeOriginLabel(entry.Origin), errThemeNotYours)
 	}
 	if entry.Dir == "" {
 		return "", errors.New("could not work out where " + name + " lives on this machine")

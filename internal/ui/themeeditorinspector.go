@@ -245,11 +245,16 @@ const editRectSpanPx = 8192
 // Transform; the wave brief's does not ("for a free ELEMENT: kind, rect, …"), and the
 // brief wins because an element whose kind cannot be changed is an element that has
 // to be deleted and re-made to become a gradient.
-// (There is no Id row. An element's id is its SECTION SUFFIX and INIDoc has no
-// DELETE, so a rename would append a second [element.<id>] and leave the first —
-// a file that reads back as two elements. See editField's own note.)
+// THE ID ROW LANDED IN W8, and only because the carrier learned to move a section
+// (theme.INIDoc.RenameSection + theme.Sidecar.RenameElement). Through W7b it was
+// deliberately absent: an element's id IS its `[element.<id>]` header, INIDoc could
+// not move one, and a rename would therefore have appended a second section and left
+// the first — a file that reads back as two elements. The row is second, not first,
+// because Kind changes which rows exist below it and a rail whose first row rewrote
+// itself would be a rail nobody could aim at.
 var identityFields = []inspectorField{
 	row("Kind", secTransform, fkEnum, editFieldKind, 0, int32(theme.ElementKindCount)-1, theme.ElementKindNames()),
+	row("Id", secTransform, fkText, editFieldElemID, 0, 0, nil),
 }
 
 var transformFields = []inspectorField{

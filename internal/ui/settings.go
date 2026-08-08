@@ -5053,6 +5053,31 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	}
 	y += themeGetRowH
 
+	// --- IMPORT a bundle, the browse half of the drop (v1.90.0 W8) ---------
+	//
+	// Directly under "Get themes" because it is the same question's other half: that
+	// row says where themes come from, this one takes the file somebody sent you and
+	// turns it into an installed theme. Drag-and-drop is the primary path and always
+	// was — but a drop is undiscoverable, and a user who has already saved the bundle
+	// into Downloads has no window to drag it onto without going and finding it again.
+	//
+	// IT IS THE SAME FUNNEL. The button opens the in-app browser bound to
+	// purposeThemeBundle, and picking a file calls handleThemeBundleDrop — the very
+	// function a drag lands in. There is no second import path to keep in step, so
+	// the caps, the consent and the destination cannot diverge between the two ways
+	// in. The CONFIRM is the same two-act consent as well: the first pick describes
+	// the bundle, and this row's button becomes "Import <name>" until it is spent.
+	if c.onRow != nil {
+		c.onRow("Import a theme bundle", y)
+	}
+	c.Label(pad, y+4, "Import:", ColText)
+	imp := a.themeImportRow()
+	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, imp.note, ColTextDim)
+	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, imp.button) {
+		a.themeImportRowAction()
+	}
+	y += themeGetRowH
+
 	// --- the theme EDITOR (v1.90.0 W7) -------------------------------------
 	//
 	// The prominent row the design asks for, and it draws through c.onRow so the
@@ -5065,17 +5090,17 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 		c.onRow("Theme editor", y)
 	}
 	c.Label(pad, y+4, "Theme editor:", ColText)
-	editable := a.themeSidecar != nil
-	note := "design this theme's own elements, colours and motion"
-	if !editable {
-		// NAME THE OFFENDER, NAME THE LIMIT, OFFER THE FIX — never a greyed button
-		// with no explanation. An AO2 theme has no native tier until something makes
-		// one, and W8's copy-for-editing is what will.
-		note = "this theme has no AsyncAO tier yet — copy it for editing first"
-	}
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, note, ColTextDim)
-	if editable {
-		if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, "Open editor") {
+	// THE BUTTON IS NEVER ABSENT (v1.90.0 W8). This row used to draw "copy it for
+	// editing first" with NO button beside it, so an AO2 theme — the state every AO2
+	// user is in on first run — got advice and no way to act on it, and the only way
+	// forward was to go and copy a folder in Explorer. The row now offers the act
+	// itself: open what can be opened, copy what cannot (themecopy.go).
+	edit := a.themeEditorRow()
+	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, edit.note, ColTextDim)
+	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, edit.button) {
+		if edit.copies {
+			a.copyAppliedThemeForEditing(themeCopyThenOpen)
+		} else {
 			a.openThemeEditor(ScreenSettings)
 		}
 	}

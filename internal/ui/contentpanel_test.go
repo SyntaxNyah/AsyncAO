@@ -191,7 +191,7 @@ func TestContentPanelCloseViaEsc(t *testing.T) {
 // TestBrowserPurposeRoutesVideoUnchanged pins the promise that the video flow is
 // byte-identical after adding the pick-purpose: purposeVideo (the zero value, the
 // Import-.demo button's purpose) still routes a pick to the video import tail and
-// never touches the content engine. It drives pickBrowsedRecording with a bogus
+// never touches the content engine. It drives pickBrowsedFile with a bogus
 // path (the video tail is import-then-export; with no ffmpeg it still runs the
 // import and posts a banner) and asserts NO content job was started.
 func TestBrowserPurposeRoutesVideoUnchanged(t *testing.T) {
@@ -199,7 +199,7 @@ func TestBrowserPurposeRoutesVideoUnchanged(t *testing.T) {
 	a := headlessProbeApp(t, nil, false)
 	demoBrowser.open = true
 	demoBrowser.purpose = purposeVideo // the default; explicit for the pin
-	a.pickBrowsedRecording(filepath.Join(t.TempDir(), "nope.demo"))
+	a.pickBrowsedFile(filepath.Join(t.TempDir(), "nope.demo"))
 	if demoBrowser.open {
 		t.Error("a pick must close the browser")
 	}
@@ -221,7 +221,7 @@ func TestBrowserPurposeCheckOpensPanel(t *testing.T) {
 	path := writeTestRecording(t, "myscene")
 	demoBrowser.open = true
 	demoBrowser.purpose = purposeCheck
-	a.pickBrowsedRecording(path)
+	a.pickBrowsedFile(path)
 	if demoBrowser.open {
 		t.Error("pick must close the browser")
 	}

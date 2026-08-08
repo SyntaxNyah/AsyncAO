@@ -850,6 +850,28 @@ type App struct {
 	// consume ("I dropped a theme in Explorer and came back"). Render/event
 	// thread on both ends, so a plain bool is correct.
 	themeCatFocusStat bool
+	// themeReport is the applied theme's IMPORT REPORT (themereport.go) — every
+	// degrade, missing family and unbound key the last apply noticed. Bounded by
+	// themeReportCap and replaced wholesale at each landing, never appended to.
+	themeReport []string
+	// themeImp is the .aotheme TRANSPORT state machine (themeimport.go): the
+	// pending consent, and the one bundle job that may be in flight. On App
+	// rather than on a screen because a drop lands on whatever is visible and
+	// the import has to survive the user walking to another screen while it runs.
+	themeImp themeImport
+	// themeCopy is the one in-flight copy-for-editing (themecopy.go). On App and
+	// not on the editor because BOTH surfaces start one — the Settings row with no
+	// editor open, and the editor's refused Save — and the pointer IS the
+	// single-flight flag, so a second press while one runs is refused with a line
+	// rather than racing it.
+	themeCopy *themeCopyJob
+	// themeEditArmGen / themeEditArmFrom are the one-shot that opens the editor
+	// over a finished copy, armed exactly as themeResizeArmGen is: it names ONE
+	// apply generation, so it cannot leak onto healTheme's eviction re-kick or a
+	// boot apply, and the screen it was armed from is remembered so an editor
+	// never opens itself over a user who walked away.
+	themeEditArmGen  uint64
+	themeEditArmFrom Screen
 	// themeAppliedGen is the gen of the newest load pollThemeApply has already
 	// landed. The publish-time newest-wins guard only protects an UNCONSUMED
 	// result; once pollThemeApply Swaps one to nil, a slower older-gen load can
@@ -2847,6 +2869,10 @@ type themeApply struct {
 	// (theme.HasAnyFontFile).
 	themeFontsMissing []string
 	themeFontWarn     string
+	// report is the IMPORT REPORT (themereport.go): every degrade the sidecar
+	// reader recorded, plus the missing families and the unbound design keys.
+	// Built on this goroutine, bounded by themeReportCap, read once at the landing.
+	report []string
 	// userFontsDir is AsyncAO's own font drop folder, created on this pass so the
 	// warning can name a path that actually exists — telling someone to put files
 	// somewhere that is not there yet is most of the way to telling them nothing.
@@ -8510,6 +8536,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
 	a.drainThumbs()        // loaded low-q stand-ins → T1 (render thread; bounded per frame)
 	a.pollThemeApply()
+	a.pollThemeBundle() // lands a finished .aotheme inspect/extract (themeimport.go)
+	a.pollThemeCopy()   // lands a finished copy-for-editing (themecopy.go)
 	a.pollManifest()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
 	a.pollCasingProbe()
@@ -9296,6 +9324,14 @@ func (a *App) applyThemeAsync() uint64 {
 			anyOnDisk := t != nil && t.HasAnyFontFile()
 			res.themeFontWarn = themeFontWarning(res.themeFontsMissing, anyOnDisk, res.userFontsDir)
 		}
+		// THE IMPORT REPORT (W8, themereport.go). Built HERE — after the fonts, which
+		// are one of its three inputs — because every input is already on this
+		// goroutine and the render thread must never walk the notes (hard rule 2).
+		// It is the surface that stops Sidecar.Notes() being collected and read by
+		// nothing but tests, W8's own metadata degrade included: a
+		// degrade-with-a-note whose note reaches nobody is a silent truncation with
+		// extra steps.
+		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
 		//
@@ -9492,12 +9528,14 @@ func (a *App) pollThemeApply() {
 		a.pushDebug(res.sidecarErr)
 		settings.statusLine = clampLine(res.sidecarErr)
 	}
-	// #21: name the rects this theme declares that no widget reads. Debug log
-	// only — it is a theme-author diagnostic, not something a player needs on
-	// screen (owner decision).
-	if res.unbound != "" {
-		a.pushDebug(res.unbound)
-	}
+	// THE IMPORT REPORT (W8, themereport.go). It SUBSUMES the #21 unbound-key
+	// line, which used to be pushed to the debug log here and nowhere else: the
+	// report carries it as one entry, still logged, now also counted on a surface
+	// a human looks at. Every other input to it — the sidecar's own degrade notes,
+	// the families that resolved to no file — was in the same position, computed
+	// and thrown at a log, which is how the format's "degrade with a note" promise
+	// came to have no note in it.
+	a.noteThemeReport(res.name, res.report)
 	// #21: drop a stale ms_chatlog drag override. Before the themeSlots registry
 	// that key was ingested AND editable, so a user could drag it — and it fed the
 	// OOC log, because the layout treated it as a server_chatlog alias. It is now
@@ -9523,6 +9561,10 @@ func (a *App) pollThemeApply() {
 	// note that the stale-generation guard above already returned for anything
 	// older than what is applied, so such a landing can never spend the arming.
 	a.maybeResizeToThemeDesign(res.gen)
+	// And the copy-for-editing hand-off (W8), armed by the same kind of one-shot:
+	// "Copy for editing" is one act, and the editor can only open over a theme
+	// that has APPLIED — which is this landing (themecopy.go).
+	a.maybeOpenEditorAfterCopy(res.gen)
 }
 
 // ensureThemeForSession re-applies the theme whenever the session's

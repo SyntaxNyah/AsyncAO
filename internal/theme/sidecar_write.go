@@ -115,6 +115,12 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 	if s == nil {
 		return nil, nil
 	}
+	// THE METADATA DEGRADE runs BEFORE the guard, in the same order the reader runs
+	// it: a model carrying a 300-rune credit (a preset, a copy-for-editing stamp, an
+	// inspector row) shortens with a note rather than making the whole save fail.
+	// Validate then only ever sees values inside the cap, which is why its length
+	// walk skips exactly these keys (metatext.go).
+	s.degradeMeta()
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
@@ -217,17 +223,22 @@ func (s *Sidecar) writeTheme(d *INIDoc) error {
 	}{
 		{"format", formatInt(format), "", canonInt},
 		{"revision", formatInt(s.Revision), "0", canonInt},
-		{"name", encodeFreeText(s.Meta.Name), "", canonFree},
-		{"author", encodeFreeText(s.Meta.Author), "", canonFree},
-		{"license", encodeFreeText(s.Meta.License), "", canonFree},
-		{"credit", encodeFreeText(s.Meta.Credit), "", canonFree},
-		{"description", encodeFreeText(s.Meta.Description), "", canonFree},
-		{"min_client", canonPlain(s.Meta.MinClient), "", canonPlain},
+		// THE METADATA ROWS CANONICALISE THROUGH THE TRUNCATION (canonMetaFree /
+		// canonMetaPlain). That is what keeps the degrade out of the FILE: the
+		// author's 300-rune credit on disk canonicalises to the same 240-rune string
+		// the model holds, so setKey decides the file already means it and writes
+		// nothing — §7's own writer rule, applied to the one cap that degrades.
+		{"name", encodeFreeText(s.Meta.Name), "", canonMetaFree},
+		{"author", encodeFreeText(s.Meta.Author), "", canonMetaFree},
+		{"license", encodeFreeText(s.Meta.License), "", canonMetaFree},
+		{"credit", encodeFreeText(s.Meta.Credit), "", canonMetaFree},
+		{"description", encodeFreeText(s.Meta.Description), "", canonMetaFree},
+		{"min_client", canonPlain(s.Meta.MinClient), "", canonMetaPlain},
 		{"base", canonPlain(s.Meta.Base), "", canonPlain},
 		{"subtheme", canonPlain(s.Meta.Subtheme), "", canonPlain},
-		{"layout_preset", canonPlain(s.Meta.LayoutPreset), "", canonPlain},
-		{"style_preset", canonPlain(s.Meta.StylePreset), "", canonPlain},
-		{"generated_by", canonPlain(s.Meta.GeneratedBy), "", canonPlain},
+		{"layout_preset", canonPlain(s.Meta.LayoutPreset), "", canonMetaPlain},
+		{"style_preset", canonPlain(s.Meta.StylePreset), "", canonMetaPlain},
+		{"generated_by", canonPlain(s.Meta.GeneratedBy), "", canonMetaPlain},
 	}
 	for _, r := range rows {
 		if err := setKey(d, secTheme, r.key, r.want, r.def, r.canon); err != nil {
@@ -396,9 +407,10 @@ func (s *Sidecar) writeImport(d *INIDoc) error {
 		key, want, def string
 		canon          canonFunc
 	}{
-		{"derived_from", canonPlain(s.Import.DerivedFrom), "", canonPlain},
-		{"derived_at", canonPlain(s.Import.DerivedAt), "", canonPlain},
-		{"derived_hash", canonPlain(s.Import.DerivedHash), "", canonPlain},
+		// Metadata, so the same truncating canonicaliser [theme]'s rows use.
+		{"derived_from", canonPlain(s.Import.DerivedFrom), "", canonMetaPlain},
+		{"derived_at", canonPlain(s.Import.DerivedAt), "", canonMetaPlain},
+		{"derived_hash", canonPlain(s.Import.DerivedHash), "", canonMetaPlain},
 		{"subthemes", formatList(s.Import.Subthemes), "", canonList},
 		{"per_misc", formatBool(s.Import.PerMisc), formatBool(false), canonBool},
 		{"lobby_design", formatBool(s.Import.LobbyDesign), formatBool(false), canonBool},
@@ -613,6 +625,26 @@ func formatCondition(c Condition) string {
 func canonPlain(s string) string { return strings.TrimSpace(s) }
 
 func canonFree(s string) string { return encodeFreeText(decodeFreeText(s)) }
+
+// canonMetaFree / canonMetaPlain are canonFree / canonPlain THROUGH the metadata
+// truncation, and they are the reason the degrade never reaches the author's file.
+//
+// A canonicaliser answers "what does the text on disk mean to THIS reader?", and
+// what a 300-rune credit means to this reader is its first 240 runes (metatext.go).
+// Saying so here makes setKey's comparison come out equal, so the line is left
+// exactly as the author wrote it — and a newer build with a bigger cap reads their
+// whole sentence back. Canonicalising WITHOUT the truncation would rewrite that
+// line to the short version on the first save of an unrelated rect nudge, which is
+// the silent-truncate-then-save data loss §7's caps block exists to prevent.
+func canonMetaFree(s string) string {
+	v, _ := truncMetaRunes(decodeFreeText(s))
+	return encodeFreeText(v)
+}
+
+func canonMetaPlain(s string) string {
+	v, _ := truncMetaRunes(strings.TrimSpace(s))
+	return v
+}
 
 // canonInt is for the integers the reader does NOT narrow: [theme] format and
 // revision, and [chrome] shape_tier, each stored exactly as atoiTrim returned

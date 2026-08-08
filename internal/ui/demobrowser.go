@@ -58,6 +58,11 @@ const (
 	purposeVideo   browsePurpose = iota // pick → importRecordingToVideo (the original flow)
 	purposeCheck                        // pick → StartContentReport + open the report panel
 	purposePackage                      // pick → StartContentReport, then package once it's ready
+	// purposeThemeBundle (v1.90.0 W8): pick → handleThemeBundleDrop, the SAME
+	// funnel a dragged .aotheme goes through. It lists bundles instead of
+	// recordings, which is the first time this browser's file filter has had to
+	// depend on what it was opened for — see browseKeepRule.
+	purposeThemeBundle
 )
 
 // browseEntry is one row in the file browser: a directory to descend into or a
@@ -75,10 +80,17 @@ type browseEntry struct {
 // warrant that surface. First open seeds dir from UserHomeDir (openDemoBrowser).
 type demoBrowserState struct {
 	open bool
-	// purpose is what the picked recording feeds (video export / content check /
-	// package). Set once at open (openDemoBrowserFor); the pick action branches on
-	// it. Defaults to purposeVideo so the historic Import-.demo button is unchanged.
+	// purpose is what the picked file feeds (video export / content check /
+	// package / theme import). Set once at open (openDemoBrowserFor); the pick
+	// action branches on it. Defaults to purposeVideo so the historic Import-.demo
+	// button is unchanged.
 	purpose browsePurpose
+	// keep is the purpose's FILE FILTER, resolved once at open and captured by the
+	// loader goroutine. A field rather than a per-load read of `purpose`: the
+	// loader runs off the render thread, and reading a field the render thread can
+	// write is a race the detector would find the first time somebody re-opened the
+	// browser while a slow network directory was still listing.
+	keep func(string) bool
 	// dir is the directory being listed. "" is the Windows DRIVES view (a row per
 	// existing volume); off Windows there is no drives view and ".." stops at "/".
 	dir string
@@ -129,6 +141,7 @@ func (a *App) openDemoBrowser() { a.openDemoBrowserFor(purposeVideo) }
 func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
 	s.purpose = purpose
+	s.keep = browseKeepRule(purpose)
 	home, _ := os.UserHomeDir() // "" is tolerated: the quick-jump button just no-ops
 	s.homeDir = home
 	if home != "" {
@@ -162,8 +175,14 @@ func (a *App) navBrowseTo(dir string) {
 	s.scroll = 0
 	s.loadErr = ""
 	s.loading = true
-	go func(target string) {
-		ents, more, err := loadBrowseDir(target)
+	// CAPTURED, not read from the state inside the goroutine: the filter belongs to
+	// the open browser and the loader must not touch a field the render thread owns.
+	keep := s.keep
+	if keep == nil {
+		keep = isRecordingName // a browser opened before W8's purpose field existed
+	}
+	go func(target string, keep func(string) bool) {
+		ents, more, err := loadBrowseDir(target, keep)
 		errStr := ""
 		if err != nil {
 			errStr = err.Error()
@@ -171,7 +190,7 @@ func (a *App) navBrowseTo(dir string) {
 		// Cap 1 + single-flight: this send can never block (the render thread drains
 		// exactly one result before clearing s.loading and allowing the next nav).
 		s.res <- browseResult{dir: target, entries: ents, more: more, err: errStr}
-	}(dir)
+	}(dir, keep)
 }
 
 // loadBrowseDir reads one directory OFF the render thread: the Windows drives
@@ -179,7 +198,7 @@ func (a *App) navBrowseTo(dir string) {
 // Returns the capped, sorted entries and the overflow count. Any I/O error
 // (an unreadable/rights-denied dir) comes back so the draw can show it while
 // leaving ".." and the quick-jumps navigable.
-func loadBrowseDir(dir string) (entries []browseEntry, more int, err error) {
+func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, more int, err error) {
 	if dir == "" { // Windows drives view (never reached off Windows)
 		return listDrives(), 0, nil
 	}
@@ -187,7 +206,36 @@ func loadBrowseDir(dir string) (entries []browseEntry, more int, err error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	return filterBrowseEntries(des), overflowCount(des), nil
+	return filterBrowseEntries(des, keep), overflowCount(des, keep), nil
+}
+
+// browseKeepRule is the FILE FILTER for a pick purpose — the one place a purpose
+// decides what a listing shows.
+//
+// A FUNCTION OF THE PURPOSE rather than a branch inside the filter, because the
+// filter is pure and generic over its entries (that is what makes it unit-testable
+// without a filesystem) and the purpose is state. The default is deliberately the
+// recording rule: a purpose added without a rule lists recordings, which is wrong
+// but harmless, rather than listing everything.
+func browseKeepRule(p browsePurpose) func(string) bool {
+	if p == purposeThemeBundle {
+		return isThemeBundleName
+	}
+	return isRecordingName
+}
+
+// isThemeBundleName reports a theme bundle by its lowercased extension.
+//
+// PLAIN .zip IS LISTED, and that is not the same decision dropclaim.go made. A
+// DROP must not be claimed by extension alone — a .zip is far more likely to be
+// meant for something else, and stealing it would be a drop that vanished — but a
+// BROWSE is the user pointing at one file and saying "this one". The importer
+// never trusts either extension anyway: themepack.Inspect sniffs the archive's own
+// magic bytes (the assets.Sniff doctrine), so a .aotheme that is really a
+// screenshot is refused by name whichever way it arrived.
+func isThemeBundleName(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == themePackExt || ext == ".zip"
 }
 
 // browseDirEntry is the tiny surface filterBrowseEntries needs from an entry, so
@@ -198,10 +246,10 @@ type browseDirEntry interface {
 }
 
 // filterBrowseEntries keeps sub-directories (skipping hidden dotfiles) and files
-// whose lowercased extension is a recording (.demo/.aorec), sorts directories
-// first then case-insensitively by name, and caps the result at maxBrowseEntries.
-// Pure over its input (no filesystem) so it unit-tests directly.
-func filterBrowseEntries[E browseDirEntry](des []E) []browseEntry {
+// the caller's keep rule accepts (recordings, or theme bundles — browseKeepRule),
+// sorts directories first then case-insensitively by name, and caps the result at
+// maxBrowseEntries. Pure over its input (no filesystem) so it unit-tests directly.
+func filterBrowseEntries[E browseDirEntry](des []E, keep func(string) bool) []browseEntry {
 	out := make([]browseEntry, 0, len(des))
 	for _, de := range des {
 		name := de.Name()
@@ -212,7 +260,7 @@ func filterBrowseEntries[E browseDirEntry](des []E) []browseEntry {
 			out = append(out, browseEntry{name: name, isDir: true})
 			continue
 		}
-		if isRecordingName(name) {
+		if keep(name) {
 			out = append(out, browseEntry{name: name, isDir: false})
 		}
 	}
@@ -231,14 +279,14 @@ func filterBrowseEntries[E browseDirEntry](des []E) []browseEntry {
 // overflowCount is how many rows past maxBrowseEntries a directory holds (the
 // "… and N more" tail). It mirrors filterBrowseEntries' keep rule so the count
 // matches the truncation exactly.
-func overflowCount[E browseDirEntry](des []E) int {
+func overflowCount[E browseDirEntry](des []E, keep func(string) bool) int {
 	kept := 0
 	for _, de := range des {
 		name := de.Name()
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		if de.IsDir() || isRecordingName(name) {
+		if de.IsDir() || keep(name) {
 			kept++
 		}
 	}
@@ -307,9 +355,20 @@ func browseTitle(p browsePurpose) string {
 		return "Pick a .demo/.aorec to check for missing content"
 	case purposePackage:
 		return "Pick a .demo/.aorec to package into a self-contained folder"
+	case purposeThemeBundle:
+		return "Pick a theme bundle to import"
 	default:
 		return "Pick a .demo to turn into a video"
 	}
+}
+
+// browseFileIcon is the glyph for a non-directory row. A constant per purpose, so
+// the flat draw loop still costs no allocation.
+func browseFileIcon(p browsePurpose) string {
+	if p == purposeThemeBundle {
+		return "📦"
+	}
+	return "🎞"
 }
 
 // drawDemoBrowser draws the modal file browser LAST in drawSettings (topmost),
@@ -493,13 +552,13 @@ func (a *App) drawDemoBrowser(w, h int32) {
 			if e.isDir {
 				a.navBrowseTo(childBrowseDir(s.dir, e.name))
 			} else {
-				a.pickBrowsedRecording(childBrowseDir(s.dir, e.name))
+				a.pickBrowsedFile(childBrowseDir(s.dir, e.name))
 			}
 		}
 		// Icon and name are SEPARATE labels (constant/cached icon + cached name) so
 		// no per-frame `icon+" "+name` concat allocates — the icon column is a fixed
 		// offset, matching drawMakerList's tag+text split.
-		icon := "🎞"
+		icon := browseFileIcon(s.purpose)
 		if e.isDir {
 			icon = "📁"
 		}
@@ -525,17 +584,25 @@ func browseMoreLabel(more int) string {
 	return fmt.Sprintf("… and %d more (open a subfolder to narrow it down)", more)
 }
 
-// pickBrowsedRecording is the browser's PICK action, routed by the browser's
-// purpose. Close the browser first (every branch does), then:
+// pickBrowsedFile is the browser's PICK action, routed by the browser's purpose.
+// Close the browser first (every branch does), then:
 //   - purposeVideo: run the SHARED Studio import tail (importDroppedRecording →
 //     importRecordingToVideo) — byte-identical to the drag-onto-Studio path.
 //   - purposeCheck / purposePackage: hand off to the content-report engine
 //     (openContentReportFor), which loads the recording, starts the probe, and
 //     opens the report panel.
+//   - purposeThemeBundle: hand off to handleThemeBundleDrop — the SAME funnel a
+//     dragged bundle enters by, so browsing and dropping cannot diverge about
+//     caps, consent or where a theme lands (v1.90.0 W8).
+//
+// EVERY BRANCH IS A HAND-OFF TO AN EXISTING OWNER; none of them does the work
+// itself. That is the property that has kept this function honest through four
+// purposes — it was renamed from pickBrowsedRecording when the fourth arrived,
+// because "recording" had stopped being true.
 //
 // The video branch is deliberately untouched from the original single-purpose
 // browser so that flow can't regress (pinned by a test).
-func (a *App) pickBrowsedRecording(path string) {
+func (a *App) pickBrowsedFile(path string) {
 	purpose := demoBrowser.purpose
 	demoBrowser.open = false
 	switch purpose {
@@ -543,6 +610,8 @@ func (a *App) pickBrowsedRecording(path string) {
 		a.openContentReportFor(path, false)
 	case purposePackage:
 		a.openContentReportFor(path, true)
+	case purposeThemeBundle:
+		a.handleThemeBundleDrop(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}
