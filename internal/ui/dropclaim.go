@@ -73,7 +73,57 @@ const (
 	// font intake). Like a bundle it is a FILE, so it must never reach the
 	// Settings screen's theme-folder arm.
 	dropClaimThemeFont
+	// dropClaimThemeImage: a .png / .webp / .gif / .apng / .avif — HandleFileDrop
+	// owns it (v1.90.0 W10's image intake). Claimed by EXTENSION ALONE, with no
+	// "is the editor open" context, and that is the same ruling dropClaimThemeFont
+	// made, for the same two reasons: a picture is a FILE, so the Settings screen's
+	// theme-folder arm would otherwise repoint the user's theme root at whatever
+	// folder it came out of; and with no editor open the answer is a sentence saying
+	// where the feature is, which beats a silent "isn't a recording" warning about a
+	// file the user dropped on purpose.
+	dropClaimThemeImage
+	// dropClaimCount sizes the name table and BOUNDS THE CENSUS; never a real
+	// claim. The gate beside settingsDropAction used to walk the enum by naming
+	// its last member, which made every future wave responsible for remembering
+	// to move the bound — and W10 did not: dropClaimThemeImage shipped outside a
+	// census whose own comment promised that "a new claim appended to the iota
+	// block joins this gate the moment it exists". A sentinel is the only form of
+	// that promise the next wave cannot break by omission.
+	dropClaimCount
 )
+
+// dropClaimNames is what each claim is called in a failure line. It is sized against
+// dropClaimCount, the same shape themeCreateTemplateNames and editOpKindNames use.
+//
+// WHAT THAT SIZING ACTUALLY BUYS, stated exactly, because the opposite was written here
+// first and a false safety promise in this file is worse than none: a claim appended to
+// the block above is NOT a compile error. A short fixed-size array literal is legal Go —
+// `[dropClaimCount]string{...}` one entry short compiles and leaves the last slot "".
+// The compiler catches only the REVERSE, a name with no claim behind it, which is how a
+// stale table reports that the enum shrank. Its diagnostic is an INDEX error pointing at
+// the surplus element, not a count one: a seventh name added below is rejected as
+// `index 6 is out of bounds (>= 6)`. (An earlier draft of this comment quoted it as
+// "too many values in array literal". Go never says that about an explicit-length
+// array — that wording is the STRUCT literal's, `too many values in struct literal of
+// type s` — and a reader who tested the old quote got a different message and had every
+// reason to start doubting the rest of a correct paragraph.)
+// The claim-with-no-name direction is caught loudly at run time, by the empty-name loop
+// at the foot of TestEveryDropClaimHasASettingsAnswer (dropclaim_test.go). THAT LOOP IS
+// THE GUARANTEE — the sentinel cannot fall behind the enum it bounds only for as long as
+// the loop is there to say so, and deleting it re-opens exactly the erosion this file
+// was hardened against.
+var dropClaimNames = [dropClaimCount]string{
+	"none", "recording", "theme bundle", "settings import", "theme font", "theme image",
+}
+
+// String makes a claim printable in a refusal or a test failure without a second
+// table — an integer in that line tells the reader nothing about which owner lapsed.
+func (c dropClaim) String() string {
+	if int(c) >= len(dropClaimNames) {
+		return "?"
+	}
+	return dropClaimNames[c]
+}
 
 // claimDroppedFile classifies a dropped path by NAME alone — no disk access, so
 // it is safe on any thread and both owners get the same answer for the same
@@ -90,6 +140,8 @@ func claimDroppedFile(path string, importArmed bool) dropClaim {
 		return dropClaimSettingsImport
 	case isThemeFontExt(ext):
 		return dropClaimThemeFont
+	case isThemeImageExt(ext):
+		return dropClaimThemeImage
 	default:
 		return dropClaimNone
 	}
@@ -128,7 +180,7 @@ func settingsDropAction(claim dropClaim) settingsDropAct {
 	switch claim {
 	case dropClaimSettingsImport:
 		return settingsDropImportSettings
-	case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:
+	case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont, dropClaimThemeImage:
 		return settingsDropIgnore
 	default:
 		return settingsDropRepointThemeRoot

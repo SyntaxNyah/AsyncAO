@@ -871,6 +871,13 @@ type App struct {
 	// single-flight flag, so a second press while one runs is refused with a line
 	// rather than racing it.
 	themeCopy *themeCopyJob
+	// themeCreate is the one in-flight theme MINT (themecreate.go). On App and not
+	// on the editor for the same two reasons themeCopy is: both surfaces start one
+	// — the Settings ▸ Theme editor tab with no editor open, and the editor's own
+	// preset gallery — and the pointer IS the single-flight flag, so a second press
+	// while one runs is refused with a line rather than racing it onto the same
+	// collision-suffixed name.
+	themeCreate *themeCreateJob
 	// themeEditArmGen / themeEditArmFrom are the one-shot that opens the editor
 	// over a finished copy, armed exactly as themeResizeArmGen is: it names ONE
 	// apply generation, so it cannot leak onto healTheme's eviction re-kick or a
@@ -8624,6 +8631,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollThemeApply()
 	a.pollThemeBundle() // lands a finished .aotheme inspect/extract (themeimport.go)
 	a.pollThemeCopy()   // lands a finished copy-for-editing (themecopy.go)
+	a.pollThemeCreate() // lands a finished theme mint (themecreate.go)
 	a.pollManifest()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
 	a.pollCasingProbe()

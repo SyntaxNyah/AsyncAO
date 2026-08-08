@@ -70,6 +70,22 @@ const (
 	// the target's: the two tables are edited by two different ops and a target that
 	// tried to say which one would be a second, weaker copy of that distinction.
 	spaceFont
+	// spaceMedia: ONE ROW OF THE THEME'S [media] TABLE (v1.90.0 W10) — a declared
+	// image, identified by its INDEX in Sidecar.Media, exactly as a font row is
+	// identified by its index in Sidecar.Fonts.
+	//
+	// IT IS NOT spaceFont WITH A DIFFERENT OP, and the distinction is the one
+	// spaceFont's own note draws: which TABLE an index addresses is a property of
+	// the space, and the two ops that share spaceFont ([fonts] and [fontbind])
+	// share it because they address two halves of ONE thing — a family and the
+	// binding that points at it, both indexed by the type tables. A [media] row is
+	// a third table with its own cap, its own budget and its own reader, so an
+	// index that meant "a font row or a media row depending on the op" would be a
+	// target that cannot be validated without its op.
+	//
+	// LIKE spaceFont IT CARRIES NO GEOMETRY. The image's rect belongs to the
+	// ELEMENT that draws it (spaceElement); this row is the declaration of the file.
+	spaceMedia
 )
 
 // elemTargetNone is the "no element" index. -1 rather than 0 because 0 is a
@@ -112,7 +128,7 @@ func newEditTarget(space editSpace, key string, elem int) editTarget {
 		if elem != elemTargetNone {
 			panic("ui: editTarget in a key space must not carry an element index")
 		}
-	case spaceElement, spaceFont:
+	case spaceElement, spaceFont, spaceMedia:
 		if key != "" {
 			panic("ui: an index editTarget has no key — identity is the index")
 		}
@@ -143,6 +159,9 @@ func elementTarget(idx int) editTarget    { return newEditTarget(spaceElement, "
 
 // fontTarget is W7b's one addition: a row of the theme's type tables, by index.
 func fontTarget(idx int) editTarget { return newEditTarget(spaceFont, "", idx) }
+
+// mediaTarget is W10's: a row of the theme's [media] table, by index.
+func mediaTarget(idx int) editTarget { return newEditTarget(spaceMedia, "", idx) }
 
 // armed reports that something is selected. The zero target is the only unarmed one.
 func (t editTarget) armed() bool { return t.space != spaceNone }
@@ -183,6 +202,14 @@ func (t editTarget) fontIdx() (int, bool) {
 	return elemTargetNone, false
 }
 
+// mediaIdx is the [media] row index, with ok=false for every non-media target.
+func (t editTarget) mediaIdx() (int, bool) {
+	if t.space == spaceMedia {
+		return t.elem, true
+	}
+	return elemTargetNone, false
+}
+
 // ---------------------------------------------------------------------------
 // Resize handles, generalized across the spaces
 // ---------------------------------------------------------------------------
@@ -207,11 +234,13 @@ func resizeEdgesFor(t editTarget) uint8 {
 		// is real. Nothing derives an element's size from its content the way the
 		// control block and the tab strip derive theirs.
 		return edgeL | edgeR | edgeT | edgeB
-	case spaceFont:
+	case spaceFont, spaceMedia:
 		// NO EDGE TO DRAG, said here rather than left to the default so that adding a
-		// space is a decision taken at this table: a [fonts] or [fontbind] row has no
-		// rect at all, which is the same honest 0 the server-tab strip gets for having
-		// no authored size.
+		// space is a decision taken at this table: a [fonts], [fontbind] or [media]
+		// row has no rect at all, which is the same honest 0 the server-tab strip gets
+		// for having no authored size. A media row's picture DOES have a rect — it
+		// belongs to the element that draws it, and that element is a spaceElement
+		// target with all four edges.
 		return 0
 	}
 	return 0

@@ -35,7 +35,6 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/SyntaxNyah/AsyncAO/internal/themepack"
 )
 
 // ---------------------------------------------------------------------------
@@ -332,20 +331,11 @@ type themeGallery struct {
 	credit galleryCredit
 	// undo is the one-deep way back from APPLY. See theme.PresetUndo.
 	undo *theme.PresetUndo
-	// create is the in-flight folder write. The pointer IS the single-flight flag,
-	// exactly as themeEditor.save and .export are.
-	create *galleryCreateJob
-}
-
-// galleryCreateJob is one "make me a theme" write, off the render thread.
-type galleryCreateJob struct {
-	name string
-	done chan galleryCreateResult
-}
-
-type galleryCreateResult struct {
-	manifest *themepack.Manifest
-	err      error
+	// THE IN-FLIGHT WRITE IS NOT HERE ANY MORE (v1.90.0 W10). It was a
+	// *galleryCreateJob on this struct with its own channel, poll and landing —
+	// the second theme mint in internal/ui. It is App.themeCreate now
+	// (themecreate.go), which is also where it belongs by lifetime: a folder write
+	// must not be cancelled by closing the panel that started it.
 }
 
 // openThemeGallery arms the panel, loading the library on first use.
@@ -400,7 +390,13 @@ func (g *themeGallery) hovered() theme.PresetPair {
 // at is a bounds-checked index into an axis. Nil rather than a panic: the indices
 // are UI state and a library that shrank under one (a future user-preset axis) is
 // a card that does not draw, not a crash on the render thread.
-func (g *themeGallery) at(list []*theme.Preset, i int) *theme.Preset {
+func (g *themeGallery) at(list []*theme.Preset, i int) *theme.Preset { return presetAt(list, i) }
+
+// presetAt is the bounds rule itself, package-level so the settings tab's own axis
+// dropdowns (settingsthemeeditor.go) share it rather than restating it. ONE answer
+// to "what is at index i of an axis", so a shrunken library cannot be safe in one
+// surface and a panic in the other.
+func presetAt(list []*theme.Preset, i int) *theme.Preset {
 	if i < 0 || i >= len(list) {
 		return nil
 	}
@@ -471,52 +467,45 @@ func (a *App) undoGalleryPick() {
 
 // createThemeFromGalleryPick writes a NEW theme from the picked pair.
 //
-// The write is off the render thread and lands through pollThemeGalleryCreate, the
-// same job/poll/land shape copyThemeForEditing uses — and for the same reason: a
-// result that arrives between frames must not touch UI state from another
-// goroutine.
+// IT OWNS THE PICK AND NOTHING ELSE (v1.90.0 W10). The job, the channel, the poll,
+// the landing, the write-root refusal and the catalog seed used to live here as a
+// second copy of themecopy.go's shape; they are now startThemeCreate's, and this is
+// the pick that feeds it. A gallery that minted its own folder was the second place
+// in internal/ui calling themepack.CreateFromSidecar, and TestOneThemeCreationFunnel
+// now forbids a third.
+//
+// THE INTENT IS themeCreateThenNote, which is the one thing this caller decides
+// differently: the editor is open over a theme the user may have unsaved work in,
+// so the new one is written and NAMED rather than applied and opened.
 func (a *App) createThemeFromGalleryPick() {
 	g := a.gallery()
 	if g == nil {
 		return
 	}
-	if g.create != nil {
-		a.te.note("a theme is already being created — let it finish first")
-		return
-	}
 	pair := g.pair()
-	if pair.Empty() {
-		a.te.note("pick a layout and a style first")
-		return
-	}
-	cat := a.themeCatalogSnapshot()
-	if cat == nil || cat.WriteRoot == "" {
-		a.requestThemeCatalog(themeScanExplicit)
-		a.te.note("this install has nowhere to write themes yet. Set a theme folder in Settings ▸ Theme.")
-		return
-	}
 	name := galleryThemeName(pair)
-	sc, err := theme.NewThemeFromPresets(name, pair)
+	sc, err := newThemeSidecarFrom(templatePreset, name, pair)
 	if err != nil {
-		a.te.note("that combination could not be built: " + err.Error())
+		a.te.note(err.Error())
 		return
 	}
-	root := cat.WriteRoot
-	job := &galleryCreateJob{name: name, done: make(chan galleryCreateResult, 1)}
-	g.create = job
-	go func() {
-		m, err := themepack.CreateFromSidecar(root, name, sc)
-		job.done <- galleryCreateResult{manifest: m, err: err}
-	}()
-	a.te.note("creating " + name + "…")
+	a.startThemeCreate(name, sc, themeCreateThenNote)
 }
 
 // galleryThemeName is what a created theme is called. Both axes, because a name
 // that said only "Vaporwave" would collide with itself the moment the same style
 // is built on a second layout — and themepack's collision suffix would then be
 // the only thing telling them apart.
+//
+// NIL-SAFE ON BOTH AXES (v1.90.0 W10). It used to be called only behind a
+// pair.Empty() guard; the create moved to the shared funnel, which makes that guard
+// newThemeSidecarFrom's, and a name derived before the refusal would have
+// dereferenced a nil layout on an empty pair. "" is the honest answer and the
+// sanitizer's own refusal value.
 func galleryThemeName(pair theme.PresetPair) string {
 	switch {
+	case pair.Layout == nil && pair.Style == nil:
+		return ""
 	case pair.Style == nil:
 		return pair.Layout.Name
 	case pair.Layout == nil:
@@ -525,26 +514,9 @@ func galleryThemeName(pair theme.PresetPair) string {
 	return pair.Style.Name + " — " + pair.Layout.Name
 }
 
-// pollThemeGalleryCreate lands a finished write. Called once per frame from the
-// editor's draw, beside the save/font/export polls.
-func (a *App) pollThemeGalleryCreate() {
-	g := a.gallery()
-	if g == nil || g.create == nil {
-		return
-	}
-	select {
-	case res := <-g.create.done:
-		name := g.create.name
-		g.create = nil
-		if res.err != nil {
-			a.te.note("could not create " + name + ": " + res.err.Error())
-			return
-		}
-		a.requestThemeCatalog(themeScanExplicit)
-		a.te.note("created " + res.manifest.Root + " — it is in Settings ▸ Theme")
-	default:
-	}
-}
+// (pollThemeGalleryCreate is gone: App.pollThemeCreate lands every mint now, from
+// App.Frame rather than from the editor's draw — so a create started here still
+// lands after the panel, or the whole editor, has been closed. themecreate.go.)
 
 // gallery is the nil-safe accessor every act above opens with. One spelling of
 // "is the panel there", so a future act cannot invent a second.

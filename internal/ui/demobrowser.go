@@ -63,6 +63,12 @@ const (
 	// recordings, which is the first time this browser's file filter has had to
 	// depend on what it was opened for — see browseKeepRule.
 	purposeThemeBundle
+	// purposeThemeImage (v1.90.0 W10): pick → editorTakeImage, the SAME funnel a
+	// dragged .png / .webp / .gif enters by. The browse half of the theme editor's
+	// image intake, and it exists for the reason purposeThemeBundle does: a drop is
+	// undiscoverable, and a picture already saved into Downloads has no window to be
+	// dragged onto without going and finding it again.
+	purposeThemeImage
 )
 
 // browseEntry is one row in the file browser: a directory to descend into or a
@@ -218,8 +224,11 @@ func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, m
 // recording rule: a purpose added without a rule lists recordings, which is wrong
 // but harmless, rather than listing everything.
 func browseKeepRule(p browsePurpose) func(string) bool {
-	if p == purposeThemeBundle {
+	switch p {
+	case purposeThemeBundle:
 		return isThemeBundleName
+	case purposeThemeImage:
+		return isThemeImageName
 	}
 	return isRecordingName
 }
@@ -357,6 +366,8 @@ func browseTitle(p browsePurpose) string {
 		return "Pick a .demo/.aorec to package into a self-contained folder"
 	case purposeThemeBundle:
 		return "Pick a theme bundle to import"
+	case purposeThemeImage:
+		return "Pick an image to add to this theme (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
 	default:
 		return "Pick a .demo to turn into a video"
 	}
@@ -365,8 +376,11 @@ func browseTitle(p browsePurpose) string {
 // browseFileIcon is the glyph for a non-directory row. A constant per purpose, so
 // the flat draw loop still costs no allocation.
 func browseFileIcon(p browsePurpose) string {
-	if p == purposeThemeBundle {
+	switch p {
+	case purposeThemeBundle:
 		return "📦"
+	case purposeThemeImage:
+		return "🖼"
 	}
 	return "🎞"
 }
@@ -612,6 +626,12 @@ func (a *App) pickBrowsedFile(path string) {
 		a.openContentReportFor(path, true)
 	case purposeThemeBundle:
 		a.handleThemeBundleDrop(path)
+	case purposeThemeImage:
+		// The SAME funnel a dragged picture enters by (thememediaintake.go). It
+		// returns false only when no editor is open over a writable theme, which
+		// cannot happen from here — this browser is opened from the editor's own rail
+		// — so the refusal is a chip rather than a branch.
+		a.editorTakeImage(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}

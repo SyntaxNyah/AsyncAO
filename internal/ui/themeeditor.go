@@ -90,6 +90,13 @@ const (
 	editorHeaderBtnW   = 62
 	editorHeaderBtnGap = 4
 
+	// editRailAddBtnW / editRailLiveBtnW size the element rail's two header buttons
+	// (v1.90.0 W10): "+ Image" and the Live/Frozen toggle. Measured against the
+	// rail's own width — editRowPad + "Elements" is about 66 px at the chrome face,
+	// and 74 + 56 + the two gaps leaves that intact at editRailW.
+	editRailAddBtnW  = 74
+	editRailLiveBtnW = 56
+
 	// editStatusMs is how long a rail chip ("cap reached", "saved") stays up.
 	editStatusMs = 4000
 
@@ -169,6 +176,18 @@ type themeEditor struct {
 	// at the draw it would be a per-frame concat inside editorChromeAllocBudget.
 	reportChip  string
 	reportChipN int
+
+	// image is the one in-flight IMAGE INTAKE (thememediaintake.go). Same shape and
+	// same reason as `font`: the pointer IS the single-flight flag, and the channel
+	// is buffered so the goroutine never blocks on an editor that closed.
+	image *editImageJob
+
+	// livePaused is the LIVE PREVIEW toggle, stored INVERTED so the zero value is
+	// the live behaviour every session before this one had (the rule 4 shape a
+	// theme.Element field already follows: absent means version 1). See
+	// editorLiveOn / drawEditorHeader for what it gates and why the OFF state is
+	// the cheap one.
+	livePaused bool
 
 	// fontsOpen / font / fontNames are the FONT RAIL (themeeditorfonts.go): whether the
 	// panel is up, the one in-flight face copy (the pointer is the flag, exactly as
@@ -302,6 +321,13 @@ func (a *App) closeThemeEditor() {
 	if a.te == nil {
 		return
 	}
+	// THE PAUSE IS LIFTED FIRST. Live preview off is a VIEW state of the open editor
+	// (editorLiveOn), and this is the last instant anything can reconcile the plan
+	// with the model — dropping a.te is what stops the frame from ever running
+	// again. A paused exit that skipped the sync would leave the courtroom drawing a
+	// plan the document has moved past, which is precisely the class the second call
+	// site in themeeditorart.go exists to close.
+	a.te.livePaused = false
 	a.editorSyncArt()
 	back := a.editorReturn
 	a.te = nil
@@ -355,9 +381,63 @@ func (a *App) editorApply(op themeEditOp) bool {
 		return false
 	}
 	a.te.ring.push(done, time.Now())
-	a.invalidateThemeCanvases()
+	a.editorInvalidateLive()
 	a.uiDirty = true
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// LIVE PREVIEW — the toggle, and the one predicate that gates it
+// ---------------------------------------------------------------------------
+
+// editorLiveOn reports the live preview being on. TRUE when there is no editor at
+// all, so a caller outside the screen never has to special-case the closed state.
+//
+// WHAT "LIVE" ALREADY MEANT, AND WHAT THIS ADDS. The canvas has been a real
+// courtroom render since W7a and the art has re-derived per edit since W7b
+// (themeeditorart.go), so the preview was never the missing half — what was missing
+// was a way to STOP it. Every keystroke in a numeric field re-bakes the layout, and
+// every keystroke in a generator's params rasterises a fresh 256 KiB tile and
+// releases the old one (pruneEditorGenTiles' own note). On a big theme, on a slow
+// machine, that is the whole editing experience: type a digit, wait for the frame.
+//
+// So the toggle FREEZES the canvas rather than enabling it. Off, the document goes
+// on taking edits — the rails, the inspector, undo and Save are untouched — and the
+// picture simply stops re-baking until the toggle goes back on, which reconciles
+// once (setEditorLive). The frozen state is the CHEAP one by construction: the
+// gates below return before the signature hash and before the invalidate, so a
+// paused editor does exactly the work an idle one does. That is the zero-cost-closed
+// discipline, and it is the direction that makes the toggle worth having — a toggle
+// whose off-state still rebaked in the background would be a label.
+func (a *App) editorLiveOn() bool { return a.te == nil || !a.te.livePaused }
+
+// editorInvalidateLive is invalidateThemeCanvases, gated by the toggle. One
+// spelling, so a future edit path cannot forget the gate and re-bake anyway.
+func (a *App) editorInvalidateLive() {
+	if !a.editorLiveOn() {
+		return
+	}
+	a.invalidateThemeCanvases()
+}
+
+// setEditorLive flips the toggle and, on the way back ON, pays the one reconcile
+// the frozen frames skipped.
+//
+// THE RESUME IS UNCONDITIONAL, not "if anything changed": the plan's signature is
+// exactly what says whether anything changed (editorSyncArt compares it), and this
+// is the one moment the answer has to be re-asked rather than trusted.
+func (a *App) setEditorLive(on bool) {
+	if a.te == nil {
+		return
+	}
+	a.te.livePaused = !on
+	if !on {
+		a.te.note("live preview off — the canvas is frozen; edits still land and Save still works")
+		return
+	}
+	a.invalidateThemeCanvases()
+	a.editorSyncArt()
+	a.uiDirty = true
 }
 
 // editorUndo steps the timeline back by one op — or by one whole GROUP, which is
@@ -387,7 +467,7 @@ func (a *App) editorUndo() bool {
 		}
 	}
 	if moved {
-		a.invalidateThemeCanvases()
+		a.editorInvalidateLive()
 		a.uiDirty = true
 	}
 	return moved
@@ -419,7 +499,7 @@ func (a *App) editorRedo() bool {
 		}
 	}
 	if moved {
-		a.invalidateThemeCanvases()
+		a.editorInvalidateLive()
 		a.uiDirty = true
 	}
 	return moved
@@ -528,10 +608,19 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// Space PEEKS. Held, not toggled: a peek you have to switch off is a mode, and
 	// the whole point is to glance.
 	a.te.peek = c.keyHeld(sdl.K_SPACE) && c.focusID == ""
+	// THE FILE BROWSER'S FENCE IS RAISED HERE and released at the very end, right
+	// before the browser draws — the same release-and-restore drawSettings uses, and
+	// for the same reason: everything behind a modal must be click-dead while its own
+	// rows must not be. It is raised BEFORE the key handler and the canvas, which is
+	// the half a fence raised later would miss: the canvas is a real courtroom and
+	// eats arrows, and editorCanvasInput hit-tests with raw pointIn.
+	if demoBrowser.open {
+		c.modalOn = true
+	}
 	a.pollEditorSave()
 	a.pollEditorFont()
 	a.pollEditorExport()
-	a.pollThemeGalleryCreate()
+	a.pollEditorImage()
 	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
 	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
 	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
@@ -599,6 +688,15 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.drawEditorFontPanel(w, h)
 	a.drawThemeGallery(w, h)
 	a.drawThemeReportPanel(w, h)
+	// THE FILE BROWSER DRAWS LAST AND TOPMOST (v1.90.0 W10), with the fence released
+	// exactly as drawSettings releases it: it is the browse half of the image
+	// intake, and it is the one surface here that IS a modal rather than a panel —
+	// everything behind it must be click-dead while it is up, and its own rows must
+	// not be. It no-ops when closed, so the editor pays one bool for having it.
+	if demoBrowser.open {
+		c.modalOn = false
+	}
+	a.drawDemoBrowser(w, h)
 }
 
 // editorPanelUp reports that an editor PANEL is on screen.
@@ -725,6 +823,13 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Fonts") {
 		a.te.fontsOpen = !a.te.fontsOpen
 	}
+	// THE IMAGE AND LIVE BUTTONS ARE NOT HERE, and that is a measurement rather than
+	// a preference. This band already carries seven buttons at editorHeaderBtnW plus
+	// the theme name (w/3) and the saved-state label (w/4); at 1280 px the two
+	// columns meet at 752 and the button row starts at 818, so a ninth and tenth
+	// button would draw straight over the name. They live on the ELEMENT RAIL
+	// instead (drawEditorElementRail), which is where they belong anyway: both act
+	// on the element list — one adds to it, the other decides whether it re-bakes.
 	// GALLERY (v1.90.0 W9) — the 21 x 14 preset grid. Beside Fonts because they are
 	// the same kind of thing: a panel that changes the whole theme at once, as
 	// against the rails, which change one row.
@@ -744,6 +849,26 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Share") {
 		a.editorExport()
 	}
+}
+
+// editorLiveLabel is the Live button's caption. Two package constants rather than a
+// formatted string, for the reason editorStateLabel gives below: the label cache
+// keys on the string, so a value built per frame would rasterise a fresh texture
+// sixty times a second.
+func editorLiveLabel(on bool) string {
+	if on {
+		return "Live"
+	}
+	return "Frozen"
+}
+
+// editorImageBtnLabel is the rail's add-an-image caption, busy or idle. Two
+// constants, same reason as editorLiveLabel.
+func editorImageBtnLabel(busy bool) string {
+	if busy {
+		return "adding…"
+	}
+	return "+ Image"
 }
 
 // editorStateLabel is the one-word answer to "is my work safe". A CONSTANT string
@@ -781,6 +906,7 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	rail := sdl.Rect{X: 0, Y: editBannerH, W: editRailW, H: h - editBannerH}
 	c.Fill(rail, a.editorPlate(ColPanel))
 	c.Label(editRowPad, rail.Y+4, "Elements", ColText)
+	a.drawEditorRailActions(rail)
 
 	// The report chip claims its row out of the BODY, not out of the footer, so a
 	// theme with notes shows one row fewer of elements rather than drawing the chip
@@ -827,6 +953,47 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	// red refusal straight over the button that explains them.
 	if a.te.status != "" && time.Since(a.te.statusAt) < editStatusMs*time.Millisecond {
 		c.LabelClipped(editRowPad, foot-chipH-editRowH+3, rail.W-editRowPad*2, a.te.status, ColDanger)
+	}
+}
+
+// drawEditorRailActions draws the element rail's header buttons: ADD AN IMAGE, and
+// the LIVE PREVIEW toggle.
+//
+// ON THE RAIL RATHER THAN THE HEADER BAND. The band is full (drawEditorHeader's own
+// note measures it), and this is the better home regardless: the rail is the
+// element list, "+ Image" is the one act that adds to it, and the Live toggle
+// decides whether the list re-bakes as you edit. Both are one press from the list
+// they act on instead of across the window from it.
+//
+// "+ IMAGE" IS THE FIRST ADD-AN-ELEMENT AFFORDANCE IN THE EDITOR. Until this wave
+// opElemAdd had no UI caller at all — it existed only as the inverse of a delete —
+// so an element could be deleted, hidden, locked and re-typed but never created. It
+// is a real gap and this closes it for the kind users asked for; the other five
+// kinds are still reached by re-typing an element in the inspector.
+func (a *App) drawEditorRailActions(rail sdl.Rect) {
+	c := a.ctx
+	// Laid out from the RIGHT edge so the "Elements" label keeps the left and the
+	// two buttons cannot push each other off the rail as their labels change.
+	live := a.editorLiveOn()
+	liveR := sdl.Rect{
+		X: rail.X + rail.W - editRowPad - editRailLiveBtnW,
+		Y: rail.Y + 2,
+		W: editRailLiveBtnW,
+		H: editRowH - 2,
+	}
+	imgR := sdl.Rect{X: liveR.X - editRailAddBtnW - editRowPad/2, Y: liveR.Y, W: editRailAddBtnW, H: liveR.H}
+	if c.Button(imgR, editorImageBtnLabel(a.te.image != nil)) {
+		// THE SAME FUNNEL A DRAG ENTERS BY (thememediaintake.go): this opens the in-app
+		// browser bound to purposeThemeImage, whose pick calls editorTakeImage. There is
+		// no second intake path, so browsing and dropping cannot diverge about the
+		// caps, the destination or the budget verdict.
+		a.openDemoBrowserFor(purposeThemeImage)
+	}
+	// The label carries the STATE, not the verb: a toggle labelled with what it
+	// would do reads as the opposite of its own state half the time. Both strings
+	// are package constants, so the rail still costs no allocation per frame.
+	if c.Button(liveR, editorLiveLabel(live)) {
+		a.setEditorLive(!live)
 	}
 }
 
@@ -1230,8 +1397,22 @@ func parseEditHex(s string) (editValue, bool) {
 //
 // It yields to a focused field, which is the house rule every other plain-key claim
 // already follows — typing "hex" into a colour row must not delete the selection.
+//
+// AND IT YIELDS TO A MODAL, which the focus check does NOT cover. c.modalOn only
+// gates hovering(), so the fence drawThemeEditor raises for the embedded file
+// browser buys the POINTER half its protection and the keyboard half none: with the
+// browser up over the editor, DELETE deleted the selected element, H/L toggled
+// hidden/locked and the arrows nudged it, under a panel that owns the screen. Worse
+// than a stray edit, this function ZEROES c.keyPressed on every arm, so the key is
+// spent — a modal that later wants Escape or a text field could not see it either.
+// The browser reads no keys today and has no field, so c.focusID stays empty and the
+// check above never fires. One line, and it covers the design's two planned modals
+// in advance.
 func (a *App) handleEditorKeys() {
 	c := a.ctx
+	if c.modalOn {
+		return
+	}
 	if c.focusID != "" || a.te == nil {
 		return
 	}

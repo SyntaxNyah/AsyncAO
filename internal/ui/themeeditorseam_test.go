@@ -345,7 +345,13 @@ func TestEveryDocumentMutationGoesThroughTheApplyFunnel(t *testing.T) {
 	for _, step := range []struct{ call, why string }{
 		{"a.te.doc.apply(op)", "the mutation itself, which is also what fills in the inverse"},
 		{"a.te.ring.push(", "what makes the mutation undoable"},
-		{"a.invalidateThemeCanvases()", "what makes the mutation visible on the next frame"},
+		// v1.90.0 W10: the SPELLING changed, the step did not. editorApply now calls
+		// editorInvalidateLive — which is invalidateThemeCanvases behind the live-preview
+		// toggle, and the ONE gated spelling of it, so a future edit path cannot re-bake
+		// past a frozen canvas by calling the raw function. The gate asks for the funnel's
+		// own step by its current name; TestFrozenLivePreviewStillEditsTheDocument drives
+		// the toggle's behaviour so the indirection cannot become a no-op unnoticed.
+		{"a.editorInvalidateLive()", "what makes the mutation visible on the next frame"},
 	} {
 		if !strings.Contains(body, step.call) {
 			t.Errorf("editorApply no longer calls %s — %s, and the three steps are inseparable",

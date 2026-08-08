@@ -66,6 +66,17 @@ func (a *App) editorSyncArt() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil || a.d.Store == nil {
 		return
 	}
+	// LIVE PREVIEW OFF FREEZES THE PICTURE (v1.90.0 W10), and this gate is BEFORE
+	// the signature hash on purpose: the whole value of the toggle is that a paused
+	// editor does what an idle one does, and a hash over every element's fill fields
+	// per frame is exactly the "cheap enough not to bother" cost that adds up on the
+	// theme this is for. Turning it back on pays one reconcile (setEditorLive), and
+	// closeThemeEditor un-pauses before its own call so the last frame always
+	// reconciles — a plan that outlived the editor stale is the defect this file's
+	// second call site exists to prevent.
+	if !a.editorLiveOn() {
+		return
+	}
 	if a.themeMediaPlan.ArtSig == themeArtSig(a.te.doc.side) {
 		return
 	}

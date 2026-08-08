@@ -463,6 +463,8 @@ func (a *App) HandleFileDrop(path string) {
 		a.handleThemeBundleDrop(path)
 	case dropClaimThemeFont:
 		a.handleThemeFontDrop(path)
+	case dropClaimThemeImage:
+		a.handleThemeImageDrop(path)
 	case dropClaimSettingsImport:
 		// The Settings screen armed this and consumes it in the same frame
 		// (importSettingsAsync). Silence here is the correct answer — the old
@@ -508,6 +510,27 @@ func (a *App) handleThemeFontDrop(path string) {
 			", then add it to [fonts] and point a [fontbind] row at it."
 	}
 	a.warnLine = line
+	a.warnAt = time.Now()
+}
+
+// handleThemeImageDrop routes a dropped picture (v1.90.0 W10's image intake).
+//
+// THE SAME TWO-STATE SHAPE handleThemeFontDrop has, and deliberately the same: with
+// the editor OPEN the picture is copied into the theme and declared as one undoable
+// act (editorTakeImage, which owns every cap and every refusal); with the editor
+// SHUT there is no document to write into and no undo stack to take it back with,
+// so the drop says where the feature is instead of editing somebody's
+// asyncao_theme.ini behind their back.
+//
+// The claim alone already fixed the half that was actively wrong: the file no longer
+// falls through to the Settings screen's theme-folder arm, which used to repoint the
+// user's theme root at whatever folder the picture came out of.
+func (a *App) handleThemeImageDrop(path string) {
+	if a.editorTakeImage(path) {
+		return
+	}
+	a.warnLine = "Image " + filepath.Base(path) + " — open Settings ▸ Theme editor ▸ Open editor, " +
+		"then drop it again (or use + Image on the element list) to add it to your theme."
 	a.warnAt = time.Now()
 }
 

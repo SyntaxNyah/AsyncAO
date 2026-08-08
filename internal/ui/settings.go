@@ -137,6 +137,27 @@ type settingsState struct {
 	// themeArt memoizes the theme-art budget bar's label. See themeArtBarText.
 	themeArt themeArtBarText
 
+	// --- Settings ▸ Theme editor, the authoring tab (v1.90.0 W10) ------------
+	//
+	// The CREATOR's four pieces of UI state. On settingsState rather than on App
+	// because they are exactly that — what the tab's controls are showing — and they
+	// die with nothing: the act reads them once and hands values to the funnel
+	// (settingsthemeeditor.go). Render thread only, like the rest of this struct.
+	//
+	// newThemeName is the name field's live text (empty = use the placeholder).
+	newThemeName string
+	// newThemeTemplate is the picked starting point. The zero value is templateBlank,
+	// which is the right default: it is the one template with no prerequisite.
+	newThemeTemplate themeCreateTemplate
+	// presetLayout / presetStyle index the two shipped preset axes, in the library's
+	// own order — the same order the editor's gallery lists them in, so a pair picked
+	// here and then opened in the gallery is the pair the gallery shows.
+	presetLayout, presetStyle int
+	// presetAxisNames memoizes the two label slices those dropdowns draw from, keyed
+	// on the library pointer. Without it the tab would rebuild two 20-odd-entry
+	// string slices every frame.
+	presetAxisNames presetAxisNameCache
+
 	// folder picking: native dialog output / resolved drag-drops land
 	// here from goroutines (never block or stat on the render thread). Still used
 	// by the THEME folder picker (browseForFolder) — the .demo picker moved fully
@@ -196,16 +217,28 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 13
+const numSettingsTabs = 14
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
+	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
 const (
 	tabGeneral = iota
 	tabTheme
+	// tabThemeEditor owns AUTHORING: making a theme, opening the editor over one,
+	// and taking a bundle somebody sent you. It exists because the editor — the
+	// flagship of v1.90.0 — was ONE row two thirds of the way down the Theme tab,
+	// between "Get themes" and "Your themes folder", and a feature you have to
+	// scroll past a subtheme dropdown to discover is a feature nobody discovers.
+	//
+	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
+	// one" / "make one"), and the sidebar is scanned top to bottom, so the
+	// authoring tab has to be where the eye already is when it fails to find the
+	// editor on Theme. The Theme tab keeps SELECTION — the catalog, the badge, the
+	// subtheme variant, the write root — and points here (drawThemeAuthoringHint).
+	tabThemeEditor
 	tabAssets
 	// tabFormats owns EVERY control that decides which image/audio file type is
 	// asked for. They used to be split across Assets (server profile, audio
@@ -276,7 +309,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// "import"/"portable" (Data), hence "reload themes" and "themes folder".
 		"subtheme", "subthemes", "theme variant", "variant",
 		"themes folder", "my themes", "where are my themes", "open themes folder",
-		"aotheme", "theme bundle", "reload themes", "find themes", "theme badge",
+		"reload themes", "find themes", "theme badge",
 		// The "Get themes" discovery row. Same shadow discipline as the block above
 		// (the table is scanned in TAB ORDER and matches forward, so a term here
 		// swallows every later tab's query hidden inside it): every entry is anchored
@@ -294,33 +327,60 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
-		// v1.90.0 W7: the theme EDITOR. Same shadow discipline as the two blocks
-		// above, and the trap here is sharper than the whole-keyword gate can see —
-		// TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE keywords, so a
-		// term here that merely CONTAINS a later tab's short query passes the gate
-		// while stealing that query for real. Each exclusion below is a word a later
-		// tab owns outright:
-		//   - nothing containing "export" or "import" (tabData 9, tabStudio 8) — hence
-		//     no "export theme" either, which still contains "export".
-		//   - nothing containing "layer" (tabAssets 2 owns "layer"/"layered", the
-		//     v1.89.0 layered assets). THIS is why the editor's noun is "element",
-		//     not "layer".
-		//   - not "grid" (tabGeneral 0's "emote grid" already answers it) and not
-		//     "glow" (tabGeneral 0).
-		// FOUR MORE the design's suggested list carried and this table cannot: each
-		// one is a longer term whose SUBSTRING is a query a later tab answers better,
-		// which the shadow gate compares whole keywords and therefore cannot see.
-		//   - "scanlines" contains "scan" → tabAssets 2's "rescan".
-		//   - "z-order" and "element list" contain "order" and "list" → tabFormats 3's
-		//     "probe order" / "format order", tabAccount 6's "master list".
-		//   - "customise theme" / "customize theme" contain "custom" → tabAudio 5's
-		//     "custom music" and tabAssets 2's "custom error sprite".
-		// None of the four features is lost: the gather-search matches ROW LABELS
-		// first, and the editor's own rows carry the words.
+		// The theme EDITOR's terms USED TO LIVE HERE (v1.90.0 W7) and moved to
+		// tabThemeEditor below — the row moved, so its search terms had to move with
+		// it or the search would land people on the tab the feature just left.
+	},
+	tabThemeEditor: {
+		// sections: New theme, The editor, Bring a theme in.
+		//
+		// THE SHADOW DISCIPLINE IS UNCHANGED and it still governs every line here.
+		// The table is scanned in TAB ORDER and matches FORWARD (the query must be a
+		// substring of a term), so a term on this tab swallows every later tab's
+		// query hidden inside it. This tab is index 2, so "later" is Assets onwards —
+		// the same set the W7 block was vetted against at index 1, minus Theme
+		// itself, which sits BEFORE us and therefore still wins its own words.
+		//
+		// Each exclusion below is a word a later tab owns outright:
+		//   - nothing containing "export" or "import" (tabData, tabStudio) — hence
+		//     no "export theme" and no "import theme" either. "aotheme" and "theme
+		//     bundle" carry the transport rows instead; they contain neither word.
+		//   - nothing containing "layer" (tabAssets owns "layer"/"layered", the
+		//     v1.89.0 layered assets). THIS is why the editor's noun is "element".
+		//   - nothing containing "custom" (tabAudio's "custom music", tabAssets'
+		//     "custom error sprite"). This is why the brief's suggested "customize
+		//     layout" is NOT here: it would steal the bare "custom" from both. The
+		//     feature is not lost — "edit the layout" and "move things around" below
+		//     answer the same question with words nobody else claims, and the
+		//     gather-search matches ROW LABELS first regardless.
+		//   - not "maker" on its own and nothing containing it (tabStudio's "scene
+		//     maker"): "theme maker" would steal the bare "maker". "theme builder"
+		//     and "theme creator" say the same thing and collide with nothing.
+		//   - nothing containing "scan" ("scanlines" → tabAssets' "rescan"),
+		//     "order"/"list" (tabFormats' "probe order", tabAccount's "master
+		//     list"), "new" (tabChat's "jump to newest"), "download" (tabAssets),
+		//     "source" (tabAssets' "asset source") or "grid"/"glow" (tabGeneral).
+		//     Hence "start a theme from scratch", never "new theme".
 		"theme editor", "editor", "make a theme", "build a theme", "create a theme",
+		"theme builder", "theme creator", "edit theme", "edit a theme", "edit my theme",
+		"start a theme", "from scratch", "blank theme", "template", "templates",
+		"theme template", "copy a theme", "copy for editing", "duplicate a theme",
+		"edit the layout", "move things around", "design my own theme", "authoring",
 		"decorate", "decoration", "element", "elements", "stacking", "inspector",
 		"undo", "shapes", "masks", "animated background", "background art",
 		"split screen", "procedural", "halftone", "generator",
+		// The image/animated-webp intake (this wave). "upload" is the word a person
+		// actually types for it even though nothing is uploaded anywhere.
+		// NOT "webp" and NOT anything containing it ("animated webp"): tabFormats'
+		// own note reserves "webp"/"gif" for tabStudio's video export, and this tab
+		// sits ahead of both. "animated image" carries the same question.
+		"add an image", "upload an image", "upload image", "add art", "picture",
+		"animated image", "theme art", "theme image",
+		// Live preview, the editor rail's own toggle.
+		"live preview", "live", "freeze the preview", "preview while editing",
+		// The transport rows that moved here with the editor: taking in what a friend
+		// sent, and (in the editor's header) handing one back.
+		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
 		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
@@ -754,6 +814,8 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsGeneral(y, w)
 	case tabTheme:
 		y = a.drawSettingsTheme(y, w, h)
+	case tabThemeEditor:
+		y = a.drawSettingsThemeEditor(y, w)
 	case tabAssets:
 		y = a.drawSettingsAssets(y, w)
 	case tabFormats:
@@ -5053,58 +5115,13 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	}
 	y += themeGetRowH
 
-	// --- IMPORT a bundle, the browse half of the drop (v1.90.0 W8) ---------
+	// --- THE AUTHORING CROSS-LINK ------------------------------------------
 	//
-	// Directly under "Get themes" because it is the same question's other half: that
-	// row says where themes come from, this one takes the file somebody sent you and
-	// turns it into an installed theme. Drag-and-drop is the primary path and always
-	// was — but a drop is undiscoverable, and a user who has already saved the bundle
-	// into Downloads has no window to drag it onto without going and finding it again.
-	//
-	// IT IS THE SAME FUNNEL. The button opens the in-app browser bound to
-	// purposeThemeBundle, and picking a file calls handleThemeBundleDrop — the very
-	// function a drag lands in. There is no second import path to keep in step, so
-	// the caps, the consent and the destination cannot diverge between the two ways
-	// in. The CONFIRM is the same two-act consent as well: the first pick describes
-	// the bundle, and this row's button becomes "Import <name>" until it is spent.
-	if c.onRow != nil {
-		c.onRow("Import a theme bundle", y)
-	}
-	c.Label(pad, y+4, "Import:", ColText)
-	imp := a.themeImportRow()
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, imp.note, ColTextDim)
-	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, imp.button) {
-		a.themeImportRowAction()
-	}
-	y += themeGetRowH
-
-	// --- the theme EDITOR (v1.90.0 W7) -------------------------------------
-	//
-	// The prominent row the design asks for, and it draws through c.onRow so the
-	// gather-search finds it by its own label — closing the class the v1.89.1
-	// unfindable row opened (TestEveryThemeEditorSettingIsFindable).
-	//
-	// `pad := a.formX` is shadowed by this function's caller, per the settings-form
-	// origin rule: a missing shadow renders the row silently under the sidebar.
-	if c.onRow != nil {
-		c.onRow("Theme editor", y)
-	}
-	c.Label(pad, y+4, "Theme editor:", ColText)
-	// THE BUTTON IS NEVER ABSENT (v1.90.0 W8). This row used to draw "copy it for
-	// editing first" with NO button beside it, so an AO2 theme — the state every AO2
-	// user is in on first run — got advice and no way to act on it, and the only way
-	// forward was to go and copy a folder in Explorer. The row now offers the act
-	// itself: open what can be opened, copy what cannot (themecopy.go).
-	edit := a.themeEditorRow()
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, edit.note, ColTextDim)
-	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, edit.button) {
-		if edit.copies {
-			a.copyAppliedThemeForEditing(themeCopyThenOpen)
-		} else {
-			a.openThemeEditor(ScreenSettings)
-		}
-	}
-	y += themeGetRowH
+	// Two rows used to sit here: "Import:" (the .aotheme browse, W8) and "Theme
+	// editor:" (W7). Both moved to the Theme editor tab, and this is the gap they
+	// left — the place a user who remembers seeing them will look. The cross-tab
+	// hint machinery is the tool for exactly that (drawThemeAuthoringHint).
+	y = a.drawThemeAuthoringHint(y, w)
 
 	// --- the write root, and the button that opens it ----------------------
 	if c.onRow != nil {

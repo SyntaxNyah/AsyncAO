@@ -28,6 +28,7 @@ package ui
 // this file run without a renderer.
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -710,8 +711,102 @@ func (d *themeDoc) apply(op themeEditOp) (themeEditOp, editApplyResult) {
 		return d.applySlotReset(op)
 	case opFontFamily, opFontBind:
 		return d.applyFontRow(op)
+	case opMediaRow:
+		return d.applyMediaRow(op)
 	}
 	return op, applyNoChange
+}
+
+// ---------------------------------------------------------------------------
+// The [media] table — one declared image per row
+// ---------------------------------------------------------------------------
+
+// mediaRowValue / mediaRowOf are the ONE encoding of a [media] row, a pair for the
+// same reason fontRowValue / fontRowOf are: four fields packed in one order and
+// unpacked in another compiles and is silently wrong.
+//
+// It rides fontRowSep (U+001F) for the reason that constant documents — INIDoc
+// refuses control characters in a value, so no field can contain the separator and
+// the encoding cannot be ambiguous for any row the reader would accept.
+//
+// AN EMPTY ID ENCODES TO "", which is the table's own "no row" value: it is what a
+// removal writes and what an append undoes to, so the two need no extra flag.
+func mediaRowValue(m theme.MediaEntry) string {
+	if m.ID == "" {
+		return ""
+	}
+	return m.ID + fontRowSep + m.File + fontRowSep + strconv.FormatInt(m.Bytes, 10) + fontRowSep + m.Hash
+}
+
+func mediaRowOf(s string) theme.MediaEntry {
+	if s == "" {
+		return theme.MediaEntry{}
+	}
+	f := strings.SplitN(s, fontRowSep, 4)
+	m := theme.MediaEntry{ID: f[0]}
+	if len(f) > 1 {
+		m.File = f[1]
+	}
+	if len(f) > 2 {
+		m.Bytes, _ = strconv.ParseInt(f[2], 10, 64)
+	}
+	if len(f) > 3 {
+		m.Hash = f[3]
+	}
+	return m
+}
+
+// applyMediaRow is applyFontRow's twin, over Sidecar.Media.
+func (d *themeDoc) applyMediaRow(op themeEditOp) (themeEditOp, editApplyResult) {
+	idx, ok := op.target.mediaIdx()
+	if !ok || d.side == nil {
+		return op, applyNoChange
+	}
+	cur := d.mediaRowAt(idx)
+	want := d.str(op.after.s)
+	if cur == want {
+		return op, applyNoChange // the table already says that: not an edit, not a refusal
+	}
+	op.before = editValueStr(d.intern(cur))
+	if !d.writeMediaRow(idx, want) {
+		return op, applyRefused // theme.MediaCap, or an index past the append slot
+	}
+	return op, applyDone
+}
+
+// mediaRowAt reads one row's encoded value, "" for a row that does not exist.
+func (d *themeDoc) mediaRowAt(idx int) string {
+	if d.side == nil || idx < 0 || idx >= len(d.side.Media) {
+		return ""
+	}
+	return mediaRowValue(d.side.Media[idx])
+}
+
+// writeMediaRow is the ONE writer of the [media] table. An empty value REMOVES the
+// row; an index at the end APPENDS.
+//
+// THE CAP REFUSES, IT DOES NOT EVICT, exactly as writeFontRow, setOverrideRow and
+// insertAt do: a document that dropped somebody else's picture to make room for this
+// one would save a theme whose elements point at nothing.
+func (d *themeDoc) writeMediaRow(idx int, v string) bool {
+	m := mediaRowOf(v)
+	switch {
+	case idx >= 0 && idx < len(d.side.Media):
+		if m.ID == "" {
+			d.side.Media = append(d.side.Media[:idx], d.side.Media[idx+1:]...)
+		} else {
+			d.side.Media[idx] = m
+		}
+	case idx == len(d.side.Media) && m.ID != "":
+		if len(d.side.Media) >= theme.MediaCap {
+			return false
+		}
+		d.side.Media = append(d.side.Media, m)
+	default:
+		return false
+	}
+	d.dirty = true
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,6 +1185,9 @@ func (d *themeDoc) revert(op themeEditOp) bool {
 	case opFontFamily, opFontBind:
 		idx, ok := op.target.fontIdx()
 		return ok && d.writeFontRow(op.kind, idx, d.str(op.before.s))
+	case opMediaRow:
+		idx, ok := op.target.mediaIdx()
+		return ok && d.writeMediaRow(idx, d.str(op.before.s))
 	}
 	return false
 }
@@ -1131,6 +1229,9 @@ func (d *themeDoc) redo(op themeEditOp) bool {
 	case opFontFamily, opFontBind:
 		idx, ok := op.target.fontIdx()
 		return ok && d.writeFontRow(op.kind, idx, d.str(op.after.s))
+	case opMediaRow:
+		idx, ok := op.target.mediaIdx()
+		return ok && d.writeMediaRow(idx, d.str(op.after.s))
 	}
 	return false
 }

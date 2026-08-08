@@ -381,6 +381,14 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 	if a.editorPanelUp() {
 		return
 	}
+	// THE FILE BROWSER IS A MODAL, not a panel (editorPanelUp is deliberately closed
+	// against modals), and it too draws over the canvas — the image-intake browse
+	// half, v1.90.0 W10. Its rect is centred over the same area, so the raw-pointIn
+	// argument above applies word for word: without this, a press on a file row also
+	// began a gesture on whatever the theme parked underneath it.
+	if demoBrowser.open {
+		return
+	}
 	// The compact toolbox hit-tests with raw pointIn and therefore sees through every
 	// fence — the same guard the legacy editor's press site carries, and for the same
 	// reason: a press on its grip must not also grab whatever the theme parked under

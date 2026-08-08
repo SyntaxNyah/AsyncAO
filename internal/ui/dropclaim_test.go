@@ -88,27 +88,120 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 	}
 }
 
+// dropClaimCensusMin is the smallest roster the claim census accepts before it calls
+// itself vacuous. The enum carries six claims today; the floor is deliberately well
+// under that, because the point is to catch a walk that stopped walking, not to restate
+// the count — the same bargain settingsTabBodyCensusMin strikes in settingscardwidth_test.go.
+//
+// IT IS A LITERAL, INDEPENDENT OF dropClaimCount, and that is the whole point of it
+// having a name: a floor derived from the bound cannot audit the bound.
+//
+// IT DOES NOT REPLACE `seen != int(dropClaimCount)`, and an earlier draft of this
+// comment said it did, on the reasoning that the clause is "tautologically false" and
+// "can never fire". That is true only WHILE the loop bound IS dropClaimCount, and the
+// conditionality is the tripwire, not a defect in it. Proven by mutation on this
+// package: rewrite the walk to the pre-W10 shape
+// `for c := dropClaimNone; c <= dropClaimThemeFont; c++` — verbatim the W10 defect,
+// the one that left dropClaimThemeImage outside the census — and this floor of 3 stays
+// green while the clause fires with "the census walked 5 of 6 claims". Deleting it
+// therefore removed the only check that speaks to the exact bug class this file exists
+// to prevent, and the aphorism above, though true, was being aimed at a clause that
+// never audited the bound in the first place.
+//
+// THE THREE QUESTIONS ARE SEPARATE, and the split is exact:
+//   - the SENTINEL is audited by the COMPILER, via the dropClaimNames array literal
+//     (and, in the too-large direction, by the empty-name loop at the foot of the test);
+//   - the WALK is audited by `seen != int(dropClaimCount)` — it asks whether the loop is
+//     still bounded by the sentinel, and it fires the day someone reverts that bound to a
+//     named member or hand-lists the roster, which is a realistic refactor;
+//   - this FLOOR audits neither. It only refuses a roster too small to be worth walking —
+//     an enum shrunk to a claim or two would satisfy both of the above and prove nothing.
+const dropClaimCensusMin = 3
+
 // TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction TOTAL over
 // dropClaim, so a claim added later cannot fall through to the theme-folder arm
 // by omission — which is precisely how a dropped file came to repoint the user's
 // theme root in the first place.
 //
 // It walks the enum by VALUE rather than listing the constants: a new claim
-// appended to the iota block joins this gate the moment it exists, and the
-// non-vacuity check below fails if the count is ever restated wrongly.
+// appended to the iota block joins this gate the moment it exists.
+//
+// THE BOUND IS THE SENTINEL, not the last named member, and that correction is the
+// whole reason this comment can be believed. The walk used to end at
+// `c <= dropClaimThemeFont`, so W10's dropClaimThemeImage was appended to the block
+// and landed OUTSIDE the census that promised to catch it — the gate went one short
+// in exactly the wave that added the member. `c < dropClaimCount` cannot go short:
+// the sentinel moves with the enum.
+//
+// WHAT GUARDS THE SENTINEL ITSELF, since the walk trusts it completely. Three
+// mechanisms, and this comment names the one that actually fires in each case,
+// because an earlier draft credited THIS TEST with all three and was wrong about two:
+//
+//   - Sentinel too SMALL — restated as a low literal, or moved above a live member:
+//     the COMPILER, via dropClaimNames. That table is [dropClaimCount]string with one
+//     entry per claim, so shrinking the bound overflows the literal; moving
+//     dropClaimCount above dropClaimThemeImage yields `index 5 is out of bounds (>= 5)`.
+//     NOTHING IN THIS TEST CATCHES THAT CASE and nothing here should claim to — a
+//     census whose bound went short is exactly as quiet as the unguarded claim it
+//     hides. Verified by mutation: with dropClaimNames decoupled to a slice so the
+//     compile error could not mask the runtime question, that reorder leaves
+//     dropClaimThemeImage unwalked and this test still PASSES.
+//   - Sentinel too LARGE: the empty-name loop at the foot of this test. A short
+//     fixed-size array literal is legal Go and leaves the extra slots "", so the
+//     compiler is silent here and the loop is the entire guarantee.
+//   - A claim added with no name: the same empty-name loop, for the same reason. It
+//     is one deletion away from silence. Do not remove it.
+//
+// TWO MORE CLAUSES GUARD THE WALK, and they are not the same check twice:
+// `seen != int(dropClaimCount)` asks whether the loop is still bounded by the sentinel
+// (it fires the moment the bound reverts to a named member — the W10 shape), and
+// dropClaimCensusMin asks whether the roster is big enough to be worth walking at all.
+// Neither audits the sentinel; see dropClaimCensusMin's declaration for the split.
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".
-	for c := dropClaimNone; c <= dropClaimThemeFont; c++ {
+	seen := 0
+	for c := dropClaimNone; c < dropClaimCount; c++ {
+		seen++
 		act := settingsDropAction(c)
 		if c != dropClaimNone && act == settingsDropRepointThemeRoot {
-			t.Errorf("dropClaim %d has an owner but still reaches the theme-folder arm — a dropped FILE would "+
-				"become 'use its parent folder as the theme root', silently, while its real owner warns about it", c)
+			t.Errorf("dropClaim %s (%d) has an owner but still reaches the theme-folder arm — a dropped FILE would "+
+				"become 'use its parent folder as the theme root', silently, while its real owner warns about it", c, c)
 		}
 		if c == dropClaimNone && act != settingsDropRepointThemeRoot {
 			t.Errorf("an UNCLAIMED drop no longer reaches the theme-folder arm — that is the documented folder " +
 				"import path (#21) and dropping a base folder would stop working")
 		}
+	}
+	// The walk is bounded by the SENTINEL, and this clause is what says so out loud. It
+	// is tautological only for as long as that remains true, and that conditionality is
+	// the point: revert the bound to a named member (`c <= dropClaimThemeFont`, which is
+	// what W10 actually shipped) or hand-list the roster, and this is the only check in
+	// the file that notices. It is not redundant with the floor below — see
+	// dropClaimCensusMin's declaration for the three-way split.
+	if seen != int(dropClaimCount) {
+		t.Fatalf("the census walked %d of %d claims — the walk is no longer bounded by the sentinel, "+
+			"which is exactly how dropClaimThemeImage shipped uncovered", seen, int(dropClaimCount))
+	}
+	// Non-vacuity, because a census that walks nothing passes — and so does one whose
+	// enum shrank to a single claim, which the clause above cannot see. The floor is a
+	// named literal rather than the enum's own count for the reason given at its
+	// declaration: a bound cannot audit itself.
+	if seen < dropClaimCensusMin {
+		t.Fatalf("the census walked %d claims, want at least %d — the loop no longer reaches the enum "+
+			"and this gate is checking almost nothing", seen, dropClaimCensusMin)
+	}
+	// Every walked value is a NAMED claim, which is what proves the sentinel is a
+	// sentinel: an unnamed slot means dropClaimCount sits past the block's real end.
+	for c := dropClaimNone; c < dropClaimCount; c++ {
+		if dropClaimNames[c] == "" {
+			t.Errorf("dropClaim %d has no name — dropClaimCount is out of step with the iota block", c)
+		}
+	}
+	// And the sentinel itself is not an owner: a value past the enum must fall to
+	// the documented folder arm, not be quietly claimed by an arm that grew too wide.
+	if settingsDropAction(dropClaimCount) != settingsDropRepointThemeRoot {
+		t.Errorf("the sentinel is being treated as a real claim — settingsDropAction's arms have outgrown the enum")
 	}
 }
 

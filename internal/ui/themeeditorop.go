@@ -145,13 +145,34 @@ const (
 	// not drawn in format 1 (paintElementText's measurement); a class binding is
 	// resolved by applySidecarFonts on every theme apply and changes the real face.
 	opFontBind
+	// opMediaRow: one [media] row — an image id, the file under the theme folder,
+	// its decoded byte cost and its content hash. The target is a spaceMedia target
+	// whose index is the row's position in Sidecar.Media; an index equal to
+	// len(Media) APPENDS. before/after carry the whole row as one interned string
+	// (mediaRowValue), and an EMPTY after removes it — which is what makes "undo an
+	// image intake" and "delete a declared image" the same code path, exactly as
+	// opFontFamily does for a face.
+	//
+	// IT IS ALWAYS GROUPED WITH THE ELEMENT THAT DRAWS IT (thememediaintake.go): a
+	// declared image with nothing pointing at it still costs the theme's art budget,
+	// so an undo that took back the element and left the declaration would leave the
+	// budget bar counting a picture nobody can see. One group, one Ctrl+Z.
+	//
+	// THE CARRIER KEEPS THE LINE until the next full rewrite, and that is the same
+	// limitation opSlotReset carries: INIDoc can remove a SECTION
+	// (RetireElementSection's route) but not a KEY, so a removed row disappears from
+	// the model — which is what the plan, the budget bar and the canvas all read —
+	// while the file keeps the text until the format grows a key removal. Stated
+	// here rather than discovered later; it is a stale declaration of a file that is
+	// still in the folder, not a corrupt one, and the reader accepts it.
+	opMediaRow
 	// editOpKindCount sizes the census tables; never a real kind.
 	editOpKindCount
 )
 
 var editOpKindNames = [editOpKindCount]string{
 	"none", "element field", "element add", "element delete", "widget rect", "widget reset",
-	"font family", "font binding",
+	"font family", "font binding", "image row",
 }
 
 func (k editOpKind) String() string {

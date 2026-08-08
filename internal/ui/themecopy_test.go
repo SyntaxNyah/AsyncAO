@@ -87,10 +87,16 @@ func TestTheCopyPrimitiveHasAProductionDriver(t *testing.T) {
 	// AND BOTH SURFACES REACH IT. The Settings row is the first-run path (an AO2
 	// theme cannot open the editor at all); the save refusal is the one that used to
 	// cost a whole session's work.
-	rows := funcBodySource(t, "settings.go", "drawThemeCatalogRows")
+	// THE FILE AND THE FUNCTION MOVED IN v1.90.0 W10, the assertions did not: the row
+	// left Settings ▸ Theme's drawThemeCatalogRows for the new Settings ▸ Theme editor
+	// tab (drawThemeEditorOpenRow, settingsthemeeditor.go) because the editor was
+	// unfindable buried in the catalog rows. Both claims below are the SAME two claims
+	// this gate has always made — the builder draws the row, and the button performs
+	// both acts — asked of the function that now draws it.
+	rows := funcBodySource(t, "settingsthemeeditor.go", "drawThemeEditorOpenRow")
 	if !containsCall(rows, "themeEditorRow") {
-		t.Error("Settings ▸ Theme no longer draws the theme-editor row through its own builder — the row " +
-			"that cannot open the editor is back to offering advice with no button")
+		t.Error("Settings ▸ Theme editor no longer draws the theme-editor row through its own builder — " +
+			"the row that cannot open the editor is back to offering advice with no button")
 	}
 	if !containsCall(rows, "copyAppliedThemeForEditing") || !containsCall(rows, "openThemeEditor") {
 		t.Error("the theme-editor row's button no longer performs BOTH acts — open what can be opened, " +

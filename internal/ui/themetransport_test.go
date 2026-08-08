@@ -785,9 +785,14 @@ func TestTheSettingsImportRowIsTheSameFunnelAsTheDrop(t *testing.T) {
 	if !containsCall(pick, "handleThemeBundleDrop") {
 		t.Error("the browser's pick no longer routes a theme bundle through handleThemeBundleDrop")
 	}
-	rows := funcBodySource(t, "settings.go", "drawThemeCatalogRows")
+	// THE ROW MOVED IN v1.90.0 W10, the claim did not: importing a bundle is the
+	// receiving half of the editor's Share button, so it went to the new Settings ▸
+	// Theme editor tab with the editor row. The assertion is the same one — the tab
+	// draws the row through its builder and its button runs the row's action — asked
+	// of the function that now draws it (drawThemeImportRow, settingsthemeeditor.go).
+	rows := funcBodySource(t, "settingsthemeeditor.go", "drawThemeImportRow")
 	if !containsCall(rows, "themeImportRowAction") || !containsCall(rows, "themeImportRow") {
-		t.Error("Settings ▸ Theme no longer draws the Import row — the browse half is unreachable")
+		t.Error("Settings ▸ Theme editor no longer draws the Import row — the browse half is unreachable")
 	}
 }
 
