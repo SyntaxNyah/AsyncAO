@@ -40,15 +40,19 @@ func TestPinnedProfileSeedsEveryImageClass(t *testing.T) {
 		if n := m.SeedLearned(p, host); n == 0 {
 			t.Fatalf("pinnedProfileJSON(%s) seeded nothing", ext)
 		}
-		// Every class a player would notice missing. DeskOverlay is deliberately
-		// absent: it follows the WebP default unless the player opts in, so a pin
-		// must NOT drag it along (see Manifest.SeedLearned).
+		// Every class a player would notice missing. DeskOverlay is included
+		// since the 2026-08-08 default flip: desks follow the manifest by default
+		// like every other class, so a pin covers them too. (A player who ticked
+		// "Always use WebP for desks" opts desks out of ANY seeding — see
+		// Manifest.SeedLearned — but that is their explicit choice, not this
+		// profile's business.)
 		want := []string{
 			config.TypeCharIcon,
 			config.TypeCharSprite,
 			config.TypeShoutBubble,
 			config.TypeEmoteButton,
 			config.TypeBackground,
+			config.TypeDeskOverlay,
 		}
 		learned := p.LearnedSnapshot()
 		for _, typeName := range want {

@@ -85,11 +85,12 @@ func TestManifestSeedLearned(t *testing.T) {
 		Background: []string{config.ExtPNG},
 	}
 	const host = "miku.pizza"
-	// Desks default to WebP and IGNORE the manifest, so the background class
-	// seeds only the background: charicon(1) + emote(sprite, bubble = 2)
-	// + background(1) = 4; DeskOverlay is exempt, Misc unseeded by design.
-	if n := m.SeedLearned(prefs, host); n != 4 {
-		t.Fatalf("seeded %d, want 4 (desk exempt by default, misc never)", n)
+	// Desks follow the manifest by default (deliberate default flip, user order
+	// 2026-08-08 — desks auto-detect like every other class), so the background
+	// class seeds background AND desk: charicon(1) + emote(sprite, bubble = 2)
+	// + background(bg, desk = 2) = 5; Misc unseeded by design.
+	if n := m.SeedLearned(prefs, host); n != 5 {
+		t.Fatalf("seeded %d, want 5 (desks follow by default, misc never)", n)
 	}
 	snap := prefs.LearnedSnapshot()
 	// The emote class declares TWO formats, so sprites and shout bubbles must
@@ -99,6 +100,7 @@ func TestManifestSeedLearned(t *testing.T) {
 		config.LearnedKey(host, config.TypeCharSprite):  {config.ExtWebP, config.ExtGIF},
 		config.LearnedKey(host, config.TypeShoutBubble): {config.ExtWebP, config.ExtGIF},
 		config.LearnedKey(host, config.TypeBackground):  {config.ExtPNG},
+		config.LearnedKey(host, config.TypeDeskOverlay): {config.ExtPNG},
 	}
 	for key, want := range checks {
 		got := snap[key]
@@ -116,19 +118,19 @@ func TestManifestSeedLearned(t *testing.T) {
 	if _, ok := snap[config.LearnedKey(host, config.TypeMisc)]; ok {
 		t.Error("Misc seeded from the emote class (png misc art beside webp emotes is real — it must learn per host)")
 	}
-	if _, ok := snap[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
-		t.Error("DeskOverlay seeded from the manifest by default (should stay WebP)")
-	}
 	if _, ok := snap[config.LearnedKey(host, config.TypeEmoteButton)]; ok {
 		t.Error("empty emotions class seeded EmoteButton")
 	}
 
-	// Opt in: desks now follow the manifest's background class.
-	prefs.SetDeskFollowManifest(true)
-	if n := m.SeedLearned(prefs, host); n != 5 {
-		t.Fatalf("seeded %d with desk-follow on, want 5", n)
+	// Opt out: pin desks to WebP; the manifest may no longer touch DeskOverlay.
+	// The clear mirrors what the Settings toggle does, so the pin is observable
+	// as an ABSENT entry rather than a stale seeded one.
+	prefs.SetDeskFollowManifest(false)
+	prefs.ClearLearnedType(config.TypeDeskOverlay)
+	if n := m.SeedLearned(prefs, host); n != 4 {
+		t.Fatalf("seeded %d with the WebP pin on, want 4 (desk exempt)", n)
 	}
-	if got := prefs.LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; len(got) != 1 || got[0] != config.ExtPNG {
-		t.Errorf("DeskOverlay learned = %v, want [%s] when following the manifest", got, config.ExtPNG)
+	if got, ok := prefs.LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
+		t.Errorf("DeskOverlay seeded from the manifest despite the WebP pin: %v", got)
 	}
 }

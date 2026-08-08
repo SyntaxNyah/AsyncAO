@@ -276,11 +276,13 @@ const defaultShowAssetWarnings = false
 // re-enables it (and offers a one-click reset of every moved sprite).
 const defaultSpriteMove = false
 
-// defaultDeskFollowManifest ships OFF: desks default to WebP and STAY WebP
-// even when a server's extensions.json declares another format for its
-// background class (which desk overlays share). ON lets desks follow the
-// manifest like backgrounds do.
-const defaultDeskFollowManifest = false
+// defaultDeskFollowManifest ships ON: desks follow the server's
+// extensions.json like every other class (auto-detect). It originally shipped
+// OFF — pinning desks to WebP — because desks share the manifest's background
+// class and a PNG-background declaration dragged desks with it; the pin is now
+// the opt-OUT for servers whose manifests are wrong. Existing installs are
+// moved once by DeskManifestDefaultMigrated — see load().
+const defaultDeskFollowManifest = true
 
 // defaultSpritePreview ships ON: hovering a character/emote button pops a
 // full-size sprite preview. OFF disables the pop-up entirely.
@@ -1288,8 +1290,10 @@ type AssetPreferences struct {
 	ShowAssetWarnings bool `json:"showAssetWarnings"`
 	// SpriteMoveOn enables click-drag sprite repositioning (OFF by default).
 	SpriteMoveOn bool `json:"spriteMove"`
-	// DeskFollowManifest lets desks adopt the server extensions.json format;
-	// OFF by default keeps desks on WebP regardless of the manifest.
+	// DeskFollowManifest lets desks adopt the server extensions.json format,
+	// ON by default (auto-detect, like every other class; the shared
+	// background/desk manifest class was the original worry that once shipped
+	// this OFF). OFF pins desks to WebP regardless of the manifest.
 	DeskFollowManifest bool `json:"deskFollowManifest"`
 	// SpritePreviewOn shows the hover-preview pop-up (ON by default).
 	SpritePreviewOn bool `json:"spritePreview"`
@@ -1363,6 +1367,16 @@ type AssetPreferences struct {
 	// rather than beside TextCrawlMs, which sits inside a run of alignment-formatted
 	// fields a doc comment would re-flow wholesale.
 	BlipSpeedDefaultMigrated bool `json:"blipSpeedDefaultMigrated"`
+	// DeskManifestDefaultMigrated is the fourth one-shot stamp, for the
+	// DeskFollowManifest field above: it records that the OFF→ON default flip
+	// (desks now follow the server manifest by default, like every other asset
+	// class) has RUN for this file (see load). Shaped like the AutoReconnect
+	// sibling, NOT the value-aware int ones — a bool has no state
+	// distinguishable from its default, so the first un-stamped load forces
+	// follow-the-manifest ON once and stamps; once true, the saved
+	// DeskFollowManifest choice is respected as-is, so a user who re-pins
+	// desks to WebP afterwards stays pinned forever.
+	DeskManifestDefaultMigrated bool `json:"deskManifestDefaultMigrated"`
 	// SmoothLogScroll eases the IC log's FOLLOW jump when a new message lands
 	// (OFF by default = AO2 parity: the log snaps to the newest line the instant it
 	// arrives, exactly as AO2-Client's QTextEdit auto-scroll does). ON restores the
@@ -1737,7 +1751,7 @@ type prefsJSON struct {
 
 	ShowAssetWarnings            bool     `json:"showAssetWarnings"`            // default OFF (zero value)
 	SpriteMove                   bool     `json:"spriteMove"`                   // default OFF (zero value)
-	DeskFollowManifest           bool     `json:"deskFollowManifest"`           // default OFF (zero value)
+	DeskFollowManifest           *bool    `json:"deskFollowManifest"`           // absent = default ON (desks follow the manifest); a POINTER so a hand-trimmed stamped file cannot read absent as a false pin
 	SpritePreview                *bool    `json:"spritePreview"`                // absent = default ON
 	PreviewHoverMs               *int     `json:"previewHoverMs"`               // absent = default 5 s
 	PreviewHeightPx              int      `json:"previewHeightPx"`              // 0/absent = shipped default (384)
@@ -1753,6 +1767,7 @@ type prefsJSON struct {
 	AutoReconnectDefaultMigrated *bool    `json:"autoReconnectDefaultMigrated"` // absent = the ON→OFF pull-back hasn't run for this file yet
 	ThemeFitDefaultMigrated      *bool    `json:"themeFitDefaultMigrated"`      // absent = the Stretch→Native default move hasn't run for this file yet; a POINTER because the sibling themeFit is a plain int, so "never written" and "deliberately Stretch" are the same bytes
 	BlipSpeedDefaultMigrated     *bool    `json:"blipSpeedDefaultMigrated"`     // absent = the 18 ms → 40 ms message-crawl ("blip speed") move hasn't run for this file yet; a POINTER for the same reason as its ThemeFit sibling — textCrawlMs is a plain int, so "never written" and "deliberately 18" are the same bytes
+	DeskManifestDefaultMigrated  *bool    `json:"deskManifestDefaultMigrated"`  // absent = the desks OFF→ON (follow-the-manifest) flip hasn't run for this file yet
 	SmoothLogScroll              bool     `json:"smoothLogScroll"`              // default OFF (zero value) — the IC log's new-message follow jumps instantly, AO2-style
 	MusicHistory                 *bool    `json:"musicHistory"`                 // absent = default ON
 	MusicStreaming               *bool    `json:"musicStreaming"`               // absent = default ON
@@ -2042,14 +2057,16 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
-		// All three one-shot default stamps. A fresh install has nothing to move — it
-		// already defaults to auto-reconnect OFF, theme fit Native and a 40 ms message
-		// crawl — so it counts as already-migrated. Only a file written by an OLDER
-		// build lacks these stamps (absent → nil on load) and triggers the one-shot
-		// force-OFF / Stretch→Native / 18→40 ms move in the load overlay.
+		// All four one-shot default stamps. A fresh install has nothing to move — it
+		// already defaults to auto-reconnect OFF, theme fit Native, a 40 ms message
+		// crawl and manifest-following desks — so it counts as already-migrated. Only
+		// a file written by an OLDER build lacks these stamps (absent → nil on load)
+		// and triggers the one-shot force-OFF / Stretch→Native / 18→40 ms /
+		// desks-follow-ON move in the load overlay.
 		AutoReconnectDefaultMigrated: true,
 		ThemeFitDefaultMigrated:      true,
 		BlipSpeedDefaultMigrated:     true,
+		DeskManifestDefaultMigrated:  true,
 		MusicHistory:                 defaultMusicHistory,
 		MusicStreaming:               defaultMusicStreaming,
 		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
@@ -2374,7 +2391,30 @@ func load(path string) (*AssetPreferences, error) {
 	p.ToolboxSeen = onDisk.ToolboxSeen // A1 discoverability latch; absent (old config) = false = show the ring once
 	p.ShowAssetWarnings = onDisk.ShowAssetWarnings
 	p.SpriteMoveOn = onDisk.SpriteMove
-	p.DeskFollowManifest = onDisk.DeskFollowManifest
+	// Desk format default flipped OFF→ON (user order 2026-08-08: desks should
+	// auto-detect from the server manifest like every other class; the shared
+	// background/desk manifest class was the original worry that shipped the WebP
+	// pin). One-shot, exactly like AutoReconnectDefaultMigrated below: a file
+	// written before the flip carries no stamp AND — because the saver always
+	// wrote the plain bool — an explicit deskFollowManifest:false that a bare
+	// default change could never reach. The flip cannot be value-aware (a bool
+	// has no state distinguishable from its default), so the first un-stamped
+	// load forces ON once and stamps; a user who re-pins WebP AFTER that saves
+	// the stamp alongside the choice, so the pin sticks forever.
+	if onDisk.DeskManifestDefaultMigrated != nil && *onDisk.DeskManifestDefaultMigrated {
+		p.DeskManifestDefaultMigrated = true
+		if onDisk.DeskFollowManifest != nil {
+			p.DeskFollowManifest = *onDisk.DeskFollowManifest
+		}
+	} else {
+		// Un-migrated: force follow-the-manifest ON once and stamp it. markDirty
+		// inside load() only arms the pending flag (see the BlipSpeed sibling's
+		// comment); that is enough — re-running this flip after a launch that never
+		// saved is idempotent, the still-un-stamped file just re-decides ON.
+		p.DeskFollowManifest = true
+		p.DeskManifestDefaultMigrated = true
+		p.markDirty()
+	}
 	if onDisk.SpritePreview != nil {
 		p.SpritePreviewOn = *onDisk.SpritePreview
 	}
@@ -3389,7 +3429,8 @@ func (p *AssetPreferences) SetSpriteMove(on bool) {
 // --- Desk format policy -----------------------------------------------------
 
 // DeskFollowsManifest reports whether desks adopt the server extensions.json
-// format (OFF by default — desks stay WebP regardless of the manifest).
+// format (ON by default — auto-detect, like every other class; OFF pins
+// desks to WebP regardless of the manifest).
 func (p *AssetPreferences) DeskFollowsManifest() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

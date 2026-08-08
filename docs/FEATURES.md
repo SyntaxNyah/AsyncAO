@@ -34,11 +34,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Manual per-type probing in Settings stays authoritative when autodetect
   is off and covers manifest-less servers. `.webp.static`-style pseudo
   suffixes are normalized away (animation is a payload property here).
-- **Desks default to WebP** (Settings → Assets): desk overlays stay on `.webp`
-  even when a server's `extensions.json` declares another format for its
-  background class (which desks share) — so a PNG-background server can't
-  silently drag desks off WebP. Untick "Always use WebP for desks" to let them
-  follow the manifest; the per-type format picker covers every format either way.
+- **Desks follow the manifest by default** (Settings → Formats): desk overlays
+  auto-detect from the server's `extensions.json` like every other class
+  (desks share the manifest's background class). Tick "Always use WebP for
+  desks" to pin them to `.webp` on servers whose manifest is wrong for desks;
+  the per-type format picker covers every format either way.
 - **Live-scene self-heal**: if the background, desk, **or a character sprite**
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a

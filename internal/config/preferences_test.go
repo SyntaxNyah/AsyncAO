@@ -1666,6 +1666,108 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 	})
 }
 
+// TestDeskManifestDefaultFlip pins the one-shot OFF→ON desk-format flip (user
+// order: desks auto-detect from the server manifest by default, like every
+// other class; the WebP pin becomes the opt-out). deskFollowManifest is a
+// plain bool the saver always wrote, so a file from an older build carries an
+// explicit false that a bare default change could never reach, and — a bool
+// having no state distinguishable from its default — the flip cannot be
+// value-aware: it is the AutoReconnect pull-back's shape, mirrored. Four
+// properties, one per sub-test:
+//
+//  1. the flip fires on an un-stamped file — its explicit false is forced ON;
+//  2. a stamped file's explicit pin is respected as-is;
+//  3. a user who re-pins WebP AFTER the flip stays pinned across load/save —
+//     which also proves the stamp persists to disk and the flip fires exactly
+//     once, because a lost stamp would re-force ON on the very next load;
+//  4. a stamped file with the key ABSENT reads as the new ON default, which is
+//     what makes prefsJSON.DeskFollowManifest a *bool: as a plain bool, absent
+//     would decode to false and silently re-pin the user to WebP.
+func TestDeskManifestDefaultFlip(t *testing.T) {
+	t.Run("an un-stamped file is flipped to follow the manifest", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"deskFollowManifest": false}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load old file: %v", err)
+		}
+		if !p.DeskFollowsManifest() {
+			t.Error("an older file's WebP pin must be flipped to follow-the-manifest on update")
+		}
+		if !p.DeskManifestDefaultMigrated {
+			t.Error("the flip must stamp the file so it never runs twice")
+		}
+	})
+
+	t.Run("a stamped file's explicit pin is respected", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"deskFollowManifest": false, "deskManifestDefaultMigrated": true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load stamped file: %v", err)
+		}
+		if p.DeskFollowsManifest() {
+			t.Error("a stamped file's explicit WebP pin must be respected (the flip already ran)")
+		}
+	})
+
+	t.Run("re-pinning WebP after the flip sticks across reloads", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"deskFollowManifest": false}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := newWithDebounce(path, testDebounce)
+		if err != nil {
+			t.Fatalf("newWithDebounce: %v", err)
+		}
+		if !p.DeskFollowsManifest() {
+			t.Fatal("precondition: the flip must have fired on this un-stamped file")
+		}
+		p.SetDeskFollowManifest(false) // the user re-pins WebP after updating
+		if err := p.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		// The stamp must be IN the file, not just in memory: a stamp that never
+		// reached disk would re-fire the flip below and un-pin the user again.
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var onDisk map[string]any
+		if err := json.Unmarshal(raw, &onDisk); err != nil {
+			t.Fatal(err)
+		}
+		if v, _ := onDisk["deskManifestDefaultMigrated"].(bool); !v {
+			t.Error("the migrated stamp did not persist to disk")
+		}
+		q, err := load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if q.DeskFollowsManifest() {
+			t.Error("a re-pinned WebP choice was lost — the flip re-fired instead of firing exactly once")
+		}
+	})
+
+	t.Run("a stamped file with the key absent keeps the ON default", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"deskManifestDefaultMigrated": true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load stamped file without the key: %v", err)
+		}
+		if !p.DeskFollowsManifest() {
+			t.Error("absent deskFollowManifest read as a WebP pin — the DTO field must be a *bool so absent means 'default ON', not 'false'")
+		}
+	})
+}
+
 // TestSmoothLogScrollPref pins the IC-log follow-jump toggle: OFF by default (AO2
 // parity — a new message lands instantly), and it survives save → load. The load
 // half is the one that keeps failing across this codebase (a field saved but never

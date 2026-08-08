@@ -382,7 +382,7 @@ func (a *App) drawLearnedTable(y int32, host string) int32 {
 }
 
 // drawFormatsAutoDetect owns the automatic path: the extensions.json probe and
-// the one class (desks) that deliberately ignores it.
+// the one class (desks) that can be opted out of it.
 func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -400,7 +400,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	y += 8
 
 	deskWebP := !a.d.Prefs.DeskFollowsManifest()
-	if next := c.Checkbox(pad, y, "Always use WebP for desks, even when the server's list says otherwise (recommended)", deskWebP); next != deskWebP {
+	if next := c.Checkbox(pad, y, "Always use WebP for desks, even when the server's list says otherwise", deskWebP); next != deskWebP {
 		a.d.Prefs.SetDeskFollowManifest(!next)
 		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
 		a.d.Resolver.InvalidateAll()
@@ -411,7 +411,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 		}
 	}
 	y += 24
-	y = a.settingsDesc(pad, y, "Desks share a manifest class with backgrounds, so a server that declares PNG backgrounds would drag desks off WebP with it. Leave this on unless a server's desks are genuinely missing.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Off (the default): desks follow the server's list like every other class. On: desks stay pinned to WebP — desks share a manifest class with backgrounds, so this covers servers whose list is right for backgrounds but wrong for desks.", ColTextDim)
 	y += 12
 	return y
 }

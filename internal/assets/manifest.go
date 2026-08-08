@@ -147,10 +147,11 @@ func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int 
 	if prefs == nil || host == "" {
 		return 0
 	}
-	// Desks default to WebP and ignore the manifest unless the player opts in:
-	// a server declaring e.g. PNG backgrounds (which desks share a class with)
-	// shouldn't silently drag desks off WebP. See defaultDeskFollowManifest /
-	// Settings → Assets → "Always use WebP for desks".
+	// Desks follow the manifest by default like every other class; pinning them
+	// to WebP is the opt-OUT for servers whose manifests are wrong (the shared
+	// background/desk manifest class was the original worry that once shipped
+	// the pin as the default). See defaultDeskFollowManifest / Settings →
+	// Formats → "Always use WebP for desks".
 	deskFollows := prefs.DeskFollowsManifest()
 	seeded := 0
 	for _, target := range m.manifestSeedTargets() {

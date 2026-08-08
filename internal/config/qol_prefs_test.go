@@ -96,8 +96,8 @@ func TestChangelogSeenRoundTrip(t *testing.T) {
 }
 
 // TestQoLPrefDefaults pins the out-of-the-box values for the QoL-roadmap prefs:
-// previews ON at a 5 s dwell, and the three opt-ins (banner, sprite-move,
-// desk-follows-manifest) OFF.
+// previews ON at a 5 s dwell, the two opt-ins (banner, sprite-move) OFF, and
+// desk-follows-manifest ON (auto-detect; the WebP pin is the opt-out).
 func TestQoLPrefDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	if !p.SpritePreviewsOn() {
@@ -112,8 +112,10 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.SpriteMoveEnabled() {
 		t.Error("SpriteMoveEnabled default must be false")
 	}
-	if p.DeskFollowsManifest() {
-		t.Error("DeskFollowsManifest default must be false (desks stay WebP)")
+	// Deliberate default flip (user order, 2026-08-08): desks auto-detect from
+	// the server manifest like every other class; pinning WebP is the opt-out.
+	if !p.DeskFollowsManifest() {
+		t.Error("DeskFollowsManifest default must be true (desks auto-detect like every other class)")
 	}
 	if !p.AutoLoginToastOn() {
 		t.Error("AutoLoginToastOn default must be true")
@@ -931,7 +933,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
 	p.SetAssetWarnings(true)
 	p.SetSpriteMove(true)
-	p.SetDeskFollowManifest(true)
+	p.SetDeskFollowManifest(false)   // explicit non-default false must survive the absent-default-ON pointer (default flipped OFF→ON 2026-08-08 — true would now be a no-op set)
 	p.SetAutoLoginToast(false)       // explicit false must survive the absent-default-ON pointer
 	p.SetCallwordToast(false)        // same absent-default-ON pointer
 	p.SetMessageCounter(false)       // same absent-default-ON pointer
@@ -979,8 +981,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.SpriteMoveEnabled() {
 		t.Error("SpriteMove lost")
 	}
-	if !q.DeskFollowsManifest() {
-		t.Error("DeskFollowManifest lost")
+	if q.DeskFollowsManifest() {
+		t.Error("DeskFollowManifest=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.AutoLoginToastOn() {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
