@@ -4332,6 +4332,15 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// classic docked tab, a torn-off Areas tab, a theme that declares no music_search)
 	// the field is drawn here exactly as before.
 	searchExternal := canvasInk && a.themedListSearchDrew()
+	// The header row is SPLIT (areamenu.go), not laid out offset by offset: the Areas
+	// view's ⋮ goes at the right end and the search field and the counter are measured
+	// back from its left edge, so they shrink to fit it instead of drawing underneath
+	// it (the overlap class the roster toolbar was rebuilt to stop, on a theme's 212 px
+	// panel). Only THIS ROW is split — the cards and the scrollbar below keep the full
+	// panel. `canvasInk` is the same answer rosterMenuThemed derives: this drawer is
+	// inside the theme's design canvas exactly when it is true.
+	head := splitAreaHeaderRow(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: fieldH})
+	a.drawAreaMenuButton(head.button, canvasInk)
 	var query string
 	// Both memos below are indexed by which box the query came from, so this
 	// drawer and a torn-off Areas panel filtered by the other box can share a
@@ -4341,13 +4350,10 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		slot = areaQuerySlotThemed
 		query = strings.ToLower(strings.TrimSpace(a.musicSearch))
 	} else {
-		// Inset the search field 2px to match the area cards' left edge below (the
-		// cards draw at X: r.X+2). The bordered-card look insets the rows, but the
-		// search box was ported verbatim from drawMusicList (whose rows start at
-		// r.X, no inset), so it sat 2px left of its column and clipped out. Shrinking
-		// width by 2 keeps the right edge exactly where it was (r.X+r.W-150),
-		// preserving the "shown / total" counter-label clearance drawn just past it.
-		a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X + 2, Y: r.Y, W: r.W - 152, H: fieldH}, a.areaSearch, "Search areas…")
+		// head.field, never a rect built here: the inset, the counter's room and the
+		// clearance from the ⋮ are one split (splitAreaHeaderRow), so the box cannot
+		// drift out from under the rule that keeps this row's three occupants apart.
+		a.areaSearch, _ = c.TextField("areasearch", head.field, a.areaSearch, "Search areas…")
 		query = strings.ToLower(strings.TrimSpace(a.areaSearch))
 	}
 	total := len(a.sess.Areas)
@@ -4363,7 +4369,8 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		r.Y += areaCountRowH
 		r.H -= areaCountRowH
 	} else {
-		c.Label(r.X+r.W-142, r.Y+5, a.areaCount.text(shown, total), ColTextDim)
+		// Same split as the field above — the counter sits in the room the ⋮ left it.
+		c.Label(head.count.X, head.count.Y, a.areaCount.text(shown, total), ColTextDim)
 		r.Y += fieldH + 6
 		r.H -= fieldH + 6
 	}

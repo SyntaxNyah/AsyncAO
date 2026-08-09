@@ -74,6 +74,58 @@ func containsCall(n ast.Node, fn string) bool {
 	return found
 }
 
+// callsNamed returns every call inside n whose function NAME is fn, in source order.
+// containsCall answers "is it called at all"; this is for gates that then have to look
+// at the ARGUMENTS of the call they found.
+func callsNamed(n ast.Node, fn string) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	ast.Inspect(n, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok && callName(call) == fn {
+			out = append(out, call)
+		}
+		return true
+	})
+	return out
+}
+
+// bindingOf returns the name the single-value assignment `x := fn(...)` binds inside
+// n, or "" when fn's result is not assigned to one plain identifier. A gate uses it to
+// learn what a helper's result is CALLED here, so the rest of the gate can require
+// other expressions to be derived from that name without hard-coding it — rename the
+// variable and the gate follows; stop using the helper and the gate fails.
+func bindingOf(n ast.Node, fn string) string {
+	name := ""
+	ast.Inspect(n, func(node ast.Node) bool {
+		as, ok := node.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		if call, ok := as.Rhs[0].(*ast.CallExpr); !ok || callName(call) != fn {
+			return true
+		}
+		if id, ok := as.Lhs[0].(*ast.Ident); ok {
+			name = id.Name
+		}
+		return false
+	})
+	return name
+}
+
+// mentionsIdent reports whether the expression e reads the identifier name anywhere
+// inside it. Deliberately "mentions" and not "equals": a coordinate that legitimately
+// grows to `head.count.X+2` still derives from head, while one rebuilt out of the
+// panel rect does not mention it at all — which is the drift these gates catch.
+func mentionsIdent(e ast.Expr, name string) bool {
+	found := false
+	ast.Inspect(e, func(node ast.Node) bool {
+		if id, ok := node.(*ast.Ident); ok && id.Name == name {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
 // deferredCall reports whether n contains `defer <...>fn(...)`.
 func deferredCall(n ast.Node, fn string) bool {
 	found := false

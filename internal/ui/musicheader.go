@@ -277,7 +277,11 @@ type musicMenuRow struct {
 // the menu reads as two named halves rather than one mixed list — and so the music
 // rows keep the exact order (and therefore the exact muscle memory) they had before
 // the roster moved in.
-var musicMenuRows = [...]musicMenuRow{
+// The AREA block is APPENDED (areamenu.go owns its rows, kinds and behaviour):
+// the Areas view shares this rect and this ⋮, so its actions belong in this pane
+// rather than in a rival popup, and keeping them in their own file means adding a
+// music row can never renumber them.
+var musicMenuRows = append([]musicMenuRow{
 	{musicMenuVolumeView, "Volume sliders"},
 	{musicMenuSeparator, ""},
 	{musicMenuFadeIn, "Fade in"},
@@ -295,7 +299,7 @@ var musicMenuRows = [...]musicMenuRow{
 	{musicMenuRosterLegacy, "Legacy roster snapshot"},
 	{musicMenuPairStatus, "Show each player's pair"},
 	{musicMenuFollow, "Follow players"},
-}
+}, areaMenuRows[:]...)
 
 // musicMenuRowLive reports whether a row is offered at all this frame. The volume
 // view is not offered inside a theme's design canvas: the theme declares its own
@@ -306,11 +310,48 @@ var musicMenuRows = [...]musicMenuRow{
 // Music view's own ⋮. They are panel-level settings for a list that shares this rect,
 // and gating them on "the roster happens to be the visible view" would only mean the
 // user has to switch views to reach a switch that is already one menu deep.
+//
+// The AREA block is the case that does NOT generalise from that, and areamenu.go
+// owns the reason: its rows act on the area list itself, so they are offered only
+// from the Areas view. Without this forward the block leaks into the Music header's
+// ⋮ and the roster toolbar's ⋮, growing every user's music menu by five rows.
 func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
+	if isAreaMenuKind(k) {
+		return a.areaMenuRowLive(k) // areamenu.go owns the AREA block
+	}
 	if k == musicMenuVolumeView {
 		return !themed
 	}
 	return true
+}
+
+// musicMenuRowDrawn reports whether row i of musicMenuRows paints this frame: it is
+// live, and — if it is a SEPARATOR — some live item still follows it.
+//
+// The lookahead is what takes a block's divider down with the block. A separator has
+// no kind of its own (every one of them is musicMenuSeparator, which is also the one
+// kind allowed an empty label), so no per-kind predicate can gate it, and the AREA
+// block appended last is live only on the Areas view: on the Music view its rows
+// vanish and its divider would otherwise draw a rule under the final roster row with
+// nothing beneath it. Generalised rather than special-cased, because the next block
+// appended to this pane inherits the same hazard.
+func (a *App) musicMenuRowDrawn(i int, themed bool) bool {
+	row := musicMenuRows[i]
+	if !a.musicMenuRowLive(row.kind, themed) {
+		return false
+	}
+	if row.kind != musicMenuSeparator {
+		return true
+	}
+	for _, next := range musicMenuRows[i+1:] {
+		if next.kind == musicMenuSeparator {
+			return false // the run to this divider's right is empty; the next one owns it
+		}
+		if a.musicMenuRowLive(next.kind, themed) {
+			return true
+		}
+	}
+	return false
 }
 
 // musicMenuRowEnabled reports whether a live row can be acted on. The four
@@ -319,6 +360,9 @@ func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
 // the bits would never leave the client, so the rows are shown greyed rather than
 // hidden (the setting is real, this server just can't carry it).
 func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
+	if isAreaMenuKind(k) {
+		return a.areaMenuRowEnabled(k) // areamenu.go owns the AREA block
+	}
 	switch k {
 	case musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop:
 		return a.musicEffectsSupported()
@@ -332,6 +376,9 @@ func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 // musicMenuRowChecked reports a toggle row's state. Loop is the INVERSE of the
 // NO_REPEAT bit: AO2 stores "don't repeat", KFO's UI says "Loop".
 func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
+	if isAreaMenuKind(k) {
+		return a.areaMenuRowChecked(k) // areamenu.go owns the AREA block
+	}
 	switch k {
 	case musicMenuVolumeView:
 		return a.musicVolMode
@@ -361,6 +408,9 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 // three playback flags in a row is precisely what this menu exists for. Pinned by
 // a test so it is not "tidied" back to Qt's behaviour later.
 func musicMenuRowIsToggle(k musicMenuKind) bool {
+	if isAreaMenuKind(k) {
+		return areaMenuRowIsToggle(k) // areamenu.go owns the AREA block
+	}
 	switch k {
 	case musicMenuVolumeView, musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop,
 		musicMenuRosterLegacy, musicMenuPairStatus, musicMenuFollow:
@@ -426,8 +476,8 @@ func (a *App) musicMenuFence(c *Ctx) {
 // musicMenuHeight is the open menu's height for the rows live this frame.
 func (a *App) musicMenuHeight(themed bool) int32 {
 	h := int32(8)
-	for _, row := range musicMenuRows {
-		if !a.musicMenuRowLive(row.kind, themed) {
+	for i, row := range musicMenuRows {
+		if !a.musicMenuRowDrawn(i, themed) {
 			continue
 		}
 		if row.kind == musicMenuSeparator {
@@ -443,8 +493,8 @@ func (a *App) musicMenuHeight(themed bool) int32 {
 func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 	c := a.ctx
 	mw := musicMenuMinW
-	for _, row := range musicMenuRows {
-		if row.kind == musicMenuSeparator || !a.musicMenuRowLive(row.kind, themed) {
+	for i, row := range musicMenuRows {
+		if row.kind == musicMenuSeparator || !a.musicMenuRowDrawn(i, themed) {
 			continue
 		}
 		if lw := c.TextWidth(row.label) + musicMenuGutterW + 2*musicMenuPadX; lw > mw {
@@ -471,8 +521,8 @@ func (a *App) drawMusicMenu(w, h int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	y := panel.Y + 4
-	for _, row := range musicMenuRows {
-		if !a.musicMenuRowLive(row.kind, themed) {
+	for i, row := range musicMenuRows {
+		if !a.musicMenuRowDrawn(i, themed) {
 			continue
 		}
 		if row.kind == musicMenuSeparator {
@@ -514,6 +564,10 @@ func (a *App) drawMusicMenu(w, h int32) {
 
 // musicMenuAct performs one menu row.
 func (a *App) musicMenuAct(k musicMenuKind) {
+	if isAreaMenuKind(k) {
+		a.areaMenuAct(k) // areamenu.go owns the AREA block
+		return
+	}
 	switch k {
 	case musicMenuVolumeView:
 		a.musicVolMode = !a.musicVolMode
