@@ -2024,8 +2024,30 @@ func immediatePreanimMsg(text string) *protocol.ChatMessage {
 // TestImmediatePreanimTransitions pins immediate-mode preanim handling. The
 // preanim plays over the text crawl (Active parked on the preanim). When it
 // finishes WHILE text still crawls it must swap to the talk sprite (it used to
-// freeze on the last preanim frame); when the TEXT finishes first it must hold
-// the preanim to its end instead of snapping straight to idle.
+// freeze on the last preanim frame); when the TEXT finishes first the message
+// SETTLES on schedule while the animation plays on, and the speaker drops to
+// idle only when the animation itself ends.
+//
+// DELIBERATE BEHAVIOR CHANGE, authored by this lane (field report: immediate
+// still holds the queue for the preanim's length). The second half of this test
+// used to assert the opposite — that text completion kept PhaseTalking until the
+// preanim finished. Under hard rule 11 a rewritten assertion is a behavior
+// change until proven otherwise, so here is the proof: three spots in
+// ../AO2-Client/src/courtroom.cpp.
+//
+//	:4273-4275  chat_tick sets text_state = 2 the moment tick_pos reaches the
+//	            end of the message. anim_state is neither consulted nor touched,
+//	            and an immediate preanim is anim_state 4 throughout
+//	            (play_preanim, :4093-4095).
+//	:2442       the gate for taking the stage is `text_state >= 2 &&
+//	            !text_queue_timer->isActive()` — TEXT state, never anim_state.
+//	:4332-4338  chat_tick arms text_queue_timer (the queue advance) right there
+//	            at text completion; the blank-post arm at :4208-4213 is the same
+//	            code again.
+//
+// So in canon occupancy ends at text completion with the animation still
+// running. Holding the queue for the animation is exactly what ticking
+// "immediate" asks the client not to do.
 func TestImmediatePreanimTransitions(t *testing.T) {
 	// Preanim finishes mid-text → talk sprite.
 	room, _, _, _ := newCourtroomRig(t)
@@ -2046,40 +2068,116 @@ func TestImmediatePreanimTransitions(t *testing.T) {
 		t.Errorf("text still crawling: phase = %v, want talking", room.Phase())
 	}
 
-	// Text finishes first → hold the preanim, don't snap to idle.
+	// Text finishes first → the message settles NOW (occupancy ends at text
+	// completion) while the animation keeps playing over the settled box.
 	room2, _, _, _ := newCourtroomRig(t)
 	room2.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hi")})
 	room2.Typewriter.SkipToEnd()
 	room2.Update(time.Millisecond)
-	if room2.Phase() != PhaseTalking || room2.Scene.Speaker.Active != room2.Scene.Speaker.PreanimBase {
-		t.Fatalf("text done but preanim playing must hold: phase=%v active=%q (want talking + preanim)", room2.Phase(), room2.Scene.Speaker.Active)
+	if room2.Phase() != PhaseLinger {
+		t.Fatalf("text done must settle the message at once: phase=%v, want linger", room2.Phase())
+	}
+	if room2.Scene.Speaker.Active != room2.Scene.Speaker.PreanimBase || !room2.Scene.Speaker.PlayOnce {
+		t.Fatalf("the immediate preanim must keep playing over the settled box: active=%q playOnce=%v", room2.Scene.Speaker.Active, room2.Scene.Speaker.PlayOnce)
 	}
 	room2.NotifyPreanimDone()
 	room2.Update(time.Millisecond)
-	if room2.Phase() == PhaseTalking {
-		t.Error("preanim done + text done must leave PhaseTalking")
+	if room2.Scene.Speaker.PlayOnce {
+		t.Error("the animation reporting done must clear PlayOnce")
 	}
 	if room2.Scene.Speaker.Active != room2.Scene.Speaker.IdleBase {
 		t.Errorf("after both done, active=%q, want the idle sprite", room2.Scene.Speaker.Active)
 	}
 }
 
-// TestImmediatePreanimBounded pins the safety bound: an immediate preanim that
-// never reports done (still decoding / missing) must NOT freeze the message —
-// the post-text wait is bounded by PreanimTimeout — while a decoded long preanim
-// that DOES report its duration (NotifyPreanimStarted) still plays in full.
+// TestImmediateDoesNotHoldTheQueueForThePreanim is the field report itself: with
+// a LONG immediate preanim still playing, the next message must take the stage
+// at TEXT completion + TextStay, not at preanim completion.
+//
+// The room is given a decoded 5 s preanim (NotifyPreanimStarted) and a zero
+// TextStay, so the only thing that could delay the second message is the
+// animation. AO2 arms text_queue_timer from chat_tick regardless of anim_state
+// (../AO2-Client/src/courtroom.cpp:4332-4338).
+func TestImmediateDoesNotHoldTheQueueForThePreanim(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.TextStay = 0
+	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("first")})
+	room.NotifyPreanimStarted(5 * time.Second) // a long, real, decoded preanim
+
+	second := immediatePreanimMsg("second")
+	second.Emote = "thinking" // distinguishable from the first message
+	room.HandleEvent(Event{Kind: EventMessage, Message: second})
+
+	room.Typewriter.SkipToEnd()
+	room.Update(time.Millisecond) // text completion → settle
+	room.Update(time.Millisecond) // linger (TextStay 0) → dequeue
+
+	if got := room.Scene.MessageText; got != "second" {
+		t.Fatalf("the queue is still held by the preanim: on stage %q, want %q", got, "second")
+	}
+	if room.Scene.Speaker.PlayOnce && room.Scene.Speaker.Active == room.Scene.Speaker.PreanimBase {
+		// The NEW message owns the stage now; its own preanim may play, but it must
+		// be the new message's, not the finished one's.
+		if !strings.Contains(room.Scene.Speaker.Active, "intro") {
+			t.Fatalf("unexpected active sprite %q", room.Scene.Speaker.Active)
+		}
+	}
+}
+
+// TestBlankImmediatePostSettlesWithoutWaitingForThePreanim covers the OTHER
+// settle site — the one a message reaches when its text is already complete the
+// instant it takes the stage, so PhaseTalking never runs a tick. A blank post
+// with an immediate preanim is exactly that message.
+//
+// It is pinned separately because a mutant that makes THIS site wait on the
+// animation survives the two tests above: they all call Update at least once,
+// and the PhaseTalking arm would then settle the message one tick later, hiding
+// the difference. The difference is real all the same — canon settles a blank
+// post synchronously inside start_chat_ticking, arming the queue timer in the
+// empty-message arm at ../AO2-Client/src/courtroom.cpp:4183-4213 with the
+// preanim still playing (anim_state 4).
+func TestBlankImmediatePostSettlesWithoutWaitingForThePreanim(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("")})
+
+	// No Update: the settle is synchronous, exactly as canon's is.
+	if got := room.Phase(); got != PhaseLinger {
+		t.Fatalf("a blank immediate post settled to %v, want linger before a single tick "+
+			"(the preanim must not hold the empty-message arm)", got)
+	}
+	if !room.Scene.Speaker.PlayOnce || room.Scene.Speaker.Active != room.Scene.Speaker.PreanimBase {
+		t.Errorf("the preanim must still be playing over the settled blank post: active=%q playOnce=%v",
+			room.Scene.Speaker.Active, room.Scene.Speaker.PlayOnce)
+	}
+}
+
+// TestImmediatePreanimBounded pins the safety bound on the DECORATION (the
+// message's own lifecycle is no longer coupled to it — see
+// TestImmediatePreanimTransitions): an immediate preanim that never reports done
+// (still decoding, or absent) must not leave the speaker parked on the preanim
+// base forever — PreanimTimeout releases it to idle — while a decoded long
+// preanim that DOES report its duration (NotifyPreanimStarted) still plays in
+// full.
+//
+// Its assertions were rewritten by this lane too, from Phase() to PlayOnce, and
+// they ride the same proof: the bound now guards the SPRITE, because the phase
+// it used to guard no longer waits on the animation at all. Same three citations
+// as TestImmediatePreanimTransitions. Note what did NOT change — both halves
+// still assert exactly what they did before (unbounded preanim is released;
+// a decoded 5 s preanim survives the plain timeout and ends on its own report),
+// only on the field that still carries the animation's state.
 func TestImmediatePreanimBounded(t *testing.T) {
-	// Never reports done: bounded, no hang.
+	// Never reports done: bounded release, no permanently frozen sprite.
 	room, _, _, _ := newCourtroomRig(t)
 	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hi")})
 	room.Typewriter.SkipToEnd()
 	room.Update(time.Millisecond)
-	if room.Phase() != PhaseTalking {
-		t.Fatalf("precondition: waiting for the preanim, phase = %v", room.Phase())
+	if !room.Scene.Speaker.PlayOnce {
+		t.Fatalf("precondition: the immediate preanim should be playing")
 	}
 	room.Update(DefaultPreanimTimeout + 100*time.Millisecond) // no done report ever
-	if room.Phase() == PhaseTalking {
-		t.Error("an immediate preanim that never reports done must be bounded, not hang the message")
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("an immediate preanim that never reports done must be bounded, not park the sprite forever")
 	}
 
 	// A long DECODED preanim (reports its duration) plays past the plain timeout.
@@ -2088,13 +2186,13 @@ func TestImmediatePreanimBounded(t *testing.T) {
 	room2.NotifyPreanimStarted(5 * time.Second) // render reports a 5 s decoded preanim
 	room2.Typewriter.SkipToEnd()
 	room2.Update(DefaultPreanimTimeout + 500*time.Millisecond) // past the plain bound
-	if room2.Phase() != PhaseTalking {
-		t.Errorf("a 5 s decoded immediate preanim was cut at the plain timeout (phase = %v)", room2.Phase())
+	if !room2.Scene.Speaker.PlayOnce {
+		t.Errorf("a 5 s decoded immediate preanim was cut at the plain timeout")
 	}
 	room2.NotifyPreanimDone()
 	room2.Update(time.Millisecond)
-	if room2.Phase() == PhaseTalking {
-		t.Error("the reported preanim finishing must leave PhaseTalking")
+	if room2.Scene.Speaker.PlayOnce {
+		t.Error("the reported preanim finishing must clear PlayOnce")
 	}
 }
 

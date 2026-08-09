@@ -210,7 +210,13 @@ func TestLocalOverlaySwapDuringFetchesRaceClean(t *testing.T) {
 // Manager: its source already IS the LocalFetcher, so SetLocalOverlay must not
 // change behavior. We install an overlay pointing at a DIFFERENT mount that does
 // NOT contain the asset; the local-mode manager must still resolve from its own
-// source (never the overlay). netFetch's overlay branch is gated !localMode.
+// source (never the overlay).
+//
+// The routing is by ORIGIN, not by mode (netFetch → localSourceFor): the decoy
+// overlay was built over a different mount set, so it owns a different
+// local://m-<hash>/ origin and cannot claim this URL. That is what keeps this
+// expectation green — and what makes it the open–closed evidence for the
+// mount-rescan fix below, which had to change the routing WITHOUT changing this.
 func TestLocalModeManagerIgnoresOverlay(t *testing.T) {
 	realMount := t.TempDir()
 	seedOverlayMount(t, realMount, "characters/phoenix/(a)normal.png", []byte("REAL"))
@@ -229,5 +235,100 @@ func TestLocalModeManagerIgnoresOverlay(t *testing.T) {
 	}
 	if string(data) != "REAL" {
 		t.Fatalf("local-mode manager served %q, want REAL (the overlay must be a no-op)", data)
+	}
+}
+
+// --- mount-rescan origin race (attach a folder mid-session) ------------------
+
+// TestLocalModeServesTheNewMountSetAfterARescan is the load-bearing proof for
+// the reported "is not under local origin" failure.
+//
+// Attaching a folder mid-session re-mints the local origin (its hash covers the
+// whole mount list), so ui/app.go rebuildAssetOrigin points the URL builder at
+// local://m-<NEW>/ and re-pushes a matching overlay. A local-mode Manager's own
+// source is still the LocalFetcher built at startup over the OLD set, and used
+// to be the only thing consulted — so every freshly-built URL came back
+// "assets: … is not under local origin …" until the user restarted the client
+// (reloading, which rebuilt the Manager, was the reported workaround).
+//
+// Here the NEW mount holds the only copy of the asset, so nothing but correct
+// origin routing can make this pass.
+func TestLocalModeServesTheNewMountSetAfterARescan(t *testing.T) {
+	oldMount := t.TempDir()
+	seedOverlayMount(t, oldMount, "characters/phoenix/(a)normal.png", []byte("OLD"))
+	source := NewLocalFetcher([]string{oldMount}) // the startup mount set
+	rig := newRig(t, source, true)                // LOCAL mode
+
+	// The user attaches a second folder. The mount SET changed, so the origin did.
+	newMount := t.TempDir()
+	seedOverlayMount(t, newMount, "characters/edgeworth/(a)normal.png", []byte("NEW"))
+	current := NewLocalFetcher([]string{oldMount, newMount})
+	if current.BaseURL() == source.BaseURL() {
+		t.Fatal("test premise broken: a changed mount set must mint a new origin")
+	}
+	rig.manager.SetLocalOverlay(current) // what rebuildAssetOrigin pushes
+
+	// A URL minted under the NEW origin must resolve — this is the regression.
+	data, err := rig.manager.FetchRaw(context.Background(), current.BaseURL()+"characters/edgeworth/(a)normal.png")
+	if err != nil {
+		t.Fatalf("a URL minted after the rescan must resolve, got %v", err)
+	}
+	if string(data) != "NEW" {
+		t.Fatalf("served %q, want NEW", data)
+	}
+}
+
+// TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder is the other half of
+// the fix, and the reason it is routing-by-origin rather than origin-aliasing:
+// URLs the session is ALREADY holding (a staged scene, an in-flight prefetch)
+// were minted under the previous mount set and must keep resolving against THAT
+// set. Serving them from the current mounts instead would cache foreign bytes
+// under the old origin's keys, which is exactly the per-mount-set cache
+// separation the origin hash exists to guarantee.
+func TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder(t *testing.T) {
+	oldMount := t.TempDir()
+	seedOverlayMount(t, oldMount, "background/court/defenseempty.png", []byte("OLDBG"))
+	source := NewLocalFetcher([]string{oldMount})
+	rig := newRig(t, source, true)
+
+	// Rescan onto a completely DIFFERENT folder that also ships the same relpath.
+	newMount := t.TempDir()
+	seedOverlayMount(t, newMount, "background/court/defenseempty.png", []byte("NEWBG"))
+	rig.manager.SetLocalOverlay(NewLocalFetcher([]string{newMount}))
+
+	// The stale URL keeps its own mount set's bytes.
+	data, err := rig.manager.FetchRaw(context.Background(), source.BaseURL()+"background/court/defenseempty.png")
+	if err != nil {
+		t.Fatalf("a URL held from before the rescan must still resolve: %v", err)
+	}
+	if string(data) != "OLDBG" {
+		t.Fatalf("stale origin served %q, want OLDBG (its own mount set's bytes)", data)
+	}
+}
+
+// TestUnknownLocalOriginIsNotServedByAMismatchedOverlay is the ENCAPSULATION
+// test for localSourceFor: the routing must be by origin OWNERSHIP, and a
+// LocalFetcher must never be handed a URL from a mount set it knows nothing
+// about. A streaming manager (no local source of its own) whose overlay does not
+// claim the origin reports "cannot serve" — never a 404, which would let the
+// diagnostic walk mark the asset [missing] (the contract
+// TestStreamingManagerNilOverlayCannotServe pins for the nil case).
+//
+// If someone "simplified" localSourceFor to just return the overlay whenever one
+// is installed, this fails: the overlay would answer with its own conclusive
+// ErrAssetNotFound for a mount set it never scanned.
+func TestUnknownLocalOriginIsNotServedByAMismatchedOverlay(t *testing.T) {
+	mount := t.TempDir()
+	seedOverlayMount(t, mount, "characters/phoenix/(a)normal.png", []byte("MINE"))
+	rig := newRig(t, network.NewClient(), false) // STREAMING
+	rig.manager.SetLocalOverlay(NewLocalFetcher([]string{mount}))
+
+	foreign := LocalScheme + "m-deadbeef/characters/phoenix/(a)normal.png"
+	_, err := rig.manager.FetchRaw(context.Background(), foreign)
+	if !errors.Is(err, ErrLocalOverlayUnavailable) {
+		t.Fatalf("a foreign local origin must report ErrLocalOverlayUnavailable, got %v", err)
+	}
+	if errors.Is(err, network.ErrAssetNotFound) {
+		t.Fatal("a foreign local origin must NOT masquerade as a 404 (would false-[missing] the asset)")
 	}
 }

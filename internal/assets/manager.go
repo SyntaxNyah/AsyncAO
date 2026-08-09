@@ -30,6 +30,20 @@ const (
 	// wins on flood); scoped strictly to AssetTypeMusic so sprite backoff
 	// bursts never reach it. Small because at most one track plays at a time.
 	musicFailChanCap = 8
+	// localOriginHistoryCap bounds how many RETIRED mount-set origins stay
+	// answerable after the overlay moves on (rule §17.4 — the ring is capped, not
+	// a leak). Each entry is one LocalFetcher: a string slice and a hashed origin,
+	// nothing paged in, so the ceiling is bytes.
+	//
+	// Four is sized off what can actually still be holding a stale base. A base
+	// only survives a mount change inside a live scene or a PARKED TAB's URL
+	// builder (ui/tabs.go activateTab does not re-mint), so the reachable
+	// generations are "the ones the user made while those tabs sat in the
+	// background" — folder attaches happen one at a time in a settings dialog, not
+	// in bursts. Four covers a full editing session with room to spare and still
+	// evicts, so a user who reconfigures mounts all afternoon does not accumulate
+	// fetchers for folders they detached hours ago.
+	localOriginHistoryCap = 4
 )
 
 // DecodedAsset is the manager's handoff to the render thread: decoded frames
@@ -152,11 +166,17 @@ type Manager struct {
 	// URL). It lets the content report / a mid-session source switch resolve a
 	// recording against the user's configured mounts WITHOUT rebuilding the
 	// Manager, which is mode-locked at construction (see LocalMode). Nil = no
-	// mounts configured. Only consulted when NOT localMode: a local-mode Manager's
-	// SOURCE already is the LocalFetcher, so the overlay would double-route — it is
-	// a strict no-op there (netFetch never reaches the overlay branch). atomic: the
-	// render thread swaps it on every mounts/pref change while pool workers read it.
+	// mounts configured. Consulted in BOTH modes, by ORIGIN (see localSourceFor).
+	// atomic: the render thread swaps it on every mounts/pref change while pool
+	// workers read it.
 	localOverlay atomic.Pointer[LocalFetcher]
+
+	// localRetired holds the mount sets the overlay has been swapped OFF, newest
+	// first, so a URL minted under a PREVIOUS generation still resolves — see
+	// localSourceFor and localOriginHistoryCap. Copy-on-write: SetLocalOverlay
+	// publishes a fresh slice and readers only ever range over an immutable one,
+	// so pool workers never lock (rule §17.5). Nil until the first swap.
+	localRetired atomic.Pointer[[]*LocalFetcher]
 
 	// mountLayer, when set, answers asset fetches from the user's local mount
 	// folders and .zip packs BEFORE the network, under the SERVER's own URL
@@ -202,21 +222,23 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 			return data, nil
 		}
 	}
-	// Streaming-manager local overlay: a local:// URL cannot go to the network
-	// client (it would transport-error). Route it to the mount overlay. Gated on
-	// !localMode because a local-mode Manager's SOURCE already is the LocalFetcher
-	// (m.client) — intercepting here would double-route (and a nil overlay would
-	// break local mode outright). The overlay branch also rides ABOVE the offline
-	// gate: local mount reads are legal offline (disk, not network). Placed AFTER
-	// archiveSrc so a replay archive's own local:// origin still wins — the mount
-	// overlay's LocalFetcher hard-errors on a URL not under its origin, which would
-	// break replay if it saw the archive's URLs first.
-	if !m.localMode && strings.HasPrefix(url, LocalScheme) {
-		if ov := m.localOverlay.Load(); ov != nil {
+	// A local:// URL names the mount set it was minted under (LocalFetcher's
+	// origin embeds a hash of the mount list), so route it to whichever local
+	// source OWNS that origin — see localSourceFor. Rides ABOVE the offline gate:
+	// local mount reads are disk, not network egress, so they are legal in
+	// rehearsal mode. Placed AFTER archiveSrc so a replay archive's own local://
+	// origin still wins.
+	if strings.HasPrefix(url, LocalScheme) {
+		if src := m.localSourceFor(url); src != nil {
 			// A missing mount file returns ErrAssetNotFound here (conclusive miss),
 			// exactly matching a streaming 404 — learned formats and warnings behave
 			// identically. No disk-tier round-trip: the mounts ARE disk (skipDisk).
-			return (*ov).Fetch(ctx, url)
+			return src.Fetch(ctx, url)
+		}
+		if m.localMode {
+			// No source claims this origin, but m.client IS a LocalFetcher: let it
+			// answer so the error names the origin it does serve (today's message).
+			return m.client.Fetch(ctx, url)
 		}
 		return nil, ErrLocalOverlayUnavailable // cannot serve — NOT a 404 (see above)
 	}
@@ -226,6 +248,67 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 	return m.client.Fetch(ctx, url)
 }
 
+// localSourceFor picks the mount fetcher a local:// URL was MINTED under, or nil
+// when no configured source claims that origin.
+//
+// The origin is not decoration: LocalFetcher hashes the whole mount list into it
+// (local.go NewLocalFetcher) so two mount configurations occupy disjoint cache
+// keyspace, exactly like two asset hosts. That makes the origin a GENERATION
+// stamp — attaching or detaching a folder mints a new one — and a Fetcher only
+// ever answers URLs under its own.
+//
+// Before this, a mid-session mount change stranded the client: the UI re-minted
+// its URL builder onto the NEW origin (ui/app.go rebuildAssetOrigin) while a
+// local-mode Manager's source stayed the LocalFetcher built at startup, so every
+// freshly-built URL came back "is not under local origin" until the user
+// restarted. The overlay pointer was already being re-pushed on every mounts
+// change — it was simply never read in local mode. Consulting it by ORIGIN fixes
+// both directions at once and keeps the separation structural:
+//
+//   - the CURRENT mount set (the overlay, re-pushed on every change) serves the
+//     URLs minted after the change, so content added mid-session resolves;
+//   - the mount set a still-held URL was minted under (a local-mode Manager's
+//     own source) keeps serving it, so a scene already on stage does not blink
+//     out — and its bytes stay cached under the origin they actually came from.
+//
+// Those two alone leave a hole one generation wide, and the field report walks
+// straight into it: a URL builder is PER-TAB session state and the UI does not
+// re-mint it on a tab switch (ui/tabs.go activateTab), so after a SECOND mount
+// change a parked tab still holds generation-2 URLs while the overlay is on 3
+// and the fixed source is on 1 — neither claims them, and that tab is stranded
+// exactly the way the whole session used to be. localRetired closes it: the
+// overlay's predecessors stay answerable for a bounded number of generations, so
+// any base minted recently enough to still be on screen resolves.
+//
+// This does NOT weaken the origin scheme, which is the point of the whole
+// mechanism: every fetcher still answers ONLY URLs under its own origin, bytes
+// are still cached under the origin they came from, and two mount
+// configurations still occupy disjoint keyspace. All that changes is how many
+// generations remain reachable at once.
+//
+// Overlay first: it is the newest mount set, and when nothing changed every
+// origin here is equal so the order cannot matter. Cheap (two atomic loads and a
+// handful of prefix compares against a cap-bounded slice) and only ever reached
+// for a local:// URL.
+func (m *Manager) localSourceFor(url string) Fetcher {
+	if ov := m.localOverlay.Load(); ov != nil && strings.HasPrefix(url, ov.BaseURL()) {
+		return ov
+	}
+	if retired := m.localRetired.Load(); retired != nil {
+		for _, lf := range *retired { // newest first, ≤ localOriginHistoryCap entries
+			if strings.HasPrefix(url, lf.BaseURL()) {
+				return lf
+			}
+		}
+	}
+	// A local-mode Manager's fixed source is a LocalFetcher; a streaming one's is
+	// the network client, which claims no local:// origin at all.
+	if lf, ok := m.client.(*LocalFetcher); ok && strings.HasPrefix(url, lf.BaseURL()) {
+		return lf
+	}
+	return nil
+}
+
 // SetLocalOverlay installs (or clears, with nil) the mount overlay a STREAMING
 // manager consults for local:// URLs. Safe to call from the render thread
 // mid-session: readers load the atomic pointer, never lock (spec §17.5). Pass
@@ -233,9 +316,44 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 // origin the UI builds URLs against, so fetch routing matches byte-for-byte); an
 // empty mount set should be passed as nil, not an empty LocalFetcher (an empty
 // LocalFetcher answers every URL with a conclusive 404, which is wrong for
-// "cannot serve"). No-op in effect on a local-mode Manager: netFetch's overlay
-// branch is gated !localMode, so the stored pointer is never read there.
-func (m *Manager) SetLocalOverlay(f *LocalFetcher) { m.localOverlay.Store(f) }
+// "cannot serve").
+//
+// It is meaningful in LOCAL mode too, and that is not a widening of the feature:
+// the overlay is simply the CURRENT mount set, and localSourceFor picks whichever
+// source owns the URL's origin. A local-mode Manager whose mounts never change
+// installs an overlay with the SAME origin as its own source, so routing is
+// unchanged; one whose mounts DID change can finally serve the URLs the UI
+// re-minted (see localSourceFor).
+//
+// The overlay it REPLACES is retired rather than dropped: URLs minted under it
+// may still be on screen (or parked on a background tab, whose URL builder the
+// UI does not re-mint), and a fetcher is the only thing that can answer its own
+// origin. Bounded at localOriginHistoryCap generations, newest first.
+//
+// Render thread only for the write (it is the mounts/pref change path); the
+// published slice is never mutated afterwards, so readers on pool workers need
+// no lock.
+func (m *Manager) SetLocalOverlay(f *LocalFetcher) {
+	prev := m.localOverlay.Swap(f)
+	if prev == nil || (f != nil && f.BaseURL() == prev.BaseURL()) {
+		return // nothing retired, or the same mount set re-pushed (a no-op change)
+	}
+	old := m.localRetired.Load()
+	next := make([]*LocalFetcher, 0, localOriginHistoryCap)
+	next = append(next, prev) // newest first
+	if old != nil {
+		for _, lf := range *old {
+			if len(next) == localOriginHistoryCap {
+				break // oldest generations fall off the end
+			}
+			if lf.BaseURL() == prev.BaseURL() {
+				continue // it is back at the head; never list a generation twice
+			}
+			next = append(next, lf)
+		}
+	}
+	m.localRetired.Store(&next)
+}
 
 // skipDisk reports whether url's bytes must bypass the T3 disk tier: a local://
 // URL (in any manager) reads from mount folders that ARE disk, so a disk-tier

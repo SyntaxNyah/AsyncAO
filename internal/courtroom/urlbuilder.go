@@ -511,9 +511,57 @@ func escapePreservingSlashes(p string) string {
 	return strings.Join(parts, "/")
 }
 
+// defaultPosBackground / legacyPosBackground are the two spellings AO2 uses for
+// "the witness view", which doubles as the fallback for ANY position a
+// background does not ship art for.
+//
+// ../AO2-Client/src/path_functions.cpp:108-117 (get_pos_path) seeds every lookup
+// with witnessempty when that file exists and wit otherwise, and only then lets
+// a known pos or a 2.8 unique pos override it — and only if THAT file exists. So
+// a background missing the position's art does not go blank in AO2; it shows the
+// witness view. ../AO2-Client/src/courtroom.cpp:4613-4626 (set_scene) repeats
+// the wit arm one more time as a last resort before hiding the layer.
+const (
+	defaultPosBackground = "witnessempty"
+	legacyPosBackground  = "wit"
+)
+
+// BackgroundFallbacks returns the further background stems to probe when a
+// position's own background art is absent, in AO2's order.
+//
+// A streaming client cannot stat files the way get_pos_path does, so the
+// existence ladder becomes a candidate chain: PrefetchChain probes the primary
+// first and only walks these when EVERY format of it 404s, delivering whichever
+// answers under the primary's base. Cost when the position's own art exists —
+// the overwhelmingly common case — is exactly zero extra probes, and a settled
+// miss is 404-cached, so the chain does not re-probe inside the TTL.
+//
+// The DESK deliberately gets no such chain. get_pos_path pairs the desk with the
+// background it settled on, but set_scene's desk arm
+// (../AO2-Client/src/courtroom.cpp:4628-4634) has no fallback at all: an author
+// suppresses a desk by not shipping the file, and 2.8 unique-position
+// backgrounds routinely ship <pos> with no <pos>_overlay for exactly that
+// reason. Substituting "stand" there would resurrect the previous room's desk
+// under a custom position — the #44 defect DeskDrawn exists to prevent. The
+// residual divergence (a background that falls back to witnessempty draws no
+// desk where AO2 draws "stand") is the price of not being able to stat.
+func BackgroundFallbacks(bgPart string) []string {
+	alts := make([]string, 0, 2)
+	for _, stem := range [...]string{defaultPosBackground, legacyPosBackground} {
+		if stem != bgPart {
+			alts = append(alts, stem)
+		}
+	}
+	return alts
+}
+
 // PositionScene maps an AO side/pos code to its background and desk part
 // stems (AO2-Client path_functions get_pos_path table). Unknown positions
 // use the 2.8 unique-position convention: <pos> / <pos>_overlay.
+//
+// This is get_pos_path's table with its file-existence tests removed — those
+// become the probe chain BackgroundFallbacks returns, because a streaming client
+// cannot stat the origin.
 func PositionScene(pos string) (bgPart, deskPart string) {
 	switch pos {
 	case "def":

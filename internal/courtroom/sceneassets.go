@@ -17,9 +17,26 @@ func IsBlankSpeaker(charName string) bool {
 // AssetRef is one asset a scene needs, for the self-contained archive exporter.
 // Base is an extensionless AO base (sprite / background / desk) the exporter
 // resolves via Manager.ResolveRaw, OR a complete URL when Exact is set (music
-// carries its own extension). Alts are the further sprite spellings AO packs
-// use behind the "(a)X" identity — the bare name and the "(a)/X" prefix
-// folder, in EmoteAlts order (nil for non-sprites).
+// carries its own extension).
+//
+// Alts are the further CANDIDATES for that same one asset: probed in Base-then-
+// Alts order, first hit wins, and whichever answers satisfies the ref. That is
+// the general contract every consumer already relies on — PrefetchChain, the
+// exporter's resolveRef, the content report's ResolveRawFull walk, the scene
+// maker's PackCovers count — so the population is whatever ladder the asset's
+// own prefetch site walks live, NOT sprites alone. Two fill it today:
+//
+//   - character sprites — the further spellings behind the "(a)X" identity, in
+//     EmoteAlts order (the bare name, then the "(a)/X" prefix folder);
+//   - position backgrounds — AO2's witness ladder, in BackgroundFallbacks
+//     order (the witnessempty / wit spellings, less the position's own stem).
+//
+// nil means the ref has no ladder at all: Base is the only spelling to try.
+// The DESK's nil is deliberate and must stay — set_scene's desk arm has no
+// fallback (BackgroundFallbacks' documented asymmetry, pinned by
+// TestTheDeskKeepsItsNoFallbackContract); "symmetrising" it with the
+// background's ladder would resurrect the previous room's desk under a custom
+// position. Add a ladder here only when the live prefetch site grows one.
 type AssetRef struct {
 	Base  string
 	Alts  []string
@@ -71,7 +88,13 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 				continue
 			}
 			bgPart, deskPart := PositionScene(m.Side) // Scene.Position == msg.Side
-			add(urls.Background(bg, bgPart), nil, assets.AssetTypeBackground, false)
+			// The background carries the witness ladder (prefetchScenery's chain):
+			// a position whose art only resolves through witnessempty/wit would
+			// otherwise be enumerated as its primary stem alone, resolve to nothing,
+			// and be bundled as nothing — so the replay of an archived scene would
+			// show black exactly where the live client showed the witness view. The
+			// desk deliberately gets no ladder (BackgroundFallbacks' contract).
+			add(urls.Background(bg, bgPart), backgroundAltURLs(urls, bg, bgPart), assets.AssetTypeBackground, false)
 			add(urls.Background(bg, deskPart), nil, assets.AssetTypeDeskOverlay, false)
 			// Sprites carry the full spelling chain: "(a)X" → bare X → "(a)/X".
 			// A blank speaker ("" or the "-" no-character sentinel) or a blank emote

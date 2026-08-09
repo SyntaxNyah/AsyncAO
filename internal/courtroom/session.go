@@ -468,6 +468,11 @@ type Session struct {
 	Evidence []EvidenceItem         // LE list (≤ evidenceCap)
 	Timers   [TimerCount]TimerState // TI server clocks
 	PosList  []string               // SD dropdown entries (≤ posListCap)
+	// latency / pingSentAt time the CH → CHECK round trip so a TI type-0 clock
+	// can be anchored where the SERVER meant it, not half an RTT late. See
+	// latency.go for the canon this mirrors.
+	latency    time.Duration
+	pingSentAt time.Time
 	// Judge is the JD state (JudgePosDependent until the server says).
 	Judge int
 	// ModGranted reports mod authentication (AUTH 1, or the legacy OOC
@@ -842,7 +847,30 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "checkconnection":
 		// Keepalive: AO2-Client answers CH with our char id.
+		//
+		// COMPATIBILITY ONLY — no server in the maintained fleet sends this
+		// header (zero occurrences across KFO-Server, Nyathena, Athena, akashi
+		// and Whisker; AO2-Client names it only to exclude it from a debug log,
+		// inside #ifdef DEBUG_NETWORK at packet_distribution.cpp:40). So the
+		// stamp below is not the production latency source. See latency.go.
 		s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
+		s.stampPing() // the CHECK that answers this CH times the round trip
+
+	case "CHECK":
+		// The tsuserver family answers every CH with CHECK
+		// (../KFO-Server/server/network/aoprotocol.py:248-253 net_cmd_ch). AO2
+		// times exactly this reply and keeps it as `latency`
+		// (packet_distribution.cpp CHECK → pong()). Nothing else changes — it is
+		// not an event, it does not touch the keepalive (the connection's own
+		// goroutine owns that), it only dates the clock correction.
+		//
+		// In production this always early-returns: the CH it answers came from
+		// the connection's keepalive goroutine, which leaves no stamp, so
+		// notePong finds none outstanding. That is deliberate (a stamp-less
+		// CHECK must never invent a measurement), and it is why the clock
+		// correction below is currently inert — latency.go, "the missing call
+		// site".
+		s.notePong()
 
 	case "HP":
 		// HP#<bar 1=def|2=pro>#<0..10>#% — judge penalty bars
@@ -911,9 +939,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "TI":
 		// TI#<id>#<type>#[<ms>]: type 0 start/resume countdown at ms,
 		// 1 pause at ms, 2 show, 3 hide; ms ≤ 0 stops the clock
-		// (packet_distribution.cpp). The canonical client also shaves its
-		// measured latency/2 off type 0; we don't measure ping, so clocks
-		// run at most one half-RTT behind the server's intent.
+		// (packet_distribution.cpp). Type 0 — and ONLY type 0 — is corrected by
+		// the measured half-RTT, matching AO2 and KFO byte for byte; see
+		// latency.go for the citations and for why a paused value is not
+		// corrected (it is a display value, not an anchor).
+		//
+		// clockLead() is 0 in production today (nothing measures a round trip —
+		// latency.go, "the missing call site"), so this arm currently behaves
+		// exactly as the uncorrected one it replaced. The correction is canon
+		// parity, not a fix for any reproduced defect.
 		id := atoiOr(p.Field(0), -1)
 		if id < 0 || id >= TimerCount || len(p.Fields) < 2 {
 			return nil
@@ -925,8 +959,13 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 				return nil
 			}
 			if ms := atoiOr(p.Field(2), -1); ms > 0 {
+				// Canon tests ms > 0 BEFORE subtracting, so a correction that
+				// eats the whole remainder still starts the clock — it just
+				// anchors in the past and reads 00:00, which is what AO2's
+				// AOClockLabel does with a target already behind it. Remaining()
+				// clamps to zero for the same display.
 				t.Running = true
-				t.Deadline = time.Now().Add(time.Duration(ms) * time.Millisecond)
+				t.Deadline = time.Now().Add(time.Duration(ms)*time.Millisecond - s.clockLead())
 			} else {
 				t.Running, t.Left = false, 0 // negative value = stop
 			}
@@ -1170,8 +1209,19 @@ func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 // (courtroom.cpp keepalive_timer → ping_server). Servers idle-kick
 // silent clients; without this, sitting minimized (no chat traffic)
 // got the connection dropped.
+//
+// NO PRODUCTION CALLER. The minimized case is exactly the one a render-loop
+// ping loses, so the app moved the keepalive off this thread: internal/ui hands
+// KeepalivePacket to Conn.SetKeepalive and internal/protocol's goroutine writes
+// it (ui/app.go:4187, ui/app.go:4669, ui/tabs.go:540). What survives here is the
+// reply-side wire shape plus the CHECK timing pair, both driven by tests — see
+// latency.go, "the missing call site", for why that leaves the TI correction
+// inert.
 func (s *Session) Ping() {
 	s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
+	// AO2's ping_server does exactly this pairing: send CH, start the timer the
+	// CHECK reply stops (courtroom.cpp:6637-6653).
+	s.stampPing()
 }
 
 // KeepalivePacket returns the CH keepalive as a wire string for the connection's

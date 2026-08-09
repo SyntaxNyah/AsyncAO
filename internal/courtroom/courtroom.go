@@ -526,6 +526,25 @@ type Courtroom struct {
 	// animation completion).
 	preanimDone bool
 
+	// imPreLeft bounds an IMMEDIATE-mode preanim, the one AO2 plays as pure
+	// DECORATION over a message that is already ticking (anim_state 4 — see
+	// play_preanim(true), ../AO2-Client/src/courtroom.cpp:4093-4096). It is a
+	// SEPARATE countdown from c.timer on purpose: c.timer belongs to the phase,
+	// and this animation deliberately outlives the phase that started it. >0 means
+	// a decoration is running; 0 means none. Cleared per message in begin().
+	imPreLeft time.Duration
+
+	// preanimEnd records why the last one-shot preanimation ended (preanimend.go).
+	// Diagnostic only — nothing in the machine branches on it.
+	preanimEnd PreanimEndReason
+
+	// OnPreanimEnd, when set, is called with the reason every time a one-shot
+	// preanimation is released. Optional and nil by default: the always-on cost
+	// of the instrumentation is one nil check per release, and a release happens
+	// at most once per message. Set it to stream "who ended the preanim" to a log
+	// or the debug panel while chasing an interrupt report.
+	OnPreanimEnd func(PreanimEndReason)
+
 	// restoring is set for the span of RestoreMessage: begin() then skips the
 	// prefetches for art the settled form can never draw (shout bubbles, the
 	// preanimation) — a restore whose message landed while the tab was
@@ -653,6 +672,50 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	}
 }
 
+// prefetchScenery warms the position background for bg, walking AO2's
+// witness-view fallback ladder when the position ships no art of its own.
+//
+// It is the one place THIS package demands a background — begin (a message's
+// position) and setBackground (a BN / area change) both come through here. It is
+// the area-change case that motivated it: a custom position that exists in one
+// room and not the next used to leave the PREVIOUS room's background on screen
+// indefinitely, because the sticky scenery gate holds until the new base becomes
+// resident and a 404'd base never does. AO2 never reaches that state:
+// get_pos_path has already fallen back to the witness view before set_scene
+// draws anything (../AO2-Client/src/path_functions.cpp:108-159).
+//
+// The chain's identity stays the position's own base, so Scene.BackgroundBase —
+// the T1 key the viewport draws and the desk logic compares against — is
+// unchanged whichever stem answers. // AssetType: Background
+//
+// KNOWN GAP, do not read this as "the ladder cannot be half applied": the APP
+// has two further demand sites for the same live base, both outside this
+// package and both still single-stem. internal/ui healScenery and the
+// scene-warm helper re-demand Scene.BackgroundBase with a plain
+// Manager.Prefetch and no alts, so after a T1 eviction a position that only
+// ever resolved through the witness fallback is re-probed under its PRIMARY
+// stem alone — which is 404-cached — the pass reports a total miss, and the
+// stage goes black. The failure this ladder exists to prevent is therefore
+// deferred to the first eviction rather than fixed. Both sites want
+// PrefetchChain(base, <these alts>, …); BackgroundFallbacks and PositionScene
+// are exported for exactly that, and internal/ui already holds a URLBuilder.
+func (c *Courtroom) prefetchScenery(bg, bgPart string) {
+	c.mgr.PrefetchChain(c.Scene.BackgroundBase, backgroundAltURLs(c.urls, bg, bgPart), assets.AssetTypeBackground, network.PriorityHigh)
+}
+
+// backgroundAltURLs turns BackgroundFallbacks' stems into URLs under bg. One
+// owner for "the witness ladder, as URLs": the live prefetch above and the
+// archive enumeration in SceneAssets both call it, so the exporter bundles
+// whichever stem the live path would have accepted instead of only the primary.
+func backgroundAltURLs(urls URLBuilder, bg, bgPart string) []string {
+	stems := BackgroundFallbacks(bgPart)
+	alts := make([]string, 0, len(stems))
+	for _, stem := range stems {
+		alts = append(alts, urls.Background(bg, stem))
+	}
+	return alts
+}
+
 // isMusicStop reports whether a track is an AO "stop music" sentinel (the fake
 // ~stop track AO2-Client sends) rather than a real song — Now-Playing clears.
 func isMusicStop(track string) bool {
@@ -756,9 +819,32 @@ func isAreaTransfer(track string) bool {
 	return !HasAudioExt(track)
 }
 
+// spriteSettled reports whether base is done resolving one way or the other:
+// resident in T1 (SpriteReady is the render store's uploaded-texture probe, so
+// this really is "decoded AND uploaded"), or conclusively 404'd. Both are
+// answers, and the wait gate must never hold for one it has already received —
+// the "never wait past the conclusively-missing rules" bound.
+func (c *Courtroom) spriteSettled(base string) bool {
+	return c.SpriteReady(base) || c.spriteConfirmedMissing(base)
+}
+
+// preanimWillPlay reports whether this message's preanimation is the thing the
+// stage shows FIRST — the selection enterAfterShout makes (playPre), lifted out
+// so the wait gate cannot drift from the play path. AO2's handle_emote_mod
+// reaches play_preanim only for PREANIM / PREANIM_ZOOM, or for IDLE / ZOOM with
+// immediate ticked (../AO2-Client/src/courtroom.cpp:2889-2910).
+//
+// It says nothing about whether the ART exists — the callers own that (the play
+// path checks spriteConfirmedMissing before parking Active on it; the gate
+// treats a confirmed miss as settled).
+func preanimWillPlay(msg *protocol.ChatMessage) bool {
+	return hasPreanim(msg) &&
+		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
+}
+
 // waitHolds reports whether the cold-load "wait" gate holds msg off-stage this
-// tick (SpriteWait mode): the speaker's idle sprite — the first thing the stage
-// would show — hasn't decoded yet and the timeout hasn't expired. behind is how
+// tick (SpriteWait mode): the sprite the stage would show FIRST hasn't decoded
+// yet and the timeout hasn't expired. behind is how
 // many messages are queued BEHIND msg (matching begin()'s post-pop catch-up
 // check, so the two triggers can never disagree); dt advances the countdown
 // (pass 0 at an arm-only site). Arming fires the SAME idle/talk prefetch begin()
@@ -775,11 +861,35 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		return false
 	}
 	idle := c.urls.Emote(msg.CharName, msg.Emote, EmoteIdle)
-	ready := c.SpriteReady(idle)
-	if ready && c.SpriteWaitPair && msg.Pair.Active() { // strictness knob: the pair partner's idle too
-		ready = c.SpriteReady(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
+	ready := c.spriteSettled(idle)
+	// ...and the TALK sprite, which for a message with no preanim is the one the
+	// stage draws FIRST: enterAfterShout falls straight through to startTalking,
+	// which parks Active on TalkBase in the same tick begin() runs — the idle base
+	// is only what the message SETTLES onto, a second or more later. Waiting for
+	// idle alone therefore opened the gate onto a cold talk sprite and flashed the
+	// placeholder for exactly the pre-message-stall window this audit is about.
+	//
+	// It is not a widening in cost: the arm below already warms talk beside idle
+	// (it always has), so this waits for a fetch that was already in flight, and a
+	// conclusively-404'd talk sprite counts as settled like every other — the gate
+	// still never waits past the missing rules. The (a)/(b) spellings are often the
+	// SAME file on legacy packs, in which case this is one extra map probe.
+	if ready {
+		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
-	if ready && c.SpriteWaitPreanim && hasPreanim(msg) { // strictness knob: the preanimation too
+	if ready && c.SpriteWaitPair && msg.Pair.Active() { // strictness knob: the pair partner's idle too
+		ready = c.spriteSettled(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
+	}
+	// The preanimation is what the stage SHOWS first whenever it will actually
+	// play (enterAfterShout parks Active on it before a single character is
+	// revealed), so the base gate covers that case — waiting for the idle sprite
+	// and then opening onto a cold preanim is the pre-message stall this audit was
+	// asked to close. It is deliberately preanimWillPlay, not hasPreanim: live
+	// packs fill the char.ini preanim field with a dummy on EVERY emote, and a
+	// declared-but-never-played preanim is not something the first frame uses.
+	// SpriteWaitPreanim keeps widening the gate to any declared preanim for the
+	// power user who wants that.
+	if ready && hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
 		// A preanim that has CONCLUSIVELY 404'd is nothing to wait for — release on
 		// the miss signal instead of burning the full timeout. Live packs fill the
@@ -788,7 +898,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// so the gate would otherwise wait for a sprite that never exists — the
 		// "flower sprites always wait the whole delay" report). Mirrors the play
 		// path's NotifyAssetMissing skip.
-		ready = c.SpriteReady(pre) || c.spriteConfirmedMissing(pre)
+		ready = c.spriteSettled(pre)
 	}
 	if ready {
 		c.waitFor = nil
@@ -802,7 +912,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		if c.SpriteWaitPair && msg.Pair.Active() {
 			c.mgr.PrefetchChain(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
 		}
-		if c.SpriteWaitPreanim && hasPreanim(msg) {
+		if hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
 		}
 	}
@@ -879,8 +989,8 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	bgPart, deskPart := PositionScene(c.Scene.Position)
 	c.Scene.BackgroundBase = c.urls.Background(bg, bgPart)
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
-	c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
-	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh)      // AssetType: DeskOverlay
+	c.prefetchScenery(bg, bgPart)
+	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	// ShowDesk is derived from the DESK BASE's residency, and that base just
 	// changed — so re-derive it here or the new room inherits the old room's
 	// answer. This is the reported "the background is missing its desk on purpose,
@@ -920,6 +1030,10 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 func (c *Courtroom) WipeStage() { c.wipeStage() }
 
 func (c *Courtroom) wipeStage() {
+	// Report a one-shot the wipe is about to destroy BEFORE the layer is zeroed —
+	// past that assignment there is no evidence a preanimation was ever playing.
+	// Idempotent when nothing was.
+	c.endPreanim(PreanimEndStageWiped)
 	// Sprites: stopPlayback + hide on the speaker and the pair layer. drawSprite
 	// early-returns on `!Visible || Active == ""` ABOVE the missingno/held/
 	// hold-previous chain, so a zeroed layer cannot leak the previous frame.
@@ -975,6 +1089,7 @@ func (c *Courtroom) wipeStage() {
 	// message held for a cold sprite is stranded, and the next area's first line
 	// inherits this one's delayed SFX, frame triggers or 2.8 additive prefix.
 	c.preanimDone = false
+	c.imPreLeft = 0
 	c.waitFor, c.waitLeft = nil, 0
 	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
 	c.frameTriggers = frameTriggerTable{}
@@ -1116,6 +1231,11 @@ func isNoSpaceRune(r rune) bool {
 }
 
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
+	// A new message takes the stage before anything below re-assigns the speaker
+	// layers, so this is the last moment a still-running one-shot can be reported
+	// as ended by THIS cause (AO2's unpack_chatmessage resets anim_state to 0).
+	// Idempotent — nothing to report when no preanim was playing.
+	c.endPreanim(PreanimEndNewMessage)
 	c.current = msg
 	c.waitFor = nil // beginning ends any armed wait-gate hold
 	// Drop any SFX/shake still armed from the previous message so a superseded
@@ -1341,8 +1461,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		// screen NOW. At low priority a busy lane shed these, and the
 		// viewport had nothing to draw for the new position (the
 		// "background goes black while talking" bug).
-		c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
-		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh)      // AssetType: DeskOverlay
+		c.prefetchScenery(c.sess.Background, bgPart)
+		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
 	// Initial desk state = the talk/idle column (a message with no preanim goes
 	// straight to talk; a shout holds the stage without touching the desk). The
@@ -1425,6 +1545,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// blankpost even when its own tail is whitespace.
 	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(c.additivePrefix+c.currentText)) == ""
 	c.preanimDone = false
+	// A new message takes the stage: any previous message's immediate-mode
+	// decoration is over (AO2's unpack_chatmessage resets anim_state to 0). The
+	// speaker layers are re-assigned above, so only the countdown needs clearing.
+	c.imPreLeft = 0
 
 	// --- phase entry ---
 	switch {
@@ -1534,8 +1658,7 @@ func (c *Courtroom) enterAfterShout() {
 	// ALREADY know is absent is the same certainty — skip it synchronously here so
 	// the placeholder never paints for a preanim we're about to skip anyway. IDLE/
 	// TALK bases keep their (wanted) missingno; only the preanim selection is gated.
-	playPre := hasPreanim(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase) &&
-		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
+	playPre := preanimWillPlay(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
 
@@ -1729,18 +1852,19 @@ func (c *Courtroom) startTalking() {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 	} else {
 		// Immediate mode: the preanim keeps playing over the text (Active stays on
-		// PreanimBase). Bound how long PhaseTalking waits for it after the text is
-		// done so a slow-decoding / missing preanim can't freeze the message —
-		// NotifyPreanimStarted extends this to the real duration once the decoded
+		// PreanimBase) on its OWN countdown, not the phase timer — the message is
+		// free to finish and hand the stage to the next one while this animation is
+		// still running (see tickImmediatePreanim). Bounded so a slow-decoding or
+		// never-arriving preanim can't leave Active parked on it forever;
+		// NotifyPreanimStarted extends it to the real duration once the decoded
 		// preanim plays, exactly like the blocking PhasePreanim path.
-		c.timer = c.PreanimTimeout
+		c.imPreLeft = c.PreanimTimeout
 	}
 	// Skip the talking phase only when there is genuinely nothing left to do:
-	// no text still to reveal, no inline \s/\f mark still to fire, and no
-	// immediate-mode preanim playing over the box. The effects clause is
-	// load-bearing for a message that is ONLY effect codes ("\f", "\s\f"): it
-	// strips to zero runes, so Done() is true from the very first instant, and
-	// without EffectsPending this jumped straight to linger — PhaseTalking (the
+	// no text still to reveal and no inline \s/\f mark still to fire. The effects
+	// clause is load-bearing for a message that is ONLY effect codes ("\f",
+	// "\s\f"): it strips to zero runes, so Done() is true from the first instant,
+	// and without EffectsPending this jumped straight to linger — PhaseTalking (the
 	// only place NextEffect is drained, see Update) never ran, so a bare effect
 	// silently did nothing while the SAME code attached to text worked. AO2 has
 	// no such hole because its emptiness test reads the RAW wire text
@@ -1752,23 +1876,99 @@ func (c *Courtroom) startTalking() {
 	// still gated by effectsVisible inside fireInlineEffect, and Scene.IsBlankPost
 	// is untouched, so an effect-only message keeps hiding the chatbox exactly
 	// like any other markup-only message (see begin).
-	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() && !c.Scene.Speaker.PlayOnce {
+	//
+	// An immediate-mode preanim does NOT keep this open: AO2's blank-post arm of
+	// start_chat_ticking starts the queue timer right there (courtroom.cpp:
+	// 4208-4213) with the preanim still playing behind it.
+	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() {
 		c.enterLinger()
 		return
 	}
 	c.phase = PhaseTalking
 }
 
+// enterLinger settles the message: text done, TextStay counting down to the
+// queue advance.
+//
+// It leaves an IMMEDIATE-mode preanim alone (imPreLeft > 0). That animation is
+// decoration AO2 plays over an already-ticking message — anim_state 4 — and its
+// lifetime is owned by tickImmediatePreanim, which parks the speaker on the idle
+// sprite when it ends. Clearing PlayOnce here instead would cut the animation
+// off at text completion, which is neither AO2's behavior nor the point of
+// ticking "immediate".
 func (c *Courtroom) enterLinger() {
-	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
-	c.Scene.Speaker.PlayOnce = false
+	if c.imPreLeft <= 0 {
+		c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
+		c.endPreanim(PreanimEndTextSettled)
+	}
 	c.phase = PhaseLinger
 	c.timer = c.TextStay
 }
 
+// tickImmediatePreanim advances the decoration an immediate-mode message started
+// and ends it when the animation finishes (NotifyPreanimDone) or its bound
+// expires. It runs OUTSIDE the phase switch because the animation deliberately
+// outlives its phase: AO2 leaves anim_state at 4 and lets the layer play on
+// while text_state reaches 2 and the queue timer runs.
+//
+// The speaker lands wherever the message currently is: still crawling → the talk
+// loop; settled → idle. Both are what the next Update of that phase would have
+// drawn anyway.
+func (c *Courtroom) tickImmediatePreanim(dt time.Duration) {
+	if c.imPreLeft <= 0 {
+		return
+	}
+	c.imPreLeft -= dt
+	if !c.preanimDone && c.imPreLeft > 0 {
+		return
+	}
+	c.imPreLeft = 0
+	if !c.Scene.Speaker.PlayOnce {
+		return // already released (NotifyAssetMissing, a new message, a wipe)
+	}
+	// preanimDone here means the render reported the last frame; otherwise the
+	// bound above ran out first — the two reasons the interrupt audit needs to
+	// tell apart.
+	if c.preanimDone {
+		c.endPreanim(PreanimEndFinished)
+	} else {
+		c.endPreanim(PreanimEndTimeout)
+	}
+	if c.phase == PhaseTalking {
+		// Text still crawling: flap the talk sprite for the rest (it used to
+		// freeze on the last preanim frame).
+		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+		return
+	}
+	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
+}
+
 // NotifyPreanimDone is called by the render side when a one-shot animation
-// finishes (or by tests). It also flips the speaker to the talk loop.
+// finishes (or by tests). The next Update releases the one-shot and flips the
+// speaker to the talk loop.
+//
+// GUARDED, exactly like its sibling NotifyPreanimStarted below, and for the same
+// reason: `a.d.Viewport.OnPreanimDone` is ONE callback slot on a SHARED viewport
+// that internal/ui re-points at whichever room currently drives it — the live
+// room, the split room, the replay room, the scene-maker preview (ui/replay.go,
+// ui/scenemaker.go, ui/gifexport.go each swap it and swap it back). A completion
+// fired across one of those swaps used to land on a room that had no one-shot on
+// stage at all and set the flag anyway; because preanimDone is sticky until the
+// next begin(), the CURRENT message then inherited it — enterAfterShout reads it
+// and skips the preanim outright (its `!c.preanimDone` term), PhasePreanim exits
+// on the first Update, and tickImmediatePreanim ends the decoration on tick one.
+// That is a "the preanimation is randomly interrupted" with no local cause, which
+// is why it never reproduced on demand.
+//
+// PlayOnce is the precise test: it is set synchronously by enterAfterShout the
+// moment this room selects a preanim to play and cleared by endPreanim the moment
+// the animation is over, so "PlayOnce is up" is exactly "this room has a one-shot
+// on stage that a done-report can be about". Every in-tree caller reports while it
+// is up, so no existing expectation moves.
 func (c *Courtroom) NotifyPreanimDone() {
+	if !c.Scene.Speaker.PlayOnce {
+		return // no one-shot on stage here — a stale report from a shared viewport
+	}
 	c.preanimDone = true
 }
 
@@ -1783,13 +1983,23 @@ func (c *Courtroom) NotifyPreanimDone() {
 // phase-guarded, so a stale callback from another room while a replay/maker
 // preview drives the same shared viewport is a safe no-op.
 func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
-	// PhasePreanim = a blocking preanim wait; PhaseTalking + PlayOnce = an
-	// IMMEDIATE-mode preanim playing over the text. Both bound the wait on
-	// c.timer, and both must let a long DECODED preanim play in full.
-	if c.phase != PhasePreanim && !(c.phase == PhaseTalking && c.Scene.Speaker.PlayOnce) {
+	want := total + preanimPlaybackSlack
+	// An IMMEDIATE-mode preanim runs on its own countdown (imPreLeft), because it
+	// is allowed to outlive the message. Extend THAT, not the phase timer — the
+	// phase timer is by then the linger/queue-advance clock, and lengthening it
+	// would re-introduce the very stall this decoupling removed.
+	if c.imPreLeft > 0 {
+		if want > c.imPreLeft {
+			c.imPreLeft = want
+		}
 		return
 	}
-	if want := total + preanimPlaybackSlack; want > c.timer {
+	// PhasePreanim = a BLOCKING preanim wait: the phase timer IS the bound, and a
+	// long decoded preanim must play in full.
+	if c.phase != PhasePreanim {
+		return
+	}
+	if want > c.timer {
 		c.timer = want
 	}
 }
@@ -1839,7 +2049,8 @@ func (c *Courtroom) NotifyAssetMissing(base string) {
 	// skipping anyway. The draw-side guard (viewport drawSprite) is the belt-and-
 	// braces for the residual frame before ANY Update on paths this can't reach.
 	if c.Scene.Speaker.PlayOnce {
-		c.Scene.Speaker.PlayOnce = false
+		c.endPreanim(PreanimEndMissing)
+		c.imPreLeft = 0 // an immediate-mode decoration that can never play
 		if c.phase == PhaseTalking || c.phase == PhasePreanim {
 			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 		}
@@ -1967,6 +2178,10 @@ func (c *Courtroom) Update(dt time.Duration) {
 			c.fireSFXDelay()
 		}
 	}
+	// An immediate-mode preanim is decoration, not occupancy: it advances outside
+	// the phase switch so it can keep playing across linger and into idle, exactly
+	// as AO2 leaves anim_state at 4 while the message settles.
+	c.tickImmediatePreanim(dt)
 	switch c.phase {
 	case PhaseShout:
 		c.timer -= dt
@@ -1977,7 +2192,14 @@ func (c *Courtroom) Update(dt time.Duration) {
 	case PhasePreanim:
 		c.timer -= dt
 		if c.preanimDone || c.timer <= 0 {
-			c.Scene.Speaker.PlayOnce = false
+			// Which of the two fired is exactly the interrupt audit's question: a
+			// TIMEOUT on a preanim that decoded means the bound pre-empted a real
+			// animation, a FINISHED means it played out.
+			if c.preanimDone {
+				c.endPreanim(PreanimEndFinished)
+			} else {
+				c.endPreanim(PreanimEndTimeout)
+			}
 			c.startTalking()
 		}
 
@@ -1996,25 +2218,15 @@ func (c *Courtroom) Update(dt time.Duration) {
 		for i := 0; i < blips; i++ {
 			c.audio.PlayBlip(c.blipRef.Base) // AssetType: Blip
 		}
-		textDone := c.Typewriter.Done()
-		// Immediate mode: a preanim (PlayOnce) is playing over the text crawl.
-		if c.Scene.Speaker.PlayOnce {
-			if textDone {
-				c.timer -= dt // bound the post-text wait (armed in startTalking, extended by NotifyPreanimStarted)
-			}
-			if c.preanimDone || (textDone && c.timer <= 0) {
-				c.Scene.Speaker.PlayOnce = false
-				if !textDone {
-					// Preanim finished while the text is still crawling: flap the
-					// talk sprite for the rest (it used to freeze on the last
-					// preanim frame).
-					c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
-				}
-			}
-		}
-		// Linger only once the text AND any immediate preanim are done — finishing
-		// the text alone used to snap straight to idle mid-preanim.
-		if textDone && !c.Scene.Speaker.PlayOnce {
+		// Text completion ends the message's OCCUPANCY, full stop — an
+		// immediate-mode preanim still playing over the box does not extend it.
+		// AO2 starts text_queue_timer (the queue advance) from chat_tick the
+		// instant the text finishes (../AO2-Client/src/courtroom.cpp:4332-4338, and
+		// :4208-4213 for a blank post) with anim_state still 4, i.e. with the
+		// immediate preanim mid-playback. This used to hold the whole queue for the
+		// preanim's length, which is precisely what ticking "immediate" asks the
+		// client NOT to do; tickImmediatePreanim now owns the animation's lifetime.
+		if c.Typewriter.Done() {
 			c.enterLinger()
 		}
 
