@@ -65,14 +65,19 @@ func paneHostFixture(t *testing.T, host, rowKey string, row theme.Rect, seed map
 // TestPaneRefusesTheOverrideTheLayoutTierRefused: an [overrides] row addressing a
 // key the client will not move must not move it inside a pane either.
 //
-// player_list is slotStateInert — nothing paints there, so themeKeyEditable
+// mute_button is slotStateInert — nothing paints there, so themeKeyEditable
 // refuses the row and the layout tier leaves the theme's own rect alone. Under
 // the old raw read the pane honoured it, so ONE file produced two different
 // answers for one widget depending on whether it happened to be hosted.
+//
+// The specimen used to be player_list. That key stopped being inert when the
+// roster ruling gave the player list AO2's own rect (theme_layout.go,
+// courtroom.cpp:879), so the fixture moved to a key that is STILL inert — the
+// invariant under test is unchanged, only what it is measured on.
 func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
-	const host = "player_list"
-	// The theme declares the key (the stock AO2 backstop does not), so the pane
-	// has something to re-home; the row then tries to move it somewhere else.
+	const host = "mute_button"
+	// The fixture seeds the key into the theme's own rects, so the pane has
+	// something to re-home; the row then tries to move it somewhere else.
 	design := theme.Rect{X: 20, Y: 30, W: 120, H: 90}
 	row := theme.Rect{X: 200, Y: 150, W: 60, H: 40}
 	a, pane, got := paneHostFixture(t, host, host, row, map[string]theme.Rect{host: design})

@@ -3588,6 +3588,12 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 		}
 	}
+	// Ghost text (ghosttext.go, ON by default): the log is written when a packet
+	// ARRIVES and the courtroom says it later, so the log runs ahead of the crawl —
+	// rows nobody has spoken yet draw faint instead of spoiling the line. Resolved
+	// ONCE per frame, outside the row loop; the zero value ghosts nothing, so with
+	// the option off the whole feature costs the draw one comparison.
+	ghost := a.ghostLogSpan(rows)
 	// Link hover spans the WHOLE message: hovering any wrapped row of a linked
 	// entry tints every one of its rows (playtest: only the hovered row lit up,
 	// so a wrapped link read as one highlighted line among plain ones). O(1):
@@ -3655,6 +3661,15 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			lineSpeaker := ""
 			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
 				lineSpeaker = a.icLog[row.entry].speaker
+			}
+			// Not said yet → faint. AFTER the link-hover override deliberately: a
+			// hovered link on an unspoken line should still read as unspoken, and the
+			// accent would otherwise shout louder than the lines that HAVE been said.
+			// The per-speaker name tint is dropped with it for the same reason — a
+			// bright name over ghosted words is the loudest thing on the panel.
+			if ghost.ghosted(ri, row.entry) {
+				col = ghostInk(col, ColPanel)
+				lineSpeaker = ""
 			}
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
 			a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
@@ -5319,17 +5334,18 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 			return
 		}
 
-		// Key badge (bottom-left): the character's bound key on this server,
-		// or "+key" on hover. Click arms capture (next plain keypress binds);
-		// right-click clears the binding.
+		// Key badge (bottom-left): the CHORD that wears this character on this
+		// server, or "+key" on hover. Click arms capture (next plain keypress
+		// binds); right-click clears the binding. The badge goes through
+		// bindChipLabel, not the bare letter: handleCharKeys fires on Alt+<key>
+		// (bareBindKey, qol.go), so a badge reading "M" would advertise a press
+		// that now just types an "m" into the IC box.
 		bound := a.charKeyFor(name)
-		badgeLabel := bound
-		if badgeLabel == "" && c.hovering(cell) {
-			badgeLabel = "+key"
+		unbound := "" // an unbound cell shows nothing until the pointer is on it
+		if c.hovering(cell) {
+			unbound = "+key"
 		}
-		if a.bindingFor == name {
-			badgeLabel = "press..."
-		}
+		badgeLabel := bindChipLabel(bound, a.bindingFor == name, "press...", unbound)
 		if badgeLabel != "" {
 			bw := c.TextWidth(badgeLabel) + 8
 			badge := sdl.Rect{X: cell.X + 1, Y: cell.Y + cell.H - iniCellKeyBadgeH - 1, W: bw, H: iniCellKeyBadgeH}
@@ -6637,7 +6653,10 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
 		addDef := sdl.Rect{X: icX, Y: rowY, W: icAddW, H: fH}
 		addBox := a.slotRect(slotICAdditive, addDef, w, h)
-		a.icAdditive = c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive)
+		// bounceOnToggle: ui_additive → on_additive_clicked → focus_ic_input
+		// (courtroom.cpp:504, :6572). The leading-space half of that handler lives at
+		// the send site (AdditiveWantsLeadingSpace), not here.
+		a.icAdditive = a.bounceOnToggle(c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive), a.icAdditive)
 		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 		icX += icAddW + 6 // downstream flows from the DEFAULT position, not the override
 	} else {
@@ -6696,7 +6715,8 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
 	if icOptionalDraws(preGuardOK, preOv, a.classicEdit, a.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
-		a.icPreanim = c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim)
+		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
+		a.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim), a.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -6736,7 +6756,11 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
 	if flipInChain && !a.panelHidden(slotICFlip) {
 		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
-		a.pairFlip = c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip)
+		// bounceOnToggle: ui_flip → focus_ic_input (courtroom.cpp:503). Only the IC-bar
+		// view bounces; the Pair panel's mirror of the same bool is not an IC-bar
+		// control, and a redraw carrying the value the other view just wrote compares
+		// equal here, so the two views cannot bounce each other.
+		a.pairFlip = a.bounceOnToggle(c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip), a.pairFlip)
 		c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 		icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -6763,10 +6787,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	case icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false):
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
-			a.sfxChoiceIdx = next
-			if next > 0 && next < len(a.sfxChoices) {
-				a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
-			}
+			a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 		}
 		a.sfxRowRightClickPreview() // right-click auditions a row without picking it
 		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it; right-click a row to hear it without picking. Extras → SFX Browser for favourites & any sound by name.")
@@ -6823,6 +6844,10 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// rides along inside it.
 	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+	// Reserve the counter + muted-chip band BEFORE the field draws, so the typed
+	// line clips short of them instead of running underneath (the overdrawn-counter
+	// report). No-op when both are off/absent.
+	c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(icCounterOn))
 	a.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
@@ -6830,12 +6855,11 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// over the input's right edge so a muted player sees WHY their sends do
 	// nothing; sendIC refuses the send and keeps the typed line intact.
 	if a.sess != nil && a.sess.Muted {
-		const mutedChip = "🔇 muted"
-		chipW := c.TextWidth(mutedChip) + 12
-		if chipW < icBox.W { // only when it fits inside the field
+		chipW := a.mutedChipW() // the ONE metric; icMutedBandW reserves off the same number
+		if chipW < icBox.W {    // only when it fits inside the field
 			chip := sdl.Rect{X: icBox.X + icBox.W - chipW - 2, Y: icBox.Y + 2, W: chipW, H: icBox.H - 4}
 			c.Fill(chip, sdl.Color{R: 120, G: 30, B: 30, A: 210})
-			c.Label(chip.X+6, chip.Y+(chip.H-14)/2, mutedChip, ColDanger)
+			c.Label(chip.X+6, chip.Y+(chip.H-14)/2, mutedChipLabel, ColDanger)
 		}
 	}
 	return send
@@ -6961,28 +6985,19 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if len(vis) > int(cols*gridRows(gridH, cellH, gap)) {
 		gridH = r.H - (btnH + 4)
 	}
-	perPage := int(cols * gridRows(gridH, cellH, gap))
-	if perPage < 1 {
-		perPage = 1
-	}
-	a.emotePerPage = perPage // number-key emote select reads this
-	pages := (len(vis) + perPage - 1) / perPage
-	if pages < 1 {
-		pages = 1 // favs-only with no favourites yet: one empty page
-	}
-	if a.emotePage >= pages {
-		a.emotePage = 0
-	}
-	// Mouse-wheel over the grid pages through emotes (scroll up = previous page,
-	// down = next). WheelIn fences the page-level scroll so nothing else moves.
-	if pages > 1 {
-		if d := c.WheelIn(r); d > 0 && a.emotePage > 0 {
-			a.emotePage--
-		} else if d < 0 && a.emotePage < pages-1 {
-			a.emotePage++
+	// Stamp the layout this frame resolved; emotescroll.go derives the scroll
+	// range, the number-key origin and the page readout from it.
+	a.setEmoteGridMetrics(int(cols), int(gridRows(gridH, cellH, gap)), len(vis))
+	perPage := a.emotePerPage
+	// Mouse-wheel over the grid SCROLLS IT BY ROW (up = earlier). It used to jump
+	// a whole page per notch, which made the two rows either side of a page seam
+	// impossible to see together. WheelIn fences the scroll so nothing else moves.
+	if a.emoteGridScrolls() {
+		if d := c.WheelIn(r); d != 0 {
+			a.scrollEmoteRows(int(-d) * emoteWheelRows)
 		}
 	}
-	start := a.emotePage * perPage
+	start := a.emoteFirstSlot()
 
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
@@ -7042,17 +7057,19 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		c.Label(r.X, r.Y+4, "No favourite emotes yet — turn off ★ Favs, then click the ★ on an emote.", ColTextDim)
 	}
 
-	// Page arrows + counter (only when more than one page exists). "<"/">"
-	// match the Settings theme-cycle buttons.
-	if pages > 1 {
+	// Page arrows + counter (only when the list overflows one page). "<"/">"
+	// match the Settings theme-cycle buttons and still move a WHOLE page — the
+	// per-row step belongs to the wheel; a button that nudged one row would need
+	// a dozen clicks to cross a big roster.
+	if a.emoteGridScrolls() {
 		cy := r.Y + r.H - btnH
-		if c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") && a.emotePage > 0 {
-			a.emotePage--
+		if c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") && a.emoteCanScrollUp() {
+			a.scrollEmotePages(-1)
 		}
-		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emotePage < pages-1 {
-			a.emotePage++
+		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emoteCanScrollDown() {
+			a.scrollEmotePages(1)
 		}
-		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePage+1, pages, len(vis)), ColTextDim)
+		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePageShown(), a.emotePagesShown(), len(vis)), ColTextDim)
 	}
 
 	// ★ Favs filter toggle (always present, so you can switch it off even with an
@@ -7262,9 +7279,7 @@ func (a *App) randomEmoteForSend() {
 		return
 	}
 	a.selectEmote(i)
-	if a.emotePerPage > 0 {
-		a.emotePage = slot / a.emotePerPage
-	}
+	a.revealEmoteSlot(slot) // minimum scroll, not a page snap (emotescroll.go)
 }
 
 // cycleEmote steps the selection by delta with wrap and scrolls its page into
@@ -7294,31 +7309,82 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 		return
 	}
 	c := a.ctx
-	n := utf8.RuneCountInString(a.icInput)
-	if n != a.icCountN {
-		a.icCountN, a.icCountStr = n, strconv.Itoa(n)
-	}
 	col := ColTextDim
-	if n > msgCounterCap {
+	if a.refreshICCount() > msgCounterCap {
 		col = ColDanger
 	}
-	// The count's own footprint (width-cached, so a stable count is a map hit and
-	// this stays alloc-free) plus a small inset from the field's right edge.
-	countW := c.TextWidth(a.icCountStr) + msgCounterPad
-	// rightEdge is the x the count's right side may reach. When the muted chip is
-	// live it owns the field's right edge (same rect drawMsgCounter's caller draws),
-	// so the count yields — it stacks to the LEFT of the chip.
-	rightEdge := input.X + input.W - msgCounterPad
-	if a.sess != nil && a.sess.Muted {
-		const mutedChip = "🔇 muted"
-		chipW := c.TextWidth(mutedChip) + 12 // must match the caller's chip metric
-		rightEdge = input.X + input.W - chipW - 2 - msgCounterChipGap
-	}
+	countW := a.icCountBandW()
+	rightEdge := input.X + input.W - msgCounterPad - a.icMutedBandW()
 	countX := rightEdge - countW
 	if countX < input.X+msgCounterPad { // no room left inside the field: drop it (chip/text win)
 		return
 	}
 	c.Label(countX, input.Y+(input.H-14)/2, a.icCountStr, col)
+}
+
+// refreshICCount refreshes the cached count string when the typed length changed
+// and returns the length. Split out because the RESERVATION (icFieldTailReserve)
+// has to measure the very same string one step BEFORE the field draws, and the
+// two must never disagree about the width — a reservation that is narrower than
+// the drawn count is exactly the overlap this whole band exists to stop.
+// Reformats only on a length change, so a settled frame stays 0-alloc.
+func (a *App) refreshICCount() int {
+	n := utf8.RuneCountInString(a.icInput)
+	if n != a.icCountN {
+		a.icCountN, a.icCountStr = n, strconv.Itoa(n)
+	}
+	return n
+}
+
+// icCountBandW is the count's own footprint measured from wherever it starts:
+// its glyphs plus the inset that separates it from whatever is to its right.
+// Width-cached, so a stable count is a map hit and this stays alloc-free.
+func (a *App) icCountBandW() int32 { return a.ctx.TextWidth(a.icCountStr) + msgCounterPad }
+
+// icMutedBandW is how much of the input's right edge the muted chip owns
+// (0 when not muted). The chip metric MUST match the one the IC-bar draw site
+// uses, so it lives here and both read it.
+func (a *App) icMutedBandW() int32 {
+	if a.sess == nil || !a.sess.Muted {
+		return 0
+	}
+	return a.mutedChipW() + 2 + msgCounterChipGap
+}
+
+// mutedChipW is the muted chip's drawn width — one definition, read by the chip's
+// own draw and by the reservation maths.
+func (a *App) mutedChipW() int32 { return a.ctx.TextWidth(mutedChipLabel) + mutedChipPadPx }
+
+// mutedChipLabel / mutedChipPadPx are the muted chip's text and its horizontal
+// padding. Named (hard rule 9) because three sites — the chip draw, the counter's
+// yield maths and the field tail reservation — have to agree on the same pixels.
+const (
+	mutedChipLabel = "🔇 muted"
+	mutedChipPadPx = int32(12)
+)
+
+// icFieldTailReserve is the width of the band at the IC input's RIGHT edge that
+// belongs to the overlays painted on top of it — the character counter and the
+// muted chip. It is handed to Ctx.ReserveFieldTail BEFORE the field draws, so
+// the typed line clips (and the keep-caret-visible scroll turns over) short of
+// them instead of running underneath: the reported symptom was typing straight
+// through the counter until the digits were unreadable.
+//
+// It is deliberately the SAME arithmetic drawMsgCounter uses, read off the same
+// two helpers, rather than a second estimate — a reservation that disagrees with
+// the draw would reintroduce the overlap it exists to prevent (or waste room).
+// Returns 0 when neither overlay is live, in which case ReserveFieldTail is a
+// no-op and the field keeps every pixel it had before.
+func (a *App) icFieldTailReserve(counterOn bool) int32 {
+	band := a.icMutedBandW()
+	if counterOn {
+		a.refreshICCount() // the cached string must be current BEFORE it is measured
+		band += a.icCountBandW()
+	}
+	if band > 0 {
+		band += msgCounterPad // the inset the counter keeps from the field's right edge
+	}
+	return band
 }
 
 // randomShowname swaps the active showname to a random saved preset (M6, the
@@ -7377,9 +7443,7 @@ func (a *App) cycleEmote(delta int) {
 	}
 	slot := ((cur+delta)%n + n) % n
 	a.selectEmote(vis[slot])
-	if a.emotePerPage > 0 {
-		a.emotePage = slot / a.emotePerPage
-	}
+	a.revealEmoteSlot(slot) // minimum scroll, not a page snap (emotescroll.go)
 }
 
 // gridRows is how many cellH-tall rows (plus a gap px gap) fit in h, ≥ 1. gap is
@@ -7900,6 +7964,15 @@ func (a *App) sendIC(shout int) {
 	// nothing else, so a line sent with Pre unticked carries the silence sentinel. The
 	// whole rule (and the canon it is transcribed from) lives in icsfx.go.
 	sfxName := outgoingSFXName(&emote, a.icPreanim, a.sfxChoiceIdx, a.sfxChoices)
+	// AO2's sfx_on_idle rewrite (courtroom.cpp:2102-2116, OFF by default like
+	// upstream): a hand-picked sound on an IDLE/ZOOM line promotes the emote mod so
+	// receivers actually play it, with the pre name blanked and the delay zeroed so
+	// no animation runs. All three fields move together — see sfxIdlePromotion.
+	emoteMod := protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features)
+	preEmote, sfxDelay := emote.Preanim, emote.SFXDelay
+	if m, promoted := sfxIdlePromotion(emoteMod, a.sfxChoiceIdx, a.d.Prefs.SFXOnIdleOn(), a.sess.Features.Has(protocol.FeaturePrezoom)); promoted {
+		emoteMod, preEmote, sfxDelay = m, "", 0
+	}
 	// Per-emote blip override (2.9.1 custom_blips), else the character's.
 	blip := emote.Blip
 	if blip == "" {
@@ -8002,13 +8075,13 @@ func (a *App) sendIC(shout int) {
 		text = courtroom.AdditiveOutgoingLeadingSpace(text)
 	}
 	out := protocol.OutgoingMS{
-		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
-		PreEmote:   emote.Preanim,
+		DeskMod:    emote.DeskMod,      // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
+		PreEmote:   preEmote,           // blanked by the sfx_on_idle promotion above, else the emote's own
 		CharName:   a.activeCharName(), // iniswap: the wire carries the custom folder
 		Emote:      emote.Anim,
 		Message:    text,
 		SFXName:    sfxName,
-		SFXDelay:   emote.SFXDelay,
+		SFXDelay:   sfxDelay, // zeroed by the sfx_on_idle promotion above, else the emote's own
 		LoopingSFX: emote.SFXLoop,
 		// #17 networked frame-synced effects: the char.ini [<emote>_Frame*]
 		// sections, pre-assembled at parse into AO2's wire format. Empty for the
@@ -8027,7 +8100,7 @@ func (a *App) sendIC(shout int) {
 		// (scenemaker.go's pre := EmoteMod==Preanim…) follows the same decision
 		// — what you see matches what you sent. immediate stays false here:
 		// a.icImmediate rides the separate OutgoingMS.Immediate field.
-		EmoteMod:    protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features),
+		EmoteMod:    emoteMod, // normalized + possibly sfx_on_idle-promoted above
 		CharID:      a.sess.MyCharID,
 		Objection:   shout,
 		TextColor:   msgColor, // swatch cycler, or M61 random-per-message colour
@@ -8078,11 +8151,43 @@ func (a *App) sendIC(shout int) {
 	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
 	// fires on every following line, which is the failure everyone notices.
 	a.icSlide, a.icRealize, a.icShake = false, false, false
-	// The effects pick is offered the same reset here, in the same place AO2 does
-	// it (courtroom.cpp:2348-2354) — but AO2's `stickyeffects` option defaults TRUE,
-	// so out of the box the pick SURVIVES the send and this is a no-op. See
-	// clearEffectsAfterSend for why the accessor's name reads backwards.
+	// The three STICKY picks get their reset here, in the same place AO2's
+	// Courtroom::reset_ui does (courtroom.cpp:2340-2359). All three upstream
+	// options ship TRUE ("sticky"), so out of the box every one of these is a
+	// no-op and the picks survive the send — that IS AO2's behaviour, not an
+	// AsyncAO shortcut. See clearEffectsAfterSend for why the upstream accessor
+	// names read backwards.
 	a.clearEffectsAfterSend()
+	a.clearSFXAfterSend()
+	a.clearPreAfterSend()
+	// "Slides can't be sticky for nausea reasons" (courtroom.cpp:2362) — already
+	// covered by the unconditional icSlide clear above.
+}
+
+// clearSFXAfterSend is courtroom.cpp:2340-2345: with Sticky Sounds OFF, a send
+// puts the IC SFX dropdown back on its "Default" row — but ONLY when the sound
+// could actually have been heard, i.e. sfx_on_idle is on or Pre was ticked. AO2
+// guards it that way so a pick made on an idle line (which a stock client
+// transmits silently — see outgoingSFXName) is not thrown away before the user
+// gets to tick Pre and send it for real.
+func (a *App) clearSFXAfterSend() {
+	if a.d.Prefs.StickySoundsOn() {
+		return
+	}
+	if !a.d.Prefs.SFXOnIdleOn() && !a.icPreanim {
+		return
+	}
+	a.sfxChoiceIdx = 0 // row 0 is the "auto" / Default row (sfxAutoLabel)
+}
+
+// clearPreAfterSend is courtroom.cpp:2356-2359: with Sticky Preanims OFF the Pre
+// checkbox unticks after every send. There is no second condition upstream, and
+// there is none here.
+func (a *App) clearPreAfterSend() {
+	if a.d.Prefs.StickyPreanimsOn() {
+		return
+	}
+	a.icPreanim = false
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
@@ -8571,14 +8676,21 @@ func (a *App) captureICColorSel() {
 	// Unfocused while the colour dropdown is open: keep the frozen pre-open selection.
 }
 
-// applyICColorPick routes an IC colour-dropdown selection, wrapping a frozen
-// selection when the pick is a standard palette colour that carries AO2 markup —
-// exactly what AO2's Courtroom::on_text_color_changed does when the IC field has a
-// selection (src/courtroom.cpp:6364-6390): it inserts the colour's markdown_start
-// before the selection and markdown_end after it (leaving the whole-message
-// text_color untouched), and does NOTHING for a colour with no markup characters
-// (c0/default; :6370-6375 qWarning+return). With no selection it sets the
-// whole-message colour (:6391-6401), which is the existing applyICColorChoice.
+// applyICColorPick is Courtroom::on_text_color_changed, transcribed whole
+// (src/courtroom.cpp:6364-6403) — the IC colour dropdown's handler for BOTH IC
+// bars. Three halves, in canon's order:
+//
+//	:6366-6389  with a selection, wrap it in the colour's markdown_start /
+//	            markdown_end and leave the whole-message text_color alone;
+//	:6391-6401  with no selection, set the whole-message colour
+//	            (applyICColorChoice);
+//	:6402       focus_ic_input — on BOTH branches, because it is the last
+//	            statement of the handler, outside the if/else.
+//
+// The wrap does NOTHING for a colour with no markup characters (c0/default;
+// :6370-6375 qWarning+return). AO2MarkupFor mirrors that: ok is true only for the
+// eight colours (1..8) that carry delimiters, false for palette 0 — so both the
+// wrap and the "no-markup → do nothing" case fall out of the one branch.
 //
 // Only standard palette entries (dropdown index 0..extColorFirst) map to an AO2
 // colour; the AsyncAO-native extras (extended/rainbow/random/custom hex) have no
@@ -8588,21 +8700,38 @@ func (a *App) applyICColorPick(next int) {
 	sel := a.icColorSel
 	a.icColorSel.active = false // consume the snapshot: the next open re-captures
 	if sel.active && next >= 0 && next < extColorFirst {
-		// A standard palette pick with a live selection. AO2's on_text_color_changed
-		// wraps the selection in the colour's markdown chars — EXCEPT for a colour
-		// with none (the stock c0/Default has empty _start; :6370-6375 qWarning +
-		// return, doing nothing). AO2MarkupFor mirrors that: ok is true only for the
-		// eight colours (1..8) that carry delimiters, false for palette 0 — so both
-		// the wrap and the "no-markup → do nothing" case fall out of this one branch.
 		if start, end, ok := courtroom.AO2MarkupFor(next); ok {
 			a.wrapICSelection(sel.lo, sel.hi, start, end)
 		}
-		return // AO2 leaves the whole-message text_color untouched on a selection.
+		// No applyICColorChoice here: AO2 leaves the whole-message text_color
+		// untouched on a selection.
+	} else {
+		// No frozen selection (or an AsyncAO-only extra: extended/rainbow/random/
+		// custom hex, which have no AO2 wire markup): set the whole-message colour.
+		a.applyICColorChoice(next)
 	}
-	// No frozen selection (or an AsyncAO-only extra: extended/rainbow/random/custom
-	// hex, which have no AO2 wire markup): set the whole-message colour instead.
-	a.applyICColorChoice(next)
+	// :6402, the handler's last statement — a colour pick is a step in composing the
+	// line, so the keyboard goes back to the line (chatfocus.go half (b)). Safe on
+	// the wrap branch too: the dropdown's open-click already unfocused the field,
+	// which cleared caretField (ui.go textField), so the re-focus lands with the
+	// caret at the end and selAnchor reset — it cannot resurrect the consumed
+	// selection over the freshly spliced text.
+	if !icColorPickOpensWheel(next) {
+		a.bounceFocusToIC()
+	}
 }
+
+// icColorPickOpensWheel reports whether dropdown row next hands the keyboard to
+// the free-hex colour wheel rather than back to the message — the ONE arm of the
+// pick that must not bounce.
+//
+// This is a deliberate divergence from courtroom.cpp:6402, and it is forced:
+// AO2's dropdown has no Custom… row at all (its colour list is the palette and
+// nothing else), so canon never faces the case. AsyncAO's Custom… opens a modal
+// float that owns the keyboard — it carries its own "iccustomhex" text field
+// (colorwheel.go) — and the IC field's Enter SENDS the message. Bouncing here
+// would arm a hidden send under a wheel the user is still dragging.
+func icColorPickOpensWheel(next int) bool { return next == icColorCustomIdx }
 
 // wrapICSelection splices the AO2 delimiters start/end around the [lo,hi) RUNE
 // range of a.icInput, so a real AO2/webAO peer renders the wrapped span in colour

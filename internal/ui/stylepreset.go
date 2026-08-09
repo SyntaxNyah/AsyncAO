@@ -11,7 +11,7 @@ import (
 
 // Custom style presets (#126): named "mood" bundles of your own sprite style + text colour
 // (+ an emote, applied by name), created from the Sprite Style box, applied in one click, and
-// bound to a bare key for hands-free swapping — the per-preset companion to the showname
+// bound to a key (fires as Alt+<key>, bareBindKey) for hands-free swapping — the per-preset companion to the showname
 // keybinds (M6). All local: applying one just sets your existing style / colour / emote.
 
 // applyStylePreset applies a saved mood. The sprite style + text colour always; the emote by
@@ -78,12 +78,9 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 		if c.Button(sdl.Rect{X: x, Y: y, W: applyW, H: 22}, pr.Name) {
 			a.applyStylePreset(pr)
 		}
-		keyLabel := "key"
-		if a.stylePresetBindFor == pr.Name {
-			keyLabel = "..." // armed: press a key
-		} else if pr.Key != "" {
-			keyLabel = strings.ToUpper(pr.Key)
-		}
+		// The chord, not the letter: handleStylePresetKeys reads bareBindKey
+		// (qol.go), so this preset applies on Alt+<key>. "..." is armed.
+		keyLabel := bindChipLabel(pr.Key, a.stylePresetBindFor == pr.Name, "...", "key")
 		if c.Button(sdl.Rect{X: x + applyW + 4, Y: y, W: bindW, H: 22}, keyLabel) {
 			a.stylePresetBindFor = pr.Name // arm the key-capture (pollStylePresetBind finishes it)
 		}
@@ -122,17 +119,16 @@ func (a *App) pollStylePresetBind() {
 	a.stylePresetBindFor = ""
 }
 
-// handleStylePresetKeys applies a key-bound preset on a bare keypress in the courtroom — the
-// same guards as handleShownameKeys (no field focus, no capture armed, no Ctrl chord), so
-// typing never swaps it. Returns true when it consumed the key.
+// handleStylePresetKeys applies a key-bound preset on Alt+<bound key> in the
+// courtroom — the shared bareBindKey gate every plain-key namespace moved onto
+// (qol.go), so typing the same letter can never swap it. Returns true when it
+// consumed the key.
 func (a *App) handleStylePresetKeys() bool {
-	c := a.ctx
-	if c.keyPressed == 0 || c.focusID != "" || c.ctrlHeld ||
-		a.bindingFor != "" || a.shownameBindFor != "" || a.stylePresetBindFor != "" ||
-		a.jukeBindFor != "" || a.macroBind >= 0 {
+	k := a.bareBindKey()
+	if k == 0 {
 		return false
 	}
-	if pr, ok := a.d.Prefs.StylePresetForKey(strings.ToLower(sdl.GetKeyName(c.keyPressed))); ok {
+	if pr, ok := a.d.Prefs.StylePresetForKey(strings.ToLower(sdl.GetKeyName(k))); ok {
 		a.applyStylePreset(pr)
 		return true
 	}

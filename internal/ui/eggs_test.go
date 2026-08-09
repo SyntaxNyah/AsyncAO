@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -35,12 +36,23 @@ func TestCreatorEgg(t *testing.T) {
 		{"SCATTERFLOWER!!!", eggScatter, "upper-case scatter"},
 		{"scatterflower and syntaxnyah", eggNyah, "a creator outranks an inspiration"},
 		{"scatterflower fanatsors", eggFanat, "fanat still wins over scatter"},
+		// Crystalwarrior: AO2's keeper, so above SyntaxNyah in the lineage and below
+		// the two originals.
+		{"CrystalWarrior", eggCrystal, "mixed-case crystal, bare"},
+		{"ask crystalwarrior about it", eggCrystal, "crystal mid-sentence"},
+		{"CRYSTALWARRIOR!!!", eggCrystal, "upper-case crystal"},
+		{"syntaxnyah then crystalwarrior", eggCrystal, "crystal outranks nyah even when nyah appears first"},
+		{"crystalwarrior omnitroid", eggOmni, "omni still outranks crystal"},
+		{"crystalwarrior scatterflower", eggCrystal, "a lineage figure outranks an inspiration"},
 		// No false positives.
 		{"you are being fanatic about this", eggNone, "fanatic must not trigger fanat"},
 		{"my android phone", eggNone, "android must not trigger omni"},
 		{"she picked a flower", eggNone, "flower alone must not trigger scatter"},
 		{"scatter the evidence", eggNone, "scatter alone must not trigger scatter"},
 		{"scatter flower", eggNone, "the two halves split by a space must not trigger"},
+		{"the alibi is crystal clear", eggNone, "crystal alone must not trigger crystal"},
+		{"a lone warrior took the stand", eggNone, "warrior alone must not trigger crystal"},
+		{"crystal warrior", eggNone, "the two halves split by a space must not trigger"},
 		{"plain courtroom banter", eggNone, "ordinary text is inert"},
 		{"", eggNone, "empty text is inert"},
 	}
@@ -277,10 +289,11 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	draw := func() { a.drawCourtroom(w, h) }
 
 	// Each egg has a DISTINCT draw path (rainbow rings, blue<->gold pulse + the
-	// perimeter sweep, pink heartbeat, and Scatterflower's palette-drift ring PLUS
-	// its stage petal field), so all four must be gated — the sweep's per-edge fill
-	// loop and the petal loop are the alloc-prone ones. drawCourtroom covers both
-	// halves of the Scatterflower egg: renderViewportZoomed reaches drawStageEgg,
+	// perimeter sweep, Crystalwarrior's split-hue ring PLUS its stage shard field,
+	// pink heartbeat, and Scatterflower's palette-drift ring PLUS its stage petal
+	// field), so all five must be gated — the sweep's per-edge fill loop and the two
+	// nested stage loops are the alloc-prone ones. drawCourtroom covers both halves
+	// of the two-part eggs: renderViewportZoomed reaches drawStageEgg,
 	// drawChatOverlay reaches drawChatEgg. Re-drive the SAME speaker (char 0
 	// "Witch", whose stage bases the staging already made resident) with each
 	// creator-name message, settle the typewriter, and assert zero allocs.
@@ -290,6 +303,7 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	}{
 		{"shoutout to FanatSors", eggFanat},
 		{"credit to OmniTroid", eggOmni},
+		{"kept alive by CrystalWarrior", eggCrystal},
 		{"made by SyntaxNyah", eggNyah},
 		{"inspired by Scatterflower", eggScatter},
 	} {
@@ -303,6 +317,81 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		if n := testing.AllocsPerRun(200, draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
 		}
+	}
+}
+
+// TestStageEggCensusIsComplete is the encapsulation gate for the egg's STAGE
+// half. eggDrawsOnStage is the one list of kinds that paint on the viewport, and
+// drawStageEgg dispatches from it — a kind added to the list but left out of the
+// dispatch (or the reverse) is the parsed-but-never-applied failure this codebase
+// has shipped before: everything compiles, every other egg gate stays green, and
+// the new egg simply never appears on the stage.
+func TestStageEggCensusIsComplete(t *testing.T) {
+	// The list itself: exactly the two-part eggs, and nothing else.
+	want := map[uint8]bool{eggScatter: true, eggCrystal: true}
+	for kind := eggNone; kind <= eggScatter; kind++ {
+		if got := eggDrawsOnStage(kind); got != want[kind] {
+			t.Errorf("eggDrawsOnStage(%d) = %v, want %v", kind, got, want[kind])
+		}
+	}
+	// …and the dispatch: the gate is consulted, both stage draws are reachable, and
+	// the frame limiter is told (an egg that animates without NoteAnimating freezes
+	// at a low idle cap — the msAnim precedent).
+	body := funcBodySource(t, "eggs.go", "drawStageEgg")
+	for _, call := range []string{"eggDrawsOnStage", "drawEggPetals", "drawEggShards", "NoteAnimating"} {
+		if !containsCall(body, call) {
+			t.Errorf("drawStageEgg does not call %s — a stage egg is unreachable or unpaced", call)
+		}
+	}
+	// The chatbox half of the crystal egg has the same deletion risk.
+	if !containsCall(funcBodySource(t, "eggs.go", "drawCreatorEgg"), "drawEggCrystalRing") {
+		t.Error("drawCreatorEgg no longer dispatches the Crystalwarrior ring")
+	}
+}
+
+// TestEggShardTaperIsAFacet pins the shard silhouette: widest in the middle,
+// pointed at both ends, and symmetric — a stack of rects that did NOT taper would
+// draw a bar, which is the difference between a crystal facet and a coloured
+// rectangle sitting on the stage.
+func TestEggShardTaperIsAFacet(t *testing.T) {
+	const last = eggCrystalSegments - 1
+	if got := eggShardTaper(0); got != 0 {
+		t.Errorf("the top segment must come to a point, got %.3f", got)
+	}
+	if got := eggShardTaper(last); got != 0 {
+		t.Errorf("the bottom segment must come to a point, got %.3f", got)
+	}
+	mid := eggShardTaper(eggCrystalSegments / 2)
+	for s := int32(0); s <= last; s++ {
+		if eggShardTaper(s) > mid+1e-9 {
+			t.Errorf("segment %d is wider than the middle — the shard is not a facet", s)
+		}
+		if got, sym := eggShardTaper(s), eggShardTaper(last-s); math.Abs(got-sym) > 1e-9 {
+			t.Errorf("segment %d (%.3f) and its mirror %d (%.3f) differ — the shard is lopsided", s, got, last-s, sym)
+		}
+	}
+}
+
+// TestEggShardGlintIsAFlashNotAPulse pins the glint's shape: zero for most of the
+// cycle, a smooth hump over the leading eggCrystalGlintFrac, and offset per shard
+// so the field twinkles instead of strobing as one object.
+func TestEggShardGlintIsAFlashNotAPulse(t *testing.T) {
+	if got := eggShardGlint(0, 0); got != 0 {
+		t.Errorf("the glint must start dark (a cosine hump from 0), got %.3f", got)
+	}
+	peak := eggShardGlint(eggCrystalGlintSecs*eggCrystalGlintFrac/2, 0)
+	if peak < 0.99 {
+		t.Errorf("the glint must reach full brightness mid-hump, got %.3f", peak)
+	}
+	// Everything past the hump is dark — that is what makes it a flash.
+	for _, frac := range []float64{0.3, 0.5, 0.9} {
+		if got := eggShardGlint(eggCrystalGlintSecs*frac, 0); got != 0 {
+			t.Errorf("the glint must be dark at %.0f%% of the cycle, got %.3f", frac*100, got)
+		}
+	}
+	// Two shards a phase apart must not flash together.
+	if a, b := eggShardGlint(0.2, 0), eggShardGlint(0.2, 0.5); a == b {
+		t.Error("two shards with different phases flashed identically — the field would strobe as one")
 	}
 }
 

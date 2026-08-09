@@ -191,13 +191,16 @@ func ovSidecar(t *testing.T, body string) *theme.Sidecar {
 func TestSidecarOverridesRewriteExistingKeysOnly(t *testing.T) {
 	// The map deliberately carries ONE editable key and one inert one, so "present
 	// but not editable" and "editable but not present" are both measured.
+	// mute_button is the inert specimen. It used to be player_list, which stopped
+	// being inert when the roster ruling gave the player list AO2's own rect
+	// (theme_layout.go, courtroom.cpp:879) — the contract under test is unchanged.
 	layout := map[string]theme.Rect{
 		"emote_dropdown": ovTestOther,
-		"player_list":    ovTestOther, // slotStateInert: ingested for audit, painted by nothing
+		"mute_button":    ovTestOther, // slotStateInert: ingested for audit, painted by nothing
 	}
 	sc := ovSidecar(t, ""+
 		"emote_dropdown = 11, 22, 33, 44\n"+ // present + editable: applied
-		"player_list    = 11, 22, 33, 44\n"+ // present, NOT editable: refused
+		"mute_button    = 11, 22, 33, 44\n"+ // present, NOT editable: refused
 		"ic_chatlog     = 11, 22, 33, 44\n"+ // editable, NOT present: refused, never added
 		"courtroom      = 11, 22, 33, 44\n"+ // the canvas itself is `fixed`: refused
 		"not_a_widget   = 11, 22, 33, 44\n") // no themeSlots row at all: refused
@@ -207,8 +210,8 @@ func TestSidecarOverridesRewriteExistingKeysOnly(t *testing.T) {
 		t.Errorf("emote_dropdown is %+v, want the override %+v — a present, editable key must be rewritten",
 			got, ovTestRect)
 	}
-	if got := layout["player_list"]; got != ovTestOther {
-		t.Errorf("player_list is %+v, want its design rect %+v untouched — nothing paints it, so an "+
+	if got := layout["mute_button"]; got != ovTestOther {
+		t.Errorf("mute_button is %+v, want its design rect %+v untouched — nothing paints it, so an "+
 			"override there is a rect the editor cannot move and the screen never shows", got, ovTestOther)
 	}
 	for _, key := range []string{"ic_chatlog", "courtroom", "not_a_widget"} {

@@ -77,10 +77,11 @@ var themedListViews = [themedChipsMax]themedChipSpec{
 // That button IS AO2's Music/Areas switch, so a Music chip and an Areas chip
 // beside it are duplicate controls for a control the theme already placed — which
 // is exactly what #21's parity rule forbids inside the design canvas. The roster
-// is the one view AO2 has no control for anywhere (its player_list is a separate
-// rect and a written deferral, and the Extras box has no roster to move it to), so
-// it is the only chip the strip still owes the user. 96 px instead of 224 is why
-// the strip fits a stock 216–224 px music_list at last.
+// is the one view that button cannot reach, and on a theme that declares no
+// `player_list` rect of its own it has no other home (the Extras box has no roster
+// to move it to), so it is the only chip the strip still owes the user — see
+// themedListStrip for the case where the theme DID declare one. 96 px instead of
+// 224 is why the strip fits a stock 216–224 px music_list at last.
 var themedRosterStrip = themedListViews[len(themedListViews)-1:]
 
 // themedLogViews is the merged-chatlog panel's view order (a theme that stacks
@@ -192,17 +193,37 @@ func fitThemedChips(body sdl.Rect, want, views []themedChipSpec, view int) ([the
 	return out, int32(n)
 }
 
-// themedListStrip is which views the music panel's chip strip carries: the roster
-// alone when the theme placed AO2's own switch_area_music button (see
-// themedRosterStrip), all three when it did not, because then the chips are the
-// only route to any of them.
+// themedMusicOnlyStrip is Music + Areas, for a theme that gave the roster a home
+// of its own (player_list): the two views still sharing music_list, and nothing
+// else.
+var themedMusicOnlyStrip = themedListViews[:2]
+
+// themedListStrip is which views the music panel's chip strip carries. Each clause
+// removes a chip the THEME has already provided a control for, which is #21's
+// parity rule read literally — a duplicate control inside the design canvas is a
+// violation, and the strip is only owed the views the theme leaves unreachable:
+//
+//	switch_area_music placed  → AO2's own Music/Areas switch exists  → drop both
+//	player_list placed        → the roster is drawn at its own rect  → drop it
+//	neither                   → the chips are the only route to any of them
+//
+// A theme that places BOTH leaves the strip nothing to carry, and fitThemedChips
+// answers zero chips, which hands the whole panel body to the list — the strip is
+// not a required part of the layout, it is the fallback for what a theme omits.
 //
 // Shared by the draw site and the geometry census so the two cannot drift — a
 // census that transcribed this rule would go on reporting a strip the courtroom
-// had stopped drawing. A map probe and a slice of a package array: no allocation.
+// had stopped drawing. Map probes and slices of a package array: no allocation.
 func themedListStrip(lay *themeLayoutCache) []themedChipSpec {
-	if _, ok := lay.rect("switch_area_music"); ok {
+	_, ownRoster := lay.rect("player_list")
+	_, hasSwitch := lay.rect("switch_area_music")
+	switch {
+	case hasSwitch && ownRoster:
+		return nil
+	case hasSwitch:
 		return themedRosterStrip
+	case ownRoster:
+		return themedMusicOnlyStrip
 	}
 	return themedListViews[:]
 }

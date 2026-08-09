@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
 // The outgoing SFX_NAME rule (icsfx.go), against AO2-Client courtroom.cpp:2044-2116.
@@ -53,6 +54,81 @@ func TestOutgoingSFXFollowsThePreCheckbox(t *testing.T) {
 	if got := outgoingSFXName(&emote, false, 99, picks); got != icSilentSFX {
 		t.Errorf("out-of-range pick = %q, want %q", got, icSilentSFX)
 	}
+}
+
+// TestSFXOnIdlePromotesTheEmoteModExtends the rule above for the preference the
+// field-batch gate could only assume: AO2's sfx_on_idle / "Always Send SFX"
+// (options.cpp:569-572, `config.value("sfx_on_idle", false)`).
+//
+// The gate above pins SFX_NAME, which sfx_on_idle does NOT touch. What the option
+// changes is the emote MOD — courtroom.cpp:2107-2115 rewrites IDLE→PREANIM and
+// ZOOM→PREANIM_ZOOM with an empty pre name and no delay, because AO plays a
+// message's sound off the preanim stage and an idle-modded line is silent at every
+// receiver whatever SFX_NAME it carries.
+func TestSFXOnIdlePromotesTheEmoteMod(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		mod, pickIdx int
+		onIdle, zoom bool
+		wantMod      int
+		wantPromoted bool
+		why          string
+	}{
+		{"off (the shipped default) changes nothing", protocol.EmoteModIdle, 1, false, true,
+			protocol.EmoteModIdle, false, "AO2 ships sfx_on_idle false — a stock client transmits the pick and stays silent"},
+		{"on + a picked sound promotes IDLE", protocol.EmoteModIdle, 1, true, true,
+			protocol.EmoteModPreanim, true, "courtroom.cpp:2109-2110"},
+		{"on but the Default row is picked", protocol.EmoteModIdle, 0, true, true,
+			protocol.EmoteModIdle, false, ":2102 gates the whole rewrite on a dropdown index != 0"},
+		{"on + ZOOM promotes to PREANIM_ZOOM", protocol.EmoteModZoom, 2, true, true,
+			protocol.EmoteModPreanimZoom, true, "courtroom.cpp:2112-2113"},
+		{"ZOOM without the prezoom feature is left alone", protocol.EmoteModZoom, 2, true, false,
+			protocol.EmoteModZoom, false,
+			"EmoteModPreanimZoom is 2.8; NormalizeOutgoingEmoteMod refuses to invent it, and routing around that guard makes a strict receiver drop the message"},
+		{"a mod that already animates is untouched", protocol.EmoteModPreanim, 1, true, true,
+			protocol.EmoteModPreanim, false, "only IDLE and ZOOM are rewritten (:2108)"},
+	} {
+		gotMod, gotPromoted := sfxIdlePromotion(tc.mod, tc.pickIdx, tc.onIdle, tc.zoom)
+		if gotMod != tc.wantMod || gotPromoted != tc.wantPromoted {
+			t.Errorf("%s: got (mod %d, promoted %v), want (mod %d, %v) — %s",
+				tc.name, gotMod, gotPromoted, tc.wantMod, tc.wantPromoted, tc.why)
+		}
+	}
+}
+
+// TestTheICSendPathAppliesTheIdlePromotionWholesale is the encapsulation half of
+// the option: the promotion moves THREE fields together (mod, pre name, delay) and
+// a send path that took the mod without blanking the other two would transmit a
+// preanim that does not exist — a missingno at every receiver.
+func TestTheICSendPathAppliesTheIdlePromotionWholesale(t *testing.T) {
+	body := funcBodySource(t, "screens.go", "sendIC")
+	if !containsCall(body, "sfxIdlePromotion") {
+		t.Fatal("the IC send path no longer calls sfxIdlePromotion — the sfx_on_idle preference does nothing")
+	}
+	for _, name := range []string{"preEmote", "sfxDelay"} {
+		if !assignsIdent(body, name) {
+			t.Errorf("sendIC never assigns %s — the promotion's three fields no longer move together", name)
+		}
+	}
+}
+
+// assignsIdent reports whether n contains an assignment to a plain identifier of
+// this name.
+func assignsIdent(n ast.Node, name string) bool {
+	found := false
+	ast.Inspect(n, func(node ast.Node) bool {
+		as, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // TestTheICSendPathUsesTheSFXRule is the encapsulation half: the IC send builder must

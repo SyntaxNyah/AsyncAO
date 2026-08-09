@@ -43,9 +43,16 @@ func TestJukeBindCaptureConsumesKey(t *testing.T) {
 		t.Error("handleJukeboxKeys must not fire on a consumed keypress")
 	}
 
-	// A fresh press of the bound key resolves and fires.
+	// The BIND still captures the plain key ("a"), but firing it is an ALT chord
+	// now (bareBindKey, qol.go): the Discord focus model gave every bare letter to
+	// the IC input, so a bare press must be inert here.
 	a.ctx.keyPressed = sdl.K_a
+	if a.handleJukeboxKeys() {
+		t.Error("a BARE bound key must no longer fire — plain letters belong to the IC input")
+	}
+	// Alt + the bound key resolves and fires.
+	a.ctx.keyPressed, a.ctx.altHeld = sdl.K_a, true
 	if !a.handleJukeboxKeys() {
-		t.Error("a bound key should fire handleJukeboxKeys")
+		t.Error("Alt + a bound key should fire handleJukeboxKeys")
 	}
 }

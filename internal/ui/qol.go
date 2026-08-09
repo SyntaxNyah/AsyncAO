@@ -250,36 +250,67 @@ func (a *App) pollCharBind() {
 	a.refreshCharKeys()
 }
 
-// handleCharKeys wears a bound character on a bare keypress — only with
-// no text field focused, no capture armed, and no Ctrl chord in flight,
-// so typing can never trigger a swap.
-func (a *App) handleCharKeys() {
+// bareBindKey is THE gate for every user-assignable "plain key" bind namespace —
+// character keys, showname keys, IC quick-phrases, jukebox keys, the emote number
+// row and the voice push-to-talk key. It returns the keycode those namespaces may
+// act on this frame, or 0.
+//
+// They used to fire on a BARE key, fenced only by "no text field is focused". The
+// Discord focus model (chatfocus.go) retires that fence: typing now claims the IC
+// input on the very first character, so a bare-key namespace either never fires
+// again or — worse — races the claim for the same letter. The user's order was to
+// remove the bare-letter space and move the survivors onto chords, so all six
+// namespaces moved together onto ALT+<key>, in this one function, rather than six
+// copies of a slightly different guard.
+//
+// ALT specifically: Ctrl is fully occupied (hotkeyDefs' collision sweep documents
+// that every Ctrl+letter, Ctrl+digit and Ctrl+symbol is already claimed), Shift is
+// text, and Alt was unused as a key chord — the layout editor's Alt+DRAG is a
+// mouse gesture in a different namespace.
+//
+// !ctrlHeld is load-bearing, not tidiness: AltGr on Windows reports as Ctrl+Alt
+// and produces real text, so a bare altHeld test would swallow every accented
+// character a European layout types into the IC box.
+//
+// The BIND-CAPTURE paths (bindingFor, jukeBindFor, …) deliberately keep reading
+// the plain key: you still press "m" to bind m — it simply fires as Alt+M.
+func (a *App) bareBindKey() sdl.Keycode {
 	c := a.ctx
-	if c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || c.ctrlHeld {
+	if c.keyPressed == 0 || !c.altHeld || c.ctrlHeld || a.capturingKey() {
+		return 0
+	}
+	return c.keyPressed
+}
+
+// handleCharKeys wears a bound character on Alt+<bound key> (see bareBindKey for
+// why this namespace is no longer a bare letter). Focus is irrelevant now — an
+// Alt chord is never text — but a capture in flight still owns the key.
+func (a *App) handleCharKeys() {
+	key := a.bareBindKey()
+	if key == 0 {
 		return
 	}
-	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))]; name != "" {
+	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
 		a.wearFromMenu(name)
 	}
 }
 
-// handleEmoteKeys picks the emote in number-key position N on the CURRENT
-// page (keys 1-9), but only with no text field focused (so typing a number
-// never switches emotes), no Ctrl chord in flight, and only when the digit
-// isn't a deliberate character keybind — the same fence as handleCharKeys.
-// Picking focuses the IC input, matching a click.
+// handleEmoteKeys picks the emote in number-key position N on the CURRENT page
+// (Alt+1 … Alt+9 — the digits are plain text in the IC box now, see bareBindKey),
+// and only when the digit isn't a deliberate character keybind, the same fence
+// handleCharKeys has always had. Picking focuses the IC input, matching a click.
 func (a *App) handleEmoteKeys() {
-	c := a.ctx
-	if c.keyPressed < sdl.K_1 || c.keyPressed > sdl.K_9 || c.focusID != "" || c.ctrlHeld || a.emotePerPage <= 0 {
+	key := a.bareBindKey()
+	if key < sdl.K_1 || key > sdl.K_9 || a.emotePerPage <= 0 {
 		return
 	}
-	if a.charKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))] != "" {
+	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
 		return // a character keybind owns this digit
 	}
 	// Map the on-screen slot through the visible list (favs-only filters it),
 	// so the number keys pick exactly what that grid cell shows.
 	a.refreshEmoteView()
-	slot := a.emotePage*a.emotePerPage + int(c.keyPressed-sdl.K_1)
+	slot := a.emoteFirstSlot() + int(key-sdl.K_1)
 	if slot >= 0 && slot < len(a.emoteVisible) {
 		a.selectEmote(a.emoteVisible[slot])
 	}
@@ -431,15 +462,7 @@ func (a *App) handleHotkeys() {
 		}
 		a.warnAt = time.Now()
 	case a.hotkeyFor(hotkeyExtras):
-		if a.theaterOn {
-			// Theater is stage-only (setTheater's invariant): summoning the
-			// Extras box from there means "give me the UI back" — exit theater
-			// and show the box, never draw floating chrome over the bare stage.
-			a.setTheater(false)
-			a.showWidgets = true
-		} else {
-			a.showWidgets = !a.showWidgets
-		}
+		a.toggleExtrasBox()
 	case a.hotkeyFor(hotkeyCharMenu):
 		a.screen = ScreenCharSelect
 	case a.hotkeyFor(hotkeyWardrobe):

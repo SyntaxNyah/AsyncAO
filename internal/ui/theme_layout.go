@@ -646,10 +646,7 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
 	c := a.ctx
 	if next, changed := c.Dropdown("sfxdd", rect, a.sfxChoices, a.sfxChoiceIdx); changed {
-		a.sfxChoiceIdx = next
-		if next > 0 && next < len(a.sfxChoices) {
-			a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
-		}
+		a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 	}
 	a.sfxRowRightClickPreview()
 	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Right-click a row to hear it without picking it. Extras → SFX Browser for favourites & any sound by name.")
@@ -968,19 +965,42 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// (themedListStrip): with AO2's own switch on screen, a Music chip and an Areas
 	// chip beside it are duplicate controls inside the design canvas (#21's parity
 	// rule), and dropping them is what finally fits the strip inside a stock
-	// 216–224 px music_list. The ROSTER chip stays either way — AsyncAO's roster
-	// shares that panel, AO2 has no equivalent at this rect (its player_list is a
-	// separate rect and a written deferral), and the Extras box has no roster to
-	// move it to, so removing it would delete the only way to reach the roster
-	// inside a theme. themedSwitchAreaMusic is what guarantees the way back OUT of
-	// the roster, and the strip's own cycle rule the way back IN.
+	// 216–224 px music_list. The ROSTER chip stays unless the theme declared
+	// `player_list` — AO2's own rect for it, which the ruling below now honours; a
+	// theme that does not is one where the roster shares this panel and the chip is
+	// the only way to reach it, since the Extras box has no roster to move it to.
+	// themedSwitchAreaMusic is what guarantees the way back OUT of the roster, and
+	// the strip's own cycle rule the way back IN.
 	if r, ok := lay.rect("switch_area_music"); ok && !a.panelHidden(panelLog) {
 		if a.drawThemeButton("switch_area_music", "A/M", r) {
 			a.logTab = themedSwitchAreaMusic(a.logTab)
 		}
 	}
 
-	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
+	// THE ROSTER'S RULING (#21 parity law, applied). The player list is NOT an
+	// AsyncAO extra squatting an AO2 rect: AO2 declares a design key for it,
+	// `player_list` (courtroom.cpp:879), separate from the music_list rect that
+	// ui_music_list (:867) and ui_area_list (:864) share. So the rule is the
+	// canonical one, in two halves:
+	//
+	//	a theme that declares player_list  → the roster draws THERE, in its own AO2
+	//	                                     rect, with its own ink and font element;
+	//	a theme that does not              → it keeps sharing music_list, which is
+	//	                                     DELIBERATE REUSE with AO2's own
+	//	                                     precedent (AO2 parents its area list in
+	//	                                     that very rect), not an extra crammed
+	//	                                     into someone else's box.
+	//
+	// No asyncao_* key is invented for it: the AO2 key exists, and inventing a
+	// parallel one would be the actual violation.
+	rosterOwnRect := false
+	if r, ok := lay.rect("player_list"); ok && !a.panelHidden(panelLog) {
+		a.drawPlayerList(insetThemedBody(r))
+		rosterOwnRect = true
+	}
+
+	// Music / Areas (and the roster too, unless it just drew at its own rect) share
+	// the music_list rect — AO2 toggles them; we chip.
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
 		// One inset for chips AND body, exactly as the log panel above (#25):
 		// drawMusicList / drawAreaList / drawPlayerList also place their first widget
@@ -998,12 +1018,16 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			}
 		}
 		inner := themedStripBody(panelBody, n)
-		switch a.logTab {
-		case logTabAreas:
+		switch {
+		case a.logTab == logTabAreas:
 			a.drawAreaList(inner, true)
-		case logTabPlayers:
+		case a.logTab == logTabPlayers && !rosterOwnRect:
 			a.drawPlayerList(inner)
 		default:
+			// rosterOwnRect lands here on purpose: with the roster already painted at
+			// its own rect, this panel shows the music list rather than the SAME roster
+			// twice (and a second drawPlayerList would fight the first over the shared
+			// scroll/drag ids).
 			a.drawMusicList(inner, true, searchExternal, nameDrew)
 		}
 	}
@@ -1032,9 +1056,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		var send bool
 		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 		// AO2's own placeholder (courtroom.cpp ui_ic_chat_message).
+		// Same counter/chip reservation the classic bar makes (screens.go): the band
+		// is declared before the field so typed text clips short of it.
+		counterOn := a.d.Prefs.MessageCounterOn()
+		c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(counterOn))
 		a.icInput, send = c.TextFieldEmoji(icFieldID, in, a.icInput, "Message in-character", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
-		a.drawMsgCounter(in, a.d.Prefs.MessageCounterOn())
+		a.drawMsgCounter(in, counterOn)
 		if send {
 			a.sendIC(0)
 		}
@@ -1064,7 +1092,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// (selectEmote); unchecked forces idle at the send site so the intro is
 	// skipped even when the emote defines one.
 	if r, ok := themedToggleRect(lay, "pre", "", "asyncao_ic_pre"); ok && !a.panelHidden(slotICPre) {
-		a.icPreanim = c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.icPreanim)
+		// bounceOnToggle: ui_pre → focus_ic_input (courtroom.cpp:502), the same wiring
+		// the classic row carries — both IC bars or neither.
+		a.icPreanim = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.icPreanim), a.icPreanim)
 		c.Tooltip(r, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 	}
 
@@ -1089,7 +1119,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// silently cleared, because pairFlip is real pair state that parks per tab.
 	if r, ok := themedToggleRect(lay, "flip", "", ""); ok &&
 		!a.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
-		a.pairFlip = c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip)
+		a.pairFlip = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip), a.pairFlip) // ui_flip → focus_ic_input (courtroom.cpp:503)
 		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 	}
 
@@ -1107,7 +1137,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// icAdditive stayed true and kept riding every message.
 	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
 		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
-		a.icAdditive = c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive)
+		a.icAdditive = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive), a.icAdditive) // :504 → :6572
 		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 	} else {
 		a.icAdditive = false
@@ -1117,7 +1147,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// position rather than cutting. The send site clears it afterwards — AO2 says
 	// "Slides can't be sticky for nausea reasons" (courtroom.cpp:2362).
 	if r, ok := themedToggleRect(lay, "slide_enable", "", ""); ok {
-		a.icSlide = c.CheckboxIn(r, lay.themedToggleLabel("slide_enable", "Slide"), a.icSlide)
+		a.icSlide = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("slide_enable", "Slide"), a.icSlide), a.icSlide) // ui_slide_enable → focus_ic_input (courtroom.cpp:506)
 		c.Tooltip(r, "Slide: the character slides into position for this message instead of cutting.")
 	}
 
@@ -1161,20 +1191,16 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// behaviour, so a theme without the files still gets a usable control.
 	if r, ok := themedToggleRect(lay, "realization", "", ""); ok {
 		if a.drawThemeButton("realization", "Flash", r) {
-			a.icRealize = !a.icRealize
+			a.toggleRealization() // arms the WIRE FLAG *and* the effects row — icarms.go
 		}
-		if a.icRealize {
-			c.Border(r, ColAccent)
-		}
+		a.drawArmedOverlay(r, a.icRealize)
 		c.Tooltip(r, "Realization: a white flash + sound on your next message. Clears after it sends.")
 	}
 	if r, ok := themedToggleRect(lay, "screenshake", "", ""); ok {
 		if a.drawThemeButton("screenshake", "Shake", r) {
-			a.icShake = !a.icShake
+			a.toggleScreenshake()
 		}
-		if a.icShake {
-			c.Border(r, ColAccent)
-		}
+		a.drawArmedOverlay(r, a.icShake)
 		c.Tooltip(r, "Screenshake: shake the courtroom on your next message. Clears after it sends.")
 	}
 
@@ -1733,22 +1759,14 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	// uniformly so the button art keeps its designed aspect — see
 	// emoteCellScale for why (#33).
 	grid := emoteGridLayout(r, a.themeEmoteCell, a.themeEmoteGap, emoteCellScale(lay.scaleX, lay.scaleY))
-	perPage := grid.perPage()
-	pages := (len(vis) + perPage - 1) / perPage
-	if pages < 1 {
-		pages = 1 // favs-only with nothing starred yet: one empty page
-	}
-	if a.emotePage >= pages {
-		a.emotePage = 0
-	}
-	if pages > 1 { // mouse-wheel pages emotes (parity with the classic row)
-		if d := c.WheelIn(r); d > 0 && a.emotePage > 0 {
-			a.emotePage--
-		} else if d < 0 && a.emotePage < pages-1 {
-			a.emotePage++
+	a.setEmoteGridMetrics(int(grid.cols), int(grid.rows), len(vis))
+	perPage := a.emotePerPage
+	if a.emoteGridScrolls() { // mouse-wheel scrolls BY ROW (parity with the classic row)
+		if d := c.WheelIn(r); d != 0 {
+			a.scrollEmoteRows(int(-d) * emoteWheelRows)
 		}
 	}
-	start := a.emotePage * perPage
+	start := a.emoteFirstSlot()
 
 	me := a.activeCharName()
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
@@ -1807,15 +1825,17 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		c.Label(r.X, r.Y+4, "No favourite emotes — turn off \"favourites only\" in Settings, then click an emote's ★.", ColTextDim)
 	}
 
-	if pages > 1 {
+	// AO2's own emote_left / emote_right keep PAGE granularity (courtroom.cpp
+	// on_emote_left_clicked steps current_emote_page); only the wheel is per-row.
+	if a.emoteGridScrolls() {
 		if lr, ok := lay.rect("emote_left"); ok {
-			if a.drawThemeButton("emote_left", "<", lr) && a.emotePage > 0 {
-				a.emotePage--
+			if a.drawThemeButton("emote_left", "<", lr) && a.emoteCanScrollUp() {
+				a.scrollEmotePages(-1)
 			}
 		}
 		if rr, ok := lay.rect("emote_right"); ok {
-			if a.drawThemeButton("emote_right", ">", rr) && a.emotePage < pages-1 {
-				a.emotePage++
+			if a.drawThemeButton("emote_right", ">", rr) && a.emoteCanScrollDown() {
+				a.scrollEmotePages(1)
 			}
 		}
 	}

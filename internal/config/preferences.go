@@ -400,6 +400,48 @@ const defaultCallwordToast = true
 // long a message is getting (servers truncate very long lines).
 const defaultMessageCounter = true
 
+// The three AO2 "sticky" post-send options, transcribed with AO2's own shipped
+// values. Courtroom::reset_ui (../AO2-Client/src/courtroom.cpp:2340, :2348,
+// :2356) resets the SFX pick / the effects pick / the Pre checkbox only when the
+// matching option is FALSE, and options.cpp implements all three as
+// config.value("sticky…", true) — :420-423, :430-433, :440-443. So AO2's stock
+// behaviour is that all three SURVIVE a send, and these defaults say exactly
+// that. (The accessor names upstream read backwards — clearXOnPlayEnabled()
+// returns the stickiness — which is why the constants here are named for the
+// config KEY, not for the function.)
+const (
+	defaultStickySounds   = true // AO2 "stickysounds"  (aooptionsdialog.cpp:416, "Sticky Sounds")
+	defaultStickyEffects  = true // AO2 "stickyeffects" (:417, "Sticky Effects")
+	defaultStickyPreanims = true // AO2 "stickypres"    (:418, "Sticky Preanims")
+)
+
+// defaultSFXOnIdle ships OFF, matching AO2's own sfx_on_idle
+// (options.cpp:569-572, `config.value("sfx_on_idle", false)`; the options dialog
+// calls it "Always Send SFX", aooptionsdialog.cpp:423). With it ON a hand-picked
+// SFX is promoted onto an IDLE/ZOOM message — AO2 rewrites the emote mod to
+// PREANIM/PREANIM_ZOOM with an empty pre and zero delay so the sound plays
+// anyway (courtroom.cpp:2107-2115).
+const defaultSFXOnIdle = false
+
+// defaultUnfocusedFullRate ships OFF: an unfocused window throttles to the
+// background cap, which is the whole point of that cap. ON makes the pacer treat
+// an unfocused window exactly like a focused one — for a second monitor, or for
+// capture software that records the client while you work in another app.
+const defaultUnfocusedFullRate = false
+
+// defaultDetailedLog ships ON as of the 2026-08-09 batch (user order: every other
+// AO client writes its chat log to disk by default, and the transcript is the
+// thing people wish they had AFTER the session). Existing configs are moved once
+// by DetailedLogDefaultMigrated — see load(). Turning it back off sticks.
+const defaultDetailedLog = true
+
+// defaultGhostCrawlText ships ON: while the typewriter is still revealing a line,
+// the not-yet-revealed tail is drawn TRANSPARENT in the log instead of being
+// absent, so the message keeps its final shape and the log stops reflowing under
+// the reader on every rune. No migration stamp: it is a brand-new preference, so
+// an absent value has never meant anything else.
+const defaultGhostCrawlText = true
+
 // defaultICTimestamps ships OFF (playtest): when ON, each IC log line is prefixed
 // with the local time it arrived, so you can see when people spoke. Toggleable in
 // Settings → Chat.
@@ -1327,6 +1369,21 @@ type AssetPreferences struct {
 	CallwordToast bool `json:"callwordToast"`
 	// MessageCounter shows a live character count by the IC input (ON by default).
 	MessageCounter bool `json:"messageCounter"`
+	// The three AO2 post-send "sticky" options (all ON by default = AO2's own
+	// shipped values; see the defaultSticky* constants for the canon citations).
+	// ON keeps the pick after a send; OFF reproduces AO2's reset_ui clear.
+	StickySounds   bool `json:"stickySounds"`
+	StickyEffects  bool `json:"stickyEffects"`
+	StickyPreanims bool `json:"stickyPreanims"`
+	// SFXOnIdle is AO2's sfx_on_idle / "Always Send SFX" (OFF by default): send a
+	// hand-picked SFX even on a message with no preanimation.
+	SFXOnIdle bool `json:"sfxOnIdle"`
+	// UnfocusedFullRate keeps the frame pacer at FULL speed while the window is
+	// unfocused (OFF by default — the background cap normally rules).
+	UnfocusedFullRate bool `json:"unfocusedFullRate"`
+	// GhostCrawlText draws the not-yet-revealed tail of a crawling message as
+	// transparent text in the log (ON by default).
+	GhostCrawlText bool `json:"ghostCrawlText"`
 	// MentionSelf treats your character name / showname as a callword (#203); OFF
 	// by default. Powers the "alert me when someone says my name" behaviour.
 	MentionSelf bool `json:"mentionSelf"`
@@ -1377,6 +1434,15 @@ type AssetPreferences struct {
 	// DeskFollowManifest choice is respected as-is, so a user who re-pins
 	// desks to WebP afterwards stays pinned forever.
 	DeskManifestDefaultMigrated bool `json:"deskManifestDefaultMigrated"`
+	// DetailedLogDefaultMigrated is the fifth one-shot stamp, for DetailedLog: it
+	// records that the transcript OFF→ON default flip has RUN for this file (see
+	// load). Same shape as its DeskManifest sibling and for the same reason — a
+	// bool that the saver has always written has no state distinguishable from
+	// its default, so a bare default change could never reach an existing file.
+	// The first un-stamped load forces logging ON once and stamps; once true, the
+	// saved DetailedLog choice is respected as-is, so a user who turns it back off
+	// stays off forever.
+	DetailedLogDefaultMigrated bool `json:"detailedLogDefaultMigrated"`
 	// SmoothLogScroll eases the IC log's FOLLOW jump when a new message lands
 	// (OFF by default = AO2 parity: the log snaps to the newest line the instant it
 	// arrives, exactly as AO2-Client's QTextEdit auto-scroll does). ON restores the
@@ -1654,7 +1720,7 @@ type prefsJSON struct {
 	AdditiveText           *bool                `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
 	MusicDucking           bool                 `json:"musicDucking"`         // default OFF (zero value)
 	PerAreaScrollback      bool                 `json:"perAreaScrollback"`    // default OFF (zero value)
-	DetailedLog            bool                 `json:"detailedLog"`          // default OFF (zero value)
+	DetailedLog            *bool                `json:"detailedLog"`          // absent = default ON (a POINTER since the OFF→ON flip: a hand-trimmed stamped file must not read absent as a deliberate OFF)
 	AutoClipModcall        *bool                `json:"autoClipModcall"`      // default ON (pointer: absent != off)
 	GroupChatButton        *bool                `json:"groupChatButton"`      // default ON (pointer: absent != off)
 	CharChatbox            *bool                `json:"charChatbox"`          // default ON (pointer: absent != off)
@@ -1768,6 +1834,13 @@ type prefsJSON struct {
 	ThemeFitDefaultMigrated      *bool    `json:"themeFitDefaultMigrated"`      // absent = the Stretch→Native default move hasn't run for this file yet; a POINTER because the sibling themeFit is a plain int, so "never written" and "deliberately Stretch" are the same bytes
 	BlipSpeedDefaultMigrated     *bool    `json:"blipSpeedDefaultMigrated"`     // absent = the 18 ms → 40 ms message-crawl ("blip speed") move hasn't run for this file yet; a POINTER for the same reason as its ThemeFit sibling — textCrawlMs is a plain int, so "never written" and "deliberately 18" are the same bytes
 	DeskManifestDefaultMigrated  *bool    `json:"deskManifestDefaultMigrated"`  // absent = the desks OFF→ON (follow-the-manifest) flip hasn't run for this file yet
+	DetailedLogDefaultMigrated   *bool    `json:"detailedLogDefaultMigrated"`   // absent = the transcript OFF→ON flip hasn't run for this file yet
+	StickySounds                 *bool    `json:"stickySounds"`                 // absent = default ON (AO2 stickysounds)
+	StickyEffects                *bool    `json:"stickyEffects"`                // absent = default ON (AO2 stickyeffects)
+	StickyPreanims               *bool    `json:"stickyPreanims"`               // absent = default ON (AO2 stickypres)
+	SFXOnIdle                    *bool    `json:"sfxOnIdle"`                    // absent = default OFF (AO2 sfx_on_idle)
+	UnfocusedFullRate            *bool    `json:"unfocusedFullRate"`            // absent = default OFF
+	GhostCrawlText               *bool    `json:"ghostCrawlText"`               // absent = default ON
 	SmoothLogScroll              bool     `json:"smoothLogScroll"`              // default OFF (zero value) — the IC log's new-message follow jumps instantly, AO2-style
 	MusicHistory                 *bool    `json:"musicHistory"`                 // absent = default ON
 	MusicStreaming               *bool    `json:"musicStreaming"`               // absent = default ON
@@ -2057,16 +2130,24 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
-		// All four one-shot default stamps. A fresh install has nothing to move — it
+		StickySounds:           defaultStickySounds,
+		StickyEffects:          defaultStickyEffects,
+		StickyPreanims:         defaultStickyPreanims,
+		SFXOnIdle:              defaultSFXOnIdle,
+		UnfocusedFullRate:      defaultUnfocusedFullRate,
+		GhostCrawlText:         defaultGhostCrawlText,
+		DetailedLog:            defaultDetailedLog,
+		// All FIVE one-shot default stamps. A fresh install has nothing to move — it
 		// already defaults to auto-reconnect OFF, theme fit Native, a 40 ms message
-		// crawl and manifest-following desks — so it counts as already-migrated. Only
-		// a file written by an OLDER build lacks these stamps (absent → nil on load)
-		// and triggers the one-shot force-OFF / Stretch→Native / 18→40 ms /
-		// desks-follow-ON move in the load overlay.
+		// crawl, manifest-following desks and transcript logging ON — so it counts as
+		// already-migrated. Only a file written by an OLDER build lacks these stamps
+		// (absent → nil on load) and triggers the one-shot force-OFF / Stretch→Native /
+		// 18→40 ms / desks-follow-ON / transcript-ON move in the load overlay.
 		AutoReconnectDefaultMigrated: true,
 		ThemeFitDefaultMigrated:      true,
 		BlipSpeedDefaultMigrated:     true,
 		DeskManifestDefaultMigrated:  true,
+		DetailedLogDefaultMigrated:   true,
 		MusicHistory:                 defaultMusicHistory,
 		MusicStreaming:               defaultMusicStreaming,
 		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
@@ -2675,7 +2756,43 @@ func load(path string) (*AssetPreferences, error) {
 	p.DisableEffects = onDisk.DisableEffects
 	p.MusicDuckingOn = onDisk.MusicDucking
 	p.PerAreaScroll = onDisk.PerAreaScrollback
-	p.DetailedLog = onDisk.DetailedLog
+	// Transcript logging default flipped OFF→ON (user order 2026-08-09: every
+	// other AO client saves the chat log, and the people who want it are the ones
+	// who only find out afterwards). One-shot, the DeskManifest shape exactly: a
+	// file written before the flip carries no stamp AND — because the saver always
+	// wrote the plain bool — an explicit detailedLog:false that a bare default change
+	// could never reach. The flip cannot be value-aware (a bool has no state
+	// distinguishable from its default), so the first un-stamped load forces it ON
+	// once and stamps; a user who turns it back off AFTER that saves the stamp
+	// alongside the choice, so the off sticks forever.
+	if onDisk.DetailedLogDefaultMigrated != nil && *onDisk.DetailedLogDefaultMigrated {
+		p.DetailedLogDefaultMigrated = true
+		if onDisk.DetailedLog != nil {
+			p.DetailedLog = *onDisk.DetailedLog
+		}
+	} else {
+		p.DetailedLog = true
+		p.DetailedLogDefaultMigrated = true
+		p.markDirty()
+	}
+	if onDisk.StickySounds != nil {
+		p.StickySounds = *onDisk.StickySounds
+	}
+	if onDisk.StickyEffects != nil {
+		p.StickyEffects = *onDisk.StickyEffects
+	}
+	if onDisk.StickyPreanims != nil {
+		p.StickyPreanims = *onDisk.StickyPreanims
+	}
+	if onDisk.SFXOnIdle != nil {
+		p.SFXOnIdle = *onDisk.SFXOnIdle
+	}
+	if onDisk.UnfocusedFullRate != nil {
+		p.UnfocusedFullRate = *onDisk.UnfocusedFullRate
+	}
+	if onDisk.GhostCrawlText != nil {
+		p.GhostCrawlText = *onDisk.GhostCrawlText
+	}
 	if onDisk.AutoClipModcall != nil { // pointer: absent keeps the default-ON
 		p.AutoClipModcall = *onDisk.AutoClipModcall
 	}
@@ -8599,9 +8716,10 @@ func (p *AssetPreferences) SetPerAreaScrollback(on bool) {
 	p.markDirty()
 }
 
-// DetailedLogOn reports the detailed-logging toggle (OFF by default): when on,
-// IC/OOC messages are appended to a per-server transcript file with timestamps,
-// area, character name and showname.
+// DetailedLogOn reports the detailed-logging toggle (ON by default since the
+// 2026-08-09 flip — see defaultDetailedLog): when on, IC/OOC messages are
+// appended to a per-server transcript file with timestamps, area, character name
+// and showname.
 func (p *AssetPreferences) DetailedLogOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -8616,6 +8734,135 @@ func (p *AssetPreferences) SetDetailedLog(on bool) {
 		return
 	}
 	p.DetailedLog = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- AO2 post-send "sticky" options + sfx_on_idle ------------------------------
+//
+// All four are transcriptions of AO2 options with AO2's own shipped defaults; see
+// the defaultSticky* / defaultSFXOnIdle constants for the canon citations. The
+// getters read "does the pick SURVIVE the send", which is the config key's own
+// sense — NOT the upstream accessor's backwards name.
+
+// StickySoundsOn reports whether the IC SFX pick survives a send (ON by default).
+func (p *AssetPreferences) StickySoundsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.StickySounds
+}
+
+// SetStickySounds toggles whether the IC SFX pick survives a send.
+func (p *AssetPreferences) SetStickySounds(on bool) {
+	p.mu.Lock()
+	if p.StickySounds == on {
+		p.mu.Unlock()
+		return
+	}
+	p.StickySounds = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// StickyEffectsOn reports whether the effects pick survives a send (ON by
+// default). With it OFF the effect's own `sticky` property still decides
+// (courtroom.cpp:2348-2354) — see App.clearEffectsAfterSend.
+func (p *AssetPreferences) StickyEffectsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.StickyEffects
+}
+
+// SetStickyEffects toggles whether the effects pick survives a send.
+func (p *AssetPreferences) SetStickyEffects(on bool) {
+	p.mu.Lock()
+	if p.StickyEffects == on {
+		p.mu.Unlock()
+		return
+	}
+	p.StickyEffects = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// StickyPreanimsOn reports whether the Pre checkbox survives a send (ON by
+// default).
+func (p *AssetPreferences) StickyPreanimsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.StickyPreanims
+}
+
+// SetStickyPreanims toggles whether the Pre checkbox survives a send.
+func (p *AssetPreferences) SetStickyPreanims(on bool) {
+	p.mu.Lock()
+	if p.StickyPreanims == on {
+		p.mu.Unlock()
+		return
+	}
+	p.StickyPreanims = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SFXOnIdleOn reports AO2's sfx_on_idle / "Always Send SFX" (OFF by default): a
+// hand-picked SFX rides a message even with Pre unticked.
+func (p *AssetPreferences) SFXOnIdleOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SFXOnIdle
+}
+
+// SetSFXOnIdle toggles sending a picked SFX on a non-preanim message.
+func (p *AssetPreferences) SetSFXOnIdle(on bool) {
+	p.mu.Lock()
+	if p.SFXOnIdle == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SFXOnIdle = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// UnfocusedFullRateOn reports the "don't throttle when unfocused" option (OFF by
+// default). It is consumed by the PACER's focus decision (App.pacingFocused), not
+// by a bare check inside wantsFullRate — the census doctrine.
+func (p *AssetPreferences) UnfocusedFullRateOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UnfocusedFullRate
+}
+
+// SetUnfocusedFullRate toggles full-speed rendering while unfocused.
+func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
+	p.mu.Lock()
+	if p.UnfocusedFullRate == on {
+		p.mu.Unlock()
+		return
+	}
+	p.UnfocusedFullRate = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// GhostCrawlTextOn reports the ghost-text option (ON by default): the tail of a
+// message the typewriter has not revealed yet is drawn transparent in the log
+// instead of missing, so the line keeps its final shape while it crawls.
+func (p *AssetPreferences) GhostCrawlTextOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.GhostCrawlText
+}
+
+// SetGhostCrawlText toggles the transparent un-revealed tail.
+func (p *AssetPreferences) SetGhostCrawlText(on bool) {
+	p.mu.Lock()
+	if p.GhostCrawlText == on {
+		p.mu.Unlock()
+		return
+	}
+	p.GhostCrawlText = on
 	p.mu.Unlock()
 	p.markDirty()
 }

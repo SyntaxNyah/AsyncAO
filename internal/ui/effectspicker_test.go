@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -159,7 +161,16 @@ func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
 // AO2's anti-overlap rule: Pre unchecked + an SFX override forces sound "0"
 // (courtroom.cpp:2302-2305).
 func TestOutgoingEffectsFieldShape(t *testing.T) {
-	a := &App{}
+	// REAL shipped preferences, not a bare struct: the sticky assertion below is
+	// about AO2's own default value, so reading it out of a zero-valued
+	// AssetPreferences would pin `false` and keep passing whatever
+	// defaultStickyEffects actually says.
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
+	a := &App{d: Deps{Prefs: prefs}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	fx := []theme.OverlayFX{{Name: "tv on", Sound: "switch tv"}, {Name: "sticky one", Sound: "s", Sticky: true}}
 	a.overlayRosters = map[string]*overlayRoster{

@@ -2079,15 +2079,24 @@ type sessionState struct {
 	// Pos-dropdown thumbnail cache (drawPosSelect): one bg thumbnail per position,
 	// keyed by row index; posBgKey (the current bg name) invalidates the whole set
 	// when the background changes so a stale stage can't show under the wrong bg.
-	posBgPages   []*render.TexturePage
-	posBgGen     uint64
-	posBgKey     string
-	posBgAsk     []time.Time               // demandAsset pacing for the pos-dropdown thumbnails
-	posThumbFn   func(idx int, r sdl.Rect) // stable (one-time) pos-thumbnail draw fn — avoids a per-frame closure alloc on the hot Pos selector
-	emotes       []courtroom.Emote
-	emoteIdx     int
-	emotePage    int // emote grid paging (classic + themed)
-	emotePerPage int // emotes per page last frame (number-key select)
+	posBgPages []*render.TexturePage
+	posBgGen   uint64
+	posBgKey   string
+	posBgAsk   []time.Time               // demandAsset pacing for the pos-dropdown thumbnails
+	posThumbFn func(idx int, r sdl.Rect) // stable (one-time) pos-thumbnail draw fn — avoids a per-frame closure alloc on the hot Pos selector
+	emotes     []courtroom.Emote
+	emoteIdx   int
+	// Emote-grid scroll position (emotescroll.go owns every derived answer). The
+	// stored value is the first visible ROW, not a page: the wheel scrolls one row
+	// per notch while the arrows and the "page x/y" readout stay page-shaped.
+	// cols / rowsPerPage / totalRows are stamped by whichever grid drew last
+	// (classic or themed), so the number-key row and the page label always
+	// describe the grid actually on screen.
+	emoteRow         int
+	emoteCols        int
+	emoteRowsPerPage int
+	emoteTotalRows   int
+	emotePerPage     int // cols*rowsPerPage, kept as its own field: several sites ask "is a grid laid out yet?"
 	// SFX picker (IC-bar dropdown): the chosen sound that OVERRIDES this character's
 	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
 	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
@@ -4849,6 +4858,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				force := a.d.Prefs.ForceCharNamesOn()
 				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message))
 				a.pushIC(line, ev.Message.TextColor, fr, fc, speaker)
+				// This line has a message in the play queue behind it: the log is written
+				// on ARRIVAL, the courtroom speaks it later, and the ghost-text option
+				// (ghosttext.go) pairs the two by counting. Stamped here, next to the
+				// reaction ref, because the EventMessage branch is the ONLY push that
+				// enqueues — every other pushIC call site is a system line that is true
+				// the instant it appears.
+				a.icLog[len(a.icLog)-1].speech = true
 				// #2 reactions: stamp this entry with its CONTENT-STABLE ref, computed from the
 				// RAW wire fields (CharName + marker-free text) — NOT the display line, which
 				// bakes in client-local showname / nick / timestamp and so wouldn't match a
@@ -5654,7 +5670,7 @@ func (a *App) enterCourtroom() {
 	// reactivation path (activateTab → buildRoom) deliberately skips this so each
 	// tab keeps its own emote selection; pollCharINI then clamps rather than
 	// resets, so the parked index survives the reload.
-	a.emoteIdx, a.emotePage = 0, 0
+	a.emoteIdx, a.emoteRow = 0, 0
 	a.buildRoom()
 }
 
@@ -6589,6 +6605,7 @@ func rateBudget(fps int) (budget time.Duration, off bool) {
 // it also enforces the unfocused cap even when FramePace lifts an unfocused
 // animation toward the active rate. 0 = uncapped (the ∞ sentinel — no floor).
 func (a *App) HardCapBudget(focused bool) time.Duration {
+	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if focused {
 		// The active cap has no "off" (0 fps while interacting is meaningless);
 		// ∞ → 0 (uncapped), N → 1s/N.
@@ -6722,6 +6739,7 @@ func pacerTierLabel(t pacerTier) string {
 // (FPSOff) → the active cap in THIS render path (the "no idle render" behaviour
 // lives in the skip/park path, not here), N → 1s/N.
 func (a *App) FramePace(focused bool) time.Duration {
+	focused = a.pacingFocused(focused)     // the "full speed while unfocused" option (pacingfocus.go)
 	full := paceBudget(a.d.Prefs.FPSCap()) // active cap: ∞/off → 0 (uncapped); N → 1s/N
 	// nextAnimDue is the stage's earliest scheduled frame flip (ok=false on a
 	// static stage / no room) — consulted by both focus branches.
@@ -6849,6 +6867,7 @@ func backstopBudget(b time.Duration) time.Duration {
 // classic loop instead re-renders at the idle rate (it doesn't track damage);
 // idle=off makes both lean on caret/timer/input for a static courtroom.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
+	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
 		return false // input this pass (incl. a focus-regain window event)
 	}
@@ -7007,6 +7026,7 @@ func (a *App) RenderNeeded() bool {
 // shortcut otherwise spins with zero sleep until a real window event. Voice /
 // mic capture never suppress, mirroring SkipFrame's own exception.
 func (a *App) RenderSuppressed(focused bool) bool {
+	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if focused || a.voiceJoined || a.micTest != nil {
 		return false
 	}
@@ -7053,7 +7073,8 @@ const (
 // interrupt the wait regardless; this only bounds how long "nothing happens"
 // may last.
 func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
-	wait = maxHousekeepingGap // Background-only floor (no frame) — see the const
+	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
+	wait = maxHousekeepingGap          // Background-only floor (no frame) — see the const
 	// Background cap OFF + unfocused: schedule NO render wakes — the window is
 	// asleep while tabbed out (SkipFrame parks it), so even the idle tick and the
 	// caret/clock deadlines stay silent until focus returns. This is what makes a
@@ -7486,7 +7507,7 @@ func (a *App) setIniswap(name string) {
 	a.iniChar = name
 	a.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
 	a.emoteAsk = nil
-	a.emoteIdx, a.emotePage = 0, 0 // new active folder = new emote list: start at the first
+	a.emoteIdx, a.emoteRow = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
 }
 
@@ -8075,19 +8096,23 @@ func (a *App) setPreviewEmote(i int) {
 // cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
 func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
 
-// clampEmoteSel returns the emote index/page to use after an emote list of
-// length n is (re)loaded. A still-valid index is PRESERVED — so a tab
+// clampEmoteSel returns the emote index / grid scroll row to use after an emote
+// list of length n is (re)loaded. A still-valid index is PRESERVED — so a tab
 // reactivation (activateTab → buildRoom → loadCharINI lands for the SAME
 // character) keeps the user's selection instead of snapping back to the first
 // emote. An out-of-range index (a shorter list, e.g. an iniswap) resets to the
-// first emote on page 0. Index and page move together so a kept index can't
-// desync from a stale page. Pure so the session-isolation behaviour is pinned
-// by a unit test, not a manual rebuild.
-func clampEmoteSel(idx, page, n int) (int, int) {
+// first emote at the top of the grid. Index and scroll move together so a kept
+// index can't desync from a stale scroll position. Pure so the session-isolation
+// behaviour is pinned by a unit test, not a manual rebuild.
+//
+// The second value was a PAGE index before the grid learned to scroll by row
+// (emotescroll.go); it is a row now. The contract is unchanged — "keep it, or
+// zero both" — which is why the signature and every caller stayed put.
+func clampEmoteSel(idx, row, n int) (int, int) {
 	if idx < 0 || idx >= n {
 		return 0, 0
 	}
-	return idx, page
+	return idx, row
 }
 
 // loadCharINI fetches the ACTIVE character's char.ini for the emote list
@@ -8138,7 +8163,7 @@ func (a *App) pollCharINI() {
 			a.warnLine = clampLine("char.ini for " + a.activeCharName() + ": " + reason + " — using a default emote")
 			a.warnAt = time.Now()
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
-			a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
+			a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
 			// The char.ini never arrived, so this character declares no default side.
 			// CLEARING is the whole point: without it the PREVIOUS character's default
 			// survives, pos_remove paints for a side the user never overrode, and one
@@ -8175,7 +8200,7 @@ func (a *App) pollCharINI() {
 		// freshly loaded list. A real character change (enterCourtroom / setIniswap)
 		// zeroes these synchronously before the fetch, so a fresh pick still starts
 		// at emote 0 — see clampEmoteSel.
-		a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
+		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Speculatively prefetch emote sprites at LOW priority (sheds under load, never blocks
 		// live HIGH fetches). #127: with the bundle toggle on, grab this character's FULL set —
@@ -8517,15 +8542,22 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				a.requestQuit()
 				handled = true
 			case ScreenCourtroom:
-				// AsyncAO is built for fullscreen, so Esc is the keyboard exit (playtest):
-				// the bare courtroom — nothing else open — leaves the server THROUGH the
-				// confirm (requestDisconnect), so an accidental tap can't instantly drop you
-				// on one stray keypress. A focused field (the IC input)
-				// eats the first Esc, exactly like every menu screen.
+				// GH #51: Esc in the bare courtroom TOGGLES THE EXTRAS BOX. It used to
+				// call requestDisconnect — one keypress from "leave the server", behind
+				// nothing but a confirm dialog, on the key people press reflexively to
+				// mean "get me out of this menu". Leaving is still one click away and now
+				// lives where every other session action already does: the Extras box's
+				// own Disconnect entry (extrasWidgets, floatbox.go), which goes through
+				// the same confirm. So the action did not disappear, it stopped being a
+				// keystroke.
+				//
+				// A focused field (the IC input) still eats the FIRST Esc, exactly like
+				// every menu screen — and under the Discord focus model (chatfocus.go)
+				// that rung is what lets you step out of the chat box at all.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
 				} else {
-					a.requestDisconnect()
+					a.toggleExtrasBox()
 				}
 				handled = true
 			case ScreenCharSelect:
@@ -8661,8 +8693,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollICPhraseBind()
 	a.pollVoicePTT()        // voice push-to-talk: capture the rebind, or toggle the mic on the bound key
 	a.pollStylePresetBind() // #126
-	a.pollAutoReconnect()   // M2: due auto-retry fires from the lobby; a single time-compare otherwise
-	a.pollTimer()           // #97 local alarm: one compare while running, zero cost when idle
+	// The Discord focus model (chatfocus.go): typing with nothing focused claims the
+	// IC input. AFTER every bind-capture poll above — an armed capture owns the next
+	// keypress and must not have it stolen — and BEFORE the screen draws, which is
+	// what makes the FIRST character land in the box instead of being eaten.
+	a.claimTypingForIC()
+	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
+	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
 	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
@@ -10228,6 +10265,12 @@ type icEntry struct {
 	speaker     string // displayed name prefix (for per-speaker name colours); "" = system/evidence line
 	stamp       string // local arrival time ("15:04"), formatted once on append; prefixed in the log when ICTimestamps is on
 	ref         uint32 // content-stable reaction ref (#2): MakeReactionRef(CharName, clean text); 0 = system line
+	// speech marks an entry that came from an IC MESSAGE and therefore has a
+	// counterpart in the courtroom's play queue — the pairing the ghost-text option
+	// counts on (ghosttext.go). Stamped by the EventMessage branch the same way
+	// `ref` is, so a system line (music, evidence, a client notice) can never be
+	// mistaken for something a character is about to say.
+	speech bool
 }
 
 // icStampLayout formats the IC log's per-line local time (24-hour HH:MM).

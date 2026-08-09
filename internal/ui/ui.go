@@ -449,22 +449,40 @@ type Ctx struct {
 	lastClickY     int32
 	ctrlHeld       bool // live modifier state (Ctrl+wheel font sizing)
 	shiftHeld      bool // live modifier state (shift-extend text selection)
-	rightClicked   bool
-	wheelY         int32
-	typed          string
-	backspace      bool
-	enter          bool
-	tabPressed     bool
-	escPressed     bool
-	fullscreenReq  bool        // F11: toggle fullscreen this frame (consumed in app.Frame)
-	keyPressed     sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
-	pasted         string      // Ctrl+V clipboard text (flattened to one line)
-	copyReq        bool        // Ctrl+C: focused field copies its selection (else value)
-	cutReq         bool        // Ctrl+X: focused field cuts its selection (else clears)
-	selectAll      bool        // Ctrl+A armed: the focused field converts it to a real all-selection
-	undoReq        bool        // Ctrl+Z routed to the focused field (App consumes the chord pre-screen)
-	redoReq        bool        // Ctrl+Y / Ctrl+Shift+Z, same routing
-	wordBack       bool        // Ctrl+Backspace in a focused field: delete the preceding word (event flag; gated on wordDeleteOn at consumption)
+	// altHeld is the live Alt state. It became load-bearing when the bare-key
+	// bind namespaces (character keys, showname keys, IC phrases, jukebox keys,
+	// the emote number row) moved onto Alt chords so they stop competing with the
+	// IC input for plain letters — see bareBindKey (qol.go). Read with !ctrlHeld
+	// everywhere, because AltGr on Windows reports as Ctrl+Alt and DOES produce
+	// text: a bare altHeld test would eat every accented character on a European
+	// keyboard layout.
+	altHeld       bool
+	rightClicked  bool
+	wheelY        int32
+	typed         string
+	backspace     bool
+	enter         bool
+	tabPressed    bool
+	escPressed    bool
+	fullscreenReq bool        // F11: toggle fullscreen this frame (consumed in app.Frame)
+	keyPressed    sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
+	pasted        string      // Ctrl+V clipboard text (flattened to one line)
+	copyReq       bool        // Ctrl+C: focused field copies its selection (else value)
+	cutReq        bool        // Ctrl+X: focused field cuts its selection (else clears)
+	selectAll     bool        // Ctrl+A armed: the focused field converts it to a real all-selection
+	undoReq       bool        // Ctrl+Z routed to the focused field (App consumes the chord pre-screen)
+	redoReq       bool        // Ctrl+Y / Ctrl+Shift+Z, same routing
+	wordBack      bool        // Ctrl+Backspace in a focused field: delete the preceding word (event flag; gated on wordDeleteOn at consumption)
+	// Word-granular editing chords, all captured the same way wordBack is (a
+	// focused field only — otherwise the key falls through to the configurable
+	// Ctrl hotkeys). wordFwdDel is Ctrl+Delete (the forward twin of
+	// Ctrl+Backspace, gated on the same WordDelete pref); wordLeft/wordRight are
+	// Ctrl+Left / Ctrl+Right caret JUMPS, which are navigation and therefore
+	// ungated — Shift composes with them through the existing c.shiftHeld
+	// extend path, so Ctrl+Shift+arrow selects by word for free.
+	wordFwdDel bool
+	wordLeft   bool
+	wordRight  bool
 	// Text-field selection: the anchor end (rune index) in the FOCUSED field;
 	// -1 = no selection. The caret is the moving end. Like c.caret it belongs
 	// to caretField, and resets on focus change. prevMouseDown feeds the
@@ -577,6 +595,24 @@ type Ctx struct {
 	// is never stamped would leave the feature dead despite defaulting ON. Not
 	// parked/reset: it's config state, not per-frame input.
 	wordDeleteOn bool
+	// The focused field's STICKY horizontal scroll. It used to be recomputed from
+	// scratch every frame as "centre the caret" (scrollFor), which meant a
+	// click-to-caret — and every mouse-move of a drag-selection — re-centred the
+	// view and slid the text out from under the cursor mid-gesture. Now the view
+	// stays exactly where it is and only moves when the caret would otherwise
+	// leave it (scrollKeep), which is what every native editor does. Belongs to
+	// fieldScrollID the way c.caret belongs to caretField, and resets with focus.
+	fieldScrollID string
+	fieldScroll   int32
+	// One-slot right-gutter reservation for the NEXT text field with this id
+	// (ReserveFieldTail). A widget the caller paints INSIDE a field's box — the IC
+	// message counter, the muted chip — declares its width here so the field's
+	// text is clipped before it instead of running underneath it. Single slot, not
+	// a map: exactly one field per frame needs it, and a map would put an
+	// allocation on the draw path. Cleared each BeginFrame, so an unconsumed
+	// reservation can never leak into the next frame's layout.
+	tailReserveID string
+	tailReserveW  int32
 
 	// Tab focus cycling (playtest: Tab out of the IC box landed on the wrong
 	// field): TextField records draw order here each frame; the next
@@ -584,7 +620,16 @@ type Ctx struct {
 	// Order is DRAW order; orderTabChain (tabchain.go) re-seats the chat
 	// block into AO2's showname → IC → OOC → OOC-name chain at Tab time.
 	fieldSeq []string
-	tabShift bool // shift held at the Tab press → cycle backwards
+	// drawnFieldSeq is the field order of the last frame that FINISHED drawing —
+	// the double-buffer partner of fieldSeq, swapped in BeginDraw. It exists
+	// because fieldSeq is empty for the whole pre-screen half of App.Frame:
+	// BeginDraw truncates it at the top of the pass and the TextFields only
+	// re-register ~280 lines later, so a pre-screen reader (claimTypingForIC,
+	// chatfocus.go) asking fieldSeq "is that box on screen?" always got "no" and
+	// its whole feature was dead code. Swapped, never copied, so the answer costs
+	// no allocation and no per-frame walk.
+	drawnFieldSeq []string
+	tabShift      bool // shift held at the Tab press → cycle backwards
 	// focusNext is a queued FocusField request, applied at the next
 	// BeginFrame so it survives this frame's click-away unfocus no matter
 	// where the requesting widget sits in draw order.
@@ -1995,7 +2040,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 		c.caretOn = true // land visible: the caret shows where focus went
 		c.caretAcc = 0
 	}
-	// fieldSeq deliberately does NOT clear here: it clears in BeginDraw, at
+	// fieldSeq deliberately does NOT clear here: it rolls over in BeginDraw, at
 	// the top of a real draw pass. BeginFrame also runs on frames the loop
 	// SKIPS (static-screen passes draw nothing), and clearing it there left
 	// the tab-cycle above reading an empty list — a Tab pressed after a
@@ -2037,6 +2082,8 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.typed = ""
 	c.backspace = false
 	c.wordBack = false
+	c.wordFwdDel, c.wordLeft, c.wordRight = false, false, false
+	c.tailReserveID, c.tailReserveW = "", 0
 	c.enter = false
 	c.tabPressed = false
 	c.escPressed = false
@@ -2059,6 +2106,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	mods := sdl.GetModState()
 	c.ctrlHeld = mods&sdl.KMOD_CTRL != 0
 	c.shiftHeld = mods&sdl.KMOD_SHIFT != 0
+	c.altHeld = mods&sdl.KMOD_ALT != 0
 	if !c.mouseDown {
 		c.dragID = "" // drags end with the button release
 	}
@@ -2087,8 +2135,15 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 // draws): the visible-field order rebuilds from scratch as this frame's
 // TextFields register. Split from BeginFrame so input-only skipped passes
 // keep the last drawn frame's field order for Tab cycling (see BeginFrame).
+//
+// The truncate is a SWAP, not a clear: the outgoing list becomes drawnFieldSeq
+// (what is on screen right now) and this frame builds into the buffer that held
+// the frame-before-last's, so both answers exist for the whole pass and neither
+// costs an allocation. Without it every pre-screen reader of "did this field
+// draw?" — App.Frame runs ~280 lines of them before the first TextField
+// registers — was reading an empty list.
 func (c *Ctx) BeginDraw() {
-	c.fieldSeq = c.fieldSeq[:0]
+	c.drawnFieldSeq, c.fieldSeq = c.fieldSeq, c.drawnFieldSeq[:0]
 }
 
 // NextCaretFlip reports the time until the focused caret next toggles
@@ -2236,6 +2291,32 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				// consumed no-op that never leaks to a hotkey mid-typing.
 				if c.focusID != "" {
 					c.wordBack = true
+				} else {
+					c.hotkey = e.Keysym.Sym
+				}
+			case sdl.K_DELETE:
+				// Ctrl+Delete = the FORWARD word delete, Ctrl+Backspace's twin. Same
+				// focused-only capture rule and the same WordDelete pref gate at
+				// consumption, for the same reason: with the pref off it must be a
+				// consumed no-op inside a field, never a key that leaks to a hotkey
+				// while you are typing.
+				if c.focusID != "" {
+					c.wordFwdDel = true
+				} else {
+					c.hotkey = e.Keysym.Sym
+				}
+			case sdl.K_LEFT, sdl.K_RIGHT:
+				// Ctrl+arrow = word-granular caret jump; with Shift the existing
+				// extend path (c.shiftHeld in textField) turns it into a word-granular
+				// SELECTION. Navigation, so it is NOT gated on the WordDelete pref —
+				// that preference is about destructive edits. Unfocused it falls
+				// through to the configurable hotkeys like every other Ctrl chord.
+				if c.focusID != "" {
+					if e.Keysym.Sym == sdl.K_LEFT {
+						c.wordLeft = true
+					} else {
+						c.wordRight = true
+					}
 				} else {
 					c.hotkey = e.Keysym.Sym
 				}
@@ -3425,6 +3506,37 @@ func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 // after an emote pick — AO2-Client's focus_ic_input parity).
 func (c *Ctx) FocusField(id string) { c.focusNext = id }
 
+// ReserveFieldTail declares that px logical pixels at the RIGHT edge of the next
+// text field drawn with this id belong to something the caller paints on top of
+// it — the IC character counter, the muted chip. The field shrinks its text
+// interior by that much, so the value clips (and the keep-caret-visible scroll
+// turns over) BEFORE the reserved band instead of typing straight through it.
+//
+// Declared by the caller rather than sniffed by the field because only the
+// caller knows what it is about to paint, and the width is usually a measured
+// string. One slot: the reservation is keyed to an id and consumed by the first
+// field that matches, and BeginFrame clears it, so a caller that reserves for a
+// field which then does not draw cannot mis-size an unrelated one next frame.
+// px <= 0 is a no-op, so a caller whose overlay is currently hidden simply
+// skips the call.
+func (c *Ctx) ReserveFieldTail(id string, px int32) {
+	if id == "" || px <= 0 {
+		return
+	}
+	c.tailReserveID, c.tailReserveW = id, px
+}
+
+// takeFieldTail consumes a pending ReserveFieldTail for id (0 if none is
+// pending, or it was declared for a different field).
+func (c *Ctx) takeFieldTail(id string) int32 {
+	if c.tailReserveID != id {
+		return 0
+	}
+	w := c.tailReserveW
+	c.tailReserveID, c.tailReserveW = "", 0
+	return w
+}
+
 // WheelIn returns this frame's wheel ticks when the cursor is inside r and no
 // earlier widget consumed them, else 0 — scrollables only react under the
 // pointer (playtest: the music list scrolled on wheel from anywhere on screen),
@@ -3441,6 +3553,26 @@ func (c *Ctx) WheelIn(r sdl.Rect) int32 {
 	}
 	c.wheelTaken = true
 	return c.wheelY
+}
+
+// fieldDrewLastFrame reports whether a TextField with this id was painted on the
+// last frame that actually drew — the one honest answer to "is that box on screen
+// right now?" available before this frame's draw pass has run.
+//
+// It reads drawnFieldSeq, NOT fieldSeq, and the difference is the whole
+// correctness of it: fieldSeq is the list THIS pass is building, and every
+// pre-screen caller runs after BeginDraw emptied it. Reading fieldSeq here made
+// claimTypingForIC refuse every keystroke in the shipped app while the unit gate
+// stayed green on a hand-seeded list. drawnFieldSeq survives skipped frames for
+// free (BeginDraw is what swaps, and a skipped pass never calls it), which is the
+// property the Tab cycle needs too. Linear over a handful of ids, no allocation.
+func (c *Ctx) fieldDrewLastFrame(id string) bool {
+	for _, f := range c.drawnFieldSeq {
+		if f == id {
+			return true
+		}
+	}
+	return false
 }
 
 // cycleField picks the next focus target for Tab / Shift+Tab: the field
@@ -3497,6 +3629,11 @@ const (
 	editHome
 	editEnd
 	editDelete
+	// Word-granular caret jumps (Ctrl+Left / Ctrl+Right). They are ops, not a
+	// separate flag pair, so the ONE shift-extend rule in textField ("a nav op
+	// with shift held moves only the caret") covers them without a second copy.
+	editWordLeft
+	editWordRight
 )
 
 // editInput is one frame of edits to a focused text field. selStart/selEnd
@@ -3507,6 +3644,7 @@ type editInput struct {
 	typed            string // inserted text (typed + pasted)
 	back             bool   // backspace (delete the rune before the caret)
 	wordBack         bool   // Ctrl+Backspace: delete the preceding word (trailing whitespace + the run before it)
+	wordFwd          bool   // Ctrl+Delete: delete the FOLLOWING word (the run after the caret + the whitespace glued to it)
 	op               editOp // caret move or forward delete
 	selStart, selEnd int    // active selection (rune range); selEnd <= selStart = none
 }
@@ -3528,6 +3666,31 @@ func wordDeleteBoundary(runes []rune, pos int) int {
 	}
 	for i > 0 && !unicode.IsSpace(runes[i-1]) { // then eat the non-whitespace word
 		i--
+	}
+	return i
+}
+
+// wordForwardBoundary is wordDeleteBoundary's mirror: the rune index a
+// Ctrl+Delete / Ctrl+Right at pos should reach, walking FORWARD. It eats the
+// non-whitespace run under the caret first and then the whitespace glued to its
+// right, which is the same convention read the other way round — Ctrl+Delete
+// takes "word + the gap after it" exactly as Ctrl+Backspace takes "the gap
+// before it + word". [pos, result) is the range to remove; the caret stays at
+// pos for a delete and MOVES to result for a jump. Pure and rune-aware, so it
+// unit-tests without SDL.
+func wordForwardBoundary(runes []rune, pos int) int {
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(runes) {
+		pos = len(runes) // the clamp its backward twin has: an over-long caret answers the END, not itself
+	}
+	i := pos
+	for i < len(runes) && !unicode.IsSpace(runes[i]) { // the word under/after the caret
+		i++
+	}
+	for i < len(runes) && unicode.IsSpace(runes[i]) { // then the whitespace run after it
+		i++
 	}
 	return i
 }
@@ -3557,8 +3720,9 @@ func editStep(value string, caret int, in editInput) (string, int) {
 	}
 	if sel := selB > selA; sel {
 		// A word-delete with an active selection deletes just the selection,
-		// exactly like a plain backspace does (in.wordBack joins in.back here).
-		if in.typed != "" || in.back || in.wordBack || in.op == editDelete {
+		// exactly like a plain backspace does (in.wordBack / in.wordFwd join
+		// in.back here).
+		if in.typed != "" || in.back || in.wordBack || in.wordFwd || in.op == editDelete {
 			t := []rune(in.typed)
 			out := make([]rune, 0, len(runes)-(selB-selA)+len(t))
 			out = append(out, runes[:selA]...)
@@ -3575,6 +3739,12 @@ func editStep(value string, caret int, in editInput) (string, int) {
 			return value, 0
 		case editEnd:
 			return value, len(runes)
+		case editWordLeft:
+			// A word jump over a selection collapses to that edge and THEN jumps,
+			// which is what a native field does (the selection is not a wall).
+			return value, wordDeleteBoundary(runes, selA)
+		case editWordRight:
+			return value, wordForwardBoundary(runes, selB)
 		}
 		return value, caret
 	}
@@ -3593,6 +3763,13 @@ func editStep(value string, caret int, in editInput) (string, int) {
 		out = append(out, runes[:start]...)
 		out = append(out, runes[caret:]...)
 		return string(out), start
+	case in.wordFwd && caret < len(runes):
+		// Ctrl+Delete: remove [caret, end-of-next-word). The caret does not move.
+		end := wordForwardBoundary(runes, caret)
+		out := make([]rune, 0, len(runes)-(end-caret))
+		out = append(out, runes[:caret]...)
+		out = append(out, runes[end:]...)
+		return string(out), caret
 	case in.back && caret > 0:
 		out := make([]rune, 0, len(runes)-1)
 		out = append(out, runes[:caret-1]...)
@@ -3611,6 +3788,10 @@ func editStep(value string, caret int, in editInput) (string, int) {
 		caret = 0
 	case in.op == editEnd:
 		caret = len(runes)
+	case in.op == editWordLeft:
+		caret = wordDeleteBoundary(runes, caret)
+	case in.op == editWordRight:
+		caret = wordForwardBoundary(runes, caret)
 	}
 	return value, caret
 }
@@ -3649,7 +3830,14 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	c.Border(r, border)
 
 	const padX = 6
-	avail := r.W - 2*padX
+	// The interior the VALUE may use. A caller-declared tail reservation
+	// (ReserveFieldTail — the IC message counter) shrinks it from the right, so
+	// typed text clips before the counter instead of running underneath it.
+	// Consumed here so exactly one field can honour it per frame.
+	avail := r.W - 2*padX - c.takeFieldTail(id)
+	if avail < 0 {
+		avail = 0
+	}
 	// maskOf maps a value to what's drawn (one '*' per rune when masked). The
 	// caret math measures the DISPLAY, so a password field never leaks its value.
 	maskOf := func(v string) string {
@@ -3660,6 +3848,9 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	}
 	if !focused && c.caretField == id {
 		c.caretField = "" // dropped focus → a future re-focus resets the caret to the end
+	}
+	if !focused && c.fieldScrollID == id {
+		c.fieldScrollID, c.fieldScroll = "", 0 // …and the view goes back to head-aligned
 	}
 
 	enter := false
@@ -3698,8 +3889,15 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		if (press && hover && c.dragID == "") || (c.dragID == id && c.mouseDown) {
 			pre := maskOf(value)
 			preRaster := c.fieldRaster(fb, mask, pre)
-			preRC := utf8.RuneCountInString(pre)
-			preScroll := scrollFor(c.fieldPrefixW(pre, preRaster, preRC), c.fieldPrefixW(pre, preRaster, c.caret), avail)
+			// The scroll the user is LOOKING AT — the one this field was drawn with
+			// last frame — never a freshly re-derived one. Re-deriving it CENTRED the
+			// caret, so the pixel under the pointer named a different rune than the
+			// one drawn there and the text slid out from under a drag-selection. A
+			// field that does not own the sticky scroll was drawn head-aligned, i.e. 0.
+			preScroll := int32(0)
+			if c.fieldScrollID == id {
+				preScroll = c.fieldScroll
+			}
 			idx := c.fieldIndexAtX(pre, preRaster, c.mouseX-(r.X+padX)+preScroll)
 			if press && hover && c.dragID == "" {
 				if c.shiftHeld {
@@ -3776,7 +3974,12 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			// the pref off, a focused Ctrl+Backspace was still captured (wordBack
 			// set, never routed to c.hotkey), so it becomes a consumed no-op — it
 			// can't leak into a Ctrl+Backspace hotkey mid-typing.
-			in := editInput{typed: c.typed + c.pasted, back: c.backspace, wordBack: c.wordBack && c.wordDeleteOn}
+			in := editInput{
+				typed:    c.typed + c.pasted,
+				back:     c.backspace,
+				wordBack: c.wordBack && c.wordDeleteOn,
+				wordFwd:  c.wordFwdDel && c.wordDeleteOn,
+			}
 			switch c.keyPressed {
 			case sdl.K_LEFT:
 				in.op = editLeft
@@ -3789,9 +3992,22 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			case sdl.K_DELETE:
 				in.op = editDelete
 			}
-			if in.typed != "" || in.back || in.wordBack || in.op != editNone {
-				nav := in.op == editLeft || in.op == editRight || in.op == editHome || in.op == editEnd
-				extend := nav && in.typed == "" && !in.back && !in.wordBack && c.shiftHeld
+			// The Ctrl+arrow jumps arrive on their OWN flags, not keyPressed: a Ctrl
+			// chord never reaches keyPressed (HandleEvent's ctrl branch returns), so
+			// they are folded in here. A plain arrow this frame wins — pressing both
+			// at once is not a thing a keyboard produces.
+			if in.op == editNone {
+				switch {
+				case c.wordLeft:
+					in.op = editWordLeft
+				case c.wordRight:
+					in.op = editWordRight
+				}
+			}
+			if in.typed != "" || in.back || in.wordBack || in.wordFwd || in.op != editNone {
+				nav := in.op == editLeft || in.op == editRight || in.op == editHome || in.op == editEnd ||
+					in.op == editWordLeft || in.op == editWordRight
+				extend := nav && in.typed == "" && !in.back && !in.wordBack && !in.wordFwd && c.shiftHeld
 				if extend {
 					// Shift+arrow/Home/End extends: fix the anchor, move only
 					// the caret (the selection is anchor..caret).
@@ -3847,7 +4063,15 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	scroll, caretX := int32(0), int32(0)
 	if focused {
 		caretX = c.fieldPrefixW(display, fbRaster, c.caret)
-		scroll = scrollFor(fullW, caretX, avail)
+		// STICKY: the view only moves when the caret would leave it. Ownership
+		// transfers on focus (a fresh field starts head-aligned and scrollKeep
+		// pulls the end into view on the first frame, which is where the caret
+		// lands), so exactly one field's scroll is live at a time.
+		if c.fieldScrollID != id {
+			c.fieldScrollID, c.fieldScroll = id, 0
+		}
+		c.fieldScroll = scrollKeep(c.fieldScroll, fullW, caretX, avail)
+		scroll = c.fieldScroll
 	}
 	// The focused ASCII field draws its moving parts (selection, value texture,
 	// caret) DEVICE-EXACT at a fractional UI scale (#77 S1/S2): under a fractional
@@ -4098,14 +4322,50 @@ func (c *Ctx) fieldIndexAtX(display string, m *render.MessageRaster, relX int32)
 	return n
 }
 
-// scrollFor is the keep-the-caret-visible horizontal scroll for a field of
-// interior width avail (caret roughly centered once the text overflows).
-// Stateless (deterministic per caret), so it never jitters frame to frame.
-func scrollFor(fullW, caretX, avail int32) int32 {
+// fieldCaretMarginPx is how much text scrollKeep keeps visible PAST the caret
+// when it is forced to move the view. A hard 0 would park the caret exactly on
+// the box edge, where the next keystroke immediately scrolls again (a one-glyph
+// stutter per character); a small lead means one nudge covers several runes and
+// you can see what you are about to overwrite. Logical px, so it tracks the UI
+// scale like every other field metric.
+const fieldCaretMarginPx = int32(16)
+
+// scrollKeep is the STICKY keep-the-caret-visible horizontal scroll: it returns
+// `cur` unchanged whenever the caret is already inside the visible interior, and
+// otherwise moves the view the SMALLEST distance that brings the caret back in
+// (plus fieldCaretMarginPx of lead). Always clamped to [0, fullW-avail], so a
+// value that shrank underneath the field can never leave a gap on the right.
+//
+// It replaces the old stateless "centre the caret" rule. That rule recomputed
+// the view from the caret every frame, which meant clicking into a long line —
+// or dragging a selection through one — re-centred the text under the pointer
+// mid-gesture: the glyph you pressed on moved before the button came up. Native
+// fields do not move the view on a click at all, which is exactly what returning
+// `cur` for an already-visible caret gives.
+func scrollKeep(cur, fullW, caretX, avail int32) int32 {
 	if fullW <= avail || avail <= 0 {
-		return 0
+		return 0 // it all fits: head-aligned, no scroll state to keep
 	}
-	s := caretX - avail/2
+	maxScroll := fullW - avail
+	s := cur
+	if s > maxScroll {
+		s = maxScroll
+	}
+	if s < 0 {
+		s = 0
+	}
+	// The margin can never exceed half the interior, or the two clamps below
+	// would fight on a very narrow box and oscillate.
+	margin := fieldCaretMarginPx
+	if half := avail / 2; margin > half {
+		margin = half
+	}
+	if caretX-s < margin { // caret ran off the left edge
+		s = caretX - margin
+	}
+	if caretX-s > avail-margin { // …or the right one
+		s = caretX - (avail - margin)
+	}
 	if s < 0 {
 		s = 0
 	}

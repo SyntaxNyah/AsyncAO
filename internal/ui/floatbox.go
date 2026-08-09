@@ -192,6 +192,22 @@ func (a *App) extrasWidgets() []extrasWidget {
 	return a.extrasWidgetCache
 }
 
+// toggleExtrasBox shows/hides the AsyncAO Extras box. ONE implementation, because
+// two keys reach it now: the configurable Ctrl chord (hotkeyExtras) and — since
+// GH #51 — Esc in the bare courtroom, which used to leave the server outright.
+//
+// Theater is stage-only (setTheater's invariant): summoning the box from there
+// means "give me the UI back", so it exits theater and shows the box rather than
+// drawing floating chrome over the bare stage.
+func (a *App) toggleExtrasBox() {
+	if a.theaterOn {
+		a.setTheater(false)
+		a.showWidgets = true
+		return
+	}
+	a.showWidgets = !a.showWidgets
+}
+
 // extrasPalette is the resolved Extras-box theme for a frame. Empty prefs leave
 // every field at the stock kit colour, so the default look (and cost) is unchanged.
 type extrasPalette struct {
@@ -321,10 +337,11 @@ func (a *App) pollVoicePTT() {
 		}
 		return
 	}
-	if !a.voiceJoined || c.keyPressed == 0 || c.focusID != "" || c.ctrlHeld || a.capturingKey() {
+	k := a.bareBindKey() // Alt+<bound key>, like every other plain-key namespace (qol.go)
+	if !a.voiceJoined || k == 0 {
 		return
 	}
-	if key := a.d.Prefs.VoicePTT(); key != "" && sdl.GetKeyName(c.keyPressed) == key {
+	if key := a.d.Prefs.VoicePTT(); key != "" && sdl.GetKeyName(k) == key {
 		a.voiceSetMic(!a.voiceMicOn)
 		c.keyPressed = 0
 	}

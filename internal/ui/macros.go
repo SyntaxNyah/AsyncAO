@@ -150,16 +150,17 @@ func (a *App) runMacro(m config.MacroSpec) {
 	a.pushDebug(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
 }
 
-// handleMacroKeys fires key-bound macros on a bare keypress — same
-// guards as character keybinds: no focused field, no capture armed, no
-// Ctrl chord. Macro binds win over character binds on conflict (they
-// were bound deliberately; the wardrobe badge shows char binds).
+// handleMacroKeys fires key-bound macros on Alt+<bound key> — the shared
+// bareBindKey gate every plain-key namespace moved onto (qol.go; the cheat sheet
+// already advertised macros as a chord, so this is also what makes that row
+// truthful). Macro binds win over character binds on conflict (they were bound
+// deliberately; the wardrobe badge shows char binds).
 func (a *App) handleMacroKeys() bool {
-	c := a.ctx
-	if c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || a.macroBind >= 0 || c.ctrlHeld {
+	k := a.bareBindKey()
+	if k == 0 {
 		return false
 	}
-	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
+	key := strings.ToLower(sdl.GetKeyName(k))
 	for _, m := range a.d.Prefs.Macros() {
 		if m.Key != "" && m.Key == key {
 			a.runMacro(m)
@@ -375,10 +376,11 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 
 	removeIdx := -1
 	for i, m := range macros {
-		key := m.Key
-		if key == "" {
-			key = "—"
-		}
+		// The CHORD, not m.Key: handleMacroKeys goes through bareBindKey (qol.go),
+		// so the chain fires on Alt+<key> and a row printing the bare letter would
+		// advertise a press that just types into the IC box. A list row has no
+		// capture of its own, hence armed=false.
+		key := bindChipLabel(m.Key, false, "", "—")
 		line := fmt.Sprintf("[%s] %s: %s", key, m.Name, strings.Join(m.Lines, " "+macroLineSeparator+" "))
 		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(line), ColTextDim)
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 56, Y: y, W: 50, H: 22}, "✕") {
@@ -393,13 +395,7 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 
 	// Editor row: name, key capture, lines, add.
 	settings.macroName, _ = c.TextField("macroname", sdl.Rect{X: pad, Y: y, W: 130, H: fieldH}, settings.macroName, "name")
-	keyLabel := "key: " + settings.macroKey
-	if settings.macroKey == "" {
-		keyLabel = "set key"
-	}
-	if a.macroBind >= 0 {
-		keyLabel = "press..."
-	}
+	keyLabel := bindChipLabel(settings.macroKey, a.macroBind >= 0, "press...", "set key")
 	if c.Button(sdl.Rect{X: pad + 136, Y: y, W: 86, H: btnH}, keyLabel) {
 		a.macroBind = 0 // arm capture (Esc cancels)
 		a.ctx.focusID = ""
@@ -422,7 +418,9 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 		}
 	}
 	y += 30
-	c.Label(pad, y, "Sends go to OOC as your OOC name (or AsyncAO<n> when unset); key fires with no text box focused.", ColTextDim)
+	// The focus fence is gone: handleMacroKeys reads bareBindKey, and an Alt chord
+	// is never text, so the chain fires even mid-sentence in the IC box.
+	c.Label(pad, y, "Sends go to OOC as your OOC name (or AsyncAO<n> when unset); the chain fires on "+bareBindChordPrefix+"<key>, even while you are typing.", ColTextDim)
 	return y + 24
 }
 

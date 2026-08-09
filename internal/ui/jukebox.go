@@ -3,7 +3,9 @@ package ui
 // Jukebox: the Wardrobe's music-link library. AO DJs/CMs stream music by
 // typing "/play <url>" in OOC (YouTube/Discord links etc.); this stores those
 // links in named playlists so you click instead of paste, shuffle a set, or
-// fire a song from a bare key. The data is GLOBAL (config.Jukebox, its own
+// fire a song from a bound key (Alt+<key> — see bareBindKey in qol.go; this
+// namespace was a bare letter until the IC input claimed that space). The
+// data is GLOBAL (config.Jukebox, its own
 // async file) — shared across every server. Render-thread only; the store does
 // the disk I/O off-thread.
 
@@ -561,16 +563,17 @@ func (a *App) refreshJukeFilter(pl int, entries []config.JukeboxEntry, query str
 	}
 }
 
-// handleJukeboxKeys fires a bare-key jukebox bind from the courtroom: an entry
-// key /plays that song, a playlist key /plays a random song from it. Slotted
-// between macros and char/emote keys (so it shadows char binds and the emote
-// 1-9 digits — a deliberate trade for a DJ). Returns true if it fired.
+// handleJukeboxKeys fires a jukebox bind from the courtroom on Alt+<bound key>
+// (the shared bareBindKey gate — qol.go): an entry key /plays that song, a
+// playlist key /plays a random song from it. Slotted between macros and
+// char/emote keys (so it shadows char binds and the emote 1-9 digits — a
+// deliberate trade for a DJ). Returns true if it fired.
 func (a *App) handleJukeboxKeys() bool {
-	c := a.ctx
-	if a.juke == nil || c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || a.jukeBindFor != "" || a.macroBind >= 0 || c.ctrlHeld {
+	k := a.bareBindKey()
+	if a.juke == nil || k == 0 {
 		return false
 	}
-	if url, ok := a.juke.ResolveKey(strings.ToLower(sdl.GetKeyName(c.keyPressed))); ok {
+	if url, ok := a.juke.ResolveKey(strings.ToLower(sdl.GetKeyName(k))); ok {
 		a.jukePlay(url)
 		return true
 	}
@@ -616,20 +619,20 @@ func (a *App) applyJukeKey(target, key string) {
 	}
 }
 
-// drawJukeKeyBadge draws a bare-key bind chip: shows the bound key, click to
-// arm a capture, right-click to clear.
+// drawJukeKeyBadge draws a bind chip: shows the CHORD that fires the bind, click
+// to arm a capture, right-click to clear. The chip prints bareBindLabel rather
+// than the raw letter — handleJukeboxKeys goes through bareBindKey (qol.go), so a
+// chip reading "M" would advertise a press that only types into the IC box now.
 func (a *App) drawJukeKeyBadge(r sdl.Rect, bound, target string) {
 	c := a.ctx
-	label, col := bound, ColAccent
-	switch {
-	case a.jukeBindFor == target:
-		label = "press…"
-	case bound == "":
-		label, col = "key", ColTextDim
+	armed := a.jukeBindFor == target
+	label, col := bindChipLabel(bound, armed, "press…", "key"), ColAccent
+	if bound == "" && !armed {
+		col = ColTextDim // an empty chip is a hint, not a value
 	}
 	c.Fill(r, ColPanelHi)
 	c.LabelClipped(r.X+4, r.Y+(r.H-14)/2, r.W-6, label, col)
-	c.Tooltip(r, "Bind a key (click, then press a key; right-click clears)")
+	c.Tooltip(r, "Bind a key (click, then press a key) — it fires on "+bareBindChordPrefix+"that key. Right-click clears.")
 	if c.hovering(r) {
 		if c.clicked {
 			a.bindingFor = "" // don't also arm a character keybind

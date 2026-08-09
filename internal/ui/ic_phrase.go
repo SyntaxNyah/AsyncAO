@@ -8,11 +8,13 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// IC quick-phrases: bind a bare key to a canned IC line ("E → Happy Pride Month")
-// so pressing it makes your CHARACTER say that line in IC — the IC counterpart to
-// the OOC-only macros. Same shape as the showname keybinds (showname_bind.go): a
-// global key→text map, cached per connect, dispatched on a bare keypress, and a
-// Settings key-capture to set one.
+// IC quick-phrases: bind a key to a canned IC line ("Alt+E → Happy Pride Month")
+// so pressing that chord makes your CHARACTER say the line in IC — the IC
+// counterpart to the OOC-only macros. Same shape as the showname keybinds
+// (showname_bind.go): a global key→text map, cached per connect, dispatched
+// through the shared Alt gate (bareBindKey, qol.go), and a Settings key-capture to
+// set one. You still press the bare letter to BIND it; it FIRES as Alt+<key>,
+// which is why every row here prints bareBindLabel and not the raw letter.
 
 // refreshICPhraseKeys re-reads the global key→IC-phrase binds into the per-frame
 // lookup cache (connect + bind edits only, never per frame).
@@ -20,17 +22,17 @@ func (a *App) refreshICPhraseKeys() {
 	a.icPhraseKeys = a.d.Prefs.ICPhraseBinds()
 }
 
-// handleICPhraseKeys sends a bound IC phrase on a bare keypress in the courtroom —
-// only with no text field focused, no capture armed, and no Ctrl chord, so typing
-// never fires one. Returns true when it consumed the key (so the character/emote
-// binds don't also fire on the same press). Mirrors handleShownameKeys.
+// handleICPhraseKeys sends a bound IC phrase on Alt+<bound key> in the courtroom
+// — the shared bareBindKey gate every plain-key namespace moved onto (qol.go), so
+// typing the same letter can never fire one. Returns true when it consumed the
+// key (so the character/emote binds don't also fire on the same press). Mirrors
+// handleShownameKeys.
 func (a *App) handleICPhraseKeys() bool {
-	c := a.ctx
-	if c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || a.shownameBindFor != "" ||
-		a.icPhraseBindFor != "" || a.jukeBindFor != "" || a.macroBind >= 0 || c.ctrlHeld {
+	k := a.bareBindKey()
+	if k == 0 {
 		return false
 	}
-	phrase, ok := a.icPhraseKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))]
+	phrase, ok := a.icPhraseKeys[strings.ToLower(sdl.GetKeyName(k))]
 	if !ok || a.sess == nil {
 		return false
 	}
@@ -94,7 +96,7 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	}
 	sort.Strings(keys) // stable display order
 	for _, k := range keys {
-		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(fmt.Sprintf("[%s]  %s", strings.ToUpper(k), binds[k])), ColTextDim)
+		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(fmt.Sprintf("[%s]  %s", bareBindLabel(k), binds[k])), ColTextDim)
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 56, Y: y, W: 50, H: 22}, "✕") {
 			a.d.Prefs.SetICPhraseKey(k, "") // empty clears the bind
 			a.refreshICPhraseKeys()
@@ -117,6 +119,9 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 		}
 	}
 	y += 30
-	c.Label(pad, y, "Fires with no text box focused, as your character with your current emote. A /command phrase runs the command.", ColTextDim)
+	// NOT "with no text box focused" any more: bareBindKey dropped the focus fence
+	// outright when the namespace moved onto Alt, because an Alt chord is never
+	// text — the phrase fires even mid-sentence in the IC box.
+	c.Label(pad, y, "Fires on "+bareBindChordPrefix+"<key>, even while you are typing, as your character with your current emote. A /command phrase runs the command.", ColTextDim)
 	return y + 24
 }

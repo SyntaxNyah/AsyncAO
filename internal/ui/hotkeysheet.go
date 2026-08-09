@@ -99,19 +99,21 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	if macros := a.d.Prefs.Macros(); len(macros) > 0 {
 		out = append(out, hkEntry{label: "Your macros", header: true})
 		for _, m := range macros {
-			key := "(no key)"
-			if m.Key != "" {
-				key = "Ctrl+" + strings.ToUpper(m.Key)
-			}
-			out = append(out, hkEntry{key: key, label: m.Name, custom: true})
+			// Alt+, not Ctrl+: this row has always LIED. handleMacroKeys reads
+			// c.keyPressed, which a Ctrl chord never reaches (HandleEvent routes those
+			// to c.hotkey and returns), so the bind was a bare key printed as a Ctrl
+			// one. It is a real Alt chord now (bareBindKey) and the row says the chord
+			// that actually fires it.
+			out = append(out, hkEntry{key: bareBindLabel(m.Key), label: m.Name, custom: true})
 		}
 	}
 
-	// Character keybinds (bare key wears a character; this server).
+	// The three user-bound key namespaces. They fire on ALT+<key> now, not on the
+	// bare letter (bareBindKey, qol.go — the Discord focus model gave every plain
+	// letter to the IC input), so the rows say so: a sheet that still printed a
+	// bare "M" would be advertising a key that no longer does anything.
 	out = appendKeyMapSection(out, "Character keys", a.charKeys, "Wear: ")
-	// Showname keybinds (bare/Ctrl per the binder; key → showname).
 	out = appendKeyMapSection(out, "Showname keys", a.shownameKeys, "Showname: ")
-	// IC quick-phrases (bare key sends a canned IC line).
 	out = appendKeyMapSection(out, "IC phrases", a.icPhraseKeys, "IC: ")
 	return out
 }
@@ -129,10 +131,15 @@ func appendKeyMapSection(out []hkEntry, header string, binds map[string]string, 
 	sort.Strings(keys)
 	out = append(out, hkEntry{label: header, header: true})
 	for _, k := range keys {
-		out = append(out, hkEntry{key: strings.ToUpper(k), label: prefix + binds[k], custom: true})
+		out = append(out, hkEntry{key: bareBindLabel(k), label: prefix + binds[k], custom: true})
 	}
 	return out
 }
+
+// bareBindLabel / bareBindChordPrefix moved to bindlabel.go: the cheat sheet was
+// their only caller for a whole wave, which is precisely the drift they exist to
+// prevent, so the sanctioned spelling now lives in a file every bind surface can
+// see rather than inside this overlay's own source.
 
 // openHotkeyCheatSheet shows the cheat sheet and (re)builds its rows so a freshly
 // opened sheet reflects the current bindings. Used by the Extras menu entry; the

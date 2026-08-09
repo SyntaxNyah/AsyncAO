@@ -55,8 +55,10 @@ func TestStylePresetSaveApply(t *testing.T) {
 	}
 }
 
-// TestStylePresetKeyApply pins the keybind path: a key-bound preset is applied on a bare
-// keypress (with no field focused / no chord), and consumes the key.
+// TestStylePresetKeyApply pins the keybind path: a key-bound preset applies on
+// ALT + the bound key (the shared bareBindKey gate, qol.go) and consumes it, while
+// a BARE press of the same key does nothing — the plain-letter space belongs to
+// the IC input under the Discord focus model (chatfocus.go).
 func TestStylePresetKeyApply(t *testing.T) {
 	a := presetTestApp(t)
 	// Bind whatever name SDL gives this keycode (headless GetKeyName may differ), so the bind
@@ -68,18 +70,27 @@ func TestStylePresetKeyApply(t *testing.T) {
 	a.d.Prefs.AddStylePreset(config.StylePreset{Name: "Calm", Color: 5})
 	a.d.Prefs.SetStylePresetKey(0, key)
 
+	// Bare: inert. This is the arm that USED to be the passing one, and it is the
+	// whole point of the move — the old fence was "no field is focused", which the
+	// first-keystroke IC claim retired.
 	a.ctx.keyPressed = sdl.K_F2
+	if a.handleStylePresetKeys() {
+		t.Fatal("a BARE bound key must no longer apply a preset")
+	}
+	a.ctx.keyPressed, a.ctx.altHeld = sdl.K_F2, true
 	if !a.handleStylePresetKeys() {
-		t.Fatal("a bound key didn't apply its preset")
+		t.Fatal("Alt + a bound key didn't apply its preset")
 	}
 	if a.icColor != 5 {
 		t.Errorf("preset colour not applied via keybind: %d", a.icColor)
 	}
 
-	// A focused field suppresses it (so typing the key never swaps styles).
+	// Ctrl+Alt is AltGr on Windows and DOES produce text: it must never reach a
+	// bind namespace, or every accented character on a European layout would swap
+	// the style while you type it.
 	a.icColor = 0
-	a.ctx.focusID = "ic"
+	a.ctx.keyPressed, a.ctx.ctrlHeld = sdl.K_F2, true
 	if a.handleStylePresetKeys() {
-		t.Error("style keybind fired while a text field was focused")
+		t.Error("style keybind fired on Ctrl+Alt (AltGr)")
 	}
 }

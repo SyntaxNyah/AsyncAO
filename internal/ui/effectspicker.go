@@ -725,6 +725,13 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.overlayChoiceIdx, rowH, thumbW, a.overlayThumbFn)
 	if changed {
 		a.overlayChoiceIdx = next
+		// on_effects_dropdown_changed's other half (courtroom.cpp:5653-5657): it sets
+		// `effect` and calls focus_ic_input(). Picking a screen effect is a step in
+		// composing the line, so the keyboard goes back to the line (chatfocus.go).
+		// Here rather than in the arm helpers: toggleRealization drives the pick
+		// THROUGH selectOverlayEffectByName, not through this dropdown, and it already
+		// bounces on its own (:6178) — a bounce on the field write would double it.
+		a.bounceFocusToIC()
 	}
 	// Right-click a row → PREVIEW it (idiom A, the HoverPreview shape): the
 	// overlay art in the preview box and the effect's own sound, without touching
@@ -892,16 +899,13 @@ func (a *App) outgoingEffectsField() string {
 // starts to matter once the user unticks the Sticky Effects box
 // (aooptionsdialog.cpp:417).
 //
-// AsyncAO therefore answers canon's shipped default. The user-facing toggle is
-// OWED, not implemented: this wave adds no settings surface (the parallel
-// theme-editor wave owns internal/ui/settings.go), so the global is the named
-// constant below and lands as one argument when the pref exists.
+// AsyncAO answers canon's shipped default, and as of the 2026-08-09 batch the
+// OWED user-facing toggle exists: Prefs.StickyEffectsOn() (defaultStickyEffects =
+// true, the same value options.cpp ships). Turning it OFF is what arms the
+// per-effect `sticky` half of courtroom.cpp:2348-2354 below.
 func (a *App) clearEffectsAfterSend() {
-	a.overlayPostSendReset(overlayEffectsStickyDefault)
+	a.overlayPostSendReset(a.d.Prefs.StickyEffectsOn())
 }
-
-// overlayEffectsStickyDefault is AO2's shipped `stickyeffects` value (TRUE).
-const overlayEffectsStickyDefault = true
 
 // overlayPostSendReset is the courtroom.cpp:2348-2354 rule with the global as a
 // parameter, so the OWED preference lands at exactly one call site and the test

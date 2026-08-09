@@ -138,8 +138,21 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// so frame 1 and frame 2 are comparable.
 	a.presenceInit = true
 	a.d.Prefs.SetFormatAutoDetect(false) // no extensions.json probe interposes
+	// macroBind is the one App field whose ZERO VALUE means "armed" — slot 0 of the
+	// macro key-capture — which is why the real constructor spells it out
+	// (app.go:3322). A hand-built fixture that leaves it at 0 reports
+	// capturingKey() == true on every frame, so every input path that steps aside
+	// for an armed capture (the IC focus claim, every bare-key bind) is silently
+	// disabled and pollMacroBind eats the first keystroke into a preference. The
+	// gates read as "the feature is broken"; the feature was never reached.
+	a.macroBind = macroBindIdle
 	return a, cleanup
 }
+
+// macroBindIdle is App.macroBind's "no capture armed" sentinel, as app.go:3322
+// constructs it. Named here because -1 in a fixture is exactly the magic number
+// that made the harness lie.
+const macroBindIdle = -1
 
 // driveFrame runs ONE real frame at the harness geometry, in the event loop's own
 // order: Ctx.BeginFrame, then App.Frame.
@@ -181,6 +194,19 @@ func driveClickAt(a *App, x, y int32) {
 	a.ctx.mouseX, a.ctx.mouseY = x, y
 	a.ctx.downX, a.ctx.downY = x, y
 	a.ctx.clicked = true
+	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
+}
+
+// driveTypedText runs one real frame carrying TEXT INPUT — one SDL_TEXTINPUT
+// event's worth, which is what a printable keystroke actually delivers.
+//
+// Seeded between BeginFrame (which clears c.typed, ui.go) and App.Frame, exactly
+// where HandleEvent appends it in the live loop. c.keyPressed is deliberately left
+// alone: a letter arrives as text, not as a keycode, which is the whole reason the
+// bare-key bind namespaces had to move to Alt chords.
+func driveTypedText(a *App, s string) {
+	a.ctx.BeginFrame(frameHarnessDt)
+	a.ctx.typed = s
 	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
 }
 

@@ -32,6 +32,7 @@ const (
 	eggNone    uint8 = iota // no creator mentioned — the common case, no glow draws
 	eggFanat                // FanatSors — creator of Attorney Online (rainbow ring)
 	eggOmni                 // OmniTroid — creator of AO2 (blue<->gold pulse + scanner sweep)
+	eggCrystal              // Crystalwarrior — AO2's keeper (prismatic shards over the STAGE + a refracting ring)
 	eggNyah                 // SyntaxNyah — creator of AsyncAO (Mayo-pink heartbeat glow)
 	eggScatter              // Scatterflower — petals over the STAGE + a petal-toned ring
 )
@@ -43,19 +44,24 @@ const (
 // eggNameScatter whole: "flower" alone is an ordinary English word that would
 // fire on any garden-variety line of roleplay.
 const (
-	eggNameFanat   = "fanatsors"
-	eggNameOmni    = "omnitroid"
+	eggNameFanat = "fanatsors"
+	eggNameOmni  = "omnitroid"
+	// eggNameCrystal is whole for the usual reason and one more: "crystal" on its
+	// own is ordinary courtroom vocabulary (a crystal ball, a crystal-clear alibi),
+	// and "warrior" is ordinary roleplay. Only the handle fires.
+	eggNameCrystal = "crystalwarrior"
 	eggNameNyah    = "syntaxnyah"
 	eggNameScatter = "scatterflower"
 )
 
 // creatorEgg scans a displayed IC message for a creator mention and returns the
 // egg kind (eggNone when none is present). Case-insensitive substring match;
-// priority is fanat > omni > nyah (creation lineage AO → AO2 → AsyncAO) then
-// scatter, so a message naming two people lights the earliest in that lineage and
-// an inspiration never outranks a creator. Callers cache the result — this
-// allocates one ToLower string, which is fine ONCE per message but must never run
-// per frame (see refreshEggKind's compare guard).
+// priority is fanat > omni > crystal > nyah (creation lineage AO → AO2 → the
+// person who keeps AO2 → AsyncAO) then scatter, so a message naming two people
+// lights the earliest in that lineage and an inspiration never outranks a
+// creator. Callers cache the result — this allocates one ToLower string, which is
+// fine ONCE per message but must never run per frame (see refreshEggKind's
+// compare guard).
 func creatorEgg(text string) uint8 {
 	if text == "" {
 		return eggNone
@@ -66,6 +72,8 @@ func creatorEgg(text string) uint8 {
 		return eggFanat
 	case strings.Contains(low, eggNameOmni):
 		return eggOmni
+	case strings.Contains(low, eggNameCrystal):
+		return eggCrystal
 	case strings.Contains(low, eggNameNyah):
 		return eggNyah
 	case strings.Contains(low, eggNameScatter):
@@ -269,6 +277,8 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 		a.drawEggRainbow(box, win, t)
 	case eggOmni:
 		a.drawEggOmni(box, win, t)
+	case eggCrystal:
+		a.drawEggCrystalRing(box, win, t)
 	case eggNyah:
 		a.drawEggNyah(box, win, t)
 	case eggScatter:
@@ -293,11 +303,29 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 // accessibility pair as the ring eggs and the AO2 screen effects.
 func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
 	a.refreshEggKind(eggSceneText(sc))
-	if a.eggKind != eggScatter || !a.d.Prefs.ScreenEffectsOn() || a.d.Prefs.ReduceMotion() {
+	if !eggDrawsOnStage(a.eggKind) || !a.d.Prefs.ScreenEffectsOn() || a.d.Prefs.ReduceMotion() {
 		return
 	}
-	a.drawEggPetals(vp, a.d.Viewport.AnimClock().Seconds())
+	t := a.d.Viewport.AnimClock().Seconds()
+	switch a.eggKind {
+	case eggScatter:
+		a.drawEggPetals(vp, t)
+	case eggCrystal:
+		a.drawEggShards(vp, t)
+	}
 	a.NoteAnimating()
+}
+
+// eggDrawsOnStage is the ONE list of eggs with a viewport half. A switch rather
+// than a per-egg boolean field so adding a stage egg is a compile-time edit here
+// and in drawStageEgg's dispatch, and a kind that grows a stage half but is left
+// out of this list simply never draws it — which the census test catches.
+func eggDrawsOnStage(kind uint8) bool {
+	switch kind {
+	case eggScatter, eggCrystal:
+		return true
+	}
+	return false
 }
 
 // outsetRing returns box grown by step px on every side (an outset ring rect).
@@ -534,6 +562,198 @@ func (a *App) drawEggPetals(vp sdl.Rect, t float64) {
 		c.Fill(sdl.Rect{X: x, Y: y, W: w, H: h}, col)
 	}
 	c.popClip(prev, had)
+}
+
+// --- Crystalwarrior: prismatic shards (stage) + a refracting ring (chatbox) -----
+//
+// Wholly PROCEDURAL, like the petals: no bundled art, no texture, no state. A
+// shard is a stack of axis-aligned fills tapering to a point at each end (the
+// only lozenge SDL_RenderFillRect can draw), tinted by sampling the hue wheel at
+// a per-shard offset that drifts with the clock — which is what makes a plain
+// rectangle read as a facet catching the light. Every property comes from
+// eggHash(index), so the field is a pure function of (index, clock): no
+// allocation, no seeding, and every AsyncAO client in the room shows the same
+// shards.
+
+const (
+	// eggCrystalShards is the named cap on the shard field (hard rule 4): the draw
+	// is exactly this many shards regardless of stage size, so the egg costs the
+	// same at 4K as at 720p. Fewer than the petal field because a shard is a stack
+	// of fills, not one — see eggCrystalSegments.
+	eggCrystalShards = 12
+	// eggCrystalSegments is how many stacked rects build one shard. 6 is enough for
+	// the taper to read as a faceted spike rather than a bar, and pins the whole
+	// egg's per-frame fill count at eggCrystalShards*eggCrystalSegments + 1.
+	eggCrystalSegments = 6
+	// eggCrystalRiseSecs is the base time a shard takes to drift up through the
+	// stage, and eggCrystalRiseVary the fraction each shard scales that by — the
+	// same anti-lockstep variance the petals use. Slower than the petal fall: these
+	// are growing facets, not falling blossom.
+	eggCrystalRiseSecs = 9.0
+	eggCrystalRiseVary = 0.5
+	// eggCrystalHeightMin/Max bound a shard's full height as a fraction of stage
+	// height, so the field scales with the stage instead of shrinking to specks on a
+	// big screen (the mistake a pixel constant would make here).
+	eggCrystalHeightMinFrac = 0.10
+	eggCrystalHeightMaxFrac = 0.26
+	// eggCrystalWidthFrac is a shard's widest point as a fraction of its height —
+	// slim, so the silhouette is a spike.
+	eggCrystalWidthFrac = 0.22
+	// eggCrystalHueDriftSecs is how long the shard field takes to walk the hue wheel
+	// once, and eggCrystalHueSpread how far apart two shards' hues sit. Together
+	// they keep the field prismatic (every shard a different colour) while the whole
+	// spread rotates slowly.
+	eggCrystalHueDriftSecs = 7.0
+	eggCrystalHueSpread    = 0.35
+	// eggCrystalGlintSecs is the period of a shard's brightness flash and
+	// eggCrystalGlintFrac how much of that period is spent bright — a short, sharp
+	// catch of the light rather than a pulse.
+	eggCrystalGlintSecs = 2.3
+	eggCrystalGlintFrac = 0.18
+	// eggCrystalAlphaBase is a shard's resting opacity and eggCrystalAlphaGlint its
+	// opacity at the crest of a glint. Both translucent: the stage art and the
+	// speaking sprite must stay readable THROUGH the crystal, which is the whole
+	// difference between a refraction effect and a curtain.
+	eggCrystalAlphaBase  = 70
+	eggCrystalAlphaGlint = 165
+	// eggCrystalBeamSecs is how long the refraction beam takes to sweep the stage,
+	// eggCrystalBeamFrac its width as a fraction of stage width, and
+	// eggCrystalBeamAlpha its opacity — one pale vertical band travelling across,
+	// the "light passing through the prism" that ties the field together.
+	eggCrystalBeamSecs  = 5.0
+	eggCrystalBeamFrac  = 0.035
+	eggCrystalBeamAlpha = 46
+	// eggCrystalRingGlintSecs is the chatbox ring's own glint period — deliberately
+	// NOT the shards' (eggCrystalGlintSecs), so the box and the stage don't flash in
+	// lockstep and read as one blinking object.
+	eggCrystalRingGlintSecs = 3.1
+	// eggCrystalRingHueStep offsets each successive ring along the hue wheel, so the
+	// band splits into colours the way light does through a facet edge. Larger than
+	// the rainbow egg's spread: FanatSors' ring is ONE colour sweeping, this one is
+	// three colours at once.
+	eggCrystalRingHueStep = 0.16
+)
+
+// eggCrystalSaturation keeps the facets pale rather than poster-paint: a crystal
+// tints the light passing through it, it does not replace it. Full value so they
+// still read as bright over a dark stage.
+const eggCrystalSaturation = 0.45
+
+// drawEggShards paints the Crystalwarrior facet field across vp: shards drifting
+// upward through the hue wheel with a periodic glint, under one pale refraction
+// beam. Clipped to the stage so a shard can never paint over the surrounding
+// chrome, and ZERO-allocation — fixed counts, no slices, no closures, every rect a
+// value through the Ctx scratch rect.
+func (a *App) drawEggShards(vp sdl.Rect, t float64) {
+	c := a.ctx
+	if vp.W <= 0 || vp.H <= 0 {
+		return
+	}
+	prev, had := c.pushClip(vp)
+	hueBase := math.Mod(t/eggCrystalHueDriftSecs, 1)
+	for i := uint32(0); i < eggCrystalShards; i++ {
+		// Four independent draws from one index — separate salts, so no two
+		// properties correlate (the petal field's rule).
+		lane := eggUnit(eggHash(i*4 + 0))
+		speed := eggUnit(eggHash(i*4 + 1))
+		size := eggUnit(eggHash(i*4 + 2))
+		phase := eggUnit(eggHash(i*4 + 3))
+
+		// p walks 1 (stage bottom) → 0 (stage top): shards RISE, which is the
+		// difference between a crystal growing into the frame and snow falling.
+		rise := eggCrystalRiseSecs * (1 - eggCrystalRiseVary/2 + speed*eggCrystalRiseVary)
+		p := 1 - math.Mod(t/rise+phase, 1)
+
+		hFrac := eggCrystalHeightMinFrac + size*(eggCrystalHeightMaxFrac-eggCrystalHeightMinFrac)
+		h := int32(hFrac * float64(vp.H))
+		if h < eggCrystalSegments {
+			h = eggCrystalSegments // one row per segment minimum, or the taper collapses
+		}
+		w := int32(float64(h) * eggCrystalWidthFrac)
+		if w < 1 {
+			w = 1
+		}
+		cx := vp.X + int32(lane*float64(vp.W))
+		top := vp.Y + int32(p*float64(vp.H)) - h/2
+
+		hue := math.Mod(hueBase+phase*eggCrystalHueSpread, 1)
+		cr, cg, cb := hsvToRGB(hue, eggCrystalSaturation, 1)
+		alpha := eggCrystalAlphaBase
+		if g := eggShardGlint(t, phase); g > 0 {
+			alpha += int(float64(eggCrystalAlphaGlint-eggCrystalAlphaBase) * g)
+		}
+		// Fade a shard out as it nears either stage edge, for the same reason petals
+		// fade: a facet that pops into existence on the clip line reads as a glitch.
+		alpha = int(float64(alpha) * eggPetalFade(p))
+		if alpha <= 0 {
+			continue
+		}
+		col := sdl.Color{R: cr, G: cg, B: cb, A: uint8(alpha)}
+		segH := h / eggCrystalSegments
+		if segH < 1 {
+			segH = 1
+		}
+		for s := int32(0); s < eggCrystalSegments; s++ {
+			sw := int32(float64(w) * eggShardTaper(s))
+			if sw < 1 {
+				sw = 1
+			}
+			c.Fill(sdl.Rect{X: cx - sw/2, Y: top + s*segH, W: sw, H: segH}, col)
+		}
+	}
+	// The refraction beam, LAST so it lies over the facets: one pale vertical band
+	// walking the stage. Colourless on purpose — it is the light, not a facet.
+	bw := int32(eggCrystalBeamFrac * float64(vp.W))
+	if bw < 1 {
+		bw = 1
+	}
+	bx := vp.X + int32(math.Mod(t/eggCrystalBeamSecs, 1)*float64(vp.W))
+	c.Fill(sdl.Rect{X: bx, Y: vp.Y, W: bw, H: vp.H},
+		sdl.Color{R: 0xff, G: 0xff, B: 0xff, A: eggCrystalBeamAlpha})
+	c.popClip(prev, had)
+}
+
+// eggShardTaper is segment s's width as a fraction of the shard's widest point:
+// 0 at both ends, 1 in the middle, so the stack of rects reads as a double-pointed
+// facet. Pure, so the silhouette is unit-testable without a renderer.
+func eggShardTaper(s int32) float64 {
+	mid := float64(eggCrystalSegments-1) / 2
+	d := math.Abs(float64(s)-mid) / mid // 0 at the centre row, 1 at either end row
+	return 1 - d*d                      // squared, so the taper is convex (a facet, not a triangle)
+}
+
+// eggShardGlint returns a 0..1 flash for a shard whose cycle is offset by phase:
+// a cosine hump over the leading eggCrystalGlintFrac of each period, zero for the
+// rest. Sharing one clock with a per-shard offset is what makes the field twinkle
+// instead of strobing as a unit.
+func eggShardGlint(t, phase float64) float64 {
+	u := math.Mod(t/eggCrystalGlintSecs+phase, 1)
+	if u >= eggCrystalGlintFrac {
+		return 0
+	}
+	return 0.5 * (1 - math.Cos(2*math.Pi*u/eggCrystalGlintFrac))
+}
+
+// drawEggCrystalRing — the Crystalwarrior chatbox half. Three rings sitting at
+// DIFFERENT points on the hue wheel at once (light split by a facet edge), the
+// whole spread drifting slowly and flashing together on the ring's own glint
+// clock. Distinct from the FanatSors rainbow, which is one colour chasing round
+// the wheel with the rings barely apart.
+func (a *App) drawEggCrystalRing(box, win sdl.Rect, t float64) {
+	c := a.ctx
+	base := math.Mod(t/eggCrystalHueDriftSecs, 1)
+	glint := eggShardGlint(t*eggCrystalGlintSecs/eggCrystalRingGlintSecs, 0)
+	for i := int32(0); i < eggRingCount; i++ {
+		ring := outsetRing(box, (i+1)*eggRingGap)
+		if !ringVisible(ring, win) {
+			continue
+		}
+		h := math.Mod(base+float64(i)*eggCrystalRingHueStep, 1)
+		// The glint desaturates toward white, which is how a facet flashes: the
+		// colour washes out at the crest instead of merely getting brighter.
+		r, g, b := hsvToRGB(h, eggCrystalSaturation*(1-glint), 1)
+		c.Border(ring, sdl.Color{R: r, G: g, B: b, A: eggRingAlpha(i)})
+	}
 }
 
 // eggPetalFade returns a 0..1 opacity for a petal at fall position p, ramping in

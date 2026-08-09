@@ -136,7 +136,7 @@ var themeSlots = [...]themeSlot{
 	{key: "music_list", phase: phasePanels, state: slotStateHandDrawn},                                            // courtroom.cpp:864 (areas) + :867 (music) — ONE rect, two widgets
 	{key: "music_search", phase: phasePanels, state: slotStateHandDrawn},                                          // courtroom.cpp:923
 	{key: "switch_area_music", art: []string{"switch_area_music"}, phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1060
-	{key: "player_list", phase: phasePanels, state: slotStateInert},                                               // courtroom.cpp:879
+	{key: "player_list", phase: phasePanels, state: slotStateHandDrawn},                                           // courtroom.cpp:879 — the roster's OWN AO2 rect; music_list is only its fallback (theme_layout.go states the ruling)
 	{key: "music_display", phase: phasePanels, state: slotStateHandDrawn},                                         // courtroom.cpp:888
 	{key: "music_name", rel: relMusicDisplay, phase: phasePanels, state: slotStateHandDrawn, fixed: true},         // courtroom.cpp:885 — a CHILD of the plate (:171), so its rect is plate-relative and the editor must never offer it a box
 	{key: "music_label", phase: phasePanels, state: slotStateHandDrawn},                                           // courtroom.cpp:988

@@ -1176,13 +1176,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			// Per-preset keybind: arm a capture (pollShownameBind binds the next
 			// key to this showname); right-click the button clears the bind.
 			bound := a.shownameKeyFor(name)
-			keyLbl := "Bind key"
-			switch {
-			case a.shownameBindFor == name:
-				keyLbl = "press a key…"
-			case bound != "":
-				keyLbl = "Key: " + bound
-			}
+			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key>
+			// (bareBindKey, qol.go) and a row printing the bare letter advertises
+			// a press that no longer does anything.
+			keyLbl := bindChipLabel(bound, a.shownameBindFor == name, "press a key…", "Bind key")
 			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
 			if c.Button(kr, keyLbl) {
 				a.bindingFor = "" // don't also arm a character keybind
@@ -1193,7 +1190,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 				a.d.Prefs.SetShownameKeyBind(bound, "")
 				a.refreshShownameKeys()
 			}
-			c.Tooltip(kr, "Bind a key to this showname — press it in the courtroom to swap. Right-click to clear.")
+			c.Tooltip(kr, "Bind a key to this showname — press "+bareBindChordPrefix+"that key in the courtroom to swap. Right-click to clear.")
 			lbl, col := name, ColText
 			if strings.EqualFold(active, name) {
 				lbl, col = name+"   ← active", ColTierGreen
@@ -3198,10 +3195,21 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetPerAreaScrollback(next)
 	}
 	y += 26
-	// Detailed transcript logging (opt-in): full IC record to a file.
+	// Detailed transcript logging (opt-OUT since the 2026-08-09 flip — every other
+	// AO client saves the log, and people only discover they wanted it afterwards).
+	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
+	// off here sticks forever.
 	detLog := a.d.Prefs.DetailedLogOn()
-	if next := c.Checkbox(pad, y, "Detailed logging (OFF by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
+	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.SetDetailedLog(next)
+	}
+	y += 26
+	// Ghost text (Crystalwarrior's ask): the tail of a message the typewriter has
+	// not reached yet is drawn transparent instead of absent, so the line keeps its
+	// final shape and the log stops reflowing under the reader on every rune.
+	ghost := a.d.Prefs.GhostCrawlTextOn()
+	if next := c.Checkbox(pad, y, "Ghost the text a message hasn't typed out yet (ON by default): the rest of the line shows faintly while it crawls, instead of the log growing a word at a time", ghost); next != ghost {
+		a.d.Prefs.SetGhostCrawlText(next)
 	}
 	y += 26
 	// Auto-clip on modcall (opt-out): save the recent IC log when a modcall fires.
@@ -3368,6 +3376,36 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 	}
 	y += 30
+
+	// AO2's four send-time options, transcribed with AO2's own shipped defaults.
+	// The three "sticky" ones govern Courtroom::reset_ui (courtroom.cpp:2340, :2348,
+	// :2356), which clears each pick only when the matching option is OFF; AO2 ships
+	// all three ON, so AsyncAO's stock behaviour is unchanged by adding the rows.
+	y = a.settingsSection(y, w, "Sending a message")
+	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, with Attorney Online's own defaults, so leaving them alone matches AO2 exactly.", ColTextDim)
+	y += 6
+	ssnd := a.d.Prefs.StickySoundsOn()
+	if next := c.Checkbox(pad, y, "Sticky sounds (ON by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
+		a.d.Prefs.SetStickySounds(next)
+	}
+	y += 26
+	sfxx := a.d.Prefs.StickyEffectsOn()
+	if next := c.Checkbox(pad, y, "Sticky effects (ON by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
+		a.d.Prefs.SetStickyEffects(next)
+	}
+	y += 26
+	spre := a.d.Prefs.StickyPreanimsOn()
+	if next := c.Checkbox(pad, y, "Sticky preanims (ON by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
+		a.d.Prefs.SetStickyPreanims(next)
+	}
+	y += 26
+	soi := a.d.Prefs.SFXOnIdleOn()
+	if next := c.Checkbox(pad, y, "Always send SFX (OFF by default): play a hand-picked sound even with Pre unticked", soi); next != soi {
+		a.d.Prefs.SetSFXOnIdle(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "AO plays a message's sound off its pre-animation stage, so a line sent with Pre unticked is silent at everyone else's client no matter which SFX you picked. On, the message is marked as having a pre-animation with an empty animation name and no delay, which is how the sound gets heard without anything actually playing. This is Attorney Online's own \"Always Send SFX\"; it ships off there too.", ColTextDim)
+	y += 10
 
 	y = a.settingsSection(y, w, "Messages & connection")
 	mc := a.d.Prefs.MessageCounterOn()
@@ -3858,6 +3896,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
 		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
 		"The rate while another window has focus (1–60, 0 = never redraw when unfocused, or ∞ = uncapped). Minimized draws nothing.")
+	// The "ignore the background rate entirely" escape hatch (pacingfocus.go). An
+	// OPTION, never a default change: it overrides the focus boolean the whole pacer
+	// branches on, so the background rate above, the static park and the wake
+	// schedule all stop applying at once.
+	ufr := a.d.Prefs.UnfocusedFullRateOn()
+	if next := c.Checkbox(pad, y, "Keep full speed when another window has focus (OFF by default)", ufr); next != ufr {
+		a.d.Prefs.SetUnfocusedFullRate(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Background frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
+	y += 6
 	// Post-input full-rate hold, in frames — a slider (the playtest ask). Default
 	// 1 frame: the input's own frame shows, then the rate drops straight to idle.
 	c.Label(pad, y+4, "Input responsiveness:", ColText)

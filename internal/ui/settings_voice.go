@@ -82,12 +82,10 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "Push-to-talk")
 	c.Label(pad, y+4, "Mic toggle key:", ColText)
-	keyLabel := a.d.Prefs.VoicePTT()
-	if a.voicePTTBindArmed {
-		keyLabel = "press a key…  (Esc cancels)"
-	} else if keyLabel == "" {
-		keyLabel = "(unbound)"
-	}
+	// bindChipLabel: pollVoicePTT reads the shared Alt gate (bareBindKey, qol.go),
+	// so the mic toggles on Alt+<key> — printing the bare letter would advertise a
+	// press that now just types into whatever field has focus.
+	keyLabel := bindChipLabel(a.d.Prefs.VoicePTT(), a.voicePTTBindArmed, "press a key…  (Esc cancels)", "(unbound)")
 	c.Label(pad+120, y+4, keyLabel, ColAccent)
 	y += 26
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Bind key") {

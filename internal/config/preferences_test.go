@@ -1768,6 +1768,164 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 	})
 }
 
+// TestDetailedLogDefaultFlip pins the one-shot OFF→ON transcript flip (user order
+// 2026-08-09: every other AO client writes its chat log to disk, and the people
+// who want it are the ones who only find out afterwards). It is the DeskManifest
+// stamp's shape, mirrored, for the same reason: detailedLog is a bool the saver has
+// always written, so a file from an older build carries an explicit false that a
+// bare default change could never reach, and a bool has no state distinguishable
+// from its default, so the flip cannot be value-aware.
+//
+// Four properties, one per sub-test — the fourth is why prefsJSON.DetailedLog
+// became a *bool: as a plain bool, absent would decode to false and silently turn
+// logging back OFF for a stamped file whose key had been hand-trimmed.
+func TestDetailedLogDefaultFlip(t *testing.T) {
+	t.Run("an un-stamped file is flipped ON", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"detailedLog": false}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load old file: %v", err)
+		}
+		if !p.DetailedLogOn() {
+			t.Error("an older file's OFF must be flipped ON once on update")
+		}
+		if !p.DetailedLogDefaultMigrated {
+			t.Error("the flip must stamp the file so it never runs twice")
+		}
+	})
+
+	t.Run("a stamped file's explicit OFF is respected", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"detailedLog": false, "detailedLogDefaultMigrated": true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load stamped file: %v", err)
+		}
+		if p.DetailedLogOn() {
+			t.Error("a stamped file's explicit OFF must be respected (the flip already ran)")
+		}
+	})
+
+	t.Run("turning it back off after the flip sticks", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"detailedLog": false}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := newWithDebounce(path, testDebounce)
+		if err != nil {
+			t.Fatalf("newWithDebounce: %v", err)
+		}
+		if !p.DetailedLogOn() {
+			t.Fatal("precondition: the flip must have fired on this un-stamped file")
+		}
+		p.SetDetailedLog(false) // the user turns the transcript back off after updating
+		if err := p.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		// The stamp must be IN the file: one that never reached disk would re-fire the
+		// flip below and turn logging back on behind the user's back, every launch.
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var onDisk map[string]any
+		if err := json.Unmarshal(raw, &onDisk); err != nil {
+			t.Fatal(err)
+		}
+		if v, _ := onDisk["detailedLogDefaultMigrated"].(bool); !v {
+			t.Error("the migrated stamp did not persist to disk")
+		}
+		q, err := load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if q.DetailedLogOn() {
+			t.Error("the re-disable was lost — the flip re-fired instead of firing exactly once")
+		}
+	})
+
+	t.Run("a stamped file with the key absent keeps the ON default", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(`{"detailedLogDefaultMigrated": true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("load stamped file without the key: %v", err)
+		}
+		if !p.DetailedLogOn() {
+			t.Error("absent detailedLog read as OFF — the DTO field must be a *bool so absent means 'default ON'")
+		}
+	})
+}
+
+// TestAO2SendOptionDefaultsMatchUpstream pins the four AO2 send-time options
+// against AO2's OWN shipped values, which is the whole reason they exist: adding a
+// user-facing toggle must not change what a stock AsyncAO does.
+//
+//	stickysounds / stickyeffects / stickypres → true  (options.cpp:420-423, :430-433, :440-443)
+//	sfx_on_idle                               → false (options.cpp:569-572)
+//
+// The two AsyncAO options added beside them ride along, because their defaults
+// were user decisions and a silent flip would be a behaviour change nobody asked
+// for: ghost text ON, the unfocused-throttle override OFF.
+func TestAO2SendOptionDefaultsMatchUpstream(t *testing.T) {
+	p, path := newTestPrefs(t)
+	for _, tc := range []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{"stickySounds", p.StickySoundsOn(), true},
+		{"stickyEffects", p.StickyEffectsOn(), true},
+		{"stickyPreanims", p.StickyPreanimsOn(), true},
+		{"sfxOnIdle", p.SFXOnIdleOn(), false},
+		{"ghostCrawlText", p.GhostCrawlTextOn(), true},
+		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s defaults to %v, want %v", tc.name, tc.got, tc.want)
+		}
+	}
+	// Every one of them must round-trip: the save-but-never-load class this codebase
+	// has shipped more than once (TestEverySavedPreferenceIsAlsoLoaded catches the
+	// reflection half; this pins the behaviour those fields actually promise).
+	p.SetStickySounds(false)
+	p.SetStickyEffects(false)
+	p.SetStickyPreanims(false)
+	p.SetSFXOnIdle(true)
+	p.SetGhostCrawlText(false)
+	p.SetUnfocusedFullRate(true)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{"stickySounds", q.StickySoundsOn(), false},
+		{"stickyEffects", q.StickyEffectsOn(), false},
+		{"stickyPreanims", q.StickyPreanimsOn(), false},
+		{"sfxOnIdle", q.SFXOnIdleOn(), true},
+		{"ghostCrawlText", q.GhostCrawlTextOn(), false},
+		{"unfocusedFullRate", q.UnfocusedFullRateOn(), true},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s did not survive save → load: %v, want %v", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
 // TestSmoothLogScrollPref pins the IC-log follow-jump toggle: OFF by default (AO2
 // parity — a new message lands instantly), and it survives save → load. The load
 // half is the one that keeps failing across this codebase (a field saved but never

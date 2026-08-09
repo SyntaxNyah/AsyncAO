@@ -55,17 +55,16 @@ func (a *App) pollShownameBind() {
 	a.refreshShownameKeys()
 }
 
-// handleShownameKeys applies a bound showname on a bare keypress in the courtroom
-// — only with no text field focused, no capture armed, and no Ctrl chord in
-// flight, so typing never swaps it. Returns true when it consumed the key, so the
-// character/emote keybinds don't also fire on the same press.
+// handleShownameKeys applies a bound showname on Alt+<bound key> in the courtroom
+// — the shared bareBindKey gate every plain-key namespace moved onto (qol.go), so
+// typing the same letter can never swap it. Returns true when it consumed the
+// key, so the character/emote keybinds don't also fire on the same press.
 func (a *App) handleShownameKeys() bool {
-	c := a.ctx
-	if c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || a.shownameBindFor != "" ||
-		a.jukeBindFor != "" || a.macroBind >= 0 || c.ctrlHeld {
+	k := a.bareBindKey()
+	if k == 0 {
 		return false
 	}
-	sn, ok := a.shownameKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))]
+	sn, ok := a.shownameKeys[strings.ToLower(sdl.GetKeyName(k))]
 	if !ok {
 		return false
 	}
