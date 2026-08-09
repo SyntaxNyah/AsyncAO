@@ -152,10 +152,44 @@ func segPathRaw(name string) string {
 	return strings.Join(parts, "/")
 }
 
-// charSeg escapes the CHARACTER-folder segment honouring the builder's casing setting — lowercase
+// charSeg escapes the CHARACTER-folder PATH honouring the builder's casing setting — lowercase
 // by default (the correct choice for almost every server), or the first-cap / title-case forms for
 // the rare capitalised-folder server. Emotes and every other segment stay lowercase (seg).
+//
+// The character identity MAY NEST, and AO2 supports it structurally: get_character_path is
+// VPath("characters/" + p_char + "/" + p_file) (../AO2-Client/src/path_functions.cpp:43-46), so a
+// '/' inside the name is a real directory on disk and packs use it ("SG/Faris NyanNyan"). webAO
+// agrees at the URL layer — it builds `characters/${encodeURI(charactername)}/…`
+// (../webAO/src/viewport/utils/preloadMessageAssets.ts:30, spritePreview.ts:20) and JavaScript's
+// encodeURI leaves '/' LITERAL, unlike encodeURIComponent. Escaping the whole identity as ONE
+// segment minted "characters/sg%2Ffaris%20nyannyan/(b)suprised": a 404 on every origin that does
+// not decode %2F back into a separator (Apache's AllowEncodedSlashes defaults to Off), and the
+// unreadable folder name a bundle used to write on disk — internal/archive DiskPath had to undo
+// exactly this spelling ("characters/drio%2Fbyakuya%20togami"), which is the same defect #40 fixed
+// for backgrounds, evidence and sfx and missed here. Split first, then escape (and case) each
+// segment, exactly as segPath does everywhere else.
+//
+// FLAT identities — virtually every character on virtually every server — take the ContainsRune
+// fast path and come out BYTE-IDENTICAL, so no cache key, learned format or T1 texture key moves.
 func (u URLBuilder) charSeg(name string) string {
+	if !strings.ContainsRune(name, '/') {
+		return u.charSegOne(name) // the 99% case: one segment, unchanged output, no allocation
+	}
+	// Only the nesting path pays the traversal clamp: interpreting '/' as a separator is what
+	// makes a ".." SEGMENT meaningful at all. Same clamp, same reasoning as Background's
+	// (cleanRel is rooted, so a climb can never escape the origin); the mount fetcher refuses
+	// whatever still looks like an escape (safepath.UnsafeRel).
+	parts := strings.Split(cleanRel(name), "/")
+	for i, part := range parts {
+		parts[i] = u.charSegOne(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+// charSegOne escapes ONE character-folder segment in the builder's configured casing. A nested
+// identity cases each of its folders independently ("SG/Faris NyanNyan" title-cases to
+// "Sg/Faris Nyannyan"), because each one is a directory the server named on its own.
+func (u URLBuilder) charSegOne(name string) string {
 	switch u.charCase {
 	case CharCaseFirstCap:
 		return segRaw(firstCap(name))

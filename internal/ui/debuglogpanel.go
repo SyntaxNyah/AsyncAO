@@ -100,7 +100,8 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// rather than bleeding over the theme's art.
 	clipPrev, clipHad := c.pushClip(body)
 	y := body.Y - a.debugOOCScroll
-	for _, ln := range lines {
+	for _, e := range lines {
+		ln := e.text
 		if y+lineH > body.Y && y < body.Y+body.H { // skip rows scrolled out of view
 			// One weighted draw, not a plain draw plus a 1 px-offset second pass: a
 			// LOGICAL pixel offset is multiplied by the UI scale, so the two copies land

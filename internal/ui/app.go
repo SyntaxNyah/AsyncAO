@@ -482,11 +482,9 @@ type App struct {
 	// behind a tab switch. It is also memory-only (debugLogCap ring, never a file),
 	// so the unbounded-file-handle concern that drove the transcript split does not
 	// apply here.
-	debugLog    []string // ring of stamped failure lines, debugLogCap max
-	debugLast   string   // last raw line, for consecutive-duplicate collapse
-	debugRepeat int      // how many times debugLast repeated
-	lastPktHdr  string   // newest server packet header (health line)
-	lastPktAt   time.Time
+	debugLog   []debugEntry // ring of stamped failure rows, debugLogCap max (see pushDebugAt)
+	lastPktHdr string       // newest server packet header (health line)
+	lastPktAt  time.Time
 
 	// --- packet inspector (#333): Debug panel's live packet ring + counts ---
 	pkts    packetLog      // bounded ring + per-header in/out counts (active conn)
@@ -3955,6 +3953,19 @@ func (a *App) keepSceneAssetsWarm() {
 			a.markSceneResident(base)
 			return
 		}
+		// A desk that 404'd CONCLUSIVELY can never become Contains, so without this
+		// it re-entered the re-demand arm below on every tick of every message —
+		// healScenery's desk arm already carries exactly this gate and this, its
+		// twin, was left without it, so #27's fix only ever covered half the
+		// re-demand sites. That is the "one missing <pos>_overlay logs a miss every
+		// few seconds forever" report: the courtroom's per-message Prefetch is the
+		// deliberate re-try for a desk that may reappear, not this keeper. The set
+		// self-heals (clearMissing on upload), and only sprites and desks are ever
+		// MarkMissing'd — Background deliberately is not (it would change the
+		// viewport's hold-previous semantics), so no other warm arm is affected.
+		if t == assets.AssetTypeDeskOverlay && a.d.Store.IsMissing(base) {
+			return
+		}
 		// Evicted (or never landed): re-demand, throttled scene-wide AND
 		// futility-latched per base (sceneHealAllowed). Without the latch, a
 		// settled scene whose decoded working set exceeds the T1 main tier
@@ -5126,8 +5137,12 @@ func (a *App) rebuildAssetOrigin() {
 		}
 	}
 	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
-		local := assets.NewLocalFetcher(mounts)
-		a.urls = courtroom.NewURLBuilder(local.BaseURL()).WithCharCase(a.charCasingFor(local.BaseURL()))
+		// The ORIGIN helper, not a fetcher: this branch only ever read BaseURL off
+		// one, and the fetcher that actually serves these URLs was already built
+		// above (SetLocalOverlay) or at boot. Building a second byte source — memo
+		// and all — to obtain a string is the pattern LocalOriginFor exists to end.
+		localOrigin := assets.LocalOriginFor(mounts)
+		a.urls = courtroom.NewURLBuilder(localOrigin).WithCharCase(a.charCasingFor(localOrigin))
 		log.Printf("ui: local asset mode over %d mounts", len(mounts))
 		return
 	}
@@ -7920,8 +7935,16 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 }
 
 // charINIURL builds a character's char.ini location.
+//
+// Through the URLBuilder's CharFolder, never a hand-rolled origin+"characters/"+name: that is the
+// ONE place the character-folder spelling is decided (casing pref, per-segment escaping, nested
+// identities like "SG/Faris NyanNyan"), and this site used to bypass all three — it hard-lowercased
+// the name, so char.ini 404'd outright on a capitalised-folder server, and it left spaces and
+// separators unescaped, so the char.ini cache key for a spaced name did not match the spelling every
+// other asset of the same character is keyed by. downloader.go builds the same URL the same way
+// (CharFolder + charINIFileName).
 func (a *App) charINIURL(name string) string {
-	return a.urls.Origin() + "characters/" + strings.ToLower(name) + "/char.ini"
+	return a.urls.CharFolder(name) + charINIFileName
 }
 
 // warmCharINI speculatively fetches a hovered character's char.ini so the
@@ -9896,20 +9919,80 @@ func (a *App) healTheme() {
 	}
 }
 
-// pushDebug appends one line to the bounded failure log (debug overlay).
-// Consecutive duplicates collapse into a ×N suffix so a chatty source
-// (an ARUP every few seconds, say) can't flush real failures out of the
+// debugStampLayout prefixes every ring row with the wall clock of its LATEST
+// sighting (the ring is diagnostics, so absolute time beats elapsed).
+const debugStampLayout = "15:04:05 "
+
+// debugFoldWindow is how long a message stays foldable: seen again within this
+// of its last sighting, it collapses into the existing row's ×N counter instead
+// of appending another.
+//
+// The collapse used to be CONSECUTIVE-ONLY, which any real flood defeats: the
+// field report's panel interleaved two chatty sources — the KFO packet family
+// this client deliberately does not implement (TT/TIN/TF/CHECK) and one absent
+// desk overlay re-reported per IC message — so neither was ever the immediately
+// previous line, and 25 of the ring's 120 rows said the same two things while
+// genuine one-off failures aged out. Folding by TIME instead means one row per
+// distinct message for as long as it keeps repeating. 90 s is comfortably wider
+// than the gap between IC messages (the cadence that produced the flood) and
+// still narrow enough that the same failure recurring much later reads as a new
+// event rather than silently bumping a stale counter.
+//
+// This is presentation ONLY. Nothing here changes which packets are handled or
+// which assets are probed; the deferred-packet decision stands.
+const debugFoldWindow = 90 * time.Second
+
+// debugEntry is one row of the bounded failure ring. text is derived from the
+// other three and cached, so the fold costs one re-render per PUSH rather than
+// per draw (the panel redraws at frame rate while it is open).
+type debugEntry struct {
+	raw   string    // the caller's message — the fold key
+	at    time.Time // latest sighting; the fold window is measured from it
+	count int       // sightings folded into this row
+	text  string    // rendered row: stamp + raw (+ "  ×N")
+}
+
+// render rebuilds the displayed row from the entry's state.
+func (e debugEntry) render() string {
+	if e.count > 1 {
+		return e.at.Format(debugStampLayout) + e.raw + fmt.Sprintf("  ×%d", e.count)
+	}
+	return e.at.Format(debugStampLayout) + e.raw
+}
+
+// pushDebug appends one line to the bounded failure log (debug overlay),
+// folding a repeat of a message already seen inside debugFoldWindow into that
+// row's ×N counter so a chatty source can't flush real failures out of the
 // ring. Render thread only.
-func (a *App) pushDebug(line string) {
-	if line == a.debugLast && len(a.debugLog) > 0 {
-		a.debugRepeat++
-		a.debugLog[len(a.debugLog)-1] = time.Now().Format("15:04:05 ") +
-			line + fmt.Sprintf("  ×%d", a.debugRepeat)
+func (a *App) pushDebug(line string) { a.pushDebugAt(line, time.Now()) }
+
+// pushDebugAt is pushDebug with the clock injected — the fold is a TIME window,
+// so the tests drive the window from here rather than by sleeping.
+func (a *App) pushDebugAt(line string, now time.Time) {
+	// The ring is ordered by latest sighting (a fold moves its row to the tail),
+	// so scanning backwards can stop at the first row outside the window: every
+	// row before it is older still. That bounds the scan without a second cap.
+	for i := len(a.debugLog) - 1; i >= 0; i-- {
+		e := a.debugLog[i]
+		if now.Sub(e.at) > debugFoldWindow {
+			break
+		}
+		if e.raw != line {
+			continue
+		}
+		e.count++
+		e.at = now
+		e.text = e.render()
+		// Move to the tail: keeps the ordering the early exit above relies on,
+		// and keeps a repeating source where the reader is looking (newest end)
+		// instead of pinned at the position of its first sighting.
+		copy(a.debugLog[i:], a.debugLog[i+1:])
+		a.debugLog[len(a.debugLog)-1] = e
 		return
 	}
-	a.debugLast = line
-	a.debugRepeat = 1
-	a.debugLog = append(a.debugLog, time.Now().Format("15:04:05 ")+line)
+	e := debugEntry{raw: line, at: now, count: 1}
+	e.text = e.render()
+	a.debugLog = append(a.debugLog, e)
 	if len(a.debugLog) > debugLogCap {
 		a.debugLog = a.debugLog[len(a.debugLog)-debugLogCap:]
 	}

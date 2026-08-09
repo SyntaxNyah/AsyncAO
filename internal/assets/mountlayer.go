@@ -47,10 +47,15 @@ type MountLayer struct {
 // while Settings cheerfully reports thousands of indexed files.
 //
 // mounts must be the SAME list idx was built from; the local origin is taken
-// from the canonical LocalFetcher helper rather than recomputed, so the pack's
+// from the canonical LocalOriginFor helper rather than recomputed, so the pack's
 // transport URLs land in exactly the keyspace the rest of the client expects.
+// It is the ORIGIN helper and not NewLocalFetcher(mounts).BaseURL() because this
+// constructor runs on every tab activation and only ever wanted the label — a
+// fetcher is a byte source with a negative memo attached, and minting one per tab
+// switch to read a string off it is exactly how a per-instance janitor goroutine
+// became a per-tab-switch leak.
 func NewMountLayer(idx *MountIndex, mounts []string, origins []string) *MountLayer {
-	l := &MountLayer{idx: idx, localOrigin: NewLocalFetcher(mounts).BaseURL()}
+	l := &MountLayer{idx: idx, localOrigin: LocalOriginFor(mounts)}
 	seen := make(map[string]struct{}, len(origins))
 	for _, o := range origins {
 		if o == "" {

@@ -41,8 +41,8 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	y += lineH
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugColdLoadLine(), ColAccent)
 	y += lineH
-	for _, ln := range lines {
-		c.LabelClipped(panel.X+6, y, panel.W-12, ln, ColTextDim)
+	for _, e := range lines {
+		c.LabelClipped(panel.X+6, y, panel.W-12, e.text, ColTextDim)
 		y += lineH
 	}
 }

@@ -279,13 +279,15 @@ func recordingToDemo(rec *sceneRecording) ([]byte, error) {
 // session, because the streaming Manager consults a local:// OVERLAY (built from
 // exactly this mount set) for local:// URLs. The legacy checkbox now means only
 // "the LIVE session reads from local folders instead of streaming"; it no longer
-// gates whether a local:// origin resolves. The origin string is the
-// LocalFetcher's BaseURL (a deterministic hash of the ordered mount set), so it
-// equals the origin both the wired production overlay AND a local-mode source
-// serve — byte-for-byte the same keyspace, no drift.
+// gates whether a local:// origin resolves. The origin string comes from the
+// canonical local-origin helper (a deterministic hash of the ordered mount set),
+// so it equals the origin both the wired production overlay AND a local-mode
+// source serve — byte-for-byte the same keyspace, no drift. It asks for the
+// origin STRING rather than building a fetcher to read BaseURL off: a fetcher
+// carries the rule-6 negative memo and this call site only ever wanted a label.
 func (a *App) mountOrigin() string {
 	if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) > 0 {
-		return assets.NewLocalFetcher(mounts).BaseURL()
+		return assets.LocalOriginFor(mounts)
 	}
 	return ""
 }

@@ -478,7 +478,7 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 			break
 		}
 		if rowY >= r.Y-debugRowH {
-			c.LabelClipped(r.X+6, rowY+1, rowW, a.debugLog[i], ColTextDim)
+			c.LabelClipped(r.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
 		}
 		rowY += debugRowH
 	}
