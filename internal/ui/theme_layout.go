@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -1499,6 +1500,13 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// a `big` as well. Both variants are pinned theme art, so this is map reads and
 	// integer arithmetic — see chatboxSkinLadder for the residency contract.
 	nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+	// AO2's OTHER per-message skin decision, and the one that left narration posts
+	// wearing an empty name plate: a blank showname takes the plate-less `chatblank`
+	// art and hides the label (courtroom.cpp:3320-3331). AFTER the widen ladder
+	// because AO2's ladder lives in the non-blank arm — a blank name can never widen
+	// — and chatboxSkinLadder already returns the base rung for empty text, so the
+	// two can never disagree about which page won.
+	skinPage, _ = a.chatboxSkinForShowname(sc.ShownameText, skinPage)
 
 	if skinned {
 		// &box into cgo would heap-allocate the PARAMETER on every themed frame that
@@ -1990,22 +1998,102 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	// pushClip, so a theme whose music_name is wider than its plate no longer spills
 	// the name past the plate art onto the background.
 	clipPrev, clipHad := c.pushClip(md)
-	// Clipped, not scrolled: AO2's ScrollText marquees an overlong track name, and
-	// that is a deliberate deviation — a marquee is per-frame motion on a surface
-	// that is otherwise static, and ReduceMotion users would need an opt-out for it.
-	// truncateLabelTo ellipsizes so the fallback reads as "there is more" instead of
-	// cutting mid-glyph; the full name stays in the list.
-	// The fits case — every ordinary track name — measures once and allocates
-	// nothing; only an overlong name pays for the ellipsis walk.
-	shown := label
-	if w, ok := c.fontTextWidth(font, label); ok && w > avail {
-		shown = c.fitLabelToFont(font, label, avail)
+	bold := a.elemBold(elemMusicName)
+	// SCROLLED, like AO2. ui_music_name is a ScrollText and an overlong title
+	// marquees there (scrolltext.cpp; ported in musicmarquee.go), which is the whole
+	// reason AO2 titles are never cut. AsyncAO ellipsized, and the deviation was
+	// recorded right here — it is retired.
+	//
+	// The ellipsized draw is still the fallback, and it is reached by two roads: a
+	// title that FITS (every ordinary one — one measure, no allocation, unchanged),
+	// and ReduceMotion, which is the opt-out the old comment correctly said a
+	// marquee needs. Neither road pays for the marquee.
+	// WEIGHTED, for the same reason the tile width is (see drawMusicMarquee): AO2's
+	// singleTextWidth is fontMetrics().horizontalAdvance on the widget's own font
+	// (scrolltext.cpp:45-47), so under music_name_bold the fit test is a bold test.
+	// Measured plain, a title that fits plain but not bold takes neither branch's
+	// remedy — no scroll, no ellipsis — and LabelClippedFontWeight hard-cuts it
+	// mid-glyph at avail.
+	w, measured := c.fontTextWidthWeight(font, label, bold)
+	if measured && marqueeScrolls(w, avail) && !a.d.Prefs.ReduceMotion() {
+		a.drawMusicMarquee(font, dst, inset, ty, label, col, bold)
+	} else {
+		shown := label
+		if measured && w > avail {
+			// truncateLabelTo ellipsizes so the cut reads as "there is more"
+			// instead of stopping mid-glyph; the full name stays in the list. It
+			// measures at the drawn weight too, or the "fitted" string still
+			// overflows by the emboldening.
+			shown = c.fitLabelToFontWeight(font, label, avail, bold)
+		}
+		// music_name_bold rides the raster (one weighted draw), not a 1 px-offset
+		// second pass — that offset scaled with the UI and smeared into a double
+		// image (F1b).
+		c.LabelClippedFontWeight(font, dst.X+inset, ty, avail, shown, col, bold)
 	}
-	// music_name_bold rides the raster (one weighted draw), not a 1 px-offset second
-	// pass — that offset scaled with the UI and smeared into a double image (F1b).
-	c.LabelClippedFontWeight(font, dst.X+inset, ty, avail, shown, col, a.elemBold(elemMusicName))
 	c.popClip(clipPrev, clipHad)
 	return true
+}
+
+// drawMusicMarquee paints the scrolling title: AO2's ScrollText::paintEvent
+// (scrolltext.cpp:64-98), tiled from marqueeFirstX at the tiled width until the
+// widget is covered.
+//
+// PACING CENSUS. This is clock-driven motion on a surface that is otherwise static,
+// so it calls NoteAnimating for exactly the reason the animated chatbox text does:
+// without it the frame pacer parks at the idle cadence and the marquee crawls at
+// the idle rate instead of AO2's 40 px/s. Draw-site census, never a bare state
+// check — it self-clears the moment the title fits, the theme changes, ReduceMotion
+// goes on or the plate stops drawing, because none of those reach this function.
+// Deleting the call left the whole package green, so it now has a deletion catcher:
+// TestMusicMarqueeJoinsThePacingCensus (musicmarquee_test.go), the drawStageEgg
+// census gate's shape.
+//
+// The 15-px edge alpha ramp AO2 composites over both ends (scrolltext.cpp:81-92) is
+// NOT reproduced: it is a per-pixel destination-in pass over an offscreen buffer,
+// and our text goes through the shared glyph atlas where a per-label alpha is the
+// only knob (LabelClippedFontAlpha) — one alpha for the whole copy, not a gradient
+// across it. The scissor clip cuts the text at the widget edge instead, which is
+// what the ramp is hiding in the first place.
+func (a *App) drawMusicMarquee(font *ttf.Font, dst sdl.Rect, inset, ty int32, label string, col sdl.Color, bold bool) {
+	c := a.ctx
+	// AO2 tiles `m_text + separator` and steps by the width of THAT string
+	// (scrolltext.cpp:52, :61), so the separator is what sits between repeats. The
+	// tiled string and the scroll epoch come out of the slot TOGETHER: both are
+	// invalidated by exactly one event (the title changing), and building the
+	// concatenation here instead cost one heap allocation on every scrolling frame.
+	tiled, elapsed := c.musicMarquee.frame(label, a.d.Viewport.AnimClock())
+	// MEASURED AT THE WEIGHT IT IS DRAWN AT. AO2 takes wholeTextSize from
+	// fontMetrics() of the widget's own font (scrolltext.cpp:62), so under
+	// music_name_bold the tile width IS the bold advance. Measured plain while
+	// LabelClippedFontWeight below draws bold, wholeW is short twice over: it
+	// clamps the blit (ui.go LabelClippedFontWeight caps the source width at
+	// maxW), which cuts the tail of every tile — AO2's "   ---   " separator —
+	// and it under-steps `x += wholeW`, so consecutive copies creep together
+	// instead of repeating at wholeTextSize.width() (scrolltext.cpp:79).
+	// fontTextWidthWeight is the metric twin of LabelClippedFontWeight and takes
+	// the identical key/measure as fontTextWidth when bold is false.
+	wholeW, ok := c.fontTextWidthWeight(font, tiled, bold)
+	if !ok || wholeW <= 0 {
+		return
+	}
+	// The clip is the music_name rect, INSIDE the plate clip the caller pushed:
+	// Qt confines the ScrollText's painting to its own widget, and a copy that
+	// starts left of the margin (or runs past the right edge) must be cut at the
+	// widget, not at the plate.
+	clipPrev, clipHad := c.pushClip(dst)
+	defer c.popClip(clipPrev, clipHad)
+
+	x := dst.X + marqueeFirstX(marqueeScrollPos(elapsed, wholeW), inset)
+	right := dst.X + dst.W
+	for tile := 0; tile < marqueeMaxTiles && x < right; tile++ {
+		// wholeW as the width bound, not the remaining room: the scissor above is
+		// what cuts the copy, and passing a shrinking bound would truncate the
+		// last copy's texture instead of clipping it.
+		c.LabelClippedFontWeight(font, x, ty, wholeW, tiled, col, bold)
+		x += wholeW
+	}
+	a.NoteAnimating()
 }
 
 // nowPlayingName is the short display name of the current track, or "" when

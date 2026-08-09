@@ -210,7 +210,25 @@ const (
 	chatboxRungBase chatboxRung = iota
 	chatboxRungMed
 	chatboxRungBig
+	// chatboxRungBlank is NOT part of the widen-and-swap ladder — it is AO2's
+	// OTHER per-message skin decision, the plate-less box a narration post gets
+	// (see chatboxSkinForShowname). It rides the same enum because it is resolved
+	// by the same loader, out of the same directory, into the same pinned tier.
+	chatboxRungBlank
 )
+
+// themeStemChatboxBlank is the blank rung's T1 stem. Declared here rather than
+// beside themeStemChatboxMed / themeStemChatboxBig because the SELECTION that
+// uses it lives in this file; the two widening stems are named where the widening
+// ladder's art is described.
+const themeStemChatboxBlank = "chatboxblank"
+
+// themeChatBlankFileStem is AO2's literal file stem for the plate-less chatbox
+// (AO2-Client courtroom.cpp:3322, `setImage("chatblank", p_misc)`). It is a FIXED
+// name, unlike med/big: AO2 does not derive it from the resolved base skin's path,
+// it names it outright — which is why fileStem below ignores its argument for this
+// rung except to notice that the base skin already IS this file.
+const themeChatBlankFileStem = "chatblank"
 
 // texStem is the rung's T1 stem — the key its art is pinned under.
 func (r chatboxRung) texStem() string {
@@ -219,6 +237,8 @@ func (r chatboxRung) texStem() string {
 		return themeStemChatboxMed
 	case chatboxRungBig:
 		return themeStemChatboxBig
+	case chatboxRungBlank:
+		return themeStemChatboxBlank
 	}
 	return themeStemChatbox
 }
@@ -238,13 +258,71 @@ func (r chatboxRung) fileStem(base string) string {
 		return base + chatboxMedSuffix
 	case chatboxRungBig:
 		return base + chatboxBigSuffix
+	case chatboxRungBlank:
+		if base == themeChatBlankFileStem {
+			// The theme's BASE skin already resolved to chatblank (two of the 74
+			// reference themes ship only that file). There is no second, distinct
+			// blank skin to pin, and pinning the same art twice would double a
+			// pinned page for no visual difference — so this rung declines, and
+			// chatboxSkinForShowname falls through to the base page, which IS the
+			// blank plate. theme.FindAssetIn refuses the empty stem outright.
+			return ""
+		}
+		return themeChatBlankFileStem
 	}
 	return base
 }
 
-// chatboxLadderRungs is the ladder's two variant rungs, in the order AO2 tries
-// them. A fixed array, so the load below is bounded by construction (hard rule 4).
-var chatboxLadderRungs = [...]chatboxRung{chatboxRungMed, chatboxRungBig}
+// chatboxLadderRungs is every chatbox VARIANT the loader resolves out of the base
+// skin's own directory, in the order AO2 reaches for them: the widen-and-swap
+// ladder's med and big, then the plate-less blank. A fixed array, so the load is
+// bounded by construction (hard rule 4).
+//
+// It is deliberately ONE array even though the blank rung is not part of the
+// widening ladder: what the array actually names is "extra chatbox art pinned per
+// theme apply, located relative to the resolved base skin", and every rung in it
+// is loaded, budgeted and evicted identically. Splitting it would mean a second
+// loop over the same directory with the same body.
+var chatboxLadderRungs = [...]chatboxRung{chatboxRungMed, chatboxRungBig, chatboxRungBlank}
+
+// chatboxSkinForShowname is AO2's per-MESSAGE chatbox choice: a post with a blank
+// showname gets the plate-less skin, everything else gets the ordinary one.
+//
+// AO2-Client courtroom.cpp:3320-3331, inside the same set_chatbox pass that places
+// the widgets:
+//
+//	if (ui_vp_showname->text().trimmed().isEmpty())   // Whitespace showname
+//	  ui_vp_chatbox->setImage("chatblank", p_misc);
+//	else { ui_vp_showname->setVisible(true);
+//	       if (!ui_vp_chatbox->setImage("chat", p_misc)) ui_vp_chatbox->setImage("chatbox", p_misc); }
+//
+// Two things that branch decides, and BOTH are per message rather than per theme:
+// which art the box wears, and whether the showname label is shown at all. AsyncAO
+// resolved the skin once per theme apply, so a narration post — the AO idiom of
+// posting with the showname cleared — kept drawing the ordinary skin's empty name
+// plate under nothing (the reported "narration bug"). It also drew the showname
+// label, which is harmless while the text is empty but is the same decision and is
+// answered by the same return.
+//
+// TRIMMED, like AO2: a showname of spaces is a blank showname. The trim is
+// strings.TrimSpace, whose cut set is Unicode space — QString::trimmed() cuts
+// ASCII whitespace only, so a name of U+3000 IDEOGRAPHIC SPACE reads blank here and
+// not in AO2. That is the safe direction (the plate is empty either way) and it
+// keeps one definition of "blank showname" across the client.
+//
+// Returns the page to blit and whether the blank variant was chosen. A theme that
+// ships no separate blank skin — most of them — returns its base page and false,
+// which is byte-identical to the pre-fix draw.
+func (a *App) chatboxSkinForShowname(showname string, base *render.TexturePage) (*render.TexturePage, bool) {
+	if strings.TrimSpace(showname) != "" {
+		return base, false
+	}
+	blank, ok := a.themePage(themeStemChatboxBlank)
+	if !ok {
+		return base, false
+	}
+	return blank, true
+}
 
 // shownameLadder is AO2's ladder as pure arithmetic: given the showname box the
 // theme declared, how wide the name actually measures, the per-rung extra, and

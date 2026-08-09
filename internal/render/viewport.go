@@ -472,6 +472,12 @@ type Viewport struct {
 	maskClip sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
 	ovRect   sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
 	ovClip   sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
+	// splashClip is the shout bubble's containment clip. Its own field, not
+	// ovClip's: an overlay and a shout can be up in the SAME frame (an effect
+	// plays over an objection), and SDL keeps the pointer live for the length of
+	// the call, so one scratch shared between two clip brackets would be a rect
+	// rewritten under a live clip. See drawSplash (splashfit.go).
+	splashClip sdl.Rect
 
 	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
@@ -1017,7 +1023,10 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	// the desk, below the shout splash.
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerOver)
 	if shoutBase := effectiveShoutBase(scene, v.store); shoutBase != "" {
-		v.drawFill(ren, shoutBase, &v.shoutAnim, vp, noDim)
+		// NOT drawFill: AO2's splash layer never stretches — it fits the bubble by
+		// HEIGHT and centres it (splashfit.go cites the exact lines). A 4:3 bubble
+		// on a 16:9 stage was being pulled wide.
+		v.drawSplash(ren, shoutBase, &v.shoutAnim, vp)
 	}
 
 	if scene.FlashLeft > 0 {
@@ -1060,16 +1069,10 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if base == "" {
 		return
 	}
-	frame := 0
-	page, ok := anim.resolve(v.store)
-	if ok && len(page.Frames) > 0 {
-		frame = clampFrame(anim.frame, len(page.Frames))
-	} else if page, ok = v.resolveHeld(anim); !ok {
-		// No page and no held bridge frame: nothing to draw (the pre-filled
-		// black stage shows — the state the bridge exists to avoid).
+	tex, _, _, ok := v.layerFrame(anim)
+	if !ok {
 		return
 	}
-	tex := page.Frames[frame]
 	v.fillRect = vp
 	if dimPct < 100 {
 		d := scaleChannel(255, dimPct)

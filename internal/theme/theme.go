@@ -836,6 +836,17 @@ func (t *Theme) FindAsset(stem string, exts []string) (string, bool) {
 // must not get it here either: pairing one theme's variant with another theme's
 // base would stretch mismatched art into the same box.
 func FindAssetIn(dir, stem string, exts []string) (string, bool) {
+	// An EMPTY stem is "this variant does not apply to this theme", not "probe
+	// the directory for a file called .png". Without the guard, filepath.Join
+	// builds <dir>/.png — a dotfile that is legal on every filesystem this runs
+	// on, so a theme could ship one and have it silently adopted as a variant
+	// skin. The chatbox's blank rung returns "" for exactly this reason (a theme
+	// whose BASE skin already is chatblank has no separate blank variant), and it
+	// is the one caller that can produce it; pinned by
+	// TestFindAssetInRefusesAnEmptyStem.
+	if stem == "" {
+		return "", false
+	}
 	for _, ext := range exts {
 		path := filepath.Join(dir, stem+ext)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {

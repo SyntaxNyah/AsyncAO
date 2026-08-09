@@ -151,6 +151,57 @@ func TestThemeFindAssetProbesExtensionsAndDirs(t *testing.T) {
 	}
 }
 
+// TestFindAssetInRefusesAnEmptyStem is the guard FindAssetIn opens with, driven
+// against the file it exists to refuse.
+//
+// An empty stem means "this variant does not apply to this theme". The chatbox's
+// blank rung is the one caller that can produce one — a theme whose BASE skin
+// already resolved to chatblank has no separate blank variant (internal/ui
+// chatboxfit.go, chatboxRung.fileStem) — and without the guard filepath.Join
+// builds <dir>/.png. That is a legal filename on every filesystem this ships on,
+// so a theme could ship one and have it silently adopted as a variant skin:
+// unnamed art pinned into T1 for as long as the theme is applied.
+//
+// The fixture ships exactly that dotfile in both entry points' path, so the test
+// fails the moment the guard is deleted rather than passing vacuously — and the
+// last block proves the directory is probeable at all, so "found nothing" above
+// cannot be an accident of the fixture.
+func TestFindAssetInRefusesAnEmptyStem(t *testing.T) {
+	root := t.TempDir()
+	writeTheme(t, root, DefaultThemeName, aoDefaultDesign, "")
+	dir := filepath.Join(root, ThemesDirName, DefaultThemeName)
+	exts := []string{".webp", ".apng", ".gif", ".png"}
+
+	dot := filepath.Join(dir, ".png")
+	if err := os.WriteFile(dot, []byte("png"), 0o644); err != nil {
+		t.Skipf("this filesystem will not hold a %q dotfile: %v", ".png", err)
+	}
+	if _, err := os.Stat(dot); err != nil {
+		t.Skipf("the dotfile did not survive: %v", err)
+	}
+
+	if path, ok := FindAssetIn(dir, "", exts); ok {
+		t.Errorf("the empty stem adopted %q — a dotfile is not a variant skin", path)
+	}
+	// The whole-theme ladder in front of it walks every theme dir through the same
+	// helper, so it inherits the refusal; a theme that inherits from another must
+	// not pick up the PARENT's dotfile either.
+	th, err := Load(DefaultThemeName, "", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path, ok := th.FindAsset("", exts); ok {
+		t.Errorf("FindAsset(\"\") resolved %q", path)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "chat.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := FindAssetIn(dir, "chat", exts); !ok {
+		t.Fatal("the fixture directory is not probeable at all — the empty-stem cases above prove nothing")
+	}
+}
+
 func TestINIToleratesCommentsAndMissingFile(t *testing.T) {
 	ini, err := LoadINI(filepath.Join(t.TempDir(), "absent.ini"))
 	if err == nil {

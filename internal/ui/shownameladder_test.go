@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"go/ast"
+	"go/token"
 	"image"
 	"os"
 	"path/filepath"
@@ -145,6 +147,146 @@ func TestChatboxRungStems(t *testing.T) {
 		if got := chatboxRungBase.fileStem(base); got != base {
 			t.Errorf("base file stem for %q = %q, want the base itself", base, got)
 		}
+	}
+}
+
+// TestChatboxBlankRungIsDistinctAndDeclinesADuplicate covers the fourth rung —
+// AO2's plate-less `chatblank` skin — which rides the same enum as the two
+// widening variants but answers both halves of a rung's identity differently.
+//
+// Its T1 stem is fixed like the others, but its FILE stem is not derived from the
+// base skin: AO2 names it outright, `setImage("chatblank", p_misc)`
+// (AO2-Client courtroom.cpp:3322), where med/big are string-appended to the
+// resolved base's own path (courtroom.cpp:3358/:3362). The consequence is the case
+// the other rungs cannot have: for the two reference themes whose BASE skin
+// already resolved to chatblank, the blank rung is the base, so it declines with
+// an empty stem rather than pinning the same art under a second key.
+//
+// The decline is driven through the loader's own lookup expression
+// (app.go: theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), …)),
+// not re-implemented here, and the fixture ships the `.png` dotfile that the empty
+// stem would otherwise adopt — theme.TestFindAssetInRefusesAnEmptyStem is the same
+// guard from the other side.
+func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
+	// (1) Identity: four rungs, four distinct T1 keys. A collision would have one
+	// rung's art overwrite another's in themeTex.
+	stems := map[string]chatboxRung{}
+	for _, r := range []chatboxRung{chatboxRungBase, chatboxRungMed, chatboxRungBig, chatboxRungBlank} {
+		if other, dup := stems[r.texStem()]; dup {
+			t.Fatalf("rungs %d and %d both pin under %q", other, r, r.texStem())
+		}
+		stems[r.texStem()] = r
+	}
+	if chatboxRungBlank.texStem() != themeStemChatboxBlank {
+		t.Errorf("the blank rung must pin under %q, got %q", themeStemChatboxBlank, chatboxRungBlank.texStem())
+	}
+	// ...and the loader must actually reach it, or the stem is pinned by nobody.
+	found := false
+	for _, r := range chatboxLadderRungs {
+		found = found || r == chatboxRungBlank
+	}
+	if !found {
+		t.Error("chatboxLadderRungs no longer contains the blank rung — nothing loads chatblank and " +
+			"chatboxSkinForShowname can never fire (narration posts go back to the empty name plate)")
+	}
+
+	// (2) The file stem is FIXED, whichever base spelling the theme shipped —
+	// except when the base already is that file.
+	for _, base := range []string{"chat", "chatbox"} {
+		if got := chatboxRungBlank.fileStem(base); got != themeChatBlankFileStem {
+			t.Errorf("blank file stem for base %q = %q, want AO2's literal %q", base, got, themeChatBlankFileStem)
+		}
+	}
+	if got := chatboxRungBlank.fileStem(themeChatBlankFileStem); got != "" {
+		t.Errorf("a theme whose base skin IS %q must decline the blank rung, got %q",
+			themeChatBlankFileStem, got)
+	}
+
+	// (3) And the decline reaches the disk probe as "find nothing", including in a
+	// directory that ships the dotfile an unguarded join would have produced.
+	dir := t.TempDir()
+	for _, name := range []string{"chatblank.png", ".png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("png"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := theme.FindAssetIn(dir, chatboxRungBlank.fileStem("chat"), themeImageExts); !ok {
+		t.Fatal("a chat-based theme did not find chatblank.png beside its base skin — " +
+			"the fixture is not exercising the probe at all")
+	}
+	if p, ok := theme.FindAssetIn(dir, chatboxRungBlank.fileStem(themeChatBlankFileStem), themeImageExts); ok {
+		t.Errorf("the declining rung still resolved %q — the empty stem must not probe", p)
+	}
+}
+
+// TestChatboxSkinForShownameFollowsTheTrimmedName drives AO2's OTHER per-message
+// skin decision, the one the widen-and-swap ladder is not: a post whose showname
+// trims to nothing wears the plate-less box (AO2-Client courtroom.cpp:3320-3331,
+// `if (ui_vp_showname->text().trimmed().isEmpty())`).
+//
+// Both arms of AO2's branch are here, and so are the two states a streaming client
+// adds: a theme that ships no blank art at all (most of them) must be byte-identical
+// to the pre-fix draw, and the decision must stay free per frame — it runs on every
+// themed chatbox frame, not once per message.
+func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
+	a, cleanup := ladderHarness(t)
+	defer cleanup()
+
+	base := pinFlatThemeArt(t, a, themeStemChatbox)
+
+	// 1. No blank art pinned — the corpus majority, and the two themes whose base
+	//    skin IS chatblank (the rung declined, so nothing was pinned under the blank
+	//    stem). Every showname, blank or not, keeps the base page.
+	for _, name := range []string{"", "   ", "Phoenix"} {
+		if page, blank := a.chatboxSkinForShowname(name, base); page != base || blank {
+			t.Errorf("showname %q with no blank art: page swapped=%v blank=%v, want the base page untouched",
+				name, page != base, blank)
+		}
+	}
+
+	// 2. With the blank skin resident, the trimmed-empty names take it and only them.
+	blankPage := pinFlatThemeArt(t, a, themeStemChatboxBlank)
+	if blankPage == base {
+		t.Fatal("the fixture pinned one page under both stems — nothing below could tell them apart")
+	}
+	for _, tc := range []struct {
+		name      string
+		showname  string
+		wantBlank bool
+	}{
+		{"a narration post", "", true},
+		{"spaces only, like QString::trimmed()", "   ", true},
+		{"tabs and newlines are whitespace too", "\t\n", true},
+		// TrimSpace's cut set is Unicode space where QString::trimmed() is ASCII
+		// only: U+3000 reads blank here and would not in AO2. Recorded as the
+		// deliberate deviation chatboxfit.go documents, pinned so it stays one.
+		{"an ideographic space (documented deviation)", "　", true},
+		{"an ordinary speaker", "Phoenix", false},
+		{"a padded name is still a name", "  Phoenix  ", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			page, blank := a.chatboxSkinForShowname(tc.showname, base)
+			if blank != tc.wantBlank {
+				t.Fatalf("showname %q: blank=%v, want %v", tc.showname, blank, tc.wantBlank)
+			}
+			want := base
+			if tc.wantBlank {
+				want = blankPage
+			}
+			if page != want {
+				t.Fatalf("showname %q returned the wrong page (blank art = %v)", tc.showname, page == blankPage)
+			}
+		})
+	}
+
+	// 3. Per FRAME, not per message: the draw sites call this inside drawCourtroom,
+	//    so it must cost nothing. themePage's first line is a map probe.
+	a.chatboxSkinForShowname("", base) // warm the themePages entry
+	if n := testing.AllocsPerRun(1000, func() {
+		a.chatboxSkinForShowname("", base)
+		a.chatboxSkinForShowname("Phoenix", base)
+	}); n != 0 {
+		t.Errorf("the per-message skin pick allocates %.1f/op, want 0", n)
 	}
 }
 
@@ -555,4 +697,229 @@ func TestShownameLadderReachesBothDrawSites(t *testing.T) {
 				"the live chatbox and the export must agree on which skin a long name is on", file)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// The blank-skin selection's mirror-site guard.
+// ---------------------------------------------------------------------------
+
+// chatboxBlankSkinFn is the seam every themed chatbox blit has to go through, and
+// the name the census below hunts for in the sources.
+const chatboxBlankSkinFn = "chatboxSkinForShowname"
+
+// chatboxBlankSkinArg is the field a live site must hand it: the SCENE's showname
+// for the message currently up.
+//
+// Pinned as the selector's last segment, not as `sc.ShownameText`, so renaming the
+// local variable is free and only a site that stops feeding the per-message name
+// fails. That is the failure worth catching: AO2's branch is per MESSAGE
+// (courtroom.cpp:3320), and a site that passed a constant, a theme-level name, or
+// the character's canonical name would compile, draw, and be wrong on exactly the
+// posts the fix was for.
+const chatboxBlankSkinArg = "ShownameText"
+
+// chatboxBlankSkinSite is one LIVE draw site that blits a themed chatbox skin, and
+// the reason it is on this list. Each entry IS the audit.
+type chatboxBlankSkinSite struct {
+	file string
+	fn   string
+	why  string
+}
+
+// chatboxBlankSkinSites is every place on screen a themed chatbox skin reaches the
+// renderer. Both wear the theme's art, so both own AO2's per-message choice between
+// the ordinary skin and the plate-less one.
+//
+// gifexport.go's drawGifThemedChatbox is the THIRD site that blits this art and it
+// is deliberately absent: it does not make the selection today, which is a live
+// defect (found in this lane's review pass) owned outside this file's territory.
+// Listing it now would fail this gate for a reason no edit here can fix. When the
+// export path is fixed it belongs on this census, exactly as it is already on
+// TestShownameLadderReachesBothDrawSites' list.
+var chatboxBlankSkinSites = []chatboxBlankSkinSite{
+	{
+		file: "theme_layout.go",
+		fn:   "drawThemedChatBox",
+		why:  "the themed courtroom's own chatbox: the theme declared an ao2_chatbox rect and this draws into it",
+	},
+	{
+		file: "screens.go",
+		fn:   "drawChatOverlay",
+		why:  "the classic overlay chatbox, which still wears the THEME's skin whenever the theme shipped one",
+	},
+}
+
+// TestChatboxBlankSkinReachesEveryLiveDrawSite is the deletion-catcher for the
+// per-message blank-skin selection, and it exists because there was not one.
+//
+// TestChatboxSkinForShownameFollowsTheTrimmedName drives the function and
+// TestChatboxBlankRungIsDistinctAndDeclinesADuplicate drives the loader that makes
+// its art resident, but neither touches the two places that actually CALL it: both
+// calls could be deleted and the whole package would stay green while every
+// narration post went back to wearing the ordinary skin's empty name plate — the
+// precise defect the seam was added to end (AO2-Client courtroom.cpp:3320-3331).
+// Hard rule 11 asks for a test that proves a seam cannot be bypassed or deleted
+// while the suite stays green; this is it, in the shape srcgate_test.go documents
+// (a deletion-catcher over production sources, containing no copy of the logic).
+//
+// Three properties per site, all of them regressions somebody could ship without
+// the compiler noticing: the call is THERE, it is fed the live per-message
+// showname, and its answer is not thrown away.
+//
+// The third one is the one that needs teeth, because Go gives "thrown away" three
+// spellings and only the loudest of them is a bare statement. A multi-value call is
+// a legal ExprStmt; `_, _ = f(...)` is a legal assignment; and an assignment whose
+// target is never read again afterwards is legal too — all three compile, all three
+// draw the pre-selection page, and all three used to pass this gate. So the property
+// is stated positively and structurally instead: the call must be the RHS of an
+// assignment whose FIRST target is a named variable, and that variable must be READ
+// somewhere after the call in the same body. That is what "the chosen page is the one
+// that gets blitted" means in source terms, and it stays site-agnostic — it never has
+// to name Copy/CopyEx, and it is not fooled by drawChatOverlay's earlier charSkin
+// blit, which happens before the selection and reads a different variable.
+func TestChatboxBlankSkinReachesEveryLiveDrawSite(t *testing.T) {
+	for _, site := range chatboxBlankSkinSites {
+		t.Run(site.file+"/"+site.fn, func(t *testing.T) {
+			body := funcBodySource(t, site.file, site.fn)
+
+			var calls []*ast.CallExpr
+			ast.Inspect(body, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok && callName(call) == chatboxBlankSkinFn {
+					calls = append(calls, call)
+				}
+				return true
+			})
+			if len(calls) == 0 {
+				t.Fatalf("%s (%s) blits a themed chatbox skin without asking %s which skin THIS MESSAGE wears — "+
+					"a post with a blank showname goes back to the ordinary skin's empty name plate "+
+					"(AO2-Client courtroom.cpp:3320-3331). The selection is per message, so every draw site owns it.",
+					site.fn, site.why, chatboxBlankSkinFn)
+			}
+			for _, call := range calls {
+				if !callReadsField(call, chatboxBlankSkinArg) {
+					t.Errorf("%s calls %s without passing the scene's .%s — the skin would follow something "+
+						"other than the showname this message actually posted with",
+						site.fn, chatboxBlankSkinFn, chatboxBlankSkinArg)
+				}
+				// (a) The chosen page has to land in a variable. A bare statement or a
+				// `_, _ =` assignment compiles and draws whatever page the code already
+				// had, which is precisely the empty name plate this seam exists to end.
+				target, ok := assignedFirstResult(body, call)
+				if !ok {
+					t.Errorf("%s discards what %s returned — the chosen page has to be assigned to a variable "+
+						"and blitted, or the selection is decoration", site.fn, chatboxBlankSkinFn)
+					continue
+				}
+				// (b) ...and that variable has to be USED after the call. Go does not
+				// require an assigned value to be read, so hoisting the blit above the
+				// selection (or leaving the assignment stranded) also compiles, also
+				// draws the pre-selection page, and is invisible to (a).
+				if !identReadAfter(body, target.Name, call.End()) {
+					t.Errorf("%s assigns %s's answer to %q and never reads it again — the blit is running on the "+
+						"page chosen BEFORE the selection, so a blank-showname post keeps the ordinary skin's "+
+						"empty name plate (AO2-Client courtroom.cpp:3320-3331)",
+						site.fn, chatboxBlankSkinFn, target.Name)
+				}
+			}
+		})
+	}
+}
+
+// assignedFirstResult returns the identifier call's FIRST result is assigned to.
+//
+// It reports false for every spelling of "the answer went nowhere": a bare
+// statement (no assignment at all), a call used as an argument to something else,
+// and an assignment whose first target is the blank identifier. Only the first
+// target matters — this seam's second result is the boolean the draw sites may
+// legitimately ignore; the PAGE is the one that has to survive.
+func assignedFirstResult(body *ast.BlockStmt, call *ast.CallExpr) (*ast.Ident, bool) {
+	var target *ast.Ident
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || target != nil {
+			return target == nil
+		}
+		// The call must BE the right-hand side, not merely contain it: `x, _ =
+		// wrap(f(...))` hands the wrapper's answer on, and whether the wrapper
+		// respects the choice is beyond what a source gate can see.
+		if len(as.Rhs) != 1 || unparen(as.Rhs[0]) != ast.Expr(call) {
+			return true
+		}
+		if id, ok := as.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
+			target = id
+		}
+		return false
+	})
+	return target, target != nil
+}
+
+// identReadAfter reports whether the variable named name is READ anywhere in body
+// at a position after pos.
+//
+// Assignment targets do not count as reads — `page = somethingElse` is the code
+// throwing the selection away, not consuming it. Compound targets (`x += …`) are
+// left alone deliberately: those do read.
+//
+// The match is by NAME, not by resolved object: go/ast's own resolution is
+// deprecated and a type-checked pass would drag the whole package's imports into a
+// source gate. The residual is a variable of the same name shadowing in an inner
+// scope BELOW the call and being read there — which cannot happen by accident,
+// because the shadow's own `:=` target is excluded above as a write, so someone
+// would have to declare a second `page` after the selection and read it instead.
+func identReadAfter(body *ast.BlockStmt, name string, pos token.Pos) bool {
+	writes := map[*ast.Ident]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || (as.Tok != token.ASSIGN && as.Tok != token.DEFINE) {
+			return true
+		}
+		for _, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok {
+				writes[id] = true
+			}
+		}
+		return true
+	})
+	read := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if read {
+			return false
+		}
+		if id, ok := n.(*ast.Ident); ok && id.Name == name && id.Pos() > pos && !writes[id] {
+			read = true
+		}
+		return !read
+	})
+	return read
+}
+
+// unparen strips redundant parentheses so `(f(x))` is recognised as the call it is.
+func unparen(e ast.Expr) ast.Expr {
+	for {
+		p, ok := e.(*ast.ParenExpr)
+		if !ok {
+			return e
+		}
+		e = p.X
+	}
+}
+
+// callReadsField reports whether any argument of call reads the named struct field
+// (the last segment of a selector), however deeply it is nested inside the
+// expression — so `sc.ShownameText`, `a.room.Scene.ShownameText` and
+// `strings.TrimSpace(sc.ShownameText)` all count, and a literal does not.
+func callReadsField(call *ast.CallExpr, field string) bool {
+	for _, arg := range call.Args {
+		found := false
+		ast.Inspect(arg, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == field {
+				found = true
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }

@@ -266,6 +266,12 @@ type Ctx struct {
 	// nil in headless tests — flashing is best-effort everywhere.
 	win *sdl.Window
 
+	// musicMarquee is the phase of the ONE scrolling label the client has, the
+	// music banner's (musicmarquee.go). It lives on Ctx rather than App because
+	// it is display state of a kit-level text surface, it has to survive between
+	// frames, and it is bounded to a single slot by its type.
+	musicMarquee marqueeSlot
+
 	font    *ttf.Font
 	fontBig *ttf.Font
 	// Device-scaled chrome faces (#77 crisp scaling): font/fontBig opened at
@@ -407,6 +413,12 @@ type Ctx struct {
 	// them. themeFaceCover holds the index-aligned sfnt cmap face for the PICK.
 	themeFaceData  [][]byte
 	themeFaceCover []*sfnt.Font
+	// themeFaceQt is the index-aligned Qt ROW PITCH of each of those faces —
+	// OS/2 usWinAscent/usWinDescent, the metric AO2's Qt actually stacks its
+	// chatbox rows by, which SDL_ttf does not expose at all (themerowpitch.go,
+	// internal/theme.ReadQtRowPitch). Parsed here, once per apply, off every draw
+	// path; the draw side does one slice read and integer arithmetic.
+	themeFaceQt []theme.QtRowPitch
 	// One logical + one device fontSet PER ELEMENT (not per face): each element
 	// pins its OWN point size, so a theme with showname = 12 and message = 24
 	// can't thrash one shared set between two sizes every frame (buildSet's pct
@@ -1064,8 +1076,12 @@ func (c *Ctx) SetThemeFaces(data [][]byte) {
 	c.dropThemeElemSets()
 	c.themeFaceData = data
 	c.themeFaceCover = c.themeFaceCover[:0]
+	c.themeFaceQt = c.themeFaceQt[:0]
 	for _, d := range data {
 		c.themeFaceCover = append(c.themeFaceCover, parseCover(d))
+		// Same loop, same index, same bytes: the Qt row pitch must never be able
+		// to belong to a different face than the cover it sits beside.
+		c.themeFaceQt = append(c.themeFaceQt, theme.ReadQtRowPitch(d))
 	}
 	c.fontChainGen++ // every fontSet (global AND per-element) rebuilds; wrap caches invalidate
 	// Labels, emoji rasters and line picks all carry the OLD faces' identity
@@ -3250,25 +3266,56 @@ const (
 // layout-build time rather than per frame; the happy path returns before the loop
 // allocates anything.
 func truncateLabelTo(label string, avail int32, measure func(string) int32) string {
+	return truncateLabelToMarker(label, avail, truncateEllipsis, measure)
+}
+
+// truncateLabelToMarker is truncateLabelTo with the trailing marker chosen by the
+// caller — for the surfaces that draw in a THEME-declared face, where U+2026 may
+// have no glyph and renders as a .notdef box (labelellipsis.go).
+//
+// AO2's arithmetic is GENERALISED, not abandoned. Its loop chops two runes and
+// appends a one-rune ellipsis, so each pass nets exactly one original character
+// narrower; the rule that produces that is "chop one more rune than the marker
+// costs", which is what truncateChopFor computes. With AO2's own marker it chops
+// two and the behaviour is byte-identical.
+//
+// Both AO2 behaviours the single-marker version documented survive verbatim: a
+// label measuring EXACTLY avail is left alone (AO2's condition is `>`), and a chop
+// that would leave nothing but the marker abandons the truncation and keeps the
+// ORIGINAL text rather than drawing a lone "…" — which also stops the loop when the
+// marker is itself wider than the rect.
+func truncateLabelToMarker(label string, avail int32, marker string, measure func(string) int32) string {
 	if avail <= 0 || measure(label) <= avail {
 		return label
 	}
+	chop := truncateChopFor(marker)
 	out := label
-	for measure(out) > avail && out != truncateEllipsis {
-		// Chop two runes off the CURRENT string and append one, exactly as AO2
-		// does. The ellipsis a previous pass appended is therefore one of the two
-		// chopped, so each pass nets ONE original rune narrower — stripping it
-		// first would net two and diverge from AO2 from the second pass onward.
+	for measure(out) > avail && out != marker {
+		// Chop off the CURRENT string and re-append the marker, exactly as AO2
+		// does. The marker a previous pass appended is therefore among the chopped
+		// runes, so each pass nets ONE original rune narrower — stripping it first
+		// would net `chop` and diverge from AO2 from the second pass onward.
 		r := []rune(out)
-		if len(r) <= truncateChopRunes {
-			return label // would collapse to "…" — AO2 keeps the original
+		if len(r) <= chop {
+			return label // would collapse to the marker alone — AO2 keeps the original
 		}
-		out = string(r[:len(r)-truncateChopRunes]) + truncateEllipsis
+		out = string(r[:len(r)-chop]) + marker
 	}
-	if out == truncateEllipsis {
+	if out == marker {
 		return label
 	}
 	return out
+}
+
+// truncateChopFor is how many runes one pass removes so the net loss is exactly one
+// original character: the marker's own runes (which the previous pass appended and
+// this one must take back) plus one.
+//
+// For AO2's single-rune ellipsis this is 2 — courtroom.cpp:6750-6754's literal
+// chop of two — which is what truncateChopRunes names and what
+// TestTruncateChopMatchesAO2ForTheEllipsis (labelellipsis_test.go) pins.
+func truncateChopFor(marker string) int {
+	return len([]rune(marker)) + 1
 }
 
 // fitLabelToFont is truncateLabelTo measured in a SPECIFIC face — for the themed
@@ -3277,9 +3324,28 @@ func truncateLabelTo(label string, avail int32, measure func(string) int32) stri
 // Callers on a per-frame path should test the fits case with fontTextWidth first:
 // the measure closure here is what would allocate, and only an overlong label
 // needs it.
+//
+// The MARKER is chosen against the same face (ellipsisFor): a theme-declared
+// display font that has no U+2026 gets "..." instead of the .notdef box that was
+// showing up at the end of every shortened music-banner title. Resolved here rather
+// than at the call sites so no themed surface can be given the coverage-checked
+// truncation and another one left with the box.
 func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
-	return truncateLabelTo(label, avail, func(s string) int32 {
-		w, ok := c.fontTextWidth(f, s)
+	return c.fitLabelToFontWeight(f, label, avail, false)
+}
+
+// fitLabelToFontWeight is fitLabelToFont measured at a weight — the third member of
+// the weighted trio (LabelClippedFontWeight draws it, fontTextWidthWeight measures
+// it, this one shortens it), so a bold themed label is cut to what the BOLD glyphs
+// occupy. SDL_ttf's emboldening widens every glyph, so a string fitted on plain
+// advances still overflows when it is drawn bold, and the ellipsis that was supposed
+// to say "there is more" gets clipped off along with the tail it marks.
+//
+// bold==false routes through the identical measure and the identical memo key as
+// before, so every existing caller is byte-for-byte unchanged.
+func (c *Ctx) fitLabelToFontWeight(f *ttf.Font, label string, avail int32, bold bool) string {
+	return truncateLabelToMarker(label, avail, c.ellipsisFor(f), func(s string) int32 {
+		w, ok := c.fontTextWidthWeight(f, s, bold)
 		if !ok {
 			return 0
 		}

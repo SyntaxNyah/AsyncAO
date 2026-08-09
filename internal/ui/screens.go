@@ -2694,7 +2694,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// by the font's LINE SPACING (leading included — linespacing.go), so sizing the
 		// grow with the shorter glyph box under-grows the panel by one leading per row
 		// and clips the tail of a long message.
-		lineH := render.FontLineSpacing(a.messageFontFor(a.messagePct(), sc.MessageText))
+		msgPct := a.messagePct()
+		lineH := a.messageRowPitchLogical(msgPct, a.messageFontFor(msgPct, sc.MessageText))
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
@@ -2715,6 +2716,14 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	}
 	if !skinned {
 		if page, ok := a.themePage(themeStemChatbox); ok {
+			// AO2's per-MESSAGE skin choice: a blank showname takes the plate-less
+			// `chatblank` art (courtroom.cpp:3320-3331). This overlay is AsyncAO's
+			// own chatbox, but it wears the THEME's skin whenever the theme shipped
+			// one, so the empty name plate a narration post left on screen is the
+			// same defect here — one selection, both paths (chatboxfit.go). A theme
+			// with no separate blank variant returns its base page, which is
+			// byte-identical to what this drew before.
+			page, _ = a.chatboxSkinForShowname(sc.ShownameText, page)
 			c.cgoRect = box
 			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 			skinned, themeSkinned = true, true
@@ -2834,8 +2843,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// failure, because it looks like the client simply stopped receiving IC.
 		c.cgoRect = box
 		_ = c.Ren.SetClipRect(&c.cgoRect)
-		msgFont := a.messageFontFor(a.messagePct(), sc.MessageText)
-		lineH := render.FontLineSpacing(msgFont) // same row pitch the raster would have used
+		msgPct := a.messagePct()
+		msgFont := a.messageFontFor(msgPct, sc.MessageText)
+		lineH := a.messageRowPitchLogical(msgPct, msgFont) // same row pitch the raster would have used
 		y := textRect.Y
 		for _, line := range c.WrapText(sc.MessageText, wrapW, 0) {
 			if y+lineH > box.Y+box.H {
@@ -2972,7 +2982,7 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 		// #39: theme "message" size, stepped by the raster's own row pitch
 		// (render.FontLineSpacing) — a highlight built on the shorter glyph box would
 		// leave an unpainted stripe between every pair of wrapped rows.
-		lineH := render.FontLineSpacing(a.messageFontFor(a.rasterScale, sc.MessageText))
+		lineH := a.msAnim.RowPitch() // the step Draw will actually use, override included
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
@@ -8258,6 +8268,11 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// can never leak into export pixels.
 	dev := a.ctx.textDevPct
 	font := a.ctx.deviceFontFor(logFont, pct)
+	// The row advance AO2's Qt would use for the theme's own message face, in the
+	// same DEVICE pixels the raster keeps its lineH in. 0 whenever the theme named
+	// no message family (or its face has no OS/2 opinion), which is every
+	// unthemed message and most themed ones.
+	pitch := a.themeRowPitchDevice(elemMessage, pct)
 	// Per-glyph fallback raster when the message has emoji OR mixes scripts no single
 	// face covers (covers() reads the pick just made above — no rescan): each rune
 	// routes to the color-emoji face or its covering text face, baseline-aligned.
@@ -8276,25 +8291,34 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 		}
 		textFonts := a.ctx.deviceCoverRunes(logFont, pct, []rune(sc.MessageText))
 		m, err := render.RasterizeFallback(a.ctx.Ren, textFonts, a.ctx.emojiDeviceFont(pct), sc.MessageText, spans, wrapW, dev)
-		return centerRaster(m, err, sc, wrapW)
+		return centerRaster(m, err, sc, wrapW, pitch)
 	}
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
 	if sceneNeedsStyled(sc.MessageStyles) {
 		m, err := render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW, dev)
-		return centerRaster(m, err, sc, wrapW)
+		return centerRaster(m, err, sc, wrapW, pitch)
 	}
 	m, err := render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col, dev)
-	return centerRaster(m, err, sc, wrapW)
+	return centerRaster(m, err, sc, wrapW, pitch)
 }
 
 // centerRaster applies the webAO "~~" centre alignment to a freshly built raster when
 // the scene asked for it (Scene.Centered). Wraps the (raster, err) return so the three
 // build paths stay one-liners; a no-op for the common left-aligned case and on error.
-func centerRaster(m *render.MessageRaster, err error, sc *courtroom.Scene, wrapW int32) (*render.MessageRaster, error) {
-	if err == nil && m != nil && sc.Centered {
+func centerRaster(m *render.MessageRaster, err error, sc *courtroom.Scene, wrapW int32, rowPitch int32) (*render.MessageRaster, error) {
+	if err != nil || m == nil {
+		return m, err
+	}
+	if sc.Centered {
 		m.Center(wrapW)
 	}
+	// AO2's row advance, when the theme's own message face has one SDL_ttf cannot
+	// see (themerowpitch.go). Applied here rather than at the three build sites so
+	// the plain, the styled and the per-glyph-fallback raster can never disagree
+	// about how far apart the rows go. A no-op for every face without an OS/2
+	// quarrel, and for every message drawn in the client's own font.
+	m.UseRowPitch(rowPitch)
 	return m, err
 }
 
@@ -8341,7 +8365,12 @@ func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct 
 	// getting uniform .notdef advances. Built ONCE per message (layout time); Draw reads the
 	// stored per-rune face, so the per-frame path keeps its zero-alloc guarantee.
 	resolve := a.animFontResolver(font, pct, sc.MessageText)
-	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW, resolve, a.ctx.fontChainGen), font
+	at := render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW, resolve, a.ctx.fontChainGen)
+	// The same AO2 row advance the plain raster gets (centerRaster), in the
+	// LOGICAL pixels this path lays out in — an effects message must not be spaced
+	// differently from the identical message without effects.
+	at.UseRowPitch(a.themeRowPitchLogical(elemMessage, pct))
+	return at, font
 }
 
 // animColors flattens the message's inline-colour runs into a per-rune colour slice so #M5
