@@ -4,7 +4,8 @@ A living handoff note so work can continue from any machine or session with
 just this repository. Refreshed at each landing; trust the newest commit of
 this file over anything older.
 
-Last refresh: 2026-08-11, HEAD = the field batch 8 commit.
+Last refresh: 2026-08-11 (second refresh, pre-mobile handoff). Pushed HEAD =
+the "docs: add the development state handoff" commit on top of field batch 8.
 
 ## Where v1.90.0 stands
 
@@ -31,15 +32,27 @@ testing. It ships the theme editor and everything around it:
 
 ## In flight right now
 
-Field batch 9 (not yet landed at this refresh):
+Field batch 9, IN PROGRESS ON THE DESKTOP MACHINE. Its work exists there as
+uncommitted files that are NOT on GitHub yet. A session on any other machine
+must NOT start, redo, or duplicate these items; they land as one commit from
+the desktop:
 1. A prominent Preview button in the theme editor: hides editing chrome and
    stages an offline sample scene (message crawling, banner scrolling) so the
    author sees the theme as a player would. Must work on a brand-new blank
-   theme too.
+   theme too. Status: in progress (the one item still being written).
 2. The pairing preview reads the partner's first char.ini emote instead of
-   assuming an emote named "normal" exists.
+   assuming an emote named "normal" exists. Status: substantially built.
 3. A small clip fix for animated text spans on the first chatbox row.
+   Status: substantially built.
 4. Two new easter eggs (Mint, Northgate) joining the existing five.
+   Status: substantially built.
+5. The CI staticcheck findings on main (9 items; CI is knowingly red on main
+   until this lands): two self-comparing test assertions to repair, a
+   possibly-unwired redo guard to verify, four dead functions to judge, two
+   mechanical style fixes. Status: queued in the same batch.
+
+Note for any non-desktop session: CI on main is red from the staticcheck
+findings above. This is known and owned; do not ship a separate fix for it.
 
 ## What remains before release
 
