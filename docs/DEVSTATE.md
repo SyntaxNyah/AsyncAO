@@ -30,12 +30,31 @@ testing. It ships the theme editor and everything around it:
   local mounts, and more. Read the commit log; each message documents its
   change thoroughly.
 
-## In flight right now
+## FINISH-THE-RELEASE RUNBOOK (the current session's job)
 
-Field batch 9, IN PROGRESS ON THE DESKTOP MACHINE. Its work exists there as
-uncommitted files that are NOT on GitHub yet. A session on any other machine
-must NOT start, redo, or duplicate these items; they land as one commit from
-the desktop:
+The desktop session handed off mid-batch. Everything needed is pushed.
+Finish in this order:
+
+1. Check out branch wip/field-batch-9. It holds the half-built batch as ONE
+   WIP commit (never merge that commit as-is). Items 2-4 below are
+   substantially built there; finish items 1 and 5, then land the WHOLE
+   batch on main as one clean commit (squash; write a proper message in the
+   log's style, no contributor names) after an adversarial review pass.
+2. Gates before that commit: gofmt, go vet, go test -race -p 1 -count=1
+   ./... (the videoenc mux test and the courtroom egg alloc gate are known
+   load flakes; green in isolation excuses them), AND staticcheck ./...
+   with ZERO findings (CI runs it; main is red until this lands).
+3. Release notes: docs/release/CHANGELOG-v1.90.0-draft.md is the approved
+   text. Paste its section into internal/ui/assets/CHANGELOG.md as
+   "## v1.90.0-test1" (the header must EQUAL the tag; a stable section
+   always sits ABOVE its -testN siblings for the updater's extractor).
+   Commit that separately.
+4. Push main only when the owner says push. The owner tags v1.90.0-test1
+   themselves (tags trigger .github/workflows/release.yml which builds all
+   release assets; the in-app updater consumes them, so tags are sacred).
+5. Delete the wip branch after the clean landing.
+
+Field batch 9's items:
 1. A prominent Preview button in the theme editor: hides editing chrome and
    stages an offline sample scene (message crawling, banner scrolling) so the
    author sees the theme as a player would. Must work on a brand-new blank
