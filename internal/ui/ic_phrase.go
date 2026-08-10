@@ -53,7 +53,7 @@ func (a *App) sendICPhrase(phrase string) {
 	}
 	draft := a.icInput
 	a.icInput = phrase
-	a.sendIC(0)
+	a.sendIC()
 	a.icInput = draft
 }
 

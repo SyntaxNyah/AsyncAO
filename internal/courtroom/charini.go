@@ -54,8 +54,14 @@ type CustomShout struct {
 // blip set, showname, custom shouts.
 type CharINI struct {
 	Showname string
-	Side     string
-	Blips    string
+	// NeedsShowname is the [Options] needs_showname= opt-out, kept RAW because
+	// canon tests it with startsWith rather than a boolean parse:
+	// get_showname returns the empty string when it starts with "false"
+	// (text_file_functions.cpp:465-468), which is a deliberate blank plate and
+	// not "fall back to the folder name". ShownameOrFolder is that rule.
+	NeedsShowname string
+	Side          string
+	Blips         string
 	// Chat is the [Options] chat= misc folder: the character's own chatbox
 	// skin lives at misc/<Chat>/chatbox (AO2-Client get_chat). Empty = the
 	// client's normal chatbox.
@@ -138,6 +144,7 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 	}
 	out := &CharINI{}
 	out.Showname, _ = ini.GetSection(charINIOptionsSection, "showname")
+	out.NeedsShowname, _ = ini.GetSection(charINIOptionsSection, "needs_showname")
 	out.Side, _ = ini.GetSection(charINIOptionsSection, "side")
 	out.Blips, _ = ini.GetSection(charINIOptionsSection, "blips")
 	if out.Blips == "" {
@@ -213,6 +220,33 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 		out.CustomShouts = append(out.CustomShouts, CustomShout{Name: val, File: stem})
 	}
 	return out, nil
+}
+
+// ShownameOrFolder is AOApplication::get_showname
+// (text_file_functions.cpp:446-473) with p_emote == -1, which is the argument
+// every DISPLAY call site passes (courtroom.cpp:2532 log_chatmessage,
+// :3286 initialize_chatbox, :3868 append_ic_text, :4798). Only the OUTGOING
+// send reads the [OptionsN] per-emote override (:2219), so it is deliberately
+// not transcribed here.
+//
+// Canon's order matters and is not the obvious one: needs_showname is tested
+// FIRST, so a character that opts out gets a genuinely BLANK name — not the
+// folder name — and blank is a real answer that routes into the plate-less
+// chatblank rung. Only then does an absent showname fall back to the folder.
+//
+// A nil receiver (no char.ini fetched yet, or an unparsable one) answers the
+// folder name, which is exactly what canon answers for an unreadable ini.
+func (c *CharINI) ShownameOrFolder(folder string) string {
+	if c == nil {
+		return folder
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(c.NeedsShowname)), "false") {
+		return "" // :465-468 — a deliberate blank, kept blank
+	}
+	if s := strings.TrimSpace(c.Showname); s != "" {
+		return s
+	}
+	return folder // :470-472
 }
 
 // firstSection is GetSection collapsed to its value.

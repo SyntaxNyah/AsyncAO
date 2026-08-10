@@ -13,13 +13,13 @@ import (
 func TestICLogLineDisplay(t *testing.T) {
 	m := &protocol.ChatMessage{Showname: "PhoenixRP", CharName: "Phoenix", Message: "Objection!"}
 
-	if line, spk := icLogLineDisplay(m, false, ""); line != "PhoenixRP: Objection!" || spk != "PhoenixRP" {
+	if line, spk := icLogLineDisplay(m, false, "", nil); line != "PhoenixRP: Objection!" || spk != "PhoenixRP" {
 		t.Fatalf("no nickname = %q / %q, want \"PhoenixRP: Objection!\" / \"PhoenixRP\"", line, spk)
 	}
-	if line, spk := icLogLineDisplay(m, false, "Bird"); line != "Bird (PhoenixRP): Objection!" || spk != "PhoenixRP" {
+	if line, spk := icLogLineDisplay(m, false, "Bird", nil); line != "Bird (PhoenixRP): Objection!" || spk != "PhoenixRP" {
 		t.Fatalf("nickname = %q / %q, want \"Bird (PhoenixRP): Objection!\" / \"PhoenixRP\" (speaker stays real)", line, spk)
 	}
-	if line, spk := icLogLineDisplay(m, true, "Bird"); line != "Phoenix: Objection!" || spk != "Phoenix" {
+	if line, spk := icLogLineDisplay(m, true, "Bird", nil); line != "Phoenix: Objection!" || spk != "Phoenix" {
 		t.Fatalf("force-char = %q / %q, want the character name with no nickname", line, spk)
 	}
 }

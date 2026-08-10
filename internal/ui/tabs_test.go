@@ -901,7 +901,7 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a.splitTab = pin
 	a.ctx.focusID = "ic-split"
 
-	a.sendICSplit(0)
+	a.sendICSplit()
 
 	// 1. Exactly one MS went out, and on the PINNED conn (the primary's send is a
 	//    no-op rehearsal func, so capturing it here proves the routing).

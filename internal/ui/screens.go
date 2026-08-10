@@ -2784,7 +2784,18 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	a.ensureChatRaster(wrapW, themeSkinned, a.messagePct()) // theme ink only with the THEME's skin; char skins keep our readable text
 	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
 	textRect := sdl.Rect{X: box.X + chatOverlayPadX, Y: box.Y + chatBoxTopStrip, W: wrapW, H: box.H - chatBoxTopStrip}
-	a.handleChatSelect(textRect, sc)
+	// The box follows its own crawl (chatcrawlscroll.go = AO2's ensureCursorVisible,
+	// courtroom.cpp:4514-4521). Exactly 0 for a message that fits, so the ordinary
+	// post draws from the same origin it always did.
+	msgScroll := chatCrawlOffset(a.msRaster, sc.VisibleRunes, textRect.H)
+	msgY := textRect.Y - msgScroll
+	// …and the clip that contains it starts at the TEXT origin, not at the top of
+	// the box: a scrolled message draws from above textRect.Y, and the showname
+	// plate is up there (box.Y+chatOverlayNameY). Clipping to `box` put the
+	// scrolled-off rows on the name band. chatcrawlscroll.go explains why the other
+	// three edges stay the box's.
+	msgClip := chatCrawlClip(box, textRect.Y)
+	a.handleChatSelect(textRect, msgScroll, sc)
 	// Snapshot the geometry for Debug → Session. Plain field stores, no allocation,
 	// so it costs the draw nothing; it is the only way to see these numbers on a
 	// machine we can't run.
@@ -2800,13 +2811,14 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		a.chatDiag.lines, a.chatDiag.lineH, a.chatDiag.total = 0, 0, 0
 	}
 	if a.msAnim != nil || a.msRaster != nil {
-		// Clip to the box: oversized Text settings stay INSIDE it. Via the Ctx
-		// scratch rect — &box into cgo would heap-allocate box at its creation
-		// every frame (SDL copies the rect, so later scratch reuse is safe).
-		c.cgoRect = box
+		// Clip to the box below the name plate: oversized Text settings stay INSIDE
+		// it, and the crawl's scrolled-off rows stay OUT of the showname strip. Via
+		// the Ctx scratch rect — &msgClip into cgo would heap-allocate it at its
+		// creation every frame (SDL copies the rect, so later scratch reuse is safe).
+		c.cgoRect = msgClip
 		_ = c.Ren.SetClipRect(&c.cgoRect)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
-			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
+			a.drawChatSelHighlight(textRect.X, msgY, wrapW, sc) // scrolled with the text it marks
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			// The master off-switch implies reduce-motion for text too: the glyphs
@@ -2824,15 +2836,18 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 				// background cap off still parks (that gate outranks this).
 				a.NoteAnimating()
 			}
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, textRect.Y, reduce)
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, msgY, reduce)
 		} else {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
 			// time its width changes parity, and the settled text wobbles as it types.
-			// box, not textRect: it is the clip actually set above, and the
-			// device-exact path must re-assert THAT one inside its 1:1 bracket or
-			// the backend may read it against the wrong scale (see draw()).
-			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, textRect.Y, c.RenderScalePct(), &box)
+			// msgClip, not textRect and not box: it is the clip actually set above,
+			// and the device-exact path must re-assert THAT one inside its 1:1
+			// bracket or the backend may read it against the wrong scale (see
+			// draw()). Handing it `box` here would restore the name band as a paint
+			// target for every scaled UI — the exact defect, on the exact machines
+			// hardest to reproduce it on.
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
 		}
 		_ = c.Ren.SetClipRect(nil)
 	} else if a.rasterFailedText != "" && sc.MessageText != "" {
@@ -2869,7 +2884,12 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 // whole-message selection. Its own press edge so it's independent of the log
 // selection's; activating either clears the other so they never fight over a
 // Ctrl+C. Shared by the classic overlay and the themed chatbox.
-func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
+// scrollY is the crawl-follow offset the text is DRAWN with
+// (chatcrawlscroll.go): the hit REGION stays the box, but the rune lookup has to
+// be measured from where the glyphs actually are, or a click inside a scrolled
+// message picks the rune that used to be under the cursor. Zero for every message
+// that fits, which is the overwhelming majority of them.
+func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.Scene) {
 	c := a.ctx
 	pressed := c.mouseDown && !a.chatSelPrevDown
 	a.chatSelPrevDown = c.mouseDown
@@ -2879,7 +2899,7 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 			a.chatSelDragging = true
 			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
 			if a.msRaster != nil { // anchor the range at the pressed boundary
-				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 				a.chatSelB = a.chatSelA
 			}
 		} else {
@@ -2889,7 +2909,7 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 	if a.chatSelDragging {
 		if c.mouseDown {
 			if a.msRaster != nil { // the held drag moves the range's head
-				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			}
 			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
 				if !a.chatSelActive {
@@ -2916,7 +2936,7 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 			a.chatSelA, a.chatSelB = 0, len(runes)
 			c.tripleClick = false
 		} else {
-			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
 			c.dblClick = false
 		}
@@ -5926,8 +5946,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 
 	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
 	// Extracted to drawICShoutRow (rects by value, no closures — the row stays
-	// alloc-free) so the send decision below reads pendingShout as before.
-	pendingShout := a.drawICShoutRow(clusterX, y, w, h)
+	// alloc-free). It ARMS a.icShout now; nothing is returned to a send.
+	a.drawICShoutRow(clusterX, y, w, h)
 
 	// Row 2: utility buttons (their own row so nothing overlaps at any
 	// viewport scale or window width). Split into the legacy-dev-theme and the
@@ -5993,13 +6013,15 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	a.drawICColorStrip(colorBox) // swatch + colour dropdown (rect by value — alloc-free)
 	// The rest of the IC bar (showname → Immediate → Additive → SFX → emoji → FX →
 	// text input → muted chip) is one sequential cursor chain, kept together in
-	// drawICInputRow. It returns whether Enter was pressed so the send decision
-	// stays visible here alongside the shout row's pendingShout. icBar is passed by
+	// drawICInputRow. It returns whether Enter was pressed. icBar is passed by
 	// value (alloc-free); the chain flows from the DEFAULT positions, never an
 	// override, so freeing one slot never cascades the rest (unchanged behaviour).
-	send := a.drawICInputRow(icBar, rowY, w, h, fH)
-	if send || pendingShout != 0 {
-		a.sendIC(pendingShout)
+	//
+	// ENTER is the only sender. The shout row ARMS (courtroom.cpp:6048-6127) and
+	// the armed state rides sendIC's own read of a.icShout — it no longer feeds a
+	// modifier straight into a send.
+	if a.drawICInputRow(icBar, rowY, w, h, fH) {
+		a.sendIC()
 	}
 
 	// Emote row — a movable/resizable slot (the grid pages within whatever rect it
@@ -6087,11 +6109,15 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 
 // drawICShoutRow draws control-block Row 1 — the shout buttons (Hold It / Objection
 // / Take That + the 2.10 custom interjection), the Pair toggle and the live layout
-// knobs — from the block origin (clusterX, y). It returns the shout modifier the
-// user clicked (0 = none), which the caller folds into its send decision. clusterX
-// / y arrive by value and the local x cursor never escapes, so the row stays
-// allocation-free (moved verbatim from drawICControls).
-func (a *App) drawICShoutRow(clusterX, y, w, h int32) (pendingShout int) {
+// knobs — from the block origin (clusterX, y). clusterX / y arrive by value and the
+// local x cursor never escapes, so the row stays allocation-free (moved verbatim
+// from drawICControls).
+//
+// The buttons ARM (toggleShout, icarms.go); the armed one wears drawArmedOverlay,
+// standing in for AO2's "*_selected" sprite swap (courtroom.cpp:6062 etc.). It used
+// to return a modifier the caller fed straight into sendIC, which is why a click
+// fired the interjection on the spot.
+func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 	c := a.ctx
 	x := clusterX
 	if !a.panelHidden(panelShouts) {
@@ -6111,20 +6137,28 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) (pendingShout int) {
 			if a.panelHidden(s.key) {
 				continue // individually hideable (the row compacts); the group toggle still hides all
 			}
-			if a.movableButton(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label, w, h) {
-				pendingShout = s.mod
+			// slotRect ONCE and reuse it, rather than movableButton plus a second
+			// lookup: the armed overlay has to land on the rect the button actually
+			// DREW at (the layout editor can have moved it), and asking twice repeats
+			// the editor's slot bookkeeping for nothing. This is movableButton inlined.
+			shoutRect := a.slotRect(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, w, h)
+			if c.Button(shoutRect, s.label) {
+				a.toggleShout(s.mod)
 			}
+			a.drawArmedOverlay(shoutRect, a.icShout == s.mod)
 			x += shoutW + 6
 		}
-		// Custom interjection (2.10): the button fires the active pick;
+		// Custom interjection (2.10): the button ARMS the active pick;
 		// the ▾ cycler steps base custom → each named [Shouts] entry.
 		// Only for characters that actually ship one (hasCustomShout).
 		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			label := a.customShoutLabel()
 			bw := c.TextWidth(label) + 16
-			if c.Button(sdl.Rect{X: x, Y: y, W: bw, H: btnH}, label) {
-				pendingShout = protocol.ShoutCustom
+			customRect := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
+			if c.Button(customRect, label) {
+				a.toggleShout(protocol.ShoutCustom)
 			}
+			a.drawArmedOverlay(customRect, a.icShout == protocol.ShoutCustom)
 			x += bw + 4
 			if len(a.customShouts) > 0 {
 				if c.Button(sdl.Rect{X: x, Y: y, W: 26, H: btnH}, "▾") {
@@ -6153,7 +6187,6 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) (pendingShout int) {
 		x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
 		_ = a.scaleControl(x, y, "Input", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
 	}
-	return pendingShout
 }
 
 // drawICUtilityRowLegacy draws control-block Row 2 in the legacy-dev-theme layout
@@ -7653,9 +7686,12 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 
 	// Offset ghost editor: drag your sprite live; partner shows as a
 	// translucent ghost at their last-known placement.
+	//
+	// grip is handed down so a press the panel's RESIZE corner already consumed
+	// cannot also start a sprite drag — see drawPairGhost.
 	pv := sdl.Rect{X: rx, Y: ry, W: r.W/2 - 2*pad, H: r.Y + r.H - pad - ry}
 	if pv.H >= ghostMinHeightPx {
-		a.drawPairGhost(pv)
+		a.drawPairGhost(pv, grip)
 	}
 }
 
@@ -7687,8 +7723,30 @@ const ghostAlpha = 110
 // message), and your idle sprite at YOUR offsets — drag it to set them
 // (the numeric rows above mirror live). Same offset math as the real
 // viewport: percent of stage width/height.
-func (a *App) drawPairGhost(pv sdl.Rect) {
+//
+// grip is the panel's bottom-right RESIZE corner, whose top-left quadrant
+// overlaps this stage: the grip is floatGripSz (16) square in the panel's
+// corner and pv runs to pad (8) short of it, so 8x8 logical pixels belong to
+// both. floatWinResize consumes that press through the shared `pressed` flag,
+// but this editor armed its drag off raw c.mouseDown and therefore ALSO started
+// dragging — every panel resize silently rewrote the pair offsets, which is how
+// an offset nobody typed ends up at 53%.
+func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	c := a.ctx
+	// CLIP THE STAGE. A character sprite is fitted to the stage HEIGHT with its
+	// width following the aspect ratio (drawGhostSprite, the same rule the real
+	// viewport and AO2's non-stretch splash arm use — animationlayer.cpp:229-260),
+	// so a wide sprite is legitimately wider than this narrow preview column, and
+	// the offset then slides it further still. AO2 gets away with the same
+	// arithmetic because ui_vp_player_char is a CHILD WIDGET and Qt clips children
+	// to the viewport; nothing clipped here, so the ghost painted straight over the
+	// panel edge and out onto the courtroom, the music list and the IC bar.
+	//
+	// pushClip, not a raw Ren.SetClipRect: hovering() honours the mirrored clip, so
+	// the drag/press hit tests below are bounded by the same rectangle the pixels
+	// are (the raw call clips DRAW only — the repo's known clipped-grid class).
+	prevClip, hadClip := c.pushClip(pv)
+	defer c.popClip(prevClip, hadClip)
 	// Real background behind the ghosts, so you place your sprite against the
 	// actual stage instead of a black void ("otherwise what's the point"). Uses
 	// YOUR position's bg; a flat fill stands in until it streams in.
@@ -7743,10 +7801,17 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 	// thing being edited here — no hit-testing pixel art).
 	pressed := c.mouseDown && !a.ghostPrev
 	a.ghostPrev = c.mouseDown
-	if pressed && c.hovering(pv) {
+	// …except on the resize corner, which the panel chrome owns. Excluded by
+	// RECT rather than by reading the chrome's `pressed` flag because the flag is
+	// already false by the time the ghost draws (floatWinResize consumed it), so
+	// there is nothing left here to test — the geometry is the only honest signal.
+	if pressed && c.hovering(pv) && !pointIn(c.mouseX, c.mouseY, grip) {
 		a.ghostDrag = true
 		a.ghostStart = [2]int32{c.mouseX, c.mouseY}
 		a.ghostBase = [2]int{a.pairOffX, a.pairOffY}
+	}
+	if a.pairWin.resizing { // a resize that started outside pv must not capture it mid-gesture either
+		a.ghostDrag = false
 	}
 	if !c.mouseDown {
 		a.ghostDrag = false
@@ -7802,9 +7867,7 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)
 		return
 	}
-	dst := sdl.Rect{H: pv.H, W: pv.H * page.W / page.H}
-	dst.X = pv.X + (pv.W-dst.W)/2 + int32(offX)*pv.W/100
-	dst.Y = pv.Y + int32(offY)*pv.H/100
+	dst := ghostSpriteRect(pv, page.W, page.H, offX, offY)
 	if len(page.Frames) > 1 {
 		a.NoteAnimating() // the editor ghost loops: keep frames coming through the static skip
 	}
@@ -7816,6 +7879,32 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 		_ = c.Ren.Copy(tex, nil, &dst)
 	}
 	_ = tex.SetAlphaMod(255)
+}
+
+// ghostSpriteRect is where one ghost lands on the miniature stage: the sprite
+// scaled to the stage HEIGHT with its own aspect ratio, centred, then slid by
+// the pair offsets as a percentage of the stage.
+//
+// It is deliberately the SAME rule the live viewport draws a character with, and
+// deliberately NOT the same function as the shout bubble's fit
+// (render.splashFitRect): AO2 gives the two layers one shared height-factor
+// scale but only the character carries an offset (courtroom.cpp
+// on_pair_offset_changed → move()), so folding them into one helper would let a
+// change to the objection bubble move everybody's pair placement. Two rules,
+// two homes, one test each.
+//
+// The returned rect CAN be wider than pv — that is correct, and it is why the
+// caller clips. A sprite authored 16:9 at a 3:4 preview column overhangs by
+// design; cropping it here instead would make the preview lie about what the
+// real viewport will show, which is the one job this box has.
+func ghostSpriteRect(pv sdl.Rect, srcW, srcH int32, offX, offY int) sdl.Rect {
+	if srcH <= 0 {
+		return sdl.Rect{X: pv.X, Y: pv.Y}
+	}
+	dst := sdl.Rect{H: pv.H, W: pv.H * srcW / srcH}
+	dst.X = pv.X + (pv.W-dst.W)/2 + int32(offX)*pv.W/100
+	dst.Y = pv.Y + int32(offY)*pv.H/100
+	return dst
 }
 
 // ghostWarmCap bounds the ghost editor's prefetch dedupe table.
@@ -7925,7 +8014,12 @@ func funColor(text string, color, ext, customRGB int, rainbow, random bool, rand
 	return text, color
 }
 
-func (a *App) sendIC(shout int) {
+// sendIC takes no shout argument any more. The interjection is ARMED state
+// (a.icShout = AO2's objection_state) and the packet reads it here, which is
+// where canon reads it too — on_chat_return_pressed, courtroom.cpp:2136-2147.
+// Passing a shout in was what made a shout BUTTON a send button.
+func (a *App) sendIC() {
+	shout := a.icShout
 	text := strings.TrimSpace(a.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
 		a.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
@@ -8158,6 +8252,7 @@ func (a *App) sendIC(shout int) {
 	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
 	// fires on every following line, which is the failure everyone notices.
 	a.icSlide, a.icRealize, a.icShake = false, false, false
+	a.icShout = 0 // objection_state, courtroom.cpp:2327 — the line it literally sits on
 	// The three STICKY picks get their reset here, in the same place AO2's
 	// Courtroom::reset_ui does (courtroom.cpp:2340-2359). All three upstream
 	// options ship TRUE ("sticky"), so out of the box every one of these is a

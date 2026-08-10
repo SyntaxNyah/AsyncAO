@@ -25,7 +25,7 @@ func TestSendICKeepsInputUntilEcho(t *testing.T) {
 	a.sess.MyCharID = 7
 	a.icInput = "gotcha — the clock was stopped"
 
-	a.sendIC(0)
+	a.sendIC()
 
 	if len(sent) != 1 || sent[0].Header != "MS" {
 		t.Fatalf("want exactly one MS out, got %+v", sent)

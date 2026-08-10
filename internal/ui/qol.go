@@ -415,14 +415,17 @@ func (a *App) handleHotkeys() {
 	}
 	name := strings.ToLower(sdl.GetKeyName(key))
 	switch name {
+	// The four shout chords ARM the interjection, exactly like the buttons they
+	// stand in for (courtroom.cpp:6048-6127) — they do not send. Pressing the
+	// armed one again disarms it.
 	case a.hotkeyFor(hotkeyHoldIt):
-		a.sendIC(protocol.ShoutHoldIt)
+		a.toggleShout(protocol.ShoutHoldIt)
 	case a.hotkeyFor(hotkeyObjection):
-		a.sendIC(protocol.ShoutObjection)
+		a.toggleShout(protocol.ShoutObjection)
 	case a.hotkeyFor(hotkeyTakeThat):
-		a.sendIC(protocol.ShoutTakeThat)
+		a.toggleShout(protocol.ShoutTakeThat)
 	case a.hotkeyFor(hotkeyCustom):
-		a.sendIC(protocol.ShoutCustom)
+		a.toggleShout(protocol.ShoutCustom)
 	case a.hotkeyFor(hotkeyPosCycle):
 		a.cyclePos()
 	case a.hotkeyFor(hotkeyMusicStop):

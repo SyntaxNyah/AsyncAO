@@ -44,7 +44,13 @@ type charMeta struct {
 	// scaling is [Options] scaling — the texture filter this character asks for
 	// (get_scaling). ScalingAuto until the fetch lands and when none is declared.
 	scaling courtroom.ScalingMode
-	done    bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
+	// showname is get_showname's answer for this character — the char.ini
+	// [Options] showname, or the folder name, or "" for needs_showname=false
+	// (courtroom.ShownameOrFolder). Only meaningful once done: an EMPTY string
+	// is a legitimate answer, so `done` and not `showname != ""` is what tells
+	// the name chain whether rung 2 has one.
+	showname string
+	done     bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 }
 
 type charMetaFetch struct {
@@ -53,6 +59,7 @@ type charMetaFetch struct {
 	chat        string
 	effects     string
 	realization string
+	showname    string
 	scaling     courtroom.ScalingMode
 }
 
@@ -75,20 +82,24 @@ func (a *App) charMetaFor(char string) charMeta {
 		a.charMetaCache = make(map[string]charMeta, charMetaCap) // reset: it's a cache, refetch heals
 	}
 	a.charMetaCache[url] = charMeta{} // in-flight marker: one fetch per URL
-	a.charMetaFetchOne(url)
+	a.charMetaFetchOne(url, char)
 	return charMeta{}
 }
 
 // charMetaFetchOne downloads + parses one char.ini off-thread and posts the
 // result (never blocking; a dropped result refetches next session).
-func (a *App) charMetaFetchOne(url string) {
+//
+// char is the FOLDER the url was minted from — get_showname's fallback value,
+// resolved here so the cache holds canon's finished answer and no second copy
+// of the rule exists at the read side.
+func (a *App) charMetaFetchOne(url, char string) {
 	if a.charMetaRes == nil {
 		a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
-		res := charMetaFetch{url: url}
+		res := charMetaFetch{url: url, showname: char} // no ini ⇒ get_showname's unreadable-ini answer
 		if data, err := a.d.Manager.FetchRaw(ctx, url); err == nil {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
@@ -96,6 +107,7 @@ func (a *App) charMetaFetchOne(url string) {
 				res.effects = strings.TrimSpace(ini.Effects)
 				res.realization = strings.TrimSpace(ini.Realization)
 				res.scaling = ini.ScalingMode()
+				res.showname = ini.ShownameOrFolder(char) // AO2 get_showname, the ONE copy
 			}
 		}
 		select {
@@ -119,7 +131,8 @@ func (a *App) pollCharMeta() {
 			}
 			a.charMetaCache[res.url] = charMeta{
 				blips: res.blips, chat: res.chat, effects: res.effects,
-				realization: res.realization, scaling: res.scaling, done: true,
+				realization: res.realization, scaling: res.scaling,
+				showname: res.showname, done: true,
 			}
 			// Our own character's effects folder may have just arrived: drop the
 			// picker's per-frame memos so the roster is re-resolved for it.
@@ -143,6 +156,19 @@ func (a *App) remoteChatSkinFor(char string) string {
 	return a.charMetaFor(char).chat
 }
 
+// remoteIniShownameFor is the courtroom's IniShownameFor callback — AO2's
+// get_showname for a speaker, off the SAME single char.ini fetch as blips,
+// skins, effects and scaling.
+//
+// known is `done`, never `showname != ""`: an empty answer is a character that
+// declared needs_showname=false and wants a blank plate, and reading emptiness
+// as "not fetched" would silently put the folder name back on exactly the
+// characters that asked for no name at all.
+func (a *App) remoteIniShownameFor(char string) (string, bool) {
+	m := a.charMetaFor(char)
+	return m.showname, m.done
+}
+
 // wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
 // speaker blips and skins identically in every mode.
 //
@@ -156,6 +182,7 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	room.BlipNameFor = a.remoteBlipFor
 	room.ChatSkinFor = a.remoteChatSkinFor
 	room.SpriteScaling = a.remoteScalingFor
+	room.IniShownameFor = a.remoteIniShownameFor
 	// Screen-effect overlays ride the same cache and the same single fetch
 	// (effectspicker.go).
 	a.wireRoomOverlay(room)

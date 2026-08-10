@@ -1064,7 +1064,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 		a.drawMsgCounter(in, counterOn)
 		if send {
-			a.sendIC(0)
+			a.sendIC()
 		}
 	}
 
@@ -1267,18 +1267,25 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			{"objection", "Objection!", protocol.ShoutObjection},
 			{"take_that", "Take That!", protocol.ShoutTakeThat},
 		}
+		// ARM, never send: the button sets objection_state and the interjection
+		// rides the next message (courtroom.cpp:6048-6127, built at :2136-2147).
+		// drawArmedOverlay stands in for canon's "*_selected" sprite swap, which a
+		// streaming client has no stem tier for — same substitute realization and
+		// screenshake already use (icarms.go).
 		for _, s := range shouts {
 			if r, ok := lay.rect(s.key); ok {
 				if a.drawThemeButton(s.key, s.label, r) {
-					a.sendIC(s.mod)
+					a.toggleShout(s.mod)
 				}
+				a.drawArmedOverlay(r, a.icShout == s.mod)
 			}
 		}
 		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			if r, ok := lay.rect("custom_objection"); ok {
 				if a.drawThemeButton("custom_objection", a.customShoutLabel(), r) {
-					a.sendIC(protocol.ShoutCustom)
+					a.toggleShout(protocol.ShoutCustom)
 				}
+				a.drawArmedOverlay(r, a.icShout == protocol.ShoutCustom)
 				if len(a.customShouts) > 0 {
 					cyc := sdl.Rect{X: r.X + r.W + 2, Y: r.Y, W: 18, H: r.H}
 					if c.Button(cyc, "▾") {
@@ -1628,26 +1635,40 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// 1080p's 770 in 765). Tightening either the selection rect or the clip below
 	// to msgBox would start cutting those themes' last column and last line.
 	textRect := sdl.Rect{X: msgX, Y: msgY, W: wrapW, H: box.Y + box.H - msgY}
-	a.handleChatSelect(textRect, sc)
+	// The box follows its own crawl — AO2's ensureCursorVisible on every tick
+	// (courtroom.cpp:4514-4521, chatcrawlscroll.go). textRect.H is the room the text
+	// really has (the message origin down to the bottom of the chatbox, which is also
+	// the clip set below), and the offset is an exact 0 for a message that fits, so a
+	// theme's ordinary post draws byte-identically to before.
+	msgScroll := chatCrawlOffset(a.msRaster, sc.VisibleRunes, textRect.H)
+	msgDrawY := msgY - msgScroll
+	// The clip's TOP is msgY for the same reason the height runs to the bottom of
+	// the box: this is Qt's message-widget viewport, and it clips at the widget's
+	// own top edge. Without it a scrolled message paints above msgY, where the
+	// theme's showname sits (nameBox above). Only the top moves — chatcrawlscroll.go
+	// keeps the other three edges the box's so the overhanging design rects above
+	// are still drawn in full.
+	msgClip := chatCrawlClip(box, msgY)
+	a.handleChatSelect(textRect, msgScroll, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		// Shared scratch, same as pushClip (ui.go): SDL_RenderSetClipRect takes a
 		// `const SDL_Rect *` (SDL_render.h:930) and the renderer keeps its OWN copy —
 		// SDL_RenderGetClipRect (:946) fills a caller struct from it rather than
 		// handing the pointer back — so the highlight/raster draws below are free to
 		// overwrite cgoRect while this clip is in force.
-		c.cgoRect = box
+		c.cgoRect = msgClip
 		_ = c.Ren.SetClipRect(&c.cgoRect)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
-			a.drawChatSelHighlight(msgX, msgY, wrapW, sc)
+			a.drawChatSelHighlight(msgX, msgDrawY, wrapW, sc) // scrolled with the text it marks
 		}
 		if a.msAnim != nil { // #M5 animated message
 			reduce := a.d.Prefs.ReduceMotion()
 			if a.msAnim.Animates(reduce) {
 				a.NoteAnimating() // clock-driven text FX must not freeze at idle=0 — same census as the classic chatbox (screens.go)
 			}
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, reduce)
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgDrawY, reduce)
 		} else {
-			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, msgX, msgY, c.RenderScalePct(), &box) // device-exact crawl + the clip it must re-assert — see the classic chatbox (screens.go)
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, msgX, msgDrawY, c.RenderScalePct(), &msgClip) // device-exact crawl + the clip it must re-assert (msgClip, the one set above) — see the classic chatbox (screens.go)
 		}
 		_ = c.Ren.SetClipRect(nil)
 	}

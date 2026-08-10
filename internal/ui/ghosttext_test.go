@@ -1,7 +1,8 @@
 package ui
 
-// Gates for the ghost-text option (ghosttext.go): the default, the pure boundary
-// arithmetic, the pairing between log lines and the play queue, and the
+// Gates for the ghost-text option (ghosttext.go): the default, the pairing
+// between log lines and the play QUEUE, the corrected rule (only queued
+// successors are ghosted — never the message being spoken), and the
 // encapsulation gate that stops the IC log's draw from quietly forgetting to ask.
 
 import (
@@ -10,12 +11,12 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // TestGhostCrawlTextShipsOn pins the DEFAULT (user-approved ON, no migration
 // stamp — a brand-new preference whose absent value has never meant anything
-// else).
+// else). The spec correction narrowed WHAT is ghosted; it did not turn the
+// option off or change its default.
 func TestGhostCrawlTextShipsOn(t *testing.T) {
 	p, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -31,118 +32,139 @@ func TestGhostCrawlTextShipsOn(t *testing.T) {
 	}
 }
 
-// TestUnspokenCountFollowsThePhase pins which phases still owe the room a spoken
-// line. PhaseLinger is the interesting row: the text is fully revealed by then, so
-// the message HAS been said and must not stay faint through the linger.
-func TestUnspokenCountFollowsThePhase(t *testing.T) {
+// TestQueuedCountIgnoresTheMessageOnStage is the corrected spec in one
+// assertion. The first cut added 1 for PhaseShout / PhasePreanim / PhaseTalking,
+// which is exactly how the message being spoken ended up ghosted — the defect
+// the field report names ("only supposed to ghost the incoming next message,
+// not the lines of the current message"). The phase must not reach this
+// arithmetic at all.
+func TestQueuedCountIgnoresTheMessageOnStage(t *testing.T) {
 	for _, tc := range []struct {
-		phase  courtroom.MessagePhase
-		queued int
-		want   int
-		why    string
+		queued, want int
+		why          string
 	}{
-		{courtroom.PhaseIdle, 0, 0, "nothing playing, nothing queued"},
-		{courtroom.PhaseIdle, 3, 3, "a drained stage still owes the queue"},
-		{courtroom.PhaseShout, 0, 1, "a shout has revealed no text yet"},
-		{courtroom.PhasePreanim, 2, 3, "the preanim plus everything behind it"},
-		{courtroom.PhaseTalking, 0, 1, "the line being typed is not said yet"},
-		{courtroom.PhaseLinger, 0, 0, "the crawl finished: the line HAS been said"},
-		{courtroom.PhaseLinger, 1, 1, "…but the queue behind it has not"},
+		{0, 0, "nothing queued: nothing is ghosted, whatever the stage is doing"},
+		{1, 1, "one message waiting behind the current line"},
+		{3, 3, "three waiting"},
+		{-1, 0, "a nonsense queue length can never ghost a line that HAS been said"},
 	} {
-		if got := unspokenCount(tc.phase, tc.queued); got != tc.want {
-			t.Errorf("unspokenCount(%v, %d) = %d, want %d (%s)", tc.phase, tc.queued, got, tc.want, tc.why)
+		if got := queuedCount(tc.queued); got != tc.want {
+			t.Errorf("queuedCount(%d) = %d, want %d (%s)", tc.queued, got, tc.want, tc.why)
 		}
 	}
 }
 
-// TestFirstUnspokenEntrySkipsSystemLines pins the pairing rule: only entries
+// TestFirstQueuedEntrySkipsSystemLines pins the pairing rule: only entries
 // stamped `speech` have a message in the play queue, so a music or evidence line
 // interleaved among them must not be counted as something a character is about to
 // say (nor be ghosted itself).
-func TestFirstUnspokenEntrySkipsSystemLines(t *testing.T) {
+func TestFirstQueuedEntrySkipsSystemLines(t *testing.T) {
 	log := []icEntry{
 		{text: "A: said", speech: true},
 		{text: "someone played a song"}, // system line — never queued
 		{text: "B: saying", speech: true},
 		{text: "C: queued", speech: true},
 	}
-	if got := firstUnspokenEntry(log, 0); got != len(log) {
-		t.Errorf("nothing unspoken must ghost nothing, got entry %d", got)
+	if got := firstQueuedEntry(log, 0); got != len(log) {
+		t.Errorf("an empty queue must ghost nothing, got entry %d", got)
 	}
-	if got := firstUnspokenEntry(log, 2); got != 2 {
-		t.Errorf("two unspoken lines start at the B line (index 2), got %d", got)
+	if got := firstQueuedEntry(log, 2); got != 2 {
+		t.Errorf("two queued lines start at the B line (index 2), got %d", got)
 	}
-	if got := firstUnspokenEntry(log, 1); got != 3 {
-		t.Errorf("one unspoken line is the last speech line (index 3), got %d", got)
+	if got := firstQueuedEntry(log, 1); got != 3 {
+		t.Errorf("one queued line is the last speech line (index 3), got %d", got)
 	}
 	// More claimed than the log holds (a shed message, a catch-up skip): ghost
 	// nothing rather than hide a line that has already been said.
-	if got := firstUnspokenEntry(log, 9); got != len(log) {
+	if got := firstQueuedEntry(log, 9); got != len(log) {
 		t.Errorf("an over-claim must ghost nothing, got entry %d", got)
 	}
 }
 
-// TestGhostRowStartWalksTheTail pins the row boundary: a row is faint until its
-// LAST rune is revealed, so a one-line message stays faint for the whole crawl and
-// a wrapped one goes solid a row at a time from the top.
-func TestGhostRowStartWalksTheTail(t *testing.T) {
-	// Entry 1 owns rows 1..3 ("aaaa", "bbbb", "cccc" — 4 runes each, 12 total);
-	// entries 0 and 2 exist to prove the walk stays inside its own entry.
-	rows := []icWrapLine{
-		{text: "other", entry: 0},
-		{text: "aaaa", entry: 1},
-		{text: "bbbb", entry: 1},
-		{text: "cccc", entry: 1},
-		{text: "later", entry: 2},
-	}
-	for _, tc := range []struct {
-		unrevealed, want int
-		why              string
-	}{
-		{0, 4, "fully revealed: no row is faint (one past the entry's last row)"},
-		{1, 3, "one rune left: only the last row is faint"},
-		{4, 3, "the whole last row unrevealed: still just that row"},
-		{5, 2, "the tail reaches into the middle row"},
-		{8, 2, "the last two rows entirely"},
-		{9, 1, "the tail reaches the first row"},
-		{12, 1, "nothing revealed: every row of the entry is faint"},
-		{99, 1, "an over-long tail clamps to the entry's first row"},
-	} {
-		if got := ghostRowStart(rows, 1, tc.unrevealed); got != tc.want {
-			t.Errorf("ghostRowStart(unrevealed=%d) = %d, want %d (%s)", tc.unrevealed, got, tc.want, tc.why)
-		}
-	}
-	// An entry filtered out of the view has no rows at all: answer 0 rather than
-	// index off the end of a slice the caller is about to walk.
-	if got := ghostRowStart(rows, 7, 5); got != 0 {
-		t.Errorf("a filtered-out entry = %d, want 0", got)
-	}
-}
-
-// TestGhostSpanGhostsTheQueueBehindTheCrawl pins the span's own rule: rows of the
-// crawling entry go faint from rowFrom, and EVERY row of a later entry is faint —
-// the queue is what runs furthest ahead of the chatbox and spoils the most.
-func TestGhostSpanGhostsTheQueueBehindTheCrawl(t *testing.T) {
-	g := ghostSpan{entry: 2, rowFrom: 5, ok: true}
+// TestGhostSpanGhostsWholeQueuedEntriesOnly is the corrected rule at the span
+// level: EVERY row of a queued entry is faint and NO row of any earlier entry
+// is — including the one crawling right now, whose rows used to flip solid one
+// at a time as the crawl passed them.
+func TestGhostSpanGhostsWholeQueuedEntriesOnly(t *testing.T) {
+	g := ghostSpan{entry: 2, ok: true}
 	for _, tc := range []struct {
 		ri, entry int
 		want      bool
 		why       string
 	}{
-		{0, 1, false, "an earlier entry has been said"},
-		{4, 2, false, "a revealed row of the crawling entry"},
-		{5, 2, true, "the first unrevealed row"},
-		{6, 2, true, "and the rows after it"},
-		{7, 3, true, "a queued entry is faint from its first row"},
+		{0, 0, false, "an entry already said"},
+		{4, 1, false, "the message being spoken RIGHT NOW — never ghosted"},
+		{9, 1, false, "…including its last row, however far ahead of the crawl it is"},
+		{0, 2, true, "the first queued entry, from its first row"},
+		{3, 2, true, "…and every other row of it"},
+		{7, 3, true, "and everything queued behind that"},
 	} {
 		if got := g.ghosted(tc.ri, tc.entry); got != tc.want {
 			t.Errorf("ghosted(row %d, entry %d) = %v, want %v (%s)", tc.ri, tc.entry, got, tc.want, tc.why)
+		}
+	}
+	// The row index must not change the answer for a given entry. This is the
+	// property that makes "ghost the current message's own lines" unexpressible:
+	// reintroduce a row boundary and this fails.
+	for ri := 0; ri < 64; ri++ {
+		if g.ghosted(ri, 1) {
+			t.Fatalf("row %d of the crawling entry is ghosted — the span grew a row boundary again", ri)
+		}
+		if !g.ghosted(ri, 2) {
+			t.Fatalf("row %d of a queued entry is NOT ghosted — the preview is partial", ri)
 		}
 	}
 	// The zero value is the off switch: it must ghost nothing at all.
 	var off ghostSpan
 	if off.ghosted(0, 0) || off.ghosted(99, 99) {
 		t.Error("the zero ghostSpan must ghost nothing — that is the option-off path")
+	}
+}
+
+// TestGhostSpanPromotesWhenTheQueueDrains walks the live sequence the report
+// describes, driving the REAL boundary resolution (ghostSpan + firstQueuedEntry,
+// the two pieces ghostLogSpan composes) rather than restating it:
+//
+//	3 messages logged, 1 crawling, 2 queued → the two successors are ghosted
+//	the crawl finishes, one dequeues        → the promoted one draws normal
+//	the queue empties                       → nothing is ghosted anywhere
+func TestGhostSpanPromotesWhenTheQueueDrains(t *testing.T) {
+	log := []icEntry{
+		{text: "A: crawling", speech: true},
+		{text: "B: queued", speech: true},
+		{text: "C: queued", speech: true},
+	}
+	span := func(queued int) ghostSpan {
+		n := queuedCount(queued)
+		if n == 0 {
+			return ghostSpan{}
+		}
+		e := firstQueuedEntry(log, n)
+		if e >= len(log) {
+			return ghostSpan{}
+		}
+		return ghostSpan{entry: e, ok: true}
+	}
+
+	g := span(2)
+	if g.ghosted(0, 0) {
+		t.Error("the crawling message must draw NORMAL while two are queued behind it")
+	}
+	if !g.ghosted(0, 1) || !g.ghosted(0, 2) {
+		t.Error("both queued successors must draw ghosted")
+	}
+
+	g = span(1) // B started crawling; only C is still waiting
+	if g.ghosted(0, 1) {
+		t.Error("a message must promote to normal the moment it starts crawling")
+	}
+	if !g.ghosted(0, 2) {
+		t.Error("the message still queued behind it stays ghosted")
+	}
+
+	g = span(0) // nothing left in the queue
+	if g.ok || g.ghosted(0, 0) || g.ghosted(0, 2) {
+		t.Error("with no queue, nothing anywhere is ghosted")
 	}
 }
 
@@ -168,6 +190,47 @@ func TestGhostInkPullsTowardTheSurface(t *testing.T) {
 	}
 }
 
+// TestGhostSpanNeverReadsTheCrawl is the deletion catcher for the CORRECTION
+// itself. The defect was ghostLogSpan measuring the typewriter — Scene.VisibleRunes
+// against the message length — to find a row boundary inside the current message.
+// Reading either of those here again is that defect returning, and every unit gate
+// above would stay green while it did.
+func TestGhostSpanNeverReadsTheCrawl(t *testing.T) {
+	body := funcBodySource(t, "ghosttext.go", "ghostLogSpan")
+	for _, banned := range []string{"VisibleRunes", "MessageText", "Phase"} {
+		if readsIdent(body, banned) {
+			t.Errorf("ghostLogSpan reads %s again — the ghost boundary is back inside the "+
+				"message being spoken, which is the reported defect (only QUEUED messages "+
+				"may be ghosted)", banned)
+		}
+	}
+	if !containsCall(body, "QueueLen") {
+		t.Fatal("ghostLogSpan no longer asks the room for its QUEUE length — the preview " +
+			"has nothing to pair log lines with")
+	}
+}
+
+// readsIdent reports whether n mentions the identifier name anywhere (as a bare
+// ident or as a selector's field/method), which is what a source census needs:
+// `sc.VisibleRunes`, `a.room.Scene.VisibleRunes` and a bare `VisibleRunes` all count.
+func readsIdent(n ast.Node, name string) bool {
+	found := false
+	ast.Inspect(n, func(node ast.Node) bool {
+		switch v := node.(type) {
+		case *ast.SelectorExpr:
+			if v.Sel != nil && v.Sel.Name == name {
+				found = true
+			}
+		case *ast.Ident:
+			if v.Name == name {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // TestICLogAsksForTheGhostSpan is the encapsulation gate. The whole feature is one
 // call in the IC log's draw; delete it and every gate above still passes while the
 // option silently does nothing — the parsed-but-never-applied failure CLAUDE.md
@@ -184,7 +247,7 @@ func TestICLogAsksForTheGhostSpan(t *testing.T) {
 		t.Fatal("drawICLogList decides a row is ghosted but never fades its ink")
 	}
 	// The stamp the pairing depends on: without it every log line looks like a
-	// system line, firstUnspokenEntry can never find the crawling message, and the
+	// system line, firstQueuedEntry can never find the queued message, and the
 	// whole option goes quiet with every unit gate above still green.
 	if !assignsField(funcBodySource(t, "app.go", "handleSessionEvents"), "speech") {
 		t.Fatal("handleSessionEvents no longer stamps icEntry.speech — the ghost pairing cannot tell a spoken line from a queued one")

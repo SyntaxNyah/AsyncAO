@@ -32,6 +32,12 @@ package ui
 //	courtroom.cpp:5656  on_effects_dropdown_changed → drawEffectsPicker
 //	courtroom.cpp:6178  on_realization_clicked      → toggleRealization (icarms.go)
 //	courtroom.cpp:6194  on_screenshake_clicked      → toggleScreenshake (icarms.go)
+//	courtroom.cpp:6065/:6085/:6105/:6125 the four shouts → toggleShout (icarms.go),
+//	                    in both IC bars and on the four hotkeys. Moved out of the
+//	                    NOT-TRANSCRIBED table below when the buttons stopped
+//	                    SENDING and started arming objection_state, which is what
+//	                    made "return the keyboard to the line you are composing"
+//	                    mean the same line canon means.
 //	courtroom.cpp:6402  on_text_color_changed       → applyICColorPick (screens.go)
 //	courtroom.cpp:5363  on_iniswap_dropdown_changed → the themed iniswap dropdown
 //	                    and its remove button (theme_layout.go)
@@ -64,10 +70,6 @@ package ui
 //	      and is simply not wrapped. One line; pinned as `deferred` in the census
 //	      so wiring it cannot happen without updating this table.
 //	:5316 on_pos_remove_clicked — same story, the themed pos_remove button.
-//	:6065/:6085/:6105/:6125 the four shouts — NOT a wrap: AsyncAO's shout buttons
-//	      SEND the line (drawICShoutRow returns a modifier straight into sendIC)
-//	      where AO2's only arm objection_state, so "return the keyboard to the
-//	      line you are composing" is about a different line. Needs a decision.
 //	:6453/:6465/:6477/:6489 WT / CE / Not Guilty / Guilty — RT packet buttons in
 //	      the judge strip (court_extras.go), which composes nothing.
 //	:6555 on_call_mod_clicked — AsyncAO's modcall is a float panel carrying its own

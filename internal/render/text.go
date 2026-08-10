@@ -778,6 +778,30 @@ func (m *MessageRaster) LineRange(i int) (int, int) {
 	return lr.start, lr.end
 }
 
+// RowOfRune is the display row that source rune n falls on — the vertical
+// sibling of RuneAt, off the same lineRanges table, so a caller that scrolls to
+// "where the crawl is" can never disagree with where the glyphs were drawn.
+//
+// It exists for AO2's ensureCursorVisible (courtroom.cpp:4514-4521), whose Qt
+// cursor lands on the revealed character's own block; a client that recomputed
+// the row from a rune count and an average line length would drift on any
+// wrapped message, which is precisely the case that needs to scroll.
+//
+// Clamped at both ends: a negative n is row 0 and an n past the text is the last
+// row, so a typewriter position that has run ahead of a re-wrapped raster (one
+// frame of overlap during a resize) can never index off the table.
+func (m *MessageRaster) RowOfRune(n int) int {
+	if m == nil || len(m.lineRanges) == 0 || n <= 0 {
+		return 0
+	}
+	for i := len(m.lineRanges) - 1; i >= 0; i-- {
+		if m.lineRanges[i].start <= n {
+			return i
+		}
+	}
+	return 0
+}
+
 // linePrefixW is the pixel width of line li's first off drawn runes — the
 // per-line sibling of PrefixWidth, covering both raster shapes.
 func (m *MessageRaster) linePrefixW(li, off int) int32 {

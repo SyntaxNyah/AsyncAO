@@ -43,9 +43,12 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 // limit) so back-to-back sends both land, but resetting lastICSend keeps the test correct
 // even if a non-zero default were ever introduced (sendIC drops sends inside the window,
 // screens.go:6138-6140, and stamps lastICSend on each accepted send).
-func (a *App) sendICFresh(shout int) {
+// It takes no shout: an interjection is ARMED state now (a.icShout, AO2's
+// objection_state), so a test that wants one on the wire arms it the way the
+// button does — toggleShout — and this just sends.
+func (a *App) sendICFresh() {
 	a.lastICSend = time.Time{}
-	a.sendIC(shout)
+	a.sendIC()
 }
 
 // lastSentMS parses the most recent captured packet back into a ChatMessage so the
@@ -72,14 +75,14 @@ func TestICBarFlipRidesSharedField(t *testing.T) {
 	a, sent := flipSendApp(t)
 
 	a.pairFlip = true // the state either view writes
-	a.sendICFresh(0)
+	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); !msg.Flip {
 		t.Error("pairFlip=true must ride OutgoingMS.Flip (the shared IC-bar / Pair-panel field)")
 	}
 
 	a.pairFlip = false
 	a.icInput = "back to normal"
-	a.sendICFresh(0)
+	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Flip {
 		t.Error("pairFlip=false must clear OutgoingMS.Flip")
 	}
@@ -123,7 +126,7 @@ func TestPairOrderSegmentsMapToWire(t *testing.T) {
 
 	// "To front" segment → PairSpeakerInFront.
 	a.pairOrder = protocol.PairSpeakerInFront
-	a.sendICFresh(0)
+	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Pair.Order != protocol.PairSpeakerInFront {
 		t.Errorf("front segment: wire pair order = %d, want PairSpeakerInFront (%d)", msg.Pair.Order, protocol.PairSpeakerInFront)
 	}
@@ -131,7 +134,7 @@ func TestPairOrderSegmentsMapToWire(t *testing.T) {
 	// "To behind" segment → PairSpeakerBehind (rides the ^1 suffix).
 	a.pairOrder = protocol.PairSpeakerBehind
 	a.icInput = "behind you"
-	a.sendICFresh(0)
+	a.sendICFresh()
 	msg := lastSentMS(t, a, sent)
 	if msg.Pair.Order != protocol.PairSpeakerBehind || !msg.Pair.HasOrder {
 		t.Errorf("behind segment: wire pair = {order:%d hasOrder:%v}, want {Behind(%d), true}", msg.Pair.Order, msg.Pair.HasOrder, protocol.PairSpeakerBehind)

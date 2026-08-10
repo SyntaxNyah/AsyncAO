@@ -609,7 +609,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			}
 			fr, fc := a.friendMessage(s.serverKey, ev.Message)
 			force := a.d.Prefs.ForceCharNamesOn()
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force), stamp: a.icStamp()})
+			// nil char.ini rung, deliberately: charMetaFor resolves against the
+			// ACTIVE tab's asset origin, and a BACKGROUND tab's speaker is on a
+			// different server. Answering from the wrong origin's cache would put
+			// another server's showname on this line; the folder name is canon's
+			// own unreadable-ini answer and is the honest degradation here.
+			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force, nil)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force, nil), stamp: a.icStamp()})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]

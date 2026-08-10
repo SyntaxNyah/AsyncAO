@@ -2057,6 +2057,15 @@ type sessionState struct {
 	// firing on every following line.
 	icRealize bool
 	icShake   bool
+	// icShout is AO2's objection_state (courtroom.cpp:6048-6127) — the ARMED
+	// interjection, riding the NEXT message exactly like icRealize and icShake:
+	// 0 none, 1 Hold It!, 2 Objection!, 3 Take That!, 4 the custom shout
+	// (protocol.Shout*). ONE int, so the four buttons are mutually exclusive by
+	// construction, which is what canon's four "reset the other three sprites"
+	// arms add up to. Cleared beside them the instant the packet is built
+	// (:2327). The shout buttons used to call sendIC directly, which fired the
+	// interjection on the click instead of arming it.
+	icShout int
 	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
 	// session. sessionState rather than a preference because AO2's ui_guard is a
 	// bare QCheckBox with no Options read (courtroom.cpp:316-319) — it is a
@@ -4867,7 +4876,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				}
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
 				force := a.d.Prefs.ForceCharNamesOn()
-				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message))
+				// The log's name resolves through the SAME char.ini rung the plate
+				// uses (remoteIniShownameFor) — one chain, two surfaces.
+				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
 				a.pushIC(line, ev.Message.TextColor, fr, fc, speaker)
 				// This line has a message in the play queue behind it: the log is written
 				// on ARRIVAL, the courtroom speaks it later, and the ghost-text option
@@ -5062,9 +5073,9 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 	a.pushIC(line, musicLogColor, false, -1, "") // system line: no friend tint, no name-tint/pair
 }
 
-func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
+func icLogLine(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
 	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
-	return icSpeakerName(m, forceChar) + ": " + icMessageBody(m)
+	return icSpeakerName(m, forceChar, ini) + ": " + icMessageBody(m)
 }
 
 // icMessageBody is an IC message's display text for the log: markup stripped (no raw
@@ -5074,15 +5085,16 @@ func icMessageBody(m *protocol.ChatMessage) string {
 	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(m.Message), inlineEmoteFor)
 }
 
-// icSpeakerName is the displayed name an IC log line is prefixed with — the
-// showname, or the character (force-char-names / no showname). Stored on the
-// entry so per-speaker name colours tint exactly that prefix.
-func icSpeakerName(m *protocol.ChatMessage, forceChar bool) string {
-	name := m.Showname
-	if forceChar || name == "" {
-		name = m.CharName // force-char-names mirrors the chatbox (anti-impersonation)
-	}
-	return name
+// icSpeakerName is the displayed name an IC log line is prefixed with. It is
+// the SAME chain the name plate draws (courtroom.DisplayName): wire showname →
+// char.ini showname → character folder, with force-char-names suppressing only
+// the first rung. Canon draws the log through get_showname too
+// (log_chatmessage, courtroom.cpp:2528-2538), so a second local rule here is
+// how the two surfaces drift — which they had, both missing the middle rung.
+//
+// Stored on the entry so per-speaker name colours tint exactly that prefix.
+func icSpeakerName(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
+	return courtroom.DisplayName(m, forceChar, ini)
 }
 
 // friendNick returns the personal nickname set for m's speaker if they're a
@@ -5106,12 +5118,12 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 // the line reads "nick (showname): msg" so you see your own label for them — but
 // the SPEAKER field stays the REAL name, so double-click-to-pair (UID lookup) and
 // the per-speaker colour still key off the true identity. Pure, for testing.
-func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, speaker string) {
-	speaker = icSpeakerName(m, force)
+func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string, ini courtroom.IniShowname) (line, speaker string) {
+	speaker = icSpeakerName(m, force, ini)
 	if !force && nick != "" {
 		return nick + " (" + speaker + "): " + icMessageBody(m), speaker
 	}
-	return icLogLine(m, force), speaker
+	return icLogLine(m, force, ini), speaker
 }
 
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
@@ -6368,7 +6380,7 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 	var send bool
 	s.icInput, send = c.TextFieldEmoji("ic-split", box, s.icInput, "Chat in the pinned server — click to focus", primary, emoji)
 	if send {
-		a.sendICSplit(0)
+		a.sendICSplit()
 	}
 }
 
@@ -6380,14 +6392,14 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 // SendChat then targets the pinned conn), capture the side effects back into the
 // tab, and restore the primary. Synchronous + single-threaded: no frame renders
 // and pumpBackgroundTabs cannot interleave between the two swaps.
-func (a *App) sendICSplit(shout int) {
+func (a *App) sendICSplit() {
 	if a.splitTab == nil {
 		return
 	}
 	savedFocus := a.ctx.focusID
 	saved := a.sessionState
 	a.sessionState = a.splitTab.state
-	a.sendIC(shout)
+	a.sendIC()
 	a.splitTab.state = a.sessionState // capture cleared input, lastSent* markers, emote roll, rate-limit stamp
 	a.sessionState = saved
 	// sendIC's random-emote path (off by default) refocuses "ic"; keep the caret

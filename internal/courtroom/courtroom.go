@@ -317,6 +317,21 @@ type Courtroom struct {
 	// behaviour as BlipNameFor. "" = no per-character skin.
 	ChatSkinFor func(char string) string
 
+	// IniShownameFor, when set, is AOApplication::get_showname for a speaker —
+	// the char.ini [Options] showname (with the needs_showname opt-out),
+	// resolved from the SAME per-URL char.ini cache BlipNameFor answers from,
+	// so the name plate costs no extra network work.
+	//
+	// It is the MIDDLE rung of canon's three-step name chain and the one AsyncAO
+	// shipped without: a wire showname wins, then this, then the character folder
+	// (courtroom.cpp:3283-3292 initialize_chatbox, :2528-2538 log_chatmessage).
+	// AO2 can always answer because it reads the ini off disk; a streaming client
+	// cannot, which is what `known` is for — false means "no char.ini yet"
+	// (or none is wired) and displayName falls back to the folder name, exactly
+	// as canon does for an unreadable ini. A known-but-EMPTY answer is
+	// needs_showname=false, a deliberate blank plate, and is honoured as one.
+	IniShownameFor func(char string) (showname string, known bool)
+
 	// EffectsFolderFor resolves a speaker's screen-effect misc folder (char.ini
 	// [Options] effects, AO2-Client get_effect's p_folder default,
 	// text_file_functions.cpp:836-839). It rides the SAME per-URL char.ini cache
@@ -2448,13 +2463,11 @@ func (c *Courtroom) applyDeskMods(preanim bool) {
 	}
 }
 
-// displayName picks the chat box name: showname overrides the folder name.
-// displayName is the chatbox/log name for a message: the custom showname,
-// falling back to the character name — UNLESS ForceCharNames is on, which
-// always shows the character (ignoring custom shownames).
+// displayName is the chatbox name plate for a message — the shared
+// DisplayName chain (displayname.go) bound to this room's viewer settings.
+// The IC log drives the SAME function, which is the whole point of it being a
+// function: the plate and the log used to reach the same answer only because
+// they happened to implement the same two of canon's three rungs.
 func (c *Courtroom) displayName(msg *protocol.ChatMessage) string {
-	if !c.ForceCharNames && msg.Showname != "" {
-		return msg.Showname
-	}
-	return msg.CharName
+	return DisplayName(msg, c.ForceCharNames, c.IniShownameFor)
 }

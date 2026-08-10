@@ -51,6 +51,34 @@ func (a *App) toggleRealization() {
 	a.bounceFocusToIC() // :6178 focus_ic_input
 }
 
+// toggleShout is on_hold_it_clicked / on_objection_clicked /
+// on_take_that_clicked / on_custom_objection_clicked (courtroom.cpp:6048-6127),
+// which are four transcriptions of ONE handler:
+//
+//	if (objection_state == N) { restore this button's art; objection_state = 0 }
+//	else                      { restore the OTHER three; select this one;
+//	                            objection_state = N }
+//	focus_ic_input()
+//
+// A shout BUTTON DOES NOT SEND. It arms; the interjection rides the next
+// message's MS objection field, which is built from objection_state at
+// courtroom.cpp:2136-2147 and cleared at :2327. AsyncAO's three shout buttons
+// (and the four shout hotkeys) called sendIC(mod) instead, so a click fired the
+// interjection immediately — on an EMPTY line, because sendIC's blankpost guard
+// deliberately lets `shout != 0` through with no text.
+//
+// The "reset the other three" arms need no code here: one int cannot hold two
+// states, which is the same reason canon's four handlers are equivalent to a
+// single assignment.
+func (a *App) toggleShout(mod int) {
+	if a.icShout == mod {
+		a.icShout = 0 // clicking the armed shout disarms it (:6050-6054)
+	} else {
+		a.icShout = mod
+	}
+	a.bounceFocusToIC() // :6065 / :6085 / :6105 / :6125 focus_ic_input
+}
+
 // toggleScreenshake is on_screenshake_clicked (courtroom.cpp:6181-6196). Unlike
 // realization it does NOT touch the effects dropdown — the shake is a viewport
 // motion the receiver derives from the wire flag alone — so this really is just
