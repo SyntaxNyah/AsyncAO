@@ -5,6 +5,7 @@ package ui
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -183,23 +184,44 @@ func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
 
 	// (2) Every MessageRaster the chatbox builds is returned through centerRaster,
 	// which is where UseRowPitch lives.
+	//
+	// EACH SITE'S WINDOW ENDS AT THE NEXT SITE, not at the end of the enclosing
+	// function, and that repair is the point of this paragraph. A window that ran
+	// to the next line-initial "\n}" swallowed every build BELOW it in the same
+	// function, so a site that stopped returning through centerRaster was covered
+	// by a LATER site's call and the census printed ok — only the last build in a
+	// function was genuinely checked, and screens.go builds three in one. Sites are
+	// collected across all three constructors and sorted, so the windows partition
+	// the source instead of overlapping.
+	var sites []int
 	for _, ctor := range []string{"render.Rasterize(", "render.RasterizeStyled(", "render.RasterizeFallback("} {
-		i := strings.Index(text, ctor)
-		for ; i >= 0; i = strings.Index(text[i+1:], ctor) + 1 {
-			tail := text[i:]
-			end := strings.Index(tail, "\n}")
-			if end < 0 {
-				end = len(tail)
-			}
-			if !strings.Contains(tail[:end], "centerRaster(") {
-				t.Errorf("a %s build does not return through centerRaster — it would skip the Qt row pitch", ctor)
-			}
-			if i+1 >= len(text) {
+		for i := strings.Index(text, ctor); i >= 0; {
+			sites = append(sites, i)
+			// The next occurrence, as an ABSOLUTE offset. The scan used to advance by the
+			// RELATIVE one, which visited a bogus position and then cycled forever between
+			// two — invisible today only because each constructor appears once.
+			next := strings.Index(text[i+1:], ctor)
+			if next < 0 {
 				break
 			}
-			if strings.Index(text[i+1:], ctor) < 0 {
-				break
-			}
+			i += 1 + next
+		}
+	}
+	if len(sites) == 0 {
+		t.Fatal("screens.go builds no MessageRaster at all — this census is checking nothing")
+	}
+	sort.Ints(sites)
+	for n, i := range sites {
+		end := len(text)
+		if rel := strings.Index(text[i:], "\n}"); rel >= 0 {
+			end = i + rel // end of the enclosing function, when no site follows inside it
+		}
+		if n+1 < len(sites) && sites[n+1] < end {
+			end = sites[n+1]
+		}
+		if !strings.Contains(text[i:end], "centerRaster(") {
+			t.Errorf("the MessageRaster build at screens.go:%d does not return through centerRaster "+
+				"— it would skip the Qt row pitch", 1+strings.Count(text[:i], "\n"))
 		}
 	}
 	if !strings.Contains(text, "m.UseRowPitch(rowPitch)") {

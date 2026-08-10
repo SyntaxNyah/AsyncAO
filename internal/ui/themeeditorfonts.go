@@ -118,7 +118,12 @@ func (a *App) drawEditorFontPanel(w, h int32) {
 	y += editRowPad
 	c.Fill(sdl.Rect{X: r.X + editRowPad, Y: y, W: r.W - editRowPad*2, H: 1}, ColPanelHi)
 	y += editRowPad
-	y = a.drawEditorFontFamilies(r, y)
+	// The families list is the LAST thing on the running cursor, and its answer is
+	// deliberately dropped: the footer below is anchored to the panel's own bottom
+	// edge, not to where the list ended, and both list loops stop two rows short of it
+	// (`y > r.Y+r.H-editFontRowH*2`) precisely so the two can never meet. Keeping the
+	// assignment would read as a cursor somebody forgot to use.
+	a.drawEditorFontFamilies(r, y)
 	c.popClip(prev, had)
 	// The footer says where a face comes FROM, because "drop a .ttf here" is the whole
 	// intake and nothing else on screen says it.
@@ -332,6 +337,17 @@ func (a *App) editorTakeFontDrop(path string) bool {
 // result that arrives between frames must not touch UI state from another goroutine.
 func (a *App) pollEditorFont() {
 	if a.te == nil || a.te.font == nil {
+		return
+	}
+	// PREVIEW DEFERS THE LANDING, it does not consume it (field batch 9). The row
+	// lands through editorApply, which refuses while the demo is up — so draining the
+	// channel here would throw away a face the user dropped seconds earlier, silently
+	// (the chip is not drawn over the demo) and with a false reason ("the [fonts]
+	// table is full", which it is not). Leaving the job in place costs nothing: the
+	// channel is buffered, the goroutine has already handed its result over, and the
+	// first editing frame after the demo lands it exactly as if Preview had never been
+	// pressed. Hard rule 7's shape — a finished result is deferred, never dropped.
+	if a.editorPreviewOn() {
 		return
 	}
 	select {

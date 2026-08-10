@@ -1647,8 +1647,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// own top edge. Without it a scrolled message paints above msgY, where the
 	// theme's showname sits (nameBox above). Only the top moves — chatcrawlscroll.go
 	// keeps the other three edges the box's so the overhanging design rects above
-	// are still drawn in full.
-	msgClip := chatCrawlClip(box, msgY)
+	// are still drawn in full, and hands the #M5 animated painter the whole box
+	// because it lifts glyphs off their row and can never be scrolled.
+	msgClip := chatCrawlClip(box, msgY, a.msAnim)
 	a.handleChatSelect(textRect, msgScroll, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		// Shared scratch, same as pushClip (ui.go): SDL_RenderSetClipRect takes a

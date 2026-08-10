@@ -1475,10 +1475,12 @@ type App struct {
 	clientTex  *sdl.Texture
 	clientTexW int32
 	clientTexH int32
-	// pinnedPass is true ONLY during the full-theme drawCourtroom render of the
-	// pinned client. Single-consumer App channel drains (pollCharINI) skip while it's
-	// set, so the view-only pass can't eat an async result meant for the primary —
-	// the pinned client is already fully loaded in its parked sessionState.
+	// pinnedPass is true during a VIEW-ONLY drawCourtroom pass over a session that is
+	// not the live one: the full-theme render of the pinned client, and the theme
+	// editor's canned preview (themeeditorpreview.go). Single-consumer App channel
+	// drains (pollCharINI) skip while it's set, so such a pass can't eat an async
+	// result meant for the primary — the pinned client is already fully loaded in its
+	// parked sessionState, and the preview's demo session never asks for one.
 	pinnedPass bool
 	// pendingControlSwap: a click on the floating client's view requests "control
 	// this server" (make it the live, fully-interactive courtroom). Applied at the
@@ -8558,7 +8560,17 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// (The keyboard map at design line 1891 writes "clear, then close panel"; its
 				// "clear" is this ladder's FOCUS rung, which is the reading that leaves both
 				// lines true.)
+				//
+				// PREVIEW IS THE TOP RUNG (field batch 9), above the focused field and
+				// above the panels. While the demo plays there IS no focused field and
+				// there ARE no panels — enterEditorPreview closes them — so a rung placed
+				// any lower would still be reached today; it sits here because "Esc leaves
+				// the thing that is covering the screen" must not depend on that staying
+				// true. It CONSUMES the press: an Esc that fell through would arm the
+				// discard chip on a document the user is not even looking at.
 				switch {
+				case a.editorPreviewOn():
+					a.exitEditorPreview()
 				case a.ctx.focusID != "":
 					a.ctx.focusID = ""
 				case a.editorPanelUp():
@@ -8758,6 +8770,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// shared viewport's anim state tracks the previewed line, not whatever the
 		// live courtroom is doing behind the overlay.
 		a.driveMakerPreview(dt)
+	case a.editorPreviewOn():
+		// The theme editor's canned demo (themeeditorpreview.go), on the same terms
+		// as the maker's pane above and for the same reason: the shared viewport must
+		// track the room that is on screen. The live room is deliberately NOT advanced
+		// — it is not being drawn, and a preview that let a live message play out
+		// behind it would drop the frames that message needed.
+		a.driveEditorPreview(dt)
 	case a.room != nil:
 		a.healScenery()
 		if a.roomPreAdvanced {

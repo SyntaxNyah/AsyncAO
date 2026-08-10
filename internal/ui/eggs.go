@@ -35,6 +35,14 @@ const (
 	eggCrystal              // Crystalwarrior — AO2's keeper (prismatic shards over the STAGE + a refracting ring)
 	eggNyah                 // SyntaxNyah — creator of AsyncAO (Mayo-pink heartbeat glow)
 	eggScatter              // Scatterflower — petals over the STAGE + a petal-toned ring
+	// The two GUEST eggs (v1.90.0 field 9). They sort below every name above and
+	// that placement is the open–closed evidence rather than a preference: the
+	// switch is first-match, so appending here is the only edit that cannot change
+	// what any message already lit. Neither is in the client lineage and neither is
+	// the named inspiration eggScatter honours, so there is no rung above the
+	// bottom they could honestly claim.
+	eggNorthgate // Northgate — an aurora hanging over the STAGE + a shimmering ramp ring
+	eggMint      // Mint — frost creeping in over the STAGE + a mint/cocoa banded ring
 )
 
 // Trigger substrings, matched case-insensitively against the displayed message
@@ -52,6 +60,19 @@ const (
 	eggNameCrystal = "crystalwarrior"
 	eggNameNyah    = "syntaxnyah"
 	eggNameScatter = "scatterflower"
+	// eggNameNorthgate is whole and needs nothing else: it is a compound that does
+	// not occur in ordinary courtroom English, so plain Contains is honest for it
+	// exactly as it is for the five above.
+	eggNameNorthgate = "northgate"
+	// eggNameMint IS AN ORDINARY ENGLISH WORD, and that is why it is the one
+	// trigger not matched by Contains. "mint condition", "peppermint", "minted"
+	// and "the Mint" are all things a courtroom line says, and every one of them
+	// contains this string — the negative rows in TestCreatorEgg exist precisely
+	// to keep that class out. It is matched at WORD BOUNDARIES instead
+	// (eggWordPresent), which is the same PRINCIPLE the full-handle rule serves
+	// ("never fire on an innocent word") applied to a handle that cannot buy its
+	// specificity from length.
+	eggNameMint = "mint"
 )
 
 // creatorEgg scans a displayed IC message for a creator mention and returns the
@@ -78,9 +99,67 @@ func creatorEgg(text string) uint8 {
 		return eggNyah
 	case strings.Contains(low, eggNameScatter):
 		return eggScatter
+	// The two guests, last (see the enum). Northgate first of the pair: it is the
+	// unambiguous compound, while Mint is the one rung that had to buy its
+	// specificity with a boundary rule — keeping the looser matcher at the very
+	// bottom means a line naming both lights the one that could not have matched
+	// by accident.
+	case strings.Contains(low, eggNameNorthgate):
+		return eggNorthgate
+	case eggWordPresent(low, eggNameMint):
+		return eggMint
 	default:
 		return eggNone
 	}
+}
+
+// eggWordPresent reports whether word appears in low (already lower-cased) as a
+// WHOLE WORD — i.e. with a non-letter, non-digit on both sides or a string edge.
+//
+// The one trigger that needs it is eggNameMint, for the reason stated at its
+// declaration. It is deliberately NOT applied to the other five: those are
+// compounds that cannot occur by accident, and switching them to boundaries would
+// silently change what "fanatsors!!!" and "@omnitroid" light after years of
+// Contains — a behaviour change dressed as a refactor.
+//
+// ASCII boundaries only, and that is the honest scope: an AO handle is ASCII by
+// convention, and a rune-aware scan would need a decode per candidate on a path
+// that runs once per message. A leading multi-byte letter reads as a boundary
+// here, which errs toward FIRING rather than toward the false-positive class this
+// exists to stop, and only for text that is not the word in the first place.
+//
+// Allocation-free: it indexes the string the caller already lower-cased, and the
+// loop carries no closure.
+func eggWordPresent(low, word string) bool {
+	if word == "" {
+		return false
+	}
+	for i := 0; ; {
+		j := strings.Index(low[i:], word)
+		if j < 0 {
+			return false
+		}
+		start := i + j
+		end := start + len(word)
+		if !eggWordChar(low, start-1) && !eggWordChar(low, end) {
+			return true
+		}
+		i = start + 1
+		if i >= len(low) {
+			return false
+		}
+	}
+}
+
+// eggWordChar reports whether index i of s is an ASCII letter or digit. An index
+// outside the string is a boundary (false), which is what makes a match at either
+// end of the message count.
+func eggWordChar(s string, i int) bool {
+	if i < 0 || i >= len(s) {
+		return false
+	}
+	ch := s[i]
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9'
 }
 
 // eggSceneText returns the text the egg scan should see for sc: the DISPLAYED
@@ -283,6 +362,10 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 		a.drawEggNyah(box, win, t)
 	case eggScatter:
 		a.drawEggScatter(box, win, t)
+	case eggNorthgate:
+		a.drawEggAuroraRing(box, win, t)
+	case eggMint:
+		a.drawEggMintRing(box, win, t)
 	}
 }
 
@@ -312,6 +395,10 @@ func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
 		a.drawEggPetals(vp, t)
 	case eggCrystal:
 		a.drawEggShards(vp, t)
+	case eggNorthgate:
+		a.drawEggAurora(vp, t)
+	case eggMint:
+		a.drawEggFrost(vp, t)
 	}
 	a.NoteAnimating()
 }
@@ -322,7 +409,7 @@ func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
 // out of this list simply never draws it — which the census test catches.
 func eggDrawsOnStage(kind uint8) bool {
 	switch kind {
-	case eggScatter, eggCrystal:
+	case eggScatter, eggCrystal, eggNorthgate, eggMint:
 		return true
 	}
 	return false

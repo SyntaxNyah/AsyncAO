@@ -341,6 +341,39 @@ func TestCanvasDragIsOneUndoStepThroughTheRealChord(t *testing.T) {
 	}
 }
 
+// TestAnOrdinarySnappedDragIsAlsoOneUndoStep is the same gate for the gesture people
+// actually make, and it exists because the one above cannot cover it.
+//
+// drivePreciseDrag holds SHIFT, which bypasses the grid and the magnet — and it SKIPS
+// outright on an SDL build that does not honour SetModState, taking the only "one
+// gesture, one undo entry" evidence in the suite with it. An unmodified drag writes a
+// SNAPPED value every frame, so it is also the arm where a coalescing key that
+// included the value, or a snap that re-opened the group, would put a hundred entries
+// in the ring for one gesture — and the user finds that out by pressing Ctrl+Z and
+// watching the box crawl back a grid line at a time.
+func TestAnOrdinarySnappedDragIsAlsoOneUndoStep(t *testing.T) {
+	a, cleanup, tgts := stageEditorCanvas(t, [2]int{3, 5}) // off-grid, so the snap really runs
+	defer cleanup()
+	el := tgts[0]
+	before := editorAuthored(t, a, el)
+	cx, cy := editorCentreOf(editorPainted(t, a, el))
+
+	driveDrag(a, cx, cy, cx+60, cy+36)
+
+	if after := editorAuthored(t, a, el); after == before {
+		t.Fatalf("the gesture left the element at %+v — with nothing moved the ring assertion "+
+			"below would pass on an empty timeline", before)
+	}
+	if a.te.ring.n != 1 {
+		t.Fatalf("a four-frame snapped drag produced %d undo entries, want 1 — Ctrl+Z would step "+
+			"one frame at a time through a gesture the user made once", a.te.ring.n)
+	}
+	driveHotkey(a, sdl.K_z)
+	if got := editorAuthored(t, a, el); got != before {
+		t.Fatalf("one Ctrl+Z left the element at %+v, want the pre-drag %+v", got, before)
+	}
+}
+
 // TestDragHoldsOneUndoGroupForTheWholeGesture pins the mechanism the gate above
 // rests on: the group id is part of the coalescing identity, so a group opened per
 // FRAME would silently defeat the merge and fill the ring in two seconds.

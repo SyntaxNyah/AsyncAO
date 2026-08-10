@@ -249,6 +249,30 @@ func (c *CharINI) ShownameOrFolder(folder string) string {
 	return folder // :470-472
 }
 
+// IdleAnim is the character's DEFAULT RESTING POSE: the anim name of the FIRST
+// [Emotions] entry. That is emote 1, the one AO2 has selected for you the moment
+// a character is picked (enter_courtroom leaves m_emote_id at 0 and paints the
+// first button pressed, courtroom.cpp:1487 / on_emote_clicked), so it is
+// literally what a player looks like before they touch anything.
+//
+// IT EXISTS BECAUSE "normal" IS A CONVENTION, NOT A GUARANTEE. Plenty of packs
+// spell their poses SNormal / SCry / HSmug and ship no `normal.*` sprite at all;
+// a surface that mints characters/<x>/(a)normal for them probes a 404 and draws
+// an empty box. Every preview in this client that needs "the sprite this
+// character shows when idle" wants THIS answer, and one function for it is what
+// stops the next surface from spelling the literal again.
+//
+// A nil receiver (nothing fetched yet, or an unparsable ini) and an ini with no
+// [Emotions] both answer "" — an ABSENT answer, never a guess. The caller keeps
+// its own optimistic convention for that window, which is what lets the common
+// pack still fill its box from a single probe (ui.previewPortraitAnim's rule).
+func (c *CharINI) IdleAnim() string {
+	if c == nil || len(c.Emotes) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(c.Emotes[0].Anim)
+}
+
 // firstSection is GetSection collapsed to its value.
 func firstSection(ini *theme.INI, section, key string) string {
 	v, _ := ini.GetSection(section, key)

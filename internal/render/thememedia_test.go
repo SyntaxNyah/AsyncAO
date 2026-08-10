@@ -147,8 +147,30 @@ func TestThemeMediaKeysAreThemeNamespaced(t *testing.T) {
 	}
 	// Generator tiles are content-addressed, so the namespace question does not
 	// arise: the same params ARE the same tile, whoever declared them.
-	if ThemeGenKey(0x0123456789abcdef) != ThemeGenKey(0x0123456789abcdef) {
-		t.Error("ThemeGenKey is not a function of its hash")
+	//
+	// TWO SEPARATE CALLS, one per notional theme, captured before they are compared:
+	// an assertion that spells the same expression on both sides can only ever agree
+	// with itself. And the tail is read BACK to the hash, which is the half that
+	// makes this a statement about the key being a function OF ITS HASH rather than
+	// merely a deterministic string — a builder that dropped the value entirely
+	// (every tile under one key, the second upload replacing the first) would pass
+	// the equality on its own.
+	//
+	// SAID PLAINLY, so nobody reads the equality as the evidence: on its own it is
+	// nearly vacuous. ThemeGenKey is a pure Sprintf, so only a stateful or
+	// counter-based builder could ever fail it — a key mangled but still injective
+	// (hash^0xff, say) walks straight through. The parse-back below is the
+	// assertion that does the work; the equality is kept because the pair of calls
+	// is what states the "same params ARE the same tile" claim in the first place.
+	const tileHash = uint64(0x0123456789abcdef)
+	byUmineko, byTrial := ThemeGenKey(tileHash), ThemeGenKey(tileHash)
+	if byUmineko != byTrial {
+		t.Errorf("two themes declaring the same tile got %q and %q — a content address that is not a "+
+			"function of the hash alone would upload one tile twice and prune one of the copies", byUmineko, byTrial)
+	}
+	if got, err := strconv.ParseUint(strings.TrimPrefix(byUmineko, ThemeGenKeyPrefix), 16, 64); err != nil || got != tileHash {
+		t.Errorf("ThemeGenKey(%#x) = %q, whose tail reads back as %#x (err %v) — the key must carry the "+
+			"hash it was built from", tileHash, byUmineko, got, err)
 	}
 	if ThemeGenKey(1) == ThemeGenKey(2) {
 		t.Error("two hashes produced one generator key")

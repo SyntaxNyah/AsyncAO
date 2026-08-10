@@ -812,12 +812,13 @@ func checkRuneCap(section, key, v string, limit int) error {
 	return nil
 }
 
-// freeText decodes a percent-encoded value. ONLY the enumerated free-text keys
-// go through here — never an AO2 root-section value.
-func (s *Sidecar) freeText(section, key, raw string) (string, error) {
-	v := decodeFreeText(raw)
-	return v, checkRuneCap(section, key, v, NameRuneCap)
-}
+// (There is no NameRuneCap-bounded freeText reader. Every percent-encoded value in
+// the format is now read by exactly one of the two rules W8 split them into: the
+// twelve attribution/provenance strings are METADATA and truncate with a note
+// (metaFree + degradeMeta, §7), and the one element value is elementText, bounded by
+// TextRuneCap. A third helper that refused a free-text value at NameRuneCap would be
+// the pre-§7 rule wearing the new spelling — the exact behaviour that cost a theme
+// its whole appearance over a long credit line.)
 
 // plainText is a value that is NOT free text: a family name, a file path, an
 // id. It is length-bounded but never percent-decoded, because inventing an
@@ -827,10 +828,10 @@ func (s *Sidecar) plainText(section, key, raw string) (string, error) {
 	return v, checkRuneCap(section, key, v, NameRuneCap)
 }
 
-// metaFree / metaPlain are freeText / plainText WITHOUT the length refusal, for
-// the metadata class alone. The bound is not skipped, it is MOVED: degradeMeta
-// applies it once, at the end of the parse, over the one table both directions
-// share (metatext.go). Splitting it that way is what lets the rule be stated in a
+// metaFree / metaPlain are the free-text decode / plainText WITHOUT the length
+// refusal, for the metadata class alone. The bound is not skipped, it is MOVED:
+// degradeMeta applies it once, at the end of the parse, over the one table both
+// directions share (metatext.go). Splitting it that way is what lets the rule be stated in a
 // single place instead of at a dozen assignment sites that each have to remember
 // which of the two caps they are under.
 func metaFree(raw string) string  { return decodeFreeText(raw) }

@@ -75,8 +75,19 @@ type pickCache struct {
 }
 
 // editorPickNames returns the live list for one source, or nil.
+//
+// pickNone — the zero value every non-picker row carries, which is what lets pickRow
+// stay a separate constructor instead of thirty rows spelling out "no list" — is
+// answered HERE rather than at the draw site. A row that names no source is asking
+// for nothing, whoever asks and however the caller reached this table, and it must
+// not take a cache slot to be told so.
+//
+// That last clause is the guard's ONLY observable — without it the slow path still
+// returns an empty list, it just caches one first — so it is what
+// TestOnlyPickerRowsNameAPickSource asserts. Deleting the pickNone disjunct fails
+// that test; a test on the return value alone would not notice.
 func (a *App) editorPickNames(src pickSource) []string {
-	if int(src) >= int(pickSourceCount) {
+	if src == pickNone || int(src) >= int(pickSourceCount) {
 		return nil
 	}
 	if s := pickStatic[src]; s != nil {

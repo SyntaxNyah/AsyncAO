@@ -137,8 +137,42 @@ func chatCrawlOffset(m *render.MessageRaster, visible int, availH int32) int32 {
 // clip painted nothing there (every row starts below the box) and this answers
 // clipNowhere, which is the same picture said honestly — never an empty rect,
 // because SDL reads w<=0||h<=0 as "clipping OFF" (see clipNowhere).
-func chatCrawlClip(box sdl.Rect, textTop int32) sdl.Rect {
-	if textTop <= box.Y {
+//
+// anim IS THE #M5 PAINTER — the live *render.AnimatedText or nil — and a
+// non-nil one takes the whole box back. AnimatedText DISPLACES glyphs off their
+// layout row — a wave is round(sin·waveAmpPx), so up to 3 px, and shake/bounce
+// the same order — so on the FIRST row, whose layout origin IS textTop, the
+// raised edge shaves the crests off every span. And it shaves them for nothing:
+// the animated painter cannot be scrolled at all. The offset both draw sites
+// compute is chatCrawlOffset(a.msRaster, …) and msAnim XOR msRaster is a
+// construction invariant (ensureChatRaster builds exactly one per message), so a
+// live msAnim means a nil raster means a structural 0 — the top edge is
+// protecting a scroll that is not there. See the file header's "NOT COVERED,
+// honestly" note: giving AnimatedText a row lookup is what would let it scroll,
+// and that day this parameter goes away with it.
+//
+// WHY THE PAINTER ITSELF AND NOT A BOOL. The `animated bool` this used to take
+// put the decision at the two draw sites as `a.msAnim != nil`, and a bare bool
+// argument is the shape whose POLARITY a refactor flips in silence: rewriting
+// both sites to `a.msAnim == nil` restores BOTH defects at once (the crests are
+// shaved again, and every ordinary raster message gets the whole box back, i.e.
+// the field-8 name-plate defect) while every test in the package stays green —
+// the direct-call gates pass their own literals and a source gate that only
+// asks whether the argument NAMES msAnim cannot tell the two spellings apart.
+// Taking the pointer deletes the invertible term from the API: the sites hand
+// over a.msAnim and nothing else type-checks, and the one nil test that remains
+// lives here, next to the paragraph that justifies it, under the direct
+// behavioural gates in chatcrawlscroll_test.go.
+//
+// THE TIGHT FORM ON PURPOSE. The equivalent test at the draw site is
+// `msgScroll == 0`, which is TRUE for the animated painter for the reason just
+// given but ALSO for every ordinary post that fits — i.e. essentially all of
+// them. That would hand the whole client's normal message the name plate back as
+// a legal paint target to fix a defect only the displacing painter can have, so
+// the narrow question ("is this the painter that draws above its own row?") is
+// the one asked. Every non-animated case, scrolled or not, is byte-identical.
+func chatCrawlClip(box sdl.Rect, textTop int32, anim *render.AnimatedText) sdl.Rect {
+	if anim != nil || textTop <= box.Y {
 		return box
 	}
 	box.H -= textTop - box.Y

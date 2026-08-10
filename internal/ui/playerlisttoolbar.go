@@ -204,7 +204,6 @@ type plStrip struct {
 	maxH        int32 // the most vertical room the strip may take (see plStripMinBodyPx)
 	x, y        int32 // cursor — where the next control's top-left goes
 	lines       int32 // lines opened so far; 0 before the first placement
-	pending     bool  // a forced line break is owed before the next placement
 	full        bool  // no further line fits vertically — every later place() fails
 }
 
@@ -224,10 +223,11 @@ func (s *plStrip) fits(n int32) bool {
 	return n*plStripLinePitch+plStripBodyGapPx <= s.maxH
 }
 
-// newline forces the next control onto a fresh line. Deliberately LAZY: it costs
-// nothing if no further control is ever placed, so an empty second half of the
-// toolbar does not reserve a blank line.
-func (s *plStrip) newline() { s.pending = true }
+// (There is no newline(). This cursor's one planner lays a single row in reading
+// order — planPlayerToolbar says so — and the FORCED break, lazy so an empty second
+// half never reserves a blank line, is a live feature of the general reflow planner
+// that grew out of this one: chromeCtl.brk, in chromerow.go. A second, unreachable
+// spelling of it here was a wrap this strip could enter and no caller could ask for.)
 
 // height is the vertical room the placed lines took. Zero when nothing was placed,
 // so a panel too small for any control gives its whole height to the roster.
@@ -272,14 +272,14 @@ func (s *plStrip) placeFlex(want, min int32) (sdl.Rect, bool) {
 			s.full = true
 			return sdl.Rect{}, false
 		}
-		s.lines, s.pending = 1, false // the first control opens line 1 at the cursor
-	case s.pending || s.x+min > s.right:
+		s.lines = 1 // the first control opens line 1 at the cursor
+	case s.x+min > s.right:
 		if !s.fits(s.lines + 1) {
 			s.full = true // the roster would drop below plStripMinBodyPx — stop here
 			return sdl.Rect{}, false
 		}
 		s.x, s.y = s.left, s.y+plStripLinePitch
-		s.lines, s.pending = s.lines+1, false
+		s.lines++
 	}
 	if avail := s.right - s.x; want > avail {
 		want = avail // take what is left of this line (only reachable for a flex control)

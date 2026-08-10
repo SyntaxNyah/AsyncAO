@@ -403,6 +403,61 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 	}
 }
 
+// TestOnlyPickerRowsNameAPickSource pins pickRow's own claim: the ~30 rows that are
+// not pickers carry pickNone because they never write one, and every row that IS a
+// picker names a live list.
+//
+// Both halves are silent failures. An fkPick row left at pickNone draws a picker with
+// nothing to pick — two step buttons the author can press forever — and a non-picker
+// row that acquired a source would be asking the cache to build a list nothing draws.
+// The zero value is the one the table relies on and the one nobody writes down, which
+// is exactly the kind that drifts.
+func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
+	a, _ := editDocRig(t, 1)
+	// THE NO-SOURCE ANSWER IS PINNED BY THE CACHE SLOT, NOT BY THE RETURN VALUE. A nil
+	// return is true of any implementation: with editorPickNames' pickNone guard deleted,
+	// pickStatic[pickNone] is nil, buildPickNames matches neither case and hands back
+	// names[pickNone][:0] — a nil-backed empty slice that compares == nil. The observable
+	// only the guard produces is the one its doc comment promises ("it must not take a
+	// cache slot to be told so"): the slot stays unbuilt.
+	if got := a.editorPickNames(pickNone); got != nil {
+		t.Errorf("the no-source list is %v, want nil", got)
+	}
+	if a.te.picks.built[pickNone] {
+		t.Error("asking for the no-source list built and cached one — pickNone must be answered " +
+			"ahead of the cache, or every non-picker row that reaches this table burns a slot on " +
+			"a list nothing draws")
+	}
+	// ANTI-VACUITY for the check above: `built` has to be a flag that actually moves, or
+	// a slot left false proves nothing. A real dynamic source must set its own.
+	a.editorPickNames(pickAnchor)
+	if !a.te.picks.built[pickAnchor] {
+		t.Fatal("a real dynamic list did not mark its cache slot built — the pickNone check above " +
+			"would then hold against any implementation")
+	}
+	pickers := 0
+	for k := theme.ElementKind(0); k < theme.ElementKindCount; k++ {
+		for i := range inspectorFields[k] {
+			f := &inspectorFields[k][i]
+			if f.kind == fkPick {
+				pickers++
+				if f.pick == pickNone {
+					t.Errorf("%s row %q is an fkPick with no source — its two step buttons would walk "+
+						"an empty list forever", k, f.label)
+				}
+				continue
+			}
+			if f.pick != pickNone {
+				t.Errorf("%s row %q is a %v row that names pick source %d — only fkPick rows offer a "+
+					"list, so nothing would ever draw it", k, f.label, f.kind, f.pick)
+			}
+		}
+	}
+	if pickers == 0 {
+		t.Fatal("the census found no fkPick rows at all — it would pass vacuously")
+	}
+}
+
 // TestPickValueRoundTripsThroughTheNoneEntry pins the one mapping an fkPick row makes
 // that is not the identity: "" is displayed as "(none)" and "(none)" is written as "".
 // Two functions, each other's inverse, beside each other — the rgbaValue/valueRGBA

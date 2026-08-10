@@ -17,7 +17,10 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +143,65 @@ func deferredCall(n ast.Node, fn string) bool {
 		return !found
 	})
 	return found
+}
+
+// readsFieldOf reports whether n contains `<expr containing a call to src>.<field>`
+// — a READ of that field off the helper's result, wherever it appears.
+//
+// It is assignsFieldFrom's missing half, and the omission was load-bearing: that
+// one matches an assignment TO a selector field, so a census built on it can only
+// ever see writes. The bypass a "one place knows this rule" gate is written to
+// catch is a READ — `anim := a.charMetaFor(name).idle` — whose left-hand side is a
+// plain identifier, so it went straight through. This walks expressions instead of
+// statements, which catches the read in every position it can take (an assignment,
+// an if-init, a call argument, a return).
+func readsFieldOf(n ast.Node, field, src string) bool {
+	found := false
+	ast.Inspect(n, func(node ast.Node) bool {
+		sel, ok := node.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != field {
+			return true
+		}
+		if containsCall(sel.X, src) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// packageFuncs visits every function and method declared in this package's
+// non-test sources, handing the visitor the file it lives in, its name and its
+// body.
+//
+// WHY WHOLE-PACKAGE AND NOT A NAMED LIST. A census over three remembered function
+// names answers "did these three break the rule", which is not the question a
+// "only one place may do X" gate is asking — a NEW call site is precisely the
+// thing that has not been remembered. Walking the package makes the gate's subject
+// the rule rather than the roster, so a fourth preview surface is covered by
+// existing at all. It fails loudly on an unparseable or unreadable file rather
+// than skipping it, so the census can never silently shrink.
+func packageFuncs(t *testing.T, visit func(file, fn string, body *ast.BlockStmt)) {
+	t.Helper()
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob this package's sources: %v", err)
+	}
+	if len(names) == 0 {
+		t.Fatal("no sources found for the package census — it would pass vacuously")
+	}
+	sort.Strings(names) // deterministic report order, whatever the filesystem hands back
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		_, f := parsedFile(t, name)
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				visit(name, fd.Name.Name, fd.Body)
+			}
+		}
+	}
 }
 
 // callName is a call's function name: the selector's last segment for x.F(), the

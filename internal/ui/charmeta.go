@@ -50,7 +50,18 @@ type charMeta struct {
 	// is a legitimate answer, so `done` and not `showname != ""` is what tells
 	// the name chain whether rung 2 has one.
 	showname string
-	done     bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
+	// idle is courtroom.CharINI.IdleAnim: the FIRST [Emotions] entry's anim, i.e.
+	// the pose AO2 has selected the instant this character is picked. It is what a
+	// PREVIEW of somebody else must mint their sprite from, because "normal" is a
+	// convention plenty of packs do not keep. Empty until the fetch lands and for
+	// an ini with no emotes — an absent answer, so the reader keeps its optimistic
+	// convention for that window rather than drawing nothing.
+	//
+	// It rides this SAME single fetch, so previewing a partner honestly costs no
+	// extra network probe: the char.ini was already being downloaded for their
+	// blips, skin, effects, scaling and showname.
+	idle string
+	done bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 }
 
 type charMetaFetch struct {
@@ -60,6 +71,7 @@ type charMetaFetch struct {
 	effects     string
 	realization string
 	showname    string
+	idle        string
 	scaling     courtroom.ScalingMode
 }
 
@@ -108,6 +120,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 				res.realization = strings.TrimSpace(ini.Realization)
 				res.scaling = ini.ScalingMode()
 				res.showname = ini.ShownameOrFolder(char) // AO2 get_showname, the ONE copy
+				res.idle = ini.IdleAnim()                 // emote 1's anim — the ONE copy of "their resting pose"
 			}
 		}
 		select {
@@ -132,7 +145,7 @@ func (a *App) pollCharMeta() {
 			a.charMetaCache[res.url] = charMeta{
 				blips: res.blips, chat: res.chat, effects: res.effects,
 				realization: res.realization, scaling: res.scaling,
-				showname: res.showname, done: true,
+				showname: res.showname, idle: res.idle, done: true,
 			}
 			// Our own character's effects folder may have just arrived: drop the
 			// picker's per-frame memos so the roster is re-resolved for it.
@@ -186,6 +199,33 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	// Screen-effect overlays ride the same cache and the same single fetch
 	// (effectspicker.go).
 	a.wireRoomOverlay(room)
+}
+
+// iniIdleAnimFor is THE seam for "what pose does this character stand in".
+//
+// It answers the character's own first [Emotions] anim (courtroom.CharINI.IdleAnim
+// — emote 1, the pose AO2 has selected the moment they are picked) and falls back
+// to `fallback` only while the char.ini has not landed or names no emotes at all.
+//
+// WHY IT IS NOT JUST charMetaFor(...).idle AT EACH CALL SITE. The fallback is the
+// interesting half. A preview must draw SOMETHING on the frame the cursor arrives,
+// and the optimistic "normal" probe is what fills the common pack's box in a
+// single request — so the rule is "convention until the ini disagrees", and that
+// rule is the thing that must exist once. Spelled at each site it decays into a
+// bare literal again, which is exactly how the pair ghost ended up minting
+// (a)normal for characters that have no such sprite: their partner previewed as an
+// empty box with a name label in it, on every server, forever.
+//
+// The answer is a NAME, not a URL, deliberately: the caller mints it through
+// urls.Emote + urls.EmoteAlts and PrefetchChain, i.e. the real sprite chain with
+// AO2-Client's two spellings ((a)X and bare X, CharLayer::load_image) and the
+// authored case the URL builder already lower-cases for the path. Returning a URL
+// here would put a second minting site next to the one that knows about alts.
+func (a *App) iniIdleAnimFor(char, fallback string) string {
+	if idle := a.charMetaFor(char).idle; idle != "" {
+		return idle
+	}
+	return fallback
 }
 
 // remoteScalingFor is the courtroom's SpriteScaling callback: the speaker's own

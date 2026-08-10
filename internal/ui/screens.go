@@ -2793,8 +2793,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// the box: a scrolled message draws from above textRect.Y, and the showname
 	// plate is up there (box.Y+chatOverlayNameY). Clipping to `box` put the
 	// scrolled-off rows on the name band. chatcrawlscroll.go explains why the other
-	// three edges stay the box's.
-	msgClip := chatCrawlClip(box, textRect.Y)
+	// three edges stay the box's — and why the #M5 animated painter, which cannot
+	// scroll but DOES lift glyphs off their row, keeps the whole box instead.
+	msgClip := chatCrawlClip(box, textRect.Y, a.msAnim)
 	a.handleChatSelect(textRect, msgScroll, sc)
 	// Snapshot the geometry for Debug → Session. Plain field stores, no allocation,
 	// so it costs the draw nothing; it is the only way to see these numbers on a
@@ -7769,11 +7770,21 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	if a.pairWith >= 0 && a.pairWith < len(a.sess.Chars) {
 		name := a.sess.Chars[a.pairWith].Name
 		// The scene's pair layer knows their REAL offsets — and their real idle
-		// sprite — once a paired message arrived; before that they stand
-		// centered on the "normal" guess.
+		// sprite — once a paired message arrived. Before that we ask their char.ini
+		// for the pose they actually stand in (iniIdleAnimFor: the first [Emotions]
+		// anim, AO2's emote 1) rather than minting the "normal" literal at them.
+		//
+		// It was the literal, and for the partner it was the WHOLE preview: your own
+		// ghost has been the selected emote's idle since v1.53.0, but theirs had no
+		// such signal, so every pack whose poses are spelled SNormal/HSmug previewed
+		// as an empty box with a name in the middle. The char.ini this reads was
+		// already being fetched for their blips, skin and showname, so honesty here
+		// costs no extra probe; until it lands the conventional idle is still the
+		// answer, which keeps the common pack at one request.
 		gx, gy := 0, 0
-		base := a.urls.Emote(name, ghostFallbackEmote, courtroom.EmoteIdle)
-		alts := a.urls.EmoteAlts(name, ghostFallbackEmote, courtroom.EmoteIdle)
+		anim := a.iniIdleAnimFor(name, ghostFallbackEmote)
+		base := a.urls.Emote(name, anim, courtroom.EmoteIdle)
+		alts := a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle)
 		if sc := &a.room.Scene; sc.PairActive && strings.EqualFold(sc.Pair.Name, name) {
 			gx, gy = sc.Pair.OffsetX, sc.Pair.OffsetY
 			if sc.Pair.IdleBase != "" {

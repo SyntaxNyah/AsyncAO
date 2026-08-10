@@ -53,16 +53,20 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 
 	// Both sessions log; each must get its OWN writer.
 	a.d.Prefs.SetDetailedLog(true)
-	if w1, w2 := a.transcriptFor(server, first), a.transcriptFor(server, second); w1 == nil || w2 == nil {
+	w1, w2 := a.transcriptFor(server, first), a.transcriptFor(server, second)
+	if w1 == nil || w2 == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
-	} else if w1 == w2 {
+	}
+	if w1 == w2 {
 		t.Error("two tab sessions on one server resolved to the SAME writer — this is the reported defect (F4)")
 	}
 	defer a.CloseTranscript()
 
 	// And the same session asks twice and gets the same writer back (one file per
-	// tab, not one per message).
-	if a.transcriptFor(server, first) != a.transcriptFor(server, first) {
+	// tab, not one per message). The second answer is measured against the writer
+	// CAPTURED ABOVE, not against a second call spelled identically beside it: two
+	// copies of one expression agree with each other whatever the map does.
+	if again := a.transcriptFor(server, first); again != w1 {
 		t.Error("the same tab session opened two writers — it would fragment its own log")
 	}
 

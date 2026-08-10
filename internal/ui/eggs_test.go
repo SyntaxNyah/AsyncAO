@@ -2,11 +2,225 @@ package ui
 
 import (
 	"math"
+	"strings"
 	"testing"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
+
+// --- the egg roster's behavioural oracles --------------------------------------
+//
+// An egg has no return value and no state a headless test can read: it is
+// SetDrawColor and fills, straight at the renderer. Every gate below therefore
+// drives the two real entry points (drawChatEgg / drawStageEgg) and reads the two
+// things a draw does leave behind — the PIXELS, captured off an offscreen target,
+// and the frame-pacing census flag. That is what makes them behavioural pins
+// rather than source checks, and it is why the two eggs' accessibility gate and
+// their pacing gate could both be deleted with the suite green before they
+// existed.
+
+// eggOracleW / eggOracleH size the offscreen frame those gates paint into, and
+// eggOracleInset how far inside it the stand-in chatbox sits. Small on purpose:
+// these gates COUNT painted pixels rather than look at them, and every egg's
+// field scales with the rect it is handed, so a postage stamp runs the same loops
+// a 4K stage would. The inset has to clear the OUTSET rings
+// (eggRingCount*eggRingGap px of them) or ringVisible would legitimately skip
+// them and the motion-allowed control arm would read a truthful zero.
+const (
+	eggOracleW     = int32(240)
+	eggOracleH     = int32(180)
+	eggOracleInset = int32(40)
+)
+
+// eggKindTriggers is one message that lights each egg. A table, and eggTriggerFor
+// fails on a kind missing from it: an eighth egg joins these gates by having been
+// added to the enum, rather than slipping past because nobody wrote it a row.
+var eggKindTriggers = map[uint8]string{
+	eggFanat:     "shoutout to FanatSors",
+	eggOmni:      "credit to OmniTroid",
+	eggCrystal:   "kept alive by CrystalWarrior",
+	eggNyah:      "made by SyntaxNyah",
+	eggScatter:   "inspired by Scatterflower",
+	eggNorthgate: "hello Northgate",
+	eggMint:      "hello Mint",
+}
+
+// eggTriggerFor returns kind's trigger message, having checked that the real scan
+// agrees it lights that egg — a table row that stopped matching would otherwise
+// quietly point a whole gate at the wrong egg (or at none).
+func eggTriggerFor(t *testing.T, kind uint8) string {
+	t.Helper()
+	text, ok := eggKindTriggers[kind]
+	if !ok {
+		t.Fatalf("egg kind %d has no trigger message recorded — add one here rather than letting "+
+			"the accessibility and pacing gates skip a whole egg", kind)
+	}
+	if got := creatorEgg(text); got != kind {
+		t.Fatalf("the recorded trigger %q lights egg %d, not %d — the gate would measure the wrong egg", text, got, kind)
+	}
+	return text
+}
+
+// eggPaintedPixels runs draw into a black-cleared offscreen frame and counts the
+// pixels it left non-black.
+func eggPaintedPixels(t *testing.T, ren *sdl.Renderer, ct *render.CaptureTarget, draw func()) int {
+	t.Helper()
+	frame, err := ct.Capture(ren, func(sdl.Rect) { draw() })
+	if err != nil {
+		t.Skipf("offscreen capture unavailable headlessly: %v", err)
+	}
+	painted := 0
+	for i := 0; i+3 < len(frame.Pix); i += 4 {
+		if frame.Pix[i] != 0 || frame.Pix[i+1] != 0 || frame.Pix[i+2] != 0 {
+			painted++
+		}
+	}
+	return painted
+}
+
+// eggOracleRig stages a courtroom app with an offscreen target sized for the two
+// gates below, and returns the stage rect and the stand-in chatbox rect they
+// drive. Screen effects ON, because the eggs' gate is the PAIR
+// (ScreenEffectsOn && !ReduceMotion) and every arm here is about the second half.
+func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect, func()) {
+	t.Helper()
+	a, cleanup := stageSettledCourtroom(t)
+	ct, err := render.NewCaptureTarget(a.ctx.Ren, eggOracleW, eggOracleH)
+	if err != nil {
+		cleanup()
+		t.Skipf("render targets unavailable: %v", err)
+	}
+	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame never runs in this
+	// harness, so pin them or every ring is skipped as off-window.
+	a.winW, a.winH = eggOracleW, eggOracleH
+	a.d.Prefs.SetScreenEffects(true)
+	vp := sdl.Rect{X: 0, Y: 0, W: eggOracleW, H: eggOracleH}
+	box := sdl.Rect{X: eggOracleInset, Y: eggOracleInset, W: eggOracleW - 2*eggOracleInset, H: eggOracleH - 2*eggOracleInset}
+	return a, ct, vp, box, func() {
+		ct.Close()
+		cleanup()
+	}
+}
+
+// TestReduceMotionFreezesEveryEgg is the accessibility gate for the whole egg
+// roster, in the shape TestReduceMotionFreezesEveryElement (themeclock_test.go)
+// uses for the theme clock.
+//
+// Reduce motion is not "most of the motion": somebody who ticks that box because
+// movement makes them ill is not served by a chatbox that still breathes at them
+// because a stranger typed a name. Both entry points read the preference, and
+// NOTHING pinned it — the guest eggs shipped with an audit mutation that let Mint
+// alone bypass the gate, and a second that deleted the term outright so all seven
+// animated for a person who had asked them not to, and the entire package stayed
+// green under both. Each kind is driven through the real entry point twice: once
+// with the preference on (no pixels, no pacing) and once with it off, because the
+// frozen arm is only worth anything if the same call paints when it is allowed to.
+func TestReduceMotionFreezesEveryEgg(t *testing.T) {
+	a, ct, vp, box, cleanup := eggOracleRig(t)
+	defer cleanup()
+
+	for kind := eggFanat; kind <= eggMint; kind++ {
+		text := eggTriggerFor(t, kind)
+		sc := courtroom.Scene{MessageText: text}
+		for _, half := range []struct {
+			name string
+			live bool
+			draw func()
+		}{
+			{"chatbox ring", true, func() { a.drawChatEgg(box, text) }},
+			{"stage field", eggDrawsOnStage(kind), func() { a.drawStageEgg(vp, &sc) }},
+		} {
+			if !half.live {
+				continue
+			}
+			for _, arm := range []struct {
+				reduce bool
+				paints bool
+			}{{reduce: true, paints: false}, {reduce: false, paints: true}} {
+				a.d.Prefs.SetReduceMotion(arm.reduce)
+				// Clear the detection cache so each arm does its own scan through the
+				// real compare-and-store guard rather than inheriting the last one's.
+				a.eggMsg, a.eggKind = "", eggNone
+				a.frameAnimChrome = false
+				painted := eggPaintedPixels(t, a.ctx.Ren, ct, half.draw)
+				switch {
+				case arm.paints && painted == 0:
+					t.Errorf("egg %d's %s painted nothing with motion ALLOWED — the frozen arm of this "+
+						"gate is measuring an egg that never draws here, so it proves nothing", kind, half.name)
+				case !arm.paints && painted != 0:
+					t.Errorf("egg %d's %s painted %d px under ReduceMotion — the accessibility opt-out "+
+						"does not reach this egg", kind, half.name, painted)
+				}
+				if got := a.frameAnimChrome; got != arm.paints {
+					t.Errorf("egg %d's %s noted the pacing census = %v with ReduceMotion=%v, want %v — "+
+						"a frozen egg still holding the client at the animation cadence is the motion "+
+						"budget spent on motion the user asked not to see", kind, half.name, got, arm.reduce, arm.paints)
+				}
+			}
+		}
+	}
+}
+
+// TestEveryEggPacesTheFrameLimiter is the per-kind pacing census, and it is a
+// BEHAVIOURAL counterpart to the source check TestStageEggCensusIsComplete makes
+// (which asks only whether NoteAnimating appears somewhere in drawStageEgg's
+// body). That is not enough, and an audit mutation proved it: a bare `return`
+// added to the eggMint arm of the dispatch skips the census call at the bottom
+// while the frost still animates, and the whole package stayed green. An egg that
+// animates without noting parks the frame limiter at its idle cap and the field
+// crawls at a few frames a second — the msAnim precedent this repo has already
+// shipped once.
+//
+// Both dispatches, every kind, plus the two negatives: a message with no egg in
+// it must not pace, and a kind with no stage half must not pace from the stage.
+func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
+	a, _, vp, box, cleanup := eggOracleRig(t)
+	defer cleanup()
+	a.d.Prefs.SetReduceMotion(false)
+
+	for kind := eggFanat; kind <= eggMint; kind++ {
+		text := eggTriggerFor(t, kind)
+		sc := courtroom.Scene{MessageText: text}
+
+		a.eggMsg, a.eggKind = "", eggNone
+		a.frameAnimChrome = false
+		a.drawStageEgg(vp, &sc)
+		if a.eggKind != kind {
+			t.Fatalf("drawStageEgg resolved egg %d for %q, want %d", a.eggKind, text, kind)
+		}
+		if got, want := a.frameAnimChrome, eggDrawsOnStage(kind); got != want {
+			t.Errorf("egg %d: drawStageEgg noted the pacing census = %v, want %v — a stage field that "+
+				"animates without noting leaves the frame limiter at the idle cap", kind, got, want)
+		}
+
+		a.eggMsg, a.eggKind = "", eggNone
+		a.frameAnimChrome = false
+		a.drawChatEgg(box, text)
+		if !a.frameAnimChrome {
+			t.Errorf("egg %d: drawChatEgg did not note the pacing census — the ring animates while the "+
+				"limiter idles, so the glow steps instead of glowing", kind)
+		}
+	}
+
+	// The negatives, from the same two entry points: an ordinary line pins nothing
+	// to the animation cadence.
+	const inert = "plain courtroom banter"
+	if got := creatorEgg(inert); got != eggNone {
+		t.Fatalf("the control message %q lights egg %d — this arm would assert nothing", inert, got)
+	}
+	sc := courtroom.Scene{MessageText: inert}
+	a.eggMsg, a.eggKind = "", eggNone
+	a.frameAnimChrome = false
+	a.drawStageEgg(vp, &sc)
+	a.drawChatEgg(box, inert)
+	if a.frameAnimChrome {
+		t.Error("a message with no creator in it held the client at the animation cadence — every " +
+			"ordinary post would keep the frame limiter awake")
+	}
+}
 
 // TestCreatorEgg pins the detection scan: each creator name in mixed case and
 // mid-sentence resolves to its egg, multiple-name messages honour the documented
@@ -44,6 +258,28 @@ func TestCreatorEgg(t *testing.T) {
 		{"syntaxnyah then crystalwarrior", eggCrystal, "crystal outranks nyah even when nyah appears first"},
 		{"crystalwarrior omnitroid", eggOmni, "omni still outranks crystal"},
 		{"crystalwarrior scatterflower", eggCrystal, "a lineage figure outranks an inspiration"},
+		// Northgate: a guest, so it sorts below every name above it.
+		{"Northgate", eggNorthgate, "mixed-case northgate, bare"},
+		{"see you at northgate tonight", eggNorthgate, "northgate mid-sentence"},
+		{"NORTHGATE!!!", eggNorthgate, "upper-case northgate"},
+		{"northgate scatterflower", eggScatter, "the named inspiration still outranks a guest"},
+		{"northgate fanatsors", eggFanat, "a lineage creator still outranks a guest"},
+		// Mint: the word-boundary rung, and the LAST one — a line naming both
+		// guests lights the one that could not have matched by accident.
+		{"Mint", eggMint, "mixed-case mint, bare"},
+		{"nice to see Mint here", eggMint, "mint mid-sentence"},
+		{"MINT!!!", eggMint, "upper-case mint, trailing punctuation is a boundary"},
+		{"(mint)", eggMint, "brackets are boundaries"},
+		{"mint, northgate", eggNorthgate, "northgate outranks mint"},
+		{"mint syntaxnyah", eggNyah, "a creator outranks a guest"},
+		// …and the boundary rule doing its job. Every one of these CONTAINS
+		// "mint": a plain substring match lights all four, which is the whole
+		// reason this trigger is not one.
+		{"the car is in mint condition", eggMint, "a boundary match still fires on the bare word"},
+		{"he ate a peppermint", eggNone, "peppermint must not trigger mint"},
+		{"freshly minted evidence", eggNone, "minted must not trigger mint"},
+		{"spearmint gum", eggNone, "spearmint must not trigger mint"},
+		{"the mintage was disputed", eggNone, "mintage must not trigger mint"},
 		// No false positives.
 		{"you are being fanatic about this", eggNone, "fanatic must not trigger fanat"},
 		{"my android phone", eggNone, "android must not trigger omni"},
@@ -267,7 +503,7 @@ func TestPerimSegment(t *testing.T) {
 // failing arm was FanatSors at 1.0/op, it is this. If it is a different arm, a
 // different count, or reproducible, it is NOT this and something did ship.
 //
-// DO NOT WEAKEN OR SKIP IT. The gate is correct and the four egg paths are
+// DO NOT WEAKEN OR SKIP IT. The gate is correct and every egg path is
 // genuinely alloc-free in the steady state; a t.Skip here would retire a
 // whole-screen zero-alloc gate to hide a 5% flake, and the class of bug it
 // catches (a per-frame allocation in a draw body) is one this codebase has
@@ -288,12 +524,15 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	a.winW, a.winH = w, h
 	draw := func() { a.drawCourtroom(w, h) }
 
-	// Each egg has a DISTINCT draw path (rainbow rings, blue<->gold pulse + the
-	// perimeter sweep, Crystalwarrior's split-hue ring PLUS its stage shard field,
-	// pink heartbeat, and Scatterflower's palette-drift ring PLUS its stage petal
-	// field), so all five must be gated — the sweep's per-edge fill loop and the two
-	// nested stage loops are the alloc-prone ones. drawCourtroom covers both halves
-	// of the two-part eggs: renderViewportZoomed reaches drawStageEgg,
+	// Each egg has a DISTINCT draw path and every one of the SEVEN is a row here:
+	// FanatSors' rainbow rings; OmniTroid's blue<->gold pulse plus the perimeter
+	// sweep; Crystalwarrior's split-hue ring PLUS its stage shard field;
+	// SyntaxNyah's pink heartbeat; Scatterflower's palette-drift ring PLUS its
+	// stage petal field; Northgate's ramp ring PLUS its stage curtain field; and
+	// Mint's banded ring PLUS its stage frost-and-fleck field. All eleven draw
+	// bodies have to be gated — the sweep's per-edge fill loop and the five nested
+	// stage loops are the alloc-prone ones. drawCourtroom covers both halves of the
+	// four two-part eggs: renderViewportZoomed reaches drawStageEgg,
 	// drawChatOverlay reaches drawChatEgg. Re-drive the SAME speaker (char 0
 	// "Witch", whose stage bases the staging already made resident) with each
 	// creator-name message, settle the typewriter, and assert zero allocs.
@@ -306,6 +545,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		{"kept alive by CrystalWarrior", eggCrystal},
 		{"made by SyntaxNyah", eggNyah},
 		{"inspired by Scatterflower", eggScatter},
+		{"hello Northgate", eggNorthgate},
+		{"hello Mint", eggMint},
 	} {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", tc.text)})
 		a.room.SkipToIdle()
@@ -328,24 +569,228 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 // the new egg simply never appears on the stage.
 func TestStageEggCensusIsComplete(t *testing.T) {
 	// The list itself: exactly the two-part eggs, and nothing else.
-	want := map[uint8]bool{eggScatter: true, eggCrystal: true}
-	for kind := eggNone; kind <= eggScatter; kind++ {
+	want := map[uint8]bool{eggScatter: true, eggCrystal: true, eggNorthgate: true, eggMint: true}
+	for kind := eggNone; kind <= eggMint; kind++ {
 		if got := eggDrawsOnStage(kind); got != want[kind] {
 			t.Errorf("eggDrawsOnStage(%d) = %v, want %v", kind, got, want[kind])
 		}
 	}
-	// …and the dispatch: the gate is consulted, both stage draws are reachable, and
+	// …and the dispatch: the gate is consulted, every stage draw is reachable, and
 	// the frame limiter is told (an egg that animates without NoteAnimating freezes
 	// at a low idle cap — the msAnim precedent).
 	body := funcBodySource(t, "eggs.go", "drawStageEgg")
-	for _, call := range []string{"eggDrawsOnStage", "drawEggPetals", "drawEggShards", "NoteAnimating"} {
+	for _, call := range []string{
+		"eggDrawsOnStage", "drawEggPetals", "drawEggShards", "drawEggAurora", "drawEggFrost", "NoteAnimating",
+	} {
 		if !containsCall(body, call) {
 			t.Errorf("drawStageEgg does not call %s — a stage egg is unreachable or unpaced", call)
 		}
 	}
-	// The chatbox half of the crystal egg has the same deletion risk.
-	if !containsCall(funcBodySource(t, "eggs.go", "drawCreatorEgg"), "drawEggCrystalRing") {
-		t.Error("drawCreatorEgg no longer dispatches the Crystalwarrior ring")
+	// The chatbox halves have the same deletion risk, and the two-part eggs have it
+	// twice over: a kind can lose its ring while keeping its stage field, which
+	// leaves the chatbox looking untouched while the stage goes on animating.
+	ring := funcBodySource(t, "eggs.go", "drawCreatorEgg")
+	for _, call := range []string{"drawEggCrystalRing", "drawEggAuroraRing", "drawEggMintRing"} {
+		if !containsCall(ring, call) {
+			t.Errorf("drawCreatorEgg no longer dispatches %s — that egg's chatbox half is gone", call)
+		}
+	}
+}
+
+// TestEveryEggKindHasBothDispatches is the encapsulation gate the roster needed
+// once it stopped being five hand-remembered names.
+//
+// EVERY kind in the enum must resolve somewhere in drawCreatorEgg. A kind added
+// to the trigger table and left out of the ring dispatch is the
+// parsed-but-never-applied shape this repo has shipped before: the scan resolves,
+// creatorEgg returns it, NoteAnimating fires, the frame limiter runs at full rate
+// — and NOTHING is drawn. Everything compiles and every other egg gate stays
+// green. Driven off the enum bound rather than a literal list, so a sixth guest
+// is caught by having been added at all.
+func TestEveryEggKindHasBothDispatches(t *testing.T) {
+	ring := funcBodySource(t, "eggs.go", "drawCreatorEgg")
+	stage := funcBodySource(t, "eggs.go", "drawStageEgg")
+	// One painter per kind, named here so the gate can say WHICH one went missing.
+	// A kind absent from this table fails loudly rather than being skipped.
+	painters := map[uint8][2]string{
+		eggFanat:     {"drawEggRainbow", ""},
+		eggOmni:      {"drawEggOmni", ""},
+		eggCrystal:   {"drawEggCrystalRing", "drawEggShards"},
+		eggNyah:      {"drawEggNyah", ""},
+		eggScatter:   {"drawEggScatter", "drawEggPetals"},
+		eggNorthgate: {"drawEggAuroraRing", "drawEggAurora"},
+		eggMint:      {"drawEggMintRing", "drawEggFrost"},
+	}
+	for kind := eggFanat; kind <= eggMint; kind++ {
+		p, known := painters[kind]
+		if !known {
+			t.Fatalf("egg kind %d has no painter recorded — add it here, or a new egg can ship "+
+				"triggering, pacing the frame limiter, and drawing nothing", kind)
+		}
+		if !containsCall(ring, p[0]) {
+			t.Errorf("egg kind %d: drawCreatorEgg does not call %s", kind, p[0])
+		}
+		hasStage := p[1] != ""
+		if hasStage != eggDrawsOnStage(kind) {
+			t.Errorf("egg kind %d: the painter table says stage=%v, eggDrawsOnStage says %v",
+				kind, hasStage, eggDrawsOnStage(kind))
+		}
+		if hasStage && !containsCall(stage, p[1]) {
+			t.Errorf("egg kind %d: drawStageEgg does not call %s", kind, p[1])
+		}
+	}
+}
+
+// TestEggWordPresentIsABoundaryMatch pins the one trigger that is not a plain
+// Contains, from both sides.
+//
+// "mint" is ordinary English, so a substring match fires on peppermint, minted,
+// spearmint and mintage — the exact false-positive class the full-handle rule
+// keeps out for the other five, applied to a handle that cannot buy specificity
+// from length. The negative rows are the point; the positive ones stop a
+// too-clever boundary rule from making the egg unreachable.
+func TestEggWordPresentIsABoundaryMatch(t *testing.T) {
+	for _, s := range []string{
+		"mint", "Mint is here" /* callers lower-case first — see below */, "a mint",
+		"mint.", "(mint)", "mint, please", "the-mint-condition", "chocolate mint chip",
+	} {
+		if !eggWordPresent(strings.ToLower(s), eggNameMint) {
+			t.Errorf("eggWordPresent(%q) = false, want true — the egg is unreachable", s)
+		}
+	}
+	for _, s := range []string{
+		"peppermint", "spearmint", "minted", "mintage", "minty", "minting", "amint", "mint7", "7mint",
+		"", "condition",
+	} {
+		if eggWordPresent(strings.ToLower(s), eggNameMint) {
+			t.Errorf("eggWordPresent(%q) = true, want false — an innocent word lit an easter egg", s)
+		}
+	}
+	// The empty needle is never a match, so a future trigger left blank cannot
+	// silently fire on every message in the room.
+	if eggWordPresent("anything at all", "") {
+		t.Error("an empty trigger matched — every message would light that egg")
+	}
+	// The LAST occurrence still counts: the scan must keep walking past a
+	// non-boundary hit rather than giving up at the first one.
+	if !eggWordPresent("peppermint and mint", eggNameMint) {
+		t.Error("a boundary match after a non-boundary one was missed — the scan stops too early")
+	}
+}
+
+// TestGuestEggsAreProceduralAndBounded pins the two properties that make an egg
+// shippable at all: the fields are FIXED caps (hard rule 4 — the per-frame cost
+// is the same at 4K as at 720p) and the maths behind them is pure, so the whole
+// effect is a function of (index, clock) with nothing to seed or reset.
+func TestGuestEggsAreProceduralAndBounded(t *testing.T) {
+	// The aurora ramp stays inside its own two hues however far the clock runs,
+	// which is what keeps this egg out of the rainbow egg's territory. Sampled
+	// across several drift cycles, including the seam where a naive lerp snaps.
+	for i := 0; i <= 400; i++ {
+		u := float64(i) / 100 // four full cycles
+		col := eggAuroraColor(u, eggNorthSaturation)
+		if col.A != 255 {
+			t.Fatalf("eggAuroraColor(%.2f).A = %d, want 255 (the caller sets alpha)", u, col.A)
+		}
+		// Green→violet: blue is never the smallest channel at the violet end and
+		// green never the smallest at the green end. A cheap, honest invariant —
+		// the ramp must never wander through red/orange.
+		if col.R > col.G && col.R > col.B {
+			t.Fatalf("eggAuroraColor(%.2f) = %+v — the aurora ramp reached a red-dominant hue", u, col)
+		}
+	}
+	// Continuity across the WRAP, which is the one place the fold is load-bearing.
+	//
+	// THE SEAM IS AT u≈1→0, NOT AT THE FOLD'S OWN APEX. This assertion used to
+	// sample 0.499 against 0.501, which cannot fail: the fold maps 0.501 back onto
+	// 0.499, so the two calls return the identical colour by construction — and an
+	// UNFOLDED straight lerp is smooth at mid-ramp too, so it measured 0 for both
+	// implementations. The discontinuity a straight lerp actually has is where the
+	// caller's clock wraps: rampBase is Mod(t/eggNorthDriftSecs, 1), so u walks off
+	// the top of the ramp and back onto the bottom once every drift cycle, and an
+	// unfolded ramp snaps violet→green there (measured on that mutant: 204,97,255 →
+	// 97,255,104). Sampled at the seam and one step wider, on EVERY channel.
+	for _, seam := range []struct{ before, after float64 }{
+		{0.999, 0.001},
+		{0.98, 0.02},
+	} {
+		lo, hi := eggAuroraColor(seam.before, eggNorthSaturation), eggAuroraColor(seam.after, eggNorthSaturation)
+		for _, ch := range []struct {
+			name   string
+			lo, hi uint8
+		}{{"red", lo.R, hi.R}, {"green", lo.G, hi.G}, {"blue", lo.B, hi.B}} {
+			if d := int(ch.lo) - int(ch.hi); d > eggAuroraSeamTol || d < -eggAuroraSeamTol {
+				t.Errorf("the aurora ramp jumps %d in %s across its wrap (u=%.3f→%.3f) — the fold is "+
+					"gone and the sky snaps once every %.0fs drift cycle", d, ch.name, seam.before, seam.after, eggNorthDriftSecs)
+			}
+		}
+	}
+
+	// The frost breath never lets go of the frame and never overshoots its reach:
+	// below the floor the rime flickers out of existence, above 1 it would grow
+	// past the length its own constants budgeted.
+	for i := 0; i <= 200; i++ {
+		got := eggMintCreep(float64(i)/10, 0.37, eggMintCreepSecs)
+		if got < eggMintReachFloor-1e-9 || got > 1+1e-9 {
+			t.Fatalf("eggMintCreep = %.4f at t=%.1f, want [%v,1]", got, float64(i)/10, eggMintReachFloor)
+		}
+	}
+	// The mint ring alternates and MARCHES: at any instant the three rings are not
+	// all one colour, and one band period later every ring has swapped.
+	for _, at := range []float64{0, 1.1, eggMintBandSecs * 3.4, 61.7} {
+		same := eggMintBandIsCocoa(0, at) == eggMintBandIsCocoa(1, at)
+		if same {
+			t.Errorf("at t=%.2f rings 0 and 1 wear the same colour — the band is not alternating", at)
+		}
+		for i := int32(0); i < eggRingCount; i++ {
+			if eggMintBandIsCocoa(i, at) == eggMintBandIsCocoa(i, at+eggMintBandSecs) {
+				t.Errorf("at t=%.2f ring %d did not swap after one band period — the march is gone", at, i)
+			}
+		}
+	}
+}
+
+// eggAuroraSeamTol is how far a channel may move across the ramp's wrap, in
+// 8-bit levels. The folded ramp measures EXACTLY 0 there (u and 1-u fold onto the
+// same point), so every level of this is slack for a future ramp that is
+// continuous without being symmetric; the unfolded lerp the fold exists to
+// prevent moves 107 / 158 / 151, two orders past it.
+const eggAuroraSeamTol = 8
+
+// TestMintHashWindowsAreDisjoint pins the Mint egg's own distinct-salt rule
+// against the three fields that share eggHash.
+//
+// Each field takes FOUR draws per element, so it owns the 4n indices from its
+// salt; overlapping windows mean an element of one field wearing another's lane,
+// size, speed and phase all at once. The flecks shipped at salt 0 — entirely
+// inside the top frost edge's window — which is invisible only because the two
+// spend those numbers on different axes, and would stop being invisible the day
+// somebody gave a fleck a vertical drift. Driven off the caps, so growing a field
+// past its neighbour's salt fails here rather than silently re-correlating.
+func TestMintHashWindowsAreDisjoint(t *testing.T) {
+	// eggHashDrawsPerElement is the four draws every element of every egg field
+	// takes (lane, size, speed, phase) — the width one element occupies.
+	const eggHashDrawsPerElement = 4
+	windows := []struct {
+		name  string
+		start uint32
+		count uint32
+	}{
+		{"top frost edge", 0, eggMintFingers},
+		{"bottom frost edge", eggMintBottomSalt, eggMintFingers},
+		{"cocoa flecks", eggMintFleckSalt, eggMintFlecks},
+	}
+	for i, a := range windows {
+		aEnd := a.start + a.count*eggHashDrawsPerElement
+		for _, b := range windows[i+1:] {
+			bEnd := b.start + b.count*eggHashDrawsPerElement
+			if a.start < bEnd && b.start < aEnd {
+				t.Errorf("the %s window [%d,%d) overlaps the %s window [%d,%d) — an element of one "+
+					"wears all four of the other's hashed properties, which is the correlation the "+
+					"per-field salts exist to prevent",
+					a.name, a.start, aEnd, b.name, b.start, bEnd)
+			}
+		}
 	}
 }
 

@@ -89,6 +89,13 @@ const (
 	// would stop pressing the button the day the row was re-spaced, silently.
 	editorHeaderBtnW   = 62
 	editorHeaderBtnGap = 4
+	// editorHeaderBtnLabelInsetY / editorHeaderBtnLabelPadX place the label a DISABLED
+	// header button draws for itself (Ctx.Button is not called on that arm, so its own
+	// centring is not available). The Y inset puts the label on the band's own label
+	// baseline — the band draws its name at y=5 and the buttons' tops sit at y=2 — and
+	// the X pad is the 8 px Ctx.Button clamps its label to inside the same box.
+	editorHeaderBtnLabelInsetY = 3
+	editorHeaderBtnLabelPadX   = 8
 
 	// editRailAddBtnW / editRailLiveBtnW size the element rail's two header buttons
 	// (v1.90.0 W10): "+ Image" and the Live/Frozen toggle. Measured against the
@@ -181,6 +188,17 @@ type themeEditor struct {
 	// same reason as `font`: the pointer IS the single-flight flag, and the channel
 	// is buffered so the goroutine never blocks on an editor that closed.
 	image *editImageJob
+
+	// preview is the PREVIEW view state (themeeditorpreview.go): the canned offline
+	// demo, played full-bleed with every piece of editing chrome gone. A POINTER,
+	// and the pointer IS the flag — the shape `gallery` and `report` already use,
+	// for the same reason: it carries a whole offline session and a room, and a
+	// session that never presses the button should pay one nil pointer.
+	//
+	// DISTINCT FROM livePaused BELOW, deliberately. That is a FREEZE switch whose
+	// value is that its off state does LESS work; this is a player whose whole job
+	// is to do more. One control cannot honestly mean both.
+	preview *editorPreview
 
 	// livePaused is the LIVE PREVIEW toggle, stored INVERTED so the zero value is
 	// the live behaviour every session before this one had (the rule 4 shape a
@@ -357,8 +375,15 @@ func (a *App) themeEditorOpen() bool {
 // inverse), push (which makes it undoable), invalidate (which re-bakes the geometry
 // the edit is expressed in). A call site that did two of the three would produce an
 // edit that either cannot be undone or cannot be seen.
+//
+// PREVIEW REFUSES HERE, at the funnel, and not only at the input paths that feed
+// it. The demo hides every rail and neutralizes every click inside its own pass
+// (themeeditorpreview.go), so nothing SHOULD reach this — which is exactly why the
+// refusal belongs at the one place all of them converge rather than at seven doors
+// that each have to remember. Preview is a view state; a view state that could
+// write the document would be a mode.
 func (a *App) editorApply(op themeEditOp) bool {
-	if a.te == nil || op.kind == opNone {
+	if a.te == nil || op.kind == opNone || a.editorPreviewOn() {
 		return false
 	}
 	done, res := a.te.doc.apply(op)
@@ -442,8 +467,15 @@ func (a *App) setEditorLive(on bool) {
 
 // editorUndo steps the timeline back by one op — or by one whole GROUP, which is
 // what makes "try a preset, hate it, Ctrl+Z" one keypress.
+//
+// IT REFUSES WHILE PREVIEW IS UP, and so does editorRedo below. The two are the
+// only document mutators that do NOT go through editorApply, and the Ctrl+Z chord
+// is claimed PRE-SCREEN (app.go, gated on themeEditorOpen) — so without this a
+// chord typed at the demo would silently rewind work the author cannot see. The
+// chord is still CONSUMED by editorUndoChord either way, which is its whole
+// promise: a key an armed editor owns never also fires whatever else it is bound to.
 func (a *App) editorUndo() bool {
-	if a.te == nil {
+	if a.te == nil || a.editorPreviewOn() {
 		return false
 	}
 	g, ok := a.te.ring.peekUndoGroup()
@@ -475,7 +507,7 @@ func (a *App) editorUndo() bool {
 
 // editorRedo is editorUndo's mirror.
 func (a *App) editorRedo() bool {
-	if a.te == nil {
+	if a.te == nil || a.editorPreviewOn() {
 		return false
 	}
 	g, ok := a.te.ring.peekRedoGroup()
@@ -621,6 +653,22 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.pollEditorFont()
 	a.pollEditorExport()
 	a.pollEditorImage()
+	// PREVIEW PREEMPTS THE WHOLE SCREEN (field batch 9). It is a VIEW STATE, so it
+	// returns here — above the key handler, the canvas input, the overlay and both
+	// rails — and every one of them is hidden by NOT RUNNING rather than by being
+	// asked to hide itself. That is the only version of "hides all editing chrome"
+	// that stays true when the next rail is added.
+	//
+	// BELOW the poll cluster, deliberately: a save or an export started before
+	// Preview was pressed must still land while the demo plays, or the chip that
+	// says so would arrive minutes late. The two polls that MUTATE THE DOCUMENT
+	// (font, image) hold their finished job instead of landing it — they carry that
+	// rule themselves rather than depending on this ordering, see pollEditorFont.
+	if a.editorPreviewOn() {
+		a.te.peek = false
+		a.drawEditorPreviewScreen(w, h)
+		return
+	}
 	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
 	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
 	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
@@ -798,8 +846,21 @@ func (a *App) drawEditorHeader(w int32) {
 	if name == "" {
 		name = "(unnamed theme)"
 	}
-	c.LabelClipped(editRowPad, 5, w/3, name, ColText)
-	c.LabelClipped(w/3+editRowPad, 5, w/4, a.editorStateLabel(), ColTextDim)
+	// THE TWO LABEL COLUMNS ARE CLAMPED AGAINST THE BUTTON ROW (field batch 9). They
+	// were w/3 and w/4 flat, which at 1280 px stopped just short of the row's left
+	// edge — the measurement this file's own note about a "ninth and tenth button"
+	// records. The wide Preview button moves that edge left, so the columns are told
+	// where it is instead of being trusted to stay clear of it. Never WIDER than
+	// before (the clamp only ever shrinks), so nothing that fitted stops fitting.
+	edge := editorPreviewBtnRect(w).X - editorHeaderBtnGap
+	nameW := clampLabelColumn(w/3, editRowPad, edge)
+	if nameW > 0 {
+		c.LabelClipped(editRowPad, 5, nameW, name, ColText)
+	}
+	stateX := w/3 + editRowPad
+	if stateW := clampLabelColumn(w/4, stateX, edge); stateW > 0 {
+		c.LabelClipped(stateX, 5, stateW, a.editorStateLabel(), ColTextDim)
+	}
 
 	const btnW, btnGap = editorHeaderBtnW, editorHeaderBtnGap
 	x := w - editRowPad - btnW
@@ -811,12 +872,17 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Save") {
 		a.editorSave()
 	}
+	// THE TWO TIMELINE BUTTONS ARE GATED ON THE RING, which is what themeEditRing's
+	// canUndo / canRedo exist to say: they are the enabled state of exactly these two
+	// controls. A Redo that looks live with an empty tail is a button lying about what
+	// the app can do — and the empty tail is the ordinary state, because every fresh
+	// edit truncates it (themeEditRing.push).
 	x -= btnW + btnGap
-	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Redo") {
+	if a.editorHeaderBtn(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Redo", a.te.ring.canRedo()) {
 		a.editorRedo()
 	}
 	x -= btnW + btnGap
-	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Undo") {
+	if a.editorHeaderBtn(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Undo", a.te.ring.canUndo()) {
 		a.editorUndo()
 	}
 	x -= btnW + btnGap
@@ -849,6 +915,66 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Share") {
 		a.editorExport()
 	}
+	// PREVIEW (field batch 9) — the headline control, and the one button in this
+	// band that is not the size of the others. It plays a canned offline scene over
+	// the real theme with every rail, handle and guide gone, which is the only way
+	// an author sees what a player will see; a small toggle beside six others would
+	// have been the least discoverable place in the client to put that.
+	//
+	// Beside Share because they are the two things you do with a finished theme —
+	// look at it, then hand it over — and LEFTMOST because the wide box has to grow
+	// away from the row rather than push it (editorPreviewBtnRect).
+	if c.Button(editorPreviewBtnRect(w), editorPreviewEnterLabel) {
+		a.toggleEditorPreview()
+	}
+}
+
+// clampLabelColumn is one header label column's clip width: what it asked for, cut
+// off at the pixel the button row starts. NEGATIVE means the column has no room at
+// all, which the caller must treat as "draw nothing" — LabelClipped reads a
+// non-positive width as "no clip" rather than as "nothing fits" (the clipNowhere
+// trap editorHeaderBtn's own guard names), so the decision cannot be left to it.
+func clampLabelColumn(want, x, edge int32) int32 {
+	if lim := edge - x; want > lim {
+		want = lim
+	}
+	return want
+}
+
+// editorHeaderBtn is one header-band button whose action may be unavailable.
+//
+// A disabled control DRAWS DIM AND STAYS PUT rather than disappearing — the
+// disabled-not-absent rule menubar.go states and the content panel's source picker
+// already follows (drawContentSourcePicker's `seg`). A button that vanished with an
+// empty timeline would re-flow the whole band under the pointer, and "where did Redo
+// go?" is a worse question than a grey Redo.
+//
+// THE CLICK IS SWALLOWED HERE, at the button, not at the action. An action that
+// quietly no-ops is indistinguishable on screen from one that ran and did nothing
+// visible, which is exactly how a redo tail that stopped being reachable would go
+// unnoticed; refusing at the door keeps the answer in one place.
+func (a *App) editorHeaderBtn(r sdl.Rect, label string, enabled bool) bool {
+	c := a.ctx
+	if enabled {
+		return c.Button(r, label)
+	}
+	// ColPanel, not the plate: an enabled Ctx.Button fills ColPanel, so only the
+	// border and the label change between the two states — the dim reads as the SAME
+	// button, greyed, rather than as a different widget.
+	c.Fill(r, ColPanel)
+	c.Border(r, ColPanelHi)
+	w := c.TextWidth(label)
+	// `maxW > 0` is Ctx.Button's own guard (ui.go), carried here for the same
+	// reason it exists there: a caller handing this a rect narrower than the pad
+	// would otherwise clamp the label to a NON-POSITIVE width, which LabelClipped
+	// reads as "no clip" rather than as "nothing fits" — the clipNowhere trap in a
+	// second place. Unreachable from the two live call sites (both pass
+	// editorHeaderBtnW), and that is exactly when a guard is cheap.
+	if maxW := r.W - editorHeaderBtnLabelPadX; w > maxW && maxW > 0 {
+		w = maxW
+	}
+	c.LabelClipped(r.X+(r.W-w)/2, r.Y+editorHeaderBtnLabelInsetY, w, label, ColTextDim)
+	return false
 }
 
 // editorLiveLabel is the Live button's caption. Two package constants rather than a

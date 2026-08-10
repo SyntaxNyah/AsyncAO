@@ -54,8 +54,9 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	}
 	if a.vpZoom <= 1 {
 		a.d.Viewport.Render(c.Ren, sc, vp)
-		a.drawStageEgg(vp, sc) // Scatterflower petals, behind the frame and the chatbox
-		a.drawStageFrame(vp)   // #56 decorative frame (Off by default → no-op)
+		a.drawEditorPreviewFigure(vp) // theme-editor demo stand-in (no-op unless previewing)
+		a.drawStageEgg(vp, sc)        // Scatterflower petals, behind the frame and the chatbox
+		a.drawStageFrame(vp)          // #56 decorative frame (Off by default → no-op)
 		return
 	}
 	// &vp into cgo would heap-allocate the parameter on EVERY call — even at
@@ -65,6 +66,10 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	_ = c.Ren.SetClipRect(&c.cgoRect)
 	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
 	_ = c.Ren.SetClipRect(nil)
+	// The stand-in rides the STAGE rect like the petals and the frame below: it is a
+	// placeholder for art, not art, so the camera must not magnify it into the one
+	// thing on screen that is obviously fake.
+	a.drawEditorPreviewFigure(vp)
 	// Petals ride the STAGE rect, not the zoomed scene rect: like the frame below
 	// they're chrome over the stage, so zooming the camera must not blow them up.
 	a.drawStageEgg(vp, sc)

@@ -71,7 +71,22 @@ func TestTimerStartSubtractsHalfTheMeasuredRoundTrip(t *testing.T) {
 	feed(t, s, fmt.Sprintf("TI#0#0#%d#%%", serverMs))
 	after := time.Now()
 
-	want := serverMs*time.Millisecond - rtt/2
+	// The reducer subtracts half the latency the session MEASURED, and that
+	// measurement is necessarily a hair ABOVE the nominal rtt: measureRTT backdates
+	// the stamp and then closes the round trip on this goroutine, so everything
+	// between the two — the packet parse, an allocation, a scheduler preemption —
+	// lands inside the sample (~0.9 µs on an idle machine, ~15-23 µs on the first,
+	// cold exchange, unbounded under load). Anchoring want to the NOMINAL rtt made
+	// the lower bound demand a deadline half that overhead later than the reducer
+	// can possibly mint, and the suite failed by exactly that half.
+	//
+	// Half of the value the reducer itself used makes the window exact by
+	// construction — no tolerance to guess, and none that could ever be right,
+	// since the overhead is a scheduling delay with no bound. It keeps every tooth:
+	// dropping the correction lands the deadline rtt/2 (200 ms) late and applying
+	// the whole latency lands it rtt/2 early, both hundreds of milliseconds outside
+	// a window this narrow.
+	want := serverMs*time.Millisecond - s.Latency()/2
 	got := s.Timers[0].Deadline
 	if got.Before(before.Add(want)) || got.After(after.Add(want)) {
 		t.Errorf("deadline is %v out from the corrected anchor (want now+%v)", got.Sub(before.Add(want)), want)

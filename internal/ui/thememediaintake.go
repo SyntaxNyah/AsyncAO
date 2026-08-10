@@ -292,6 +292,15 @@ func (a *App) pollEditorImage() {
 	if a.te == nil || a.te.image == nil {
 		return
 	}
+	// PREVIEW DEFERS THE LANDING (field batch 9), for pollEditorFont's reason and one
+	// of its own: landEditorImage mutates the document through editorApply, which
+	// refuses while the demo is up, and its refusal arm Releases the decoded page — so
+	// draining here would cost the user the picture AND its decode, silently and under
+	// the wrong sentence ("the [media] table is full"). The job waits instead; the
+	// first editing frame after the demo lands it, decode included.
+	if a.editorPreviewOn() {
+		return
+	}
 	select {
 	case res := <-a.te.image.done:
 		job := a.te.image

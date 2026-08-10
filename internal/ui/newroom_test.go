@@ -40,6 +40,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // roomFactoryApp is a settled courtroom plus the one dependency the maker
@@ -48,7 +49,24 @@ import (
 // the shared fixture, so this gate drives the same App the alloc gates do.
 func roomFactoryApp(t *testing.T) (*App, func()) {
 	t.Helper()
+	a, _, cleanup := roomFactoryAppMounted(t)
+	return a, cleanup
+}
+
+// roomFactoryAppMounted is roomFactoryApp with the Manager's local mount FOLDER
+// handed back, so a gate can write a real asset file into it and drive the byte
+// path end to end (write characters/<x>/char.ini, point urls at
+// assets.LocalOriginFor of the same folder, and Manager.FetchRaw reads it).
+//
+// The split exists because a fixture that owns its mount privately can only ever
+// serve misses: every consumer of roomFactoryApp before this one drove the
+// fetch's FAILURE path, which is exactly how the char.ini→cache mapping shipped
+// with no end-to-end coverage at all (deleting `res.idle = ini.IdleAnim()` — and
+// `res.showname` beside it — left the whole package green).
+func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
+	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
+	mount := t.TempDir()
 	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
@@ -70,13 +88,13 @@ func roomFactoryApp(t *testing.T) (*App, func()) {
 		Prefs:     a.d.Prefs,
 		T2:        t2,
 		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{t.TempDir()}),
+		Source:    assets.NewLocalFetcher([]string{mount}),
 		LocalMode: true,
 		Pool:      pool,
 		Decoder:   decoder,
 	})
 	a.d.Prefs.SetFormatAutoDetect(false) // no manifest fetch interposes on the export path
-	return a, cleanup
+	return a, mount, cleanup
 }
 
 // gateOrigin is deliberately non-http: the replay pre-warm and the export's
@@ -100,7 +118,7 @@ func gateScene() *sceneRecording {
 // existence, together with the real call that makes it happen.
 //
 // The list is the POINT of this gate: a mode that is not here is a mode nothing
-// checks. Six rows, five entry points — a replay appears twice because it is two
+// checks. Seven rows, six entry points — a replay appears twice because it is two
 // modes (viewing, and previewing for the maker). What stops a seventh from being
 // added without joining the list is TestRoomConstructionHasExactlyOneCallSite
 // (nothing may build a room another way) plus roomConstructionFuncs below
@@ -174,6 +192,29 @@ func stagedRoomPaths() []stagedRoomPath {
 		},
 		stop:      func(a *App) { a.makerScene, a.makerPreviewRoom = nil, nil },
 		authoring: true,
+	}, {
+		// The theme editor's canned Preview. A VIEWING room, not an authoring one:
+		// its whole job is to show the author what a PLAYER sees, so the viewer's
+		// effect prefs must reach it (and requirement 6 — reduce motion freezes the
+		// demo — is that same pref arriving, not an exemption from it).
+		name: "the theme editor's canned preview (enterEditorPreview)",
+		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
+			if a.themeSidecar == nil {
+				a.themeSidecar = theme.NewSidecar()
+			}
+			if !a.armThemeEditor(ScreenSettings) {
+				t.Fatal("armThemeEditor refused a theme that has a sidecar — the preview cannot be reached")
+			}
+			a.enterEditorPreview()
+			if a.te == nil || a.te.preview == nil {
+				t.Fatal("enterEditorPreview staged no preview")
+			}
+			return a.te.preview.state.room
+		},
+		stop: func(a *App) {
+			a.exitEditorPreview()
+			a.te = nil
+		},
 	}, {
 		name: "the comic/video export (startSceneExport)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
@@ -477,13 +518,15 @@ var roomVisualGateFields = map[string]bool{
 // impossible to add silently — the author has to come here, and the comment
 // they land on tells them to add a stagedRoomPath row.
 //
-//	buildRoom          app.go        — the live courtroom
-//	pinToSplit         app.go        — the pinned split pane
-//	startReplay        replay.go     — a replay, and the maker's Preview (authoring)
-//	ensureMakerPreview scenemaker.go — the WYSIWYG preview pane (authoring)
-//	startSceneExport   gifexport.go  — the comic/video export (authoring)
+//	buildRoom           app.go                 — the live courtroom
+//	pinToSplit          app.go                 — the pinned split pane
+//	startReplay         replay.go              — a replay, and the maker's Preview (authoring)
+//	ensureMakerPreview  scenemaker.go          — the WYSIWYG preview pane (authoring)
+//	startSceneExport    gifexport.go           — the comic/video export (authoring)
+//	enterEditorPreview  themeeditorpreview.go  — the theme editor's canned demo
 var roomConstructionFuncs = []string{
 	"buildRoom",
+	"enterEditorPreview",
 	"ensureMakerPreview",
 	"pinToSplit",
 	"startReplay",

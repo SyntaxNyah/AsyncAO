@@ -246,8 +246,9 @@ func layChromeRow(r sdl.Rect, ctls []chromeCtl, maxLines int32, shrink bool) (ch
 			continue
 		}
 		// A forced break only costs a line once something is already on the current one:
-		// an empty second half of a row must not reserve a blank line, which is the same
-		// laziness plStrip.newline documents.
+		// an empty second half of a row must not reserve a blank line. This is the ONE
+		// implementation of that laziness — plStrip carried an unreachable second
+		// spelling of it and no longer does.
 		brk := ctls[i].brk && x > r.X
 		if !brk {
 			if avail := r.X + r.W - x; w > avail {

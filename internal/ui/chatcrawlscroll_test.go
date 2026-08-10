@@ -125,7 +125,7 @@ func TestTheScrolledMessageNeverPaintsOnTheNamePlate(t *testing.T) {
 			"text origin to paint over", plate.H)
 	}
 	plateBottom := plate.Y + plate.H
-	clip := chatCrawlClip(box, textTop)
+	clip := chatCrawlClip(box, textTop, nil) // nil = the scrolling raster painter is live
 
 	// THE PREMISE. Somewhere in this crawl the unbounded draw origin climbs into
 	// the plate band — that is why a clip is needed at all. If a future layout
@@ -168,14 +168,14 @@ func TestTheScrolledMessageNeverPaintsOnTheNamePlate(t *testing.T) {
 func TestChatCrawlClipRaisesOnlyTheTop(t *testing.T) {
 	box := sdl.Rect{X: 10, Y: 20, W: 200, H: 100}
 
-	got := chatCrawlClip(box, 46)
+	got := chatCrawlClip(box, 46, nil)
 	if want := (sdl.Rect{X: 10, Y: 46, W: 200, H: 74}); got != want {
 		t.Errorf("chatCrawlClip(%+v, 46) = %+v, want %+v", box, got, want)
 	}
 	// A text origin at or above the box top is the unscrolled classic case: the box
 	// back, untouched, so an ordinary post draws byte-identically to before.
 	for _, top := range []int32{box.Y, box.Y - 1, -1000} {
-		if got := chatCrawlClip(box, top); got != box {
+		if got := chatCrawlClip(box, top, nil); got != box {
 			t.Errorf("chatCrawlClip(box, %d) = %+v, want the box unchanged", top, got)
 		}
 	}
@@ -183,13 +183,168 @@ func TestChatCrawlClipRaisesOnlyTheTop(t *testing.T) {
 	// answer an empty rect: SDL reads w<=0||h<=0 as "clipping OFF", which would
 	// hand an overhanging theme the whole window (see clipNowhere).
 	for _, top := range []int32{box.Y + box.H, box.Y + box.H + 40} {
-		got := chatCrawlClip(box, top)
+		got := chatCrawlClip(box, top, nil)
 		if got != clipNowhere {
 			t.Errorf("chatCrawlClip(box, %d) = %+v, want clipNowhere", top, got)
 		}
 		if got.W <= 0 || got.H <= 0 {
 			t.Errorf("chatCrawlClip(box, %d) = %+v — SDL reads that as clipping DISABLED", top, got)
 		}
+	}
+}
+
+// TestAnimatedSpansKeepTheirTopPixels is the field-8 reviewer's deferred defect,
+// pinned from both ends at once.
+//
+// THE DEFECT. A wave/shake/bounce span DISPLACES its glyphs off the layout row
+// (render/animtext.go: dy = round(sin·waveAmpPx), so ±3 px, and the shake and
+// bounce offsets are the same order). On the FIRST row the layout origin IS the
+// text origin, so a clip raised to that origin cuts the crests — 2-3 px off the
+// top of every animated span in the first line of every post that wears one.
+//
+// THE FIX has to be exactly as narrow as the defect, which is why both halves
+// are here: the animated painter gets the whole box back, and a SCROLLED
+// (non-animated) message still may not reach the name plate. A remedy that
+// answered `box` unconditionally would pass the first half and fail the second.
+func TestAnimatedSpansKeepTheirTopPixels(t *testing.T) {
+	// The classic overlay's real geometry, same as the name-plate gate above.
+	const lineH, rows = 20, 6
+	box := sdl.Rect{X: 40, Y: 100, W: 300, H: chatBoxTopStrip + 2*lineH + chatBoxBottomPad}
+	textTop := box.Y + chatBoxTopStrip
+
+	// THE PREMISE: there really is room above the text origin inside the box, so
+	// "keep the box" is a change that can be seen. Without it this gate would pass
+	// on a layout whose text starts flush with the chatbox top.
+	if textTop <= box.Y {
+		t.Fatalf("stale premise: the text origin (%d) is at or above the box top (%d), so a raised "+
+			"clip could never shave anything", textTop, box.Y)
+	}
+
+	// THE FIX. The animated painter's clip is the whole box, so a glyph lifted the
+	// full wave amplitude above the first row still paints. A zero-valued layout is
+	// the honest stand-in: chatCrawlClip asks only whether the #M5 painter EXISTS,
+	// never what it holds — which is why the parameter is the painter itself.
+	animClip := chatCrawlClip(box, textTop, &render.AnimatedText{})
+	if animClip != box {
+		t.Fatalf("the #M5 clip = %+v, want the whole box %+v — an animated span on the first row "+
+			"loses its crest to the raised edge", animClip, box)
+	}
+	// Measured against the amplitude the renderer actually uses: the topmost pixel a
+	// first-row wave can reach must be inside the clip. maxAnimLiftPx is this
+	// package's copy of that budget (render owns the offsets; a UI gate cannot
+	// import the private constant, so the number is named and justified here).
+	if lifted := textTop - maxAnimLiftPx; lifted < animClip.Y {
+		t.Errorf("a first-row span lifted %d px reaches y=%d, above the clip top %d — %d px shaved",
+			maxAnimLiftPx, lifted, animClip.Y, animClip.Y-lifted)
+	}
+
+	// THE OTHER HALF, unchanged: a scrolled RASTER message still never paints on
+	// the plate. Same walk as TestTheScrolledMessageNeverPaintsOnTheNamePlate, run
+	// here so the two halves of the branch are asserted against each other.
+	availH := box.H - chatBoxTopStrip
+	rasterClip := chatCrawlClip(box, textTop, nil)
+	if rasterClip.Y != textTop {
+		t.Fatalf("the raster clip top = %d, want the text origin %d — the scrolled-off rows are "+
+			"back on the showname plate", rasterClip.Y, textTop)
+	}
+	scrolled := false
+	for row := 0; row < rows; row++ {
+		off := chatCrawlScrollPx(row, lineH, availH)
+		if off > 0 {
+			scrolled = true
+		}
+		if painted := max32(textTop-off, rasterClip.Y); painted < textTop {
+			t.Errorf("row %d: a scrolled raster paints from y=%d, above the text origin %d",
+				row, painted, textTop)
+		}
+	}
+	if !scrolled {
+		t.Fatalf("stale premise: a %d-row message in a %d px box never scrolls, so the "+
+			"still-clipped half of this gate measures nothing", rows, availH)
+	}
+}
+
+// maxAnimLiftPx is the largest number of pixels an #M5 span can lift a glyph
+// ABOVE its layout row. render/animtext.go's displacing effects are wave
+// (round(sin·2.6) → 3), bounce (round(·3.0) → 3) and shake (round(sin·1.6) → 2),
+// so 3 is the budget — and this gate is what fails if a future effect grows a
+// taller lift than the clip branch was justified against.
+const maxAnimLiftPx = 3
+
+// TestBothChatboxesExemptTheAnimatedPainter is the deletion catcher for the
+// branch. Two painters, same defect, and a fix applied to one of them is the
+// failure this package has shipped repeatedly (the two IC bars, the two
+// blank-plate skin sites — TestBothChatboxesFollowTheCrawl was written for the
+// same reason). Source-driven, because a missing argument has no return value:
+// the crests simply go missing at the top of the box.
+//
+// IT PINS THE ARGUMENT'S FORM, not merely the name inside it, and that is the
+// whole lesson of the audit that produced this paragraph. While the parameter
+// was `animated bool`, this gate asked only whether the third argument MENTIONED
+// msAnim — so rewriting both sites from `a.msAnim != nil` to `a.msAnim == nil`
+// (crests shaved again AND every ordinary raster message handed the showname
+// plate back, the two defects this branch exists to keep apart) satisfied it and
+// left the entire package green. The parameter is the painter itself now, which
+// makes that inversion a type error rather than a silent one; this gate keeps
+// the remaining spellings out — a literal nil at one site (the exemption gone
+// for the themed box only), or a substitute pointer computed from something
+// else — by requiring the bare selector.
+func TestBothChatboxesExemptTheAnimatedPainter(t *testing.T) {
+	for _, site := range []struct{ file, fn string }{
+		{"screens.go", "drawChatOverlay"},
+		{"theme_layout.go", "drawThemedChatBox"},
+	} {
+		body := funcBodySource(t, site.file, site.fn)
+		calls := callsNamed(body, "chatCrawlClip")
+		if len(calls) != 1 {
+			t.Fatalf("%s: %d chatCrawlClip calls, want exactly 1", site.fn, len(calls))
+		}
+		if n := len(calls[0].Args); n != 3 {
+			t.Fatalf("%s: chatCrawlClip takes %d args here, want 3 (box, textTop, anim)", site.fn, n)
+		}
+		sel, ok := calls[0].Args[2].(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "msAnim" {
+			t.Errorf("%s hands chatCrawlClip %T instead of the plain a.msAnim selector — the raised "+
+				"edge shaves 2-3 px off every wave/shake span on the FIRST row (render/animtext.go "+
+				"displaces glyphs off their layout row; the animated painter cannot scroll, so the "+
+				"edge is protecting nothing), and anything computed here is a second copy of a rule "+
+				"that lives in chatCrawlClip", site.fn, calls[0].Args[2])
+		}
+	}
+}
+
+// TestTheAnimatedExemptionKnowsWhichWayRoundItIs is the polarity gate, and it is
+// deliberately a BEHAVIOURAL one on the seam rather than a source check at the
+// sites: the decision has exactly one home now, so this drives that home with
+// both shapes it can be handed and asserts the two answers are the two DIFFERENT
+// rects — which is what an inverted predicate cannot satisfy.
+//
+// Its sibling gates assert the two answers are each CORRECT (the whole box for
+// the #M5 painter, the raised edge for the raster). This one asserts they are
+// not the same rect, so a branch that collapsed to one answer — `anim == nil`,
+// `true ||`, the term deleted — fails here with a message that names the
+// polarity instead of only the arm that happened to be checked first.
+func TestTheAnimatedExemptionKnowsWhichWayRoundItIs(t *testing.T) {
+	// A box whose text origin is genuinely inside it, or both arms would answer
+	// the box and the difference this gate measures would not exist.
+	box := sdl.Rect{X: 40, Y: 100, W: 300, H: 120}
+	textTop := box.Y + chatBoxTopStrip
+	if textTop <= box.Y || textTop >= box.Y+box.H {
+		t.Fatalf("stale premise: a text origin of %d in a box of [%d,%d) leaves no raised edge to tell apart",
+			textTop, box.Y, box.Y+box.H)
+	}
+	anim := chatCrawlClip(box, textTop, &render.AnimatedText{})
+	raster := chatCrawlClip(box, textTop, nil)
+	if anim == raster {
+		t.Fatalf("both painters get %+v — the exemption is not branching at all", anim)
+	}
+	if anim != box {
+		t.Errorf("the #M5 painter gets %+v, want the whole box %+v — the polarity is inverted: the "+
+			"painter that lifts glyphs off their row is the one being clipped", anim, box)
+	}
+	if raster.Y != textTop {
+		t.Errorf("the raster painter gets a clip topped at %d, want the text origin %d — the polarity "+
+			"is inverted: a scrolled ordinary post paints straight onto the showname plate", raster.Y, textTop)
 	}
 }
 
@@ -234,6 +389,12 @@ func TestBothChatboxesClipAtTheTextOrigin(t *testing.T) {
 // The chatbox clip reaches SDL through the Ctx scratch field rather than as a call
 // argument (&local would escape through cgo), so the gate above has to read an
 // assignment to catch it.
+//
+// ITS CENSUS LIMIT, said out loud: it matches ANY assignment to that field
+// anywhere in the body, so a function with several cgoRect writes satisfies it as
+// soon as ONE of them mentions src — it proves the clip variable reaches the
+// scratch rect somewhere, never that the write immediately before the
+// SetClipRect is the one that did.
 func assignsFieldFrom(n ast.Node, field, src string) bool {
 	found := false
 	ast.Inspect(n, func(node ast.Node) bool {

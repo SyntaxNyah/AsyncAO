@@ -197,6 +197,16 @@ type Manager struct {
 // SetOffline flips rehearsal mode's network gate.
 func (m *Manager) SetOffline(on bool) { m.offline.Store(on) }
 
+// Offline reports the network gate's current state, so a caller that closes it
+// TEMPORARILY can put back what it found rather than assuming "open".
+//
+// It exists for the theme editor's offline preview (ui/themeeditorpreview.go),
+// which brackets the gate for the length of a canned demo. Without a reader, a
+// preview taken from inside a rehearsal session would re-open the network on the
+// way out and quietly end rehearsal mode — the bug that a save/restore pair with
+// no getter always writes.
+func (m *Manager) Offline() bool { return m.offline.Load() }
+
 // ErrLocalOverlayUnavailable reports that a local:// URL was requested of a
 // STREAMING manager that has no mount overlay configured. It is DELIBERATELY
 // distinct from network.ErrAssetNotFound: a nil overlay means "this client

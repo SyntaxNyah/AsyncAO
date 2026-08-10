@@ -120,6 +120,61 @@ func TestWalkFilesSkipsSymlinks(t *testing.T) {
 	}
 }
 
+// TestUnsafePathAsksLstatNotStat drives the by-path refusal over the answers that
+// separate it from a stat-based lookalike. THE STAT VERSION PASSES A NAIVE TEST:
+// os.Stat on a link to a regular file says "regular file", so a gate that only checked
+// "link to a file is refused, plain file is not" would stay green on an implementation
+// that follows the link and can never refuse anything.
+//
+// The link-to-a-DIRECTORY case is the one the mount fetcher's fold depends on (a
+// stat-based answer calls it a directory and descends straight out of the mount), and
+// the DANGLING case is the one that must not be reported as absent — foldLookup finds
+// it by name, so "not refused" there is a refusal that never fires.
+//
+// The two ALLOWED answers carry as much weight as the refusals: a directory must stay
+// traversable or foldJoin cannot descend at all, and a regular file must stay readable
+// or the fold serves nothing. A predicate that refuses everything is the other way to
+// pass a refusal-only gate. The non-regular NON-links this also refuses need a device
+// node to demonstrate — safepath_unix_test.go holds that half.
+func TestUnsafePathAsksLstatNotStat(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	file := filepath.Join(root, "real.png")
+	if err := os.WriteFile(file, []byte("real"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirLink := filepath.Join(root, "up")
+	if err := os.Symlink(outside, dirLink); err != nil {
+		t.Skipf("symlinks unavailable on this host: %v", err) // Windows without dev mode
+	}
+	fileLink := filepath.Join(root, "linked.png")
+	if err := os.Symlink(file, fileLink); err != nil {
+		t.Fatal(err)
+	}
+	dangling := filepath.Join(root, "gone.png")
+	if err := os.Symlink(filepath.Join(outside, "never-written"), dangling); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		what string
+		path string
+		want bool
+	}{
+		{"a link to a directory", dirLink, true},
+		{"a link to a regular file", fileLink, true},
+		{"a dangling link", dangling, true},
+		{"a regular file", file, false},
+		{"the directory the link points at", outside, false},
+		{"a plain directory the fold must descend into", root, false},
+		{"a name nothing is at", filepath.Join(root, "absent.png"), false},
+	} {
+		if got := UnsafePath(tc.path); got != tc.want {
+			t.Errorf("UnsafePath(%s) = %v, want %v", tc.what, got, tc.want)
+		}
+	}
+}
+
 // TestWalkFilesYieldsSlashedRelsAndStops pins the contract the mount index and
 // the theme packer both build on: forward-slashed root-relative names, and a
 // false return that stops the walk (that is how each caller enforces its own cap).
