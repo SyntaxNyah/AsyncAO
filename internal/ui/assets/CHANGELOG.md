@@ -4,7 +4,7 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.90.0-test1 — 2026-08-10
+## v1.90.0 — 2026-08-10
 
 AsyncAO gets a **theme editor**. Start a theme from blank, from a template, or
 from a copy of the one you are using. Drag the courtroom around at full window
