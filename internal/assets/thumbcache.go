@@ -1,7 +1,9 @@
 package assets
 
 import (
+	"errors"
 	"image"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -255,6 +257,13 @@ func (t *ThumbCache) encodeWorker() {
 	}
 }
 
+// thumbFile is one entry of prune's directory snapshot.
+type thumbFile struct {
+	path string
+	size int64
+	mod  int64 // mtime, UnixNano — the prune order
+}
+
 // prune enforces the byte budget: when the store's files sum past it, the
 // OLDEST (mtime) are deleted until under. Runs on the encode worker (off every
 // hot path) at open and every thumbPruneEvery stores; a walk of even a full
@@ -271,13 +280,8 @@ func (t *ThumbCache) prune() {
 	if err != nil {
 		return
 	}
-	type fileAge struct {
-		path string
-		size int64
-		mod  int64
-	}
 	var total int64
-	files := make([]fileAge, 0, len(entries))
+	files := make([]thumbFile, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -287,17 +291,36 @@ func (t *ThumbCache) prune() {
 			continue
 		}
 		total += info.Size()
-		files = append(files, fileAge{path: filepath.Join(root, e.Name()), size: info.Size(), mod: info.ModTime().UnixNano()})
+		files = append(files, thumbFile{path: filepath.Join(root, e.Name()), size: info.Size(), mod: info.ModTime().UnixNano()})
 	}
+	pruneToBudget(files, total, budget, os.Remove)
+}
+
+// pruneToBudget deletes oldest-first until the snapshot's bytes fall to budget.
+// Split out of prune so the one case that cannot be staged on a real directory —
+// an entry the snapshot listed but that is GONE by the time this pass reaches it
+// — is drivable through the remove hook instead of raced.
+//
+// That case is the whole reason this function is careful about its arithmetic. A
+// vanished file has already given its bytes back, so it counts as freed. The
+// caller's ReadDir is a snapshot and anything may empty an entry behind it: the
+// open sweep overlapping the every-thumbPruneEvery one, a cleanup tool, the user
+// emptying the folder. Crediting only remove's own successes left total
+// overstated by every vanished file and walked the sweep straight past the
+// budget, deleting live thumbnails (a flaky TestThumbPruneBudget was this bug
+// reproducing itself against the encode worker's open sweep). Any OTHER error
+// means the bytes really are still there — a locked file — so total keeps them
+// and the file survives to the next sweep.
+func pruneToBudget(files []thumbFile, total, budget int64, remove func(string) error) {
 	if total <= budget {
 		return
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].mod < files[j].mod }) // oldest first
 	for _, f := range files {
 		if total <= budget {
-			break
+			return
 		}
-		if os.Remove(f.path) == nil {
+		if err := remove(f.path); err == nil || errors.Is(err, fs.ErrNotExist) {
 			total -= f.size
 		}
 	}
