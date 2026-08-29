@@ -6339,7 +6339,8 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		}
 		c.Border(vcR, vcBord)
 		c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
-		x += vcW + btnGap
+		// No cursor advance: this is the row's last block and nothing reads x
+		// after it (staticcheck SA4006). A button appended below adds its own.
 	}
 	return y2, false
 }
