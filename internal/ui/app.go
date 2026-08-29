@@ -4202,7 +4202,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 			a.recordPacket(p, true)
 		}
 		return conn.Send(context.Background(), p)
-	}, hdid())
+	}, hdid(wsURL))
 	// Prime the background keepalive goroutine immediately, so the CH ping flows from
 	// the moment we connect even if the first render frame is delayed (or the window
 	// is already minimized). pumpConnection refreshes it as MyCharID changes.
@@ -4670,10 +4670,12 @@ func (a *App) updatePresence() {
 	a.d.Presence.Set(act)
 }
 
-// hdid is the device ID AO servers key bans on. It derives from stable
-// per-machine/account roots (hwid.Compute) rather than the hostname — see
-// internal/hwid for the roots, hashing and graceful fallback.
-func hdid() string { return hwid.Compute() }
+// hdid is the device ID AO servers key bans on, for the server at wsURL. It
+// derives from stable per-machine/account roots rather than the hostname, and is
+// bound to that ONE server (hwid.For), so the id a server receives cannot be
+// replayed against another — see internal/hwid for the roots, hashing, address
+// normalisation and graceful fallback.
+func hdid(wsURL string) string { return hwid.For(wsURL) }
 
 // pumpConnection drains incoming packets into the session each frame.
 func (a *App) pumpConnection() {

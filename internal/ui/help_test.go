@@ -55,7 +55,12 @@ func TestPrivacySections(t *testing.T) {
 		}
 		all += s.heading + " " + strings.Join(s.body, " ")
 	}
-	for _, want := range []string{"HDID", "IPID", "IP address", "AO2", "SHA-256", "nginx", "VPN", "WSS", "TLS", "Wireshark", "exit node", "WebSocket", "man-in-the-middle"} {
+	// The per-server HDID claims are load-bearing honesty: the explainer has to say
+	// that the ID differs per server AND that the price is a ban not following a
+	// device between servers. Dropping either would leave the page describing a
+	// client that no longer exists.
+	for _, want := range []string{"HDID", "IPID", "IP address", "AO2", "SHA-256", "nginx", "VPN", "WSS", "TLS", "Wireshark", "exit node", "WebSocket", "man-in-the-middle",
+		"different ID on every server", "per server", "no longer follows your device"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("privacy explainer should mention %q", want)
 		}
