@@ -653,9 +653,7 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	if widened.W <= nameBox.W || page == mustPage(t, a, themeStemChatbox) {
 		t.Fatalf("the ladder did not fire: box %d → %d px, skin swapped %v", nameBox.W, widened.W, page != nil)
 	}
-	settle(draw)
-
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom on the med/big ladder allocates %.1f/op, want 0 — "+
 			"the per-message skin decision is doing work it should not (fix the alloc, don't disarm the ladder)", n)
 	}

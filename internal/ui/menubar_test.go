@@ -868,15 +868,15 @@ func TestDrawLobbyWithMenuBarZeroAlloc(t *testing.T) {
 		a.drawLobby(w, h)
 		a.drawMenuBar(w, h)
 	}
-	settle(draw)
 	// Prove the fixture really painted the bar before measuring anything: a silently
 	// hidden strip would make this a duplicate of TestDrawLobbyZeroAlloc and leave
 	// the widget uncovered again.
+	draw()
 	if !a.menuBar.draws || !a.menuBar.live {
 		t.Fatalf("the fixture must draw a live menu bar (draws=%v live=%v)", a.menuBar.draws, a.menuBar.live)
 	}
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled lobby frame with the menu bar allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -914,12 +914,12 @@ func TestDrawMenuBarOpenPaneZeroAlloc(t *testing.T) {
 		a.drawLobby(w, h)
 		a.drawMenuBar(w, h)
 	}
-	settle(draw)
+	draw()
 	if !a.menuBarOpen() || a.menuBar.subRow < 0 {
-		t.Fatal("the fixture must stay open across the settle — a state flip would make the gate measure a different frame")
+		t.Fatal("the fixture must stay open across a drawn frame — a state flip would make the gate measure a different frame")
 	}
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled frame with an open menu pane allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }

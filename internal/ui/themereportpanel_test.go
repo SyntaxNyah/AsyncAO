@@ -230,8 +230,7 @@ func TestTheReportChipAllocatesNothingPerFrame(t *testing.T) {
 	}
 
 	// And the whole frame still fits the editor's own named budget, with both up.
-	settle(func() { driveFrame(a) })
-	if n := testing.AllocsPerRun(30, func() { driveFrame(a) }); n > editorChromeAllocBudget {
+	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {
 		t.Fatalf("an editor frame with the report panel up allocates %.0f/op, past the named budget of %d",
 			n, editorChromeAllocBudget)
 	}

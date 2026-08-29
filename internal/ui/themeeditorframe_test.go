@@ -67,8 +67,7 @@ func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 	defer cleanup()
 	a.te.selectOnly(elementTarget(len(a.themeSidecar.Elements) - 1))
 
-	settle(func() { driveFrame(a) })
-	if n := testing.AllocsPerRun(30, func() { driveFrame(a) }); n > editorChromeAllocBudget {
+	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {
 		t.Fatalf("one editor frame allocates %.0f/op, past the named budget of %d — the usual cause is a "+
 			"string built inside the element rail's ROW LOOP, which scales with the theme",
 			n, editorChromeAllocBudget)

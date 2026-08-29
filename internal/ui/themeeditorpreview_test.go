@@ -1219,8 +1219,7 @@ func TestEditorPreviewFrameStaysInsideItsChromeBudget(t *testing.T) {
 	defer a.d.Prefs.SetReduceMotion(false)
 	driveFrames(a, 5)
 
-	settle(func() { driveFrame(a) })
-	if n := testing.AllocsPerRun(30, func() { driveFrame(a) }); n > editorChromeAllocBudget {
+	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {
 		t.Fatalf("one preview frame allocates %.0f/op, past the editor's named chrome budget of %d — "+
 			"the usual cause is a string or a rect slice built inside the stand-in's band loop",
 			n, editorChromeAllocBudget)

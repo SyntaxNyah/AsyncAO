@@ -139,25 +139,10 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	}
 }
 
-// settle renders probe batches until one allocates NOTHING, so one-off cache
-// growth (text atlas, width memos, fieldSeq capacity) and the staged app's
-// initial background asset work (the demand pump negative-caching its misses)
-// finish before the strict gate measures. testing.AllocsPerRun counts GLOBAL
-// mallocs — background goroutines included — so the gate can only read exact
-// zero once the whole app is quiescent, not just the draw. Bounded: a scene
-// that never settles falls through and the strict assert reports the
-// persistent count loudly instead of spinning forever.
-func settle(draw func()) {
-	// settleBatches × settleFrames ≈ 600 headless frames, far past any one-off
-	// warm-up; a real per-frame leak never reads 0 so the loop exits quickly.
-	const settleBatches = 30
-	const settleFrames = 20
-	for i := 0; i < settleBatches; i++ {
-		if testing.AllocsPerRun(settleFrames, draw) == 0 {
-			return
-		}
-	}
-}
+// The settle-then-measure pair these gates used to run lives in
+// allocgate_test.go now, as one allocsPerFrame call: settling at 20 frames and
+// asserting at 200 is what made them flaky. Read the header there before
+// changing anything here.
 
 // TestDrawCourtroomZeroAlloc is the whole-screen gate for the live courtroom.
 func TestDrawCourtroomZeroAlloc(t *testing.T) {
@@ -166,9 +151,8 @@ func TestDrawCourtroomZeroAlloc(t *testing.T) {
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -196,9 +180,8 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed-font drawCourtroom allocates %.1f/op, want 0 — the per-element font path leaks (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -263,9 +246,8 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 	if !a.toolboxThemeRectOn {
 		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
 	}
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -301,9 +283,8 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with divergent panel zooms allocates %.1f/op, want 0 — "+
 			"two panels are sharing one fontSet and rebuilding it every frame (fix the alloc, don't equalise the fixture)", n)
 	}
@@ -345,9 +326,8 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	if px := a.labelEmojiWidth(snFont, snEmoji, name, ColAccent); px <= 0 {
 		t.Fatalf("the staged showname %q measures %d px — the centring path is doing no work", name, px)
 	}
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with a centred showname allocates %.1f/op, want 0 — "+
 			"the showname measure is not hitting a cache (fix the alloc, don't left-align the fixture)", n)
 	}
@@ -380,9 +360,8 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	// that early-return — a clock read, the due-check — would trip this gate
 	// instead of shipping unmeasured.
 	draw := func() { a.noteScreenTransition(); a.drawLobby(w, h) }
-	settle(draw)
 
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled drawLobby allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }

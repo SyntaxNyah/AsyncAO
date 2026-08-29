@@ -483,31 +483,18 @@ func TestPerimSegment(t *testing.T) {
 // the full drawCreatorEgg runs each measured frame. A non-zero count means a
 // per-frame allocation shipped in the egg draw (fix it, don't loosen the gate).
 //
-// ⚠ KNOWN INTERMITTENT — QUANTIFIED, PRE-EXISTING, AND NOT A REGRESSION OF
-// WHATEVER YOU JUST CHANGED. Measured at clean ee17f25 (before the v1.90.0 W8/W9
-// work): 3-4 failures in 60 consecutive runs, ~5-6%. Every observed failure was
-// on the FIRST arm ("shoutout to FanatSors", eggFanat) and every one reported
-// exactly 1.0 allocs/op — which, over AllocsPerRun's 200 iterations, is one real
-// event of >= 200 allocations rather than a drifting average. That shape says a
-// one-shot rebuild lands inside the measured window, not that the egg draw
-// allocates per frame.
+// THE ~5% FLAKE THIS USED TO CARRY IS FIXED — see the header in
+// allocgate_test.go. The reading that kept coming back, exactly 1.0/op on the
+// FanatSors arm, was diagnosed correctly here: one event of >= 200 allocations
+// inside the window, not a per-frame cost. What nobody spotted was that the old
+// settle() proved quiescence over 20 frames and then the assert measured 200, so
+// the event cleared the warm-up and failed the gate. allocsPerFrame settles and
+// asserts over the same window and outlasts a one-shot burst; a per-frame
+// allocation still fails on the first reading.
 //
-// The likely candidates, in the order a bisect should try them: a text-cache or
-// fontSet rebuild triggered by the typewriter settling a frame later than
-// settle() assumes; the label cache evicting under the four messages this test
-// pushes through it; or a lazy glyph-atlas page for a name the earlier arms did
-// not use. None of them has been confirmed, and confirming one is its own
-// afternoon.
-//
-// WHAT TO DO WITH A RED RUN HERE: re-run the test alone. If it goes green and the
-// failing arm was FanatSors at 1.0/op, it is this. If it is a different arm, a
-// different count, or reproducible, it is NOT this and something did ship.
-//
-// DO NOT WEAKEN OR SKIP IT. The gate is correct and every egg path is
-// genuinely alloc-free in the steady state; a t.Skip here would retire a
-// whole-screen zero-alloc gate to hide a 5% flake, and the class of bug it
-// catches (a per-frame allocation in a draw body) is one this codebase has
-// shipped more than once.
+// DO NOT WEAKEN OR SKIP IT. Every egg path is genuinely alloc-free in the steady
+// state, and the class of bug this catches (a per-frame allocation in a draw
+// body) is one this codebase has shipped more than once.
 func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
@@ -550,12 +537,12 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	} {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", tc.text)})
 		a.room.SkipToIdle()
-		settle(draw)
 		// Sanity: the egg must actually resolve, or this gate would pass vacuously.
+		draw()
 		if a.eggKind != tc.want {
 			t.Fatalf("egg for %q = %d, want %d — the zero-alloc gate would measure the wrong (or no) path", tc.text, a.eggKind, tc.want)
 		}
-		if n := testing.AllocsPerRun(200, draw); n != 0 {
+		if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
 		}
 	}

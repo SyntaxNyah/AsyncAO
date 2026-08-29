@@ -691,8 +691,7 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 		t.Fatalf("seeded %d live effects, want %d", live, theme.ElementCap)
 	}
 
-	settle(draw)
-	if n := testing.AllocsPerRun(200, draw); n != 0 {
+	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
 		t.Fatalf("a settled themed frame with %d LIVE effects allocates %.1f/op, want 0 — "+
 			"the motion path is charging per frame (fix it, don't shrink the fixture)", theme.ElementCap, n)
 	}
