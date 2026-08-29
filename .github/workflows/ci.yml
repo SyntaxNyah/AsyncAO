@@ -37,10 +37,19 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # PINNED, not "latest". A floating version hands our CI to someone else's
+      # release schedule: 2026.2 landed 2026-08-20 and 2026.2.1 the day after,
+      # and the next push went red on SA4006 that the older staticcheck installed
+      # locally never reported — so it passed every local gate on the way in and
+      # only CI saw it (dfd514d). This job also gates every binary build below,
+      # so an upstream release can block a release mid-flight. Bump this
+      # deliberately: install the same version locally (go install
+      # honnef.co/go/tools/cmd/staticcheck@<version>), clear what it finds, and
+      # move the pin in the same commit.
       - name: staticcheck
         uses: dominikh/staticcheck-action@v1
         with:
-          version: "latest"
+          version: "2026.2.1"
           install-go: false
 
       - name: Tests (race detector — §17.8 gate)
