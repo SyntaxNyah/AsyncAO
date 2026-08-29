@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.91.0 — 2026-08-29
+
+HDID security update to avoid spoofing. Now generates one unique HDID per
+server.
+
+Sorry for the lack of updates lately, AsyncAO is not dead, just working on other
+things currently.
+
 ## v1.90.0 — 2026-08-10
 
 AsyncAO gets a **theme editor**. Start a theme from blank, from a template, or
