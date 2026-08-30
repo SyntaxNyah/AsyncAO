@@ -839,6 +839,14 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 	if url == "" {
 		return
 	}
+	// Gated like the typed lanes, on the same session memory. warmCharINI latches
+	// on the hovered name, so hovering B then back to A re-fires for A — on a
+	// server where neither character ships a char.ini that is a fresh pool job
+	// and a fresh probe per hover, forever.
+	key := missChain{base: url, typ: missTypeRaw}
+	if m.conclusiveMiss.has(key, m.probeListGen()) {
+		return // no warning: this lane has no AssetType to report and is silent on 404 by contract
+	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),
 		Epoch: m.pool.Epoch(),
@@ -861,12 +869,19 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 					return
 				}
 			}
-			if data, err := m.netFetch(context.Background(), url); err == nil {
-				m.netFetches.Add(1)
-				m.t2.Add(url, data, int64(len(data)))
-				if !m.skipDisk(url) {
-					m.disk.Put(url, data)
+			data, err := m.netFetch(context.Background(), url)
+			if err != nil {
+				// The current generation, for resolveExact's reason: a complete URL
+				// builds no candidate list, so the format preferences had no say.
+				if errors.Is(err, network.ErrAssetNotFound) {
+					m.rememberExhausted(key, m.probeListGen())
 				}
+				return // any other error is transient and leaves the URL probeable
+			}
+			m.netFetches.Add(1)
+			m.t2.Add(url, data, int64(len(data)))
+			if !m.skipDisk(url) {
+				m.disk.Put(url, data)
 			}
 		},
 	})
@@ -1046,6 +1061,13 @@ func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
 // chrome, theme bits).
 func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
 	if base == "" || !t.Valid() {
+		return
+	}
+	// The same gate as every other entry point, and the one it can least afford
+	// to skip: a sticky asset outlives room changes by definition, so an absent
+	// one is re-demanded in every room the session ever visits.
+	if m.conclusiveMiss.has(missChainFor(base, nil, t), m.probeListGen()) {
+		m.skipExhausted(base, t, false)
 		return
 	}
 	m.pool.Submit(prio, network.Job{

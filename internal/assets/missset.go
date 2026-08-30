@@ -32,6 +32,13 @@ type missChain struct {
 // collide on the joined form.
 const missChainSeparator = "\x00"
 
+// missTypeRaw is the miss identity for the decode-free raw lane
+// (Manager.PrefetchRaw: char.ini and other text). Those URLs carry no AssetType
+// at all, so they need a bucket of their own, and AssetTypeCount is the enum's
+// sentinel — never a valid asset type — so a raw entry can never collide with a
+// typed one that happens to share a URL.
+const missTypeRaw = AssetTypeCount
+
 // missSetOverflowEvictShift sizes the batch dropped when the set is full:
 // capacity>>shift entries, i.e. an eighth. Batching amortizes the O(n log n)
 // overflow scan over that many inserts instead of paying it on every insert

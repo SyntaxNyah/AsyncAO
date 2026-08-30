@@ -324,13 +324,30 @@ func TestForgetUnderIsScopedToOneOrigin(t *testing.T) {
 // to quietly reopen the storm.
 //
 // It reflects over the Manager's exported Prefetch* surface rather than naming
-// the five methods that exist today — that is the difference between pinning
-// the behaviour and pinning the file. A new PrefetchWhatever that submits a job
+// the methods that exist today — that is the difference between pinning the
+// behaviour and pinning the file. A new PrefetchWhatever that submits a job
 // without consulting the memory fails here on the day it is written, with a
 // message that says what it forgot.
+//
+// WHAT IT MEASURES, AND WHY NOT REQUESTS. The first cut of this test counted
+// requests arriving at the server, and it PASSED for PrefetchSticky and
+// PrefetchRaw while both were ungated: the network client's own 404 cache
+// absorbs a repeat inside its TTL, so no wire traffic proves nothing about
+// whether the pipeline above it ran. Two real gaps sat green underneath that
+// assertion. The pool counter is the honest observable — a gated entry point
+// submits NO job, so Executed+Stale cannot move, and the network cache has no
+// say in it. The request count is still checked, because both costs matter, but
+// it is the weaker of the two and must never be the only one.
 func TestEveryPrefetchEntryPointConsultsTheMissGate(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing
 	rig := newRig(t, network.NewClient(), false)
+
+	// Executed+Stale counts every job the pool ACCEPTED, however it ended, so a
+	// submit cannot hide behind a shed or an epoch bump.
+	poolWork := func() int64 {
+		s := rig.pool.Stats()
+		return s.Executed + s.Stale
+	}
 
 	mt := reflect.TypeOf(rig.manager)
 	var entryPoints []reflect.Method
@@ -352,18 +369,48 @@ func TestEveryPrefetchEntryPointConsultsTheMissGate(t *testing.T) {
 
 			m.Func.Call(args)
 			waitForRequests(t, cs, base)
-			settled := cs.total()
+			// Let the settling pass leave the pool before the baseline is taken,
+			// or its own job would be counted against the repeats below.
+			waitForPoolIdle(t, poolWork)
+			settledReqs, settledJobs := cs.total(), poolWork()
 
-			for i := 0; i < 10; i++ {
+			const repeats = 10
+			for i := 0; i < repeats; i++ {
 				m.Func.Call(args)
 			}
-			// Give a pass that DID escape the gate time to reach the server.
+			// Give a pass that DID escape the gate time to run and be counted.
 			time.Sleep(200 * time.Millisecond)
-			if got := cs.total(); got != settled {
-				t.Errorf("%s re-probed an exhausted chain %d time(s): it must consult the conclusive-miss memory before submitting a job", m.Name, got-settled)
+
+			if got := poolWork(); got != settledJobs {
+				t.Errorf("%s submitted %d pipeline job(s) for a chain already probed to exhaustion (want 0): "+
+					"it must consult the conclusive-miss memory BEFORE pool.Submit, not rely on a cache further down",
+					m.Name, got-settledJobs)
+			}
+			if got := cs.total(); got != settledReqs {
+				t.Errorf("%s re-probed an exhausted chain %d time(s) on the wire", m.Name, got-settledReqs)
 			}
 		})
 	}
+}
+
+// waitForPoolIdle blocks until the pool's accepted-job count stops moving, so a
+// baseline is taken between passes rather than in the middle of one.
+func waitForPoolIdle(t *testing.T, poolWork func() int64) {
+	t.Helper()
+	deadline := time.Now().Add(missWait)
+	last, stable := int64(-1), 0
+	for time.Now().Before(deadline) {
+		n := poolWork()
+		if n == last {
+			if stable++; stable >= 3 {
+				return
+			}
+		} else {
+			last, stable = n, 0
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("the pool never went idle: a settling pass is still submitting work, so any baseline taken here would be meaningless")
 }
 
 // prefetchArgs builds a call for any Prefetch* signature by parameter TYPE, so
