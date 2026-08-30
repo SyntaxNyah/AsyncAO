@@ -44,6 +44,21 @@ const (
 	// evicts, so a user who reconfigures mounts all afternoon does not accumulate
 	// fetchers for folders they detached hours ago.
 	localOriginHistoryCap = 4
+	// conclusiveMissCap bounds the session's exhausted-chain set (rule §17.4 —
+	// see missSet for what it is and why the 404 cache could not be it).
+	//
+	// Sized off the case that produced it: a large character roster where most
+	// entries ship neither a char_icon nor emotions/button<N>_off art. One absent
+	// icon per character on a two-thousand-name roster, plus the ~60 button cells
+	// (on and off) of every character whose emote grid the user opens, plus the
+	// stray background and sound, all fit — so a whole session on such a server
+	// settles at zero repeat probes instead of churning the set. At roughly 150
+	// bytes an entry that is ~1.2 MiB against the 256 MiB budget.
+	//
+	// Overflow is a safety valve, not a design point: it drops the oldest eighth,
+	// and each dropped key costs at most one more pipeline pass before it is
+	// recorded again.
+	conclusiveMissCap = 8192
 )
 
 // DecodedAsset is the manager's handoff to the render thread: decoded frames
@@ -146,6 +161,14 @@ type Manager struct {
 	deliveryNotify atomic.Pointer[func()]
 
 	inflight sync.Map // base|type → struct{}: one pipeline pass per asset
+
+	// conclusiveMiss remembers the chains already probed to exhaustion this
+	// session. Consulted in prefetchChain/PrefetchExact BEFORE the pool submit,
+	// so re-demanding an asset the server does not have costs one map lookup
+	// instead of a job, a resolver walk, two failed disk reads and a 404 on the
+	// wire. Emptied only by ForgetConclusiveMisses and the source-change setters
+	// that call it — see missSet for why it has no TTL.
+	conclusiveMiss *missSet
 
 	// offline gates every network egress (rehearsal mode: a server's
 	// already-cached assets browse, nothing probes). Cache-tier reads
@@ -345,8 +368,19 @@ func (m *Manager) localSourceFor(url string) Fetcher {
 // no lock.
 func (m *Manager) SetLocalOverlay(f *LocalFetcher) {
 	prev := m.localOverlay.Swap(f)
-	if prev == nil || (f != nil && f.BaseURL() == prev.BaseURL()) {
-		return // nothing retired, or the same mount set re-pushed (a no-op change)
+	if sameMountSet(prev, f) {
+		return // the same mount set re-pushed: nothing retired, nothing changed
+	}
+	// Changing a byte source changes the answer to "does this asset exist", so
+	// the session's exhausted-chain memory goes with it. Inside the setter rather
+	// than at the call sites because forgetting it is SILENT: the prefetch gate
+	// consults the set BEFORE any source is reached, so a stale entry would keep
+	// a just-attached folder's files unreachable with nothing on screen to say
+	// why. Guarded on a real change because rebuildAssetOrigin re-pushes on every
+	// connect and settings edit, and one Manager serves every tab.
+	m.ForgetConclusiveMisses()
+	if prev == nil {
+		return // nothing to retire
 	}
 	old := m.localRetired.Load()
 	next := make([]*LocalFetcher, 0, localOriginHistoryCap)
@@ -363,6 +397,17 @@ func (m *Manager) SetLocalOverlay(f *LocalFetcher) {
 		}
 	}
 	m.localRetired.Store(&next)
+}
+
+// sameMountSet reports whether two overlays name the same mount configuration.
+// Identity is the ORIGIN, not the pointer: rebuildAssetOrigin mints a fresh
+// LocalFetcher on every call, and a LocalFetcher's BaseURL hashes the whole
+// mount list (NewLocalFetcher), so equal origins mean equal mounts.
+func sameMountSet(a, b *LocalFetcher) bool {
+	if a == nil || b == nil {
+		return a == b // nil→nil is the no-mounts steady state; nil↔set is a real change
+	}
+	return a.BaseURL() == b.BaseURL()
 }
 
 // skipDisk reports whether url's bytes must bypass the T3 disk tier: a local://
@@ -445,21 +490,22 @@ type ManagerDeps struct {
 // NewManager builds the pipeline orchestrator.
 func NewManager(deps ManagerDeps) *Manager {
 	return &Manager{
-		resolver:    deps.Resolver,
-		prefs:       deps.Prefs,
-		t2:          deps.T2,
-		disk:        deps.Disk,
-		client:      deps.Source,
-		localMode:   deps.LocalMode,
-		pool:        deps.Pool,
-		decoder:     deps.Decoder,
-		thumbs:      deps.Thumbs,
-		t1Contains:  deps.T1Contains,
-		t1Failed:    deps.T1Failed,
-		decodedCh:   make(chan DecodedAsset, decodedChanCap),
-		audioCh:     make(chan AudioAsset, audioChanCap),
-		warningCh:   make(chan Warning, warningChanCap),
-		musicFailCh: make(chan MusicFailure, musicFailChanCap),
+		resolver:       deps.Resolver,
+		prefs:          deps.Prefs,
+		t2:             deps.T2,
+		disk:           deps.Disk,
+		client:         deps.Source,
+		localMode:      deps.LocalMode,
+		pool:           deps.Pool,
+		decoder:        deps.Decoder,
+		thumbs:         deps.Thumbs,
+		t1Contains:     deps.T1Contains,
+		t1Failed:       deps.T1Failed,
+		decodedCh:      make(chan DecodedAsset, decodedChanCap),
+		audioCh:        make(chan AudioAsset, audioChanCap),
+		warningCh:      make(chan Warning, warningChanCap),
+		musicFailCh:    make(chan MusicFailure, musicFailChanCap),
+		conclusiveMiss: newMissSet(conclusiveMissCap),
 	}
 }
 
@@ -563,6 +609,10 @@ func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio ne
 	if m.t1Failed != nil && m.t1Failed(base) {
 		return // recently failed to decode — back off (the negative cache absorbs retries)
 	}
+	if m.conclusiveMiss.has(missChainFor(base, alts, t), m.probeListGen()) {
+		m.skipExhausted(base, t, suppressMissing)
+		return
+	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),
 		Epoch: m.pool.Epoch(),
@@ -575,6 +625,118 @@ func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio ne
 	})
 }
 
+// missChainFor builds the conclusive-miss identity for a chain. Allocation-free
+// for the alt-less case, which is the demand cadence's entire traffic.
+func missChainFor(base string, alts []string, t AssetType) missChain {
+	k := missChain{base: base, typ: t}
+	switch len(alts) {
+	case 0:
+	case 1:
+		k.chain = alts[0] // the overwhelmingly common chain (prefixed → bare sprite): no join, no alloc
+	default:
+		k.chain = strings.Join(alts, missChainSeparator)
+	}
+	return k
+}
+
+// IsConclusiveMiss reports whether an ALT-LESS prefetch of base was already
+// probed to exhaustion this session — i.e. whether Prefetch would do anything.
+//
+// It exists for the drawing side. A cell that will never be filled should not
+// hold the frame pump awake waiting for it (ui/app.go demandAsset), and asking
+// here is how the UI learns that without duplicating the Manager's knowledge of
+// what was tried. Alt-less because every one of those call sites goes through
+// Prefetch; a chain's answer is not this question's to give.
+//
+// Nil-receiver safe, like every method on this memory and like missSet itself:
+// without a Manager the answer is "nothing is known missing", which is what a
+// headless UI test wants and is the truth in any case. One contract for the
+// whole quartet, so no call site has to remember which of them needs a guard.
+func (m *Manager) IsConclusiveMiss(base string, t AssetType) bool {
+	if m == nil {
+		return false
+	}
+	return m.conclusiveMiss.has(missChain{base: base, typ: t}, m.probeListGen())
+}
+
+// probeListGen is the configuration the miss memory is valid for: change the
+// format order or the fallback toggles and every remembered "we tried
+// everything" was an answer about a list that is no longer the list (missSet).
+//
+// Read from the preferences on every consult rather than cached here, because
+// the mutations that move it are user-driven and rare while the consults are
+// per-cell and hot — an atomic load is cheaper than any arrangement for being
+// told. Zero without preferences (headless rigs): a constant generation just
+// means nothing ever retires early.
+func (m *Manager) probeListGen() uint64 {
+	if m.prefs == nil {
+		return 0
+	}
+	return m.prefs.FormatGeneration()
+}
+
+// ForgetConclusiveMisses empties the session's exhausted-chain memory, so every
+// asset that 404'd anywhere becomes probeable again.
+//
+// This is the explicit half of the deal missSet makes: it never expires on a
+// timer, so something has to say when the answer might have changed. The
+// blanket form is for the changes that are not confined to one server — the
+// byte sources (SetMountLayer / SetLocalOverlay call it themselves, so no
+// caller can forget) and the user's Settings button. A reconnect uses the
+// scoped form below.
+func (m *Manager) ForgetConclusiveMisses() {
+	if m == nil {
+		return
+	}
+	m.conclusiveMiss.forget()
+}
+
+// ForgetConclusiveMissesUnder empties the remembered misses for ONE asset
+// origin. It is what a (re)connect calls: joining a server is the moment to
+// give that server's absent assets a fresh look, and it is not a statement
+// about any OTHER server whose tab is still open against the same Manager.
+func (m *Manager) ForgetConclusiveMissesUnder(origin string) {
+	if m == nil {
+		return
+	}
+	m.conclusiveMiss.forgetUnder(origin)
+}
+
+// ConclusiveMissCount reports how many chains are remembered as exhausted, for
+// the Settings button's label and the debug overlay.
+func (m *Manager) ConclusiveMissCount() int {
+	if m == nil {
+		return 0
+	}
+	return m.conclusiveMiss.size(m.probeListGen())
+}
+
+// skipExhausted is what a prefetch does INSTEAD of a pipeline pass once the
+// chain is known exhausted: nothing on the wire, but the §4 warning still
+// fires.
+//
+// Reporting is deliberately not skipped with the probing. The warning lane is
+// not only a fetch outcome — Courtroom.NotifyAssetMissing rides it to skip a
+// preanimation that can never arrive (ui/app.go drainWarnings), so swallowing
+// the repeat would hold the stage for the full PreanimTimeout every time after
+// the first that the same absent preanim is played. The missing COUNTER is not
+// bumped, because this pass found nothing out: the count answers "how many
+// assets did we discover are absent", and letting a demand cadence inflate it
+// is what made it useless to read while this bug was live.
+//
+// Tried is empty here on purpose rather than remembered per key: the extension
+// list was already logged in full when the miss was discovered, and the lane
+// already carries nil from resolveExact, so consumers handle it.
+func (m *Manager) skipExhausted(base string, t AssetType, suppressMissing bool) {
+	if suppressMissing {
+		return // speculative: no one asked for this, so no one hears about it (PrefetchChainSpeculative)
+	}
+	select {
+	case m.warningCh <- Warning{Base: base, Type: t}:
+	default:
+	}
+}
+
 // PrefetchExact queues a pipeline pass for a COMPLETE URL (extension
 // included) — AO music tracks ship their extension in the track name, and
 // direct http(s) tracks are full URLs already. No candidate probing.
@@ -584,6 +746,15 @@ func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) 
 	}
 	if m.t1Failed != nil && m.t1Failed(url) {
 		return // recently failed to decode — back off
+	}
+	// Same session memory as the probing path — the evidence grid paces its
+	// thumbnails on exactly the same retry cadence (ui/court_extras.go
+	// demandEvidence), so an evidence file the server never uploaded would storm
+	// identically. One rule for the whole Manager: a chain already probed to
+	// exhaustion this session is not probed again.
+	if m.conclusiveMiss.has(missChain{base: url, typ: t}, m.probeListGen()) {
+		m.skipExhausted(url, t, false)
+		return
 	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),
@@ -639,6 +810,12 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		}
 		m.deliver(url, url, t, data, false)
 	case errors.Is(err, network.ErrAssetNotFound):
+		// The CURRENT generation, not a sampled one: this path probes a complete
+		// URL and never builds a candidate list, so the format preferences had no
+		// say in the verdict and cannot have invalidated it mid-pass. It still
+		// rides the same generation bucket as everything else, which only means a
+		// format change costs this entry one extra probe it did not strictly need.
+		m.rememberExhausted(missChain{base: url, typ: t}, m.probeListGen())
 		m.reportMissing(url, t, nil)
 	default:
 		// Transient failure (timeout / 5xx / host backoff). Music is the one
@@ -894,6 +1071,10 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 		return // an identical pass is already in flight
 	}
 	defer m.inflight.Delete(key)
+	// Sampled BEFORE the walk, not at the end: a verdict is only about the probe
+	// list that produced it, and rememberExhausted drops the record if the user
+	// changed that list while this pass was running.
+	startGen := m.probeListGen()
 
 	// T1: already a texture — nothing to do. Uploads from this path are
 	// keyed by base (TextureStore.Upload(d.Base, …)), so the check must use
@@ -940,6 +1121,7 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 			}
 		}
 	}
+	m.rememberExhausted(missChainFor(primary, alts, t), startGen)
 	if suppressMissing {
 		// Speculative pass: count the miss (metrics) but do not surface the
 		// visible §4 warning for an asset no one demanded.
@@ -947,6 +1129,36 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 		return
 	}
 	m.reportMissing(primary, t, tried)
+}
+
+// rememberExhausted records a chain that came back empty from every spelling
+// and every format, so the next demand for it costs a map lookup instead of a
+// pipeline pass (missSet).
+//
+// It holds both rules for when a 404 is NOT a finding, because both are
+// judgements about the pass rather than about the set:
+//
+//   - OFFLINE. Rehearsal mode makes netFetch answer ErrAssetNotFound for every
+//     candidate without asking anyone (see netFetch), so recording those would
+//     carry rehearsal's silence into the live session and blank assets that were
+//     only ever absent because the network was closed. The resolver refuses to
+//     learn formats from that same silence for the same reason.
+//
+//   - THE LIST MOVED UNDER US. startGen is the probe-list generation this pass
+//     began with. A pass that walked the old list and lands after the user
+//     changed the format preferences knows nothing about the new one, and
+//     recording it would tag an obsolete verdict as current — precisely what the
+//     generation exists to prevent, just through a narrower window. Dropping the
+//     record costs one more pipeline pass; keeping it would cost the asset for
+//     the rest of the session.
+func (m *Manager) rememberExhausted(k missChain, startGen uint64) {
+	if m.offline.Load() {
+		return
+	}
+	if startGen != m.probeListGen() {
+		return
+	}
+	m.conclusiveMiss.add(k, startGen)
 }
 
 // tryBase walks one base's format candidates (learned-first), delivering a
@@ -1079,7 +1291,18 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 // SetMountLayer installs (or clears, with nil) the local-pack layer consulted
 // before the network. Safe from the render thread mid-session: readers load the
 // atomic pointer and never lock (rule 5).
-func (m *Manager) SetMountLayer(l *MountLayer) { m.mountLayer.Store(l) }
+//
+// Installing a layer is the user asserting they have files the server did not
+// serve, so it drops the session's exhausted-chain memory with it — supplying a
+// missing asset is the whole reason to add a pack, and the prefetch gate sits
+// ABOVE the layer, so a remembered miss would shadow exactly the files that were
+// just made available. Done here rather than at the call sites for the same
+// reason ui/mountlayer.go forgets the texture store's negative caches inside
+// rescanLocalPacks: a caller that skips it fails silently.
+func (m *Manager) SetMountLayer(l *MountLayer) {
+	m.ForgetConclusiveMisses()
+	m.mountLayer.Store(l)
+}
 
 // MountLayer returns the live layer (nil when no mounts are configured).
 func (m *Manager) MountLayer() *MountLayer { return m.mountLayer.Load() }
