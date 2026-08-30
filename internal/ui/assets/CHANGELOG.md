@@ -4,6 +4,23 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.91.2 — 2026-08-30
+
+Finishes v1.91.1. The "ask once" rule now covers the last two paths that were
+still exempt from it.
+
+- **Hovering characters no longer re-asks for a missing char.ini.** The
+  character list warms each name as you move over it. On a server missing those
+  files, hovering away and back asked again every time. It asks once now, like
+  everything else.
+- **The one remaining prefetch path that could skip the rule now follows it.**
+  Nothing in the client called that path yet, so this changes nothing you can
+  see. It closes the door before something does.
+- The test meant to catch a path skipping the rule was measuring the wrong
+  thing, and passed both of the above while they were broken. It now measures
+  work the client actually does, and was checked by breaking each fix on purpose
+  to confirm it fails.
+
 ## v1.91.1 — 2026-08-30
 
 Fixes a client that kept asking a server for files the server does not have.
