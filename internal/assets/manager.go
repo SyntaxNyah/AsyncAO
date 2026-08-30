@@ -847,6 +847,15 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 	if m.conclusiveMiss.has(key, m.probeListGen()) {
 		return // no warning: this lane has no AssetType to report and is silent on 404 by contract
 	}
+	// A file the user's pack holds has no RTT to hide, and FetchRawLayered will
+	// read it from disk without ever asking the server — so warming it would buy
+	// nothing and spend a real network probe (plus a remembered miss) on a URL the
+	// server may well not have at all. Covers is a MAP lookup, never a read: this
+	// runs on the render thread (warmCharINI fires from a hover), where reading the
+	// file would be the synchronous disk I/O hard rule 2 forbids.
+	if l := m.activeMountLayer(); l != nil && l.Covers(url) {
+		return
+	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),
 		Epoch: m.pool.Epoch(),
@@ -1427,6 +1436,74 @@ func (m *Manager) packBytes(l *MountLayer, base string, t AssetType) (key string
 		return k, b, true
 	}
 	return "", nil, false
+}
+
+// packExactBytes is packBytes for a COMPLETE URL: no format walk, one index
+// lookup. It is the text-asset sibling of the probe path's lookup, and it exists
+// because a char.ini is not a format family — its URL is already exact, so
+// walking PackFormatList over it would only manufacture nonsense keys
+// (char.ini.webp).
+//
+// Same four things and nothing else — resolve the rel, skip quarantined entries,
+// read, return — so both the synchronous reader (FetchRawLayered) and the warm
+// path (PrefetchRaw's early-out) share one implementation without either
+// inheriting side effects.
+func (m *Manager) packExactBytes(l *MountLayer, url string) ([]byte, bool) {
+	idx := l.Index()
+	if idx == nil || !idx.acquire() {
+		return nil, false
+	}
+	defer idx.release()
+
+	rel, has := l.RelOf(url)
+	if !has || mountLayerExcluded(rel) {
+		return nil, false
+	}
+	folded := foldRel(rel)
+	f, hit := idx.LookupExact(folded)
+	if !hit || idx.IsBad(folded) {
+		return nil, false
+	}
+	b, err := idx.ReadFile(f, folded)
+	if err != nil || len(b) == 0 {
+		return nil, false // a pack failure is never a server failure: fall through
+	}
+	return b, true
+}
+
+// FetchRawLayered is FetchRaw for the text assets a content pack legitimately
+// ships — char.ini above all, and misc/<folder>/effects.ini beside it.
+//
+// WHY IT EXISTS AT ALL (issue #72). The pack layer was wired into the probe path
+// (resolveChain) and the exact DECODE path (resolveExact), but never into the raw
+// text lane, so a mounted base served a sprite maker's art and then read their
+// character's emote list, showname, blips, chatbox skin, scaling and idle pose
+// off the SERVER. Art from one base, metadata from another, is not a
+// half-working feature — it is a character that looks right and behaves like
+// somebody else's.
+//
+// It is a SEPARATE method rather than a flag inside FetchRaw for the reason
+// ResolveRawLayered is: FetchRaw writes T2 AND T3 under the passed URL, and the
+// callers that must NOT see a pack (the extensions.json manifest fetch, the
+// autoindex listings, the downloader's deliberate read-from-the-server) keep the
+// unlayered method by name rather than by remembering to pass false.
+//
+// THE PACK IS CONSULTED BEFORE T2, like the exact decode path (resolveExact) and
+// for the same reason: a server copy cached earlier this session must not beat
+// the file the user just edited on disk. Pack bytes are then returned WITHOUT
+// being cached anywhere — no T2 even under the local:// key, no T3. A char.ini is
+// a couple of KiB read once per character per session (every call site dedupes:
+// charMetaCache, previewChar, the emote list's own latch), and a cache here would
+// only add a way for a rescan to serve a stale ini back — the precise complaint
+// this method exists to answer.
+func (m *Manager) FetchRawLayered(ctx context.Context, url string) ([]byte, error) {
+	if l := m.activeMountLayer(); l != nil {
+		if b, ok := m.packExactBytes(l, url); ok {
+			m.mountFetches.Add(1)
+			return b, nil
+		}
+	}
+	return m.FetchRaw(ctx, url)
 }
 
 // ResolveRawLayered is ResolveRaw for tooling that should see the user's local
