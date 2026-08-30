@@ -223,6 +223,11 @@ func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 // the pool epoch: that marks EVERY queued job stale, including live high-priority
 // message work.
 func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
+	// FIRST, and not behind the Store guard: parsed INIs are UI state, not
+	// textures, and gating them on a texture store existing would be an
+	// unrelated dependency — the kind that leaves a headless path silently
+	// half-invalidated.
+	a.forgetParsedINIs()
 	if a.d.Store == nil {
 		return
 	}
@@ -237,6 +242,33 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 	}
 	if n := a.d.Store.RemoveWhere(layer.Covers); n > 0 {
 		a.pushDebug("local packs: dropped " + strconv.Itoa(n) + " resident texture(s) to re-resolve")
+	}
+}
+
+// forgetParsedINIs drops everything derived from a char.ini so a source change is
+// visible without a reconnect.
+//
+// The texture caches above are not enough, and this is the half that makes the
+// feature feel broken when it is missing: an ini is PARSED into UI state — the
+// emote list, the preview's emote cycle, every speaker's showname/blips/chatbox
+// skin/effects/scaling — and those parsed copies are keyed by URL in maps no
+// texture invalidation touches. A sprite maker's loop is "edit the ini, press
+// Rescan, look", and without this they would keep looking at the answer from
+// before the edit for the rest of the session.
+//
+// It re-reads the ACTIVE character's ini directly rather than rebuilding the
+// room, for the reason rescanLocalPacks does not rebuild: buildRoom re-arms the
+// live-roster poll, whose queued OOC /gas is the documented server flood-kick
+// vector, and a user tidying their mount list would emit one per click.
+func (a *App) forgetParsedINIs() {
+	a.charMetaCache = nil // remote speakers: refetched on their next message
+	// The preview's own latch, or the next hover over the SAME character would be
+	// dropped as "already showing that one" and keep the pre-edit emote list.
+	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil
+	a.previewEmoteIdx = 0
+	a.iniWarmed = "" // the hover warm's latch, same reason
+	if a.sess != nil && a.activeCharName() != "" {
+		a.loadCharINI() // the emote strip in front of the user, reloaded in place
 	}
 }
 

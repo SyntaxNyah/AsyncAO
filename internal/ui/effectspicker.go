@@ -270,7 +270,9 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 		var remoteNames []string
 		if manifestURL != "" && mgr != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), overlayFetchTimeout)
-			if data, ferr := mgr.FetchRaw(ctx, manifestURL); ferr == nil {
+			// LAYERED: an effect pack in the user's own folders ships its effects.ini
+			// beside its art, and the art half already came from there (#72).
+			if data, ferr := mgr.FetchRawLayered(ctx, manifestURL); ferr == nil {
 				if remote, perr := theme.ParseOverlayFX(bytes.NewReader(data)); perr == nil {
 					remoteNames = theme.OverlayFXNames(remote)
 					// LAST in the property pass: a manifest shipped beside the art is

@@ -8053,7 +8053,9 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
-		data, err := a.d.Manager.FetchRaw(ctx, url)
+		// LAYERED, like loadCharINI: previewing a character the user's own pack
+		// supplies must cycle THEIR emotes, not the server's idea of that folder.
+		data, err := a.d.Manager.FetchRawLayered(ctx, url)
 		if err != nil {
 			return
 		}
@@ -8206,7 +8208,9 @@ func (a *App) loadCharINI() {
 	a.charINIBusy = true
 	key := a.serverKey
 	go func() {
-		data, err := a.d.Manager.FetchRaw(context.Background(), url)
+		// LAYERED: a character served out of the user's own folders must bring its
+		// own emote list, or their sprites load under somebody else's poses (#72).
+		data, err := a.d.Manager.FetchRawLayered(context.Background(), url)
 		if err != nil {
 			a.charINIres <- charINIFetch{key: key, err: err}
 			PushWake() // wake the event-driven loop so Background drains this at idle=0

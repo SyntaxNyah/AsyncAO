@@ -112,7 +112,10 @@ func (a *App) charMetaFetchOne(url, char string) {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
 		res := charMetaFetch{url: url, showname: char} // no ini ⇒ get_showname's unreadable-ini answer
-		if data, err := a.d.Manager.FetchRaw(ctx, url); err == nil {
+		// LAYERED: this is the whole of a speaker's declared identity — showname,
+		// blips, chatbox skin, effects, scaling, idle pose. A user testing their own
+		// character out of a mounted folder must see the ini they are editing (#72).
+		if data, err := a.d.Manager.FetchRawLayered(ctx, url); err == nil {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
 				res.chat = strings.TrimSpace(ini.Chat)
