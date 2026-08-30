@@ -131,8 +131,10 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
                         T3 disk?     → promote to T2 + learn + decode
                         source fetch → T2 + async T3 + learn + decode
          every candidate 404 + learned was used → invalidate + one full-list retry
-       still nothing → Warning{base, formats tried} → UI banner (12 s, courtroom
-                                                      + char select)
+       still nothing → remember the exhausted CHAIN for the session (missSet)
+                       → Warning{base, formats tried} → UI banner (12 s,
+                                                        courtroom + char select)
+       chain already exhausted → warn, submit nothing  ← the gate, above the pool
   decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px),
                animations DECIMATED to maxDecodedAssetBytes (T1 budget / 4,
                the cache.MaxDecodedAssetBytes single source of truth —
@@ -179,6 +181,54 @@ Hovering any character cell (either grid, the wardrobe too) warms its
 char.ini through the decode-free raw lane (`Manager.PrefetchRaw`:
 pool-bounded, inflight-deduped, T2 + disk), so the eventual pick loads
 its emote list from memory instead of paying an RTT.
+
+### Conclusive misses (the cadence has to terminate)
+
+The demand loop above only ever ended on T1 residency, and an asset the
+server does not have can never become resident. A roster whose characters
+ship no `char_icon` and no `emotions/button<N>_off` art therefore re-asked
+for every one of them every 2 s for as long as the grid was on screen.
+
+`Manager.conclusiveMiss` (`assets/missSet`, cap `conclusiveMissCap` = 8192)
+records the resolution chain — base + type + the alt spellings probed after
+it — the first time every candidate 404s. Every `Prefetch*` entry point
+consults it before submitting; a hit warns and returns without a pool job.
+`demandAsset` consults it too and reports "this can never arrive", which is
+what lets a permanently blank cell stop holding the frame pump awake.
+
+The network client's 404 cache does not and cannot do this job. It is 1024
+entries at a 5 min TTL, so a large roster evicts its way back onto the wire,
+and it sits at the BOTTOM of the pipeline — a hit there still costs the pool
+job, the resolver walk and two failed disk reads above it. That overhead,
+not the requests, is what took the framerate down.
+
+The memory has no clock, because it is a fact about work already done rather
+than a guess with an expiry (contrast `LocalFetcher.missMemo`, which is the
+guess). What invalidates it is a change to either input of that fact — the
+byte source, or the candidate list it was measured against — so the flushes
+live inside the setters that make those changes and no call site can forget
+them:
+
+| Event | Scope |
+|---|---|
+| `config.FormatGeneration` moves (format order, fallback toggles) | all |
+| `installAssetOrigin` (connect / reconnect / mounts change) | that origin |
+| `SetMountLayer` (pack rescan) | all |
+| `SetLocalOverlay` with a **different** mount set | all |
+| Settings > Cache > **Retry missing assets** | all |
+
+The first row is not a call at all: every entry carries the format generation
+it was recorded under, and any operation that reads or extends the set retires
+a stale one first. It has to be structural rather than a flush call, because
+adding the server's real format in Settings > Assets is the FIRST thing a user
+does when sprites look missing — and this gate sits above the resolver, so a
+memory that ignored the change would make that setting do nothing, silently
+and for the rest of the session.
+
+A transport error is never recorded: `walkCandidates` reports it and ends the
+pass before the exhaustion path, so a timeout or a 5xx leaves the asset
+probeable. Only "every candidate returned 404" is a finding — and not even
+that in rehearsal mode, where the offline gate manufactures the 404s.
 
 ## Cache tiers (§9)
 
@@ -278,7 +328,9 @@ No new module dependency: `archive/zip` is stdlib.
 - `singleflight.DoChan` keyed by URL — concurrent identical fetches share one
   upstream call; a caller's context cancels only that caller's wait.
 - Negative cache: expirable LRU (1024 entries / 5 min). Cached 404s never
-  touch the wire.
+  touch the wire. It is the last line, not the first: the pipeline stops a
+  known-absent asset at the Manager (see *Conclusive misses*) so a repeat
+  demand costs no pool job either.
 - Transport: 16 conns/host, 8 idle, 90 s idle timeout, compression off
   (assets are pre-compressed), TLS session cache, 2 s TLS handshake cap.
   HTTP/2 engages automatically on https hosts; plain-http AO hosts ride tuned

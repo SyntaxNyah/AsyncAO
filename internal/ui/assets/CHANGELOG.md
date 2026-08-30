@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.91.1 — 2026-08-30
+
+Fixes a client that kept asking a server for files the server does not have.
+
+If a character had no `char_icon`, or no `_off` art for its emote buttons, the
+client asked again every two seconds, for every one of those on screen, for as
+long as you were looking at them. On a roster where most characters are missing
+that art it was a steady stream of 404s at the server and a steady stream of
+wasted work at the client, which is what made it slow down and stutter the
+longer you left it open.
+
+- **A missing file is now asked for once.** When every format of an asset comes
+  back 404, the client remembers that for the rest of the session and stops
+  asking. It still tells you the asset is missing, so nothing gets quieter than
+  it was.
+- **Blank emote cells let the client idle again.** A cell with no art and no
+  icon used to keep the client redrawing at full demand speed waiting for a
+  picture that was never coming.
+- **Settings > Cache has a "Retry missing assets" button.** Use it if files
+  were added to the server while you were connected. Reconnecting does the same
+  thing, and so does changing your local folders.
+
 ## v1.91.0 — 2026-08-29
 
 HDID security update to avoid spoofing. Now generates one unique HDID per
