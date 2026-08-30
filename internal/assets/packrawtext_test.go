@@ -230,3 +230,53 @@ func TestFetchRawLayeredCostsNothingWithoutMounts(t *testing.T) {
 		t.Errorf("the nil-layer path allocates %v per call vs FetchRaw's %v — the no-mounts user is paying for the feature", layered, bare)
 	}
 }
+
+// warmNoMountsRig is the shape both raw-text benchmarks measure: a streaming
+// Manager with NO layer and the file already in T2, so what is timed is the
+// lookup path itself rather than a network round trip.
+func warmNoMountsRig(b *testing.B) (*packRig, string) {
+	b.Helper()
+	pr := newPackRig(b,
+		map[string]string{"/base/characters/witch/char.ini": "SERVER INI"},
+		map[string]string{},
+	)
+	pr.rig.manager.SetMountLayer(nil)
+	url := pr.base("characters/witch/char.ini")
+	if _, err := pr.rig.manager.FetchRaw(context.Background(), url); err != nil {
+		b.Fatalf("priming T2: %v", err)
+	}
+	return pr, url
+}
+
+// BenchmarkFetchRawNoMounts is the BASELINE half of the pair: what the raw-text
+// read cost before the pack layer existed. It is only meaningful next to
+// BenchmarkFetchRawLayeredNoMounts below.
+func BenchmarkFetchRawNoMounts(b *testing.B) {
+	pr, url := warmNoMountsRig(b)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pr.rig.manager.FetchRaw(ctx, url); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkFetchRawLayeredNoMounts measures what a user who has configured NO
+// local folder pays for issue #72's fix. BenchmarkActiveMountLayerNoMounts times
+// the gate hook in isolation; this times the whole call a char.ini read actually
+// makes, so the "no slowdown in stream mode" claim rests on a measurement of the
+// real path instead of an inspection of it. The delta against
+// BenchmarkFetchRawNoMounts is the entire cost of the feature to that user.
+func BenchmarkFetchRawLayeredNoMounts(b *testing.B) {
+	pr, url := warmNoMountsRig(b)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pr.rig.manager.FetchRawLayered(ctx, url); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

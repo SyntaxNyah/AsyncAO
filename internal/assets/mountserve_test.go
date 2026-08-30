@@ -25,8 +25,8 @@ type packRig struct {
 
 // serveAndCount answers the given rels and records every request path, so a test
 // can assert the pack cost the network NOTHING.
-func newPackRig(t *testing.T, server map[string]string, pack map[string]string) *packRig {
-	t.Helper()
+func newPackRig(tb testing.TB, server map[string]string, pack map[string]string) *packRig {
+	tb.Helper()
 	pr := &packRig{hits: map[string]int{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -39,19 +39,19 @@ func newPackRig(t *testing.T, server map[string]string, pack map[string]string) 
 		_, _ = w.Write([]byte(body))
 	})
 	pr.srv = httptest.NewServer(mux)
-	t.Cleanup(pr.srv.Close)
+	tb.Cleanup(pr.srv.Close)
 	pr.origin = pr.srv.URL + "/base/"
 
-	pr.dir = t.TempDir()
-	writePack(t, pr.dir, pack)
+	pr.dir = tb.TempDir()
+	writePack(tb, pr.dir, pack)
 	ix, errs := BuildMountIndex([]string{pr.dir})
 	if len(errs) != 0 {
-		t.Fatalf("index build: %v", errs)
+		tb.Fatalf("index build: %v", errs)
 	}
-	t.Cleanup(ix.Retire)
+	tb.Cleanup(ix.Retire)
 	pr.layer = NewMountLayer(ix, []string{pr.dir}, []string{pr.origin})
 
-	pr.rig = newRig(t, network.NewClient(), false)
+	pr.rig = newRig(tb, network.NewClient(), false)
 	pr.rig.manager.SetMountLayer(pr.layer)
 	return pr
 }

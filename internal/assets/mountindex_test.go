@@ -482,15 +482,15 @@ func TestBuildMountIndexSurvivesABadMount(t *testing.T) {
 
 // --- helpers -------------------------------------------------------------------
 
-func writePack(t *testing.T, root string, files map[string]string) {
-	t.Helper()
+func writePack(tb testing.TB, root string, files map[string]string) {
+	tb.Helper()
 	for rel, body := range files {
 		p := filepath.Join(root, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 	}
 }

@@ -30,23 +30,23 @@ type testRig struct {
 	t2       *cache.ByteBudgetLRU[string, []byte]
 }
 
-func newRig(t *testing.T, source Fetcher, localMode bool) *testRig {
-	t.Helper()
-	prefs := newTestPrefs(t)
+func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
+	tb.Helper()
+	prefs := newTestPrefs(tb)
 	resolver := NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	disk, err := cache.NewDiskCache(filepath.Join(t.TempDir(), "assets"), 0)
+	disk, err := cache.NewDiskCache(filepath.Join(tb.TempDir(), "assets"), 0)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	t.Cleanup(disk.Close)
+	tb.Cleanup(disk.Close)
 	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
+	tb.Cleanup(pool.Close)
 	decoder := NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	tb.Cleanup(decoder.Close)
 
 	m := NewManager(ManagerDeps{
 		Resolver:  resolver,

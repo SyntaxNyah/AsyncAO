@@ -10,13 +10,14 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-func newTestPrefs(t *testing.T) *config.AssetPreferences {
-	t.Helper()
-	p, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+// testing.TB rather than *testing.T so a benchmark can build the same rig.
+func newTestPrefs(tb testing.TB) *config.AssetPreferences {
+	tb.Helper()
+	p, err := config.New(filepath.Join(tb.TempDir(), config.PrefsFileName))
 	if err != nil {
-		t.Fatalf("config.New: %v", err)
+		tb.Fatalf("config.New: %v", err)
 	}
-	t.Cleanup(func() { _ = p.Close() })
+	tb.Cleanup(func() { _ = p.Close() })
 	return p
 }
 
