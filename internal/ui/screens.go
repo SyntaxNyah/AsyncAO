@@ -7537,10 +7537,17 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 		if ip, iok := a.cachedPage(&a.emoteIconPages, &a.emoteIconGen, 1, 0, iconBase); iok && len(ip.Frames) > 0 {
 			_ = c.Ren.Copy(ip.Frames[0], nil, &btn)
 		} else {
-			a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
+			pending := a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			c.Fill(btn, ColPanel)
 			c.Border(btn, ColPanelHi)
-			a.frameDemandPending = true // blank cell (no art, no icon yet): keep the demand pump alive at idle
+			if pending {
+				// Blank cell, art still possible: keep the demand pump alive at idle.
+				// Gated on the demand rather than on the blankness — a character with
+				// no button art AND no icon is a permanently grey cell, and flagging it
+				// pinned the client at the demand cadence forever, awake and
+				// re-rendering for something that could never arrive.
+				a.frameDemandPending = true
+			}
 		}
 		// Emote-name caption: opt-in (default OFF). Off ⇒ the fallback shows a clean
 		// icon with no text overlay, which is what most players want; on ⇒ the name

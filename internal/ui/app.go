@@ -5130,6 +5130,24 @@ func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string, ini cour
 	return icLogLine(m, force, ini), speaker
 }
 
+// installAssetOrigin points this session's URL builder at origin — the ONE
+// place rebuildAssetOrigin mints one, mounts branch and server branch alike.
+//
+// It also gives that origin's remembered misses a fresh look. The manager keeps
+// every chain it probed to exhaustion for the whole session and nothing else
+// expires it (assets.missSet), so (re)connecting has to be the moment the
+// server gets a clean slate — otherwise a server that repacked between visits
+// would stay half-invisible until a restart. Scoped to THIS origin, because one
+// Manager serves every open tab and reconnecting one of them says nothing about
+// what the others already established.
+//
+// Both jobs live here so they cannot drift apart: an origin installed without
+// the flush would silently serve a previous visit's verdict.
+func (a *App) installAssetOrigin(origin string) {
+	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
+	a.d.Manager.ForgetConclusiveMissesUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
+}
+
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
 // asset URL, in that priority (the no-streaming checkbox wins).
 func (a *App) rebuildAssetOrigin() {
@@ -5158,7 +5176,7 @@ func (a *App) rebuildAssetOrigin() {
 		// above (SetLocalOverlay) or at boot. Building a second byte source — memo
 		// and all — to obtain a string is the pattern LocalOriginFor exists to end.
 		localOrigin := assets.LocalOriginFor(mounts)
-		a.urls = courtroom.NewURLBuilder(localOrigin).WithCharCase(a.charCasingFor(localOrigin))
+		a.installAssetOrigin(localOrigin)
 		log.Printf("ui: local asset mode over %d mounts", len(mounts))
 		return
 	}
@@ -5170,7 +5188,7 @@ func (a *App) rebuildAssetOrigin() {
 		a.connErr = `server provided no asset URL — set Settings > Assets > Asset source to "Only use my folders"`
 		return
 	}
-	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
+	a.installAssetOrigin(origin)
 	if a.rehearsal {
 		return // offline: no DNS warm, no manifest fetch
 	}
@@ -7934,20 +7952,43 @@ func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, 
 // demandAsset paces one visible cell's asset demand: shared per-frame
 // budget, one ask per slot per charIconRetryInterval (self-heals shed
 // low-lane jobs). stamps resizes lazily to n; callers tag the asset type.
-func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) {
-	if a.iconAskBudget <= 0 || idx < 0 || idx >= n {
-		return
+//
+// It reports whether the cell's art may still ARRIVE. False means the manager
+// already probed every format of this base to exhaustion this session, so no
+// amount of waiting or re-asking can fill the cell; callers use that to stop
+// holding the frame pump awake for art that is never coming (see
+// frameDemandPending). True is the ordinary answer, INCLUDING the frames where
+// this call asked for nothing because the budget or the retry window said no —
+// "not asked yet" is not "not coming".
+//
+// The conclusive-miss check comes before the pacing, not after, because it is
+// the cadence itself that had to stop. This retry loop only ever terminated on
+// residency, and a 404'd base can never become resident, so a roster whose
+// characters ship no char_icon and no emotions/button<N>_off art re-asked for
+// every one of them every charIconRetryInterval for as long as the grid was on
+// screen — a 404 leaving the client every couple of seconds, forever, with the
+// pool jobs and shed-loop spins behind each one taking the framerate with them.
+func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) bool {
+	if idx < 0 || idx >= n {
+		return false
+	}
+	if a.d.Manager.IsConclusiveMiss(base, t) {
+		return false
+	}
+	if a.iconAskBudget <= 0 {
+		return true // budget spent this frame, not a verdict on the asset
 	}
 	if len(*stamps) != n {
 		*stamps = make([]time.Time, n)
 	}
 	now := time.Now()
 	if now.Sub((*stamps)[idx]) < charIconRetryInterval {
-		return
+		return true
 	}
 	(*stamps)[idx] = now
 	a.iconAskBudget--
 	a.d.Manager.Prefetch(base, t, network.PriorityLow)
+	return true
 }
 
 // charINIURL builds a character's char.ini location.

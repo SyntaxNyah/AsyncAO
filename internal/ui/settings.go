@@ -2842,8 +2842,25 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 			settings.statusLine = "Disk cache cleared."
 		}
 	}
+	// Retry-missing: the manual half of the session miss memory. The client stops
+	// asking for an asset once it has probed every format of it and come up empty,
+	// which is what keeps it from re-404ing the server every couple of seconds
+	// forever; that answer is otherwise only revisited on a reconnect or a folder
+	// change, so a server that uploads the missing files mid-session needs a way
+	// to say so without one.
+	missCount := a.d.Manager.ConclusiveMissCount()
+	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Retry missing assets") {
+		a.d.Manager.ForgetConclusiveMisses()
+		if a.d.Store != nil { // nil only in headless tests
+			a.d.Store.ForgetMissing() // the render side's copy, or the viewport keeps drawing placeholders
+		}
+		settings.statusLine = "Will look for " + strconv.Itoa(missCount) + " missing asset(s) again."
+	}
+	c.Tooltip(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Look again for assets this server didn't have. Use it if files were added while you were connected. Reconnecting does the same thing.")
 	y += 30
 	c.Label(pad, y, "\"Clear disk cache\" wipes the on-disk asset cache (T3); assets re-download fresh on next use.", ColTextDim)
+	y += 18
+	c.Label(pad, y, "\"Retry missing assets\" asks again for the "+strconv.Itoa(missCount)+" asset(s) this session found the server doesn't have.", ColTextDim)
 	y += 18
 	c.Label(pad, y, "Recommended after a server that's behind Cloudflare / a CDN updates its assets: otherwise the CDN —", ColTextDim)
 	y += 18
