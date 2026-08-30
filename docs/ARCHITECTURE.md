@@ -291,6 +291,47 @@ transport label, so nothing downstream ever learns a second spelling.
 6. **No mounts costs nothing.** `activeMountLayer` loads the layer pointer
    *first* and returns on nil, so the default path is one atomic load
    (benchmarked at ~0.9 ns/op, 0 allocs). No index, no goroutine, no disk.
+   Benchmark the hook *and* the call that rides it: `BenchmarkFetchRawNoMounts`
+   vs `BenchmarkFetchRawLayeredNoMounts` is the pair for the text lane (~3 ns on
+   a ~50 ns read, 0 extra allocs), because timing the hook alone cannot answer
+   what a real reader pays.
+
+**The text lane (issue #72).** A mounted base answers `char.ini` and
+`effects.ini`, not only the art beside them. `FetchRawLayered` is the text
+sibling of `ResolveRawLayered`: pack first, server second, and named apart from
+`FetchRaw` so the callers that must NOT see a pack keep the unlayered method by
+default. Those are `extensions.json` (it seeds the server host's learned
+formats — invariant 2) and the autoindex listings, both already refused by
+`mountLayerExcluded`. The pack is consulted **before T2**, like the exact decode
+path, so a server copy cached earlier in the session cannot shadow the file the
+user just edited. Pack bytes are returned **uncached**: a couple of KiB read once
+per character per session, where a cache would only add a way to serve a stale
+ini back after a rescan. `PrefetchRaw` has the matching early-out — a file the
+pack holds has no RTT to hide, so warming it would spend a real probe, and a
+remembered miss, on a URL the server need not have at all.
+
+Art from one base and metadata from another is not half a feature; it is a
+character that looks right and behaves like somebody else's. A new raw-text
+fetch therefore fails a census gate by default and its author has to name which
+side it means, because a call site reaching for the server-only lane is
+invisible: `FetchRaw` returns perfectly good bytes, just the wrong side's.
+
+**A source change invalidates parsed inis, not only textures.** An ini is parsed
+into UI state keyed by URL, in maps no texture invalidation touches, so
+`rescanLocalPacks` calls `forgetParsedINIs` *ahead of* the texture-store guard —
+parsed inis are not textures, and gating them on a store existing leaves the
+headless path silently half-invalidated. It reloads the active character's ini
+in place rather than rebuilding the room, because `buildRoom` re-arms the roster
+poll whose OOC `/gas` is the known flood-kick vector.
+
+**Setup surface.** `internal/ui/basescan.go` reads a candidate folder (counts, a
+bounded `char.ini` sample, the standard subfolders, and the two off-by-one-level
+corrections) and `basewizard.go` reports it *before* anything is written.
+`applyBaseWizard` is the only writer in that flow, pinned by a census gate: the
+report is only worth reading if browsing, scanning and re-picking cannot change
+what the user is currently running. The scan runs off the render thread behind a
+single-flight latch (hard rule 2), and its result carries the path it scanned so
+a superseded pick is reconciled on landing rather than queued.
 
 **One key space.** Every map and set is keyed by the *folded rel including its
 extension* (`foldRel`: per-segment percent-decode, then lowercase, returning the

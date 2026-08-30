@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.92.0 — 2026-08-30
+
+Using your own AO files from a folder on your computer is now one button, and
+your `char.ini` files finally come from it.
+
+- **Settings > Assets starts with "Use my own AO files".** It opens a dialog
+  that walks through it: pick the folder, see what is in it, then choose whether
+  to stream anything it does not have. The old rows are still there, under
+  "Advanced".
+- **It shows you the folder before you commit to it.** How many characters and
+  backgrounds it holds, whether those characters have their `char.ini` files,
+  and which of the standard folders exist. Nothing is applied until you press
+  "Use this folder".
+- **It catches the two easy mistakes.** Pick your `characters` folder instead of
+  the base above it, or a folder with the base inside it, and it offers the
+  right one.
+- **Your `char.ini` files are read from your folder now.** They were coming from
+  the server while the sprites beside them came from your disk, so a character
+  had your art with somebody else's emote list, showname, blips, chatbox skin
+  and scaling (issue #72). Effects inis too.
+- **Editing an ini and rescanning shows the edit.** Parsed ini data was kept for
+  the rest of the session, so the old version stayed on screen until a restart.
+- Zip packs work anywhere a folder does.
+
+If you stream everything and have no folder set up, none of this changes what
+you run.
+
 ## v1.91.2 — 2026-08-30
 
 Finishes v1.91.1. The "ask once" rule now covers the last two paths that were
