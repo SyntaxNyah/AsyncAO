@@ -69,7 +69,23 @@ const (
 	// undiscoverable, and a picture already saved into Downloads has no window to be
 	// dragged onto without going and finding it again.
 	purposeThemeImage
+	// purposeBaseFolder: pick → the base-folder wizard's setBasePath (issue #72).
+	// The FIRST purpose whose answer is a DIRECTORY rather than a file, which is
+	// why browsePicksDir exists — the rows are still files and folders, but the
+	// pick is "the folder I am standing in".
+	//
+	// It is in-app for the reason the .demo picker moved in-app: the native folder
+	// dialog is a PowerShell shell-out that exists only on Windows and has failed
+	// to win foreground live before. browseForFolder's own comment names extending
+	// this browser to directories as the escalation path; this is it.
+	purposeBaseFolder
 )
+
+// browsePicksDir reports a purpose whose answer is the CURRENT DIRECTORY rather
+// than a row in it. Such a browser grows a "Use this folder" button beside the
+// path line; everything else about it is unchanged, so there is still one file
+// navigation surface rather than two.
+func browsePicksDir(p browsePurpose) bool { return p == purposeBaseFolder }
 
 // browseEntry is one row in the file browser: a directory to descend into or a
 // recording (.demo/.aorec) to pick. Built once per navigation by the loader.
@@ -229,8 +245,19 @@ func browseKeepRule(p browsePurpose) func(string) bool {
 		return isThemeBundleName
 	case purposeThemeImage:
 		return isThemeImageName
+	case purposeBaseFolder:
+		return isBaseMountName
 	}
 	return isRecordingName
+}
+
+// isBaseMountName reports a file that can be mounted as a base in its own right,
+// which is .zip and nothing else. It exists so the base-folder browser is not
+// filtered down to directories only: a pack is a legitimate answer to "where are
+// your AO files", and hiding every file would make a folder full of them look
+// empty to somebody checking they had opened the right one.
+func isBaseMountName(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".zip")
 }
 
 // isThemeBundleName reports a theme bundle by its lowercased extension.
@@ -368,6 +395,8 @@ func browseTitle(p browsePurpose) string {
 		return "Pick a theme bundle to import"
 	case purposeThemeImage:
 		return "Pick an image to add to this theme (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
+	case purposeBaseFolder:
+		return "Open your base folder, then press Use this folder"
 	default:
 		return "Pick a .demo to turn into a video"
 	}
@@ -377,7 +406,7 @@ func browseTitle(p browsePurpose) string {
 // the flat draw loop still costs no allocation.
 func browseFileIcon(p browsePurpose) string {
 	switch p {
-	case purposeThemeBundle:
+	case purposeThemeBundle, purposeBaseFolder:
 		return "📦"
 	case purposeThemeImage:
 		return "🖼"
@@ -438,12 +467,22 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	y += 26
 
-	// Current path line (the drives view has no path).
+	// Current path line (the drives view has no path). A directory-picking purpose
+	// puts its commit button here, on the same row as the path it commits, so what
+	// the button means is the line next to it. It is hidden in the drives view,
+	// where there is no directory to pick.
 	pathText := s.dir
+	pathW := inW
 	if s.isDrivesView() {
 		pathText = "This PC (drives)"
+	} else if browsePicksDir(s.purpose) {
+		const useBtnW = 130
+		pathW = inW - useBtnW - 8
+		if c.Button(sdl.Rect{X: inX + inW - useBtnW, Y: y - 2, W: useBtnW, H: btnH}, "Use this folder") {
+			a.pickBrowsedFile(s.dir)
+		}
 	}
-	c.LabelClipped(inX, y, inW, pathText, ColTextDim)
+	c.LabelClipped(inX, y, pathW, pathText, ColTextDim)
 	y += 22
 
 	// Quick-jump row: Home / Downloads / Desktop / recordings\ (+ Drives on
@@ -632,6 +671,11 @@ func (a *App) pickBrowsedFile(path string) {
 		// cannot happen from here — this browser is opened from the editor's own rail
 		// — so the refusal is a chip rather than a branch.
 		a.editorTakeImage(path)
+	case purposeBaseFolder:
+		// The SAME funnel a dropped folder enters by. path is the current DIRECTORY
+		// for the Use-this-folder button and a .zip pack for a row click; setBasePath
+		// takes either, and the scan reports which it got.
+		baseWizard.setBasePath(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}

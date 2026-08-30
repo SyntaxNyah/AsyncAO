@@ -595,7 +595,12 @@ func (a *App) drawSettings(w, h int32) {
 	// (contentpanel.go) is the SAME kind of blocking modal and rides the same fence —
 	// the two are mutually exclusive (picking in the browser closes it and opens the
 	// panel), so one flag OR the other is set, never contended.
-	if demoBrowser.open || contentPanel.open {
+	//
+	// The base-folder wizard (basewizard.go) is the same kind of blocking modal and
+	// joins the same fence. It is NOT exclusive with the browser — its step 1 opens
+	// one on top of itself — so the wizard fences ITSELF while the browser is up;
+	// see drawBaseWizard.
+	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = true
 	}
 
@@ -604,7 +609,15 @@ func (a *App) drawSettings(w, h int32) {
 	// drag-drop, and the off-thread IO status line).
 	a.pollThemeScan()
 	a.pollFolderPick()
-	if c.dropped != "" {
+	// baseWizardTakesDrop CONSUMES the drop when it returns true: the OPEN
+	// base-folder wizard gets first refusal, because it says "or drag the folder
+	// onto this window" and has to mean it. Without that arm the drop falls through
+	// to the default below, which points the user's THEME ROOT at the folder they
+	// were setting up as an asset base — the silent-wrong-action class dropclaim.go
+	// exists to end, arriving through a different door. It refuses anything a
+	// global owner already claimed, so it cannot resurrect that bug from the other
+	// side either. Pinned by TestOpenBaseWizardTakesTheDropBeforeTheThemeRoot.
+	if c.dropped != "" && !a.baseWizardTakesDrop(c.dropped) {
 		// Drag-and-drop anywhere on this screen. The classification is shared
 		// with HandleFileDrop (dropclaim.go) precisely because this arm and that
 		// one used to disagree: a recording, or a theme BUNDLE, must not fall
@@ -799,9 +812,13 @@ func (a *App) drawSettings(w, h int32) {
 	// mutually exclusive, so releasing once for either is correct. The content panel
 	// draws after the browser (a pick closes the browser and opens the panel in the
 	// same click — the panel must own this frame's release).
-	if demoBrowser.open || contentPanel.open {
+	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = false
 	}
+	// The wizard draws BEFORE the browser: its step 1 opens one on top of itself,
+	// and the topmost panel has to be the one drawn last. drawBaseWizard re-fences
+	// itself for exactly that overlap.
+	a.drawBaseWizard(w, h)
 	a.drawDemoBrowser(w, h)
 	a.drawContentPanel(w, h)
 }

@@ -211,7 +211,7 @@ func TestLoadBrowseDirError(t *testing.T) {
 }
 
 // TestEveryBrowsePurposeHasItsOwnFileFilter is the seam's encapsulation gate
-// (v1.90.0 W8). The browser now serves four purposes and a listing that showed
+// (v1.90.0 W8). The browser now serves five purposes and a listing that showed
 // recordings to somebody importing a theme would be a picker with nothing in it —
 // the "button does nothing" report the in-app browser was built to end.
 //
@@ -230,12 +230,23 @@ func TestEveryBrowsePurposeHasItsOwnFileFilter(t *testing.T) {
 		t.Error("the theme-bundle browser does not list a plain .zip — a BROWSE is the user " +
 			"pointing at one file, and the importer sniffs the archive's own magic bytes anyway")
 	}
+	if browseKeepRule(purposeBaseFolder)("clip.aorec") {
+		t.Error("the base-folder browser lists recordings")
+	}
+	if !browseKeepRule(purposeBaseFolder)("BASE.ZIP") {
+		t.Error("the base-folder browser hides .zip packs — a pack is a legitimate answer to " +
+			"\"where are your AO files\", and hiding every file makes a full folder look empty")
+	}
 	for _, p := range []browsePurpose{purposeVideo, purposeCheck, purposePackage} {
 		if browseKeepRule(p)("umineko" + themePackExt) {
 			t.Errorf("purpose %d lists theme bundles — the recording flows must not change", p)
 		}
 		if !browseKeepRule(p)("clip.aorec") {
 			t.Errorf("purpose %d stopped listing recordings", p)
+		}
+		if browsePicksDir(p) {
+			t.Errorf("purpose %d picks a directory — the recording flows answer with a FILE, "+
+				"and a browser that returns its own cwd to them picks nothing at all", p)
 		}
 	}
 }
