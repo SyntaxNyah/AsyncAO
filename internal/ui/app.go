@@ -224,6 +224,19 @@ type App struct {
 	// signal shouldAutoReconnect reads. Set by the deliberate paths, cleared on a
 	// fresh connect.
 	deliberateClose bool
+	// pendingSessionCarry is the one-shot "we are coming back" snapshot of the
+	// log-content fields (sessioncarry.go) captured at a teardown that means
+	// exactly that — the disconnect dialog's Reconnect, or an involuntary drop
+	// about to auto-retry — and reapplied by connectWith only when the redial
+	// lands on the SAME server. Lives here, not in sessionState, for the same
+	// reason lastConnURL does two fields up: it must outlive the very
+	// resetSessionState() call (Disconnect, then connectWith's own reset) that
+	// it exists to protect content from — sessionState is what that call
+	// replaces wholesale. pendingSessionCarryKey is the serverKey (dialled
+	// address, not display name) it was captured from; nil/"" together mean
+	// nothing is pending.
+	pendingSessionCarry    *sessionCarry
+	pendingSessionCarryKey string
 
 	// --- lobby state ---
 	masterEntries []network.ServerEntry // raw master list (no favorites)
@@ -4191,6 +4204,13 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		return
 	}
 	a.conn = conn
+	// A pending carry from THIS server's own drop (a dialog Reconnect click or
+	// an auto-retry) rejoins the fresh session now that the dial actually
+	// succeeded — placed AFTER the dial, not right after resetSessionState
+	// above, so a failed attempt (a retried auto-reconnect) never burns the
+	// one-shot slot before the connection that earns it. No-ops (and clears
+	// the slot) unless wsURL matches the server the carry was captured from.
+	a.applySessionCarryIfPending(wsURL)
 	// Wake the render loop the instant a packet lands (experimental
 	// event-driven loop; a queued no-op event otherwise — the wake is never
 	// treated as user input in either mode).

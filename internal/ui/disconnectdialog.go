@@ -197,6 +197,16 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// No room to freeze (char-select, already torn down) or a deliberate close:
 	// today's plain teardown to the lobby, which still arms auto-reconnect for a
 	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
+	//
+	// A genuine transport drop about to auto-retry is "we're coming back" just
+	// as much as a dialog Reconnect click is: snapshot today's log before
+	// Disconnect wipes it, so a successful retry can restore it
+	// (applySessionCarryIfPending, gated on the SAME server). Gated on the same
+	// shouldAutoReconnect check as the re-arm below, so a kick/ban/deliberate
+	// close starts clean — nothing here for those cases to ever consume.
+	if shouldAutoReconnect(reason, deliberate) {
+		a.snapshotSessionCarry()
+	}
 	a.Disconnect() // → lobby; nils conn/sess and cancels any pending retry
 	if shouldAutoReconnect(reason, deliberate) {
 		a.scheduleAutoReconnect() // re-arm the countdown the teardown just cancelled
@@ -254,7 +264,14 @@ func (a *App) reconnectFromDisconnectDialog() {
 	name, url := a.disconnectDlg.name, a.disconnectDlg.url
 	a.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
-	a.Disconnect()           // full teardown of the frozen session → lobby
+	if url != "" {
+		// Clicking Reconnect IS "we're coming back": snapshot today's log before
+		// the teardown below wipes it, so the redial to this SAME server (below)
+		// can restore it — applySessionCarryIfPending checks the key match, so
+		// this is a no-op harvest if url somehow changes before the dial lands.
+		a.snapshotSessionCarry()
+	}
+	a.Disconnect() // full teardown of the frozen session → lobby
 	if url != "" {
 		a.Connect(name, url) // Connect cancels any pending auto-retry and redials
 	}
