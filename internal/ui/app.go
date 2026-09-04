@@ -3999,21 +3999,25 @@ func (a *App) keepSceneAssetsWarm() {
 		// cycles/sec while the app sat idle or minimized (the CPU-burn report;
 		// the "stage blinks" report is the same churn's visible face).
 		//
-		// Char sprites re-demand through the FULL prefix→bare fallback (like
-		// healSpriteLayer), NOT a single-spelling Prefetch. That is the missingno
-		// no-blip guarantee: a Warning (→ Store.MarkMissing → a missingno flash)
-		// fires ONLY on FULL chain exhaustion, so a mixed-naming pack's bare-only
-		// sprite — which exists under the unprefixed spelling — must have its bare
-		// spelling probed here too, or this warm's single prefixed Prefetch would
-		// 404, report missing, and flash the placeholder over a sprite that DOES
-		// exist. Routing char warms through the fallback makes "a char Warning
-		// fired" mean "both spellings, every format, exhausted" for every
-		// non-speculative source. The 404 cache absorbs the extra probe inside its
-		// TTL and the latch stops the repeats. bg/desk/chatskin have no bare-
-		// spelling twin, so they keep the plain single Prefetch.
+		// Char sprites re-demand through the FULL courtroom.SpriteHealAlts chain
+		// (bare, then folder — the same one healSpriteLayer and the primary
+		// per-message demand walk via EmoteAlts), NOT a single-spelling Prefetch.
+		// That is the missingno no-blip guarantee: a Warning (→ Store.MarkMissing
+		// → a missingno flash) fires ONLY on FULL chain exhaustion, so a sprite
+		// that exists ONLY under the bare or the "(a)/"-folder spelling must have
+		// that spelling probed here too, or this warm's single prefixed Prefetch
+		// would 404, report missing, and flash the placeholder over a sprite that
+		// DOES exist. Routing char warms through the SAME chain the primary
+		// resolve used makes "a char Warning fired" mean "every spelling, every
+		// format, exhausted" — and keeps a heal pass from recording its OWN
+		// conclusive-miss verdict on a shorter chain than the one that actually
+		// resolved the sprite (missChainFor keys on exact chain identity). The
+		// 404 cache absorbs the extra probes inside their TTL and the latch stops
+		// the repeats. bg/desk/chatskin have no alt spelling, so they keep the
+		// plain single Prefetch.
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
 			if t == assets.AssetTypeCharSprite {
-				a.d.Manager.PrefetchWithFallback(base, bareSpriteBase(base), t, network.PriorityHigh) // AssetType: CharSprite (prefix→bare so a bare-only sprite never false-flags missing)
+				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (bare + folder, so no spelling ever false-flags missing)
 			} else {
 				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			}
@@ -10395,9 +10399,10 @@ func (a *App) healScenery() {
 }
 
 // healSpriteLayer re-demands one visible character sprite layer if its active
-// base was evicted from T1. Uses the prefix→bare fallback the lifecycle uses
-// (bareSpriteBase reconstructs the unprefixed spelling), paced per layer like
-// the scenery above. No-op while the sprite is resident or recently asked.
+// base was evicted from T1. Walks courtroom.SpriteHealAlts — the same
+// bare-then-folder chain EmoteAlts feeds the primary per-message demand —
+// paced per layer like the scenery above. No-op while the sprite is resident
+// or recently asked.
 func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
 	if !layer.Visible || layer.Active == "" {
 		return
@@ -10412,27 +10417,13 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
-	a.d.Manager.PrefetchWithFallback(layer.Active, bareSpriteBase(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite)
+	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
 	// Cold sprite + thumbnails on: also ask for the low-q stand-in (paced by the
 	// same retry window above; the loader reads + decodes off-thread and
 	// drainThumbs uploads under the thumb:// key the renderer probes).
 	if th := a.d.Manager.Thumbs(); th != nil && th.Enabled() && !a.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
 		th.RequestLoad(layer.Active)
 	}
-}
-
-// bareSpriteBase reconstructs the unprefixed sprite spelling from an active
-// base: it strips a leading "(a)"/"(b)" from the final path segment, turning
-// URLBuilder.Emote's output back into EmoteBare's. Preanim/already-bare bases
-// (no prefix) pass through unchanged, so PrefetchWithFallback just retries the
-// same URL.
-func bareSpriteBase(active string) string {
-	i := strings.LastIndexByte(active, '/')
-	seg := active[i+1:]
-	if strings.HasPrefix(seg, "(a)") || strings.HasPrefix(seg, "(b)") {
-		return active[:i+1] + seg[len("(a)"):]
-	}
-	return active
 }
 
 // icEntry is one IC log line with its AO text color preserved (rich

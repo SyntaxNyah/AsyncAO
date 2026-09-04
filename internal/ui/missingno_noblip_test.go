@@ -83,6 +83,128 @@ func writeBareSprite(t *testing.T, dir, char, emote string) {
 	}
 }
 
+// writeFolderSprite writes a FOLDER-spelling idle sprite PNG at the webAO relpath
+// characters/<char>/(<prefix>)/<emote>.png under dir — a pack that groups its
+// idle/talk art in literal "(a)"/"(b)" directories (GH #70, Crystalwarrior) and
+// ships NEITHER the glued "(a)<emote>" file NOR the bare "<emote>" one.
+func writeFolderSprite(t *testing.T, dir, char, prefix, emote string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	rel := filepath.Join("characters", char, "("+prefix+")", emote+".png")
+	full := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSceneWarmNoMissingnoForFolderOnlySprite is TestSceneWarmNoMissingnoForBareOnlySprite's
+// twin for the OTHER alt spelling: a pack that ships its sprite ONLY under the
+// "(a)/<emote>" folder form, neither glued nor bare. Before the GH #70 fix,
+// keepSceneAssetsWarm's char-sprite re-demand walked only bareSpriteBase's 2-link
+// glued→bare chain — which excludes this pack's one working spelling — so an
+// eviction of this live sprite fired a Warning, marked it missing, and flashed the
+// placeholder over art that genuinely exists. Now it walks
+// courtroom.SpriteHealAlts' bare-then-folder chain, so the folder file resolves.
+func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
+	a := testTabApp(t)
+	dir := t.TempDir()
+	// The pack ships characters/hobo/(a)/normal.png (folder) — but NEITHER
+	// (a)normal.png (glued) NOR normal.png (bare).
+	writeFolderSprite(t, dir, "hobo", "a", "normal")
+	local, cleanup := wireLocalManager(t, a, dir)
+	defer cleanup()
+
+	// The live speaker's idle base is the GLUED spelling (the sprite's identity),
+	// which does not exist on disk — only its folder-form twin does.
+	glued := local.BaseURL() + "characters/hobo/(a)normal"
+	seedPNGFormat(t, a)
+
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = glued
+	a.room.Scene.Speaker.IdleBase = glued
+
+	a.sceneWarmLastDemand = time.Time{}
+	a.keepSceneAssetsWarm()
+
+	settleDeadline := time.Now().Add(5 * time.Second)
+	gotDecode := false
+	for !gotDecode && time.Now().Before(settleDeadline) {
+		select {
+		case d := <-a.d.Manager.Decoded():
+			if d.Err == nil && d.Base == glued {
+				gotDecode = true
+			}
+			if d.Asset != nil {
+				d.Asset.Release()
+			}
+		case w := <-a.d.Manager.Warnings():
+			t.Fatalf("a folder-only sprite must NOT report missing (no-blip guarantee); got Warning for %q", w.Base)
+		default:
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	if !gotDecode {
+		t.Fatal("the folder-spelling sprite never resolved through the fallback — the warm re-demand is not walking bare+folder")
+	}
+
+	a.drainWarnings()
+	if a.d.Store.IsMissing(glued) {
+		t.Error("a folder-only sprite must never be flagged missing — missingno would flash over a sprite that exists")
+	}
+}
+
+// TestHealSpriteLayerFolderOnlySprite is the same guard driven directly through
+// healSpriteLayer (not the scene-warm loop) — a separate call site with its own
+// gap before the GH #70 fix.
+func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
+	a := testTabApp(t)
+	dir := t.TempDir()
+	writeFolderSprite(t, dir, "hobo", "a", "normal")
+	local, cleanup := wireLocalManager(t, a, dir)
+	defer cleanup()
+
+	glued := local.BaseURL() + "characters/hobo/(a)normal"
+	seedPNGFormat(t, a)
+
+	layer := &courtroom.SpriteLayer{Visible: true, Active: glued}
+	var askBase string
+	var askAt time.Time
+	a.healSpriteLayer(layer, &askBase, &askAt, time.Now())
+
+	settleDeadline := time.Now().Add(5 * time.Second)
+	gotDecode := false
+	for !gotDecode && time.Now().Before(settleDeadline) {
+		select {
+		case d := <-a.d.Manager.Decoded():
+			if d.Err == nil && d.Base == glued {
+				gotDecode = true
+			}
+			if d.Asset != nil {
+				d.Asset.Release()
+			}
+		case w := <-a.d.Manager.Warnings():
+			t.Fatalf("a folder-only sprite must NOT report missing via healSpriteLayer; got Warning for %q", w.Base)
+		default:
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	if !gotDecode {
+		t.Fatal("healSpriteLayer never resolved the folder-spelling sprite — it is not walking the bare+folder chain")
+	}
+
+	a.drainWarnings()
+	if a.d.Store.IsMissing(glued) {
+		t.Error("a folder-only sprite must never be flagged missing via healSpriteLayer")
+	}
+}
+
 // TestSceneWarmNoMissingnoForBareOnlySprite is the no-blip guard: it exercises the
 // exact path that produced the false-positive flash — keepSceneAssetsWarm's
 // char-sprite re-demand for a mixed-naming pack whose sprite exists ONLY under the

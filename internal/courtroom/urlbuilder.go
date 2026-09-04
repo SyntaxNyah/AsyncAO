@@ -289,6 +289,53 @@ func (u URLBuilder) EmoteAlts(character, emote string, kind EmoteKind) []string 
 	}
 }
 
+// emotePrefixLen is len("(a)") == len("(b)") — both AO sprite prefixes are the
+// same width, so one constant reconstructs either. Named so SpriteHealAlts'
+// slicing reads as "skip the prefix", not a bare magic 3.
+const emotePrefixLen = 3
+
+// SpriteHealAlts reconstructs EmoteAlts' fallback chain — bare, then folder,
+// same order and reasoning as EmoteAlts' own comment — from an already-built
+// Emote() base. It exists for callers that hold only the resolved active URL
+// of a live sprite layer (internal/ui's re-heal paths: courtroom.SpriteLayer
+// carries base URLs, not the character/emote/kind that produced them, so they
+// can't call EmoteAlts directly) and need the SAME chain the primary demand
+// path walked, not a second hand-rolled one. Keeping the "(a)"/"(b)" string
+// surgery here — beside Emote/EmoteFolder/EmoteBare, its only other owners —
+// means the convention has exactly one home instead of a duplicate copy in
+// internal/ui. // AssetType: CharSprite
+func SpriteHealAlts(active string) []string {
+	return []string{bareSpriteBase(active), folderSpriteBase(active)}
+}
+
+// bareSpriteBase reconstructs the unprefixed sprite spelling from an active
+// base: it strips a leading "(a)"/"(b)" from the final path segment, turning
+// Emote()'s output back into EmoteBare's. Preanim/already-bare bases (no
+// prefix) pass through unchanged, so a chain built from them just retries the
+// same URL.
+func bareSpriteBase(active string) string {
+	i := strings.LastIndexByte(active, '/')
+	seg := active[i+1:]
+	if strings.HasPrefix(seg, "(a)") || strings.HasPrefix(seg, "(b)") {
+		return active[:i+1] + seg[emotePrefixLen:]
+	}
+	return active
+}
+
+// folderSpriteBase reconstructs the prefix-as-FOLDER sprite spelling from an
+// active base: it turns a leading "(a)"/"(b)" on the final path segment into
+// a folder separator, mirroring EmoteFolder's shape ("(a)/<emote>"). Preanim/
+// already-bare bases (no prefix) pass through unchanged, exactly like
+// bareSpriteBase's no-op case.
+func folderSpriteBase(active string) string {
+	i := strings.LastIndexByte(active, '/')
+	seg := active[i+1:]
+	if strings.HasPrefix(seg, "(a)") || strings.HasPrefix(seg, "(b)") {
+		return active[:i+1] + seg[:emotePrefixLen] + "/" + seg[emotePrefixLen:]
+	}
+	return active
+}
+
 // EmoteButton returns the emote-picker button art base for the 1-based
 // emote number n; on selects the pressed (_on) variant. Convention shared
 // by AO2-Client (emotion_button "emotions/button%1_off") and webAO.
