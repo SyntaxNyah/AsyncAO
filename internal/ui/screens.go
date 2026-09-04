@@ -6931,6 +6931,26 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
+// followPinnedPreview retargets an ALREADY-OPEN, PINNED preview box to the emote
+// that was just picked, so "pinned" means "keep showing whatever's currently
+// selected" instead of freezing on whichever cell the hover/right-click that
+// opened it happened to land on (playtest: "stuck on one you called it on").
+//
+// Both guards matter: a.previewBase == "" leaves a CLOSED box closed — picking
+// an emote must never spontaneously pop the preview open for someone who
+// never touched it, or this stops being a fix and becomes an annoyance. And
+// !previewIsPinned() leaves an unpinned OPEN box to its existing close-on-click
+// contract (closeSpritePreviewOnLeave / dismissPreviewOnClick) — a bare hover
+// preview still vanishes on a click, exactly as TestSpritePreviewTravelCorridor
+// pins. One boolean short-circuit, so a click with the box closed (the common
+// case) costs nothing beyond the field read already sitting in a register.
+func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
+	if a.previewBase == "" || !a.previewIsPinned() {
+		return
+	}
+	a.previewEmote(char, e)
+}
+
 // drawSpritePreviewFallback paints the shared sprite-preview box on the courtroom
 // passes where its PRIMARY draw site — the tail of the emote grid — did not run.
 //
@@ -7167,6 +7187,7 @@ func (a *App) selectEmote(i int) {
 	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh)  // AssetType: EmoteButton (on)
 	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (off fallback)
 	a.speculateEmote(me, &a.emotes[i])
+	a.followPinnedPreview(me, &a.emotes[i]) // a pinned box follows the pick; a closed one stays closed
 	a.ctx.FocusField("ic")
 }
 

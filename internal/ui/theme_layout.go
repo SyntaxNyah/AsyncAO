@@ -1820,7 +1820,8 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			a.emoteIdx = i
 			a.icPreanim = emoteHasPreanim(e) // "Pre" auto-follows the pick (AO2-Client ui_pre)
 			a.speculateEmote(me, e)
-			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
+			a.followPinnedPreview(me, e) // a pinned box follows the pick; a closed one stays closed
+			c.FocusField("ic")           // AO2 focus_ic_input: pick emote, keep typing
 		}
 		// Right-click pins the preview open, exactly as the CLASSIC emote row does.
 		// Without it there was no way at all to pin on an AO2 theme, which is where
