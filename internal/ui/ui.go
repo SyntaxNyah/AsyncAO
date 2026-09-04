@@ -132,6 +132,31 @@ var paletteDarkText = sdl.Color{R: 20, G: 20, B: 24, A: 255}
 // panel → dark text" in the readability floor.
 const paletteLightPanelLuma = 128
 
+// sliderIdleThumbColor is the un-hovered fill for Slider's and VScrollbar's
+// thumb (GH #50, "black slider ball"). ColPanelHi's contrast is only ever
+// proven against ColBackground — its real job is a raised BUTTON surface
+// (see the comment on its assignment below) — so reusing it unchecked here
+// puts a small thumb directly on ColPanel instead, a tighter context
+// nothing had contrast-checked. Every built-in chrome preset fails the
+// kit's own minInkSkinContrast floor for that pair (dark/soft/midnight
+// Δ16, warm Δ14, light Δ20, even "High contrast" Δ28 — all under 48), so
+// idle the thumb reads as one flat block fused to the track. This reuses
+// that SAME floor and the SAME two proven-safe ink extremes
+// applyThemePalette's text-readability guard already falls back to below
+// (light ink on a dark surface, dark ink on a light one) instead of a
+// second contrast system or a constant hand-tuned only for the stock
+// defaults — so any preset, custom scheme, or AO2-derived palette gets a
+// readable thumb, not just the six shipped today.
+func sliderIdleThumbColor() sdl.Color {
+	if absInt(colLuma(ColPanelHi)-colLuma(ColPanel)) >= minInkSkinContrast {
+		return ColPanelHi // already clears the floor — untouched, today and for any future palette that does too
+	}
+	if colLuma(ColPanel) < paletteLightPanelLuma {
+		return defaultKitColors[4] // stock light ink (ColText's slot), safe on a dark track
+	}
+	return paletteDarkText // dark ink, safe on a light track
+}
+
 // applyThemePalette restores the stock kit palette, then lays the theme's
 // courtroom_stylesheets.css colors over it. Slots the stylesheet doesn't
 // define keep stock values or derive from defined ones (background from
@@ -4964,7 +4989,7 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 
 	c.Fill(track, ColPanel)
 	thumbY := track.Y + scroll*span/maxScroll
-	col := ColPanelHi
+	col := sliderIdleThumbColor()
 	if c.dragID == id || c.hovering(grab) {
 		col = ColAccent
 	}
@@ -5036,7 +5061,7 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 	if thumbX > track.X { // filled portion left of the thumb reads as "level"
 		c.Fill(sdl.Rect{X: track.X, Y: track.Y, W: thumbX - track.X, H: track.H}, ColPanelHi)
 	}
-	col := ColPanelHi
+	col := sliderIdleThumbColor()
 	if c.dragID == id || c.hovering(grab) {
 		col = ColAccent
 	}
