@@ -126,18 +126,24 @@ func TestSessionLabelReadsBothNameShapes(t *testing.T) {
 	}
 }
 
-// TestBothMessageSeamsFileUnderTheirOwnTab is the wiring catcher. There are two
-// call sites — the live tab's and the parked tab's — and the parked one runs while a
-// DIFFERENT session is live, so a site that read the live session instead of its own
-// would file every backgrounded tab's lines under the foreground tab's log. That is
-// invisible to a unit test of logDetailed, and it is exactly the mistake the old
-// single-argument signature invited.
+// TestBothMessageSeamsFileUnderTheirOwnTab is the wiring catcher — for BOTH IC
+// (logDetailed) and OOC (logDetailedOOC). Each has multiple call sites — the
+// live tab's and at least one parked tab's — and the parked ones run while a
+// DIFFERENT session is live, so a site that read the live session instead of
+// its own would file every backgrounded tab's lines under the foreground
+// tab's log. That is invisible to a unit test of logDetailed/logDetailedOOC
+// alone, and it is exactly the mistake the old single-argument signature
+// invited (F4).
+//
+// logDetailedOOC is walked by this SAME loop rather than a second, parallel
+// test: a copy-pasted AST rule drifts the moment one of the two functions is
+// edited and the other isn't — the mirror-test gap hard rule #11 calls out.
 func TestBothMessageSeamsFileUnderTheirOwnTab(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob the package: %v", err)
 	}
-	seams := 0
+	seams := map[string]int{"logDetailed": 0, "logDetailedOOC": 0}
 	for _, name := range files {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
@@ -145,24 +151,31 @@ func TestBothMessageSeamsFileUnderTheirOwnTab(t *testing.T) {
 		fset, f := parsedFile(t, name)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || callName(call) != "logDetailed" {
+			if !ok {
 				return true
 			}
-			seams++
+			fn := callName(call)
+			if _, tracked := seams[fn]; !tracked {
+				return true
+			}
+			seams[fn]++
 			if len(call.Args) < 3 {
-				t.Errorf("%s:%d — logDetailed must be handed the CALLING tab's session id", name, fset.Position(call.Pos()).Line)
+				t.Errorf("%s:%d — %s must be handed the CALLING tab's session id", name, fset.Position(call.Pos()).Line, fn)
 				return true
 			}
 			sel, ok := call.Args[1].(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "logSession" {
-				t.Errorf("%s:%d — logDetailed's session argument is not a .logSession: the background seam runs while a DIFFERENT tab is live, "+
+				t.Errorf("%s:%d — %s's session argument is not a .logSession: the background seam runs while a DIFFERENT tab is live, "+
 					"so anything but the calling session's own id files a parked tab's lines under the foreground tab's log (F4)",
-					name, fset.Position(call.Pos()).Line)
+					name, fset.Position(call.Pos()).Line, fn)
 			}
 			return true
 		})
 	}
-	if seams < 2 {
-		t.Fatalf("found %d logDetailed call sites, want both (the live tab's and the parked tab's) — one of the message seams stopped transcribing", seams)
+	if seams["logDetailed"] < 2 {
+		t.Errorf("found %d logDetailed call sites, want both (the live tab's and the parked tab's) — one of the IC message seams stopped transcribing", seams["logDetailed"])
+	}
+	if seams["logDetailedOOC"] < 2 {
+		t.Errorf("found %d logDetailedOOC call sites, want at least both (the live tab's and a parked tab's) — one of the OOC message seams stopped transcribing", seams["logDetailedOOC"])
 	}
 }

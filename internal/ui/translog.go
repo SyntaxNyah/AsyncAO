@@ -1,12 +1,17 @@
 package ui
 
-// Detailed transcript logging (opt-in, OFF by default): when enabled, IC
-// messages are appended to a per-server log file — logs/<server>/<date_time>.log
-// beside the exe — AO-style: "[timestamp] showname (char): message" (showname
-// first, the server is the folder so it isn't repeated per line, no area/pipe
-// columns). One file per server per session. All disk I/O runs on a background
-// goroutine per server fed by a bounded channel (rule §2: no synchronous disk I/O
-// on the message path; §17.4: bounded queue), so the message seam never blocks.
+// Detailed transcript logging (opt-in, ON by default since the 2026-08-09
+// flip): when enabled, IC and OOC lines are INTERLEAVED into the same
+// per-server log file — logs/<server>/<date_time>.log beside the exe — AO2
+// style: IC as "[timestamp] showname (char): message"
+// (../AO2-Client/src/chatlogpiece.cpp ChatLogPiece::toString), OOC as
+// "[OOC][timestamp] name: text" (../AO2-Client/src/courtroom.cpp:1932,
+// Courtroom::append_server_chatmessage) — showname first, the server is the
+// folder so it isn't repeated per line, no area/pipe columns. One file per
+// server per TAB SESSION (translogKey). All disk I/O runs on a background
+// goroutine per writer fed by a bounded channel (rule §2: no synchronous disk
+// I/O on the message path; §17.4: bounded queue), so the message seam never
+// blocks.
 
 import (
 	"bufio"
@@ -126,6 +131,29 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	b.WriteString(who)
 	b.WriteString(": ")
 	b.WriteString(m.Message)
+	return b.String()
+}
+
+// oocLogLine formats one OOC transcript line, matching AO2-Client's own OOC
+// log shape (Courtroom::append_server_chatmessage,
+// ../AO2-Client/src/courtroom.cpp:1932: `"[OOC][" + timestamp + "] " + name +
+// ": " + message`): a bracketed "OOC" tag beside the bracketed timestamp,
+// then LINE verbatim — line is whatever pushOOC / the parked-tab seam already
+// composed for the on-screen OOC panel ("name: text" for a real message, a
+// bare "[MOD CALL] …" / "SERVER: …" / "CLIENT: …" line for a system one), so
+// the file always matches what the screen showed rather than a second,
+// independently-derived rendering of it. Pure — unit-tested.
+//
+// Still readable by parseLogWho (logbrowser.go): the literal "[OOC]" tag has
+// no "] " substring of its own (its "]" is immediately followed by "[", never
+// a space), so the first "] " in the result is still the one right after the
+// timestamp, exactly as detailedLogLine's callers expect.
+func oocLogLine(now time.Time, line string) string {
+	var b strings.Builder
+	b.WriteString("[OOC][")
+	b.WriteString(now.Format("2006-01-02 15:04:05"))
+	b.WriteString("] ")
+	b.WriteString(line)
 	return b.String()
 }
 

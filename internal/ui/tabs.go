@@ -636,6 +636,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
 		s.oocSeq++
+		a.logDetailedOOC(s.serverName, s.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
 		// OOC still LOGS, but by default it doesn't bump the unread badge: servers
 		// post auto-messages in OOC (hourly "hydration" reminders, etc.) and a "(1)"
 		// when nobody chatted is just noise. Opt in to count OOC in Settings.
@@ -649,9 +650,11 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	case courtroom.EventModcall:
 		// A modcall on a backgrounded server still alerts the mod (toast +
 		// the tab's OOC log + unread), like the friend signal.
-		s.oocLog = appendCapped(s.oocLog, "[MOD CALL] "+ev.Text, icLogCap)
+		modcallLine := "[MOD CALL] " + ev.Text
+		s.oocLog = appendCapped(s.oocLog, modcallLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line — no name tint
 		s.oocSeq++
+		a.logDetailedOOC(s.serverName, s.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
 		t.unread++
 		a.signalModcall(s.serverName, ev.Text)
 		a.autoClipModcall(s.serverName, s.icLog, ev.Text) // freeze IC context even on a backgrounded server
@@ -693,9 +696,11 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	case courtroom.EventDisconnect:
 		t.dead = true
 		t.deadReason = ev.Text // "Kicked: …" / "Banned: …" — the dialog names it on activation
-		s.oocLog = appendCapped(s.oocLog, "SERVER: disconnected: "+ev.Text, icLogCap)
+		disconnectLine := "SERVER: disconnected: " + ev.Text
+		s.oocLog = appendCapped(s.oocLog, disconnectLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
 		s.oocSeq++
+		a.logDetailedOOC(s.serverName, s.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
 	}
 }
 

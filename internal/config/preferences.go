@@ -8717,9 +8717,10 @@ func (p *AssetPreferences) SetPerAreaScrollback(on bool) {
 }
 
 // DetailedLogOn reports the detailed-logging toggle (ON by default since the
-// 2026-08-09 flip — see defaultDetailedLog): when on, IC/OOC messages are
-// appended to a per-server transcript file with timestamps, area, character name
-// and showname.
+// 2026-08-09 flip — see defaultDetailedLog): when on, IC and OOC lines are
+// both interleaved into one timestamped per-server transcript file (one file
+// per tab session — see internal/ui/translog.go), IC carrying character name
+// and showname; no area/pipe columns.
 func (p *AssetPreferences) DetailedLogOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

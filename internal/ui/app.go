@@ -10613,6 +10613,24 @@ func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
 	}
 }
 
+// logDetailedOOC appends an OOC line to the SAME per-session transcript IC
+// uses — AO2 interleaves OOC into one log file (courtroom.cpp:1932), and so
+// does this: it reuses transcriptFor rather than opening a second writer or
+// file, so OOC inherits the already-solved per-(server, tab) separation for
+// free. No-op when detailed logging is off, same as logDetailed. Called at
+// both message seams (active + background tab) — see logDetailed's doc for
+// why session is the CALLING TAB's sessionState.logSession rather than
+// a.logSession read here: the background seam runs while a DIFFERENT tab is
+// live.
+func (a *App) logDetailedOOC(server string, session int, line string) {
+	if !a.d.Prefs.DetailedLogOn() {
+		return
+	}
+	if w := a.transcriptFor(server, session); w != nil {
+		w.write(oocLogLine(time.Now(), line))
+	}
+}
+
 // transcriptFor returns this TAB SESSION's transcript writer, opening its file
 // (logs/<server>/<date_time>[-<session>].log) on first use. Bounded by
 // transcriptWriterCap so a churn of servers/reconnects can't open unbounded files
@@ -10792,6 +10810,12 @@ func (a *App) pushOOC(line, speaker string) {
 	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
 	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
 	a.oocSeq++ // invalidate the wrapped-lines cache
+	// Every active-tab OOC-ish event (real chat, [MOD CALL], CLIENT auth lines,
+	// [CASE], [SERVER] notices/mute) already funnels through this one function,
+	// same as AO2's single append_server_chatmessage entry point — so this one
+	// call site is the transcript's for the whole channel, "log only what's
+	// shown" (the truncated, post-suppression `line` above, not the raw input).
+	a.logDetailedOOC(a.serverName, a.logSession, line) // detailed transcript (opt-in), this tab's own file
 }
 
 func appendCapped(list []string, line string, cap int) []string {
