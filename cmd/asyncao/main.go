@@ -213,6 +213,17 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer window.Destroy()
+	// mainWindowID is recorded once, right after the window exists, and is
+	// compared against every WINDOWEVENT_CLOSE the run loop receives — see
+	// mainWindowShouldQuit's comment for why this exists at all.
+	mainWindowID, idErr := window.GetID()
+	if idErr != nil {
+		// Unreachable in practice (the window we just created must have an
+		// id), but fail safe: 0 is not a real SDL window id, so a CLOSE
+		// event can never match it and behavior degrades to today's
+		// SDL_QUIT-only quit rather than silently never quitting.
+		mainWindowID = 0
+	}
 	// Clamp the (possibly stale/oversize) saved size to the display we landed on
 	// and recenter — the startup half of the "too big to drag smaller" fix.
 	if di, err := window.GetDisplayIndex(); err == nil {
@@ -447,9 +458,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			if ui.IsWakeEvent(ev) {
 				return // a background doorbell (packet/decode), never user input
 			}
-			switch e := ev.(type) {
-			case *sdl.QuitEvent:
+			if mainWindowShouldQuit(ev, mainWindowID) {
 				running = false
+			}
+			switch e := ev.(type) {
 			case *sdl.DropEvent:
 				// Drag-and-drop import (#73): a .aorec / AO2 .demo dropped on the
 				// window imports into recordings\ and starts playing.
