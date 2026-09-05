@@ -8312,6 +8312,11 @@ func (a *App) sendIC() {
 	// that lands inside another message's area-wide delay window
 	// (area.set_next_msg_delay), so an optimistic clear cost the whole typed
 	// line whenever two people sent at once and the other side won the race.
+	// The echo handler is prefix-aware (issue #56): if the box still starts
+	// with this exact line, only the sent prefix is consumed and whatever the
+	// user typed on top of it during the round trip survives — an unrelated
+	// edit (not a continuation of this line) still survives whole, same as
+	// before.
 	// evidPresent stays armed for the same reason (AO2 resets it on the echo):
 	// a swallowed send must not disarm the evidence you presented.
 	a.icPendingSent = a.icInput
@@ -8364,17 +8369,32 @@ func (a *App) clearPreAfterSend() {
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
-// MyCharID) — the AO2-Client own-echo block in handle_chatmessage. Clear the
-// input only if it still holds exactly what we sent (typing that raced the
-// echo survives), and consume the one-shot evidence-present state. A send the
-// server swallowed never echoes, so everything stays put for an immediate
-// re-Enter.
+// MyCharID) — the AO2-Client own-echo block in handle_chatmessage. Consumes
+// the one-shot evidence-present state unconditionally, and resolves the box
+// with a prefix-aware check (issue #56 — a plain exact-match gate discarded
+// the pending snapshot on ANY edit, including simply continuing to type the
+// next line during the round trip, and the box was then never cleared):
+//   - the box still STARTS WITH the sent line → strip just that prefix,
+//     keeping whatever the user typed on top of it while waiting. An
+//     unchanged box (the box still IS exactly the sent line) is the
+//     zero-length-remainder case of this same rule, so it clears too —
+//     matching AO2-Client's unconditional clear for that case.
+//   - anything else (a genuine, unrelated edit — e.g. the swallowed-message
+//     recovery case) → leave it untouched, exactly as before.
+//
+// A send the server swallowed never echoes, so everything stays put for an
+// immediate re-Enter regardless of which branch a LATER echo would have hit.
 func (s *sessionState) noteOwnICEcho() {
-	if s.icInput == s.icPendingSent {
-		// The echo consumes the line. The IC field's undo history records the
-		// clear at its next draw (fieldhistory.go's out-of-band detector), so
-		// Ctrl+Z still brings the sent line back — with real redo on top.
-		s.icInput = ""
+	if strings.HasPrefix(s.icInput, s.icPendingSent) {
+		// Strip only the part that actually sent; whatever was typed on top
+		// of it during the round trip is real, unsent draft and stays. When
+		// icPendingSent is "" (nothing sent, or an earlier echo already
+		// consumed it) this strips zero characters — a safe no-op, not a
+		// case that needs its own branch. The IC field's undo history
+		// records the clear at its next draw (fieldhistory.go's
+		// out-of-band detector), so Ctrl+Z still brings a fully-cleared
+		// sent line back — with real redo on top.
+		s.icInput = s.icInput[len(s.icPendingSent):]
 	}
 	s.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
