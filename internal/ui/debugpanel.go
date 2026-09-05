@@ -43,7 +43,7 @@ const (
 )
 
 // debugSections are the panel's tabs, indexed by a.debugSection.
-var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log"}
+var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Fonts"}
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
 // or Settings → Power user → Diagnostics).
@@ -110,6 +110,8 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		a.drawDebugCache(body)
 	case 4:
 		a.drawDebugLogSection(body)
+	case 5:
+		a.drawDebugFonts(body)
 	default:
 		a.drawDebugSession(body)
 	}
@@ -479,6 +481,82 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 		}
 		if rowY >= r.Y-debugRowH {
 			c.LabelClipped(r.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
+		}
+		rowY += debugRowH
+	}
+}
+
+// drawDebugFonts renders the font-pick readout (v1.93.0 "funky fonts"
+// report, fontpickdebug.go): what the IC log's own font/colour resolution
+// actually returned for its most recent rows, so a report like "this row
+// rendered in a different font and dimmer than everything else" can be
+// diagnosed from a screenshot of this tab instead of another static-reading
+// pass. See fontpickdebug.go's header for the two unconfirmed candidates
+// this exists to catch.
+func (a *App) drawDebugFonts(r sdl.Rect) {
+	c := a.ctx
+	y := r.Y
+	line := func(s string, col sdl.Color) {
+		c.LabelClipped(r.X, y, r.W, s, col)
+		y += debugLineH
+	}
+
+	themeName := a.themeAppliedName
+	if themeName == "" {
+		themeName = "(none - default AO2 look)"
+	}
+	line("Theme: "+themeName, ColAccent)
+	f := a.themeFonts.e[elemICChatlog]
+	switch {
+	case !f.dressed():
+		line("ic_chatlog: undressed - draws in the client's own font chain", ColTextDim)
+	case f.face == 0:
+		line("ic_chatlog: theme sizes it but names no family - client's chain, theme's point size", ColTextDim)
+	default:
+		name := "(unresolved)"
+		if idx := f.faceIdx(); idx >= 0 && idx < len(a.themeFaceNames) {
+			name = a.themeFaceNames[idx]
+		}
+		line("ic_chatlog font file: "+name, ColText)
+	}
+	y += 4
+
+	listR := sdl.Rect{X: r.X, Y: y, W: r.W, H: r.Y + r.H - y}
+	c.Border(listR, ColPanelHi)
+
+	a.debugFontBuf = a.icFontPickRows(a.debugFontBuf)
+	if len(a.debugFontBuf) == 0 {
+		c.LabelClipped(listR.X+6, listR.Y+6, listR.W-12, "No IC log rows yet.", ColTextDim)
+		return
+	}
+	if !c.ctrlHeld {
+		a.debugFontScroll -= c.WheelIn(listR) * scrollStepPx
+	}
+	contentH := int32(len(a.debugFontBuf)) * debugRowH
+	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
+	a.debugFontScroll = c.VScrollbar("debugfonts", track, a.debugFontScroll, contentH, listR.H)
+	clipPrev, clipHad := c.pushClip(listR)
+	defer c.popClip(clipPrev, clipHad)
+	rowW := listR.W - scrollBarW - 12
+	rowY := listR.Y - a.debugFontScroll
+	for i := range a.debugFontBuf {
+		if rowY > listR.Y+listR.H {
+			break
+		}
+		if rowY >= listR.Y-debugRowH {
+			rec := a.debugFontBuf[i]
+			col, flag := ColText, ""
+			switch {
+			case rec.shared && !rec.covered:
+				col, flag = ColDanger, "  <- SHARED EMBEDDED FACE, uncovered"
+			case !rec.covered:
+				col = ColTierYellow
+			}
+			c.LabelClipped(listR.X+6, rowY+1, rowW,
+				fmt.Sprintf("[%s %d/%d] cov=%-5v col=#%02X%02X%02X (%s) %q%s",
+					rec.setName, rec.slot, rec.slotOf, rec.covered,
+					rec.color.R, rec.color.G, rec.color.B, rec.colorSrc, rec.text, flag),
+				col)
 		}
 		rowY += debugRowH
 	}

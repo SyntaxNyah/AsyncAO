@@ -1676,10 +1676,16 @@ type sessionState struct {
 	showCMPanel        bool // the separate CM (area control) panel is open
 	// Debug panel (Extras → Debug): sectioned diagnostics view (#333 packet inspector + perf + log).
 	showDebugPanel bool
-	debugSection   int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Log
+	debugSection   int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Cache · 4 Log · 5 Fonts
 	debugPktScroll int32       // Packets list scroll offset
 	debugLogScroll int32       // Log list scroll offset
 	debugPktBuf    []packetRec // reused recent()-into buffer (alloc-free draw)
+	// Fonts tab (fontpickdebug.go, the "funky fonts" readout): the resolved
+	// font/colour for the recent IC log rows, driven through the same calls
+	// drawICLogList makes. debugFontBuf is reused across frames like
+	// debugPktBuf — built and read ONLY while this tab is open.
+	debugFontScroll int32
+	debugFontBuf    []fontPickRow
 	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
 	showFxPicker bool
 	// showICColorWheel floats the free-hex colour wheel (v1.52.0) anchored to
