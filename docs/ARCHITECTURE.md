@@ -28,6 +28,50 @@ and only on this thread. The decode pool outputs plain `image.RGBA`; texture
 creation, destruction (via the bounded destroy queue) and font rasterization
 all happen here.
 
+### The second window (`render.PreviewWindow`, v1.93.0)
+
+The detached emote preview is a real second `sdl.Window` + `sdl.Renderer`,
+opened on demand and closed by its own titlebar X. It runs on the *same*
+locked thread as the main window: SDL2 permits many windows from one thread
+and permits none from a second thread, so rule zero is unchanged.
+
+Three invariants, the first two measured on this box with a throwaway
+two-window probe that drove the real title-bar-X path via
+`PostMessage(hwnd, WM_CLOSE)` rather than `SDL_DestroyWindow`:
+
+1. **Closing a non-last window posts only `WINDOWEVENT_CLOSE`, never
+   `SDL_QUIT`,** and SDL does not destroy the window for you. The app must.
+2. **Closing the *main* window while a second window is open also posts no
+   `SDL_QUIT`.** A single-window app quits because SDL posts `SDL_QUIT` on the
+   *last* window's close, so the moment a second window can exist the X button
+   would leave the client running invisibly behind an orphan. `cmd/asyncao`'s
+   `mainWindowShouldQuit` (quit.go) therefore treats `WINDOWEVENT_CLOSE`
+   carrying the main window's id as a quit. Deleting that id check is the
+   failure mode; `cmd/asyncao/quit_test.go` is what goes red.
+3. **Every event is routed by `WindowID` before it reaches the UI**
+   (`cmd/asyncao/previewroute.go`, `dispatchEvent`). This is not cosmetic:
+   `ui.Ctx.HandleEvent` writes raw `MouseMotionEvent.X/Y` straight into the
+   shared `c.mouseX/c.mouseY`, and SDL's mouse coordinates are window-client
+   relative, so an ungated second window's motion would alias onto main-window
+   hit-testing and produce phantom hovers and clicks.
+
+Closed is the default and must stay free: `PreviewWindow.ID()` returns 0 when
+closed (never a real SDL id), so the routing gate costs one `uint32` compare,
+and `syncPreviewWindow`/`Present` are zero-allocation while closed
+(`TestSyncPreviewWindowClosedIsZeroAlloc`, plus closed-vs-open benchmarks).
+Two vsync'd `direct3d` renderers were measured not to serialize (2560x1440 @
+165 Hz: 5.80 ms/frame main-only, 5.52 ms/frame with both), so the preview
+renderer uses `PRESENTVSYNC` too.
+
+The preview's texture cannot be borrowed from the main `TextureStore` (an SDL
+texture belongs to the renderer that made it, and the decoded `image.RGBA` is
+released after upload). It is fed by reading the already-uploaded frame back
+off the *main* renderer through a scratch render target (`readTexturePixels`)
+and handing those pixels to the second renderer. Re-entering
+`internal/assets` for a second decode would not work anyway: `Manager`'s
+T1-residency short-circuit makes a repeat `Prefetch` for a resident asset a
+silent no-op with no decode event to catch. One feed per pick, not per frame.
+
 ## Frame pacing & the event-driven loop
 
 The main loop is not vsync-bound. Each pass computes a pacing budget from

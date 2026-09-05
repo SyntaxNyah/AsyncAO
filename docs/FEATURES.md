@@ -1684,6 +1684,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   it anywhere on screen (it stays put across previews) if it covers something.
   (The courtroom **stage** has its own zoom: **Ctrl+wheel** zooms toward the
   cursor, Ctrl+drag pans — the "hyperfocus" camera.)
+- **Pop the preview out into its own OS window** (v1.93.0): the pop-out button in
+  the preview's top chrome detaches the sprite into a **real second window** with
+  its own titlebar, freely draggable **outside AsyncAO's borders** and onto a
+  second monitor. Its position and size persist across launches (clamped back to
+  an existing display if you unplug the monitor it was on). The in-app box stops
+  drawing while detached, so there is exactly one preview on screen; **closing the
+  detached window is the re-attach gesture**. It follows every emote pick through
+  the same `followPinnedPreview` path the in-app box uses, and shows a **still**
+  per pick rather than playing the animation. Closed costs nothing measurable:
+  event routing is one `uint32` compare and the per-frame touch points are
+  zero-allocation while closed (`TestSyncPreviewWindowClosedIsZeroAlloc`).
 - **Sprite hover-previews are configurable** (Settings → General): the preview
   pop-up is **ON by default** with a **5 s hover dwell** you tune with a slider
   (0.5–15 s), or switch off entirely.

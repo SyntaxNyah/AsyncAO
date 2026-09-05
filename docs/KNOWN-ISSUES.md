@@ -84,6 +84,100 @@ the same widget: `outlined` / `outline_color` / `outline_width`
 (`courtroom.cpp:1239-1256`), which `FontSpec` does not model at all. If theme
 typography is picked up again, that is the better first target.
 
+## Theme generator tiles are still resampled at fractional UI scale
+
+v1.93.0 made text device-exact (`MessageRaster.DrawScaled` wired to log lines,
+shownames, text fields and reaction badges, gated by `internal/ui/scaleblur_test.go`).
+The procedural half was investigated in the same release and **deliberately not
+attempted**: the 17 generators in `internal/ui/gentex.go` still raster at logical
+size and get stretched by the ambient `ren.SetScale`, so a themed courtroom whose
+panels come from a generator looks soft at any scale other than 100%. Imported
+art (sprites, backgrounds, `[media]` images) has no higher-resolution source and
+is out of scope for this class of fix entirely.
+
+Four findings, so this is not re-attempted from the wrong premise:
+
+1. **The cache key excludes size on purpose.** `TestGeneratorKeyIsResizeInvariant`
+   (`internal/ui/gentex_test.go`) pins that `theme.GeneratorSpec.Hash()` carries no
+   `<w>x<h>`, in its own words because a dimensioned key "would make every resize a
+   full re-raster of every generator element, on the theme-apply goroutine, while
+   the user is still dragging". Device scale changes on that same trigger
+   (`SetAutoScaleFromWindow` fires on window resize when auto-scale is on, which is
+   the reported repro). Dimensioning the key re-opens exactly the storm that test
+   exists to prevent; a rebuild-in-place under the *unchanged* content address is
+   the shape that does not.
+2. **The DoS bound and the byte budget collide, with no free constant.**
+   `theme.GenTileMaxPx` = 256 logical px bounds a tile at 256 KiB and
+   `render.ThemeGenCap` = 12 bounds the count, and `TestGeneratorTileNeverExceedsMaxPx`
+   asserts the 3 MiB worst case stays under `ThemeMediaByteCap(...)/2`. `TexBudgetMinMiB`
+   = 32 is user-reachable, giving a 12 MiB cap. A naive `cap × devScale` at the
+   200% ceiling makes the worst case 12 MiB, the entire floor, leaving nothing for
+   the up to 24 imported `[media]` images sharing it. So a theme that fits at 100%
+   could start refusing tiles purely because the user raised the scale slider: a new
+   failure mode invented by the fix. Either the bound tightens (themes visibly lose
+   tiles at high scale) or it is weakened (forbidden). It needs a scale-aware
+   admission model that *chooses* a lower device tile size under budget pressure,
+   which does not exist.
+3. **There is no rebuild-on-scale-change trigger at all.** `themeArtSig`
+   (`internal/ui/thememedia.go`) signs kind/media/generator/params and never scale;
+   `planElements` takes no scale parameter.
+4. **The bake and the draw both hard-code logical insets.** `paintElementNineSlice`
+   (`internal/ui/themeelements.go`) reads `e.slice[0..3]` as source-pixel insets
+   against `e.page.W/H`; if tile dimensions move with device scale those insets must
+   scale with them or 9-sliced corners come out wrong. `paintElementTiled`'s repeat
+   count, `paintElementFitted`'s aspect math and `paintElementBlit`'s rotation each
+   need the same coordinated inverse-scale treatment. Text needed one bracket around
+   one glyph-run blit; this needs four draw functions plus the bake.
+
+Closing this means its own release: scale-aware admission with graceful
+degradation, a debounced rebuild under the unchanged key, the four `paintElement*`
+rewrites, and new tests that *supplement* rather than weaken the two pins above.
+
+## Reported: a chat-log row draws in a stray face and/or dim, not reproduced
+
+A user reported the IC log rendering wrong. The screenshot shows **two** anomalies,
+not one: one row in a **monospace face and dim, timestamp included**, a second row
+dim in the **normal proportional face**, and every other row normal. The text is
+pure ASCII, which is what makes it hard: no fallback tier should be reached at all.
+Three investigation passes have failed to reproduce it, so v1.93.0 shipped a
+**diagnostic instead of a fix** (Debug panel > Fonts, `internal/ui/fontpickdebug.go`),
+which reports the face, tier, coverage verdict and colour source for each visible
+row by calling the same `elemFontFor` / `coversFace` / `setIndexOf` the draw calls.
+`TestICFontPickRowsReadsTheRealCoverageDecisionNotAGuess` pins that it reads the
+real pick rather than re-deriving one, since a readout that guesses would report
+"correct" while the draw goes wrong.
+
+Ruled out, do not re-chase:
+
+- **Ghosting.** `ghosted(e)` is `e >= g.entry` (`ghosttext.go`), monotonic to the
+  tail, so once an entry is ghosted every later entry must be. The screenshot has
+  normal rows *after* both dim rows. Ghosting cannot be the mechanism.
+- **`themeGenericFontClasses`.** `mono` / `monospace` / `serif` are explicit no-ops
+  in AsyncAO and fall back to the client's own chain, so a theme writing
+  `ic_chatlog_font = mono` is not it.
+- **The `drawLogLineNamed` fall-through double-draw**, fixed in `f922bfd`.
+- **The `setOf` / `coverRunes` aliasing hazard** as a standalone cause: structurally
+  inert for covered ASCII.
+
+Two candidates remain, and they compose into one story:
+
+1. **Shared-pointer aliasing.** `buildSet` shares `Ctx.font` / `Ctx.fontDev` as the
+   embedded last-resort face across every `fontSet` built at 100%/100% with no
+   custom chrome font. `setIndexOf` then reverse-resolves that shared pointer by a
+   first-match linear scan over `setPairs()`, so a raster asking "which set owns this
+   pointer" silently gets `chatSet` even when the real call was for `elemICChatlog`.
+2. **The census tier has no style discrimination.** `fontCensus.find()`
+   (`fontcensus.go`) sorts candidates by `(isStyledCut, fileSize)`: regular cuts
+   first, then **smallest file wins**, with zero monospace-vs-proportional awareness.
+   A small system console font ranks very well for basic Latin, and once loaded it is
+   appended to *every* set's chain unconditionally. If anything upstream (candidate 1)
+   wrongly reports an ASCII rune uncovered, `noteUncovered` queues it and this is what
+   answers.
+
+A stock install has only the single embedded Latin face, so no stray face is even
+reachable. The reporter is therefore on a **themed** install with its own
+`ic_chatlog` font, which is the precondition any repro attempt needs.
+
 ## A missing BACKGROUND still holds the previous room's, unlike the desk
 
 The desk layer releases when its image is conclusively missing — that was issue

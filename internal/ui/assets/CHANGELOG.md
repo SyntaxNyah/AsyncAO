@@ -4,6 +4,58 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.93.0 — 2026-09-05
+
+Reconnecting keeps your log, the emote preview can leave the window, and areas
+show their status on the player tab.
+
+- **Reconnecting to the same server brings your log back.** Every redial wiped
+  the session first, so you came back to an empty chatbox with no way to read
+  what you missed. Leaving on purpose still starts you blank.
+- **The emote preview pops out into its own window.** There is a new button in
+  the preview's top corner. It becomes a real window you can drag anywhere,
+  including onto a second monitor, and it reopens where you left it. Close that
+  window to put the preview back in the client. It shows a still of each emote,
+  not the animation.
+- **A pinned preview follows every emote you click.** It used to stay stuck on
+  whichever emote you opened it on.
+- **The player tab shows each area's status.** Casing, RP, looking for players,
+  locked, spectator, and who the CM is, in the colours the Areas tab uses.
+- **OOC is saved to your log files.** IC was being written and OOC was not, so
+  the transcript was missing half of what happened.
+- **Names in the log line up with their messages.** Bold names were measured at
+  regular weight, so a name and its message ran together on screen, and
+  selecting a line landed to the right of the text.
+- **Text is sharper at UI scales between 100% and 200%.** Log lines, shownames,
+  text fields and floating reaction badges are drawn at your screen's real pixel
+  size now instead of being drawn small and stretched.
+
+Crystalwarrior's reports:
+
+- **Sprites in subfolders stop flashing a missing-file placeholder.** When the
+  client dropped one from memory to free space, the reload only checked the old
+  location, so art that exists came back missing until you switched emote. (#70)
+- **The idle slider and the scrollbar thumb are visible against their track.**
+  They sat 16 shades apart where the client's own readability rule asks for 48.
+  Every built-in preset failed it, high contrast included. (#50)
+- **The IC box clears when you send, even if you kept typing.** It waited for
+  the server to echo your line and only cleared on an exact match, so typing
+  during the round trip left your sent text sitting in the box. (#56)
+
+Still open, so you know where it stands:
+
+- **Panels a theme draws with its own pattern generators are still soft** at any
+  UI scale other than 100%. The text fix above does not reach them and they need
+  their own pass. Character art, backgrounds and imported images have no sharper
+  original to draw from, so they cannot be fixed this way at all.
+- **The odd fonts and dim rows in the chat log are not solved.** Two rounds of
+  looking have not reproduced it. This build adds a Fonts tab to the debug panel
+  (F8) that shows which font and colour each visible line actually resolved. If
+  you see it happen, open that tab and send a screenshot of it and the log.
+
+Thanks to CS for the first group of reports, and to Crystalwarrior for the
+second.
+
 ## v1.92.0 — 2026-08-30
 
 Using your own AO files from a folder on your computer is now one button, and
