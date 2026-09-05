@@ -1744,16 +1744,24 @@ type icWrapLine struct {
 // width−logWrapIndentPx, so an indented row can never overflow the column.
 const logWrapIndentPx = 14
 
+// icRowIsEntryStart reports whether display row li of a.icWrap begins a NEW
+// icLog entry, as opposed to a wrap continuation of the row above (IC entries
+// are single paragraphs, so "continuation" and "same entry as the row above"
+// are the same fact). This is the ONE test for that fact: logRowIndent's
+// hanging indent below, drawICLogList's per-speaker name-tint gate, and
+// logRowNameStyle's selection-side twin (logselect_wire.go) all ask it
+// instead of re-deriving the entry-boundary comparison three separate times.
+func (a *App) icRowIsEntryStart(li int) bool {
+	return li <= 0 || li >= len(a.icWrap) || a.icWrap[li-1].entry != a.icWrap[li].entry
+}
+
 // logRowIndent is display row li's draw indent in log `which`: a wrap
 // continuation row indents by logWrapIndentPx, a message's first row (and any
 // row without wrap data) sits at the column start. The selection hit-math and
 // highlight use the same offset, so clicks land exactly on what's drawn.
 func (a *App) logRowIndent(which, li int) int32 {
 	if which == logSelIC {
-		// IC entries are single paragraphs: a row is a continuation exactly
-		// when it shares its entry with the row above (the filtered wrap keeps
-		// an entry's rows adjacent).
-		if li > 0 && li < len(a.icWrap) && a.icWrap[li].entry == a.icWrap[li-1].entry {
+		if !a.icRowIsEntryStart(li) {
 			return logWrapIndentPx
 		}
 		return 0

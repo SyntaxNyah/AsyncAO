@@ -3578,7 +3578,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// Per-speaker name colours (read once): tint each entry's name prefix on its
 	// first wrapped row. Short-circuit so the default OFF path adds nothing.
 	nameColorsOn := a.d.Prefs.NameColorsOn()
-	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemICChatlog) // read once per frame, passed per line (#39: ic_chatlog_bold)
+	boldNames := a.logRowBoldPref(logSelIC) // read once per frame, passed per line (#39: ic_chatlog_bold)
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -3680,7 +3680,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// wrapped row (the shared helper falls back to a plain draw for
 			// system/evidence lines or when a long name wrapped off this row).
 			lineSpeaker := ""
-			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
+			if nameColorsOn && a.icRowIsEntryStart(ri) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
 			// Not said yet → faint. AFTER the link-hover override deliberately: a
@@ -3781,9 +3781,9 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx)                        // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()                              // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemServerChatlog) // read once per frame, passed per line
+	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -4005,9 +4005,9 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx)                        // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()                              // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemServerChatlog) // read once per frame, passed per line
+	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
