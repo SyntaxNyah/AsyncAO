@@ -4201,18 +4201,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 				}
 				detail = fmt.Sprintf("%d %s", info.Players, unit)
 			}
-			if info.Status != "" {
-				detail += "  ·  " + info.Status
-			}
-			switch strings.ToUpper(info.Lock) {
-			case "LOCKED":
-				detail += "  ·  locked"
-			case "SPECTATABLE":
-				detail += "  ·  spectatable"
-			}
-			if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
-				detail += "  ·  CM: " + info.CM
-			}
+			detail += arupStatusText(info) // status/lock/CM — shared with the Players tab, see arupStatusText
 		}
 		out = append(out, areaWrapRow{
 			idx:         i,
@@ -4224,6 +4213,48 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 	}
 	m.rows, m.seq, m.query, m.cardW, m.pct, m.gen = out, a.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
 	return m.rows
+}
+
+// arupStatusText renders one area's live ARUP status/lock/CM fields
+// (courtroom.AreaInfo, filled field-by-field 0=players/1=status/2=CM/3=lock by
+// the ARUP case in session.go, matching AO2-Client's arup_modify) as a
+// "  ·  STATUS  ·  locked  ·  CM: Phoenix"-style suffix: one "  ·  "-joined
+// segment per present field, in ARUP field order, and "" (not even a stray
+// separator) when nothing has been reported at all — info's fields all sit at
+// their "unknown" zero value, or info itself is nil (the area index is out of
+// range, e.g. a partial snapshot mid-connect).
+//
+// The leading "  ·  " on a non-empty result is deliberate: every caller glues
+// this onto a headline it already has (the Areas tab's population count in
+// areaWrapped, the Players tab's headcount in drawAreaHeaderRow) rather than
+// knowing in advance which fields are set — see areaWrapped above and
+// drawAreaHeaderRow in playerlist.go, the two production call sites
+// TestArupStatusTextSharedAcrossAreaAndPlayerTabs pins. A caller with
+// nothing else on the line (drawCurrentAreaStatusStrip) trims it back off.
+//
+// AsyncAO deliberately keeps its own simplified status colour buckets
+// (areaStatusColor below) rather than adding AO2-Client's full
+// LFP/CASING/RP/GAMING/RECESS 5-way split (courtroom.cpp:1858-1877) as a
+// SECOND vocabulary for the Players tab — one status vocabulary across both
+// tabs beats upstream parity here.
+func arupStatusText(info *courtroom.AreaInfo) string {
+	if info == nil {
+		return ""
+	}
+	detail := ""
+	if info.Status != "" {
+		detail += "  ·  " + info.Status
+	}
+	switch strings.ToUpper(info.Lock) {
+	case "LOCKED":
+		detail += "  ·  locked"
+	case "SPECTATABLE":
+		detail += "  ·  spectatable"
+	}
+	if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
+		detail += "  ·  CM: " + info.CM
+	}
+	return detail
 }
 
 // areaCountRowH / areaCountRowLabelOffY size the bare "shown / total" line that

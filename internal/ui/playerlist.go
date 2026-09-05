@@ -27,6 +27,11 @@ const (
 	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC) — actions live in the … menu, so rows never grow past the icon
 	playerIconSz  = int32(38)
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
+	// currentAreaStatusStripH is the flat-roster (/ga) current-area ARUP status
+	// line's fixed height: one text row plus a hair of top padding, the same
+	// "one dim readout line" sizing as areaCountRowH (screens.go) uses for the
+	// Areas tab's own bare counter row.
+	currentAreaStatusStripH = int32(20)
 )
 
 // areaJumpFollowWindow is how long a "click to jump →" keeps re-nudging the
@@ -287,6 +292,20 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	r.Y += plan.h
 	r.H -= plan.h
+
+	// The flat single-area (/ga) roster has no per-area header row to carry the
+	// area's ARUP status (playerRosterRows never synthesizes one for a single
+	// area — TestPlayerRosterRowsFlat pins "no group headers"), so give it one
+	// always-visible, non-scrolling line of its own instead, between the
+	// toolbar and the scrollable rows. A /gas roster already shows this text
+	// per area via drawAreaHeaderRow, so this line is skipped there (reusing
+	// `multiArea`, already computed above for the Rooms button — one
+	// rosterMultiArea() call per frame, not two).
+	if !multiArea {
+		a.drawCurrentAreaStatusStrip(sdl.Rect{X: r.X, Y: r.Y, W: r.W - scrollBarW - 6, H: currentAreaStatusStripH})
+		r.Y += currentAreaStatusStripH
+		r.H -= currentAreaStatusStripH
+	}
 
 	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
@@ -660,33 +679,50 @@ func (a *App) currentSpeakerName() string {
 	return ""
 }
 
+// areaInfoByName returns the live ARUP record for the named area, matched
+// against a.sess.Areas by name (the same list ARUP fills a.sess.AreaInfo
+// parallel to, by index — session.go's ARUP handler). ok is false when there
+// is no session, no area has that name, or the index is out of range for
+// AreaInfo (a partial snapshot mid-connect).
+//
+// The single "name → *AreaInfo" lookup for the whole package: curAreaPlayers
+// below and drawAreaHeaderRow / drawCurrentAreaStatusStrip (both read it FRESH
+// every frame, never memoized — see the staleness note on drawAreaHeaderRow)
+// all go through this one scan rather than three copies of it.
+func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
+	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
+		return nil, false
+	}
+	for i, nm := range a.sess.Areas {
+		if nm == name {
+			if i >= len(a.sess.AreaInfo) {
+				return nil, false
+			}
+			return &a.sess.AreaInfo[i], true
+		}
+	}
+	return nil, false
+}
+
 // curAreaPlayers returns the live ARUP head-count for the area we're in (matched
 // by name; area 0 on a fresh join before any area click). ok=false when unknown.
 func (a *App) curAreaPlayers() (int, bool) {
 	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
 		return 0, false
 	}
-	idx := -1
-	for i, name := range a.sess.Areas {
-		if name == a.curArea {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		if a.curArea != "" { // we've navigated, but the name didn't match the list
+	var info *courtroom.AreaInfo
+	if a.curArea == "" {
+		info = &a.sess.AreaInfo[0] // fresh join, no area click yet: assume the spawn area (index 0)
+	} else {
+		var ok bool
+		if info, ok = a.areaInfoByName(a.curArea); !ok { // navigated, but the name didn't match the list
 			return 0, false
 		}
-		idx = 0 // fresh join: assume the spawn area
 	}
-	if idx >= len(a.sess.AreaInfo) {
+	if info.Players < 0 { // -1 = server hasn't reported it
 		return 0, false
 	}
-	n := a.sess.AreaInfo[idx].Players
-	if n < 0 { // -1 = server hasn't reported it
-		return 0, false
-	}
-	return n, true
+	return info.Players, true
 }
 
 // cmNameSet is the lowercased set of case-master names across all areas (ARUP
@@ -896,8 +932,72 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	// the name rows left the panel changing in halves — the names moved and the
 	// headers above them did not, which reads as the setting not working at all
 	// rather than as working on some of it.
-	c.LabelClippedFont(a.elemFont(elemPlayerList, a.playerPct), r.X+8, r.Y+6, r.W-132,
-		name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", nameCol)
+	font := a.elemFont(elemPlayerList, a.playerPct)
+	base := name + "  ·  " + strconv.Itoa(hr.count) + " player(s)"
+	maxW := r.W - 132
+	c.LabelClippedFont(font, r.X+8, r.Y+6, maxW, base, nameCol)
+
+	// ARUP status/lock/CM (the user's ask: surface "casing, spectator, RP,
+	// Locked, gaming" in the Players tab, not just the separate Areas tab).
+	// Looked up LIVE here, every frame, via areaInfoByName — NEVER folded into
+	// rosterRow or memoized alongside playerRosterRows, whose cache key is
+	// rosterStamp()/areaListAt, not areaInfoSeq: an ARUP-only change (a mod
+	// locks this area, nobody joins or leaves) would not invalidate that memo
+	// and a baked-in string would go stale silently.
+	//
+	// arupStatusText and the colour buckets below are the Areas tab's own
+	// (screens.go) — reused, not reinvented, so the two tabs share one status
+	// vocabulary (TestArupStatusTextSharedAcrossAreaAndPlayerTabs pins both
+	// callers).
+	if info, ok := a.areaInfoByName(hr.area); ok {
+		if extra := arupStatusText(info); extra != "" {
+			extraCol := ColTextDim
+			switch {
+			case strings.EqualFold(info.Lock, "LOCKED"):
+				extraCol = areaLockedBorder
+			case info.Status != "" && !strings.EqualFold(info.Status, "IDLE"):
+				extraCol = areaStatusColor(info.Status)
+			}
+			if usedW, ok := c.fontTextWidth(font, base); ok && usedW < maxW {
+				c.LabelClippedFont(font, r.X+8+usedW, r.Y+6, maxW-usedW, extra, extraCol)
+			}
+		}
+	}
+}
+
+// drawCurrentAreaStatusStrip draws the flat single-area (/ga) roster's own ARUP
+// status readout, above the scrollable rows: the current area's status/lock/CM
+// (courtroom.AreaInfo, via areaInfoByName), read LIVE every frame — same
+// staleness rule as drawAreaHeaderRow: never cached alongside a memoized roster
+// row, since playerRosterRows/the roster memo does not key on areaInfoSeq.
+//
+// A no-op (blank strip) when there's no session, the area name doesn't match
+// (a mid-transfer race), or ARUP simply hasn't reported anything notable yet —
+// the common case before a server's first ARUP burst, matching how the Areas
+// tab degrades (an empty detail block, not placeholder text).
+func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
+	c := a.ctx
+	info, ok := a.areaInfoByName(a.myAreaName())
+	if !ok {
+		return
+	}
+	extra := arupStatusText(info)
+	if extra == "" {
+		return
+	}
+	col := ColTextDim
+	switch {
+	case strings.EqualFold(info.Lock, "LOCKED"):
+		col = areaLockedBorder
+	case info.Status != "" && !strings.EqualFold(info.Status, "IDLE"):
+		col = areaStatusColor(info.Status)
+	}
+	// arupStatusText's leading "  ·  " is meant to follow a headline (a name, a
+	// headcount) that every OTHER caller already has on the same line; alone on
+	// its own strip that separator would just be an orphaned leading dot, so
+	// trim exactly the one leading occurrence back off.
+	text := strings.TrimPrefix(extra, "  ·  ")
+	c.LabelClippedFont(a.elemFont(elemPlayerList, a.playerPct), r.X, r.Y+3, r.W, text, col)
 }
 
 // jumpToArea transfers us to area by name (AO switches areas through the music
