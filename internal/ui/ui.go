@@ -796,6 +796,13 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 // SetWindow attaches the SDL window for attention requests (FlashWindow).
 func (c *Ctx) SetWindow(win *sdl.Window) { c.win = win }
 
+// MousePos returns this frame's logical cursor position — the same
+// coordinates every widget's hit-testing consults. Exported so a caller
+// outside this package can observe the shared cursor state (e.g. proving a
+// second window's input never reached it) without duplicating HandleEvent's
+// own coordinate math.
+func (c *Ctx) MousePos() (x, y int32) { return c.mouseX, c.mouseY }
+
 // WindowFocused reports whether the window currently has input focus and isn't
 // minimised — used to gate desktop (OS) toasts to "you're tabbed away" only (#M4). A nil
 // window (headless tests) reads as focused, so tests never toast. Render thread only.

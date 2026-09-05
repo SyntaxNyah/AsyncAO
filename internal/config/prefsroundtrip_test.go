@@ -195,6 +195,52 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPreviewWindowRectRoundTrips is the detached emote-preview window's
+// persisted position/size (v1.93.0 preview-window-wire). The whole point of
+// saving it is "reopens where the user left it" (their own stated workflow:
+// "I usually put previews somewhere out of the way") — so it must survive a
+// restart, and a NEGATIVE x/y (a window dragged onto a monitor to the left of
+// or above the primary one) must round-trip too, not just get clamped to 0
+// somewhere in the pipeline.
+func TestPreviewWindowRectRoundTrips(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+
+	if _, _, _, _, ok := p.PreviewWindowRect(); ok {
+		t.Fatal("a fresh install must report no saved preview window rect")
+	}
+
+	p.SetPreviewWindowRect(-300, 50, 420, 360)
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+
+	back := loadPrefs(t, path)
+	x, y, w, h, ok := back.PreviewWindowRect()
+	if !ok {
+		t.Fatal("the saved rect did not load back (ok=false)")
+	}
+	if x != -300 || y != 50 || w != 420 || h != 360 {
+		t.Errorf("rect after reload = (%d,%d,%d,%d), want (-300,50,420,360)", x, y, w, h)
+	}
+
+	// A rect of exactly (0,0,0,0) is itself a legitimate save (top-left of the
+	// primary display, e.g. a 0-sized restore never actually reached) and must
+	// be distinguished from "never saved" by the Valid flag, not by the zero
+	// values themselves.
+	back.SetPreviewWindowRect(0, 0, 0, 0)
+	if err := back.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	x, y, w, h, ok = loadPrefs(t, path).PreviewWindowRect()
+	if !ok {
+		t.Fatal("an explicit (0,0,0,0) save must still load back as valid")
+	}
+	if x != 0 || y != 0 || w != 0 || h != 0 {
+		t.Errorf("rect after an all-zero reload = (%d,%d,%d,%d), want all zero", x, y, w, h)
+	}
+}
+
 // TestPanelFontsRoundTrip: these are eight separate settings a user tunes once
 // and expects to keep. Losing them on restart would be worse than not having the
 // feature — they would have to be re-typed every launch.

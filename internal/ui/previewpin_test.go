@@ -14,26 +14,35 @@ import (
 // TestPreviewChromeRectsAreDisjointAndInsideTheFrame pins the shared rect helpers.
 // The close button's rect used to be written literally TWICE — once in the draw
 // and once in the input handler — which is one edit away from a control whose
-// pixels and hit box disagree.
+// pixels and hit box disagree. Extended for the pop-out button (v1.93.0
+// preview-window-wire) rather than left behind it: a third chrome slot is
+// exactly the kind of addition that silently overlaps an existing one if
+// nothing re-checks the whole row.
 func TestPreviewChromeRectsAreDisjointAndInsideTheFrame(t *testing.T) {
 	for _, frame := range []sdl.Rect{
 		{X: 0, Y: 0, W: 200, H: 240},
 		{X: 613, Y: 87, W: 331, H: 420},
 		{X: 4, Y: 4, W: 80, H: 100}, // the narrowest the box ever gets
 	} {
-		pin, closeB := previewPinRect(frame), previewCloseRect(frame)
-		if _, hit := pin.Intersect(&closeB); hit {
-			t.Errorf("frame %+v: pin %+v overlaps close %+v — one click would fire both", frame, pin, closeB)
-		}
-		for name, r := range map[string]sdl.Rect{"pin": pin, "close": closeB} {
-			if r.X < frame.X || r.X+r.W > frame.X+frame.W || r.Y < frame.Y || r.Y+r.H > frame.Y+frame.H {
-				t.Errorf("frame %+v: %s %+v is outside the box", frame, name, r)
+		detach, pin, closeB := previewDetachRect(frame), previewPinRect(frame), previewCloseRect(frame)
+		slots := map[string]sdl.Rect{"detach": detach, "pin": pin, "close": closeB}
+		for aName, aR := range slots {
+			for bName, bR := range slots {
+				if aName == bName {
+					continue
+				}
+				if _, hit := aR.Intersect(&bR); hit {
+					t.Errorf("frame %+v: %s %+v overlaps %s %+v — one click would fire both", frame, aName, aR, bName, bR)
+				}
+			}
+			if aR.X < frame.X || aR.X+aR.W > frame.X+frame.W || aR.Y < frame.Y || aR.Y+aR.H > frame.Y+frame.H {
+				t.Errorf("frame %+v: %s %+v is outside the box", frame, aName, aR)
 			}
 		}
-		// The name strip's reserve must actually cover both slots, or a long emote
-		// name runs under the chrome.
-		if got := previewChromeW; got < (closeB.X+closeB.W)-pin.X {
-			t.Errorf("previewChromeW = %d, too small for the two slots spanning %d px", got, (closeB.X+closeB.W)-pin.X)
+		// The name strip's reserve must actually cover all three slots, or a long
+		// emote name runs under the chrome.
+		if got := previewChromeW; got < (closeB.X+closeB.W)-detach.X {
+			t.Errorf("previewChromeW = %d, too small for the three slots spanning %d px", got, (closeB.X+closeB.W)-detach.X)
 		}
 	}
 }

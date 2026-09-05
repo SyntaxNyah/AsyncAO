@@ -371,7 +371,14 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer uiCtx.Destroy()
-	uiCtx.SetWindow(window)  // modcall/case-alert taskbar flashing
+	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
+	// preview is the detachable emote-preview window: closed (nil sdl.Window)
+	// until the user's own pop-out toggle opens it (internal/ui's
+	// toggleDetachPreview, wired below via Deps.Preview) — see
+	// render.PreviewWindow's doc for the "closed = free" contract
+	// dispatchEvent and the render loop's Present call below both rely on.
+	preview := render.NewPreviewWindow()
+	defer preview.Close()
 	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
 
 	// Discord Rich Presence: stdlib-only local IPC, fully optional at
@@ -394,6 +401,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Viewport:         viewport,
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
+		Preview:          preview,
 		Presence:         pres,
 		MasterURL:        masterURL,
 		ConfigQuarantine: configQuarantine,
@@ -461,6 +469,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			if mainWindowShouldQuit(ev, mainWindowID) {
 				running = false
 			}
+			// The preview/main routing gate (see dispatchEvent's doc for the
+			// coordinate-aliasing hazard this exists to prevent). A preview
+			// event is the preview's OWN concern end to end: it never reaches
+			// uiCtx, and it never reaches the main-window-only bookkeeping
+			// below either, since that bookkeeping is about the MAIN
+			// window's monitor/focus/drop state, not the preview's.
+			if dispatchEvent(ev, uiCtx, preview) {
+				return
+			}
 			switch e := ev.(type) {
 			case *sdl.DropEvent:
 				// Drag-and-drop import (#73): a .aorec / AO2 .demo dropped on the
@@ -485,7 +502,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 					app.NoteFocusGained()
 				}
 			}
-			uiCtx.HandleEvent(ev)
 			sawEvent = true
 			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
 				sawInput = true
@@ -582,6 +598,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
 		ren.Present()
+		// The detached preview's own present, independent of the main
+		// window's renderer. Present is a single nil check when the preview
+		// is closed (the overwhelmingly common case: nothing has ever been
+		// popped out this session — see render.PreviewWindow.Present's doc
+		// and BenchmarkPreviewWindowPresentClosed for the proof).
+		preview.Present()
 		// A real interaction (click / key / wheel) almost always changed UI-visible
 		// state DURING the draw above — a screen switch, a menu open, a toggle — which
 		// only appears on the NEXT frame. Force that one frame so it's never stranded

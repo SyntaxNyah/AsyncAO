@@ -1292,6 +1292,17 @@ func (a *App) randomChar() {
 // controls don't blink. Off the hot path — only drawn when a preview is up.
 func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c := a.ctx
+	// Detached (v1.93.0 preview-window-wire, requirement 2): the in-app box
+	// does not exist AT ALL while the sprite lives in its own OS window —
+	// drawing both would show the same pick twice, and this box's own
+	// clamp-to-window math (baseX/hiX/baseY/hiY below) is exactly the thing
+	// the detached path must never inherit. previewFrameRect is zeroed so
+	// handlePreviewInput's wheel/drag hit-testing (which gates on box.W==0)
+	// also stands down for free.
+	if a.previewIsDetached() {
+		a.previewFrameRect = sdl.Rect{}
+		return
+	}
 	// The box is an OCCLUDER: fenceSpritePreview published its footprint at the top
 	// of the courtroom pass (#37), and that fence would blank the box's OWN − / +
 	// zoom buttons and pinned × too. Suspend it for our own widgets, mark-scoped so
@@ -1426,6 +1437,17 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 		// so a name that fit yesterday must not run under it when the box is pinned.
 		c.LabelClipped(strip.X+4, strip.Y+3, frame.W-8-previewChromeW, name, ColAccent)
 	}
+	// Pop-out toggle (v1.93.0 preview-window-wire, requirement 1): detaches the
+	// sprite into its own OS window, freely movable off AsyncAO's own borders —
+	// "somewhere out of the way", the user's own stated workflow. Always drawn
+	// plain (never a lit "active" state): this whole box stops drawing the
+	// instant it IS detached (the early return above), so a click here always
+	// means "detach", never "toggle off" — re-attaching is the OS window's own
+	// titlebar X (previewDetachRect's doc).
+	detachB := previewDetachRect(frame)
+	c.Fill(detachB, ColPanelHi)
+	drawToolIcon(c, iconPopOut, detachB, ColText)
+	c.Tooltip(detachB, "Pop out into its own window — drag it anywhere, even a second monitor. Close that window to bring it back.")
 	// Pin toggle — the discoverable half of the feature. Until now the ONLY way to
 	// pin was right-clicking a CLASSIC emote-grid cell, which no AO2 theme even
 	// draws. Lit accent while pinned, exactly the compact toolbox's pin-chip idiom.
@@ -1454,14 +1476,15 @@ func previewGripRect(frame sdl.Rect) sdl.Rect {
 	return sdl.Rect{X: frame.X + frame.W - 16, Y: frame.Y + frame.H - previewCaptionH - 16, W: 16, H: 16}
 }
 
-// The preview box's top-right chrome: a pin toggle and a close button. Both rects
-// live here rather than at their two call sites — the close button's rect used to
-// be written literally in the draw AND again in the input handler, which is one
-// edit away from a control whose pixels and hit box disagree.
+// The preview box's top-right chrome: a pop-out toggle, a pin toggle, and a
+// close button. Rects live here rather than at their call sites — the close
+// button's rect used to be written literally in the draw AND again in the
+// input handler, which is one edit away from a control whose pixels and hit
+// box disagree.
 const (
 	previewChromeBtn   = int32(18) // square px per chrome button
-	previewChromeGap   = int32(2)  // inset from the frame edge, and between the two
-	previewChromeSlots = int32(2)  // pin + close
+	previewChromeGap   = int32(2)  // inset from the frame edge, and between buttons
+	previewChromeSlots = int32(3)  // pop-out + pin + close (v1.93.0 preview-window-wire)
 	// previewChromeW is the width the name strip must keep clear of them.
 	previewChromeW = previewChromeSlots * (previewChromeBtn + previewChromeGap)
 )
@@ -1478,10 +1501,33 @@ func previewPinRect(frame sdl.Rect) sdl.Rect {
 	return r
 }
 
+// previewDetachRect is the slot immediately left of the pin button — the
+// pop-out-to-its-own-window toggle (v1.93.0 preview-window-wire, requirement
+// 1). Only ever clickable while ATTACHED: this whole box does not draw at
+// all once detached (drawSpritePreview's early return), so there is no
+// in-app affordance to re-attach — closing the OS window (its own titlebar
+// X) IS the re-attach gesture, and toggleDetachPreview/syncPreviewWindow
+// both treat that uniformly with the button's own click.
+func previewDetachRect(frame sdl.Rect) sdl.Rect {
+	r := previewPinRect(frame)
+	r.X -= previewChromeBtn + previewChromeGap
+	return r
+}
+
 // previewIsPinned is the box's "stays open" state: the per-session latch (set by
-// a right-click open, or by this box's own pin button) OR the sticky preference.
+// a right-click open, or by this box's own pin button), the sticky preference,
+// OR the sprite currently being detached into its own OS window.
+//
+// The detached arm (v1.93.0 preview-window-wire, requirement 3) is the ENTIRE
+// wiring the detached window needs to keep following emote picks: it is what
+// makes followPinnedPreview's own `!a.previewIsPinned()` guard pass while
+// detached, so all three of its existing call sites (selectEmote,
+// drawEmoteGridThemed, applyStylePreset) retarget the window for free through
+// the exact same seam wave 1 shipped — no fourth pick implementation, and the
+// AST census (TestEveryEmotePickImplementationFollowsThePinnedPreview) never
+// has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
-	return a.previewPinned || a.d.Prefs.PreviewPinnedOn()
+	return a.previewPinned || a.d.Prefs.PreviewPinnedOn() || a.previewIsDetached()
 }
 
 // togglePreviewPin flips BOTH the latch and the preference, so unpinning a box
@@ -1719,6 +1765,12 @@ func (a *App) previewOwnerMark() int {
 // Off the hot path — a no-op whenever no preview is up.
 func (a *App) handlePreviewInput() {
 	c := a.ctx
+	// Runs EVERY frame, before either early return below: the detached
+	// window must keep receiving frames / get its close reconciled even on
+	// passes where the in-app box itself never draws (previewBase=="" after
+	// a screen switch force-cleared it while still detached, or simply no
+	// box drawn yet this frame) — see syncPreviewWindow's own doc.
+	a.syncPreviewWindow()
 	// Clear last frame's fence answer FIRST, before any early return: this runs once
 	// per frame above every screen, so a pass that publishes nothing (char select,
 	// settings) can never replay a courtroom frame's stale mark into pushOverlayOwner.
@@ -1732,7 +1784,12 @@ func (a *App) handlePreviewInput() {
 		return
 	}
 	// The top-right chrome claims the click before the drag-start below.
-	pinB, closeB := previewPinRect(box), previewCloseRect(box)
+	detachB, pinB, closeB := previewDetachRect(box), previewPinRect(box), previewCloseRect(box)
+	if c.clicked && c.hovering(detachB) {
+		a.toggleDetachPreview()
+		c.clicked = false
+		return
+	}
 	if c.clicked && c.hovering(pinB) {
 		a.togglePreviewPin()
 		c.clicked = false
@@ -1781,7 +1838,7 @@ func (a *App) handlePreviewInput() {
 	// the press would start a body drag and the release would return through the
 	// branch above with previewDrag still latched.
 	body := sdl.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H - previewDragBottomReserve}
-	if c.mouseDown && !a.previewDrag && c.hovering(body) && !c.hovering(pinB) && !c.hovering(closeB) {
+	if c.mouseDown && !a.previewDrag && c.hovering(body) && !c.hovering(detachB) && !c.hovering(pinB) && !c.hovering(closeB) {
 		a.previewDrag = true
 		a.previewDragMoved = false
 		a.previewDragStart = [2]int32{c.mouseX, c.mouseY}

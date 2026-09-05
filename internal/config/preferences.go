@@ -1349,6 +1349,24 @@ type AssetPreferences struct {
 	// closed (the box's own pin button toggles this too — a vector icon, not a
 	// glyph). Default OFF (zero value).
 	PreviewPinned bool `json:"previewPinned"`
+	// PreviewWinRectValid marks whether PreviewWinRectX/Y/W/H below holds a
+	// real, once-detached window position rather than "never popped out yet".
+	// A saved rect of exactly (0,0) is legitimate (top-left of the primary
+	// display), so — unlike PreviewHeightPxVal's "<=0 means unset" sentinel,
+	// which works because a real height is never zero or negative — the rect
+	// needs its own explicit presence flag. Default OFF (zero value), same
+	// shape as PreviewPinned just above.
+	PreviewWinRectValid bool `json:"previewWinRectValid"`
+	// PreviewWinRectX/Y/W/H are the detached emote-preview window's last known
+	// desktop-pixel position and client size, meaningful only when
+	// PreviewWinRectValid is true. Persisted (via the debounced saver, never a
+	// per-move write — CLAUDE.md hard rules 2/3) so popping it back out, or a
+	// fresh launch, reopens it "somewhere out of the way" instead of a default
+	// spot every time — the user's own stated workflow for this feature.
+	PreviewWinRectX int `json:"previewWinRectX"`
+	PreviewWinRectY int `json:"previewWinRectY"`
+	PreviewWinRectW int `json:"previewWinRectW"`
+	PreviewWinRectH int `json:"previewWinRectH"`
 	// EmoteHoverNamesOn shows the emote's name as a tooltip when the cursor
 	// rests on its grid button (ON by default). Independent of the sprite
 	// hover-preview above.
@@ -1815,13 +1833,18 @@ type prefsJSON struct {
 	CharDownloader     bool                      `json:"charDownloader"`
 	ToolboxSeen        bool                      `json:"toolboxSeen"` // A1: default OFF (zero value) = show the toolbox discoverability ring until first expand
 
-	ShowAssetWarnings            bool     `json:"showAssetWarnings"`            // default OFF (zero value)
-	SpriteMove                   bool     `json:"spriteMove"`                   // default OFF (zero value)
-	DeskFollowManifest           *bool    `json:"deskFollowManifest"`           // absent = default ON (desks follow the manifest); a POINTER so a hand-trimmed stamped file cannot read absent as a false pin
-	SpritePreview                *bool    `json:"spritePreview"`                // absent = default ON
-	PreviewHoverMs               *int     `json:"previewHoverMs"`               // absent = default 5 s
-	PreviewHeightPx              int      `json:"previewHeightPx"`              // 0/absent = shipped default (384)
-	PreviewPinned                bool     `json:"previewPinned"`                // default OFF (zero value)
+	ShowAssetWarnings            bool     `json:"showAssetWarnings"`   // default OFF (zero value)
+	SpriteMove                   bool     `json:"spriteMove"`          // default OFF (zero value)
+	DeskFollowManifest           *bool    `json:"deskFollowManifest"`  // absent = default ON (desks follow the manifest); a POINTER so a hand-trimmed stamped file cannot read absent as a false pin
+	SpritePreview                *bool    `json:"spritePreview"`       // absent = default ON
+	PreviewHoverMs               *int     `json:"previewHoverMs"`      // absent = default 5 s
+	PreviewHeightPx              int      `json:"previewHeightPx"`     // 0/absent = shipped default (384)
+	PreviewPinned                bool     `json:"previewPinned"`       // default OFF (zero value)
+	PreviewWinRectValid          bool     `json:"previewWinRectValid"` // default OFF (zero value): never popped out yet
+	PreviewWinRectX              int      `json:"previewWinRectX"`     // meaningful only when PreviewWinRectValid
+	PreviewWinRectY              int      `json:"previewWinRectY"`
+	PreviewWinRectW              int      `json:"previewWinRectW"`
+	PreviewWinRectH              int      `json:"previewWinRectH"`
 	EmoteHoverNames              *bool    `json:"emoteHoverNames"`              // absent = default ON
 	EmoteHoverNamesMs            *int     `json:"emoteHoverNamesMs"`            // absent = default 5 s
 	EmoteGridGapPx               *int     `json:"emoteGridGapPx"`               // absent = DefaultEmoteGridGapPx. A POINTER because 0 ("butt the icons together") is a value a user can legitimately pick, and a plain int could not tell it from a config written before the setting existed
@@ -2506,6 +2529,15 @@ func load(path string) (*AssetPreferences, error) {
 		p.PreviewHeightPxVal = clampPercent(onDisk.PreviewHeightPx, MinPreviewHeightPx, MaxPreviewHeightPx)
 	}
 	p.PreviewPinned = onDisk.PreviewPinned // default-OFF bool: unconditional
+	// Same unconditional copy as PreviewPinned above (Valid is itself the
+	// default-OFF bool; X/Y/W/H are meaningless noise on an old file that
+	// never wrote them, and copying them is harmless since every reader
+	// checks Valid first — see PreviewWindowRect).
+	p.PreviewWinRectValid = onDisk.PreviewWinRectValid
+	p.PreviewWinRectX = onDisk.PreviewWinRectX
+	p.PreviewWinRectY = onDisk.PreviewWinRectY
+	p.PreviewWinRectW = onDisk.PreviewWinRectW
+	p.PreviewWinRectH = onDisk.PreviewWinRectH
 	if onDisk.EmoteHoverNames != nil {
 		p.EmoteHoverNamesOn = *onDisk.EmoteHoverNames
 	}
@@ -3644,6 +3676,37 @@ func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 		return
 	}
 	p.PreviewHeightPxVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PreviewWindowRect returns the detached emote-preview window's last saved
+// desktop position + client size, and ok=true only if one was ever saved
+// (see PreviewWinRectValid's doc for why a bare zero-value rect can't double
+// as "never popped out" here the way PreviewHeightPx's sentinel can).
+func (p *AssetPreferences) PreviewWindowRect() (x, y, w, h int, ok bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.PreviewWinRectValid {
+		return 0, 0, 0, 0, false
+	}
+	return p.PreviewWinRectX, p.PreviewWinRectY, p.PreviewWinRectW, p.PreviewWinRectH, true
+}
+
+// SetPreviewWindowRect persists the detached preview window's position and
+// size. Called ONLY at a natural boundary — the window closing (its own X,
+// or the pop-out toggle re-attaching) — never per-frame or per-drag/-resize
+// tick (CLAUDE.md hard rules 2/3: learning marks dirty, the debounced saver
+// flushes; there is no per-move disk write here at all).
+func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
+	p.mu.Lock()
+	if p.PreviewWinRectValid && p.PreviewWinRectX == x && p.PreviewWinRectY == y &&
+		p.PreviewWinRectW == w && p.PreviewWinRectH == h {
+		p.mu.Unlock()
+		return
+	}
+	p.PreviewWinRectValid = true
+	p.PreviewWinRectX, p.PreviewWinRectY, p.PreviewWinRectW, p.PreviewWinRectH = x, y, w, h
 	p.mu.Unlock()
 	p.markDirty()
 }

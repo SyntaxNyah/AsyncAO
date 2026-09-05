@@ -15,13 +15,17 @@ package ui
 
 import (
 	"go/ast"
+	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // emotePreviewFollowTestApp is a headless App wired with a real (local-mount)
@@ -163,6 +167,44 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.previewBase, want)
+	}
+}
+
+// TestFollowPinnedPreviewFollowsWhileDetached is requirement 3's own proof
+// (v1.93.0 preview-window-wire): popping the preview out into its own OS
+// window must make it keep following subsequent picks exactly like a
+// right-click pin does — through the SAME previewIsPinned()/
+// followPinnedPreview seam wave 1 shipped, not a new one. If detaching ever
+// grew its own separate "keep it open" bookkeeping instead of feeding
+// previewIsPinned(), this test — not just the census above — would catch it:
+// the census only proves every pick call site invokes followPinnedPreview,
+// it says nothing about whether a DETACHED preview counts as pinned to it.
+func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
+	a := emotePreviewFollowTestApp(t)
+	os.Setenv("SDL_VIDEODRIVER", "dummy")
+	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
+		t.Skipf("SDL unavailable: %v", err)
+	}
+	defer sdl.Quit()
+	a.d.Preview = render.NewPreviewWindow()
+	if err := a.d.Preview.Open("test-detach-follow", 64, 64); err != nil {
+		t.Skipf("preview window unavailable: %v", err)
+	}
+	defer a.d.Preview.Close()
+
+	a.previewEmote("TestChar", &a.emotes[0]) // as if a hover opened it, THEN the user detached
+	if !a.previewIsDetached() {
+		t.Fatal("fixture: a.d.Preview.Open succeeded but previewIsDetached() reports false")
+	}
+	if !a.previewIsPinned() {
+		t.Fatal("a detached preview must read as pinned (previewIsPinned) — that is the whole wire")
+	}
+
+	a.selectEmote(1)
+
+	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	if a.previewBase != want {
+		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.previewBase, want)
 	}
 }
 

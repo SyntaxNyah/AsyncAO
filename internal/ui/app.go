@@ -163,6 +163,13 @@ type Deps struct {
 	Viewport *render.Viewport
 	Pump     *render.Pump
 	Audio    *render.Audio
+	// Preview is the detachable emote-preview OS window (v1.93.0
+	// preview-window-wire). NEVER nil in production (main.go always
+	// constructs one via render.NewPreviewWindow, closed by default — the
+	// "closed = free" contract), but every consumer must stay nil-safe
+	// (render.PreviewWindow's own methods all are) so headless tests that
+	// never set this field keep working unmodified.
+	Preview *render.PreviewWindow
 	// Presence is the OPTIONAL Discord Rich Presence client (nil in
 	// tests; never required to build or run — see internal/presence).
 	Presence *presence.Client
@@ -1547,9 +1554,26 @@ type App struct {
 	// then close it the moment the cursor leaves the box (beta feedback).
 	previewTriggerRect sdl.Rect
 	previewEntered     bool
-	previewPinned      bool   // right-click pins the sprite-preview box open until you close it (its x)
-	vpExactBuf         string // edit buffer for the Settings exact-stage-width px field (commit on Enter)
-	hidden             map[string]bool
+	previewPinned      bool // right-click pins the sprite-preview box open until you close it (its x)
+	// previewWinFedBase is the previewBase whose CURRENT frame the detached
+	// preview OS window (a.d.Preview) was last fed via a texture readback.
+	// Compared against previewBase every frame (only while detached — see
+	// syncPreviewWindow) so a new pick re-feeds exactly once, and going
+	// not-ready (still loading) clears it so the eventual ready flip feeds
+	// too. Deliberately App-level, not a field on render.PreviewWindow
+	// itself: it names a COMPARISON this package owns (previewBase is
+	// internal/ui's own concept), not preview-window state.
+	previewWinFedBase string
+	// previewWinWasOpen is syncPreviewWindow's OWN falling-edge latch — "was
+	// the detached window open as of last frame" — used ONLY to detect the
+	// single frame it just closed (by its own titlebar X or the pop-out
+	// toggle) so that frame's position/size gets persisted once. It is NOT a
+	// second copy of "is it detached": every query of that goes straight to
+	// a.d.Preview.IsOpen() (previewIsDetached), so there is nothing here for
+	// the pop-out button to disagree with if the window closes itself.
+	previewWinWasOpen bool
+	vpExactBuf        string // edit buffer for the Settings exact-stage-width px field (commit on Enter)
+	hidden            map[string]bool
 
 	iniRes chan iniswapFetch
 

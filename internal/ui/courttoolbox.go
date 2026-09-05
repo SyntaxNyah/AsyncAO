@@ -129,6 +129,12 @@ const (
 	iconExpandAll   // a bordered box with a plus bar
 	iconCollapseAll // a bordered box with a minus bar
 	iconKebab       // three stacked squares — the overflow menu
+	// iconPopOut is the sprite-preview's pop-out-to-its-own-OS-window toggle
+	// (v1.93.0 preview-window-wire): a bordered "main" window silhouette with
+	// a smaller filled window silhouette offset up-and-right — the universal
+	// open-in-a-new-window pictograph, reduced to the same axis-aligned rects
+	// as every other icon here.
+	iconPopOut
 )
 
 // drawToolIcon paints the vector glyph for k, centred inside r, in col. Pure
@@ -259,6 +265,20 @@ func drawToolIcon(c *Ctx, k iconKind, r sdl.Rect, col sdl.Color) {
 		for i := int32(0); i < 3; i++ {
 			c.Fill(sdl.Rect{X: x, Y: iy + gap + i*(sq+gap), W: sq, H: sq}, col)
 		}
+	case iconPopOut:
+		small := iw * 3 / 5
+		if small < 2 {
+			small = 2
+		}
+		smallH := ih * 3 / 5
+		if smallH < 2 {
+			smallH = 2
+		}
+		// The "main" window: bottom-left, outline only.
+		c.Border(sdl.Rect{X: ix, Y: iy + ih - smallH, W: small, H: smallH}, col)
+		// The "popped out" window: top-right, filled solid so the two read as
+		// distinct without needing a third colour.
+		c.Fill(sdl.Rect{X: ix + iw - small, Y: iy, W: small, H: smallH}, col)
 	}
 }
 
