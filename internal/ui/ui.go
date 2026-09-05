@@ -4154,7 +4154,11 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	drawn := false
 	if fbRaster != nil && show == display {
 		cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
-		fbRaster.Draw(c.Ren, fbRaster.TotalRunes(), r.X+padX-scroll, r.Y+(r.H-fbRaster.Height())/2)
+		// DrawScaled: fbRaster is built via c.emojiRaster (fieldRaster), which rasterizes
+		// its device-sibling faces exactly like the log/showname raster above — the ASCII
+		// branch of this same field is already device-exact (devFieldValue); the emoji
+		// branch was the one gap left (see the census in app.go).
+		fbRaster.DrawScaled(c.Ren, fbRaster.TotalRunes(), r.X+padX-scroll, r.Y+(r.H-fbRaster.Height())/2, c.RenderScalePct(), &c.clipRect)
 		c.popClip(cp, ch)
 		drawn = true
 	}
@@ -4167,7 +4171,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	if !drawn && show == placeholder && show != "" && fb.primary != nil && !isASCII(show) {
 		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
 			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
-			m.Draw(c.Ren, m.TotalRunes(), r.X+padX, r.Y+(r.H-m.Height())/2)
+			m.DrawScaled(c.Ren, m.TotalRunes(), r.X+padX, r.Y+(r.H-m.Height())/2, c.RenderScalePct(), &c.clipRect)
 			c.popClip(cp, ch)
 			drawn = true
 		}

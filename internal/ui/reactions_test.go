@@ -139,13 +139,14 @@ func TestDrawReactionFloatsZeroAlloc(t *testing.T) {
 	// test can't rely on) so ensureReactBadge is a pure map hit in the measured loop.
 	a.reactBadges = map[uint8]*render.Badge{}
 	for i := 0; i < 2; i++ {
-		b, err := render.RasterizeBadge(ren, font, "A", white)
+		b, err := render.RasterizeBadge(ren, font, "A", white, render.DefaultDevScale)
 		if err != nil || b == nil {
 			t.Fatalf("RasterizeBadge: %v", err)
 		}
 		defer b.Destroy()
 		a.reactBadges[uint8(i)] = b
 	}
+	a.reactBadgeDevScale = a.ctx.textDevPct // matches the zero-value Ctx above; keeps the map from self-purging mid-test
 
 	vp := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 

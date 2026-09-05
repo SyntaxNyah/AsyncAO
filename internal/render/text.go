@@ -53,6 +53,27 @@ func logicalFromDevice(device, devScale int32) int32 {
 // used on any draw path — the internal logicalFromDevice is.
 func LogicalFromDevice(device, devScale int32) int32 { return logicalFromDevice(device, devScale) }
 
+// deviceFromLogicalAt scales a LOGICAL coordinate up to devScale's DEVICE space —
+// the inverse of logicalFromDevice. Free function (not just MessageRaster's method
+// below) because Badge needs the identical conversion for its own device-exact
+// bracket and a second, drifting copy of this arithmetic is exactly the kind of bug
+// #77's rounding-rule comment warns about.
+func deviceFromLogicalAt(v, devScale int32) int32 {
+	if devScale <= 0 || devScale == DefaultDevScale {
+		return v
+	}
+	return v * devScale / DefaultDevScale
+}
+
+// deviceExactAt reports whether a texture/raster rasterized at devScale (a percent,
+// 100 = 1:1) draws device-exact when the renderer is CURRENTLY scaled to renderPct
+// (also a percent). Shared by MessageRaster.deviceExact (see its doc for the bug
+// this predicate fixes) and Badge.Draw — same equality, same "not worth it at the
+// identity scale" gate, one texture instead of one multi-line raster.
+func deviceExactAt(renderPct, devScale int32) bool {
+	return renderPct > 0 && renderPct != DefaultDevScale && renderPct == devScale
+}
+
 // TextColor maps an AO color index to RGBA (out of range → white).
 func TextColor(index int) sdl.Color {
 	if index < 0 || index >= len(textColors) {
@@ -509,7 +530,7 @@ func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, re
 // size. The offscreen passes that bracket their own SetScale (the pinned-tab
 // client, the exports) break that equality and correctly stay on the scaled path.
 func (m *MessageRaster) deviceExact(renderPct int32) bool {
-	return renderPct > 0 && renderPct != DefaultDevScale && renderPct == m.devScale
+	return deviceExactAt(renderPct, m.devScale)
 }
 
 // proj maps a DEVICE-px raster measurement into the space the blit is happening
@@ -895,10 +916,7 @@ func (m *MessageRaster) RuneAt(relX, relY int32) int {
 // deviceFromLogical scales a LOGICAL coordinate up to the raster's DEVICE space
 // (#77) — the inverse of logicalFromDevice, for mapping incoming mouse points.
 func (m *MessageRaster) deviceFromLogical(v int32) int32 {
-	if m.devScale <= 0 || m.devScale == DefaultDevScale {
-		return v
-	}
-	return v * m.devScale / DefaultDevScale
+	return deviceFromLogicalAt(v, m.devScale)
 }
 
 // LineSpanX returns the pixel x-range on display line i covered by the

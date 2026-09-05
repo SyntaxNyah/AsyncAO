@@ -1959,10 +1959,17 @@ type sessionState struct {
 	// (drawReactionFloats); reactBadges caches one alpha-fadeable texture per palette index
 	// (built once the colour-emoji face lands); reactRect is the reused draw scratch (a fresh
 	// local would heap-escape through cgo). reactSpawnSeq scatters floats horizontally.
-	reactionFloats []reactionFloat
-	reactBadges    map[uint8]*render.Badge
-	reactRect      sdl.Rect
-	reactSpawnSeq  int32
+	// reactBadgeDevScale is the ctx.textDevPct every cached badge in reactBadges was built
+	// at — ensureReactBadge purges the whole map on a mismatch, the same "one stale scale
+	// invalidates everything" idiom SetTextDevScale uses for the label/emoji caches (#77);
+	// it lives here rather than on Ctx because reactBadges does too, and the two must
+	// invalidate together or a float outlives a UI-scale change blitting a stale-scale
+	// texture through the non-exact fallback forever.
+	reactionFloats     []reactionFloat
+	reactBadges        map[uint8]*render.Badge
+	reactBadgeDevScale int32
+	reactRect          sdl.Rect
+	reactSpawnSeq      int32
 	// React trigger: showReactPicker toggles the palette (reactFenceOn tracks our modal
 	// fence so it's released on close, like the emoji picker); reactBtnRect anchors it.
 	// reactTarget{Ref,Name} is the message snapshotted when the palette opened. pendingReact
@@ -3549,10 +3556,19 @@ func (a *App) NoteDisplayChanged() {
 //
 //   - TEXT is crisp, and re-rasterizes here. SetUIScale → SetTextDevScale reopens
 //     every face at pt x scale and purges the label/width/raster caches, so glyphs
-//     are rasterized at DEVICE size and blitted 1:1 (#77 Part A). The text fields,
-//     the message raster and the emoji rasters each carry their own device-exact
-//     blit on top of that. TestAutoScaleStepRerastersTextAtDeviceScale pins the
-//     wiring at this exact threshold.
+//     are rasterized at DEVICE size (#77 Part A). Getting the raster built at device
+//     size is only half of it, though: the BLIT also has to stay device-exact
+//     (MessageRaster.DrawScaled, gated on the renderer's scale matching the raster's
+//     — see deviceExact's own doc for why the plain Draw resamples even a
+//     device-rasterized texture). That bracket now reaches every live text/emoji
+//     surface — the chatbox body, IC/OOC log lines and shownames (labelEmoji /
+//     labelCoveringCentered), the text field's emoji-fallback branch, and the
+//     floating reaction badges (Badge.Draw, render/badge.go) — not just the chatbox
+//     body it started on; TestMessageRasterDrawIsExportOnly is the class gate
+//     (a source scan banning the plain Draw everywhere outside the two export
+//     passes, which legitimately bracket their own scale) and
+//     TestAutoScaleStepRerastersTextAtDeviceScale pins the raster-rebuild wiring at
+//     this exact threshold.
 //   - RECT CHROME (panels, borders, bars) is resolution-independent: SDL rasterizes
 //     a filled rect at the scaled coordinates, so there is no resample to soften —
 //     only an edge that can land a pixel either way.
@@ -3567,11 +3583,20 @@ func (a *App) NoteDisplayChanged() {
 //     higher-resolution source to re-rasterize from; the UI scale is one more factor
 //     in a stretch that already happens at 100% (a 256 px icon in a 40 px cell), so
 //     "re-raster at device scale" is not a thing that can be done for them.
-//   - WHAT COULD BE, and is not yet: the PROCEDURAL textures (colorwheel.go,
-//     shapemask.go, the generator tiles) are built at logical size and could be built
-//     at device size instead. They are smooth gradients and flat masks, where a 5%
-//     resample is not visible, so they are not worth a second raster tier today —
-//     recorded here so the next person does not have to re-derive it.
+//   - WHAT STILL IS NOT, and IS worth doing (correcting this comment's earlier
+//     verdict): the PROCEDURAL textures — colorwheel.go, shapemask.go, and the
+//     theme GENERATOR TILES (gentex.go) — are built at logical size and stretched
+//     through the ambient scale exactly like sprite art. The generator tiles are
+//     NOT settings-only decoration: they back entire chatbox/panel/background skins
+//     for shipped community-style themes (vaporwave, cyberpunk, danganronpa,
+//     newspaper, …), so their softness is visible in ordinary themed-courtroom use,
+//     not just a floating colour-picker disc. Left unfixed this pass — a device-px
+//     rebake needs a rebuild-on-scale-change trigger (mirroring SetTextDevScale's
+//     no-op-on-unchanged-scale idiom) plus re-clamping the existing hostile-parameter
+//     DoS bound (theme.GenTileMaxPx / clampTilePx) through whatever multiplies the
+//     target size, and that is a wider-blast-radius change than this pass's
+//     text/badge fixes — recorded here, still, so the next person does not have to
+//     re-derive either the mechanism or the risk.
 func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	if !a.d.Prefs.UIScaleAuto() {
 		return // manual scale governs; the detected value is unused

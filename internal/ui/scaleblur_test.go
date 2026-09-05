@@ -22,8 +22,28 @@ package ui
 //     at 105% the renderer put the copies 1.05 device px apart on different
 //     sub-pixel phases, which is why names read DOUBLED beside message text on the
 //     same row that stayed crisp.
+//   - The device-exact blit (DrawScaled) reaches EVERY live emoji/mixed-script text
+//     surface, not just the chatbox body it started on
+//     (TestMessageRasterDrawIsExportOnly, TestLabelCoveringCenteredDeviceExactAtFractionalScale).
+//     labelEmojiWeight/labelCoveringCentered and the text field's emoji-fallback
+//     branch used to call the plain, non-device-exact Draw — the raster's spans were
+//     already built from device-sibling fonts (emojiRasterWeight/fieldRaster fold
+//     textDevPct), but blitting them through Draw threw that precision away by
+//     projecting back to logical BEFORE ren.SetScale multiplied it up again, the
+//     exact rounding mismatch deviceExact's own doc measures for the chatbox crawl.
+//   - Floating reaction badges (#2) rasterize at the device scale and blit
+//     device-exact too (TestEnsureReactBadgeBuildsFromDeviceFont,
+//     TestReactionBadgeCachePurgesOnDeviceScaleChange,
+//     TestBadgeDeviceExactDiffersFromResampleAtFractionalScale in
+//     internal/render/badge_test.go). ensureReactBadge used to build from EmojiFont
+//     (a fixed logical pixel size) and Badge.Draw had no SetScale bracket at all, so
+//     every float softened at any UI scale other than 100% — and the badge cache
+//     never invalidated on a scale change, so ensureReactBadge now purges it on a
+//     textDevPct mismatch (the same idiom SetTextDevScale uses for the label/emoji
+//     caches).
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -31,6 +51,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -277,5 +298,192 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 	}
 	if viaPlain.tex != viaWeight.tex || viaPlain.src != viaWeight.src || viaPlain.w != viaWeight.w {
 		t.Error("textTextureBold(false) returned a DIFFERENT texture than textTexture — the unweighted path must stay byte-identical")
+	}
+}
+
+// exportOnlyDrawFiles are the two passes that legitimately keep MessageRaster's plain,
+// non-device-exact Draw: comicexport.go and gifexport.go render at a resolution the
+// live UI scale must never leak into (Draw's own doc comment: "Draw keeps the scaled
+// projection, which is what the offscreen/export passes want"). Every other file must
+// reach a message/emoji/field raster through DrawScaled instead.
+var exportOnlyDrawFiles = map[string]bool{
+	"comicexport.go": true,
+	"gifexport.go":   true,
+}
+
+// TestMessageRasterDrawIsExportOnly is the deletion-catcher for the WHOLE Draw-vs-
+// DrawScaled class (#1), not just the three call sites this fix touched
+// (labelEmojiWeight, labelCoveringCentered, the text field's emoji-fallback branch):
+// any call named Draw with MessageRaster.Draw's exact 4-argument shape
+// (ren, visibleRunes, x, y — DrawScaled's own shape tacks on renderPct and clip, so it
+// can never collide with this count) outside the two export passes throws away the
+// device precision emojiRaster/fieldRaster already bake into their fonts and
+// reintroduces the resample deviceExact's own doc measures. It reads the PRODUCTION
+// sources of the whole package, so a FIFTH call site added anywhere later fails here
+// without the gate needing an update — it is the "not just this instance" gate the
+// blur report asked for.
+func TestMessageRasterDrawIsExportOnly(t *testing.T) {
+	names, err := filepath.Glob("*.go")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("glob the package: %v (%d files)", err, len(names))
+	}
+	scanned := 0
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		scanned++
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || callName(call) != "Draw" || len(call.Args) != 4 {
+				return true
+			}
+			if exportOnlyDrawFiles[name] {
+				return true
+			}
+			t.Errorf("%s:%d — a 4-argument .Draw(ren, visibleRunes, x, y) call outside the export passes. "+
+				"Live UI text must call DrawScaled(ren, visibleRunes, x, y, renderPct, clip) so a device-rasterized "+
+				"emoji/field raster blits device-exact instead of being resampled by ren.SetScale.",
+				name, fset.Position(call.Pos()).Line)
+			return true
+		})
+	}
+	if scanned == 0 {
+		t.Fatal("scanned no production files — the gate would pass vacuously")
+	}
+}
+
+// TestLabelCoveringCenteredDeviceExactAtFractionalScale is the fails-at-a-fractional-
+// scale / passes-at-100% regression pin the blur report asked for, driven through the
+// REAL production draw path (labelCoveringCentered), not a reimplementation of
+// DrawScaled's contract. It compares the production call's painted pixels against the
+// SAME underlying raster (same emojiRaster cache key, so literally the same texture)
+// drawn through the plain Draw it used to call.
+//
+//   - At 100% deviceExact is false for BOTH calls by design (the identity scale has
+//     nothing to fold), so they must be byte-identical — a regression here would be a
+//     DIFFERENT bug, and this test correctly does not claim to catch one.
+//   - At 105% the production call takes the device-exact branch and the comparison
+//     call does not, so they must differ. If labelCoveringCentered ever reverts to
+//     calling Draw again, this assertion goes back to passing where it must fail.
+func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
+	const canvasW, canvasH = 400, 200
+	const text = "React \U0001F600 label" // U+1F600 is supplementary-plane → NeedsEmojiFallback is unconditionally true
+
+	paint := func(t *testing.T, pct int, viaProduction bool) []byte {
+		t.Helper()
+		a := scaleTestApp(t)
+		c := a.ctx
+		c.SetEmojiFont(twemojiTTF)
+		c.SetUIScale(pct)
+		col := sdl.Color{R: 255, G: 255, B: 255, A: 255}
+
+		ren := c.Ren
+		_ = ren.SetDrawColor(0, 0, 0, 255)
+		_ = ren.Clear()
+		_ = ren.SetScale(float32(pct)/100, float32(pct)/100)
+		if viaProduction {
+			c.labelCoveringCentered(4, 0, 40, 300, text, col)
+		} else {
+			// The exact args labelCoveringCentered itself passes to emojiRaster — same
+			// cache key, so this is the SAME *render.MessageRaster instance, drawn
+			// through the method the call site used to call.
+			face := c.chromeFaceFor(text)
+			m := c.emojiRaster(text, col, face, c.EmojiFont(DefaultScalePct))
+			if m == nil {
+				t.Fatal("emojiRaster returned nil — precondition for this A/B failed")
+			}
+			hgt := m.Height()
+			m.Draw(ren, m.TotalRunes(), 4, 0+(40-hgt)/2)
+		}
+		_ = ren.SetScale(1, 1)
+
+		pix := make([]byte, canvasW*canvasH*4)
+		if err := ren.ReadPixels(&sdl.Rect{X: 0, Y: 0, W: canvasW, H: canvasH}, uint32(sdl.PIXELFORMAT_ARGB8888), unsafe.Pointer(&pix[0]), canvasW*4); err != nil {
+			t.Skipf("ReadPixels: %v", err)
+		}
+		return pix
+	}
+
+	for _, pct := range []int{100, 105} {
+		t.Run(map[int]string{100: "100pct", 105: "105pct"}[pct], func(t *testing.T) {
+			production := paint(t, pct, true)
+			viaPlainDraw := paint(t, pct, false)
+			differ := !bytes.Equal(production, viaPlainDraw)
+			if pct == DefaultScalePct && differ {
+				t.Error("at 100% labelCoveringCentered's output differs from a direct Draw call on the same raster — deviceExact should be false for both at the identity scale, so nothing should differ here")
+			}
+			if pct != DefaultScalePct && !differ {
+				t.Error("at 105% labelCoveringCentered's output is byte-identical to a direct Draw call on the same raster — the device-exact bracket isn't firing (the #1 blur gap is back)")
+			}
+		})
+	}
+}
+
+// TestEnsureReactBadgeBuildsFromDeviceFont is the AST wiring gate for #2: ensureReactBadge
+// must resolve its glyph through emojiDeviceFont (not the logical-only EmojiFont) and hand
+// RasterizeBadge the CURRENT textDevPct as its devScale argument. Reads the production
+// source, so a revert to EmojiFont — the exact regression this fix closes — fails here
+// even though nothing about ensureReactBadge's return type or nil-handling changed.
+func TestEnsureReactBadgeBuildsFromDeviceFont(t *testing.T) {
+	body := funcBodySource(t, "reactions.go", "ensureReactBadge")
+	if !containsCall(body, "emojiDeviceFont") {
+		t.Error("ensureReactBadge no longer resolves the emoji face through emojiDeviceFont — reaction floats would build from the fixed LOGICAL face again and blur at any scale != 100%")
+	}
+	calls := callsNamed(body, "RasterizeBadge")
+	if len(calls) != 1 {
+		t.Fatalf("ensureReactBadge calls RasterizeBadge %d times, want exactly 1", len(calls))
+	}
+	if len(calls[0].Args) < 5 {
+		t.Fatal("RasterizeBadge call dropped the devScale argument (want 5 args: ren, font, text, col, devScale)")
+	}
+	if !mentionsIdent(calls[0].Args[4], "textDevPct") {
+		t.Error("RasterizeBadge's devScale argument no longer reads textDevPct — a badge would freeze at whatever scale built it")
+	}
+}
+
+// TestReactionBadgeCachePurgesOnDeviceScaleChange drives ensureReactBadge (not a
+// reimplementation of it) across a real UI-scale change and proves the WHOLE chain
+// actually moved: a new badge object is built (the cache purge fired), its DEVICE pixel
+// footprint (RawSize) grew with the scale, and its LOGICAL footprint (Size) — what the
+// float's on-screen position and spread math uses — stayed the same, so a reaction float
+// does not visibly change size just because the window's UI scale changed.
+func TestReactionBadgeCachePurgesOnDeviceScaleChange(t *testing.T) {
+	a := scaleTestApp(t)
+	c := a.ctx
+	c.SetEmojiFont(twemojiTTF)
+
+	c.SetUIScale(100)
+	b100 := a.ensureReactBadge(0)
+	if b100 == nil {
+		t.Fatal("ensureReactBadge returned nil at 100% with a real emoji face loaded")
+	}
+	w100, h100 := b100.RawSize()
+	lw100, lh100 := b100.Size()
+
+	c.SetUIScale(150)
+	b150 := a.ensureReactBadge(0)
+	if b150 == nil {
+		t.Fatal("ensureReactBadge returned nil at 150%")
+	}
+	if b150 == b100 {
+		t.Error("the reaction badge survived a UI-scale change — ensureReactBadge's purge-on-mismatch didn't fire, so it will blit a stale-scale texture through the non-exact fallback forever")
+	}
+	w150, h150 := b150.RawSize()
+	if w150 <= w100 || h150 <= h100 {
+		t.Errorf("badge RAW (device) size did not grow with the UI scale: 100%%=%dx%d 150%%=%dx%d", w100, h100, w150, h150)
+	}
+	lw150, lh150 := b150.Size()
+	if abs32(lw150-lw100) > 1 || abs32(lh150-lh100) > 1 {
+		t.Errorf("LOGICAL badge size drifted across a UI-scale change: 100%%=%dx%d 150%%=%dx%d — a reaction float must not visibly change size just because the scale changed", lw100, lh100, lw150, lh150)
 	}
 }

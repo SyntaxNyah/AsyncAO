@@ -95,7 +95,16 @@ func (a *App) labelEmojiWeight(primary, emoji *ttf.Font, x, y, maxW int32, text 
 		return
 	}
 	cp, ch := c.pushClip(sdl.Rect{X: x, Y: y, W: maxW, H: m.Height()})
-	m.Draw(c.Ren, m.TotalRunes(), x, y)
+	// DrawScaled, not Draw: the raster's spans are already rasterized at the DEVICE
+	// sibling faces (emojiRasterWeight folds c.textDevPct), so drawing it through the
+	// plain scaled path divides that device-precise glyph geometry back to logical and
+	// lets ren.SetScale multiply it back up — the exact resample MessageRaster.deviceExact
+	// documents (src/dst rects can round to different physical widths at a fractional
+	// scale). c.clipRect is the rect pushClip just asserted (the intersection above), in
+	// LOGICAL px — required, not optional, so the device-exact bracket can re-assert it in
+	// device pixels itself (see DrawScaled's doc: SDL backends disagree on when a clip set
+	// under one scale converts to another).
+	m.DrawScaled(c.Ren, m.TotalRunes(), x, y, c.RenderScalePct(), &c.clipRect)
 	c.popClip(cp, ch)
 }
 
@@ -150,7 +159,10 @@ func (c *Ctx) labelCoveringCentered(x, rowY, rowH, maxW int32, text string, col 
 	h := m.Height()
 	y := rowY + (rowH-h)/2
 	cp, ch := c.pushClip(sdl.Rect{X: x, Y: y, W: maxW, H: h})
-	m.Draw(c.Ren, m.TotalRunes(), x, y)
+	// DrawScaled — same reasoning as labelEmojiWeight above: this raster's spans are
+	// device-sibling faces too (emojiRaster shares emojiRasterWeight), so the dropdown
+	// / lobby rows this draws get the same device-exact blit the chatbox body has.
+	m.DrawScaled(c.Ren, m.TotalRunes(), x, y, c.RenderScalePct(), &c.clipRect)
 	c.popClip(cp, ch)
 }
 

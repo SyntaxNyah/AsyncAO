@@ -104,7 +104,16 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 		x := baseX + f.xJit - bw/2
 		y := baseY - int32(float64(reactionFloatRisePx)*prog) - bh
 		a.reactRect = sdl.Rect{X: x, Y: y, W: bw, H: bh}
-		b.Draw(c.Ren, &a.reactRect, reactionAlpha(prog))
+		// The clip param mirrors whatever's ambient right now (nil when nothing is
+		// fenced, which is every call site today) rather than assuming none — a future
+		// caller that wraps this in a pushClip must not silently reintroduce the
+		// macOS-Metal lazy-clip bug Badge.Draw's own doc describes. c.clipRect is a
+		// plain field read, so this costs nothing extra when clipOn is false.
+		var clip *sdl.Rect
+		if c.clipOn {
+			clip = &c.clipRect
+		}
+		b.Draw(c.Ren, &a.reactRect, reactionAlpha(prog), c.RenderScalePct(), clip)
 	}
 	a.reactionFloats = a.reactionFloats[:w]
 }
@@ -122,13 +131,29 @@ func reactionAlpha(prog float64) uint8 {
 }
 
 // ensureReactBadge returns the cached float badge for a palette index, building it once
-// from the colour-emoji face. Returns nil (not cached) while the face is still loading, so
-// it retries on a later frame; warmReactBadges pre-builds all of them once the face lands.
+// from the colour-emoji face at the CURRENT device text scale. Returns nil (not cached)
+// while the face is still loading, so it retries on a later frame; warmReactBadges
+// pre-builds all of them once the face lands.
+//
+// A UI-scale change purges every cached badge first (reactBadgeDevScale mismatch) — the
+// same "one stale scale invalidates the whole cache" idiom SetTextDevScale already uses
+// for the label/emoji-raster caches. Without it a badge built at whatever scale was
+// active the first time a reaction floated would keep blitting that device pixel count
+// forever, going soft again the moment the user changed the UI scale (Badge.Draw's
+// non-exact fallback still displays it at the right LOGICAL size, just resampled).
 func (a *App) ensureReactBadge(index uint8) *render.Badge {
+	if a.ctx.textDevPct != a.reactBadgeDevScale {
+		a.purgeReactBadges()
+	}
 	if b, ok := a.reactBadges[index]; ok {
 		return b
 	}
-	emoji := a.ctx.EmojiFont(reactionFloatPct)
+	// emojiDeviceFont, not EmojiFont: the float now blits through Badge.Draw's
+	// device-exact bracket (the same #77 pattern the chatbox/log rasters use), which
+	// needs the glyph rasterized AT the current device scale, not the logical one —
+	// EmojiFont alone left the badge a fixed pixel size that then got bilinearly
+	// resampled by the frame's ambient SetScale at any UI scale other than 100%.
+	emoji := a.ctx.emojiDeviceFont(reactionFloatPct)
 	if emoji == nil {
 		return nil
 	}
@@ -136,7 +161,7 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if !ok {
 		return nil
 	}
-	b, err := render.RasterizeBadge(a.ctx.Ren, emoji, s, sdl.Color{R: 255, G: 255, B: 255, A: 255})
+	b, err := render.RasterizeBadge(a.ctx.Ren, emoji, s, sdl.Color{R: 255, G: 255, B: 255, A: 255}, a.ctx.textDevPct)
 	if err != nil || b == nil {
 		return nil
 	}
@@ -144,7 +169,20 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 		a.reactBadges = make(map[uint8]*render.Badge, courtroom.ReactionCount())
 	}
 	a.reactBadges[index] = b
+	a.reactBadgeDevScale = a.ctx.textDevPct
 	return b
+}
+
+// purgeReactBadges destroys every cached reaction badge texture and empties the map.
+// Render thread only (the textures are render-thread-owned) — called from
+// ensureReactBadge on a device-scale mismatch, mirroring purgeEmojiCache/purgeTextCache.
+func (a *App) purgeReactBadges() {
+	for k, b := range a.reactBadges {
+		if b != nil {
+			b.Destroy()
+		}
+		delete(a.reactBadges, k)
+	}
 }
 
 // warmReactBadges pre-builds every reaction badge once the emoji face is available, so the
