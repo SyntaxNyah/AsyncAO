@@ -22,6 +22,21 @@ import (
 // budgets.
 const previewWindowTexBudgetBytes = 16 << 20
 
+// previewWindowAnimCacheBudgetBytes bounds the SUM of every DISTINCT decoded
+// frame ShowAnimFrame retains for one animated pick — separate from, and in
+// ADDITION to, previewWindowTexBudgetBytes' per-frame ceiling above. Hard
+// rule 4 (no unbounded cache): a looping animation's whole cached frame set,
+// not just its momentarily-displayed frame, needs its own named cap. Sized
+// to comfortably exceed the decoder's own default per-asset decoded-bytes
+// cap (cache.MaxDecodedAssetBytes(cache.DefaultT1BudgetBytes) == 16 MiB —
+// the sum of every frame of one animated asset, by construction, at the
+// default T1 budget) with headroom for GPU texture padding/alignment: two
+// decoded-asset-caps' worth rather than an unrelated round number. A
+// power-user who raises T1's budget raises the per-asset cap proportionally
+// (budget/4); a pick whose total decoded bytes exceed THIS window's cap
+// degrades gracefully instead of growing past it — see animOverflowed.
+const previewWindowAnimCacheBudgetBytes = 32 << 20
+
 // PreviewWindow owns a second, independent SDL window + renderer + a single
 // texture slot, created on Open and fully torn down on Close.
 //
@@ -44,10 +59,18 @@ type PreviewWindow struct {
 	win *sdl.Window
 	ren *sdl.Renderer
 	tex *sdl.Texture
-	// texW/texH are the CURRENTLY UPLOADED texture's pixel size, purely for
-	// diagnostics — SetFrame always rebuilds the texture (see its comment for
-	// why a rebuild-per-call is the right tradeoff here).
+	// texW/texH are the CURRENTLY DISPLAYED texture's pixel size (queried
+	// off the texture itself by setDisplayTexture, never hand-tracked), used
+	// by Present's fit math.
 	texW, texH int32
+	// texIsCached reports whether tex is currently one of animFrames' own
+	// entries (owned by the animation cache below — destroyed only by
+	// resetAnimCache/Close) rather than a texture the display slot alone
+	// owns (built by SetFrame, or ShowAnimFrame's cache-overflow fallback —
+	// destroyed by setDisplayTexture's own replace, or by Close). Without
+	// this distinction, leaving an animated pick would either double-free a
+	// texture still referenced by animFrames or leak a solo one.
+	texIsCached bool
 	// id is cached once at Open (an SDL window's id never changes after
 	// creation) so the main loop's per-event routing gate (ID) never touches
 	// SDL to answer a question the window already answered once.
@@ -66,6 +89,27 @@ type PreviewWindow struct {
 	// that flips it.
 	lastX, lastY, lastW, lastH int32
 	hadLastRect                bool
+	// animFrames/animFor/animSource/animBytes/animOverflowed together are
+	// ShowAnimFrame's bounded per-pick cache of distinct decoded animation
+	// frames — see ShowAnimFrame's doc for the full contract. animFrames is
+	// indexed by the source page's own frame ordinal (nil until that ordinal
+	// has been visited); animFor/animSource are the (base, source-identity)
+	// pair the cache was built for — either changing invalidates the whole
+	// cache, never just one slot, because a re-decode/eviction of the source
+	// page (a NEW source identity for the SAME base) means every previously
+	// cached frame's content is stale, not just the one at the current idx.
+	animFrames []*sdl.Texture
+	animFor    string
+	animSource any
+	animBytes  int64
+	// animOverflowed latches once caching one more distinct frame for the
+	// CURRENT pick would exceed previewWindowAnimCacheBudgetBytes: no further
+	// frames are added to animFrames for this pick, and every subsequent
+	// ShowAnimFrame call for an uncached ordinal falls back to calling fill
+	// and uploading directly every time it's shown — graceful degrade (still
+	// correct, still bounded by the animation's own frame-index-change rate,
+	// never by render-frame rate) rather than growing the cache past its cap.
+	animOverflowed bool
 }
 
 // NewPreviewWindow returns a closed PreviewWindow. See the type doc for the
@@ -242,10 +286,15 @@ func (p *PreviewWindow) Close() {
 		p.lastW, p.lastH = p.win.GetSize()
 		p.hadLastRect = true
 	}
-	if p.tex != nil {
+	// Destroy the display texture only if THIS slot owns it outright — a
+	// cache-owned one (texIsCached) is destroyed by resetAnimCache below,
+	// never here, or it would be a double free the moment resetAnimCache
+	// walks animFrames.
+	if p.tex != nil && !p.texIsCached {
 		p.tex.Destroy()
-		p.tex = nil
 	}
+	p.tex = nil
+	p.resetAnimCache() // frees every cached animation-frame texture too
 	if p.ren != nil {
 		p.ren.Destroy()
 		p.ren = nil
@@ -255,6 +304,56 @@ func (p *PreviewWindow) Close() {
 		p.win = nil
 	}
 	p.texW, p.texH, p.id = 0, 0, 0
+}
+
+// resetAnimCache destroys every texture ShowAnimFrame has cached for the
+// CURRENT (animFor, animSource) pick and returns the cache to empty. Called
+// whenever ShowAnimFrame sees the pick or its source page's identity change
+// (a stale cache would otherwise show frames from the WRONG animation or the
+// wrong decode generation of the right one), whenever SetFrame is used
+// (a plain single-picture display means leaving animation mode for this
+// window entirely — there is nothing left to invalidate it later), and from
+// Close.
+//
+// If the currently displayed texture (p.tex) belongs to the cache being torn
+// down, the display slot is cleared too rather than left pointing at freed
+// SDL memory — Present's next call would otherwise use-after-free it.
+func (p *PreviewWindow) resetAnimCache() {
+	for _, t := range p.animFrames {
+		if t != nil {
+			t.Destroy()
+		}
+	}
+	p.animFrames = nil
+	p.animFor = ""
+	p.animSource = nil
+	p.animBytes = 0
+	p.animOverflowed = false
+	if p.texIsCached {
+		p.tex, p.texW, p.texH, p.texIsCached = nil, 0, 0, false
+	}
+}
+
+// setDisplayTexture points the window's display slot at tex — either a
+// freshly built texture this call is handing off ownership of, or a cached
+// animation frame an earlier ShowAnimFrame call already owns (cached=true).
+// The PREVIOUS display texture is destroyed only when this slot owned it
+// outright (cached==false last time): a cache-owned one belongs to
+// animFrames and is torn down there (resetAnimCache/Close), never here.
+//
+// texW/texH are read back off tex itself (Query) rather than threaded
+// through every caller — cheap (no allocation) and impossible to drift from
+// what is actually about to be presented, unlike a hand-tracked width/height
+// that a future edit could forget to update on one call site.
+func (p *PreviewWindow) setDisplayTexture(tex *sdl.Texture, cached bool) {
+	if p.tex != nil && !p.texIsCached && p.tex != tex {
+		p.tex.Destroy()
+	}
+	_, _, w, h, err := tex.Query()
+	if err != nil {
+		w, h = 0, 0 // previewFitRect's own degenerate-input guard handles a 0x0 dst
+	}
+	p.tex, p.texW, p.texH, p.texIsCached = tex, w, h, cached
 }
 
 // SetFrame uploads img as the preview's next displayed frame.
@@ -281,37 +380,135 @@ func (p *PreviewWindow) Close() {
 // rebuilt whenever the content changes (a new emote pick), capped at
 // previewWindowTexBudgetBytes: deliberately NOT a general-purpose multi-page
 // cache, and NOT re-uploaded every render frame — see Present's doc for the
-// idle-animation tradeoff that follows from that.
+// idle-animation tradeoff that follows from that, and ShowAnimFrame below for
+// the animated-pick sibling that IS a (bounded) multi-frame cache.
 func (p *PreviewWindow) SetFrame(img *image.RGBA) error {
 	if p.ren == nil || img == nil {
 		return nil
 	}
-	w, h := int32(img.Rect.Dx()), int32(img.Rect.Dy())
-	if w <= 0 || h <= 0 {
-		return nil
-	}
-	if int64(w)*int64(h)*4 > previewWindowTexBudgetBytes {
-		return fmt.Errorf("render: preview frame %dx%d exceeds the %d MiB preview budget", w, h, previewWindowTexBudgetBytes>>20)
-	}
-	// Rebuilt every call rather than reused+Update()'d: SetFrame runs on a
-	// selection change or one animation tick, never in the main per-frame
-	// hot path (that's Present, below), so the simpler always-recreate shape
-	// — the exact one TextureStore.buildPage already uses for every sprite
-	// frame in the client — is worth more here than the small win of a
-	// STREAMING texture nothing else in this package uses.
-	tex, err := p.ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, w, h)
+	tex, err := p.uploadFrame(img)
 	if err != nil {
 		return err
 	}
+	if tex == nil {
+		return nil // degenerate (zero) size — matches the previous silent no-op
+	}
+	// A plain SetFrame means leaving animation mode for this window entirely
+	// (the caller has a single, non-animated picture to show) — tear down
+	// whatever animation cache the PREVIOUS pick may have built, or its
+	// textures would simply leak (nothing else ever visits them again).
+	p.resetAnimCache()
+	p.setDisplayTexture(tex, false)
+	return nil
+}
+
+// uploadFrame is the single primitive that turns decoded pixels into a
+// texture on THIS window's own renderer — SetFrame and ShowAnimFrame's
+// cache-miss path both build on it, so there is exactly one place in this
+// type that knows how to do that and one place that enforces the per-frame
+// budget.
+//
+// Returns (nil, nil) for a degenerate (zero-area) image — the existing
+// silent-no-op shape SetFrame documented before this was extracted — and
+// (nil, err) when img exceeds previewWindowTexBudgetBytes or an SDL call
+// fails. The caller owns the returned texture on success.
+func (p *PreviewWindow) uploadFrame(img *image.RGBA) (*sdl.Texture, error) {
+	w, h := int32(img.Rect.Dx()), int32(img.Rect.Dy())
+	if w <= 0 || h <= 0 {
+		return nil, nil
+	}
+	if int64(w)*int64(h)*4 > previewWindowTexBudgetBytes {
+		return nil, fmt.Errorf("render: preview frame %dx%d exceeds the %d MiB preview budget", w, h, previewWindowTexBudgetBytes>>20)
+	}
+	// Rebuilt every call rather than reused+Update()'d: both callers invoke
+	// this on a selection change or one animation-frame-index tick, never in
+	// the main per-frame hot path (that's Present, below), so the simpler
+	// always-recreate shape — the exact one TextureStore.buildPage already
+	// uses for every sprite frame in the client — is worth more here than the
+	// small win of a STREAMING texture nothing else in this package uses.
+	tex, err := p.ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, w, h)
+	if err != nil {
+		return nil, err
+	}
 	if err := tex.Update(nil, unsafe.Pointer(&img.Pix[0]), img.Stride); err != nil {
 		_ = tex.Destroy()
-		return err
+		return nil, err
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
-	if p.tex != nil {
-		p.tex.Destroy()
+	return tex, nil
+}
+
+// ShowAnimFrame displays frame idx of the animated pick identified by
+// (base, source), building a small per-pick cache the first time each
+// distinct ordinal is visited so that a LOOPING animation calls fill at most
+// ONCE PER DISTINCT FRAME, no matter how many times ShowAnimFrame itself is
+// called afterward (every subsequent loop through the same frames is a
+// cache hit: point the display slot at the already-uploaded texture, no
+// readback, no upload — the exact per-render-frame cost Present already
+// pays regardless). fill is the caller's readback+decode step (in practice,
+// internal/ui's readTexturePixels against the MAIN renderer); it is called
+// at most once per (base, source, idx) triple under budget, or on every
+// call once previewWindowAnimCacheBudgetBytes is exhausted for this pick
+// (see animOverflowed) — still correct, just no longer avoiding the repeat
+// readback for that one oversized pick.
+//
+// source is an opaque, comparable identity token for the frame's origin
+// (in practice, the *render.TexturePage the frames were read from) — this
+// package does not interpret it beyond equality. That keeps PreviewWindow
+// free of any dependency on what "source" means to a caller: a re-decode or
+// eviction that replaces the page with a NEW pointer for the SAME base
+// naturally invalidates the cache (base unchanged, source changed), exactly
+// as a genuinely different pick would (base changed) — both call the same
+// resetAnimCache path, because both mean "everything cached is now stale."
+//
+// A no-op (returns nil) when closed, mirroring SetFrame.
+func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill func() (*image.RGBA, error)) error {
+	if p.ren == nil {
+		return nil
 	}
-	p.tex, p.texW, p.texH = tex, w, h
+	if idx < 0 {
+		return nil // pageFrameLoop never returns negative; defensive against a misbehaving caller
+	}
+	if base != p.animFor || source != p.animSource {
+		p.resetAnimCache()
+		p.animFor, p.animSource = base, source
+	}
+	if idx < len(p.animFrames) && p.animFrames[idx] != nil {
+		p.setDisplayTexture(p.animFrames[idx], true) // cache hit: no readback, no upload
+		return nil
+	}
+	img, err := fill()
+	if err != nil {
+		return err
+	}
+	if img == nil {
+		return nil
+	}
+	tex, err := p.uploadFrame(img)
+	if err != nil {
+		return err
+	}
+	if tex == nil {
+		return nil
+	}
+	w, h := int32(img.Rect.Dx()), int32(img.Rect.Dy())
+	frameBytes := int64(w) * int64(h) * 4
+	if !p.animOverflowed && p.animBytes+frameBytes <= previewWindowAnimCacheBudgetBytes {
+		if idx >= len(p.animFrames) {
+			grown := make([]*sdl.Texture, idx+1)
+			copy(grown, p.animFrames)
+			p.animFrames = grown
+		}
+		p.animFrames[idx] = tex
+		p.animBytes += frameBytes
+		p.setDisplayTexture(tex, true)
+	} else {
+		// Over cache budget for this pick: show it, but do not retain it —
+		// the NEXT visit to this ordinal calls fill again (graceful degrade,
+		// hard rule 4 — never grow the cache past its named cap).
+		p.animOverflowed = true
+		p.setDisplayTexture(tex, false)
+	}
 	return nil
 }
 

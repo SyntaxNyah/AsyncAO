@@ -66,6 +66,47 @@ func newPreviewFeedApp(t testing.TB) *App {
 	return a
 }
 
+// previewAnimFeedFixtureBase is a SEPARATE base from previewFeedFixtureBase
+// (a distinct texture-store key) carrying a 3-frame ANIMATED fixture, for the
+// v1.94.0 animated-preview tests below. 50ms per frame (150ms total loop) is
+// large enough that a.frameNow can be hand-advanced deterministically without
+// any real sleep, and small enough that a handful of test-chosen offsets
+// cross several frame boundaries.
+const previewAnimFeedFixtureBase = "preview-fixture://anim-sprite"
+
+// previewAnimFrameDelay is every frame's display duration in the fixture
+// above — one named constant both the fixture and the tests derive their
+// a.frameNow offsets from, so the two can never silently drift apart.
+const previewAnimFrameDelay = 50 * time.Millisecond
+
+// newAnimatedPreviewFeedApp is newPreviewFeedApp plus a second, animated,
+// 3-frame fixture resident under previewAnimFeedFixtureBase — everything the
+// animated half of feedDetachedPreviewFrame/ShowAnimFrame touches, built the
+// same way (real headless SDL, real TextureStore) rather than a mock page.
+func newAnimatedPreviewFeedApp(t testing.TB) *App {
+	t.Helper()
+	a := newPreviewFeedApp(t)
+	frames := make([]*image.RGBA, 3)
+	delays := make([]time.Duration, 3)
+	for i := range frames {
+		img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+		// Each frame gets a distinct fill value so a future debugging session
+		// can tell them apart visually; the tests themselves only assert on
+		// previewWinFedFrame / fill-call counts, never pixel content.
+		fill := byte(0x10 * (i + 1))
+		for p := 0; p < len(img.Pix); p += 4 {
+			img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = fill, fill, fill, 0xFF
+		}
+		frames[i] = img
+		delays[i] = previewAnimFrameDelay
+	}
+	dec := &assets.Decoded{Frames: frames, Delays: delays, Animated: true, Width: 20, Height: 20}
+	if err := a.d.Store.Upload(previewAnimFeedFixtureBase, dec); err != nil {
+		t.Skipf("animated texture upload unavailable: %v", err)
+	}
+	return a
+}
+
 // --- requirement 1: pop-out toggle -------------------------------------------
 
 func TestToggleDetachPreviewOpensAndReattaches(t *testing.T) {
@@ -156,6 +197,213 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedBase == "preview-fixture://sprite-2" {
 		t.Fatal("feedDetachedPreviewFrame marked a NON-resident base as fed")
+	}
+}
+
+// --- v1.94.0: the popped-out preview plays animations ------------------------
+
+// TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly is the animated
+// counterpart of TestFeedDetachedPreviewFrameUploadsOnce: a multi-frame
+// animated pick must advance previewWinFedFrame exactly when the wall clock
+// crosses a frame boundary, and must NOT touch it (no wasted GPU work) on a
+// call where the boundary hasn't been crossed. Deleting the
+// `idx == a.previewWinFedFrame` gate in feedDetachedPreviewFrame (falling
+// back to feeding on every call) doesn't change what this test asserts, but
+// TestPreviewWindowShowAnimFrameCachesAfterFirstPass (internal/render) would
+// then see far more fill calls than frames — that pair together is what
+// actually catches a regression to "feed every call."
+func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
+	a := newAnimatedPreviewFeedApp(t)
+	a.previewBase = previewAnimFeedFixtureBase
+
+	a.toggleDetachPreview() // real OS window creation — measurably slow, so the clock is set up AFTER this, not before
+	if !a.previewIsDetached() {
+		t.Fatal("setup: toggle did not detach")
+	}
+
+	// Pin BOTH the loop anchor and the frame clock to the same reference
+	// point (rather than relying on how much real wall-clock time
+	// toggleDetachPreview's window creation happened to take), so every
+	// offset below is measured from a known, controlled zero rather than
+	// real elapsed time — a.now() returns a.frameNow verbatim whenever it is
+	// non-zero (app.go), so setting both directly makes this deterministic.
+	base := time.Now()
+	a.previewAt = base
+	a.frameNow = base
+	a.feedDetachedPreviewFrame()
+	if a.previewWinFedFrame != 0 {
+		t.Fatalf("previewWinFedFrame = %d at elapsed=0, want 0 (the first frame)", a.previewWinFedFrame)
+	}
+
+	// Still inside frame 0's window: a repeat call must not change anything.
+	a.frameNow = base.Add(previewAnimFrameDelay / 2)
+	a.feedDetachedPreviewFrame()
+	if a.previewWinFedFrame != 0 {
+		t.Fatalf("previewWinFedFrame = %d before the first frame boundary, want 0", a.previewWinFedFrame)
+	}
+
+	// Crossed into frame 1.
+	a.frameNow = base.Add(previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.feedDetachedPreviewFrame()
+	if a.previewWinFedFrame != 1 {
+		t.Fatalf("previewWinFedFrame = %d after crossing into frame 1's window, want 1", a.previewWinFedFrame)
+	}
+
+	// Crossed into frame 2.
+	a.frameNow = base.Add(2*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.feedDetachedPreviewFrame()
+	if a.previewWinFedFrame != 2 {
+		t.Fatalf("previewWinFedFrame = %d after crossing into frame 2's window, want 2", a.previewWinFedFrame)
+	}
+
+	// The loop wraps: 3*delay + delay/2 modulo the 3*delay total lands back
+	// in frame 0's window.
+	a.frameNow = base.Add(3*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.feedDetachedPreviewFrame()
+	if a.previewWinFedFrame != 0 {
+		t.Fatalf("previewWinFedFrame = %d after the loop wrapped back to frame 0, want 0", a.previewWinFedFrame)
+	}
+}
+
+// TestAdvanceDetachedPreviewAnimatesWithoutFrame is THE encapsulation test
+// for problem 2 (the freeze-on-idle bug the still-frame fix alone would
+// expose): it drives ONLY the real AdvanceDetachedPreview entry point — the
+// one cmd/asyncao's minimized and SkipFrame branches call — and NEVER calls
+// Frame() at all, proving the popped-out window's animation can progress on
+// a pass the main loop draws nothing for. If a future edit moved the feed
+// step back to running only inside Frame()/handlePreviewInput (reintroducing
+// the freeze-while-idle/minimized regression this task exists to fix),
+// AdvanceDetachedPreview would do nothing and previewWinFedFrame would stay
+// at 0 through every iteration below — this test would fail loudly.
+func TestAdvanceDetachedPreviewAnimatesWithoutFrame(t *testing.T) {
+	a := newAnimatedPreviewFeedApp(t)
+	a.previewBase = previewAnimFeedFixtureBase
+
+	a.toggleDetachPreview() // real OS window creation — the clock is pinned AFTER this, not before
+	if !a.previewIsDetached() {
+		t.Fatal("setup: toggle did not detach")
+	}
+
+	// Pin the loop anchor and frame clock together (see the sibling test's
+	// comment for why: a.now() prefers a.frameNow whenever it's non-zero).
+	base := time.Now()
+	a.previewAt = base
+	a.frameNow = base
+
+	seenFrames := map[int]bool{a.previewWinFedFrame: true}
+	// Walk the clock across two full loops purely through AdvanceDetachedPreview
+	// — the same call cmd/asyncao's run() makes from its minimized/SkipFrame
+	// branches, never app.Frame().
+	for step := 1; step <= 12; step++ {
+		a.frameNow = base.Add(time.Duration(step) * (previewAnimFrameDelay / 2))
+		a.AdvanceDetachedPreview()
+		seenFrames[a.previewWinFedFrame] = true
+	}
+	for want := 0; want < 3; want++ {
+		if !seenFrames[want] {
+			t.Errorf("frame index %d was never fed via AdvanceDetachedPreview alone (saw %v) — "+
+				"the detached preview did not animate without Frame() running", want, seenFrames)
+		}
+	}
+}
+
+// TestPreviewAnimWakeCapZeroWhenClosedOrStatic pins PreviewAnimWakeCap's
+// "no extra constraint" default: closed, or showing a static/1-frame pick,
+// it must report 0 so cmd/asyncao's main loop applies no cap at all.
+func TestPreviewAnimWakeCapZeroWhenClosedOrStatic(t *testing.T) {
+	a := newPreviewFeedApp(t) // previewBase points at the STATIC single-frame fixture
+	if cap := a.PreviewAnimWakeCap(); cap != 0 {
+		t.Errorf("PreviewAnimWakeCap() = %v while closed, want 0", cap)
+	}
+	a.toggleDetachPreview()
+	if !a.previewIsDetached() {
+		t.Fatal("setup: toggle did not detach")
+	}
+	if cap := a.PreviewAnimWakeCap(); cap != 0 {
+		t.Errorf("PreviewAnimWakeCap() = %v for a detached STATIC pick, want 0 (no extra wake pressure needed)", cap)
+	}
+}
+
+// TestPreviewAnimWakeCapPositiveWhenAnimating is the positive control: an
+// open, animated pick must report the named cap, not 0 — without this a
+// future edit could silently break the "detect animating" branch and
+// TestPreviewAnimWakeCapZeroWhenClosedOrStatic would keep passing for the
+// wrong reason (a gate that always returns 0).
+func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
+	a := newAnimatedPreviewFeedApp(t)
+	a.previewBase = previewAnimFeedFixtureBase
+	a.toggleDetachPreview()
+	if !a.previewIsDetached() {
+		t.Fatal("setup: toggle did not detach")
+	}
+	if cap := a.PreviewAnimWakeCap(); cap != previewAnimWakeCapMs {
+		t.Errorf("PreviewAnimWakeCap() = %v for a detached ANIMATED pick, want %v", cap, previewAnimWakeCapMs)
+	}
+}
+
+// TestAdvanceDetachedPreviewClosedIsZeroAlloc is AdvanceDetachedPreview's own
+// "closed = free" pin, mirroring TestSyncPreviewWindowClosedIsZeroAlloc —
+// this is the exact call cmd/asyncao's main loop now makes on EVERY pass
+// (minimized and SkipFrame branches), so its closed-path cost must stay a
+// no-alloc nil check, the same as every other preview touch point.
+func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
+	a := &App{ctx: &Ctx{}, activeTab: -1}
+	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
+	a.d.Prefs = prefs
+	a.d.Preview = render.NewPreviewWindow()
+	a.resetSessionState()
+
+	n := testing.AllocsPerRun(1000, func() { a.AdvanceDetachedPreview() })
+	if n != 0 {
+		t.Errorf("AdvanceDetachedPreview allocates %.1f objects/op while closed, want 0", n)
+	}
+}
+
+// BenchmarkAdvanceDetachedPreviewClosed / ...Open are the closed-vs-open pair
+// for the new loop-level call site, modeled on
+// BenchmarkSyncPreviewWindowClosed/Open:
+//
+//	go test ./internal/ui/... -run NONE -bench AdvanceDetachedPreview -benchmem
+func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
+	a := &App{ctx: &Ctx{}, activeTab: -1}
+	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = prefs.Close() })
+	a.d.Prefs = prefs
+	a.d.Preview = render.NewPreviewWindow()
+	a.resetSessionState()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.AdvanceDetachedPreview()
+	}
+}
+
+func BenchmarkAdvanceDetachedPreviewOpenAnimating(b *testing.B) {
+	a := newAnimatedPreviewFeedApp(b)
+	a.previewBase = previewAnimFeedFixtureBase
+	a.toggleDetachPreview()
+	if !a.previewIsDetached() {
+		b.Skip("preview window unavailable")
+	}
+	base := a.previewAt
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Sweep the clock across the loop so most iterations DO cross a frame
+		// boundary — the steady-state "open and actually animating" cost the
+		// task's benchmark requirement asks for, not a best-case all-cache-hit
+		// single index.
+		a.frameNow = base.Add(time.Duration(i%3) * previewAnimFrameDelay)
+		a.AdvanceDetachedPreview()
 	}
 }
 

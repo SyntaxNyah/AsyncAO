@@ -33,6 +33,8 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | Singleflight | **32 concurrent fetches → 1 upstream request** | `TestSingleflightCollapsesConcurrentFetches` |
 | Prefs deadlock regression | **mutators complete instantly** | `TestSetFormatOrderCompletes` |
 | UI label blit at fractional scale, 0 allocs | **0 allocs/op** steady state, **~2.0-2.4 µs/op** (device-exact) vs **~4.0 µs/op pre-fix** (software renderer) — `blitLabel`'s device-exact bracket (`blitLabelExact`) is *cheaper* than the ambient-scale resample it replaces here, because a scaled `Ren.Copy` costs a per-pixel bilinear resample the extra `SetScale`/`SetClipRect` calls don't approach; identity scale (100%) is unaffected (~1.5-1.8 µs/op either way, noise-level) since `uiDeviceExactAt` excludes it | `BenchmarkLabelAtFractionalScale` / `BenchmarkLabelAtIdentityScale` + `TestLabelAllocFreeAtFractionalScale` |
+| Popped-out preview: closed = free, main loop's new per-pass call | **2.485 ns/op, 0 allocs/op** (closed) vs **278.7 ns/op, 2 allocs/op (10 B)** (open + animating, clock swept across the loop) — `AdvanceDetachedPreview` is the call `cmd/asyncao`'s minimized/`SkipFrame` branches now make on EVERY pass regardless of whether the preview was ever opened | `BenchmarkAdvanceDetachedPreviewClosed` / `BenchmarkAdvanceDetachedPreviewOpenAnimating` + `TestAdvanceDetachedPreviewClosedIsZeroAlloc` (software renderer) |
+| Popped-out preview: animation cache hit vs miss | **216.3 ns/op, 4 allocs/op (16 B)** (cache hit — a looping animation past its first pass) vs **235958 ns/op, 9 allocs/op (311524 B)** (cache miss — a fresh readback+upload, ~1090x slower) | `BenchmarkPreviewWindowShowAnimFrameCacheHit` / `...CacheMiss` + `TestPreviewWindowShowAnimFrameCachesAfterFirstPass` (software renderer) |
 | Race detector | **clean across all packages** | CI `go test -race ./...` |
 
 Notes:
@@ -62,4 +64,11 @@ Notes:
   origin — so caching it means a second invalidation source, not a one-liner.
   Tracked in `docs/ROADMAP.md`; do not add a gate that only passes by shrinking
   the staged roster.
+- The two popped-out-preview rows above are measured on the SDL *software*
+  renderer only (the same backend every headless test gets, per this repo's
+  standing convention) — not re-verified against an accelerated D3D/GL
+  renderer. `BenchmarkAdvanceDetachedPreviewClosed`'s near-zero cost is
+  backend-independent (it never reaches a single SDL call); the animated
+  numbers could differ on an accelerated backend and are not claimed to
+  match one.
 - Keep this file current: update measurements when touching any gated path.

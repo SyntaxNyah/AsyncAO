@@ -525,11 +525,25 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
-			scheduledNap = minimizedNap
+			// The detached emote preview is a SEPARATE OS window: it must keep
+			// animating even while the MAIN window is minimized, which is
+			// precisely the case a user pops it out to watch (v1.94.0). Both
+			// calls are "closed/static = free" (a nil check, or a nil check
+			// plus one texture-store lookup) — see render.PreviewWindow.Present
+			// and ui.App.AdvanceDetachedPreview's docs.
+			app.AdvanceDetachedPreview()
+			preview.Present()
+			nap := minimizedNap
+			// A detached, animating preview must not be frozen for the length
+			// of the (much longer) minimized nap — see PreviewAnimWakeCap's doc.
+			if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && nap > wakeCap {
+				nap = wakeCap
+			}
+			scheduledNap = nap
 			// Interruptible nap: a restore / focus-gain / alt-tab-in event returns
 			// immediately so the window wakes and redraws on the spot, instead of
 			// finishing out the nap first (a felt delay coming back to the window).
-			if ev := sdl.WaitEventTimeout(int(minimizedNap / time.Millisecond)); ev != nil {
+			if ev := sdl.WaitEventTimeout(int(nap / time.Millisecond)); ev != nil {
 				pendingEv = ev
 			}
 			continue
@@ -548,6 +562,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		limiterOff := prefs.FrameLimiterDisabled()
 		if !limiterOff && app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
+			// Same reasoning as the minimized branch above: a detached preview
+			// must keep feeding/presenting on a pass that SkipFrame decided
+			// needs no main-window redraw at all, or it freezes the instant the
+			// courtroom goes idle or the window loses focus — the exact
+			// scenario a popped-out preview exists for (v1.94.0).
+			app.AdvanceDetachedPreview()
+			preview.Present()
 			if prefs.EventDrivenLoopOn() {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
 				// have produced redraw-worthy work (packets, texture uploads):
@@ -568,6 +589,14 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 					continue
 				}
 				wait, renderDue := app.NextWakeDelay(focused)
+				// A detached, animating preview must not be frozen for the
+				// length of an otherwise-long event park — see
+				// PreviewAnimWakeCap's doc. This only shortens the SLEEP; it
+				// never sets renderDue, so it cannot force a main-window
+				// redraw (SkipFrame's own contract is untouched).
+				if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && wait > wakeCap {
+					wait = wakeCap
+				}
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev
@@ -579,6 +608,9 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			nap := app.FramePace(focused)
 			if nap <= 0 || nap > maxFrameDelta {
 				nap = maxFrameDelta
+			}
+			if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && nap > wakeCap {
+				nap = wakeCap
 			}
 			scheduledNap = nap
 			time.Sleep(nap)

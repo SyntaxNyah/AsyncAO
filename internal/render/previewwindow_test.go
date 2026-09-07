@@ -153,6 +153,244 @@ func TestPreviewWindowSetFrameRespectsBudget(t *testing.T) {
 	}
 }
 
+// --- ShowAnimFrame: the animated-preview cache (v1.94.0) ---------------------
+
+// previewAnimFillCounter returns a fill func for ShowAnimFrame that counts
+// its own invocations and returns a real wxh fixture image — the exact shape
+// internal/ui's real caller (readTexturePixels wrapped as a closure) hands
+// ShowAnimFrame, just instrumented so the test can observe how many times
+// the "expensive readback" step actually ran.
+func previewAnimFillCounter(w, h int, calls *int) func() (*image.RGBA, error) {
+	return func() (*image.RGBA, error) {
+		*calls++
+		return previewFixtureImage(w, h), nil
+	}
+}
+
+// TestPreviewWindowShowAnimFrameCachesAfterFirstPass is the performance claim
+// itself, pinned as a BEHAVIOR (not just a benchmark): driving a real 3-frame
+// looping animation through ShowAnimFrame three full loops must call fill
+// exactly 3 times total — once per DISTINCT frame ordinal, never once per
+// visit. Deleting the cache (making ShowAnimFrame always call fill,
+// discarding animFrames) makes fillCalls grow to 9 instead of 3 and this
+// test fails; so does keying the cache by idx alone if a future edit forgets
+// the base/source identity gate (that variant is TestPreviewWindow
+// ShowAnimFrameInvalidatesOnBaseOrSourceChange below).
+func TestPreviewWindowShowAnimFrameCachesAfterFirstPass(t *testing.T) {
+	_, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+
+	pw := NewPreviewWindow()
+	if err := pw.Open("test-preview-anim-cache", 64, 64); err != nil {
+		t.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	fillCalls := 0
+	fill := previewAnimFillCounter(32, 32, &fillCalls)
+	source := &TexturePage{} // an opaque identity token — ShowAnimFrame never inspects it
+
+	// Three full loops through a 3-frame animation: 0,1,2 three times over.
+	order := []int{0, 1, 2, 0, 1, 2, 0, 1, 2}
+	for i, idx := range order {
+		if err := pw.ShowAnimFrame("anim-fixture", source, idx, fill); err != nil {
+			t.Fatalf("ShowAnimFrame(idx=%d) call #%d: %v", idx, i, err)
+		}
+	}
+	if fillCalls != 3 {
+		t.Fatalf("fill called %d times across %d ShowAnimFrame calls of a 3-frame loop, want exactly 3 "+
+			"(one readback per DISTINCT frame, cached thereafter)", fillCalls, len(order))
+	}
+}
+
+// TestPreviewWindowShowAnimFrameInvalidatesOnBaseOrSourceChange is the other
+// half of the cache contract: a cached texture must never be reused across a
+// DIFFERENT pick (base changed) or a re-decode/eviction of the SAME pick's
+// source page (base unchanged, source pointer changed) — both are "start
+// over," not "reuse slot idx." Simplifying the invalidation gate to base-only
+// (dropping the source check) would make the third ShowAnimFrame call below
+// a cache hit instead of a refill, and this test would fail.
+func TestPreviewWindowShowAnimFrameInvalidatesOnBaseOrSourceChange(t *testing.T) {
+	_, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+
+	pw := NewPreviewWindow()
+	if err := pw.Open("test-preview-anim-invalidate", 64, 64); err != nil {
+		t.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	fillCalls := 0
+	fill := previewAnimFillCounter(32, 32, &fillCalls)
+	srcA := &TexturePage{}
+
+	if err := pw.ShowAnimFrame("baseA", srcA, 0, fill); err != nil {
+		t.Fatalf("first ShowAnimFrame: %v", err)
+	}
+	if fillCalls != 1 {
+		t.Fatalf("fillCalls = %d after the first call, want 1", fillCalls)
+	}
+	// Same base, same source, same idx: a cache hit — no refill.
+	if err := pw.ShowAnimFrame("baseA", srcA, 0, fill); err != nil {
+		t.Fatalf("repeat ShowAnimFrame: %v", err)
+	}
+	if fillCalls != 1 {
+		t.Fatalf("fillCalls = %d after a repeat of the same (base,source,idx), want 1 (cache hit)", fillCalls)
+	}
+	// A DIFFERENT base at the SAME idx must not reuse baseA's cached slot 0.
+	if err := pw.ShowAnimFrame("baseB", srcA, 0, fill); err != nil {
+		t.Fatalf("ShowAnimFrame after a base change: %v", err)
+	}
+	if fillCalls != 2 {
+		t.Fatalf("fillCalls = %d after switching to a different base at the same idx, want 2 "+
+			"(the old base's cache must not be reused)", fillCalls)
+	}
+	// The SAME base, but a NEW source identity (simulating a T1 re-decode of
+	// the same asset — a fresh *TexturePage pointer) at the SAME idx must
+	// also refill, not reuse baseB's slot 0.
+	srcB2 := &TexturePage{}
+	if err := pw.ShowAnimFrame("baseB", srcB2, 0, fill); err != nil {
+		t.Fatalf("ShowAnimFrame after a source-page change: %v", err)
+	}
+	if fillCalls != 3 {
+		t.Fatalf("fillCalls = %d after a source-page identity change at the same (base,idx), want 3 "+
+			"(a re-decode must invalidate the cache, not reuse the stale slot)", fillCalls)
+	}
+}
+
+// TestPreviewWindowShowAnimFrameRespectsCacheBudget pins the "no unbounded
+// cache" rule (CLAUDE.md hard rule 4) for the AGGREGATE animation cache,
+// mirroring TestPreviewWindowSetFrameRespectsBudget's real-oversized-input
+// pattern rather than mocking the size check. Each individual frame here is
+// safely under previewWindowTexBudgetBytes (the PER-FRAME cap SetFrame also
+// enforces); the cap under test is previewWindowAnimCacheBudgetBytes, the
+// SUM across every distinct cached frame of one pick.
+func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
+	_, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+
+	pw := NewPreviewWindow()
+	if err := pw.Open("test-preview-anim-budget", 64, 64); err != nil {
+		t.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	// 1900x1900x4 ≈ 13.77 MiB: comfortably under the 16 MiB per-frame cap, but
+	// two of them (≈27.5 MiB) fit the 32 MiB aggregate cache cap while a
+	// third (≈41.3 MiB total) does not.
+	const w, h = 1900, 1900
+	fillCalls := 0
+	fill := previewAnimFillCounter(w, h, &fillCalls)
+	source := &TexturePage{}
+
+	for idx := 0; idx < 3; idx++ {
+		if err := pw.ShowAnimFrame("big-anim", source, idx, fill); err != nil {
+			t.Fatalf("ShowAnimFrame(idx=%d): %v (want no error — an over-cap frame degrades, it does not fail)", idx, err)
+		}
+	}
+	if fillCalls != 3 {
+		t.Fatalf("fillCalls = %d after the first visit to 3 distinct frames, want 3", fillCalls)
+	}
+
+	// idx 0 and 1 together (~27.5 MiB) fit under the cache budget and must
+	// stay cached: revisiting them must NOT call fill again.
+	if err := pw.ShowAnimFrame("big-anim", source, 0, fill); err != nil {
+		t.Fatalf("ShowAnimFrame(idx=0) revisit: %v", err)
+	}
+	if err := pw.ShowAnimFrame("big-anim", source, 1, fill); err != nil {
+		t.Fatalf("ShowAnimFrame(idx=1) revisit: %v", err)
+	}
+	if fillCalls != 3 {
+		t.Fatalf("fillCalls = %d after revisiting the two IN-BUDGET frames, want 3 (both must stay cached)", fillCalls)
+	}
+
+	// idx 2 pushed the running total over the 32 MiB cache cap, so it must
+	// NOT have been retained: every revisit calls fill again — graceful
+	// degrade (still shows the correct frame, still bounded — never grows
+	// the cache past its cap) rather than an error or an unbounded cache.
+	if err := pw.ShowAnimFrame("big-anim", source, 2, fill); err != nil {
+		t.Fatalf("ShowAnimFrame(idx=2) revisit: %v", err)
+	}
+	if fillCalls != 4 {
+		t.Fatalf("fillCalls = %d after revisiting the OVER-BUDGET frame once more, want 4 "+
+			"(it must not have been cached — every visit re-reads it)", fillCalls)
+	}
+	if err := pw.ShowAnimFrame("big-anim", source, 2, fill); err != nil {
+		t.Fatalf("ShowAnimFrame(idx=2) second revisit: %v", err)
+	}
+	if fillCalls != 5 {
+		t.Fatalf("fillCalls = %d after a second revisit of the over-budget frame, want 5", fillCalls)
+	}
+}
+
+// TestPreviewWindowShowAnimFrameClosedIsNoOp mirrors SetFrame's own
+// documented "closed = free, no-op" contract: a closed window must not call
+// fill at all, and must not error.
+func TestPreviewWindowShowAnimFrameClosedIsNoOp(t *testing.T) {
+	pw := NewPreviewWindow()
+	fillCalls := 0
+	fill := previewAnimFillCounter(32, 32, &fillCalls)
+	if err := pw.ShowAnimFrame("base", &TexturePage{}, 0, fill); err != nil {
+		t.Errorf("ShowAnimFrame on a closed PreviewWindow returned %v, want nil (documented no-op)", err)
+	}
+	if fillCalls != 0 {
+		t.Errorf("fill was called %d times on a closed PreviewWindow, want 0", fillCalls)
+	}
+}
+
+// BenchmarkPreviewWindowShowAnimFrameCacheHit / ...CacheMiss are the
+// steady-state-vs-refill comparison the task's benchmark requirement asks
+// for, modeled on BenchmarkPreviewWindowPresentClosed/Open: run together so
+// the RATIO (a cache hit must be dramatically cheaper than a fill+upload) is
+// the meaningful evidence, not either absolute.
+//
+//	go test ./internal/render/... -run NONE -bench PreviewWindowShowAnimFrame -benchmem
+func BenchmarkPreviewWindowShowAnimFrameCacheHit(b *testing.B) {
+	_, cleanup := newHeadlessRenderer(b)
+	defer cleanup()
+	pw := NewPreviewWindow()
+	if err := pw.Open("bench-preview-anim-hit", 320, 240); err != nil {
+		b.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	source := &TexturePage{}
+	fill := func() (*image.RGBA, error) { return previewFixtureImage(320, 240), nil }
+	const frames = 3
+	for i := 0; i < frames; i++ {
+		if err := pw.ShowAnimFrame("bench-anim", source, i, fill); err != nil {
+			b.Fatalf("warmup ShowAnimFrame(idx=%d): %v", i, err)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pw.ShowAnimFrame("bench-anim", source, i%frames, fill)
+	}
+}
+
+func BenchmarkPreviewWindowShowAnimFrameCacheMiss(b *testing.B) {
+	_, cleanup := newHeadlessRenderer(b)
+	defer cleanup()
+	pw := NewPreviewWindow()
+	if err := pw.Open("bench-preview-anim-miss", 320, 240); err != nil {
+		b.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	fill := func() (*image.RGBA, error) { return previewFixtureImage(320, 240), nil }
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// A fresh source EVERY call forces a cache invalidation (and
+		// therefore a fill+upload) on every single ShowAnimFrame call — the
+		// worst case the cache is meant to avoid in steady state.
+		_ = pw.ShowAnimFrame("bench-anim-miss", &TexturePage{}, 0, fill)
+	}
+}
+
 // TestPreviewWindowCloseEventClosesItself pins HandleEvent's entire
 // contract: a WINDOWEVENT_CLOSE closes the window. cmd/asyncao's
 // eventForPreviewWindow/dispatchEvent own deciding WHETHER an event belongs

@@ -1564,6 +1564,25 @@ type App struct {
 	// itself: it names a COMPARISON this package owns (previewBase is
 	// internal/ui's own concept), not preview-window state.
 	previewWinFedBase string
+	// previewWinFedPage is the *render.TexturePage feedDetachedPreviewFrame
+	// last fed FROM, for the same base above. Tracked separately from the
+	// base STRING so a T1 eviction+re-decode of the same base (a NEW
+	// TexturePage pointer, the OLD one's textures already destroyed) is
+	// noticed and re-fed immediately, rather than waiting for the animation's
+	// frame index to happen to change — without this, a re-decode landing on
+	// the same frame index the window was already showing would silently
+	// keep displaying content read back from a page that no longer exists in
+	// T1 (still valid memory — the preview owns its own uploaded copy — just
+	// stale) until the index next moved.
+	previewWinFedPage *render.TexturePage
+	// previewWinFedFrame is the page-relative frame INDEX last fed for
+	// previewWinFedBase/previewWinFedPage, animated pages only (always 0 for
+	// a static/1-frame page, matching pageFrameLoop's own "no loop" answer).
+	// feedDetachedPreviewFrame recomputes the current index every call
+	// (cheap, pure — pageFrameLoop) but only does GPU work when it differs
+	// from this, which is what lets a looping animation's readback+cache
+	// stay keyed on ACTUAL frame changes instead of firing every call.
+	previewWinFedFrame int
 	// previewWinWasOpen is syncPreviewWindow's OWN falling-edge latch — "was
 	// the detached window open as of last frame" — used ONLY to detect the
 	// single frame it just closed (by its own titlebar X or the pop-out
