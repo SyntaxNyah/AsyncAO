@@ -170,12 +170,28 @@ func (a *App) logLineText(which, i int) string {
 // only for the two partial-end lines of a selection (interior lines fill the
 // whole column, so they need no measurement).
 //
-// Before this, the selection side always measured at plain weight regardless
-// of what drew — a named row's true on-screen width (bold speaker + plain
-// message) was systematically under-measured by the bold/plain advance
-// delta, so the mouse had to travel past the last glyph into empty space
-// before hitTestRune's binary search would conclude the line was fully
-// covered ("you have to select empty space past the text to select it all").
+// Before the bold-aware split (see git history), the selection side always
+// measured at plain weight regardless of what drew — a named row's true
+// on-screen width (bold speaker + plain message) was systematically
+// under-measured by the bold/plain advance delta, so the mouse had to travel
+// past the last glyph into empty space before hitTestRune's binary search
+// would conclude the line was fully covered ("you have to select empty space
+// past the text to select it all").
+//
+// Every partial-row width here goes through devTextWidthWeight, NOT
+// fontTextWidthWeight (the plain c.font.SizeUTF8 measure) — the same two
+// steps (device-face SizeUTF8, uiLogicalFromDevice fold) the row's actual
+// draw performs in textTextureBold/cachedText.logicalW(). The two faces are
+// independently-hinted FreeType rasterizations at different point sizes and
+// agree exactly only at textDevPct==100; at any fractional UI scale a
+// logical-only measure drifts from the real glyph advances, growing with how
+// far into the row the offset reaches, until a long wrapped row's highlight
+// and clipboard copy land on visibly different runes than the ones drawn
+// (measured on the MOTD, the longest text in a typical log, but the row-
+// relative mechanism is identical for IC and OOC and for any long row of
+// either). Both branches below fold with the SAME c.textDevPct, so an
+// interrupted bold+plain split still sums to one consistent device-exact
+// prefix width.
 func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes []rune, off int) int32 {
 	c := a.ctx
 	if font == nil || off <= 0 {
@@ -191,17 +207,17 @@ func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes [
 		// strings.Index into rune counts for wrap indices.
 		boldEnd := utf8.RuneCountInString(text[:boldEndByte])
 		if off <= boldEnd {
-			w, _ := c.fontTextWidthWeight(font, string(runes[:off]), bold)
-			return w
+			w, _ := c.devTextWidthWeight(font, string(runes[:off]), bold)
+			return uiLogicalFromDevice(w, c.textDevPct)
 		}
-		boldW, _ := c.fontTextWidthWeight(font, string(runes[:boldEnd]), bold)
-		restW, _ := c.fontTextWidthWeight(font, string(runes[boldEnd:off]), false)
-		return boldW + restW
+		boldW, _ := c.devTextWidthWeight(font, string(runes[:boldEnd]), bold)
+		restW, _ := c.devTextWidthWeight(font, string(runes[boldEnd:off]), false)
+		return uiLogicalFromDevice(boldW, c.textDevPct) + uiLogicalFromDevice(restW, c.textDevPct)
 	}
-	// No split: the whole row drew (and is measured) at plain weight — byte
-	// identical to what this function always did before the bold-aware split above.
-	w, _ := c.fontTextWidthWeight(font, string(runes[:off]), false)
-	return w
+	// No split: the whole row drew (and is measured) at plain weight — the MOTD
+	// continuation-row shape (a system line has no speaker span at all).
+	w, _ := c.devTextWidthWeight(font, string(runes[:off]), false)
+	return uiLogicalFromDevice(w, c.textDevPct)
 }
 
 // logRowFont is the face one display row of log `which` is DRAWN in. The IC and

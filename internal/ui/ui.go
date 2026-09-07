@@ -333,6 +333,18 @@ type Ctx struct {
 	// bracket is actually armed, so a session with no per-panel font never
 	// allocates it.
 	panelWidth map[panelWidthKey]int32
+	// logDevWidth memoises devTextWidthWeight — the DEVICE-face prefix width
+	// (raw device px) logPrefixWidth uses for log selection/highlight. Same key
+	// shape as panelWidth (font, text, bold) but a SEPARATE map, since the two
+	// hold different numbers for the same key: panelWidth is the LOGICAL-face
+	// SizeUTF8, this is the DEVICE sibling's. Keying by the LOGICAL font pointer
+	// (not the device one) is what lets it share panelWidth's purge site
+	// (purgeTextCache): every path that can make the device sibling stale first
+	// either changes the logical font pointer itself (new key, old entries
+	// unreachable) or calls purgeTextCache directly (SetTextDevScale). Nil until
+	// a fractional-scale selection is measured, so 100%-only sessions never
+	// allocate it.
+	logDevWidth map[panelWidthKey]int32
 
 	// User-scaled font sets (chat box, log/OOC lists): the user's
 	// override chain (CJK fallback) plus the embedded last resort,
@@ -2860,6 +2872,10 @@ func (c *Ctx) purgeTextCache() {
 	// per-element face is exactly what a panel bracket arms, so anywhere else this
 	// map would hold dangling pointers across a theme swap.
 	clear(c.panelWidth)
+	// logDevWidth shares panelWidth's face-pointer-keyed lifecycle (see its field
+	// doc): a stale entry here would silently keep serving a log selection the
+	// PREVIOUS device scale's glyph metrics after a scale or face change.
+	clear(c.logDevWidth)
 }
 
 // logicalW is the label's LOGICAL width (#77): the device texture width divided
@@ -3171,6 +3187,53 @@ func (c *Ctx) devTextWidth(text string) int32 {
 	}
 	c.devWidthCache[text] = int32(w)
 	return int32(w)
+}
+
+// devTextWidthWeight is fontTextWidthWeight's device-exact twin — the same
+// #77 S1b idiom devTextWidth already applies to the chrome face (see its doc
+// comment for the underlying mechanism), generalized to an explicit font and
+// weight so log-row selection can use it. Returns the RAW DEVICE-pixel width,
+// unfolded, exactly like devTextWidth: callers fold with uiLogicalFromDevice
+// at the read site (logPrefixWidth), the same two steps textTextureBold /
+// cachedText.logicalW() perform for the actual draw.
+//
+// Without this, logPrefixWidth measured font.SizeUTF8 directly on the LOGICAL
+// face while the row is drawn on deviceTextFont(font) and folded back — two
+// independently-hinted FreeType rasterizations that agree only at
+// textDevPct==100 and drift apart (growing with prefix length) at every other
+// scale, so a wrapped row's highlight rect and the runes actually copied to
+// the clipboard could disagree by several characters (the MOTD-selection
+// offset). Routing selection through this instead makes it read the SAME
+// number the draw produced, not a second, independently-rounded estimate.
+//
+// Memoized in its own map (logDevWidth), same key shape and cap as
+// fontTextWidthWeight's panelWidth; see logDevWidth's field doc for why
+// sharing panelWidth's purge site (purgeTextCache) is sufficient even though
+// the value depends on the DEVICE sibling.
+func (c *Ctx) devTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, bool) {
+	if f == nil {
+		return 0, false
+	}
+	k := panelWidthKey{font: f, text: text, bold: bold}
+	if w, ok := c.logDevWidth[k]; ok {
+		return w, true
+	}
+	dev := c.deviceTextFont(f)
+	if bold {
+		dev.SetStyle(ttf.STYLE_BOLD)
+		defer dev.SetStyle(ttf.STYLE_NORMAL) // never leave a weight on the shared device face
+	}
+	w, _, err := dev.SizeUTF8(text)
+	if err != nil {
+		return 0, false
+	}
+	if c.logDevWidth == nil {
+		c.logDevWidth = make(map[panelWidthKey]int32, textCacheMax)
+	} else if len(c.logDevWidth) >= textCacheMax {
+		c.logDevWidth = make(map[panelWidthKey]int32, textCacheMax)
+	}
+	c.logDevWidth[k] = int32(w)
+	return int32(w), true
 }
 
 // --- widgets ---------------------------------------------------------------------

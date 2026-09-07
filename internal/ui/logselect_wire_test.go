@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // oocRowSelectionFixture builds a headless App with a real font-loaded Ctx (via
@@ -216,5 +219,177 @@ func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("IC logPrefixWidth(off=len(speaker)) = %d, want the BOLD width %d", got, want)
+	}
+}
+
+// --- v1.94.0: the MOTD-selection offset -------------------------------------------
+//
+// User report: dragging a selection over a wrapped continuation row highlighted
+// "see fit." but Ctrl+C copied "u see fi" — same length, shifted ~2 characters
+// left. Root cause: logPrefixWidth measured a row's selection width by calling
+// fontTextWidthWeight, which runs SizeUTF8 on the LOGICAL font directly. The row
+// is actually DRAWN on deviceTextFont(font) (textTextureBold), then folded back
+// to logical with uiLogicalFromDevice (cachedText.logicalW(), the same call
+// blitLabel paints from). Those are two independently-hinted FreeType
+// rasterizations at two different point sizes: they agree bit-for-bit only at
+// textDevPct==100 (deviceTextFont is the identity there) and drift apart, GROWING
+// with prefix length, at every fractional UI scale — the default condition for
+// most users (UIScaleAuto ships ON). It is not MOTD-specific machinery: IC and
+// OOC share logPrefixWidth verbatim: MOTD is simply the longest text most logs
+// ever contain, so it's the first place the drift crosses a whole character.
+//
+// The fix routes logPrefixWidth through devTextWidthWeight — the SAME two steps
+// (device-face SizeUTF8, uiLogicalFromDevice fold) the draw performs — instead of
+// fontTextWidthWeight's logical-only SizeUTF8. At textDevPct==100 the two are
+// provably identical (deviceTextFont(font)==font, uiLogicalFromDevice is the
+// identity), which is why every existing test above this comment — none of which
+// sets a fractional UI scale — is untouched evidence that the fix changes
+// NOTHING at the default scale.
+//
+// fractionalScalePct is 105%: config.MinAutoUIScalePercent + UIScaleStepPercent,
+// the FIRST step UIScaleAuto's own detection leaves 100% at (scaleblur_test.go's
+// autoScaleStepW/H), not an arbitrary probe value.
+const fractionalScalePct = config.MinAutoUIScalePercent + config.UIScaleStepPercent
+
+// motdSelectionFixtureLine is long enough (over 100 runes) that a per-glyph
+// rounding drift of a fraction of a pixel per character accumulates past one
+// whole character by the tested offsets — both recon probes measured the drift
+// GROWING with prefix length and needed 30-40+ runes before it became visible.
+const motdSelectionFixtureLine = "You may present your evidence to the court whenever you feel it necessary, and you may use it in any area you see fit."
+
+// drawnPrefixWidth is the row's TRUE on-screen width for its first n runes,
+// read off the PRODUCTION draw function itself (textTextureBold — the exact
+// call LabelClippedFontWeight/labelEmoji make) rather than any reimplementation
+// of the width math: cachedText.logicalW() is precisely the quantity blitLabel
+// blits (ui.go:2911-2928's own doc comment).
+func drawnPrefixWidth(t *testing.T, c *Ctx, font *ttf.Font, runes []rune, n int) int32 {
+	t.Helper()
+	tex, ok := c.textTextureBold(string(runes[:n]), ColText, font, false)
+	if !ok {
+		t.Fatalf("textTextureBold failed to rasterize a %d-rune prefix", n)
+	}
+	return tex.logicalW()
+}
+
+// TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale is the direct
+// regression pin for the MOTD-selection offset: logPrefixWidth must return the
+// SAME number the row's own draw produces, not a second, independently-hinted
+// estimate of it. At 100% (see the companion tests above, none of which set a
+// scale) the two measurements collapse to the identical call; this test is what
+// forces them apart by setting a real fractional UI scale and comparing against
+// the production draw as ground truth.
+//
+// Deleting the fix (routing logPrefixWidth's width lookups back through
+// fontTextWidthWeight instead of devTextWidthWeight) reproduces the drift this
+// asserts against — confirmed by running this test against the unfixed tree
+// before adding the fix (see the implementer's report).
+func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale(t *testing.T) {
+	a, _ := oocRowSelectionFixture(t, motdSelectionFixtureLine, "") // no speaker: the MOTD continuation-row shape
+	c := a.ctx
+	c.SetUIScale(fractionalScalePct)
+
+	font := a.logRowFont(logSelOOC, motdSelectionFixtureLine) // the SAME resolution logPointAt/drawLogSelHighlight use
+	runes := []rune(motdSelectionFixtureLine)
+
+	// A short prefix, so the long-prefix assertion below has a same-fixture
+	// baseline: per both dossiers' probes the drift GROWS with prefix length,
+	// so this one is expected to be small but is not asserted to be zero (a
+	// live run against the unfixed code measured 2px of drift here too).
+	const shortOff = 8
+	if got, want := a.logPrefixWidth(logSelOOC, 0, motdSelectionFixtureLine, font, runes, shortOff),
+		drawnPrefixWidth(t, c, font, runes, shortOff); abs32(got-want) > 1 {
+		t.Errorf("logPrefixWidth(off=%d) = %d, want the drawn width %d (±1px)", shortOff, got, want)
+	}
+
+	// A long prefix, deep enough for the per-glyph drift to exceed a whole
+	// character — the assertion that fails on the unfixed code.
+	longOff := len(runes) - 4
+	got, want := a.logPrefixWidth(logSelOOC, 0, motdSelectionFixtureLine, font, runes, longOff), drawnPrefixWidth(t, c, font, runes, longOff)
+	if abs32(got-want) > 1 {
+		t.Errorf("logPrefixWidth(off=%d) = %d, want the drawn width %d (±1px) at %d%% UI scale — "+
+			"the selection measurement has drifted from the actual glyph raster (the MOTD-selection offset)",
+			longOff, got, want, fractionalScalePct)
+	}
+}
+
+// TestLogPrefixWidthMatchesTheActualDrawAtFractionalScaleIC is the IC twin: the
+// adversarial recon explicitly established this is NOT MOTD- or OOC-specific —
+// IC and OOC share logPrefixWidth verbatim, gated on the same devPct — so a fix
+// (or a test) that only covers OOC would leave IC's identical selection bug
+// unpinned. NameColorsOn defaults OFF, so this IC row takes the same no-split
+// plain-weight path the OOC MOTD line does.
+func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScaleIC(t *testing.T) {
+	a := scaleTestApp(t)
+	a.logPct = DefaultScalePct
+	a.icLog = []icEntry{{text: motdSelectionFixtureLine, speaker: "Wright"}}
+	a.icLogSeq++
+	const fixtureWidth = 4000
+	rows := a.icWrapped(fixtureWidth-logWrapIndentPx, false)
+	if len(rows) != 1 {
+		t.Fatalf("fixture must not wrap, got %d rows", len(rows))
+	}
+	c := a.ctx
+	c.SetUIScale(fractionalScalePct)
+
+	font := a.logRowFont(logSelIC, rows[0].text)
+	runes := []rune(rows[0].text)
+
+	longOff := len(runes) - 4
+	got, want := a.logPrefixWidth(logSelIC, 0, rows[0].text, font, runes, longOff), drawnPrefixWidth(t, c, font, runes, longOff)
+	if abs32(got-want) > 1 {
+		t.Errorf("IC logPrefixWidth(off=%d) = %d, want the drawn width %d (±1px) at %d%% UI scale",
+			longOff, got, want, fractionalScalePct)
+	}
+}
+
+// TestLogSelectCopyRecoversTheHighlightedSpanAtFractionalScale drives the mouse
+// hit-test (logPointAt) and the copy assembly (selectedText fed by logLineText —
+// the exact call shape handleLogSelect's Ctrl+C handler uses at
+// logselect_wire.go) together, seeded with REAL pixel positions read off the
+// row's own production draw (drawnPrefixWidth), not hand-picked coordinates: it
+// asks "if the user dragged from the pixel where rune loTrue is actually drawn
+// to the pixel where rune hiTrue is actually drawn, does the clipboard receive
+// that exact span?"
+//
+// Before the fix, logPointAt's hit-test (hitTestRune, measuring through the same
+// drifted logPrefixWidth the highlight rect used) reached a given on-screen pixel
+// at a SMALLER rune count than the real glyph advances did (measW grows faster
+// per rune than the true raster — both recon probes), so the recovered offset
+// sat to the LEFT of the pixel the user actually dragged to — same direction,
+// same shape as the report ("u see fi" copied vs. "see fit." highlighted).
+func TestLogSelectCopyRecoversTheHighlightedSpanAtFractionalScale(t *testing.T) {
+	a, _ := oocRowSelectionFixture(t, motdSelectionFixtureLine, "")
+	c := a.ctx
+	c.SetUIScale(fractionalScalePct)
+
+	font := a.logRowFont(logSelOOC, motdSelectionFixtureLine)
+	runes := []rune(motdSelectionFixtureLine)
+
+	const loTrue, hiTrue = 30, 100 // deep enough for the drift to exceed one rune (both probes)
+	if hiTrue >= len(runes) {
+		t.Fatalf("fixture too short: need > %d runes, got %d", hiTrue, len(runes))
+	}
+	xLo := drawnPrefixWidth(t, c, font, runes, loTrue)
+	xHi := drawnPrefixWidth(t, c, font, runes, hiTrue)
+
+	const listX, listY, lineH = int32(10), int32(10), int32(20)
+	lo := a.logPointAt(logSelOOC, listX, listY, 0, lineH, listX+xLo, listY+lineH/2)
+	hi := a.logPointAt(logSelOOC, listX, listY, 0, lineH, listX+xHi, listY+lineH/2)
+
+	if d := lo.off - loTrue; d < -1 || d > 1 {
+		t.Errorf("logPointAt at the pixel where rune %d is actually drawn returned off=%d, want %d (±1) — "+
+			"the hit-test has drifted from the real glyph position", loTrue, lo.off, loTrue)
+	}
+	if d := hi.off - hiTrue; d < -1 || d > 1 {
+		t.Errorf("logPointAt at the pixel where rune %d is actually drawn returned off=%d, want %d (±1) — "+
+			"the hit-test has drifted from the real glyph position", hiTrue, hi.off, hiTrue)
+	}
+
+	// The exact call handleLogSelect's Ctrl+C handler makes.
+	loP, hiP := orderSel(lo, hi)
+	copied := selectedText(func(i int) string { return a.logLineText(logSelOOC, i) }, loP, hiP)
+	want := string(runes[loTrue:hiTrue])
+	if copied != want {
+		t.Errorf("copied selection = %q, want %q (the substring under the ACTUAL drawn glyphs at the dragged pixels)", copied, want)
 	}
 }
