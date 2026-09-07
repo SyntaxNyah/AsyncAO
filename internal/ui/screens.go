@@ -3257,6 +3257,25 @@ func clampF64(v, min, max float64) float64 {
 // Audio now.)
 const volStripRowsH = int32(44)
 
+// persistChannelMute saves one channel's click-to-mute toggle so it survives a
+// restart (and, via resetSessionState's reseed, Connect/Disconnect too — see
+// tabs.go). id matches drawVolumeStrip's cell ids ("master"/"music"/"sfx"/
+// "blip"); the "rate" cell passes a nil mute pointer and never reaches this
+// call. The single switch keeps one persistence call site per channel instead
+// of four near-identical branches at each cell(...) call above.
+func (a *App) persistChannelMute(id string, on bool) {
+	switch id {
+	case "master":
+		a.d.Prefs.SetMasterVolMuted(on)
+	case "music":
+		a.d.Prefs.SetMusicVolMuted(on)
+	case "sfx":
+		a.d.Prefs.SetSFXVolMuted(on)
+	case "blip":
+		a.d.Prefs.SetBlipVolMuted(on)
+	}
+}
+
 // drawVolumeStrip draws the toggleable on-screen volume row (Master + the three
 // channels) at the top of the log panel — quick volume without leaving the chat.
 func (a *App) drawVolumeStrip(r sdl.Rect) {
@@ -3281,7 +3300,8 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 			lbl := sdl.Rect{X: x, Y: r.Y, W: colW - 6, H: 16}
 			if c.ClickedIn(lbl) {
 				*mute = !*mute
-				a.applyAudioVolumes() // the muted channel goes silent; the slider level is kept
+				a.applyAudioVolumes()           // the muted channel goes silent; the slider level is kept
+				a.persistChannelMute(id, *mute) // survives a restart, and Connect/Disconnect (resetSessionState reseeds it)
 			}
 			if *mute {
 				labelCol = ColDanger

@@ -1251,6 +1251,14 @@ type AssetPreferences struct {
 	BlipVol        int    `json:"blipVolume"`
 	AlertVol       int    `json:"alertVolume"`
 	MasterVol      int    `json:"masterVolume"` // scales all three (default 100)
+	// The four channel-mute overlays (volume strip #10 + the SFX-mute hotkey).
+	// Plain bools, not pointers: unlike the *Vol levels above, mute has no
+	// "never set" state to distinguish from 0 — false (unmuted) is both the
+	// zero value and today's actual behavior, same as DNDSaved.
+	MasterVolMuted bool   `json:"masterVolMuted"`
+	MusicVolMuted  bool   `json:"musicVolMuted"`
+	SFXVolMuted    bool   `json:"sfxVolMuted"`
+	BlipVolMuted   bool   `json:"blipVolMuted"`
 	HoldClearOn    bool   `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
 	HoldClearKey   string `json:"holdClearKey"` // which key (default "Backspace"), rebindable
 	HoldClearMs    int    `json:"holdClearMs"`  // hold duration to clear (default 1500)
@@ -1769,14 +1777,20 @@ type prefsJSON struct {
 	WindowH            int                              `json:"windowHeight"`
 	WindowFull         *bool                            `json:"windowFullscreen"` // absent = default OFF
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
-	MusicVol     *int   `json:"musicVolume"`
-	SFXVol       *int   `json:"sfxVolume"`
-	BlipVol      *int   `json:"blipVolume"`
-	AlertVol     *int   `json:"alertVolume"`
-	MasterVol    *int   `json:"masterVolume"`
-	HoldClearOn  *bool  `json:"holdClearOn"` // absent = default ON
-	HoldClearKey string `json:"holdClearKey"`
-	HoldClearMs  int    `json:"holdClearMs"`
+	MusicVol  *int `json:"musicVolume"`
+	SFXVol    *int `json:"sfxVolume"`
+	BlipVol   *int `json:"blipVolume"`
+	AlertVol  *int `json:"alertVolume"`
+	MasterVol *int `json:"masterVolume"`
+	// Channel mutes: plain bools (not pointers, like DNDSaved) since false is
+	// both the zero value and the un-muted default — no ambiguity to resolve.
+	MasterVolMuted bool   `json:"masterVolMuted"`
+	MusicVolMuted  bool   `json:"musicVolMuted"`
+	SFXVolMuted    bool   `json:"sfxVolMuted"`
+	BlipVolMuted   bool   `json:"blipVolMuted"`
+	HoldClearOn    *bool  `json:"holdClearOn"` // absent = default ON
+	HoldClearKey   string `json:"holdClearKey"`
+	HoldClearMs    int    `json:"holdClearMs"`
 	// Extras-box theming (hex; "" = stock colour). Gradient: absent = default OFF.
 	ExtrasBg         string `json:"extrasBg"`
 	ExtrasBg2        string `json:"extrasBg2"`
@@ -2932,6 +2946,13 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.MasterVol != nil {
 		p.MasterVol = clampPercent(*onDisk.MasterVol, 0, defaultAudioVolume)
 	}
+	// Plain-bool overlay (no nil check, matching DNDSaved at :2356-2357): the
+	// zero value on an old file (field absent) is false = unmuted, which is
+	// also the field's meaning, so unconditional copy is correct.
+	p.MasterVolMuted = onDisk.MasterVolMuted
+	p.MusicVolMuted = onDisk.MusicVolMuted
+	p.SFXVolMuted = onDisk.SFXVolMuted
+	p.BlipVolMuted = onDisk.BlipVolMuted
 	if onDisk.HoldClearOn != nil {
 		p.HoldClearOn = *onDisk.HoldClearOn
 	}
@@ -7413,6 +7434,90 @@ func (p *AssetPreferences) SetMasterVolume(v int) {
 		return
 	}
 	p.MasterVol = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// The four channel-mute accessors below persist the volume strip's (#10)
+// click-to-mute state and the SFX-mute hotkey, so quitting muted stays muted
+// on the next launch — they default OFF (unmuted), same as the zero value.
+// Named *VolMuted (not SFXMuted) to stay clear of two unrelated existing
+// names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
+// and AssetPreferences.MutedSFX (the M11 per-name mute list).
+
+// MasterVolMutedOn reports the persisted master-channel mute.
+func (p *AssetPreferences) MasterVolMutedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MasterVolMuted
+}
+
+// SetMasterVolMuted persists the master-channel mute toggle.
+func (p *AssetPreferences) SetMasterVolMuted(on bool) {
+	p.mu.Lock()
+	if p.MasterVolMuted == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MasterVolMuted = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicVolMutedOn reports the persisted music-channel mute.
+func (p *AssetPreferences) MusicVolMutedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicVolMuted
+}
+
+// SetMusicVolMuted persists the music-channel mute toggle.
+func (p *AssetPreferences) SetMusicVolMuted(on bool) {
+	p.mu.Lock()
+	if p.MusicVolMuted == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicVolMuted = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SFXVolMutedOn reports the persisted SFX-channel mute (volume strip AND the
+// Mute SFX hotkey share this one flag).
+func (p *AssetPreferences) SFXVolMutedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SFXVolMuted
+}
+
+// SetSFXVolMuted persists the SFX-channel mute toggle.
+func (p *AssetPreferences) SetSFXVolMuted(on bool) {
+	p.mu.Lock()
+	if p.SFXVolMuted == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SFXVolMuted = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BlipVolMutedOn reports the persisted blip-channel mute.
+func (p *AssetPreferences) BlipVolMutedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.BlipVolMuted
+}
+
+// SetBlipVolMuted persists the blip-channel mute toggle.
+func (p *AssetPreferences) SetBlipVolMuted(on bool) {
+	p.mu.Lock()
+	if p.BlipVolMuted == on {
+		p.mu.Unlock()
+		return
+	}
+	p.BlipVolMuted = on
 	p.mu.Unlock()
 	p.markDirty()
 }

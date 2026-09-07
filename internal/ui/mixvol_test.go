@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestMixChannels pins #10: per-channel mutes zero just that channel, master mute zeroes
 // everything (including the alert), the message-on-stage duck scales music, the cross-tab
@@ -43,5 +46,22 @@ func TestMixChannels(t *testing.T) {
 	// master scale (0*anything=0), and it dominates the softer message-on-stage duck.
 	if mu, _, _, _ := mixChannels(80, 90, 70, 60, 50, false, false, false, false, true, true); mu != 0 {
 		t.Errorf("tab-duck + message-duck + master=80 music = %d, want 0", mu)
+	}
+}
+
+// TestMutedChannelsBootNotice pins the silent-launch fix's message text: no
+// channel muted produces no banner (so a normal, never-muted launch is
+// unchanged), and the named channels appear in a fixed master/music/sfx/blip
+// order regardless of which combination is set.
+func TestMutedChannelsBootNotice(t *testing.T) {
+	if got := mutedChannelsBootNotice(false, false, false, false); got != "" {
+		t.Errorf("no channel muted must produce no notice, got %q", got)
+	}
+	if got := mutedChannelsBootNotice(true, false, false, false); got == "" || !strings.Contains(got, "Master") {
+		t.Errorf("master-only notice = %q, want it to name Master", got)
+	}
+	got := mutedChannelsBootNotice(true, false, true, false)
+	if !strings.Contains(got, "Master") || !strings.Contains(got, "SFX") || strings.Contains(got, "Music") || strings.Contains(got, "Blip") {
+		t.Errorf("master+sfx notice = %q, want Master and SFX only", got)
 	}
 }

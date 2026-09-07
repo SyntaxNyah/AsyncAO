@@ -1273,6 +1273,48 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	}
 }
 
+// TestChannelMuteRoundTrip pins the four persisted channel mutes (the volume
+// strip #10 click-to-mute toggles + the SFX-mute hotkey, which share
+// SFXVolMuted): all four default OFF (unmuted, matching today's actual
+// behavior — no migration stamp needed), and the saved state survives a real
+// save→load round trip through disk, exactly like TestDNDPersistRoundTrip.
+// This is the "the value actually round-trips" half of the guard;
+// TestEverySavedPreferenceIsAlsoLoaded (prefsroundtrip_test.go) is the "the
+// shape exists" half — deleting either the prefsJSON field or its load-overlay
+// line for any one of the four fails THIS test's reload assertion, even
+// though the shape-only guard could theoretically still pass if the omission
+// were paired with an accidental removal elsewhere.
+func TestChannelMuteRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.MasterVolMutedOn() || p.MusicVolMutedOn() || p.SFXVolMutedOn() || p.BlipVolMutedOn() {
+		t.Fatal("all four channel mutes must default unmuted")
+	}
+	p.SetMasterVolMuted(true)
+	p.SetSFXVolMuted(true)
+	// Music and blip are left OFF deliberately, so the reload assertion also
+	// catches a bug that sets every channel muted regardless of which one changed.
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.MasterVolMutedOn() {
+		t.Error("master mute lost across reload")
+	}
+	if !q.SFXVolMutedOn() {
+		t.Error("SFX mute lost across reload")
+	}
+	if q.MusicVolMutedOn() || q.BlipVolMutedOn() {
+		t.Error("unmuted channels came back muted after reload")
+	}
+}
+
 // TestAlertVolumeRoundTrip pins the callword/alert volume (separate from SFX):
 // it defaults to full, clamps to 0–100, and survives save→load.
 func TestAlertVolumeRoundTrip(t *testing.T) {

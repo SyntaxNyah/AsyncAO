@@ -589,17 +589,45 @@ func (a *App) quickSwapNext() {
 	a.warnAt = time.Now()
 }
 
-// toggleSFXMute flips a session-only SFX mute and re-applies volumes. The
-// music/blip channels are untouched; the saved SFX volume is preserved (mute
-// is not persisted — it's a quick "shush" for one session).
+// toggleSFXMute flips the SFX mute and re-applies volumes. The music/blip
+// channels are untouched; the saved SFX volume is preserved (mute is an
+// overlay, not a volume write). Persisted (config.SetSFXVolMuted) via the
+// debounced saver, same flag the volume strip's SFX cell toggles, so the
+// hotkey and the strip can never disagree about whether SFX is muted.
 func (a *App) toggleSFXMute() {
 	a.sfxMuted = !a.sfxMuted
+	a.d.Prefs.SetSFXVolMuted(a.sfxMuted)
 	a.applyAudioVolumes()
 	a.warnLine = "SFX unmuted"
 	if a.sfxMuted {
 		a.warnLine = "SFX muted (press the Mute SFX hotkey again to restore)"
 	}
 	a.warnAt = time.Now()
+}
+
+// mutedChannelsBootNotice builds the NewApp boot banner naming which
+// persisted channel mutes just restored ("" when none did) — the
+// silent-launch fix: without it, a user who quit muted gets total silence on
+// the next launch with the volume strip that would explain why hidden by
+// default (VolStripOn OFF).
+func mutedChannelsBootNotice(master, music, sfx, blip bool) string {
+	var names []string
+	if master {
+		names = append(names, "Master")
+	}
+	if music {
+		names = append(names, "Music")
+	}
+	if sfx {
+		names = append(names, "SFX")
+	}
+	if blip {
+		names = append(names, "Blips")
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "Audio is muted (" + strings.Join(names, ", ") + ") — click a label in the volume strip to unmute."
 }
 
 // duckMusicPercent is how loud music plays (as a % of its set volume) while a

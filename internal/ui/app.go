@@ -2554,12 +2554,16 @@ type sessionState struct {
 	// atomic, and the worker needs one stable global flag anyway.
 	dl downloader
 
-	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys
-	// toggles the F1 hotkey cheat-sheet overlay; musicDucked tracks whether
-	// music is currently ducked under a playing message (transition-driven).
+	// sfxMuted is the SFX mute (Mute SFX hotkey); showHotkeys toggles the F1
+	// hotkey cheat-sheet overlay; musicDucked tracks whether music is
+	// currently ducked under a playing message (transition-driven).
 	// masterMuted/musicMuted/blipMuted are the per-channel mute toggles in the
-	// volume strip (#10) — session-only, like sfxMuted; they zero the channel in
-	// applyAudioVolumes WITHOUT touching the stored slider level (master mutes all).
+	// volume strip (#10). All four PERSIST (config.AssetPreferences'
+	// *VolMuted fields) — they zero the channel in applyAudioVolumes WITHOUT
+	// touching the stored slider level (master mutes all). Living on
+	// sessionState instead of App, they don't survive on their own: resetSessionState
+	// reseeds them from prefs on every fresh session (NewApp/Connect/
+	// Disconnect), the same pattern already used above for volStripOn.
 	sfxMuted           bool
 	masterMuted        bool
 	musicMuted         bool
@@ -3467,6 +3471,17 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			msg += " Your old file was saved as " + filepath.Base(q.BackupPath) + " (beside it)."
 		}
 		a.warnLine = clampLine(msg)
+		a.warnAt = time.Now()
+	} else if line := mutedChannelsBootNotice(a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted); line != "" {
+		// Silent-launch trap: the mute flags just seeded in resetSessionState
+		// (above) are real and persisted, but the volume strip that shows a
+		// muted channel (the red "muted" label) defaults HIDDEN
+		// (VolStripOn OFF) — so a user who quit muted a week ago would get
+		// total silence on this launch with no on-screen sign why. One line,
+		// same corrupt-prefs mechanism, no new panel/modal/settings row.
+		// `else`: the corrupt-prefs notice is rarer and more consequential
+		// (you lost settings), so it wins the single warnLine slot.
+		a.warnLine = line
 		a.warnAt = time.Now()
 	}
 	// Warm the local-pack index at startup rather than waiting for the first
