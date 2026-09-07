@@ -4,6 +4,34 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.94.0 — 2026-09-07
+
+Five follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
+popped-out preview animates and travels with the main window, and mute sticks.
+
+- **Text is sharp at every UI scale, not just in some places.** The last release
+  drew log lines, shownames and text fields at your screen's real pixel size and
+  left buttons, labels, settings and the rest stretched. The fix now sits in the
+  one drawing step they all share, so it covers the whole client instead of the
+  handful of screens picked out by hand.
+- **The popped-out preview plays animations.** It showed a single still frame
+  before. It keeps animating while the main window is minimised or sitting idle,
+  which is most of the reason to put it in its own window.
+- **The popped-out preview rises with the main window.** Clicking the client
+  brings the preview up with it. It does not take focus, and it does not float
+  over other programs while AsyncAO is behind them.
+- **Muting is remembered.** Master, music, sound effects and blips each keep
+  their mute state between sessions and across reconnects. Starting up muted
+  says so in the lobby, since the volume strip is hidden by default and there
+  would otherwise be nothing to see.
+- **Selecting text in the log copies what you highlighted.** The highlight and
+  the copy were measured with a different font size than the one on screen, so
+  the further along a line you selected, the further off the result was. The
+  MOTD showed it first because it is the longest text in the client, but IC and
+  OOC had the same fault.
+
+Thanks to CS for the reports.
+
 ## v1.93.0 — 2026-09-05
 
 Reconnecting keeps your log, the emote preview can leave the window, and areas
