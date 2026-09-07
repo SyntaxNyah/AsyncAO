@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"image"
 	"testing"
 
@@ -320,6 +321,78 @@ func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
 	}
 	if fillCalls != 5 {
 		t.Fatalf("fillCalls = %d after a second revisit of the over-budget frame, want 5", fillCalls)
+	}
+}
+
+// TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick pins the one
+// case where a stale frame could outlive the pick it belongs to.
+//
+// A pick that OVERFLOWED the aggregate cache budget is displayed with
+// texIsCached false — the display slot owns that texture outright, and
+// animFrames never held it. If the next pick's very first fill then FAILS
+// (readTexturePixels has a documented failure mode: a backend without
+// render-target support, or a transient device loss), the identity fields
+// have already moved to the new pick. A resetAnimCache that cleared the
+// display slot only in the cache-owned case would leave the window PAINTING
+// THE PREVIOUS EMOTE under the new pick's identity, and the split would
+// stick: internal/ui marks a pick fed before the fill that might fail, so
+// nothing retries until the user picks a third, different emote.
+//
+// Delete the `p.tex != nil && !p.texIsCached` destroy or the unconditional
+// clear that follows it in resetAnimCache and this test fails on the
+// "still displaying the previous pick" assertion.
+func TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick(t *testing.T) {
+	_, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+
+	pw := NewPreviewWindow()
+	if err := pw.Open("test-preview-anim-stale", 64, 64); err != nil {
+		t.Skipf("preview window unavailable: %v", err)
+	}
+	defer pw.Close()
+
+	// Same oversized geometry TestPreviewWindowShowAnimFrameRespectsCacheBudget
+	// uses, for the same reason: three of these overflow the aggregate cap, so
+	// the third is displayed solo-owned rather than cached.
+	const w, h = 1900, 1900
+	fillCalls := 0
+	fill := previewAnimFillCounter(w, h, &fillCalls)
+	oldSource := &TexturePage{}
+	for idx := 0; idx < 3; idx++ {
+		if err := pw.ShowAnimFrame("old-pick", oldSource, idx, fill); err != nil {
+			t.Fatalf("ShowAnimFrame(old-pick, idx=%d): %v", idx, err)
+		}
+	}
+	if !pw.animOverflowed {
+		t.Fatalf("setup: three %dx%d frames did not overflow the %d MiB cache cap",
+			w, h, previewWindowAnimCacheBudgetBytes>>20)
+	}
+	if pw.texIsCached {
+		t.Fatal("setup: the over-budget frame must be displayed solo-owned (texIsCached false)")
+	}
+	stale := pw.tex
+	if stale == nil {
+		t.Fatal("setup: nothing on display after the over-budget frame")
+	}
+
+	// The new pick's first readback fails.
+	wantErr := errors.New("readback unavailable")
+	newSource := &TexturePage{}
+	err := pw.ShowAnimFrame("new-pick", newSource, 0, func() (*image.RGBA, error) {
+		return nil, wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ShowAnimFrame returned %v, want the fill error propagated", err)
+	}
+	if pw.tex == stale {
+		t.Fatal("the window is still displaying the PREVIOUS pick's frame after switching to a new " +
+			"pick whose first fill failed — identity moved but the display slot did not, and nothing retries")
+	}
+	if pw.tex != nil {
+		t.Errorf("display slot = %p after a failed switch, want nil (a blank window, not another pick's frame)", pw.tex)
+	}
+	if pw.texW != 0 || pw.texH != 0 {
+		t.Errorf("texW/texH = %dx%d after a failed switch, want 0x0 to match the cleared slot", pw.texW, pw.texH)
 	}
 }
 

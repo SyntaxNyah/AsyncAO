@@ -205,13 +205,13 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 // TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly is the animated
 // counterpart of TestFeedDetachedPreviewFrameUploadsOnce: a multi-frame
 // animated pick must advance previewWinFedFrame exactly when the wall clock
-// crosses a frame boundary, and must NOT touch it (no wasted GPU work) on a
-// call where the boundary hasn't been crossed. Deleting the
-// `idx == a.previewWinFedFrame` gate in feedDetachedPreviewFrame (falling
-// back to feeding on every call) doesn't change what this test asserts, but
-// TestPreviewWindowShowAnimFrameCachesAfterFirstPass (internal/render) would
-// then see far more fill calls than frames — that pair together is what
-// actually catches a regression to "feed every call."
+// crosses a frame boundary.
+//
+// This test covers the POSITIVE direction only: it would still pass if the
+// gate degraded to "feed on every call", because ShowAnimFrame's own cache
+// absorbs the redundant calls invisibly. The gate itself is pinned by
+// TestPreviewFeedNeeded below, which drives the real predicate
+// feedDetachedPreviewFrame asks.
 func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
 	a.previewBase = previewAnimFeedFixtureBase
@@ -262,6 +262,57 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d after the loop wrapped back to frame 0, want 0", a.previewWinFedFrame)
+	}
+}
+
+// TestPreviewFeedNeeded drives feedDetachedPreviewFrame's actual gate. The
+// gate is invisible from outside on the normal path (ShowAnimFrame's cache
+// swallows a redundant call), so nothing above catches its removal — but it
+// stops being cosmetic the moment a pick overflows the animation cache
+// budget, where an uncached ordinal calls fill on EVERY visit and losing the
+// gate turns one readback per animation tick into one per rendered frame.
+//
+// Weaken any arm of previewFeedNeeded and a named case here fails: return
+// true unconditionally and both "nothing changed" cases fail; drop the page
+// comparison and the re-decode case fails; drop the `animated &&` and the
+// static case fails.
+func TestPreviewFeedNeeded(t *testing.T) {
+	pageA, pageB := &render.TexturePage{}, &render.TexturePage{}
+	const baseA, baseB = "char://a", "char://b"
+
+	cases := []struct {
+		name          string
+		fedBase, base string
+		fedPage, page *render.TexturePage
+		animated      bool
+		fedIdx, idx   int
+		want          bool
+		why           string
+	}{
+		{"first feed of a pick", "", baseA, nil, pageA, false, 0, 0, true,
+			"nothing has ever been fed, so the window is blank"},
+		{"same static pick, unchanged", baseA, baseA, pageA, pageA, false, 0, 0, false,
+			"a static pick is fed exactly once, the pre-animation contract"},
+		{"different base", baseA, baseB, pageA, pageB, false, 0, 0, true,
+			"a different emote must replace what is on screen"},
+		{"same base, re-decoded page", baseA, baseA, pageA, pageB, true, 1, 1, true,
+			"a T1 evict+re-decode yields a NEW page pointer; the cached frames are stale even at the same index"},
+		{"animated, index advanced", baseA, baseA, pageA, pageA, true, 0, 1, true,
+			"the animation crossed a frame boundary"},
+		{"animated, index unchanged", baseA, baseA, pageA, pageA, true, 2, 2, false,
+			"THE GATE: same frame still showing, so a 60Hz loop must not re-feed it"},
+		{"animated, index wrapped to 0", baseA, baseA, pageA, pageA, true, 2, 0, true,
+			"a loop wrap is a real boundary crossing, not a no-change"},
+		{"static page whose index somehow differs", baseA, baseA, pageA, pageA, false, 0, 1, false,
+			"a non-animated page has one frame; the index is not a reason to re-feed it"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := previewFeedNeeded(tc.fedBase, tc.base, tc.fedPage, tc.page, tc.animated, tc.fedIdx, tc.idx)
+			if got != tc.want {
+				t.Errorf("previewFeedNeeded = %v, want %v — %s", got, tc.want, tc.why)
+			}
+		})
 	}
 }
 

@@ -98,7 +98,7 @@ type PreviewWindow struct {
 	// cache, never just one slot, because a re-decode/eviction of the source
 	// page (a NEW source identity for the SAME base) means every previously
 	// cached frame's content is stale, not just the one at the current idx.
-	animFrames []*sdl.Texture
+	animFrames []previewAnimFrame
 	animFor    string
 	animSource any
 	animBytes  int64
@@ -110,6 +110,17 @@ type PreviewWindow struct {
 	// correct, still bounded by the animation's own frame-index-change rate,
 	// never by render-frame rate) rather than growing the cache past its cap.
 	animOverflowed bool
+}
+
+// previewAnimFrame is one cached animation frame: the texture plus the pixel
+// size Present's fit math needs. The size is carried alongside rather than
+// asked back off the texture because sdl.Texture.Query crosses cgo with four
+// out-parameters, which escape to the heap — measured at 4 allocs / 16 B per
+// call, the same class of trap as Ren.GetScale (CLAUDE.md). Every producer
+// already knows the size at upload time, so nothing has to ask.
+type previewAnimFrame struct {
+	tex  *sdl.Texture
+	w, h int32
 }
 
 // NewPreviewWindow returns a closed PreviewWindow. See the type doc for the
@@ -286,15 +297,11 @@ func (p *PreviewWindow) Close() {
 		p.lastW, p.lastH = p.win.GetSize()
 		p.hadLastRect = true
 	}
-	// Destroy the display texture only if THIS slot owns it outright — a
-	// cache-owned one (texIsCached) is destroyed by resetAnimCache below,
-	// never here, or it would be a double free the moment resetAnimCache
-	// walks animFrames.
-	if p.tex != nil && !p.texIsCached {
-		p.tex.Destroy()
-	}
-	p.tex = nil
-	p.resetAnimCache() // frees every cached animation-frame texture too
+	// resetAnimCache frees every cached animation-frame texture AND the display
+	// slot, in whichever of the two ownership cases applies. Close deliberately
+	// does not repeat that test itself: one place knowing the rule is what
+	// keeps a solo-owned frame from surviving a teardown it should not.
+	p.resetAnimCache()
 	if p.ren != nil {
 		p.ren.Destroy()
 		p.ren = nil
@@ -315,13 +322,21 @@ func (p *PreviewWindow) Close() {
 // window entirely — there is nothing left to invalidate it later), and from
 // Close.
 //
-// If the currently displayed texture (p.tex) belongs to the cache being torn
-// down, the display slot is cleared too rather than left pointing at freed
-// SDL memory — Present's next call would otherwise use-after-free it.
+// THE DISPLAY SLOT IS CLEARED IN BOTH OWNERSHIP CASES, and the second one is
+// not symmetry for its own sake:
+//   - A cache-owned texture (texIsCached) was just freed by the loop above, so
+//     leaving it in the slot would be a use-after-free on Present's next call.
+//   - An outright-owned one — what the over-budget path hands to
+//     setDisplayTexture(tex, false) — is still valid memory, so its failure is
+//     quieter and worse. animFor/animSource move to the new pick while the
+//     window keeps PAINTING THE OLD ONE, and that split state sticks: the
+//     caller marks a pick fed BEFORE the readback that might fail, so a fill
+//     error on the first frame of the new pick is never retried and the
+//     previous emote stays on screen until the user picks a third one.
 func (p *PreviewWindow) resetAnimCache() {
-	for _, t := range p.animFrames {
-		if t != nil {
-			t.Destroy()
+	for _, f := range p.animFrames {
+		if f.tex != nil {
+			f.tex.Destroy()
 		}
 	}
 	p.animFrames = nil
@@ -329,9 +344,10 @@ func (p *PreviewWindow) resetAnimCache() {
 	p.animSource = nil
 	p.animBytes = 0
 	p.animOverflowed = false
-	if p.texIsCached {
-		p.tex, p.texW, p.texH, p.texIsCached = nil, 0, 0, false
+	if p.tex != nil && !p.texIsCached {
+		p.tex.Destroy() // solo-owned: the loop above never visited it
 	}
+	p.tex, p.texW, p.texH, p.texIsCached = nil, 0, 0, false
 }
 
 // setDisplayTexture points the window's display slot at tex — either a
@@ -341,17 +357,13 @@ func (p *PreviewWindow) resetAnimCache() {
 // outright (cached==false last time): a cache-owned one belongs to
 // animFrames and is torn down there (resetAnimCache/Close), never here.
 //
-// texW/texH are read back off tex itself (Query) rather than threaded
-// through every caller — cheap (no allocation) and impossible to drift from
-// what is actually about to be presented, unlike a hand-tracked width/height
-// that a future edit could forget to update on one call site.
-func (p *PreviewWindow) setDisplayTexture(tex *sdl.Texture, cached bool) {
+// w/h are the texture's pixel size, passed in rather than queried back off
+// tex: every caller already has it (uploadFrame validated it, the cache
+// stored it), and sdl.Texture.Query would cross cgo and heap-allocate its
+// out-parameters on a path that runs on every animation frame tick.
+func (p *PreviewWindow) setDisplayTexture(tex *sdl.Texture, w, h int32, cached bool) {
 	if p.tex != nil && !p.texIsCached && p.tex != tex {
 		p.tex.Destroy()
-	}
-	_, _, w, h, err := tex.Query()
-	if err != nil {
-		w, h = 0, 0 // previewFitRect's own degenerate-input guard handles a 0x0 dst
 	}
 	p.tex, p.texW, p.texH, p.texIsCached = tex, w, h, cached
 }
@@ -398,7 +410,7 @@ func (p *PreviewWindow) SetFrame(img *image.RGBA) error {
 	// whatever animation cache the PREVIOUS pick may have built, or its
 	// textures would simply leak (nothing else ever visits them again).
 	p.resetAnimCache()
-	p.setDisplayTexture(tex, false)
+	p.setDisplayTexture(tex, int32(img.Rect.Dx()), int32(img.Rect.Dy()), false)
 	return nil
 }
 
@@ -473,8 +485,9 @@ func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill fun
 		p.resetAnimCache()
 		p.animFor, p.animSource = base, source
 	}
-	if idx < len(p.animFrames) && p.animFrames[idx] != nil {
-		p.setDisplayTexture(p.animFrames[idx], true) // cache hit: no readback, no upload
+	if idx < len(p.animFrames) && p.animFrames[idx].tex != nil {
+		hit := p.animFrames[idx]
+		p.setDisplayTexture(hit.tex, hit.w, hit.h, true) // cache hit: no readback, no upload
 		return nil
 	}
 	img, err := fill()
@@ -495,19 +508,19 @@ func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill fun
 	frameBytes := int64(w) * int64(h) * 4
 	if !p.animOverflowed && p.animBytes+frameBytes <= previewWindowAnimCacheBudgetBytes {
 		if idx >= len(p.animFrames) {
-			grown := make([]*sdl.Texture, idx+1)
+			grown := make([]previewAnimFrame, idx+1)
 			copy(grown, p.animFrames)
 			p.animFrames = grown
 		}
-		p.animFrames[idx] = tex
+		p.animFrames[idx] = previewAnimFrame{tex: tex, w: w, h: h}
 		p.animBytes += frameBytes
-		p.setDisplayTexture(tex, true)
+		p.setDisplayTexture(tex, w, h, true)
 	} else {
 		// Over cache budget for this pick: show it, but do not retain it —
 		// the NEXT visit to this ordinal calls fill again (graceful degrade,
 		// hard rule 4 — never grow the cache past its named cap).
 		p.animOverflowed = true
-		p.setDisplayTexture(tex, false)
+		p.setDisplayTexture(tex, w, h, false)
 	}
 	return nil
 }

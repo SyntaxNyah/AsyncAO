@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // previewWindowTitle names the detached OS window in the taskbar/alt-tab and
@@ -173,8 +174,8 @@ func (a *App) feedDetachedPreviewFrame() {
 	}
 	idx := pageFrameLoop(page, a.now().Sub(a.previewAt))
 	animated := page.Animated && len(page.Frames) > 1 // pageFrameLoop's own "loop at all" guard
-	samePick := a.previewWinFedBase == a.previewBase && a.previewWinFedPage == page
-	if samePick && (!animated || idx == a.previewWinFedFrame) {
+	if !previewFeedNeeded(a.previewWinFedBase, a.previewBase, a.previewWinFedPage, page,
+		animated, a.previewWinFedFrame, idx) {
 		return // same pick, same source page, nothing new to show
 	}
 	// Marked attempted regardless of what follows: a decode that resolved to
@@ -195,6 +196,24 @@ func (a *App) feedDetachedPreviewFrame() {
 	_ = a.d.Preview.ShowAnimFrame(a.previewBase, page, idx, func() (*image.RGBA, error) {
 		return readTexturePixels(a.ctx.Ren, page.Frames[idx], page.W, page.H)
 	})
+}
+
+// previewFeedNeeded is feedDetachedPreviewFrame's whole "is there anything new
+// to show" decision, factored out as a pure function so it can be driven
+// exhaustively by a test. It is not a duplicate of the gate: it IS the gate,
+// its only production caller being the line above.
+//
+// A frequency gate rather than a correctness one — ShowAnimFrame's own cache
+// would absorb a redundant call on the normal path — but it stops being merely
+// an optimization the moment a pick overflows the animation cache budget:
+// there, an uncached ordinal calls fill on EVERY visit, so without the
+// fedIdx == idx test a 60 Hz main loop would run a full GPU readback per
+// rendered frame instead of one per animation frame tick.
+func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, animated bool, fedIdx, idx int) bool {
+	if fedBase != base || fedPage != page {
+		return true // different pick, or the same base re-decoded into a new page
+	}
+	return animated && idx != fedIdx
 }
 
 // AdvanceDetachedPreview is syncPreviewWindow's entry point for the main
