@@ -32,6 +32,7 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | 404 never re-probed in TTL | **1 upstream hit for 11 fetches** | `TestNotFoundCachedWithinTTL` |
 | Singleflight | **32 concurrent fetches → 1 upstream request** | `TestSingleflightCollapsesConcurrentFetches` |
 | Prefs deadlock regression | **mutators complete instantly** | `TestSetFormatOrderCompletes` |
+| UI label blit at fractional scale, 0 allocs | **0 allocs/op** steady state, **~2.0-2.4 µs/op** (device-exact) vs **~4.0 µs/op pre-fix** (software renderer) — `blitLabel`'s device-exact bracket (`blitLabelExact`) is *cheaper* than the ambient-scale resample it replaces here, because a scaled `Ren.Copy` costs a per-pixel bilinear resample the extra `SetScale`/`SetClipRect` calls don't approach; identity scale (100%) is unaffected (~1.5-1.8 µs/op either way, noise-level) since `uiDeviceExactAt` excludes it | `BenchmarkLabelAtFractionalScale` / `BenchmarkLabelAtIdentityScale` + `TestLabelAllocFreeAtFractionalScale` |
 | Race detector | **clean across all packages** | CI `go test -race ./...` |
 
 Notes:
@@ -47,6 +48,13 @@ Notes:
   eviction, or purge bumps `TextureStore.Generation` (re-measured above).
 - GIF/APNG composition canvases and DisposalPrevious snapshots come from the
   pixel pool: animated decodes now allocate only their output frames.
+- `BenchmarkLabelAtFractionalScale`'s software-renderer win is a property of
+  *this* backend (a scaled bilinear resample is expensive to interpret in
+  software); it is not a claim that the accelerated (D3D/OpenGL) backend sees
+  the same delta — there the extra `SetScale`/`SetClipRect` cgo calls have to
+  compete against a cheap GPU-side scale instead of an expensive CPU one. Not
+  measured on an accelerated renderer; the alloc gate (`TestLabelAllocFreeAtFractionalScale`)
+  is backend-independent and is the one that must hold everywhere.
 - **Character select is the one whole-screen draw with no gate yet.** Its themed
   geometry is alloc-free (`charSelectGridPlan`, `cellAt`, `charHoverID` and the
   cached heading are all covered), but `drawCharCell` still rebuilds each visible

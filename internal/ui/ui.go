@@ -2924,13 +2924,54 @@ func deviceExactText(devPct int32) bool {
 	return devPct != DefaultScalePct && devPct != 0
 }
 
+// uiDeviceExactAt is blitLabel's gate, the ui-package twin of
+// render.deviceExactAt (internal/render/text.go) — same equality, same
+// "not worth it at the identity scale" exclusion. It compares the RENDERER'S
+// CURRENT scale (renderPct, from Ctx.RenderScalePct — an offscreen export
+// bracket can move this away from the label's own devPct) against the specific
+// TEXTURE's own device build scale (devPct, cachedText.devPct, stamped at
+// rasterization time), not the weaker "is any fractional scale active"
+// predicate deviceExactText uses: a label rasterized during one scale and
+// blitted during another (the export/pinned-tab brackets) must NOT take the
+// 1:1 shortcut, or it draws at the wrong on-screen size.
+func uiDeviceExactAt(renderPct, devPct int32) bool {
+	return renderPct > 0 && renderPct != DefaultScalePct && renderPct == devPct
+}
+
 // blitLabel copies a cached label (atlas sub-rect aware) through the scratch
 // rects — zero heap escapes on the per-frame draw path. wLog is the LOGICAL
 // destination width (a full label passes t.logicalW(); a clipped one a smaller
-// logical maxW). #77: the SRC sub-rect stays in DEVICE px (the texture is
-// device-sized), the DST in LOGICAL px (the renderer's SetScale maps it 1:1 onto
-// device pixels — crisp). devPct==100 reproduces the pre-#77 1:1 blit.
+// logical maxW).
+//
+// F1 (blur still there after v1.93.0): at a fractional UI scale the SCALED path
+// below computes its source crop and destination width through two
+// INDEPENDENTLY-rounding formulas (a truncating multiply here, a separate
+// round-half-up divide in whichever caller measured wLog, then the ambient
+// SetScale re-multiplies the destination) — the two rects can end up describing
+// different physical device spans, and HINT_RENDER_SCALE_QUALITY=1 (main.go)
+// turns that mismatch into a real bilinear blend at the label's edge, on every
+// plain Label/Button/Checkbox/Heading/Tooltip in the client, not just the
+// emoji/mixed-script surfaces v1.93.0 (12d1965) fixed. Gated on the SAME
+// equality MessageRaster.deviceExact/Badge.Draw already use (uiDeviceExactAt),
+// blitLabelExact draws src.W==dst.W under SetScale(1,1) instead — no resample is
+// even possible when the two rects are the same value. devPct==100 (or an
+// export bracket that disagrees with the renderer's own scale) keeps this exact
+// pre-#77 1:1-at-scale-1 / scaled-at-scale-N behavior, byte-identical.
 func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
+	if uiDeviceExactAt(c.RenderScalePct(), t.devPct) {
+		c.blitLabelExact(t, x, y, wLog)
+		return
+	}
+	c.blitLabelScaled(t, x, y, wLog)
+}
+
+// blitLabelScaled is blitLabel's pre-generalization path, kept as its own named
+// function (not inlined) so a test can drive it directly as the "old behavior"
+// reference for an A/B pixel comparison without re-deriving its arithmetic. #77:
+// the SRC sub-rect stays in DEVICE px (the texture is device-sized), the DST in
+// LOGICAL px (the renderer's ambient SetScale maps it back onto device pixels —
+// exact only when that mapping happens to round-trip, see blitLabel's doc).
+func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
 	srcW := wLog
 	if t.devPct > 0 && t.devPct != DefaultScalePct {
 		srcW = wLog * t.devPct / DefaultScalePct // logical width → device sample width
@@ -2941,6 +2982,72 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: srcW, H: t.h}
 	c.drawDst = sdl.Rect{X: x, Y: y, W: wLog, H: uiLogicalFromDevice(t.h, t.devPct)}
 	_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
+}
+
+// blitLabelExact is blitLabel's device-exact bracket — the same SetScale(1,1) /
+// reassert-the-clip-in-device-pixels / restore-by-recomputing shape
+// devFieldValue (ui.go), MessageRaster.draw (internal/render/text.go) and
+// Badge.Draw (internal/render/badge.go) already use, generalized to every kit
+// label instead of only the focused field's moving parts. Only reached when
+// uiDeviceExactAt has already confirmed the texture's own device scale matches
+// the renderer's current one.
+//
+// THE FIX, restated: src.W and dst.W are the SAME computed value (devW below),
+// so SDL is never asked to resample — the two rects can no longer describe
+// different physical spans, which is the whole mismatch blitLabelScaled can hit.
+//
+// THE METAL CLIP TRAP (documented at length in text.go's DrawScaled and
+// badge.go's Draw): macOS's Metal backend evaluates a clip rect against the
+// scale in force when it's USED, not when it was SET, so flipping to
+// SetScale(1,1) underneath an already-set logical clip silently shrinks it to
+// 1/scale of its intended size for the duration of this blit. c.clipOn/
+// c.clipRect (the pushClip mirror) is re-projected to device pixels and
+// re-asserted INSIDE the bracket, in the same order those three call sites use,
+// so every backend reads the same rows. c.cgoRect is blitLabel's own scratch
+// mirror for this (same reuse discipline devFieldValue's clip handling already
+// uses on this field — nothing else touches it mid-bracket, this function calls
+// no pushClip/popClip/Fill/Border of its own).
+//
+// Allocation-free: c.drawSrc/c.drawDst (already-reused scratch rects) and
+// c.cgoRect carry every rect: no &local ever crosses into cgo. The scale is
+// restored by RECOMPUTING it from c.RenderScalePct(), never by Ren.GetScale(),
+// which takes the address of named returns for cgo and heap-allocates two
+// float32s per call — a per-widget-per-frame allocation this draw path (called
+// for every Label/Button/Checkbox on screen) cannot have.
+func (c *Ctx) blitLabelExact(t cachedText, x, y, wLog int32) {
+	dev := t.devPct
+
+	// One device-width computation feeds BOTH src and dst (the fix). Clamped to
+	// the texture's own device width as a safety net — the same clamp
+	// blitLabelScaled applies to its srcW, now guarding a dst that can never
+	// disagree with it.
+	devW := uiDeviceFromLogical(wLog, dev)
+	if devW > t.w {
+		devW = t.w
+	}
+
+	hadClip, prevClip := c.clipOn, c.clipRect
+	_ = c.Ren.SetScale(1, 1)
+	if hadClip {
+		c.cgoRect = sdl.Rect{
+			X: uiDeviceFromLogical(prevClip.X, dev), Y: uiDeviceFromLogical(prevClip.Y, dev),
+			W: uiDeviceFromLogical(prevClip.W, dev), H: uiDeviceFromLogical(prevClip.H, dev),
+		}
+		_ = c.Ren.SetClipRect(&c.cgoRect)
+	}
+
+	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: devW, H: t.h}
+	c.drawDst = sdl.Rect{X: uiDeviceFromLogical(x, dev), Y: uiDeviceFromLogical(y, dev), W: devW, H: t.h}
+	_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
+
+	s := float32(c.RenderScalePct()) / float32(DefaultScalePct)
+	_ = c.Ren.SetScale(s, s)
+	if hadClip {
+		c.cgoRect = prevClip
+		_ = c.Ren.SetClipRect(&c.cgoRect)
+	} else {
+		_ = c.Ren.SetClipRect(nil)
+	}
 }
 
 // Label draws text at (x, y) and returns its LOGICAL pixel width.

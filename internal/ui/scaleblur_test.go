@@ -487,3 +487,247 @@ func TestReactionBadgeCachePurgesOnDeviceScaleChange(t *testing.T) {
 		t.Errorf("LOGICAL badge size drifted across a UI-scale change: 100%%=%dx%d 150%%=%dx%d — a reaction float must not visibly change size just because the scale changed", lw100, lh100, lw150, lh150)
 	}
 }
+
+// F1 continued — "blur is still there" after v1.93.0/12d1965. That fix reached
+// only labelEmoji/labelCoveringCentered's RARE emoji/mixed-script raster branch,
+// the text field's own emoji-fallback branch, and reaction badges. It never
+// touched blitLabel (ui.go), the single choke point every PLAIN Label/Heading/
+// LabelClipped*/Button/Checkbox/Dropdown/Tooltip call in the client draws
+// through — including the exact widgets in the report's own screenshot
+// (Settings > WINDOW: a Checkbox, a Label, a Button, a Label). blitLabel now
+// carries the same device-exact bracket (blitLabelExact), gated the same way
+// MessageRaster/Badge already are (uiDeviceExactAt).
+
+// TestLabelDeviceExactAtFractionalScale is the Ctx.Label counterpart to
+// TestLabelCoveringCenteredDeviceExactAtFractionalScale (labelCoveringCentered)
+// and TestBadgeDeviceExactDiffersFromResampleAtFractionalScale
+// (internal/render/badge_test.go) for the surface neither of those closes: the
+// plain, non-emoji, non-focused-field label path.
+//
+// It drives the REAL production entry point (Ctx.Label) twice against the SAME
+// cached glyph texture: once with blitLabel's device-exact gate telling the
+// truth, once with it LIED to via beginRenderScaleOverride — the exact
+// production knob an offscreen export bracket already uses to decouple
+// Ctx.RenderScalePct from the live ambient ren.SetScale — forcing blitLabel down
+// the pre-generalization blitLabelScaled branch while the renderer's ACTUAL
+// scale (ren.SetScale, set once before either call, exactly as main.go sets it
+// per frame) never changes. This is not a reimplementation of blitLabel's gate:
+// it is the same knob RenderScalePct-based export brackets use for real.
+//
+//   - At 100% uiDeviceExactAt excludes the identity scale unconditionally for
+//     BOTH calls (same exclusion MessageRaster.deviceExact/Badge.Draw use), so
+//     the two paints must be byte-identical — a difference here would be a
+//     DIFFERENT bug than the one this test targets.
+//   - At 115%, "M" is a minimal reproducer of blitLabelScaled's src/dst
+//     rounding mismatch (blitLabel's own doc): the OLD path's independently
+//     re-derived width/height land the SAME device-sized glyph texture at a
+//     measurably different device row than its own device-exact 1:1 copy. The
+//     margin strip strictly ABOVE the glyph's own first ink row — found
+//     dynamically from the device-exact (correct) render, not a hardcoded row,
+//     so this does not silently stop testing anything if the embedded font
+//     ever changes — is pure background by construction in a correct render;
+//     the OLD path bleeds real (non-pure-white) pixels into it.
+//
+// Pure black-on-white text makes "not background" unambiguous, and the margin
+// sits entirely outside the glyph's own ink (not "inside a glyph"), so the
+// font's own antialiasing at the glyph's real edges cannot contaminate the
+// signal — the strip is either untouched background or it is evidence of the
+// mismatch, nothing else.
+//
+// DELETION CATCHER: reverting blitLabel to call blitLabelScaled unconditionally
+// (deleting the uiDeviceExactAt branch, or blitLabelExact itself) collapses the
+// "truth" and "lied" calls onto the identical code path — production and
+// reference become the same function call on the same inputs — and the 115%
+// subtest's "old path bleeds into the margin, the fixed path does not" assertion
+// goes back to failing exactly where it must.
+func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
+	const canvasW, canvasH = 60, 40
+	const text = "M"
+
+	paint := func(t *testing.T, pct int, exact bool) []byte {
+		t.Helper()
+		a := scaleTestApp(t)
+		c := a.ctx
+		c.SetUIScale(pct)
+		col := sdl.Color{R: 0, G: 0, B: 0, A: 255} // pure black on pure white bg: any non-pure pixel is unambiguous
+
+		ren := c.Ren
+		_ = ren.SetDrawColor(255, 255, 255, 255)
+		_ = ren.Clear()
+		_ = ren.SetScale(float32(pct)/100, float32(pct)/100) // the frame's ambient scale, set once, as main.go does
+		if !exact {
+			// Lie that the renderer is at the identity scale — uiDeviceExactAt
+			// excludes DefaultScalePct unconditionally — so blitLabel takes the
+			// OLD blitLabelScaled branch even though the ambient SetScale above
+			// is still fractional. Production knob, not a gate reimplementation:
+			// this is the same beginRenderScaleOverride an offscreen export
+			// bracket calls to keep RenderScalePct honest inside its own SetScale.
+			c.beginRenderScaleOverride(DefaultScalePct)
+		}
+		c.Label(4, 4, text, col)
+		if !exact {
+			c.endRenderScaleOverride()
+		}
+		_ = ren.SetScale(1, 1)
+
+		pix := make([]byte, canvasW*canvasH*4)
+		if err := ren.ReadPixels(&sdl.Rect{X: 0, Y: 0, W: canvasW, H: canvasH}, uint32(sdl.PIXELFORMAT_ARGB8888), unsafe.Pointer(&pix[0]), canvasW*4); err != nil {
+			t.Skipf("ReadPixels: %v", err)
+		}
+		return pix
+	}
+
+	for _, pct := range []int{100, 115} {
+		t.Run(map[int]string{100: "100pct", 115: "115pct"}[pct], func(t *testing.T) {
+			exact := paint(t, pct, true)
+			lied := paint(t, pct, false)
+
+			if pct == DefaultScalePct {
+				if !bytes.Equal(exact, lied) {
+					t.Error("at 100% Ctx.Label's painted pixels depend on the device-exact gate — uiDeviceExactAt should exclude the identity scale for both calls, so nothing should differ here")
+				}
+				return
+			}
+
+			// Find the glyph's own first ink row in the CORRECT (device-exact)
+			// render, scanning top-down over the whole canvas. Every row strictly
+			// above it is background BY CONSTRUCTION in a correct render — this
+			// is a property of how `top` was found, not an assumption.
+			top := int32(-1)
+		scanTop:
+			for y := int32(0); y < canvasH; y++ {
+				for x := int32(0); x < canvasW; x++ {
+					off := (y*canvasW + x) * 4
+					b, g, r := exact[off], exact[off+1], exact[off+2]
+					if r != 255 || g != 255 || b != 255 {
+						top = y
+						break scanTop
+					}
+				}
+			}
+			if top <= 0 {
+				t.Fatalf("precondition failed: the device-exact render has no blank margin above its own glyph (top=%d) — this pct/text pair does not exercise the mismatch, pick another one rather than weaken the assertion below", top)
+			}
+
+			// blended counts pixels that are neither pure white nor pure black —
+			// on a pure black-on-white render that is only possible where a
+			// filtered copy interpolated across a transparency/ink boundary.
+			blended := func(pix []byte) int {
+				n := 0
+				for y := int32(0); y < top; y++ {
+					for x := int32(0); x < canvasW; x++ {
+						off := (y*canvasW + x) * 4
+						b, g, r := pix[off], pix[off+1], pix[off+2]
+						if r > 0 && r < 255 && r == g && g == b {
+							n++
+						}
+					}
+				}
+				return n
+			}
+
+			if n := blended(exact); n != 0 {
+				t.Errorf("the device-exact render has %d blended pixel(s) above its own glyph's first ink row (row<%d) — the harness's own precondition is broken", n, top)
+			}
+			if n := blended(lied); n == 0 {
+				t.Errorf("at %d%% the OLD (blitLabelScaled) render shows zero blended pixels above the device-exact glyph's own first ink row (row<%d) — this pct/text pair no longer reproduces the src/dst rounding mismatch; this is the KNOWN-BUGGY reference path, so a zero reading here means the test fixture needs revisiting, not that anything got fixed", pct, top)
+			}
+		})
+	}
+}
+
+// TestBlitLabelDispatchesToDeviceExactBranch is the AST wiring/deletion-catcher
+// for the WHOLE class (not just the "M"-at-115% instance
+// TestLabelDeviceExactAtFractionalScale pins): it reads blitLabel's own
+// production source and requires that it still gates on uiDeviceExactAt and
+// still calls blitLabelExact. Someone "simplifying" blitLabel back down to a
+// single unconditional blitLabelScaled body — the exact regression this whole
+// file is about — fails here even on a pct/text combination the pixel test
+// above does not happen to cover.
+func TestBlitLabelDispatchesToDeviceExactBranch(t *testing.T) {
+	body := funcBodySource(t, "ui.go", "blitLabel")
+	if !containsCall(body, "uiDeviceExactAt") {
+		t.Error("blitLabel no longer gates on uiDeviceExactAt — every plain Label/Button/Checkbox draw would silently fall back to the pre-fix ambient-scale blit at any fractional UI scale")
+	}
+	if !containsCall(body, "blitLabelExact") {
+		t.Error("blitLabel no longer calls blitLabelExact — the device-exact branch this file's blur fix depends on is gone even if the gate itself survived")
+	}
+	if !containsCall(body, "blitLabelScaled") {
+		t.Error("blitLabel no longer calls blitLabelScaled — the export/pinned-tab fallback (a renderer scale that disagrees with the texture's own devPct) has nowhere left to draw")
+	}
+}
+
+// TestLabelAllocFreeAtFractionalScale closes the coverage gap
+// TestWholeScreenGatesGoThroughAllocsPerFrame's sibling gates leave open: every
+// whole-screen 0-alloc fixture in this package (wholescreenalloc_test.go) is
+// pinned at uiScalePct=100, where uiDeviceExactAt is false by construction and
+// blitLabelExact's new SetScale/SetClipRect bracket never runs at all. Without
+// this gate, a naive implementation of that bracket (a &local rect escaping
+// through cgo, say) could regress the render loop's zero-allocation contract at
+// every fractional scale and nothing already in the suite would notice.
+func TestLabelAllocFreeAtFractionalScale(t *testing.T) {
+	a := scaleTestApp(t)
+	c := a.ctx
+	c.SetUIScale(115) // fractional: exercises blitLabelExact, not the 100% fast path
+
+	// A clip is armed for part of the run so the reassert-the-clip branch inside
+	// blitLabelExact is measured too, not just the no-clip path.
+	draw := func() {
+		c.Label(4, 4, "Fit to screen", ColText)
+		cp, ch := c.pushClip(sdl.Rect{X: 0, Y: 0, W: 200, H: 60})
+		c.Label(4, 20, "Custom:", ColText)
+		c.popClip(cp, ch)
+	}
+	// Warm the label cache/atlas before measuring: only the STEADY STATE (cache
+	// hit, texture already resident) is the render-loop's contract; the first
+	// rasterization is a one-shot cost every AllocsPerRun-gated draw in this
+	// package already excludes the same way.
+	draw()
+	if n := testing.AllocsPerRun(200, draw); n != 0 {
+		t.Errorf("Ctx.Label allocates %.1f/op at a fractional UI scale (115%%) once its label cache is warm — blitLabelExact's SetScale/SetClipRect bracket must stay allocation-free like devFieldValue/MessageRaster.draw/Badge.Draw already are", n)
+	}
+}
+
+// BenchmarkLabelAtFractionalScale is the wall-clock half of the perf gate the
+// alloc test above cannot show: blitLabelExact adds two SetScale and up to two
+// SetClipRect cgo calls per label versus the pre-fix single Ren.Copy, and
+// blitLabel runs per-widget-per-frame. Run with
+// `go test -run=NONE "-bench=BenchmarkLabelAtFractionalScale" -benchmem` and
+// compare against BenchmarkLabelAtIdentityScale, which must stay on the
+// untouched 100% fast path (nothing added there).
+func BenchmarkLabelAtFractionalScale(b *testing.B) {
+	ren, cleanup := newCaptureHarness(b)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		b.Fatalf("NewCtx: %v", err)
+	}
+	defer c.Destroy()
+	c.SetUIScale(115)
+	c.Label(4, 4, "Fit to screen", ColText) // prime the cache/atlas
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		c.Label(4, 4, "Fit to screen", ColText)
+	}
+}
+
+// BenchmarkLabelAtIdentityScale is BenchmarkLabelAtFractionalScale's control:
+// uiDeviceExactAt is false at 100% by construction, so this must show no added
+// cost from the fix — the whole point of keeping the identity-scale short
+// circuit.
+func BenchmarkLabelAtIdentityScale(b *testing.B) {
+	ren, cleanup := newCaptureHarness(b)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		b.Fatalf("NewCtx: %v", err)
+	}
+	defer c.Destroy()
+	c.Label(4, 4, "Fit to screen", ColText) // prime the cache/atlas
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		c.Label(4, 4, "Fit to screen", ColText)
+	}
+}
