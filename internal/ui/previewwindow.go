@@ -71,6 +71,17 @@ func (a *App) openDetachedPreview() {
 	if err != nil {
 		return
 	}
+	// Ties the new OS window's z-order to the main window (Windows-only
+	// native owner relationship; a documented no-op elsewhere) — "shared
+	// priority with main async window, moving on top of other windows when
+	// async is selected". Best-effort: LinkOwner's own bool return is
+	// intentionally unchecked here, matching AllowSetForeground's existing
+	// best-effort call convention elsewhere in this codebase — a failed
+	// link just leaves the preview with its previous, already-workable,
+	// independent z-order rather than blocking the pop-out over it. See
+	// render.PreviewWindow.LinkOwner's doc for the measured reasoning
+	// (why a focus-hook approach was ruled out first).
+	a.d.Preview.LinkOwner(a.ctx.win)
 	// Force a fresh feed even if this exact previewBase was already fed to a
 	// PRIOR (now-closed) window — a new OS window has no texture of its own
 	// yet, and previewWinFedBase otherwise still names this base from before.
