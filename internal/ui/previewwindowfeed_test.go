@@ -387,8 +387,8 @@ func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
 	if !a.previewIsDetached() {
 		t.Fatal("setup: toggle did not detach")
 	}
-	if cap := a.PreviewAnimWakeCap(); cap != previewAnimWakeCapMs {
-		t.Errorf("PreviewAnimWakeCap() = %v for a detached ANIMATED pick, want %v", cap, previewAnimWakeCapMs)
+	if cap := a.PreviewAnimWakeCap(); cap != previewAnimWakeCap {
+		t.Errorf("PreviewAnimWakeCap() = %v for a detached ANIMATED pick, want %v", cap, previewAnimWakeCap)
 	}
 }
 

@@ -4,7 +4,7 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.94.0 — 2026-09-08
+## v1.94.0 — 2026-09-11
 
 Six follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
 popped-out preview animates and travels with the main window, and mute sticks.

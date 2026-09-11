@@ -8462,17 +8462,17 @@ func (a *App) clearPreAfterSend() {
 // A send the server swallowed never echoes, so everything stays put for an
 // immediate re-Enter regardless of which branch a LATER echo would have hit.
 func (s *sessionState) noteOwnICEcho() {
-	if strings.HasPrefix(s.icInput, s.icPendingSent) {
-		// Strip only the part that actually sent; whatever was typed on top
-		// of it during the round trip is real, unsent draft and stays. When
-		// icPendingSent is "" (nothing sent, or an earlier echo already
-		// consumed it) this strips zero characters — a safe no-op, not a
-		// case that needs its own branch. The IC field's undo history
-		// records the clear at its next draw (fieldhistory.go's
-		// out-of-band detector), so Ctrl+Z still brings a fully-cleared
-		// sent line back — with real redo on top.
-		s.icInput = s.icInput[len(s.icPendingSent):]
-	}
+	// Strip only the part that actually sent; whatever was typed on top
+	// of it during the round trip is real, unsent draft and stays. When
+	// icPendingSent is "" (nothing sent, or an earlier echo already
+	// consumed it) this strips zero characters — a safe no-op, which is
+	// why it needs no branch of its own. A draft that no longer opens
+	// with the sent text is the genuine-edit case and TrimPrefix leaves
+	// it untouched, same as the old guarded slice did. The IC field's
+	// undo history records the clear at its next draw (fieldhistory.go's
+	// out-of-band detector), so Ctrl+Z still brings a fully-cleared
+	// sent line back — with real redo on top.
+	s.icInput = strings.TrimPrefix(s.icInput, s.icPendingSent)
 	s.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
 }

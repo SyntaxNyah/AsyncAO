@@ -234,7 +234,7 @@ func (a *App) AdvanceDetachedPreview() {
 	a.syncPreviewWindow()
 }
 
-// previewAnimWakeCapMs bounds how long the main loop may sleep/park on a
+// previewAnimWakeCap bounds how long the main loop may sleep/park on a
 // pass that isn't calling app.Frame(), while the detached preview is open
 // and showing a page with more than one frame — otherwise the loop's own
 // much longer idle/minimized nap would freeze the popped-out animation for
@@ -249,7 +249,7 @@ func (a *App) AdvanceDetachedPreview() {
 // to a couple hundred ms) read as smooth, and this cap only ever applies
 // while a detached window is actually open AND actually animating — the
 // overwhelmingly common case (nothing detached) pays nothing at all.
-const previewAnimWakeCapMs = 100 * time.Millisecond
+const previewAnimWakeCap = 100 * time.Millisecond
 
 // PreviewAnimWakeCap reports the longest cmd/asyncao's main loop should
 // sleep/park on a pass that isn't calling app.Frame(), or 0 for "no extra
@@ -273,7 +273,7 @@ func (a *App) PreviewAnimWakeCap() time.Duration {
 	if !ok || !page.Animated || len(page.Frames) < 2 {
 		return 0
 	}
-	return previewAnimWakeCapMs
+	return previewAnimWakeCap
 }
 
 // readTexturePixels reads an ALREADY-UPLOADED texture on the MAIN renderer
