@@ -770,15 +770,15 @@ func TestSchemeForOpen(t *testing.T) {
 // wire) survives whole to be word-wrapped at draw time, and only a hostile huge
 // line is bounded (with an ellipsis).
 func TestCapLogLine(t *testing.T) {
-	if s := "Phoenix: Objection!"; capLogLine(s) != s {
+	if s := "Phoenix: Objection!"; capLogLine(s, "Phoenix") != s {
 		t.Error("a short line must pass through unchanged")
 	}
 	long := "Phoenix: " + strings.Repeat("a", 256) // the old clampLine cut these at 120
-	if got := capLogLine(long); got != long {
+	if got := capLogLine(long, "Phoenix"); got != long {
 		t.Errorf("a 256-char IC message must survive whole, got %d runes", len([]rune(got)))
 	}
-	huge := strings.Repeat("x", icLineCap+50)
-	if r := []rune(capLogLine(huge)); len(r) != icLineCap+1 || r[len(r)-1] != '…' {
+	huge := strings.Repeat("x", icLineCap+50) // system line: no speaker head to protect
+	if r := []rune(capLogLine(huge, "")); len(r) != icLineCap+1 || r[len(r)-1] != '…' {
 		t.Errorf("a hostile huge line must cap at %d runes + …, got %d", icLineCap, len(r))
 	}
 }

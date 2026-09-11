@@ -614,7 +614,11 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// different server. Answering from the wrong origin's cache would put
 			// another server's showname on this line; the folder name is canon's
 			// own unreadable-ini answer and is the honest degradation here.
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force, nil)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force, nil), stamp: a.icStamp()})
+			// One resolution of the name, used as BOTH the entry's speaker and
+			// capLogLine's head marker — computing it twice would let the two drift
+			// and quietly cost the strip its anchor.
+			speaker := icSpeakerName(ev.Message, force, nil)
+			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force, nil), speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, stamp: a.icStamp()})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]
@@ -629,7 +633,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 		}
 	case courtroom.EventOOC:
-		line := ev.Name + ": " + ev.Text
+		// Literally the same call pushOOC makes for the live tab. A parked tab writes its
+		// OOC log here instead of through pushOOC (that one mutates ACTIVE-tab state), so
+		// the rule has to be stated at both seams — TestEveryDisplayLaneStripsTheSidechannel
+		// is what keeps the two from drifting apart again, and sharing one function rather
+		// than two spellings of "strip the body" is what makes that gate meaningful.
+		line := stripDisplayTail(ev.Name+": "+ev.Text, ev.Name)
 		if len(line) > oocLineCap {
 			line = line[:oocLineCap] + "…"
 		}

@@ -770,6 +770,11 @@ func (a *App) pollMakerExport() {
 }
 
 // eventSummary returns a short tag + one-line description for the event list.
+//
+// It is a DISPLAY string, so the zero-width sidechannel comes off, the same rule
+// icMessageBody follows. The event itself keeps its literal Message: makerSave and
+// makerExportDemo serialise that field verbatim, because a replay has to re-decode
+// the very same marker to reproduce the sprite style it was played with.
 func eventSummary(e recEvent) (tag, text string) {
 	switch courtroom.EventKind(e.Kind) {
 	case courtroom.EventMessage:
@@ -779,7 +784,7 @@ func eventSummary(e recEvent) (tag, text string) {
 			if e.Message.Showname != "" {
 				name = e.Message.Showname
 			}
-			text = strings.TrimSpace(name + ": " + e.Message.Message)
+			text = strings.TrimSpace(name + ": " + courtroom.StripSpriteStyle(e.Message.Message))
 		}
 	case courtroom.EventBackground:
 		tag, text = "BG", e.Text

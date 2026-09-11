@@ -5195,11 +5195,24 @@ func icLogLine(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShownam
 	return icSpeakerName(m, forceChar, ini) + ": " + icMessageBody(m)
 }
 
-// icMessageBody is an IC message's display text for the log: markup stripped (no raw
-// \cN / { }) and known :shortcode: inline emotes (#18) expanded to their emoji — the same
-// expansion the live chatbox does (Courtroom.InlineEmote), so the log and the box agree.
+// icMessageBody is an IC message's display text for the log: the zero-width sidechannel
+// dropped, markup stripped (no raw \cN / { }) and known :shortcode: inline emotes (#18)
+// expanded to their emoji — the same expansion the live chatbox does
+// (Courtroom.InlineEmote), so the log and the box agree.
+//
+// StripSpriteStyle FIRST, and it is not optional. AsyncAO transmits sprite styles,
+// profiles, reactions and status over an invisible run of zero-width runes appended to
+// the IC body (courtroom/spritestyle.go), and the receiver deliberately leaves
+// msg.Message literal so a recording replays the same marker — the chatbox reads a
+// separately-decoded clean lane (Courtroom.currentText) instead. This is the log's copy
+// of that lane, and it was missing: the codec runes reached the log verbatim, where they
+// counted against the line cap, rode into the clipboard and the URL scan, and — the
+// visible symptom — walked the whole row's font pick off the primary face, so an
+// occasional line drew in a stray family. Only style-CHANGE messages carry a marker,
+// which is why it was only ever an occasional line. Zero-alloc when absent (one
+// ContainsRune), so an ordinary message pays nothing.
 func icMessageBody(m *protocol.ChatMessage) string {
-	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(m.Message), inlineEmoteFor)
+	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(courtroom.StripSpriteStyle(m.Message)), inlineEmoteFor)
 }
 
 // icSpeakerName is the displayed name an IC log line is prefixed with. It is
@@ -10832,11 +10845,19 @@ func (a *App) CloseTranscript() {
 }
 
 func (a *App) pushIC(line string, color int, friend bool, friendColor int32, speaker string) {
+	// Store-form FIRST, then describe it. Everything else on the entry is a statement
+	// ABOUT the stored text, so it has to be derived from that exact string. The url
+	// below used to be scanned off the original: extractURLs splits on strings.Fields
+	// and no codec rune is whitespace, so a trailing marker FUSES onto the last token —
+	// a message ending in a link stored a url with invisible runes inside it, and that
+	// is the string the tooltip shows and openBrowser is handed. The same ordering also
+	// stops a link past icLineCap being offered from text the entry no longer contains.
+	line = capLogLine(line, speaker)
 	url := ""
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: capLogLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp()})
+	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp()})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]
@@ -10859,6 +10880,16 @@ const oocLineCap = 16384
 // two slices stay parallel (same cap), so display can look the speaker up by
 // entry index without re-parsing the ": " (which would mis-tint system lines).
 func (a *App) pushOOC(line, speaker string) {
+	// Drop the zero-width sidechannel from the BODY before anything reads the line. OOC
+	// is the channel AsyncAO's own DMs and group chat ride on (/pm, courtroom/msgwire.go)
+	// and the caller composes us ev.Name + ": " + a RAW ev.Text, so this is the lane
+	// where a marker actually arrives; the control frame itself was already decoded
+	// upstream (routeIncomingPM runs before this call), so by here it is display text.
+	//
+	// The head is preserved, which is what keeps the "speaker: " trim below working and
+	// keeps oocSpeakers a substring of oocLog — see stripDisplayTail for why stripping
+	// the whole composed line was wrong. Zero-alloc when absent.
+	line = stripDisplayTail(line, speaker)
 	// Harvest /getarea "[uid] name" rows for click-to-pair, from the RAW text:
 	// strip the "speaker: " prefix first, else when a server sends /getarea line
 	// by line every "[uid]" row hides behind "ServerName: " and parses as nothing.
@@ -10916,11 +10947,85 @@ func appendCapped(list []string, line string, cap int) []string {
 	return list
 }
 
-// capLogLine bounds one stored IC entry (hostile-server guard) WITHOUT the
-// old 120-char "…" truncation — the IC log word-wraps long lines at draw time
-// (icWrapped). Real IC messages (≤256 on the wire) are never cut. Byte-length
-// fast path; the rune conversion only runs on a genuinely huge line.
-func capLogLine(s string) string {
+// speakerHeadLen is the byte length of the "<speaker>: " head a composed log line
+// opens with, or 0 when there is none (a system line with no speaker, or a line the
+// speaker does not appear in). icLogLineDisplay's nick arm writes "Ace (Nick): …",
+// where the speaker sits INSIDE the head, so the name is located by index rather
+// than assumed to start at 0.
+func speakerHeadLen(line, speaker string) int {
+	if speaker == "" {
+		return 0
+	}
+	i := strings.Index(line, speaker)
+	if i < 0 {
+		return 0
+	}
+	head := i + len(speaker)
+	if strings.HasPrefix(line[head:], ": ") {
+		head += 2
+	}
+	return head
+}
+
+// stripDisplayTail drops the zero-width sidechannel from a composed log line's BODY
+// and leaves the speaker head byte-identical.
+//
+// NOT the whole line, and that is the entire point. StripSpriteStyle is GATED on the
+// U+2060 sentinel but then deletes the whole nine-rune alphabet, and three of those —
+// U+200B/200C/200D — are ordinary text: a ZWJ is what holds an emoji cluster together
+// and a ZWNJ is mandatory in Persian orthography. The gate and the deletion therefore
+// do not distribute over concatenation:
+//
+//	StripSpriteStyle(name + ": " + body) != name + ": " + StripSpriteStyle(body)
+//
+// whenever the sentinel is in the BODY and alphabet runes are in the NAME. Every
+// marker is appended to the end of an outgoing body (the IC send, messaging_panel's
+// DM), while the name is its own wire field — so stripping the composed line let one
+// speaker's body marker authorise deleting runes out of another player's name. On the
+// OOC lane that is not theoretical: pushOOC composes ev.Name + ": " + a RAW ev.Text,
+// so every AsyncAO DM sets the gate for the whole line, and a rainbow-flag showname
+// came apart into two glyphs on every row that player sent.
+//
+// It also kept icEntry.speaker / oocSpeakers from being a substring of the line they
+// are stored parallel to, so Ctx.logRowSplit's strings.Index missed and the bold +
+// tinted name span silently vanished, draw and selection alike.
+//
+// "Strip the speaker the same way" does NOT repair either: the sentinel gate is a
+// whole-string test, so StripSpriteStyle(speaker) is a no-op on exactly the names that
+// break. A speaker cleaned some other way then stops matching the roster —
+// currentSpeakerName is EqualFold'd against the RAW p.showname (playerlist.go), so the
+// speaking-row highlight and the speakers-first sort would go dead for that player.
+// Leaving the head alone is what keeps both contracts at once, and it is the same rule
+// subtitleLine already follows (subtitles.go: strip Message, keep Showname).
+func stripDisplayTail(line, speaker string) string {
+	head := speakerHeadLen(line, speaker)
+	if head == 0 {
+		return courtroom.StripSpriteStyle(line)
+	}
+	return line[:head] + courtroom.StripSpriteStyle(line[head:])
+}
+
+// capLogLine turns a composed line into a STORABLE IC log entry: the zero-width
+// sidechannel comes off the BODY (stripDisplayTail), then the result is bounded
+// (hostile-server guard) WITHOUT the old 120-char "…" truncation — the IC log
+// word-wraps long lines at draw time (icWrapped). Real IC messages (≤256 on the wire)
+// are never cut. Byte-length fast path; the rune conversion only runs on a genuinely
+// huge line.
+//
+// The two steps live together because their ORDER is the point: the cap has to be
+// measured on the text a human sees, so an invisible marker can neither eat the
+// budget nor be cut in half and left as a partial run.
+//
+// Stripping HERE and not only at the formatters is what makes the guarantee
+// structural. Every icEntry the client stores gets its text through this one
+// function — pushIC for the active tab, routeBackgroundEvent for a parked one — so a
+// future log write site is covered by using the same chokepoint rather than by
+// remembering a rule. speaker is a parameter and not an afterthought for the same
+// reason: a caller cannot store an entry without telling this function which part of
+// the line is a name, so it cannot accidentally get the whole-line strip.
+// Zero-alloc when absent (one ContainsRune).
+func capLogLine(s, speaker string) string {
+	s = stripDisplayTail(s, speaker)
 	if len(s) <= icLineCap {
 		return s
 	}

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -558,7 +559,15 @@ func readLogScope(root, server, session string) []logLine {
 			if len(lines) >= maxLogScopeLines {
 				return false
 			}
-			t := strings.TrimRight(sc.Text(), "\r")
+			// Strip the zero-width sidechannel on READ as well as on write. The
+			// writer (detailedLogLine) drops it now, but every log file already on
+			// disk was written before that and still carries the runes — and the
+			// browser is the one lane whose input is HISTORY, so it is the only
+			// place a fix at the write seam cannot reach. Also the reason it is
+			// applied before the blank test and the lowercase search key: an
+			// invisible run must not make an empty line look non-empty, and must
+			// not sit inside the text a search matches against.
+			t := courtroom.StripSpriteStyle(strings.TrimRight(sc.Text(), "\r"))
 			if strings.TrimSpace(t) == "" {
 				continue
 			}

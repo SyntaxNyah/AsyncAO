@@ -4,9 +4,9 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.94.0 — 2026-09-07
+## v1.94.0 — 2026-09-08
 
-Five follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
+Six follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
 popped-out preview animates and travels with the main window, and mute sticks.
 
 - **Text is sharp at every UI scale, not just in some places.** The last release
@@ -29,6 +29,15 @@ popped-out preview animates and travels with the main window, and mute sticks.
   the further along a line you selected, the further off the result was. The
   MOTD showed it first because it is the longest text in the client, but IC and
   OOC had the same fault.
+- **A log line no longer switches to a different font on its own.** AsyncAO
+  sends sprite styles, profiles and reactions as invisible characters on the end
+  of a message. Those were reaching the log text, where the font picker counted
+  them as characters the normal font could not draw and moved the whole line
+  onto another one. They now come off everywhere a message is shown or saved:
+  the log, the OOC panel, DMs, the scene maker, the transcript files and the log
+  browser, which also cleans up files written by older builds. A link in one of
+  those messages opens the right address again, instead of the address with the
+  invisible characters stuck on the end.
 
 Thanks to CS for the reports.
 

@@ -1249,8 +1249,16 @@ func (c *Ctx) TakeWantsCJK() bool {
 	return false
 }
 
-// pickResult is one cached line pick: the covering face, and whether it covers EVERY
-// rune (false = a mixed-script line the per-glyph raster should handle).
+// pickResult is one cached line pick: the face chosen for the line's VISIBLE runes,
+// and whether that face covers EVERY rune, invisible ones included.
+//
+// The two questions have different answers and both matter. The pick may not be held
+// hostage by a formatting rune — that is what threw whole log rows onto a stray family
+// (see pickFont) — but the flag has to stay honest, because SDL_ttf draws .notdef for
+// any rune the face lacks, invisible or not. So covered==false has two causes now: a
+// mixed-SCRIPT line no single face can draw, or a line whose face merely lacks one
+// formatting rune. Both want the same thing from the reader (coversFace): take the
+// per-glyph raster path rather than blitting the line through one face.
 type pickResult struct {
 	font    *ttf.Font
 	covered bool
@@ -1287,8 +1295,15 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	}
 	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if !covered {
-		// Nothing in this set can draw the whole string, so some of it is about to
-		// come out as .notdef — hand those runes to the census.
+		// The picked face can't draw the whole string, so some of it may be about to
+		// come out as .notdef — offer those runes to the census.
+		//
+		// "May", not "is": covered==false no longer implies nothing in the set covers
+		// the line, since the pick is now made on the VISIBLE runes alone and a face
+		// that merely lacks a formatting rune still wins it. noteUncoveredIn re-checks
+		// every cover in the set and skips invisible runes outright, so an
+		// invisible-only gap queues nothing — it just costs one scan of a string this
+		// client had not drawn before.
 		//
 		// This sits in the memo-MISS branch on purpose. Every single-face pick lands
 		// here (chat, log, the per-element theme sets, and now chrome labels), and a
@@ -2009,20 +2024,37 @@ func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
 }
 
 // pickFont returns the rendering font for the first set entry whose sfnt cover
-// provides every rune of text — a Cyrillic line stays on the embedded font, a
-// Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
+// provides every VISIBLE rune of text — a Cyrillic line stays on the embedded font,
+// a Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
 // with fonts; the last entry is the unconditional fallback (used when nothing
 // covers, so the result is at worst the same .notdef box as before).
+//
+// VISIBLE is the whole rule. An invisible formatting rune — a joiner, a directional
+// mark, the zero-width sidechannel courtroom/spritestyle.go rides on IC text — draws
+// as nothing when it works, so it must never VETO a face for the words around it. It
+// used to: the embedded face has a glyph for none of the nine codec runes, so one of
+// them anywhere in a message walked the pick off the primary face and onto whichever
+// fallback happened to carry zero-width glyphs, and the whole ASCII line then rendered
+// in that stray family. noteUncoveredIn has applied exactly this skip to the CENSUS
+// since it was written; the pick, which is what the reader actually sees, never got it.
+//
+// The second result stays HONEST — true only when the face covers every rune, the
+// invisible ones included. That bool is the raster gate (coversFace), and a face with
+// no glyph for a formatting rune must still let the per-glyph raster hand that one rune
+// to a face that has it, instead of blitting the whole line through a .notdef box.
 func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
 		return fonts[0], true
 	}
 	for i, f := range fonts[:len(fonts)-1] {
-		if i < len(cover) && coverHasAll(cover[i], buf, text) {
-			return f, true
+		if i >= len(cover) {
+			continue
+		}
+		if visible, all := coverScan(cover[i], buf, text); visible {
+			return f, all
 		}
 	}
-	// Fell through — no single face covers every rune (a mixed-script run). The
+	// Fell through — no face covers even the visible runes (a mixed-script run). The
 	// last entry renders it (at worst the same .notdef as before); covered=false
 	// tells the raster gate to take the per-glyph path instead.
 	return fonts[len(fonts)-1], false
@@ -2038,18 +2070,33 @@ func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
 	return err == nil && idx != 0
 }
 
-// coverHasAll reports whether the face covers EVERY rune of text (the whole-message
-// PICK rule).
-func coverHasAll(f *sfnt.Font, buf *sfnt.Buffer, text string) bool {
+// coverScan answers the pick's two different questions in ONE pass over text:
+//
+//	visible — does f have a glyph for every rune that is SUPPOSED to draw something?
+//	          This is the PICK rule (see pickFont): an isInvisibleRune formatting
+//	          character cannot disqualify a face for the visible text around it.
+//	all     — does f have a glyph for every rune, invisible ones included? This is
+//	          the raster gate, and it must stay honest so a formatting rune the face
+//	          lacks still routes through coverRunes instead of drawing .notdef.
+//
+// The two answers differ only for the runes isInvisibleRune names, which is exactly
+// the point. A nil face covers nothing. Allocation-free: the reused sfnt buffer, and
+// an early return the moment a VISIBLE rune is missing (the common rejection).
+func coverScan(f *sfnt.Font, buf *sfnt.Buffer, text string) (visible, all bool) {
 	if f == nil {
-		return false
+		return false, false
 	}
+	all = true
 	for _, r := range text {
-		if !coverHasRune(f, buf, r) {
-			return false
+		if coverHasRune(f, buf, r) {
+			continue
+		}
+		all = false
+		if !isInvisibleRune(r) {
+			return false, false // a rune that must draw is missing: this face is out
 		}
 	}
-	return true
+	return true, all
 }
 
 // coverAt returns the cover face at i, or nil when out of range — keeps the

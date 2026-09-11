@@ -187,7 +187,20 @@ const (
 // pmAppend records one PM line under the partner's canonical thread key, bounded
 // per-thread and in the number of threads.
 func (a *App) pmAppend(partner string, fromMe bool, text string) {
-	text = strings.TrimSpace(text)
+	// The DM channel is the one place the zero-width codec rides by DESIGN: a group
+	// invite / join / kick / DM tag travels as a control frame inside an otherwise
+	// ordinary PM body (courtroom/msgwire.go, magic 0x74).
+	//
+	// None of the four callers hands us a marked string TODAY — routeIncomingPM passes
+	// DecodeMessageFrame's already-clean text, detectIncomingPM is reached from inside
+	// pushOOC which strips before it parses, and the two send paths pass the composed
+	// text rather than the wire body. This strip is the seam's own guarantee, not a
+	// patch for a live defect, and the send paths are why it is worth having:
+	// sendDirectMessage builds `body := text + ...EncodeMarker()` on the line above its
+	// pmAppend(target, true, text), so mirroring the WIRE string into the thread is a
+	// one-word slip. Stating the rule at the seam means the slip is invisible instead
+	// of being a bug report about a DM that ate its own font. Zero-alloc when absent.
+	text = strings.TrimSpace(courtroom.StripSpriteStyle(text))
 	key := a.pmThreadKey(partner)
 	if key == "" || text == "" {
 		return

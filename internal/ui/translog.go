@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -114,6 +115,11 @@ func (w *transcriptWriter) close() {
 // detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, then
 // "showname (char)" — showname FIRST, falling back to just the character when there's no distinct
 // showname — then the message. No server (it's the folder) or area/pipe columns. Pure — unit-tested.
+//
+// The body is stripped of the zero-width sidechannel (courtroom/spritestyle.go) for the same reason
+// icMessageBody strips it: this file is READ — by the user, and by the in-app log browser — so it is
+// a display string, not a wire record. Nothing re-decodes a transcript, so keeping the marker would
+// buy nothing and cost a file full of invisible runes that break search and copy-paste.
 func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	char := strings.TrimSpace(m.CharName)
 	show := strings.TrimSpace(m.Showname)
@@ -130,7 +136,7 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	b.WriteString("] ")
 	b.WriteString(who)
 	b.WriteString(": ")
-	b.WriteString(m.Message)
+	b.WriteString(courtroom.StripSpriteStyle(m.Message))
 	return b.String()
 }
 
