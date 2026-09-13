@@ -86,9 +86,9 @@ typography is picked up again, that is the better first target.
 
 ## Theme generator tiles are still resampled at fractional UI scale
 
-v1.93.0 made text device-exact (`MessageRaster.DrawScaled` wired to log lines,
-shownames, text fields and reaction badges, gated by `internal/ui/scaleblur_test.go`).
-The procedural half was investigated in the same release and **deliberately not
+v1.95.0 made text device-exact everywhere, at the `blitLabel` primitive every drawn
+string goes through (gated by `internal/ui/scaleblur_test.go`). That closes text and
+text only. The procedural half was investigated alongside it and **deliberately not
 attempted**: the 17 generators in `internal/ui/gentex.go` still raster at logical
 size and get stretched by the ambient `ren.SetScale`, so a themed courtroom whose
 panels come from a generator looks soft at any scale other than 100%. Imported
@@ -133,50 +133,52 @@ Closing this means its own release: scale-aware admission with graceful
 degradation, a debounced rebuild under the unchanged key, the four `paintElement*`
 rewrites, and new tests that *supplement* rather than weaken the two pins above.
 
-## Reported: a chat-log row draws in a stray face and/or dim, not reproduced
+## The census font tier ranks by file size, with no style discrimination
 
-A user reported the IC log rendering wrong. The screenshot shows **two** anomalies,
-not one: one row in a **monospace face and dim, timestamp included**, a second row
-dim in the **normal proportional face**, and every other row normal. The text is
-pure ASCII, which is what makes it hard: no fallback tier should be reached at all.
-Three investigation passes have failed to reproduce it, so v1.93.0 shipped a
-**diagnostic instead of a fix** (Debug panel > Fonts, `internal/ui/fontpickdebug.go`),
-which reports the face, tier, coverage verdict and colour source for each visible
-row by calling the same `elemFontFor` / `coversFace` / `setIndexOf` the draw calls.
-`TestICFontPickRowsReadsTheRealCoverageDecisionNotAGuess` pins that it reads the
-real pick rather than re-deriving one, since a readout that guesses would report
-"correct" while the draw goes wrong.
+The defect this section was opened for is **fixed**, and the fix names a cause that
+was not among the two this file had been carrying. A chat-log row drawing in a stray
+monospace face, plus a second row dim in the normal proportional face, was root-caused
+in `2e2392c`: AsyncAO appends its sprite-style, profile, reaction, status and DM
+markers to a message body as a run of zero-width runes, and `coverScan` counted those
+as glyphs the face had to draw. Every candidate therefore "failed" coverage on text
+that was pure ASCII, and the picker fell through to the last font in the chain. The
+same miss broke `logRowSplit`'s `strings.Index`, which killed the bold-and-tinted name
+span on the draw path, and that is the second symptom. Both markers come off at the
+seam now, everywhere a message is shown or saved.
 
-Ruled out, do not re-chase:
+Note what that vindicates, because the remaining work is not what it looks like. The
+cause sat **upstream of the pick**, in coverage scanning, so the shared-pointer
+aliasing candidate was not it. But the census candidate is exactly what *answered* the
+false uncovered report, and it is still loaded:
 
-- **Ghosting.** `ghosted(e)` is `e >= g.entry` (`ghosttext.go`), monotonic to the
-  tail, so once an entry is ghosted every later entry must be. The screenshot has
-  normal rows *after* both dim rows. Ghosting cannot be the mechanism.
-- **`themeGenericFontClasses`.** `mono` / `monospace` / `serif` are explicit no-ops
-  in AsyncAO and fall back to the client's own chain, so a theme writing
-  `ic_chatlog_font = mono` is not it.
-- **The `drawLogLineNamed` fall-through double-draw**, fixed in `f922bfd`.
-- **The `setOf` / `coverRunes` aliasing hazard** as a standalone cause: structurally
-  inert for covered ASCII.
-
-Two candidates remain, and they compose into one story:
-
-1. **Shared-pointer aliasing.** `buildSet` shares `Ctx.font` / `Ctx.fontDev` as the
-   embedded last-resort face across every `fontSet` built at 100%/100% with no
-   custom chrome font. `setIndexOf` then reverse-resolves that shared pointer by a
-   first-match linear scan over `setPairs()`, so a raster asking "which set owns this
-   pointer" silently gets `chatSet` even when the real call was for `elemICChatlog`.
-2. **The census tier has no style discrimination.** `fontCensus.find()`
+1. **The census tier has no style discrimination.** `fontCensus.find()`
    (`fontcensus.go`) sorts candidates by `(isStyledCut, fileSize)`: regular cuts
    first, then **smallest file wins**, with zero monospace-vs-proportional awareness.
    A small system console font ranks very well for basic Latin, and once loaded it is
-   appended to *every* set's chain unconditionally. If anything upstream (candidate 1)
-   wrongly reports an ASCII rune uncovered, `noteUncovered` queues it and this is what
-   answers.
+   appended to *every* set's chain unconditionally. Any future fault that reports a
+   covered rune uncovered lands here again, and the visible result is a whole row in a
+   console face. Ranking should prefer a proportional cut for a proportional element.
+2. **Shared-pointer reverse resolution.** `buildSet` shares `Ctx.font` / `Ctx.fontDev`
+   as the embedded last-resort face across every `fontSet` built at 100%/100% with no
+   custom chrome font. `setIndexOf` reverse-resolves that shared pointer by a
+   first-match linear scan over `setPairs()`, so a raster asking "which set owns this
+   pointer" can silently get `chatSet` when the real call was for `elemICChatlog`.
+   Never disproven, just not the mechanism behind the reported rows.
 
-A stock install has only the single embedded Latin face, so no stray face is even
-reachable. The reporter is therefore on a **themed** install with its own
-`ic_chatlog` font, which is the precondition any repro attempt needs.
+Ruled out for that defect, do not re-chase: ghosting (`ghosted(e)` is `e >= g.entry`
+in `ghosttext.go`, monotonic to the tail, and normal rows appeared *after* both dim
+ones); `themeGenericFontClasses` (`mono` / `monospace` / `serif` are explicit no-ops
+that fall back to the client's own chain); the `drawLogLineNamed` fall-through
+double-draw, fixed in `f922bfd`; and `setOf` / `coverRunes` aliasing as a standalone
+cause, structurally inert for covered ASCII.
+
+The Debug panel's Fonts tab (`internal/ui/fontpickdebug.go`) shipped as a diagnostic
+when three passes had failed to reproduce this, it is what caught the cause, and it
+stays as a feature. It reports the face, tier, coverage verdict and colour source for
+each visible row by calling the same `elemFontFor` / `coversFace` / `setIndexOf` the
+draw calls use, and `TestICFontPickRowsReadsTheRealCoverageDecisionNotAGuess` pins
+that it reads the real pick rather than re-deriving one, since a readout that guesses
+would report "correct" while the draw goes wrong.
 
 ## A missing BACKGROUND still holds the previous room's, unlike the desk
 
