@@ -6,56 +6,39 @@ tagged "installed" below.
 
 ## v1.95.0 — 2026-09-13
 
-Servers that turn you away now say why, in a box you can copy out of.
+Three builds' worth of work in one release. Servers that turn you away now say
+why, in a box you can copy out of. Reconnecting keeps your log, the emote
+preview can leave the window, and text is sharp at every UI scale.
 
-- **A refused connection shows the server's own message.** A ban, a kick or a
-  lockdown usually arrives with instructions attached: an appeal link, a Discord
-  invite, a code to get whitelisted. AsyncAO put that on one line at the top of
-  the server list, so anything after the first line was unreachable, and a long
-  enough message drew nothing at all. It now opens a box with the whole message
-  in it, says which server sent it, and has a Copy button, since a code you
-  cannot select is a code you have to retype by hand.
-- **Notices from the server get the same box.** The popup servers use for rules,
-  a message of the day or a whitelist procedure was one line in the OOC log, so
-  it scrolled away while you were reading it. It now stays up until you dismiss
-  it, and it is still written to the log.
-- **Kick and ban reasons in the courtroom show in full.** The disconnect box drew
-  the reason as one clipped line. It wraps now, and it has a Copy button too.
-- **A server that refuses the connection outright is reported for what it is.**
-  Being rate limited, blocked at the firewall or arriving at a server in lockdown
-  was reported as "this may not be a WebSocket server", which sends people away
-  from servers that would let them in.
-- **Enter joins the server you picked in the list.** Selecting one with the arrow
-  keys and pressing Enter did nothing at all. While a server's message is on
-  screen, Enter is held back everywhere else in the client, so it cannot redial
-  the server the message is about or send a line into a room you have been
-  removed from.
+When a server turns you away:
 
-## v1.94.0 — 2026-09-11
+- **Whatever the server sent you opens in a box you can read.** A kick or ban
+  reason, a lockdown refusal, a rules or message-of-the-day popup. Servers
+  usually attach the instructions for getting in, an appeal link, a Discord
+  invite, a code to get whitelisted, and those come last, so they were the part
+  you never got to see: the server list showed one line, the courtroom's
+  disconnect box clipped it, and a notice was one line in the OOC log that
+  scrolled away while you were reading it. A long enough message drew nothing at
+  all. The box wraps the whole thing, says which server sent it, stays up until
+  you dismiss it, and has a Copy button, since a code you cannot select is a
+  code you retype by hand. Notices are still written to the log.
+- **A server that refuses you is reported for what it is.** Being rate limited,
+  blocked at the firewall or arriving at a server in lockdown was reported as
+  "this may not be a WebSocket server", which sends people away from servers
+  that would let them in.
+- **Enter joins the server you picked in the list.** Selecting one with the
+  arrow keys and pressing Enter did nothing at all. While a server's message is
+  on screen the rest of the client stays out of the way, so nothing you press
+  can redial the server the message is about, switch tabs out from under it, or
+  send a line into a room you have been removed from.
 
-Six follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
-popped-out preview animates and travels with the main window, and mute sticks.
+Your log:
 
-- **Text is sharp at every UI scale, not just in some places.** The last release
-  drew log lines, shownames and text fields at your screen's real pixel size and
-  left buttons, labels, settings and the rest stretched. The fix now sits in the
-  one drawing step they all share, so it covers the whole client instead of the
-  handful of screens picked out by hand.
-- **The popped-out preview plays animations.** It showed a single still frame
-  before. It keeps animating while the main window is minimised or sitting idle,
-  which is most of the reason to put it in its own window.
-- **The popped-out preview rises with the main window.** Clicking the client
-  brings the preview up with it. It does not take focus, and it does not float
-  over other programs while AsyncAO is behind them.
-- **Muting is remembered.** Master, music, sound effects and blips each keep
-  their mute state between sessions and across reconnects. Starting up muted
-  says so in the lobby, since the volume strip is hidden by default and there
-  would otherwise be nothing to see.
-- **Selecting text in the log copies what you highlighted.** The highlight and
-  the copy were measured with a different font size than the one on screen, so
-  the further along a line you selected, the further off the result was. The
-  MOTD showed it first because it is the longest text in the client, but IC and
-  OOC had the same fault.
+- **Reconnecting to the same server brings your log back.** Every redial wiped
+  the session first, so you came back to an empty chatbox with no way to read
+  what you missed. Leaving on purpose still starts you blank.
+- **OOC is saved to your log files.** IC was being written and OOC was not, so
+  the transcript was missing half of what happened.
 - **A log line no longer switches to a different font on its own.** AsyncAO
   sends sprite styles, profiles and reactions as invisible characters on the end
   of a message. Those were reaching the log text, where the font picker counted
@@ -64,38 +47,43 @@ popped-out preview animates and travels with the main window, and mute sticks.
   the log, the OOC panel, DMs, the scene maker, the transcript files and the log
   browser, which also cleans up files written by older builds. A link in one of
   those messages opens the right address again, instead of the address with the
-  invisible characters stuck on the end.
+  invisible characters stuck on the end. The debug panel on F8 has a new Fonts
+  tab showing which font and colour each visible line resolved to, which is what
+  caught this.
+- **Names line up with their messages, and selecting copies what you
+  highlighted.** Both came from measuring text differently than it gets drawn.
+  Bold names were measured at regular weight, so a name and its message ran
+  together on screen. The highlight was measured at a different font size, so
+  the further along a line you selected, the further off the result was. The
+  MOTD showed it first because it is the longest text in the client, but IC and
+  OOC had the same fault.
 
-Thanks to CS for the reports.
+The emote preview:
 
-## v1.93.0 — 2026-09-05
-
-Reconnecting keeps your log, the emote preview can leave the window, and areas
-show their status on the player tab.
-
-- **Reconnecting to the same server brings your log back.** Every redial wiped
-  the session first, so you came back to an empty chatbox with no way to read
-  what you missed. Leaving on purpose still starts you blank.
-- **The emote preview pops out into its own window.** There is a new button in
-  the preview's top corner. It becomes a real window you can drag anywhere,
-  including onto a second monitor, and it reopens where you left it. Close that
-  window to put the preview back in the client. It shows a still of each emote,
-  not the animation.
+- **It pops out into its own window.** There is a new button in the preview's
+  top corner. It becomes a real window you can drag anywhere, including onto a
+  second monitor, and it reopens where you left it. Close that window to put the
+  preview back in the client. It plays each emote's animation, and keeps playing
+  while the main window is minimised or sitting idle, which is most of the
+  reason to put it in its own window. Clicking the client brings it up with it.
+  It does not take focus, and it does not float over other programs while
+  AsyncAO is behind them.
 - **A pinned preview follows every emote you click.** It used to stay stuck on
   whichever emote you opened it on.
+
+Everywhere else:
+
+- **Text is sharp at every UI scale.** Log lines, shownames, text fields,
+  buttons, labels, settings and floating reaction badges are drawn at your
+  screen's real pixel size now, instead of being drawn small and stretched. The
+  fix sits in the one drawing step they all share, so it covers the whole client
+  rather than the handful of screens picked out by hand.
+- **Muting is remembered.** Master, music, sound effects and blips each keep
+  their mute state between sessions and across reconnects. Starting up muted
+  says so in the lobby, since the volume strip is hidden by default and there
+  would otherwise be nothing to see.
 - **The player tab shows each area's status.** Casing, RP, looking for players,
   locked, spectator, and who the CM is, in the colours the Areas tab uses.
-- **OOC is saved to your log files.** IC was being written and OOC was not, so
-  the transcript was missing half of what happened.
-- **Names in the log line up with their messages.** Bold names were measured at
-  regular weight, so a name and its message ran together on screen, and
-  selecting a line landed to the right of the text.
-- **Text is sharper at UI scales between 100% and 200%.** Log lines, shownames,
-  text fields and floating reaction badges are drawn at your screen's real pixel
-  size now instead of being drawn small and stretched.
-
-Crystalwarrior's reports:
-
 - **Sprites in subfolders stop flashing a missing-file placeholder.** When the
   client dropped one from memory to free space, the reload only checked the old
   location, so art that exists came back missing until you switched emote. (#70)
@@ -109,16 +97,12 @@ Crystalwarrior's reports:
 Still open, so you know where it stands:
 
 - **Panels a theme draws with its own pattern generators are still soft** at any
-  UI scale other than 100%. The text fix above does not reach them and they need
-  their own pass. Character art, backgrounds and imported images have no sharper
-  original to draw from, so they cannot be fixed this way at all.
-- **The odd fonts and dim rows in the chat log are not solved.** Two rounds of
-  looking have not reproduced it. This build adds a Fonts tab to the debug panel
-  (F8) that shows which font and colour each visible line actually resolved. If
-  you see it happen, open that tab and send a screenshot of it and the log.
+  UI scale other than 100%. The text fix above covers text; those panels are
+  still drawn small and stretched, and they need their own pass. Character art,
+  backgrounds and imported images have no sharper original to draw from, so they
+  cannot be fixed this way at all.
 
-Thanks to CS for the first group of reports, and to Crystalwarrior for the
-second.
+Thanks to CS and Crystalwarrior for the reports.
 
 ## v1.92.0 — 2026-08-30
 
