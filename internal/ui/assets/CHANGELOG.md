@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.95.0 — 2026-09-13
+
+Servers that turn you away now say why, in a box you can copy out of.
+
+- **A refused connection shows the server's own message.** A ban, a kick or a
+  lockdown usually arrives with instructions attached: an appeal link, a Discord
+  invite, a code to get whitelisted. AsyncAO put that on one line at the top of
+  the server list, so anything after the first line was unreachable, and a long
+  enough message drew nothing at all. It now opens a box with the whole message
+  in it, says which server sent it, and has a Copy button, since a code you
+  cannot select is a code you have to retype by hand.
+- **Notices from the server get the same box.** The popup servers use for rules,
+  a message of the day or a whitelist procedure was one line in the OOC log, so
+  it scrolled away while you were reading it. It now stays up until you dismiss
+  it, and it is still written to the log.
+- **Kick and ban reasons in the courtroom show in full.** The disconnect box drew
+  the reason as one clipped line. It wraps now, and it has a Copy button too.
+- **A server that refuses the connection outright is reported for what it is.**
+  Being rate limited, blocked at the firewall or arriving at a server in lockdown
+  was reported as "this may not be a WebSocket server", which sends people away
+  from servers that would let them in.
+- **Enter joins the server you picked in the list.** Selecting one with the arrow
+  keys and pressing Enter did nothing at all. While a server's message is on
+  screen, Enter is held back everywhere else in the client, so it cannot redial
+  the server the message is about or send a line into a room you have been
+  removed from.
+
 ## v1.94.0 — 2026-09-11
 
 Six follow-ups from testing v1.93.0. Text is sharp everywhere this time, the
