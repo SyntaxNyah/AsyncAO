@@ -7,6 +7,7 @@ package protocol
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -39,6 +40,38 @@ func EncodeField(field string) string {
 // DecodeField unescapes one field from the wire.
 func DecodeField(field string) string {
 	return decodeReplacer.Replace(field)
+}
+
+// SanitizeText makes a server-authored string safe to RENDER, without changing what
+// it says. Newlines and tabs survive (they carry the layout of a multi-line notice);
+// every other control rune and every invalid UTF-8 sequence is dropped.
+//
+// It lives here, at the seam where server bytes become Go strings, because both paths
+// that carry server prose to a texture need exactly this and neither may re-implement
+// it: internal/courtroom's kick/ban/notice cap and this package's own refusal-body
+// reader.
+//
+// WHY IT IS NOT COSMETIC. Every draw ends in SDL_ttf and every copy ends in
+// SDL_SetClipboardText, and both marshal through C.CString — which is NUL-terminated.
+// An embedded NUL therefore truncates the C string silently, so a server could put one
+// byte in front of its own access code and the box would show, and Copy would hand
+// over, everything up to that byte and nothing after it. That is the exact "the tail of
+// the message is unreachable" failure the notice box exists to end, through a different
+// door. An invalid sequence (a payload cut mid-rune upstream) draws as tofu, which is
+// noise the user cannot act on either.
+//
+// Both stdlib calls return the original string untouched when there is nothing to do,
+// so a clean payload — every real one — costs no allocation.
+func SanitizeText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(s, ""))
 }
 
 // Packet is one AO protocol message.

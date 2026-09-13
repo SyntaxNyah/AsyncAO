@@ -201,8 +201,24 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 		dialOpts.HTTPClient = &http.Client{Transport: transport}
 	}
 
-	ws, _, err := websocket.Dial(ctx, wsURL, dialOpts)
+	ws, resp, err := websocket.Dial(ctx, wsURL, dialOpts)
 	if err != nil {
+		// A non-nil resp means the server ANSWERED and refused: the socket and any
+		// TLS handshake worked, and this is a 403/429/503-style rejection that
+		// usually carries instructions (a whitelist procedure, an appeal link). Keep
+		// them — see DialError for what was being thrown away here. resp stays nil
+		// for a DNS failure, a refused connection or a TLS error, so every one of
+		// those keeps the exact error string it has today and every existing
+		// classifier that reads it is untouched.
+		if resp != nil {
+			return nil, &DialError{
+				URL:        wsURL,
+				StatusCode: resp.StatusCode,
+				Status:     resp.Status,
+				Body:       dialBody(resp),
+				Err:        err,
+			}
+		}
 		return nil, fmt.Errorf("protocol: dialing %s: %w", wsURL, err)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
