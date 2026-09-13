@@ -392,6 +392,14 @@ func (a *App) editorUndoChord() bool {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
+	if a.serverNoticeDlg.open {
+		// A BB notice can land while the courtroom is fully LIVE, so this one is not
+		// about a dead socket: it is that the box owns the frame, and a shout or a
+		// pos-cycle fired blind underneath it is an action the user did not see
+		// themselves take. Esc is answered earlier (closeTopOverlay), so the box is
+		// still dismissable from the keyboard.
+		return
+	}
 	if a.disconnectDlg.open {
 		// The courtroom is FROZEN under the involuntary-disconnect dialog: its
 		// scene still draws (so this runs, called from drawCourtroom), but the
@@ -2001,6 +2009,132 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 		lines = lines[:maxLines]
 	}
 	return lines
+}
+
+// wrapParagraphs wraps server-authored prose that carries embedded newlines, which
+// is the shape every "the server is telling you something" payload has: a kick/ban
+// reason, a BB popup notice, a lockdown message with its access code alone on the
+// last line (../Nyathena/internal/athena/lockdown_passkey.go), a KFO removal
+// formatted "<reason>\nUntil: <when>\nID: <n>".
+//
+// It exists because the wrapper underneath it CANNOT do this itself:
+// wrapToWidthMeasured loops strings.Fields, which discards newlines outright, so
+// handing it a multi-paragraph reason reflows the whole payload into one run and
+// the Until/ID/code lines stop being lines at all. This is oocWrapped's proven
+// split-then-wrap shape lifted out for the modal surfaces, same "+1 probe" and
+// same shared-budget rule, so the two stay consistent.
+//
+// maxLines is a budget shared across ALL paragraphs rather than per paragraph, so
+// the total row count stays bounded however the server chooses to split its text.
+// ok reports whether everything fit: false means the caller MUST show a truncation
+// marker, because these payloads put the part you actually need (the code, the
+// appeal link) at the tail, and silently dropping it is the whole bug.
+//
+// Callers must pass maxLines >= 1. The two wrappers in this package disagree on
+// maxLines <= 0 — wrapToWidthMeasured cuts to nothing, Ctx.WrapText treats it as
+// unbounded — so this refuses to guess rather than inheriting either reading.
+func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines int) (lines []string, ok bool) {
+	if maxLines < 1 {
+		return nil, false
+	}
+	remaining := maxLines
+	fit := true
+	for _, rawPara := range strings.Split(s, "\n") {
+		if remaining <= 0 {
+			fit = false // out of budget with paragraphs still unrendered
+			break
+		}
+		para := strings.TrimRight(rawPara, "\r") // tolerate CRLF payloads
+		if strings.TrimSpace(para) == "" {
+			// A blank line is a deliberate paragraph break in a MOTD-style notice, so
+			// it survives as a spacer row and spends budget like any other row.
+			lines = append(lines, "")
+			remaining--
+			continue
+		}
+		// The "+1 probe": wrapToWidthMeasured caps SILENTLY (it never reports that it
+		// truncated), so asking for one row more than the budget is how we tell a
+		// paragraph that exactly filled the budget from one that overflowed it.
+		// remaining >= 1 is guaranteed above, so probe >= 2 and the maxLines <= 0
+		// disagreement documented above can never be reached from here.
+		got := wrapToWidthMeasured(measure, para, maxW, remaining+1)
+		if len(got) > remaining {
+			got = got[:remaining]
+			fit = false
+		}
+		lines = append(lines, got...)
+		remaining -= len(got)
+	}
+	return lines, fit
+}
+
+// paraWrapCache memoizes ONE wrapParagraphs result for a modal that redraws every
+// frame while it is up.
+//
+// It exists because the wrap is not cheap and the modals are not transient. Each
+// row is measured through chromeFaceFor, which for non-ASCII text builds a face set
+// and runs a per-candidate coverage pick; the wrap itself allocates (a []string, and
+// the rune slices behind the measure). Doing that 60 times a second for text that
+// CANNOT change while the box is open would put allocations on a drawn screen, which
+// is what the alloc gates exist to catch.
+//
+// Embedded by value in the two modal states that show server-authored prose — the
+// notice box and the involuntary-disconnect dialog — so there is one cache rule and
+// one place to get it wrong, and both are invalidated on the same keys.
+type paraWrapCache struct {
+	lines []string
+	fit   bool
+	src   string
+	width int32
+	rows  int
+	gen   int
+	// mark is part of the KEY, not just an argument. It decides what the last row says
+	// on an overflow, so a hit returned across two different markers would be a stale
+	// body: today both callers pass the same constant, but nothing about the type
+	// promises that, and the failure would be silent — which is the class of bug this
+	// cache was added in the middle of fixing.
+	mark string
+}
+
+// get returns the wrapped lines and whether everything fit, rewrapping only when
+// the text, the width, the row budget or the font generation changed.
+//
+// gen must be ctx.fontChainGen. It is load-bearing rather than paranoia: a Cyrillic
+// or CJK notice is first measured in the embedded face, which does NOT cover it, and
+// the covering fallback lands ASYNC a few frames later and bumps that counter
+// (ui.go, "wrap caches invalidate"). Without this key the rows would keep the widths
+// we guessed before the face we draw them in existed.
+//
+// mark, when non-empty, is spent on the LAST row whenever the text overflowed the
+// budget. wrapParagraphs reports the overflow but wrapToWidthMeasured underneath it
+// truncates silently, and silence is the actual bug being fixed here: the tail of a
+// server's removal notice is where the access code and the appeal link live, so a
+// body that just stops has to say so.
+func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width int32, rows int, mark string) ([]string, bool) {
+	if p.lines != nil && p.src == s && p.width == width && p.rows == rows && p.gen == gen &&
+		p.mark == mark {
+		return p.lines, p.fit
+	}
+	lines, fit := wrapParagraphs(measure, s, width, rows)
+	if !fit && mark != "" {
+		// Spend the last row rather than growing past the height the budget was
+		// computed for. At rows == 1 that leaves the marker alone, which is still
+		// honest — the caller's Copy button has the whole text.
+		keep := rows - 1
+		if keep < 0 {
+			keep = 0
+		}
+		if len(lines) > keep {
+			lines = lines[:keep]
+		}
+		lines = append(lines, mark)
+	}
+	if lines == nil {
+		lines = []string{} // non-nil, so an empty result still reads as baked
+	}
+	p.lines, p.fit = lines, fit
+	p.src, p.width, p.rows, p.gen, p.mark = s, width, rows, gen, mark
+	return p.lines, p.fit
 }
 
 // --- IC log export --------------------------------------------------------------------

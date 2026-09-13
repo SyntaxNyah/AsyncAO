@@ -1063,7 +1063,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.icInput, send = c.TextFieldEmoji(icFieldID, in, a.icInput, "Message in-character", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 		a.drawMsgCounter(in, counterOn)
-		if send {
+		// Same notice fence as the classic bar's send site (screens.go), and the twin is
+		// the whole point: "behavior is shared with the classic path" is this function's
+		// stated contract, so a guard that lands on only one of the two pairs is a
+		// themed-only hole — a user on an AO2 theme could Enter a line into a room the
+		// server has already removed them from. fencePointer blanks the mouse and leaves
+		// the keyboard alone, so the box's pointer fence cannot cover this.
+		if send && !a.serverNoticeDlg.open {
 			a.sendIC()
 		}
 	}

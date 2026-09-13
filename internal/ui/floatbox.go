@@ -401,6 +401,14 @@ func (a *App) closeTopOverlay() bool {
 	// freeze class).
 	case a.disconnectDlg.open:
 		a.closeDisconnectDialogToLobby()
+	// The server-notice box, immediately below the disconnect dialog: it MUST answer
+	// Esc like every sibling, or Esc falls through to the screen arm underneath and
+	// (on the lobby, where a removal notice lives) opens the Quit confirm stacked on
+	// top of a still-fenced box. Unlike the dialog above this one CAN just close —
+	// there is no dead-but-drawn session under it; the teardown or the live session,
+	// whichever applies, was already settled before the box opened.
+	case a.serverNoticeDlg.open:
+		a.closeServerNotice()
 	case a.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",
 		// then click a background chip's ✕): without this, Esc falls through

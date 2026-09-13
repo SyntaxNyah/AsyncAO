@@ -271,6 +271,35 @@ func lobbyListTop(topChrome int32) int32 {
 	return lobbyDirectRowY(topChrome) + lobbyListActionsDropY + btnH + lobbyListActionsGapY
 }
 
+// connErrLabel is the lobby's one-line view of connErr, and it is a VIEW: the full
+// reason is never truncated in connErr itself, and a server-authored one now also
+// goes to the notice box (servernotice.go), which is where the whole thing —
+// newlines, access code, appeal link — is readable and copyable.
+//
+// Two things are wrong with drawing connErr raw, and both are invisible failures:
+//
+//   - a reason with newlines is one Label call, and SDL_ttf does not break lines,
+//     so the second line either vanishes or lands as a tofu box mid-sentence;
+//   - a long enough reason draws NOTHING AT ALL. LabelClipped would not have saved
+//     it either — it rasterizes the whole string and clips only the blit width, so
+//     past some length the texture is the thing that fails, not the layout.
+//
+// Memoized against connErrSrc because the clamp allocates and this is called from
+// the per-frame lobby draw.
+func (a *App) connErrLabel() string {
+	if a.connErrSrc != a.connErr {
+		a.connErrSrc = a.connErr
+		s := a.connErr
+		if i := strings.IndexByte(s, '\n'); i >= 0 {
+			// Mark the cut: a reason that silently stops at its first line reads as
+			// the whole message, and the part that matters is usually below it.
+			s = strings.TrimRight(s[:i], " \t\r") + " …"
+		}
+		a.connErrLine = clampLine(s) // logLineMax runes, the shared single-line UI cap
+	}
+	return a.connErrLine
+}
+
 func (a *App) drawLobby(w, h int32) {
 	a.pollLobbyFetch()
 	a.pollPing() // drain connect-time probes (no-op unless a sweep is running)
@@ -282,7 +311,7 @@ func (a *App) drawLobby(w, h int32) {
 	c.Heading(pad, hdrY, "AsyncAO", ColText)
 	c.Label(pad, hdrY+30, a.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
-		c.Label(pad+220, hdrY+30, a.connErr, ColDanger)
+		c.Label(pad+220, hdrY+30, a.connErrLabel(), ColDanger)
 		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
 			label := "Reconnect to " + a.lastConnName
 			bw := c.TextWidth(label) + 20
@@ -552,7 +581,27 @@ func (a *App) drawLobby(w, h int32) {
 
 	// Keyboard navigation (#18): arrows move the selection through joinable servers, Enter joins —
 	// when no text field is focused. The selection drives the same expand + scroll as a click.
-	if c.focusID == "" {
+	//
+	// NOT while the server-notice box is up. A refused dial lands here with the box open
+	// and a.selServer still pointing at the server that just refused us, and the pointer
+	// fence (App.Frame) only blanks the MOUSE — fencePointer leaves the keyboard alone.
+	// Enter would redial the server whose ban message is the reason the box is on screen,
+	// which is the same hazard the quick-connect key is gated for.
+	if c.focusID == "" && !a.serverNoticeDlg.open {
+		// Enter reads c.enter, NOT c.keyPressed, and that is a fix rather than a style
+		// choice: HandleEvent answers K_RETURN/K_KP_ENTER with `c.enter = true` and only
+		// reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm (ui.go), so keyPressed
+		// can never hold Return and the `case sdl.K_RETURN` this replaces was unreachable
+		// from a real keystroke. #18's "Enter joins" has been dead since it shipped.
+		// Consumed on use so one press joins once and nothing downstream sees it twice.
+		if c.enter {
+			c.enter = false
+			if a.selServer >= 0 && a.selServer < len(a.servers) && a.servers[a.selServer].Joinable() {
+				e := &a.servers[a.selServer]
+				a.Connect(e.Name, e.WebSocketURL())
+				return
+			}
+		}
 		switch c.keyPressed {
 		case sdl.K_DOWN:
 			if nx := a.nextJoinableServer(a.selServer, 1); nx >= 0 {
@@ -566,12 +615,6 @@ func (a *App) drawLobby(w, h int32) {
 				a.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
-		case sdl.K_RETURN, sdl.K_KP_ENTER:
-			if a.selServer >= 0 && a.selServer < len(a.servers) && a.servers[a.selServer].Joinable() {
-				e := &a.servers[a.selServer]
-				a.Connect(e.Name, e.WebSocketURL())
-				return
-			}
 		}
 	}
 
@@ -6129,7 +6172,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// ENTER is the only sender. The shout row ARMS (courtroom.cpp:6048-6127) and
 	// the armed state rides sendIC's own read of a.icShout — it no longer feeds a
 	// modifier straight into a send.
-	if a.drawICInputRow(icBar, rowY, w, h, fH) {
+	//
+	// The send is ALSO gated on the notice box, and this is the one keyboard path the
+	// handleHotkeys guard cannot cover: the field reads Ctx.enter directly, which is
+	// neither a hotkey chord nor pointer state, so neither that early return nor
+	// fencePointer touches it. A BB notice arrives while the session is fully live, so
+	// it can land with the IC field focused mid-sentence — and pressing Enter under a
+	// modal the user is still reading would transmit a real message they did not see
+	// themselves send. The field still takes the keystroke (the draft is not lost); only
+	// the send waits.
+	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.serverNoticeDlg.open {
 		a.sendIC()
 	}
 

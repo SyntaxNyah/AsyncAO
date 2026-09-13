@@ -69,6 +69,12 @@ type disconnectDialog struct {
 	// lastConn* re-capture rationale.
 	name string
 	url  string
+	// wrap memoizes the laid-out raw reason. The raw line used to be ONE clipped
+	// label, which for a kick/ban is the server's own multi-line prose — so an
+	// access code or an appeal link on its second line was unreachable here too,
+	// and past some length the label drew nothing at all (LabelClipped rasterizes
+	// the whole string and clips only the blit). See paraWrapCache (qol.go).
+	wrap paraWrapCache
 	// hiddenUntil defers actually DRAWING the modal (open stays true the whole
 	// time — the pointer-fence and pollAutoReconnect's frozen-retry trigger are
 	// both keyed on open, not visibility) until this time; the zero value shows
@@ -126,6 +132,40 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 	}
 	return r
 }
+
+// serverRemovalMessage pulls the SERVER'S OWN words out of a drop reason, which is
+// the only thing the notice box is for.
+//
+// EventDisconnect builds its Text as "Kicked: " / "Banned: " plus the raw wire
+// field (internal/courtroom/session.go, the KK/KB/BD cases). Anything else — a
+// transport drop, a timeout, our own dial error — is OUR prose, already fully said
+// by the lobby line and the friendly sentence above, and must NOT raise a modal:
+// popping a box on every blip is the nagging drawFontWarnDialog exists to avoid.
+//
+// A removal with no reason attached returns false too. "The server banned you."
+// is already on screen; a modal whose body is "no reason given" adds a click and
+// no information.
+func serverRemovalMessage(raw string) (string, bool) {
+	rest, cut := strings.CutPrefix(raw, "Kicked: ")
+	if !cut {
+		rest, cut = strings.CutPrefix(raw, "Banned: ")
+	}
+	if !cut {
+		return "", false
+	}
+	// Trailing newlines are common in server-formatted reasons and would otherwise
+	// spend a body row on nothing. Interior newlines are the whole point and stay.
+	if rest = strings.TrimSpace(rest); rest == "" {
+		return "", false
+	}
+	return rest, true
+}
+
+// serverNoticeRemovedFallbackTitle heads a removal we could not name. Unreachable
+// from today's single caller (friendlyDisconnectReason names both prefixes that
+// serverRemovalMessage matches), and kept anyway so the box can never draw a blank
+// heading if either side of that pairing changes.
+const serverNoticeRemovedFallbackTitle = "The server closed your connection"
 
 // freezeSessionUnderDialog is the ONE freeze both drop arms use: the active tab's
 // link dying under the user, and a parked tab's death surfaced later by
@@ -198,6 +238,29 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// today's plain teardown to the lobby, which still arms auto-reconnect for a
 	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
 	//
+	// This is the arm the reported bug lives on. A server that refuses during the
+	// handshake — locked down, or whitelisting by IP — sends its instructions as the
+	// BD reason and closes, and we reach here with a.room == nil, so there is no
+	// frozen courtroom for the disconnect dialog to sit on. All the reason had left
+	// was one unclipped label on the lobby, which cannot show a second line; a
+	// lockdown puts the access code on the LAST line, so the code was structurally
+	// unreachable. Snapshot the pieces BEFORE the teardown: serverName is on
+	// sessionState and resetSessionState rebuilds that struct wholesale, so reading
+	// it after Disconnect would attribute the message to nobody.
+	//
+	// The two surfaces stay mutually exclusive by construction: the branch above
+	// returns, so a drop either freezes under the disconnect dialog (which gets the
+	// same wrapped body and Copy) or lands here and raises the notice box. Never
+	// both, and the a.disconnectDlg.open ⇒ screen == Courtroom invariant is untouched.
+	noticeBody, showNotice := "", false
+	if !deliberate {
+		noticeBody, showNotice = serverRemovalMessage(reason)
+	}
+	noticeTitle, noticeServer := friendlyDisconnectReason(reason).friendly, a.serverName
+	if noticeTitle == "" {
+		noticeTitle = serverNoticeRemovedFallbackTitle
+	}
+	//
 	// A genuine transport drop about to auto-retry is "we're coming back" just
 	// as much as a dialog Reconnect click is: snapshot today's log before
 	// Disconnect wipes it, so a successful retry can restore it
@@ -208,6 +271,12 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 		a.snapshotSessionCarry()
 	}
 	a.Disconnect() // → lobby; nils conn/sess and cancels any pending retry
+	if showNotice {
+		// AFTER the teardown, deliberately. The box is App-level so it survives
+		// resetSessionState either way, but opening it last means no teardown step
+		// can run with a modal already fenced over the screen.
+		a.openServerNotice(serverNoticeRemoved, noticeTitle, noticeServer, noticeBody)
+	}
 	if shouldAutoReconnect(reason, deliberate) {
 		a.scheduleAutoReconnect() // re-arm the countdown the teardown just cancelled
 	}
@@ -222,6 +291,16 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 // they're frozen here rather than read from lastConn* at click time). hiddenUntil
 // is the zero value for immediate display, which is what both arms now pass.
 func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time) {
+	// A BB popup notice can be on screen when the link dies — a server that is about
+	// to close the socket is exactly the kind that just sent one. Two blocking modals
+	// would then stack, and the server's MOTD is moot the instant the session is gone.
+	// ONLY an info notice is dismissed: a serverNoticeRemoved box is the only copy of
+	// the appeal instructions the user will get, and nothing may destroy it. (It
+	// cannot be open here anyway — a removal takes the other branch of
+	// handleInvoluntaryDrop — so this is the invariant, stated where it is enforced.)
+	if a.serverNoticeDlg.open && a.serverNoticeDlg.kind == serverNoticeInfo {
+		a.closeServerNotice()
+	}
 	a.disconnectDlg = disconnectDialog{
 		open:        true,
 		reason:      friendlyDisconnectReason(raw),
@@ -291,9 +370,51 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	if a.now().Before(a.disconnectDlg.hiddenUntil) {
 		return // still within the grace window — a quick self-heal must stay invisible
 	}
+	raw := a.disconnectDlg.reason.raw
+	if raw == "" {
+		raw = "connection ended"
+	}
+	friendly := a.disconnectDlg.reason.friendly
+	friendlyH := int32(0)
+	if friendly != "" {
+		friendlyH = discDlgFriendlyH
+	}
+
+	// The raw reason wraps now instead of being one clipped label. For a kick or a
+	// ban it IS the server's prose, newlines and all, and the tail is the part that
+	// matters (a lockdown puts its access code on the last line). Copy below hands
+	// over the whole untruncated string either way.
+	textW := int32(discDlgW) - 2*pad
+	rows := discDlgRawRows(h, friendlyH)
+	lines, _ := a.disconnectDlg.wrap.get(a.chromeWrapMeasure(), a.ctx.fontChainGen,
+		raw, textW, rows, serverNoticeTruncMark)
+
+	mh := discDlgChromeH() + friendlyH + int32(len(lines))*discDlgLineH
+	if mh < discDlgMinH {
+		mh = discDlgMinH // the common one-line drop keeps exactly today's proportions
+	}
+	if lim := h - 2*serverNoticeMargin; mh > lim {
+		mh = lim
+	}
+	// Same absolute floor and same edge clamps as the notice box, for the same reason:
+	// the window clamp above is the one line that can hand back a height smaller than
+	// the chrome, and the buttons' y is measured from the panel's BOTTOM, so a collapsed
+	// panel stacks Reconnect on top of the heading. friendlyH is inside the floor here
+	// (the notice box has no equivalent row) so one row of the server's own reason is
+	// always visible, not just the sentence we wrote about it.
+	if floor := discDlgChromeH() + friendlyH + discDlgLineH; mh < floor {
+		mh = floor
+	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
-	const mw, mh = 520, 220
-	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	const mw = discDlgW
+	mx, my := (w-mw)/2, (h-mh)/2
+	if mx < 0 {
+		mx = 0 // narrower than the panel: Reconnect is left-anchored, keep it clickable
+	}
+	if my < 0 {
+		my = 0 // taller than the window: heading and first reason rows stay on screen
+	}
+	m := sdl.Rect{X: mx, Y: my, W: mw, H: mh}
 	c.Fill(m, ColPanel)
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Disconnected from the server", ColText)
@@ -303,16 +424,19 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	// failure can't look identical, and no cause is hidden behind a guess. Both are
 	// server-supplied / error-derived and variable length, so clip to the panel
 	// (the §3.4 spill-past-the-border class of bug).
-	y := m.Y + 48
-	if fr := a.disconnectDlg.reason.friendly; fr != "" {
-		c.LabelClipped(m.X+pad, y, mw-2*pad, fr, ColText)
-		y += 24
+	y := m.Y + discDlgHeadH
+	if friendly != "" {
+		c.LabelClipped(m.X+pad, y, mw-2*pad, friendly, ColText)
+		y += friendlyH
 	}
-	raw := a.disconnectDlg.reason.raw
-	if raw == "" {
-		raw = "connection ended"
+	bodyLimit := m.Y + mh - btnH - pad - discDlgCountdownH
+	for _, line := range lines {
+		if y+discDlgLineH > bodyLimit {
+			break // the height clamp already told the wrap its budget; belt and braces
+		}
+		c.LabelClipped(m.X+pad, y, mw-2*pad, line, ColTextDim)
+		y += discDlgLineH
 	}
-	c.LabelClipped(m.X+pad, y, mw-2*pad, raw, ColTextDim)
 
 	// Auto-reconnect status: if a retry is armed and counting down (the pref is on
 	// and this was a genuine drop), show it — the buttons still work, and a
@@ -324,14 +448,76 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 		if secs < 0 {
 			secs = 0
 		}
-		c.Label(m.X+pad, m.Y+mh-btnH-pad-26, "Reconnecting automatically in "+strconv.Itoa(secs)+"s…", ColAccent)
+		c.Label(m.X+pad, m.Y+mh-btnH-pad-discDlgCountdownH, "Reconnecting automatically in "+strconv.Itoa(secs)+"s…", ColAccent)
 	}
 
-	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 150, H: btnH}, "Reconnect") {
+	by := m.Y + mh - btnH - pad
+	if c.Button(sdl.Rect{X: m.X + pad, Y: by, W: 150, H: btnH}, "Reconnect") {
 		a.reconnectFromDisconnectDialog()
 		return
 	}
-	if c.Button(sdl.Rect{X: m.X + mw - pad - 150, Y: m.Y + mh - btnH - pad, W: 150, H: btnH}, "Back to lobby") {
+	// Copy, between the two actions: the raw reason is the server's own text, and for
+	// a kick or a ban it carries the thing you have to act on — an appeal link, a
+	// Discord invite, a whitelist code. Reading it off the screen and retyping it was
+	// the only option before. Sends the WHOLE raw string, never the wrapped view: a
+	// re-flowed or truncated code is worse than none.
+	if c.Button(sdl.Rect{X: m.X + (mw-discDlgCopyW)/2, Y: by, W: discDlgCopyW, H: btnH}, "Copy") {
+		_ = sdl.SetClipboardText(raw)
+		a.warnLine = clampLine("Copied the disconnect reason.")
+		a.warnAt = a.now()
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 150, Y: by, W: 150, H: btnH}, "Back to lobby") {
 		a.closeDisconnectDialogToLobby()
 	}
+}
+
+// Involuntary-disconnect dialog geometry. Named per rule §17.9; the panel now GROWS
+// with the wrapped reason instead of being a fixed 520x220, so the arithmetic has to
+// be stated once and shared with discDlgRawRows rather than inlined twice.
+const (
+	// discDlgW is unchanged from the fixed-size version.
+	discDlgW = 520
+	// discDlgMinH is the old fixed height, kept as a FLOOR so the overwhelmingly
+	// common case — a one-line transport drop — looks exactly as it did.
+	discDlgMinH = 220
+	// discDlgHeadH is the heading band, the m.Y+48 the whole modal family uses.
+	discDlgHeadH = 48
+	// discDlgFriendlyH is the row the named-cause sentence occupies when there is
+	// one. Zero when friendly == "", which is why it is added separately.
+	discDlgFriendlyH = 24
+	// discDlgLineH is one wrapped raw-reason row.
+	discDlgLineH = 20
+	// discDlgCountdownH is the strip above the buttons the auto-reconnect countdown
+	// draws in. RESERVED ALWAYS, even for a kick or ban that can never count down,
+	// so the panel does not resize under the user's eyes when a retry arms.
+	discDlgCountdownH = 26
+	// discDlgRawMaxRows caps the wrapped reason. Lower than the notice box's budget
+	// because this panel also carries a heading, the friendly line, the countdown
+	// strip and three buttons — and Copy is the escape hatch for anything longer.
+	discDlgRawMaxRows = 8
+	// discDlgCopyW is the middle button. It has to fit between two 150 px buttons in
+	// a 520 px panel, which leaves 204 px of gap.
+	discDlgCopyW = 110
+)
+
+// discDlgChromeH is every vertical pixel the panel spends on something other than
+// the friendly line and the wrapped body.
+func discDlgChromeH() int32 {
+	return discDlgHeadH + discDlgCountdownH + btnH + pad
+}
+
+// discDlgRawRows is how many wrapped reason rows fit in a window h tall. Derived
+// from the same arithmetic drawDisconnectDialog lays out with, so the wrap budget and
+// the drawn area cannot drift apart — the duplicated-layout-constant trap the lobby
+// row helpers call out (screens.go).
+func discDlgRawRows(h, friendlyH int32) int {
+	avail := h - 2*serverNoticeMargin - discDlgChromeH() - friendlyH
+	rows := int(avail / discDlgLineH)
+	if rows > discDlgRawMaxRows {
+		rows = discDlgRawMaxRows
+	}
+	if rows < 1 {
+		rows = 1 // unreachable above config.MinWindowH; never wrap to nothing
+	}
+	return rows
 }

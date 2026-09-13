@@ -227,6 +227,21 @@ func driveHotkey(a *App, key sdl.Keycode) {
 	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
 }
 
+// driveEnter runs one real frame carrying a RETURN keypress.
+//
+// ON c.enter, NEVER c.keyPressed, and HandleEvent is the authority rather than my
+// preference: its key-down switch answers K_RETURN/K_KP_ENTER with `c.enter = true`
+// (ui.go) and only reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm, so
+// keyPressed can never hold Return. A gate that stamped keyPressed would be pressing a
+// key no keyboard can produce — which is exactly how the lobby's own "Enter joins"
+// shipped dead. Seeded between BeginFrame (which clears enter) and App.Frame, where the
+// event loop seeds it.
+func driveEnter(a *App) {
+	a.ctx.BeginFrame(frameHarnessDt)
+	a.ctx.enter = true
+	a.Frame(frameHarnessDt, frameHarnessW, frameHarnessH)
+}
+
 // driveUntilThemeApplied kicks a theme apply and drives REAL FRAMES until
 // pollThemeApply — App.Frame's own call, not a hand call — has landed it.
 //

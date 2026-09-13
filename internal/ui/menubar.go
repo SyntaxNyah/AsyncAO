@@ -813,7 +813,7 @@ func (a *App) closeMenuBar() { a.menuOpen, a.menuSub = "", "" }
 func (a *App) menuBarSuppressed() bool {
 	return a.layoutEditorArmed() ||
 		a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" ||
-		a.showQuitConfirm || a.disconnectDlg.open
+		a.showQuitConfirm || a.disconnectDlg.open || a.serverNoticeDlg.open
 }
 
 // menuBarIndexOf maps a stored menu title to its index in menuBarMenus, or -1.

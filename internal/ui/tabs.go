@@ -1188,6 +1188,16 @@ func (a *App) handleTabBar(w, h int32) {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}
+	// The notice box is the THIRD gate here and the only one that can be up with no
+	// session at all. Same hazard as the dialog above for an INFO notice (a chip
+	// click would activateTab → parkActive out from under a modal the box keeps open,
+	// because the box is on App and does NOT park with the tab), and for a REMOVED
+	// notice the strip must stay inert so the appeal text cannot be scrolled away
+	// behind a tab switch before it has been read or copied.
+	if a.serverNoticeDlg.open {
+		a.tabDragFrom, a.tabDragging = -1, false
+		return
+	}
 	pressed := c.mouseDown && !a.tabPrevDown
 	a.tabPrevDown = c.mouseDown
 	if rects == nil {

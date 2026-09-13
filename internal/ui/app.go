@@ -7,6 +7,7 @@ import (
 	"image"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -212,7 +213,13 @@ type App struct {
 	// sessionState — a past refactor swept them into sessionState, so Disconnect
 	// wiped them mid-teardown and silently killed the reason text, the Reconnect
 	// button and the backoff counter. Keep them here.
-	connErr      string // last lobby error/notice (disconnect reason, dial failure, …)
+	connErr string // last lobby error/notice (disconnect reason, dial failure, …)
+	// connErrLine is the drawable one-line view of connErr, memoized against
+	// connErrSrc. Memoized because building it clamps runes and so ALLOCATES, and
+	// this is read from the lobby's per-frame draw — an allocation there is what the
+	// lobby alloc gate exists to catch. See connErrLabel.
+	connErrLine  string
+	connErrSrc   string
 	lastConnName string // M2: the server we were dropped from, for one-click Reconnect
 	lastConnURL  string // its ws URL (serverKey); set on connect, re-captured at Disconnect
 	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
@@ -548,6 +555,16 @@ type App struct {
 	// a theme is global to the client — one theme, one warning, whichever tab
 	// happens to be in front when it applies.
 	fontWarnDlg fontWarnDialog
+	// serverNoticeDlg is the server's-own-words modal (servernotice.go): a kick/ban
+	// reason, a lockdown message, a BB popup notice. On App for the same reason
+	// fontWarnDlg is, only more sharply: resetSessionState rebuilds sessionState
+	// wholesale on DISCONNECT, so a removal reason parked there would be erased by
+	// the very teardown that produced it, before the lobby ever drew.
+	serverNoticeDlg serverNoticeDialog
+	// chromeMeasure is the shared modal-wrap metric, built once on first use because
+	// a closure allocates and it is consulted every frame a modal is open. See
+	// chromeWrapMeasure (servernotice.go).
+	chromeMeasure func(string) int32
 	// panelSizeEdit is the RAW text of each per-panel size box while it is being
 	// typed in, keyed by the AO2 element id. It exists because a half-typed number
 	// is not a size, and clamping one into range mid-keystroke made anything below
@@ -4213,6 +4230,25 @@ func (a *App) Connect(name, wsURL string) {
 // error still goes to the debug log. Matches substrings of the lowercased error (Go's
 // net / crypto-tls / websocket wording is stable enough); falls back to the raw text.
 func friendlyConnError(wsURL string, err error) string {
+	// A server that ANSWERED and refused comes first, ahead of every string sniff
+	// below. It has to: the library's "expected handshake response status code 101
+	// but got 503" matches the " status" arm further down, which tells the user the
+	// server "may not be a WebSocket (AO2 2.11) server" — false, and it sends people
+	// away from a server that would let them in if they read its message. The full
+	// text goes to the notice box (connectWith); this is the one-line lobby view.
+	var de *protocol.DialError
+	if errors.As(err, &de) && de.StatusCode != 0 {
+		switch de.StatusCode {
+		case http.StatusTooManyRequests:
+			return "The server is rate-limiting connections — wait a moment and try again."
+		case http.StatusForbidden, http.StatusUnauthorized:
+			return "The server refused your connection. It may be whitelisting who can join."
+		case http.StatusServiceUnavailable:
+			return "The server is not accepting connections right now (it may be locked down)."
+		default:
+			return "The server refused your connection (" + de.Status + ")."
+		}
+	}
 	s := strings.ToLower(err.Error())
 	switch {
 	// Proxy cases come FIRST and it matters. The websocket library wraps every
@@ -4292,8 +4328,18 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
 		a.pushDebug("connect failed: " + err.Error())
+		// A refusal the server EXPLAINED gets the notice box, same as a BD reason:
+		// the explanation is how you get in (a Discord invite to ask for a whitelist
+		// entry, an access code), and the lobby line is one row that cannot hold it.
+		// Snapshot the name before the teardown below — serverName is on sessionState.
+		noticeServer := a.serverName
+		var de *protocol.DialError
+		refused := errors.As(err, &de) && de.Body != ""
 		a.closeActiveTab()
 		a.screen = ScreenLobby
+		if refused {
+			a.openServerNotice(serverNoticeRemoved, a.connErr, noticeServer, de.Body)
+		}
 		return
 	}
 	a.conn = conn
@@ -5096,7 +5142,16 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.ctx.FlashWindow()
 			}
 		case courtroom.EventNotice:
+			// BB is AO2's call_notice, and AO2 shows it in a real modal
+			// (courtroom.cpp). We kept only the OOC mirror, so a whitelist code or a
+			// lockdown explanation scrolled away behind the next line of chat. Do
+			// BOTH: the log keeps it searchable, the box makes it copyable and
+			// impossible to miss. serverNoticeInfo, so dismissing touches nothing —
+			// the connection is fine and the server just said something.
 			a.pushOOC("[SERVER] "+ev.Text, "")
+			if strings.TrimSpace(ev.Text) != "" {
+				a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, a.serverName, ev.Text)
+			}
 			a.ctx.FlashWindow()
 		case courtroom.EventMuted:
 			// The server (un)muted us. Surface it in the OOC log + flash the window;
@@ -6527,7 +6582,12 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 	primary, emoji := a.icFieldFonts(s.icInput)
 	var send bool
 	s.icInput, send = c.TextFieldEmoji("ic-split", box, s.icInput, "Chat in the pinned server — click to focus", primary, emoji)
-	if send {
+	// Fenced under the notice box like both single-pane send sites. The pinned pane is a
+	// DIFFERENT socket, so this one is not about writing to a dead connection: the box is
+	// App-level and pointer-blinds the whole frame, which leaves a still-focused field's
+	// Enter as the one action that can fire while the user is reading a ban. A line the
+	// user did not see themselves send is the same defect whichever server receives it.
+	if send && !a.serverNoticeDlg.open {
 		a.sendICSplit()
 	}
 }
@@ -8851,7 +8911,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
 	// Quick-connect key: the courtroom hotkey handler is sess-gated and never runs
 	// in the lobby, so dispatch this one here, only while offline.
-	if a.sess == nil && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
+	// Gated on the notice box: it is the one blocking modal that is routinely up on
+	// the LOBBY with no session, which is precisely when this dispatch is live. Its
+	// whole reason for being there is that the server just removed us, so letting a
+	// keypress redial past it would be the client arguing with the ban. (The sibling
+	// confirms are NOT gated here; that gap is pre-existing and untouched.)
+	if a.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
 	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
@@ -9021,7 +9086,17 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open {
+	//
+	// serverNoticeDlg joins them: it is blocking, and unlike the rest it can be up
+	// with NO session at all (a server that refuses during the handshake), so the
+	// screen underneath is the lobby — where an unfenced click lands on Reconnect and
+	// redials the server that just banned you.
+	//
+	// fontWarnDlg was MISSING from this list and was therefore click-through: it
+	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
+	// ever fenced the screen for it, so a click that looked like it hit the dialog
+	// also hit whatever was behind. Pre-existing, same family, one term.
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -9230,7 +9305,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -9267,6 +9342,16 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.disconnectDlg.open {
 		a.ctx.unfencePointer()
 		a.drawDisconnectDialog(winW, winH)
+	}
+	// The server's-own-words box (servernotice.go), same rule: drawn
+	// unconditionally-while-open so its fence is always released here. BELOW the
+	// disconnect dialog because that dialog is about the session and owns the front
+	// when both are somehow up — though they cannot be: a removal notice and the
+	// dialog are mutually exclusive branches of handleInvoluntaryDrop, and
+	// openDisconnectDialog dismisses a live INFO notice for exactly this reason.
+	if a.serverNoticeDlg.open {
+		a.ctx.unfencePointer()
+		a.drawServerNotice(winW, winH)
 	}
 	// The missing-theme-fonts notice, same family and the same rule: drawn
 	// unconditionally-while-open so its fence is always released here. Last of the
