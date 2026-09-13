@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -126,7 +127,54 @@ const (
 	// HPBarMax is the top HP pip count (AO2-Client set_hp_bar guards 0..10;
 	// exported because the UI draws defensebar0..defensebar<HPBarMax>).
 	HPBarMax = 10
+	// serverTextRuneCap bounds one piece of server-authored PROSE that the UI will
+	// render into a texture: a KK/KB/BD removal reason and a BB popup notice (rule
+	// §17.4 — a hostile server cannot balloon memory, and LabelClipped does NOT save
+	// us because it rasterizes the whole string before clipping the blit width, so an
+	// oversized reason draws NOTHING at all).
+	//
+	// RUNES, not bytes, and that distinction is load-bearing: Cyrillic is two bytes
+	// per rune in UTF-8, so a byte cap would cut a Russian server's whitelist notice
+	// at roughly half the text a Latin one keeps. clampWireBytes (profilewire.go) is
+	// the byte-capping sibling and is deliberately NOT reused here.
+	//
+	// Sized well past every real payload (the longest surveyed removal reason is a
+	// few hundred runes) while staying far below anything that threatens the memory
+	// envelope. The display surfaces bound their own row count separately, so this
+	// only has to keep what Copy hands the user useful — not what fits on screen.
+	serverTextRuneCap = 8192
 )
+
+// capServerText clamps server-authored prose to serverTextRuneCap runes, marking a
+// cut with an ellipsis so a truncated copy-paste never reads as the whole message.
+//
+// It MUST be applied to the raw wire field BEFORE any "Kicked: " / "Banned: "
+// prefix is concatenated on. Capping the joined string instead would let a small cap
+// eat into the prefix literal itself, and four consumers in internal/ui match that
+// prefix with strings.HasPrefix — shouldAutoReconnect (reconnect.go) among them. A
+// reason that stopped matching "Banned" would silently re-arm auto-reconnect against
+// a ban, turning a display bug into ban evasion. Capping the field keeps the prefix
+// structurally out of reach of the cap whatever its value.
+//
+// It also SCRUBS before it counts, through protocol.SanitizeText — the same scrub the
+// refusal-body reader uses, shared rather than repeated. That is not tidiness: a single
+// NUL anywhere in the payload truncates the C string SDL_ttf draws and the one
+// SDL_SetClipboardText copies, so a server could put one byte in front of its own access
+// code and both the box and Copy would silently stop there — the same "the tail is
+// unreachable" bug the notice box exists to end, through a different door. Scrubbing
+// first also means the rune count is a count of what will actually be shown.
+//
+// The fast path allocates nothing: SanitizeText returns the input untouched when there
+// is nothing to drop, RuneCountInString does not build a []rune, and every real payload
+// sits far under the cap, so the conversion only ever runs on the pathological input
+// that actually needs it.
+func capServerText(s string) string {
+	s = protocol.SanitizeText(s)
+	if utf8.RuneCountInString(s) <= serverTextRuneCap {
+		return s
+	}
+	return string([]rune(s)[:serverTextRuneCap]) + "…"
+}
 
 // EventKind tags session events handed to the UI/courtroom layer.
 type EventKind int
@@ -838,12 +886,17 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		return []Event{{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1)}}
 
+	// A removal reason is attacker-controlled prose the UI renders into a modal, so it
+	// is capped here at the wire seam — one choke point ahead of every consumer
+	// (connErr, the disconnect dialog, the notice box, the tab's deadReason latch, the
+	// clipboard). Note the cap wraps the FIELD, not the joined string: see
+	// capServerText for why the prefix must stay out of its reach.
 	case "KK":
-		return []Event{{Kind: EventDisconnect, Text: "Kicked: " + p.Field(0)}}
+		return []Event{{Kind: EventDisconnect, Text: "Kicked: " + capServerText(p.Field(0))}}
 	case "KB":
-		return []Event{{Kind: EventDisconnect, Text: "Banned: " + p.Field(0)}}
+		return []Event{{Kind: EventDisconnect, Text: "Banned: " + capServerText(p.Field(0))}}
 	case "BD":
-		return []Event{{Kind: EventDisconnect, Text: "Banned: " + p.Field(0)}}
+		return []Event{{Kind: EventDisconnect, Text: "Banned: " + capServerText(p.Field(0))}}
 
 	case "checkconnection":
 		// Keepalive: AO2-Client answers CH with our char id.
@@ -1074,11 +1127,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventMuted, Int: boolToInt(muted)}}
 
 	case "BB":
-		// Server popup notice (call_notice) — surfaced like OOC + a flash.
+		// Server popup notice (call_notice). AO2 shows this in a real modal
+		// (courtroom.cpp call_notice); we mirror it to OOC so it stays in the
+		// searchable log AND raise the notice box, because a transient line is exactly
+		// how a whitelist code or a lockdown explanation gets missed. Capped like the
+		// removal reasons above: same attacker-controlled prose, same texture.
 		if len(p.Fields) == 0 {
 			return nil
 		}
-		return []Event{{Kind: EventNotice, Text: p.Field(0)}}
+		return []Event{{Kind: EventNotice, Text: capServerText(p.Field(0))}}
 
 	case "CASEA":
 		// Case announcement: CASEA#<msg>#<def>#<pro>#<judge>#<jury>#<steno>.
