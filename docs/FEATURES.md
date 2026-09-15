@@ -1567,10 +1567,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   snapshot the search and domain-grouping use), so the per-frame draw just walks a
   cached slice — **allocation-free**. Stars survive Export/Import; a merged-in
   shared config arrives un-starred (it can't restar your library).
-- **Audio codecs** (the "audio note"): only WAV is built into SDL_mixer; the
-  **Opus / Ogg-Vorbis / MP3** decoders ship as separate DLLs and are loaded at
-  startup via `Mix_Init` (best-effort — a missing codec just loses that one
-  format, the rest still play). This is what lets **`.opus`** work everywhere it
+- **Audio codecs** (the "audio note"): the SDL Mixer X fork bundles Ogg-Vorbis
+  (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) straight into its own library, so
+  only **Opus** (libopusfile) ships as a separate DLL and is loaded at startup via
+  `Mix_Init` (best-effort — a missing codec just loses that one format, the rest
+  still play). This is what lets **`.opus`** work everywhere it
   matters: Discord `/play` CDN links (which are `.opus`) **and** a custom
   `.opus` callword/friend alert sound. Decoding always runs in C off the Go
   side (spec §8).

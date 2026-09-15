@@ -129,10 +129,11 @@ Homebrew** — the release pipeline runs `scripts/bundle-macos.sh` to collect th
 dylib closure into a `lib/` folder beside the binary (rewriting install names to
 `@rpath/`, the macOS analogue of the Windows DLL staging), so it runs on a clean
 Mac. The script asserts both directions: no Homebrew path survives in the
-binary, **and** the music-codec dylibs (opusfile/vorbisfile/mpg123/FLAC) made it
-into `lib/` — the bundler only follows hard links, so a Homebrew formula switch
-to SDL_mixer's dlopen codec shims would otherwise silently ship a tarball whose
-music can't play on a brew-less Mac. The bare `asyncao-macos-arm64` asset is the
+binary, **and** the SDL Mixer X + opusfile dylibs made it into `lib/` (the fork
+bundles Vorbis/MP3/FLAC inside its own dylib, so those need no separate staging)
+— the bundler only follows hard links, so a switch to dlopen codec shims would
+otherwise silently ship a tarball whose music can't play on a brew-less Mac. The
+bare `asyncao-macos-arm64` asset is the
 self-update target; for a first install, `tar -xzf
 asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/` land flat in the
 current folder) and run `./asyncao-macos-arm64`.

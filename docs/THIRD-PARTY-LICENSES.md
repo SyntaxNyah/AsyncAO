@@ -46,16 +46,15 @@ Shipped next to `asyncao.exe` so it runs without MSYS2 on `PATH` (staged by
 
 | Library | Role | Licence |
 |---|---|---|
-| [SDL2](https://www.libsdl.org), SDL2_ttf, SDL2_mixer | windowing, rendering, audio | zlib |
-| [SDL Mixer X](https://github.com/SyntaxNyah/SDL-Mixer-X) (AsyncAO fork of [WohlSoft/SDL-Mixer-X](https://github.com/WohlSoft/SDL-Mixer-X)) | extended SDL_mixer (music streams, loop points) | zlib |
+| [SDL2](https://www.libsdl.org), SDL2_ttf | windowing, rendering, audio | zlib |
+| [SDL Mixer X](https://github.com/SyntaxNyah/SDL-Mixer-X) (AsyncAO fork of [WohlSoft/SDL-Mixer-X](https://github.com/WohlSoft/SDL-Mixer-X)) | extended SDL_mixer (music streams, loop points); bundles stb_vorbis (BSD), dr_mp3 & dr_flac (public domain/MIT-0), pxtone (own liberal licence), qoa (MIT) | zlib |
 | [libwebp](https://chromium.googlesource.com/webm/libwebp) (+ demux/mux/sharpyuv) | WebP codec | BSD-3-Clause |
 | [libavif](https://github.com/AOMediaCodec/libavif) | AVIF codec | BSD-2-Clause |
 | [dav1d](https://code.videolan.org/videolan/dav1d), [libaom](https://aomedia.googlesource.com/aom), libyuv, rav1e, SVT-AV1 | AV1 decode/encode | BSD-2/3-Clause |
 | [FreeType](https://freetype.org) | font rasterizer | FreeType License (BSD-style) / GPLv2 |
 | [HarfBuzz](https://harfbuzz.github.io) | text shaping | MIT (Old MIT) |
-| [Opus](https://opus-codec.org), Ogg, Vorbis (Xiph.Org) | audio codecs | BSD-3-Clause |
-| [mpg123](https://www.mpg123.de) | MP3 decoding | LGPL-2.1 |
-| [WavPack](https://www.wavpack.com), [libxmp](https://xmp.sourceforge.net), [Game Music Emu](https://bitbucket.org/mpyne/game-music-emu) | extra audio formats | BSD-3 / LGPL-2.1 |
+| [Opus](https://opus-codec.org), Ogg (Xiph.Org) | audio codecs | BSD-3-Clause |
+| [WavPack](https://www.wavpack.com) | WV audio format | BSD-3-Clause |
 | [libpng](https://www.libpng.org), [zlib](https://zlib.net) | PNG & deflate | libpng / zlib |
 | [bzip2](https://sourceware.org/bzip2/), [Brotli](https://github.com/google/brotli), [Zstandard](https://github.com/facebook/zstd) | compression | bzip2 (BSD-like) / MIT / BSD-3 |
 | [GLib](https://gitlab.gnome.org/GNOME/glib) (gio/gobject/…), graphite2 | FreeType/HarfBuzz support | LGPL-2.1 / tri-licence |

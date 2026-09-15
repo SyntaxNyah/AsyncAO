@@ -78,7 +78,7 @@ var aboutBlocks = []aboutBlock{
 	{abPara, "A special thank-you to Northgate — who backed this project, including financially, and gave me the inspiration to keep going. Without that support AsyncAO wouldn't have come this far this fast. Thank you."},
 	{abMayo, "Mayo — the AsyncAO mascot and app icon. The client was almost named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya representation, since the AO2 client only ever showed Phoenix and Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace Attorney, with the Go gopher's blue palette (AsyncAO is written in Go)."},
 	{abPara, "Art commissioned by Nyah and illustrated by hlenbchan — please go support their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life."},
-	{abPara, "AsyncAO is FREE SOFTWARE — licensed under the GNU AGPL v3 (the LICENSE file), and free all the way down: EVERY dependency is open-source under an AGPL-v3-compatible licence (MIT / BSD / ISC / zlib / MPL-2.0 / LGPL, plus the GCC runtime's linking exception). No proprietary or closed-source pieces anywhere. Each one is linked and credited below — please support them too. Full details: docs/THIRD-PARTY-LICENSES.md in the repo."},
+	{abPara, "AsyncAO is FREE SOFTWARE — licensed under the GNU AGPL v3 (the LICENSE file), and free all the way down: EVERY dependency is open-source under an AGPL-v3-compatible licence (MIT / BSD / ISC / zlib / MPL-2.0 / LGPL / public-domain, plus the GCC runtime's linking exception). No proprietary or closed-source pieces anywhere. Each one is linked and credited below — please support them too. Full details: docs/THIRD-PARTY-LICENSES.md in the repo."},
 	{abPara, "Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors. Because the whole stack is AGPL-v3-compatible free software, AsyncAO may be freely redistributed — including as binary GitHub releases — in full compliance with the AGPL and every dependency's licence (ship the third-party notices alongside binaries)."},
 	{abAccent, "Pull requests, bug fixes and feature requests are welcome!"},
 }
@@ -125,7 +125,7 @@ var aboutLinks = []aboutLink{
 	{"dav1d / libaom — AV1 decoders (BSD)", "https://code.videolan.org/videolan/dav1d"},
 	{"FreeType — font rasterizer (FreeType License)", "https://freetype.org"},
 	{"HarfBuzz — text shaping (MIT)", "https://harfbuzz.github.io"},
-	{"Opus / Ogg / Vorbis — audio codecs (BSD, Xiph.Org)", "https://xiph.org"},
+	{"Opus / Ogg — audio codecs (BSD, Xiph.Org)", "https://xiph.org"},
 	{"libpng / zlib — PNG & deflate (libpng / zlib licences)", "https://www.libpng.org"},
 
 	{"Font", ""},

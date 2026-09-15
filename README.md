@@ -200,13 +200,14 @@ AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces
   [klauspost/compress](https://github.com/klauspost/compress), and the
   `golang.org/x/*` libraries), and MPL-2.0
   ([hashicorp/golang-lru](https://github.com/hashicorp/golang-lru)).
-- **Bundled engine** — zlib ([SDL2](https://www.libsdl.org) / ttf / mixer); BSD
-  ([libwebp](https://chromium.googlesource.com/webm/libwebp),
+- **Bundled engine** — zlib ([SDL2](https://www.libsdl.org) / ttf / SDL Mixer X);
+  BSD ([libwebp](https://chromium.googlesource.com/webm/libwebp),
   [libavif](https://github.com/AOMediaCodec/libavif) + dav1d/aom,
-  [Opus/Vorbis](https://xiph.org)); the [FreeType](https://freetype.org),
+  [Opus/Ogg](https://xiph.org), WavPack, stb_vorbis); MIT / public-domain (qoa,
+  dr_mp3, dr_flac); the [FreeType](https://freetype.org),
   [HarfBuzz](https://harfbuzz.github.io), [libpng](https://www.libpng.org) and
-  [zlib](https://zlib.net) licences; LGPL (GLib, gettext, mpg123 — used as
-  separate DLLs); and the GCC runtime under its **Runtime Library Exception**.
+  [zlib](https://zlib.net) licences; LGPL (GLib, gettext — used as separate
+  DLLs); and the GCC runtime under its **Runtime Library Exception**.
 - **Font** — [OpenDyslexic](https://opendyslexic.org), SIL OFL 1.1.
 
 MPL-2.0, LGPL and the GCC exception are all AGPL-compatible, so the whole stack is
