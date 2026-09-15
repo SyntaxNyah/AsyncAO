@@ -36,8 +36,9 @@ finish-args:
   - --filesystem=xdg-data/asyncao:create
 
 modules:
-  # SDL2_ttf and SDL2_mixer are not in the base runtime — build them from the
-  # SDL release branches (autotools).
+  # SDL2_ttf and the SDL Mixer X fork are not in the base runtime — build them
+  # (SDL2_ttf from the SDL release branch; the mixer from our fork, which is what
+  # the Go code links via SDL_mixer_ext.h).
   - name: sdl2_ttf
     buildsystem: autotools
     sources:
@@ -45,14 +46,19 @@ modules:
         url: https://github.com/libsdl-org/SDL_ttf.git
         tag: release-2.22.0
 
-  - name: sdl2_mixer
-    buildsystem: autotools
+  - name: sdl2_mixer_ext
+    buildsystem: cmake
     config-opts:
-      - --disable-music-cmd
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDL_MIXER_X_SHARED=ON
+      - -DSDL_MIXER_X_STATIC=OFF
+      - -DMIXERX_ENABLE_LGPL=OFF
+      - -DMIXERX_ENABLE_GPL=OFF
+      - -DUSE_MIDI=OFF
     sources:
       - type: git
-        url: https://github.com/libsdl-org/SDL_mixer.git
-        tag: release-2.8.0
+        url: https://github.com/SyntaxNyah/SDL-Mixer-X.git
+        branch: master
 
   - name: asyncao
     buildsystem: simple
@@ -73,7 +79,7 @@ modules:
       # @ASYNCAO_TAGS@ = "" (full default) or "nodiscord novoice" (lean: no Discord,
       # no voice — quoted below, so the embedded space is safe); @ASYNCAO_VERSION@ =
       # the release tag (stamped for the About / What's New version display).
-      - CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
+      - CGO_CFLAGS="-I/app/include" CGO_LDFLAGS="-L/app/lib" CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.desktop
           /app/share/applications/io.github.SyntaxNyah.AsyncAO.desktop
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.metainfo.xml
