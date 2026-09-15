@@ -79,7 +79,7 @@ modules:
       # @ASYNCAO_TAGS@ = "" (full default) or "nodiscord novoice" (lean: no Discord,
       # no voice — quoted below, so the embedded space is safe); @ASYNCAO_VERSION@ =
       # the release tag (stamped for the About / What's New version display).
-      - CGO_CFLAGS="-I/app/include" CGO_LDFLAGS="-L/app/lib" CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
+      - CGO_CFLAGS="-I/app/include -I/usr/include/SDL2" CGO_LDFLAGS="-L/app/lib64" CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.desktop
           /app/share/applications/io.github.SyntaxNyah.AsyncAO.desktop
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.metainfo.xml
