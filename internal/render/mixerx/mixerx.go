@@ -15,7 +15,7 @@ package mixerx
 /*
 #cgo LDFLAGS: -lSDL2_mixer_ext
 #include <stdlib.h>
-#include <SDL2/SDL_mixer.h>
+#include <SDL2/SDL_mixer_ext.h>
 */
 import "C"
 
