@@ -3,15 +3,17 @@
 // added runtime loop-point setters (Mix_SetMusicLoopStartTime/EndTime) that
 // AsyncAO's custom music loop points (#48) depend on.
 //
-// The cgo preamble targets the SDL Mixer X build installed into the MSYS2
-// UCRT64 prefix (C:\msys64\ucrt64): SDL_mixer.h / SDL_mixer_ext.h in
-// include/SDL2/, libSDL2_mixer_ext.dll.a in lib/, and SDL2_mixer_ext.dll in
-// bin/. See docs/SDL_MIXER_X-MIGRATION-PLAN.md for how that fork is built.
+// The cgo preamble links SDL Mixer X (AsyncAO's fork of WohlSoft/SDL-Mixer-X),
+// which provides the multi-music stream API and the runtime loop-point setters
+// that AsyncAO's crossfade and gapless-loop support depend on. Only the library
+// NAME is pinned here; the include and library search paths are supplied by the
+// build environment (CGO_CFLAGS / CGO_LDFLAGS — see scripts/build.ps1,
+// scripts/setup-deps.*, and the CI workflows, which build the fork and point
+// cgo at its install prefix). See docs/SDL_MIXER_X-MIGRATION-PLAN.md.
 package mixerx
 
 /*
-#cgo CFLAGS: -IC:/msys64/ucrt64/include
-#cgo LDFLAGS: -LC:/msys64/ucrt64/lib -lSDL2_mixer_ext
+#cgo LDFLAGS: -lSDL2_mixer_ext
 #include <stdlib.h>
 #include <SDL2/SDL_mixer.h>
 */
