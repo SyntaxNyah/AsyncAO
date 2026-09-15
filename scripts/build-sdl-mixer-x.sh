@@ -36,6 +36,18 @@ if command -v ldconfig >/dev/null 2>&1; then
   ldconfig
 fi
 
+# macOS: the fork installs the shared library with a BARE install name
+# (LC_ID_DYLIB = "libSDL2_mixer_ext.2.dylib" — no @rpath, no directory). The
+# linker bakes that bare name into every consumer, and dylibbundler can't
+# resolve it transitively (it loops on "does not exist. Try again"). Rewrite it
+# to a full path (Homebrew-style) so the reference is resolvable and dylibbundler
+# can locate + bundle the dylib.
+if command -v install_name_tool >/dev/null 2>&1; then
+  soname="$PREFIX/lib/$(readlink "$PREFIX/lib/libSDL2_mixer_ext.dylib")"
+  real="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$soname")"
+  install_name_tool -id "$soname" "$real"
+fi
+
 echo "SDL Mixer X installed to $PREFIX"
 echo "  header: $PREFIX/include/SDL2/SDL_mixer.h"
 echo "  lib:    $PREFIX/lib/libSDL2_mixer_ext.so"
