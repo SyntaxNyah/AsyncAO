@@ -140,6 +140,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libavif
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-opusfile
+            git
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
