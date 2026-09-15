@@ -123,7 +123,7 @@ asyncao -debug          # pprof on localhost:6060
 | [docs/user/themes.md](docs/user/themes.md) | Using AO2 themes + the `asyncao_ic_*` keys for placing IC controls |
 | [docs/user/asset-preferences.md](docs/user/asset-preferences.md) | Format settings guide |
 | [docs/user/pairing.md](docs/user/pairing.md) | Pairing guide |
-| [docs/user/themes.md](docs/user/themes.md) | Migrating AO2 themes |
+| [docs/user/music.md](docs/user/music.md) | Music fade, sync, and custom loop points |
 | [docs/user/local-assets.md](docs/user/local-assets.md) | No-streaming legacy mode |
 
 ## Roadmap

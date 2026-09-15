@@ -1270,11 +1270,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **`~stop` sentinel halts playback immediately** instead of fetching a track
   that 404s, and **disconnecting from a server stops the music** too. The MC
   **looping** flag (field 3) and **MUSIC_EFFECT** flags (field 5) are honored: a
-  no-repeat / play-once track plays once instead of looping forever, and a
-  fade-in track ramps up (via SDL_mixer's native fade, toward your volume so a
-  slider drag never fights the ramp) instead of hard-cutting. Fade-out and
-  sync-position are documented-skipped (single stream / no cheap mid-fetch seek);
-  a short or malformed MC packet degrades to the AsyncAO default (loop forever).
+  no-repeat / play-once track plays once instead of looping forever; a fade-in
+  track ramps up (via SDL_mixer's native fade, toward your volume so a slider
+  drag never fights the ramp); a fade-out track ramps the *previous* track down
+  over 4 seconds while the new one downloads (zero added latency); and sync-
+  position starts the new track at the same position the previous track was at.
+  A short or malformed MC packet degrades to the AsyncAO default (loop forever).
+- **Custom loop points** from AO `.txt` or DRO `.ini` sidecar files: when a track
+  is marked to loop, AsyncAO checks for loop-point metadata (sample-based or
+  seconds) and seeks back to `loop_start` when the track reaches `loop_end`,
+  instead of restarting from the top. See [docs/user/music.md](../user/music.md)
+  for the full sidecar format and how accurate the timing is.
 - **OOC links survive word-wrap**: a long shared link (e.g. a Discord CDN URL
   with a `&`-laden query string) that wraps across rows still opens / copies /
   saves whole — resolved from the source entry, not the visible fragment.

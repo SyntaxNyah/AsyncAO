@@ -4,6 +4,54 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.95.1 — 2026-09-15
+
+Music transitions work, and tracks can loop from custom points instead of
+restarting from the top.
+
+Music effects (all four checkboxes in the music menu now do what they say):
+
+- **Fade in** ramps the new track up over one second, matching AO2.
+- **Fade out previous** ramps the old track down over four seconds while the new
+  one downloads. Zero added latency compared to the plain stop, and the default
+  setting works instead of silently doing nothing. The outgoing track fades while
+  the incoming one is still loading, so tracks swap exactly when they always
+  have. AO2 can play both at once (true crossfade); AsyncAO uses one stream, so
+  both are never audible simultaneously.
+- **Synchronize position** starts the new track at the same position the previous
+  track was at. Captured at request time (before the new track overwrites the old
+  position), so the seconds the old track keeps playing while the new one
+  downloads are counted. Useful for switching between alternate versions of the
+  same song without losing your place.
+- **Loop** still loops, same as before.
+
+Custom loop points (AO .txt and DRO .ini sidecars):
+
+- **Tracks can loop from authored points instead of restarting from the top.**
+  When a track is set to loop, AsyncAO checks for a `.txt` or folder `.ini` file
+  with loop metadata (in samples or seconds), and seeks back to `loop_start` when
+  the track reaches `loop_end`. Most tracks have no loop points, and that is
+  fine: they restart from the top like they always have. Loop points are optional.
+- **AO-style sidecars** (`sounds/music/trial.opus.txt`) use sample counts or
+  seconds, with `seconds = true` or `_sec` keys or trailing `s`/`sec` on values.
+  The `seconds` flag is order-dependent (affects only lines below it), matching
+  AO2 exactly.
+- **DRO-style metadata** (`sounds/music/trial/trial.ini`) matches track filenames
+  case-insensitively. The `play_once` key suppresses looping even when the server
+  says to loop.
+- **Sample rates are sniffed** from the track's own audio header (WAV, Ogg
+  Vorbis, Ogg Opus, FLAC, MP3). Opus files are always 48000 Hz per the spec.
+- **Loop timing is frame-driven.** The deadline is checked once per frame, so
+  overshoot depends on how fast frames run. While idle (no typing, no
+  animations), frames are infrequent and loops can overshoot by up to half a
+  second. While typing or during courtroom action, frames run much faster and
+  overshoot is under 20ms. Loop windows narrower than one second are refused.
+
+See [docs/user/music.md](https://github.com/SyntaxNyah/AsyncAO/blob/main/docs/user/music.md)
+for the full sidecar format, examples, and accuracy details.
+
+Thanks to Crystalwarrior for the reports.
+
 ## v1.95.0 — 2026-09-13
 
 Three builds' worth of work in one release. Servers that turn you away now say
