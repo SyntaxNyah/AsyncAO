@@ -150,3 +150,14 @@ func (m *missMemo) size() int {
 	defer m.mu.Unlock()
 	return len(m.entries)
 }
+
+// clear empties the memo: every remembered miss is forgotten so the next lookup
+// re-walks the mounts. Used by the Settings "clear cached 404s" action.
+func (m *missMemo) clear() {
+	if m == nil || m.entries == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.entries)
+}

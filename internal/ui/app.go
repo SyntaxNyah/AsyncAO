@@ -8655,6 +8655,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
+
+	// Drain debug logs from render package (loop points diagnostics, etc.)
+	if a.d.Audio != nil {
+		for _, line := range render.PollDebugLogs() {
+			a.pushDebug(line)
+		}
+	}
+
 	// Damage bookkeeping (experimental loop): this frame absorbs everything
 	// pending. Snapshot the store generation at frame START — uploads during
 	// THIS frame (the pump below) bump it and earn at most one follow-up

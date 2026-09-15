@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -460,29 +462,73 @@ func (a *App) frameStats() (avg, worst, fps float32) {
 // a one-stop view.
 func (a *App) drawDebugLogSection(r sdl.Rect) {
 	c := a.ctx
-	c.Border(r, ColPanelHi)
+	// Export button at the top
+	btnR := sdl.Rect{X: r.X + r.W - 100, Y: r.Y, W: 90, H: btnH}
+	if c.Button(btnR, "Export Log") {
+		a.exportDebugLog()
+	}
+	logR := sdl.Rect{X: r.X, Y: r.Y + btnH + 4, W: r.W, H: r.H - btnH - 4}
+	c.Border(logR, ColPanelHi)
 	if len(a.debugLog) == 0 {
-		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No failures logged this session.", ColTextDim)
+		c.LabelClipped(logR.X+6, logR.Y+6, logR.W-12, "No failures logged this session.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugLogScroll -= c.WheelIn(r) * scrollStepPx
+		a.debugLogScroll -= c.WheelIn(logR) * scrollStepPx
 	}
 	contentH := int32(len(a.debugLog)) * debugRowH
-	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.debugLogScroll = c.VScrollbar("debuglog", track, a.debugLogScroll, contentH, r.H)
-	clipPrev, clipHad := c.pushClip(r)
+	track := sdl.Rect{X: logR.X + logR.W - scrollBarW, Y: logR.Y, W: scrollBarW, H: logR.H}
+	a.debugLogScroll = c.VScrollbar("debuglog", track, a.debugLogScroll, contentH, logR.H)
+	clipPrev, clipHad := c.pushClip(logR)
 	defer c.popClip(clipPrev, clipHad)
-	rowW := r.W - scrollBarW - 12
-	rowY := r.Y - a.debugLogScroll
+	rowW := logR.W - scrollBarW - 12
+	rowY := logR.Y - a.debugLogScroll
 	for i := len(a.debugLog) - 1; i >= 0; i-- { // newest first
-		if rowY > r.Y+r.H {
+		if rowY > logR.Y+logR.H {
 			break
 		}
-		if rowY >= r.Y-debugRowH {
-			c.LabelClipped(r.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
+		if rowY >= logR.Y-debugRowH {
+			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
 		}
 		rowY += debugRowH
+	}
+}
+
+// exportDebugLog writes the debug log to a timestamped .txt file on the desktop.
+func (a *App) exportDebugLog() {
+	if len(a.debugLog) == 0 {
+		return
+	}
+
+	// Build filename with timestamp
+	now := time.Now()
+	filename := fmt.Sprintf("asyncao-debug-%s.txt", now.Format("20060102-150405"))
+
+	// Try Desktop first, fall back to current directory
+	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
+	path := filepath.Join(desktop, filename)
+	if err := os.MkdirAll(desktop, 0755); err != nil {
+		path = filename // fallback to current directory
+	}
+
+	// Build content
+	var content string
+	content += fmt.Sprintf("AsyncAO Debug Log Export\n")
+	content += fmt.Sprintf("Generated: %s\n", now.Format("2006-01-02 15:04:05"))
+	content += fmt.Sprintf("Entries: %d\n", len(a.debugLog))
+	content += fmt.Sprintf("\n%s\n\n", "============================================================")
+
+	// Add all log entries (oldest first for readability)
+	for i := 0; i < len(a.debugLog); i++ {
+		e := a.debugLog[i]
+		content += fmt.Sprintf("[%s] %s\n", e.at.Format("15:04:05"), e.text)
+	}
+
+	// Write file
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		a.pushDebug("Failed to export debug log: " + err.Error())
+	} else {
+		a.pushDebug("Debug log exported to: " + path)
 	}
 }
 

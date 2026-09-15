@@ -2868,7 +2868,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	missCount := a.d.Manager.ConclusiveMissCount()
 	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Retry missing assets") {
 		a.d.Manager.ForgetConclusiveMisses()
-		if a.d.Store != nil { // nil only in headless tests
+		a.d.Manager.ForgetNotFound() // the network 404 LRU + local miss memo
+		if a.d.Store != nil {        // nil only in headless tests
 			a.d.Store.ForgetMissing() // the render side's copy, or the viewport keeps drawing placeholders
 		}
 		settings.statusLine = "Will look for " + strconv.Itoa(missCount) + " missing asset(s) again."

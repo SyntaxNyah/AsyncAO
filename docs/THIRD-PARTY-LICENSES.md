@@ -47,6 +47,7 @@ Shipped next to `asyncao.exe` so it runs without MSYS2 on `PATH` (staged by
 | Library | Role | Licence |
 |---|---|---|
 | [SDL2](https://www.libsdl.org), SDL2_ttf, SDL2_mixer | windowing, rendering, audio | zlib |
+| [SDL Mixer X](https://github.com/SyntaxNyah/SDL-Mixer-X) (AsyncAO fork of [WohlSoft/SDL-Mixer-X](https://github.com/WohlSoft/SDL-Mixer-X)) | extended SDL_mixer (music streams, loop points) | zlib |
 | [libwebp](https://chromium.googlesource.com/webm/libwebp) (+ demux/mux/sharpyuv) | WebP codec | BSD-3-Clause |
 | [libavif](https://github.com/AOMediaCodec/libavif) | AVIF codec | BSD-2-Clause |
 | [dav1d](https://code.videolan.org/videolan/dav1d), [libaom](https://aomedia.googlesource.com/aom), libyuv, rav1e, SVT-AV1 | AV1 decode/encode | BSD-2/3-Clause |

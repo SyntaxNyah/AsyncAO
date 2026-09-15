@@ -18,6 +18,8 @@ package assets
 // trip. That is why it may safely carry the decoded, lowercased folded rel.
 
 import (
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -164,4 +166,35 @@ func mountLayerExcluded(rel string) bool {
 		last = rel[i+1:]
 	}
 	return strings.EqualFold(last, ManifestFileName)
+}
+
+// ReadFileDirect reads a file directly from the mount folders by relative path,
+// bypassing the index and format checks. Used for sidecar files like loop point
+// .txt that aren't indexed as assets. Returns the file bytes or an error.
+func (l *MountLayer) ReadFileDirect(rel string) ([]byte, error) {
+	if l == nil || l.idx == nil {
+		return nil, os.ErrNotExist
+	}
+
+	// URL-decode the rel path (e.g., %5B -> [, %20 -> space)
+	decoded := rel
+	if d, err := url.PathUnescape(rel); err == nil {
+		decoded = d
+	}
+
+	// The MountIndex sources handle file reading
+	// Try to look up in the files map first (won't be there for .txt, but try anyway)
+	folded := foldRel(decoded)
+	if f, ok := l.idx.files[folded]; ok {
+		return l.idx.ReadFile(f, folded)
+	}
+
+	// Not in index - try direct read from each source (need exact path with no URL encoding)
+	for _, src := range l.idx.sources {
+		if data, err := src.read(decoded); err == nil {
+			return data, nil
+		}
+	}
+
+	return nil, os.ErrNotExist
 }

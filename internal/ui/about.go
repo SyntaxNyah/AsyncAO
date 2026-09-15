@@ -23,6 +23,9 @@ const (
 	aboutAOSDLURL  = "https://github.com/AttorneyOnline/AO-SDL"
 	aboutAOSiteURL = "https://aceattorneyonline.com"
 	aboutArtistURL = "https://www.instagram.com/hlenbchan2" // app icon artist
+	aboutDROURL    = "https://github.com/Killing-Fever-Online/DRO-Client"
+	aboutKFOURL    = "https://github.com/Killing-Fever-Online/KFO-Client"
+	aboutMixerXURL = "https://github.com/SyntaxNyah/SDL-Mixer-X" // AsyncAO's fork of WohlSoft/SDL-Mixer-X
 	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
 	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
 	aboutMascotPx = int32(200)
@@ -93,6 +96,8 @@ var aboutLinks = []aboutLink{
 
 	{"Attorney Online — the project AsyncAO builds on", ""},
 	{"AO2-Client — the original client (GPLv3)", aboutAO2URL},
+	{"DRO-Client — the Danganronpa client (loop-point .ini convention)", aboutDROURL},
+	{"KFO-Client — Killing Fever Online's client (music/loop conventions)", aboutKFOURL},
 	{"webAO — AO in the browser (asset URL conventions)", aboutWebAOURL},
 	{"AO-SDL — an SDL2 AO client (thread-model reference)", aboutAOSDLURL},
 	{"aceattorneyonline.com — the AO community", aboutAOSiteURL},
@@ -114,6 +119,7 @@ var aboutLinks = []aboutLink{
 
 	{"Native engine — bundled C libraries (all free software)", ""},
 	{"SDL2 — windowing, rendering & audio (zlib)", "https://www.libsdl.org"},
+	{"SDL Mixer X — SDL_mixer music/stream mixer, AsyncAO fork of WohlSoft/SDL-Mixer-X (zlib)", aboutMixerXURL},
 	{"libwebp — WebP image codec (BSD)", "https://chromium.googlesource.com/webm/libwebp"},
 	{"libavif — AVIF image codec (BSD)", "https://github.com/AOMediaCodec/libavif"},
 	{"dav1d / libaom — AV1 decoders (BSD)", "https://code.videolan.org/videolan/dav1d"},

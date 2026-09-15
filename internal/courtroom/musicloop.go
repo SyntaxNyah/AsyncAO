@@ -85,6 +85,7 @@ const (
 	droPlayOnceKey  = "play_once"
 	droLoopStartKey = "loop_start"
 	droLoopEndKey   = "loop_end"
+	droSecondsKey   = "seconds"
 )
 
 // droPlayOnceTrue / droPlayOnceTrueNumeric are the two spellings accepted for a
@@ -392,6 +393,17 @@ func droSampleSeconds(v string, sampleRate int) (seconds float64, ok bool) {
 	return float64(n) / float64(sampleRate), true
 }
 
+// droLoopSeconds converts one DRO loop_start/loop_end value into seconds, honouring
+// the section's seconds=true toggle (AsyncAO's own extension: DRO itself has no such
+// toggle). In seconds mode the value is already a float in seconds; otherwise it is
+// a sample count reduced by /sampleRate exactly as DRO's own math does.
+func droLoopSeconds(v string, secondsMode bool, sampleRate int) (seconds float64, ok bool) {
+	if secondsMode {
+		return legacySecondsValue(v), true
+	}
+	return droSampleSeconds(v, sampleRate)
+}
+
 // ParseDROLoopSidecar parses a DRO sounds/music/<folder>/<folder>.ini manifest
 // (../DRO-Client/src/draudiotrackmetadata.cpp:57-90, update_cache) and returns the
 // metadata for the section whose `filename` matches trackRel, case-insensitively —
@@ -410,13 +422,14 @@ func ParseDROLoopSidecar(data []byte, trackRel string, sampleRate int) (DROTrack
 		}
 		var meta DROTrackMeta
 		meta.PlayOnce = isTruthyDROBool(sec.kv[droPlayOnceKey])
+		secondsMode := isTruthyDROBool(sec.kv[droSecondsKey])
 		if ls, present := sec.kv[droLoopStartKey]; present {
-			if v, convOk := droSampleSeconds(ls, sampleRate); convOk {
+			if v, convOk := droLoopSeconds(ls, secondsMode, sampleRate); convOk {
 				meta.Loop.StartSec = v
 			}
 		}
 		if le, present := sec.kv[droLoopEndKey]; present {
-			if v, convOk := droSampleSeconds(le, sampleRate); convOk {
+			if v, convOk := droLoopSeconds(le, secondsMode, sampleRate); convOk {
 				meta.Loop.EndSec = v
 				meta.Loop.HaveEnd = true
 			}

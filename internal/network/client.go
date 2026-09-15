@@ -521,6 +521,13 @@ func (c *Client) ForgetNotFound(url string) {
 	c.notFound.Remove(url)
 }
 
+// ClearNotFound empties the whole negative cache: every 404 is forgotten so the
+// next fetch re-probes the network. The Settings "clear 404s" action pairs this
+// with the manager's conclusive-miss memory for a complete wipe.
+func (c *Client) ClearNotFound() {
+	c.notFound.Purge()
+}
+
 // --- Host backoff ------------------------------------------------------------
 
 type hostBackoff struct {

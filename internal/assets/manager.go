@@ -691,6 +691,21 @@ func (m *Manager) ForgetConclusiveMisses() {
 	m.conclusiveMiss.forget()
 }
 
+// ForgetNotFound clears the whole 404 negative cache: the network client's LRU
+// and (in local mode) the local fetcher's miss memo. Pairs with
+// ForgetConclusiveMisses for the Settings "clear cached 404s" action.
+func (m *Manager) ForgetNotFound() {
+	if m == nil {
+		return
+	}
+	if c, ok := m.client.(*network.Client); ok {
+		c.ClearNotFound()
+	}
+	if lf, ok := m.client.(*LocalFetcher); ok {
+		lf.notFound.clear()
+	}
+}
+
 // ForgetConclusiveMissesUnder empties the remembered misses for ONE asset
 // origin. It is what a (re)connect calls: joining a server is the moment to
 // give that server's absent assets a fresh look, and it is not a statement
@@ -1346,6 +1361,12 @@ func (m *Manager) MountLayer() *MountLayer { return m.mountLayer.Load() }
 // goroutine runs, no directory is walked, no allocation happens, and no extra
 // probe is issued. Testing localMode or archiveSrc first would spend a second
 // load on every user who has never opened the Settings page.
+// ActiveMountLayer returns the current mount layer, or nil if none is active or
+// local-only mode is enabled. Exported for sidecar file access (loop points .txt).
+func (m *Manager) ActiveMountLayer() *MountLayer {
+	return m.activeMountLayer()
+}
+
 func (m *Manager) activeMountLayer() *MountLayer {
 	l := m.mountLayer.Load()
 	if l == nil {

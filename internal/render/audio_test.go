@@ -4,7 +4,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/mix"
+	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
 )
 
 // TestPlayMusicAtIdempotent pins the cross-tab resume guard: PlayMusicAt for the

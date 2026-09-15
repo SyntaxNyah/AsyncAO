@@ -130,9 +130,19 @@ If SDL Mixer X doesn't work:
 ## Current Status
 
 - Branch: `SDL_Mixer_X-test`
-- Status: **Planning / Research**
-- Starting point: SDL2 implementation from `looping-points-with-sdl2-suck` branch
-- Next action: Build SDL Mixer X and create test program
+- Status: **Implemented & building** (pending independent gapless listening test)
+- SDL Mixer X 2.8.0 built from source for MSYS2 UCRT64 (gcc 16.1.0, cmake+ninja),
+  ZLib-licensed, with OGG/stb_vorbis, Opus, FLAC/dr_flac, MP3/dr_mp3, WAV, MIDI.
+- **Key finding:** SDL Mixer X's loop API is *get-only* (`Mix_GetMusicLoopStartTime/EndTime`),
+  sourced from embedded tags only — there is NO `Mix_SetMusicLoopStartTime` upstream.
+  So the fork was patched to add `Mix_SetMusicLoopStartTime`/`Mix_SetMusicLoopEndTime`
+  (runtime setters writing the codec's `loop_start`/`loop_end` fields the decode loop
+  already reads), implemented for stb_vorbis, Opus, and dr_flac.
+- AsyncAO integration: `internal/render/mixerx` cgo wrapper (drop-in replacement for
+  go-sdl2's `mix`, plus the loop setters), `audio.go`/`musicclock.go`/tests swapped,
+  and `applyLoopPoints` now sets native loop points instead of the old frame-polled
+  `Mix_SetMusicPosition` seek. Full binary links `SDL2_mixer_ext.dll`.
+- Next action: independent gapless listening test (KFO), then merge.
 
 ## References
 

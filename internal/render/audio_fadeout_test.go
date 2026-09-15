@@ -4,94 +4,26 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/mix"
+	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
 )
 
-// TestFadeOutReaperGuard pins the FADE_OUT hazard mitigation (#112): when a track
-// is faded out (musicFadingOut=true) and its replacement never arrives (fetch 404,
-// TTL expiry), reapFinishedMusic tears down the silent-but-live stream even if it's
-// looping. Without this, a looping area track would sit silent forever (the musicLoop
-// early-return would skip it), and PlayMusic of that URL would be a no-op (the
-// idempotency check sees musicURL still set). The guard is tested headlessly: the
-// sentinel music pointer + fading flags trigger the reap path WITHOUT calling into
-// an uninitialised SDL_mixer.
-func TestFadeOutReaperGuard(t *testing.T) {
-	var dummy byte
-	live := (*mix.Music)(unsafe.Pointer(&dummy)) // non-nil sentinel; never dereferenced
-
-	// Fading-out looping stream: reaper must tear it down, ignoring musicLoop.
-	// The real mixer state (NO_FADING + !PlayingMusic) is stubbed by the test
-	// setup — the hazard case is when the fade FINISHED but the replacement
-	// track never landed. If this test tried to poll the real mixer it would
-	// crash; the fact that it doesn't IS the assertion that the guard works.
+// TestStopMusicClearsCrossfade pins that stopMusic tears down the crossfade
+// transient (musicOld) alongside the live stream (#112). SDL Mixer X's
+// multi-music support lets a true crossfade keep the old track alive in musicOld
+// while it fades out; a manual StopMusic mid-fade must free it so the next
+// PlayMusic starts clean. Structural: musicOld is nil here so stopMusic's Free
+// path is skipped and no SDL call is made (a sentinel *Music would be
+// dereferenced by SDL Mixer X's Mix_FreeMusic).
+func TestStopMusicClearsCrossfade(t *testing.T) {
 	a := &Audio{
-		enabled:        true,
-		music:          live,
-		musicURL:       "http://cdn/area.opus",
-		musicLoop:      true,
-		musicFadingOut: true, // fade was armed, track is now silent
-	}
-	// reapFinishedMusic reads mix.FadingMusic() and mix.PlayingMusic() — both
-	// would abort on an uninitialised mixer. The guard must check musicFadingOut
-	// FIRST and tear down WITHOUT calling those mixer functions. A successful
-	// test run (no crash) proves the guard fires.
-	//
-	// NOTE: This test cannot actually call a.reapFinishedMusic() because that
-	// WOULD call mix.FadingMusic()/mix.PlayingMusic() and crash. Instead, we
-	// verify the guard logic exists by checking the struct state. The real
-	// runtime behaviour (fade finishes → reaper runs → stream torn down) is
-	// covered by manual playtesting, not unit tests (SDL_mixer must be live).
-	//
-	// What we CAN test: the flag is set correctly in PlayMusic, and cleared
-	// in stopMusic.
-	if !a.musicFadingOut {
-		t.Fatal("musicFadingOut must be true to trigger the hazard guard")
-	}
-	// Simulate the reaper's teardown path (what it WOULD do):
-	a.stopMusic()
-	if a.music != nil || a.musicURL != "" || a.musicFadingOut {
-		t.Error("stopMusic must clear music, musicURL, and musicFadingOut")
-	}
-}
-
-// TestStopMusicClearsFadeFlag pins that stopMusic resets musicFadingOut (#112).
-// When a faded-out stream is torn down (natural reap, manual stop, or replaced by
-// a new track), the flag must clear so a LATER fade doesn't inherit a stale true.
-// Headless: stopMusic only touches struct fields, never calls SDL_mixer.
-func TestStopMusicClearsFadeFlag(t *testing.T) {
-	a := &Audio{
-		enabled:        true,
-		musicFadingOut: true, // stale flag from a prior fade
+		enabled:   true,
+		musicURL:  "http://cdn/area.opus",
+		musicLoop: true,
 	}
 	a.stopMusic()
-	if a.musicFadingOut {
-		t.Error("stopMusic must clear musicFadingOut")
+	if a.music != nil || a.musicURL != "" || a.musicLoop || a.musicOld != nil || a.musicOldRW != nil {
+		t.Error("stopMusic must clear music, musicURL, musicLoop, musicOld, and musicOldRW")
 	}
-}
-
-// TestStartMusicClearsFadeFlag pins that startMusic resets musicFadingOut when a
-// new stream loads (#112). A stale flag from a prior fade must not leak into the
-// new track's lifecycle. This is structural safety: the flag guards reapFinishedMusic,
-// and a stale true would tear down a fresh looping track the moment it naturally
-// paused or finished fading in. Tested via direct struct manipulation (no real
-// SDL_mixer needed).
-func TestStartMusicClearsFadeFlag(t *testing.T) {
-	a := &Audio{
-		enabled:        true,
-		musicFadingOut: true, // stale flag from a prior fade
-		// startMusic would call stopMusic (which clears the flag), then set it
-		// false again explicitly. We test the explicit clear by checking the
-		// state AFTER a successful startMusic simulation.
-	}
-	// We can't call real startMusic (needs SDL_mixer), but we can verify the
-	// clearing happens in stopMusic (which startMusic calls first):
-	a.stopMusic()
-	if a.musicFadingOut {
-		t.Error("stopMusic (called by startMusic) must clear musicFadingOut")
-	}
-	// The binding decision requires startMusic to ALSO clear it explicitly after
-	// loading the new stream. That's verified by reading the implementation:
-	// audio.go line ~955: `a.musicFadingOut = false`.
 }
 
 // TestSyncPosCapturedAtRequestTime pins SYNC_POS capture timing (#112): when the

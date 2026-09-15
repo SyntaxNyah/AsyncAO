@@ -351,6 +351,25 @@ func TestParseDROLoopSidecarPlayOnce(t *testing.T) {
 	}
 }
 
+// TestParseDROLoopSidecarSecondsMode pins the AsyncAO extension that DRO itself
+// lacks: a section with seconds=true reads loop_start/loop_end as float seconds
+// instead of sample counts, so the sample rate is irrelevant to those values.
+func TestParseDROLoopSidecarSecondsMode(t *testing.T) {
+	data := []byte(`[0]
+filename = "Track.opus"
+seconds = true
+loop_start = 1.5
+loop_end = 9.75
+`)
+	meta, ok := ParseDROLoopSidecar(data, "Track.opus", 100)
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+	if meta.Loop.StartSec != 1.5 || !meta.Loop.HaveEnd || meta.Loop.EndSec != 9.75 {
+		t.Errorf("loop = %+v, want start=1.5 end=9.75 haveEnd=true (seconds, not samples)", meta.Loop)
+	}
+}
+
 // TestParseDROLoopSidecarQuotedAndUnquotedValuesAgree pins that QSettings-style
 // quoting is transparent: the same logical manifest, written with and without
 // surrounding double quotes, must parse identically.
