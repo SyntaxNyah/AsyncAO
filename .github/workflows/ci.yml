@@ -195,9 +195,9 @@ jobs:
         run: brew install sdl2 sdl2_ttf webp libavif opus opusfile cmake ninja pkg-config dylibbundler
       - name: Build + install SDL Mixer X (crossfade + gapless loop points)
         run: |
-          bash scripts/build-sdl-mixer-x.sh /usr/local
-          echo "CGO_CFLAGS=-I/usr/local/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
+          bash scripts/build-sdl-mixer-x.sh "$(brew --prefix)"
+          echo "CGO_CFLAGS=-I$(brew --prefix)/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L$(brew --prefix)/lib" >> "$GITHUB_ENV"
       - name: Build
         run: |
           export CGO_ENABLED=1
