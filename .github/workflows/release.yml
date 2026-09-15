@@ -116,7 +116,7 @@ jobs:
           fi
       - name: Build + install SDL Mixer X (crossfade + gapless loop points)
         run: |
-          scripts/build-sdl-mixer-x.sh /ucrt64
+          bash scripts/build-sdl-mixer-x.sh /ucrt64
           echo "CGO_CFLAGS=-I/ucrt64/include" >> "$GITHUB_ENV"
           echo "CGO_LDFLAGS=-L/ucrt64/lib" >> "$GITHUB_ENV"
       - name: Build + bundle DLLs
@@ -193,7 +193,7 @@ jobs:
             patchelf desktop-file-utils
       - name: Build + install SDL Mixer X (crossfade + gapless loop points)
         run: |
-          sudo scripts/build-sdl-mixer-x.sh /usr/local
+          sudo bash scripts/build-sdl-mixer-x.sh /usr/local
           echo "CGO_CFLAGS=-I/usr/local/include" >> "$GITHUB_ENV"
           echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
       - name: Build (version-stamped)
@@ -250,7 +250,7 @@ jobs:
         run: brew install sdl2 sdl2_ttf webp libavif opus opusfile cmake ninja pkg-config dylibbundler
       - name: Build + install SDL Mixer X (crossfade + gapless loop points)
         run: |
-          scripts/build-sdl-mixer-x.sh /usr/local
+          bash scripts/build-sdl-mixer-x.sh /usr/local
           echo "CGO_CFLAGS=-I/usr/local/include" >> "$GITHUB_ENV"
           echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
       - name: Build (version-stamped)
