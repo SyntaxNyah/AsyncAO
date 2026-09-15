@@ -60,10 +60,15 @@ cp -f "$BIN" "$STAGE/$BIN_NAME"
 # just below, so the very same rewrite works whether the binary sits inside the
 # staging dir (bundled install) or is dropped as a bare self-update asset next
 # to an existing lib/.
+# The SDL Mixer X fork installs its dylib straight into the Homebrew prefix's
+# lib/ with a bare "libSDL2_mixer_ext.2.dylib" install name (no keg dir, no
+# @rpath). dylibbundler's default search list doesn't include that prefix, so
+# point it there explicitly (-s) or it loops on "does not exist. Try again".
 dylibbundler -od -b \
   -x "$STAGE/$BIN_NAME" \
   -d "$LIBDIR" \
-  -p "@rpath/"
+  -p "@rpath/" \
+  -s "$(brew --prefix)/lib"
 
 # Teach the binary WHERE @rpath points, in priority order. First hit wins, so:
 #   1. @executable_path/lib  — the bundled libs we just staged. THIS is the fix:
