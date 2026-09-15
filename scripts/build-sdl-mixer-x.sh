@@ -28,6 +28,14 @@ cmake -S "$SRC" -B "$SRC/build" \
 cmake --build "$SRC/build" --parallel
 cmake --install "$SRC/build"
 
+# Refresh the dynamic-linker cache so the freshly installed shared library is
+# found at RUNTIME (test binaries link against libSDL2_mixer_ext.so.2; linking
+# only finds the -l/-L path, the loader needs the cache). No-op on macOS, which
+# resolves dylibs via install_name instead of a cache.
+if command -v ldconfig >/dev/null 2>&1; then
+  ldconfig
+fi
+
 echo "SDL Mixer X installed to $PREFIX"
 echo "  header: $PREFIX/include/SDL2/SDL_mixer.h"
 echo "  lib:    $PREFIX/lib/libSDL2_mixer_ext.so"
