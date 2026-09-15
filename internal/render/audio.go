@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -56,13 +57,19 @@ const (
 	// scales toward the current VolumeMusic — so a mid-fade volume-slider drag
 	// just changes the ceiling the ramp climbs to (no fight, no extra state).
 	musicFadeInMs = 1000
+	// musicFadeOutMs is the FADE_OUT ramp length (#112). AO2's BASS path slides
+	// the PREVIOUS track down over 4000ms (../AO2-Client/src/aomusicplayer.cpp:141
+	// FADE_OUT branch); we match it. The outgoing stream fades WHILE the incoming
+	// track downloads (zero added latency), then stopMusic halts+frees it.
+	musicFadeOutMs = 4000
 
 	// Music effect bit flags (MUSIC_EFFECT, ../AO2-Client/src/datatypes.h:95-101).
-	// Only FADE_IN is honored here; FADE_OUT and SYNC_POS are documented-skipped
-	// in startMusic (see the comment there). The looping field / NO_REPEAT are
-	// applied by the courtroom before we ever see them (they arrive as the loop
-	// bool), so this file only needs FADE_IN.
-	musicEffectFadeIn = 1
+	// Pinned against config.MusicFlag* to catch config drift at compile time.
+	// The looping field / NO_REPEAT are applied by the courtroom before we ever
+	// see them (they arrive as the loop bool).
+	musicEffectFadeIn  = 1 << 0 // ramp the NEW track up (config.MusicFlagFadeIn)
+	musicEffectFadeOut = 1 << 1 // ramp the PREVIOUS track down (config.MusicFlagFadeOut)
+	musicEffectSyncPos = 1 << 2 // start new track at previous track's position (config.MusicFlagSyncPos)
 
 	// mixInitOpus is MIX_INIT_OPUS (0x40). go-sdl2 v0.4.40's mix package
 	// predates the Opus flag and doesn't export it, but the SDL2_mixer.dll we
@@ -71,6 +78,12 @@ const (
 	// content (Discord /play links, .opus alert sounds) won't decode.
 	mixInitOpus = 0x40
 )
+
+// Compile-time assertion: render-side effect constants must match config's wire values.
+// If config.MusicFlag* changes, this catches the drift before runtime (#112).
+var _ = [1]struct{}{}[config.MusicFlagFadeIn-musicEffectFadeIn]
+var _ = [1]struct{}{}[config.MusicFlagFadeOut-musicEffectFadeOut]
+var _ = [1]struct{}{}[config.MusicFlagSyncPos-musicEffectSyncPos]
 
 type pendingKind int
 
@@ -127,6 +140,26 @@ type Audio struct {
 	//          NO_REPEAT, #15) stream is reaped by reapFinishedMusic when it ends, so a
 	//          finished one-shot stops lying to the "is music playing" guards. A looping
 	//          track never ends on its own, so it's never reaped.
+	musicFadingOut bool // true when Mix_FadeOutMusic was called on the live stream and
+	//          its replacement has not yet arrived. Checked in Frame: if the fade finishes
+	//          (mixer reports NO_FADING + not playing) but the new track never lands
+	//          (fetch 404, TTL expiry), the silent-but-live stream is torn down so a
+	//          later PlayMusic of that same URL can start fresh (#112 fade hazard).
+
+	// loopMeta caches sidecar fetch/parse results (#48): keyed by music URL (full,
+	// host-included), holding either real loop points or the fact that none exist
+	// (conclusively missing: fetch 404, parse failure, direct URL). Entries expire
+	// after loopMetaCacheMaxAge and are never re-probed inside TTL (hard rule #6).
+	loopMeta map[string]loopMeta
+	// loopMetaRes receives sidecar fetch results from background goroutines (one
+	// spawned per armLoopFromCache cache miss). Drained by pollLoopMeta (called
+	// every Frame), which writes results to loopMeta.
+	loopMetaRes chan loopMetaResult
+	// loopArm holds the state for ONE armed loop-back seek: the stream it applies
+	// to, the loop window, and the wall-clock deadline when advanceLoopBack fires
+	// the seek. Nil when no loop is armed; set by armLoopFromCache (called by
+	// playDecoded when loop=true); cleared by stopMusic and when stale.
+	loopArm *loopArm
 
 	// swapSnaps records, keyed by an OUTGOING music URL, the true position that
 	// track was at the instant startMusic swapped it out for a new URL (a
@@ -187,14 +220,16 @@ func (a *Audio) SetBlipScale(pct int) {
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
 	a := &Audio{
-		mgr:       mgr,
-		chunks:    map[string]*mix.Chunk{},
-		pending:   map[string]pendingPlay{},
-		musicVol:  fullVolumePercent,
-		sfxVol:    fullVolumePercent,
-		blipVol:   fullVolumePercent,
-		alertVol:  fullVolumePercent,
-		blipScale: fullVolumePercent,
+		mgr:         mgr,
+		chunks:      map[string]*mix.Chunk{},
+		pending:     map[string]pendingPlay{},
+		loopMeta:    map[string]loopMeta{},
+		loopMetaRes: make(chan loopMetaResult, 8), // small buffer for async fetch results
+		musicVol:    fullVolumePercent,
+		sfxVol:      fullVolumePercent,
+		blipVol:     fullVolumePercent,
+		alertVol:    fullVolumePercent,
+		blipScale:   fullVolumePercent,
 	}
 	// Load the dynamic decoder libraries we ship: opus/ogg/mp3/flac are pulled
 	// in on demand (only WAV is built into SDL_mixer), so without this they
@@ -473,6 +508,8 @@ func (a *Audio) Frame() {
 			a.onAudioBytes(asset)
 		default:
 			a.expirePending()
+			a.pollLoopMeta()      // drain sidecar fetch results (#48)
+			a.advanceLoopBack()   // check loop-back deadline and fire seek when due (#48)
 			a.reapFinishedMusic() // clear a naturally-ended one-shot so it's not seen as "still playing"
 			return
 		}
@@ -495,9 +532,25 @@ func (a *Audio) Frame() {
 // stops on its own, and music is never paused in this client (no Mix_PauseMusic path),
 // so !PlayingMusic() with a.music != nil is unambiguously a finished one-shot — never
 // a pause or a load gap (startMusic's Play() begins synchronously before this runs).
+//
+// FADE_OUT hazard guard (#112): when musicFadingOut is set (a FADE_OUT was armed but
+// the replacement track has not yet arrived), a faded-to-silence stream is torn down
+// regardless of musicLoop. Without this, a looping track that faded out and whose
+// replacement never landed (fetch 404, TTL expiry) would sit silent-but-live forever
+// (the musicLoop early-return below would skip it), and a later PlayMusic of that same
+// URL would be a no-op (the idempotency check at audio.go:687 sees musicURL still set).
 func (a *Audio) reapFinishedMusic() {
-	if !a.enabled || a.music == nil || a.musicLoop {
-		return // nothing loaded, disabled, or a looping track (never ends by itself)
+	if !a.enabled || a.music == nil {
+		return // nothing loaded or disabled
+	}
+	// Faded-out stream whose replacement never arrived: tear it down even if looping.
+	if a.musicFadingOut && mix.FadingMusic() == mix.NO_FADING && !mix.PlayingMusic() {
+		a.stopMusic()
+		return
+	}
+	// Normal reap: only non-looping tracks that have naturally stopped.
+	if a.musicLoop {
+		return // looping track never ends by itself
 	}
 	if mix.PlayingMusic() {
 		return // still rolling
@@ -706,17 +759,45 @@ func (a *Audio) PlayBlip(base string) { a.request(base, pendingBlip) }
 
 // PlayMusic streams a track from its full URL. loop=false plays it once (2.9
 // NO_REPEAT / looping=0, #15); effects carries the MUSIC_EFFECT bit flags
-// (FADE_IN). Idempotent: if that exact track is already playing, it's a no-op —
-// so a room rebuild (random char, char switch, tab reactivation) re-seeding the
-// current song doesn't restart it from the top (a re-seed's loop/effects are
-// intentionally ignored, same reasoning as the no-restart). A genuinely new
-// track (or a resume after the song stopped) plays as normal. // AssetType: Music
+// (FADE_IN, FADE_OUT, SYNC_POS — #112). Idempotent: if that exact track is
+// already playing, it's a no-op — so a room rebuild (random char, char switch,
+// tab reactivation) re-seeding the current song doesn't restart it from the top
+// (a re-seed's loop/effects are intentionally ignored, same reasoning as the
+// no-restart). A genuinely new track (or a resume after the song stopped) plays
+// as normal. // AssetType: Music
 func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	if !a.enabled {
 		return
 	}
 	if url == a.musicURL && a.music != nil {
 		return // already playing this exact track — don't restart
+	}
+	// FADE_OUT: ramp the PREVIOUS (live) track down while the new one downloads
+	// (#112). AO2's semantic is a true overlapping crossfade (both streams audible
+	// at once), which we can't replicate with SDL_mixer's single Mix_Music slot.
+	// Instead: when a DIFFERENT track is requested, the old stream is live, the
+	// device+stream are enabled, volume > 0 (aomusicplayer.cpp:138 gate), and the
+	// stream is not already fading, call Mix_FadeOutMusic on it NOW. The ramp runs
+	// DURING the new track's download (zero added latency vs. today's hard chop),
+	// then startMusic stopMusic's it (Mix_HaltMusic cancels any remaining fade +
+	// Free completes instantly). The fade flag guards reapFinishedMusic: if the
+	// replacement never arrives, a faded-out looping track would sit silent-but-
+	// live forever (musicLoop early-return) and block the URL from replaying.
+	var syncPosSec float64
+	if a.music != nil && a.musicURL != "" {
+		// SYNC_POS: capture the PREVIOUS track's position NOW, before the new one
+		// overwrites it (#112). AO2: ../AO2-Client/src/aomusicplayer.cpp:132-136
+		// reads the old stream's pos, then plays the new one at that exact spot.
+		// We record it on the pendingPlay entry; startMusic consumes it as seekSec.
+		if effects&musicEffectSyncPos != 0 {
+			if pos, _, ok := a.MusicClock(); ok {
+				syncPosSec = pos
+			}
+		}
+		if effects&musicEffectFadeOut != 0 && a.musicVol > 0 && mix.FadingMusic() != mix.FADING_OUT {
+			_ = mix.FadeOutMusic(musicFadeOutMs) // returns 0 when no music playing (free guard)
+			a.musicFadingOut = true
+		}
 	}
 	// Purge any OTHER pendingMusic entry from a prior, still-in-flight PlayMusic
 	// so at most one music track is ever pending at a time (§1.2). Without this,
@@ -727,7 +808,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	// PlayMusic and onAudioBytes both run on the locked render thread, so this
 	// purge is atomic with respect to deliveries — no generation counter needed.
 	a.purgePendingMusic(url)
-	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects}
+	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects, seekSec: syncPosSec}
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
 }
 
@@ -850,33 +931,38 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 
 // startMusic decodes and plays a fetched track. loop drives the SDL_mixer loop
 // count (-1 = forever, 0 = play once — 2.9 looping/NO_REPEAT, #15); effects
-// carries the MUSIC_EFFECT bit flags. Render thread only.
+// carries the MUSIC_EFFECT bit flags (FADE_IN, FADE_OUT, SYNC_POS — #112);
+// seekSec is a best-effort start position (>0 = seek there, 0 = play from top).
+// Render thread only.
 //
 // Effect handling (../AO2-Client/src/aomusicplayer.cpp:24-160):
 //   - FADE_IN: honored via SDL_mixer's native Mix_FadeInMusic, which ramps the
 //     new stream up over musicFadeInMs on the C audio callback (no goroutine —
 //     rule #1) and always scales toward the current VolumeMusic, so a volume
 //     slider drag mid-fade just changes the ceiling (no fight).
-//   - FADE_OUT: SKIPPED. SDL_mixer plays a single music stream, so a track→track
-//     replace can't crossfade (the old is Freed synchronously here); and on the
-//     stop path Mix_FadeOutMusic returns immediately while the C callback keeps
-//     streaming — but stopMusic synchronously Frees the Music/RWops and drops the
-//     pinned byte slice, a use-after-free of the same class as #4. Skipped to
-//     stay correct rather than faked.
-//   - SYNC_POS: SKIPPED as a wire MUSIC_EFFECT (the server-driven mid-fetch
-//     sync). A DIFFERENT, client-local seek DOES exist though: seekSec (cross-tab
-//     music continuity) — see the seek block below. It's best-effort: Mix_Set-
-//     MusicPosition only supports some formats (ogg/mp3/mod, and flac/opus with a
-//     new enough SDL_mixer), returning -1 otherwise, so a failed seek degrades to
-//     playing from the top (today's behavior) rather than faking anything.
-//     CAUTION reading its failure log: SDL_mixer masks EVERY negative return
-//     from the codec's Seek with the one generic "Position not implemented for
-//     music type" string (release-2.8.x src/music.c Mix_SetMusicPosition — the
-//     same Mix_SetError used when Seek is absent). So that message usually
-//     means an OUT-OF-RANGE target the codec rejected (e.g. opusfile's
-//     op_pcm_seek returns OP_EINVAL for a target past the track's end), NOT a
-//     missing codec; the duration wrap in the seek block below exists so we
-//     never hand SDL_mixer such a target.
+//   - FADE_OUT: armed in PlayMusic at request time (#112). The PREVIOUS track
+//     fades down WHILE the new track downloads (zero added latency vs. today's
+//     hard chop). When the bytes land here, stopMusic calls Mix_HaltMusic
+//     (cancels any remaining fade) then Frees — no use-after-free, no deferred
+//     swap, no stale-position bug. AO2's true overlapping crossfade (both streams
+//     audible) is impossible with SDL_mixer's single Mix_Music slot.
+//   - SYNC_POS: captured in PlayMusic at request time (#112), before the new
+//     track overwrites the old one's clock. Delivered here via seekSec and routed
+//     through the existing cross-tab resume seek logic below. An explicit resume
+//     seek (PlayMusicAt) outranks a SYNC_POS capture (the resume is a deliberate
+//     user-visible continuity feature; SYNC_POS is a DJ nicety).
+//
+// seekSec best-effort notes: Mix_SetMusicPosition only supports some formats
+// (ogg/mp3/mod, and flac/opus with a new enough SDL_mixer), returning -1
+// otherwise, so a failed seek degrades to playing from the top (today's behavior)
+// rather than faking anything. CAUTION reading its failure log: SDL_mixer masks
+// EVERY negative return from the codec's Seek with the one generic "Position not
+// implemented for music type" string (release-2.8.x src/music.c Mix_SetMusicPosition
+// — the same Mix_SetError used when Seek is absent). So that message usually
+// means an OUT-OF-RANGE target the codec rejected (e.g. opusfile's op_pcm_seek
+// returns OP_EINVAL for a target past the track's end), NOT a missing codec; the
+// duration wrap in the seek block below exists so we never hand SDL_mixer such a
+// target.
 func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
 	// Takeover snapshot (cross-tab resume, wave 13): this call is about to SWAP a
 	// live, different track out for `url`. Capture the OUTGOING track's true
@@ -905,7 +991,8 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	a.musicBytes = data // pin the payload while the mixer streams from it
 	a.musicRW = rw
 	a.music = music
-	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
+	a.musicLoop = loop       // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
+	a.musicFadingOut = false // new stream loaded; clear any stale fade flag
 	// SDL_mixer Play/FadeIn loop counts: -1 = loop forever; playOnceLoops (1) =
 	// play through exactly once. We use 1, not 0, for play-once: Mix_PlayMusic /
 	// Mix_FadeInMusic document loops as "play the music loop times through", so 1
@@ -929,12 +1016,15 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 		a.stopMusic()
 		return
 	}
-	// Cross-tab resume seek (best-effort): jump to where the backgrounded tab's
-	// track would be by now. Mix_SetMusicPosition acts on the CURRENTLY playing
-	// stream (so it runs after Play/FadeIn above) and only some formats support
-	// it — a -1 just leaves us at the top (today's restart-from-scratch behavior),
-	// which is the honest graceful degrade. int64 truncation of seconds is fine;
-	// sub-second precision is meaningless for a song resume.
+	// Cross-tab resume + SYNC_POS seek (best-effort): jump to where the track
+	// should be. An explicit resume seek (PlayMusicAt) outranks a SYNC_POS
+	// capture (the resume is deliberate user continuity; SYNC_POS is a DJ
+	// nicety). Mix_SetMusicPosition acts on the CURRENTLY playing stream (so it
+	// runs after Play/FadeIn above) and only some formats support it — a -1 just
+	// leaves us at the top (today's restart-from-scratch behavior), which is the
+	// honest graceful degrade. Sub-second precision is delivered via the direct
+	// cgo binding (internal/render/musicseek.go); the stock go-sdl2 wrapper
+	// truncates to whole seconds.
 	if seekSec > 0 {
 		// Wrap the target by the freshly-loaded stream's REAL length first. WHY:
 		// the ui-side wall-clock fallback (no takeover snapshot: an old parked
@@ -957,11 +1047,11 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 		// The wrap can land exactly on 0 (target = a whole number of loops):
 		// the stream is already at the top, so skip the pointless seek call.
 		if seekSec > 0 {
-			if err := mix.SetMusicPosition(int64(seekSec)); err != nil {
+			if !a.SeekMusicPrecise(seekSec) {
 				// Not fatal — playback continues from the start. The error string
 				// is SDL_mixer's generic mask (SYNC_POS caution above), so log the
 				// numbers that actually diagnose a failure: target + known length.
-				log.Printf("render: music seek to %.0fs (track length %.0fs) failed for %q (playing from top): %v", seekSec, durSec, url, err)
+				log.Printf("render: music seek to %.0fs (track length %.0fs) failed for %q (playing from top)", seekSec, durSec, url)
 			}
 		}
 	}
@@ -969,6 +1059,16 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	// The fade ramps toward this ceiling; set it now so both the faded and the
 	// non-faded path land at the user's chosen volume.
 	mix.VolumeMusic(mixVolume(a.musicVol))
+	// Loop-point arming (#48): when the stream is looping, attempt to arm a
+	// loop-back seek. If a cached sidecar exists and parsed successfully, and the
+	// window is wide enough, advanceLoopBack (called every Frame) will fire the
+	// seek when the deadline arrives. If no sidecar is cached, a background fetch
+	// is triggered; the next play of this URL (or a later loop iteration) will
+	// find the cache populated.
+	a.loopArm = nil // clear any stale arm from a prior track
+	if loop {
+		a.armLoopFromCache(url, data)
+	}
 }
 
 func (a *Audio) stopMusic() {
@@ -985,4 +1085,6 @@ func (a *Audio) stopMusic() {
 	a.musicURL = "" // nothing playing now; a later PlayMusic of the same URL plays again
 	// No stream loaded → loop-ness is moot; reset so a stale true can't skip a future reap.
 	a.musicLoop = false
+	a.musicFadingOut = false
+	a.loopArm = nil // clear any armed loop-back seek
 }
