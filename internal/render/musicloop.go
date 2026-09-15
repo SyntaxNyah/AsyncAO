@@ -1,6 +1,7 @@
 package render
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -75,14 +76,27 @@ func (a *Audio) armLoopFromCache(url string, data []byte) {
 	}
 
 	if !cached {
-		// Cache miss: trigger a background fetch. fetchLoopMetaOnce runs async and
-		// writes the result (found or conclusively-missing) to a.loopMetaRes; the
-		// next pollLoopMeta (called every Frame) drains it and writes the cache.
-		// This playDecoded proceeds without arming; the NEXT play of this URL (or
-		// a later loop iteration on a long track) will find the cache populated.
-		go a.fetchLoopMetaOnce(url, data)
-		return
+		// Cache miss: fetch and parse synchronously so we can arm on the FIRST
+		// playthrough. The .txt file is small (typically <100 bytes) and the music
+		// bytes are already in memory for sample rate sniffing, so this is fast.
+		// We write the result to the cache immediately so subsequent plays don't
+		// re-fetch.
+		log.Printf("render: loop cache MISS for %q, fetching synchronously", url)
+		meta = a.fetchLoopMetaSync(url, data)
+
+		// Write to cache
+		if len(a.loopMeta) >= loopMetaCacheCap {
+			// Evict oldest (FIFO). We don't have an order slice, so evict randomly.
+			for k := range a.loopMeta {
+				delete(a.loopMeta, k)
+				break
+			}
+		}
+		a.loopMeta[url] = meta
+		cached = true
 	}
+
+	log.Printf("render: loop cache HIT for %q, found=%v", url, meta.found)
 
 	// Cache hit, but no points found (conclusively missing): silent no-op. Most
 	// tracks will hit this path (few have sidecars); logging would be spam.
@@ -96,7 +110,10 @@ func (a *Audio) armLoopFromCache(url string, data []byte) {
 	// found=true when a DRO .ini exists but has no loop keys — belt-and-braces).
 	// Also refuse if HaveEnd is false (no loop_end was ever defined).
 	p := meta.points
+	log.Printf("render: checking loop arm conditions: HaveEnd=%v, window=%.2fs, start=%.2fs, end=%.2fs",
+		p.HaveEnd, p.EndSec-p.StartSec, p.StartSec, p.EndSec)
 	if !p.HaveEnd || p.EndSec-p.StartSec < minLoopWindowSec || p.StartSec >= p.EndSec {
+		log.Printf("render: loop arm REFUSED (conditions not met)")
 		return
 	}
 
@@ -104,17 +121,101 @@ func (a *Audio) armLoopFromCache(url string, data []byte) {
 	// stream's position; if it's past `end`, we missed the window (late fetch, or
 	// the track was resumed past the loop point) — don't arm a seek into the past.
 	if pos, _, ok := a.MusicClock(); ok && pos >= p.EndSec {
+		log.Printf("render: loop arm REFUSED (already past loop point: pos=%.2fs >= end=%.2fs)", pos, p.EndSec)
 		return // already past the loop point; wait for the natural loop-around
 	}
 
 	// Arm the loop-back: set the deadline to fire when the track reaches `end`.
 	// advanceLoopBack (called every Frame) polls the deadline and fires the seek.
+	log.Printf("render: ARMING loop-back: start=%.2fs, end=%.2fs", p.StartSec, p.EndSec)
 	a.loopArm = &loopArm{
 		url:      url,
 		start:    p.StartSec,
 		end:      p.EndSec,
 		deadline: time.Now().Add(time.Duration(p.EndSec * float64(time.Second))),
 	}
+}
+
+// fetchLoopMetaSync fetches and parses a track's sidecar(s) synchronously, returning
+// the result immediately. Called by armLoopFromCache on cache miss so loop points work
+// on the first playthrough. For AO .txt sidecars, the sample rate is sniffed from `data`
+// (the track's own bytes, already in memory); for DRO .ini, the folder convention is
+// applied. Direct http(s) URLs (query strings present) never get a sidecar probe.
+func (a *Audio) fetchLoopMetaSync(url string, data []byte) loopMeta {
+	// Direct URLs (with query strings) are never probed for sidecars — they're
+	// off-domain redirects or parameterized CDN links, not asset-origin paths.
+	if courtroom.IsDirectMusicURL(url) {
+		return loopMeta{found: false, fetchedAt: time.Now()}
+	}
+
+	// Sniff sample rate from the track's own bytes (already in memory from the
+	// music fetch). Needed for both AO .txt (samples → seconds) and DRO .ini
+	// (samples → seconds). Opus/unknown defaults to 48000 (best-effort).
+	sampleRate, ok := assets.SniffAudioSampleRate(data)
+	if !ok {
+		log.Printf("render: loop sidecar fetch for %q: sample rate sniff failed, defaulting to 48000 Hz", url)
+		sampleRate = 48000
+	} else {
+		log.Printf("render: loop sidecar fetch for %q: sniffed sample rate = %d Hz", url, sampleRate)
+	}
+
+	// Try AO .txt first: same path, `.txt` appended.
+	txtURL := url + ".txt"
+
+	// The .txt file isn't an indexed asset, so we need to fetch it directly. In both
+	// local-only mode and streaming mode with local mounts, the Manager's FetchRaw
+	// will route local:// URLs to the appropriate LocalFetcher.
+	var foundTxt bool
+	var txtData []byte
+
+	if data, err := a.mgr.FetchRaw(context.Background(), txtURL); err == nil && len(data) > 0 {
+		txtData = data
+		foundTxt = true
+		log.Printf("render: AO .txt sidecar found via FetchRaw, %d bytes", len(txtData))
+	} else {
+		log.Printf("render: AO .txt sidecar not found via FetchRaw: %v", err)
+	}
+
+	if foundTxt {
+		if points, ok := courtroom.ParseAOLoopSidecar(txtData, sampleRate); ok {
+			log.Printf("render: parsed AO loop sidecar: start=%.2fs, end=%.2fs (before clamp)", points.StartSec, points.EndSec)
+			// Clamp the points against the track's duration.
+			dur := a.musicDuration()
+			log.Printf("render: track duration=%.2fs", dur)
+			start, end := courtroom.ClampLoopPoints(points.StartSec, points.EndSec, dur)
+			log.Printf("render: clamped loop points: start=%.2fs, end=%.2fs", start, end)
+			points.StartSec = start
+			points.EndSec = end
+			return loopMeta{points: points, found: true, fetchedAt: time.Now()}
+		} else {
+			log.Printf("render: AO .txt parse failed")
+		}
+		// Parse failed: fall through to try DRO (AO .txt might be corrupt; DRO
+		// could still be valid). If DRO also fails, both are conclusively-missing.
+	}
+
+	// Try DRO .ini: folder convention (courtroom.DROLoopManifestURL). The filename
+	// is case-insensitive matched against the .ini's section headers.
+	if droURL, ok := courtroom.DROLoopManifestURL(url); ok {
+		if relPath, ok := courtroom.MusicRelPath(url); ok {
+			if _, droData, _, ok := a.mgr.ResolveRawLayered(droURL, assets.AssetTypeMusic); ok && len(droData) > 0 {
+				if droMeta, ok := courtroom.ParseDROLoopSidecar(droData, relPath, sampleRate); ok {
+					// DRO play_once suppresses arming even when the wire said loop=true.
+					if droMeta.PlayOnce {
+						// Mark as found but with zero points (play_once = no loop).
+						return loopMeta{found: true, fetchedAt: time.Now()}
+					}
+					// Clamp the points against the track's duration.
+					start, end := courtroom.ClampLoopPoints(droMeta.Loop.StartSec, droMeta.Loop.EndSec, a.musicDuration())
+					points := courtroom.LoopPoints{StartSec: start, EndSec: end, HaveEnd: droMeta.Loop.HaveEnd}
+					return loopMeta{points: points, found: true, fetchedAt: time.Now()}
+				}
+			}
+		}
+	}
+
+	// Both AO and DRO conclusively missing (or parse failed): cache that fact.
+	return loopMeta{found: false, fetchedAt: time.Now()}
 }
 
 // fetchLoopMetaOnce fetches and parses a track's sidecar(s) exactly once (#48),
@@ -124,6 +225,9 @@ func (a *Audio) armLoopFromCache(url string, data []byte) {
 // own bytes, already in memory); for DRO .ini, the folder convention is applied.
 // Direct http(s) URLs (query strings present) never get a sidecar probe — they're
 // treated as conclusively-missing immediately (courtroom.IsDirectMusicURL gate).
+//
+// NOTE: This function is currently unused - armLoopFromCache now calls fetchLoopMetaSync
+// directly for synchronous first-play arming. Kept for potential future async optimization.
 func (a *Audio) fetchLoopMetaOnce(url string, data []byte) {
 	// Direct URLs (with query strings) are never probed for sidecars — they're
 	// off-domain redirects or parameterized CDN links, not asset-origin paths.
@@ -137,19 +241,43 @@ func (a *Audio) fetchLoopMetaOnce(url string, data []byte) {
 	// (samples → seconds). Opus/unknown defaults to 48000 (best-effort).
 	sampleRate, ok := assets.SniffAudioSampleRate(data)
 	if !ok {
+		log.Printf("render: loop sidecar fetch for %q: sample rate sniff failed, defaulting to 48000 Hz", url)
 		sampleRate = 48000
+	} else {
+		log.Printf("render: loop sidecar fetch for %q: sniffed sample rate = %d Hz", url, sampleRate)
 	}
 
 	// Try AO .txt first: same path, `.txt` appended.
 	txtURL := url + ".txt"
-	if _, txtData, ok := a.mgr.ResolveRaw(txtURL, assets.AssetTypeMusic); ok && len(txtData) > 0 {
+
+	// The .txt file isn't an indexed asset, so we need to fetch it directly. In both
+	// local-only mode and streaming mode with local mounts, the Manager's FetchRaw
+	// will route local:// URLs to the appropriate LocalFetcher.
+	var foundTxt bool
+	var txtData []byte
+
+	if data, err := a.mgr.FetchRaw(context.Background(), txtURL); err == nil && len(data) > 0 {
+		txtData = data
+		foundTxt = true
+		log.Printf("render: AO .txt sidecar found via FetchRaw, %d bytes", len(txtData))
+	} else {
+		log.Printf("render: AO .txt sidecar not found via FetchRaw: %v", err)
+	}
+
+	if foundTxt {
 		if points, ok := courtroom.ParseAOLoopSidecar(txtData, sampleRate); ok {
+			log.Printf("render: parsed AO loop sidecar: start=%.2fs, end=%.2fs (before clamp)", points.StartSec, points.EndSec)
 			// Clamp the points against the track's duration.
-			start, end := courtroom.ClampLoopPoints(points.StartSec, points.EndSec, a.musicDuration())
+			dur := a.musicDuration()
+			log.Printf("render: track duration=%.2fs", dur)
+			start, end := courtroom.ClampLoopPoints(points.StartSec, points.EndSec, dur)
+			log.Printf("render: clamped loop points: start=%.2fs, end=%.2fs", start, end)
 			points.StartSec = start
 			points.EndSec = end
 			a.loopMetaRes <- loopMetaResult{url: url, meta: loopMeta{points: points, found: true, fetchedAt: time.Now()}}
 			return
+		} else {
+			log.Printf("render: AO .txt parse failed")
 		}
 		// Parse failed: fall through to try DRO (AO .txt might be corrupt; DRO
 		// could still be valid). If DRO also fails, both are conclusively-missing.
@@ -159,7 +287,7 @@ func (a *Audio) fetchLoopMetaOnce(url string, data []byte) {
 	// is case-insensitive matched against the .ini's section headers.
 	if droURL, ok := courtroom.DROLoopManifestURL(url); ok {
 		if relPath, ok := courtroom.MusicRelPath(url); ok {
-			if _, droData, ok := a.mgr.ResolveRaw(droURL, assets.AssetTypeMusic); ok && len(droData) > 0 {
+			if _, droData, _, ok := a.mgr.ResolveRawLayered(droURL, assets.AssetTypeMusic); ok && len(droData) > 0 {
 				if droMeta, ok := courtroom.ParseDROLoopSidecar(droData, relPath, sampleRate); ok {
 					// DRO play_once suppresses arming even when the wire said loop=true.
 					if droMeta.PlayOnce {
@@ -236,6 +364,7 @@ func (a *Audio) advanceLoopBack() {
 	}
 	// Deadline due: fire the loop-back seek. The precise binding (SeekMusicPrecise)
 	// delivers sub-second accuracy; go-sdl2's stock wrapper truncates to whole seconds.
+	log.Printf("render: FIRING loop-back seek to %.2fs for %q", a.loopArm.start, a.musicURL)
 	if !a.SeekMusicPrecise(a.loopArm.start) {
 		log.Printf("render: loop-back seek to %.2fs failed for %q", a.loopArm.start, a.musicURL)
 	}
@@ -244,6 +373,7 @@ func (a *Audio) advanceLoopBack() {
 	// full armLoopFromCache + MusicClock read).
 	loopPeriod := a.loopArm.end - a.loopArm.start
 	a.loopArm.deadline = a.loopArm.deadline.Add(time.Duration(loopPeriod * float64(time.Second)))
+	log.Printf("render: loop period=%.2fs, next deadline in %.2fs", loopPeriod, loopPeriod)
 }
 
 // musicDuration returns the live stream's duration in seconds, or -1.0 if unknown

@@ -219,6 +219,9 @@ func (a *Audio) SetBlipScale(pct int) {
 // NewAudio opens the mixer. A failed device (headless CI) degrades to a
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
+	// Enable debug log capture so render package log.Printf appears in F8 panel
+	EnableDebugLogCapture()
+
 	a := &Audio{
 		mgr:         mgr,
 		chunks:      map[string]*mix.Chunk{},
