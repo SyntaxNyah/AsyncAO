@@ -513,7 +513,7 @@ func (a *App) exportDebugLog() {
 
 	// Build content
 	var content string
-	content += fmt.Sprintf("AsyncAO Debug Log Export\n")
+	content += "AsyncAO Debug Log Export\n"
 	content += fmt.Sprintf("Generated: %s\n", now.Format("2006-01-02 15:04:05"))
 	content += fmt.Sprintf("Entries: %d\n", len(a.debugLog))
 	content += fmt.Sprintf("\n%s\n\n", "============================================================")
