@@ -38,6 +38,21 @@ Custom loop points (AO .txt and DRO/KFO .ini sidecars):
 - Sample rates are sniffed from the track's own header (WAV, Ogg Vorbis, Opus,
   FLAC, MP3).
 
+How to loop a section of a track:
+
+- Put a text file next to the track, named after it plus `.txt` (for
+  `sounds/music/trial.opus` that is `trial.opus.txt`), containing:
+
+    seconds = true
+    loop_start = 5.0
+    loop_end = 20.0
+
+- Turn on Loop for that track in the music menu. It plays, then jumps back to
+  the 5-second mark each time it reaches 20 seconds, gaplessly.
+- Sample counts work too (drop the `seconds = true` line): at 44100 Hz,
+  `loop_start = 220500` and `loop_end = 882000` loop the same window.
+- A track with no sidecar loops from the top, like it always has.
+
 Settings: "Retry missing assets" (Settings > Cache) now also empties the 404
 negative cache, so a server or CDN that adds files mid-session is picked up
 immediately.
@@ -45,10 +60,9 @@ immediately.
 Credits: DRO-Client, KFO-Client, and the SDL Mixer X fork are now credited in
 the About page's "built on" and "libraries" sections.
 
-Known issue: DRO .ini loop points need the track itself to be reachable. In
-local (mount) mode a track whose file is not under a mounted folder reports
-"Missing asset" and its loop points are not applied (the sidecar is only read
-after the music loads). Streaming mode is unaffected.
+Known issue: DRO `.ini` loop points are broken in this release and will be fixed
+another time. Use an AO `.txt` sidecar (see the example above) for loop points
+until then.
 
 Thanks to Crystalwarrior for the reports, the DRO .ini fixtures, and all the
 testing help.
