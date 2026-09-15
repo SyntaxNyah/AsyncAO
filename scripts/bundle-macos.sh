@@ -146,19 +146,15 @@ done
 
 # --- Must-bundle assertion ----------------------------------------------------
 # check_clean proves nothing WRONG is referenced; this proves everything NEEDED
-# is PRESENT. dylibbundler only walks hard LC_LOAD_DYLIB links. Today's Homebrew
-# sdl2_mixer formula hard-links every music codec (autotools --enable-music-*
-# with each *-shared dlopen path disabled), so the codec dylibs ride into lib/
-# transitively. But if the formula ever flips to SDL_mixer's dlopen shims
-# (autotools --enable-music-*-shared, or the CMake build whose
-# SDL2MIXER_DEPS_SHARED default compiles the *_DYNAMIC/SDL_LoadObject paths),
-# those libraries vanish from the link table: dylibbundler stages nothing, the
-# no-Homebrew guard above still passes, and on a clean Mac SDL_mixer's
-# dlopen("libopusfile.0.dylib") finds no /opt/homebrew — music playback breaks
-# silently in the shipped tarball. (The field symptom that motivated this was
-# .opus SEEK failing on macOS; a missing codec dylib is the harsher cousin —
-# no playback at all.) Fail loudly instead: ci.yml runs this script as a
-# blocking gate, so a formula change turns CI red before a release ships.
+# is PRESENT. dylibbundler only walks hard LC_LOAD_DYLIB links. The fork bundles
+# Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) inside its own dylib,
+# so those codecs ride along automatically; only Ogg-Opus (libopusfile) is an
+# external shared library that must be staged here. If the fork ever flips a
+# codec to a dlopen shim (SDL_LoadObject), that library vanishes from the link
+# table: dylibbundler stages nothing, the no-Homebrew guard above still passes,
+# and on a clean Mac the dlopen finds nothing — music playback breaks silently.
+# Fail loudly instead: ci.yml runs this script as a blocking gate, so a build
+# change turns CI red before a release ships.
 check_present() {
   local glob="$1" why="$2"
   local f
@@ -177,16 +173,12 @@ check_present() {
   return 1
 }
 
-# The mixer itself plus the music-codec closure playback/seek depends on —
-# exactly the formats the client Init's (audio.go mix.Init: OGG/MP3/OPUS/FLAC).
-# Tracker (libxmp) and MIDI (fluid-synth) music are DELIBERATELY outside this
-# guarantee: the client never passes INIT_MOD/INIT_MID, so those decoders are
-# unreachable at runtime, and MIDI would additionally need a shipped soundfont
-# — asserting their dylibs would pin bytes no code path can use.
-check_present "libSDL2_mixer*.dylib" "SDL2_mixer — all music + SFX"
+# The mixer itself plus the one music-codec dylib that lives OUTSIDE the fork.
+# The fork compiles Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac)
+# straight into libSDL2_mixer_ext, so those formats need no separate dylib —
+# only Ogg-Opus demux/seek (libopusfile) is an external shared library. Tracker
+# (xmp) and MIDI are built off by the build script and unreachable at runtime.
+check_present "libSDL2_mixer*.dylib" "SDL Mixer X — all music + SFX"
 check_present "libopusfile*.dylib"   "Ogg-Opus demux/decode/seek — .opus music"
-check_present "libvorbisfile*.dylib" "Ogg-Vorbis — .ogg music"
-check_present "libmpg123*.dylib"     "MP3 music"
-check_present "libFLAC*.dylib"       "FLAC music"
 
 echo "bundle-macos: OK — $STAGE/$BIN_NAME is self-contained ($bundled bundled dylibs)"
