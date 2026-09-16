@@ -66,12 +66,22 @@ func TestDecodeCapFitsMainTier(t *testing.T) {
 	}
 	for _, b := range budgets {
 		decodeCap := cache.MaxDecodedAssetBytes(b)
+		animCap := cache.MaxAnimatedDecodedAssetBytes(b)
 		main, _ := splitT1Budget(b)
 		if decodeCap > main {
 			t.Errorf("budget=%d: decode cap %d exceeds main tier %d — one page could evict the whole working set", b, decodeCap, main)
 		}
 		if decodeCap > main/2 {
 			t.Errorf("budget=%d: decode cap %d exceeds main/2 (%d) — one page could evict half the working set", b, decodeCap, main/2)
+		}
+		// The ANIMATED frame budget is larger than the still cap but must stay
+		// <= main/2, so one animated page can never evict even half the main
+		// tier's live working set (the same stage-flash invariant).
+		if animCap < decodeCap {
+			t.Errorf("budget=%d: animated cap %d < still cap %d — animations must get at least the still budget", b, animCap, decodeCap)
+		}
+		if animCap > main/2 {
+			t.Errorf("budget=%d: animated cap %d exceeds main/2 (%d) — one animated page could evict half the working set", b, animCap, main/2)
 		}
 	}
 }

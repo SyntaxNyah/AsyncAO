@@ -40,36 +40,37 @@ const (
 	rgbaBytesPerPixel = 4
 )
 
-// defaultMaxDecodedAssetBytes caps ONE asset's decoded payload (Σ w×h×4 across
-// frames) at the default T1 texture budget's per-asset share. The cap fraction
-// (and WHY it must stay well under the render main tier) is the single source of
-// truth cache.MaxDecodedAssetBytes — see cache.decodeCapBudgetDiv: a page above
-// the whole budget can never become resident (ByteBudgetLRU rejects it) and one
-// page near the main tier evicts most of the on-screen working set (the
-// stage-flash class). Long community animations (hundreds of full-canvas frames)
-// hit exactly that and rendered as invisible characters; the decoders now
-// DECIMATE to the frames that fit (frameDecimator) so a longer clip still spans
-// its whole duration at a lower frame rate rather than truncating.
-var defaultMaxDecodedAssetBytes = cache.MaxDecodedAssetBytes(cache.DefaultT1BudgetBytes)
+// defaultMaxAnimatedDecodedAssetBytes caps ONE animated asset's decoded payload
+// (Σ w×h×4 across frames) at the default T1 texture budget's share. The cap is
+// cache.MaxAnimatedDecodedAssetBytes = half the render MAIN tier (larger than
+// the old budget/4, so a long animation keeps more frames) — see cache for the
+// arithmetic and WHY main/2 is the eviction-safe ceiling: a page above the
+// whole budget can never become resident (ByteBudgetLRU rejects it) and one
+// page above main/2 would evict most of the on-screen working set (the
+// stage-flash class). Long community animations (hundreds of full-canvas
+// frames) hit the cap and DECIMATE to the frames that fit (frameDecimator) so
+// a longer clip still spans its whole duration at a lower frame rate rather
+// than truncating.
+var defaultMaxAnimatedDecodedAssetBytes = cache.MaxAnimatedDecodedAssetBytes(cache.DefaultT1BudgetBytes)
 
-// maxDecodedAssetBytes is the LIVE per-asset decode cap. It defaults to
-// defaultMaxDecodedAssetBytes; SetMaxDecodedAssetBytes scales it off the user's
-// actual texture budget (TexBudgetMiB) at startup via cache.MaxDecodedAssetBytes
-// — the SAME fraction, so a bigger budget lets a longer animation decode in full
-// (the "long animations skip to the end past ~5 s" report) without moving the
-// shipped default or the eviction safety margin. Atomic: decode workers read it
-// live.
-var maxDecodedAssetBytes atomic.Int64
+// maxAnimatedDecodedAssetBytes is the LIVE per-animated-asset frame budget. It
+// defaults to defaultMaxAnimatedDecodedAssetBytes; SetMaxAnimatedDecodedAssetBytes
+// scales it off the user's actual texture budget (TexBudgetMiB) at startup via
+// cache.MaxAnimatedDecodedAssetBytes — the SAME fraction, so a bigger budget
+// lets a longer animation decode in full without moving the shipped default or
+// the eviction safety margin. Atomic: decode workers read it live.
+var maxAnimatedDecodedAssetBytes atomic.Int64
 
-func init() { maxDecodedAssetBytes.Store(defaultMaxDecodedAssetBytes) }
+func init() { maxAnimatedDecodedAssetBytes.Store(defaultMaxAnimatedDecodedAssetBytes) }
 
-// SetMaxDecodedAssetBytes sets the per-asset decode cap in bytes (<= 0 restores
-// the default). Called once at startup from the texture budget.
-func SetMaxDecodedAssetBytes(n int64) {
+// SetMaxAnimatedDecodedAssetBytes sets the per-animated-asset frame budget in
+// bytes (<= 0 restores the default). Called once at startup from the texture
+// budget.
+func SetMaxAnimatedDecodedAssetBytes(n int64) {
 	if n <= 0 {
-		n = defaultMaxDecodedAssetBytes
+		n = defaultMaxAnimatedDecodedAssetBytes
 	}
-	maxDecodedAssetBytes.Store(n)
+	maxAnimatedDecodedAssetBytes.Store(n)
 }
 
 const (
@@ -192,9 +193,9 @@ func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 }
 
 // boundedFrameCount reports how many frames of an animation may stay resident:
-// the count whose decoded bytes fit maxDecodedAssetBytes — never below one
-// frame (a single canvas larger than the budget fails at upload with a clear
-// error instead). The decoders honour this budget by DECIMATION, not
+// the count whose decoded bytes fit maxAnimatedDecodedAssetBytes — never below
+// one frame (a single canvas larger than the budget fails at upload with a
+// clear error instead). The decoders honour this budget by DECIMATION, not
 // truncation (see frameDecimator): the returned count is how many evenly-spaced
 // frames to keep across the whole clip, not a prefix length.
 func boundedFrameCount(width, height, frames int) int {
@@ -202,7 +203,7 @@ func boundedFrameCount(width, height, frames int) int {
 	if canvasBytes <= 0 {
 		return frames
 	}
-	maxFrames := int(maxDecodedAssetBytes.Load()) / canvasBytes
+	maxFrames := int(maxAnimatedDecodedAssetBytes.Load()) / canvasBytes
 	if maxFrames < 1 {
 		maxFrames = 1
 	}

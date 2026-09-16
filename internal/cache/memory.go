@@ -26,34 +26,72 @@ const (
 	// the byte budget is expected to trip first for sprite-sized assets.
 	DefaultMaxEntries = 4096
 
-	// decodeCapBudgetDiv is the single source of truth for "how big may ONE
-	// decoded asset get, relative to the whole T1 budget". It was written
-	// independently in three places (the decoder default, main's live override,
-	// and — by ratio — the render tier split it must stay compatible with), and
-	// a page near the old budget/2 cap was ~57% of the MAIN tier, so ONE landing
-	// page evicted the majority of the on-screen working set: the confirmed root
-	// arithmetic of the stage-flash class the held:// bridge only patches
-	// downstream. The render main tier is always >= budget/2 (render's
-	// splitT1Budget caps the small-UI shield at budget/2), so a budget/4 decode
-	// cap is provably <= main AND <= main/2 for EVERY budget — one page can never
-	// evict even half the main tier's live working set. Frame decimation already
-	// keeps long clips spanning at the smaller cap (decoder.go frameDecimator),
-	// so the quality cost of the tighter cap is a lower frame rate on giant
-	// preanims, not a truncated clip. Cross-package invariant pinned by
-	// render.TestDecodeCapFitsMainTier.
+	// decodeCapBudgetDiv is the STILL-asset cap: how big one decoded STILL asset
+	// may get, relative to the whole T1 budget. It was written independently in
+	// three places (the decoder default, main's live override, and — by ratio —
+	// the render tier split it must stay compatible with), and a page near the
+	// old budget/2 cap was ~57% of the MAIN tier, so ONE landing page evicted
+	// the majority of the on-screen working set: the confirmed root arithmetic
+	// of the stage-flash class the held:// bridge only patches downstream. The
+	// render main tier is always >= budget/2 (splitT1Budget caps the small-UI
+	// shield at budget/2), so a budget/4 decode cap is provably <= main AND <=
+	// main/2 for EVERY budget — one page can never evict even half the main
+	// tier's live working set. ANIMATED assets get a larger cap (see
+	// MaxAnimatedDecodedAssetBytes = main/2); stills keep this tighter one.
+	// Cross-package invariant pinned by render.TestDecodeCapFitsMainTier.
 	decodeCapBudgetDiv = 4
 )
 
 // MaxDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4 across
-// frames) for a given T1 texture budget: the SINGLE source of truth both the
-// decoder default and main's live override derive from (see decodeCapBudgetDiv
-// for the arithmetic and why budget/4). A non-positive budget yields 0 so
+// frames) for a STILL asset at a given T1 texture budget: the SINGLE source of
+// truth both the decoder default and main's live override derive from (see
+// decodeCapBudgetDiv for the arithmetic and why budget/4). Animated assets use
+// MaxAnimatedDecodedAssetBytes instead. A non-positive budget yields 0 so
 // callers can substitute their own default.
 func MaxDecodedAssetBytes(budget int64) int64 {
 	if budget <= 0 {
 		return 0
 	}
 	return budget / decodeCapBudgetDiv
+}
+
+// Small-texture shield carve-out (the byte budget reserved for icon/button
+// thumbnails). These constants are the SINGLE source of truth for the render
+// tier split — render.splitT1Budget delegates here — so the main tier and the
+// animated decode cap derive from the same arithmetic and can never drift
+// apart.
+const (
+	smallTexBudgetDiv = 8
+	smallTexMinBudget = 4 << 20
+)
+
+// SmallTierBytes is the small-UI shield's share of the T1 budget: budget/8,
+// floored at smallTexMinBudget so tiny power-user budgets keep a useful shield,
+// and capped at budget/2 so the floor can't starve the main tier.
+func SmallTierBytes(budget int64) int64 {
+	small := budget / smallTexBudgetDiv
+	if small < smallTexMinBudget {
+		small = smallTexMinBudget
+	}
+	if small > budget/2 {
+		small = budget / 2
+	}
+	return small
+}
+
+// MainTierBytes is the remainder of the T1 budget after the small shield.
+func MainTierBytes(budget int64) int64 {
+	return budget - SmallTierBytes(budget)
+}
+
+// MaxAnimatedDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4
+// across frames) for ANIMATED assets: half the main render tier. It is larger
+// than the still cap (MaxDecodedAssetBytes = budget/4) so a long animated
+// sprite keeps more frames, and it is provably <= main/2 for EVERY budget —
+// one animated page can never evict even half the main tier's live working set
+// (the stage-flash invariant, pinned by render.TestDecodeCapFitsMainTier).
+func MaxAnimatedDecodedAssetBytes(budget int64) int64 {
+	return MainTierBytes(budget) / 2
 }
 
 // sized pairs a cached value with the payload size it was accounted at.

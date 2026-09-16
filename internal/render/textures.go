@@ -53,8 +53,8 @@ const (
 	// evicting the sprites on stage. (The stage layers and theme chrome grew
 	// their own protections earlier — keepSceneAssetsWarm, the pinned tier;
 	// this closes the gap for the button/icon grids.)
-	smallTexBudgetDiv = 8       // shield budget = T1 budget / 8 (8 MiB at the 64 MiB default ≈ >1000 buttons)
-	smallTexMinBudget = 4 << 20 // floor so tiny power-user T1 budgets keep a useful shield
+	// (the small-tier carve-out arithmetic now lives in cache.SmallTierBytes /
+	// cache.MainTierBytes, shared with the animated decode cap)
 )
 
 // smallTexTier reports whether an asset type belongs in the small-UI shield.
@@ -66,18 +66,12 @@ func smallTexTier(t assets.AssetType) bool {
 }
 
 // splitT1Budget carves the small-texture shield out of the configured T1
-// budget (total residency stays exactly the configured budget). The floor
-// keeps a useful shield under tiny power-user budgets; the half-cap keeps the
-// floor from starving the main tier in the same situation.
+// budget (total residency stays exactly the configured budget). The arithmetic
+// lives in cache (cache.SmallTierBytes / cache.MainTierBytes) — the single
+// source of truth also used by the animated decode cap — so the two can never
+// drift apart.
 func splitT1Budget(budget int64) (main, small int64) {
-	small = budget / smallTexBudgetDiv
-	if small < smallTexMinBudget {
-		small = smallTexMinBudget
-	}
-	if small > budget/2 {
-		small = budget / 2
-	}
-	return budget - small, small
+	return cache.MainTierBytes(budget), cache.SmallTierBytes(budget)
 }
 
 const (
@@ -617,7 +611,7 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 		// Bigger than the entire tier budget: the LRU refuses it, and before
 		// this check the freshly created textures leaked silently — sprites
 		// of that size simply never appeared. The decode-side cap
-		// (assets.maxDecodedAssetBytes) keeps this branch unreachable for
+		// (assets.maxAnimatedDecodedAssetBytes) keeps this branch unreachable for
 		// well-formed assets; pathological ones get a loud error instead.
 		page.destroy()
 		return fmt.Errorf("render: %s decoded to %d bytes, above the tier's %d-byte share of the T1 budget", base, page.bytes, tier.Budget())

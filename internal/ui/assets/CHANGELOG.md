@@ -37,10 +37,11 @@ reports.
   (e.g. Rice Shower, Fenomeno) no longer drop to a slideshow. Animated WebP /
   AVIF / GIF / APNG frames are now downscaled during decode and the per-asset
   frame budget is measured against the on-screen size, so a high-resolution
-  clip keeps every authored frame instead of being decimated. When a clip is
-  still decimated (a very long loop under a low texture budget), a uniform
-  looping animation now keeps a constant frame rate instead of juddering on the
-  wrap.
+  clip keeps every authored frame instead of being decimated. Animated assets
+  also get a larger frame budget than stills (half the main texture tier
+  instead of a quarter), so a long animation keeps more frames; and when a clip
+  is still decimated, a uniform looping animation now keeps a constant frame
+  rate instead of juddering on the wrap.
 - **Music and master volume sliders work again** — the SDL Mixer X migration
   played music as a per-stream (`Mix_PlayMusicStream`), but the sliders still
   set the legacy global `Mix_VolumeMusic`, which never reaches a playing

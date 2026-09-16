@@ -304,7 +304,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// ~5 s (the decoder otherwise used a fixed cap off the DEFAULT budget,
 	// ignoring this setting). The fraction is provably eviction-safe against the
 	// render main tier — see cache.decodeCapBudgetDiv.
-	assets.SetMaxDecodedAssetBytes(cache.MaxDecodedAssetBytes(int64(prefs.TexBudgetMiB()) << 20))
+	assets.SetMaxAnimatedDecodedAssetBytes(cache.MaxAnimatedDecodedAssetBytes(int64(prefs.TexBudgetMiB()) << 20))
 
 	// --- asset pipeline ---
 	var localMode bool
