@@ -6396,7 +6396,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		evLabel = "Evidence ●" // armed: next IC message presents it
 	}
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
-		a.showEvid = true
+		a.toggleEvidence()
 	}
 	x += 106
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
@@ -6548,7 +6548,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	}
 	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
 		if c.Button(r, evLabel) {
-			a.showEvid = true
+			a.toggleEvidence()
 		}
 	}
 	x = a.drawPosSelect(x, y2, btnH)

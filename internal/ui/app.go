@@ -2505,6 +2505,15 @@ type sessionState struct {
 	// evShow is the incoming presented-evidence pop-up.
 	evShowImg string
 	evShowAt  time.Time
+	// evidPresentImage is the #59 present-image override: when armed and
+	// non-empty, presenting shows THIS image instead of the selected evidence's
+	// own image (decouples the presented picture from the evidence id).
+	evidPresentImage string
+	// evidCtxMenu opens a small right-click context menu over the DRO evidence
+	// list (Edit / Delete / Present / Pin), positioned at evidCtxX/evidCtxY.
+	evidCtxMenu bool
+	evidCtxX    int32
+	evidCtxY    int32
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
@@ -6000,6 +6009,8 @@ func (a *App) buildRoom() {
 	a.hpPrev = [2]int{a.sess.HPDef, a.sess.HPPro}
 	a.showModcall, a.modReason = false, ""
 	a.showEvid, a.evidEditing, a.evidPresent, a.evidIdx = false, false, false, -1
+	a.evidPresentImage = ""
+	a.evidCtxMenu = false
 	a.evidAsk = nil
 	a.evShowImg = ""
 	a.screen = ScreenCourtroom
@@ -6516,16 +6527,16 @@ func (a *App) renderFullClientTexture(w, h int32) {
 // off-screen → hovering() is false everywhere), then restored. Opt-in path, so the
 // small value copy is fine.
 type ctxInput struct {
-	mouseX, mouseY, downX, downY, wheelY     int32
-	clicked, dblClick, tripleClick           bool
-	rightClicked                             bool
-	mouseDown, middleHeld                    bool
-	backspace, enter, tabPressed, escPressed bool
-	keyPressed, hotkey                       sdl.Keycode
-	typed, pasted, dropped, dragID           string
-	copyReq, cutReq, selectAll, wheelTaken   bool
-	undoReq, redoReq                         bool
-	wordBack                                 bool
+	mouseX, mouseY, downX, downY, wheelY      int32
+	clicked, dblClick, tripleClick            bool
+	rightClicked                              bool
+	mouseDown, middleHeld                     bool
+	backspace, enter, tabPressed, escPressed  bool
+	keyPressed, hotkey                        sdl.Keycode
+	typed, pasted, pastedRaw, dropped, dragID string
+	copyReq, cutReq, selectAll, wheelTaken    bool
+	undoReq, redoReq                          bool
+	wordBack                                  bool
 }
 
 func (a *App) snapshotInput() ctxInput {
@@ -6536,7 +6547,7 @@ func (a *App) snapshotInput() ctxInput {
 		mouseDown: c.mouseDown, middleHeld: c.middleHeld,
 		backspace: c.backspace, enter: c.enter, tabPressed: c.tabPressed, escPressed: c.escPressed,
 		keyPressed: c.keyPressed, hotkey: c.hotkey,
-		typed: c.typed, pasted: c.pasted, dropped: c.dropped, dragID: c.dragID,
+		typed: c.typed, pasted: c.pasted, pastedRaw: c.pastedRaw, dropped: c.dropped, dragID: c.dragID,
 		copyReq: c.copyReq, cutReq: c.cutReq, selectAll: c.selectAll, wheelTaken: c.wheelTaken,
 		undoReq: c.undoReq, redoReq: c.redoReq,
 		wordBack: c.wordBack,
@@ -6547,7 +6558,7 @@ func (a *App) snapshotInput() ctxInput {
 	c.mouseDown, c.middleHeld = false, false
 	c.backspace, c.enter, c.tabPressed, c.escPressed = false, false, false, false
 	c.keyPressed, c.hotkey = 0, 0
-	c.typed, c.pasted, c.dropped, c.dragID = "", "", "", ""
+	c.typed, c.pasted, c.pastedRaw, c.dropped, c.dragID = "", "", "", "", ""
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = false, false, false, false
 	c.undoReq, c.redoReq = false, false
 	c.wordBack = false
@@ -6561,7 +6572,7 @@ func (a *App) restoreInput(in ctxInput) {
 	c.mouseDown, c.middleHeld = in.mouseDown, in.middleHeld
 	c.backspace, c.enter, c.tabPressed, c.escPressed = in.backspace, in.enter, in.tabPressed, in.escPressed
 	c.keyPressed, c.hotkey = in.keyPressed, in.hotkey
-	c.typed, c.pasted, c.dropped, c.dragID = in.typed, in.pasted, in.dropped, in.dragID
+	c.typed, c.pasted, c.pastedRaw, c.dropped, c.dragID = in.typed, in.pasted, in.pastedRaw, in.dropped, in.dragID
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = in.copyReq, in.cutReq, in.selectAll, in.wheelTaken
 	c.undoReq, c.redoReq = in.undoReq, in.redoReq
 	c.wordBack = in.wordBack

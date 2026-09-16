@@ -24,7 +24,7 @@ import (
 )
 
 // decodeAVIF decodes a still or animated AVIF payload into RGBA frames.
-func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("assets: empty avif payload")
 	}
@@ -53,7 +53,8 @@ func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
 	if frameTotal <= 0 {
 		return nil, fmt.Errorf("assets: avif reports no frames")
 	}
-	keep := boundedFrameCount(width, height, frameTotal)
+	tw, th, down := decodeTargetDims(width, height, maxH)
+	keep := boundedFrameCount(tw, th, frameTotal)
 	walk := frameTotal // NextImage must advance per frame (each composes onto the last)
 	if !playAnimations {
 		walk, keep = 1, 1
@@ -62,8 +63,8 @@ func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
 
 	d := &Decoded{
 		Animated:     frameTotal > 1,
-		Width:        width,
-		Height:       height,
+		Width:        tw,
+		Height:       th,
 		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
 		Frames:       make([]*image.RGBA, 0, keep),
 		Delays:       make([]time.Duration, 0, keep),
@@ -109,9 +110,18 @@ func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
 			d.Release()
 			return nil, avifError(fmt.Sprintf("frame %d yuv→rgb", i), res)
 		}
-		d.Frames = append(d.Frames, rgba)
-		if token != nil {
-			d.pooledPix = append(d.pooledPix, token)
+		if down {
+			small, smallTok := downscaleFrame(rgba, tw, th)
+			putPixBuf(token)
+			d.Frames = append(d.Frames, small)
+			if smallTok != nil {
+				d.pooledPix = append(d.pooledPix, smallTok)
+			}
+		} else {
+			d.Frames = append(d.Frames, rgba)
+			if token != nil {
+				d.pooledPix = append(d.pooledPix, token)
+			}
 		}
 		d.Delays = append(d.Delays, folded)
 	}

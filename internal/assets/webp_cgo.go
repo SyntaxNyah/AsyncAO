@@ -25,12 +25,12 @@ import (
 const webpBytesPerPixel = 4
 
 // decodeWebP decodes a static or animated WebP payload into RGBA frames.
-func decodeWebP(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeWebP(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("assets: empty webp payload")
 	}
 	if Sniff(data) == FormatWebPAnim {
-		return decodeWebPAnim(data, playAnimations)
+		return decodeWebPAnim(data, playAnimations, maxH)
 	}
 	return decodeWebPStatic(data)
 }
@@ -70,7 +70,7 @@ func decodeWebPStatic(data []byte) (*Decoded, error) {
 // decodeWebPAnim walks the WebPAnimDecoder, copying each composed canvas
 // into pooled RGBA frames. Timestamps arrive as cumulative end-times in
 // milliseconds; per-frame delays are their deltas.
-func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	// The decoder reads from the payload across calls; pin it so handing
 	// the pointer to C stays legal without copying the payload.
 	var pinner runtime.Pinner
@@ -104,8 +104,9 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 	if frameTotal == 0 {
 		return nil, fmt.Errorf("assets: webp anim reports zero frames")
 	}
+	tw, th, down := decodeTargetDims(width, height, maxH)
 
-	keep := boundedFrameCount(width, height, frameTotal)
+	keep := boundedFrameCount(tw, th, frameTotal)
 	walk := frameTotal // GetNext must run per frame (each composes onto the last)
 	if !playAnimations {
 		walk, keep = 1, 1
@@ -114,8 +115,8 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 
 	d := &Decoded{
 		Animated:     frameTotal > 1,
-		Width:        width,
-		Height:       height,
+		Width:        tw,
+		Height:       th,
 		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
 		Frames:       make([]*image.RGBA, 0, keep),
 		Delays:       make([]time.Duration, 0, keep),
@@ -149,9 +150,18 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 		rgba, token := newPooledRGBA(width, height)
 		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
 		copy(rgba.Pix, src)
-		d.Frames = append(d.Frames, rgba)
-		if token != nil {
-			d.pooledPix = append(d.pooledPix, token)
+		if down {
+			small, smallTok := downscaleFrame(rgba, tw, th)
+			putPixBuf(token)
+			d.Frames = append(d.Frames, small)
+			if smallTok != nil {
+				d.pooledPix = append(d.pooledPix, smallTok)
+			}
+		} else {
+			d.Frames = append(d.Frames, rgba)
+			if token != nil {
+				d.pooledPix = append(d.pooledPix, token)
+			}
 		}
 		d.Delays = append(d.Delays, folded)
 	}

@@ -893,15 +893,23 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 		return
 	}
 	item := a.sess.Evidence[id-1]
+	img := item.Image
+	// #59: the local presenter can override the displayed image, decoupling the
+	// shown picture from the evidence id (legacy clients still show the
+	// evidence's own image; the server-side hook for remote custom images rides
+	// this same override).
+	if msg.CharID == a.sess.MyCharID && a.evidPresentImage != "" {
+		img = a.evidPresentImage
+	}
 	name := msg.Showname
 	if name == "" {
 		name = msg.CharName
 	}
 	fr, fc := a.friendMessage(a.serverKey, msg)
 	a.pushIC(name+" presented evidence: "+item.Name, 0, fr, fc, "") // system line — no speaker tint
-	a.evShowImg = item.Image
+	a.evShowImg = img
 	a.evShowAt = time.Now()
-	a.d.Manager.PrefetchExact(a.urls.Evidence(item.Image), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
+	a.d.Manager.PrefetchExact(a.urls.Evidence(img), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
 }
 
 // demandEvidence paces thumbnail fetches for the evidence grid: one exact
@@ -916,6 +924,11 @@ func (a *App) demandEvidence(idx int, url string) {
 	a.evidAsk[idx] = time.Now()
 	a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (evidence thumbnail, exact URL)
 }
+
+// toggleEvidence flips the Evidence floating window open/closed (#57): the
+// Evidence button — and its hotkey — acts as a toggle rather than an
+// "open, never close" latch, matching every other floating panel's button.
+func (a *App) toggleEvidence() { a.showEvid = !a.showEvid }
 
 // evidPanelDefW etc. size the floating Evidence window; the min keeps the grid +
 // inspector usable.
@@ -1002,7 +1015,21 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		a.evidEditing, a.evidIdx = true, -1
 		a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
 	}
-	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: addB.X - r.X - 4, H: floatTitleH}, pressed)
+	// #16: toggle the evidence browser between AO2 (grid) and DRO (list +
+	// window). Stored in prefs so the choice sticks across sessions.
+	modeB := sdl.Rect{X: addB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
+	modeLabel := "Mode: AO2"
+	if a.d.Prefs.EvidenceMode() == "dro" {
+		modeLabel = "Mode: DRO"
+	}
+	if c.Button(modeB, modeLabel) {
+		if a.d.Prefs.EvidenceMode() == "dro" {
+			a.d.Prefs.SetEvidenceMode("ao2")
+		} else {
+			a.d.Prefs.SetEvidenceMode("dro")
+		}
+	}
+	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: modeB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
 	a.drawResizeGrip(grip)
@@ -1011,18 +1038,27 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 	contentTop := r.Y + floatTitleH + 8
 
-	// Editor mode replaces the grid: 3 fields + save/cancel.
+	// Editor mode replaces the grid: name + MULTILINE description + image
+	// fields, then save/cancel. The description is a real multiline editor
+	// (#83): Enter inserts a line break and the box soft-wraps + scrolls.
 	if a.evidEditing {
 		fy := contentTop
 		c.Label(r.X+pad, fy+4, "Name:", ColText)
 		a.evidName, _ = c.TextField("evname", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidName, "Evidence name")
-		fy += 32
-		c.Label(r.X+pad, fy+4, "Description:", ColText)
-		a.evidDesc, _ = c.TextField("evdesc", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidDesc, "What it proves")
-		fy += 32
+		fy += fieldH + 10
+		c.Label(r.X+pad, fy, "Description:", ColText)
+		fy += 20
+		// The description area takes the room left before the image row and the
+		// buttons, floored at a usable minimum so a tiny panel still edits.
+		descH := r.Y + r.H - pad - fy - fieldH - 10 - btnH - 8
+		if descH < 60 {
+			descH = 60
+		}
+		a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: r.X + pad, Y: fy, W: r.W - 2*pad, H: descH}, a.evidDesc, "What it proves")
+		fy += descH + 8
 		c.Label(r.X+pad, fy+4, "Image file:", ColText)
 		a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
-		fy += 40
+		fy += fieldH + 10
 		if c.Button(sdl.Rect{X: r.X + pad, Y: fy, W: 90, H: btnH}, "Save") {
 			name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
 			if name != "" {
@@ -1040,47 +1076,93 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		return
 	}
 
-	// Thumbnail grid (left 60%) + inspector (right 40%).
-	const cell, cellGap = int32(72), int32(8)
-	gridW := r.W * 6 / 10
-	grid := sdl.Rect{X: r.X + pad, Y: contentTop, W: gridW - 2*pad, H: r.Y + r.H - contentTop - pad}
-	cols := grid.W / (cell + cellGap)
-	if cols < 1 {
-		cols = 1
+	// Browser list/grid (left) + inspector (right). AO2 = thumbnail grid; DRO =
+	// a vertical icon list (40×40 icons + right-click context menu, #16).
+	dro := a.d.Prefs.EvidenceMode() == "dro"
+	leftW := r.W * 6 / 10
+	if dro {
+		leftW = r.W / 2
 	}
-	rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
-	contentH := rows * (cell + cellGap + 14)
-	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
-	a.evidScroll = c.VScrollbar("evidscroll", track, a.evidScroll, contentH, grid.H)
-	for i := range a.sess.Evidence {
-		item := &a.sess.Evidence[i]
-		col, row := int32(i)%cols, int32(i)/cols
-		cx := grid.X + col*(cell+cellGap)
-		cy := grid.Y + row*(cell+cellGap+14) - a.evidScroll
-		if cy+cell < grid.Y || cy > grid.Y+grid.H {
-			continue
+	ix := r.X + leftW + pad
+	iw := r.W - leftW - 2*pad
+
+	if dro {
+		const rowH, icon = int32(48), int32(40)
+		list := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
+		contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
+		track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+		a.evidScroll = c.VScrollbar("evidlist", track, a.evidScroll, contentH, list.H)
+		for i := range a.sess.Evidence {
+			item := &a.sess.Evidence[i]
+			cy := list.Y + int32(i)*(rowH+4) - a.evidScroll
+			if cy+rowH < list.Y || cy > list.Y+list.H {
+				continue
+			}
+			row := sdl.Rect{X: list.X, Y: cy, W: list.W, H: rowH}
+			if i == a.evidIdx {
+				c.Fill(row, ColPanelHi)
+			}
+			iconR := sdl.Rect{X: row.X + 4, Y: row.Y + (rowH-icon)/2, W: icon, H: icon}
+			url := a.urls.Evidence(item.Image)
+			if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
+				_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
+			} else {
+				c.Fill(iconR, ColPanelHi)
+				a.demandEvidence(i, url)
+			}
+			c.Border(iconR, ColPanelHi)
+			c.LabelClipped(row.X+icon+8, row.Y+14, row.W-icon-12, item.Name, ColText)
+			if c.hovering(row) && c.clicked {
+				a.evidIdx = i
+				a.evidCtxMenu = false
+			}
+			if c.hovering(row) && c.rightClicked {
+				a.evidIdx = i
+				a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
+			}
 		}
-		rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
-		if i == a.evidIdx {
-			c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
+		if a.evidCtxMenu {
+			a.drawEvidenceContextMenu()
 		}
-		url := a.urls.Evidence(item.Image)
-		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
-		} else {
-			c.Fill(rc, ColPanelHi)
-			a.demandEvidence(i, url)
+	} else {
+		const cell, cellGap = int32(72), int32(8)
+		grid := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
+		cols := grid.W / (cell + cellGap)
+		if cols < 1 {
+			cols = 1
 		}
-		c.Border(rc, ColPanelHi)
-		c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
-		if c.hovering(rc) && c.clicked {
-			a.evidIdx = i
+		rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
+		contentH := rows * (cell + cellGap + 14)
+		track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
+		a.evidScroll = c.VScrollbar("evidscroll", track, a.evidScroll, contentH, grid.H)
+		for i := range a.sess.Evidence {
+			item := &a.sess.Evidence[i]
+			col, row := int32(i)%cols, int32(i)/cols
+			cx := grid.X + col*(cell+cellGap)
+			cy := grid.Y + row*(cell+cellGap+14) - a.evidScroll
+			if cy+cell < grid.Y || cy > grid.Y+grid.H {
+				continue
+			}
+			rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
+			if i == a.evidIdx {
+				c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
+			}
+			url := a.urls.Evidence(item.Image)
+			if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
+				_ = c.Ren.Copy(page.Frames[0], nil, &rc)
+			} else {
+				c.Fill(rc, ColPanelHi)
+				a.demandEvidence(i, url)
+			}
+			c.Border(rc, ColPanelHi)
+			c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
+			if c.hovering(rc) && c.clicked {
+				a.evidIdx = i
+			}
 		}
 	}
 
-	// Inspector.
-	ix := r.X + gridW + pad
-	iw := r.W - gridW - 2*pad
+	// Inspector (shared by both modes).
 	iy := contentTop
 	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
 		c.Label(ix, iy, "Select an item.", ColTextDim)
@@ -1121,7 +1203,13 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	iy += viewH
 
 	c.LabelClipped(ix, iy, iw, "image: "+sel.Image, ColTextDim)
-	iy += 28
+	iy += 24
+	// #59: present-image override — present THIS picture instead of the
+	// evidence's own image (decouples the shown picture from the evidence id).
+	c.Label(ix, iy, "Present image (optional):", ColTextDim)
+	iy += 16
+	a.evidPresentImage, _ = c.TextField("evpresentimg", sdl.Rect{X: ix, Y: iy, W: iw, H: fieldH}, a.evidPresentImage, "leave blank to use the evidence's image")
+	iy += fieldH + 8
 	presentLabel := "Present with next message"
 	if a.evidPresent {
 		presentLabel = "Presenting — click to cancel"
@@ -1142,6 +1230,58 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	// Pin to the case notebook: name + description in one quoted line.
 	if c.Button(sdl.Rect{X: ix, Y: iy, W: iw, H: btnH}, "Pin to notebook") {
 		a.pinNote("[evidence] " + sel.Name + ": " + sel.Description)
+	}
+}
+
+// drawEvidenceContextMenu draws the DRO evidence list's right-click context
+// menu (#16): Edit / Delete / Present / Pin for the selected item, at the spot
+// the user right-clicked. Clicking outside closes it.
+func (a *App) drawEvidenceContextMenu() {
+	c := a.ctx
+	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
+		a.evidCtxMenu = false
+		return
+	}
+	items := []struct {
+		label string
+		act   func()
+	}{
+		{"Edit", func() {
+			sel := &a.sess.Evidence[a.evidIdx]
+			a.evidEditing = true
+			a.evidName, a.evidDesc, a.evidImage = sel.Name, sel.Description, sel.Image
+			a.evidCtxMenu = false
+		}},
+		{"Delete", func() {
+			a.sess.DeleteEvidence(a.evidIdx)
+			a.evidPresent = false
+			a.evidCtxMenu = false
+		}},
+		{"Present", func() {
+			a.evidPresent = !a.evidPresent
+			a.evidCtxMenu = false
+		}},
+		{"Pin to notebook", func() {
+			sel := &a.sess.Evidence[a.evidIdx]
+			a.pinNote("[evidence] " + sel.Name + ": " + sel.Description)
+			a.evidCtxMenu = false
+		}},
+	}
+	mw := int32(140)
+	mh := int32(len(items))*btnH + 12
+	menu := sdl.Rect{X: a.evidCtxX, Y: a.evidCtxY, W: mw, H: mh}
+	if c.clicked && !c.hovering(menu) {
+		a.evidCtxMenu = false // left-click anywhere outside dismisses
+		return
+	}
+	c.Fill(menu, ColPanel)
+	c.Border(menu, ColAccent)
+	y := menu.Y + 6
+	for _, it := range items {
+		if c.Button(sdl.Rect{X: menu.X + 6, Y: y, W: mw - 12, H: btnH}, it.label) {
+			it.act()
+		}
+		y += btnH + 2
 	}
 }
 

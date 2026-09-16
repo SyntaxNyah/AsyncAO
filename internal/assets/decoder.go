@@ -168,6 +168,29 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 	return out
 }
 
+// decodeTargetDims returns the on-screen dimensions for a sprite after the
+// aspect-preserving height cap maxH, plus whether any downscale is needed.
+func decodeTargetDims(width, height, maxH int) (tw, th int, downscale bool) {
+	if maxH <= 0 || height <= maxH {
+		return width, height, false
+	}
+	th = maxH
+	tw = width * maxH / height
+	if tw < 1 {
+		tw = 1
+	}
+	return tw, th, true
+}
+
+// downscaleFrame rescales one full-size frame to tw×th using the same
+// CatmullRom kernel downscaleDecodedAspect uses, so decode-time downscaling and
+// the post-decode fit path are pixel-identical.
+func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
+	out, token := newPooledRGBA(tw, th)
+	xdraw.CatmullRom.Scale(out, out.Rect, src, src.Rect, xdraw.Src, nil)
+	return out, token
+}
+
 // boundedFrameCount reports how many frames of an animation may stay resident:
 // the count whose decoded bytes fit maxDecodedAssetBytes — never below one
 // frame (a single canvas larger than the budget fails at upload with a clear
@@ -396,6 +419,17 @@ func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 	return d
 }
 
+// fullSizeMaxH is the decode-time height cap for a full-size asset: the sprite
+// cap when the type is not a fixed-cell thumbnail (those downscale in fit to a
+// square), 0 otherwise. Animated decoders use it to downscale per-frame DURING
+// decode and to budget their frame count against the on-screen bytes (#110).
+func (p *DecoderPool) fullSizeMaxH(t AssetType) int {
+	if decodeTargetPx(t) > 0 {
+		return 0
+	}
+	return int(p.spriteCap.Load())
+}
+
 // Submit queues a decode. Returns false when the pool is closed (OnDone is
 // then invoked inline with an error so callers always hear back).
 func (p *DecoderPool) Submit(req DecodeRequest) bool {
@@ -467,7 +501,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 	}
 
 	start := time.Now()
-	d, err := DecodeImage(req.Data, req.PlayAnimations)
+	d, err := DecodeImageSized(req.Data, req.PlayAnimations, p.fullSizeMaxH(req.Type))
 	if err != nil {
 		p.failed.Add(1)
 	} else {
@@ -512,20 +546,32 @@ func (p *DecoderPool) Stats() DecoderStats {
 
 // DecodeImage decodes a payload by sniffed format. Exported for benchmarks
 // and the emote preview path; the client itself goes through the pool.
+// DecodeImage decodes a payload by sniffed format with no decode-time downscale
+// (maxH = 0). Exported for benchmarks and the emote preview path; the client
+// goes through the pool, which passes its sprite cap via DecodeImageSized.
 func DecodeImage(data []byte, playAnimations bool) (*Decoded, error) {
+	return DecodeImageSized(data, playAnimations, 0)
+}
+
+// DecodeImageSized is DecodeImage with an optional aspect-preserving height cap
+// (maxH). Animated decoders honour it by downscaling each frame DURING decode
+// and by budgeting their frame count against the DOWNSCALED bytes, so a
+// high-res clip keeps its full authored frame rate while its resident memory
+// stays bounded by its on-screen size (#110). maxH <= 0 = keep native size.
+func DecodeImageSized(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	switch Sniff(data) {
 	case FormatPNG:
 		return decodePNG(data)
 	case FormatAPNG:
-		return decodeAPNG(data, playAnimations)
+		return decodeAPNG(data, playAnimations, maxH)
 	case FormatGIF:
-		return decodeGIF(data, playAnimations)
+		return decodeGIF(data, playAnimations, maxH)
 	case FormatJPEG:
 		return decodeJPEG(data)
 	case FormatWebP, FormatWebPAnim:
-		return decodeWebP(data, playAnimations)
+		return decodeWebP(data, playAnimations, maxH)
 	case FormatAVIF, FormatAVIFAnim:
-		return decodeAVIF(data, playAnimations)
+		return decodeAVIF(data, playAnimations, maxH)
 	default:
 		return nil, fmt.Errorf("assets: unrecognized image payload (%d bytes, magic %s)", len(data), Sniff(data))
 	}
@@ -596,7 +642,7 @@ func newPooledRGBA(w, h int) (*image.RGBA, *[]byte) {
 // decodeGIF composes a multi-frame GIF onto a persistent canvas, honoring
 // per-frame disposal, producing full-canvas RGBA frames the render loop can
 // flip between with zero work.
-func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	g, err := gif.DecodeAll(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("assets: gif decode: %w", err)
@@ -610,10 +656,11 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 		b := g.Image[0].Bounds()
 		width, height = b.Max.X, b.Max.Y
 	}
+	tw, th, down := decodeTargetDims(width, height, maxH)
 
 	total := len(g.Image)
 	animated := total > 1
-	keep := boundedFrameCount(width, height, total)
+	keep := boundedFrameCount(tw, th, total)
 	walk := total // frames to composite: the whole clip (decimation keeps a subset)
 	if !playAnimations {
 		walk, keep = 1, 1
@@ -622,8 +669,8 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 
 	d := &Decoded{
 		Animated:     animated,
-		Width:        width,
-		Height:       height,
+		Width:        tw,
+		Height:       th,
 		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
 		Frames:       make([]*image.RGBA, 0, keep),
 		Delays:       make([]time.Duration, 0, keep),
@@ -659,9 +706,18 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 		if folded, keepIt := dec.step(i, gifFrameDelay(g, i)); keepIt {
 			out, token := newPooledRGBA(width, height)
 			copy(out.Pix, canvas.Pix)
-			d.Frames = append(d.Frames, out)
-			if token != nil {
-				d.pooledPix = append(d.pooledPix, token)
+			if down {
+				small, smallTok := downscaleFrame(out, tw, th)
+				putPixBuf(token)
+				d.Frames = append(d.Frames, small)
+				if smallTok != nil {
+					d.pooledPix = append(d.pooledPix, smallTok)
+				}
+			} else {
+				d.Frames = append(d.Frames, out)
+				if token != nil {
+					d.pooledPix = append(d.pooledPix, token)
+				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}
@@ -706,7 +762,7 @@ func clearRect(canvas *image.RGBA, r image.Rectangle) {
 
 // decodeAPNG composes APNG frames (offsets, dispose ops, blend ops) onto a
 // persistent canvas, mirroring the GIF path.
-func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	a, err := apng.DecodeAll(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("assets: apng decode: %w", err)
@@ -717,6 +773,7 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 
 	first := a.Frames[0].Image.Bounds()
 	width, height := first.Dx(), first.Dy()
+	tw, th, down := decodeTargetDims(width, height, maxH)
 
 	// Frames flagged IsDefault are the static fallback image, not part of
 	// the animation proper.
@@ -732,7 +789,7 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 
 	total := len(animFrames)
 	animated := total > 1
-	keep := boundedFrameCount(width, height, total)
+	keep := boundedFrameCount(tw, th, total)
 	walk := total // compose the whole clip; decimation keeps an evenly-spaced subset
 	if !playAnimations {
 		walk, keep = 1, 1
@@ -741,8 +798,8 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 
 	d := &Decoded{
 		Animated:     animated,
-		Width:        width,
-		Height:       height,
+		Width:        tw,
+		Height:       th,
 		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
 		Frames:       make([]*image.RGBA, 0, keep),
 		Delays:       make([]time.Duration, 0, keep),
@@ -781,9 +838,18 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 		if folded, keepIt := dec.step(i, apngFrameDelay(frame)); keepIt {
 			out, token := newPooledRGBA(width, height)
 			copy(out.Pix, canvas.Pix)
-			d.Frames = append(d.Frames, out)
-			if token != nil {
-				d.pooledPix = append(d.pooledPix, token)
+			if down {
+				small, smallTok := downscaleFrame(out, tw, th)
+				putPixBuf(token)
+				d.Frames = append(d.Frames, small)
+				if smallTok != nil {
+					d.pooledPix = append(d.pooledPix, smallTok)
+				}
+			} else {
+				d.Frames = append(d.Frames, out)
+				if token != nil {
+					d.pooledPix = append(d.pooledPix, token)
+				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}

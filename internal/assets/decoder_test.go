@@ -397,6 +397,55 @@ func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
 	}
 }
 
+// TestDecodeGIFDownscalesInsteadOfDecimating pins the #110 fix: with a
+// decode-time height cap (the sprite cap), the frame budget is measured against
+// the DOWNSCALED bytes, so a high-res animation keeps its full authored frame
+// rate instead of being decimated to a slideshow — while the resident frames
+// still land at the smaller on-screen size.
+func TestDecodeGIFDownscalesInsteadOfDecimating(t *testing.T) {
+	const w, h = 500, 500
+	fits := int(maxDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
+	if fits < 2 {
+		t.Fatalf("test geometry no longer fits the budget (fits=%d)", fits)
+	}
+	frames := fits + 3 // would decimate under the old native-canvas budget
+
+	g := &gif.GIF{Config: image.Config{Width: w, Height: h}}
+	pal := color.Palette{color.Black, color.White}
+	for i := 0; i < frames; i++ {
+		img := image.NewPaletted(image.Rect(0, 0, w, h), pal)
+		g.Image = append(g.Image, img)
+		g.Delay = append(g.Delay, 5) // 5 centiseconds/frame
+		g.Disposal = append(g.Disposal, gif.DisposalNone)
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+
+	// Half height quarters the per-frame bytes, so the whole clip now fits and
+	// must keep every frame at its authored timing.
+	d, err := DecodeImageSized(buf.Bytes(), true, h/2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Release()
+	if len(d.Frames) != frames {
+		t.Errorf("downscaled decode kept %d frames, want the full %d (no decimation)", len(d.Frames), frames)
+	}
+	if d.Width != w/2 || d.Height != h/2 {
+		t.Errorf("downscaled dims = %dx%d, want %dx%d", d.Width, d.Height, w/2, h/2)
+	}
+	var got time.Duration
+	for _, dl := range d.Delays {
+		got += dl
+	}
+	want := time.Duration(frames) * gifFrameDelay(g, 0)
+	if got != want {
+		t.Errorf("downscaled total duration = %v, want %v", got, want)
+	}
+}
+
 // TestFrameDecimator pins the decimation primitive: exactly `keep` frames are
 // materialised, spanning both endpoints (0 and total-1), with skipped frames'
 // delays folded forward so the total is preserved.

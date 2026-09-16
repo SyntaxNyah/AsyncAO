@@ -13,7 +13,7 @@ import (
 	"golang.org/x/image/webp"
 )
 
-func decodeWebP(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeWebP(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if Sniff(data) == FormatWebPAnim {
 		return nil, fmt.Errorf("assets: animated webp requires the cgo build (libwebp); rebuild with CGO_ENABLED=1 or ask for a static asset")
 	}
@@ -22,5 +22,6 @@ func decodeWebP(data []byte, playAnimations bool) (*Decoded, error) {
 		return nil, fmt.Errorf("assets: webp decode (pure-Go fallback): %w", err)
 	}
 	_ = playAnimations
+	_ = maxH
 	return staticDecoded(img), nil
 }

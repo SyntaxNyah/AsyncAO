@@ -484,7 +484,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyBackground):
 		a.openBgPicker()
 	case a.hotkeyFor(hotkeyEvidence):
-		a.showEvid = true
+		a.toggleEvidence()
 	case a.hotkeyFor(hotkeyPairMenu):
 		a.showPair = true
 	case a.hotkeyFor(hotkeyModcall):

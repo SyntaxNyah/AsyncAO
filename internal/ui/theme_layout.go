@@ -1436,7 +1436,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	if r, ok := lay.rect("evidence_button"); ok {
 		if a.drawThemeButton("evidence_button", evLabel, r) {
-			a.showEvid = true
+			a.toggleEvidence()
 		}
 	}
 

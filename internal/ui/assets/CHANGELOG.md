@@ -4,6 +4,34 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.95.2 - 2026-09-16
+
+Evidence system overhaul and an animation frame-rate fix, built around a new
+evidence browser mode selector (AO2 / DRO) and several long-standing reports.
+
+- **Evidence browser mode (#16)** — the evidence window now has an AO2 mode
+  (the original thumbnail grid + inspector) and a DRO mode (Danganronpa
+  Online-style): a vertical icon list with 40×40 icons, a right-click context
+  menu (edit / delete / present / pin), and the inspector doubles as the
+  evidence window with the nameplate, image and description. Toggle it with the
+  Mode button in the panel title bar; the choice is remembered.
+- **Multiline evidence editor (#83)** — the Description field is a real
+  multiline editor: Enter makes a new line, long lines wrap, the box scrolls,
+  and paste keeps its newlines.
+- **Evidence button toggles (#57)** — the Evidence button (and its hotkey) now
+  flips the window closed when it is already open, instead of only ever opening.
+- **Present a custom image (#59)** — the evidence inspector has a "Present
+  image (optional)" field, so presenting can show any picture you choose
+  instead of being locked to the evidence's own image.
+- **Animated characters run at full frame rate (#110)** — large animated sprites
+  (e.g. Rice Shower, Fenomeno) no longer drop to a slideshow. Animated WebP /
+  AVIF / GIF / APNG frames are now downscaled during decode and the per-asset
+  frame budget is measured against the on-screen size, so a high-resolution
+  clip keeps every authored frame instead of being decimated.
+
+A huge thank-you to **Crystalwarrior** for the relentless playtesting, the
+DRO reference work and the detailed issue reports that shaped all of this.
+
 ## v1.95.1 - 2026-09-15
 
 Music transitions and loop points, rebuilt on SDL Mixer X (the SDL_mixer fork

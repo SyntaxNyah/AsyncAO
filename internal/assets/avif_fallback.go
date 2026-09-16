@@ -8,7 +8,8 @@ package assets
 
 import "fmt"
 
-func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
+func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	_ = playAnimations
+	_ = maxH
 	return nil, fmt.Errorf("assets: avif (%d bytes) requires the cgo build (libavif); rebuild with CGO_ENABLED=1", len(data))
 }

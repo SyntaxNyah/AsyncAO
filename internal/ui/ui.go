@@ -504,6 +504,7 @@ type Ctx struct {
 	fullscreenReq bool        // F11: toggle fullscreen this frame (consumed in app.Frame)
 	keyPressed    sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
 	pasted        string      // Ctrl+V clipboard text (flattened to one line)
+	pastedRaw     string      // Ctrl+V clipboard text, newlines preserved (TextArea only)
 	copyReq       bool        // Ctrl+C: focused field copies its selection (else value)
 	cutReq        bool        // Ctrl+X: focused field cuts its selection (else clears)
 	selectAll     bool        // Ctrl+A armed: the focused field converts it to a real all-selection
@@ -650,6 +651,17 @@ type Ctx struct {
 	// reservation can never leak into the next frame's layout.
 	tailReserveID string
 	tailReserveW  int32
+
+	// Multiline TextArea state (#83). taCaret/taSelAnchor are RUNE indices into
+	// the area's value; taScroll is its vertical scroll in pixels; taCaretField
+	// names which area owns the caret (focus change resets it, like caretField).
+	// Focus is shared with TextField (c.focusID) so clipboard chords / select-all
+	// are captured the same way, but the caret lives HERE and never touches
+	// c.caret/c.selAnchor — the single-line field's math stays independent.
+	taCaret      int
+	taSelAnchor  int
+	taCaretField string
+	taScroll     int32
 
 	// Tab focus cycling (playtest: Tab out of the IC box landed on the wrong
 	// field): TextField records draw order here each frame; the next
@@ -2351,6 +2363,7 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				if c.focusID != "" {
 					if text, err := sdl.GetClipboardText(); err == nil && text != "" {
 						c.pasted += flattenClipboard(text)
+						c.pastedRaw += text
 					}
 				} else {
 					c.hotkey = e.Keysym.Sym
