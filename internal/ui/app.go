@@ -1831,6 +1831,10 @@ type sessionState struct {
 	// room.Update (the room is already current) but still advances the UI + draws.
 	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
 	roomPreAdvanced bool
+	// lastSpeakerDiagBase is the speaker sprite base last logged to the debug
+	// log (pushDebug) — the #110 animation diagnostic logs once per base change,
+	// never per frame, so the ring isn't flooded with identical rows.
+	lastSpeakerDiagBase string
 	// frameDemandPending is set during a draw pass whenever it leaves a
 	// DEMAND-STREAMED cell (an emote-grid button with neither its art nor its
 	// fallback icon resident yet) truly blank. drawnDemandPending is the last
@@ -9079,6 +9083,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
+		a.logSpeakerAnimDiag() // #110: log the speaker sprite's frame/delay stats once per base change
 		// This frame IS the draw the doorbell exists to force, and the viewport is
 		// now bound to the new overlay, so the draw-site censuses take over from
 		// here — sync the latch instead of ringing (noteOverlayStart).
@@ -10298,6 +10303,26 @@ func (e debugEntry) render() string {
 // row's ×N counter so a chatty source can't flush real failures out of the
 // ring. Render thread only.
 func (a *App) pushDebug(line string) { a.pushDebugAt(line, time.Now()) }
+
+// logSpeakerAnimDiag logs the active speaker sprite's animation stats to the
+// debug log once per base change (#110 frame-rate diagnostic). The debug panel
+// cache inspector shows the same numbers live; this puts a record in the log.
+func (a *App) logSpeakerAnimDiag() {
+	if a.d.Viewport == nil {
+		return
+	}
+	si, ok := a.d.Viewport.SpeakerAnimInfo()
+	if !ok {
+		return
+	}
+	if si.Base == a.lastSpeakerDiagBase {
+		return // same base already logged — don't flood the ring
+	}
+	a.lastSpeakerDiagBase = si.Base
+	a.pushDebug(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
+		si.Base, si.Kept, si.Source,
+		si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond))
+}
 
 // pushDebugAt is pushDebug with the clock injected — the fold is a TIME window,
 // so the tests drive the window from here rather than by sleeping.

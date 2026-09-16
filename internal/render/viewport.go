@@ -279,6 +279,45 @@ func pageDuration(page *TexturePage) time.Duration {
 	return total
 }
 
+// SpeakerAnimInfo is a diagnostic snapshot of the speaker sprite's decoded
+// animation: kept/source frame counts and delay statistics. The debug panel
+// surfaces it to answer "is this sprite decimated / are its delays even".
+type SpeakerAnimInfo struct {
+	Base     string
+	Kept     int
+	Source   int
+	MinDelay time.Duration
+	MaxDelay time.Duration
+	AvgDelay time.Duration
+}
+
+// SpeakerAnimInfo reports the active speaker sprite's decoded animation stats.
+// ok=false when there's no resident speaker page (nothing to report).
+func (v *Viewport) SpeakerAnimInfo() (SpeakerAnimInfo, bool) {
+	a := &v.speakerAnim
+	if a.page == nil || len(a.page.Frames) == 0 || len(a.page.Delays) == 0 {
+		return SpeakerAnimInfo{}, false
+	}
+	info := SpeakerAnimInfo{
+		Base:   a.base,
+		Kept:   len(a.page.Frames),
+		Source: a.page.SourceFrames,
+	}
+	var sum time.Duration
+	info.MinDelay = a.page.Delays[0]
+	for _, d := range a.page.Delays {
+		sum += d
+		if d < info.MinDelay {
+			info.MinDelay = d
+		}
+		if d > info.MaxDelay {
+			info.MaxDelay = d
+		}
+	}
+	info.AvgDelay = sum / time.Duration(len(a.page.Delays))
+	return info, true
+}
+
 // SpriteFX is the optional colour wash applied to character layers (all OFF /
 // neutral by default). It's a plain value struct with no pointers, so the App
 // can rebuild and hand it to SetSpriteFX every frame with zero allocation. The

@@ -373,6 +373,15 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 	if a.d.Store != nil {
 		line("T1 decoded textures — "+memTierLine(a.d.Store.Stats()), ColText)
 	}
+	// Speaker sprite animation diagnostic: kept/source frame count + delay
+	// stats, to answer "is this sprite decimated / are its delays even" (#110).
+	if a.d.Viewport != nil {
+		if si, ok := a.d.Viewport.SpeakerAnimInfo(); ok {
+			line(fmt.Sprintf("Speaker anim — %s · %d/%d frames · %d/%d/%d ms (min/avg/max)",
+				si.Base, si.Kept, si.Source,
+				si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond), ColText)
+		}
+	}
 	// T2 raw bytes + T3 on-disk cache (both owned by the asset manager).
 	if a.d.Manager != nil {
 		line("T2 raw bytes — "+memTierLine(a.d.Manager.T2Stats()), ColText)

@@ -68,8 +68,11 @@ func decodeWebPStatic(data []byte) (*Decoded, error) {
 }
 
 // decodeWebPAnim walks the WebPAnimDecoder, copying each composed canvas
-// into pooled RGBA frames. Timestamps arrive as cumulative end-times in
-// milliseconds; per-frame delays are their deltas.
+// into pooled RGBA frames. Frame delays come from the demuxer's per-frame
+// ANMF duration — NOT from GetNext's cumulative timestamp, whose first frame
+// is stamped at 0 in the common convention and therefore shifted every delay
+// by one frame (frame 0 fell through to the 100 ms zero-delay substitute, so
+// a looping sprite stuttered once per cycle at the wrap).
 func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	// The decoder reads from the payload across calls; pin it so handing
 	// the pointer to C stays legal without copying the payload.
@@ -104,6 +107,29 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 	if frameTotal == 0 {
 		return nil, fmt.Errorf("assets: webp anim reports zero frames")
 	}
+
+	// Per-frame delays from the demuxer's ANMF duration — independent of the
+	// cumulative-timestamp convention GetNext uses (see the comment above).
+	// Default every frame to the zero-delay fallback, then overwrite with the
+	// authored duration where the demuxer reports it.
+	durations := make([]time.Duration, frameTotal)
+	for i := range durations {
+		durations[i] = defaultZeroFrameDelay
+	}
+	if dmux := C.WebPDemux(&webpData); dmux != nil {
+		defer C.WebPDemuxDelete(dmux)
+		for i := 0; i < frameTotal; i++ {
+			var iter C.WebPIterator
+			if C.WebPDemuxGetFrame(dmux, C.int(i+1), &iter) == 0 {
+				continue // keep the default for a frame the demuxer can't reach
+			}
+			if iter.duration > 0 {
+				durations[i] = time.Duration(iter.duration) * time.Millisecond
+			}
+			C.WebPDemuxReleaseIterator(&iter)
+		}
+	}
+
 	tw, th, down := decodeTargetDims(width, height, maxH)
 
 	keep := boundedFrameCount(tw, th, frameTotal)
@@ -124,23 +150,18 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 	}
 
 	canvasBytes := width * height * webpBytesPerPixel
-	prevTimestamp := 0
 	for i := 0; i < walk; i++ {
 		if C.WebPAnimDecoderHasMoreFrames(dec) == 0 {
 			break
 		}
 		var frameRGBA *C.uint8_t
-		var timestamp C.int
+		var timestamp C.int // read but ignored: delays come from the demuxer durations
 		if C.WebPAnimDecoderGetNext(dec, &frameRGBA, &timestamp) == 0 {
 			d.Release()
 			return nil, fmt.Errorf("assets: webp anim frame %d decode failed", i)
 		}
 
-		delay := time.Duration(int(timestamp)-prevTimestamp) * time.Millisecond
-		if delay <= 0 {
-			delay = defaultZeroFrameDelay
-		}
-		prevTimestamp = int(timestamp)
+		delay := durations[i]
 		sourceDelays = append(sourceDelays, delay)
 
 		// Every GetNext ran (compositing the running canvas); copy out only the
