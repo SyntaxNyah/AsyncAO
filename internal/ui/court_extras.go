@@ -994,8 +994,9 @@ func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 // drawEvidencePanel is the evidence browser/editor — a NON-BLOCKING floating window
 // (floatWin: drag the title bar, resize the bottom-right grip) so the courtroom stays
 // live behind it: you can keep talking, follow the chat and pre-write a message while
-// you browse or arm evidence (#5, Crystalwarrior). A thumbnail grid of the server's LE
-// list, an inspector for the selection, present-arming, and the PE/DE/EE editor ops.
+// you browse or arm evidence (#5, Crystalwarrior). A vertical icon list of the
+// server's LE evidence, an inspector for the selection, present-arming, and the
+// PE/DE/EE editor ops.
 func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.evidWin.dragging || a.evidWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -1015,21 +1016,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		a.evidEditing, a.evidIdx = true, -1
 		a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
 	}
-	// #16: toggle the evidence browser between AO2 (grid) and DRO (list +
-	// window). Stored in prefs so the choice sticks across sessions.
-	modeB := sdl.Rect{X: addB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
-	modeLabel := "Mode: AO2"
-	if a.d.Prefs.EvidenceMode() == "dro" {
-		modeLabel = "Mode: DRO"
-	}
-	if c.Button(modeB, modeLabel) {
-		if a.d.Prefs.EvidenceMode() == "dro" {
-			a.d.Prefs.SetEvidenceMode("ao2")
-		} else {
-			a.d.Prefs.SetEvidenceMode("dro")
-		}
-	}
-	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: modeB.X - r.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: addB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
 	a.drawResizeGrip(grip)
@@ -1076,93 +1063,52 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		return
 	}
 
-	// Browser list/grid (left) + inspector (right). AO2 = thumbnail grid; DRO =
-	// a vertical icon list (40×40 icons + right-click context menu, #16).
-	dro := a.d.Prefs.EvidenceMode() == "dro"
-	leftW := r.W * 6 / 10
-	if dro {
-		leftW = r.W / 2
-	}
+	// Browser list (left) + inspector (right): a vertical DRO-style icon list
+	// (40×40 icons + right-click context menu, #16).
+	leftW := r.W / 2
 	ix := r.X + leftW + pad
 	iw := r.W - leftW - 2*pad
 
-	if dro {
-		const rowH, icon = int32(48), int32(40)
-		list := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
-		contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
-		track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-		a.evidScroll = c.VScrollbar("evidlist", track, a.evidScroll, contentH, list.H)
-		for i := range a.sess.Evidence {
-			item := &a.sess.Evidence[i]
-			cy := list.Y + int32(i)*(rowH+4) - a.evidScroll
-			if cy+rowH < list.Y || cy > list.Y+list.H {
-				continue
-			}
-			row := sdl.Rect{X: list.X, Y: cy, W: list.W, H: rowH}
-			if i == a.evidIdx {
-				c.Fill(row, ColPanelHi)
-			}
-			iconR := sdl.Rect{X: row.X + 4, Y: row.Y + (rowH-icon)/2, W: icon, H: icon}
-			url := a.urls.Evidence(item.Image)
-			if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-				_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
-			} else {
-				c.Fill(iconR, ColPanelHi)
-				a.demandEvidence(i, url)
-			}
-			c.Border(iconR, ColPanelHi)
-			c.LabelClipped(row.X+icon+8, row.Y+14, row.W-icon-12, item.Name, ColText)
-			if c.hovering(row) && c.clicked {
-				a.evidIdx = i
-				a.evidCtxMenu = false
-			}
-			if c.hovering(row) && c.rightClicked {
-				a.evidIdx = i
-				a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
-			}
+	const rowH, icon = int32(48), int32(40)
+	list := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
+	contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
+	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	a.evidScroll = c.VScrollbar("evidlist", track, a.evidScroll, contentH, list.H)
+	for i := range a.sess.Evidence {
+		item := &a.sess.Evidence[i]
+		cy := list.Y + int32(i)*(rowH+4) - a.evidScroll
+		if cy+rowH < list.Y || cy > list.Y+list.H {
+			continue
 		}
-		if a.evidCtxMenu {
-			a.drawEvidenceContextMenu()
+		row := sdl.Rect{X: list.X, Y: cy, W: list.W, H: rowH}
+		if i == a.evidIdx {
+			c.Fill(row, ColPanelHi)
 		}
-	} else {
-		const cell, cellGap = int32(72), int32(8)
-		grid := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
-		cols := grid.W / (cell + cellGap)
-		if cols < 1 {
-			cols = 1
+		iconR := sdl.Rect{X: row.X + 4, Y: row.Y + (rowH-icon)/2, W: icon, H: icon}
+		url := a.urls.Evidence(item.Image)
+		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
+		} else {
+			c.Fill(iconR, ColPanelHi)
+			a.demandEvidence(i, url)
 		}
-		rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
-		contentH := rows * (cell + cellGap + 14)
-		track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
-		a.evidScroll = c.VScrollbar("evidscroll", track, a.evidScroll, contentH, grid.H)
-		for i := range a.sess.Evidence {
-			item := &a.sess.Evidence[i]
-			col, row := int32(i)%cols, int32(i)/cols
-			cx := grid.X + col*(cell+cellGap)
-			cy := grid.Y + row*(cell+cellGap+14) - a.evidScroll
-			if cy+cell < grid.Y || cy > grid.Y+grid.H {
-				continue
-			}
-			rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
-			if i == a.evidIdx {
-				c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
-			}
-			url := a.urls.Evidence(item.Image)
-			if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-				_ = c.Ren.Copy(page.Frames[0], nil, &rc)
-			} else {
-				c.Fill(rc, ColPanelHi)
-				a.demandEvidence(i, url)
-			}
-			c.Border(rc, ColPanelHi)
-			c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
-			if c.hovering(rc) && c.clicked {
-				a.evidIdx = i
-			}
+		c.Border(iconR, ColPanelHi)
+		c.LabelClipped(row.X+icon+8, row.Y+14, row.W-icon-12, item.Name, ColText)
+		if c.hovering(row) && c.clicked {
+			a.evidIdx = i
+			a.evidCtxMenu = false
+		}
+		if c.hovering(row) && c.rightClicked {
+			a.evidIdx = i
+			a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
 		}
 	}
+	if a.evidCtxMenu {
+		a.drawEvidenceContextMenu()
+	}
 
-	// Inspector (shared by both modes).
+	// Inspector (right column): name, scrollable description, image, present-arming,
+	// and the edit/delete/pin actions for the selection.
 	iy := contentTop
 	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
 		c.Label(ix, iy, "Select an item.", ColTextDim)
@@ -1233,7 +1179,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 }
 
-// drawEvidenceContextMenu draws the DRO evidence list's right-click context
+// drawEvidenceContextMenu draws the evidence list's right-click context
 // menu (#16): Edit / Delete / Present / Pin for the selected item, at the spot
 // the user right-clicked. Clicking outside closes it.
 func (a *App) drawEvidenceContextMenu() {

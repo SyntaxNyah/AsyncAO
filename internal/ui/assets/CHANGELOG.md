@@ -19,12 +19,12 @@ reports.
   binary unable to find its new libraries. The binary and every runtime library
   are rename-swapped with a rollback, and leftovers are cleaned up on the next
   launch. (Linux's AppImage is already self-contained.)
-- **Evidence browser mode (#16)** — the evidence window now has an AO2 mode
-  (the original thumbnail grid + inspector) and a DRO mode (Danganronpa
-  Online-style): a vertical icon list with 40×40 icons, a right-click context
-  menu (edit / delete / present / pin), and the inspector doubles as the
-  evidence window with the nameplate, image and description. Toggle it with the
-  Mode button in the panel title bar; the choice is remembered.
+- **Evidence browser (#16)** — the evidence window is now a DRO (Danganronpa
+  Online)-style vertical icon list with 40×40 icons and a right-click context
+  menu (edit / delete / present / pin), with the inspector doubling as the
+  evidence window (nameplate, image and description). The old AO2 thumbnail
+  grid and the Mode toggle were dropped — the two layouts weren't different
+  enough to keep both.
 - **Multiline evidence editor (#83)** — the Description field is a real
   multiline editor: Enter makes a new line, long lines wrap, the box scrolls,
   and paste keeps its newlines.

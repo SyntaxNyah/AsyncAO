@@ -2509,8 +2509,8 @@ type sessionState struct {
 	// non-empty, presenting shows THIS image instead of the selected evidence's
 	// own image (decouples the presented picture from the evidence id).
 	evidPresentImage string
-	// evidCtxMenu opens a small right-click context menu over the DRO evidence
-	// list (Edit / Delete / Present / Pin), positioned at evidCtxX/evidCtxY.
+	// evidCtxMenu opens a small right-click context menu over the evidence list
+	// (Edit / Delete / Present / Pin), positioned at evidCtxX/evidCtxY.
 	evidCtxMenu bool
 	evidCtxX    int32
 	evidCtxY    int32

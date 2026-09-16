@@ -198,10 +198,6 @@ const (
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
 
-// defaultEvidenceMode is the out-of-the-box evidence browser (#16): AO2-style
-// thumbnail grid. "dro" opts into the DRO-style list + evidence window.
-const defaultEvidenceMode = "ao2"
-
 // defaultShowFriendButton shows the per-row "+ Friend" button in the player
 // list out of the box (it can be hidden in Settings). Default-ON so the
 // feature is discoverable; the toggle is for people who find it clutters
@@ -1003,11 +999,7 @@ type AssetPreferences struct {
 	GlobalFallbacksEnabled bool `json:"globalFallbacksEnabled"`
 	PreferAnimated         bool `json:"preferAnimated"`
 	EmoteButtonImages      bool `json:"emoteButtonImages"`
-	// EvidenceBrowserMode selects the evidence browser: "ao2" (thumbnail grid +
-	// inspector) or "dro" (Danganronpa Online-style list + evidence window, #16).
-	// Clamped on read so an unknown/legacy value falls back to ao2.
-	EvidenceBrowserMode string `json:"evidenceMode"`
-	SmoothScaling       bool   `json:"smoothScaling"`
+	SmoothScaling          bool `json:"smoothScaling"`
 	// SpriteScaling is the tri-state per-sprite texture filter (issue #21 label
 	// 15): 0 Auto / 1 Smooth / 2 Pixel, mirroring courtroom.ScalingMode. Auto is
 	// the shipped default and means "let each character's char.ini decide, then
@@ -1583,7 +1575,6 @@ type prefsJSON struct {
 	GlobalFallbacksEnabled bool                 `json:"globalFallbacksEnabled"`
 	PreferAnimated         *bool                `json:"preferAnimated"`
 	EmoteButtonImages      *bool                `json:"emoteButtonImages"`
-	EvidenceBrowserMode    *string              `json:"evidenceMode"` // absent = ao2 (default)
 	SmoothScaling          *bool                `json:"smoothScaling"`
 	SpriteScaling          *int                 `json:"spriteScaling"`         // absent = Auto
 	SpriteScalingMigrated  *bool                `json:"spriteScalingMigrated"` // absent = the move to Auto has not run for this file
@@ -2139,7 +2130,6 @@ func defaultPrefs(path string) *AssetPreferences {
 	return &AssetPreferences{
 		PreferAnimated:       defaultPreferAnimated,
 		EmoteButtonImages:    defaultEmoteButtonImages,
-		EvidenceBrowserMode:  defaultEvidenceMode,
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
 		EventDrivenLoop:      defaultEventDrivenLoop,
@@ -2321,9 +2311,6 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.EmoteButtonImages != nil {
 		p.EmoteButtonImages = *onDisk.EmoteButtonImages
-	}
-	if onDisk.EvidenceBrowserMode != nil {
-		p.EvidenceBrowserMode = *onDisk.EvidenceBrowserMode
 	}
 	if onDisk.SmoothScaling != nil {
 		p.SmoothScaling = *onDisk.SmoothScaling
@@ -3469,36 +3456,6 @@ func (p *AssetPreferences) SetEmoteButtonImages(enabled bool) {
 		return
 	}
 	p.EmoteButtonImages = enabled
-	p.mu.Unlock()
-	p.markDirty()
-}
-
-// --- Evidence browser mode ---------------------------------------------------
-
-// EvidenceMode reports the evidence browser mode ("ao2" or "dro", #16); any
-// unknown stored value clamps to "ao2" on read so a legacy/future file can
-// never select an unhandled mode.
-func (p *AssetPreferences) EvidenceMode() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.EvidenceBrowserMode != "dro" {
-		return "ao2"
-	}
-	return "dro"
-}
-
-// SetEvidenceMode sets the evidence browser mode ("ao2" or "dro"); anything
-// else stores "ao2".
-func (p *AssetPreferences) SetEvidenceMode(mode string) {
-	if mode != "dro" {
-		mode = "ao2"
-	}
-	p.mu.Lock()
-	if p.EvidenceBrowserMode == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.EvidenceBrowserMode = mode
 	p.mu.Unlock()
 	p.markDirty()
 }
