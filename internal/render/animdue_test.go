@@ -277,3 +277,63 @@ func TestPreanimLoopFiresDoneOnce(t *testing.T) {
 		t.Error("collided loop-on handoff must not latch finished")
 	}
 }
+
+// TestProgressivePartialDoesNotFinishPreanim pins the progressive-decode swap
+// fix: the renderer's fast 1-frame "Partial" delivery (assets.Decoded.Partial)
+// must NOT be mistaken for a genuine single-frame animation. A playOnce preanim
+// must not complete (latch finished / fire OnPreanimDone) on the partial, or a
+// preanimation would "finish" after one frame and hand the stage to the
+// still-decoding talk loop (the swap stutter). The FULL frame set then plays the
+// preanim to its natural last frame and completes exactly once.
+func TestProgressivePartialDoesNotFinishPreanim(t *testing.T) {
+	v := NewViewport(nil)
+	v.speakerAnim.reset("characters/x/intro")
+
+	partial := &TexturePage{
+		Frames:  make([]*sdl.Texture, 1),
+		Delays:  []time.Duration{0},
+		Partial: true,
+	}
+
+	// The progressive partial is one static frame: it must not report completion
+	// and must not latch finished (the preanim is still decoding behind it).
+	for i := 0; i < 3; i++ {
+		if v.advanceSpeaker(partial, 100*time.Millisecond, true) {
+			t.Fatalf("a progressive partial must not fire OnPreanimDone (step %d)", i)
+		}
+		if v.speakerAnim.finished {
+			t.Fatalf("a progressive partial must not latch finished (step %d)", i)
+		}
+	}
+
+	// The full set lands (the store replaces the page; no syncAnim reset). The
+	// preanim now plays to its natural end and completes exactly once.
+	full := threeFramePage()
+	for i := 0; i < 2; i++ {
+		if v.advanceSpeaker(full, 100*time.Millisecond, true) {
+			t.Fatalf("preanim completed before its last frame (step %d)", i)
+		}
+	}
+	if !v.advanceSpeaker(full, 100*time.Millisecond, true) {
+		t.Fatal("preanim must complete on its last frame")
+	}
+	if !v.speakerAnim.finished {
+		t.Fatal("preanim must latch finished at its natural end")
+	}
+	if v.advanceSpeaker(full, 100*time.Millisecond, true) {
+		t.Error("a finished one-shot re-reported completion")
+	}
+
+	// Control: a NON-partial single-frame playOnce still completes immediately
+	// (a genuinely static one-shot is its own whole animation).
+	single := NewViewport(nil)
+	single.speakerAnim.reset("characters/x/intro")
+	static := &TexturePage{
+		Frames: make([]*sdl.Texture, 1),
+		Delays: []time.Duration{0},
+	}
+	if !single.advanceSpeaker(static, 100*time.Millisecond, true) {
+		t.Fatal("a genuine single-frame one-shot must still complete")
+	}
+}
+

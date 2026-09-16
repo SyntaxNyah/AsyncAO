@@ -92,6 +92,12 @@ type TexturePage struct {
 	Frames   []*sdl.Texture
 	Delays   []time.Duration
 	Animated bool
+	// Partial marks a progressive first-frame delivery: the page holds only frame 0
+	// and the FULL frame set for the same base follows shortly and replaces it
+	// (assets.Decoded.Partial). The renderer must not treat it as the real
+	// animation — a playOnce layer must not complete on it, and a swap must keep
+	// holding the previous sprite instead of freezing on this single static frame.
+	Partial bool
 	// SourceFrames is the pre-decimation frame count of the decoded animation
 	// (assets.Decoded.SourceFrames) — the frame space remote clients index
 	// networked frame-synced effects into (#17). 0 for a static / non-decimated
@@ -578,6 +584,7 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	page := &TexturePage{
 		Delays:       append([]time.Duration(nil), d.Delays...),
 		Animated:     d.Animated,
+		Partial:      d.Partial, // progressive first-frame delivery (full set follows)
 		SourceFrames: d.SourceFrames, // carry the un-decimated frame count for #17 frame-effect mapping
 		W:            int32(d.Width),
 		H:            int32(d.Height),

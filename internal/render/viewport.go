@@ -148,7 +148,11 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 // why advance() is byte-identical to what it was.
 func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce bool, maxDelay time.Duration) (justFinished bool) {
 	if page == nil || len(page.Frames) <= 1 {
-		if playOnce && !a.finished {
+		// A progressive PARTIAL (one-frame delivery the full set is about to
+		// replace) is NOT a genuine single-frame animation: don't latch
+		// `finished` for a playOnce layer on it, or a preanimation would
+		// "complete" after one frame and fire OnPreanimDone prematurely.
+		if playOnce && !a.finished && (page == nil || !page.Partial) {
 			// Static "animation": a single frame finishes immediately.
 			// INVARIANT: finished is set ONLY under playOnce (here and at the
 			// last-frame case below). The Update speaker block's "told-to-loop
@@ -1486,7 +1490,7 @@ func (v *Viewport) tickCold(a *animState, dt time.Duration) {
 		a.coldFor = 0
 		return
 	}
-	if _, ok := a.resolve(v.store); ok {
+	if page, ok := a.resolve(v.store); ok && !page.Partial {
 		a.coldFor = 0
 		if a.fadeLeft > 0 {
 			a.fadeLeft -= dt
@@ -1545,6 +1549,20 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		return
 	}
 	page, ok := anim.resolve(v.store)
+	// A progressive PARTIAL must not displace the hold-previous stand-in during
+	// a swap: drawing it would freeze the old animation to one static frame for
+	// the rest of the decode (~1s). Prefer the previous sprite when we have one —
+	// exactly the webAO hold-previous contract — the partial only provides the
+	// fast first frame for a COLD load (no lastGood to hold). Guards mirror the
+	// miss-path hold-previous branch below.
+	if ok && page.Partial && v.spriteLoadMode == SpriteLoadHoldPrev &&
+		anim.lastGood != "" && anim.lastGood != anim.base &&
+		(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) {
+		if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
+			v.drawHeldSprite(ren, layer, held, vp)
+			return
+		}
+	}
 	if !ok || len(page.Frames) == 0 {
 		// missingno FIRST (AO2 fidelity): a CONCLUSIVELY-MISSING base (its whole
 		// fallback chain 404'd — store.IsMissing) draws the shared placeholder

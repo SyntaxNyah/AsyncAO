@@ -4,6 +4,23 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.96.2 - 2026-09-16
+
+Hotfix for the animation swap stutter: a progressive first-frame "Partial"
+delivery was being treated as the real animation, which froze a swapping
+sprite on one static frame and could cut a preanimation short.
+
+- **Fixed a frame of frozen/blank sprite when animations swap** — the fast
+  one-frame partial (the "show frame 0 while the clip decodes" path) no longer
+  displaces the hold-previous sprite during a swap, so the previous animation
+  keeps playing until the full clip lands instead of freezing on a single
+  static frame for the rest of the decode. The partial is still used on a cold
+  load (no previous sprite to hold), so first-frame latency is unchanged.
+- **Fixed preanimations ending after one frame** — a one-shot (pre)animation no
+  longer reports itself finished on that one-frame partial, so preanims (e.g.
+  Ridelle's bow/damage lead-ins) play to their natural last frame instead of
+  being cut short the instant their first frame decoded.
+
 ## v1.96.1 - 2026-09-16
 
 Evidence system overhaul, an animation frame-rate fix, animated-sprite memory
