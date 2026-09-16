@@ -186,11 +186,19 @@ const fullVolumePercent = 100
 func mixVolume(pct int) int { return pct * mix.MAX_VOLUME / fullVolumePercent }
 
 // SetVolumes applies the user's music/SFX/blip volumes (0–100). Music
-// volume takes effect immediately; chunk volumes apply per play.
+// volume takes effect immediately on the LIVE stream: SDL Mixer X plays music
+// via PlayStream/FadeInStream, and a playing stream's volume is per-stream
+// (SetVolumeStream) — the global VolumeMusic only seeds FUTURE LoadMUS, so it
+// alone can't change what's already audible (the "music slider does nothing"
+// report). The global is still kept in sync as the next stream's default.
+// Chunk (SFX/blip) volumes apply per play.
 func (a *Audio) SetVolumes(music, sfx, blip int) {
 	a.musicVol, a.sfxVol, a.blipVol = music, sfx, blip
 	if a.enabled {
 		mix.VolumeMusic(mixVolume(music))
+		if a.music != nil {
+			a.music.SetVolumeStream(mixVolume(music))
+		}
 	}
 }
 

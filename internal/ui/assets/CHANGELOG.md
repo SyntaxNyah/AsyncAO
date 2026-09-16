@@ -28,6 +28,12 @@ evidence browser mode selector (AO2 / DRO) and several long-standing reports.
   AVIF / GIF / APNG frames are now downscaled during decode and the per-asset
   frame budget is measured against the on-screen size, so a high-resolution
   clip keeps every authored frame instead of being decimated.
+- **Music and master volume sliders work again** — the SDL Mixer X migration
+  played music as a per-stream (`Mix_PlayMusicStream`), but the sliders still
+  set the legacy global `Mix_VolumeMusic`, which never reaches a playing
+  stream — so music stayed at its launch volume. The sliders now set the live
+  stream's own volume too, so music (and the master slider that scales it)
+  responds immediately.
 
 A huge thank-you to **Crystalwarrior** for the relentless playtesting, the
 DRO reference work and the detailed issue reports that shaped all of this.
