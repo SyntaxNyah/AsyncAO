@@ -4016,7 +4016,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: the active rate while you interact or anything animates, the idle rate when nothing needs redrawing, the background rate when another window has focus (minimized draws nothing). Any change returns to the active rate instantly. Each rate takes a typed exact number; 0 on Idle/Background means never redraw in that state (0 GPU when nothing moves), and ∞ removes the cap — for Active that means vsync paces the frames.", ColTextDim)
+	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: the active rate while you interact or anything animates, the idle rate when nothing needs redrawing, the unfocused rate when another window has focus (minimized draws nothing). Any change returns to the active rate instantly. Each rate takes a typed exact number; 0 on Idle/Unfocused means never redraw in that state (0 GPU when nothing moves), and ∞ removes the cap — for Active that means vsync paces the frames.", ColTextDim)
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
 		config.FPSCapMin, config.FPSCapMax, config.FPSCapUnlimitedOff, config.FPSCapMin,
@@ -4026,7 +4026,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, config.FPSOff,
 		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
 		"The rate when nothing needs redrawing (1–120, 0 = never redraw when idle, or ∞ = uncapped). Any change returns to the active rate instantly.")
-	y = a.fpsSettingRow(y, "unfocusedfps", "Background frame rate:",
+	y = a.fpsSettingRow(y, "unfocusedfps", "Unfocused frame rate:",
 		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
 		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
 		"The rate while another window has focus (1–60, 0 = never redraw when unfocused, or ∞ = uncapped). Minimized draws nothing.")
@@ -4039,7 +4039,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetUnfocusedFullRate(next)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Background frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
+	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Unfocused frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
 	y += 6
 	// Post-input full-rate hold, in frames — a slider (the playtest ask). Default
 	// 1 frame: the input's own frame shows, then the rate drops straight to idle.

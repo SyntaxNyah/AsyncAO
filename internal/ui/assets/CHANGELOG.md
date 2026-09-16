@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.96.3 - 2026-09-16
+
+Settings findability: the "throttle when unfocused" control was hard to find.
+
+- **Renamed the unfocused-throttle setting** — "Background frame rate" is now
+  **"Unfocused frame rate"** (Settings → Power user → Frame rate & GPU), so the
+  control that throttles the client while another window has focus is findable
+  by name instead of hiding behind a vague label. Behavior is unchanged.
+
 ## v1.96.2 - 2026-09-16
 
 Hotfix for the animation swap stutter: a progressive first-frame "Partial"
