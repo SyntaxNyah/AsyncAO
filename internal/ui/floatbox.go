@@ -710,6 +710,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
+	if a.showEvid && a.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
+		return true
+	}
 	if a.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
 		return true
 	}
@@ -1037,6 +1040,9 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
 		a.drawEvidencePanel(w, h, &pressed)
+		if a.evidInspectorDetached { // the inspector popped out into its own window
+			a.drawEvidenceInspectorWindow(w, h, &pressed)
+		}
 	}
 	// The three ex-modals (#31), drawn like every other floating panel.
 	if a.showTimer {

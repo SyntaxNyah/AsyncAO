@@ -2514,6 +2514,13 @@ type sessionState struct {
 	evidCtxMenu bool
 	evidCtxX    int32
 	evidCtxY    int32
+	// evidInspectorDetached pops the inspector (the right column, which now
+	// hosts editing as a view/edit toggle) out into its own floating window;
+	// evidInspectorWin is that window's geometry. One at a time for now — the
+	// inspector edits a single selection, so "multiple edited evidences" would
+	// mean multiple of these windows later.
+	evidInspectorDetached bool
+	evidInspectorWin      floatWin
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
@@ -5173,7 +5180,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:
-			a.evidAsk = nil // list replaced; thumbnail pacing resets
+			a.evidAsk = nil  // list replaced; thumbnail pacing resets
+			a.evidScroll = 0 // a fresh list scrolls from the top
 			if a.evidIdx >= len(a.sess.Evidence) {
 				a.evidIdx = -1
 			}

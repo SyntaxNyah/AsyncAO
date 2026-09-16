@@ -937,6 +937,11 @@ const (
 	evidPanelDefH = 420
 	evidPanelMinW = 360
 	evidPanelMinH = 240
+
+	// evidInspectorDefW/DefH size the detached inspector window (the popped-out
+	// right column); it reuses the panel's min so the edit/view layout stays usable.
+	evidInspectorDefW = 340
+	evidInspectorDefH = 420
 )
 
 // evidDescLineH is the pixel height of one wrapped description line in the
@@ -995,15 +1000,16 @@ func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 // (floatWin: drag the title bar, resize the bottom-right grip) so the courtroom stays
 // live behind it: you can keep talking, follow the chat and pre-write a message while
 // you browse or arm evidence (#5, Crystalwarrior). A vertical icon list of the
-// server's LE evidence, an inspector for the selection, present-arming, and the
-// PE/DE/EE editor ops.
+// server's LE evidence, and an inspector for the selection. The inspector's view/edit
+// is a TOGGLE (editing is merged in, not a whole-panel mode swap), and it can be
+// popped out into its own window (evidInspectorDetached → drawEvidenceInspectorWindow).
 func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.evidWin.dragging || a.evidWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.evidPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
-	// Title bar / drag handle + close + "Add new" + a bottom-right resize grip.
+	// Title bar / drag handle + close + "Add new" + "Pop out/in" + a bottom-right resize grip.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	c.Heading(r.X+pad, r.Y+6, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
 	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
@@ -1013,10 +1019,19 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 	addB := sdl.Rect{X: closeB.X - 90, Y: r.Y + 3, W: 84, H: btnH}
 	if c.Button(addB, "Add new") {
-		a.evidEditing, a.evidIdx = true, -1
+		a.evidIdx = -1
+		a.evidEditing = true
 		a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
 	}
-	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: addB.X - r.X - 4, H: floatTitleH}, pressed)
+	popB := sdl.Rect{X: addB.X - 86, Y: r.Y + 3, W: 80, H: btnH}
+	popLabel := "Pop out"
+	if a.evidInspectorDetached {
+		popLabel = "Pop in"
+	}
+	if c.Button(popB, popLabel) {
+		a.evidInspectorDetached = !a.evidInspectorDetached
+	}
+	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: popB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
 	a.drawResizeGrip(grip)
@@ -1025,62 +1040,43 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 	contentTop := r.Y + floatTitleH + 8
 
-	// Editor mode replaces the grid: name + MULTILINE description + image
-	// fields, then save/cancel. The description is a real multiline editor
-	// (#83): Enter inserts a line break and the box soft-wraps + scrolls.
-	if a.evidEditing {
-		fy := contentTop
-		c.Label(r.X+pad, fy+4, "Name:", ColText)
-		a.evidName, _ = c.TextField("evname", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidName, "Evidence name")
-		fy += fieldH + 10
-		c.Label(r.X+pad, fy, "Description:", ColText)
-		fy += 20
-		// The description area takes the room left before the image row and the
-		// buttons, floored at a usable minimum so a tiny panel still edits.
-		descH := r.Y + r.H - pad - fy - fieldH - 10 - btnH - 8
-		if descH < 60 {
-			descH = 60
-		}
-		a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: r.X + pad, Y: fy, W: r.W - 2*pad, H: descH}, a.evidDesc, "What it proves")
-		fy += descH + 8
-		c.Label(r.X+pad, fy+4, "Image file:", ColText)
-		a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
-		fy += fieldH + 10
-		if c.Button(sdl.Rect{X: r.X + pad, Y: fy, W: 90, H: btnH}, "Save") {
-			name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
-			if name != "" {
-				if a.evidIdx < 0 {
-					a.sess.AddEvidence(name, desc, img)
-				} else {
-					a.sess.EditEvidence(a.evidIdx, name, desc, img)
-				}
-				a.evidEditing = false
-			}
-		}
-		if c.Button(sdl.Rect{X: r.X + pad + 100, Y: fy, W: 90, H: btnH}, "Cancel") {
-			a.evidEditing = false
-		}
-		return
+	// List (left); when the inspector is detached the list takes the whole panel.
+	var listRect, inspRect sdl.Rect
+	if a.evidInspectorDetached {
+		listRect = sdl.Rect{X: r.X + pad, Y: contentTop, W: r.W - 2*pad, H: r.Y + r.H - contentTop - pad}
+	} else {
+		leftW := r.W / 2
+		listRect = sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
+		inspRect = sdl.Rect{X: r.X + leftW + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
 	}
+	a.drawEvidenceList(listRect)
+	if a.evidInspectorDetached {
+		return // the inspector draws in its own window (drawEvidenceInspectorWindow)
+	}
+	a.drawEvidenceInspector(inspRect)
+}
 
-	// Browser list (left) + inspector (right): a vertical DRO-style icon list
-	// (40×40 icons + right-click context menu, #16).
-	leftW := r.W / 2
-	ix := r.X + leftW + pad
-	iw := r.W - leftW - 2*pad
-
+// drawEvidenceList draws the vertical DRO-style icon list (40×40 icons +
+// right-click context menu, #16) into list. The wheel scrolls the list (WheelIn
+// is single-consumer and the list rect doesn't overlap the inspector, so the
+// description's own wheel is untouched), and rows are clipped to the viewport so
+// a row scrolled part-way out can't bleed into the title bar.
+func (a *App) drawEvidenceList(list sdl.Rect) {
+	c := a.ctx
 	const rowH, icon = int32(48), int32(40)
-	list := sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
 	contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
+	a.evidScroll -= c.WheelIn(list) * scrollStepPx
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	a.evidScroll = c.VScrollbar("evidlist", track, a.evidScroll, contentH, list.H)
+	listClipPrev, listClipHad := c.pushClip(list)
+	rowW := list.W - scrollBarW
 	for i := range a.sess.Evidence {
 		item := &a.sess.Evidence[i]
 		cy := list.Y + int32(i)*(rowH+4) - a.evidScroll
-		if cy+rowH < list.Y || cy > list.Y+list.H {
-			continue
+		if cy+rowH <= list.Y || cy >= list.Y+list.H {
+			continue // culled: only a screenful of rows draws, not the whole list
 		}
-		row := sdl.Rect{X: list.X, Y: cy, W: list.W, H: rowH}
+		row := sdl.Rect{X: list.X, Y: cy, W: rowW, H: rowH}
 		if i == a.evidIdx {
 			c.Fill(row, ColPanelHi)
 		}
@@ -1093,7 +1089,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 			a.demandEvidence(i, url)
 		}
 		c.Border(iconR, ColPanelHi)
-		c.LabelClipped(row.X+icon+8, row.Y+14, row.W-icon-12, item.Name, ColText)
+		c.LabelClipped(row.X+icon+8, row.Y+14, rowW-icon-12, item.Name, ColText)
 		if c.hovering(row) && c.clicked {
 			a.evidIdx = i
 			a.evidCtxMenu = false
@@ -1103,13 +1099,26 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 			a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
 		}
 	}
+	c.popClip(listClipPrev, listClipHad)
 	if a.evidCtxMenu {
 		a.drawEvidenceContextMenu()
 	}
+}
 
-	// Inspector (right column): name, scrollable description, image, present-arming,
-	// and the edit/delete/pin actions for the selection.
-	iy := contentTop
+// drawEvidenceInspector draws the evidence inspector (the right column, or the
+// popped-out window's body) into rect. View/edit is a TOGGLE: editing is merged
+// into the inspector rather than swapping the whole panel.
+func (a *App) drawEvidenceInspector(rect sdl.Rect) {
+	c := a.ctx
+	ix, iw := rect.X, rect.W
+
+	// Edit toggle (add when evidIdx == -1, edit the selection otherwise).
+	if a.evidEditing {
+		a.drawEvidenceEditor(rect)
+		return
+	}
+
+	iy := rect.Y
 	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
 		c.Label(ix, iy, "Select an item.", ColTextDim)
 		return
@@ -1121,16 +1130,13 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c.Label(ix, iy, sel.Name, ColAccent)
 	iy += 22
 
-	// Description viewport (Issue #15): a fixed-height scrollable region
-	// instead of a hard 6-line cap, so reading a long description no longer
-	// requires resizing the whole floating window. Its height is whatever's
-	// left after reserving the trailing block (image line + buttons) below,
-	// floored at evidDescMinViewH.
+	// Description viewport (Issue #15): a fixed-height scrollable region, with
+	// URLs rendered as clickable links the way the OOC log does.
 	descTextW := iw - scrollBarW - scrollBarGap
 	if descTextW < 40 {
 		descTextW = 40 // degenerate-width guard (very narrow panel)
 	}
-	viewH := evidDescViewH(r.Y+r.H-pad, iy)
+	viewH := evidDescViewH(rect.Y+rect.H-pad, iy)
 	lines := c.WrapText(sel.Description, descTextW, evidDescWrapMaxLines)
 	descContentH := int32(len(lines)) * evidDescLineH
 	viewport := sdl.Rect{X: ix, Y: iy, W: descTextW, H: viewH}
@@ -1141,7 +1147,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	dy := iy - a.evidDescScroll
 	for _, line := range lines {
 		if dy+evidDescLineH >= iy && dy <= iy+viewH {
-			c.LabelClipped(ix, dy, descTextW, line, ColText)
+			a.drawEvidenceDescriptionLine(ix, dy, descTextW, line)
 		}
 		dy += evidDescLineH
 	}
@@ -1177,6 +1183,105 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	if c.Button(sdl.Rect{X: ix, Y: iy, W: iw, H: btnH}, "Pin to notebook") {
 		a.pinNote("[evidence] " + sel.Name + ": " + sel.Description)
 	}
+}
+
+// drawEvidenceEditor draws the inspector's EDIT view (the toggle's edit side):
+// name + multiline description (#83) + image fields, then Save/Cancel. Add when
+// evidIdx == -1, replace otherwise.
+func (a *App) drawEvidenceEditor(rect sdl.Rect) {
+	c := a.ctx
+	ix, iy, iw := rect.X, rect.Y, rect.W
+	c.Label(ix, iy+4, "Name:", ColText)
+	a.evidName, _ = c.TextField("evname", sdl.Rect{X: ix + 60, Y: iy, W: iw - 60, H: fieldH}, a.evidName, "Evidence name")
+	iy += fieldH + 8
+	c.Label(ix, iy, "Description:", ColText)
+	iy += 18
+	descH := rect.Y + rect.H - iy - fieldH - 10 - btnH - 8
+	if descH < 60 {
+		descH = 60
+	}
+	a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: ix, Y: iy, W: iw, H: descH}, a.evidDesc, "What it proves")
+	iy += descH + 8
+	c.Label(ix, iy+4, "Image file:", ColText)
+	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: iw - 60, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
+	iy += fieldH + 8
+	if c.Button(sdl.Rect{X: ix, Y: iy, W: 90, H: btnH}, "Save") {
+		name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
+		if name != "" {
+			if a.evidIdx < 0 {
+				a.sess.AddEvidence(name, desc, img)
+			} else {
+				a.sess.EditEvidence(a.evidIdx, name, desc, img)
+			}
+			a.evidEditing = false
+		}
+	}
+	if c.Button(sdl.Rect{X: ix + 100, Y: iy, W: 90, H: btnH}, "Cancel") {
+		a.evidEditing = false
+	}
+}
+
+// drawEvidenceDescriptionLine draws one wrapped description line, rendering any
+// URLs in it as clickable links (accent + hover underline + open browser), the
+// same way the OOC log treats links.
+func (a *App) drawEvidenceDescriptionLine(x, y, maxW int32, line string) {
+	c := a.ctx
+	links := extractURLs(line, oocLinksPerParagraphMax)
+	if len(links) == 0 {
+		c.LabelClipped(x, y, maxW, line, ColText)
+		return
+	}
+	cx := x
+	rest := line
+	for _, url := range links {
+		idx := strings.Index(rest, url)
+		if idx < 0 {
+			break
+		}
+		if idx > 0 {
+			seg := rest[:idx]
+			c.LabelClipped(cx, y, maxW-(cx-x), seg, ColText)
+			cx += c.TextWidth(seg)
+		}
+		a.linkLabel(cx, y, maxW-(cx-x), url)
+		cx += c.TextWidth(url)
+		rest = rest[idx+len(url):]
+	}
+	if rest != "" {
+		c.LabelClipped(cx, y, maxW-(cx-x), rest, ColText)
+	}
+}
+
+// drawEvidenceInspectorWindow draws the detached inspector in its own floating
+// window. The body is the same drawEvidenceInspector (view/edit toggle).
+func (a *App) drawEvidenceInspectorWindow(w, h int32, pressed *bool) {
+	c := a.ctx
+	r := a.evidInspectorRect(w, h)
+	c.Fill(r, ColPanel)
+	c.Border(r, ColAccent)
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	title := "Evidence inspector"
+	if a.evidIdx >= 0 && a.evidIdx < len(a.sess.Evidence) {
+		title = a.sess.Evidence[a.evidIdx].Name
+	}
+	c.Heading(r.X+pad, r.Y+6, title, ColText)
+	popB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
+	if c.Button(popB, "Pop in") {
+		a.evidInspectorDetached = false
+		return
+	}
+	a.floatWinDrag(&a.evidInspectorWin, sdl.Rect{X: r.X, Y: r.Y, W: popB.X - r.X - 4, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.evidInspectorWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+	contentTop := r.Y + floatTitleH + 8
+	a.drawEvidenceInspector(sdl.Rect{X: r.X + pad, Y: contentTop, W: r.W - 2*pad, H: r.Y + r.H - contentTop - pad})
+}
+
+// evidInspectorRect is the detached inspector window's rect (floatWin default
+// size, centered until first placed).
+func (a *App) evidInspectorRect(w, h int32) sdl.Rect {
+	return a.evidInspectorWin.rect(evidInspectorDefW, evidInspectorDefH, evidPanelMinW, evidPanelMinH, w, h)
 }
 
 // drawEvidenceContextMenu draws the evidence list's right-click context
