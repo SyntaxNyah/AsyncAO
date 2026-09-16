@@ -179,9 +179,9 @@ const ghMultiAssetJSON = `{
 }`
 
 // TestSelfUpdatePicksSwappableDefault pins that SelfUpdateAssetMatch + Check
-// land on the bare/self-contained default binary for each platform — never the
-// .zip bundle (which a self-replace would rename over the .exe) or the
-// Discord-free variant.
+// land on each platform's self-update payload: the Windows DLL bundle (exe +
+// runtime DLLs, extracted by StageBundle), the Linux AppImage, and the macOS
+// bare binary — never the Discord-free variant or a macOS tarball.
 func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(ghMultiAssetJSON))
@@ -189,9 +189,9 @@ func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
 	defer srv.Close()
 
 	want := map[string]string{
-		"windows": "https://example/win.exe",
+		"windows": "https://example/win-bundle.zip",
 		"linux":   "https://example/linux.AppImage",
-		"darwin":  "https://example/mac",
+		"darwin":  "https://example/mac-bundle.tar.gz",
 	}
 	for goos, wantURL := range want {
 		rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
@@ -260,8 +260,8 @@ const ghSumsJSON = `{
   "body": "notes",
   "html_url": "https://example/rel",
   "assets": [
-    {"name": "SHA256SUMS.txt",             "browser_download_url": "https://example/SHA256SUMS.txt"},
-    {"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/win.exe"}
+    {"name": "SHA256SUMS.txt",                    "browser_download_url": "https://example/SHA256SUMS.txt"},
+    {"name": "asyncao-windows-x86_64-bundle.zip", "browser_download_url": "https://example/win-bundle.zip"}
   ]
 }`
 
@@ -281,7 +281,7 @@ func TestCheckCapturesSumsAssetAndName(t *testing.T) {
 	if rel == nil {
 		t.Fatal("a higher tag must report an update")
 	}
-	if rel.AssetURL != "https://example/win.exe" || rel.AssetName != "asyncao-windows-x86_64.exe" {
+	if rel.AssetURL != "https://example/win-bundle.zip" || rel.AssetName != "asyncao-windows-x86_64-bundle.zip" {
 		t.Errorf("asset URL/name = %q / %q", rel.AssetURL, rel.AssetName)
 	}
 	if rel.SumsURL != "https://example/SHA256SUMS.txt" {

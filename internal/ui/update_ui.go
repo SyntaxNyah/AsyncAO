@@ -57,7 +57,7 @@ func (a *App) maybeKickUpdateCheck() {
 	// check pref (you want the stale binary gone even with checks disabled).
 	go func() {
 		if exe, err := os.Executable(); err == nil {
-			update.CleanupOldVersion(exe)
+			update.CleanupOldBundle(exe)
 		}
 	}()
 	if !a.d.Prefs.UpdateCheckEnabled() {
@@ -154,44 +154,103 @@ func (a *App) startSelfUpdate() {
 	res := a.updateApplyRes
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
-		staged := update.StagedPath(exe)
-		if _, err := update.Download(context.Background(), url, staged); err != nil {
-			res <- err
-			return
+		var err error
+		switch runtime.GOOS {
+		case "windows":
+			// Windows self-updates via the DLL bundle (exe + runtime DLLs beside
+			// it), so a new engine ships with its libraries.
+			err = a.applyBundleUpdate(url, sumsURL, assetName, exe, "")
+		case "darwin":
+			// macOS self-updates via the bundle tarball (binary + lib/), so a
+			// SONAME bump no longer strands a bare binary against a stale lib/.
+			err = a.applyBundleUpdate(url, sumsURL, assetName, exe, "lib")
+		default:
+			// Linux ships a self-contained AppImage — a single-file swap is the
+			// whole update.
+			err = a.applyBinaryUpdate(url, sumsURL, assetName, exe)
 		}
-		// Verify the download against the release's SHA256SUMS manifest when one
-		// was published. Releases cut before checksums shipped carry no manifest
-		// (SumsURL == ""): we skip verification and proceed exactly as before —
-		// the download is still integrity-capped, just not sum-checked. A release
-		// that DOES ship sums gets enforced: any fetch/lookup/mismatch failure
-		// aborts, deletes the partial download, and surfaces the error in the
-		// modal (pollUpdate → a.updateErr) rather than installing an unverified
-		// binary over the running one.
-		if sumsURL != "" {
-			wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
-			if err != nil {
-				_ = os.Remove(staged)
-				res <- err
-				return
-			}
-			if err := update.VerifyChecksum(staged, wantHex); err != nil {
-				_ = os.Remove(staged)
-				res <- err
-				return
-			}
-		}
-		if err := update.StageReplace(staged, exe, update.BackupPath(exe)); err != nil {
-			_ = os.Remove(staged)
-			res <- err
-			return
-		}
-		// Uninstall the old binary now. On Unix the renamed-away old exe unlinks
-		// immediately (the running process keeps its open inode); on Windows it is
-		// still locked, so this no-ops and the next-launch CleanupOldVersion
-		// finishes the job — a running .exe can't delete itself.
-		update.CleanupOldVersion(exe)
-		res <- nil
+		res <- err
 	}()
+}
+
+// applyBinaryUpdate is the single-binary self-update path (Linux AppImage,
+// macOS bare binary): download the one asset, verify it against the release's
+// SHA256SUMS manifest when published, and stage-replace the running binary.
+func (a *App) applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
+	staged := update.StagedPath(exe)
+	if _, err := update.Download(context.Background(), url, staged); err != nil {
+		return err
+	}
+	// Verify the download against the release's SHA256SUMS manifest when one
+	// was published. Releases cut before checksums shipped carry no manifest
+	// (SumsURL == ""): we skip verification and proceed exactly as before — the
+	// download is still integrity-capped, just not sum-checked. A release that
+	// DOES ship sums gets enforced: any fetch/lookup/mismatch failure aborts,
+	// deletes the partial download, and surfaces the error in the modal.
+	if sumsURL != "" {
+		wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
+		if err != nil {
+			_ = os.Remove(staged)
+			return err
+		}
+		if err := update.VerifyChecksum(staged, wantHex); err != nil {
+			_ = os.Remove(staged)
+			return err
+		}
+	}
+	if err := update.StageReplace(staged, exe, update.BackupPath(exe)); err != nil {
+		_ = os.Remove(staged)
+		return err
+	}
+	// Uninstall the old binary now. On Unix the renamed-away old exe unlinks
+	// immediately (the running process keeps its open inode); on Windows it is
+	// still locked, so this no-ops and the next-launch CleanupOldBundle
+	// finishes the job — a running .exe can't delete itself.
+	update.CleanupOldVersion(exe)
+	return nil
+}
+
+// applyBundleUpdate is the bundle self-update (Windows DLL zip, macOS binary +
+// lib/ tarball): download the archive, verify it, extract it, and stage-replace
+// the binary plus every runtime library (see update.StageBundle). libSubdir is
+// "" on Windows (DLLs beside the exe) and "lib" on macOS (dylibs). This fixes
+// the v1.95.1 class of breakage, where a bare-binary swap updated the executable
+// but left stale engine libraries beside it so the new build couldn't launch.
+func (a *App) applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
+	archivePath := update.StagedPath(exe) + ".archive"
+	defer os.Remove(archivePath)
+	if _, err := update.Download(context.Background(), url, archivePath); err != nil {
+		return err
+	}
+	if sumsURL != "" {
+		wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
+		if err != nil {
+			return err
+		}
+		if err := update.VerifyChecksum(archivePath, wantHex); err != nil {
+			return err
+		}
+	}
+	stagingDir := update.StagedPath(exe) + ".d"
+	_ = os.RemoveAll(stagingDir)
+	defer os.RemoveAll(stagingDir)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return err
+	}
+	if strings.HasSuffix(strings.ToLower(assetName), ".tar.gz") {
+		if err := update.ExtractTarGz(archivePath, stagingDir); err != nil {
+			return err
+		}
+	} else {
+		if err := update.ExtractZip(archivePath, stagingDir); err != nil {
+			return err
+		}
+	}
+	if err := update.StageBundle(stagingDir, exe, libSubdir); err != nil {
+		return err
+	}
+	update.CleanupOldBundle(exe)
+	return nil
 }
 
 // requestRelaunch is the "Restart to apply" action: flag a relaunch and quit

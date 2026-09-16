@@ -281,38 +281,37 @@ func pathBase(name string) string {
 }
 
 // SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY
-// identifies this platform's self-replaceable build, for Check's assetMatch.
+// identifies this platform's self-update payload, for Check's assetMatch.
 //
-// It is deliberately more specific than the bare GOOS. A release carries several
-// assets whose name contains the OS token — the default build, the Discord-free
-// build, and (on Windows) a DLL bundle .zip — and Check takes the FIRST match,
-// so matching on "windows" alone is order-dependent and could hand the
-// self-replace a .zip, which it would rename over the running .exe and brick the
-// install. These tokens match EXACTLY the one swappable default binary per
-// platform; the release workflow names assets to suit:
+// Windows and macOS now match their BUNDLE (Windows: exe + DLLs zip; macOS:
+// binary + lib/ tarball), not the bare binary: the runtime engine libraries
+// sit beside the binary and a bare swap can't refresh them — a new build that
+// ships a new engine (or a new SONAME) would otherwise leave an updated binary
+// unable to load the stale libs (the v1.95.1 SDL Mixer X breakage). The
+// self-updater downloads the bundle and extracts it over the install (see
+// StageBundle). Linux is self-contained and keeps its single-file AppImage:
 //
-//	windows -> asyncao-windows-x86_64.exe     (bare exe; the runtime DLLs already sit beside it)
-//	linux   -> AsyncAO-linux-x86_64.AppImage  (self-contained single file)
-//	darwin  -> asyncao-macos-arm64            (arm64 binary, rewritten to load a sibling ./lib)
+//	windows -> asyncao-windows-x86_64-bundle.zip  (exe + runtime DLLs)
+//	linux   -> AsyncAO-linux-x86_64.AppImage      (self-contained single file)
+//	darwin  -> asyncao-macos-bundle-arm64.tar.gz  (binary + bundled lib/)
 //
-// Every non-default variant is named so it does NOT contain the platform's
-// token: the Discord-free builds carry …-nodiscord…, the Windows DLL bundle is
-// …-bundle.zip, and the macOS first-install tarballs are
-// asyncao-macos-bundle-arm64.tar.gz / asyncao-macos-nodiscord-bundle-arm64.tar.gz.
-// That last pair is the subtle one: the darwin token is the substring
-// "macos-arm64", and "macos-bundle-arm64" does NOT contain it (the "-bundle-"
-// breaks the run), so the self-updater picks the bare binary and never renames
-// a .tar.gz over the running executable. An unknown GOOS falls back to the bare
-// OS name (old behaviour: best-effort first match). Match is case-insensitive
-// (Check lowercases both sides), so the .AppImage capitalisation is fine.
+// Every non-default variant is named so it does NOT contain its platform's
+// token: the Discord-free builds carry …-nodiscord…, the Windows nodiscord
+// bundle is …-nodiscord-bundle.zip, and the macOS Homebrew edition is
+// …-macos-homebrew-arm64.tar.gz — the "-nodiscord-"/"-homebrew-" break the
+// token run, so the self-updater always lands on the default bundle and never
+// renames a Homebrew tarball or a nodiscord variant over the running install.
+// An unknown GOOS falls back to the bare OS name (old behaviour: best-effort
+// first match). Match is case-insensitive (Check lowercases both sides), so the
+// .AppImage capitalisation is fine.
 func SelfUpdateAssetMatch(goos string) string {
 	switch goos {
 	case "windows":
-		return "windows-x86_64.exe"
+		return "windows-x86_64-bundle.zip"
 	case "linux":
 		return "linux-x86_64.appimage"
 	case "darwin":
-		return "macos-arm64"
+		return "macos-bundle-arm64.tar.gz"
 	default:
 		return goos
 	}

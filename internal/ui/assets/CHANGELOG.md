@@ -4,11 +4,21 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.95.2 - 2026-09-16
+## v1.96.0 - 2026-09-16
 
-Evidence system overhaul and an animation frame-rate fix, built around a new
-evidence browser mode selector (AO2 / DRO) and several long-standing reports.
+Evidence system overhaul, an animation frame-rate fix, a music/volume fix, and
+a rebuilt self-updater that now ships the whole Windows install — built around a
+new evidence browser mode selector (AO2 / DRO) and several long-standing
+reports.
 
+- **Self-updater downloads the full bundle** — the self-updater now downloads
+  and extracts the platform bundle instead of swapping only the bare binary:
+  Windows gets the `-bundle.zip` (exe + runtime DLLs), macOS gets the
+  `-bundle-arm64.tar.gz` (binary + `lib/`), so an engine change (like the SDL
+  Mixer X migration, or a dylib SONAME bump) can no longer leave an updated
+  binary unable to find its new libraries. The binary and every runtime library
+  are rename-swapped with a rollback, and leftovers are cleaned up on the next
+  launch. (Linux's AppImage is already self-contained.)
 - **Evidence browser mode (#16)** — the evidence window now has an AO2 mode
   (the original thumbnail grid + inspector) and a DRO mode (Danganronpa
   Online-style): a vertical icon list with 40×40 icons, a right-click context

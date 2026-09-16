@@ -15,6 +15,9 @@ package update
 // signing, which slots in at VerifyChecksum's call site later.
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"debug/macho"
@@ -54,6 +57,27 @@ func StagedPath(targetPath string) string { return targetPath + ".new" }
 // OFF the boot critical path (it touches the disk).
 func CleanupOldVersion(targetPath string) {
 	_ = os.Remove(BackupPath(targetPath))
+}
+
+// CleanupOldBundle removes leftover .old backups from a previous BUNDLE update
+// — the exe's .old and every sibling runtime lib's .old (Windows DLLs beside the
+// exe, macOS dylibs in lib/). Safe to call on every boot: a still-locked file is
+// left for a later boot, and the caller runs it off the boot critical path.
+func CleanupOldBundle(exePath string) {
+	dir := filepath.Dir(exePath)
+	clean := func(d string) {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".old") {
+				_ = os.Remove(filepath.Join(d, e.Name()))
+			}
+		}
+	}
+	clean(dir)
+	clean(filepath.Join(dir, bundledLibDirName)) // macOS dylib backups live in lib/
 }
 
 // Download streams the asset at url to destPath (created/truncated), bounded by
@@ -141,33 +165,232 @@ func VerifyChecksum(path, wantHex string) error {
 var renameFn = os.Rename
 
 // StageReplace swaps the binary at targetPath with the one at newPath, keeping
-// the old binary at backupPath. Pure over paths (no os.Executable). A failed
-// install rolls back so the install always works; a failed rollback is a hard
-// error naming where the good binary is. All three paths must be on one volume.
+// the old binary at backupPath, after the macOS SONAME-skew preflight. Pure over
+// paths (no os.Executable). A failed install rolls back so the install always
+// works; a failed rollback is a hard error naming where the good binary is. All
+// three paths must be on one volume.
 func StageReplace(newPath, targetPath, backupPath string) error {
-	if _, err := os.Stat(newPath); err != nil {
-		return fmt.Errorf("update: staged binary missing: %w", err)
-	}
-	// macOS SONAME-skew preflight, BEFORE any mutation (§ finding: the bare-binary
-	// self-update swaps only the executable, never the sibling ./lib the tarball
-	// shipped — see docs/CODE-SIGNING.md). If the new binary needs an @rpath dylib
-	// the installed lib/ doesn't have, refuse HERE, while the install is still
-	// pristine (no backup rename yet), so the caller degrades to "re-download the
-	// tarball" and nothing is left broken. Fail-open by construction (see the fn).
+	// macOS SONAME-skew preflight, BEFORE any mutation (§ finding: the
+	// BARE-binary self-update swaps only the executable, never the sibling ./lib
+	// the tarball shipped — see docs/CODE-SIGNING.md). If the new binary needs an
+	// @rpath dylib the installed lib/ doesn't have, refuse HERE, while the install
+	// is still pristine (no backup rename yet), so the caller degrades to
+	// "re-download the bundle" and nothing is left broken. Fail-open by
+	// construction (see the fn). The bundle path (StageBundle) skips this — it
+	// replaces lib/ too — and calls stageReplaceFile directly.
 	if err := preflightDarwinSwap(newPath, targetPath); err != nil {
 		return err
 	}
+	return stageReplaceFile(newPath, targetPath, backupPath)
+}
+
+// stageReplaceFile is the core rename-with-rollback swap, shared by StageReplace
+// (bare binary, preflight included) and StageBundle (bundle file swap, no
+// preflight — the bundle replaces lib/ too, so SONAME-skew can't happen).
+func stageReplaceFile(newPath, targetPath, backupPath string) error {
+	if _, err := os.Stat(newPath); err != nil {
+		return fmt.Errorf("update: staged file missing: %w", err)
+	}
 	_ = os.Remove(backupPath) // clear a stale backup so the rename can't collide
 	if err := renameFn(targetPath, backupPath); err != nil {
-		return fmt.Errorf("update: backing up current binary: %w", err)
+		return fmt.Errorf("update: backing up current file: %w", err)
 	}
 	if err := renameFn(newPath, targetPath); err != nil {
 		if rbErr := renameFn(backupPath, targetPath); rbErr != nil {
-			return fmt.Errorf("update: install failed (%v) and rollback failed (%v); working binary is at %s", err, rbErr, backupPath)
+			return fmt.Errorf("update: install failed (%v) and rollback failed (%v); working file is at %s", err, rbErr, backupPath)
 		}
-		return fmt.Errorf("update: installing new binary (rolled back cleanly): %w", err)
+		return fmt.Errorf("update: installing new file (rolled back cleanly): %w", err)
 	}
 	return nil
+}
+
+// ExtractZip unpacks a release bundle zip into destDir. Only flat, basename
+// entries are accepted (the Windows bundle is the exe + runtime DLLs at the top
+// level); any entry carrying a path separator is refused so a hostile or
+// malformed archive can't write outside destDir (rule §17.4). Directory entries
+// are skipped.
+func ExtractZip(zipPath, destDir string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		name := f.Name
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if name == "" || strings.ContainsAny(name, `/\`) {
+			return fmt.Errorf("update: unsafe path in bundle: %q", name)
+		}
+		dst := filepath.Join(destDir, name)
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(dst)
+		if err != nil {
+			_ = rc.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, rc)
+		_ = rc.Close()
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+
+// ExtractTarGz unpacks a release bundle tarball (the macOS binary + lib/) into
+// destDir. Entries are confined to flat names or a lib/ subdir; '..' and
+// absolute paths are refused (rule §17.4). File modes are preserved so the
+// binary keeps its exec bit. Directory, symlink and non-regular entries are
+// skipped.
+func ExtractTarGz(tarPath, destDir string) error {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue // skip dirs, symlinks, links, devices
+		}
+		name := strings.TrimPrefix(filepath.ToSlash(hdr.Name), "./")
+		name = strings.TrimPrefix(name, "/")
+		if name == "" || strings.HasPrefix(name, "..") || strings.Contains(name, "/../") {
+			return fmt.Errorf("update: unsafe path in bundle: %q", hdr.Name)
+		}
+		dst := filepath.Join(destDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		out, err := os.Create(dst)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(out, tr)
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if mode := os.FileMode(hdr.Mode).Perm(); mode&0o111 != 0 {
+			_ = os.Chmod(dst, mode) // preserve the exec bit so the binary launches
+		}
+	}
+}
+
+// StageBundle replaces a running install's binary AND its bundled runtime
+// libraries from an extracted bundle directory (ExtractZip / ExtractTarGz
+// output). libSubdir names the directory inside the bundle that holds the
+// runtime libraries — "" on Windows (DLLs sit flat beside the exe), "lib" on
+// macOS (dylibs). The binary is the flat .exe, or the flat file that is neither
+// a library nor documentation (the macOS bare binary); documentation (.txt/.md)
+// is ignored. Runtime files are
+// swapped FIRST via the rename-with-rollback swap (a loaded library, like a
+// running binary, can be renamed but not overwritten), then the binary is
+// swapped LAST as the commit point, so a failed library swap leaves the OLD
+// binary in place. A library that didn't exist before simply moves in.
+// stagingDir is left empty on success.
+func StageBundle(stagingDir, targetExe, libSubdir string) error {
+	dir := filepath.Dir(targetExe)
+	var newBin string
+	type staged struct{ src, rel string }
+	var files []staged
+
+	isLib := func(ext string) bool {
+		switch ext {
+		case ".dll", ".dylib", ".so":
+			return true
+		}
+		return false
+	}
+	isDoc := func(ext string) bool { return ext == ".txt" || ext == ".md" }
+
+	addFlat := func(absDir string) error {
+		entries, err := os.ReadDir(absDir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			p := filepath.Join(absDir, e.Name())
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			switch {
+			case newBin == "" && ext == ".exe":
+				newBin = p
+			case isDoc(ext):
+				// documentation, not runtime
+			case isLib(ext):
+				files = append(files, staged{p, e.Name()})
+			case newBin == "":
+				// A flat file that's neither an exe, a library, nor docs is the
+				// macOS bare binary (e.g. asyncao-macos-arm64, no extension).
+				newBin = p
+			default:
+				files = append(files, staged{p, e.Name()})
+			}
+		}
+		return nil
+	}
+	if err := addFlat(stagingDir); err != nil {
+		return err
+	}
+	if libSubdir != "" {
+		libDir := filepath.Join(stagingDir, libSubdir)
+		entries, err := os.ReadDir(libDir)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			files = append(files, staged{filepath.Join(libDir, e.Name()), filepath.Join(libSubdir, e.Name())})
+		}
+	}
+	if newBin == "" {
+		return fmt.Errorf("update: bundle contains no binary")
+	}
+	for _, f := range files {
+		target := filepath.Join(dir, f.rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if _, statErr := os.Stat(target); statErr != nil {
+			if err := renameFn(f.src, target); err != nil {
+				return fmt.Errorf("update: installing %s: %w", f.rel, err)
+			}
+			continue
+		}
+		if err := stageReplaceFile(f.src, target, target+".old"); err != nil {
+			return err
+		}
+	}
+	return stageReplaceFile(newBin, targetExe, targetExe+".old")
 }
 
 // TargetWritable reports whether the directory holding targetPath can be

@@ -1,6 +1,9 @@
 package update
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -327,4 +331,252 @@ func TestVerifiedDownloadFlow(t *testing.T) {
 			t.Fatalf("an absent manifest must proceed unverified: %v", err)
 		}
 	})
+}
+
+// writeZip builds a flat zip (one entry per map key, contents from the value)
+// at path, for ExtractZip / StageBundle fixtures.
+func writeZip(t *testing.T, path string, entries map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, content := range entries {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestExtractZip pins that the Windows bundle (a flat exe + DLLs archive) lands
+// in the staging dir with its exact contents.
+func TestExtractZip(t *testing.T) {
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "bundle.zip")
+	writeZip(t, zipPath, map[string]string{
+		"asyncao.exe": "EXE",
+		"SDL2.dll":    "DLL1",
+		"libwebp.dll": "DLL2",
+	})
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractZip(zipPath, out); err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+	if got := readFile(t, filepath.Join(out, "asyncao.exe")); got != "EXE" {
+		t.Errorf("exe = %q", got)
+	}
+	if got := readFile(t, filepath.Join(out, "SDL2.dll")); got != "DLL1" {
+		t.Errorf("SDL2.dll = %q", got)
+	}
+	if got := readFile(t, filepath.Join(out, "libwebp.dll")); got != "DLL2" {
+		t.Errorf("libwebp.dll = %q", got)
+	}
+}
+
+// TestExtractZipRejectsTraversal pins the §17.4 guard: a bundle entry carrying a
+// path separator (an absolute or ../ path) must be refused, never written
+// outside the staging dir.
+func TestExtractZipRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "evil.zip")
+	writeZip(t, zipPath, map[string]string{
+		"../evil.dll": "EVIL",
+	})
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractZip(zipPath, out); err == nil {
+		t.Fatal("a traversal entry must be refused")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "evil.dll")); !os.IsNotExist(err) {
+		t.Error("the traversal entry must not be written outside the staging dir")
+	}
+}
+
+// TestStageBundle pins the bundle replacement choreography: the exe is swapped
+// last, an existing DLL is rename-swapped (backup kept at .old), and a
+// newly-shipped DLL just moves in.
+func TestStageBundle(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "asyncao.exe")
+	oldDLL := filepath.Join(dir, "SDL2.dll")
+	writeFile(t, target, "OLD-EXE")
+	writeFile(t, oldDLL, "OLD-DLL")
+
+	staging := filepath.Join(dir, "staging")
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(staging, "asyncao.exe"), "NEW-EXE")
+	writeFile(t, filepath.Join(staging, "SDL2.dll"), "NEW-DLL")
+	writeFile(t, filepath.Join(staging, "SDL2_mixer_ext.dll"), "NEW-ENGINE") // a newly-shipped lib
+
+	if err := StageBundle(staging, target, ""); err != nil {
+		t.Fatalf("StageBundle: %v", err)
+	}
+	if got := readFile(t, target); got != "NEW-EXE" {
+		t.Errorf("exe = %q, want the new exe", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "asyncao.exe.old")); got != "OLD-EXE" {
+		t.Errorf("exe backup = %q, want the old exe", got)
+	}
+	if got := readFile(t, oldDLL); got != "NEW-DLL" {
+		t.Errorf("SDL2.dll = %q, want the new DLL", got)
+	}
+	if got := readFile(t, oldDLL+".old"); got != "OLD-DLL" {
+		t.Errorf("SDL2.dll.old = %q, want the old DLL", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "SDL2_mixer_ext.dll")); got != "NEW-ENGINE" {
+		t.Errorf("newly-shipped DLL = %q, want it moved in (no old to back up)", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SDL2_mixer_ext.dll.old")); !os.IsNotExist(err) {
+		t.Error("a DLL that didn't exist before must not leave a .old backup")
+	}
+}
+
+// TestCleanupOldBundle pins that next-boot cleanup removes the exe's .old and
+// every sibling DLL's .old, and leaves unrelated files alone.
+func TestCleanupOldBundle(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "asyncao.exe")
+	writeFile(t, exe+".old", "stale exe")
+	writeFile(t, filepath.Join(dir, "SDL2.dll.old"), "stale dll")
+	writeFile(t, filepath.Join(dir, "config.json"), "keep me")
+	CleanupOldBundle(exe)
+	if _, err := os.Stat(exe + ".old"); !os.IsNotExist(err) {
+		t.Error("the exe .old must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SDL2.dll.old")); !os.IsNotExist(err) {
+		t.Error("a sibling DLL .old must be removed")
+	}
+	if got := readFile(t, filepath.Join(dir, "config.json")); got != "keep me" {
+		t.Error("non-.old files must be left alone")
+	}
+}
+
+// writeTarGz builds a gzipped tar at path: one entry per map key (0755, or 0644
+// for .txt/.md documentation) — the shape of the macOS bundle tarball.
+func writeTarGz(t *testing.T, path string, entries map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	for name, content := range entries {
+		mode := int64(0o755)
+		if strings.HasSuffix(name, ".txt") || strings.HasSuffix(name, ".md") {
+			mode = 0o644
+		}
+		hdr := &tar.Header{Name: name, Mode: mode, Size: int64(len(content))}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestExtractTarGz pins the macOS bundle extraction: the binary + lib/ + docs
+// land under the staging dir, the binary keeps its exec bit, and a '..' path is
+// refused.
+func TestExtractTarGz(t *testing.T) {
+	dir := t.TempDir()
+	tarPath := filepath.Join(dir, "bundle.tar.gz")
+	writeTarGz(t, tarPath, map[string]string{
+		"./asyncao-macos-arm64":     "BIN",
+		"./lib/libSDL2-2.0.0.dylib": "DYLIB",
+		"./INSTALL.txt":             "docs",
+	})
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractTarGz(tarPath, out); err != nil {
+		t.Fatalf("ExtractTarGz: %v", err)
+	}
+	bin := filepath.Join(out, "asyncao-macos-arm64")
+	if got := readFile(t, bin); got != "BIN" {
+		t.Errorf("binary = %q", got)
+	}
+	if runtime.GOOS != "windows" { // Windows has no exec bit to preserve
+		if info, err := os.Stat(bin); err == nil && info.Mode().Perm()&0o111 == 0 {
+			t.Error("the extracted binary must keep its exec bit")
+		}
+	}
+	if got := readFile(t, filepath.Join(out, "lib", "libSDL2-2.0.0.dylib")); got != "DYLIB" {
+		t.Errorf("dylib = %q", got)
+	}
+	if got := readFile(t, filepath.Join(out, "INSTALL.txt")); got != "docs" {
+		t.Errorf("INSTALL.txt = %q", got)
+	}
+}
+
+// TestStageBundleMacLib pins the macOS bundle replacement: the binary (exec bit,
+// no .exe) is detected and swapped last, lib/ dylibs are rename-swapped into
+// lib/, a newly-shipped dylib moves in, and the INSTALL.txt doc is ignored.
+func TestStageBundleMacLib(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "asyncao")
+	writeFile(t, target, "OLD-BIN")
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(libDir, "libSDL2.dylib"), "OLD-DYLIB")
+
+	staging := filepath.Join(dir, "staging")
+	if err := os.MkdirAll(filepath.Join(staging, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(staging, "asyncao-macos-arm64")
+	writeFile(t, bin, "NEW-BIN")
+	if err := os.Chmod(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(staging, "lib", "libSDL2.dylib"), "NEW-DYLIB")
+	writeFile(t, filepath.Join(staging, "lib", "libavif.dylib"), "NEW-LIB") // newly shipped
+	writeFile(t, filepath.Join(staging, "INSTALL.txt"), "docs")
+
+	if err := StageBundle(staging, target, "lib"); err != nil {
+		t.Fatalf("StageBundle: %v", err)
+	}
+	if got := readFile(t, target); got != "NEW-BIN" {
+		t.Errorf("binary = %q, want the new binary", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "lib", "libSDL2.dylib")); got != "NEW-DYLIB" {
+		t.Errorf("libSDL2.dylib = %q, want the new dylib", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "lib", "libavif.dylib")); got != "NEW-LIB" {
+		t.Errorf("newly-shipped dylib = %q, want it moved into lib/", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "INSTALL.txt")); !os.IsNotExist(err) {
+		t.Error("documentation (INSTALL.txt) must not be installed")
+	}
 }
