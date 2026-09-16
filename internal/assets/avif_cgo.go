@@ -53,12 +53,12 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if frameTotal <= 0 {
 		return nil, fmt.Errorf("assets: avif reports no frames")
 	}
-	tw, th, down := decodeTargetDims(width, height, maxH)
-	keep := boundedFrameCount(tw, th, frameTotal)
 	walk := frameTotal // NextImage must advance per frame (each composes onto the last)
 	if !playAnimations {
-		walk, keep = 1, 1
+		walk = 1
 	}
+	tw, th, down := decodeTargetDimsBudgeted(width, height, maxH, walk)
+	keep := boundedFrameCount(tw, th, walk) // safety net; == walk after downscale-to-fit
 	fdec := newFrameDecimator(walk, keep)
 	sourceDelays := make([]time.Duration, 0, walk)
 

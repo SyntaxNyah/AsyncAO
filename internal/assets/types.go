@@ -109,6 +109,13 @@ type Decoded struct {
 	Partial bool
 	// Width and Height are the canvas dimensions in pixels.
 	Width, Height int
+	// Compressed holds DXT1/DXT5-encoded frame payloads, parallel to Frames.
+	// nil when compression is off/unsupported; DXTFormat is the FOURCC when set.
+	// When non-nil, Frames has already been released and the render thread
+	// uploads Compressed instead of raw RGBA.
+	Compressed [][]byte
+	// DXTFormat is the compressed-texture FOURCC of Compressed (0 = raw RGBA).
+	DXTFormat uint32
 
 	// pooledPix tracks which frame pixel buffers were drawn from the pixel
 	// pool and must be returned on Release.
@@ -116,9 +123,15 @@ type Decoded struct {
 }
 
 // PixelBytes returns the canvas payload size the T1 texture budget accounts
-// for: Σ w×h×4 per frame.
+// for: Σ w×h×4 per frame (or the encoded DXT payload size when compressed).
 func (d *Decoded) PixelBytes() int64 {
 	var total int64
+	if d.DXTFormat != 0 && len(d.Compressed) > 0 {
+		for _, c := range d.Compressed {
+			total += int64(len(c))
+		}
+		return total
+	}
 	for _, f := range d.Frames {
 		if f != nil {
 			total += int64(len(f.Pix))
@@ -136,6 +149,7 @@ func (d *Decoded) Release() {
 	}
 	d.pooledPix = nil
 	d.Frames = nil
+	d.Compressed = nil
 }
 
 // ResolvedAsset describes where an asset was found and how.

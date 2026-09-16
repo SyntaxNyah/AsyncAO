@@ -9,7 +9,10 @@ import "sync"
 
 // pixClassSizes are the pooled buffer capacities. AO sprites are typically
 // 256×192×4 ≈ 200 KiB; backgrounds up to 1920×1080×4 ≈ 8 MiB.
-var pixClassSizes = [...]int{256 << 10, 1 << 20, 4 << 20, 16 << 20}
+// An 8 MiB class sits between 4 and 16: native animated frames (~7.3 MiB at
+// 1600x1200x4) landed in the 16 MiB class and wasted ~2x per frame; the 8 MiB
+// class keeps that overhead near 1.1x and halves the decode-burst heap.
+var pixClassSizes = [...]int{256 << 10, 1 << 20, 4 << 20, 8 << 20, 16 << 20}
 
 var pixPools = func() [len(pixClassSizes)]*sync.Pool {
 	var pools [len(pixClassSizes)]*sync.Pool

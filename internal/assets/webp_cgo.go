@@ -90,7 +90,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		return nil, fmt.Errorf("assets: webp anim options init failed")
 	}
 	opts.color_mode = C.MODE_RGBA
-	opts.use_threads = 0 // the decode pool already provides parallelism
+	opts.use_threads = 0 // lossless (VP8L) decode is inherently sequential; threading only helps lossy VP8, and adds overhead here
 
 	dec := C.WebPAnimDecoderNew(&webpData, &opts)
 	if dec == nil {
@@ -130,13 +130,12 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		}
 	}
 
-	tw, th, down := decodeTargetDims(width, height, maxH)
-
-	keep := boundedFrameCount(tw, th, frameTotal)
 	walk := frameTotal // GetNext must run per frame (each composes onto the last)
 	if !playAnimations {
-		walk, keep = 1, 1
+		walk = 1
 	}
+	tw, th, down := decodeTargetDimsBudgeted(width, height, maxH, walk)
+	keep := boundedFrameCount(tw, th, walk) // safety net; == walk after downscale-to-fit
 	fdec := newFrameDecimator(walk, keep)
 	sourceDelays := make([]time.Duration, 0, walk)
 

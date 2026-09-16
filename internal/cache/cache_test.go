@@ -14,18 +14,19 @@ import (
 const diskSettleWait = 3 * time.Second
 
 // TestDecodeBudgetShares pins the still vs animated per-asset decode budgets
-// against the T1 tier split: the still cap is budget/4, the animated frame
-// budget is half the main tier (larger, so a long animation keeps more frames,
-// but still <= main/2 — the stage-flash eviction invariant).
+// against the T1 tier split: the still cap is budget/4, while the animated
+// frame budget is a fixed value (DefaultMaxAnimatedDecodedAssetBytes) no longer
+// derived from the T1 budget — #110 made animations downscale-to-fit a fixed
+// budget instead of being decimated to a share of T1.
 func TestDecodeBudgetShares(t *testing.T) {
 	cases := []struct {
 		budget      int64
 		small, main int64
-		still, anim int64
+		still       int64
 	}{
-		{DefaultT1BudgetBytes, 8 << 20, 56 << 20, 16 << 20, 28 << 20}, // 64 MiB default
-		{32 << 20, 4 << 20, 28 << 20, 8 << 20, 14 << 20},              // slider min
-		{256 << 20, 32 << 20, 224 << 20, 64 << 20, 112 << 20},         // slider max
+		{DefaultT1BudgetBytes, 8 << 20, 56 << 20, 16 << 20}, // 64 MiB default
+		{32 << 20, 4 << 20, 28 << 20, 8 << 20},              // slider min
+		{256 << 20, 32 << 20, 224 << 20, 64 << 20},          // slider max
 	}
 	for _, tc := range cases {
 		if small := SmallTierBytes(tc.budget); small != tc.small {
@@ -37,14 +38,16 @@ func TestDecodeBudgetShares(t *testing.T) {
 		if got := MaxDecodedAssetBytes(tc.budget); got != tc.still {
 			t.Errorf("MaxDecodedAssetBytes(%d) = %d, want %d", tc.budget, got, tc.still)
 		}
-		if got := MaxAnimatedDecodedAssetBytes(tc.budget); got != tc.anim {
-			t.Errorf("MaxAnimatedDecodedAssetBytes(%d) = %d, want %d", tc.budget, got, tc.anim)
-		}
 	}
 
 	// Non-positive budgets yield 0 so callers can substitute their own default.
-	if MaxDecodedAssetBytes(0) != 0 || MaxAnimatedDecodedAssetBytes(0) != 0 {
-		t.Error("non-positive budget must yield a 0 cap")
+	if MaxDecodedAssetBytes(0) != 0 {
+		t.Error("non-positive budget must yield a 0 still cap")
+	}
+	// The animated budget is a fixed downscale-to-fit bound, not a T1 share: it
+	// must comfortably exceed the default T1 budget.
+	if DefaultMaxAnimatedDecodedAssetBytes <= DefaultT1BudgetBytes {
+		t.Errorf("animated cap %d must exceed the default T1 budget %d", DefaultMaxAnimatedDecodedAssetBytes, DefaultT1BudgetBytes)
 	}
 }
 

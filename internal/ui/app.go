@@ -7490,6 +7490,9 @@ func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
 // decodes pick it up (already-decoded textures keep their size until eviction).
 func (a *App) applySpriteCap() {
 	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.SpriteDownscaleOffOn(), a.d.Prefs.SpriteDownscalePct()))
+	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.AnimatedSpriteCap())
+	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.AnimatedBudgetMiB())
+	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.AnimDecodeConcurrency())
 }
 
 // vpSpriteLoadMode maps the 3-way cold-load pref onto the renderer's 2-way switch:

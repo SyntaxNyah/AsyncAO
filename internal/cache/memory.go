@@ -36,18 +36,41 @@ const (
 	// render main tier is always >= budget/2 (splitT1Budget caps the small-UI
 	// shield at budget/2), so a budget/4 decode cap is provably <= main AND <=
 	// main/2 for EVERY budget — one page can never evict even half the main
-	// tier's live working set. ANIMATED assets get a larger cap (see
-	// MaxAnimatedDecodedAssetBytes = main/2); stills keep this tighter one.
+	// tier's live working set. STILL assets keep this tighter one; ANIMATED
+	// assets are no longer decimated to fit this budget (the #110 choppy-
+	// animation fix) — they get the fixed budget
+	// DefaultMaxAnimatedDecodedAssetBytes instead, downscaled to fit it, and
+	// overflow the main tier into an eviction-exempt map on the render side.
 	// Cross-package invariant pinned by render.TestDecodeCapFitsMainTier.
 	decodeCapBudgetDiv = 4
 )
+
+// DefaultMaxAnimatedDecodedAssetBytes bounds ONE animated asset's decoded
+// payload (Σ w×h×4 across frames) shipped as the default. Animated sprites are
+// no longer DECIMATED to fit the T1 tier (the #110 choppy-animation fix): the
+// decoder DOWNSCALES the frames far enough that every authored frame fits this
+// budget, so a long clip stays smooth at a smaller on-screen size instead of
+// dropping frames (slideshow) or loading full-size (memory hog). 128 MiB keeps
+// a 60-frame 1600×1200 clip at native (439 MiB) — only very long clips (e.g. a
+// 142-frame preanim) shrink to fit — while a hostile server still cannot
+// balloon resident memory past the oversized cap below.
+const DefaultMaxAnimatedDecodedAssetBytes = 128 << 20
+
+// DefaultOversizedTextureBytes caps the render TextureStore's eviction-exempt
+// OVERFLOW tier in total: an animated page that still exceeds the main LRU
+// tier's budget (the animated budget is larger than the default main tier)
+// lives there, and this bounds how many such pages can be resident at once.
+// Sized to ONE animated budget (500 MiB) so a single full-size animation is
+// resident and peak animated memory stays ~500 MiB rather than the ~1 GiB that
+// two resident clips would cost.
+const DefaultOversizedTextureBytes = 500 << 20
 
 // MaxDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4 across
 // frames) for a STILL asset at a given T1 texture budget: the SINGLE source of
 // truth both the decoder default and main's live override derive from (see
 // decodeCapBudgetDiv for the arithmetic and why budget/4). Animated assets use
-// MaxAnimatedDecodedAssetBytes instead. A non-positive budget yields 0 so
-// callers can substitute their own default.
+// the fixed safety cap DefaultMaxAnimatedDecodedAssetBytes instead. A
+// non-positive budget yields 0 so callers can substitute their own default.
 func MaxDecodedAssetBytes(budget int64) int64 {
 	if budget <= 0 {
 		return 0
@@ -58,8 +81,7 @@ func MaxDecodedAssetBytes(budget int64) int64 {
 // Small-texture shield carve-out (the byte budget reserved for icon/button
 // thumbnails). These constants are the SINGLE source of truth for the render
 // tier split — render.splitT1Budget delegates here — so the main tier and the
-// animated decode cap derive from the same arithmetic and can never drift
-// apart.
+// small shield derive from the same arithmetic and can never drift apart.
 const (
 	smallTexBudgetDiv = 8
 	smallTexMinBudget = 4 << 20
@@ -82,16 +104,6 @@ func SmallTierBytes(budget int64) int64 {
 // MainTierBytes is the remainder of the T1 budget after the small shield.
 func MainTierBytes(budget int64) int64 {
 	return budget - SmallTierBytes(budget)
-}
-
-// MaxAnimatedDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4
-// across frames) for ANIMATED assets: half the main render tier. It is larger
-// than the still cap (MaxDecodedAssetBytes = budget/4) so a long animated
-// sprite keeps more frames, and it is provably <= main/2 for EVERY budget —
-// one animated page can never evict even half the main tier's live working set
-// (the stage-flash invariant, pinned by render.TestDecodeCapFitsMainTier).
-func MaxAnimatedDecodedAssetBytes(budget int64) int64 {
-	return MainTierBytes(budget) / 2
 }
 
 // sized pairs a cached value with the payload size it was accounted at.

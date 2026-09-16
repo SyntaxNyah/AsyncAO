@@ -170,6 +170,19 @@ type TextureStore struct {
 	// their recency, making it constant).
 	pinned      map[string]*TexturePage
 	pinnedBytes int64
+	// oversized holds animated pages too large for the main LRU tier's budget
+	// (a full high-res animation is routinely larger than the whole T1). They
+	// are eviction-exempt like pinned pages, but bounded by their OWN hard cap
+	// (oversizedCap) so a hostile server cannot pin an unbounded number of
+	// giant animations. Guarded by oversizedMu because Contains (the manager's
+	// T1 probe) runs OFF the render thread and must still see these pages —
+	// otherwise a resident animation would be re-fetched every time its owner
+	// speaks. Mutations are render-thread only, so the lock is held briefly.
+	oversizedMu    sync.RWMutex
+	oversized      map[string]*TexturePage
+	oversizedBytes int64
+	oversizedCap   int64
+	oversizedOrder []string // insertion order, oldest first, for cap eviction
 	// themeMediaBytes / themeMediaCount / themeGenCount account for the THEME-MEDIA
 	// subset of `pinned` (thememedia.go): user art and generator tiles. They are a
 	// separate ledger from pinnedBytes because the two answer different questions —
@@ -314,10 +327,12 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 		budgetBytes = int64(T1BudgetBytes)
 	}
 	s := &TextureStore{
-		ren:     ren,
-		pinned:  map[string]*TexturePage{},
-		destroy: make(chan *TexturePage, destroyQueueCap),
-		budget:  budgetBytes,
+		ren:          ren,
+		pinned:       map[string]*TexturePage{},
+		oversized:    map[string]*TexturePage{},
+		oversizedCap: cache.DefaultOversizedTextureBytes,
+		destroy:      make(chan *TexturePage, destroyQueueCap),
+		budget:       budgetBytes,
 	}
 	// Both LRU tiers share one eviction path: bump the generation (cached
 	// page pointers must re-resolve) and route the page through the bounded
@@ -524,17 +539,31 @@ func (s *TextureStore) HeldStats() HeldStats {
 }
 
 // Contains reports whether a texture page exists for the asset base in
-// either LRU tier. Safe to call from any goroutine (the inner LRUs are
-// thread-safe) — wired as the manager's T1 probe.
+// either LRU tier or the oversized map. Safe to call from any goroutine (the
+// inner LRUs are thread-safe; the oversized map is mutex-guarded) — wired as
+// the manager's T1 probe, which must see oversized pages or it would re-fetch
+// a resident animation.
 func (s *TextureStore) Contains(base string) bool {
-	return s.small.Contains(base) || s.t1.Contains(base)
+	if s.small.Contains(base) || s.t1.Contains(base) {
+		return true
+	}
+	s.oversizedMu.RLock()
+	_, ok := s.oversized[base]
+	s.oversizedMu.RUnlock()
+	return ok
 }
 
-// Get returns the page for base (pinned pages first, then the small-UI
-// shield, then the main tier), bumping recency for LRU-resident ones.
-// Render thread only.
+// Get returns the page for base (pinned pages first, then the oversized map,
+// then the small-UI shield, then the main tier), bumping recency for
+// LRU-resident ones. Render thread only.
 func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 	if page, ok := s.pinned[base]; ok {
+		return page, true
+	}
+	s.oversizedMu.RLock()
+	page, ok := s.oversized[base]
+	s.oversizedMu.RUnlock()
+	if ok {
 		return page, true
 	}
 	if page, ok := s.small.Get(base); ok {
@@ -552,6 +581,32 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 		SourceFrames: d.SourceFrames, // carry the un-decimated frame count for #17 frame-effect mapping
 		W:            int32(d.Width),
 		H:            int32(d.Height),
+	}
+	if d.DXTFormat != 0 && len(d.Compressed) > 0 {
+		// Compressed path: upload the pre-encoded DXT payloads. The canvas is
+		// guaranteed 4-aligned by Decoded.compress, and the format was already
+		// validated against the renderer at startup.
+		blockBytes := 8
+		if d.DXTFormat == assets.DXT5FourCC {
+			blockBytes = 16
+		}
+		pitch := (d.Width / 4) * blockBytes
+		for _, comp := range d.Compressed {
+			tex, err := s.ren.CreateTexture(d.DXTFormat, sdl.TEXTUREACCESS_STATIC, int32(d.Width), int32(d.Height))
+			if err != nil {
+				page.destroy()
+				return nil, err
+			}
+			if err := tex.Update(nil, unsafe.Pointer(&comp[0]), pitch); err != nil {
+				_ = tex.Destroy()
+				page.destroy()
+				return nil, err
+			}
+			_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
+			page.Frames = append(page.Frames, tex)
+			page.bytes += int64(len(comp))
+		}
+		return page, nil
 	}
 	for _, frame := range d.Frames {
 		tex, err := s.ren.CreateTexture(
@@ -608,11 +663,30 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 	}
 	foldUploadEWMA(&s.uploadNsEWMA, time.Since(start)) // cold-load profiling: GPU-upload stage
 	if !tier.Add(base, page, page.bytes) {
-		// Bigger than the entire tier budget: the LRU refuses it, and before
-		// this check the freshly created textures leaked silently — sprites
-		// of that size simply never appeared. The decode-side cap
-		// (assets.maxAnimatedDecodedAssetBytes) keeps this branch unreachable for
-		// well-formed assets; pathological ones get a loud error instead.
+		// Bigger than the whole tier budget: ByteBudgetLRU refuses it. Animated
+		// sprites legitimately get this big (a full high-res animation is larger
+		// than the entire T1), so a page too big for the MAIN tier is parked in
+		// the eviction-exempt oversized map (bounded by its own cap) instead of
+		// being refused — the #110 fix: load the full clip, don't decimate it
+		// into a slideshow. A page too big for the SMALL shield never reaches
+		// here (UploadSmall routes it to main first); if it somehow does, the
+		// loud error stays.
+		if tier == s.t1 {
+			// Drop any stale entry this base still holds in the MAIN tier. A
+			// progressive upload parks its 1-frame "Partial" in the main LRU
+			// first, and ByteBudgetLRU.Add rejects the over-budget FULL page
+			// BEFORE removing that old entry. Leaving it meant an oversized-cap
+			// eviction of the full clip fell back to the stale static frame and
+			// the T1 Contains probe short-circuited re-decode (the "static after
+			// reconnect" report). The oversized map is authoritative now.
+			s.t1.Remove(base)
+			s.storeOversized(base, page)
+			s.generation.Add(1)
+			s.clearFailed(base)  // it decoded fine
+			s.releaseHeld(base)  // the real page is back
+			s.clearMissing(base) // it landed after all
+			return nil
+		}
 		page.destroy()
 		return fmt.Errorf("render: %s decoded to %d bytes, above the tier's %d-byte share of the T1 budget", base, page.bytes, tier.Budget())
 	}
@@ -621,6 +695,48 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 	s.releaseHeld(base)  // the real page is back: drop the held-frame bridge
 	s.clearMissing(base) // it landed after all — drop any conclusively-missing flag
 	return nil
+}
+
+// storeOversized parks a page too large for the main LRU tier in the
+// eviction-exempt oversized map, evicting the oldest oversized pages until the
+// map is back under oversizedCap. Render thread only.
+func (s *TextureStore) storeOversized(base string, page *TexturePage) {
+	s.oversizedMu.Lock()
+	defer s.oversizedMu.Unlock()
+	if old, ok := s.oversized[base]; ok {
+		s.oversizedBytes -= old.bytes
+		s.dropOversizedOrderLocked(base)
+		s.queueDestroy(old)
+	}
+	s.oversized[base] = page
+	s.oversizedBytes += page.bytes
+	s.oversizedOrder = append(s.oversizedOrder, base)
+	for s.oversizedBytes > s.oversizedCap && len(s.oversizedOrder) > 1 {
+		oldest := s.oversizedOrder[0]
+		if oldest == base {
+			// A single page can exceed the cap; the decode cap
+			// (cache.DefaultMaxAnimatedDecodedAssetBytes) makes it the only
+			// resident page. Never evict the page we just stored.
+			break
+		}
+		if p, ok := s.oversized[oldest]; ok {
+			s.oversizedBytes -= p.bytes
+			delete(s.oversized, oldest)
+			s.queueDestroy(p)
+		}
+		s.oversizedOrder = s.oversizedOrder[1:]
+	}
+}
+
+// dropOversizedOrderLocked removes base from the insertion-order ring; the
+// caller holds oversizedMu.
+func (s *TextureStore) dropOversizedOrderLocked(base string) {
+	for i, k := range s.oversizedOrder {
+		if k == base {
+			s.oversizedOrder = append(s.oversizedOrder[:i], s.oversizedOrder[i+1:]...)
+			return
+		}
+	}
 }
 
 // UploadPinned is Upload into the eviction-exempt tier (theme chrome:
@@ -685,6 +801,19 @@ func (s *TextureStore) Remove(base string) {
 		s.generation.Add(1)
 		return
 	}
+	s.oversizedMu.Lock()
+	page, ok := s.oversized[base]
+	if ok {
+		s.oversizedBytes -= page.bytes
+		delete(s.oversized, base)
+		s.dropOversizedOrderLocked(base)
+	}
+	s.oversizedMu.Unlock()
+	if ok {
+		s.queueDestroy(page)
+		s.generation.Add(1)
+		return
+	}
 	// A key lives in at most one LRU tier; Remove on the other is a no-op.
 	s.small.Remove(base)
 	s.t1.Remove(base)
@@ -730,6 +859,13 @@ func (s *TextureStore) RemoveWhere(pred func(key string) bool) int {
 			doomed = append(doomed, key)
 		}
 	}
+	s.oversizedMu.RLock()
+	for key := range s.oversized {
+		if !reservedKey(key) && pred(key) {
+			doomed = append(doomed, key)
+		}
+	}
+	s.oversizedMu.RUnlock()
 	for _, key := range append(s.t1.Keys(), s.small.Keys()...) {
 		if !reservedKey(key) && pred(key) {
 			doomed = append(doomed, key)
@@ -805,6 +941,15 @@ func (s *TextureStore) Stats() cache.MemoryStats {
 	}
 }
 
+// OversizedBytes reports the total bytes resident in the oversized overflow
+// map (animated sprites too large for the main LRU tier). Safe to call from
+// any goroutine — wired to the debug panel's memory readout.
+func (s *TextureStore) OversizedBytes() int64 {
+	s.oversizedMu.RLock()
+	defer s.oversizedMu.RUnlock()
+	return s.oversizedBytes
+}
+
 // Purge destroys everything — pinned pages included (server switch /
 // shutdown / filtering swap; the theme re-applies after). Render thread
 // only.
@@ -820,6 +965,14 @@ func (s *TextureStore) Purge() {
 		delete(s.pinned, base)
 	}
 	s.pinnedBytes = 0
+	s.oversizedMu.Lock()
+	for base, page := range s.oversized {
+		page.destroy()
+		delete(s.oversized, base)
+	}
+	s.oversizedBytes = 0
+	s.oversizedOrder = s.oversizedOrder[:0]
+	s.oversizedMu.Unlock()
 	// The theme-media ledger is a view of the pinned map, so emptying one empties
 	// the other. themePage's generation-keyed negative cache and healTheme's paced
 	// re-kick then bring the theme's art back exactly as they bring its chrome back.

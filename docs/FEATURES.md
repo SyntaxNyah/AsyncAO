@@ -47,9 +47,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   showing black) now covers the **current speaker and their pair partner**, not
   only scenery — so a mid-scene eviction of the on-stage character briefly shows
   its frozen frame instead of the last remaining black-flash case. The rule that
-  a single decoded asset may use only a bounded share of the texture budget now
+  a single decoded STILL asset may use only a bounded share of the texture budget now
   lives in **one place** (a page can no longer evict the majority of the
-  on-screen working set).
+  on-screen working set); animated sprites are the deliberate exception — they
+  downscale-to-fit a fixed 500 MiB budget (#110) instead of being decimated,
+  and any page larger than the main tier overflows into a separately-capped
+  eviction-exempt map.
 - **Cold-load sprite modes** (Settings → Power user → Renderer): what happens while
   a NEW, uncached sprite is still streaming + decoding (the cold-load gap — worse on
   huge art / high ping). **"Keep the previous one"** (default as of v1.55.0,
@@ -155,7 +158,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (`NewClientNotFoundTTL`, restart-applied), per-host adaptive-deadline
   multiple (`SetAdaptiveLatencyMultiple`, live), decode-downscale percent /
   off-switch (`config.EffectiveSpriteCap` → `DecoderPool.SetSpriteCap`, live
-  for new decodes), T1 texture budget (`NewTextureStoreBudget`,
+  for new decodes), **animated sprite height cap** (default **off** — downscales
+  ANIMATED sprites harder than stills to save memory; `DecoderPool.SetAnimatedSpriteCap`,
+  live for new decodes), T1 texture budget (`NewTextureStoreBudget`,
   restart-applied), speaker-swap **crossfade** (render: the new sprite
   alpha-ramps over the old — `animState.fadeLeft`, armed in `syncAnim`, ticked
   only while resident so a cold load never eats the fade; Reduce-motion zeroes

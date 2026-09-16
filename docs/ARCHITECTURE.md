@@ -179,13 +179,18 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
                        → Warning{base, formats tried} → UI banner (12 s,
                                                         courtroom + char select)
        chain already exhausted → warn, submit nothing  ← the gate, above the pool
-  decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px),
-               animations DECIMATED to maxDecodedAssetBytes (T1 budget / 4,
-               the cache.MaxDecodedAssetBytes single source of truth —
-               keep evenly-spaced frames spanning the whole clip, fold skipped
-               delays forward: a lower-fps full loop beats a truncated one that
-               snaps mid-preanim, and both dodge a 250 MB RGBA spike inside the
-               256 MiB process budget); fixed-cell types
+  decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px);
+               STILL assets capped at maxDecodedAssetBytes (T1 budget / 4, the
+               cache.MaxDecodedAssetBytes single source of truth — one landing
+               page can never evict even half the main tier); ANIMATED assets
+               are not decimated to fit T1 (#110): the decoder DOWNSCALES each
+               frame to fit a fixed 500 MiB budget
+               (cache.DefaultMaxAnimatedDecodedAssetBytes) so every authored
+               frame stays resident at a smaller on-screen size — smooth
+               without the memory hog; an animated page larger than the main
+               LRU tier overflows into an eviction-exempt map
+               (TextureStore.oversized, capped at 500 MiB) instead of being
+               refused; fixed-cell types
                (char icons → 64 px, emote buttons → 40 px) thumbnail at
                decode, so a 500×500 pack icon costs ~16 KB of T1 instead of
                ~1 MB and a 4000-char roster fits the texture budget whole

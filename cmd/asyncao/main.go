@@ -27,9 +27,11 @@ import (
 )
 
 const (
-	// memoryBudgetBytes is the soft heap limit (spec §1: < 256 MiB on
-	// a 200-character server).
-	memoryBudgetBytes = 256 << 20
+	// memoryBudgetBytes is the soft heap limit. 700 MiB accommodates the
+	// 500 MiB animated decode budget — a full-size clip's decoded RGBA stays
+	// live in the heap until its textures upload — plus T2 raw bytes, so the
+	// GC doesn't thrash while a big animation decodes.
+	memoryBudgetBytes = 700 << 20
 
 	windowTitle    = "AsyncAO"
 	windowWidth    = 1152
@@ -166,6 +168,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
 	defer decoder.Close()
+	decoder.SetAnimatedBudgetMiB(prefs.AnimatedBudgetMiB())
+	decoder.SetAnimatedDecodeConcurrency(prefs.AnimDecodeConcurrency())
 
 	// --- SDL (render thread = this thread, forever) ---
 	// Texture scale quality must be hinted before textures exist: "1" =
@@ -269,6 +273,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			// entirely (config.EffectiveSpriteCap owns the math; the App re-derives
 			// it live when the Settings sliders move).
 			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.SpriteDownscaleOffOn(), prefs.SpriteDownscalePct()))
+			decoder.SetAnimatedSpriteCap(prefs.AnimatedSpriteCap())
 		}
 	}
 
@@ -291,6 +296,36 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// every alpha Fill opaque. Textures set their own mode at upload.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
+	// Texture compression (DXT/BC): intersect the power-user setting with the
+	// renderer's advertised formats so the decode pool only compresses when the
+	// GPU can actually upload the compressed format (the software fallback
+	// cannot). The mode is fixed for the process lifetime (restart-applied).
+	texCompressMode := assets.CompressOff
+	if mode := prefs.TexCompression(); mode != config.TexCompressOff {
+		if info, err := ren.GetInfo(); err == nil {
+			dxt5, dxt1 := false, false
+			n := int(info.NumTextureFormats)
+			if n > len(info.TextureFormats) {
+				n = len(info.TextureFormats)
+			}
+			for i := 0; i < n; i++ {
+				switch uint32(info.TextureFormats[i]) {
+				case assets.DXT5FourCC:
+					dxt5 = true
+				case assets.DXT1FourCC:
+					dxt1 = true
+				}
+			}
+			switch {
+			case mode == config.TexCompressDXT5 && dxt5:
+				texCompressMode = assets.CompressDXT5
+			case mode == config.TexCompressDXT1 && dxt1:
+				texCompressMode = assets.CompressDXT1
+			}
+		}
+	}
+	decoder.SetTextureCompression(texCompressMode)
+
 	// Power-user T1 budget (restart-applied; the default 64 MiB fits the 256 MiB
 	// memory budget alongside T2's 128 MiB).
 	store, err := render.NewTextureStoreBudget(ren, int64(prefs.TexBudgetMiB())<<20)
@@ -298,13 +333,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer store.Purge()
-	// Scale the per-asset decode cap off the SAME (live) texture budget via the
-	// single source of truth (cache.MaxDecodedAssetBytes), so raising the texture
-	// budget lets a longer animation decode in full instead of truncating past
-	// ~5 s (the decoder otherwise used a fixed cap off the DEFAULT budget,
-	// ignoring this setting). The fraction is provably eviction-safe against the
-	// render main tier — see cache.decodeCapBudgetDiv.
-	assets.SetMaxAnimatedDecodedAssetBytes(cache.MaxAnimatedDecodedAssetBytes(int64(prefs.TexBudgetMiB()) << 20))
+	// Animated sprites are no longer decimated to fit the T1 budget (#110): the
+	// decoder ships a fixed 128 MiB downscale-to-fit budget
+	// (cache.DefaultMaxAnimatedDecodedAssetBytes) and oversized pages overflow
+	// the main tier into the store's eviction-exempt map. No per-budget scaling
+	// here anymore — the texture budget now only bounds the STILL-asset decode
+	// cap and the two LRU tiers.
 
 	// --- asset pipeline ---
 	var localMode bool

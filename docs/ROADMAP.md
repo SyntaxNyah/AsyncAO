@@ -397,8 +397,9 @@ gamepad track below._
   (fetch TTFB/transfer · decode+CatmullRom-downscale · upload) to the metrics
   cold-load report so the bottleneck is measured, not asserted. Confirmed by hand:
   the dominant cost for an uncached sprite is **network transfer + latency**, but the
-  **CatmullRom downscale of huge (2000²) sprites** runs in the decode pool and is a
-  real secondary cost (the old "blurry huge WebP" was this path pre-fix). Hold-
+  **CatmullRom downscale of huge (2000²) sprites** ran in the decode pool and was a
+  real secondary cost — since v1.96.0 the animated downscale is a fast area-average
+  (box) filter, so decode is no longer CatmullRom-bound. Hold-
   previous is **bottleneck-agnostic** — it covers the gap whatever the cause — so it
   was the right first move regardless.
 - ~~**Config presets**~~ — **shipped in v1.40.0** (Settings → Data → "Setting

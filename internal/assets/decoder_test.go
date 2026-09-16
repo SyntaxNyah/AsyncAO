@@ -321,12 +321,23 @@ func TestPixPoolOversizeUnpooled(t *testing.T) {
 	putPixBuf(token) // must be a no-op
 }
 
+// pinSmallAnimatedBudget shrinks the live animated frame budget so the
+// budget-fit downscale can be exercised deterministically regardless of the
+// shipped (128 MiB) default, restoring the prior value on cleanup.
+func pinSmallAnimatedBudget(t *testing.T) {
+	t.Helper()
+	old := maxAnimatedDecodedAssetBytes.Load()
+	maxAnimatedDecodedAssetBytes.Store(28 << 20) // the old default-64 MiB share
+	t.Cleanup(func() { maxAnimatedDecodedAssetBytes.Store(old) })
+}
+
 // TestBoundedFrameCount pins the per-asset decode budget: animations
 // truncate to the frames whose decoded bytes fit maxAnimatedDecodedAssetBytes
 // (community sprite packs ship hundreds of full-canvas frames; unbounded,
 // one page outgrew the whole T1 budget and the character became invisible
 // when its owner talked). The clamp never drops below one frame.
 func TestBoundedFrameCount(t *testing.T) {
+	pinSmallAnimatedBudget(t)
 	const w, h = 1000, 1000 // 4 MB per decoded frame
 	fits := int(maxAnimatedDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
 	if fits < 2 {
@@ -350,16 +361,16 @@ func TestBoundedFrameCount(t *testing.T) {
 	}
 }
 
-// TestDecodeGIFDecimatesOversizedAnimation runs a real decode through the
-// budget: a GIF whose frame count exceeds the cap decodes to exactly the
-// bounded frame count, still flagged Animated — and, crucially, DECIMATED not
-// TRUNCATED: the kept frames span the whole clip and the total playback time is
-// preserved (a truncation would drop the tail and run short, snapping a long
-// preanim to its talking pose a quarter of the way through — the bug this fixes).
-func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
+// TestDecodeGIFDownscalesToFitBudget runs a real decode through the budget: a
+// GIF whose frame count exceeds the cap at native size is DOWNSCALED (never
+// decimated) so every authored frame fits at a smaller canvas — the #110 fix:
+// smooth (full frame count) without the memory hog, instead of dropping frames
+// into a slideshow.
+func TestDecodeGIFDownscalesToFitBudget(t *testing.T) {
+	pinSmallAnimatedBudget(t)
 	const w, h = 500, 500
 	fits := int(maxAnimatedDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
-	frames := fits + 3
+	frames := fits + 3 // would exceed the budget at native size
 
 	g := &gif.GIF{Config: image.Config{Width: w, Height: h}}
 	pal := color.Palette{color.Black, color.White}
@@ -379,21 +390,27 @@ func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Release()
-	if len(d.Frames) != fits {
-		t.Errorf("decoded %d frames, want decimation to %d", len(d.Frames), fits)
+	if len(d.Frames) != frames {
+		t.Errorf("downscaled decode kept %d frames, want the full %d (no decimation)", len(d.Frames), frames)
 	}
 	if !d.Animated {
-		t.Error("decimated animation must stay flagged Animated")
+		t.Error("downscaled animation must stay flagged Animated")
 	}
-	// Decimation preserves total duration; truncation to `fits` frames would
-	// lose the last 3 frames' delays and run 3×50 ms short.
+	// Downscaled to fit the budget: a smaller canvas, not a dropped frame count.
+	if d.Width >= w || d.Height >= h {
+		t.Errorf("expected a downscaled canvas, got %dx%d (native %dx%d)", d.Width, d.Height, w, h)
+	}
+	if d.PixelBytes() > maxAnimatedDecodedAssetBytes.Load() {
+		t.Errorf("downscaled payload %d bytes exceeds the %d-byte budget", d.PixelBytes(), maxAnimatedDecodedAssetBytes.Load())
+	}
+	// Full duration preserved: every frame's delay is present.
 	var got time.Duration
 	for _, dl := range d.Delays {
 		got += dl
 	}
 	want := time.Duration(frames) * gifFrameDelay(g, 0)
 	if got != want {
-		t.Errorf("decimated total duration = %v, want %v (whole clip, delays folded)", got, want)
+		t.Errorf("total duration = %v, want %v", got, want)
 	}
 }
 
@@ -403,6 +420,7 @@ func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
 // rate instead of being decimated to a slideshow — while the resident frames
 // still land at the smaller on-screen size.
 func TestDecodeGIFDownscalesInsteadOfDecimating(t *testing.T) {
+	pinSmallAnimatedBudget(t)
 	const w, h = 500, 500
 	fits := int(maxAnimatedDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
 	if fits < 2 {

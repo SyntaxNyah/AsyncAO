@@ -1007,179 +1007,184 @@ type AssetPreferences struct {
 	SpriteScaling int `json:"spriteScaling"`
 	// SpriteScalingMigrated stamps that the one-shot move to Auto has run for this
 	// file (see load). Absent in files written before the tri-state existed.
-	SpriteScalingMigrated  bool                         `json:"spriteScalingMigrated"`
-	UpdateCheck            bool                         `json:"updateCheck"`
-	UpdateExperimental     bool                         `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
-	HighlightColor         int                          `json:"highlightColor"`
-	ICCustomColor          int                          `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
-	NameColors             bool                         `json:"nameColors"`
-	NameSat                int                          `json:"nameColorSat"`
-	NameVal                int                          `json:"nameColorVal"`
-	BgSlideshow            bool                         `json:"bgSlideshow"`
-	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
-	DownloadKBps           int                          `json:"downloadKBps"`
-	ForceCharNames         bool                         `json:"forceCharNames"`
-	RandomEmote            bool                         `json:"randomEmote"`
-	FriendHighlight        bool                         `json:"friendHighlight"`
-	ShowFriendButton       bool                         `json:"showFriendButton"`
-	ClipSpritesToStage     bool                         `json:"clipSpritesToStage"` // clip character sprites to the stage so an offset can't spill over the chatbox/log (default ON)
-	RightClickHideSprite   bool                         `json:"rightClickHideSprite"`
-	DragLayout             bool                         `json:"dragLayout"`
-	FollowEnabled          bool                         `json:"followEnabled"`
-	ShowPairStatus         bool                         `json:"showPairStatus"`
-	PlayerListSort         int                          `json:"playerListSort"`     // remembered Players-tab player sort
-	PlayerListAreaSort     int                          `json:"playerListAreaSort"` // remembered Players-tab /gas area-group order
-	DyslexiaFont           bool                         `json:"dyslexiaFont"`
-	FontEverywhere         bool                         `json:"fontEverywhere"` // active font override also drives the chrome (whole UI), not just chat/log
-	DNDPersist             bool                         `json:"dndPersist"`
-	DNDSaved               bool                         `json:"dndSaved"`
-	RainbowMessages        bool                         `json:"rainbowMessages"`
-	RandomMessageColor     bool                         `json:"randomMessageColor"`
-	RainbowSprites         bool                         `json:"rainbowSprites"`
-	ShowRecordButton       bool                         `json:"showRecordButton"`
-	InstantDisconnect      bool                         `json:"instantDisconnect"`
-	HideDesk               bool                         `json:"hideDesk"`
-	FavEmoteBox            bool                         `json:"favEmoteBox"`          // floating box of starred emotes (default OFF)
-	InstantReplay          bool                         `json:"instantReplay"`        // always-on rolling clip buffer (default OFF)
-	InstantReplaySeconds   int                          `json:"instantReplaySeconds"` // clip capture window; 0 = default
-	TimerSeconds           int                          `json:"timerSeconds"`         // local alarm/timer remembered duration; 0 = default (#97)
-	TimerRepeat            bool                         `json:"timerRepeat"`          // local alarm/timer auto-restart (default OFF) (#97)
-	NotifyOnOOC            bool                         `json:"notifyOnOOC"`          // OOC bumps the unread tab badge (default OFF = IC only)
-	ShowSongURL            bool                         `json:"showSongURL"`          // show the full song URL in the music log line (default OFF)
-	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
-	LastServerName         string                       `json:"lastServerName"`
-	LastServerURL          string                       `json:"lastServerURL"`
-	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
-	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
-	Export                 ExportOptions                `json:"export"`
-	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`              // the user's own transmitted sprite style (#103)
-	SavedStyles            []StylePreset                `json:"stylePresets,omitempty"`     // #126 saved style+colour+emote moods
-	HideSpriteStyles       bool                         `json:"hideSpriteStyles"`           // ignore others' transmitted styles (default OFF = show)
-	HideReactions          bool                         `json:"hideReactions"`              // ignore others' transmitted emoji reactions (#2) (default OFF = show)
-	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`         // #127 pre-grab a char's FULL sprite set on load (default OFF)
-	PingChip               bool                         `json:"pingChip"`                   // #128 show the connection-quality chip (default OFF)
-	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`           // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
-	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
-	WSOrigin               string                       `json:"wsOrigin,omitempty"`         // power-user: Origin header sent on the WebSocket HANDSHAKE (servers that allowlist their own web client's origin); empty = none
-	AssetCharCase          uint8                        `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
-	ProxyModeVal           int                          `json:"proxyMode"`                  // Network: 0 = use the machine's setting (default), 1 = never proxy, 2 = the URL below. NOT omitempty — 0 is the default, but an explicit 0 written by a user who switched back must persist.
-	ProxyURL               string                       `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy, used only in mode 2.
-	PanelFontsVal          map[string]PanelFont         `json:"panelFonts,omitempty"`       // per-panel font/size the USER picked, keyed by the AO2 element identifier ("ic_chatlog"), which beats whatever the theme asked for
-	FontWarnThemes         []string                     `json:"fontWarnThemes,omitempty"`   // themes already warned about for missing fonts — the warning is once per theme, and it has to survive a restart or it is once per LAUNCH Empty in every other mode.
-	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
-	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
-	PrefetchAggro          int                          `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
-	VoicePTTKey            string                       `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
-	QuitConfirmSkip        bool                         `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
-	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
-	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default OFF since v1.87.0 — OOC gets its own box.
-	MyProfile              ProfilePref                  `json:"profile"`                    // the user's character profile (#101)
-	ChatboxOpacity         int                          `json:"chatboxOpacity"`
-	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
-	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
-	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
-	RainbowPerChar         bool                         `json:"rainbowPerChar"`
-	SpriteWobble           bool                         `json:"spriteWobble"`
-	SpriteSpin             bool                         `json:"spriteSpin"`
-	SpriteSolidTint        bool                         `json:"spriteSolidTint"`
-	SpriteTintColor        int                          `json:"spriteTintColor"`
-	ShoutPunch             bool                         `json:"shoutPunch"`
-	ChatboxTint            bool                         `json:"chatboxTint"`
-	PostVignette           bool                         `json:"postVignette"`
-	PostScanlines          bool                         `json:"postScanlines"`
-	PostGrain              bool                         `json:"postGrain"`
-	PostCRT                bool                         `json:"postCRT"`
-	AnimateEntrances       bool                         `json:"animateEntrances"`
-	DepthOfField           bool                         `json:"depthOfField"`
-	Spotlight              bool                         `json:"spotlight"`         // #121 dim non-speakers (default OFF)
-	SpotlightStrength      int                          `json:"spotlightStrength"` // dim intensity [10,90], 0 = unset → default
-	IdleBreath             bool                         `json:"idleBreath"`        // #122 idle breathing (default OFF)
-	BreathNoBob            bool                         `json:"breathNoBob"`       // inverted: false = bob component ON (default)
-	BreathNoScale          bool                         `json:"breathNoScale"`     // inverted: false = scale component ON (default)
-	BreathAmount           int                          `json:"breathAmp"`         // amplitude [1,100], 0 = unset → default
-	BreathRate             int                          `json:"breathSpeed"`       // speed [1,100], 0 = unset → default
-	Reflection             bool                         `json:"reflection"`        // #123 glass-floor reflection (default OFF)
-	ReflectOpacity         int                          `json:"reflectStrength"`   // opacity [0,100], 0 = unset → default
-	WeatherKind            int                          `json:"weatherType"`       // #124 ambient weather (0 = None/off)
-	WeatherDensity         int                          `json:"weatherIntensity"`  // intensity [1,100], 0 = unset → default
-	StageFrameKind         int                          `json:"stageFrame"`        // #56 decorative viewport frame (0 = Off)
-	FriendNotify           bool                         `json:"friendNotify"`
-	FriendOSToast          bool                         `json:"friendOSToast"`
-	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
-	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
-	FriendSound            bool                         `json:"friendSound"`
-	FriendSoundFile        string                       `json:"friendSoundFile"`
-	ModBanSFX              bool                         `json:"modBanSFX"`
-	ModKickSFX             bool                         `json:"modKickSFX"`
-	ModMuteSFX             bool                         `json:"modMuteSFX"`
-	ModBanSoundFile        string                       `json:"modBanSoundFile"`
-	ModKickSoundFile       string                       `json:"modKickSoundFile"`
-	ModMuteSoundFile       string                       `json:"modMuteSoundFile"`
-	ModcallToast           bool                         `json:"modcallToast"`
-	CallwordSoundFile      string                       `json:"callwordSoundFile"`
-	DebugOverlay           bool                         `json:"debugOverlay"`
-	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
-	ThemeLayoutOn          bool                         `json:"themeLayout"`
-	ThemeFit               int                          `json:"themeFit"`
-	ThemeFitZoom           int                          `json:"themeFitZoom"`
-	ThemeFitPanX           int                          `json:"themeFitPanX"`
-	ThemeFitPanY           int                          `json:"themeFitPanY"`
-	PlainLobby             bool                         `json:"plainLobby"`
-	ThemeFonts             bool                         `json:"themeFonts"` // per-element courtroom_fonts.ini families/sizes/bold (#39); default ON
-	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
-	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
-	CatchUpThreshold       int                          `json:"catchUpThreshold"`
-	MultiTabCap            int                          `json:"multiTabCap"`
-	RestoreTabs            bool                         `json:"restoreTabs"`
-	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
-	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
-	SpriteLoadModeVal      int                          `json:"spriteLoadMode"`                 // cold-load sprite behaviour: 0 blank, 1 hold-previous (default), 2 wait (see SpriteLoad*). NOT omitempty: an explicit Blank(0) must persist, not read back as "absent → default".
-	SpriteWaitMsVal        int                          `json:"spriteWaitMs,omitempty"`         // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
-	SpriteWaitPair         bool                         `json:"spriteWaitPair,omitempty"`       // wait mode also gates on the PAIR partner's idle sprite (default OFF)
-	SpriteWaitPreanim      bool                         `json:"spriteWaitPreanim,omitempty"`    // wait mode also gates on the message's PREANIM (default OFF)
-	HoldPrevMaxAgeMsVal    int                          `json:"holdPrevMaxAgeMs,omitempty"`     // hold-previous stand-in cap in ms (0/absent = bridge forever)
-	HoldDebugTint          bool                         `json:"holdDebugTint,omitempty"`        // amber-tint stand-in sprites (power-user diagnostics, default OFF)
-	ShoutDurationMsVal     int                          `json:"shoutDurationMs,omitempty"`      // shout-bubble hold in ms (0/absent = the canonical default)
-	PreanimTimeoutMsVal    int                          `json:"preanimTimeoutMs,omitempty"`     // preanim wait cap in ms (0/absent = the canonical default)
-	ICQueueCapVal          int                          `json:"icQueueCap,omitempty"`           // IC backlog queue depth (0/absent = the canonical default 64)
-	CatchUpLingerMsVal     int                          `json:"catchUpLingerMs,omitempty"`      // per-message linger while catching up, ms (default 0 = one per frame)
-	ThumbCache             bool                         `json:"thumbCache,omitempty"`           // opt-in persistent low-q sprite thumbnail cache (default OFF)
-	ThumbHeightPxVal       int                          `json:"thumbHeightPx,omitempty"`        // thumbnail height px (0/absent = 64)
-	ThumbQualityVal        int                          `json:"thumbQuality,omitempty"`         // thumbnail webp quality (0/absent = 20)
-	ThumbBudgetMiBVal      int                          `json:"thumbBudgetMiB,omitempty"`       // thumbnail store byte budget, MiB (0/absent = 64; auto-prunes oldest)
-	DiskCacheBudgetMiBVal  int                          `json:"diskCacheBudgetMiB,omitempty"`   // T3 disk-cache auto-prune cap, MiB (0/absent = UNLIMITED, the default — never silently deletes)
-	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
-	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
-	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = ∞/vsync default; -1 = uncapped; positive = a cap)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = off default; -1 = uncapped; -2 = never redraw when idle)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 5 default; -1 = uncapped; -2 = never redraw when unfocused)
-	InputGraceFramesVal    int                          `json:"inputGraceFrames,omitempty"`     // full-rate hold after a click/key, in frames (0/absent = default 1)
-	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
-	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
-	MotionRedrawPerEvent   bool                         `json:"motionRedrawPerEvent"`           // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default ON (v1.55.1). NOT omitempty: an explicit OFF must persist, not read back as "absent → default ON".
-	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
-	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
-	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
-	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
-	MusicFlagsVal          int                          `json:"musicFlags"`                     // AO2 MUSIC_EFFECT bitmask sent with a track play (see MusicEffect*). NOT omitempty: 0 ("no effects") is a real choice and must persist, not read back as "absent → the FADE_OUT default".
-	OpenTabs               []OpenTab                    `json:"openTabs"`
-	ReduceMotionOn         bool                         `json:"reduceMotion"`
-	DisableEffects         bool                         `json:"disableEffects"`       // master off-switch for every visual extra; default OFF (zero value)
-	FontCensus             bool                         `json:"fontCensus"`           // index the machine's own fonts for scripts the bundled chain lacks; default ON
-	ScreenEffects          bool                         `json:"screenEffects"`        // AO2 \s/\f + field shake/flash; default ON
-	WordDelete             bool                         `json:"wordDelete"`           // Ctrl+Backspace deletes a word in any text field; default ON
-	RecordingsKeepAssets   bool                         `json:"recordingsKeepAssets"` // an in-app .aorec recording auto-packages its warm assets into a self-contained bundle on stop; default ON
-	AdditiveText           bool                         `json:"additiveText"`         // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
-	MusicDuckingOn         bool                         `json:"musicDucking"`
-	PerAreaScroll          bool                         `json:"perAreaScrollback"`
-	DetailedLog            bool                         `json:"detailedLog"`
-	AutoClipModcall        bool                         `json:"autoClipModcall"`
-	GroupChatButton        bool                         `json:"groupChatButton"`
-	CharChatbox            bool                         `json:"charChatbox"` // per-character chatbox skins (default ON)
-	FontOverridePaths      string                       `json:"fontPaths"`
-	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
-	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
+	SpriteScalingMigrated    bool                 `json:"spriteScalingMigrated"`
+	UpdateCheck              bool                 `json:"updateCheck"`
+	UpdateExperimental       bool                 `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
+	HighlightColor           int                  `json:"highlightColor"`
+	ICCustomColor            int                  `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
+	NameColors               bool                 `json:"nameColors"`
+	NameSat                  int                  `json:"nameColorSat"`
+	NameVal                  int                  `json:"nameColorVal"`
+	BgSlideshow              bool                 `json:"bgSlideshow"`
+	BgSlideshowSecs          int                  `json:"bgSlideshowSecs"`
+	DownloadKBps             int                  `json:"downloadKBps"`
+	ForceCharNames           bool                 `json:"forceCharNames"`
+	RandomEmote              bool                 `json:"randomEmote"`
+	FriendHighlight          bool                 `json:"friendHighlight"`
+	ShowFriendButton         bool                 `json:"showFriendButton"`
+	ClipSpritesToStage       bool                 `json:"clipSpritesToStage"` // clip character sprites to the stage so an offset can't spill over the chatbox/log (default ON)
+	RightClickHideSprite     bool                 `json:"rightClickHideSprite"`
+	DragLayout               bool                 `json:"dragLayout"`
+	FollowEnabled            bool                 `json:"followEnabled"`
+	ShowPairStatus           bool                 `json:"showPairStatus"`
+	PlayerListSort           int                  `json:"playerListSort"`     // remembered Players-tab player sort
+	PlayerListAreaSort       int                  `json:"playerListAreaSort"` // remembered Players-tab /gas area-group order
+	DyslexiaFont             bool                 `json:"dyslexiaFont"`
+	FontEverywhere           bool                 `json:"fontEverywhere"` // active font override also drives the chrome (whole UI), not just chat/log
+	DNDPersist               bool                 `json:"dndPersist"`
+	DNDSaved                 bool                 `json:"dndSaved"`
+	RainbowMessages          bool                 `json:"rainbowMessages"`
+	RandomMessageColor       bool                 `json:"randomMessageColor"`
+	RainbowSprites           bool                 `json:"rainbowSprites"`
+	ShowRecordButton         bool                 `json:"showRecordButton"`
+	InstantDisconnect        bool                 `json:"instantDisconnect"`
+	HideDesk                 bool                 `json:"hideDesk"`
+	FavEmoteBox              bool                 `json:"favEmoteBox"`          // floating box of starred emotes (default OFF)
+	InstantReplay            bool                 `json:"instantReplay"`        // always-on rolling clip buffer (default OFF)
+	InstantReplaySeconds     int                  `json:"instantReplaySeconds"` // clip capture window; 0 = default
+	TimerSeconds             int                  `json:"timerSeconds"`         // local alarm/timer remembered duration; 0 = default (#97)
+	TimerRepeat              bool                 `json:"timerRepeat"`          // local alarm/timer auto-restart (default OFF) (#97)
+	NotifyOnOOC              bool                 `json:"notifyOnOOC"`          // OOC bumps the unread tab badge (default OFF = IC only)
+	ShowSongURL              bool                 `json:"showSongURL"`          // show the full song URL in the music log line (default OFF)
+	AutoConnectOnLaunch      bool                 `json:"autoConnectOnLaunch"`
+	LastServerName           string               `json:"lastServerName"`
+	LastServerURL            string               `json:"lastServerURL"`
+	RainbowSpriteSpeed       int                  `json:"rainbowSpriteSpeed"`
+	ReplayPlaybackSpeed      int                  `json:"replaySpeed"`
+	Export                   ExportOptions        `json:"export"`
+	MySpriteStyle            SpriteStylePref      `json:"mySpriteStyle"`              // the user's own transmitted sprite style (#103)
+	SavedStyles              []StylePreset        `json:"stylePresets,omitempty"`     // #126 saved style+colour+emote moods
+	HideSpriteStyles         bool                 `json:"hideSpriteStyles"`           // ignore others' transmitted styles (default OFF = show)
+	HideReactions            bool                 `json:"hideReactions"`              // ignore others' transmitted emoji reactions (#2) (default OFF = show)
+	CharBundlePrefetch       bool                 `json:"charBundlePrefetch"`         // #127 pre-grab a char's FULL sprite set on load (default OFF)
+	PingChip                 bool                 `json:"pingChip"`                   // #128 show the connection-quality chip (default OFF)
+	ValidateTLSCerts         bool                 `json:"validateTLSCerts"`           // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
+	AssetOrigin              string               `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
+	WSOrigin                 string               `json:"wsOrigin,omitempty"`         // power-user: Origin header sent on the WebSocket HANDSHAKE (servers that allowlist their own web client's origin); empty = none
+	AssetCharCase            uint8                `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
+	ProxyModeVal             int                  `json:"proxyMode"`                  // Network: 0 = use the machine's setting (default), 1 = never proxy, 2 = the URL below. NOT omitempty — 0 is the default, but an explicit 0 written by a user who switched back must persist.
+	ProxyURL                 string               `json:"proxyUrl,omitempty"`         // Network: the operator's own proxy, used only in mode 2.
+	PanelFontsVal            map[string]PanelFont `json:"panelFonts,omitempty"`       // per-panel font/size the USER picked, keyed by the AO2 element identifier ("ic_chatlog"), which beats whatever the theme asked for
+	FontWarnThemes           []string             `json:"fontWarnThemes,omitempty"`   // themes already warned about for missing fonts — the warning is once per theme, and it has to survive a restart or it is once per LAUNCH Empty in every other mode.
+	VoiceInputDevice         string               `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
+	VoiceOutVolume           int                  `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
+	PrefetchAggro            int                  `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
+	VoicePTTKey              string               `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
+	QuitConfirmSkip          bool                 `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
+	LegacyDevTheme           bool                 `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
+	OOCInLogTab              bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default OFF since v1.87.0 — OOC gets its own box.
+	MyProfile                ProfilePref          `json:"profile"`                    // the user's character profile (#101)
+	ChatboxOpacity           int                  `json:"chatboxOpacity"`
+	RainbowSpriteVividness   int                  `json:"rainbowSpriteVividness"`
+	RainbowSpriteGlow        bool                 `json:"rainbowSpriteGlow"`
+	RainbowPairDesync        bool                 `json:"rainbowPairDesync"`
+	RainbowPerChar           bool                 `json:"rainbowPerChar"`
+	SpriteWobble             bool                 `json:"spriteWobble"`
+	SpriteSpin               bool                 `json:"spriteSpin"`
+	SpriteSolidTint          bool                 `json:"spriteSolidTint"`
+	SpriteTintColor          int                  `json:"spriteTintColor"`
+	ShoutPunch               bool                 `json:"shoutPunch"`
+	ChatboxTint              bool                 `json:"chatboxTint"`
+	PostVignette             bool                 `json:"postVignette"`
+	PostScanlines            bool                 `json:"postScanlines"`
+	PostGrain                bool                 `json:"postGrain"`
+	PostCRT                  bool                 `json:"postCRT"`
+	AnimateEntrances         bool                 `json:"animateEntrances"`
+	DepthOfField             bool                 `json:"depthOfField"`
+	Spotlight                bool                 `json:"spotlight"`         // #121 dim non-speakers (default OFF)
+	SpotlightStrength        int                  `json:"spotlightStrength"` // dim intensity [10,90], 0 = unset → default
+	IdleBreath               bool                 `json:"idleBreath"`        // #122 idle breathing (default OFF)
+	BreathNoBob              bool                 `json:"breathNoBob"`       // inverted: false = bob component ON (default)
+	BreathNoScale            bool                 `json:"breathNoScale"`     // inverted: false = scale component ON (default)
+	BreathAmount             int                  `json:"breathAmp"`         // amplitude [1,100], 0 = unset → default
+	BreathRate               int                  `json:"breathSpeed"`       // speed [1,100], 0 = unset → default
+	Reflection               bool                 `json:"reflection"`        // #123 glass-floor reflection (default OFF)
+	ReflectOpacity           int                  `json:"reflectStrength"`   // opacity [0,100], 0 = unset → default
+	WeatherKind              int                  `json:"weatherType"`       // #124 ambient weather (0 = None/off)
+	WeatherDensity           int                  `json:"weatherIntensity"`  // intensity [1,100], 0 = unset → default
+	StageFrameKind           int                  `json:"stageFrame"`        // #56 decorative viewport frame (0 = Off)
+	FriendNotify             bool                 `json:"friendNotify"`
+	FriendOSToast            bool                 `json:"friendOSToast"`
+	CallwordOSToast          bool                 `json:"callwordOSToast"` // #M4 desktop toast on callword
+	FriendGlowPulse          bool                 `json:"friendGlowPulse"`
+	FriendSound              bool                 `json:"friendSound"`
+	FriendSoundFile          string               `json:"friendSoundFile"`
+	ModBanSFX                bool                 `json:"modBanSFX"`
+	ModKickSFX               bool                 `json:"modKickSFX"`
+	ModMuteSFX               bool                 `json:"modMuteSFX"`
+	ModBanSoundFile          string               `json:"modBanSoundFile"`
+	ModKickSoundFile         string               `json:"modKickSoundFile"`
+	ModMuteSoundFile         string               `json:"modMuteSoundFile"`
+	ModcallToast             bool                 `json:"modcallToast"`
+	CallwordSoundFile        string               `json:"callwordSoundFile"`
+	DebugOverlay             bool                 `json:"debugOverlay"`
+	AutoDetectFormats        bool                 `json:"formatAutoDetect"`
+	ThemeLayoutOn            bool                 `json:"themeLayout"`
+	ThemeFit                 int                  `json:"themeFit"`
+	ThemeFitZoom             int                  `json:"themeFitZoom"`
+	ThemeFitPanX             int                  `json:"themeFitPanX"`
+	ThemeFitPanY             int                  `json:"themeFitPanY"`
+	PlainLobby               bool                 `json:"plainLobby"`
+	ThemeFonts               bool                 `json:"themeFonts"` // per-element courtroom_fonts.ini families/sizes/bold (#39); default ON
+	UIScaleAutoOn            bool                 `json:"uiScaleAuto"`
+	CatchUpOn                bool                 `json:"catchUpWhenBehind"`
+	CatchUpThreshold         int                  `json:"catchUpThreshold"`
+	MultiTabCap              int                  `json:"multiTabCap"`
+	RestoreTabs              bool                 `json:"restoreTabs"`
+	VolStripOn               bool                 `json:"volStripOn"`                      // on-screen volume strip toggle (default OFF)
+	ChangelogSeen            string               `json:"changelogSeenVersion,omitempty"`  // last What's New version opened (#23 unread dot)
+	SpriteLoadModeVal        int                  `json:"spriteLoadMode"`                  // cold-load sprite behaviour: 0 blank, 1 hold-previous (default), 2 wait (see SpriteLoad*). NOT omitempty: an explicit Blank(0) must persist, not read back as "absent → default".
+	SpriteWaitMsVal          int                  `json:"spriteWaitMs,omitempty"`          // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
+	SpriteWaitPair           bool                 `json:"spriteWaitPair,omitempty"`        // wait mode also gates on the PAIR partner's idle sprite (default OFF)
+	SpriteWaitPreanim        bool                 `json:"spriteWaitPreanim,omitempty"`     // wait mode also gates on the message's PREANIM (default OFF)
+	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
+	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
+	ShoutDurationMsVal       int                  `json:"shoutDurationMs,omitempty"`       // shout-bubble hold in ms (0/absent = the canonical default)
+	PreanimTimeoutMsVal      int                  `json:"preanimTimeoutMs,omitempty"`      // preanim wait cap in ms (0/absent = the canonical default)
+	ICQueueCapVal            int                  `json:"icQueueCap,omitempty"`            // IC backlog queue depth (0/absent = the canonical default 64)
+	CatchUpLingerMsVal       int                  `json:"catchUpLingerMs,omitempty"`       // per-message linger while catching up, ms (default 0 = one per frame)
+	ThumbCache               bool                 `json:"thumbCache,omitempty"`            // opt-in persistent low-q sprite thumbnail cache (default OFF)
+	ThumbHeightPxVal         int                  `json:"thumbHeightPx,omitempty"`         // thumbnail height px (0/absent = 64)
+	ThumbQualityVal          int                  `json:"thumbQuality,omitempty"`          // thumbnail webp quality (0/absent = 20)
+	ThumbBudgetMiBVal        int                  `json:"thumbBudgetMiB,omitempty"`        // thumbnail store byte budget, MiB (0/absent = 64; auto-prunes oldest)
+	DiskCacheBudgetMiBVal    int                  `json:"diskCacheBudgetMiB,omitempty"`    // T3 disk-cache auto-prune cap, MiB (0/absent = UNLIMITED, the default — never silently deletes)
+	NotFoundTTLSecVal        int                  `json:"notFoundTTLSec,omitempty"`        // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
+	AdaptiveLatMultipleVal   int                  `json:"adaptiveLatMultiple,omitempty"`   // per-host deadline = N × TTFB EWMA (0/absent = 8)
+	SpriteDownscaleOff       bool                 `json:"spriteDownscaleOff,omitempty"`    // disable the automatic decode downscale entirely (default OFF = downscale on)
+	FPSCapVal                int                  `json:"fpsCap,omitempty"`                // foreground frame cap (0/absent = ∞/vsync default; -1 = uncapped; positive = a cap)
+	IdleFPSVal               int                  `json:"idleFps,omitempty"`               // idle frame rate (0/absent = off default; -1 = uncapped; -2 = never redraw when idle)
+	UnfocusedFPSVal          int                  `json:"unfocusedFps,omitempty"`          // unfocused-window frame rate (0/absent = 5 default; -1 = uncapped; -2 = never redraw when unfocused)
+	InputGraceFramesVal      int                  `json:"inputGraceFrames,omitempty"`      // full-rate hold after a click/key, in frames (0/absent = default 1)
+	EventDrivenLoop          bool                 `json:"eventDrivenLoop"`                 // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
+	DisableFrameLimiter      bool                 `json:"disableFrameLimiter,omitempty"`   // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
+	MotionRedrawPerEvent     bool                 `json:"motionRedrawPerEvent"`            // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default ON (v1.55.1). NOT omitempty: an explicit OFF must persist, not read back as "absent → default ON".
+	SpriteDownscalePctVal    int                  `json:"spriteDownscalePct,omitempty"`    // decode downscale target as % of display height (0/absent = 100)
+	AnimatedSpriteCapPxVal   int                  `json:"animatedSpriteCapPx,omitempty"`   // opt-in animated-only height cap in px (0/absent = off)
+	TexBudgetMiBVal          int                  `json:"texBudgetMiB,omitempty"`          // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
+	AnimatedBudgetMiBVal     int                  `json:"animatedBudgetMiB,omitempty"`     // per-animated-asset decode budget, MiB (0/absent = 500); LIVE
+	AnimDecodeConcurrencyVal int                  `json:"animDecodeConcurrency,omitempty"` // concurrent animated decodes (0/absent = 2); LIVE
+	TexCompressionVal        int                  `json:"texCompression,omitempty"`        // texture compression (0=off,1=DXT5,2=DXT1); RESTART
+
+	CrossfadeMsVal       int                          `json:"crossfadeMs,omitempty"`  // speaker-swap crossfade duration ms (0/absent = off)
+	MusicVolMode         bool                         `json:"musicVolMode,omitempty"` // Music menu shows the volume sliders instead of the track list (persisted)
+	MusicFlagsVal        int                          `json:"musicFlags"`             // AO2 MUSIC_EFFECT bitmask sent with a track play (see MusicEffect*). NOT omitempty: 0 ("no effects") is a real choice and must persist, not read back as "absent → the FADE_OUT default".
+	OpenTabs             []OpenTab                    `json:"openTabs"`
+	ReduceMotionOn       bool                         `json:"reduceMotion"`
+	DisableEffects       bool                         `json:"disableEffects"`       // master off-switch for every visual extra; default OFF (zero value)
+	FontCensus           bool                         `json:"fontCensus"`           // index the machine's own fonts for scripts the bundled chain lacks; default ON
+	ScreenEffects        bool                         `json:"screenEffects"`        // AO2 \s/\f + field shake/flash; default ON
+	WordDelete           bool                         `json:"wordDelete"`           // Ctrl+Backspace deletes a word in any text field; default ON
+	RecordingsKeepAssets bool                         `json:"recordingsKeepAssets"` // an in-app .aorec recording auto-packages its warm assets into a self-contained bundle on stop; default ON
+	AdditiveText         bool                         `json:"additiveText"`         // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
+	MusicDuckingOn       bool                         `json:"musicDucking"`
+	PerAreaScroll        bool                         `json:"perAreaScrollback"`
+	DetailedLog          bool                         `json:"detailedLog"`
+	AutoClipModcall      bool                         `json:"autoClipModcall"`
+	GroupChatButton      bool                         `json:"groupChatButton"`
+	CharChatbox          bool                         `json:"charChatbox"` // per-character chatbox skins (default ON)
+	FontOverridePaths    string                       `json:"fontPaths"`
+	UserMacros           []MacroSpec                  `json:"macros,omitempty"`
+	ThemeRectOv          map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
 	// ThemeRectRotations holds per-theme, per-widget ROTATION angles for
 	// texture-backed themed chrome (A4 — the cheap-tier rotation revamp). Keyed
 	// theme → widget key → angle byte (the 360/256 encoding shared with
@@ -1732,24 +1737,30 @@ type prefsJSON struct {
 	DisableFrameLimiter    bool                 `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
 	MotionRedrawPerEvent   *bool                `json:"motionRedrawPerEvent"` // per-event motion redraw (default ON as of v1.55.1; pointer: absent → the default, distinct from an explicit OFF)
 	SpriteDownscalePct     int                  `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
+	AnimatedSpriteCapPx    int                  `json:"animatedSpriteCapPx"`  // animated-only height cap px (0 = off)
 	TexBudgetMiB           int                  `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
-	CrossfadeMs            int                  `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
-	MusicVolMode           bool                 `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
-	MusicFlags             *int                 `json:"musicFlags"`           // AO2 MUSIC_EFFECT bitmask; absent = DefaultMusicFlags (pointer: an explicit 0 "no effects" must persist)
-	OpenTabs               []OpenTab            `json:"openTabs"`             // remembered tabs for restore-on-launch
-	ReduceMotion           bool                 `json:"reduceMotion"`         // default OFF (zero value)
-	DisableEffects         bool                 `json:"disableEffects"`       // default OFF (zero value) — master visual-effects off-switch
-	ScreenEffects          *bool                `json:"screenEffects"`        // absent = default ON
-	FontCensus             *bool                `json:"fontCensus"`           // absent = default ON (pointer: an explicit OFF must persist)
-	WordDelete             *bool                `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
-	RecordingsKeepAssets   *bool                `json:"recordingsKeepAssets"` // absent = default ON (pointer: an explicit OFF must persist)
-	AdditiveText           *bool                `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
-	MusicDucking           bool                 `json:"musicDucking"`         // default OFF (zero value)
-	PerAreaScrollback      bool                 `json:"perAreaScrollback"`    // default OFF (zero value)
-	DetailedLog            *bool                `json:"detailedLog"`          // absent = default ON (a POINTER since the OFF→ON flip: a hand-trimmed stamped file must not read absent as a deliberate OFF)
-	AutoClipModcall        *bool                `json:"autoClipModcall"`      // default ON (pointer: absent != off)
-	GroupChatButton        *bool                `json:"groupChatButton"`      // default ON (pointer: absent != off)
-	CharChatbox            *bool                `json:"charChatbox"`          // default ON (pointer: absent != off)
+	TexCompression         int                  `json:"texCompression"`       // texture compression (0 = off, 1 = DXT5, 2 = DXT1)
+
+	AnimatedBudgetMiB     int `json:"animatedBudgetMiB"`     // per-animated-asset decode budget, MiB (0 = 500)
+	AnimDecodeConcurrency int `json:"animDecodeConcurrency"` // concurrent animated decodes (0 = 2)
+
+	CrossfadeMs          int       `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
+	MusicVolMode         bool      `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
+	MusicFlags           *int      `json:"musicFlags"`           // AO2 MUSIC_EFFECT bitmask; absent = DefaultMusicFlags (pointer: an explicit 0 "no effects" must persist)
+	OpenTabs             []OpenTab `json:"openTabs"`             // remembered tabs for restore-on-launch
+	ReduceMotion         bool      `json:"reduceMotion"`         // default OFF (zero value)
+	DisableEffects       bool      `json:"disableEffects"`       // default OFF (zero value) — master visual-effects off-switch
+	ScreenEffects        *bool     `json:"screenEffects"`        // absent = default ON
+	FontCensus           *bool     `json:"fontCensus"`           // absent = default ON (pointer: an explicit OFF must persist)
+	WordDelete           *bool     `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
+	RecordingsKeepAssets *bool     `json:"recordingsKeepAssets"` // absent = default ON (pointer: an explicit OFF must persist)
+	AdditiveText         *bool     `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
+	MusicDucking         bool      `json:"musicDucking"`         // default OFF (zero value)
+	PerAreaScrollback    bool      `json:"perAreaScrollback"`    // default OFF (zero value)
+	DetailedLog          *bool     `json:"detailedLog"`          // absent = default ON (a POINTER since the OFF→ON flip: a hand-trimmed stamped file must not read absent as a deliberate OFF)
+	AutoClipModcall      *bool     `json:"autoClipModcall"`      // default ON (pointer: absent != off)
+	GroupChatButton      *bool     `json:"groupChatButton"`      // default ON (pointer: absent != off)
+	CharChatbox          *bool     `json:"charChatbox"`          // default ON (pointer: absent != off)
 
 	FontPaths          string                           `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                      `json:"macros"`
@@ -2768,6 +2779,12 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteDownscalePctVal != 0 {
 		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
+	p.AnimatedSpriteCapPxVal = onDisk.AnimatedSpriteCapPx
+	if p.AnimatedSpriteCapPxVal < AnimatedSpriteCapMinPx {
+		p.AnimatedSpriteCapPxVal = 0 // below the floor = off, not a forced 240 px cap
+	} else if p.AnimatedSpriteCapPxVal > AnimatedSpriteCapMaxPx {
+		p.AnimatedSpriteCapPxVal = AnimatedSpriteCapMaxPx
+	}
 	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
 	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
 	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
@@ -2788,6 +2805,21 @@ func load(path string) (*AssetPreferences, error) {
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
 	}
+	p.AnimatedBudgetMiBVal = onDisk.AnimatedBudgetMiB
+	if p.AnimatedBudgetMiBVal != 0 {
+		p.AnimatedBudgetMiBVal = clampPercent(p.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
+	}
+	p.AnimDecodeConcurrencyVal = onDisk.AnimDecodeConcurrency
+	if p.AnimDecodeConcurrencyVal != 0 {
+		p.AnimDecodeConcurrencyVal = clampPercent(p.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
+	}
+	p.TexCompressionVal = onDisk.TexCompression
+	switch p.TexCompressionVal {
+	case TexCompressOff, TexCompressDXT5, TexCompressDXT1:
+	default:
+		p.TexCompressionVal = 0 // absent/out-of-range -> the shipped default (DXT5)
+	}
+
 	p.CrossfadeMsVal = onDisk.CrossfadeMs
 	if p.CrossfadeMsVal != 0 {
 		p.CrossfadeMsVal = clampPercent(p.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
@@ -7858,6 +7890,13 @@ const (
 	SpriteDownscaleMinPct = 50
 	SpriteDownscaleMaxPct = 200
 
+	// Animated-only height cap (px): an OPTIONAL, default-off memory knob that
+	// downscales ANIMATED sprites harder than stills, so a long full-canvas
+	// preanim costs less VRAM. 0 = off (animated sprites use the still cap);
+	// anything below the floor snaps back to off.
+	AnimatedSpriteCapMinPx = 240
+	AnimatedSpriteCapMaxPx = 2160
+
 	// T1 texture byte budget, MiB. RESTART-applied. ⚠ T1 + T2 (128 MiB) live
 	// inside the 256 MiB memory budget. The default (64) and everything up to
 	// TexBudgetSafeMaxMiB keep the WHOLE client under budget; the max is raised
@@ -7871,6 +7910,33 @@ const (
 	// TexBudgetSafeMaxMiB is the largest budget that still fits the 256 MiB
 	// memory target; the Settings row marks everything above it experimental.
 	TexBudgetSafeMaxMiB = 128
+
+	// Per-animated-asset decode budget, MiB (the #110 downscale-to-fit budget).
+	// LIVE-applied: the decoder reads it atomically, so changing it reshapes NEW
+	// animated decodes without a restart. 128 = the shipped default (downscales
+	// very large clips to fit; lower = softer, far less RAM). The oversized GPU
+	// overflow cap stays large enough to hold many compressed clips resident.
+	AnimatedBudgetDefaultMiB = 128
+	AnimatedBudgetMinMiB     = 64
+	AnimatedBudgetMaxMiB     = 512
+
+	// Concurrent animated decodes: how many long clips may decode at once. The
+	// per-frame decoded RGBA of a full clip is the RAM spike, so this gates the
+	// decode burst. 1 = slowest loads, least RAM; higher = faster, more RAM.
+	AnimDecodeConcurrencyDefault = 2
+	AnimDecodeConcurrencyMin     = 1
+	AnimDecodeConcurrencyMax     = 8
+
+	// Texture compression (restart-applied): how decoded frames are stored on
+	// the GPU. Off = raw RGBA (32 bpp, lossless); DXT5 = BC3 (8 bpp, smooth
+	// alpha, ~4x smaller); DXT1 = BC1 (4 bpp, 1-bit alpha, ~8x smaller). Lossy
+	// (4x4 blocks); applies only to canvases whose width/height are multiples of
+	// 4 and only when the renderer advertises the format.
+	// Stored value 0 = absent (omitempty) -> the shipped default (DXT5). The
+	// explicit modes are 1/2/3 so "Off" stays a real, selectable choice.
+	TexCompressOff  = 1
+	TexCompressDXT5 = 2
+	TexCompressDXT1 = 3
 
 	// Speaker-swap crossfade: the new sprite fades in over N ms (0 = off, the
 	// default hard swap). Suppressed by Reduce motion.
@@ -8286,6 +8352,34 @@ func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 	p.markDirty()
 }
 
+// AnimatedSpriteCap reports the opt-in animated-only height cap in px
+// (0 = off, the default: animated sprites use the still sprite cap).
+func (p *AssetPreferences) AnimatedSpriteCap() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AnimatedSpriteCapPxVal
+}
+
+// SetAnimatedSpriteCap persists the opt-in animated-only height cap (0 = off;
+// else clamped to [AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx]).
+func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
+	if px != 0 {
+		if px < AnimatedSpriteCapMinPx {
+			px = 0 // below the floor = off, not a forced floor value
+		} else {
+			px = clampPercent(px, AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx)
+		}
+	}
+	p.mu.Lock()
+	if p.AnimatedSpriteCapPxVal == px {
+		p.mu.Unlock()
+		return
+	}
+	p.AnimatedSpriteCapPxVal = px
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
 // when unset; applies on restart).
 func (p *AssetPreferences) TexBudgetMiB() int {
@@ -8308,6 +8402,88 @@ func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
 		return
 	}
 	p.TexBudgetMiBVal = mib
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
+// (AnimatedBudgetDefaultMiB when unset; LIVE-applied - new decodes pick it up).
+func (p *AssetPreferences) AnimatedBudgetMiB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.AnimatedBudgetMiBVal == 0 {
+		return AnimatedBudgetDefaultMiB
+	}
+	return p.AnimatedBudgetMiBVal
+}
+
+// SetAnimatedBudgetMiB persists the per-animated-asset decode budget
+// (0 = default; else clamped).
+func (p *AssetPreferences) SetAnimatedBudgetMiB(mib int) {
+	if mib != 0 {
+		mib = clampPercent(mib, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
+	}
+	p.mu.Lock()
+	if p.AnimatedBudgetMiBVal == mib {
+		p.mu.Unlock()
+		return
+	}
+	p.AnimatedBudgetMiBVal = mib
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AnimDecodeConcurrency reports the concurrent animated-decode bound
+// (AnimDecodeConcurrencyDefault when unset; LIVE-applied).
+func (p *AssetPreferences) AnimDecodeConcurrency() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.AnimDecodeConcurrencyVal == 0 {
+		return AnimDecodeConcurrencyDefault
+	}
+	return p.AnimDecodeConcurrencyVal
+}
+
+// SetAnimDecodeConcurrency persists the concurrent animated-decode bound
+// (0 = default; else clamped).
+func (p *AssetPreferences) SetAnimDecodeConcurrency(n int) {
+	if n != 0 {
+		n = clampPercent(n, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
+	}
+	p.mu.Lock()
+	if p.AnimDecodeConcurrencyVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.AnimDecodeConcurrencyVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// TexCompression reports the texture-compression mode (TexCompressOff /
+// TexCompressDXT5 / TexCompressDXT1; restart-applied).
+func (p *AssetPreferences) TexCompression() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.TexCompressionVal < TexCompressOff || p.TexCompressionVal > TexCompressDXT1 {
+		return TexCompressDXT5 // 0/absent -> the shipped default
+	}
+	return p.TexCompressionVal
+}
+
+// SetTexCompression persists the texture-compression mode (clamped to 0/1/2).
+func (p *AssetPreferences) SetTexCompression(mode int) {
+	switch mode {
+	case TexCompressOff, TexCompressDXT5, TexCompressDXT1:
+	default:
+		mode = TexCompressDXT5 // unknown -> the shipped default
+	}
+	p.mu.Lock()
+	if p.TexCompressionVal == mode {
+		p.mu.Unlock()
+		return
+	}
+	p.TexCompressionVal = mode
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -8563,7 +8739,12 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.AdaptiveLatMultipleVal = 0
 	p.SpriteDownscaleOff = false
 	p.SpriteDownscalePctVal = 0
+	p.AnimatedSpriteCapPxVal = 0
 	p.TexBudgetMiBVal = 0
+	p.AnimatedBudgetMiBVal = 0
+	p.AnimDecodeConcurrencyVal = 0
+	p.TexCompressionVal = 0
+
 	p.CrossfadeMsVal = 0
 	p.FPSCapVal = 0
 	p.IdleFPSVal = 0

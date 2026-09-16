@@ -372,6 +372,9 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 	// T1 — decoded textures (render side).
 	if a.d.Store != nil {
 		line("T1 decoded textures — "+memTierLine(a.d.Store.Stats()), ColText)
+		if ob := a.d.Store.OversizedBytes(); ob > 0 {
+			line(fmt.Sprintf("  oversized animations — %.1f MiB (full, above the T1 budget)", float64(ob)/(1<<20)), ColTierYellow)
+		}
 	}
 	// Speaker sprite animation diagnostic: kept/source frame count + delay
 	// stats, to answer "is this sprite decimated / are its delays even" (#110).

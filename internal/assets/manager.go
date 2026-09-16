@@ -457,6 +457,22 @@ func (m *Manager) SetAdaptiveLatencyMultiple(n int) {
 // (0 = no cap). Live-safe; applies to NEW decodes.
 func (m *Manager) SetSpriteCap(px int) { m.decoder.SetSpriteCap(px) }
 
+// SetAnimatedSpriteCap forwards the opt-in animated-only height cap to the
+// decoder pool (0 = off). Live-safe; applies to NEW decodes.
+func (m *Manager) SetAnimatedSpriteCap(px int) { m.decoder.SetAnimatedSpriteCap(px) }
+
+// SetAnimatedBudgetMiB forwards the live per-animated-asset decode budget (MiB)
+// to the decoder pool. New animated decodes pick it up immediately.
+func (m *Manager) SetAnimatedBudgetMiB(mib int) { m.decoder.SetAnimatedBudgetMiB(mib) }
+
+// SetAnimatedDecodeConcurrency forwards the live concurrent-animated-decode
+// bound to the decoder pool.
+func (m *Manager) SetAnimatedDecodeConcurrency(n int) { m.decoder.SetAnimatedDecodeConcurrency(n) }
+
+// SetTextureCompression forwards the texture-compression mode (CompressOff /
+// CompressDXT5 / CompressDXT1) to the decoder pool.
+func (m *Manager) SetTextureCompression(mode int) { m.decoder.SetTextureCompression(mode) }
+
 // ColdLoadStats reports the fetch (all-hosts TTFB) and decode (+fit) EWMAs for
 // the debug overlay's cold-load profiling line; the upload stage comes from the
 // render-side TextureStore. Zeroes until samples exist / in local mode.

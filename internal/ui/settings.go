@@ -32,7 +32,11 @@ type settingsState struct {
 	// fpsBufs backs the three frame-rate rows' exact-number entries (active,
 	// idle, unfocused) — reseeded from the pref while unfocused, applied on
 	// Enter (fpsSettingRow).
-	fpsBufs   [3]string
+	fpsBufs [3]string
+	// memBufs backs the exact-number fields of the memory/scale slider rows
+	// (downscale %, animated height cap, animated budget, decode concurrency,
+	// texture budget) - reseeded while unfocused, applied on Enter.
+	memBufs   [5]string
 	tab       int                    // active settings tab (index into settingsTabNames)
 	tabScroll [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 	search    string                 // settings search query (jumps to the matching tab)
@@ -1119,6 +1123,89 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		lbl = strconv.Itoa(cur) + " fps"
 	}
 	c.Label(ub.X+ub.W+10, y+4, lbl, ColTextDim)
+	return y + 26
+}
+
+// numSliderRow renders a labelled slider with -/+ nudge buttons and an
+// exact-value entry field (the power-user ask: nudge with arrows or type a
+// value). 0 is the off/default sentinel (the bottom of the track); the getter
+// maps it to the shipped default. buf backs the number field (settingsState),
+// reseeded from the pref while unfocused. Returns y past the row.
+func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, get func() int, set func(int), buf *string, suffix, tip string) int32 {
+	c := a.ctx
+	pad := a.formX
+	c.Label(pad, y+4, label, ColText)
+
+	cur := get()
+	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 110, H: 16}
+	raw := int(clampI32(c.Slider(id, track, int32(cur), int32(max)), 0, int32(max)))
+	nv := raw
+	if nv != 0 && nv < min {
+		nv = 0 // below the floor -> the off/default sentinel
+	}
+	c.Tooltip(track, tip)
+	if nv != cur {
+		set(nv)
+		cur = get()
+	}
+
+	minus := sdl.Rect{X: track.X + track.W + 6, Y: y, W: 20, H: btnH}
+	if c.Button(minus, "-") {
+		n := cur - step
+		if n < min {
+			n = 0 // below the floor -> the off/default sentinel
+		}
+		set(n)
+		cur = get()
+	}
+	c.Tooltip(minus, "Decrease by "+strconv.Itoa(step)+suffix)
+
+	plus := sdl.Rect{X: minus.X + minus.W + 4, Y: y, W: 20, H: btnH}
+	if c.Button(plus, "+") {
+		n := cur
+		if n == 0 {
+			n = min // sentinel -> the first real value
+		} else {
+			n += step
+			if n > max {
+				n = max
+			}
+		}
+		set(n)
+		cur = get()
+	}
+	c.Tooltip(plus, "Increase by "+strconv.Itoa(step)+suffix)
+
+	fieldID := id + "-num"
+	fr := sdl.Rect{X: plus.X + plus.W + 6, Y: y, W: 46, H: btnH}
+	if c.focusID != fieldID {
+		*buf = strconv.Itoa(cur)
+	}
+	var entered bool
+	*buf, entered = c.TextField(fieldID, fr, *buf, suffix)
+	if entered {
+		if n, err := strconv.Atoi(strings.TrimSpace(*buf)); err == nil {
+			if n < min {
+				n = 0 // below the floor -> the off/default sentinel
+			} else if n > max {
+				n = max
+			}
+			set(n)
+			cur = get()
+		}
+		c.focusID = "" // commit releases the field so it reseeds from the pref
+	}
+
+	var lbl string
+	switch {
+	case cur == 0:
+		lbl = "off"
+	case def > 0 && cur == def:
+		lbl = "default (" + strconv.Itoa(def) + suffix + ")"
+	default:
+		lbl = strconv.Itoa(cur) + suffix
+	}
+	c.Label(fr.X+fr.W+8, y+4, lbl, ColTextDim)
 	return y + 26
 }
 
@@ -3749,6 +3836,18 @@ func charCaseLabel(c uint8) string {
 	}
 }
 
+// texCompressLabel is the cycle-button label for the texture-compression mode.
+func texCompressLabel(mode int) string {
+	switch mode {
+	case config.TexCompressDXT5:
+		return "DXT5 (BC3) - ~4x smaller"
+	case config.TexCompressDXT1:
+		return "DXT1 (BC1) - ~8x smaller"
+	default:
+		return "Off (raw RGBA)"
+	}
+}
+
 // drawSettingsPowerUser is the advanced Settings card (its own left-sidebar tab): TLS validation,
 // the Asset Origin header, character-folder casing, and image-format tuning — options that can
 // BREAK connections or asset fetching if set wrong. The whole card hides behind a reveal button and
@@ -4234,49 +4333,40 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.applySpriteCap()
 	}
 	y += 24
-	c.Label(pad, y+4, "Downscale target:", ColText)
-	dsPct := a.d.Prefs.SpriteDownscalePct()
-	dtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nds := int(clampI32(c.Slider("downscalepct", dtrack, int32(dsPct), config.SpriteDownscaleMaxPct), 0, config.SpriteDownscaleMaxPct))
-	if nds != 0 && nds < config.SpriteDownscaleMinPct {
-		nds = 0 // bottom of the track = the default (100 % of the display height)
-	}
-	c.Tooltip(dtrack, "The decode-time downscale shrinks huge art toward your display height; this scales that target (50–200 %). Applies to NEWLY loaded art.")
-	dsLabel := "default (100% of display)"
-	if nds != 0 {
-		dsLabel = strconv.Itoa(nds) + "%"
-	}
-	c.Label(pad+210+226, y+4, dsLabel, ColTextDim)
-	if nds != dsPct {
-		a.d.Prefs.SetSpriteDownscalePct(nds)
-		a.applySpriteCap()
-	}
-	y += 26
+	y = a.numSliderRow(y, "downscalepct", "Downscale target:", config.SpriteDownscaleMinPct, config.SpriteDownscaleMaxPct, 5, 100, a.d.Prefs.SpriteDownscalePct, func(n int) { a.d.Prefs.SetSpriteDownscalePct(n); a.applySpriteCap() }, &settings.memBufs[0], "%", "The decode-time downscale shrinks huge art toward your display height; this scales that target (50-200%). Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
 	y += 8
-	c.Label(pad, y+4, "Texture memory budget:", ColText)
-	txb := a.d.Prefs.TexBudgetMiB()
-	xtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	ntx := int(clampI32(c.Slider("texbudget", xtrack, int32(txb), config.TexBudgetMaxMiB), 0, config.TexBudgetMaxMiB))
-	if ntx != 0 && ntx < config.TexBudgetMinMiB {
-		ntx = 0 // bottom of the track = the default (64 MiB)
-	}
-	c.Tooltip(xtrack, "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32–256 MiB). Above 128 is EXPERIMENTAL — it exceeds the 256 MiB memory budget and may stutter or crash on low-RAM machines. Applies on RESTART.")
-	txLabel := "default (64 MiB)"
-	txCol := ColTextDim
-	if ntx != 0 {
-		txLabel = strconv.Itoa(ntx) + " MiB"
-		if ntx > config.TexBudgetSafeMaxMiB {
-			txLabel += "  ⚠ experimental — over budget"
-			txCol = ColAccent
-		}
-	}
-	c.Label(pad+210+226, y+4, txLabel, txCol)
-	if ntx != txb {
-		a.d.Prefs.SetTexBudgetMiB(ntx)
-	}
-	y += 26
+	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, a.d.Prefs.AnimatedSpriteCap, func(n int) { a.d.Prefs.SetAnimatedSpriteCap(n); a.applySpriteCap() }, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
+	y = a.settingsDesc(pad, y, "Animations are no longer truncated to fit the texture budget, so one full high-res preanimation can hold a few hundred MB of GPU memory. This caps animated sprite HEIGHT (still art is untouched) to shrink that footprint; leave off for AO2-identical full quality.", ColTextDim)
+	y += 8
+	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, a.d.Prefs.AnimatedBudgetMiB, func(n int) { a.d.Prefs.SetAnimatedBudgetMiB(n); a.applySpriteCap() }, &settings.memBufs[2], " MiB", "How much decoded memory ONE animated sprite may use before its frames are downscaled to fit (64-512 MiB). 128 = the shipped default (very large clips downscale to fit); lower = softer sprites, far less RAM. Applies to NEWLY loaded art (LIVE).")
+	y = a.settingsDesc(pad, y, "Decoded memory allowed for ONE animated sprite before its frames are downscaled to fit. 500 MiB keeps full-size high-res clips native (sharpest, most RAM); lower shrinks them to fit (softer, a fraction of the RAM). The per-frame decoded pixels of several such clips are what spiked RAM, so this is the biggest lever. Applies to newly loaded art.", ColTextDim)
+	y += 8
+	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, a.d.Prefs.AnimDecodeConcurrency, func(n int) { a.d.Prefs.SetAnimDecodeConcurrency(n); a.applySpriteCap() }, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
+	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
+	y += 8
+	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, a.d.Prefs.SetTexBudgetMiB, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
 	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. The default (64) and anything up to 128 fit the 256 MiB memory budget — above 128 is EXPERIMENTAL and deliberately exceeds it, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
+	y += 10
+
+	// Texture compression (restart-applied; lossy).
+	y += 8
+	c.Label(pad, y+4, "Texture compression:", ColText)
+	txc := a.d.Prefs.TexCompression()
+	next := txc
+	switch txc {
+	case config.TexCompressOff:
+		next = config.TexCompressDXT5
+	case config.TexCompressDXT5:
+		next = config.TexCompressDXT1
+	case config.TexCompressDXT1:
+		next = config.TexCompressOff
+	}
+	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 220, H: btnH}, texCompressLabel(txc)) {
+		a.d.Prefs.SetTexCompression(next)
+	}
+	y += btnH + 6
+	y = a.settingsDesc(pad, y, "How decoded art is stored on the GPU. Off = raw RGBA (lossless). DXT5 (BC3) = ~4x smaller with smooth alpha; DXT1 (BC1) = ~8x smaller but 1-bit alpha (jagged soft edges). Both are lossy 4x4-block formats, only apply to art whose width and height are multiples of 4, and only when your GPU supports them (otherwise it silently stays Off). Applies on RESTART.", ColTextDim)
 	y += 10
 
 	// Character-folder casing.

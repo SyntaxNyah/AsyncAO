@@ -129,6 +129,11 @@ func (p *Pump) Frame() {
 			}
 		}
 		bytes := d.Asset.PixelBytes()
+		if d.Asset.Animated {
+			// #110 diagnostic: log the animated upload attempt (the upload
+			// itself releases the frames, so capture the counts first).
+			log.Printf("[anim-upload] %s animated=%v frames=%d bytes=%dMiB", d.Base, d.Asset.Animated, len(d.Asset.Frames), bytes>>20)
+		}
 		// Small-UI art (emote buttons, char icons) uploads into the shield
 		// tier so sprite streaming can never evict the visible grids (the
 		// "emote buttons visibly refresh" churn — textures.go).

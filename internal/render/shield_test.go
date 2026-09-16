@@ -49,13 +49,16 @@ func TestSplitT1Budget(t *testing.T) {
 }
 
 // TestDecodeCapFitsMainTier is the cross-package invariant for the decode-cap /
-// T1-budget arithmetic (the stage-flash root cause): the per-asset decode cap
-// (cache.MaxDecodedAssetBytes — the single source both the decoder default and
-// main's live override derive from) must never exceed the render MAIN tier for
-// ANY budget, and must stay <= main/2 so one landing page can't evict even half
-// the on-screen working set. The two formulas live in different packages
+// T1-budget arithmetic (the stage-flash root cause): the per-asset STILL decode
+// cap (cache.MaxDecodedAssetBytes — the single source both the decoder default
+// and main's live override derive from) must never exceed the render MAIN tier
+// for ANY budget, and must stay <= main/2 so one landing page can't evict even
+// half the on-screen working set. The two formulas live in different packages
 // (cache owns the cap, render owns splitT1Budget); this pins that they stay
-// compatible even if one changes.
+// compatible even if one changes. Animated assets are deliberately NOT pinned
+// here anymore: #110 decoupled them from T1 (a fixed 128 MiB downscale-to-fit
+// budget + an eviction-exempt overflow map), so they no longer obey the
+// main/2 ceiling.
 func TestDecodeCapFitsMainTier(t *testing.T) {
 	// Default, the two Settings-slider extremes (min 32 MiB, max 256 MiB), plus
 	// pathological small/huge values that exercise the split's floor + half-cap.
@@ -66,22 +69,12 @@ func TestDecodeCapFitsMainTier(t *testing.T) {
 	}
 	for _, b := range budgets {
 		decodeCap := cache.MaxDecodedAssetBytes(b)
-		animCap := cache.MaxAnimatedDecodedAssetBytes(b)
 		main, _ := splitT1Budget(b)
 		if decodeCap > main {
 			t.Errorf("budget=%d: decode cap %d exceeds main tier %d — one page could evict the whole working set", b, decodeCap, main)
 		}
 		if decodeCap > main/2 {
 			t.Errorf("budget=%d: decode cap %d exceeds main/2 (%d) — one page could evict half the working set", b, decodeCap, main/2)
-		}
-		// The ANIMATED frame budget is larger than the still cap but must stay
-		// <= main/2, so one animated page can never evict even half the main
-		// tier's live working set (the same stage-flash invariant).
-		if animCap < decodeCap {
-			t.Errorf("budget=%d: animated cap %d < still cap %d — animations must get at least the still budget", b, animCap, decodeCap)
-		}
-		if animCap > main/2 {
-			t.Errorf("budget=%d: animated cap %d exceeds main/2 (%d) — one animated page could evict half the working set", b, animCap, main/2)
 		}
 	}
 }
@@ -249,5 +242,128 @@ func TestStoreStatsAggregateTiers(t *testing.T) {
 	store.Remove("srv/a/(a)x")
 	if store.Contains("srv/a/(a)x") {
 		t.Error("Remove left the main-tier page resident")
+	}
+}
+
+// TestUploadOversizedAnimationBecomesResident pins the #110 fix: an animated
+// page whose decoded bytes exceed the whole MAIN tier budget (a full high-res
+// animation) must still become resident — in the eviction-exempt oversized map —
+// instead of being refused, which used to leave the character invisible.
+func TestUploadOversizedAnimationBecomesResident(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 16<<20) // 12 MiB main
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	// 4 × 1024² RGBA = 16 MiB > the 12 MiB main tier.
+	const base = "srv/characters/witch/(a)normal"
+	if err := store.Upload(base, sizedFixture(1024, 4)); err != nil {
+		t.Fatalf("oversized animated upload must park in the overflow map, got: %v", err)
+	}
+	if !store.Contains(base) {
+		t.Fatal("oversized page not resident after upload")
+	}
+	page, ok := store.Get(base)
+	if !ok || len(page.Frames) != 4 {
+		t.Fatalf("oversized page broken: ok=%v frames=%d", ok, len(page.Frames))
+	}
+	if got := store.OversizedBytes(); got != 16<<20 {
+		t.Errorf("OversizedBytes = %d, want %d", got, 16<<20)
+	}
+	// Remove must clear it from the overflow map too.
+	store.Remove(base)
+	if store.Contains(base) {
+		t.Error("Remove left the oversized page resident")
+	}
+	if store.OversizedBytes() != 0 {
+		t.Errorf("OversizedBytes after Remove = %d, want 0", store.OversizedBytes())
+	}
+}
+
+// TestOversizedMapCapEviction pins the overflow map's OWN hard cap: past it the
+// oldest oversized page is evicted (insertion order), so a hostile server
+// cannot pin an unbounded number of giant animations.
+func TestOversizedMapCapEviction(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 16<<20) // 12 MiB main
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	// Shrink the cap below the two-page total so eviction is observable without
+	// allocating gigabytes.
+	store.oversizedCap = 20 << 20
+
+	first := "srv/characters/witch/(a)normal"
+	second := "srv/characters/witch/(b)normal"
+	// Each 16 MiB (4 × 1024²) > 12 MiB main, so both are oversized.
+	if err := store.Upload(first, sizedFixture(1024, 4)); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if err := store.Upload(second, sizedFixture(1024, 4)); err != nil {
+		t.Fatalf("second upload: %v", err)
+	}
+	// 32 MiB total > 20 MiB cap: the oldest (first) must be evicted.
+	if store.Contains(first) {
+		t.Error("oversized cap did not evict the oldest overflow page")
+	}
+	if !store.Contains(second) {
+		t.Error("newest overflow page missing after cap eviction")
+	}
+	if got := store.OversizedBytes(); got != 16<<20 {
+		t.Errorf("OversizedBytes after cap eviction = %d, want %d (one 16 MiB page)", got, 16<<20)
+	}
+}
+
+// TestOversizedUploadDropsStalePartial pins the "static after reconnect" fix:
+// a progressive upload leaves a 1-frame Partial in the MAIN tier, and the full
+// clip overflows to the oversized map. The stale partial must be dropped when
+// the full clip lands, or an oversized-cap eviction resurrects the static frame
+// (and the T1 Contains probe then short-circuits a re-decode forever).
+func TestOversizedUploadDropsStalePartial(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 16<<20) // 12 MiB main tier
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	store.oversizedCap = 20 << 20
+
+	base := "srv/characters/witch/(a)normal"
+	other := "srv/characters/witch/(b)normal"
+
+	// Progressive upload: the 1-frame partial lands in the MAIN tier first...
+	if err := store.Upload(base, sizedFixture(1024, 1)); err != nil {
+		t.Fatalf("partial upload: %v", err)
+	}
+	// ...then the full clip overflows to the oversized map.
+	if err := store.Upload(base, sizedFixture(1024, 4)); err != nil {
+		t.Fatalf("full upload: %v", err)
+	}
+	// The resident page must be the full clip, not the stale 1-frame partial.
+	page, ok := store.Get(base)
+	if !ok {
+		t.Fatal("full clip not resident after upload")
+	}
+	if len(page.Frames) != 4 {
+		t.Fatalf("resident frames = %d, want 4 (stale 1-frame partial left behind)", len(page.Frames))
+	}
+
+	// Force the oversized cap to evict the full clip.
+	if err := store.Upload(other, sizedFixture(1024, 4)); err != nil {
+		t.Fatalf("second full upload: %v", err)
+	}
+	// The evicted base must be FULLY gone - the stale partial must not
+	// resurrect as a static texture.
+	if store.Contains(base) {
+		t.Error("evicted base still resident via its stale 1-frame partial")
+	}
+	if _, ok := store.Get(base); ok {
+		t.Error("evicted base still returns a page (stale partial)")
 	}
 }

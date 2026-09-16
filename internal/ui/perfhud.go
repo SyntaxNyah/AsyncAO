@@ -24,7 +24,7 @@ const (
 	perfHUDScaleMs = 33.0
 	// perfBudgetBytes mirrors main's GOMEMLIMIT budget (spec §13): the
 	// HUD shows heap pressure against it.
-	perfBudgetBytes = 256 << 20
+	perfBudgetBytes = 700 << 20
 	// frameBudgetMs is the 60 fps line drawn across the graph.
 	frameBudgetMs = 16.7
 )

@@ -20,7 +20,8 @@ everything in memory and on disk, and renders without allocating.
 - **Built for speed** — zero-fallback asset streaming (exactly one network probe
   per asset; the first probe *learns* what formats your server ships, so later
   loads resolve in <100 ns without touching the network), a three-tier cache
-  (64 MiB GPU textures / 128 MiB raw bytes / on-disk by full URL), and a
+  (64 MiB GPU textures — full animations downscale to fit a 500 MiB budget
+  — / 128 MiB raw bytes / on-disk by full URL), and a
   **zero-allocation render loop** under a 256 MiB budget. Cold-loading a
   200-character server costs ~285 probes, not thousands.
 - **Easy on your GPU and battery** — a real frame limiter, not vsync: a static
