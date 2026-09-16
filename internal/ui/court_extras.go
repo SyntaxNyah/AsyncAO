@@ -1031,7 +1031,18 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	if c.Button(popB, popLabel) {
 		a.evidInspectorDetached = !a.evidInspectorDetached
 	}
-	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: popB.X - r.X - 4, H: floatTitleH}, pressed)
+	// List ↔ grid layout toggle (in-memory): a quick flip between the DRO icon
+	// list and the AO2 thumbnail grid, not a persisted preference.
+	viewB := sdl.Rect{X: popB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
+	viewLabel := "View: List"
+	if a.evidGridView {
+		viewLabel = "View: Grid"
+	}
+	if c.Button(viewB, viewLabel) {
+		a.evidGridView = !a.evidGridView
+		a.evidScroll = 0 // reflow: start the new layout scrolled to the top
+	}
+	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: viewB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
 	a.drawResizeGrip(grip)
@@ -1049,7 +1060,11 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		listRect = sdl.Rect{X: r.X + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
 		inspRect = sdl.Rect{X: r.X + leftW + pad, Y: contentTop, W: leftW - 2*pad, H: r.Y + r.H - contentTop - pad}
 	}
-	a.drawEvidenceList(listRect)
+	if a.evidGridView {
+		a.drawEvidenceGrid(listRect)
+	} else {
+		a.drawEvidenceList(listRect)
+	}
 	if a.evidInspectorDetached {
 		return // the inspector draws in its own window (drawEvidenceInspectorWindow)
 	}
@@ -1100,6 +1115,62 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 		}
 	}
 	c.popClip(listClipPrev, listClipHad)
+	if a.evidCtxMenu {
+		a.drawEvidenceContextMenu()
+	}
+}
+
+// drawEvidenceGrid draws the AO2-style thumbnail grid of the evidence into grid
+// (the list ↔ grid toggle's grid side). Same selection/context-menu/demand
+// behaviour as the list, laid out as 72×72 cells with the name beneath each.
+func (a *App) drawEvidenceGrid(grid sdl.Rect) {
+	c := a.ctx
+	const cell, cellGap = int32(72), int32(8)
+	cellW := grid.W - scrollBarW
+	if cellW < cell {
+		cellW = cell // degenerate-width guard (very narrow panel)
+	}
+	cols := cellW / (cell + cellGap)
+	if cols < 1 {
+		cols = 1
+	}
+	rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
+	contentH := rows*(cell+cellGap+14) - cellGap
+	a.evidScroll -= c.WheelIn(grid) * scrollStepPx
+	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
+	a.evidScroll = c.VScrollbar("evidgrid", track, a.evidScroll, contentH, grid.H)
+	clipPrev, clipHad := c.pushClip(grid)
+	for i := range a.sess.Evidence {
+		item := &a.sess.Evidence[i]
+		col, row := int32(i)%cols, int32(i)/cols
+		cx := grid.X + col*(cell+cellGap)
+		cy := grid.Y + row*(cell+cellGap+14) - a.evidScroll
+		if cy+cell <= grid.Y || cy >= grid.Y+grid.H {
+			continue
+		}
+		rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
+		if i == a.evidIdx {
+			c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
+		}
+		url := a.urls.Evidence(item.Image)
+		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
+		} else {
+			c.Fill(rc, ColPanelHi)
+			a.demandEvidence(i, url)
+		}
+		c.Border(rc, ColPanelHi)
+		c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
+		if c.hovering(rc) && c.clicked {
+			a.evidIdx = i
+			a.evidCtxMenu = false
+		}
+		if c.hovering(rc) && c.rightClicked {
+			a.evidIdx = i
+			a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
+		}
+	}
+	c.popClip(clipPrev, clipHad)
 	if a.evidCtxMenu {
 		a.drawEvidenceContextMenu()
 	}

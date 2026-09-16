@@ -2521,6 +2521,11 @@ type sessionState struct {
 	// mean multiple of these windows later.
 	evidInspectorDetached bool
 	evidInspectorWin      floatWin
+	// evidGridView toggles the evidence browser between the DRO-style icon
+	// list and the AO2 thumbnail grid. In-memory (not persisted): the earlier
+	// evidenceMode preference was dropped and this is a quick layout flip, not
+	// a stored setting.
+	evidGridView bool
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
