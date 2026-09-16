@@ -496,6 +496,60 @@ func TestFrameDecimator(t *testing.T) {
 	}
 }
 
+// TestSpreadLoopDelays pins the loop-aware decimation: a UNIFORM source (a
+// looping idle/talk cycle) decimated to fewer frames gets its kept delays
+// spread evenly — a constant frame rate at the same total time — instead of the
+// [D, 2D, 2D, …] fold that judders when the loop wraps. A non-uniform source
+// (a one-shot preanim with a final hold) is left folded so the hold survives.
+func TestSpreadLoopDelays(t *testing.T) {
+	const per = 33 * time.Millisecond
+
+	// Uniform loop: 100 frames at 33 ms, decimated to 34 — every kept delay
+	// must be within 1 ns of the others (the ±1 ns remainder) and sum exactly.
+	d := &Decoded{Delays: make([]time.Duration, 34)}
+	src := make([]time.Duration, 100)
+	for i := range src {
+		src[i] = per
+	}
+	spreadLoopDelays(d, src)
+	var sum time.Duration
+	minD, maxD := d.Delays[0], d.Delays[0]
+	for _, dl := range d.Delays {
+		sum += dl
+		if dl < minD {
+			minD = dl
+		}
+		if dl > maxD {
+			maxD = dl
+		}
+	}
+	if maxD-minD > 1 {
+		t.Fatalf("uniform loop delays not evenly spread: %v", d.Delays)
+	}
+	if want := time.Duration(100) * per; sum != want {
+		t.Errorf("spread total = %v, want %v (no time lost)", sum, want)
+	}
+
+	// Non-uniform source (final-frame hold): the fold must survive — the hold
+	// stays on the last kept frame, not smeared across the clip.
+	held := &Decoded{Delays: []time.Duration{per, 2 * per, 12 * per}}
+	heldSrc := []time.Duration{per, per, per, per, 10 * per}
+	before := append([]time.Duration(nil), held.Delays...)
+	spreadLoopDelays(held, heldSrc)
+	for i := range held.Delays {
+		if held.Delays[i] != before[i] {
+			t.Fatalf("non-uniform hold was spread: %v → %v", before, held.Delays)
+		}
+	}
+
+	// Not decimated (kept == source length): untouched.
+	noop := &Decoded{Delays: []time.Duration{per, per}}
+	spreadLoopDelays(noop, []time.Duration{per, per})
+	if noop.Delays[0] != per || noop.Delays[1] != per {
+		t.Fatalf("non-decimated clip was modified: %v", noop.Delays)
+	}
+}
+
 // TestFrameKeepIndexMapping pins the exported forward map (#17): a kept-frame
 // ordinal maps back to the SOURCE frame index the sender authored networked frame
 // effects against. It must round-trip endpoints, stay identity when nothing was

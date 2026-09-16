@@ -112,6 +112,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		walk, keep = 1, 1
 	}
 	fdec := newFrameDecimator(walk, keep)
+	sourceDelays := make([]time.Duration, 0, walk)
 
 	d := &Decoded{
 		Animated:     frameTotal > 1,
@@ -140,6 +141,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 			delay = defaultZeroFrameDelay
 		}
 		prevTimestamp = int(timestamp)
+		sourceDelays = append(sourceDelays, delay)
 
 		// Every GetNext ran (compositing the running canvas); copy out only the
 		// decimated subset, with skipped frames' delays folded into the kept one.
@@ -169,5 +171,6 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 	if len(d.Frames) == 0 {
 		return nil, fmt.Errorf("assets: webp anim yielded no frames")
 	}
+	spreadLoopDelays(d, sourceDelays)
 	return d, nil
 }

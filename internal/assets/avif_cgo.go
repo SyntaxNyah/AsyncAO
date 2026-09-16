@@ -60,6 +60,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		walk, keep = 1, 1
 	}
 	fdec := newFrameDecimator(walk, keep)
+	sourceDelays := make([]time.Duration, 0, walk)
 
 	d := &Decoded{
 		Animated:     frameTotal > 1,
@@ -84,6 +85,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		if delay <= 0 {
 			delay = defaultZeroFrameDelay
 		}
+		sourceDelays = append(sourceDelays, delay)
 
 		// The decoder is now advanced onto frame i; copy out only the decimated
 		// subset (skipped frames still advanced, so kept frames compose right),
@@ -129,6 +131,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if len(d.Frames) == 0 {
 		return nil, fmt.Errorf("assets: avif yielded no frames")
 	}
+	spreadLoopDelays(d, sourceDelays)
 	return d, nil
 }
 

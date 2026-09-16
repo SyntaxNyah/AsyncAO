@@ -306,6 +306,42 @@ func (fd *frameDecimator) step(i int, delay time.Duration) (dur time.Duration, k
 	return dur, true
 }
 
+// spreadLoopDelays evens out a decimated animation's kept-frame delays when the
+// SOURCE delays were uniform (a looping idle/talk cycle, e.g. a trotting
+// horse): the fold that packs skipped-frame delays forward would otherwise play
+// such a loop as [D, 2D, 2D, …] — every kept frame a different duration — so
+// the loop judders. Evenly spreading the total across the kept frames restores
+// a constant frame rate at the SAME total playback time. Non-uniform sources (a
+// one-shot preanim whose final frame holds) stay folded so the hold remains on
+// the final kept frame. sourceDelays is the full source-order delay sequence;
+// GIF/APNG build it up front, AVIF/WebP collect it during their walk. No-op
+// unless the clip was actually decimated.
+func spreadLoopDelays(d *Decoded, sourceDelays []time.Duration) {
+	if len(d.Delays) < 2 || len(sourceDelays) <= len(d.Delays) {
+		return
+	}
+	uniform := true
+	var total time.Duration
+	for _, s := range sourceDelays {
+		total += s
+		if s != sourceDelays[0] {
+			uniform = false
+		}
+	}
+	if !uniform {
+		return
+	}
+	keep := len(d.Delays)
+	base := total / time.Duration(keep)
+	rem := int(total % time.Duration(keep))
+	for i := range d.Delays {
+		d.Delays[i] = base
+		if i < rem {
+			d.Delays[i]++
+		}
+	}
+}
+
 // DecodeWorkers returns the §8 worker-count formula.
 func DecodeWorkers() int {
 	n := runtime.NumCPU() / 2
@@ -666,6 +702,10 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		walk, keep = 1, 1
 	}
 	dec := newFrameDecimator(walk, keep)
+	sourceDelays := make([]time.Duration, walk)
+	for i := 0; i < walk; i++ {
+		sourceDelays[i] = gifFrameDelay(g, i)
+	}
 
 	d := &Decoded{
 		Animated:     animated,
@@ -731,6 +771,7 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 			}
 		}
 	}
+	spreadLoopDelays(d, sourceDelays)
 	return d, nil
 }
 
@@ -795,6 +836,10 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		walk, keep = 1, 1
 	}
 	dec := newFrameDecimator(walk, keep)
+	sourceDelays := make([]time.Duration, walk)
+	for i := 0; i < walk; i++ {
+		sourceDelays[i] = apngFrameDelay(animFrames[i])
+	}
 
 	d := &Decoded{
 		Animated:     animated,
@@ -863,6 +908,7 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 			}
 		}
 	}
+	spreadLoopDelays(d, sourceDelays)
 	return d, nil
 }
 
