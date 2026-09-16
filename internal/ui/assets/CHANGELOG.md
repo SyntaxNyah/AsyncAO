@@ -6,36 +6,10 @@ tagged "installed" below.
 
 ## v1.96.1 - 2026-09-16
 
-Memory & texture-compression patch. Animated sprites now ship at a 128 MiB
-budget with DXT5 texture compression on by default, plus nudge buttons and
-exact-value entry on the memory sliders.
-
-- **Animated sprite memory budget: 128 MiB by default (was 500).** The
-  per-sprite decoded-frame budget now ships at 128 MiB, so very large
-  animations downscale to fit instead of holding hundreds of MB. Lower it for
-  even less RAM; raise it for more source detail. Applies to newly loaded art.
-- **Texture compression: DXT5 by default.** Decoded art is now stored on the
-  GPU as DXT5 (BC3, ~4x smaller, smooth alpha) out of the box - the main fix
-  for the RAM gap versus browser clients like webAO. DXT1 (BC1, ~8x smaller,
-  1-bit alpha) and raw RGBA (lossless) stay available. Restart-applied.
-- **Concurrent animated decodes (default 2).** Caps how many long animations
-  decode at once, flattening the memory spike while a character's animations
-  stream in.
-- **Fixed a frozen-sprite bug after reconnect.** An evicted animation could
-  fall back to a stale single frame and stay stuck instead of re-decoding.
-- **8 MiB pixel-pool class.** Native frames no longer grab a 16 MiB buffer (a
-  ~2x waste), halving the decode-burst heap.
-- **Memory sliders nudge and take exact values.** Every memory/scale slider
-  gained -/+ buttons and a type-a-value field.
-
-Thanks to everyone playtesting the memory work on large packs.
-
-## v1.96.0 - 2026-09-16
-
-Evidence system overhaul, an animation frame-rate fix, a music/volume fix, and
-a rebuilt self-updater that now ships the whole Windows install — built around a
-new evidence browser mode selector (AO2 / DRO) and several long-standing
-reports.
+Evidence system overhaul, an animation frame-rate fix, animated-sprite memory
+tuning with DXT/BC texture compression, a music/volume fix, and a rebuilt
+self-updater that now ships the whole Windows install — built around a new
+evidence browser mode selector (AO2 / DRO) and several long-standing reports.
 
 - **Self-updater downloads the full bundle** — the self-updater now downloads
   and extracts the platform bundle instead of swapping only the bare binary:
@@ -65,8 +39,8 @@ reports.
   area-average (box) filter (CatmullRom's float64 kernel was the ~4 s decode
   bottleneck), and — crucially — animations are **no longer decimated to fit
   the texture budget**: when a clip is too big, its frames are **downscaled** so
-  every authored frame stays resident, fitting a 500 MiB budget (a 60-frame
-  1600×1200 clip decodes at native) instead of dropping frames into a slideshow
+  every authored frame stays resident, fitting a downscale-to-fit budget (128 MiB
+  by default) instead of dropping frames into a slideshow
   or loading hundreds of MB. A new **animated sprite height cap** setting (off
   by default) downscales animations harder if you'd rather save even more memory
   than quality.
