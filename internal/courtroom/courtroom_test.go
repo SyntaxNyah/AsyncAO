@@ -1142,6 +1142,51 @@ func TestSessionCourtPackets(t *testing.T) {
 	}
 }
 
+// TestSessionIncomingEvidenceChanges pins the "evidence changed" harness: an
+// incoming PE/EE/DE relay mutates the local list and emits EventEvidenceChanged
+// (Int = index, Int2 = op, Text = name) — a single-item change, not a full LE
+// replace.
+func TestSessionIncomingEvidenceChanges(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+	feed(t, s, "LE#Knife&A bloody knife&knife.png#Badge&Shiny badge&badge.png#%")
+
+	// PE appends.
+	if ev := feed(t, s, "PE#Gun#A loud gun#gun.png#%"); len(ev) != 1 ||
+		ev[0].Kind != EventEvidenceChanged || ev[0].Int != 2 || ev[0].Int2 != EvidenceOpAdd || ev[0].Text != "Gun" {
+		t.Fatalf("PE → %+v", ev)
+	}
+	if len(s.Evidence) != 3 || s.Evidence[2].Name != "Gun" {
+		t.Fatalf("PE list → %+v", s.Evidence)
+	}
+
+	// EE edits in place.
+	if ev := feed(t, s, "EE#1#Badge#A clean badge#badge2.png#%"); len(ev) != 1 ||
+		ev[0].Kind != EventEvidenceChanged || ev[0].Int != 1 || ev[0].Int2 != EvidenceOpEdit || ev[0].Text != "Badge" {
+		t.Fatalf("EE → %+v", ev)
+	}
+	if s.Evidence[1].Description != "A clean badge" || s.Evidence[1].Image != "badge2.png" {
+		t.Fatalf("EE list → %+v", s.Evidence[1])
+	}
+
+	// DE removes and shifts.
+	if ev := feed(t, s, "DE#0#%"); len(ev) != 1 ||
+		ev[0].Kind != EventEvidenceChanged || ev[0].Int != 0 || ev[0].Int2 != EvidenceOpDelete || ev[0].Text != "Knife" {
+		t.Fatalf("DE → %+v", ev)
+	}
+	if len(s.Evidence) != 2 || s.Evidence[0].Name != "Badge" || s.Evidence[1].Name != "Gun" {
+		t.Fatalf("DE list → %+v", s.Evidence)
+	}
+
+	// Out-of-range ids drop (the server re-syncs with a full LE).
+	if ev := feed(t, s, "EE#9#X#x#x.png#%"); ev != nil {
+		t.Fatalf("out-of-range EE accepted: %+v", ev)
+	}
+	if ev := feed(t, s, "DE#9#%"); ev != nil {
+		t.Fatalf("out-of-range DE accepted: %+v", ev)
+	}
+}
+
 // TestSessionLegacyModLogin pins the auth emulation for servers without
 // auth_packet: the exact OOC confirmation line grants mod state.
 func TestSessionLegacyModLogin(t *testing.T) {

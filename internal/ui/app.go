@@ -5185,6 +5185,18 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			if a.evidIdx >= len(a.sess.Evidence) {
 				a.evidIdx = -1
 			}
+		case courtroom.EventEvidenceChanged:
+			// One item changed (PE/EE/DE relay from another player or the
+			// server): keep the selection and scroll, just fix the cursor when
+			// a delete removed or shifted the selection.
+			if ev.Int2 == courtroom.EvidenceOpDelete {
+				if a.evidIdx == ev.Int {
+					a.evidIdx = -1
+					a.evidEditing = false
+				} else if a.evidIdx > ev.Int {
+					a.evidIdx--
+				}
+			}
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
 			a.pushDebug("disconnected: " + ev.Text)

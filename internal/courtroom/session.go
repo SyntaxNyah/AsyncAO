@@ -234,6 +234,12 @@ const (
 	EventMuted
 	// EventEvidence signals the LE list was replaced (read Evidence).
 	EventEvidence
+	// EventEvidenceChanged signals ONE item changed in place (an incoming
+	// PE/EE/DE broadcast from another player or the server — not a full LE
+	// replace). Int = the item index (-1 for a PE append), Int2 = the
+	// operation (EvidenceOpAdd/Edit/Delete), Text = the item's name. The UI
+	// re-reads Evidence and adjusts its selection without resetting scroll.
+	EventEvidenceChanged
 	// EventTimer signals TI clock Int changed (read Timers).
 	EventTimer
 	// EventPlayersUpdated signals the live player list changed (PR/PU from the
@@ -251,6 +257,13 @@ const (
 	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid,
 	// Text = base64 opus payload. Consumed by the audio layer (decode + play).
 	EventVoiceAudio
+)
+
+// Evidence operation kinds, carried in EventEvidenceChanged.Int2.
+const (
+	EvidenceOpAdd = iota
+	EvidenceOpEdit
+	EvidenceOpDelete
 )
 
 // Event is one session occurrence. Fields are populated per Kind.
@@ -1105,6 +1118,46 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			})
 		}
 		return []Event{{Kind: EventEvidence}}
+
+	case "PE":
+		// Incoming evidence add (a server relay — another player or the server
+		// added an item; tsuserver-family servers echo PE rather than re-sending
+		// the whole LE). Same per-field percent-decode as LE; append and signal
+		// a single-item change rather than a full list replace.
+		if len(p.Fields) < 3 || len(s.Evidence) >= evidenceCap {
+			return nil
+		}
+		name := protocol.DecodeField(p.Field(0))
+		s.Evidence = append(s.Evidence, EvidenceItem{
+			Name:        name,
+			Description: protocol.DecodeField(p.Field(1)),
+			Image:       protocol.DecodeField(p.Field(2)),
+		})
+		return []Event{{Kind: EventEvidenceChanged, Int: len(s.Evidence) - 1, Int2: EvidenceOpAdd, Text: name}}
+
+	case "EE":
+		// Incoming evidence edit: EE#id#name#desc#image. Bounds-guarded like
+		// LE's cap; out-of-range ids drop (the server will re-sync with an LE).
+		id := atoiOr(p.Field(0), -1)
+		if id < 0 || id >= len(s.Evidence) {
+			return nil
+		}
+		s.Evidence[id] = EvidenceItem{
+			Name:        protocol.DecodeField(p.Field(1)),
+			Description: protocol.DecodeField(p.Field(2)),
+			Image:       protocol.DecodeField(p.Field(3)),
+		}
+		return []Event{{Kind: EventEvidenceChanged, Int: id, Int2: EvidenceOpEdit, Text: s.Evidence[id].Name}}
+
+	case "DE":
+		// Incoming evidence delete: DE#id.
+		id := atoiOr(p.Field(0), -1)
+		if id < 0 || id >= len(s.Evidence) {
+			return nil
+		}
+		name := s.Evidence[id].Name
+		s.Evidence = append(s.Evidence[:id], s.Evidence[id+1:]...)
+		return []Event{{Kind: EventEvidenceChanged, Int: id, Int2: EvidenceOpDelete, Text: name}}
 
 	case "MU", "UM":
 		// Mute / unmute a character (packet_distribution.cpp:483-497 →
