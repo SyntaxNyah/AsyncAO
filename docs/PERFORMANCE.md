@@ -21,6 +21,13 @@ The per-frame downscale is a fast area-average (box) filter — CatmullRom's
 float64 kernel was the decode bottleneck. The 700 MiB limit covers the Go heap
 (a clip's decoded RGBA stays live there until its textures upload); the
 textures themselves live in VRAM.
+
+Resident animated memory is further capped by **still-framing non-active
+characters** (v1.97.0): only the active speaker's idle/talk/preanim stay fully
+loaded; the pair and every previously-shown character collapse to their first
+frame and stream back in the instant they speak. A crowded room therefore holds
+~one full animation plus a handful of single-frame stills instead of one full
+animation per character.
 `GOMAXPROCS` stays default — the netpoller already covers blocking I/O; the
 old "+2 for I/O" advice is a myth.
 

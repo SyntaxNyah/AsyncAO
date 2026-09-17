@@ -396,13 +396,16 @@ provider-major ordering would let a legacy bare-named pack serve one file as
 both idle and talk, shadowing a server that ships proper `(a)`/`(b)` art. Do
 not "fix" this back to AO-SDL's ordering.
 
-**Named caps:** `mountIndexByteCap` (accounted footprint, enforced *during* the
-walk, sized against real headroom — a hard 256 MiB `SetMemoryLimit` with
-128 MiB already committed to T2), `mountIndexMaxDepth`, `mountBadCap`
+**Named caps:** `mountIndexMaxDepth`, `mountBadCap`
 (quarantine; eviction is **oldest-first**, inverting `MarkMissing`'s
 stop-when-full policy, because an unquarantined corrupt file wins forever and
 its asset is permanently missingno), `mountArchiveCap`,
 `mountZipEntryMaxBytes`, `LocalMountCap`, `mountLayerOriginCap`.
+There is **no entry-count or byte cap** on the index (v1.97.0): local mounts
+are the user's own content and must never be silently truncated, so a pack is
+indexed in full and index memory grows with the pack (~180 bytes/file). The
+remaining caps are all *safety* bounds (depth, per-entry size, symlinks) —
+not limits on legitimate content.
 
 **Zip lifetime.** Archive handles are refcounted and closed when the last
 reader releases, **not** when the layer pointer swaps — a Rescan during a read

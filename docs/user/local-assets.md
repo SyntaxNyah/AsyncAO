@@ -97,7 +97,8 @@ that shipped before it. This is gated by a benchmark, not just asserted.
 
 With folders configured, a lookup is an in-memory map hit against an index
 built once in the background. A file your pack provides costs **no network
-request at all**.
+request at all**. There is no size limit on the index: every file in your
+folders is indexed (memory grows with the pack, roughly 180 bytes per file).
 
 ## Legacy: never stream
 

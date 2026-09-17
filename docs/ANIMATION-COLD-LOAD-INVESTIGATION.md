@@ -113,6 +113,13 @@ exposed alongside the network TTFB EWMA in the F8 debug overlay.
   every later demand is a T1 short-circuit (`manager.go:1144`) and playback is a
   pointer swap. Every *new* sprite — a character's first appearance, a fresh
   preanim, an emote never seen this session — pays the full decode again.
+- **Non-active animations are still-framed (v1.97.0).** `TextureStore` keeps only
+  the active speaker's animation fully resident; the pair and every
+  previously-shown character collapse to a single still frame
+  (`ReduceAnimatedExcept`) and re-stream (~20 ms) the instant they become active.
+  A long-absent character therefore re-pays the decode on re-entry, but the
+  steady-state resident animated tier is bounded to ~one active animation plus
+  stills — the memory-side complement to the cold-load latency traced here.
 - **The progressive path can't start playback.** It shows frame 0 fast
   (`decoder.go:723–737`) but the animation is a static frame until the full set
   lands and uploads. (`ef34522` fixed the bug where that static frame *froze* a
