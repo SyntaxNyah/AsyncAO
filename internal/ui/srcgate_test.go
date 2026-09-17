@@ -44,6 +44,36 @@ func parsedFile(t *testing.T, name string) (*token.FileSet, *ast.File) {
 	return fset, f
 }
 
+// parseNonTestSources parses every non-test .go file in this package's directory
+// into fset, returning a filename→AST map in the same shape the deprecated
+// parser.ParseDir used to hand back (its per-package Files map). ParseDir was
+// dropped because it ignores build tags when associating files with packages
+// (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
+// result is a failure, not a pass: a census that read nothing passes everything.
+func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	files := make(map[string]*ast.File)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, mode)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files[name] = f
+	}
+	if len(files) == 0 {
+		t.Fatal("no production sources found — the census would be vacuous")
+	}
+	return files
+}
+
 // funcBodySource returns the AST body of the named function (or method) declared in
 // file. Fails the test when it is absent — a renamed function must break its gate
 // loudly, not silently stop being checked.

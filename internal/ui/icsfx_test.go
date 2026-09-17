@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"strings"
 	"testing"
 
@@ -159,34 +158,28 @@ func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
 
 	// And nothing in the package may spell the wire sentinel by hand: one constant, so
 	// the send rule and any future reader agree on what "no sound" is.
-	src, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go") && fi.Name() != "icsfx.go"
-	}, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse package: %v", err)
-	}
-	for _, pkg := range src {
-		for name, file := range pkg.Files {
-			base := name
-			if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-				base = base[i+1:]
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				assign, ok := n.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				for i, lhs := range assign.Lhs {
-					id, ok := lhs.(*ast.Ident)
-					if !ok || id.Name != "sfxName" || i >= len(assign.Rhs) {
-						continue
-					}
-					if lit, ok := assign.Rhs[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-						t.Errorf("%s assigns sfxName from the literal %s — use icSilentSFX / outgoingSFXName", base, lit.Value)
-					}
-				}
-				return true
-			})
+	files := parseNonTestSources(t, fset, parser.SkipObjectResolution)
+	delete(files, "icsfx.go") // the sentinel is defined here; only the OTHER files are policed
+	for name, file := range files {
+		base := name
+		if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+			base = base[i+1:]
 		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range assign.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || id.Name != "sfxName" || i >= len(assign.Rhs) {
+					continue
+				}
+				if lit, ok := assign.Rhs[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					t.Errorf("%s assigns sfxName from the literal %s — use icSilentSFX / outgoingSFXName", base, lit.Value)
+				}
+			}
+			return true
+		})
 	}
 }

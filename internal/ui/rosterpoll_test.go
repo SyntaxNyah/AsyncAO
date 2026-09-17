@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"strings"
 	"testing"
 	"time"
@@ -127,44 +126,37 @@ var rosterFetchSites = []rosterFetchSite{
 // pull would leave a PR/PU-less server with no way to refresh its roster at all).
 func TestOnlyUserActionsFetchTheRoster(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse package: %v", err)
-	}
+	files := parseNonTestSources(t, fset, parser.SkipObjectResolution)
 	seen := make([]bool, len(rosterFetchSites))
 	var offenders []string
-	for _, pkg := range pkgs {
-		for path, file := range pkg.Files {
-			base := path
-			if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-				base = base[i+1:]
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch v := n.(type) {
-				case *ast.FuncDecl:
-					if v.Name.Name == "fetchRoster" {
-						if i := rosterSiteIndex(base); i >= 0 {
-							seen[i] = true
-						} else {
-							offenders = append(offenders, base+" defines fetchRoster")
-						}
-					}
-				case *ast.CallExpr:
-					sel, ok := v.Fun.(*ast.SelectorExpr)
-					if !ok || sel.Sel.Name != "fetchRoster" {
-						return true
-					}
+	for path, file := range files {
+		base := path
+		if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+			base = base[i+1:]
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.FuncDecl:
+				if v.Name.Name == "fetchRoster" {
 					if i := rosterSiteIndex(base); i >= 0 {
 						seen[i] = true
-						return true
+					} else {
+						offenders = append(offenders, base+" defines fetchRoster")
 					}
-					offenders = append(offenders, base+" calls fetchRoster")
 				}
-				return true
-			})
-		}
+			case *ast.CallExpr:
+				sel, ok := v.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "fetchRoster" {
+					return true
+				}
+				if i := rosterSiteIndex(base); i >= 0 {
+					seen[i] = true
+					return true
+				}
+				offenders = append(offenders, base+" calls fetchRoster")
+			}
+			return true
+		})
 	}
 	if len(offenders) > 0 {
 		t.Errorf("roster pull started from unlisted file(s):\n  %s\n\n"+

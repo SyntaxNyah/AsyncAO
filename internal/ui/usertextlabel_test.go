@@ -2,10 +2,7 @@ package ui
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"io/fs"
-	"strings"
 	"testing"
 )
 
@@ -43,48 +40,41 @@ var singleFaceLabels = []string{
 // already decided the face can draw the whole string.
 func TestUserTextSurfacesUseACoveringFace(t *testing.T) {
 	fset := token.NewFileSet()
-	pkg, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatalf("parse ui package: %v", err)
-	}
+	files := parseNonTestSources(t, fset, 0)
 	want := map[string]bool{}
 	for _, fn := range userTextDrawSites {
 		want[fn] = false
 	}
-	for _, p := range pkg {
-		for _, file := range p.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				fn, ok := n.(*ast.FuncDecl)
-				if !ok || fn.Name == nil {
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			fn, ok := n.(*ast.FuncDecl)
+			if !ok || fn.Name == nil {
+				return true
+			}
+			if _, tracked := want[fn.Name.Name]; !tracked {
+				return true
+			}
+			want[fn.Name.Name] = true
+			ast.Inspect(fn.Body, func(in ast.Node) bool {
+				call, ok := in.(*ast.CallExpr)
+				if !ok {
 					return true
 				}
-				if _, tracked := want[fn.Name.Name]; !tracked {
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
 					return true
 				}
-				want[fn.Name.Name] = true
-				ast.Inspect(fn.Body, func(in ast.Node) bool {
-					call, ok := in.(*ast.CallExpr)
-					if !ok {
-						return true
+				for _, banned := range singleFaceLabels {
+					if sel.Sel.Name == banned {
+						t.Errorf("%s calls %s at %s — that resolves ONE face, so a name needing two "+
+							"renders as tofu boxes. Use labelEmoji (App) or labelCoveringCentered (Ctx).",
+							fn.Name.Name, banned, fset.Position(call.Pos()))
 					}
-					sel, ok := call.Fun.(*ast.SelectorExpr)
-					if !ok {
-						return true
-					}
-					for _, banned := range singleFaceLabels {
-						if sel.Sel.Name == banned {
-							t.Errorf("%s calls %s at %s — that resolves ONE face, so a name needing two "+
-								"renders as tofu boxes. Use labelEmoji (App) or labelCoveringCentered (Ctx).",
-								fn.Name.Name, banned, fset.Position(call.Pos()))
-						}
-					}
-					return true
-				})
+				}
 				return true
 			})
-		}
+			return true
+		})
 	}
 	for fn, found := range want {
 		if !found {

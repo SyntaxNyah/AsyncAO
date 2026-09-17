@@ -25,40 +25,33 @@ import (
 // may stage any SpriteLayer it likes.
 func TestOnlyEndPreanimReleasesTheOneShot(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatalf("parse package: %v", err)
-	}
+	files := parseNonTestSources(t, fset, 0)
 	type site struct {
 		file string
 		fn   string
 	}
 	var sites []site
-	for _, pkg := range pkgs {
-		for name, file := range pkg.Files {
-			fn := "<file scope>"
-			ast.Inspect(file, func(n ast.Node) bool {
-				if d, ok := n.(*ast.FuncDecl); ok {
-					fn = d.Name.Name
-					return true
-				}
-				assign, ok := n.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				for i, lhs := range assign.Lhs {
-					if !isPlayOnceSelector(lhs) || i >= len(assign.Rhs) {
-						continue
-					}
-					if id, ok := assign.Rhs[i].(*ast.Ident); ok && id.Name == "false" {
-						sites = append(sites, site{file: shortName(name), fn: fn})
-					}
-				}
+	for name, file := range files {
+		fn := "<file scope>"
+		ast.Inspect(file, func(n ast.Node) bool {
+			if d, ok := n.(*ast.FuncDecl); ok {
+				fn = d.Name.Name
 				return true
-			})
-		}
+			}
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range assign.Lhs {
+				if !isPlayOnceSelector(lhs) || i >= len(assign.Rhs) {
+					continue
+				}
+				if id, ok := assign.Rhs[i].(*ast.Ident); ok && id.Name == "false" {
+					sites = append(sites, site{file: shortName(name), fn: fn})
+				}
+			}
+			return true
+		})
 	}
 	if len(sites) != 1 || sites[0].fn != "endPreanim" {
 		t.Errorf("`Speaker.PlayOnce = false` sites = %+v; want exactly one, in endPreanim.\n"+
@@ -284,3 +277,33 @@ func wantReason(t *testing.T, room *Courtroom, want PreanimEndReason) {
 // compile-time proof the hook keeps the shape internal/ui would wire it with.
 var _ = func(c *Courtroom) { c.OnPreanimEnd = func(PreanimEndReason) {} }
 var _ = protocol.ChatMessage{}
+
+// parseNonTestSources parses every non-test .go file in this package's directory
+// into fset, returning a filename→AST map in the same shape the deprecated
+// parser.ParseDir used to hand back (its per-package Files map). ParseDir was
+// dropped because it ignores build tags when associating files with packages
+// (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
+// result is a failure, not a pass: a census that read nothing passes everything.
+func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	files := make(map[string]*ast.File)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, mode)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files[name] = f
+	}
+	if len(files) == 0 {
+		t.Fatal("no production sources found — the census would be vacuous")
+	}
+	return files
+}
