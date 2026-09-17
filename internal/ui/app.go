@@ -2530,6 +2530,32 @@ type sessionState struct {
 	// evidenceMode preference was dropped and this is a quick layout flip, not
 	// a stored setting.
 	evidGridView bool
+	// evidIconSize scales the evidence list icons and grid cells (32–96 px;
+	// default 40). In-memory like evidGridView — the icon-size slider in the
+	// evidence window drives it and both layouts rescale together.
+	evidIconSize int32
+	// evidDiscardConfirm is the "Stop editing?" modal: swapping the selection
+	// (or Add new) while the editor is open first asks. evidDiscardTarget is
+	// the index the swap would land on (-1 = Add new).
+	evidDiscardConfirm bool
+	evidDiscardTarget  int
+	// evidConflict is the incoming-edit compare view: an EE for the item being
+	// edited arrived while the editor was open. evidIncoming snapshots the
+	// server's new {name,desc,image} so the user can Keep mine / Accept theirs
+	// instead of silently losing the unsaved work.
+	evidConflict bool
+	evidIncoming courtroom.EvidenceItem
+	// evidPicker is the "Choose" image picker: a modal grid of evidence images
+	// (local mount folder in local/layered mode, the server's evidence/ index in
+	// stream/layered mode, plus the case evidence already on hand).
+	evidPickerOpen   bool
+	evidPickerSearch string
+	evidPickerScroll int32
+	evidPickerFiles  []string // discovered names, parallel to evidPickerLower
+	evidPickerLower  []string
+	evidPickerBusy   bool
+	evidPickerScanned bool
+	evidPickerRes    chan []string
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
@@ -5202,9 +5228,16 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if a.evidIdx == ev.Int {
 					a.evidIdx = -1
 					a.evidEditing = false
+					a.evidConflict = false
 				} else if a.evidIdx > ev.Int {
 					a.evidIdx--
 				}
+			} else if ev.Int2 == courtroom.EvidenceOpEdit && a.evidEditing && a.evidIdx == ev.Int {
+				// Someone else edited the very item we're mid-edit on: snapshot
+				// the incoming values and surface the Keep mine / Accept theirs
+				// compare instead of silently clobbering our unsaved work.
+				a.evidIncoming = a.sess.Evidence[ev.Int]
+				a.evidConflict = true
 			}
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
@@ -9040,8 +9073,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
 	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
 	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
-	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
+	a.pollCharMeta()        // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()          // drain bg discovery even when the picker is closed (slideshow)
+	a.pollEvidencePicker()  // drain evidence-image picker discovery (local scan / server index)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
@@ -9148,7 +9182,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
 	// ever fenced the screen for it, so a click that looked like it hit the dialog
 	// also hit whatever was behind. Pre-existing, same family, one term.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidPickerOpen {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -9357,7 +9391,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidPickerOpen {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -9367,7 +9401,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm || a.evidPickerOpen {
 		a.ctx.unfencePointer()
 		switch {
 		case a.makerExportPack > 0:
@@ -9380,6 +9414,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// Explicit case BEFORE default: a lone pending close must not fall into
 			// the hide-sprite branch below (it would draw the wrong modal).
 			a.drawCloseTabConfirm(winW, winH)
+		case a.evidDiscardConfirm:
+			a.drawEvidenceDiscardConfirm(winW, winH)
+		case a.evidPickerOpen:
+			a.drawEvidencePicker(winW, winH)
 		default:
 			a.drawHideSpriteConfirm(winW, winH)
 		}

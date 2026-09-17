@@ -414,6 +414,14 @@ func (u URLBuilder) BackgroundsRoot() string {
 	return u.origin + backgroundDir
 }
 
+// EvidenceRoot returns the evidence/ directory URL (with trailing slash). On
+// hosts that serve an autoindex it lists every evidence image — the stream-mode
+// discovery source for the evidence image picker (Issue #119). Not an asset:
+// fetch its bytes, don't format-probe it.
+func (u URLBuilder) EvidenceRoot() string {
+	return u.origin + evidenceDir
+}
+
 // CharFolder returns one character's folder URL (with trailing slash) — the
 // recursive-download root and (on an autoindex host) its file listing.
 func (u URLBuilder) CharFolder(character string) string {

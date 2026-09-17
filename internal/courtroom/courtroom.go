@@ -308,9 +308,12 @@ type Courtroom struct {
 	// ([Options] blips / legacy gender) — the webAO-parity fallback for
 	// messages whose wire Blipname field is empty (pre-2.10.2 senders, short
 	// packets). The App answers from its per-URL char.ini cache and fires the
-	// fetch on a miss; "" = unknown (the AO default set plays this message,
-	// the speaker's next message picks the fetched value up).
-	BlipNameFor func(char string) string
+	// fetch on a miss. known=false means the char.ini is still in flight (the
+	// blip is HELD — not defaulted to "male" — until it lands, so a character's
+	// first message already blips with their own set); known=true with an empty
+	// name means the ini genuinely declares none and the AO default plays. The
+	// contract mirrors IniShownameFor's (string, known) shape.
+	BlipNameFor func(char string) (name string, known bool)
 
 	// ChatSkinFor, when set, resolves a speaker's chatbox-skin misc folder
 	// (char.ini [Options] chat, AO2-Client get_chat) — same cache/fetch
@@ -499,11 +502,20 @@ type Courtroom struct {
 	// current.Message keeps the marker (recordings share that pointer, so replays
 	// re-decode the style); we never mutate it.
 	currentText string
-	// blipRef is THIS message's blip chain, minted once in begin() by the one
-	// guarded mint (blipurl.go BlipRef): Base is the identity the blip player and
-	// the texture/audio tiers key on, Alts are the further AO2 spellings the
-	// prefetch chain walks on a miss.
+	// blipRef is THIS message's blip chain, minted in begin() by the one guarded
+	// mint (blipurl.go BlipRef): Base is the identity the blip player and the
+	// texture/audio tiers key on, Alts are the further AO2 spellings the
+	// prefetch chain walks on a miss. It may stay empty while the speaker's
+	// char.ini is in flight (see blipPending / resolveBlip).
 	blipRef AssetRef
+	// blipWire is the message's validated wire blip field ("" when absent or a
+	// sentinel); blipSpeaker is the speaker's character folder. blipPending is
+	// set when the speaker's char.ini is still in flight: resolveBlip leaves
+	// blipRef empty then, and the talk ticks re-ask until the meta lands, so the
+	// first message never sounds the wrong (male) default before the set loads.
+	blipWire    string
+	blipSpeaker string
+	blipPending bool
 	// pendingEffects holds the current message's decoded animated-text spans (#M5),
 	// set in begin() and copied onto Scene.MessageEffects when the text shows
 	// (startTalking) — effects are per-message content, never recalled.
@@ -1416,28 +1428,17 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.Predictor.OnMessage(speakerName, msg.Pair.Name, msg.Emote)
 	}
 
-	blip := msg.Blipname
-	if !validBlipName(blip) {
-		blip = "" // sentinel / path-unsafe: fall through to char.ini, then the default
+	// Resolve this message's blip set: the wire field wins; a missing wire field
+	// asks the speaker's char.ini (webAO parity); only a KNOWN-but-empty char.ini
+	// falls back to AO's default. An in-flight char.ini (known=false) leaves the
+	// message pending — re-resolved on the talk ticks — so a female character's
+	// FIRST message never sounds the male default (see resolveBlip).
+	c.blipWire = msg.Blipname
+	if !validBlipName(c.blipWire) {
+		c.blipWire = "" // sentinel / path-unsafe: fall through to char.ini
 	}
-	if blip == "" && c.BlipNameFor != nil {
-		// webAO parity: senders that omit the wire field (pre-2.10.2 clients,
-		// short packets) still blip with THEIR char.ini set, not the default.
-		blip = c.BlipNameFor(speakerName)
-		if !validBlipName(blip) {
-			blip = "" // a char.ini is server bytes too — same one guard, not a second copy
-		}
-	}
-	if blip == "" {
-		blip = defaultBlipSet // get_blipname's last resort (text_file_functions.cpp:510)
-	}
-	// ONE mint for every blip URL in the client (blipurl.go): the guard that
-	// rejects sentinels, and AO2's get_blips ladder — the modern sounds/blips/
-	// set, AO1's sounds/general/sfx-blip<name>, and the plain general sound —
-	// each in the lowercase identity casing then the authored one.
-	// AssetType: Blip
-	c.blipRef = c.urls.BlipRef(blip)
-	c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
+	c.blipSpeaker = speakerName
+	c.resolveBlip()
 
 	// Per-character chatbox skin (char.ini chat=<misc>, AO2 get_chat): the scene
 	// carries the misc art's base; the ui draws it as the chatbox background
@@ -1576,6 +1577,47 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	default:
 		c.enterAfterShout()
 	}
+}
+
+
+// resolveBlip mints c.blipRef from the current message's wire blip or the
+// speaker's char.ini set, holding the message (blipRef empty, blipPending set)
+// while the char.ini fetch is still in flight — so a female character's first
+// message never sounds the male default before her set loads. Re-run from the
+// talk ticks until the meta lands (pollCharMeta flips it to known=true).
+//
+// ONE mint for every blip URL in the client (blipurl.go): the guard that
+// rejects sentinels, and AO2's get_blips ladder — the modern sounds/blips/
+// set, AO1's sounds/general/sfx-blip<name>, and the plain general sound —
+// each in the lowercase identity casing then the authored one.
+// AssetType: Blip
+func (c *Courtroom) resolveBlip() {
+	c.blipPending = false
+	if c.blipWire != "" {
+		c.blipRef = c.urls.BlipRef(c.blipWire)
+		c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
+		return
+	}
+	if c.BlipNameFor != nil {
+		name, known := c.BlipNameFor(c.blipSpeaker)
+		if known {
+			if !validBlipName(name) {
+				name = "" // a char.ini is server bytes too — same one guard, not a second copy
+			}
+			if name == "" {
+				name = defaultBlipSet // get_blipname's last resort (text_file_functions.cpp:510)
+			}
+			c.blipRef = c.urls.BlipRef(name)
+			c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
+			return
+		}
+		// In-flight: hold, don't default. The talk ticks re-ask until known.
+		c.blipPending = true
+		c.blipRef = AssetRef{}
+		return
+	}
+	c.blipRef = c.urls.BlipRef(defaultBlipSet)
+	c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
 }
 
 // beginCaughtUp shows a backlog message's text for ~one frame with no
@@ -2230,8 +2272,13 @@ func (c *Courtroom) Update(dt time.Duration) {
 			}
 			c.fireInlineEffect(m)
 		}
+		if c.blipPending {
+			c.resolveBlip() // the speaker's char.ini may have landed since begin()
+		}
 		for i := 0; i < blips; i++ {
-			c.audio.PlayBlip(c.blipRef.Base) // AssetType: Blip
+			if c.blipRef.Base != "" { // held while in flight — never the wrong set
+				c.audio.PlayBlip(c.blipRef.Base) // AssetType: Blip
+			}
 		}
 		// Text completion ends the message's OCCUPANCY, full stop — an
 		// immediate-mode preanim still playing over the box does not extend it.

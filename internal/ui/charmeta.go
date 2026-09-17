@@ -159,9 +159,14 @@ func (a *App) pollCharMeta() {
 	}
 }
 
-// remoteBlipFor is the courtroom's BlipNameFor callback: the speaker's
-// char.ini blip set ("" until fetched / when none is declared).
-func (a *App) remoteBlipFor(char string) string { return a.charMetaFor(char).blips }
+// remoteBlipFor is the courtroom's BlipNameFor callback: the speaker's char.ini
+// blip set, plus whether the fetch has settled. known=false (still in flight)
+// makes the courtroom hold the blip rather than default to "male", so the
+// first message a character sends already blips with their own set.
+func (a *App) remoteBlipFor(char string) (string, bool) {
+	m := a.charMetaFor(char)
+	return m.blips, m.done
+}
 
 // remoteChatSkinFor is the courtroom's ChatSkinFor callback — gated on the
 // pref so turning skins off also stops the misc art fetches.

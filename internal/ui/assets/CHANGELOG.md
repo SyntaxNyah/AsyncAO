@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.96.5 - 2026-09-17
+
+Evidence system polish and a first-message blip fix — driven by Crystalwarrior's
+detailed bug reports and huge evidence-system suggestions (thank you!).
+
+- **Evidence window contained (#119)** — the title-bar controls (Close / Add
+  new / Pop out / View) and the "Evidence (N)" heading are now clipped to the
+  window and the heading ellipsizes instead of drawing under the buttons, so a
+  narrow panel no longer leaks parts outside its bounds.
+- **Grid names center + wrap** — the grid view's name label is now word-wrapped
+  (up to two lines) and horizontally centered under each icon.
+- **Icon-size slider** — a new slider in the evidence window scales the list
+  icons and the grid cells from one control (32–96 px).
+- **"Choose" opens your evidence folder** — the editor's Image-file field gains
+  a Choose button that opens a thumbnail grid of evidence images: your local
+  mount's `evidence/` folder in local/layered mode, and the server's `evidence/`
+  listing in stream mode (plus the case evidence already on hand).
+- **Stop-editing confirm** — swapping the evidence selection (or Add new) while
+  the editor is open now asks before discarding your unsaved edit.
+- **Incoming-edit compare** — when another player edits the very evidence you
+  have open in the editor, you get a side-by-side **Keep mine / Accept theirs**
+  view instead of silently losing your work (so you can "nuh uh", or at least
+  compare).
+- **Fixed male blips on a female character's first message** — a speaker's first
+  message now waits for their char.ini instead of sounding the hardcoded male
+  default, so the correct blip set plays from the very first character.
+
 ## v1.96.3 - 2026-09-16
 
 Settings findability: the "throttle when unfocused" control was hard to find.

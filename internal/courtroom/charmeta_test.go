@@ -42,11 +42,11 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		}
 	}
 	room, _, _, _ := newCourtroomRig(t)
-	room.BlipNameFor = func(char string) string {
+	room.BlipNameFor = func(char string) (string, bool) {
 		if char == "dorothy" {
-			return "deep"
+			return "deep", true
 		}
-		return ""
+		return "", true
 	}
 	room.ChatSkinFor = func(char string) string {
 		if char == "dorothy" {
@@ -105,7 +105,7 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		t.Errorf("skinless speaker must clear ChatSkinBase, got %q", room.Scene.ChatSkinBase)
 	}
 	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/male") {
-		t.Errorf("unknown speaker with no wire blip must use the AO default: %q", room.blipRef.Base)
+		t.Errorf("known-but-empty speaker with no wire blip must use the AO default: %q", room.blipRef.Base)
 	}
 }
 
@@ -156,3 +156,34 @@ number = 2
 		t.Errorf("emote with no frame sections must leave FRAME_* empty, got shake=%q sfx=%q realize=%q", p.FrameShake, p.FrameSFX, p.FrameRealize)
 	}
 }
+
+// TestBlipHeldWhileCharINIPending pins the first-message guarantee: a speaker
+// whose char.ini is still in flight (known=false) must NOT sound the male
+// default — the blip is held (empty base) until the fetch lands, then the
+// correct set plays for that same message.
+func TestBlipHeldWhileCharINIPending(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.BlipNameFor = func(char string) (string, bool) { return "", false }
+	msg := &protocol.ChatMessage{
+		CharName: "ridelle", Emote: "normal", Message: "hello", Side: "wit",
+		EmoteMod: protocol.EmoteModIdle, // no preanim stall — begin → typewriter
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if !room.blipPending {
+		t.Fatal("in-flight char.ini must leave the blip pending")
+	}
+	if room.blipRef.Base != "" {
+		t.Fatalf("in-flight char.ini must not resolve to a default: blip base = %q", room.blipRef.Base)
+	}
+
+	// The fetch lands: the same speaker now answers "female", known=true.
+	room.BlipNameFor = func(char string) (string, bool) { return "female", true }
+	room.SkipToIdle()
+	if room.blipPending {
+		t.Fatal("a landed char.ini must clear the pending flag")
+	}
+	if !strings.HasSuffix(room.blipRef.Base, "sounds/blips/female") {
+		t.Errorf("first message must blip with the landed set, got %q", room.blipRef.Base)
+	}
+}
+

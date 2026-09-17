@@ -169,7 +169,7 @@ func TestMessageFunnelMintsExactlyBlipRef(t *testing.T) {
 		// Per-row, so no row inherits a previous row's override and appending
 		// a case can never silently change what an earlier one tested.
 		charINI := tc.charINI
-		room.BlipNameFor = func(string) string { return charINI }
+		room.BlipNameFor = func(string) (string, bool) { return charINI, true }
 		room.HandleEvent(Event{Kind: EventMessage, Message: icMsg(tc.char, tc.wire)})
 		room.SkipToIdle()
 		want := room.urls.BlipRef(tc.resolved)
@@ -187,7 +187,7 @@ func TestFunnelAlwaysMintsAPlayableChain(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	hostile := []string{"", "   ", "-1", "0", "5^0", "../../etc/passwd", `a\b`, "a#b", "male"}
 	for _, junk := range hostile {
-		room.BlipNameFor = func(string) string { return junk }
+		room.BlipNameFor = func(string) (string, bool) { return junk, true }
 		room.HandleEvent(Event{Kind: EventMessage, Message: &protocol.ChatMessage{
 			CharName: "stranger", Emote: "normal", Message: "hi", Side: "wit",
 			EmoteMod: protocol.EmoteModIdle, Blipname: junk,

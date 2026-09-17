@@ -964,6 +964,20 @@ const (
 	evidInspectorLastBtnH   = btnH
 )
 
+
+// Evidence icon-size slider bounds and the grid name-label band (Issue #119):
+// one in-memory size scales both the list icons and the grid cells; grid names
+// wrap to at most two centered lines.
+const (
+	evidIconDefault  = 40
+	evidIconMin      = 32
+	evidIconMax      = 96
+	evidIconRowH     = 26  // the icon-size slider strip's height above the list/grid
+	evidNameLineH    = 16  // one grid name-label line
+	evidNameMaxLines = 2   // grid name wrap cap
+	evidNameBandH    = evidNameLineH*evidNameMaxLines + 2
+)
+
 // evidDescViewH is the pure height arithmetic behind the Issue #15
 // description viewport: whatever's left between descTop (just under the
 // item's name heading) and panelBottom (the panel's inner bottom edge)
@@ -1009,21 +1023,31 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	r := a.evidPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
-	// Title bar / drag handle + close + "Add new" + "Pop out/in" + a bottom-right resize grip.
+	// Title bar / drag handle + close + "Add new" + "Pop out/in" + a bottom-right
+	// resize grip. The whole strip is clipped so a narrow panel can't let a button
+	// or the heading escape the window (Issue #119).
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
-	c.Heading(r.X+pad, r.Y+6, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
+	titleClip, titleHad := c.pushClip(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH})
 	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
+	addB := sdl.Rect{X: closeB.X - 90, Y: r.Y + 3, W: 84, H: btnH}
+	popB := sdl.Rect{X: addB.X - 86, Y: r.Y + 3, W: 80, H: btnH}
+	viewB := sdl.Rect{X: popB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
+	// The heading takes whatever width is left of the button column and
+	// ellipsizes instead of drawing under it (Heading doesn't clip, so use the
+	// big face through LabelClippedFont).
+	availW := viewB.X - r.X - 2*pad
+	if availW < 0 {
+		availW = 0
+	}
+	c.LabelClippedFont(c.fontBig, r.X+pad, r.Y+6, availW, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
 	if c.Button(closeB, "Close") {
 		a.showEvid = false
+		c.popClip(titleClip, titleHad)
 		return
 	}
-	addB := sdl.Rect{X: closeB.X - 90, Y: r.Y + 3, W: 84, H: btnH}
 	if c.Button(addB, "Add new") {
-		a.evidIdx = -1
-		a.evidEditing = true
-		a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
+		a.startEvidenceAdd()
 	}
-	popB := sdl.Rect{X: addB.X - 86, Y: r.Y + 3, W: 80, H: btnH}
 	popLabel := "Pop out"
 	if a.evidInspectorDetached {
 		popLabel = "Pop in"
@@ -1033,7 +1057,6 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 	// List ↔ grid layout toggle (in-memory): a quick flip between the DRO icon
 	// list and the AO2 thumbnail grid, not a persisted preference.
-	viewB := sdl.Rect{X: popB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
 	viewLabel := "View: List"
 	if a.evidGridView {
 		viewLabel = "View: Grid"
@@ -1042,6 +1065,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		a.evidGridView = !a.evidGridView
 		a.evidScroll = 0 // reflow: start the new layout scrolled to the top
 	}
+	c.popClip(titleClip, titleHad)
 	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: viewB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
@@ -1050,6 +1074,19 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		a.persistPanelSlot(slotPanelEvid, r, w, h)
 	}
 	contentTop := r.Y + floatTitleH + 8
+
+	// Icon-size slider (Issue #119): one in-memory value scales both the list
+	// icons and the grid cells. Mapped onto [min,max] so the thumb sits on the
+	// real size.
+	if a.evidIconSize == 0 {
+		a.evidIconSize = evidIconDefault
+	}
+	c.Label(r.X+pad, contentTop+4, "Icon size:", ColTextDim)
+	a.evidIconSize = evidIconMin + c.Slider("evidiconsize",
+		sdl.Rect{X: r.X + pad + 66, Y: contentTop + 3, W: 120, H: 16},
+		a.evidIconSize-evidIconMin, evidIconMax-evidIconMin)
+	c.Label(r.X+pad+196, contentTop+4, fmt.Sprintf("%d px", a.evidIconSize), ColTextDim)
+	contentTop += evidIconRowH
 
 	// List (left); when the inspector is detached the list takes the whole panel.
 	var listRect, inspRect sdl.Rect
@@ -1078,7 +1115,11 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 // a row scrolled part-way out can't bleed into the title bar.
 func (a *App) drawEvidenceList(list sdl.Rect) {
 	c := a.ctx
-	const rowH, icon = int32(48), int32(40)
+	if a.evidIconSize == 0 {
+		a.evidIconSize = evidIconDefault
+	}
+	icon := a.evidIconSize
+	rowH := icon + 8
 	contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
 	a.evidScroll -= c.WheelIn(list) * scrollStepPx
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
@@ -1104,13 +1145,13 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 			a.demandEvidence(i, url)
 		}
 		c.Border(iconR, ColPanelHi)
-		c.LabelClipped(row.X+icon+8, row.Y+14, rowW-icon-12, item.Name, ColText)
+		c.LabelClipped(row.X+icon+8, row.Y+(rowH-evidNameLineH)/2, rowW-icon-12, item.Name, ColText)
 		if c.hovering(row) && c.clicked {
-			a.evidIdx = i
+			a.requestEvidenceSelection(i)
 			a.evidCtxMenu = false
 		}
 		if c.hovering(row) && c.rightClicked {
-			a.evidIdx = i
+			a.requestEvidenceSelection(i)
 			a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
 		}
 	}
@@ -1125,7 +1166,11 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 // behaviour as the list, laid out as 72×72 cells with the name beneath each.
 func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 	c := a.ctx
-	const cell, cellGap = int32(72), int32(8)
+	if a.evidIconSize == 0 {
+		a.evidIconSize = evidIconDefault
+	}
+	cell := a.evidIconSize + 32
+	const cellGap = int32(8)
 	cellW := grid.W - scrollBarW
 	if cellW < cell {
 		cellW = cell // degenerate-width guard (very narrow panel)
@@ -1135,7 +1180,7 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 		cols = 1
 	}
 	rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
-	contentH := rows*(cell+cellGap+14) - cellGap
+	contentH := rows*(cell+cellGap+evidNameBandH) - cellGap
 	a.evidScroll -= c.WheelIn(grid) * scrollStepPx
 	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
 	a.evidScroll = c.VScrollbar("evidgrid", track, a.evidScroll, contentH, grid.H)
@@ -1144,8 +1189,8 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 		item := &a.sess.Evidence[i]
 		col, row := int32(i)%cols, int32(i)/cols
 		cx := grid.X + col*(cell+cellGap)
-		cy := grid.Y + row*(cell+cellGap+14) - a.evidScroll
-		if cy+cell <= grid.Y || cy >= grid.Y+grid.H {
+		cy := grid.Y + row*(cell+cellGap+evidNameBandH) - a.evidScroll
+		if cy+cell+evidNameBandH <= grid.Y || cy >= grid.Y+grid.H {
 			continue
 		}
 		rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
@@ -1160,13 +1205,20 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 			a.demandEvidence(i, url)
 		}
 		c.Border(rc, ColPanelHi)
-		c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
+		// Name: word-wrapped and centered beneath the cell (Issue #119).
+		nameLines := c.WrapText(item.Name, cell, evidNameMaxLines)
+		ny := cy + cell + 2
+		for _, line := range nameLines {
+			lw := c.TextWidth(line)
+			c.LabelClipped(cx+(cell-lw)/2, ny, cell, line, ColTextDim)
+			ny += evidNameLineH
+		}
 		if c.hovering(rc) && c.clicked {
-			a.evidIdx = i
+			a.requestEvidenceSelection(i)
 			a.evidCtxMenu = false
 		}
 		if c.hovering(rc) && c.rightClicked {
-			a.evidIdx = i
+			a.requestEvidenceSelection(i)
 			a.evidCtxMenu, a.evidCtxX, a.evidCtxY = true, c.mouseX, c.mouseY
 		}
 	}
@@ -1182,6 +1234,13 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 	c := a.ctx
 	ix, iw := rect.X, rect.W
+
+	// Incoming-edit compare (an EE arrived for the item being edited): show the
+	// Keep mine / Accept theirs view instead of the editor.
+	if a.evidConflict && a.evidEditing {
+		a.drawEvidenceCompare(rect)
+		return
+	}
 
 	// Edit toggle (add when evidIdx == -1, edit the selection otherwise).
 	if a.evidEditing {
@@ -1274,7 +1333,14 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: ix, Y: iy, W: iw, H: descH}, a.evidDesc, "What it proves")
 	iy += descH + 8
 	c.Label(ix, iy+4, "Image file:", ColText)
-	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: iw - 60, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
+	imgW := iw - 60 - 76 // leave room for the "Choose" picker button
+	if imgW < 60 {
+		imgW = 60
+	}
+	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
+	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: 70, H: fieldH}, "Choose") {
+		a.openEvidencePicker()
+	}
 	iy += fieldH + 8
 	if c.Button(sdl.Rect{X: ix, Y: iy, W: 90, H: btnH}, "Save") {
 		name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
@@ -1285,12 +1351,115 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 				a.sess.EditEvidence(a.evidIdx, name, desc, img)
 			}
 			a.evidEditing = false
+			a.evidConflict = false
 		}
 	}
 	if c.Button(sdl.Rect{X: ix + 100, Y: iy, W: 90, H: btnH}, "Cancel") {
 		a.evidEditing = false
+		a.evidConflict = false
 	}
 }
+
+// requestEvidenceSelection is the ONE seam for changing the evidence selection
+// from the list/grid. While the editor is open it first asks (Stop editing?)
+// instead of silently discarding the unsaved work; otherwise it switches.
+func (a *App) requestEvidenceSelection(idx int) {
+	if a.evidEditing && idx != a.evidIdx {
+		a.evidDiscardConfirm = true
+		a.evidDiscardTarget = idx
+		return
+	}
+	a.evidIdx = idx
+}
+
+// startEvidenceAdd opens a fresh "Add new" editor, first asking the same
+// Stop-editing? confirm when an edit to an EXISTING item is already in progress
+// (re-adding while already adding just resets the draft, as before).
+func (a *App) startEvidenceAdd() {
+	if a.evidEditing && a.evidIdx != -1 {
+		a.evidDiscardConfirm = true
+		a.evidDiscardTarget = -1
+		return
+	}
+	a.evidIdx = -1
+	a.evidEditing = true
+	a.evidConflict = false
+	a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
+}
+
+// drawEvidenceDiscardConfirm is the "Stop editing?" modal (drawn top-level over
+// the courtroom, mirroring drawQuitConfirm): swapping the evidence selection
+// while the editor is open asks before the unsaved edit is discarded.
+func (a *App) drawEvidenceDiscardConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 480, 180
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	c.Heading(m.X+pad, m.Y+pad, "Stop editing?", ColText)
+	c.Label(m.X+pad, m.Y+50, "You have an unsaved evidence edit. Switching away will discard it.", ColText)
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 120, H: btnH}, "Discard") {
+		a.evidDiscardConfirm = false
+		a.evidEditing = false
+		a.evidConflict = false
+		a.evidIdx = a.evidDiscardTarget
+		if a.evidIdx < 0 {
+			a.evidEditing = true
+			a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
+		}
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 130, Y: m.Y + mh - btnH - pad, W: 130, H: btnH}, "Keep editing") {
+		a.evidDiscardConfirm = false
+	}
+}
+
+// drawEvidenceCompare is the incoming-edit compare view (the inspector's edit
+// side replaced while evidConflict is set): your unsaved edit side-by-side with
+// the server's new values, so you can Keep mine or Accept theirs.
+func (a *App) drawEvidenceCompare(rect sdl.Rect) {
+	c := a.ctx
+	ix, iy, iw := rect.X, rect.Y, rect.W
+	c.Label(ix, iy, "This evidence changed while you were editing.", ColAccent)
+	iy += 22
+	half := (iw - 12) / 2
+	if half < 120 {
+		half = 120
+	}
+	leftX, rightX := ix, ix+half+12
+	c.Label(leftX, iy, "Yours (unsaved):", ColText)
+	c.Label(rightX, iy, "Theirs (incoming):", ColText)
+	iy += 20
+	c.LabelClipped(leftX, iy, half, a.evidName, ColTextDim)
+	c.LabelClipped(rightX, iy, half, a.evidIncoming.Name, ColTextDim)
+	iy += evidDescLineH
+	leftDesc := c.WrapText(a.evidDesc, half, 3)
+	rightDesc := c.WrapText(a.evidIncoming.Description, half, 3)
+	for i := 0; i < 3; i++ {
+		l, r := "", ""
+		if i < len(leftDesc) {
+			l = leftDesc[i]
+		}
+		if i < len(rightDesc) {
+			r = rightDesc[i]
+		}
+		c.LabelClipped(leftX, iy, half, l, ColTextDim)
+		c.LabelClipped(rightX, iy, half, r, ColTextDim)
+		iy += evidDescLineH
+	}
+	c.LabelClipped(leftX, iy, half, "image: "+a.evidImage, ColTextDim)
+	c.LabelClipped(rightX, iy, half, "image: "+a.evidIncoming.Image, ColTextDim)
+	iy += 28
+	if c.Button(sdl.Rect{X: ix, Y: iy, W: 120, H: btnH}, "Keep mine") {
+		a.evidConflict = false
+	}
+	if c.Button(sdl.Rect{X: ix + 130, Y: iy, W: 130, H: btnH}, "Accept theirs") {
+		a.evidConflict = false
+		a.evidName, a.evidDesc, a.evidImage = a.evidIncoming.Name, a.evidIncoming.Description, a.evidIncoming.Image
+	}
+}
+
 
 // drawEvidenceDescriptionLine draws one wrapped description line, rendering any
 // URLs in it as clickable links (accent + hover underline + open browser), the
