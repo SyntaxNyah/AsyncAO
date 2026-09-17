@@ -441,6 +441,11 @@ type Viewport struct {
 	overlayAnim animState
 	overlayGen  uint32
 
+	// prevActiveIdle/Talk/Preanim are the speaker's three sprite bases from the
+	// previous frame, so ReduceAnimatedExcept fires only when the active animated
+	// set changes (once per message), not every frame.
+	prevActiveIdle, prevActiveTalk, prevActivePreanim string
+
 	// OnPreanimDone forwards one-shot completion to the courtroom state
 	// machine.
 	OnPreanimDone func()
@@ -696,6 +701,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
+	v.reduceInactiveAnimations(scene)
 	// Hold-previous max-age clock: how long each char layer has been cold
 	// (resolve is generation-cached — steady state is pointer math).
 	v.tickCold(&v.speakerAnim, dt)
@@ -922,6 +928,32 @@ func (v *Viewport) syncAnim(a *animState, base string) {
 			a.fadeLeft = 0
 		}
 	}
+}
+
+// reduceInactiveAnimations downgrades non-active resident animations to stills
+// once per active-set change. Only the speaker's idle/talk/preanim stay fully
+// animated; everything else (the pair, previous speakers) collapses to frame 0
+// and re-streams when it becomes active again.
+func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
+	if scene.Speaker.IdleBase == v.prevActiveIdle &&
+		scene.Speaker.TalkBase == v.prevActiveTalk &&
+		scene.Speaker.PreanimBase == v.prevActivePreanim {
+		return
+	}
+	v.prevActiveIdle = scene.Speaker.IdleBase
+	v.prevActiveTalk = scene.Speaker.TalkBase
+	v.prevActivePreanim = scene.Speaker.PreanimBase
+	active := make(map[string]bool, 3)
+	if scene.Speaker.IdleBase != "" {
+		active[scene.Speaker.IdleBase] = true
+	}
+	if scene.Speaker.TalkBase != "" {
+		active[scene.Speaker.TalkBase] = true
+	}
+	if scene.Speaker.PreanimBase != "" {
+		active[scene.Speaker.PreanimBase] = true
+	}
+	v.store.ReduceAnimatedExcept(active)
 }
 
 // syncAnimSticky rebinds a scenery layer only once the incoming base is

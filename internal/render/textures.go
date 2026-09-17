@@ -103,8 +103,14 @@ type TexturePage struct {
 	// networked frame-synced effects into (#17). 0 for a static / non-decimated
 	// page; the viewport treats 0 as len(Frames) (identity).
 	SourceFrames int
-	W, H         int32
-	bytes        int64
+	// Stilled marks a page downgraded from a full animation to its first frame
+	// by ReduceAnimatedExcept (the "non-active characters are a still" memory
+	// cap). Animated stays true, but only frame 0 remains. ContainsAnimated
+	// treats these as absent so an animate demand re-decodes the full clip;
+	// Get still returns them so the frozen frame keeps drawing while it streams.
+	Stilled bool
+	W, H    int32
+	bytes   int64
 	// scaleMode/scaleModeSet memoise the per-texture filter this page's frames
 	// currently carry (scalemode_cgo.go). Per PAGE rather than per texture
 	// because every frame of one animation is the same art at the same size, and
@@ -144,6 +150,33 @@ func (p *TexturePage) destroy() {
 		v.destroy()
 		delete(p.variants, k)
 	}
+}
+
+// reduceToStill destroys every frame but the first, collapsing the page to a
+// single-frame still and marking it Stilled. The caller owns the byte-accounting
+// update (oversizedBytes or the LRU Resize). Render thread only.
+func (p *TexturePage) reduceToStill() {
+	n := len(p.Frames)
+	if n <= 1 {
+		return
+	}
+	// Frames of one decoded animation are equal-size, so the remaining frame's
+	// bytes are the page's per-frame share (correct for both raw RGBA and DXT).
+	frameBytes := p.bytes / int64(n)
+	if frameBytes <= 0 {
+		frameBytes = int64(p.W) * int64(p.H) * texBytesPerPixel
+	}
+	for _, t := range p.Frames[1:] {
+		if t != nil {
+			_ = t.Destroy()
+		}
+	}
+	p.Frames = p.Frames[:1]
+	if len(p.Delays) > 1 {
+		p.Delays = p.Delays[:1]
+	}
+	p.Stilled = true
+	p.bytes = frameBytes
 }
 
 // TextureStore is T1: a byte-budgeted texture cache keyed by asset BASE
@@ -557,6 +590,65 @@ func (s *TextureStore) Contains(base string) bool {
 	_, ok := s.oversized[base]
 	s.oversizedMu.RUnlock()
 	return ok
+}
+
+// ContainsAnimated is Contains but treats Stilled pages as absent: a full
+// animation downgraded to a still re-decodes on the next animate demand. It is
+// the manager's T1 probe (so a reduced pair/previous-speaker re-streams when it
+// becomes the speaker), while Contains stays the wait-gate probe (a reduced page
+// must still count as settled). Safe from any goroutine.
+func (s *TextureStore) ContainsAnimated(base string) bool {
+	if page, ok := s.small.Peek(base); ok {
+		return !page.Stilled
+	}
+	if page, ok := s.t1.Peek(base); ok {
+		return !page.Stilled
+	}
+	s.oversizedMu.RLock()
+	page, ok := s.oversized[base]
+	s.oversizedMu.RUnlock()
+	return ok && !page.Stilled
+}
+
+// ReduceAnimatedExcept downgrades every resident ANIMATED page whose base is
+// NOT in active to a single still frame, freeing the rest. It is the
+// "non-active characters are a still" memory cap: only the active speaker's
+// animation stays full; the pair and every previously-shown animation collapse
+// to frame 0 and re-stream (~20 ms) when they become active again.
+// Render thread only. Returns how many pages it downgraded.
+func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
+	reduced := 0
+
+	// Oversized map (animated pages too large for the main tier).
+	s.oversizedMu.Lock()
+	for base, page := range s.oversized {
+		if active[base] || !page.Animated || page.Stilled || len(page.Frames) <= 1 {
+			continue
+		}
+		before := page.bytes
+		page.reduceToStill()
+		s.oversizedBytes += page.bytes - before
+		reduced++
+	}
+	s.oversizedMu.Unlock()
+
+	// Main tier (bulky-but-fits animations live here under DXT5).
+	for _, base := range s.t1.Keys() {
+		if active[base] {
+			continue
+		}
+		page, ok := s.t1.Peek(base)
+		if !ok || !page.Animated || page.Stilled || len(page.Frames) <= 1 {
+			continue
+		}
+		before := page.bytes
+		page.reduceToStill()
+		s.t1.Resize(base, page.bytes)
+		if page.bytes != before {
+			reduced++
+		}
+	}
+	return reduced
 }
 
 // Get returns the page for base (pinned pages first, then the oversized map,

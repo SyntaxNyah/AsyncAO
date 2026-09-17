@@ -357,7 +357,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Pool:       pool,
 		Decoder:    decoder,
 		Thumbs:     thumbs, // opt-in low-q sprite thumbnails (nil when unavailable)
-		T1Contains: store.Contains,
+		T1Contains: store.ContainsAnimated,
 		T1Failed:   store.FailedRecently,
 	})
 	// Seed the streaming manager's local:// overlay from the configured mounts,

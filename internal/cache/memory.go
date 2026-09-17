@@ -128,7 +128,7 @@ type ByteBudgetLRU[K comparable, V any] struct {
 	misses    atomic.Int64
 	evictions atomic.Int64
 	onEvict   EvictFunc[K, V]
-	lru       *lru.Cache[K, sized[V]]
+	lru       *lru.Cache[K, *sized[V]]
 }
 
 // NewByteBudgetLRU builds a tier holding at most maxEntries values and at
@@ -138,7 +138,7 @@ func NewByteBudgetLRU[K comparable, V any](maxEntries int, budgetBytes int64, on
 		budget:  budgetBytes,
 		onEvict: onEvict,
 	}
-	inner, err := lru.NewWithEvict(maxEntries, func(key K, entry sized[V]) {
+	inner, err := lru.NewWithEvict(maxEntries, func(key K, entry *sized[V]) {
 		c.bytes.Add(-entry.size)
 		c.evictions.Add(1)
 		if c.onEvict != nil {
@@ -164,7 +164,7 @@ func (c *ByteBudgetLRU[K, V]) Add(key K, value V, size int64) bool {
 	// Remove-then-add keeps byte accounting exact on replacement and routes
 	// the displaced value through the eviction callback.
 	c.lru.Remove(key)
-	c.lru.Add(key, sized[V]{value: value, size: size})
+	c.lru.Add(key, &sized[V]{value: value, size: size})
 	c.bytes.Add(size)
 	for c.bytes.Load() > c.budget {
 		if _, _, ok := c.lru.RemoveOldest(); !ok {
@@ -191,7 +191,30 @@ func (c *ByteBudgetLRU[K, V]) Get(key K) (V, bool) {
 // Peek returns the cached value without bumping recency or counters.
 func (c *ByteBudgetLRU[K, V]) Peek(key K) (V, bool) {
 	entry, ok := c.lru.Peek(key)
-	return entry.value, ok
+	if !ok {
+		var zero V
+		return zero, false
+	}
+	return entry.value, true
+}
+
+// Resize updates the accounted payload size of an existing entry in place,
+// WITHOUT routing the value through the eviction callback (the value is kept;
+// only its byte cost changes). It exists for the texture store's animated-page
+// downgrade: a full animation reduced to a still frame keeps its one remaining
+// texture but must shrink its byte accounting so the tier evicts correctly.
+// Returns false when the key is absent (or the size is invalid).
+func (c *ByteBudgetLRU[K, V]) Resize(key K, size int64) bool {
+	if size < 0 {
+		return false
+	}
+	entry, ok := c.lru.Peek(key)
+	if !ok {
+		return false
+	}
+	c.bytes.Add(size - entry.size)
+	entry.size = size
+	return true
 }
 
 // Contains reports presence without recency or counter effects.

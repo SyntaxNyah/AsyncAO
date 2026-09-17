@@ -250,11 +250,8 @@ func (a *App) drawMountIndexStatus(y int32) int32 {
 	case a.mountIndexing:
 		c.Label(pad, y+4, "Indexing your folders…", ColTextDim)
 	case a.mountIndex != nil:
-		files, mounts, truncated := a.mountIndex.Stats()
+		files, mounts := a.mountIndex.Stats()
 		line := fmt.Sprintf("Indexed %d file(s) in %d mount(s).", files, mounts)
-		if truncated {
-			line += " Size cap reached — the rest streams from the server."
-		}
 		// Served-this-session, not a "shadow count": the client never enumerates the
 		// server's files, so how many of these REPLACE a server asset is unknowable
 		// without crawling it. This number is one we actually have.

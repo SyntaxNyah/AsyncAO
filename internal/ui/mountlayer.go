@@ -179,8 +179,8 @@ func (a *App) pollMountIndex() {
 		// textures this pack can re-answer so the current speaker updates on the
 		// next frame instead of whenever it happens to evict.
 		a.rescanLocalPacks(layer)
-		files, _, truncated := res.idx.Stats()
-		a.pushDebug("local packs indexed: " + strconv.Itoa(files) + " file(s)" + map[bool]string{true: " (cap reached)"}[truncated])
+		files, _ := res.idx.Stats()
+		a.pushDebug("local packs indexed: " + strconv.Itoa(files) + " file(s)")
 	default:
 	}
 }

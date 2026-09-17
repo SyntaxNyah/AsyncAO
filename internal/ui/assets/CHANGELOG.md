@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.97.0 - 2026-09-17
+
+A big memory win for crowded areas and unlimited local packs.
+
+- **Animated sprites use a fraction of the RAM** — only the active speaker's
+  animation stays fully loaded. The pair and every previously-shown character
+  now collapse to a single still frame and stream back in the instant they
+  speak, so a room full of bulky animated characters costs far less memory
+  without changing the animation you're actually watching.
+- **No more local-pack size cap** — the mount index no longer stops at a
+  ~46,000-file limit. A large "Only use my folders" pack is indexed in full
+  instead of silently falling back to the server for the rest.
+
 ## v1.96.6 - 2026-09-17
 
 Animated sprites now start moving the instant their first frame decodes, and a

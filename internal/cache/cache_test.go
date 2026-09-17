@@ -108,6 +108,30 @@ func TestByteBudgetGetBumpsRecency(t *testing.T) {
 	}
 }
 
+func TestByteBudgetResize(t *testing.T) {
+	var evictions int
+	c := mustLRU(t, DefaultMaxEntries, int64(1000), func(string, []byte, int64) { evictions++ })
+	c.Add("k", make([]byte, 100), 100)
+	if !c.Resize("k", 30) {
+		t.Fatal("Resize on a resident key must succeed")
+	}
+	if got := c.Bytes(); got != 30 {
+		t.Errorf("Bytes after Resize = %d, want 30", got)
+	}
+	if got := c.Len(); got != 1 {
+		t.Errorf("Len = %d, want 1 (Resize must not drop the entry)", got)
+	}
+	if _, ok := c.Peek("k"); !ok {
+		t.Error("Resize dropped the entry")
+	}
+	if evictions != 0 {
+		t.Errorf("Resize fired the eviction callback %d times, want 0 (in-place byte update)", evictions)
+	}
+	if c.Resize("absent", 10) {
+		t.Error("Resize on an absent key must return false")
+	}
+}
+
 func TestByteBudgetReplaceAccountsExactly(t *testing.T) {
 	var evictions int
 	c := mustLRU(t, DefaultMaxEntries, int64(1000), func(string, []byte, int64) { evictions++ })

@@ -43,7 +43,7 @@ func TestAssetSourceLayeredPublishesALayer(t *testing.T) {
 	if layer.Index() == nil {
 		t.Fatal("no index behind the published layer")
 	}
-	if files, _, _ := layer.Index().Stats(); files != 1 {
+	if files, _ := layer.Index().Stats(); files != 1 {
 		t.Errorf("indexed %d files, want the 1 in the pack", files)
 	}
 }

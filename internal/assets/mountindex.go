@@ -38,26 +38,12 @@ import (
 )
 
 const (
-	// mountIndexEntryBytes is the ACCOUNTED cost of one indexed file: the folded
-	// key string, the packFile value, this entry's share of both maps' bucket
-	// overhead, and the stem entry. Go maps also hold old and new bucket arrays
-	// simultaneously while growing, so the real peak runs above nominal — the
-	// figure is deliberately generous rather than a measured floor.
-	mountIndexEntryBytes = 180
-	// mountIndexByteCap bounds the ACCOUNTED footprint (entries ×
-	// mountIndexEntryBytes), enforced DURING the walk so it stops at the cap
-	// instead of discovering it afterwards.
+	// No entry-count or byte cap: local mounts are the user's own content and must
+	// never be silently truncated. The old mountIndexByteCap stopped indexing packs
+	// past ~46k files — the "size cap" / "not indexing files" report. Index memory
+	// grows with the pack (~180 bytes/file); the only remaining bounds are the
+	// SAFETY ones below (depth, per-entry size, symlink skip).
 	//
-	// Sizing: cmd/asyncao installs a hard debug.SetMemoryLimit of 256 MiB and the
-	// T2 tier already commits 128 MiB of that, with the decode pool's pixpool
-	// classes on top — so the headroom this can spend is far smaller than the
-	// total budget suggests, and pushing live heap toward SetMemoryLimit makes the
-	// GC run continuously (which the 1 Hz GC-p99 metric watches). 8 MiB is ~46k
-	// files, already far past any "small custom content pack".
-	mountIndexByteCap = 8 << 20
-	// mountIndexMaxEntries is the cap in entries, derived so the two constants can
-	// never drift apart.
-	mountIndexMaxEntries = mountIndexByteCap / mountIndexEntryBytes
 	// mountIndexMaxDepth bounds directory recursion. It is safepath's shared
 	// bound, aliased rather than copied so the mount index and the theme packer
 	// can never drift into two different ideas of "too deep" (rule 4).
@@ -149,8 +135,7 @@ type MountIndex struct {
 	files map[string]packFile // folded rel (WITH extension) -> location
 	stems map[string]uint16   // folded rel WITHOUT extension -> indexed-extension mask
 
-	entries   int
-	truncated bool
+	entries int
 
 	bad quarantine
 
@@ -168,7 +153,7 @@ type MountIndex struct {
 // pool workers and MUST be safe for concurrent use.
 type mountSource interface {
 	// walk visits every FILE under the source, passing the source-relative path
-	// with forward slashes. Returning false stops the walk (the byte cap).
+	// with forward slashes. Returning false stops the walk.
 	walk(fn func(rel string) bool) error
 	// read returns one entry's bytes by its exact source-relative path.
 	read(rel string) ([]byte, error)
@@ -218,20 +203,13 @@ func BuildMountIndex(mounts []string) (*MountIndex, []error) {
 		if err := ix.absorb(src, uint8(len(ix.sources)-1)); err != nil {
 			errs = append(errs, &mountError{mount: m, err: err})
 		}
-		if ix.truncated {
-			break
-		}
 	}
 	return ix, errs
 }
 
-// absorb indexes one source's files, stopping at the byte cap.
+// absorb indexes one source's files.
 func (ix *MountIndex) absorb(src mountSource, mount uint8) error {
 	return src.walk(func(rel string) bool {
-		if ix.entries >= mountIndexMaxEntries {
-			ix.truncated = true
-			return false
-		}
 		// Folder walks are already depth-bounded by safepath.WalkFiles; this
 		// covers the OTHER source kind, whose entry names come straight out of a
 		// zip central directory and never touch a walker.
@@ -295,8 +273,8 @@ func (ix *MountIndex) ReadFile(f packFile, foldedRel string) ([]byte, error) {
 }
 
 // Stats reports what the settings status line shows.
-func (ix *MountIndex) Stats() (files, mounts int, truncated bool) {
-	return ix.entries, len(ix.mounts), ix.truncated
+func (ix *MountIndex) Stats() (files, mounts int) {
+	return ix.entries, len(ix.mounts)
 }
 
 // Mounts returns the configured mount list this index was built from, so a

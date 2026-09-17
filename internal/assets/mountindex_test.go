@@ -179,10 +179,7 @@ func TestMountIndexZipPack(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("build errors: %v", errs)
 	}
-	files, mounts, truncated := ix.Stats()
-	if truncated {
-		t.Error("a three-entry zip reported truncated")
-	}
+	files, mounts := ix.Stats()
 	if mounts != 1 {
 		t.Errorf("mounts = %d, want 1", mounts)
 	}
@@ -235,7 +232,7 @@ func TestMountIndexZipSlipRefused(t *testing.T) {
 	ix, _ := BuildMountIndex([]string{zipPath})
 	defer ix.Retire()
 
-	if files, _, _ := ix.Stats(); files != 1 {
+	if files, _ := ix.Stats(); files != 1 {
 		t.Errorf("indexed %d entries, want 1 — the escaping name was not refused", files)
 	}
 	if _, ok := ix.LookupExact("../../evil.png"); ok {
@@ -260,30 +257,27 @@ func (f *fakeSource) walk(fn func(rel string) bool) error {
 	return nil
 }
 
-// TestMountIndexByteCapStopsTheWalk pins that the cap is enforced DURING the walk
-// — it stops absorbing rather than discovering the overrun afterwards — and that
-// the partial index still serves. Degrading is always safe here because the layer
-// only ever ADDS hits over the network path.
-func TestMountIndexByteCapStopsTheWalk(t *testing.T) {
+// TestMountIndexNoEntryCap pins that there is NO entry-count cap: a pack larger
+// than the old ~46k-file limit is indexed in full. Local mounts are the user's
+// own content and must never be silently truncated.
+func TestMountIndexNoEntryCap(t *testing.T) {
 	ix := &MountIndex{files: map[string]packFile{}, stems: map[string]uint16{}}
 	ix.refs.Store(1)
 	defer ix.Retire()
-	src := &fakeSource{n: mountIndexMaxEntries + 64}
+	const big = 60000 // past the old 8 MiB cap (~46,600 entries)
+	src := &fakeSource{n: big}
 	ix.sources = append(ix.sources, src)
 	if err := ix.absorb(src, 0); err != nil {
 		t.Fatal(err)
 	}
 
-	got, _, truncated := ix.Stats()
-	if !truncated {
-		t.Error("the cap was reached without reporting truncated")
+	files, _ := ix.Stats()
+	if files != big {
+		t.Errorf("indexed %d entries, want %d (no truncation)", files, big)
 	}
-	if got > mountIndexMaxEntries {
-		t.Errorf("indexed %d entries, past the %d cap", got, mountIndexMaxEntries)
-	}
-	// The partial index still resolves what it did manage to index.
-	if _, ok := ix.LookupExact("characters/c0/(a)normal.png"); !ok {
-		t.Error("a truncated index lost the entries it had already absorbed")
+	// The whole pack resolves, including the file past the old cap.
+	if _, ok := ix.LookupExact("characters/c59999/(a)normal.png"); !ok {
+		t.Error("a file past the old cap was not indexed")
 	}
 }
 
