@@ -142,3 +142,20 @@ func BenchmarkDecodeWebP_256x192(b *testing.B) {
 		d.Release()
 	}
 }
+
+// BenchmarkDecodeWebPAnim_256x192_3f is the §15 animated-decode gate: it times
+// the COLD decode of a small 3-frame animated WebP (every authored frame,
+// composed then copied out). This is the unit-level probe for the animation
+// cold-load cost — the real-world number needs a larger 60–150 frame fixture.
+func BenchmarkDecodeWebPAnim_256x192_3f(b *testing.B) {
+	data := fixture(b, "sprite_anim_256x192.webp")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		d, err := DecodeImage(data, true)
+		if err != nil {
+			b.Fatal(err)
+		}
+		d.Release()
+	}
+}

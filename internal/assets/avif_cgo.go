@@ -39,7 +39,14 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		return nil, fmt.Errorf("assets: avif decoder allocation failed")
 	}
 	defer C.avifDecoderDestroy(dec)
-	dec.maxThreads = 1 // the decode pool already provides parallelism
+	// Animated AVIF (AV1 image sequences) is a multi-frame decode and dav1d
+	// scales across worker threads, so let it use the machine's cores instead
+	// of serialising every frame (the animation cold-load cost — see
+	// docs/ANIMATION-COLD-LOAD-INVESTIGATION.md gap #1). The decode pool
+	// parallelises ACROSS assets and animGate bounds CONCURRENT full animated
+	// decodes (default 2), so a per-decoder pool of NumCPU threads cannot
+	// multiply into unbounded oversubscription.
+	dec.maxThreads = C.int(runtime.NumCPU())
 
 	if res := C.avifDecoderSetIOMemory(dec, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))); res != C.AVIF_RESULT_OK {
 		return nil, avifError("set io", res)

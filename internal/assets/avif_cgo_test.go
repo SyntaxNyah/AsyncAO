@@ -66,3 +66,21 @@ func TestDecodeAVIFAnimatedFirstFrameOnly(t *testing.T) {
 		t.Errorf("frames = %d, want 1", len(d.Frames))
 	}
 }
+
+// BenchmarkDecodeAVIFAnim_64x48_2f is the §15 animated-AVIF decode gate: it
+// times the cold decode of a 2-frame animated AVIF. It doubles as the
+// regression probe for the maxThreads=NUMCPU threading change (a decode that
+// regresses to serial would show up here, though a larger fixture is the
+// real cold-load stand-in).
+func BenchmarkDecodeAVIFAnim_64x48_2f(b *testing.B) {
+	data := fixture(b, "sprite_anim_64x48.avif")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		d, err := DecodeImage(data, true)
+		if err != nil {
+			b.Fatal(err)
+		}
+		d.Release()
+	}
+}
