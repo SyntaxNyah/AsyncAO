@@ -60,7 +60,7 @@ func TestLocalFetcherFoldAndTheIndexAgreeAboutAFifo(t *testing.T) {
 		t.Fatalf("BuildMountIndex: %v", errs)
 	}
 	defer ix.Retire()
-	if files, _, _ := ix.Stats(); files != 0 {
+	if files, _ := ix.Stats(); files != 0 {
 		t.Errorf("the index holds %d files — WalkFiles visited a non-regular entry", files)
 	}
 	if ix.Covers(rel) {
