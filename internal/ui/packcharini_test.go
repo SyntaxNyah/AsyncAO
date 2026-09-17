@@ -206,10 +206,12 @@ func TestEveryCharINIReadIsLayered(t *testing.T) {
 		// Learns THIS host's character-folder casing. A pack answering would teach
 		// the server a convention only the pack follows.
 		"probeCasing": "casing is a property of the server's filesystem",
-		// iniswap.txt and the backgrounds autoindex are server-curated listings; a
-		// pack has no equivalent, so answering would replace a real list with none.
-		"ensureIniList": "iniswap.txt + the backgrounds listing are server-curated",
-		"ensureBgList":  "an autoindex listing has no pack equivalent",
+		// iniswap.txt and the backgrounds/evidence autoindexes are server-curated
+		// listings; a pack has no equivalent, so answering would replace a real
+		// list with none.
+		"ensureIniList":      "iniswap.txt + the backgrounds listing are server-curated",
+		"ensureBgList":       "an autoindex listing has no pack equivalent",
+		"fetchEvidenceIndex": "the evidence/ autoindex has no pack equivalent",
 		// The content report and the exporters deliberately distinguish the two
 		// sources themselves (ResolveRawLayered reports which arm answered), so
 		// their raw reads mean the server's copy specifically.
