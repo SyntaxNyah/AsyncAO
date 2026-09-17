@@ -34,8 +34,9 @@ Power user tab's "Decode downscale & texture memory" group:
   to fit; lowering it downscales more (softer, a fraction of the RAM). LIVE:
   new decodes pick it up without a restart.
 - **Concurrent animated decodes** (default 2) - how many long clips decode at
-  once. A full clip holds every authored frame in RGBA until upload, so this
-  caps the decode burst (the thing that pushed RSS toward 3 GiB). LIVE.
+  once. A streaming clip holds one native frame in the decoder at a time (its
+  downscaled frames accumulate on the GPU), but it still holds its `animGate`
+  slot for the whole decode, so this bounds concurrent decode bursts. LIVE.
 - **Animated sprite height cap** (default off) - an extra height clamp for
   animated sprites only (still art untouched).
 - **Texture compression** (default DXT5) - how decoded art is stored on the GPU.

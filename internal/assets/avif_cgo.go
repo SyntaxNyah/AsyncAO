@@ -142,6 +142,122 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	return d, nil
 }
 
+// decodeAVIFAnimStream is decodeAVIF's incremental form: it walks the same
+// avifDecoder and emits each frame from kept index 1 (frame 0 was already
+// delivered by the progressive first frame) as a single-frame chunk via emit.
+// It streams only when the clip needs no decimation (the common case); when
+// decimation is needed it returns streamed=false so the caller falls back to
+// the classic full decode. total is the source frame count.
+func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
+	var pinner runtime.Pinner
+	pinner.Pin(&data[0])
+	defer pinner.Unpin()
+
+	dec := C.avifDecoderCreate()
+	if dec == nil {
+		return false, 0, fmt.Errorf("assets: avif decoder allocation failed")
+	}
+	defer C.avifDecoderDestroy(dec)
+	dec.maxThreads = C.int(runtime.NumCPU())
+
+	if res := C.avifDecoderSetIOMemory(dec, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))); res != C.AVIF_RESULT_OK {
+		return false, 0, avifError("set io", res)
+	}
+	if res := C.avifDecoderParse(dec); res != C.AVIF_RESULT_OK {
+		return false, 0, avifError("parse", res)
+	}
+
+	width, height := int(dec.image.width), int(dec.image.height)
+	walk := int(dec.imageCount)
+	if walk <= 0 {
+		return false, 0, fmt.Errorf("assets: avif reports no frames")
+	}
+	tw, th, down := decodeTargetDimsBudgeted(width, height, maxH, walk)
+	keep := boundedFrameCount(tw, th, walk)
+	if keep < walk {
+		return false, walk, nil // decimation needed — fall back to the full decode
+	}
+
+	for i := 0; i < walk; i++ {
+		if res := C.avifDecoderNextImage(dec); res != C.AVIF_RESULT_OK {
+			return true, walk, nil // truncated sequence: keep what decoded
+		}
+		delay := time.Duration(float64(dec.imageTiming.duration) * float64(time.Second))
+		if delay <= 0 {
+			delay = defaultZeroFrameDelay
+		}
+		if i == 0 {
+			continue // frame 0 already delivered by the progressive first frame
+		}
+
+		var rgb C.avifRGBImage
+		C.avifRGBImageSetDefaults(&rgb, dec.image)
+		rgb.format = C.AVIF_RGB_FORMAT_RGBA
+		rgb.depth = 8
+
+		rgba, token := newPooledRGBA(width, height)
+		pinner.Pin(&rgba.Pix[0])
+		rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
+		rgb.rowBytes = C.uint32_t(rgba.Stride)
+
+		if res := C.avifImageYUVToRGB(dec.image, &rgb); res != C.AVIF_RESULT_OK {
+			putPixBuf(token)
+			return true, walk, avifError(fmt.Sprintf("frame %d yuv→rgb", i), res)
+		}
+		out := rgba
+		if down {
+			small, smallTok := downscaleFrame(rgba, tw, th)
+			putPixBuf(token)
+			out = small
+			token = smallTok
+		}
+		chunk := &Decoded{
+			Frames:       []*image.RGBA{out},
+			Delays:       []time.Duration{delay},
+			Animated:     true,
+			SourceFrames: walk,
+			Width:        tw,
+			Height:       th,
+			Stream:       true,
+			FrameOffset:  i,
+			Partial:      true,
+		}
+		if token != nil {
+			chunk.pooledPix = append(chunk.pooledPix, token)
+		}
+		emit(chunk)
+	}
+	return true, walk, nil
+}
+
 func avifError(stage string, res C.avifResult) error {
 	return fmt.Errorf("assets: avif %s: %s", stage, C.GoString(C.avifResultToString(res)))
+}
+
+// peekAVIFAnimDims reads an animated AVIF's canvas size and frame count from a
+// header parse only (no frame decode) so the progressive first frame can be
+// downscaled to the same budget-fit dimensions the stream's appends use.
+func peekAVIFAnimDims(data []byte) (width, height, frames int, ok bool) {
+	if len(data) == 0 {
+		return 0, 0, 0, false
+	}
+	var pinner runtime.Pinner
+	pinner.Pin(&data[0])
+	defer pinner.Unpin()
+	dec := C.avifDecoderCreate()
+	if dec == nil {
+		return 0, 0, 0, false
+	}
+	defer C.avifDecoderDestroy(dec)
+	if res := C.avifDecoderSetIOMemory(dec, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))); res != C.AVIF_RESULT_OK {
+		return 0, 0, 0, false
+	}
+	if res := C.avifDecoderParse(dec); res != C.AVIF_RESULT_OK {
+		return 0, 0, 0, false
+	}
+	w, h, n := int(dec.image.width), int(dec.image.height), int(dec.imageCount)
+	if w <= 0 || h <= 0 || n <= 0 {
+		return 0, 0, 0, false
+	}
+	return w, h, n, true
 }

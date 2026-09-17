@@ -336,4 +336,3 @@ func TestProgressivePartialDoesNotFinishPreanim(t *testing.T) {
 		t.Fatal("a genuine single-frame one-shot must still complete")
 	}
 }
-

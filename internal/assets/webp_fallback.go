@@ -25,3 +25,7 @@ func decodeWebP(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	_ = maxH
 	return staticDecoded(img), nil
 }
+
+func peekWebPAnimDims(data []byte) (width, height, frames int, ok bool) {
+	return 0, 0, 0, false
+}

@@ -122,14 +122,14 @@ func (p *Pump) Frame() {
 		// Progressive ordering guard: the budget carry can reorder a
 		// first-frame partial AFTER its own full set — uploading it then
 		// would regress the resident animation to one frame.
-		if d.Asset.Partial {
+		if d.Asset.Partial && !d.Asset.Stream {
 			if page, ok := p.store.Get(d.Base); ok && len(page.Frames) > len(d.Asset.Frames) {
 				d.Asset.Release()
 				return
 			}
 		}
 		bytes := d.Asset.PixelBytes()
-		if d.Asset.Animated {
+		if d.Asset.Animated && !d.Asset.Stream {
 			// #110 diagnostic: log the animated upload attempt (the upload
 			// itself releases the frames, so capture the counts first).
 			log.Printf("[anim-upload] %s animated=%v frames=%d bytes=%dMiB", d.Base, d.Asset.Animated, len(d.Asset.Frames), bytes>>20)
@@ -138,7 +138,9 @@ func (p *Pump) Frame() {
 		// tier so sprite streaming can never evict the visible grids (the
 		// "emote buttons visibly refresh" churn — textures.go).
 		var err error
-		if smallTexTier(d.Type) {
+		if d.Asset.Stream {
+			err = p.store.AppendStream(d.Base, d.Asset)
+		} else if smallTexTier(d.Type) {
 			err = p.store.UploadSmall(d.Base, d.Asset)
 		} else {
 			err = p.store.Upload(d.Base, d.Asset)

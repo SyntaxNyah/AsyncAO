@@ -112,6 +112,20 @@ func (a *animState) reset(base string) {
 	}
 }
 
+// restart rebinds playback to a freshly-replaced page WITHOUT changing the base
+// identity: the same base was re-decoded (a stream re-establishing its prefix, or
+// a full upload replacing a partial), so the cursor/finished flags reset but
+// lastGood/thumbKey/heldKey survive (the base is unchanged). The frame cursor
+// must never outlive the page it indexes.
+func (a *animState) restart() {
+	a.frame = 0
+	a.elapsed = 0
+	a.finished = false
+	a.startReported = false
+	a.loopReported = false
+	a.shownSrc = -1
+}
+
 // resolve returns the cached page, re-querying the store only when its
 // generation moved (upload/eviction/purge) or the base changed.
 func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
@@ -128,7 +142,15 @@ func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 		a.pageGen = gen
 		return nil, false
 	}
-	a.page = page
+	if a.page != page {
+		// The page POINTER changed while the base did not: the resident page was
+		// replaced (shrink on a redundant re-establish, or a partial→full swap).
+		// Restart playback so a.frame can't run past the new page's frame count.
+		if a.page != nil {
+			a.restart()
+		}
+		a.page = page
+	}
 	a.pageGen = gen
 	return page, true
 }
@@ -166,6 +188,13 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 	if a.finished {
 		return false
 	}
+	if a.frame >= len(page.Frames) {
+		// Defensive clamp: a re-decode can replace the page with a shorter one
+		// between resolves (resolve.restart handles the normal case); never index
+		// a frame that no longer exists.
+		a.frame = 0
+		a.elapsed = 0
+	}
 	a.elapsed += dt
 	for {
 		delay := page.Delays[a.frame]
@@ -177,6 +206,12 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 		}
 		a.elapsed -= delay
 		if a.frame == len(page.Frames)-1 {
+			if page.Partial {
+				// Streaming prefix: hold the current last frame until the next
+				// chunk appends (playback resumes when len grows). Never finish
+				// or wrap a still-growing page.
+				return false
+			}
 			if playOnce {
 				// INVARIANT: finished is set ONLY under playOnce (here and the
 				// single-frame case above). The Update speaker block's told-to-loop
@@ -265,7 +300,10 @@ func (v *Viewport) reportSpeakerFrame(page *TexturePage) {
 		return
 	}
 	a := &v.speakerAnim
-	src := assets.FrameKeepIndex(a.frame, page.SourceFrames, len(page.Frames))
+	src := a.frame
+	if !page.Partial {
+		src = assets.FrameKeepIndex(a.frame, page.SourceFrames, len(page.Frames))
+	}
 	if src == a.shownSrc {
 		return // same source frame still on screen — nothing new to fire
 	}
@@ -679,7 +717,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			// First frame of a decoded, multi-frame preanim: report its real total
 			// duration so the courtroom's fallback timeout can't cut a long one
 			// short. Single-frame "preanims" finish instantly below — no report.
-			if scene.Speaker.PlayOnce && !v.speakerAnim.startReported && v.OnPreanimStart != nil && len(page.Frames) > 1 {
+			if scene.Speaker.PlayOnce && !v.speakerAnim.startReported && v.OnPreanimStart != nil && !page.Partial && len(page.Frames) > 1 {
 				v.speakerAnim.startReported = true
 				v.OnPreanimStart(pageDuration(page))
 			}

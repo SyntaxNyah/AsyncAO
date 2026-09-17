@@ -79,9 +79,11 @@ func TestDecodeWebPAnimatedFirstFrameOnly(t *testing.T) {
 	}
 }
 
-// TestProgressiveAnimatedDecode pins the two-phase delivery: an animated
-// payload with PlayAnimations on yields a Partial single-frame result
-// first, then the full set; statics deliver exactly once.
+// TestProgressiveAnimatedDecode pins the streaming delivery: an animated WebP
+// with PlayAnimations on streams as an establishing frame-0 chunk, one append
+// per remaining frame, then a finalize that clears Partial — the page grows
+// frame-by-frame instead of being replaced by a full set. Statics deliver
+// exactly once.
 func TestProgressiveAnimatedDecode(t *testing.T) {
 	pool := NewDecoderPool(1)
 	defer pool.Close()
@@ -89,9 +91,12 @@ func TestProgressiveAnimatedDecode(t *testing.T) {
 	type result struct {
 		frames  int
 		partial bool
+		stream  bool
+		offset  int
+		source  int
 	}
 	deliver := func(data []byte) []result {
-		out := make(chan result, 4)
+		out := make(chan result, 8)
 		done := make(chan struct{})
 		pool.Submit(DecodeRequest{
 			URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
@@ -101,9 +106,9 @@ func TestProgressiveAnimatedDecode(t *testing.T) {
 					close(done)
 					return
 				}
-				out <- result{frames: len(d.Frames), partial: d.Partial}
+				out <- result{frames: len(d.Frames), partial: d.Partial, stream: d.Stream, offset: d.FrameOffset, source: d.SourceFrames}
 				if !d.Partial {
-					close(done) // the full set is always the last delivery
+					close(done) // the finalize is always the last delivery
 				}
 				d.Release()
 			},
@@ -118,14 +123,63 @@ func TestProgressiveAnimatedDecode(t *testing.T) {
 	}
 
 	anim := deliver(fixture(t, "sprite_anim_256x192.webp"))
-	if len(anim) != 2 || !anim[0].partial || anim[0].frames != 1 ||
-		anim[1].partial || anim[1].frames != 3 {
-		t.Errorf("animated deliveries = %+v, want partial[1] then full[3]", anim)
+	if len(anim) != 4 {
+		t.Fatalf("animated deliveries = %+v, want 4 (establish + 2 appends + finalize)", anim)
+	}
+	if anim[0].frames != 1 || !anim[0].partial || !anim[0].stream || anim[0].offset != 0 {
+		t.Errorf("establishing chunk = %+v, want 1 frame partial stream offset=0", anim[0])
+	}
+	if anim[1].frames != 1 || !anim[1].partial || !anim[1].stream || anim[1].offset != 1 {
+		t.Errorf("append 1 = %+v, want 1 frame partial stream offset=1", anim[1])
+	}
+	if anim[2].frames != 1 || !anim[2].partial || !anim[2].stream || anim[2].offset != 2 {
+		t.Errorf("append 2 = %+v, want 1 frame partial stream offset=2", anim[2])
+	}
+	if anim[3].frames != 0 || anim[3].partial || !anim[3].stream || anim[3].source != 3 {
+		t.Errorf("finalize = %+v, want 0 frames !partial stream source=3", anim[3])
 	}
 
 	static := deliver(fixture(t, "sprite_256x192.webp"))
-	if len(static) != 1 || static[0].partial {
-		t.Errorf("static deliveries = %+v, want one non-partial", static)
+	if len(static) != 1 || static[0].partial || static[0].stream {
+		t.Errorf("static deliveries = %+v, want one non-partial non-stream", static)
+	}
+}
+
+// TestPeekAnimatedDimsAndFitPrefix pins the resolution-consistency fix: the
+// establishing frame-0 prefix is downscaled to the SAME budget-fit dimensions
+// the stream's appends use, so the whole clip is one resolution (and the prefix
+// doesn't pay a full-size downscale + upload).
+func TestPeekAnimatedDimsAndFitPrefix(t *testing.T) {
+	data := fixture(t, "sprite_anim_256x192.webp")
+
+	w, h, n, ok := peekAnimatedDims(data)
+	if !ok || w != 256 || h != 192 || n != 3 {
+		t.Fatalf("peekAnimatedDims = (%d,%d,%d,%v), want (256,192,3,true)", w, h, n, ok)
+	}
+
+	first, err := DecodeImage(data, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+
+	// Native 256x192 fits the default 128 MiB budget: a no-op.
+	if same := fitEstablishingPrefix(first, data, 0); same != first {
+		t.Fatalf("fitEstablishingPrefix must be a no-op at native size")
+	}
+
+	// Force the budget below the native 3-frame payload (3×256×192×4 ≈ 0.56 MiB)
+	// so the prefix must shrink to fit.
+	SetAnimatedDecodedAssetBytes(512 << 10)
+	defer SetAnimatedDecodedAssetBytes(0) // reset to the default
+
+	shrunk := fitEstablishingPrefix(first, data, 0)
+	defer shrunk.Release()
+	if shrunk.Width >= 256 || shrunk.Height >= 192 {
+		t.Fatalf("fitEstablishingPrefix did not downscale under a 512 KiB budget: %dx%d", shrunk.Width, shrunk.Height)
+	}
+	if shrunk.Width <= 0 || shrunk.Height <= 0 {
+		t.Fatalf("fitEstablishingPrefix produced a degenerate canvas: %dx%d", shrunk.Width, shrunk.Height)
 	}
 }
 

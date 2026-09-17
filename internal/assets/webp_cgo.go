@@ -35,6 +35,34 @@ func decodeWebP(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	return decodeWebPStatic(data)
 }
 
+// peekWebPAnimDims reads an animated WebP's canvas size and frame count from the
+// demuxer header only (no pixel decode) so the progressive first frame can be
+// downscaled to the same budget-fit dimensions the stream's appends use.
+func peekWebPAnimDims(data []byte) (width, height, frames int, ok bool) {
+	if len(data) == 0 {
+		return 0, 0, 0, false
+	}
+	var pinner runtime.Pinner
+	pinner.Pin(&data[0])
+	defer pinner.Unpin()
+	webpData := C.WebPData{
+		bytes: (*C.uint8_t)(unsafe.Pointer(&data[0])),
+		size:  C.size_t(len(data)),
+	}
+	dmux := C.WebPDemux(&webpData)
+	if dmux == nil {
+		return 0, 0, 0, false
+	}
+	defer C.WebPDemuxDelete(dmux)
+	w := int(C.WebPDemuxGetI(dmux, C.WEBP_FF_CANVAS_WIDTH))
+	h := int(C.WebPDemuxGetI(dmux, C.WEBP_FF_CANVAS_HEIGHT))
+	n := int(C.WebPDemuxGetI(dmux, C.WEBP_FF_FRAME_COUNT))
+	if w <= 0 || h <= 0 || n <= 0 {
+		return 0, 0, 0, false
+	}
+	return w, h, n, true
+}
+
 // decodeWebPStatic decodes a still WebP directly into a pooled RGBA buffer.
 func decodeWebPStatic(data []byte) (*Decoded, error) {
 	var w, h C.int
@@ -193,4 +221,111 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 	}
 	spreadLoopDelays(d, sourceDelays)
 	return d, nil
+}
+
+// decodeWebPAnimStream is decodeWebPAnim's incremental form: it walks the same
+// WebPAnimDecoder and emits each frame from kept index 1 (frame 0 was already
+// delivered by the progressive first frame) as a single-frame chunk via emit.
+// It streams only when the clip needs no decimation (the common case —
+// downscale-to-fit keeps every frame in budget); otherwise it returns
+// streamed=false so the caller falls back to the classic full decode, which
+// keeps spreadLoopDelays correct. total is the source frame count.
+func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
+	var pinner runtime.Pinner
+	pinner.Pin(&data[0])
+	defer pinner.Unpin()
+
+	webpData := C.WebPData{
+		bytes: (*C.uint8_t)(unsafe.Pointer(&data[0])),
+		size:  C.size_t(len(data)),
+	}
+
+	var opts C.WebPAnimDecoderOptions
+	if C.WebPAnimDecoderOptionsInit(&opts) == 0 {
+		return false, 0, fmt.Errorf("assets: webp anim options init failed")
+	}
+	opts.color_mode = C.MODE_RGBA
+	opts.use_threads = 0
+
+	dec := C.WebPAnimDecoderNew(&webpData, &opts)
+	if dec == nil {
+		return false, 0, fmt.Errorf("assets: webp anim decoder rejected payload")
+	}
+	defer C.WebPAnimDecoderDelete(dec)
+
+	var info C.WebPAnimInfo
+	if C.WebPAnimDecoderGetInfo(dec, &info) == 0 {
+		return false, 0, fmt.Errorf("assets: webp anim info unavailable")
+	}
+	width, height := int(info.canvas_width), int(info.canvas_height)
+	walk := int(info.frame_count)
+	if walk == 0 {
+		return false, 0, fmt.Errorf("assets: webp anim reports zero frames")
+	}
+
+	// Per-frame delays from the demuxer's ANMF duration (see decodeWebPAnim).
+	durations := make([]time.Duration, walk)
+	for i := range durations {
+		durations[i] = defaultZeroFrameDelay
+	}
+	if dmux := C.WebPDemux(&webpData); dmux != nil {
+		defer C.WebPDemuxDelete(dmux)
+		for i := 0; i < walk; i++ {
+			var iter C.WebPIterator
+			if C.WebPDemuxGetFrame(dmux, C.int(i+1), &iter) == 0 {
+				continue
+			}
+			if iter.duration > 0 {
+				durations[i] = time.Duration(iter.duration) * time.Millisecond
+			}
+			C.WebPDemuxReleaseIterator(&iter)
+		}
+	}
+
+	tw, th, down := decodeTargetDimsBudgeted(width, height, maxH, walk)
+	keep := boundedFrameCount(tw, th, walk)
+	if keep < walk {
+		return false, walk, nil // decimation needed — fall back to the full decode
+	}
+
+	canvasBytes := width * height * webpBytesPerPixel
+	for i := 0; i < walk; i++ {
+		if C.WebPAnimDecoderHasMoreFrames(dec) == 0 {
+			return true, walk, nil // truncated payload: keep what decoded
+		}
+		var frameRGBA *C.uint8_t
+		var timestamp C.int // read but ignored: delays come from the demuxer durations
+		if C.WebPAnimDecoderGetNext(dec, &frameRGBA, &timestamp) == 0 {
+			return true, walk, nil // mid-stream frame failure: keep the prefix
+		}
+		if i == 0 {
+			continue // frame 0 already delivered by the progressive first frame
+		}
+		rgba, token := newPooledRGBA(width, height)
+		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
+		copy(rgba.Pix, src)
+		out := rgba
+		if down {
+			small, smallTok := downscaleFrame(rgba, tw, th)
+			putPixBuf(token)
+			out = small
+			token = smallTok
+		}
+		chunk := &Decoded{
+			Frames:       []*image.RGBA{out},
+			Delays:       []time.Duration{durations[i]},
+			Animated:     true,
+			SourceFrames: walk,
+			Width:        tw,
+			Height:       th,
+			Stream:       true,
+			FrameOffset:  i,
+			Partial:      true,
+		}
+		if token != nil {
+			chunk.pooledPix = append(chunk.pooledPix, token)
+		}
+		emit(chunk)
+	}
+	return true, walk, nil
 }

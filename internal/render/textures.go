@@ -584,10 +584,32 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	page := &TexturePage{
 		Delays:       append([]time.Duration(nil), d.Delays...),
 		Animated:     d.Animated,
-		Partial:      d.Partial, // progressive first-frame delivery (full set follows)
+		Partial:      d.Partial,      // progressive first-frame delivery (full set follows)
 		SourceFrames: d.SourceFrames, // carry the un-decimated frame count for #17 frame-effect mapping
 		W:            int32(d.Width),
 		H:            int32(d.Height),
+	}
+	frames, bytes, err := s.buildFrames(d)
+	if err != nil {
+		page.destroy()
+		return nil, err
+	}
+	page.Frames = frames
+	page.bytes = bytes
+	return page, nil
+}
+
+// buildFrames uploads a Decoded's frames to GPU textures — the pre-encoded DXT
+// payloads or the raw RGBA frames — returning the textures and their accounted
+// byte size. The Decoded is NOT released here; on error any already-built
+// textures are destroyed.
+func (s *TextureStore) buildFrames(d *assets.Decoded) (frames []*sdl.Texture, bytes int64, err error) {
+	fail := func() {
+		for _, t := range frames {
+			if t != nil {
+				_ = t.Destroy()
+			}
+		}
 	}
 	if d.DXTFormat != 0 && len(d.Compressed) > 0 {
 		// Compressed path: upload the pre-encoded DXT payloads. The canvas is
@@ -599,42 +621,42 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 		}
 		pitch := (d.Width / 4) * blockBytes
 		for _, comp := range d.Compressed {
-			tex, err := s.ren.CreateTexture(d.DXTFormat, sdl.TEXTUREACCESS_STATIC, int32(d.Width), int32(d.Height))
-			if err != nil {
-				page.destroy()
-				return nil, err
+			tex, e := s.ren.CreateTexture(d.DXTFormat, sdl.TEXTUREACCESS_STATIC, int32(d.Width), int32(d.Height))
+			if e != nil {
+				fail()
+				return nil, 0, e
 			}
-			if err := tex.Update(nil, unsafe.Pointer(&comp[0]), pitch); err != nil {
+			if e := tex.Update(nil, unsafe.Pointer(&comp[0]), pitch); e != nil {
 				_ = tex.Destroy()
-				page.destroy()
-				return nil, err
+				fail()
+				return nil, 0, e
 			}
 			_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
-			page.Frames = append(page.Frames, tex)
-			page.bytes += int64(len(comp))
+			frames = append(frames, tex)
+			bytes += int64(len(comp))
 		}
-		return page, nil
+		return frames, bytes, nil
 	}
 	for _, frame := range d.Frames {
-		tex, err := s.ren.CreateTexture(
+		tex, e := s.ren.CreateTexture(
 			uint32(sdl.PIXELFORMAT_ABGR8888), // image.RGBA byte order
 			sdl.TEXTUREACCESS_STATIC,
 			int32(d.Width), int32(d.Height),
 		)
-		if err != nil {
-			page.destroy()
-			return nil, err
+		if e != nil {
+			fail()
+			return nil, 0, e
 		}
-		if err := tex.Update(nil, unsafe.Pointer(&frame.Pix[0]), frame.Stride); err != nil {
+		if e := tex.Update(nil, unsafe.Pointer(&frame.Pix[0]), frame.Stride); e != nil {
 			_ = tex.Destroy()
-			page.destroy()
-			return nil, err
+			fail()
+			return nil, 0, e
 		}
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
-		page.Frames = append(page.Frames, tex)
-		page.bytes += int64(len(frame.Pix))
+		frames = append(frames, tex)
+		bytes += int64(len(frame.Pix))
 	}
-	return page, nil
+	return frames, bytes, nil
 }
 
 // Upload turns a decoded asset into textures under the asset's base key.
@@ -718,21 +740,95 @@ func (s *TextureStore) storeOversized(base string, page *TexturePage) {
 	s.oversized[base] = page
 	s.oversizedBytes += page.bytes
 	s.oversizedOrder = append(s.oversizedOrder, base)
-	for s.oversizedBytes > s.oversizedCap && len(s.oversizedOrder) > 1 {
-		oldest := s.oversizedOrder[0]
-		if oldest == base {
-			// A single page can exceed the cap; the decode cap
-			// (cache.DefaultMaxAnimatedDecodedAssetBytes) makes it the only
-			// resident page. Never evict the page we just stored.
-			break
+	s.enforceOversizedCapLocked(base)
+}
+
+// enforceOversizedCapLocked evicts the oldest oversized pages (never `keep`)
+// until the map is back under oversizedCap. Caller holds oversizedMu.
+func (s *TextureStore) enforceOversizedCapLocked(keep string) {
+	for s.oversizedBytes > s.oversizedCap && len(s.oversizedOrder) > 0 {
+		// Evict the OLDEST page that isn't `keep` (the page just stored or
+		// being grown must never be evicted while its stream is live). A lone
+		// page is allowed to exceed the cap (the decode cap bounds one clip).
+		idx := -1
+		for i, k := range s.oversizedOrder {
+			if k != keep {
+				idx = i
+				break
+			}
 		}
+		if idx < 0 {
+			return // only `keep` remains: a single page may exceed the cap
+		}
+		oldest := s.oversizedOrder[idx]
 		if p, ok := s.oversized[oldest]; ok {
 			s.oversizedBytes -= p.bytes
 			delete(s.oversized, oldest)
 			s.queueDestroy(p)
 		}
-		s.oversizedOrder = s.oversizedOrder[1:]
+		s.oversizedOrder = append(s.oversizedOrder[:idx], s.oversizedOrder[idx+1:]...)
 	}
+}
+
+// AppendStream grows a streaming (incremental) animation page in place. The
+// establishing chunk (FrameOffset 0) parks a fresh page in the oversized map so
+// it can grow without LRU byte-accounting churn; later chunks append frames to
+// it; the finalize chunk (Partial=false, no frames) clears Partial so the
+// renderer stops treating it as a growing prefix. Render thread only.
+func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
+	defer d.Release()
+	if d.FrameOffset == 0 && len(d.Frames) > 0 {
+		// Establishing frame. If a page is already resident for this base, a
+		// redundant re-decode is racing this stream (the demand/prefetch overlap
+		// window before the base becomes T1-resident). Re-establishing here would
+		// SHRINK the fuller resident page and leave the viewport's playback cursor
+		// pointing past its frame count. Keep the fuller page and drop this
+		// stream's prefix — its later appends then hit the ordering guard below.
+		s.oversizedMu.RLock()
+		_, exists := s.oversized[base]
+		s.oversizedMu.RUnlock()
+		if exists {
+			return nil
+		}
+		page, err := s.buildPage(d)
+		if err != nil {
+			return err
+		}
+		s.storeOversized(base, page)
+		s.clearFailed(base)
+		s.releaseHeld(base)
+		s.clearMissing(base)
+		s.generation.Add(1)
+		return nil
+	}
+	s.oversizedMu.RLock()
+	page, ok := s.oversized[base]
+	s.oversizedMu.RUnlock()
+	if !ok {
+		return nil // stream page gone (oversized cap eviction); a re-demand re-decodes
+	}
+	if len(d.Frames) > 0 {
+		if len(page.Frames) != d.FrameOffset {
+			return nil // out-of-order append: a fuller page already won
+		}
+		frames, added, err := s.buildFrames(d)
+		if err != nil {
+			return err
+		}
+		page.Frames = append(page.Frames, frames...)
+		page.Delays = append(page.Delays, d.Delays...)
+		page.bytes += added
+		s.oversizedMu.Lock()
+		s.oversizedBytes += added
+		s.enforceOversizedCapLocked(base)
+		s.oversizedMu.Unlock()
+	}
+	if !d.Partial {
+		page.Partial = false
+		page.SourceFrames = d.SourceFrames
+	}
+	s.generation.Add(1)
+	return nil
 }
 
 // dropOversizedOrderLocked removes base from the insertion-order ring; the

@@ -1,6 +1,9 @@
 # Animation Cold-Load Stutter — Investigation
 
-> **Status:** investigation only, no code shipped.
+> **Status:** Phase 1a (AVIF `maxThreads`) and Phase 2 (streaming/incremental
+> decode) are shipped, plus a **Phase 2 crash fix** (redundant re-decode no longer
+> shrinks a streaming page under the viewport's playback cursor). Phase 1b
+> (warm-on-join) and the larger benchmark fixture remain open.
 > **Date:** 2026-09-17
 > **Relates to:** #110 (animation fps / choppy-animation fix), #100 (predictive
 > prefetch), #17 (networked frame effects), #72 (mounted content packs),
@@ -31,6 +34,11 @@ decoded and uploaded** — so a brand-new sprite shows a static first frame and
 this (progressive frame 0, the Markov prefetcher, and T3 disk) all leave the
 **first appearance** cold, and full decodes are serialized through `animGate`
 (default concurrency 2).
+
+**Phase 2 shipped a fix for this:** definitely-animated WebP/AVIF now stream
+frame-by-frame (an establishing frame-0 chunk, then one append per remaining
+frame), so a cold sprite *plays from its decoded prefix* instead of holding
+frame 0. GIF/APNG keep the classic progressive+full path.
 
 ## 3. The cold-load pipeline, end to end
 
@@ -109,7 +117,8 @@ exposed alongside the network TTFB EWMA in the F8 debug overlay.
   (`decoder.go:723–737`) but the animation is a static frame until the full set
   lands and uploads. (`ef34522` fixed the bug where that static frame *froze* a
   swap; the "holds a static frame until the full decode lands" behavior itself
-  remains.)
+  remained until Phase 2 — streaming WebP/AVIF now plays from the decoded prefix,
+  while GIF/APNG keep the static-until-full behavior.)
 - **The prefetcher needs history.** The Markov prefetcher
   (`internal/assets/prefetcher.go:41`) *does* decode ahead —
   `PrefetchChainSpeculative` still walks `resolveChain → deliver → decoder.Submit`,
@@ -150,7 +159,7 @@ The concrete reasons a first appearance still stutters, with severity:
 |---|-----|-------|----------|
 | 1 | AVIF animations decode single-threaded (`maxThreads=1`); dav1d is heavily threaded and would scale | `avif_cgo.go:42` | High (easy, safe win) |
 | 2 | WebP lossless (VP8L) is inherently sequential; only lossy VP8 would benefit from `use_threads` — so this is *not* a quick win for the common case | `webp_cgo.go:93` | Informational |
-| 3 | Playback cannot start until the **entire** frame set is decoded + uploaded (frame 0 holds static meanwhile) | `decoder.go:721–760`, `pump.go:56` | High (the real "stutter") |
+| 3 | Playback cannot start until the **entire** frame set is decoded + uploaded (frame 0 holds static meanwhile) | `decoder.go:721–760`, `pump.go:56` | High (the real "stutter") — **RESOLVED by Phase 2 streaming** |
 | 4 | A character's first appearance is never predicted/warmed; speculative upload is byte-capped | `prefetcher.go:249`, `pump.go:34–35` | Medium |
 | 5 | `animGate=2` queues bursts of new animations (memory-vs-latency tradeoff) | `decoder.go:436` | Medium |
 
@@ -164,8 +173,10 @@ The concrete reasons a first appearance still stutters, with severity:
    them", deliver frames as they decode, so the animation *plays from a decoded
    prefix* while the rest finishes. This is the complete fix for gap #3 but the
    most complex: `Decoded` delivery must support frame-appends, and the render
-   side must grow a resident frame set without stutter. Worth its own follow-up
-   with an encapsulation test for the new seam.
+   side must grow a resident frame set without stutter. **SHIPPED (Phase 2)** —
+   `streamAnimated` + `decodeWebPAnimStream`/`decodeAVIFAnimStream` +
+   `AppendStream`, with encapsulation tests in
+   `internal/render/streaming_test.go`.
 3. **Warm earlier + wider.** Warm the pair partner and the current speaker's
    idle/talk sprite at connect/join (not only after Markov learning), and/or
    raise the speculative upload budget. Low risk, complements the others, does
@@ -187,8 +198,14 @@ which stage dominates rather than guess:
   `AvgDecode` EWMA on a real server to pin down the dominant cost.
 - **Phase 1 — low-risk wins.** (a) AVIF `maxThreads = NumCPU` (gap #1);
   (b) warm pair-partner + current-speaker sprites on join (gap #4).
-- **Phase 2 — the real fix, if the data says gap #3 dominates.** Scope the
-  streaming/incremental decode as its own issue.
+- **Phase 2 — the real fix (DONE).** Streaming/incremental decode is shipped:
+  definitely-animated WebP/AVIF now streams frame-by-frame — an establishing
+  frame-0 chunk, one append per remaining frame, then a finalize — so the
+  resident page GROWS and a cold sprite starts playing from its decoded prefix
+  instead of holding frame 0 until the whole clip decodes (gap #3). GIF/APNG
+  keep the classic progressive+full path (their `DecodeAll` decodes everything
+  up front). The rare decimation-needed case falls back to the full decode so
+  `spreadLoopDelays` stays correct.
 
 ## 10. How to reproduce & triage
 
@@ -216,9 +233,13 @@ the sprite *starting to move* (vs. the instant re-show on the next message).
   but re-opens the multi-GiB RSS spike it was added to cap (see
   `docs/PERFORMANCE.md`). Should the limit be adaptive (higher when sprites are
   downscaled-to-fit)?
-- **Is streaming decode worth the seam churn?** It changes the `Decoded`
-  delivery contract (append vs. replace) and touches `pump.go` + `viewport.go`.
-  Needs an encapsulation test per CLAUDE.md rule §17.11.
+- **Is streaming decode worth the seam churn?** RESOLVED — shipped. The
+  `Decoded` contract grew a `Stream`+`FrameOffset` prefix-extension (the page
+  grows in the oversized map, never the LRU), `pump.go` routes stream chunks to
+  `AppendStream`, and `viewport.go` holds a playOnce layer on the prefix
+  boundary. Encapsulation tests: `TestAppendStreamGrowsResidentPage`,
+  `TestAppendStreamDropsOutOfOrder`, `TestStreamingPreanimHoldsOnPrefix`,
+  `TestReportSpeakerFrameIdentityWhileStreaming`.
 - **Warm-on-join scope.** How many characters/sprites to warm at connect without
   competing with demand decodes through `animGate`?
 

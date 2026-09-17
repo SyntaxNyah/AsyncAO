@@ -703,6 +703,15 @@ func (p *DecoderPool) Close() {
 
 func (p *DecoderPool) worker() {
 	defer p.wg.Done()
+	// A decode runs on a background goroutine the render thread's crash guard
+	// cannot see; log any panic to disk (then re-panic so the crash behaviour
+	// is unchanged — it just becomes diagnosable).
+	defer func() {
+		if r := recover(); r != nil {
+			writeDecodeCrash(r)
+			panic(r)
+		}
+	}()
 	for {
 		select {
 		case req := <-p.jobs:
@@ -720,15 +729,27 @@ func (p *DecoderPool) worker() {
 // instead of after the whole sequence.
 func (p *DecoderPool) runJob(req DecodeRequest) {
 	animated := req.PlayAnimations && sniffMaybeAnimated(req.Data)
+	streamable := animated && streamableFormat(req.Data)
 	if animated {
 		if first, err := DecodeImage(req.Data, false); err == nil {
 			// GIF/APNG can sniff "maybe" but decode static — only a real
 			// animation benefits from the early frame (statics would just
 			// upload the same texture twice).
 			if first.Animated && len(first.Frames) > 0 {
+				if streamable {
+					// Match the stream's frame size: downscale frame 0 to the
+					// same budget-fit dimensions the appends use (fit below still
+					// applies any tighter animated-only cap after).
+					first = fitEstablishingPrefix(first, req.Data, p.fullSizeMaxH(req.Type))
+				}
 				first = p.fit(req.Type, first)
 				p.compressIfEnabled(first)
 				first.Partial = true
+				if streamable {
+					// Streaming formats park the page in the oversized map so it
+					// can grow frame-by-frame; frame 0 is the establishing prefix.
+					first.Stream = true
+				}
 				req.OnDone(req.URL, first, nil)
 			} else {
 				first.Release()
@@ -743,6 +764,13 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 	if animated {
 		p.animGate.acquire()
 		defer p.animGate.release()
+	}
+
+	// Streaming decode for the definitely-animated CGO formats: frames land one
+	// at a time and the page plays the growing prefix (see streamAnimated).
+	if streamable {
+		p.streamAnimated(req)
+		return
 	}
 
 	start := time.Now()
@@ -770,6 +798,141 @@ func sniffMaybeAnimated(data []byte) bool {
 	default:
 		return false
 	}
+}
+
+// streamableFormat reports the definitely-animated CGO containers whose
+// decoders can stream frames incrementally (WebP ANMF / AV1 image sequence).
+// GIF and APNG are excluded: their DecodeAll decodes every frame up front, so
+// there is no per-frame decode to overlap and they keep the classic
+// progressive+full path.
+func streamableFormat(data []byte) bool {
+	switch Sniff(data) {
+	case FormatWebPAnim, FormatAVIFAnim:
+		return true
+	default:
+		return false
+	}
+}
+
+// peekAnimatedDims returns an animated payload's canvas size and frame count
+// without decoding pixels, dispatching to the format's header reader. Used to
+// make the progressive first frame match the stream's budget-fit dimensions.
+func peekAnimatedDims(data []byte) (width, height, frames int, ok bool) {
+	switch Sniff(data) {
+	case FormatWebPAnim:
+		return peekWebPAnimDims(data)
+	case FormatAVIFAnim:
+		return peekAVIFAnimDims(data)
+	default:
+		return 0, 0, 0, false
+	}
+}
+
+// fitEstablishingPrefix downscales a streaming asset's frame-0 prefix to the
+// same budget-fit dimensions the incremental appends will use (downscaleFrame,
+// the same box filter), so the whole clip is one consistent resolution and the
+// establishing frame doesn't pay a full-size downscale + upload. No-op when the
+// prefix already matches or the header can't be peeked.
+func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
+	w, h, frames, ok := peekAnimatedDims(data)
+	if !ok {
+		return first
+	}
+	tw, th, _ := decodeTargetDimsBudgeted(w, h, maxH, frames)
+	if first.Width == tw && first.Height == th {
+		return first
+	}
+	out := &Decoded{
+		Animated:     first.Animated,
+		Width:        tw,
+		Height:       th,
+		Frames:       make([]*image.RGBA, 0, len(first.Frames)),
+		Delays:       first.Delays,
+		SourceFrames: first.SourceFrames, // pixels shrink, the frame space does not
+	}
+	for _, frame := range first.Frames {
+		small, token := downscaleFrame(frame, tw, th)
+		out.Frames = append(out.Frames, small)
+		if token != nil {
+			out.pooledPix = append(out.pooledPix, token)
+		}
+	}
+	first.Release()
+	return out
+}
+
+// streamAnimated drives the incremental decode of a WebP/AVIF animation. The
+// progressive first frame above already delivered the establishing chunk; this
+// walks the remaining frames and appends each as it decodes, so the resident
+// page grows and the renderer plays the prefix instead of holding frame 0
+// until the whole clip decodes (docs/ANIMATION-COLD-LOAD-INVESTIGATION.md gap
+// #3).
+//
+// A decoder may refuse to stream (when the frame budget forces decimation —
+// rare, since downscale-to-fit keeps everything in budget); in that case this
+// falls back to the classic full decode so spreadLoopDelays keeps working.
+func (p *DecoderPool) streamAnimated(req DecodeRequest) {
+	format := Sniff(req.Data)
+	maxH := p.fullSizeMaxH(req.Type)
+	start := time.Now()
+
+	emit := func(chunk *Decoded) {
+		chunk = p.fit(req.Type, chunk)
+		p.compressIfEnabled(chunk)
+		req.OnDone(req.URL, chunk, nil)
+	}
+
+	var streamed bool
+	var total int
+	var err error
+	switch format {
+	case FormatWebPAnim:
+		streamed, total, err = decodeWebPAnimStream(req.Data, maxH, emit)
+	case FormatAVIFAnim:
+		streamed, total, err = decodeAVIFAnimStream(req.Data, maxH, emit)
+	default:
+		streamed = false
+		err = fmt.Errorf("assets: streamAnimated on non-streamable format %s", format)
+	}
+
+	if !streamed {
+		// Decimation needed (rare): the classic full decode replaces the
+		// establishing prefix and keeps spreadLoopDelays correct.
+		start = time.Now()
+		d, derr := DecodeImageSized(req.Data, req.PlayAnimations, maxH)
+		if derr != nil {
+			p.failed.Add(1)
+		} else {
+			d = p.fit(req.Type, d)
+			p.compressIfEnabled(d)
+			p.decoded.Add(1)
+			foldEWMA(&p.decodeNsEWMA, time.Since(start))
+		}
+		req.OnDone(req.URL, d, derr)
+		return
+	}
+
+	// Finalize: clear Partial on the resident page so the renderer stops
+	// treating it as a growing prefix (finish a playOnce layer, report the
+	// true duration). Sent even after a mid-stream decode failure — the frames
+	// that decoded form the final page.
+	req.OnDone(req.URL, &Decoded{
+		Stream:       true,
+		Partial:      false,
+		FrameOffset:  total,
+		SourceFrames: total,
+	}, nil)
+
+	if err != nil {
+		p.failed.Add(1)
+		log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v took=%s",
+			format, req.PlayAnimations, maxH, err, time.Since(start).Round(time.Millisecond))
+		return
+	}
+	p.decoded.Add(1)
+	foldEWMA(&p.decodeNsEWMA, time.Since(start))
+	log.Printf("[anim-decode] %s playAnim=%v maxH=%d -> streamed source=%d budget=%dMiB took=%s",
+		format, req.PlayAnimations, maxH, total, maxAnimatedDecodedAssetBytes.Load()>>20, time.Since(start).Round(time.Millisecond))
 }
 
 // DecoderStats is a point-in-time counter snapshot.

@@ -103,10 +103,21 @@ type Decoded struct {
 	// T1 byte budget. 0 for a static image / a decoder that didn't set it
 	// (treated as len(Frames), the safe identity).
 	SourceFrames int
-	// Partial marks a progressive first-frame delivery: the full frame set
-	// for the same URL follows from the same decode job and replaces this
-	// page on upload (§perf: giant preanims start in one frame-decode).
+	// Partial marks an incomplete delivery: more frames for the same base
+	// follow from the same decode job. For a classic progressive delivery the
+	// full frame set follows and REPLACES this page on upload; for a streaming
+	// delivery (Stream below) the page GROWS as further chunks append.
 	Partial bool
+	// Stream marks an incremental (streaming) delivery: these frames are a
+	// PREFIX EXTENSION of the same base's resident page, not a replacement.
+	// FrameOffset is the 0-based kept-frame index these frames begin at — 0 for
+	// the establishing first frame (which parks the page in the oversized map
+	// so it can grow without LRU byte-accounting churn), k>0 for an append.
+	// When Partial is false the stream is complete and the page stops being
+	// treated as a growing prefix (the renderer may then finish a playOnce
+	// layer and report its true duration).
+	Stream      bool
+	FrameOffset int
 	// Width and Height are the canvas dimensions in pixels.
 	Width, Height int
 	// Compressed holds DXT1/DXT5-encoded frame payloads, parallel to Frames.

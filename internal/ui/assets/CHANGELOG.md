@@ -4,6 +4,26 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.96.6 - 2026-09-17
+
+Animated sprites now start moving the instant their first frame decodes, and a
+crash that could fire when a sprite was requested twice at once is fixed.
+
+- **Animated sprites play while they decode** — a preanimation or looping sprite
+  now streams in frame-by-frame and starts playing from the first frame instead
+  of holding a static frame until the whole clip decoded. A large lossless
+  preanimation shows its first frame in about 20 ms and keeps moving as the rest
+  of the frames land.
+- **Fixed a crash on a double-requested sprite** — a sprite fetched twice in a
+  row (a demand racing a prefetch) could swap a half-loaded animation back to a
+  single fresh frame and crash the renderer. The redundant decode now leaves the
+  fuller animation in place.
+- **One consistent sprite resolution** — the first frame of a streamed animation
+  is now the same size as the frames after it, so a sprite no longer "pops" from
+  sharp to soft the instant it starts moving.
+- **Faster AVIF animations** — animated AVIF decode now spreads across the
+  machine's cores instead of serialising every frame.
+
 ## v1.96.5 - 2026-09-17
 
 Evidence system polish and a first-message blip fix — driven by Crystalwarrior's

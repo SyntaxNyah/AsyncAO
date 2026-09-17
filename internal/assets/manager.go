@@ -1341,7 +1341,12 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 			// art to disk under the server's identity, where it outlives the pack and
 			// keeps showing as that server's cold-load stand-in after the folder is
 			// gone.
-			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack {
+			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
+				d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
+				// Store once, from the frame-0 delivery (the progressive partial
+				// or a stream's establishing chunk). Stream appends carry later
+				// frames and the finalize carries none — re-storing those would
+				// overwrite the stand-in with a mid-clip or empty frame.
 				m.thumbs.Store(base, d)
 			}
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
