@@ -1332,17 +1332,18 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: ix, Y: iy, W: iw, H: descH}, a.evidDesc, "What it proves")
 	iy += descH + 8
 	c.Label(ix, iy+4, "Image file:", ColText)
-	imgW := iw - 60 - 152 // leave room for the "Choose" + "Browse" buttons
+	// ONE button, not two (issue #6 follow-up): "Choose" and "Browse" now open the
+	// same browser — the merged local asset sources — so two entries were two doors
+	// into one room. The width the second button held goes back to the field, which
+	// is what wants it: an asset path ("../characters/foo/char_icon.png") is longer
+	// than the filename the old placeholder suggested.
+	const browseBtnW = 90
+	imgW := iw - 60 - browseBtnW - 6
 	if imgW < 60 {
 		imgW = 60
 	}
 	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
-	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: 70, H: fieldH}, "Choose") {
-		demoBrowser.open = false // mutually exclusive with the Browse file browser
-		a.openEvidencePicker()
-	}
-	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6 + 70 + 6, Y: iy, W: 70, H: fieldH}, "Browse") {
-		a.evidPickerOpen = false // mutually exclusive with the Choose thumbnail grid
+	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: browseBtnW, H: fieldH}, "Browse…") {
 		a.openDemoBrowserFor(purposeEvidenceImage)
 	}
 	iy += fieldH + 8

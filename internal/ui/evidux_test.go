@@ -32,18 +32,3 @@ func TestRequestEvidenceSelectionAsksWhileEditing(t *testing.T) {
 		t.Fatalf("swap while not editing must apply directly: confirm=%v idx=%d", a.evidDiscardConfirm, a.evidIdx)
 	}
 }
-
-// TestMergeEvidencePickerFiles pins the picker's merge: trim, case-insensitive
-// de-duplication, and cap-respecting append.
-func TestMergeEvidencePickerFiles(t *testing.T) {
-	a := testTabApp(t)
-	a.evidPickerFiles = []string{"Knife.png"}
-	a.evidPickerLower = []string{"knife.png"}
-	a.mergeEvidencePickerFiles([]string{"knife.png", "Badge.png", "  "})
-	if len(a.evidPickerFiles) != 2 {
-		t.Fatalf("merge length = %d, want 2 (%v)", len(a.evidPickerFiles), a.evidPickerFiles)
-	}
-	if a.evidPickerFiles[1] != "Badge.png" {
-		t.Fatalf("merge[1] = %q, want Badge.png (case-insensitive dedup + trim)", a.evidPickerFiles[1])
-	}
-}

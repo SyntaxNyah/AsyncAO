@@ -36,6 +36,28 @@ the themes folder.
   theme-format reference instead). The embedded default, your own themes folder,
   and the in-app creator, editor and Share export are all unaffected; a `.aotheme`
   you already have still installs from a drop.
+- **Animated zoom speedlines run smoothly now** — a zoom's burst only advanced when
+  something else happened to redraw the stage (the chatbox caret's blink, a mouse
+  move), so it looked frozen and throttled. A speedline is a scheduled animation
+  layer like the background and the character sprites, and now tells the frame pacer
+  when its next frame is due exactly like they do.
+- **Every zoom emote draws a speedline, and per-position art is honoured** — a zoom
+  at the judge, the jury or the seance bench drew nothing at all. All three now fall
+  to the defense burst, which is what AO2's own catch-all does. A character can also
+  ship its own `jud_speedlines` / `jur_speedlines` / `sea_speedlines` next to the
+  standard `defense_speedlines` / `prosecution_speedlines` and have it used.
+- **The evidence image picker now lists YOUR folders** — "Choose" and "Browse" are
+  one button, and it walks the merged view of your local asset sources instead of
+  the case's existing evidence or the server. A file one source overrides appears
+  only once, as the override; non-images (a stray `credit.txt` beside the art) are
+  not offered; and the browser cannot leave your sources, so a pick can no longer
+  write a filesystem path such as
+  `../../UPDATES/minimal/base/evidence/empty.png` into the field. Taking an image
+  from elsewhere in the base still works — it is written the AO way, as
+  `../characters/<name>/char_icon.png`.
+- **Thanks to Crystalwarrior for the extensive playtest help** — the zoom emote,
+  speedline and evidence-browse fixes above were all found, reproduced and
+  specified during their playtest sessions.
 
 ## v1.98.0 - 2026-09-18
 

@@ -2545,17 +2545,14 @@ type sessionState struct {
 	// instead of silently losing the unsaved work.
 	evidConflict bool
 	evidIncoming courtroom.EvidenceItem
-	// evidPicker is the "Choose" image picker: a modal grid of evidence images
-	// (local mount folder in local/layered mode, the server's evidence/ index in
-	// stream/layered mode, plus the case evidence already on hand).
-	evidPickerOpen    bool
-	evidPickerSearch  string
-	evidPickerScroll  int32
-	evidPickerFiles   []string // discovered names, parallel to evidPickerLower
-	evidPickerLower   []string
-	evidPickerBusy    bool
-	evidPickerScanned bool
-	evidPickerRes     chan []string
+	// The evidence image picker USED TO LIVE HERE as evidPickerOpen/Search/Scroll/
+	// Files/Lower/Busy/Scanned/Res (a modal thumbnail grid fed by a local scan plus
+	// the server's evidence/ autoindex). Both of its sources were wrong for the
+	// playtest — it offered the CASE's existing images and the STREAM instead of the
+	// user's own folders, listed credit.txt among them, and showed no folders at all
+	// — so the "Choose" thumbnail grid was retired and its button merged into Browse,
+	// which one purpose now backs: the merged local asset source browser
+	// (demobrowser.go + mergebrowse.go, purposeEvidenceImage).
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
@@ -9076,12 +9073,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
-	a.pollMakerExport()    // M16: deliver the self-contained archive export result
-	a.tickContentJob()     // content report / package: drain probe results + poll the package goroutine (no-op when idle)
-	a.pollGifExport()      // M16: deliver the off-thread GIF encode result
-	a.pollCharMeta()       // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()         // drain bg discovery even when the picker is closed (slideshow)
-	a.pollEvidencePicker() // drain evidence-image picker discovery (local scan / server index)
+	a.pollMakerExport() // M16: deliver the self-contained archive export result
+	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
+	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
+	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
@@ -9188,7 +9184,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
 	// ever fenced the screen for it, so a click that looked like it hit the dialog
 	// also hit whatever was behind. Pre-existing, same family, one term.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidPickerOpen || demoBrowser.open {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -9397,7 +9393,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidPickerOpen && !demoBrowser.open {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -9407,7 +9403,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm || a.evidPickerOpen {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm {
 		a.ctx.unfencePointer()
 		switch {
 		case a.makerExportPack > 0:
@@ -9422,8 +9418,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCloseTabConfirm(winW, winH)
 		case a.evidDiscardConfirm:
 			a.drawEvidenceDiscardConfirm(winW, winH)
-		case a.evidPickerOpen:
-			a.drawEvidencePicker(winW, winH)
 		default:
 			a.drawHideSpriteConfirm(winW, winH)
 		}

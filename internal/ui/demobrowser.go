@@ -80,10 +80,12 @@ const (
 	// this browser to directories as the escalation path; this is it.
 	purposeBaseFolder
 	// purposeEvidenceImage (issue #6): pick → the evidence editor's Image-file
-	// field. The browser seeds at the local evidence/ folder but stays free to
-	// escape it, matching "open file explorer to the configured evidence folder".
-	// The picked absolute path is relativised against that folder (../… when the
-	// user wandered out, the shape Evidence() resolves since #127).
+	// field. This is the ONE purpose whose browser navigates the MERGED LOCAL ASSET
+	// SOURCES instead of the machine's filesystem (Crystalwarrior's design): it
+	// seeds at the mounts' evidence/ folder, lists the union of every local mount
+	// with an earlier mount shadowing a later one, can walk back out into
+	// characters/, background/ — any folder, because an evidence image may reuse
+	// art from anywhere — and cannot leave the mounts at all. See mergebrowse.go.
 	purposeEvidenceImage
 )
 
@@ -122,10 +124,13 @@ type demoBrowserState struct {
 	// dir is the directory being listed. "" is the Windows DRIVES view (a row per
 	// existing volume); off Windows there is no drives view and ".." stops at "/".
 	dir string
-	// evDir is the evidence folder an evidence-image browse seeds at and relativises
-	// its pick against (issue #6). "" when the browser was opened for any other
-	// purpose, so a stale evidence dir can't leak into a non-evidence pick.
-	evDir string
+	// merged marks the EVIDENCE browse's VIRTUAL navigation (issue #6 follow-up):
+	// dir is then a mount-relative ASSET path — "" is the merged root, "evidence",
+	// "characters/foo" — inside the union of the local mounts, never a filesystem
+	// path, so the seed / parent / child walks all route through the merged model
+	// (mergebrowse.go) instead of filepath. Every other purpose leaves this false
+	// and navigates the real disk.
+	merged bool
 	// entries is the loaded+cached listing for dir (NO per-frame ReadDir). more is
 	// the overflow count when the directory exceeded maxBrowseEntries (0 = none).
 	entries []browseEntry
@@ -157,7 +162,12 @@ var demoBrowser = demoBrowserState{res: make(chan browseResult, browseResCap)}
 
 // isDrivesView reports the sentinel dir ("" = the Windows drives list). Off
 // Windows this is never entered (openDemoBrowser/parentBrowseDir never yield "").
-func (s *demoBrowserState) isDrivesView() bool { return s.dir == "" }
+// isDrivesView reports the sentinel dir ("" = the Windows drives list). In the
+// MERGED browse "" is not a sentinel at all — it is the merged ROOT, a real place
+// with real rows — so that browser is never in the drives view, and never offers
+// one: a volume list would be exactly the escape hatch the sandbox exists to
+// remove.
+func (s *demoBrowserState) isDrivesView() bool { return !s.merged && s.dir == "" }
 
 // openDemoBrowser opens the browser for the ORIGINAL .demo → video flow (the
 // Studio call-out's Import button on every OS). Thin wrapper over the
@@ -174,13 +184,6 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
 	s.purpose = purpose
 	s.keep = browseKeepRule(purpose)
-	// The evidence browse seeds at the local evidence/ folder and relativises its
-	// pick against it (issue #6); every other purpose must not inherit a stale one.
-	if purpose == purposeEvidenceImage {
-		s.evDir = a.localEvidenceDir()
-	} else {
-		s.evDir = ""
-	}
 	home, _ := os.UserHomeDir() // "" is tolerated: the quick-jump button just no-ops
 	s.homeDir = home
 	if home != "" {
@@ -190,14 +193,26 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 		s.downloadsDir, s.desktopDir = "", ""
 	}
 	s.recDir = recordingsDir()
+	// Switching path models drops the remembered dir: a merged asset path is
+	// meaningless to the filesystem browser, and a C:\… path can never be a
+	// mount-relative one. Each model then starts at ITS OWN home — the merged browse
+	// at the mounts' evidence/ folder below, the filesystem browser at home (never at
+	// "", which is the drives sentinel and would open a theme/demo pick on "This PC"
+	// just because an evidence pick ran first).
+	if merged := purpose == purposeEvidenceImage; s.merged != merged {
+		s.merged = merged
+		s.dir = home
+	}
 	start := s.dir
-	if start == "" && !s.open {
+	if s.merged {
+		// Both buttons open HERE, every time, deliberately: "Browse/Choose both
+		// start in the <merged_base>/evidence/" (Crystalwarrior). A remembered
+		// merged dir would make the two entries behave differently for no gain.
+		start = evidenceBrowseSeed
+	} else if start == "" && !s.open {
 		// Very first open this session: seed from home (drives view stays reachable
 		// via the 💾 button on Windows). A remembered dir survives re-opens.
 		start = home
-	}
-	if purpose == purposeEvidenceImage && s.evDir != "" {
-		start = s.evDir // open straight to the configured evidence folder (#6)
 	}
 	s.open = true
 	a.navBrowseTo(start)
@@ -222,6 +237,13 @@ func (a *App) navBrowseTo(dir string) {
 	keep := s.keep
 	if keep == nil {
 		keep = isRecordingName // a browser opened before W8's purpose field existed
+	}
+	if s.merged {
+		// The merged listing reads the mount set HERE, on the render thread — the
+		// loader goroutine may not touch prefs (§17.4 rail: off-thread work captures
+		// its inputs before it starts).
+		a.startMergedBrowseLoad(dir, keep)
+		return
 	}
 	go func(target string, keep func(string) bool) {
 		ents, more, err := loadBrowseDir(target, keep)
@@ -411,6 +433,32 @@ func childBrowseDir(dir, name string) string {
 	return filepath.Join(dir, name)
 }
 
+// parentDir climbs one level in whichever path model the OPEN browser uses. The
+// merged model clamps at the mount root — there is nothing above it, and that
+// clamp IS the sandbox — while the filesystem model keeps its drives-sentinel and
+// POSIX-root behaviour.
+func (s *demoBrowserState) parentDir() string {
+	if s.merged {
+		return mergedParentDir(s.dir)
+	}
+	return parentBrowseDir(s.dir)
+}
+
+// joinBrowseDir joins a row's name onto the open browser's current dir, in that
+// browser's path model. The merged model joins with a FORWARD SLASH, never
+// filepath.Join: those paths are asset rels that courtroom's Evidence() resolves
+// against the origin, so a Windows backslash would freeze into the field as a
+// literal filename ("evidence\cases\knife.png" matches nothing on the wire).
+func (s *demoBrowserState) joinBrowseDir(name string) string {
+	if s.merged {
+		if s.dir == "" {
+			return name
+		}
+		return s.dir + "/" + name
+	}
+	return childBrowseDir(s.dir, name)
+}
+
 // browseTitle names the modal for its current purpose. Each string is a package
 // const built once (no per-frame alloc — the switch returns a constant); the
 // video wording is unchanged from the original single-purpose browser.
@@ -425,7 +473,7 @@ func browseTitle(p browsePurpose) string {
 	case purposeThemeImage:
 		return "Pick an image to add to this theme (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
 	case purposeEvidenceImage:
-		return "Pick an image for this evidence (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
+		return "Pick an evidence image from your local asset sources"
 	case purposeBaseFolder:
 		return "Open your base folder, then press Use this folder"
 	default:
@@ -502,42 +550,68 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	// puts its commit button here, on the same row as the path it commits, so what
 	// the button means is the line next to it. It is hidden in the drives view,
 	// where there is no directory to pick.
-	pathText := s.dir
+	//
+	// The MERGED browse labels the same row with its own root, because "" there is
+	// the merged root and not a sentinel: "asset sources ▸ evidence" is what the row
+	// is telling you.
 	pathW := inW
-	if s.isDrivesView() {
-		pathText = "This PC (drives)"
-	} else if browsePicksDir(s.purpose) {
-		const useBtnW = 130
-		pathW = inW - useBtnW - 8
-		if c.Button(sdl.Rect{X: inX + inW - useBtnW, Y: y - 2, W: useBtnW, H: btnH}, "Use this folder") {
-			a.pickBrowsedFile(s.dir)
+	if s.merged {
+		const srcLabel = "asset sources ▸"
+		sw := c.TextWidth(srcLabel) + 8
+		c.Label(inX, y, srcLabel, ColTextDim)
+		if s.dir == "" {
+			c.LabelClipped(inX+sw, y, pathW-sw, "(merged root)", ColTextDim)
+		} else {
+			c.LabelClipped(inX+sw, y, pathW-sw, s.dir, ColText)
 		}
+	} else {
+		pathText := s.dir
+		if s.isDrivesView() {
+			pathText = "This PC (drives)"
+		} else if browsePicksDir(s.purpose) {
+			const useBtnW = 130
+			pathW = inW - useBtnW - 8
+			if c.Button(sdl.Rect{X: inX + inW - useBtnW, Y: y - 2, W: useBtnW, H: btnH}, "Use this folder") {
+				a.pickBrowsedFile(s.dir)
+			}
+		}
+		c.LabelClipped(inX, y, pathW, pathText, ColTextDim)
 	}
-	c.LabelClipped(inX, y, pathW, pathText, ColTextDim)
 	y += 22
 
 	// Quick-jump row: Home / Downloads / Desktop / recordings\ (+ Drives on
 	// Windows). Each is a no-op when its path didn't resolve at open (empty).
-	qx := inX
-	quick := func(label, target string, enabled bool) {
-		bw := c.TextWidth(label) + 16
-		if bw < 40 {
-			bw = 40
+	//
+	// THE MERGED BROWSE HAS NO QUICK JUMPS, and that is the point: every one of them
+	// leaves the mounts, which is exactly what this browser must never do. Their row
+	// carries the one thing a user needs to know about this listing instead — that it
+	// is the LOCAL asset sources, merged, and nothing else (ChocomintCake: "have a
+	// highlight that tells u its local only like a tip").
+	if s.merged {
+		c.LabelClipped(inX, y+4, inW, mergedBrowseTip, ColAccent)
+		y += btnH + 8
+	} else {
+		qx := inX
+		quick := func(label, target string, enabled bool) {
+			bw := c.TextWidth(label) + 16
+			if bw < 40 {
+				bw = 40
+			}
+			r := sdl.Rect{X: qx, Y: y, W: bw, H: btnH}
+			if c.Button(r, label) && enabled {
+				a.navBrowseTo(target)
+			}
+			qx += bw + 6
 		}
-		r := sdl.Rect{X: qx, Y: y, W: bw, H: btnH}
-		if c.Button(r, label) && enabled {
-			a.navBrowseTo(target)
+		quick("🏠 Home", s.homeDir, s.homeDir != "")
+		quick("⬇ Downloads", s.downloadsDir, s.downloadsDir != "")
+		quick("🖥 Desktop", s.desktopDir, s.desktopDir != "")
+		quick("📼 recordings\\", s.recDir, s.recDir != "")
+		if runtime.GOOS == "windows" {
+			quick("💾 Drives", "", true) // dir="" is the drives view
 		}
-		qx += bw + 6
+		y += btnH + 8
 	}
-	quick("🏠 Home", s.homeDir, s.homeDir != "")
-	quick("⬇ Downloads", s.downloadsDir, s.downloadsDir != "")
-	quick("🖥 Desktop", s.desktopDir, s.desktopDir != "")
-	quick("📼 recordings\\", s.recDir, s.recDir != "")
-	if runtime.GOOS == "windows" {
-		quick("💾 Drives", "", true) // dir="" is the drives view
-	}
-	y += btnH + 8
 
 	// Status line: loading spinner-text or an error (an unreadable dir), leaving
 	// the list navigable below via ".." and the quick-jumps.
@@ -545,7 +619,14 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		c.Label(inX, y, "Loading…", ColTextDim)
 		y += 18
 	} else if s.loadErr != "" {
-		c.LabelClipped(inX, y, inW, "Can't open this folder: "+s.loadErr, ColDanger)
+		// The merged browse has no "folder" to fail to open — its one refusal is the
+		// no-sources state, which already reads as a sentence — so the filesystem
+		// wording is skipped rather than printed over it.
+		note := "Can't open this folder: "
+		if s.merged {
+			note = ""
+		}
+		c.LabelClipped(inX, y, inW, note+s.loadErr, ColDanger)
 		y += 18
 	}
 
@@ -558,10 +639,11 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	listRect := sdl.Rect{X: inX, Y: listTop, W: inW, H: listH}
 	c.Fill(listRect, ColPanel)
 
-	// Row model: a leading "⬆ .." row (except in the drives view, which is the
-	// top of the tree on Windows), then the entries, then an optional "… and N
-	// more" tail. rowCount sizes the scrollbar content height.
-	showUp := !s.isDrivesView()
+	// Row model: a leading "⬆ .." row (except in the drives view, which is the top
+	// of the tree on Windows, and at the MERGED ROOT, which is the top of the
+	// mounts — the clamp that makes this browser a sandbox), then the entries, then
+	// an optional "… and N more" tail. rowCount sizes the scrollbar content height.
+	showUp := !s.isDrivesView() && !(s.merged && s.dir == "")
 	rowCount := len(s.entries)
 	if showUp {
 		rowCount++
@@ -625,7 +707,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		// Resolve which model row this index is: the ⬆ parent row, or an entry.
 		if showUp && i == 0 {
 			if c.ClickedIn(row) {
-				a.navBrowseTo(parentBrowseDir(s.dir))
+				a.navBrowseTo(s.parentDir())
 			}
 			c.Label(row.X+8, row.Y+4, "⬆", ColText)
 			c.LabelClipped(row.X+browseIconColW, row.Y+4, row.W-browseIconColW-8, "..", ColText)
@@ -634,9 +716,9 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		e := s.entries[i-upRows]
 		if c.ClickedIn(row) {
 			if e.isDir {
-				a.navBrowseTo(childBrowseDir(s.dir, e.name))
+				a.navBrowseTo(s.joinBrowseDir(e.name))
 			} else {
-				a.pickBrowsedFile(childBrowseDir(s.dir, e.name))
+				a.pickBrowsedFile(s.joinBrowseDir(e.name))
 			}
 		}
 		// Icon and name are SEPARATE labels (constant/cached icon + cached name) so
@@ -708,48 +790,19 @@ func (a *App) pickBrowsedFile(path string) {
 		// takes either, and the scan reports which it got.
 		baseWizard.setBasePath(path)
 	case purposeEvidenceImage:
-		// Relativise the absolute pick against the evidence folder it seeded at
-		// (../… when the user escaped it) and fill the editor's Image-file field.
-		a.setEvidenceImageFromPath(path)
+		// The merged browse: an origin-relative asset path re-rooted at the mounts'
+		// evidence/ folder (issue #6 follow-up). No filesystem path is involved, so
+		// the "../../UPDATES/…" leak a relative mount used to cause here cannot
+		// exist — see evidenceRelFromMerged.
+		a.setEvidenceImageFromMergedPath(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}
 }
 
-// localEvidenceDir returns the first non-zip local mount's evidence/ folder — the
-// same source the evidence picker's local scan uses — or "" when there is none
-// (stream mode / no mounts), in which case the evidence browse falls back to the
-// browser's usual home seed.
-func (a *App) localEvidenceDir() string {
-	_, mounts := a.d.Prefs.LocalAssets()
-	for _, m := range mounts {
-		if strings.EqualFold(filepath.Ext(m), ".zip") {
-			continue
-		}
-		return filepath.Join(m, "evidence")
-	}
-	return ""
-}
-
-// evidenceRel turns an absolute browsed path into the evidence field's relative
-// name: relative to evDir, slashed. Falls back to the basename when evDir is empty
-// or the path cannot be relativised. Files outside evDir become ../…, which is the
-// shape Evidence() resolves (#127).
-func evidenceRel(evDir, path string) string {
-	base := evDir
-	if base == "" {
-		base = filepath.Dir(path)
-	}
-	rel, err := filepath.Rel(base, path)
-	if err != nil || rel == "." {
-		rel = filepath.Base(path)
-	}
-	return filepath.ToSlash(rel)
-}
-
-// setEvidenceImageFromPath fills the evidence editor's Image-file field from a
-// browsed absolute path, relativised against the evidence folder the browser
-// seeded at (issue #6).
-func (a *App) setEvidenceImageFromPath(path string) {
-	a.evidImage = evidenceRel(demoBrowser.evDir, path)
+// setEvidenceImageFromMergedPath fills the evidence editor's Image-file field from
+// a pick in the MERGED browse (issue #6 follow-up). See evidenceRelFromMerged for
+// the conversion, which lives in mergebrowse.go beside the rest of that model.
+func (a *App) setEvidenceImageFromMergedPath(path string) {
+	a.evidImage = evidenceRelFromMerged(path)
 }
