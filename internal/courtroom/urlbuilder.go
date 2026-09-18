@@ -693,9 +693,16 @@ func PositionScene(pos string) (bgPart, deskPart string) {
 }
 
 // ZoomSide maps a speaker's position to the speedline side a zoom emote shows:
-// defense for the defense/helper-defense side, prosecution for the
-// prosecution/helper-prosecution/WITNESS side, "" when the position has no
-// speedlines (judge, jury, seance, empty). Issue #126.
+// prosecution for the prosecution/helper-prosecution/WITNESS side, defense for
+// EVERYTHING else — the defense/helper-defense side, the judge, the jury, the
+// seance, and the empty side. Issue #126.
+//
+// IT NEVER RETURNS "". v1.98.0 returned "" for judge/jury/seance as a deliberate
+// deviation from AO2's catch-all else, and the playtest killed the deviation: a
+// zoom emote that draws no burst at all reads as a broken emote, and the question
+// "which burst does a judge get?" already has an answer — AO2's else branch gives
+// them defense_speedlines. Crystalwarrior: "in no circumstance should ZoomSide
+// return ”". So defense is the catch-all, exactly like AO2.
 //
 // The witness stands with the PROSECUTION because that is what AO2 hardcodes:
 // `side.startsWith("pro") || side == "hlp" || side.startsWith("wit")` is the whole
@@ -704,18 +711,48 @@ func PositionScene(pos string) (bgPart, deskPart string) {
 // quoted on the zoom report). This function shipped `wit` on the DEFENSE side for
 // the whole of v1.98.0, which drew the wrong speedline art for every witness.
 //
-// The judge/jury/seance positions return "" here where AO2's catch-all else hands
-// them defense_speedlines: a DELIBERATE deviation. No side of the courtroom owns
-// those positions, so a judge zooming with the defense's burst reads as a bug
-// rather than as fidelity, and "" simply draws no overlay.
+// This is the side of the LAST-resort file (and the bundled stock burst keyed off
+// it); which FILES are tried before that is SpeedlinesCandidates' chain.
 func ZoomSide(pos string) string {
 	switch pos {
-	case "def", "hld":
-		return "defense"
 	case "pro", "hlp", "wit":
 		return "prosecution"
 	}
-	return ""
+	return "defense"
+}
+
+// SpeedlinesCandidates returns the ordered char-folder speedline URLs to try for
+// a zoom by a speaker at pos: the position's OWN <pos>_speedlines first, then the
+// AO2 side stem (<side>_speedlines — prosecution_speedlines for the pro/hlp/wit
+// side, defense_speedlines for everyone else). The last entry is the
+// AO2-compatible file; ZoomSide gives the bundled-burst side that stands behind
+// the whole chain.
+//
+// This is Crystalwarrior's resolution chain, with one substitution at the end:
+//
+//	check <pos>_speedlines; else prosecution_speedlines on pro/hlp/wit; else
+//	defense_speedlines; else report missing asset     (AO2)
+//
+// The last tier is served by the bundled stock burst instead of an alert — issue
+// #126 shipped that burst so a zoom always draws SOMETHING — and the bundled key
+// follows ZoomSide, so a pro whose pack ships nothing gets the PROSECUTION burst,
+// never the defense one. AO2 never hands a pro position defense_speedlines (its
+// hardcoded filename has no such branch), and neither do we.
+//
+// The <pos> arm is the extension AO2's hardcoded filename never allowed: a judge,
+// jury or seance speaker can now ship jud_speedlines / jur_speedlines /
+// sea_speedlines in their own character folder and have it used. For the six
+// standard positions that first candidate is a name no real pack ships (packs
+// ship the side stems), so it costs one 404-cached probe per character per
+// session before the side stem wins.
+func (u URLBuilder) SpeedlinesCandidates(character, pos string) []string {
+	// ZoomSide is never "" — defense is the catch-all, matching AO2's else branch —
+	// so the slice always ends with a real candidate and is never empty.
+	out := make([]string, 0, 2)
+	if pos != "" {
+		out = append(out, u.Speedlines(character, pos))
+	}
+	return append(out, u.Speedlines(character, ZoomSide(pos)))
 }
 
 // ShoutName maps an objection modifier to its asset stem.

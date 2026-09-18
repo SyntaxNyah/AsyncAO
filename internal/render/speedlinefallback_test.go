@@ -21,9 +21,10 @@ func TestSpeedlineFallbackKey(t *testing.T) {
 	}
 }
 
-// TestEffectiveSpeedlineBase pins the char-folder → bundled fallback resolution:
-// the speaker's own speedline wins when resident, the stock burst otherwise, and
-// a non-zoom scene draws nothing (#126).
+// TestEffectiveSpeedlineBase pins the char-folder chain → bundled fallback
+// resolution: the FIRST resident candidate wins (most specific first), the stock
+// burst is drawn when the character ships none of the chain, and a non-zoom scene
+// draws nothing (#126).
 func TestEffectiveSpeedlineBase(t *testing.T) {
 	// No zoom → empty (the side check short-circuits before the store is touched).
 	if got := effectiveSpeedlineBase(&courtroom.Scene{}, nil); got != "" {
@@ -38,17 +39,42 @@ func TestEffectiveSpeedlineBase(t *testing.T) {
 	}
 	defer store.Purge()
 
-	const charBase = "http://x/base/characters/phoenix/defense_speedlines"
-	if err := store.Upload(charBase, decodedFixture()); err != nil {
+	const posBase = "http://x/base/characters/judge/jud_speedlines"
+	const sideBase = "http://x/base/characters/judge/defense_speedlines"
+	if err := store.Upload(sideBase, decodedFixture()); err != nil {
 		t.Fatal(err)
 	}
-	scene := &courtroom.Scene{SpeedlinesSide: "defense", SpeedlinesBase: charBase}
-	if got := effectiveSpeedlineBase(scene, store); got != charBase {
-		t.Fatalf("resident char speedline = %q, want %q", got, charBase)
+	scene := &courtroom.Scene{
+		SpeedlinesSide:  "defense",
+		SpeedlinesChain: []string{posBase, sideBase},
+	}
+	// Only the SIDE stem is resident: the chain's first entry misses and the
+	// second wins — the chain is a walk, not a single lookup.
+	if got := effectiveSpeedlineBase(scene, store); got != sideBase {
+		t.Fatalf("chain walk = %q, want the resident side stem %q", got, sideBase)
 	}
 
-	scene.SpeedlinesBase = "http://x/base/characters/other/defense_speedlines"
+	// The position's own art now lands: it is MORE specific, so it wins.
+	if err := store.Upload(posBase, decodedFixture()); err != nil {
+		t.Fatal(err)
+	}
+	if got := effectiveSpeedlineBase(scene, store); got != posBase {
+		t.Fatalf("resident <pos> art = %q, want %q (most specific first)", got, posBase)
+	}
+
+	// Nothing in the chain is resident → the bundled stock burst for the side.
+	scene.SpeedlinesChain = []string{
+		"http://x/base/characters/other/jud_speedlines",
+		"http://x/base/characters/other/defense_speedlines",
+	}
 	if got := effectiveSpeedlineBase(scene, store); got != SpeedlineDefenseKey {
 		t.Fatalf("missing char speedline = %q, want %q", got, SpeedlineDefenseKey)
+	}
+
+	// An EMPTY chain is what a zoom can no longer produce (ZoomSide never returns
+	// ""), but the bundled tier must still answer if one ever arrives.
+	scene.SpeedlinesChain = nil
+	if got := effectiveSpeedlineBase(scene, store); got != SpeedlineDefenseKey {
+		t.Fatalf("empty chain = %q, want the bundled fallback %q", got, SpeedlineDefenseKey)
 	}
 }

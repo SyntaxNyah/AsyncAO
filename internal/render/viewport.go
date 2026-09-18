@@ -877,6 +877,14 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	consider := func(a *animState, visible bool) { considerMax(a, visible, 0) }
 	consider(&v.bgAnim, true)
 	consider(&v.deskAnim, true)
+	// The zoom speedline (#126) is a SCHEDULED multi-frame layer like every other
+	// one here — Update advances it, and it expects a deadline from this list. It
+	// had none, so a zoom's burst only flipped frames when something ELSE forced a
+	// redraw (the caret's 500 ms blink, a mouse move) and read to the playtest as
+	// "the animation is throttled / it only draws when the caret does". That is
+	// exactly the missing-deadline class this list exists to close. Gated on
+	// base != "" — no zoom, no layer — the same arm the shout bubble uses.
+	consider(&v.speedlineAnim, v.speedlineAnim.base != "")
 	consider(&v.shoutAnim, v.shoutAnim.base != "")
 	consider(&v.speakerAnim, scene.Speaker.Visible)
 	consider(&v.pairAnim, scene.PairActive)
@@ -1229,15 +1237,25 @@ func SpeedlineFallbackKey(side string) string {
 	return ""
 }
 
-// effectiveSpeedlineBase picks which speedline to draw: the speaker's own char
-// folder art when it's resident, else the bundled stock burst for their side.
-// Mirrors effectiveShoutBase's resident-check fallback. "" = no zoom emote.
+// effectiveSpeedlineBase picks which speedline to draw: the FIRST candidate in
+// the speaker's char-folder chain that is resident, else the bundled stock burst
+// for their side. Mirrors effectiveShoutBase's resident-check fallback.
+// "" = no zoom emote.
+//
+// The chain is ordered most-specific-first by courtroom.SpeedlinesCandidates —
+// the position's own <pos>_speedlines before the AO2 side stem — and every
+// candidate is a full URL, so this is a first-resident-wins walk over at most two
+// entries. That walk is also where the chain's last tier meets the bundled art:
+// a character shipping neither file still draws, because AO's own last resort
+// (a missing-asset alert) is replaced by the stock burst issue #126 added.
 func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string {
 	if scene.SpeedlinesSide == "" {
 		return ""
 	}
-	if scene.SpeedlinesBase != "" && store.Contains(scene.SpeedlinesBase) {
-		return scene.SpeedlinesBase
+	for _, cand := range scene.SpeedlinesChain {
+		if cand != "" && store.Contains(cand) {
+			return cand
+		}
 	}
 	return SpeedlineFallbackKey(scene.SpeedlinesSide)
 }

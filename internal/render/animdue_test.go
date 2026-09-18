@@ -131,6 +131,54 @@ func TestNextAnimDueColdCrossfade(t *testing.T) {
 	}
 }
 
+// TestNextAnimDueSpeedline pins the zoom-speedline layer as a SCHEDULED frame
+// source. It advances in Update like the bg/desk/shout/speaker/pair layers, but
+// it was the one live layer missing from NextAnimDue's consider list, so a zoom's
+// burst only flipped frames when something else forced a redraw — the playtest's
+// "the animation is throttled, it only draws when the caret does".
+func TestNextAnimDueSpeedline(t *testing.T) {
+	v := NewViewport(nil)
+	scene := &courtroom.Scene{}
+
+	// A staged but UNRESOLVED speedline (base set, no page yet) schedules nothing —
+	// same as any layer waiting on its bytes.
+	v.speedlineAnim.base = "theme://speedline/defense"
+	if _, ok := v.NextAnimDue(scene); ok {
+		t.Fatal("a speedline with no resident page must not schedule redraws")
+	}
+
+	// Resident and multi-frame: it owns the schedule on an otherwise static stage.
+	v.speedlineAnim.page = &TexturePage{
+		Frames: make([]*sdl.Texture, 4),
+		Delays: []time.Duration{60 * time.Millisecond, 60 * time.Millisecond, 60 * time.Millisecond, 60 * time.Millisecond},
+	}
+	v.speedlineAnim.elapsed = 20 * time.Millisecond
+	if due, ok := v.NextAnimDue(scene); !ok || due != 40*time.Millisecond {
+		t.Fatalf("speedline loop: due=%v ok=%v, want 40ms true", due, ok)
+	}
+
+	// Its deadline competes with the other layers on the min, exactly like them: a
+	// faster speaker frame wins. (The delays stay above minAnimFrameDelay so this is
+	// testing the min and not the schedule floor.)
+	v.speakerAnim.page = &TexturePage{
+		Frames: make([]*sdl.Texture, 2),
+		Delays: []time.Duration{30 * time.Millisecond, 30 * time.Millisecond},
+	}
+	v.speakerAnim.elapsed = 10 * time.Millisecond
+	scene.Speaker.Visible = true
+	if due, ok := v.NextAnimDue(scene); !ok || due != 20*time.Millisecond {
+		t.Fatalf("a faster layer must win the min: due=%v ok=%v, want 20ms true", due, ok)
+	}
+
+	// The zoom ending clears the base (Update's syncAnim), which drops the layer
+	// from the schedule without touching its page.
+	v.speedlineAnim.base = ""
+	scene.Speaker.Visible = false
+	if _, ok := v.NextAnimDue(scene); ok {
+		t.Fatal("a cleared speedline must stop scheduling redraws")
+	}
+}
+
 // TestNextAnimDueAllocs pins the pacer's clock at zero allocations — it runs
 // once per frame on the main thread, so it must never touch the heap.
 func TestNextAnimDueAllocs(t *testing.T) {

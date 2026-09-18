@@ -150,12 +150,16 @@ type Scene struct {
 	// AO2-Client falls back the same way. Prefetched alongside ShoutBase.
 	ShoutFallbackBase string
 	ShoutCustom       bool
-	// SpeedlinesBase is the speaker's own zoom speedline overlay (char folder),
-	// set for a zoom/preanim-zoom emote and "" otherwise. Issue #126.
-	SpeedlinesBase string
+	// SpeedlinesChain is the speaker's own zoom speedline overlay candidates (char
+	// folder, MOST SPECIFIC FIRST — see urlbuilder.SpeedlinesCandidates: the
+	// position's <pos>_speedlines before the AO2 side stem), set for a
+	// zoom/preanim-zoom emote and nil otherwise. The renderer draws the first
+	// candidate that is resident. Issue #126.
+	SpeedlinesChain []string
 	// SpeedlinesSide is the zoom emote's speedline side ("defense"/"prosecution"),
-	// "" when not zooming. The renderer maps it to the bundled stock fallback when
-	// the character ships no speedline of its own. Issue #126.
+	// "" only when NOT zooming — a zoom always has one, because ZoomSide never
+	// returns "". The renderer maps it to the bundled stock fallback when the
+	// character ships none of SpeedlinesChain. Issue #126.
 	SpeedlinesSide string
 
 	// MusicTrack is the currently-playing track (raw MC text; "" = nothing,
@@ -1528,14 +1532,19 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// speedlines (courtroom.cpp:3456-3477) — it never rescales the character
 	// layer — so the punch-in is the character's own zoom preanimation art.
 	// Magnifying here stacked a second zoom on top of that art.
-	c.Scene.SpeedlinesBase = ""
+	// The chain is what replaced v1.98.0's single <side>_speedlines base: every
+	// position (judge, jury and seance included) now resolves through
+	// SpeedlinesCandidates, so a zoom emote ALWAYS stages a burst — ZoomSide never
+	// returns "", and the chain's last arm is the side stem. Prefetched as one
+	// chain: the <pos> stem is a 404-cached miss for most packs, so the side stem
+	// is already in flight when it lands.
+	c.Scene.SpeedlinesChain = nil
 	c.Scene.SpeedlinesSide = ""
 	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
-		if side := ZoomSide(msg.Side); side != "" {
-			c.Scene.SpeedlinesSide = side
-			c.Scene.SpeedlinesBase = c.urls.Speedlines(speakerName, side)
-			c.mgr.Prefetch(c.Scene.SpeedlinesBase, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
-		}
+		c.Scene.SpeedlinesSide = ZoomSide(msg.Side)
+		c.Scene.SpeedlinesChain = c.urls.SpeedlinesCandidates(speakerName, msg.Side)
+		c.mgr.PrefetchChain(c.Scene.SpeedlinesChain[0], c.Scene.SpeedlinesChain[1:],
+			assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
 	}
 
 	// #17 networked frame effects: parse this message's FRAME_* fields into the
