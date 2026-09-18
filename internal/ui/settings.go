@@ -5023,11 +5023,14 @@ const themeDropNote = "drop a theme folder in here (or anywhere on this screen) 
 // themeGetNote is the discovery row's one line. A const, so the row costs no
 // allocation to draw (the settings-text doctrine — see themeRowText).
 //
-// It names the COUNT and the two ways to get the files, because "go to the repo"
-// on its own is the instruction that strands a non-developer: Code ▸ Download ZIP
-// is the path for someone who has never used git, and it is the one this sentence
-// leads with the alternative to.
-const themeGetNote = "the themes/ folder of the source repository holds fourteen free drop-in themes — clone it, or use Code ▸ Download ZIP, then copy the ones you want into the folder below"
+// It used to name the COUNT and the two ways to fetch the files, because the
+// repository's themes/ folder held the only copy of fourteen hand-authored themes
+// and "go to the repo" on its own strands a non-developer (Code ▸ Download ZIP is
+// the path for someone who has never used git). That corpus has been retired, so
+// there is no download left to advertise and this says so rather than pointing at
+// a folder that is no longer there. What the repository still carries for a theme
+// author is the format reference, which is what this row is for now.
+const themeGetNote = "themes are not bundled with the client — the source repository carries the theme format reference (docs/THEME-FORMAT.md) if you want to write one"
 
 // themeRowLabelW is the label gutter shared by the catalog rows below, so
 // "Subtheme:" and "Your themes:" line their controls up with each other.
@@ -5264,19 +5267,23 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 
 	// --- where to GET themes, which is the row nobody could find -----------
 	//
-	// THE DISCOVERY POINT. Fourteen finished franchise themes ship in the source
-	// repository's themes/ folder and in nothing else: they are not in the release
-	// archives (they are content, not code), there is no in-app gallery, and the
-	// only surface that ever mentioned the repository at all is a link buried in
-	// About. Someone who reads "drop a theme folder in here" two rows down and has
-	// no theme folder to drop is at a dead end — this row is the answer to the
-	// question that dead end asks, so it sits with the folder rows rather than in a
-	// help screen.
+	// THE DISCOVERY POINT, and it still is one even though it no longer sells
+	// anything. It used to advertise the fourteen hand-authored themes that lived
+	// in the source repository's themes/ folder and nowhere else (never in the
+	// release archives — they were content, not code), which is what made "drop a
+	// theme folder in here" two rows down a dead end for anyone with no theme
+	// folder to drop. That corpus has been retired, so the row now answers the
+	// same dead end with the one thing the repository can still give a theme
+	// author: the format reference.
 	//
-	// ABOVE the write root deliberately, for two reasons: the sentence can then say
-	// "the folder below" and mean it, and this row draws even on the arm where the
-	// write root could not be resolved at all — the case where a user needs to know
-	// where themes come from MOST.
+	// It STAYS rather than being deleted along with the corpus, because the
+	// question it exists for — "I have none, where do these come from?" — is
+	// exactly as real when the answer is "you write one". There is deliberately no
+	// count and no download instruction left in it.
+	//
+	// ABOVE the write root deliberately: this row draws even on the arm where the
+	// write root could not be resolved at all — the case where a user needs to
+	// know where themes come from MOST.
 	if c.onRow != nil {
 		c.onRow("Get themes", y)
 	}

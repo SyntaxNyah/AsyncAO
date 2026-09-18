@@ -31,9 +31,11 @@ the themes folder.
   scales a maximized window auto-selects (125%, 150%, 175%) text sat a pixel away
   from the chrome laid out around it. Both directions share one rounding rule now.
 - **The fourteen bundled sample themes are retired** — `themes/` no longer ships
-  hand-authored themes, so the repository is just the client. The embedded default,
-  your own themes folder, and the in-app creator, editor and Share export are all
-  unaffected; a `.aotheme` you already have still installs from a drop.
+  hand-authored themes, so the repository is just the client, and Theme → "Get
+  themes" no longer sends you there looking for them (that row points at the
+  theme-format reference instead). The embedded default, your own themes folder,
+  and the in-app creator, editor and Share export are all unaffected; a `.aotheme`
+  you already have still installs from a drop.
 
 ## v1.98.0 - 2026-09-18
 
