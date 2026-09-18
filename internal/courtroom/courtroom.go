@@ -542,10 +542,6 @@ type Courtroom struct {
 	// so a message with no marker reuses its speaker's remembered style. A clear (an
 	// inactive style) frees the entry; the map is bounded by maxRememberedStyles.
 	styleByChar map[int]SpriteStyle
-	// lastEmoteByChar remembers each speaker's last shown emote, keyed by msg.CharID,
-	// so the preanim plays only when the emote CHANGES (AO2 play_preanim-once, #52).
-	// Bounded by maxRememberedEmotes; charID < 0 (system/spectator) is not stored.
-	lastEmoteByChar map[int]string
 
 	// profileByName remembers each speaker's transmitted WireProfile (#101 slice 2),
 	// keyed by the bare character name (the player list rows key by character too). Like
@@ -946,22 +942,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// path's NotifyAssetMissing skip.
 		ready = c.spriteSettled(pre)
 	}
-	// #125: the scenery this message draws on — the background and, when it will
-	// actually be drawn, the desk overlay — is part of "what the stage shows
-	// first" too. A sprite that decodes before the new background leaves the
-	// speaker standing on the previous room's desk for one frame, so gate both
-	// like the sprites. The desk only holds when it is unresolved AND would draw
-	// (a hidden or known-absent desk is nothing to wait for).
-	if ready && c.sess != nil && c.sess.Background != "" {
-		bgPart, deskPart := PositionScene(msg.Side)
-		ready = c.spriteSettled(c.urls.Background(c.sess.Background, bgPart))
-		if ready {
-			deskBase := c.urls.Background(c.sess.Background, deskPart)
-			if res := c.deskResolutionOf(deskBase); DeskDrawn(msg.DeskMod, false, res) && res == DeskUnresolved {
-				ready = false
-			}
-		}
-	}
 	if ready {
 		c.waitFor = nil
 		return false
@@ -976,18 +956,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		}
 		if hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
-		}
-		// #125: warm the scenery the wait gate now also holds on, so the hold can
-		// actually end (begin() would prefetch it, but begin() runs only after the
-		// gate releases). The desk is only warmed when it would draw.
-		if c.sess != nil && c.sess.Background != "" {
-			bgPart, deskPart := PositionScene(msg.Side)
-			bgBase := c.urls.Background(c.sess.Background, bgPart)
-			c.mgr.PrefetchChain(bgBase, backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
-			deskBase := c.urls.Background(c.sess.Background, deskPart)
-			if res := c.deskResolutionOf(deskBase); DeskDrawn(msg.DeskMod, false, res) {
-				c.mgr.Prefetch(deskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay (wait-gate warm)
-			}
 		}
 	}
 	c.waitLeft -= dt
@@ -1744,27 +1712,6 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.timer = c.CatchUpLinger // power-user knob; the canonical default is zero (drain one per frame)
 }
 
-// maxRememberedEmotes bounds the per-character last-emote memory (#52): the
-// distinct char-slot count is finite, but cap it so a malformed stream can't
-// grow the map without bound.
-const maxRememberedEmotes = 512
-
-// rememberLastEmote records a speaker's last shown emote (charID < 0 — system /
-// spectator — has no stable slot and is not stored). Read by enterAfterShout so the
-// preanim only plays when the emote changed, not on every re-selection.
-func (c *Courtroom) rememberLastEmote(charID int, emote string) {
-	if charID < 0 || emote == "" {
-		return
-	}
-	if c.lastEmoteByChar == nil {
-		c.lastEmoteByChar = make(map[int]string, maxRememberedEmotes)
-	}
-	if _, had := c.lastEmoteByChar[charID]; !had && len(c.lastEmoteByChar) >= maxRememberedEmotes {
-		return
-	}
-	c.lastEmoteByChar[charID] = emote
-}
-
 // enterAfterShout picks preanim vs talking, mirroring handle_emote_mod:
 // preanim plays first unless absent; IDLE/ZOOM with immediate plays preanim
 // alongside the text.
@@ -1772,11 +1719,6 @@ func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
-	// #52: AO2 plays a preanim only when the emote CHANGES; re-selecting the same
-	// emote re-shows the talk sprite without replaying the (possibly long) preanim.
-	// sameEmote reads the PREVIOUS message's emote, then the memory is refreshed.
-	sameEmote := msg.Emote != "" && c.lastEmoteByChar != nil && c.lastEmoteByChar[msg.CharID] == msg.Emote
-	c.rememberLastEmote(msg.CharID, msg.Emote)
 	// The emote SFX arms HERE (AO2 starts sfx_delay_timer inside play_preanim,
 	// courtroom.cpp:4054 — before the preanim's own art is even checked), but the
 	// message EFFECTS do not: do_effect lives in start_chat_ticking (:4154-4172), which
@@ -1803,7 +1745,7 @@ func (c *Courtroom) enterAfterShout() {
 	// ALREADY know is absent is the same certainty — skip it synchronously here so
 	// the placeholder never paints for a preanim we're about to skip anyway. IDLE/
 	// TALK bases keep their (wanted) missingno; only the preanim selection is gated.
-	playPre := preanimWillPlay(msg) && !sameEmote && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
+	playPre := preanimWillPlay(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
 

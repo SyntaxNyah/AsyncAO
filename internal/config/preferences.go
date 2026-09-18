@@ -400,19 +400,20 @@ const defaultCallwordToast = true
 // long a message is getting (servers truncate very long lines).
 const defaultMessageCounter = true
 
-// The three AO2 "sticky" post-send options, transcribed with AO2's own shipped
-// values. Courtroom::reset_ui (../AO2-Client/src/courtroom.cpp:2340, :2348,
-// :2356) resets the SFX pick / the effects pick / the Pre checkbox only when the
-// matching option is FALSE, and options.cpp implements all three as
-// config.value("sticky…", true) — :420-423, :430-433, :440-443. So AO2's stock
-// behaviour is that all three SURVIVE a send, and these defaults say exactly
-// that. (The accessor names upstream read backwards — clearXOnPlayEnabled()
-// returns the stickiness — which is why the constants here are named for the
-// config KEY, not for the function.)
+// The three AO2 "sticky" post-send options, shipped with AsyncAO's defaults
+// (FALSE: every pick resets after a send). AO2's own options.cpp implements all
+// three as config.value("sticky…", true) — :420-423, :430-433, :440-443 — so
+// stock AO2 keeps the picks. AsyncAO ships them OFF instead so the SFX pick, the
+// effects pick and the Pre checkbox clear after every send, matching the one-shot
+// Screenshake/Realization arms. Courtroom::reset_ui
+// (../AO2-Client/src/courtroom.cpp:2340, :2348, :2356) clears each only when its
+// option is FALSE. (The accessor names upstream read backwards —
+// clearXOnPlayEnabled() returns the stickiness — which is why the constants here
+// are named for the config KEY, not for the function.)
 const (
-	defaultStickySounds   = true // AO2 "stickysounds"  (aooptionsdialog.cpp:416, "Sticky Sounds")
-	defaultStickyEffects  = true // AO2 "stickyeffects" (:417, "Sticky Effects")
-	defaultStickyPreanims = true // AO2 "stickypres"    (:418, "Sticky Preanims")
+	defaultStickySounds   = false // AO2 "stickysounds"  (aooptionsdialog.cpp:416, "Sticky Sounds")
+	defaultStickyEffects  = false // AO2 "stickyeffects" (:417, "Sticky Effects")
+	defaultStickyPreanims = false // AO2 "stickypres"    (:418, "Sticky Preanims")
 )
 
 // defaultSFXOnIdle ships OFF, matching AO2's own sfx_on_idle

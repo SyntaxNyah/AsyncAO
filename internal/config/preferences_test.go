@@ -1906,26 +1906,28 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 	})
 }
 
-// TestAO2SendOptionDefaultsMatchUpstream pins the four AO2 send-time options
-// against AO2's OWN shipped values, which is the whole reason they exist: adding a
-// user-facing toggle must not change what a stock AsyncAO does.
+// TestSendOptionDefaults pins the four AO2 send-time options against AsyncAO's
+// shipped values. The three sticky options are deliberately shipped OFF (unlike
+// AO2's own options.cpp:420-423, :430-433, :440-443, which default true) so the
+// SFX/effects picks and the Pre checkbox reset after every send, matching the
+// one-shot Screenshake/Realization arms.
 //
-//	stickysounds / stickyeffects / stickypres → true  (options.cpp:420-423, :430-433, :440-443)
+//	stickysounds / stickyeffects / stickypres → false (AsyncAO default; AO2 ships true)
 //	sfx_on_idle                               → false (options.cpp:569-572)
 //
 // The two AsyncAO options added beside them ride along, because their defaults
 // were user decisions and a silent flip would be a behaviour change nobody asked
 // for: ghost text ON, the unfocused-throttle override OFF.
-func TestAO2SendOptionDefaultsMatchUpstream(t *testing.T) {
+func TestSendOptionDefaults(t *testing.T) {
 	p, path := newTestPrefs(t)
 	for _, tc := range []struct {
 		name string
 		got  bool
 		want bool
 	}{
-		{"stickySounds", p.StickySoundsOn(), true},
-		{"stickyEffects", p.StickyEffectsOn(), true},
-		{"stickyPreanims", p.StickyPreanimsOn(), true},
+		{"stickySounds", p.StickySoundsOn(), false},
+		{"stickyEffects", p.StickyEffectsOn(), false},
+		{"stickyPreanims", p.StickyPreanimsOn(), false},
 		{"sfxOnIdle", p.SFXOnIdleOn(), false},
 		{"ghostCrawlText", p.GhostCrawlTextOn(), true},
 		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},

@@ -3499,25 +3499,26 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 30
 
-	// AO2's four send-time options, transcribed with AO2's own shipped defaults.
-	// The three "sticky" ones govern Courtroom::reset_ui (courtroom.cpp:2340, :2348,
-	// :2356), which clears each pick only when the matching option is OFF; AO2 ships
-	// all three ON, so AsyncAO's stock behaviour is unchanged by adding the rows.
+	// AO2's four send-time options, shipped with AsyncAO's defaults. The three
+	// "sticky" ones govern Courtroom::reset_ui (courtroom.cpp:2340, :2348, :2356),
+	// which clears each pick only when the matching option is OFF; AO2 ships all
+	// three ON, AsyncAO ships them OFF so the picks reset after every send (matching
+	// the one-shot Screenshake/Realization arms).
 	y = a.settingsSection(y, w, "Sending a message")
-	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, with Attorney Online's own defaults, so leaving them alone matches AO2 exactly.", ColTextDim)
+	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, shipped with AsyncAO's defaults (reset after every send).", ColTextDim)
 	y += 6
 	ssnd := a.d.Prefs.StickySoundsOn()
-	if next := c.Checkbox(pad, y, "Sticky sounds (ON by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
+	if next := c.Checkbox(pad, y, "Sticky sounds (OFF by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
 		a.d.Prefs.SetStickySounds(next)
 	}
 	y += 26
 	sfxx := a.d.Prefs.StickyEffectsOn()
-	if next := c.Checkbox(pad, y, "Sticky effects (ON by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
+	if next := c.Checkbox(pad, y, "Sticky effects (OFF by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
 		a.d.Prefs.SetStickyEffects(next)
 	}
 	y += 26
 	spre := a.d.Prefs.StickyPreanimsOn()
-	if next := c.Checkbox(pad, y, "Sticky preanims (ON by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
+	if next := c.Checkbox(pad, y, "Sticky preanims (OFF by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
 		a.d.Prefs.SetStickyPreanims(next)
 	}
 	y += 26

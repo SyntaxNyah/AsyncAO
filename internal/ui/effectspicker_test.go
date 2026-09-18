@@ -195,13 +195,13 @@ func TestOutgoingEffectsFieldShape(t *testing.T) {
 	}
 	a.icPreanim, a.sfxChoiceIdx = true, 0
 
-	// AO2's shipped default is `stickyeffects = true` (options.cpp:430-433) and
-	// courtroom.cpp:2348 resets ONLY when that is false — so a stock client keeps
-	// the pick after a send whatever the effect declares.
+	// AO2 ships `stickyeffects = true` (options.cpp:430-433), but AsyncAO ships it
+	// OFF: courtroom.cpp:2348 resets when false, so a stock AsyncAO client clears a
+	// plain effect to None after a send.
 	a.overlayChoiceIdx = 1
 	a.clearEffectsAfterSend()
-	if a.overlayChoiceIdx != 1 {
-		t.Error("the shipped default is sticky: the pick must survive the send (options.cpp:430-433)")
+	if a.overlayChoiceIdx != 0 {
+		t.Error("the shipped default is non-sticky: a plain effect must clear to None")
 	}
 	// With the (OWED) global turned off, the per-effect `sticky` override is what
 	// decides — the other half of courtroom.cpp:2348-2354.

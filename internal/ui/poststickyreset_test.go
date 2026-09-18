@@ -54,9 +54,8 @@ func TestClearSFXAfterSendReadsTheRealPreferences(t *testing.T) {
 		pre          bool
 		wantCleared  bool
 	}{
-		// Sticky Sounds is AO2's shipped default (defaultStickySounds = true): the
-		// pick survives whatever the other two say.
-		{"shipped default keeps the pick", true, false, false, false},
+		// Sticky Sounds ON: the pick survives whatever the other two say.
+		{"sticky on keeps the pick", true, false, false, false},
 		{"sticky wins even with Pre ticked", true, false, true, false},
 		{"sticky wins even with sfx_on_idle", true, true, false, false},
 		// Sticky OFF: the :2340 disjunction decides.
@@ -91,7 +90,7 @@ func TestClearPreAfterSendReadsTheRealPreferences(t *testing.T) {
 		wantWhy  string
 		startPre bool
 	}{
-		{"shipped default keeps Pre ticked", true, true, "defaultStickyPreanims = true", true},
+		{"sticky on keeps Pre ticked", true, true, "StickyPreanims on", true},
 		{"sticky off unticks Pre", false, false, "courtroom.cpp:2358 ui_pre->setChecked(false)", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,8 +133,8 @@ func TestClearEffectsAfterSendReadsTheRealPreference(t *testing.T) {
 		row     int
 		wantRow int
 	}{
-		{"shipped default keeps a plain effect", true, stickyFXPlainRow, stickyFXPlainRow},
-		{"shipped default keeps a sticky effect", true, stickyFXStickyRow, stickyFXStickyRow},
+		{"sticky on keeps a plain effect", true, stickyFXPlainRow, stickyFXPlainRow},
+		{"sticky on keeps a sticky effect", true, stickyFXStickyRow, stickyFXStickyRow},
 		{"global off clears a plain effect to None", false, stickyFXPlainRow, 0},
 		{"global off still keeps a sticky effect", false, stickyFXStickyRow, stickyFXStickyRow},
 	} {
