@@ -14,6 +14,12 @@ the themes folder.
   read as a double zoom. AO2 never rescales the character for a zoom: it hides the
   desk and the pair and plays the speedlines, which is what this does now. The
   punch-in is the preanimation art itself.
+- **A zoom emote clears the stage like AO2's** — the desk and the pair partner are
+  hidden for a zoom or preanim-zoom, so the speedlines read as a solo shot. The
+  desk still shows through a preanim-zoom's own preanimation, exactly as AO2's
+  `play_preanim` → `set_scene` → `handle_ic_speaking` sequence does.
+- **Witnesses get the prosecution speedlines** — a zoom at the witness stand drew
+  the defense burst. AO2 puts `wit` on the prosecution side.
 - **A character stops changing filter mid-animation** — a sprite could swap between
   crisp pixels and smoothing partway through one animation, because the per-sprite
   filter was re-decided from whichever animation page happened to be on stage (an

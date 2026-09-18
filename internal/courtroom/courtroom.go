@@ -1491,10 +1491,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// straight to talk; a shout holds the stage without touching the desk). The
 	// phase transitions (enterAfterShout preanim entry, startTalking) call
 	// applyDeskMods to flip it per phase — AO2's set_scene at preanim_start /
-	// start_chat_ticking. Pair/offset are set below from the message.
+	// start_chat_ticking. Pair/offset are set below from the message. A zoom
+	// emote's TALK side hides the desk outright (zoomEmote), and its preanim side
+	// re-shows it through applyDeskMods(true).
 	// DeskDrawn (not bare deskVisible) so a background known to ship no desk for
 	// this position stays hidden — AO2's set_scene existence check (#44).
-	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution())
+	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution()) && !zoomEmote(msg.EmoteMod)
 
 	// CLEAR SITE 1 of 3 (overlayfx.go): AO2 stops and hides ui_vp_effect inside
 	// display_character (courtroom.cpp:2755-2761), i.e. the moment the next IC
@@ -1546,7 +1548,11 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// them.
 	c.frameTriggers = c.buildFrameTriggers(msg)
 
-	c.Scene.PairActive = msg.Pair.Active()
+	// A zoom emote is a SOLO shot: AO2 never displays the pair for one, in either
+	// phase (zoomEmote). SpeakerInFront is still read from the wire — it orders the
+	// two layers whenever the pair IS on stage, and the pair layer below is left
+	// zeroed, so a stale one from a previous message cannot draw.
+	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod)
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
 	if c.Scene.PairActive {
 		c.Scene.Pair = SpriteLayer{
@@ -2500,6 +2506,24 @@ func (c *Courtroom) recordMissingDesk(base string) {
 	c.missingDesks[base] = struct{}{}
 }
 
+// zoomEmote reports whether an emote mod takes the stage over the way AO2's zoom
+// does. Two separate AO2 behaviours key off it, and both are about a zoom being a
+// SOLO shot rather than a courtroom scene:
+//
+//   - the DESK is hidden outright in handle_ic_speaking (courtroom.cpp:3459),
+//     which sits on the TALK side of the phase machine. play_preanim re-runs
+//     set_scene first (:4055-4073), so a PREANIM_ZOOM still shows its desk
+//     THROUGH the preanimation and loses it when the talking starts — the same
+//     talk-only asymmetry applyDeskMods already models for the mod 4/5 EX pair;
+//   - the PAIR is never displayed at all: handle_ic_message only calls
+//     display_pair_character when the mod is not one of these (:3160), and that
+//     runs BEFORE the phase machine, so it is hidden in BOTH phases.
+//
+// Reported on the #126 zoom playtest (Crystalwarrior quoted handle_ic_speaking).
+func zoomEmote(mod int) bool {
+	return mod == protocol.EmoteModZoom || mod == protocol.EmoteModPreanimZoom
+}
+
 // applyDeskMods re-derives the phase-dependent desk state from the CURRENT
 // message for the given phase (preanim vs talk/idle). It always recomputes from
 // c.current — never cumulatively mutating Scene — so a phase that shows the pair
@@ -2523,11 +2547,16 @@ func (c *Courtroom) applyDeskMods(preanim bool) {
 		return
 	}
 	msg := c.current
-	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, preanim, c.deskResolution())
+	zoom := zoomEmote(msg.EmoteMod)
+	// The desk is a WRITE-ONLY to the talk side for a zoom emote: shown through the
+	// preanimation (play_preanim's set_scene), hidden once the talking starts
+	// (handle_ic_speaking) — see zoomEmote.
+	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, preanim, c.deskResolution()) && !(zoom && !preanim)
 	// Pair visibility. Mod 4 hides it in both phases (never re-shown by AO2); mod 5
-	// hides it in talk only. Otherwise it comes straight from the message.
+	// hides it in talk only; a zoom emote hides it in BOTH (AO2 never displays the
+	// pair for one). Otherwise it comes straight from the message.
 	hidePair := msg.DeskMod == protocol.DeskEmoteOnlyEx ||
-		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx)
+		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx) || zoom
 	c.Scene.PairActive = msg.Pair.Active() && !hidePair
 	// Speaker offset. Zeroed only in the phase AO2 does move(0,0): mod 4 during the
 	// PREANIM (restored to the message offset in talk), mod 5 during TALK/idle.

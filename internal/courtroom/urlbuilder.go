@@ -693,14 +693,26 @@ func PositionScene(pos string) (bgPart, deskPart string) {
 }
 
 // ZoomSide maps a speaker's position to the speedline side a zoom emote shows:
-// defense for the defense/witness/helper-defense side, prosecution for the
-// prosecution/helper-prosecution side, "" when the position has no speedlines
-// (judge, jury, seance, empty). Issue #126.
+// defense for the defense/helper-defense side, prosecution for the
+// prosecution/helper-prosecution/WITNESS side, "" when the position has no
+// speedlines (judge, jury, seance, empty). Issue #126.
+//
+// The witness stands with the PROSECUTION because that is what AO2 hardcodes:
+// `side.startsWith("pro") || side == "hlp" || side.startsWith("wit")` is the whole
+// test, under its own comment "I still hate this hardcoding"
+// (../AO2-Client/src/courtroom.cpp:3463-3471 — the same block Crystalwarrior
+// quoted on the zoom report). This function shipped `wit` on the DEFENSE side for
+// the whole of v1.98.0, which drew the wrong speedline art for every witness.
+//
+// The judge/jury/seance positions return "" here where AO2's catch-all else hands
+// them defense_speedlines: a DELIBERATE deviation. No side of the courtroom owns
+// those positions, so a judge zooming with the defense's burst reads as a bug
+// rather than as fidelity, and "" simply draws no overlay.
 func ZoomSide(pos string) string {
 	switch pos {
-	case "def", "wit", "hld":
+	case "def", "hld":
 		return "defense"
-	case "pro", "hlp":
+	case "pro", "hlp", "wit":
 		return "prosecution"
 	}
 	return ""

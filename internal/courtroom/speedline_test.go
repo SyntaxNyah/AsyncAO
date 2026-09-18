@@ -7,9 +7,14 @@ import (
 )
 
 // TestZoomSide pins the position → speedline-side mapping (#126).
+//
+// `wit` is PROSECUTION: AO2's whole test is
+// `side.startsWith("pro") || side == "hlp" || side.startsWith("wit")`, with the
+// else-branch taking everything else (courtroom.cpp:3463-3471). v1.98.0 shipped it
+// on the defense side, which drew the wrong burst for every witness.
 func TestZoomSide(t *testing.T) {
-	defense := map[string]bool{"def": true, "wit": true, "hld": true}
-	prosecution := map[string]bool{"pro": true, "hlp": true}
+	defense := map[string]bool{"def": true, "hld": true}
+	prosecution := map[string]bool{"pro": true, "hlp": true, "wit": true}
 	none := []string{"jud", "jur", "sea", "", "unknown"}
 
 	for pos := range defense {
