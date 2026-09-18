@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
@@ -22,8 +23,14 @@ const (
 	charMetaCap = 256
 	// charMetaResCap sizes the async result channel; a burst beyond it just
 	// leaves later results to the next drain (senders never block the fetch
-	// goroutine — see charMetaFetchOne's non-blocking send).
-	charMetaResCap = 8
+	// goroutine — see charMetaFetchOne's non-blocking send). Sized large enough
+	// that a busy room's first-message burst rarely overflows (#69).
+	charMetaResCap = 64
+	// charMetaRefetchAfter is how old an in-flight (done=false) marker must be
+	// before charMetaFor re-arms a fetch for it. A result dropped on channel
+	// overflow leaves done=false forever otherwise; this heals that drop on the
+	// character's next message without ever spawning an unbounded fetch loop.
+	charMetaRefetchAfter = 5 * time.Second
 )
 
 // charMeta is the slice of a remote char.ini the live courtroom needs.
@@ -62,6 +69,11 @@ type charMeta struct {
 	// blips, skin, effects, scaling and showname.
 	idle string
 	done bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
+	// stamp is when an IN-FLIGHT marker (done=false) was armed. A dropped async
+	// result leaves done=false forever; charMetaFor re-arms a fetch once the
+	// marker goes stale so a dropped char.ini heals on the next message (#69).
+	// Zero for settled entries, where `done` already decides.
+	stamp time.Time
 }
 
 type charMetaFetch struct {
@@ -85,7 +97,13 @@ func (a *App) charMetaFor(char string) charMeta {
 	}
 	url := a.charINIURL(char)
 	if m, ok := a.charMetaCache[url]; ok {
-		return m
+		// A settled entry (hit or miss) is final. An in-flight marker that has
+		// gone stale means its result was dropped on channel overflow (#69):
+		// fall through and re-arm the fetch instead of returning a marker that
+		// would hold the character's blips/skin/effects forever.
+		if m.done || time.Since(m.stamp) < charMetaRefetchAfter {
+			return m
+		}
 	}
 	if a.charMetaCache == nil {
 		a.charMetaCache = make(map[string]charMeta, charMetaCap)
@@ -93,7 +111,7 @@ func (a *App) charMetaFor(char string) charMeta {
 	if len(a.charMetaCache) >= charMetaCap {
 		a.charMetaCache = make(map[string]charMeta, charMetaCap) // reset: it's a cache, refetch heals
 	}
-	a.charMetaCache[url] = charMeta{} // in-flight marker: one fetch per URL
+	a.charMetaCache[url] = charMeta{stamp: time.Now()} // in-flight marker: one fetch per URL
 	a.charMetaFetchOne(url, char)
 	return charMeta{}
 }

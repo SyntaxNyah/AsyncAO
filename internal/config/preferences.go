@@ -7776,10 +7776,10 @@ const (
 // Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
 // its sprite before playing anyway. User-tunable within [min,max] — deliberately a
 // WIDE range (power user: from a near-instant 50 ms nudge to a patient 30 s on a
-// dial-up-grade link); the default is generous enough for a big sprite on a slow
-// link without stalling conversation.
+// dial-up-grade link); the default is 0.5 s — a fast desktop client shouldn't
+// stall a busy room for longer than that waiting on a first-load sprite.
 const (
-	SpriteWaitDefaultMs = 1500
+	SpriteWaitDefaultMs = 500
 	SpriteWaitMinMs     = 50
 	SpriteWaitMaxMs     = 30000
 )

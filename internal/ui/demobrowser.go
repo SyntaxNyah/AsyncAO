@@ -79,6 +79,12 @@ const (
 	// to win foreground live before. browseForFolder's own comment names extending
 	// this browser to directories as the escalation path; this is it.
 	purposeBaseFolder
+	// purposeEvidenceImage (issue #6): pick → the evidence editor's Image-file
+	// field. The browser seeds at the local evidence/ folder but stays free to
+	// escape it, matching "open file explorer to the configured evidence folder".
+	// The picked absolute path is relativised against that folder (../… when the
+	// user wandered out, the shape Evidence() resolves since #127).
+	purposeEvidenceImage
 )
 
 // browsePicksDir reports a purpose whose answer is the CURRENT DIRECTORY rather
@@ -116,6 +122,10 @@ type demoBrowserState struct {
 	// dir is the directory being listed. "" is the Windows DRIVES view (a row per
 	// existing volume); off Windows there is no drives view and ".." stops at "/".
 	dir string
+	// evDir is the evidence folder an evidence-image browse seeds at and relativises
+	// its pick against (issue #6). "" when the browser was opened for any other
+	// purpose, so a stale evidence dir can't leak into a non-evidence pick.
+	evDir string
 	// entries is the loaded+cached listing for dir (NO per-frame ReadDir). more is
 	// the overflow count when the directory exceeded maxBrowseEntries (0 = none).
 	entries []browseEntry
@@ -164,6 +174,13 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
 	s.purpose = purpose
 	s.keep = browseKeepRule(purpose)
+	// The evidence browse seeds at the local evidence/ folder and relativises its
+	// pick against it (issue #6); every other purpose must not inherit a stale one.
+	if purpose == purposeEvidenceImage {
+		s.evDir = a.localEvidenceDir()
+	} else {
+		s.evDir = ""
+	}
 	home, _ := os.UserHomeDir() // "" is tolerated: the quick-jump button just no-ops
 	s.homeDir = home
 	if home != "" {
@@ -178,6 +195,9 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 		// Very first open this session: seed from home (drives view stays reachable
 		// via the 💾 button on Windows). A remembered dir survives re-opens.
 		start = home
+	}
+	if purpose == purposeEvidenceImage && s.evDir != "" {
+		start = s.evDir // open straight to the configured evidence folder (#6)
 	}
 	s.open = true
 	a.navBrowseTo(start)
@@ -247,6 +267,8 @@ func browseKeepRule(p browsePurpose) func(string) bool {
 		return isThemeImageName
 	case purposeBaseFolder:
 		return isBaseMountName
+	case purposeEvidenceImage:
+		return isEvidenceImageName
 	}
 	return isRecordingName
 }
@@ -258,6 +280,13 @@ func browseKeepRule(p browsePurpose) func(string) bool {
 // empty to somebody checking they had opened the right one.
 func isBaseMountName(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".zip")
+}
+
+// isEvidenceImageName reports an evidence-image candidate by extension — the same
+// decode-pipeline list the theme image intake uses (PNG/WebP/GIF/APNG/AVIF), so
+// the evidence browse never offers a file the thumbnailer can't sniff.
+func isEvidenceImageName(name string) bool {
+	return isThemeImageExt(strings.ToLower(filepath.Ext(name)))
 }
 
 // isThemeBundleName reports a theme bundle by its lowercased extension.
@@ -676,7 +705,49 @@ func (a *App) pickBrowsedFile(path string) {
 		// for the Use-this-folder button and a .zip pack for a row click; setBasePath
 		// takes either, and the scan reports which it got.
 		baseWizard.setBasePath(path)
+	case purposeEvidenceImage:
+		// Relativise the absolute pick against the evidence folder it seeded at
+		// (../… when the user escaped it) and fill the editor's Image-file field.
+		a.setEvidenceImageFromPath(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}
+}
+
+// localEvidenceDir returns the first non-zip local mount's evidence/ folder — the
+// same source the evidence picker's local scan uses — or "" when there is none
+// (stream mode / no mounts), in which case the evidence browse falls back to the
+// browser's usual home seed.
+func (a *App) localEvidenceDir() string {
+	_, mounts := a.d.Prefs.LocalAssets()
+	for _, m := range mounts {
+		if strings.EqualFold(filepath.Ext(m), ".zip") {
+			continue
+		}
+		return filepath.Join(m, "evidence")
+	}
+	return ""
+}
+
+// evidenceRel turns an absolute browsed path into the evidence field's relative
+// name: relative to evDir, slashed. Falls back to the basename when evDir is empty
+// or the path cannot be relativised. Files outside evDir become ../…, which is the
+// shape Evidence() resolves (#127).
+func evidenceRel(evDir, path string) string {
+	base := evDir
+	if base == "" {
+		base = filepath.Dir(path)
+	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == "." {
+		rel = filepath.Base(path)
+	}
+	return filepath.ToSlash(rel)
+}
+
+// setEvidenceImageFromPath fills the evidence editor's Image-file field from a
+// browsed absolute path, relativised against the evidence folder the browser
+// seeded at (issue #6).
+func (a *App) setEvidenceImageFromPath(path string) {
+	a.evidImage = evidenceRel(demoBrowser.evDir, path)
 }

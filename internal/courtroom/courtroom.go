@@ -129,7 +129,15 @@ type SpriteLayer struct {
 	// ScalingAuto, which is both the default and the case the renderer settles
 	// with the geometry rule — see scaling.go.
 	Scaling ScalingMode
+	// ZoomPct magnifies this layer when > 100 (a zoom emote grows the speaker past
+	// the stage so the speedlines behind it read as a punch-in). 0/100 = the
+	// default full-height placement. Issue #126.
+	ZoomPct int
 }
+
+// ZoomScalePct is how much a zoom emote magnifies the speaker (150 = 1.5×).
+// Issue #126.
+const ZoomScalePct = 150
 
 // Scene is the renderer's entire input: plain data, no SDL types, mutated
 // only by Courtroom on the game thread.
@@ -150,6 +158,13 @@ type Scene struct {
 	// AO2-Client falls back the same way. Prefetched alongside ShoutBase.
 	ShoutFallbackBase string
 	ShoutCustom       bool
+	// SpeedlinesBase is the speaker's own zoom speedline overlay (char folder),
+	// set for a zoom/preanim-zoom emote and "" otherwise. Issue #126.
+	SpeedlinesBase string
+	// SpeedlinesSide is the zoom emote's speedline side ("defense"/"prosecution"),
+	// "" when not zooming. The renderer maps it to the bundled stock fallback when
+	// the character ships no speedline of its own. Issue #126.
+	SpeedlinesSide string
 
 	// MusicTrack is the currently-playing track (raw MC text; "" = nothing,
 	// stopped, or an area transfer) — the courtroom Now-Playing display reads it.
@@ -527,6 +542,10 @@ type Courtroom struct {
 	// so a message with no marker reuses its speaker's remembered style. A clear (an
 	// inactive style) frees the entry; the map is bounded by maxRememberedStyles.
 	styleByChar map[int]SpriteStyle
+	// lastEmoteByChar remembers each speaker's last shown emote, keyed by msg.CharID,
+	// so the preanim plays only when the emote CHANGES (AO2 play_preanim-once, #52).
+	// Bounded by maxRememberedEmotes; charID < 0 (system/spectator) is not stored.
+	lastEmoteByChar map[int]string
 
 	// profileByName remembers each speaker's transmitted WireProfile (#101 slice 2),
 	// keyed by the bare character name (the player list rows key by character too). Like
@@ -927,6 +946,22 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// path's NotifyAssetMissing skip.
 		ready = c.spriteSettled(pre)
 	}
+	// #125: the scenery this message draws on — the background and, when it will
+	// actually be drawn, the desk overlay — is part of "what the stage shows
+	// first" too. A sprite that decodes before the new background leaves the
+	// speaker standing on the previous room's desk for one frame, so gate both
+	// like the sprites. The desk only holds when it is unresolved AND would draw
+	// (a hidden or known-absent desk is nothing to wait for).
+	if ready && c.sess != nil && c.sess.Background != "" {
+		bgPart, deskPart := PositionScene(msg.Side)
+		ready = c.spriteSettled(c.urls.Background(c.sess.Background, bgPart))
+		if ready {
+			deskBase := c.urls.Background(c.sess.Background, deskPart)
+			if res := c.deskResolutionOf(deskBase); DeskDrawn(msg.DeskMod, false, res) && res == DeskUnresolved {
+				ready = false
+			}
+		}
+	}
 	if ready {
 		c.waitFor = nil
 		return false
@@ -941,6 +976,18 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		}
 		if hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
+		}
+		// #125: warm the scenery the wait gate now also holds on, so the hold can
+		// actually end (begin() would prefetch it, but begin() runs only after the
+		// gate releases). The desk is only warmed when it would draw.
+		if c.sess != nil && c.sess.Background != "" {
+			bgPart, deskPart := PositionScene(msg.Side)
+			bgBase := c.urls.Background(c.sess.Background, bgPart)
+			c.mgr.PrefetchChain(bgBase, backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
+			deskBase := c.urls.Background(c.sess.Background, deskPart)
+			if res := c.deskResolutionOf(deskBase); DeskDrawn(msg.DeskMod, false, res) {
+				c.mgr.Prefetch(deskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay (wait-gate warm)
+			}
 		}
 	}
 	c.waitLeft -= dt
@@ -1511,6 +1558,22 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		Scaling:     c.scalingFor(speakerName),
 	}
 
+	// #126 zoom speedlines: a zoom/preanim-zoom emote shows the speaker's own
+	// <side>_speedlines overlay behind them (char folder first, the bundled stock
+	// burst when the pack ships none) and magnifies the speaker. Resolved +
+	// prefetched once per message; ""/0 for a non-zoom emote or a side with none.
+	c.Scene.SpeedlinesBase = ""
+	c.Scene.SpeedlinesSide = ""
+	c.Scene.Speaker.ZoomPct = 0
+	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
+		if side := ZoomSide(msg.Side); side != "" {
+			c.Scene.SpeedlinesSide = side
+			c.Scene.SpeedlinesBase = c.urls.Speedlines(speakerName, side)
+			c.Scene.Speaker.ZoomPct = ZoomScalePct
+			c.mgr.Prefetch(c.Scene.SpeedlinesBase, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
+		}
+	}
+
 	// #17 networked frame effects: parse this message's FRAME_* fields into the
 	// per-frame trigger table ONCE here (never per render frame — the render loop
 	// is zero-allocation). Built after the Speaker bases above so a later
@@ -1578,7 +1641,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.enterAfterShout()
 	}
 }
-
 
 // resolveBlip mints c.blipRef from the current message's wire blip or the
 // speaker's char.ini set, holding the message (blipRef empty, blipPending set)
@@ -1682,6 +1744,27 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.timer = c.CatchUpLinger // power-user knob; the canonical default is zero (drain one per frame)
 }
 
+// maxRememberedEmotes bounds the per-character last-emote memory (#52): the
+// distinct char-slot count is finite, but cap it so a malformed stream can't
+// grow the map without bound.
+const maxRememberedEmotes = 512
+
+// rememberLastEmote records a speaker's last shown emote (charID < 0 — system /
+// spectator — has no stable slot and is not stored). Read by enterAfterShout so the
+// preanim only plays when the emote changed, not on every re-selection.
+func (c *Courtroom) rememberLastEmote(charID int, emote string) {
+	if charID < 0 || emote == "" {
+		return
+	}
+	if c.lastEmoteByChar == nil {
+		c.lastEmoteByChar = make(map[int]string, maxRememberedEmotes)
+	}
+	if _, had := c.lastEmoteByChar[charID]; !had && len(c.lastEmoteByChar) >= maxRememberedEmotes {
+		return
+	}
+	c.lastEmoteByChar[charID] = emote
+}
+
 // enterAfterShout picks preanim vs talking, mirroring handle_emote_mod:
 // preanim plays first unless absent; IDLE/ZOOM with immediate plays preanim
 // alongside the text.
@@ -1689,6 +1772,11 @@ func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
+	// #52: AO2 plays a preanim only when the emote CHANGES; re-selecting the same
+	// emote re-shows the talk sprite without replaying the (possibly long) preanim.
+	// sameEmote reads the PREVIOUS message's emote, then the memory is refreshed.
+	sameEmote := msg.Emote != "" && c.lastEmoteByChar != nil && c.lastEmoteByChar[msg.CharID] == msg.Emote
+	c.rememberLastEmote(msg.CharID, msg.Emote)
 	// The emote SFX arms HERE (AO2 starts sfx_delay_timer inside play_preanim,
 	// courtroom.cpp:4054 — before the preanim's own art is even checked), but the
 	// message EFFECTS do not: do_effect lives in start_chat_ticking (:4154-4172), which
@@ -1715,7 +1803,7 @@ func (c *Courtroom) enterAfterShout() {
 	// ALREADY know is absent is the same certainty — skip it synchronously here so
 	// the placeholder never paints for a preanim we're about to skip anyway. IDLE/
 	// TALK bases keep their (wanted) missingno; only the preanim selection is gated.
-	playPre := preanimWillPlay(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
+	playPre := preanimWillPlay(msg) && !sameEmote && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
 
@@ -2403,33 +2491,39 @@ func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 	return deskVisible(deskMod, preanim)
 }
 
-// deskResolution reports what this room knows about the live Scene.DeskBase.
-// Only DeskAbsent changes the outcome of DeskDrawn, so a base we have not been
-// told about is simply DeskUnresolved. Game-thread only: a map read plus, where
-// the room was wired one, the same T1 residency probe the sprite wait-gate uses.
-func (c *Courtroom) deskResolution() DeskResolution {
-	if c.Scene.DeskBase == "" {
+// deskResolutionOf reports what this room knows about a desk base. Only
+// DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
+// about is simply DeskUnresolved. Game-thread only: a map read plus, where the
+// room was wired one, the same T1 residency probe the sprite wait-gate uses.
+//
+// RESIDENT beats a remembered miss, and clears it. missingDesks used to be
+// insert-only, so a desk that 404'd once stayed absent for the life of the
+// Courtroom even after it actually arrived — a server repack, a local mount
+// added, or a format learned. The render side already self-heals
+// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
+// there and ShowDesk still said no. This is also what makes DeskResolved a
+// real state rather than a declared-but-unreachable one.
+//
+// SpriteReady is the same same-thread T1 map probe the sprite wait-gate uses,
+// and it is nil in rigs that never wired it — an unwired room simply keeps the
+// old two-state answer.
+func (c *Courtroom) deskResolutionOf(base string) DeskResolution {
+	if base == "" {
 		return DeskUnresolved
 	}
-	// RESIDENT beats a remembered miss, and clears it. missingDesks used to be
-	// insert-only, so a desk that 404'd once stayed absent for the life of the
-	// Courtroom even after it actually arrived — a server repack, a local mount
-	// added, or a format learned. The render side already self-heals
-	// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
-	// there and ShowDesk still said no. This is also what makes DeskResolved a
-	// real state rather than a declared-but-unreachable one.
-	//
-	// SpriteReady is the same same-thread T1 map probe the sprite wait-gate uses,
-	// and it is nil in rigs that never wired it — an unwired room simply keeps the
-	// old two-state answer.
-	if c.SpriteReady != nil && c.SpriteReady(c.Scene.DeskBase) {
-		delete(c.missingDesks, c.Scene.DeskBase)
+	if c.SpriteReady != nil && c.SpriteReady(base) {
+		delete(c.missingDesks, base)
 		return DeskResolved
 	}
-	if _, ok := c.missingDesks[c.Scene.DeskBase]; ok {
+	if _, ok := c.missingDesks[base]; ok {
 		return DeskAbsent
 	}
 	return DeskUnresolved
+}
+
+// deskResolution is deskResolutionOf for the LIVE scene's desk.
+func (c *Courtroom) deskResolution() DeskResolution {
+	return c.deskResolutionOf(c.Scene.DeskBase)
 }
 
 // NotifyDeskMissing reports that the desk image for a background+position

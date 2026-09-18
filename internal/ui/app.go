@@ -2548,14 +2548,14 @@ type sessionState struct {
 	// evidPicker is the "Choose" image picker: a modal grid of evidence images
 	// (local mount folder in local/layered mode, the server's evidence/ index in
 	// stream/layered mode, plus the case evidence already on hand).
-	evidPickerOpen   bool
-	evidPickerSearch string
-	evidPickerScroll int32
-	evidPickerFiles  []string // discovered names, parallel to evidPickerLower
-	evidPickerLower  []string
-	evidPickerBusy   bool
+	evidPickerOpen    bool
+	evidPickerSearch  string
+	evidPickerScroll  int32
+	evidPickerFiles   []string // discovered names, parallel to evidPickerLower
+	evidPickerLower   []string
+	evidPickerBusy    bool
 	evidPickerScanned bool
-	evidPickerRes    chan []string
+	evidPickerRes     chan []string
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar      string   // active override folder ("" = picked character)
@@ -3500,6 +3500,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// kick the off-thread custom-image load if the user chose one. Default first so
 	// a failed custom load leaves a valid page in place (missingno.go).
 	a.uploadEmbeddedMissingno()
+	a.uploadEmbeddedSpeedlines() // #126 bundled zoom speedline fallback
 	if p := d.Prefs.ErrorSpritePath(); p != "" {
 		a.applyErrorSprite(p)
 	}
@@ -9070,12 +9071,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
-	a.pollMakerExport() // M16: deliver the self-contained archive export result
-	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
-	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
-	a.pollCharMeta()        // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()          // drain bg discovery even when the picker is closed (slideshow)
-	a.pollEvidencePicker()  // drain evidence-image picker discovery (local scan / server index)
+	a.pollMakerExport()    // M16: deliver the self-contained archive export result
+	a.tickContentJob()     // content report / package: drain probe results + poll the package goroutine (no-op when idle)
+	a.pollGifExport()      // M16: deliver the off-thread GIF encode result
+	a.pollCharMeta()       // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()         // drain bg discovery even when the picker is closed (slideshow)
+	a.pollEvidencePicker() // drain evidence-image picker discovery (local scan / server index)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {

@@ -964,7 +964,6 @@ const (
 	evidInspectorLastBtnH   = btnH
 )
 
-
 // Evidence icon-size slider bounds and the grid name-label band (Issue #119):
 // one in-memory size scales both the list icons and the grid cells; grid names
 // wrap to at most two centered lines.
@@ -972,9 +971,9 @@ const (
 	evidIconDefault  = 40
 	evidIconMin      = 32
 	evidIconMax      = 96
-	evidIconRowH     = 26  // the icon-size slider strip's height above the list/grid
-	evidNameLineH    = 16  // one grid name-label line
-	evidNameMaxLines = 2   // grid name wrap cap
+	evidIconRowH     = 26 // the icon-size slider strip's height above the list/grid
+	evidNameLineH    = 16 // one grid name-label line
+	evidNameMaxLines = 2  // grid name wrap cap
 	evidNameBandH    = evidNameLineH*evidNameMaxLines + 2
 )
 
@@ -1333,13 +1332,16 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: ix, Y: iy, W: iw, H: descH}, a.evidDesc, "What it proves")
 	iy += descH + 8
 	c.Label(ix, iy+4, "Image file:", ColText)
-	imgW := iw - 60 - 76 // leave room for the "Choose" picker button
+	imgW := iw - 60 - 152 // leave room for the "Choose" + "Browse" buttons
 	if imgW < 60 {
 		imgW = 60
 	}
 	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
 	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: 70, H: fieldH}, "Choose") {
 		a.openEvidencePicker()
+	}
+	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6 + 70 + 6, Y: iy, W: 70, H: fieldH}, "Browse") {
+		a.openDemoBrowserFor(purposeEvidenceImage)
 	}
 	iy += fieldH + 8
 	if c.Button(sdl.Rect{X: ix, Y: iy, W: 90, H: btnH}, "Save") {
@@ -1459,7 +1461,6 @@ func (a *App) drawEvidenceCompare(rect sdl.Rect) {
 		a.evidName, a.evidDesc, a.evidImage = a.evidIncoming.Name, a.evidIncoming.Description, a.evidIncoming.Image
 	}
 }
-
 
 // drawEvidenceDescriptionLine draws one wrapped description line, rendering any
 // URLs in it as clickable links (accent + hover underline + open browser), the

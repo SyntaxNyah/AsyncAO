@@ -98,7 +98,15 @@ func (u URLBuilder) Evidence(image string) string {
 	// A nested evidence name ("cases/knife.png") keeps its separators (segPath),
 	// so the exact URL mirrors the server's real layout and a bundle writes real
 	// subfolders, never a "cases%2Fknife.png" file (#40).
-	return u.origin + evidenceDir + segPath(image)
+	//
+	// #127: AO allows an evidence image to crawl OUT of the evidence folder with
+	// ".." ("../characters/Ridelle/char_icon.png" — asset reuse across folders).
+	// cleanRel collapses "."/".." like the OS does, clamped so the path can never
+	// escape the origin (the same traversal guard Background uses), so the escaped
+	// spelling resolves to its real asset instead of 404ing / being refused by the
+	// local fetcher. Flat + nested names are unchanged (cleanRel is identity for a
+	// path with no "."/".." segments).
+	return u.origin + segPath(cleanRel(evidenceDir+image))
 }
 
 // encodeURIRestores maps Go's percent-escapes back to the literal marks
@@ -428,6 +436,14 @@ func (u URLBuilder) CharFolder(character string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/"
 }
 
+// Speedlines returns the zoom speedline overlay base for a speaker's own folder:
+// <character>/<side>_speedlines ("defense"/"prosecution"). Issue #126. Drawn behind
+// the speaker during a zoom emote; characters that ship no speedline fall back to
+// themes/default, which is client-side theme art outside this builder's scope.
+func (u URLBuilder) Speedlines(character, side string) string {
+	return u.origin + charactersDir + u.charSeg(character) + "/" + side + "_speedlines"
+}
+
 // BackgroundFolder returns one background's folder URL (with trailing slash). A
 // nested background name keeps its separators (segPath), matching Background.
 func (u URLBuilder) BackgroundFolder(bg string) string {
@@ -674,6 +690,20 @@ func PositionScene(pos string) (bgPart, deskPart string) {
 	default:
 		return pos, pos + "_overlay"
 	}
+}
+
+// ZoomSide maps a speaker's position to the speedline side a zoom emote shows:
+// defense for the defense/witness/helper-defense side, prosecution for the
+// prosecution/helper-prosecution side, "" when the position has no speedlines
+// (judge, jury, seance, empty). Issue #126.
+func ZoomSide(pos string) string {
+	switch pos {
+	case "def", "wit", "hld":
+		return "defense"
+	case "pro", "hlp":
+		return "prosecution"
+	}
+	return ""
 }
 
 // ShoutName maps an objection modifier to its asset stem.

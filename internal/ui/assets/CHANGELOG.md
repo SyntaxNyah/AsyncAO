@@ -4,6 +4,31 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.98.0 - 2026-09-18
+
+Courtroom fidelity fixes and the zoom speedline effect — thanks to Crystalwarrior
+and Mep for the reports.
+
+- **Zoom emotes now show speedlines** — a ZOOM preanimation/emote draws the
+  defense or prosecution speedlines behind the speaker and magnifies them for the
+  punch-in look. The art comes from the character's own folder first, with a
+  bundled stock burst as the fallback.
+- **Preanimations play once per emote** — re-selecting the same emote no longer
+  replays the preanimation every time; it plays when the emote changes, like AO2.
+- **Wrong or missing blips fixed** — a speaker's own blip set now resolves
+  reliably on their first message (a busy room could previously drop the char.ini
+  result and leave the default blip — or no blip — for the whole session).
+- **"Hold message until art loads" now waits for the background and desk too** —
+  not just the character sprite, so a new scene doesn't flash the wrong backdrop.
+- **Evidence images can reference other folders** — an evidence icon may point at
+  `../characters/<name>/…` and resolve correctly, and is always clamped to the
+  server origin.
+- **Evidence editor gains a Browse button** — pick the image file in an in-app
+  file browser that opens at the configured evidence folder (and can wander out
+  of it) instead of typing the path.
+- **Snappier sprite-wait default** — the default wait before a message
+  auto-advances is now 0.5 s (was 1.5 s).
+
 ## v1.97.0 - 2026-09-17
 
 A big memory win for crowded areas and unlimited local packs.

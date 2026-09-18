@@ -428,11 +428,12 @@ const (
 type Viewport struct {
 	store *TextureStore
 
-	speakerAnim animState
-	pairAnim    animState
-	shoutAnim   animState
-	bgAnim      animState
-	deskAnim    animState
+	speakerAnim   animState
+	pairAnim      animState
+	shoutAnim     animState
+	bgAnim        animState
+	deskAnim      animState
+	speedlineAnim animState
 	// overlayAnim plays the AO2 screen-effect overlay (effects.ini). overlayGen
 	// mirrors Scene.Overlay.Gen so the SAME effect fired twice in a row restarts:
 	// animState.reset only fires on a base change, and the second trigger of an
@@ -701,6 +702,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
+	v.syncAnim(&v.speedlineAnim, effectiveSpeedlineBase(scene, v.store))
 	v.reduceInactiveAnimations(scene)
 	// Hold-previous max-age clock: how long each char layer has been cold
 	// (resolve is generation-cached — steady state is pointer math).
@@ -712,6 +714,9 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	}
 	if page, ok := v.deskAnim.resolve(v.store); ok {
 		v.deskAnim.advance(page, dt, false)
+	}
+	if page, ok := v.speedlineAnim.resolve(v.store); ok {
+		v.speedlineAnim.advance(page, dt, false)
 	}
 	if shoutBase != "" {
 		if page, ok := v.shoutAnim.resolve(v.store); ok {
@@ -1064,6 +1069,12 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	} else {
 		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, 100) // bg full-bright (spotlight dims pair+desk, not bg)
 	}
+	// #126 zoom speedlines: the speaker's own radial art behind them during a zoom
+	// emote (char folder, or the bundled stock burst when the pack ships none).
+	// Drawn over the background, under the characters.
+	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
+		v.drawFill(ren, base, &v.speedlineAnim, vp, 100)
+	}
 
 	// Pair hue offset for the "desync" effect: half a period so the two
 	// characters show opposite hues. Zero unless rainbow + desync are both on,
@@ -1155,6 +1166,39 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 
 	v.particles.draw(ren, stage) // #124 ambient weather over the stage (free when off), under the post-FX
 	v.applyPostFX(ren, stage)    // #10 retro overlays over the whole stage frame (free when off)
+}
+
+// Bundled zoom speedline fallback keys (issue #126). The UI decodes and pins the
+// embedded stock burst art under these at startup; effectiveSpeedlineBase uses
+// them when a zoom emote's speaker ships no <side>_speedlines of its own.
+const (
+	SpeedlineDefenseKey     = "theme://speedline/defense"
+	SpeedlineProsecutionKey = "theme://speedline/prosecution"
+)
+
+// SpeedlineFallbackKey maps a ZoomSide value ("defense"/"prosecution") to its
+// bundled fallback key; "" for anything else.
+func SpeedlineFallbackKey(side string) string {
+	switch side {
+	case "defense":
+		return SpeedlineDefenseKey
+	case "prosecution":
+		return SpeedlineProsecutionKey
+	}
+	return ""
+}
+
+// effectiveSpeedlineBase picks which speedline to draw: the speaker's own char
+// folder art when it's resident, else the bundled stock burst for their side.
+// Mirrors effectiveShoutBase's resident-check fallback. "" = no zoom emote.
+func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string {
+	if scene.SpeedlinesSide == "" {
+		return ""
+	}
+	if scene.SpeedlinesBase != "" && store.Contains(scene.SpeedlinesBase) {
+		return scene.SpeedlinesBase
+	}
+	return SpeedlineFallbackKey(scene.SpeedlinesSide)
 }
 
 // effectiveShoutBase picks which shout bubble to draw: the character's own
@@ -1718,11 +1762,19 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
 
-	scaledW := vp.H * page.W / page.H
-	v.dstRect.W = scaledW
-	v.dstRect.H = vp.H
-	v.dstRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
-	v.dstRect.Y = vp.Y + vp.H*int32(layer.OffsetY)/offsetPercentDivisor
+	// #126 zoom magnification: a zoom emote grows the speaker past the stage
+	// (bottom-anchored) so the speedlines behind it read as a punch-in. No zoom
+	// (ZoomPct <= 100) is byte-identical to the original full-height placement.
+	zoom := layer.ZoomPct
+	if zoom <= 100 {
+		zoom = 100
+	}
+	h := vp.H * int32(zoom) / 100
+	w := h * page.W / page.H
+	v.dstRect.W = w
+	v.dstRect.H = h
+	v.dstRect.X = vp.X + (vp.W-w)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
+	v.dstRect.Y = vp.Y + (vp.H - h) + vp.H*int32(layer.OffsetY)/offsetPercentDivisor
 
 	flip := sdl.FLIP_NONE
 	if layer.Flip {
