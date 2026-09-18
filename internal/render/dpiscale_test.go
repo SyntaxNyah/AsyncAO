@@ -37,17 +37,61 @@ func TestLogicalFromDeviceRounding(t *testing.T) {
 	}
 }
 
-// TestDeviceLogicalRoundTrip pins that a MessageRaster's logical line-height metric
-// stays close to the un-scaled value across scales (the raster rasterizes the SAME
-// font at pt×scale, then Draw/Height divide back) — proving the scale folds into the
-// point size and unfolds in the geometry, not into a doubled on-screen size.
-func TestDeviceFromLogicalInverts(t *testing.T) {
-	m := &MessageRaster{lineH: 20, devScale: 150}
-	// logical(device) then device(logical) should land within 1px of the original
-	// (round-trip through integer rounding at an odd scale).
-	logical := logicalFromDevice(m.lineH, m.devScale)
-	back := m.deviceFromLogical(logical)
-	if d := back - m.lineH; d < -1 || d > 1 {
-		t.Errorf("round-trip 20 device → %d logical → %d device drifted by %d (>1px)", logical, back, d)
+// TestDeviceFromLogicalRoundTripBounded pins the ONE property a
+// device→logical→device round trip can actually guarantee once the forward
+// projection uses the shared "round half up" rule: the drift stays within a pixel
+// and the projection never reverses direction. logicalFromDevice folds the scale
+// into the font point size and divides the result back down, so the round trip is
+// lossy by construction — demanding exactness here would force the forward
+// direction to round some OTHER way, reintroducing exactly the disagreement with
+// uiDeviceFromLogical this fix removes.
+func TestDeviceFromLogicalRoundTripBounded(t *testing.T) {
+	for _, dev := range []int32{0, 100, 125, 150, 175, 200} {
+		for _, lineH := range []int32{0, 1, 4, 10, 16, 20, 22, 35, 48} {
+			m := &MessageRaster{lineH: lineH, devScale: dev}
+			logical := logicalFromDevice(m.lineH, m.devScale)
+			if back := m.deviceFromLogical(logical); back < lineH-1 || back > lineH+1 {
+				t.Errorf("round-trip %d device at %d%% → %d logical → %d device drifted more than 1px",
+					lineH, dev, logical, back)
+			}
+			// Monotonic non-decreasing in the logical input: a crossing would let a
+			// caret/selection edge land left of the glyph edge it belongs at.
+			if d2 := m.deviceFromLogical(logical + 1); d2 < m.deviceFromLogical(logical) {
+				t.Errorf("deviceFromLogical not monotonic at dev=%d logical=%d", dev, logical)
+			}
+		}
+	}
+}
+
+// TestDeviceFromLogicalRounding pins the forward projection's "round half up"
+// rule at the odd scales the roadmap flags as the off-by-one failure mode, and
+// pins it EQUAL to the inverse rule rather than merely consistent with its own
+// history. uiDeviceFromLogical rounds half up too; if this file ever rounds the
+// other way again, a chatbox line and the chrome around it separate by a pixel.
+func TestDeviceFromLogicalRounding(t *testing.T) {
+	cases := []struct {
+		logical, devScale, want int32
+	}{
+		// Identity fast paths.
+		{37, 100, 37},
+		{50, 0, 50},  // devScale 0 → identity (headless MessageRaster{})
+		{50, -5, 50}, // negative → identity
+		// 200%: halves cleanly.
+		{100, 200, 200},
+		{101, 200, 202},
+		// 150%: 3 → (3*150+50)/100 = 5 (the row that used to truncate to 4).
+		{3, 150, 5},
+		{5, 150, 8}, // (750+50)/100 = 8
+		{7, 150, 11},
+		// 125%: 3 → (375+50)/100 = 4 (the row that used to truncate to 3).
+		{3, 125, 4},
+		{7, 125, 9}, // (875+50)/100 = 9
+		// 175%: 1 → (175+50)/100 = 2.
+		{1, 175, 2},
+	}
+	for _, c := range cases {
+		if got := deviceFromLogicalAt(c.logical, c.devScale); got != c.want {
+			t.Errorf("deviceFromLogicalAt(%d, %d) = %d, want %d", c.logical, c.devScale, got, c.want)
+		}
 	}
 }

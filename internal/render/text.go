@@ -58,12 +58,30 @@ func LogicalFromDevice(device, devScale int32) int32 { return logicalFromDevice(
 // below) because Badge needs the identical conversion for its own device-exact
 // bracket and a second, drifting copy of this arithmetic is exactly the kind of bug
 // #77's rounding-rule comment warns about.
+//
+// ROUNDING RULE — the SAME "round half up" logicalFromDevice uses, and for the same
+// reason: uiDeviceFromLogical (internal/ui/ui.go, the projection every kit label and
+// the focused text field draw through) rounds half up, so a TRUNCATING projection
+// here biased every text origin toward the stage origin — at the fractional scales
+// a maximized window's auto UI scale lands on (125/150/175%) a logical x of 3 drew
+// the chatbox text at device 4 while the chrome laid out around it drew at 5. That
+// one-pixel separation between the text and its own frame is the reported text
+// offset on maximize.
+//
+// Pinned equal to uiDeviceFromLogical by the ui package's cross-package test via
+// DeviceFromLogicalAt. devScale<=0 or ==100 is the identity fast path.
 func deviceFromLogicalAt(v, devScale int32) int32 {
 	if devScale <= 0 || devScale == DefaultDevScale {
 		return v
 	}
-	return v * devScale / DefaultDevScale
+	return (v*devScale + DefaultDevScale/2) / DefaultDevScale
 }
+
+// DeviceFromLogicalAt exposes the #77 forward-projection rounding rule so the ui
+// package's cross-package test can assert its own uiDeviceFromLogical agrees
+// exactly. Like LogicalFromDevice it is not used on any draw path — the internal
+// deviceFromLogicalAt is.
+func DeviceFromLogicalAt(v, devScale int32) int32 { return deviceFromLogicalAt(v, devScale) }
 
 // deviceExactAt reports whether a texture/raster rasterized at devScale (a percent,
 // 100 = 1:1) draws device-exact when the renderer is CURRENTLY scaled to renderPct

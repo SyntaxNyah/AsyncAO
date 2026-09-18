@@ -21,6 +21,25 @@ func TestUILogicalFromDeviceMatchesRender(t *testing.T) {
 	}
 }
 
+// TestUIDeviceFromLogicalMatchesRender is the FORWARD-direction twin of
+// TestUILogicalFromDeviceMatchesRender. render.deviceFromLogicalAt is what
+// MessageRaster.draw / Badge.Draw project a text or badge origin (and their clips)
+// through, while every kit label and the focused text field project through
+// uiDeviceFromLogical — so the two must land on the same device pixel, or the text
+// sits a pixel off the chrome laid out around it at the fractional scales a
+// maximized window's auto UI scale picks (the reported text offset). render rounds
+// half up; it used to truncate. render.DeviceFromLogicalAt is exported for this
+// check only.
+func TestUIDeviceFromLogicalMatchesRender(t *testing.T) {
+	for _, dev := range []int32{0, 100, 125, 150, 175, 200} {
+		for _, v := range []int32{0, 1, 2, 3, 5, 7, 37, 100, 149, 151, 201, 333} {
+			if got, want := uiDeviceFromLogical(v, dev), render.DeviceFromLogicalAt(v, dev); got != want {
+				t.Errorf("uiDeviceFromLogical(%d,%d)=%d != render.DeviceFromLogicalAt=%d", v, dev, got, want)
+			}
+		}
+	}
+}
+
 // TestTextWidthScaleInvariant is the core #77 Part-A regression: TextWidth must
 // return the SAME logical width for a string regardless of the global UI scale,
 // because layout happens in logical pixels (the device scale folds into the font
