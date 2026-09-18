@@ -126,6 +126,15 @@ func (a *App) charMetaFetchOne(url, char string) {
 	if a.charMetaRes == nil {
 		a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 	}
+	// Capture the Manager and the result channel BEFORE the goroutine. A test App
+	// (or a torn-down one) has no Manager, and the goroutine must not read a.d
+	// fields that can be nil or reassigned after it is spawned — reading a nil
+	// *Manager on the goroutine is the #69 CI panic (nil deref in FetchRawLayered).
+	mgr := a.d.Manager
+	if mgr == nil {
+		return
+	}
+	resCh := a.charMetaRes
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
@@ -133,7 +142,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 		// LAYERED: this is the whole of a speaker's declared identity — showname,
 		// blips, chatbox skin, effects, scaling, idle pose. A user testing their own
 		// character out of a mounted folder must see the ini they are editing (#72).
-		if data, err := a.d.Manager.FetchRawLayered(ctx, url); err == nil {
+		if data, err := mgr.FetchRawLayered(ctx, url); err == nil {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
 				res.chat = strings.TrimSpace(ini.Chat)
@@ -145,7 +154,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 			}
 		}
 		select {
-		case a.charMetaRes <- res:
+		case resCh <- res:
 		default: // burst overflow: drop — the miss marker stays, a later session refetches
 		}
 	}()
