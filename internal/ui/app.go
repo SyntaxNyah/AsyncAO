@@ -5973,6 +5973,11 @@ func (a *App) enterCourtroom() {
 	// tab keeps its own emote selection; pollCharINI then clamps rather than
 	// resets, so the parked index survives the reload.
 	a.emoteIdx, a.emoteRow = 0, 0
+	// A fresh character must not inherit the previous character's last staged
+	// message — buildRoom's stageRestoreMsg would otherwise re-stage the OLD
+	// speaker's sprite (the "swapped to Armstrong, Phoenix's emote on the witness
+	// desk" report). Tab reactivation (activateTab → buildRoom directly) keeps it.
+	a.sess.LastIC = nil
 	a.buildRoom()
 }
 
