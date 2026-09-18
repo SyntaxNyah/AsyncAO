@@ -129,15 +129,7 @@ type SpriteLayer struct {
 	// ScalingAuto, which is both the default and the case the renderer settles
 	// with the geometry rule — see scaling.go.
 	Scaling ScalingMode
-	// ZoomPct magnifies this layer when > 100 (a zoom emote grows the speaker past
-	// the stage so the speedlines behind it read as a punch-in). 0/100 = the
-	// default full-height placement. Issue #126.
-	ZoomPct int
 }
-
-// ZoomScalePct is how much a zoom emote magnifies the speaker (150 = 1.5×).
-// Issue #126.
-const ZoomScalePct = 150
 
 // Scene is the renderer's entire input: plain data, no SDL types, mutated
 // only by Courtroom on the game thread.
@@ -1528,16 +1520,18 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 
 	// #126 zoom speedlines: a zoom/preanim-zoom emote shows the speaker's own
 	// <side>_speedlines overlay behind them (char folder first, the bundled stock
-	// burst when the pack ships none) and magnifies the speaker. Resolved +
-	// prefetched once per message; ""/0 for a non-zoom emote or a side with none.
+	// burst when the pack ships none). Resolved + prefetched once per message;
+	// "" for a non-zoom emote or a side with none. There is deliberately NO
+	// magnification: AO2's zoom only hides the desk + pair and plays these
+	// speedlines (courtroom.cpp:3456-3477) — it never rescales the character
+	// layer — so the punch-in is the character's own zoom preanimation art.
+	// Magnifying here stacked a second zoom on top of that art.
 	c.Scene.SpeedlinesBase = ""
 	c.Scene.SpeedlinesSide = ""
-	c.Scene.Speaker.ZoomPct = 0
 	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
 		if side := ZoomSide(msg.Side); side != "" {
 			c.Scene.SpeedlinesSide = side
 			c.Scene.SpeedlinesBase = c.urls.Speedlines(speakerName, side)
-			c.Scene.Speaker.ZoomPct = ZoomScalePct
 			c.mgr.Prefetch(c.Scene.SpeedlinesBase, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
 		}
 	}

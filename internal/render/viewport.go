@@ -88,6 +88,14 @@ type animState struct {
 	// STRING, re-Get through the store each frame — never a cached page pointer,
 	// which could be evicted underfoot.
 	lastGood string
+
+	// scaleName/scaleIdleH latch the per-sprite filter rule's native height to the
+	// character's own IDLE page (spriteNativeH below). They are deliberately NOT
+	// cleared by reset/restart: a base change is idle -> talk -> preanim WITHIN one
+	// character, and the whole point is that those swaps reuse ONE height. A real
+	// character swap re-arms via scaleName.
+	scaleName  string
+	scaleIdleH int32
 }
 
 // reset rebinds the state to a new asset base. lastGood survives on purpose (see
@@ -124,6 +132,39 @@ func (a *animState) restart() {
 	a.startReported = false
 	a.loopReported = false
 	a.shownSrc = -1
+}
+
+// spriteNativeH is the "native art height" the per-sprite filter rule decides on
+// (spriteScaleMode, scalemode_cgo.go): the character's IDLE page height.
+//
+// AO2 settles one filter per SPRITE (issue #21 label 15) from m_frame_size.height()
+// against the widget height, and recomputes it only when the animation FILE
+// changes (AnimationLayer::resetData -> calculateFrameGeometry). Taking the height
+// from whichever page happens to be drawing is not equivalent here, because
+// AsyncAO decodes an ANIMATION down to fit a byte budget scaled by its FRAME COUNT
+// (budgetFitHeight, assets/decoder.go) while a static page is not scaled at all —
+// so a character's talk/preanim page can decode at a different height than its
+// idle and the rule re-decided the filter mid-animation. That is the reported
+// "swaps to smooth scaling for animations": one character flipping filter as its
+// bases swapped underneath it.
+//
+// So latch the height from the IDLE page and keep it while that character's other
+// bases swap; only a different character re-arms the latch. Re-arming on the idle
+// itself (rather than on any page) means the very first drawn page of a message
+// that opens on a preanim still decides for itself, exactly as before.
+//
+// No store probe, no allocation: two string compares per draw.
+func (a *animState) spriteNativeH(layer *courtroom.SpriteLayer, page *TexturePage) int32 {
+	if a.scaleName != layer.Name {
+		a.scaleName, a.scaleIdleH = layer.Name, 0
+	}
+	if layer.Active == layer.IdleBase && page.H > 0 {
+		a.scaleIdleH = page.H
+	}
+	if a.scaleIdleH > 0 {
+		return a.scaleIdleH
+	}
+	return page.H
 }
 
 // resolve returns the cached page, re-querying the store only when its
@@ -1762,14 +1803,14 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
 
-	// #126 zoom magnification: a zoom emote grows the speaker past the stage
-	// (bottom-anchored) so the speedlines behind it read as a punch-in. No zoom
-	// (ZoomPct <= 100) is byte-identical to the original full-height placement.
-	zoom := layer.ZoomPct
-	if zoom <= 100 {
-		zoom = 100
-	}
-	h := vp.H * int32(zoom) / 100
+	// The sprite fills the stage height (bottom-anchored), preserving the art's
+	// aspect. AO2 resizes every character layer to the viewport exactly ONCE
+	// (courtroom.cpp:778) and never scales it for an emote: a zoom emote only hides
+	// the desk + the pair and plays the speedlines (:3456-3477), so the punch-in is
+	// the character's own zoom preanimation ART. The 1.5x magnification v1.98.0
+	// added here stacked on top of that art and read as a double zoom (#126
+	// playtest). The reflection below already mirrors at vp.H for the same reason.
+	h := vp.H
 	w := h * page.W / page.H
 	v.dstRect.W = w
 	v.dstRect.H = h
@@ -1816,11 +1857,16 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			tex, drawPage = vpg.Frames[frame], vpg
 		}
 	}
-	// AO2 filters per SPRITE, not per client (issue #21 label 15). page.H is the
-	// native art height here: both decoder downscalers are downscale-only and capped
-	// at the display height, so a sprite being ENLARGED was never resampled and this
-	// is exactly AO2's m_frame_size.height() vs widget_size.height() test.
-	drawPage.applyScaleMode(ren, v.spriteScaleMode(layer, page.H, v.dstRect.H))
+	// AO2 filters per SPRITE, not per client (issue #21 label 15), and the two
+	// inputs here are AO2's own: m_frame_size.height() (the frame's native art
+	// height) against widget_size.height() — the viewport the layer fills, which
+	// AnimationLayer::calculateFrameGeometry reads as its own size(), set ONCE at
+	// courtroom.cpp:778 and never rescaled by an emote. It must be vp.H and NOT
+	// v.dstRect.H: dstRect is this sprite's own destination and grows with a
+	// transmitted scale (#34) or zoom, so feeding it in re-decided the filter as a
+	// side-effect of an unrelated effect. nativeH is latched per character — see
+	// spriteNativeH.
+	drawPage.applyScaleMode(ren, v.spriteScaleMode(layer, anim.spriteNativeH(layer, page), vp.H))
 
 	// Resolve the effective per-layer effects into plain locals (no allocation; a
 	// no-FX layer leaves them all neutral and the blit byte-identical). A

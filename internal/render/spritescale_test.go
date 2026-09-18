@@ -8,6 +8,52 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
+// TestSpriteNativeHLatchesToTheIdle pins that one character keeps ONE native
+// height while its bases swap under it. spriteScaleMode decides the filter from
+// this height, and re-reading it from whichever page was drawing let a
+// talk/preanim page that decoded at a different size flip the filter
+// mid-animation — the reported "swaps to smooth scaling for animations".
+//
+// The latch must still re-arm for a DIFFERENT character (a speaker swap), and a
+// message that opens on a preanim (no idle drawn yet) still decides from that
+// page, exactly as it did before the latch existed.
+func TestSpriteNativeHLatchesToTheIdle(t *testing.T) {
+	idle := &TexturePage{H: 192}
+	talk := &TexturePage{H: 384}  // decoded larger: must NOT re-decide the filter
+	zoom := &TexturePage{H: 1024} // the big close-up a zoom preanim ships
+
+	phoenix := &courtroom.SpriteLayer{Name: "Phoenix", IdleBase: "idle", TalkBase: "talk", Active: "idle"}
+	var a animState
+	if got := a.spriteNativeH(phoenix, idle); got != 192 {
+		t.Fatalf("the idle draw = %d, want 192 (it latches)", got)
+	}
+	phoenix.Active = "talk"
+	if got := a.spriteNativeH(phoenix, talk); got != 192 {
+		t.Errorf("the talk draw re-measured the sprite: got %d, want 192 (the idle's)", got)
+	}
+	phoenix.Active = "zoom"
+	if got := a.spriteNativeH(phoenix, zoom); got != 192 {
+		t.Errorf("the preanim draw re-measured the sprite: got %d, want 192 (the idle's)", got)
+	}
+
+	// A speaker swap re-arms: the new character measures from its own art.
+	edgeworth := &courtroom.SpriteLayer{Name: "Edgeworth", IdleBase: "e_idle", Active: "e_idle"}
+	if got := a.spriteNativeH(edgeworth, &TexturePage{H: 720}); got != 720 {
+		t.Errorf("a new character must measure from its own art: got %d, want 720", got)
+	}
+
+	// A preanim-first message has no idle yet, so the preanim page decides itself.
+	var b animState
+	pre := &courtroom.SpriteLayer{Name: "Phoenix", IdleBase: "idle", Active: "idle_zoom"}
+	if got := b.spriteNativeH(pre, zoom); got != 1024 {
+		t.Errorf("a preanim-first draw = %d, want 1024 (its own page)", got)
+	}
+	pre.Active = "idle"
+	if got := b.spriteNativeH(pre, idle); got != 192 {
+		t.Errorf("the idle must latch on arrival: got %d, want 192", got)
+	}
+}
+
 // TestSpriteScaleModeFollowsAO2 pins the full resolution chain at the draw site:
 // user mode, then char.ini, then AO2's geometry rule.
 //

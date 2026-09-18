@@ -42,28 +42,31 @@ func TestSpeedlinesURL(t *testing.T) {
 }
 
 // TestZoomEmoteSetsSpeedlines pins that a zoom/preanim-zoom message stages the
-// speaker's speedline overlay + side + magnification, and a non-zoom message
-// clears them (#126).
+// speaker's speedline overlay + side, and a non-zoom message clears them (#126).
+//
+// It deliberately does NOT pin any magnification: AO2's zoom never rescales the
+// character layer, it only hides the desk + pair and plays the speedlines
+// (courtroom.cpp:3456-3477). v1.98.0 magnified the speaker 1.5x on top of the
+// character's own zoom preanimation art, which the playtest reported as a double
+// zoom, so the magnification was removed rather than fixed.
 func TestZoomEmoteSetsSpeedlines(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 
-	m := waitMsg("Phoenix", "normal", "hi")
-	m.CharID = 1
-	m.Side = "def"
-	m.EmoteMod = protocol.EmoteModZoom
-	room.HandleEvent(Event{Kind: EventMessage, Message: m})
-	want := room.urls.Speedlines("Phoenix", "defense")
-	if room.Scene.SpeedlinesBase != want {
-		t.Fatalf("zoom emote SpeedlinesBase = %q, want %q", room.Scene.SpeedlinesBase, want)
+	for _, mod := range []int{protocol.EmoteModZoom, protocol.EmoteModPreanimZoom} {
+		m := waitMsg("Phoenix", "normal", "hi")
+		m.CharID = 1
+		m.Side = "def"
+		m.EmoteMod = mod
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		want := room.urls.Speedlines("Phoenix", "defense")
+		if room.Scene.SpeedlinesBase != want {
+			t.Fatalf("emote %d SpeedlinesBase = %q, want %q", mod, room.Scene.SpeedlinesBase, want)
+		}
+		if room.Scene.SpeedlinesSide != "defense" {
+			t.Fatalf("emote %d SpeedlinesSide = %q, want defense", mod, room.Scene.SpeedlinesSide)
+		}
+		room.SkipToIdle()
 	}
-	if room.Scene.SpeedlinesSide != "defense" {
-		t.Fatalf("zoom emote SpeedlinesSide = %q, want defense", room.Scene.SpeedlinesSide)
-	}
-	if room.Scene.Speaker.ZoomPct != ZoomScalePct {
-		t.Fatalf("zoom emote ZoomPct = %d, want %d", room.Scene.Speaker.ZoomPct, ZoomScalePct)
-	}
-
-	room.SkipToIdle()
 
 	m2 := waitMsg("Phoenix", "normal", "hi2")
 	m2.CharID = 1
@@ -72,8 +75,5 @@ func TestZoomEmoteSetsSpeedlines(t *testing.T) {
 	room.HandleEvent(Event{Kind: EventMessage, Message: m2})
 	if room.Scene.SpeedlinesBase != "" || room.Scene.SpeedlinesSide != "" {
 		t.Fatalf("non-zoom emote must clear speedlines: base=%q side=%q", room.Scene.SpeedlinesBase, room.Scene.SpeedlinesSide)
-	}
-	if room.Scene.Speaker.ZoomPct != 0 {
-		t.Fatalf("non-zoom emote must clear ZoomPct, got %d", room.Scene.Speaker.ZoomPct)
 	}
 }
