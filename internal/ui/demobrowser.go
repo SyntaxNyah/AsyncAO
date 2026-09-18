@@ -424,6 +424,8 @@ func browseTitle(p browsePurpose) string {
 		return "Pick a theme bundle to import"
 	case purposeThemeImage:
 		return "Pick an image to add to this theme (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
+	case purposeEvidenceImage:
+		return "Pick an image for this evidence (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
 	case purposeBaseFolder:
 		return "Open your base folder, then press Use this folder"
 	default:
@@ -437,7 +439,7 @@ func browseFileIcon(p browsePurpose) string {
 	switch p {
 	case purposeThemeBundle, purposeBaseFolder:
 		return "📦"
-	case purposeThemeImage:
+	case purposeThemeImage, purposeEvidenceImage:
 		return "🖼"
 	}
 	return "🎞"

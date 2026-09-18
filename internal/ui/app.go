@@ -9183,7 +9183,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
 	// ever fenced the screen for it, so a click that looked like it hit the dialog
 	// also hit whatever was behind. Pre-existing, same family, one term.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidPickerOpen {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidPickerOpen || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -9392,7 +9392,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidPickerOpen {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidPickerOpen && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -9451,6 +9451,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.fontWarnDlg.open {
 		a.ctx.unfencePointer()
 		a.drawFontWarnDialog(winW, winH)
+	}
+	// The in-app file browser (the evidence editor's Browse button and the Studio
+	// flows) also draws over the courtroom, not just over Settings. It shares the
+	// pointer fence every modal above uses: fenced while the screen draws, released
+	// here for its own buttons, then painted last so it tops the evidence panel it
+	// was opened from.
+	if demoBrowser.open {
+		a.ctx.unfencePointer()
+		a.drawDemoBrowser(winW, winH)
 	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()

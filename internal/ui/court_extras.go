@@ -1338,9 +1338,11 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	}
 	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
 	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: 70, H: fieldH}, "Choose") {
+		demoBrowser.open = false // mutually exclusive with the Browse file browser
 		a.openEvidencePicker()
 	}
 	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6 + 70 + 6, Y: iy, W: 70, H: fieldH}, "Browse") {
+		a.evidPickerOpen = false // mutually exclusive with the Choose thumbnail grid
 		a.openDemoBrowserFor(purposeEvidenceImage)
 	}
 	iy += fieldH + 8
