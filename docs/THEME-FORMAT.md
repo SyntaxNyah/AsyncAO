@@ -436,10 +436,10 @@ client lives in a set that holds exactly **one** point size, so an element drawn
 at a different size from the widget it borrows its face from rebuilds that set,
 and purges the text cache with it, on every frame both are on screen. Giving
 elements their own face pool instead spends one of a theme's four face slots.
-Measured against what it would buy: the fourteen themes shipped with this
-release all write `font =`, none of them ships a face *file*, and a family that
-names no file resolves to the client's chain either way — so honouring `font`
-changes nothing on any theme that exists, and only `size` would.
+Measured against what it would buy: every theme written against this format so far
+writes `font =`, none of them ships a face *file*, and a family that names no file
+resolves to the client's chain either way — so honouring `font` changes nothing on
+any theme that exists, and only `size` would.
 
 **Type that must render exactly is `[fonts]` + `[fontbind]` territory** (above).
 Those bind a *file the theme ships* to an AO2 courtroom element, they cost

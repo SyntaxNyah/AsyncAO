@@ -9,8 +9,6 @@ package ui
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -319,39 +317,6 @@ func assertGenParamsAllResolve(t *testing.T, where string, elements []theme.Elem
 		}
 	}
 	return checked
-}
-
-// TestGeneratorParamKeysDoNotCollide checks the ONE risk the global slot table
-// carries, over the SHIPPED THEMES: two keys landing in the same slot for a
-// generator that writes both.
-//
-// The mapping is global because twenty-five keys mapped per-generator would be
-// twenty-five more things to keep in step with the rasters. This is the price.
-func TestGeneratorParamKeysDoNotCollide(t *testing.T) {
-	root := filepath.Join(uiRepoRoot(t), shippedThemeDir)
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("read %s: %v", root, err)
-	}
-	checked := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		path := filepath.Join(root, e.Name(), theme.SidecarFileName)
-		if _, err := os.Stat(path); err != nil {
-			continue
-		}
-		sc, err := theme.LoadSidecar(path)
-		if err != nil || sc == nil {
-			t.Fatalf("themes/%s: %v", e.Name(), err)
-		}
-		checked += assertGenParamsAllResolve(t, "themes/"+e.Name(), sc.Elements)
-	}
-	if checked == 0 {
-		t.Fatal("no shipped element declares a generator — the gate is vacuous")
-	}
-	t.Logf("%d generator elements across the shipped themes, no slot collisions", checked)
 }
 
 // genInkedPixels counts the pixels a tile actually paints. Coverage rather than a

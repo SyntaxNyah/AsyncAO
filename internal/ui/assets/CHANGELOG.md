@@ -4,6 +4,31 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.98.1 - 2026-09-18
+
+Playtest fixes for v1.98.0 — the zoom emote, per-sprite filtering, scaled text, and
+the themes folder.
+
+- **The zoom emote no longer zooms twice** — v1.98.0 also magnified the speaker
+  1.5x on top of the character's own zoom preanimation art, so a PREANIM_ZOOM emote
+  read as a double zoom. AO2 never rescales the character for a zoom: it hides the
+  desk and the pair and plays the speedlines, which is what this does now. The
+  punch-in is the preanimation art itself.
+- **A character stops changing filter mid-animation** — a sprite could swap between
+  crisp pixels and smoothing partway through one animation, because the per-sprite
+  filter was re-decided from whichever animation page happened to be on stage (an
+  animated page decodes at a different height than a static one) and from the
+  zoomed destination rect. One character now keeps one filter for the whole
+  message, decided from its idle art against the stage.
+- **Scaled text lines up** — the chatbox text projected to device pixels with a
+  truncating rule while every other label rounded half up, so at the fractional
+  scales a maximized window auto-selects (125%, 150%, 175%) text sat a pixel away
+  from the chrome laid out around it. Both directions share one rounding rule now.
+- **The fourteen bundled sample themes are retired** — `themes/` no longer ships
+  hand-authored themes, so the repository is just the client. The embedded default,
+  your own themes folder, and the in-app creator, editor and Share export are all
+  unaffected; a `.aotheme` you already have still installs from a drop.
+
 ## v1.98.0 - 2026-09-18
 
 Courtroom fidelity fixes and the zoom speedline effect — thanks to Crystalwarrior

@@ -214,8 +214,9 @@ func TestRenameElementRefusesEveryWayItCouldDuplicate(t *testing.T) {
 			before := elementIDsOf(sc)
 			// The BASELINE is what this model writes BEFORE the attempt, not the
 			// source: a save of an unedited file is already the writer's own
-			// business (the corpus gate in repothemes_test.go measures that), and
-			// what is under test here is only that a REFUSAL moves nothing.
+			// business (the repository's hand-authored theme corpus measured
+			// exactly that, byte for byte, until it was retired), and what is
+			// under test here is only that a REFUSAL moves nothing.
 			baseline, err := sc.Bytes()
 			if err != nil {
 				t.Fatalf("Bytes before the attempt: %v", err)

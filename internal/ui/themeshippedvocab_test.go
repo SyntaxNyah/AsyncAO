@@ -1,11 +1,12 @@
 package ui
 
-// The SHIPPED-CONTENT gates for the free-element vocabulary (v1.90.0 W3).
+// The PUBLISHED-VOCABULARY gates for the free-element vocabulary (v1.90.0 W3),
+// plus the two shout-condition gates that ride the same tables.
 //
-// Every other element test in this package measures the model against a fixture
-// this package wrote. These two measure it against the 14 themes the repository
-// SHIPS (themes/*/asyncao_theme.ini, commit 269633a) — because both defects these
-// gates exist to catch were invisible to a self-consistent test:
+// These began as a pair: the document census here, and a SHIPPED-CONTENT census
+// over the fourteen themes the repository carried in themes/. The content half was
+// the half that mattered, because both defects it existed to catch were invisible
+// to a self-consistent test:
 //
 //   - `shape` is read as FREE TEXT (sidecar_read.go), not as an enum, so a name the
 //     bake does not know degrades to the flat box with no note, no report line and
@@ -18,7 +19,11 @@ package ui
 //     conditions in the shipped themes could never fire — and the one spelling that
 //     did work, `shout:objection`, was the one the fixture happened to use.
 //
-// A vocabulary is only as real as the content written in it. These read the content.
+// A vocabulary is only as real as the content written in it. The themes/ corpus has
+// since been retired from the repository, so the content half went with it and what
+// remains is the part that needs no corpus: the format document against the live
+// tables. Re-derive a census over content you actually ship before trusting a
+// vocabulary change again — this file can no longer see that class of defect.
 
 import (
 	"fmt"
@@ -28,20 +33,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
-
-// shippedThemeDir is the repository's own theme folder, relative to the repo root.
-const shippedThemeDir = "themes"
-
-// shippedThemeMin is the number of themes that must be found before either gate
-// believes it measured anything. 14 shipped at 269633a; the floor is there so a
-// path change turns into a failure instead of a vacuous pass.
-const shippedThemeMin = 14
 
 // uiRepoRoot walks up from this package to the directory holding go.mod.
 func uiRepoRoot(t *testing.T) string {
@@ -60,147 +55,6 @@ func uiRepoRoot(t *testing.T) string {
 		}
 		dir = parent
 	}
-}
-
-// loadShippedSidecars parses every themes/<name>/asyncao_theme.ini through the real
-// reader. A parse error is FATAL: the client never refuses a stranger's sidecar
-// (format rule 1), but these files are ours, and one that stopped parsing would turn
-// both gates below into tests of the empty set.
-func loadShippedSidecars(t *testing.T) map[string]*theme.Sidecar {
-	t.Helper()
-	root := filepath.Join(uiRepoRoot(t), shippedThemeDir)
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("read %s: %v", root, err)
-	}
-	out := map[string]*theme.Sidecar{}
-	found := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		path := filepath.Join(root, e.Name(), theme.SidecarFileName)
-		if _, err := os.Stat(path); err != nil {
-			continue // an AO2-only theme folder: nothing of ours to check
-		}
-		found++
-		sc, err := theme.LoadSidecar(path)
-		if err != nil {
-			// EVERY broken theme, not just the first: a cap violation is a whole-file
-			// refusal (ErrSidecarCap), so a theme that trips one ships with no AsyncAO
-			// tier at all — no elements, no overrides, no palette — and one Fatal would
-			// hide the other thirteen.
-			t.Errorf("themes/%s: %v — a theme WE ship must parse, or it loads as a bare AO2 theme with "+
-				"its entire AsyncAO tier silently dropped", e.Name(), err)
-			continue
-		}
-		if sc == nil {
-			t.Errorf("themes/%s parsed to a nil sidecar", e.Name())
-			continue
-		}
-		out[e.Name()] = sc
-	}
-	if found < shippedThemeMin {
-		t.Fatalf("found %d shipped sidecars under %s, want at least %d — the gate is measuring nothing",
-			found, root, shippedThemeMin)
-	}
-	return out
-}
-
-// TestShippedThemeShapesAllResolve is the first gate: every `shape =` value written
-// in a theme we ship must be IN the vocabulary, not merely survive it.
-//
-// "Resolves" is checked with elemShapeIDOK, whose second return is the whole point —
-// `sharp` degrades to the flat box and looks correct by luck, so a test that only
-// compared ids could not tell a match from a fall-through. The failure this prevents
-// is the exact one that shipped: `pill` (17 lines, 8 themes) collapsing to a hard
-// rectangle, including the register plate whose own comment says the capsule IS its
-// identity (the CAPSULE CHIPS block above themes/thh_trial/asyncao_theme.ini
-// [element.chip_search]).
-func TestShippedThemeShapesAllResolve(t *testing.T) {
-	scs := loadShippedSidecars(t)
-	used := map[string]int{}
-	total := 0
-	for name, sc := range scs {
-		for i := range sc.Elements {
-			el := &sc.Elements[i]
-			raw := strings.TrimSpace(el.Shape)
-			if raw == "" {
-				continue // not a shape element (or one the reader already called inert)
-			}
-			total++
-			used[strings.ToLower(raw)]++
-			if _, ok := elemShapeIDOK(raw); !ok {
-				t.Errorf("themes/%s [element.%s] shape = %q is not in the element vocabulary — it degrades "+
-					"to a flat box SILENTLY (shape is free text, so no degrade note reaches the import "+
-					"report). Add the name to elemShapeNames/elemShapeAliases, or fix the theme.",
-					name, el.ID, raw)
-			}
-		}
-	}
-	if total == 0 {
-		t.Fatal("no shipped theme declares a shape — the gate is vacuous")
-	}
-	// Non-vacuity with teeth: the three names shapemask.go already persists are the
-	// ones the shipped content is written in, so each must actually appear. A future
-	// rename that "passed" by deleting the content it broke fails here instead.
-	for _, want := range []string{shapeSharp, shapeRounded, shapePillKey} {
-		if used[want] == 0 {
-			t.Errorf("no shipped theme uses shape %q — either the corpus changed or the census is reading "+
-				"the wrong files; this gate exists because that vocabulary is the one authors write in", want)
-		}
-	}
-	names := make([]string, 0, len(used))
-	for n := range used {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		t.Logf("shipped shape %q: %d elements", n, used[n])
-	}
-}
-
-// TestShippedThemeConditionsCanAllResolve is the second gate: a `visible_when` in a
-// theme we ship must be able to MATCH something.
-//
-// A condition that can never fire is the worst class of theme bug, because the
-// element simply never appears and there is nothing at all to see — no note, no
-// fallback, no misplaced box. The shout axis is the only closed vocabulary among the
-// valued axes (pos, char and side name whatever a server calls them), so it is the
-// only one that can be checked this way, and it is exactly where the defect was.
-func TestShippedThemeConditionsCanAllResolve(t *testing.T) {
-	scs := loadShippedSidecars(t)
-	live := liveShoutStems(t)
-	shouts, designKeys := 0, 0
-	for name, sc := range scs {
-		for i := range sc.Elements {
-			el := &sc.Elements[i]
-			if el.VisibleWhen.Axis != theme.CondShout {
-				continue
-			}
-			shouts++
-			raw := strings.TrimSpace(el.VisibleWhen.Value)
-			if raw != elemShoutStem(raw) {
-				designKeys++ // written in the design-key spelling and normalised at bake
-			}
-			if !live[elemConditionValue(el.VisibleWhen)] {
-				t.Errorf("themes/%s [element.%s] visible_when = shout:%s can NEVER match: it interns as %q, "+
-					"and Courtroom.CurrentShout only ever reports %v. The element is invisible forever, "+
-					"with nothing on screen to say so.",
-					name, el.ID, raw, elemConditionValue(el.VisibleWhen), sortedKeys(live))
-			}
-		}
-	}
-	if shouts == 0 {
-		t.Fatal("no shipped theme gates an element on a shout — the gate is vacuous")
-	}
-	if designKeys == 0 {
-		t.Fatal("no shipped shout condition uses the DESIGN-KEY spelling (hold_it / take_that / " +
-			"custom_objection) — that is the spelling the defect broke, so a corpus without it cannot " +
-			"prove the normalisation is doing anything")
-	}
-	t.Logf("%d shout conditions across %d shipped themes, %d of them in the design-key spelling",
-		shouts, len(scs), designKeys)
 }
 
 // publishedShapeFence is the line in docs/THEME-FORMAT.md §3 that publishes the
@@ -402,256 +256,6 @@ func TestPublishedGeneratorVocabularyMatchesTheTables(t *testing.T) {
 		t.Errorf("docs/THEME-FORMAT.md lists a generator %q the client does not rasterise — a theme written "+
 			"against the document degrades to a flat fill", name)
 	}
-}
-
-// TestShippedThemesEmitNoDegradeNotesAtAll widens the note check that used to live
-// inside the condition gate above — where it only ever looked for the substring
-// "visible_when" — to EVERY note the reader can produce.
-//
-// The narrow version was blind by construction. A degrade note is the reader saying
-// "this line meant something and I could not use it", and there is no reason the
-// only interesting ones would mention conditions: the defect this widening actually
-// caught was four of themes/thh_trial's five [palette] roles being refused, because
-// parseRGBAValue reached hexNibble with the author's UPPER-CASE hex and hexNibble
-// only knew a-f. `panel = #101010` parsed (all digits), `panel_hi = #1C1C1C` did
-// not, and the theme shipped with the stylesheet's colours where its own were
-// meant to be. Nothing on screen said so — which is precisely why the sidecar's
-// visibility surface (the refusal chip) and this gate landed in the same wave.
-//
-// A note is fine in a STRANGER's theme; it is the format's rule 3 working. In one
-// of ours it is a bug in the theme or a gap in the reader, and either way somebody
-// has to look at it.
-func TestShippedThemesEmitNoDegradeNotesAtAll(t *testing.T) {
-	scs := loadShippedSidecars(t)
-	for name, sc := range scs {
-		for _, note := range sc.Notes() {
-			t.Errorf("themes/%s: %s — a theme WE ship must not degrade anything. Either the theme is "+
-				"writing something this build cannot read, or the reader is refusing something it should "+
-				"accept; both are defects and neither is visible on screen.", name, note)
-		}
-	}
-	t.Logf("%d shipped sidecars, 0 degrade notes", len(scs))
-}
-
-// TestShippedThemeClocksAndEffectsAllResolve is the W5 sibling of the two gates
-// above, and it exists for the same reason they do: the motion vocabulary is
-// already WRITTEN — all fourteen shipped themes carry `[effect.*]` sections, and
-// all fourteen carry `[clock.N]` groups as well (29 groups across the corpus) —
-// so a resolver that grew no arm for a kind, or a bind pointed at a widget key
-// that does not exist, is content that silently does nothing. There is no note,
-// no fallback and no misplaced box; the theme just "looks a bit plain", which is
-// the class of bug nobody reports.
-//
-// Four failure modes, each of them invisible on screen:
-//
-//  1. a bind whose target is not a themeSlots key — absSlotRect can never find it,
-//     so §6.6 R10's skip-if-absent makes the whole section inert forever;
-//  2. a bind that bakes inert anyway (no effect, no amplitude, no colour) — the
-//     author wrote a section that draws nothing;
-//  3. an effect kind the resolver never moves anything for;
-//  4. a clock group whose speed left the format's range, which would put a
-//     divisor the pool has to defend against into elementElapsed.
-func TestShippedThemeClocksAndEffectsAllResolve(t *testing.T) {
-	scs := loadShippedSidecars(t)
-	binds, moving, clocks := 0, 0, 0
-	kinds := map[string]int{}
-	gens := map[string]int{}
-	for name, sc := range scs {
-		for i := range sc.Effects {
-			b := &sc.Effects[i]
-			binds++
-			kinds[b.Effect.String()]++
-			if themeSlotFor(b.Target) == nil {
-				t.Errorf("themes/%s [effect.%s] names no AO2 widget — absSlotRect can never resolve it, so "+
-					"the binding is skip-if-absent FOREVER (§6.6 R10) with nothing on screen to say so",
-					name, b.Target)
-			}
-			if b.Effect == theme.FXNone || b.AmpPct <= 0 || !b.Color.Opaque() {
-				t.Errorf("themes/%s [effect.%s] bakes INERT (effect=%s amp_pct=%d colour opaque=%v) — a "+
-					"binding needs all three, and one that is missing simply does not draw",
-					name, b.Target, b.Effect, b.AmpPct, b.Color.Opaque())
-			}
-			if effectMovesSomething(bakedEffect{kind: b.Effect, periodMs: b.PeriodMs, ampPct: b.AmpPct}) {
-				moving++
-			} else if b.AmpPct > 0 {
-				t.Errorf("themes/%s [effect.%s] names effect %q and the resolver never leaves the neutral "+
-					"transform for it across a whole cycle — the section is decoration that cannot animate",
-					name, b.Target, b.Effect)
-			}
-		}
-		for i := range sc.Elements {
-			el := &sc.Elements[i]
-			if el.Effect == theme.FXNone {
-				continue
-			}
-			kinds[el.Effect.String()]++
-			fx := bakedEffect{kind: el.Effect, periodMs: el.EffectPeriodMs, ampPct: el.EffectAmpPct}
-			if el.EffectAmpPct > 0 && !effectMovesSomething(fx) {
-				t.Errorf("themes/%s [element.%s] names effect %q at amp_pct %d and the resolver never "+
-					"leaves the neutral transform for it — the element is authored to move and does not",
-					name, el.ID, el.Effect, el.EffectAmpPct)
-			}
-			if int(el.Clock) >= theme.ClockCap {
-				t.Errorf("themes/%s [element.%s] clock = %d is outside the pool", name, el.ID, el.Clock)
-			}
-			// The 9-slice insets a theme WRITES must be the ones that PAINT.
-			// paintElementNineSlice clamps a pair that would collapse the middle
-			// (themeelements.go:1044-1052) — silently, and by construction it fires on
-			// the most natural thing an author writes: `size = 6` makes a 12 px plate
-			// tile, and `slice = 6, 6, 6, 6` on it is not "6 px corners", it is
-			// 6, 6, 5, 5 after the clamp. The file then documents a frame the client
-			// never draws, and the next editor tunes the wrong numbers.
-			if !genNineSliceIsLiteral(el) {
-				spec := theme.GeneratorSpecOf(el)
-				w, h := genTileSizeOf(spec)
-				t.Errorf("themes/%s [element.%s] writes slice = %d, %d, %d, %d on a %dx%d tile, which "+
-					"paintElementNineSlice clamps to %v — write the clamped values so the file says what "+
-					"it paints", name, el.ID, el.Slice[0], el.Slice[1], el.Slice[2], el.Slice[3], w, h,
-					nineSliceClamp(el.Slice, w, h))
-			}
-		}
-		// Elements and bindings share ONE array (theme.ElementCap), and the bake fills
-		// it with the elements first — so a theme that crowds the array loses its
-		// bindings, silently and last-declared-first. The count is the only place that
-		// is visible before somebody notices a glow missing. thh_trial is not merely
-		// the tight one today, it is AT the cap: 87 elements + 9 bindings = 96 of 96,
-		// zero headroom. Any new [element.*] there costs a binding — the last one
-		// declared, which is [effect.music_display] — so that theme needs a deletion
-		// before it can take an addition.
-		if n := len(sc.Elements) + len(sc.Effects); n > theme.ElementCap {
-			t.Errorf("themes/%s declares %d elements + %d bindings = %d, past theme.ElementCap (%d) — the "+
-				"bake fills the array with elements first, so this theme's LAST bindings never draw",
-				name, len(sc.Elements), len(sc.Effects), n, theme.ElementCap)
-		}
-		// ...and the SECOND silent cap beside it, which had no gate at all.
-		// planThemeMedia admits at most render.ThemeGenCap DISTINCT gen_params
-		// strings per theme, first come first served in declaration order, and hands
-		// the thirteenth no tile whatsoever (thememedia.go:193-195): the element keeps
-		// its slot, resolves to an empty key, and paints nothing. No note, no report
-		// line, nothing on screen. Three shipped themes already sit exactly AT 12, so
-		// for them the next distinct string is not a budget warning, it is a blanked
-		// element — and the only warning that exists is this count.
-		//
-		// Counted the way the planner counts: by the hash of the resolved spec, and
-		// only for generators this build rasterises (an unknown name degrades to a
-		// flat fill and is never budgeted).
-		n := distinctGenTiles(sc)
-		gens[name] = n
-		if n > render.ThemeGenCap {
-			t.Errorf("themes/%s declares %d distinct generator parameter sets, past render.ThemeGenCap "+
-				"(%d) — every element past the cap resolves to no art at all, silently",
-				name, n, render.ThemeGenCap)
-		}
-		for i := range sc.Clocks {
-			c := sc.Clocks[i]
-			if !c.Declared {
-				continue
-			}
-			clocks++
-			if got := clampClockSpeed(c.SpeedPct); got != c.EffectivePct() {
-				t.Errorf("themes/%s [clock.%d] speed_pct = %d loads as %d but the pool clamps it to %d — "+
-					"the reader and the pool disagree about the same file",
-					name, i, c.SpeedPct, c.EffectivePct(), got)
-			}
-		}
-	}
-	// Non-vacuity, in the direction that actually goes wrong: the corpus is the
-	// reason this gate exists, so a path change that stopped finding the sections
-	// must fail rather than pass silently.
-	if binds == 0 || clocks == 0 {
-		t.Fatalf("found %d effect bindings and %d declared clock groups across %d shipped themes — the "+
-			"gate is reading nothing", binds, clocks, len(scs))
-	}
-	if moving != binds {
-		t.Errorf("%d of %d shipped bindings resolve to motion", moving, binds)
-	}
-	for _, n := range sortedCountKeys(kinds) {
-		t.Logf("shipped effect %q: %d declarations", n, kinds[n])
-	}
-	for _, n := range sortedCountKeys(gens) {
-		t.Logf("themes/%s: %d of %d generator tiles", n, gens[n], render.ThemeGenCap)
-	}
-}
-
-// nineSliceClamp reproduces paintElementNineSlice's inset clamp
-// (themeelements.go:1044-1052) for a source tile of sw x sh. A mirror, deliberately:
-// the painter takes a *bakedElement and an *sdl.Texture and this gate reads files, so
-// the four lines are written out where a reader can compare them to the call site.
-func nineSliceClamp(sl [4]int16, sw, sh int32) [4]int16 {
-	l, t, r, b := int32(sl[0]), int32(sl[1]), int32(sl[2]), int32(sl[3])
-	if l+r >= sw {
-		l, r = sw/2, sw-sw/2-1
-	}
-	if t+b >= sh {
-		t, b = sh/2, sh-sh/2-1
-	}
-	return [4]int16{int16(l), int16(t), int16(r), int16(b)}
-}
-
-// genNineSliceIsLiteral reports whether the element's authored `slice` is the one
-// that would actually paint.
-//
-// Vacuously true for anything this gate cannot measure — an element that is not a
-// known GENERATOR has no tile size until the media plan lands, and a media page's
-// dimensions are not in the file at all.
-func genNineSliceIsLiteral(el *theme.Element) bool {
-	if el.Kind != theme.ElemGen || el.Fit != theme.FitNine || el.Gen == "" || el.Inert() {
-		return true
-	}
-	spec := theme.GeneratorSpecOf(el)
-	if !GeneratorKnown(spec.Name) {
-		return true
-	}
-	w, h := genTileSizeOf(spec)
-	return nineSliceClamp(el.Slice, w, h) == el.Slice
-}
-
-// distinctGenTiles counts the generator tiles one sidecar would ask the store for,
-// mirroring planThemeMedia's admission arm (thememedia.go:186-198) rather than
-// calling it: the planner needs an App, a theme id and a landed store, and this gate
-// reads files off disk. The three conditions that decide whether an element costs a
-// tile are the whole of that mirror, so they are written out where a reader can
-// compare them line by line to the call site.
-func distinctGenTiles(sc *theme.Sidecar) int {
-	seen := map[string]struct{}{}
-	for i := range sc.Elements {
-		el := &sc.Elements[i]
-		if el.Kind != theme.ElemGen || el.Gen == "" || el.Inert() {
-			continue
-		}
-		spec := theme.GeneratorSpecOf(el)
-		if !GeneratorKnown(spec.Name) {
-			continue // degrades to a flat fill: nothing to rasterise, nothing to budget
-		}
-		seen[render.ThemeGenKey(spec.Hash())] = struct{}{}
-	}
-	return len(seen)
-}
-
-// effectMovesSomething reports whether the resolver leaves the neutral transform
-// anywhere in one cycle of an effect.
-//
-// SAMPLED ACROSS THE PERIOD, never at one point: every periodic kind rides a raised
-// cosine that is neutral at its own start, so a single sample would be a coin flip
-// and this gate would fail (or pass) at random.
-func effectMovesSomething(fx bakedEffect) bool {
-	period := time.Duration(effectPeriodMs(fx.periodMs)) * time.Millisecond
-	for step := 1; step <= 16; step++ {
-		if !fxNeutralTerms(resolveElementEffect(fx, period*time.Duration(step)/16, &fxState{})) {
-			return true
-		}
-	}
-	return false
-}
-
-// sortedCountKeys renders a census map in a stable order.
-func sortedCountKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // TestShoutConditionTableMatchesCourtroom pins elemShoutConditions against the ONE
