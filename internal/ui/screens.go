@@ -8411,7 +8411,7 @@ func (a *App) sendIC() {
 		OffsetX:     a.pairOffX,
 		OffsetY:     a.pairOffY,
 		Flip:        a.pairFlip,
-		Immediate:   a.icImmediate,      // non-interrupting preanim (IC-row toggle)
+		Immediate:   outgoingImmediate(a.icImmediate, a.icPreanim), // non-interrupting preanim — only ships when Pre (a preanimation) is also on; AO2's pre_no_interrupt rides ui_pre
 		Additive:    a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
 		Slide:       a.icSlide,          // #21: slide into position instead of cutting (AO2 ui_slide)
 		Realization: a.icRealize,        // #21: white flash + sound on this message (AO2 realization_state)
