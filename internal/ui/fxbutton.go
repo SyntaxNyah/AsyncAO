@@ -28,6 +28,23 @@ var fxEffectOrder = []uint8{
 	courtroom.TextEffectBlink, courtroom.TextEffectSparkle,
 }
 
+// inlineMarkupButtons is the picker's second section (#131): the position-based AO
+// codes a player would otherwise have to memorise. Clicking one inserts its code at
+// the IC caret (insertICInline) and closes the picker.
+var inlineMarkupButtons = []struct{ label, code string }{
+	{"Slow down", "{"},
+	{"Speed up", "}"},
+	{"Shake", `\s`},
+	{"Flash", `\f`},
+	{"Pause", `\p`},
+	{"Bold", `\b`},
+	{"Italic", `\i`},
+}
+
+// fxPickerRowCount is the picker's total rows: the sticky effects, one divider row,
+// then the inline-code section.
+func fxPickerRowCount() int { return len(fxEffectOrder) + 1 + len(inlineMarkupButtons) }
+
 // fxButton draws the IC-bar Text FX button; clicking it toggles the picker. Accent-coloured when
 // an effect is active so the on-state reads at a glance. Records its rect so the picker anchors
 // to it (and the pointer fence can find the picker).
@@ -120,7 +137,7 @@ const fxPickerRow = int32(20)
 // pointer fence agree.
 func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 	pw := int32(120)
-	ph := int32(len(fxEffectOrder))*fxPickerRow + 8
+	ph := int32(fxPickerRowCount())*fxPickerRow + 8
 	// Opened from the Extras menu with no button on screen (#21: a themed layout
 	// draws the FX button only where the theme asks for it), fxBtnRect is the zero
 	// value and the clamps below would pin the list to the top-left corner. Anchor
@@ -171,6 +188,26 @@ func (a *App) drawFxPicker(w, h int32) {
 			col = ColAccent // mark the active effect
 		}
 		c.Label(row.X+4, y+3, name, col)
+		y += fxPickerRow
+	}
+	// Divider, then the inline-code section (#131): position-based codes a player
+	// can drop mid-sentence instead of memorising the markup language.
+	y += 2
+	c.Fill(sdl.Rect{X: r.X + 4, Y: y, W: r.W - 8, H: 1}, ColPanelHi)
+	y += 5
+	c.Label(r.X+4, y+3, "Type in the middle", ColTextDim)
+	y += fxPickerRow
+	for _, b := range inlineMarkupButtons {
+		row := sdl.Rect{X: r.X + 4, Y: y, W: r.W - 8, H: fxPickerRow}
+		if c.hovering(row) {
+			c.Fill(row, ColPanelHi)
+			if c.clicked {
+				a.insertICInline(b.code)
+				a.showFxPicker = false
+			}
+		}
+		c.Label(row.X+4, y+3, b.label, ColText)
+		c.Tooltip(row, "Inserts "+b.code+" at the caret in your IC message")
 		y += fxPickerRow
 	}
 }
