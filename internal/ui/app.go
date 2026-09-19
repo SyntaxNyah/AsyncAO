@@ -1140,6 +1140,11 @@ type App struct {
 	classicEdit     bool
 	classicOv       map[string][4]float64
 	classicOvLoaded bool
+	// tornZ is the session-scoped tear-off panel z-order (torntabs.go), a
+	// permutation of tornTabTable indices back-to-front. Empty = table order.
+	// It exists so clicking a floating panel brings it to the front instead of
+	// the fixed order always drawing Players over Music/Areas.
+	tornZ []int
 	// classicAnchor holds per-slot window pins (parsed from
 	// config.ClassicAnchors alongside classicOv): a pinned slot's override
 	// re-bases to pixel offsets from its window corner/centre on resize
@@ -3675,6 +3680,20 @@ func (a *App) NoteDisplayChanged() {
 		return // same monitor — not a DPI change
 	}
 	a.SeedDisplayDPIScale() // updates lastDPIDisplayIndex + re-detects DPI
+}
+
+// NoteFocusLost is called from the event loop when the window loses input focus
+// (WINDOWEVENT_FOCUS_LOST). It drops the focused text field so the caret stops
+// blinking and typing is no longer captured by the IC/OOC box — clicking away to
+// Discord (or anywhere) must not leave the client looking ready to type. The
+// Discord-style auto-refocus (chatfocus.go) re-arms on the next in-app keystroke,
+// so returning and typing works without a click.
+func (a *App) NoteFocusLost() {
+	if a.ctx == nil {
+		return
+	}
+	a.ctx.focusID = ""
+	a.ctx.selAnchor = -1
 }
 
 // SetAutoScaleFromWindow updates the auto UI scale from the current PHYSICAL

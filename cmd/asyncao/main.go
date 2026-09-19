@@ -541,6 +541,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if e.Event == sdl.WINDOWEVENT_FOCUS_GAINED {
 					app.NoteFocusGained()
 				}
+				// Clicking away drops text-field focus: the IC/OOC caret stops
+				// blinking and typing goes to whatever app now has focus, instead
+				// of a field that is no longer on screen.
+				if e.Event == sdl.WINDOWEVENT_FOCUS_LOST {
+					app.NoteFocusLost()
+				}
 			}
 			sawEvent = true
 			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
