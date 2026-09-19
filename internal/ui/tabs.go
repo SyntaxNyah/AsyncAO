@@ -1448,16 +1448,19 @@ func (a *App) resetSessionState() {
 		// Seed them on every fresh session instead.
 		volStripOn:   a.d.Prefs.VolStripShownOn(),
 		musicVolMode: a.d.Prefs.MusicVolModeOn(),
-		// The four channel mutes are the SAME failure mode as volStripOn just
-		// above (playtest never happened for this one, but the bug is
-		// identical by inspection): they PERSIST, but they live on
+		// The master/music/blip channel mutes are the SAME failure mode as
+		// volStripOn just above (playtest never happened for this one, but the
+		// bug is identical by inspection): they PERSIST, but they live on
 		// sessionState, which NewApp/Connect/Disconnect all rebuild via this
 		// literal. A boot-only seed (dndOn's pattern, App.dndOn) would look
 		// right at launch and silently un-mute the instant the user connects
 		// to a server. Reseed here, every time, like volStripOn.
+		// sfxMuted is the deliberate exception: the SFX mute is session-only
+		// (see toggleSFXMute) so an accidental hotkey press can't leave SFX
+		// silently muted across a restart.
 		masterMuted:  a.d.Prefs.MasterVolMutedOn(),
 		musicMuted:   a.d.Prefs.MusicVolMutedOn(),
-		sfxMuted:     a.d.Prefs.SFXVolMutedOn(),
+		sfxMuted:     false,
 		blipMuted:    a.d.Prefs.BlipVolMutedOn(),
 		spriteOv:     map[string][2]int{},
 		pmThreads:    map[string][]pmLine{},

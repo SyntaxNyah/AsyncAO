@@ -107,7 +107,7 @@ var hotkeyDefs = []struct {
 	{hotkeyReplayLast, "Replay the last recording (start/stop)", "i"},
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
-	{hotkeyMuteSFX, "Mute sound effects", "k"},
+	{hotkeyMuteSFX, "Mute sound effects", "{"},
 	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
@@ -590,12 +590,13 @@ func (a *App) quickSwapNext() {
 
 // toggleSFXMute flips the SFX mute and re-applies volumes. The music/blip
 // channels are untouched; the saved SFX volume is preserved (mute is an
-// overlay, not a volume write). Persisted (config.SetSFXVolMuted) via the
-// debounced saver, same flag the volume strip's SFX cell toggles, so the
-// hotkey and the strip can never disagree about whether SFX is muted.
+// overlay, not a volume write). Session-only: NOT persisted, so an accidental
+// press can never leave SFX silently muted across a restart (the Ctrl+K trap —
+// the hotkey now defaults to Ctrl+{ and resetSessionState re-seeds sfxMuted
+// false every session). The volume strip's SFX cell shares this same in-memory
+// flag, so the hotkey and the strip still never disagree within a session.
 func (a *App) toggleSFXMute() {
 	a.sfxMuted = !a.sfxMuted
-	a.d.Prefs.SetSFXVolMuted(a.sfxMuted)
 	a.applyAudioVolumes()
 	a.warnLine = "SFX unmuted"
 	if a.sfxMuted {

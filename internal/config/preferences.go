@@ -7498,9 +7498,13 @@ func (p *AssetPreferences) SetMasterVolume(v int) {
 	p.markDirty()
 }
 
-// The four channel-mute accessors below persist the volume strip's (#10)
-// click-to-mute state and the SFX-mute hotkey, so quitting muted stays muted
-// on the next launch — they default OFF (unmuted), same as the zero value.
+// The master/music/blip channel-mute accessors below persist the volume
+// strip's (#10) click-to-mute state, so quitting muted stays muted on the next
+// launch — they default OFF (unmuted), same as the zero value. SFXVolMuted is
+// the deliberate exception: the SFX mute (the Mute-SFX hotkey AND the volume
+// strip's SFX cell) is session-only (see ui.toggleSFXMute / ui.resetSessionState),
+// so its field and accessors are retained only for schema compatibility and are
+// never read by the app — an accidental Mute-SFX press must not survive a restart.
 // Named *VolMuted (not SFXMuted) to stay clear of two unrelated existing
 // names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
 // and AssetPreferences.MutedSFX (the M11 per-name mute list).
@@ -7543,15 +7547,18 @@ func (p *AssetPreferences) SetMusicVolMuted(on bool) {
 	p.markDirty()
 }
 
-// SFXVolMutedOn reports the persisted SFX-channel mute (volume strip AND the
-// Mute SFX hotkey share this one flag).
+// SFXVolMutedOn reports the persisted SFX-channel mute. Retained for schema
+// compatibility only: the SFX mute is now session-only and the app never reads
+// this (see ui.toggleSFXMute / ui.resetSessionState).
 func (p *AssetPreferences) SFXVolMutedOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.SFXVolMuted
 }
 
-// SetSFXVolMuted persists the SFX-channel mute toggle.
+// SetSFXVolMuted persists the SFX-channel mute toggle. Retained for schema
+// compatibility only: the SFX mute is now session-only and the app never writes
+// this (see ui.toggleSFXMute / ui.persistChannelMute).
 func (p *AssetPreferences) SetSFXVolMuted(on bool) {
 	p.mu.Lock()
 	if p.SFXVolMuted == on {

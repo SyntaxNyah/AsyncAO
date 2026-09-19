@@ -48,17 +48,16 @@ func TestDoNotDisturbSilencesCallword(t *testing.T) {
 }
 
 // TestMuteStateSurvivesResetSessionState pins the fix for the connect/
-// disconnect mute trap: masterMuted/musicMuted/sfxMuted/blipMuted live on
-// sessionState, which resetSessionState rebuilds from scratch on every
-// NewApp/Connect/Disconnect — a boot-only seed (the dndOn pattern) would look
-// right at launch and then silently un-mute the instant the user connected.
-// This drives the REAL a.resetSessionState() (via testTabApp's constructor,
-// then again explicitly) rather than poking the bool fields directly, so it
-// fails if the seed lines are deleted from the sessionState{} literal in
-// tabs.go, and it calls resetSessionState a SECOND time specifically to catch
-// a regression back to "seed once in NewApp": a boot-only seed passes the
-// first check below but fails the second, since nothing but this function
-// re-reads the persisted prefs.
+// disconnect mute trap: masterMuted/musicMuted/blipMuted live on sessionState,
+// which resetSessionState rebuilds from scratch on every NewApp/Connect/
+// Disconnect — a boot-only seed (the dndOn pattern) would look right at launch
+// and then silently un-mute the instant the user connected. sfxMuted is the
+// deliberate exception: it is session-only, so resetSessionState must NOT
+// reseed it from prefs (an accidental Mute-SFX hotkey press must never survive
+// a restart). This drives the REAL a.resetSessionState() (via testTabApp's
+// constructor, then again explicitly) rather than poking the bool fields
+// directly, and calls it a SECOND time specifically to catch a regression back
+// to "seed once in NewApp".
 func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a := testTabApp(t) // already ran resetSessionState() once, with mutes off in prefs
 	if a.masterMuted || a.musicMuted || a.sfxMuted || a.blipMuted {
@@ -68,8 +67,11 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a.d.Prefs.SetSFXVolMuted(true)
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
-	if !a.masterMuted || !a.sfxMuted {
-		t.Error("resetSessionState did not seed the persisted mute state")
+	if !a.masterMuted {
+		t.Error("resetSessionState did not seed the persisted master mute")
+	}
+	if a.sfxMuted {
+		t.Error("SFX mute must be session-only — never reseeded from prefs")
 	}
 	if a.musicMuted || a.blipMuted {
 		t.Error("channels that were never muted must not come back muted")
@@ -77,8 +79,11 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	// The regression this test exists for: reset a SECOND time (a park→Connect
 	// or a Disconnect after this one) and confirm the mute survives again.
 	a.resetSessionState()
-	if !a.masterMuted || !a.sfxMuted {
-		t.Error("mute state was wiped on a second session reset — the connect/disconnect trap")
+	if !a.masterMuted {
+		t.Error("master mute was wiped on a second session reset — the connect/disconnect trap")
+	}
+	if a.sfxMuted {
+		t.Error("SFX mute must stay session-only across a second reset")
 	}
 }
 

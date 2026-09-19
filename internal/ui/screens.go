@@ -3305,15 +3305,14 @@ const volStripRowsH = int32(44)
 // tabs.go). id matches drawVolumeStrip's cell ids ("master"/"music"/"sfx"/
 // "blip"); the "rate" cell passes a nil mute pointer and never reaches this
 // call. The single switch keeps one persistence call site per channel instead
-// of four near-identical branches at each cell(...) call above.
+// of four near-identical branches at each cell(...) call above. The SFX channel
+// is the deliberate exception: it is session-only and not persisted here.
 func (a *App) persistChannelMute(id string, on bool) {
 	switch id {
 	case "master":
 		a.d.Prefs.SetMasterVolMuted(on)
 	case "music":
 		a.d.Prefs.SetMusicVolMuted(on)
-	case "sfx":
-		a.d.Prefs.SetSFXVolMuted(on)
 	case "blip":
 		a.d.Prefs.SetBlipVolMuted(on)
 	}
