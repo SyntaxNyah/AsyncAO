@@ -213,6 +213,62 @@ func (a *App) tearOffTab(id int, w, h int32) {
 	a.d.Prefs.SetClassicSlot(key, frac)
 }
 
+// tornTabOrder returns the back-to-front draw order of the tear-off tabs as
+// tornTabTable indices. Session-scoped: tornZ records bring-to-front clicks;
+// empty means the table's own order (the pre-z-order default). A fixed-size
+// value so the per-frame draw loop allocates nothing.
+func (a *App) tornTabOrder() [len(tornTabTable)]int {
+	var order [len(tornTabTable)]int
+	if len(a.tornZ) == 0 {
+		for i := range tornTabTable {
+			order[i] = i
+		}
+		return order
+	}
+	copy(order[:], a.tornZ)
+	return order
+}
+
+// bringTornToFront promotes the topmost torn panel under a fresh left-click to
+// the front of the z-order, so clicking a floating panel (anywhere in its rect)
+// raises it above the others — the standard window behaviour the old fixed
+// table order lacked (the Players tab always drew over Music/Areas no matter
+// how the panels were arranged).
+func (a *App) bringTornToFront(w, h int32) {
+	c := a.ctx
+	if !c.clicked {
+		return
+	}
+	order := a.tornTabOrder()
+	// Scan front-to-back: the panel already on top under the cursor wins, and
+	// promoting it is a no-op when it is already front.
+	for j := len(order) - 1; j >= 0; j-- {
+		idx := order[j]
+		t := tornTabTable[idx]
+		if _, torn := a.classicOv[t.key]; !torn || a.tabHidden(t.id) {
+			continue
+		}
+		r, ok := a.tornTabRect(t.key, w, h)
+		if !ok || r.W < classicMinPx || r.H < classicMinPx {
+			continue
+		}
+		if pointIn(c.mouseX, c.mouseY, r) {
+			if j == len(order)-1 {
+				return // already front
+			}
+			z := make([]int, 0, len(order))
+			for _, o := range order {
+				if o != idx {
+					z = append(z, o)
+				}
+			}
+			z = append(z, idx)
+			a.tornZ = z
+			return
+		}
+	}
+}
+
 // drawTornTabs paints every torn-off tab as its own floating panel: a titled
 // header (the editor's drag handle) over the tab's real content. slotRect returns
 // the override and — only while editing — registers the slot, so the editor draws
@@ -224,15 +280,16 @@ func (a *App) drawTornTabs(w, h int32) {
 		return
 	}
 	c := a.ctx
-	for i := range tornTabTable {
-		t := tornTabTable[i]
+	a.bringTornToFront(w, h)
+	for _, idx := range a.tornTabOrder() {
+		t := tornTabTable[idx]
 		if _, torn := a.classicOv[t.key]; !torn {
 			continue
 		}
 		if a.tabHidden(t.id) {
 			continue // fully hidden: don't draw it even though it has a torn-out override
 		}
-		r := a.slotRect(t.key, a.tornTabDefaultRect(i, w, h), w, h)
+		r := a.slotRect(t.key, a.tornTabDefaultRect(idx, w, h), w, h)
 		if r.W < classicMinPx || r.H < classicMinPx {
 			continue
 		}
