@@ -1426,6 +1426,11 @@ type AssetPreferences struct {
 	// OFF and the shipped behaviour matches AO2. Message timing is unchanged either
 	// way (the render fires preanim-done exactly once regardless).
 	LoopPreanim bool `json:"loopPreanim"`
+	// DisableAltEmoteRow removes the Alt+1..9 emote number row (OFF by default —
+	// the row works unless explicitly disabled). The digits are plain text in the
+	// IC box now, so disabling the row makes Alt+1..9 type digits instead of
+	// picking emotes.
+	DisableAltEmoteRow bool `json:"disableAltEmoteRow"`
 	// ICTimestamps prefixes each IC log line with its local arrival time (OFF by default).
 	ICTimestamps bool `json:"icTimestamps"`
 	// AutoReconnect auto-retries the last server after an unexpected drop (OFF by
@@ -1736,6 +1741,7 @@ type prefsJSON struct {
 	InputGraceFrames       int                  `json:"inputGraceFrames"`     // full-rate hold after input, in frames (0 = default 1)
 	EventDrivenLoop        *bool                `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	DisableFrameLimiter    bool                 `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
+	DisableAltEmoteRow     bool                 `json:"disableAltEmoteRow"`   // remove the Alt+1..9 emote number row (default OFF)
 	MotionRedrawPerEvent   *bool                `json:"motionRedrawPerEvent"` // per-event motion redraw (default ON as of v1.55.1; pointer: absent → the default, distinct from an explicit OFF)
 	SpriteDownscalePct     int                  `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	AnimatedSpriteCapPx    int                  `json:"animatedSpriteCapPx"`  // animated-only height cap px (0 = off)
@@ -2505,6 +2511,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.CallwordOSToast = onDisk.CallwordOSToast
 	p.MentionSelf = onDisk.MentionSelf
 	p.LoopPreanim = onDisk.LoopPreanim
+	p.DisableAltEmoteRow = onDisk.DisableAltEmoteRow
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
@@ -3941,6 +3948,26 @@ func (p *AssetPreferences) SetLoopPreanim(on bool) {
 		return
 	}
 	p.LoopPreanim = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DisableAltEmoteRowOn reports the "remove Alt+1..9 emote number row" toggle
+// (OFF by default: the row works unless the user disables it).
+func (p *AssetPreferences) DisableAltEmoteRowOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DisableAltEmoteRow
+}
+
+// SetDisableAltEmoteRow toggles the Alt+1..9 emote number row off/on.
+func (p *AssetPreferences) SetDisableAltEmoteRow(on bool) {
+	p.mu.Lock()
+	if p.DisableAltEmoteRow == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DisableAltEmoteRow = on
 	p.mu.Unlock()
 	p.markDirty()
 }

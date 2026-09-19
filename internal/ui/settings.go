@@ -1466,6 +1466,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetEmoteHoverNames(next)
 	}
 	y += 26
+	altRow := a.d.Prefs.DisableAltEmoteRowOn()
+	if next := c.Checkbox(pad, y, "Disable the Alt+1..9 emote number row (OFF by default): the digits pick the emote shown on the current page. Disable to make Alt+1..9 type digits instead.", altRow); next != altRow {
+		a.d.Prefs.SetDisableAltEmoteRow(next)
+	}
+	y += 26
 	if names {
 		ems := a.d.Prefs.EmoteHoverNamesMillis()
 		if next := a.emoteNameDelayRow(y, ems); next != ems {

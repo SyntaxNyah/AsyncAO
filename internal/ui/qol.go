@@ -302,6 +302,9 @@ func (a *App) handleCharKeys() {
 // and only when the digit isn't a deliberate character keybind, the same fence
 // handleCharKeys has always had. Picking focuses the IC input, matching a click.
 func (a *App) handleEmoteKeys() {
+	if a.d.Prefs.DisableAltEmoteRowOn() {
+		return // the user removed the Alt+1..9 number row; the digits are plain text again
+	}
 	key := a.bareBindKey()
 	if key < sdl.K_1 || key > sdl.K_9 || a.emotePerPage <= 0 {
 		return
