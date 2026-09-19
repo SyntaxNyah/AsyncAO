@@ -8227,6 +8227,24 @@ func funColor(text string, color, ext, customRGB int, rainbow, random bool, rand
 	return text, color
 }
 
+// midEmoteResolver resolves a :stem: shortcode against this character's emote list
+// (case-insensitive on Anim or Comment) into the mid-text emote it stands for,
+// carrying that emote's preanim and per-emote sound. The wire's silence sentinels
+// ("", "0", "1") read as "no sound", matching outgoingSFXName's convention.
+func (a *App) midEmoteResolver(stem string) (courtroom.MidEmote, bool) {
+	for i := range a.emotes {
+		e := &a.emotes[i]
+		if strings.EqualFold(e.Anim, stem) || strings.EqualFold(e.Comment, stem) {
+			sfx := e.SFXName
+			if sfx == "" || sfx == "0" || sfx == "1" {
+				sfx = ""
+			}
+			return courtroom.MidEmote{Pre: e.Preanim, Emote: e.Anim, SFX: sfx}, true
+		}
+	}
+	return courtroom.MidEmote{}, false
+}
+
 // sendIC takes no shout argument any more. The interjection is ARMED state
 // (a.icShout = AO2's objection_state) and the packet reads it here, which is
 // where canon reads it too — on_chat_return_pressed, courtroom.cpp:2136-2147.
@@ -8238,6 +8256,10 @@ func (a *App) sendIC() {
 		a.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
 		return
 	}
+	// Mid-text emotes (#130): a typed :emote: shortcode becomes the internal <e:...>
+	// marker on the wire (readable to non-AsyncAO clients, rendered inline here).
+	// Unknown :tokens: and plain text are untouched.
+	text = courtroom.ExpandMidTextShortcodes(text, a.midEmoteResolver)
 	// Blankpost: Enter on an empty input sends the AO single-space
 	// message — your sprite plays with no text (the RP "just show my
 	// character" convention; truly empty messages get server-rejected).
@@ -8425,11 +8447,11 @@ func (a *App) sendIC() {
 		OffsetY:     a.pairOffY,
 		Flip:        a.pairFlip,
 		Immediate:   outgoingImmediate(a.icImmediate, a.icPreanim), // non-interrupting preanim — only ships when Pre (a preanimation) is also on; AO2's pre_no_interrupt rides ui_pre
-		Additive:    a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
-		Slide:       a.icSlide,          // #21: slide into position instead of cutting (AO2 ui_slide)
-		Realization: a.icRealize,        // #21: white flash + sound on this message (AO2 realization_state)
-		Screenshake: a.icShake,          // #21: shake the courtroom on this message (AO2 screenshake_state)
-		KFOCompat:   a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
+		Additive:    a.icAdditive,                                  // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
+		Slide:       a.icSlide,                                     // #21: slide into position instead of cutting (AO2 ui_slide)
+		Realization: a.icRealize,                                   // #21: white flash + sound on this message (AO2 realization_state)
+		Screenshake: a.icShake,                                     // #21: shake the courtroom on this message (AO2 screenshake_state)
+		KFOCompat:   a.sess.KFOCompat(),                            // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 		// AO2 screen effect (ui_effects_dropdown): "<name>|<folder>|<sound>", where
 		// folder is OUR char.ini [Options] effects and sound is the merged property
 		// (courtroom.cpp:2296-2308). "" for the "None" row.
