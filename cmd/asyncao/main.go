@@ -341,10 +341,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// cap and the two LRU tiers.
 
 	// --- asset pipeline ---
+	// Auto-mounted asset packages (issue #128): discovered once beside the exe
+	// and appended after the manual mounts so an explicit folder always wins.
+	enabled, manualMounts := prefs.LocalAssets()
+	autoMounts := config.DiscoverPackages(config.ExecutableDir())
+	allMounts := config.CombineMounts(manualMounts, autoMounts)
 	var localMode bool
 	var source assets.Fetcher = client
-	if enabled, mounts := prefs.LocalAssets(); enabled && len(mounts) > 0 {
-		source = assets.NewLocalFetcher(mounts)
+	if enabled && len(allMounts) > 0 {
+		source = assets.NewLocalFetcher(allMounts)
 		localMode = true
 	}
 	manager := assets.NewManager(assets.ManagerDeps{
@@ -366,8 +371,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// against the local base while connected). A local-mode Manager ignores the
 	// overlay (its source already is the LocalFetcher); no mounts → nil (no
 	// overlay). rebuildAssetOrigin re-pushes this on every mounts/pref change.
-	if _, mounts := prefs.LocalAssets(); len(mounts) > 0 {
-		manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))
+	if len(allMounts) > 0 {
+		manager.SetLocalOverlay(assets.NewLocalFetcher(allMounts))
 	}
 	manager.SetDiskCompression(prefs.DiskZstdEnabled())
 	// #34: apply the T3 auto-prune cap (0 = unlimited, the default). The writer
@@ -439,6 +444,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Presence:         pres,
 		MasterURL:        masterURL,
 		ConfigQuarantine: configQuarantine,
+		AutoMounts:       autoMounts,
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)

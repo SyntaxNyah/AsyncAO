@@ -43,7 +43,7 @@ func (a *App) wantMountLayer() []string {
 	if a.d.Manager.LocalMode() {
 		return nil
 	}
-	on, mounts := a.d.Prefs.LayeredAssets()
+	on, mounts := a.layeredAssets()
 	if !on {
 		return nil
 	}

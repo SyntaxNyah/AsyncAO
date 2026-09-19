@@ -216,6 +216,19 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 		y += 28
 	}
 
+	// Auto-mounted packages (issue #128): discovered beside the exe at startup
+	// and appended AFTER the manual mounts above, so a manual folder always wins.
+	// Read-only — managed by dropping/removing folders in packages/.
+	if len(a.d.AutoMounts) > 0 {
+		y += 4
+		c.Label(pad, y+4, "Auto-mounted packages (from the packages/ folder next to the exe)", ColText)
+		y += 24
+		for i, m := range a.d.AutoMounts {
+			c.LabelClipped(pad+20, y+4, a.formW-190, fmt.Sprintf("%d. %s", len(mounts)+i+1, m), ColTextDim)
+			y += 28
+		}
+	}
+
 	if haveMounts {
 		y += 4
 		y = a.drawMountIndexStatus(y)

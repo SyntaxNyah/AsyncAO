@@ -286,7 +286,7 @@ func recordingToDemo(rec *sceneRecording) ([]byte, error) {
 // origin STRING rather than building a fetcher to read BaseURL off: a fetcher
 // carries the rule-6 negative memo and this call site only ever wanted a label.
 func (a *App) mountOrigin() string {
-	if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) > 0 {
+	if _, mounts := a.localAssets(); len(mounts) > 0 {
 		return assets.LocalOriginFor(mounts)
 	}
 	return ""

@@ -182,6 +182,10 @@ type Deps struct {
 	// at startup and was renamed aside (defaults are in effect). NewApp raises
 	// a one-time startup notice from it. Nil on a clean/first-run load.
 	ConfigQuarantine *config.Quarantine
+	// AutoMounts are the auto-discovered packages/ folders (issue #128),
+	// appended after the user's manual mounts. Nil in tests and when there is
+	// no packages/ folder beside the executable.
+	AutoMounts []string
 }
 
 // App is the whole client UI state machine. Render thread only.
@@ -5414,13 +5418,13 @@ func (a *App) rebuildAssetOrigin() {
 	// nil when no mounts. A local-mode Manager ignores the overlay (its source
 	// already is the LocalFetcher); pushing is a harmless no-op there.
 	if a.d.Manager != nil {
-		if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) > 0 {
+		if _, mounts := a.localAssets(); len(mounts) > 0 {
 			a.d.Manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))
 		} else {
 			a.d.Manager.SetLocalOverlay(nil)
 		}
 	}
-	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
+	if enabled, mounts := a.localAssets(); enabled && len(mounts) > 0 {
 		// The ORIGIN helper, not a fetcher: this branch only ever read BaseURL off
 		// one, and the fetcher that actually serves these URLs was already built
 		// above (SetLocalOverlay) or at boot. Building a second byte source — memo

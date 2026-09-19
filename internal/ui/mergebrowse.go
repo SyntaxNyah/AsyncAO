@@ -118,10 +118,10 @@ func (a *App) mergedBrowseMounts() []string {
 	if a.d.Prefs == nil {
 		return nil
 	}
-	if on, mounts := a.d.Prefs.LocalAssets(); on && len(mounts) > 0 {
+	if on, mounts := a.localAssets(); on && len(mounts) > 0 {
 		return mounts
 	}
-	if on, mounts := a.d.Prefs.LayeredAssets(); on {
+	if on, mounts := a.layeredAssets(); on {
 		return mounts
 	}
 	return nil
