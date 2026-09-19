@@ -134,3 +134,39 @@ func TestManifestSeedLearned(t *testing.T) {
 		t.Errorf("DeskOverlay seeded from the manifest despite the WebP pin: %v", got)
 	}
 }
+
+// TestManifestSeedLearnedAudio pins the optional audio classes: a manifest that
+// declares sfx_extensions / blips_extensions seeds the SFX and Blip learned
+// tables (declaration order, full list), and an absent class seeds nothing (the
+// type keeps its default opus-first order + per-host learning).
+func TestManifestSeedLearnedAudio(t *testing.T) {
+	m, err := ParseManifest([]byte(`{
+		"sfx_extensions": [".opus", ".ogg"],
+		"blips_extensions": [".wav", ".WAV", ".bogus"]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.SFX) != 2 || m.SFX[0] != config.ExtOpus || m.SFX[1] != config.ExtOgg {
+		t.Errorf("sfx = %v, want [.opus .ogg]", m.SFX)
+	}
+	if len(m.Blips) != 1 || m.Blips[0] != config.ExtWAV {
+		t.Errorf("blips = %v, want [.wav] (dupe collapsed, .bogus dropped)", m.Blips)
+	}
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prefs.Close()
+	const host = "kfo.test"
+	if n := m.SeedLearned(prefs, host); n != 2 {
+		t.Fatalf("seeded %d, want 2 (sfx + blip only; image classes absent)", n)
+	}
+	snap := prefs.LearnedSnapshot()
+	if got := snap[config.LearnedKey(host, config.TypeSFX)]; len(got) != 2 || got[0] != config.ExtOpus || got[1] != config.ExtOgg {
+		t.Errorf("learned[SFX] = %v, want [.opus .ogg]", got)
+	}
+	if got := snap[config.LearnedKey(host, config.TypeBlip)]; len(got) != 1 || got[0] != config.ExtWAV {
+		t.Errorf("learned[Blip] = %v, want [.wav]", got)
+	}
+}

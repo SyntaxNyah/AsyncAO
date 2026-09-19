@@ -31,10 +31,20 @@ type Manifest struct {
 	Emote      []string `json:"emote_extensions"`
 	Emotions   []string `json:"emotions_extensions"`
 	Background []string `json:"background_extensions"`
+	// Audio classes. webAO's extensions.json only declares the image classes;
+	// SFX and blip URLs are extension-less in practice (audio.request self-fetches
+	// by base), so these keys are optional. A server that ships them seeds the
+	// SFX/blip probe order exactly like the image classes; absent → the type's
+	// default order (opus → ogg → wav → mp3) plus per-host learning still applies.
+	SFX   []string `json:"sfx_extensions"`
+	Blips []string `json:"blips_extensions"`
 }
 
-// manifestKnownExts is the decoder-supported image set a manifest may
-// declare; anything else (audio, typos, future formats) is dropped.
+// manifestKnownExts is the decoder-supported set a manifest may declare;
+// anything else (typos, future formats) is dropped. Image and audio formats
+// share one set: each class seeds only its own asset types, so an audio
+// extension on an image class (or vice-versa) is a server mistake the probe
+// self-corrects.
 var manifestKnownExts = map[string]bool{
 	config.ExtWebP: true,
 	config.ExtAVIF: true,
@@ -42,6 +52,10 @@ var manifestKnownExts = map[string]bool{
 	config.ExtGIF:  true,
 	config.ExtPNG:  true,
 	config.ExtJPG:  true,
+	config.ExtOpus: true,
+	config.ExtOgg:  true,
+	config.ExtMP3:  true,
+	config.ExtWAV:  true,
 }
 
 // bundledVanillaManifestJSON is the official AO vanilla base's extensions.json
@@ -83,6 +97,8 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	m.Emote = sanitizeManifestExts(m.Emote)
 	m.Emotions = sanitizeManifestExts(m.Emotions)
 	m.Background = sanitizeManifestExts(m.Background)
+	m.SFX = sanitizeManifestExts(m.SFX)
+	m.Blips = sanitizeManifestExts(m.Blips)
 	return &m, nil
 }
 
@@ -129,6 +145,8 @@ func (m *Manifest) manifestSeedTargets() []struct {
 		{m.Emote, []AssetType{AssetTypeCharSprite, AssetTypeShoutBubble}},
 		{m.Emotions, []AssetType{AssetTypeEmoteButton}},
 		{m.Background, []AssetType{AssetTypeBackground, AssetTypeDeskOverlay}},
+		{m.SFX, []AssetType{AssetTypeSFX}},
+		{m.Blips, []AssetType{AssetTypeBlip}},
 	}
 }
 
