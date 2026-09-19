@@ -1771,6 +1771,12 @@ func (a *App) oocWrapped(width int32) []string {
 type icWrapLine struct {
 	text  string
 	entry int // index into icLog
+	// headRunes is the leading runes of text that are the timestamp + speaker
+	// head (not part of the message body); bodyOff is the rune offset of this
+	// row's body within its entry's body. Both are 0 for rows whose entry has no
+	// inline-colour runs — the renderer only reads them when the entry is styled.
+	headRunes int
+	bodyOff   int
 }
 
 // logWrapIndentPx is the hanging indent for a message's wrapped continuation
@@ -1832,12 +1838,13 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// Hoisted once.
 	icMeasure := func(s string) int32 { return a.logDrawnWidth(elemICChatlog, a.logPct, s) }
 	for _, i := range a.icLogFiltered() {
-		// Prefix the local arrival time when enabled. The stamp was formatted once
-		// on append; the only cost here is one concat per entry, and only on a wrap
-		// REBUILD (new message / search / resize / toggle), never per frame.
-		text := a.icLog[i].text
-		if showStamps && a.icLog[i].stamp != "" {
-			text = a.icLog[i].stamp + "  " + text
+		entry := &a.icLog[i]
+		text := entry.text
+		stampRunes := 0
+		if showStamps && entry.stamp != "" {
+			prefix := entry.stamp + "  "
+			text = prefix + text
+			stampRunes = utf8.RuneCountInString(prefix)
 		}
 		// Wrap against the width each row will really be DRAWN at (icMeasure). An
 		// emoji entry takes the rune-granular wrap: the plain word-wrap sizes colour
@@ -1852,8 +1859,28 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		} else {
 			wrapped = wrapToWidthMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
 		}
+		// Per-row body mapping for inline-colour entries (#123): each wrapped row is
+		// a contiguous rune slice of text, so track its rune offset and fold the
+		// head (timestamp + "<speaker>: ") into a leading default-colour span.
+		styled := len(entry.styles) > 0
+		bodyStart := stampRunes + entry.bodyRuneStart
+		off := 0
 		for _, ln := range wrapped {
-			out = append(out, icWrapLine{text: ln, entry: i})
+			row := icWrapLine{text: ln, entry: i}
+			if styled {
+				n := utf8.RuneCountInString(ln)
+				if head := bodyStart - off; head > 0 {
+					row.headRunes = head
+				}
+				if row.headRunes > n {
+					row.headRunes = n
+				}
+				if bodyOff := off - bodyStart; bodyOff > 0 {
+					row.bodyOff = bodyOff
+				}
+				off += n
+			}
+			out = append(out, row)
 		}
 	}
 	if out == nil {

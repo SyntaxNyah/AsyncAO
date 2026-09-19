@@ -618,7 +618,8 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// capLogLine's head marker — computing it twice would let the two drift
 			// and quietly cost the strip its anchor.
 			speaker := icSpeakerName(ev.Message, force, nil)
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force, nil), speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, stamp: a.icStamp()})
+			line, _, bodyRuneStart, styles := icLogEntry(ev.Message, force, "", nil)
+			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]

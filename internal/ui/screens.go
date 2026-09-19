@@ -3808,12 +3808,22 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// accent would otherwise shout louder than the lines that HAVE been said.
 			// The per-speaker name tint is dropped with it for the same reason — a
 			// bright name over ghosted words is the loudest thing on the panel.
-			if ghost.ghosted(ri, row.entry) {
+			ghostedRow := ghost.ghosted(ri, row.entry)
+			if ghostedRow {
 				col = ghostInk(col, ColPanel)
 				lineSpeaker = ""
 			}
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
-			a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
+			// Inline-colour body (#123): a styled entry draws its body in the
+			// authored colours; a ghosted or link-hovered row keeps the single-colour
+			// path (its override colour is a transient UI state, not the message).
+			if styles := a.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
+				bodyLen := utf8.RuneCountInString(row.text) - row.headRunes
+				spans := inlineSpanAt(styles, row.headRunes, row.bodyOff, bodyLen, col)
+				a.drawColoredLogRow(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, spans)
+			} else {
+				a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
+			}
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)

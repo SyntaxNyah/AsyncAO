@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -5094,8 +5095,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				force := a.d.Prefs.ForceCharNamesOn()
 				// The log's name resolves through the SAME char.ini rung the plate
 				// uses (remoteIniShownameFor) — one chain, two surfaces.
-				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
-				a.pushIC(line, ev.Message.TextColor, fr, fc, speaker)
+				line, speaker, bodyRuneStart, styles := icLogEntry(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
+				a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart)
 				// This line has a message in the play queue behind it: the log is written
 				// on ARRIVAL, the courtroom speaks it later, and the ghost-text option
 				// (ghosttext.go) pairs the two by counting. Stamped here, next to the
@@ -5318,9 +5319,27 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 	a.pushIC(line, musicLogColor, false, -1, "") // system line: no friend tint, no name-tint/pair
 }
 
+// icLogEntry builds everything the IC log stores for an incoming message: the
+// display line, the real speaker (for name colours / pairing), the rune offset of
+// the body within the line, and the body's inline-colour runs. The head is
+// resolved ONCE here so the body offset and the two legacy line formatters can
+// never disagree about where the message text starts.
+func icLogEntry(m *protocol.ChatMessage, forceChar bool, nick string, ini courtroom.IniShowname) (line, speaker string, bodyRuneStart int, styles []courtroom.StyleRun) {
+	speaker = icSpeakerName(m, forceChar, ini)
+	body, styles := icBodyStyled(m)
+	if len(styles) == 1 && styles[0].Color == courtroom.ColorDefault && !styles[0].Bold && !styles[0].Italic {
+		styles = nil // a plain message: keep the cheap single-colour log path
+	}
+	head := speaker + ": "
+	if !forceChar && nick != "" {
+		head = nick + " (" + speaker + "): "
+	}
+	return head + body, speaker, utf8.RuneCountInString(head), styles
+}
+
 func icLogLine(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
-	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
-	return icSpeakerName(m, forceChar, ini) + ": " + icMessageBody(m)
+	line, _, _, _ := icLogEntry(m, forceChar, "", ini)
+	return line
 }
 
 // icMessageBody is an IC message's display text for the log: the zero-width sidechannel
@@ -5339,8 +5358,26 @@ func icLogLine(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShownam
 // occasional line drew in a stray family. Only style-CHANGE messages carry a marker,
 // which is why it was only ever an occasional line. Zero-alloc when absent (one
 // ContainsRune), so an ordinary message pays nothing.
+// icMessageBody is an IC message's display text for the log: the zero-width
+// sidechannel dropped, markup stripped (no raw \cN / { }) and known :shortcode:
+// inline emotes (#18) expanded to their emoji — the same expansion the live
+// chatbox does, so the log and the box agree. StripSpriteStyle is called directly
+// here (not via icBodyStyled) because the sidechannel gate pins that seam.
 func icMessageBody(m *protocol.ChatMessage) string {
 	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(courtroom.StripSpriteStyle(m.Message)), inlineEmoteFor)
+}
+
+// icBodyStyled returns an IC message's display body and its inline-colour style
+// runs over that body — the styled twin of icMessageBody. Emoji are expanded first
+// (the transform commutes with markup stripping: emoji colons are not markup runes
+// and vice versa), then the typewriter strips the markup and records the colour
+// runs in one tested pass (the SAME parser the chatbox uses). The clean text is
+// identical to icMessageBody's; styles is a single default run for a plain message.
+func icBodyStyled(m *protocol.ChatMessage) (string, []courtroom.StyleRun) {
+	raw := courtroom.ExpandInlineEmotes(courtroom.StripSpriteStyle(m.Message), inlineEmoteFor)
+	tw := courtroom.NewTypewriter()
+	tw.Start(raw)
+	return tw.Text(), tw.Styles()
 }
 
 // icSpeakerName is the displayed name an IC log line is prefixed with. It is
@@ -5377,11 +5414,8 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 // the SPEAKER field stays the REAL name, so double-click-to-pair (UID lookup) and
 // the per-speaker colour still key off the true identity. Pure, for testing.
 func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string, ini courtroom.IniShowname) (line, speaker string) {
-	speaker = icSpeakerName(m, force, ini)
-	if !force && nick != "" {
-		return nick + " (" + speaker + "): " + icMessageBody(m), speaker
-	}
-	return icLogLine(m, force, ini), speaker
+	line, speaker, _, _ = icLogEntry(m, force, nick, ini)
+	return line, speaker
 }
 
 // installAssetOrigin points this session's URL builder at origin — the ONE
@@ -10753,6 +10787,12 @@ type icEntry struct {
 	// `ref` is, so a system line (music, evidence, a client notice) can never be
 	// mistaken for something a character is about to say.
 	speech bool
+	// styles carries the inline-colour runs over the display BODY (indexing the
+	// body portion of text, after the "<speaker>: " head); nil for a plain
+	// message or a system line. bodyRuneStart is the rune offset of the body
+	// within text, so the renderer can map styles onto the body slice.
+	styles        []courtroom.StyleRun
+	bodyRuneStart int
 }
 
 // icStampLayout formats the IC log's per-line local time (24-hour HH:MM).
@@ -11053,6 +11093,13 @@ func (a *App) CloseTranscript() {
 }
 
 func (a *App) pushIC(line string, color int, friend bool, friendColor int32, speaker string) {
+	a.pushICStyled(line, color, friend, friendColor, speaker, nil, 0)
+}
+
+// pushICStyled is pushIC plus the inline-colour runs and the body's rune offset
+// within the line (issue #123): an IC message's inline colour markup now colours
+// the log, so the entry carries the runs the renderer maps onto the body.
+func (a *App) pushICStyled(line string, color int, friend bool, friendColor int32, speaker string, styles []courtroom.StyleRun, bodyRuneStart int) {
 	// Store-form FIRST, then describe it. Everything else on the entry is a statement
 	// ABOUT the stored text, so it has to be derived from that exact string. The url
 	// below used to be scanned off the original: extractURLs splits on strings.Fields
@@ -11065,7 +11112,7 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp()})
+	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]
