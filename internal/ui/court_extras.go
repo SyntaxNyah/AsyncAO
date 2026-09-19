@@ -1373,8 +1373,18 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 		imgW = 60
 	}
 	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
-	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: browseBtnW, H: fieldH}, "Browse…") {
-		a.openDemoBrowserFor(purposeEvidenceImage)
+	// The picker source follows the panel's "Stream from server" toggle: local
+	// folders by default, the server's evidence/ index when streaming.
+	browseLabel := "Browse…"
+	if a.evidStream {
+		browseLabel = "Server…"
+	}
+	if c.Button(sdl.Rect{X: ix + 60 + imgW + 6, Y: iy, W: browseBtnW, H: fieldH}, browseLabel) {
+		if a.evidStream {
+			a.openServerEvidencePicker()
+		} else {
+			a.openDemoBrowserFor(purposeEvidenceImage)
+		}
 	}
 	iy += fieldH + 8
 	if c.Button(sdl.Rect{X: ix, Y: iy, W: 90, H: btnH}, "Save") {
