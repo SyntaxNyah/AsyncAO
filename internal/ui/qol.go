@@ -78,6 +78,7 @@ const (
 	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
+	hotkeySearchLog  = "search_log"  // focus the log find field (defaults to Ctrl+F3; Ctrl+F is already the UI-chrome menu)
 	// Hide/show the two chrome bars from the keyboard. They were reachable only
 	// through the UI-chrome panel, which is itself a piece of chrome — so anything
 	// that covered it (or a layout that put it awkwardly) left no way back except
@@ -151,6 +152,7 @@ var hotkeyDefs = []struct {
 	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
+	{hotkeySearchLog, "Focus the log search (find)", "f3"},                 // Ctrl+F3 — the free function-key band; Ctrl+F is the UI-chrome menu
 	// Chrome toggles. The FUNCTION-KEY band for the same reason Edit Layout uses
 	// it (see the sweep above): every Ctrl+letter, Ctrl+digit and Ctrl+symbol is
 	// already claimed by a row here or by the clipboard / editor-undo chords, and
@@ -545,6 +547,8 @@ func (a *App) handleHotkeys() {
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):
 		a.toggleFavEmoteBox()
+	case a.hotkeyFor(hotkeySearchLog):
+		a.focusLogSearch()
 	}
 }
 

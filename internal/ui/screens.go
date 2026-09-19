@@ -3785,6 +3785,9 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 			// Selection highlight sits under the text (and the divider).
 			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
+			// Find highlight (Ctrl+F): a band behind each matched word, under the
+			// text, so a surviving (filtered) row shows WHERE the query matched.
+			a.drawLogSearchHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
 			// Unread divider: a thin accent rule at the top of the first unread
 			// line, so "jump to last read" lands on an obvious boundary.
 			if ri == firstUnreadRow {
