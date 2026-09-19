@@ -120,8 +120,8 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 // half-fixed state this change exists to make impossible.
 func TestTheLiveLogPassesTheShownameRung(t *testing.T) {
 	body := funcBodySource(t, "app.go", "handleSessionEvents")
-	if !containsCall(body, "icLogLineDisplay") {
-		t.Fatal("handleSessionEvents no longer builds its log line through icLogLineDisplay")
+	if !containsCall(body, "icLogEntry") {
+		t.Fatal("handleSessionEvents no longer builds its log line through icLogEntry")
 	}
 	// readsIdent, not containsCall: the rung is passed as a METHOD VALUE, which is
 	// an argument rather than a call, so a call census cannot see it at all.

@@ -209,9 +209,9 @@ func TestEveryCharINIReadIsLayered(t *testing.T) {
 		// iniswap.txt and the backgrounds/evidence autoindexes are server-curated
 		// listings; a pack has no equivalent, so answering would replace a real
 		// list with none.
-		"ensureIniList":      "iniswap.txt + the backgrounds listing are server-curated",
-		"ensureBgList":       "an autoindex listing has no pack equivalent",
-		"fetchEvidenceIndex": "the evidence/ autoindex has no pack equivalent",
+		"ensureIniList":            "iniswap.txt + the backgrounds listing are server-curated",
+		"ensureBgList":             "an autoindex listing has no pack equivalent",
+		"fetchServerEvidenceIndex": "the evidence/ autoindex has no pack equivalent",
 		// The content report and the exporters deliberately distinguish the two
 		// sources themselves (ResolveRawLayered reports which arm answered), so
 		// their raw reads mean the server's copy specifically.
