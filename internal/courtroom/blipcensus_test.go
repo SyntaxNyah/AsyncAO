@@ -41,6 +41,7 @@ var blipTypeSites = []blipSite{
 	{"internal/assets/types.go", "the AssetType enum + its config-name table (the declaration itself)"},
 	{"internal/courtroom/blipurl.go", "the ONE mint: BlipRef tags the chain it builds"},
 	{"internal/ui/contentjob.go", "the content report's category mapping for an already-minted ref"},
+	{"internal/assets/manifest.go", "manifest seeding maps blips_extensions onto the Blip type for format learning (tags the type, mints no URL)"},
 	// Tests are listed too: a test is where a fourth production site would first
 	// appear, disguised as a fixture.
 	{"internal/assets/manager_test.go", "pins that the manager tags a blip fetch with the blip type"},
