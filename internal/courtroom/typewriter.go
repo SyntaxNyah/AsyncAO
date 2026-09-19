@@ -308,6 +308,15 @@ type EffectMark struct {
 	Kind EffectKind
 }
 
+// MidEmoteMark is one mid-text <e:...>/<s:...> marker to fire when the reveal
+// reaches At (a visible-rune index, mirroring EffectMark). The courtroom drains
+// them via NextMidEmote and plays the emote / sound; the typewriter never touches
+// SDL.
+type MidEmoteMark struct {
+	At   int
+	Mark MidMark
+}
+
 // effectMarksMax bounds how many inline \s/\f marks ONE MESSAGE can record (hard
 // rule §17.4 — every queue has a named cap). Two runes per code against AO's
 // ~256-character IC line means a hostile peer could otherwise hand us ~128 marks
@@ -328,6 +337,11 @@ type EffectMark struct {
 // hence at most 2×effectMarksMax marks, and the prefix's marks are dropped by
 // StartAppend's skip loop anyway (they fired on the original line).
 const effectMarksMax = 32
+
+// midMarksMax bounds how many mid-text markers ONE MESSAGE can record (same hard
+// rule as effectMarksMax): a hostile peer must not be able to grow an unbounded
+// queue with a wall of <e:...> markers. A hand-authored line uses a handful.
+const midMarksMax = 16
 
 // parsePauseDuration reads the optional digit run of a \p code beginning at index
 // `at` (the char after 'p'). Bare \p is a 1000 ms pause; \p<n> is n ms clamped to
@@ -393,11 +407,13 @@ type Typewriter struct {
 	intervals []time.Duration // per-rune delay (speed codes pre-applied)
 	styles    []StyleRun      // inline-color runs over runes (partition, in order)
 	effects   []EffectMark    // inline \s/\f screen-effect marks, in reveal order
+	midMarks  []MidEmoteMark  // inline <e:...>/<s:...> markers, in reveal order
 
 	visible      int
 	accumulator  time.Duration
 	blipCounter  int
 	effectCursor int // next unfired effect (advanced by NextEffect; dropped by SkipToEnd)
+	midCursor    int // next unfired mid-text marker (advanced by NextMidEmote; dropped by SkipToEnd)
 	// effectMarkBase is where the current parse phase's effectMarksMax budget starts
 	// counting from — 0 for an ordinary Start, and the mark count AT THE JOIN for the
 	// additive StartAppend, so the appended tail gets its own full allowance instead of
@@ -439,11 +455,13 @@ func (t *Typewriter) startJoined(prefix, message string) {
 	t.intervals = t.intervals[:0]
 	t.styles = t.styles[:0]
 	t.effects = t.effects[:0]
+	t.midMarks = t.midMarks[:0]
 	t.visible = 0
 	t.accumulator = 0
 	t.blipCounter = 0
 	t.effectCursor = 0
 	t.effectMarkBase = 0
+	t.midCursor = 0
 
 	speed := speedStepDefault
 	// base is the AsyncAO-native `\c` colour (ColorDefault until a `\cN` code).
@@ -610,6 +628,18 @@ func (t *Typewriter) startJoined(prefix, message string) {
 			}
 			continue
 		}
+		if r == '<' {
+			if m, n, ok := parseMidEmoteRunes(rs, i); ok {
+				t.addMidMark(m)
+				i += n - 1
+				continue
+			}
+			if m, n, ok := parseMidSFXRunes(rs, i); ok {
+				t.addMidMark(m)
+				i += n - 1
+				continue
+			}
+		}
 		emit(r)
 	}
 	flush()
@@ -624,6 +654,15 @@ func (t *Typewriter) addEffect(k EffectKind) {
 		return
 	}
 	t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: k})
+}
+
+// addMidMark records one mid-text <e:...>/<s:...> marker at the current reveal
+// position, capped at midMarksMax per message (midtext.go).
+func (t *Typewriter) addMidMark(m MidMark) {
+	if len(t.midMarks) >= midMarksMax {
+		return
+	}
+	t.midMarks = append(t.midMarks, MidEmoteMark{At: len(t.runes), Mark: m})
 }
 
 // StartAppend loads message with prefix ALREADY revealed — the 2.8 additive case
@@ -653,6 +692,11 @@ func (t *Typewriter) StartAppend(prefix, message string) {
 	// reveal reaches it as the tail starts — so it must NOT be skipped.
 	for t.effectCursor < len(t.effects) && t.effects[t.effectCursor].At < pre {
 		t.effectCursor++
+	}
+	// Skip mid-text markers strictly INSIDE the prefix too (they fired on the
+	// original line); a marker AT the boundary belongs to the appended tail.
+	for t.midCursor < len(t.midMarks) && t.midMarks[t.midCursor].At < pre {
+		t.midCursor++
 	}
 }
 
@@ -713,6 +757,16 @@ func StripChatMarkup(message string) string {
 			}
 			continue
 		}
+		if r == '<' {
+			if _, n, ok := parseMidEmoteRunes(rs, i); ok {
+				i += n - 1
+				continue
+			}
+			if _, n, ok := parseMidSFXRunes(rs, i); ok {
+				i += n - 1
+				continue
+			}
+		}
 		out = append(out, r)
 	}
 	return string(out)
@@ -737,6 +791,7 @@ func (t *Typewriter) Done() bool { return t.visible >= len(t.runes) }
 func (t *Typewriter) SkipToEnd() {
 	t.visible = len(t.runes)
 	t.effectCursor = len(t.effects)
+	t.midCursor = len(t.midMarks)
 }
 
 // EffectsPending reports whether this message still has inline \s/\f marks that
@@ -762,6 +817,23 @@ func (t *Typewriter) NextEffect() (EffectMark, bool) {
 		return m, true
 	}
 	return EffectMark{}, false
+}
+
+// MidEmotesPending reports whether this message still has mid-text markers that
+// NextMidEmote has not handed out — the same distinction EffectsPending makes for
+// inline effects (a marker at position 0 in a glyph-less message must still fire).
+func (t *Typewriter) MidEmotesPending() bool { return t.midCursor < len(t.midMarks) }
+
+// NextMidEmote returns the next mid-text marker whose position has been revealed
+// since the last call, advancing an internal cursor; ok=false when none are
+// pending. 0-alloc (value return, no slice).
+func (t *Typewriter) NextMidEmote() (MidEmoteMark, bool) {
+	if t.midCursor < len(t.midMarks) && t.midMarks[t.midCursor].At <= t.visible {
+		m := t.midMarks[t.midCursor]
+		t.midCursor++
+		return m, true
+	}
+	return MidEmoteMark{}, false
 }
 
 // Update advances the reveal by dt. It returns how many new runes became
