@@ -4,7 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## Unreleased
+## v1.98.5 - 2026-09-20
+
+- **SFX and shout audio no longer go silently missing.** The "all sound effects
+  are silent" report traced to the SFX mute hotkey: it persisted across every
+  restart, so one accidental press muted SFX forever while every slider still
+  read 100%. The SFX mute is now **session-only** (it resets on the next launch)
+  and its default hotkey moved from **Ctrl+K** to **Ctrl+{** so it can't be
+  brushed by accident.
+- **Servers can declare their sound-effect and blip formats.** `extensions.json`
+  now reads `sfx_extensions` and `blips_extensions`, so a server ships its SFX/blip
+  probe order (e.g. `.opus` → `.ogg` → `.mp3` → `.wav`) instead of relying on the
+  client's default.
+
+Thanks to **Crystalwarrior** for the playtesting and bug reports, to **cs** for the
+playertab report, and to **edited** for the caret and the French-keyboard
+emote-swap keybind reports.
 
 - **Evidence images: local by default, one click to stream.** The Evidence panel
   now reads evidence images (list/grid thumbnails, the presented-evidence pop-up)

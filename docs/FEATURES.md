@@ -35,6 +35,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Manual per-type probing in Settings stays authoritative when autodetect
   is off and covers manifest-less servers. `.webp.static`-style pseudo
   suffixes are normalized away (animation is a payload property here).
+  A server can also declare `sfx_extensions` / `blips_extensions` to seed
+  its sound-effect and blip formats; audio classes the manifest doesn't
+  cover fall back to `.opus` → `.ogg` → `.mp3` → `.wav`.
 - **Desks follow the manifest by default** (Settings → Formats): desk overlays
   auto-detect from the server's `extensions.json` like every other class
   (desks share the manifest's background class). Tick "Always use WebP for
@@ -2105,9 +2108,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   A **Hotkeys** button now sits on the main courtroom screen in both layouts — on
   the classic utility bar (after the Pos selector) and beside **★ Extras** at the
   bottom-left in themed mode — so the list is one click away without recalling F1.
-- **Mute SFX hotkey** (Ctrl+K by default, rebindable): a session-only
+- **Mute SFX hotkey** (Ctrl+{ by default, rebindable): a session-only
   "shush" that silences sound effects without touching your saved volumes
-  or the music/blip channels.
+  or the music/blip channels. It resets on the next launch, so an accidental
+  press can never leave SFX silently muted across a restart.
 - **Reduce motion** (Settings → General, accessibility): suppresses the
   screen shake and realization flash (the effect *sounds* still play);
   also governs the text effects added later. It now strips **every**
