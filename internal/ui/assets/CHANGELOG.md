@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## Unreleased
+
+- **Evidence images: local by default, one click to stream.** The Evidence panel
+  now reads evidence images (list/grid thumbnails, the presented-evidence pop-up)
+  from your local folders by default, with a **"Stream from server"** toggle in
+  the panel to switch to the server's `evidence/` images on demand — and back.
+  It mirrors the demo content report's "Resolve from" source switch, and falls
+  back to streaming when no local mounts are configured.
+
 ## v1.98.1 - 2026-09-18
 
 Playtest fixes for v1.98.0 — the zoom emote, per-sprite filtering, scaled text, and

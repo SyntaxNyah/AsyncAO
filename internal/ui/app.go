@@ -2544,6 +2544,13 @@ type sessionState struct {
 	// default 40). In-memory like evidGridView — the icon-size slider in the
 	// evidence window drives it and both layouts rescale together.
 	evidIconSize int32
+	// evidStream toggles the evidence panel's image source: OFF (default) reads
+	// evidence images from the user's local mounts (local://); ON streams them
+	// from the server. Session-scoped. evidLocalOrigin caches the local:// origin
+	// (rebuilt on mount change); "" when there are no local mounts, so the toggle
+	// falls back to streaming.
+	evidStream      bool
+	evidLocalOrigin string
 	// evidDiscardConfirm is the "Stop editing?" modal: swapping the selection
 	// (or Add new) while the editor is open first asks. evidDiscardTarget is
 	// the index the swap would land on (-1 = Add new).
@@ -5476,6 +5483,15 @@ func (a *App) rebuildAssetOrigin() {
 		} else {
 			a.d.Manager.SetLocalOverlay(nil)
 		}
+	}
+	// Cache the local:// origin the evidence panel's "stream from server" toggle
+	// reads local images from — the same mounts the overlay above serves ("" when
+	// none, so the toggle falls back to streaming). Rebuilt on every mounts/pref
+	// change because this is the one funnel they all route through.
+	if _, mounts := a.localAssets(); len(mounts) > 0 {
+		a.evidLocalOrigin = assets.LocalOriginFor(mounts)
+	} else {
+		a.evidLocalOrigin = ""
 	}
 	if enabled, mounts := a.localAssets(); enabled && len(mounts) > 0 {
 		// The ORIGIN helper, not a fetcher: this branch only ever read BaseURL off

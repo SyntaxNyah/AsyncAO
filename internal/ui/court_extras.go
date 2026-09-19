@@ -462,7 +462,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	if a.evShowImg != "" {
 		if time.Since(a.evShowAt) >= evidenceShowDuration {
 			a.evShowImg = ""
-		} else if page, ok := a.d.Store.Get(a.urls.Evidence(a.evShowImg)); ok && len(page.Frames) > 0 {
+		} else if page, ok := a.d.Store.Get(a.evidURL(a.evShowImg)); ok && len(page.Frames) > 0 {
 			w := vp.W * evidPopupWidthPct / 100
 			h := w * page.H / page.W
 			dst := sdl.Rect{X: vp.X + vp.W - w - 8, Y: vp.Y + vp.H/4, W: w, H: h}
@@ -909,7 +909,18 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	a.pushIC(name+" presented evidence: "+item.Name, 0, fr, fc, "") // system line — no speaker tint
 	a.evShowImg = img
 	a.evShowAt = time.Now()
-	a.d.Manager.PrefetchExact(a.urls.Evidence(img), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
+	a.d.Manager.PrefetchExact(a.evidURL(img), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
+}
+
+// evidURL resolves an evidence image name to the URL its pixels come from, honouring
+// the evidence panel's "stream from server" toggle: OFF (default) reads the user's
+// local mounts (local://), ON streams from the server. Falls back to streaming when
+// there are no local mounts. Same cost as URLs.Evidence — no extra allocation.
+func (a *App) evidURL(name string) string {
+	if !a.evidStream && a.evidLocalOrigin != "" {
+		return courtroom.NewURLBuilder(a.evidLocalOrigin).Evidence(name)
+	}
+	return a.urls.Evidence(name)
 }
 
 // demandEvidence paces thumbnail fetches for the evidence grid: one exact
@@ -1087,6 +1098,25 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c.Label(r.X+pad+196, contentTop+4, fmt.Sprintf("%d px", a.evidIconSize), ColTextDim)
 	contentTop += evidIconRowH
 
+	// Evidence image source: local folders by default, one click to stream from
+	// the server instead. Active (streaming) is accent-filled; the tooltip explains
+	// the trade. evidAsk clears so thumbnails re-demand against the new source.
+	streamB := sdl.Rect{X: r.X + pad, Y: contentTop + 1, W: 176, H: btnH}
+	if a.evidStream {
+		if c.ButtonCol(streamB, "Streaming from server", ColAccent, ColAccent, ColAccent, ColBackground) {
+			a.evidStream = false
+			a.evidAsk = nil
+		}
+		c.Tooltip(streamB, "Evidence images are streaming from the server. Click to switch back to your local folders.")
+	} else {
+		if c.Button(streamB, "Stream from server") {
+			a.evidStream = true
+			a.evidAsk = nil
+		}
+		c.Tooltip(streamB, "Evidence images come from your local folders by default. Click to stream them from the server instead.")
+	}
+	contentTop += btnH + 4
+
 	// List (left); when the inspector is detached the list takes the whole panel.
 	var listRect, inspRect sdl.Rect
 	if a.evidInspectorDetached {
@@ -1136,7 +1166,7 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 			c.Fill(row, ColPanelHi)
 		}
 		iconR := sdl.Rect{X: row.X + 4, Y: row.Y + (rowH-icon)/2, W: icon, H: icon}
-		url := a.urls.Evidence(item.Image)
+		url := a.evidURL(item.Image)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
 		} else {
@@ -1196,7 +1226,7 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 		if i == a.evidIdx {
 			c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
 		}
-		url := a.urls.Evidence(item.Image)
+		url := a.evidURL(item.Image)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
 		} else {
