@@ -9,7 +9,9 @@ tagged "installed" below.
 - **Evidence images: local by default, one click to stream.** The Evidence panel
   now reads evidence images (list/grid thumbnails, the presented-evidence pop-up)
   from your local folders by default, with a **"Stream from server"** toggle in
-  the panel to switch to the server's `evidence/` images on demand — and back.
+  the panel — right under the icon-size slider — to switch to the server's
+  `evidence/` images on demand — and back. (In local mode you won't see the
+  server's images until you flip that toggle on.)
   The editor's **Browse…** button follows the same toggle (your folders vs. the
   server's `evidence/` index). It mirrors the demo content report's "Resolve from"
   source switch, and falls back to streaming when no local mounts are configured.

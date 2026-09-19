@@ -94,6 +94,7 @@ func (a *App) pollServerEvidencePicker() {
 		select {
 		case names := <-a.evidServerRes:
 			a.mergeServerEvidenceNames(names)
+			a.evidServerBusy = false
 		default:
 			return
 		}
@@ -122,6 +123,20 @@ func (a *App) mergeServerEvidenceNames(names []string) {
 	}
 }
 
+// serverEvidenceEmptyLabel picks the empty-grid message: "Loading…" while the
+// index fetch is still in flight, a no-match message when a filter is set, and
+// the plain empty message otherwise. Pure so the three states are unit-testable.
+func serverEvidenceEmptyLabel(busy, hasFilter bool) string {
+	switch {
+	case busy:
+		return "Loading server evidence…"
+	case hasFilter:
+		return "No server evidence images match."
+	default:
+		return "No server evidence images found."
+	}
+}
+
 // drawServerEvidencePicker draws the "Choose evidence image" modal over the server
 // autoindex: a search field above a scrollable grid of thumbnails. Clicking a cell
 // fills the editor's Image file and closes.
@@ -142,7 +157,6 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 	y += fieldH + 10
 
 	grid := sdl.Rect{X: m.X + pad, Y: y, W: mw - 2*pad, H: m.Y + mh - pad - y}
-	clipPrev, clipHad := c.pushClip(grid)
 	cellW := grid.W - scrollBarW
 	cols := cellW / (evidServerCell + evidServerCellGap)
 	if cols < 1 {
@@ -156,19 +170,24 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 		}
 	}
 	if len(names) == 0 {
-		c.LabelClipped(grid.X, grid.Y+4, grid.W, "No server evidence images found.", ColTextDim)
-		c.popClip(clipPrev, clipHad)
+		c.LabelClipped(grid.X, grid.Y+4, grid.W, serverEvidenceEmptyLabel(a.evidServerBusy, a.evidServerSearch != ""), ColTextDim)
 		return
 	}
 	rows := (int32(len(names)) + cols - 1) / cols
-	contentH := rows*(evidServerCell+evidServerCellGap+evidServerNameBand) - evidServerCellGap
-	a.evidServerScroll -= c.WheelIn(grid) * scrollStepPx
+	rowPitch := evidServerCell + evidServerCellGap + evidServerNameBand
+	contentH := rows*rowPitch - evidServerCellGap
+	a.evidServerScroll -= c.WheelIn(grid) * rowPitch
 	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
 	a.evidServerScroll = c.VScrollbar("evidserverpicker", track, a.evidServerScroll, contentH, grid.H)
+	// Clip AFTER the wheel/scrollbar resolve, like the other icon grids
+	// (charGridScroll, drawEvidenceGrid, drawSfxBrowser): hovering() honours clipOn,
+	// and the scrollbar's grab slop extends past the grid's right edge, so pushing
+	// the clip first leaves the wheel band and the thumb un-hoverable.
+	clipPrev, clipHad := c.pushClip(grid)
 	for i, name := range names {
 		col, row := int32(i)%cols, int32(i)/cols
 		cx := grid.X + col*(evidServerCell+evidServerCellGap)
-		cy := grid.Y + row*(evidServerCell+evidServerCellGap+evidServerNameBand) - a.evidServerScroll
+		cy := grid.Y + row*rowPitch - a.evidServerScroll
 		if cy+evidServerCell+evidServerNameBand <= grid.Y || cy >= grid.Y+grid.H {
 			continue
 		}
@@ -178,7 +197,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
-			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (server evidence picker thumbnail)
+			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (server evidence picker thumbnail)
 		}
 		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+evidServerCell+2, evidServerCell, name, ColTextDim)

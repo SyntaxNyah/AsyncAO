@@ -1747,8 +1747,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   restart.
 - **Hide the desk** (Settings → General, **default OFF**): suppress the foreground
   courtroom desk so the **full character** shows (no table in front). Toggle it
-  live with the **"Hide / show the desk"** key (Controls tab, default **Ctrl+V**)
-  or the Settings checkbox. Persisted. Suppressed in the same per-frame
+  with the Settings checkbox. Persisted. Suppressed in the same per-frame
   sprite-override pass (one pref read, then the existing short-circuit) — the
   render gate is untouched.
 - **★ favourite a character from Character Select**: a star on each character

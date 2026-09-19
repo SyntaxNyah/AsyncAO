@@ -2359,7 +2359,7 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			case sdl.K_v:
 				// Paste only into a focused field; with nothing focused let Ctrl+V
 				// fall through to the configurable hotkeys (else a hotkey bound to
-				// "v" — the Hide-desk default — is dead, clipboard ate it).
+				// "v" is dead — clipboard ate it).
 				if c.focusID != "" {
 					if text, err := sdl.GetClipboardText(); err == nil && text != "" {
 						c.pasted += flattenClipboard(text)

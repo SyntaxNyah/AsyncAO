@@ -64,7 +64,6 @@ const (
 	hotkeyShownameCycle = "showname_cycle" // cycle to the next saved showname preset
 	hotkeyDND           = "dnd"            // toggle Do Not Disturb (mute callword + friend pings) (M15)
 	hotkeyReshowSprites = "reshow_sprites" // un-hide all sprites hidden this session (right-click-to-hide)
-	hotkeyHideDesk      = "hide_desk"      // toggle hiding the courtroom desk
 	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
 	hotkeyFavEmotes     = "fav_emote_box"  // toggle the floating favourite-emotes box
 	hotkeyClipReplay    = "clip_replay"    // save the last window of conversation (instant replay)
@@ -78,7 +77,7 @@ const (
 	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
-	hotkeySearchLog  = "search_log"  // focus the log find field (defaults to Ctrl+F3; Ctrl+F is already the UI-chrome menu)
+	hotkeySearchLog  = "search_log"  // focus the log find field (Ctrl+F, the standard find chord)
 	// Hide/show the two chrome bars from the keyboard. They were reachable only
 	// through the UI-chrome panel, which is itself a piece of chrome — so anything
 	// that covered it (or a layout that put it awkwardly) left no way back except
@@ -122,7 +121,7 @@ var hotkeyDefs = []struct {
 	{hotkeyEvidence, "Menu: Evidence", "9"},
 	{hotkeyPairMenu, "Menu: Pairing", "0"},
 	{hotkeyModcall, "Menu: Call mod", "o"},
-	{hotkeyUIChrome, "Menu: UI chrome", "f"},
+	{hotkeyUIChrome, "Menu: UI chrome", "f4"},
 	// Edit Layout (FIX 2b): defaults to Ctrl+F2. Collision sweep — every Ctrl+letter
 	// (a–z), Ctrl+digit (0–9) and Ctrl+symbol (- = , . [ ] ; ' \ ` /) default is
 	// already taken by a row above; the clipboard/select-all chords (Ctrl+C/V/X/A,
@@ -140,7 +139,6 @@ var hotkeyDefs = []struct {
 	{hotkeyShownameCycle, "Cycle showname preset", "b"},                    // Ctrl+B (rebindable)
 	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},                        // Ctrl+D — session-only, rebindable
 	{hotkeyReshowSprites, "Reshow hidden sprites", "y"},                    // un-hide all right-click-hidden sprites
-	{hotkeyHideDesk, "Hide / show the desk", "v"},                          // toggle desk rendering
 	{hotkeyQuickConnect, "Connect to last server", "q"},                    // dial the saved server (lobby)
 	{hotkeyFavEmotes, "Favourite-emotes box", "a"},                         // toggle the floating box of starred emotes
 	{hotkeyClipReplay, "Clip the last conversation (Instant Replay)", "."}, // Ctrl+. — every letter is taken; pairs with settings (Ctrl+,)
@@ -152,14 +150,14 @@ var hotkeyDefs = []struct {
 	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
-	{hotkeySearchLog, "Focus the log search (find)", "f3"},                 // Ctrl+F3 — the free function-key band; Ctrl+F is the UI-chrome menu
+	{hotkeySearchLog, "Focus the log search (find)", "f"},                  // Ctrl+F: the standard find chord
 	// Chrome toggles. The FUNCTION-KEY band for the same reason Edit Layout uses
 	// it (see the sweep above): every Ctrl+letter, Ctrl+digit and Ctrl+symbol is
-	// already claimed by a row here or by the clipboard / editor-undo chords, and
-	// the only Ctrl+Fn taken is F2. Both are rebindable like every other row.
-	// f5/f6 rather than f3/f4: the cheat sheet already lists PLAIN F1, F3 and F8 as
-	// fixed keys, and a Ctrl+F3 sitting next to a plain F3 in the same window reads
-	// as a mistake even though the two are different namespaces.
+	// already claimed by a row here or by the clipboard / editor-undo chords. UI
+	// chrome is Ctrl+F4 (freeing Ctrl+F for log search); the two bar toggles use
+	// f5/f6 rather than f3/f4 because the cheat sheet already lists PLAIN F1, F3
+	// and F8 as fixed keys, and a Ctrl+F3 next to a plain F3 reads as a mistake
+	// even though they are different namespaces. All rebindable like every row.
 	{hotkeyToggleMenuBar, "Show / hide the menu bar", "f5"},
 	{hotkeyToggleToolbox, "Show / hide the toolbox", "f6"},
 }
@@ -532,8 +530,6 @@ func (a *App) handleHotkeys() {
 		a.warnAt = time.Now()
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
-	case a.hotkeyFor(hotkeyHideDesk):
-		a.toggleHideDesk()
 	case a.hotkeyFor(hotkeySpotlight):
 		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
 	case a.hotkeyFor(hotkeyIdleBreath):
@@ -564,18 +560,6 @@ func (a *App) toggleFavEmoteBox() {
 		a.warnLine = "Favourite-emotes box shown — ★ emotes in the grid to fill it"
 	} else {
 		a.warnLine = "Favourite-emotes box hidden"
-	}
-	a.warnAt = time.Now()
-}
-
-// toggleHideDesk flips the hide-desk option (Settings + the Hide/show desk key).
-func (a *App) toggleHideDesk() {
-	on := !a.d.Prefs.HideDeskOn()
-	a.d.Prefs.SetHideDesk(on)
-	if on {
-		a.warnLine = "Desk hidden"
-	} else {
-		a.warnLine = "Desk showing"
 	}
 	a.warnAt = time.Now()
 }

@@ -709,8 +709,10 @@ func (a *Audio) PlayFile(path string) {
 	a.playChunk(chunk, pendingAlert) // alert channel: a custom callword/friend sound is never cut by blips
 }
 
-// request plays the chunk for base now if cached, else marks it pending
-// (the courtroom already prefetched it at HIGH priority).
+// request plays the chunk for base now if cached, else marks it pending and —
+// for SFX/shout, which nothing else prefetches — fetches the bytes itself.
+// Blips are prefetched by the courtroom (resolveBlip); music self-fetches in
+// PlayMusic.
 func (a *Audio) request(base string, kind pendingKind) {
 	if base == "" || !a.enabled {
 		return
@@ -720,6 +722,13 @@ func (a *Audio) request(base string, kind pendingKind) {
 		return
 	}
 	a.pending[base] = pendingPlay{kind: kind, deadline: time.Now().Add(pendingPlayTTL)}
+	// Music self-fetches in PlayMusic and blips are prefetched by the courtroom
+	// (resolveBlip); the emote SFX, the dropdown audition and the shout cry are
+	// NOT prefetched anywhere, so fetch them here — without this the pending entry
+	// above just expires after pendingPlayTTL and the sound never plays.
+	if (kind == pendingSFX || kind == pendingShout) && a.mgr != nil {
+		a.mgr.Prefetch(base, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX
+	}
 }
 
 func (a *Audio) expirePending() {

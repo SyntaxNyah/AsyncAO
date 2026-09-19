@@ -1513,7 +1513,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	// Hide the desk (the foreground table the character stands behind).
 	hideDesk := a.d.Prefs.HideDeskOn()
-	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows. Toggle live with the Hide/show-desk key (Controls tab).", hideDesk); next != hideDesk {
+	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows.", hideDesk); next != hideDesk {
 		a.d.Prefs.SetHideDesk(next)
 	}
 	y += 30

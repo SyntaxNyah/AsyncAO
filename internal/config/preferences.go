@@ -1890,9 +1890,9 @@ type prefsJSON struct {
 	BlipSpeedDefaultMigrated     *bool    `json:"blipSpeedDefaultMigrated"`     // absent = the 18 ms → 40 ms message-crawl ("blip speed") move hasn't run for this file yet; a POINTER for the same reason as its ThemeFit sibling — textCrawlMs is a plain int, so "never written" and "deliberately 18" are the same bytes
 	DeskManifestDefaultMigrated  *bool    `json:"deskManifestDefaultMigrated"`  // absent = the desks OFF→ON (follow-the-manifest) flip hasn't run for this file yet
 	DetailedLogDefaultMigrated   *bool    `json:"detailedLogDefaultMigrated"`   // absent = the transcript OFF→ON flip hasn't run for this file yet
-	StickySounds                 *bool    `json:"stickySounds"`                 // absent = default ON (AO2 stickysounds)
-	StickyEffects                *bool    `json:"stickyEffects"`                // absent = default ON (AO2 stickyeffects)
-	StickyPreanims               *bool    `json:"stickyPreanims"`               // absent = default ON (AO2 stickypres)
+	StickySounds                 *bool    `json:"stickySounds"`                 // absent = default OFF (AsyncAO ships OFF; AO2 ships ON)
+	StickyEffects                *bool    `json:"stickyEffects"`                // absent = default OFF (AsyncAO ships OFF; AO2 ships ON)
+	StickyPreanims               *bool    `json:"stickyPreanims"`               // absent = default OFF (AsyncAO ships OFF; AO2 ships ON)
 	SFXOnIdle                    *bool    `json:"sfxOnIdle"`                    // absent = default OFF (AO2 sfx_on_idle)
 	UnfocusedFullRate            *bool    `json:"unfocusedFullRate"`            // absent = default OFF
 	GhostCrawlText               *bool    `json:"ghostCrawlText"`               // absent = default ON

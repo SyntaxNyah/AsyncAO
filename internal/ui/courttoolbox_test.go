@@ -122,7 +122,16 @@ func TestUICfgRetired(t *testing.T) {
 	a.sess = &courtroom.Session{}        // handleHotkeys early-returns without a session
 	a.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
 	a.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
-	a.ctx.hotkey = sdl.K_f               // default hotkeyUIChrome bind is "f"
+	// Bind the action to whatever name SDL gives Ctrl+F4's keycode (headless
+	// GetKeyName can differ from the "f4" default), so the bind and the dispatch
+	// agree. This proves the wiring, not a key-name quirk. Skip only if key names
+	// aren't resolvable at all.
+	key := strings.ToLower(sdl.GetKeyName(sdl.K_F4))
+	if key == "" {
+		t.Skip("SDL key names unavailable headless")
+	}
+	a.d.Prefs.SetHotkey(hotkeyUIChrome, key)
+	a.ctx.hotkey = sdl.K_F4
 
 	a.handleHotkeys()
 

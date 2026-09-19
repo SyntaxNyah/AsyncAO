@@ -10716,12 +10716,12 @@ func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.room) }
 
 // applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
 //
-// Parameterised because these are USER-level choices — the Hide-desk toggle and
-// keybind, the per-character Missingno hides, the per-character offsets — and a
+// Parameterised because these are USER-level choices — the Hide-desk toggle, the
+// per-character Missingno hides, the per-character offsets — and a
 // user who hides the desk means everywhere, not "in whichever room happens to be
 // a.room". The pinned/split pane, the replay room and the scene-maker preview all
 // drive their own Update and were silently exempt, so the desk stayed visible in
-// the pinned pane with the toggle on and the keybind pressed.
+// the pinned pane with the toggle on.
 func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 	if room == nil {
 		return
@@ -10732,7 +10732,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 	}
 	sc := &room.Scene
 	if hideDesk {
-		sc.ShowDesk = false // hide-desk option (Settings toggle + keybind)
+		sc.ShowDesk = false // hide-desk option (Settings toggle)
 	}
 	for _, layer := range [...]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair} {
 		if layer.Name == "" {

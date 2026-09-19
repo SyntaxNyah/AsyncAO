@@ -1776,7 +1776,7 @@ func (c *Courtroom) enterAfterShout() {
 }
 
 // preanimSFXPlays reports whether this message's emote SFX may play at all — the
-// gate AO2 puts on the whole sfx_delay_timer, not on the sound itself.
+// gate on the whole sfx_delay_timer, not on the sound itself.
 //
 // CANON. play_sfx (courtroom.cpp:4590-4607) is wired to exactly one trigger,
 // sfx_delay_timer (:432), and that timer is started in exactly one place:
@@ -1785,20 +1785,31 @@ func (c *Courtroom) enterAfterShout() {
 //	PREANIM / PREANIM_ZOOM              → play_preanim(false)   (:2892-2896)
 //	IDLE / ZOOM *with* immediate ticked → play_preanim(true)    (:2897-2910)
 //
-// so a plain IDLE/ZOOM message NEVER plays its SFX_NAME in AO2, whatever the field
-// carries. That is the receive half of the field report: AsyncAO armed the delay for
-// every message, so a "SFX: auto" line sent with Pre unchecked still fired the emote's
-// char.ini sound.
+// so a plain IDLE/ZOOM message with an AUTO SFX never plays its SFX_NAME in AO2,
+// whatever the field carries. That is the receive half of the field report: AsyncAO
+// armed the delay for every message, so a "SFX: auto" line sent with Pre unchecked
+// still fired the emote's char.ini sound.
 //
-// Note where the start sits: :4054 is BEFORE the `file_exists(anim_to_find)` check at
-// :4056, so a preanim whose ART is missing still plays the sound. The gate is the emote
-// MOD, never whether the sprite resolved — which is why this deliberately does not reuse
-// enterAfterShout's `playPre` (that one also consults hasPreanim / the missing-sprite
-// cache, both of which are about what to DRAW).
+// A hand-PICKED sound is different: outgoingSFXName ships it whenever the dropdown
+// row is > 0, REGARDLESS of Pre (courtroom.cpp:2102-2104), so an IDLE/ZOOM line
+// carrying a real name is a sender that explicitly asked for a sound — it must play
+// even though the mod is Idle, or the pick is silent at every receiver. The silent
+// sentinels ("", "0", "1") stay silent: auto + Pre off transmits "1".
+//
+// Note where the preanim start sits: :4054 is BEFORE the `file_exists(anim_to_find)`
+// check at :4056, so a preanim whose ART is missing still plays the sound. The gate
+// is never whether the sprite resolved — which is why this deliberately does not
+// reuse enterAfterShout's `playPre` (that one also consults hasPreanim / the
+// missing-sprite cache, both of which are about what to DRAW).
 func preanimSFXPlays(msg *protocol.ChatMessage) bool {
-	return msg.EmoteMod == protocol.EmoteModPreanim ||
+	if msg.EmoteMod == protocol.EmoteModPreanim ||
 		msg.EmoteMod == protocol.EmoteModPreanimZoom ||
-		msg.Immediate
+		msg.Immediate {
+		return true
+	}
+	// A non-silent SFX_NAME on an IDLE/ZOOM line is a hand-picked sound shipped
+	// regardless of Pre; play it. The silent sentinels stay silent.
+	return msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1"
 }
 
 // armSFXDelay schedules the message's emote SFX and (for preanim mods) its
@@ -1823,6 +1834,12 @@ func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
 	shake := msg.Screenshake && preanimMod && c.effectsVisible()
 	if base == "" && !shake {
 		return // nothing to schedule
+	}
+	// Warm the bytes now so they're cached when the deadline fires — the audio
+	// sink's request() also self-fetches as a backstop, but prefetching here keeps
+	// a first play from adding fetch latency on top of the SFX_DELAY.
+	if base != "" && c.mgr != nil {
+		c.mgr.Prefetch(base, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX
 	}
 	c.sfxArmed = true
 	c.sfxLeft = time.Duration(msg.SFXDelay) * sfxDelayUnit
