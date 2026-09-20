@@ -85,8 +85,8 @@ func logSamples(p *metrics.Profiler) {
 		if s == nil {
 			continue
 		}
-		log.Printf("heap=%dMiB gcP99=%s hitRate=%.0f%% probes=%d cached404=%d",
-			s.HeapBytes>>20, s.GCPauseP99, s.CacheHitRate*100, s.Probes, s.Cached404s)
+		log.Printf("heap=%dMiB sys=%dMiB gcP99=%s hitRate=%.0f%% probes=%d cached404=%d",
+			s.HeapBytes>>20, s.TotalBytes>>20, s.GCPauseP99, s.CacheHitRate*100, s.Probes, s.Cached404s)
 	}
 }
 

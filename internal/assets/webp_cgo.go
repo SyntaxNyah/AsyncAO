@@ -289,6 +289,23 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 	}
 
 	canvasBytes := width * height * webpBytesPerPixel
+
+	// When downscaling, the native canvas is transient (copied out of the C
+	// decoder, downscaled, then discarded). Reuse ONE native buffer across the
+	// whole stream instead of churning the pixel pool (and re-mmap'ing under GC
+	// pressure) per frame. When not downscaling the native buffer IS the
+	// delivered frame, so it cannot be reused.
+	var reuse *image.RGBA
+	var reuseToken *[]byte
+	if down {
+		reuse, reuseToken = newPooledRGBA(width, height)
+		defer func() {
+			if reuseToken != nil {
+				putPixBuf(reuseToken)
+			}
+		}()
+	}
+
 	for i := 0; i < walk; i++ {
 		if C.WebPAnimDecoderHasMoreFrames(dec) == 0 {
 			return true, walk, nil // truncated payload: keep what decoded
@@ -301,13 +318,18 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		if i == 0 {
 			continue // frame 0 already delivered by the progressive first frame
 		}
-		rgba, token := newPooledRGBA(width, height)
+		var rgba *image.RGBA
+		var token *[]byte
+		if down {
+			rgba = reuse
+		} else {
+			rgba, token = newPooledRGBA(width, height)
+		}
 		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
 		copy(rgba.Pix, src)
 		out := rgba
 		if down {
 			small, smallTok := downscaleFrame(rgba, tw, th)
-			putPixBuf(token)
 			out = small
 			token = smallTok
 		}

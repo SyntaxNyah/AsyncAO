@@ -42,11 +42,23 @@ const (
 	defaultMaxIdleConnsPerHost = 16
 	defaultMaxIdleConnsTotal   = 96
 	defaultIdleConnTimeout     = 90 * time.Second
-	defaultTLSHandshakeTimeout = 2 * time.Second
+	// defaultTLSHandshakeTimeout bounds just the TLS handshake, a phase that
+	// runs BEFORE the request is written (so defaultResponseHeaderTimeout never
+	// covers it). It must match the header/request budget: a slow host like
+	// catbox.moe occasionally takes several seconds to finish its handshake,
+	// and a 2s cap cut those tracks off with "TLS handshake timeout" long
+	// before headers could arrive. 15s mirrors the other slow-host timeouts;
+	// fast hosts are still cut by the request context's adaptive deadline
+	// (2s floor), so sprite/icon fetches keep failing fast.
+	defaultTLSHandshakeTimeout = 15 * time.Second
 	// defaultResponseHeaderTimeout fails a stalled server faster than the
 	// overall request deadline, freeing the connection slot for the next
-	// probe.
-	defaultResponseHeaderTimeout = 3 * time.Second
+	// probe. 15s (not 3s) because slow file hosts — catbox.moe and friends —
+	// routinely take several seconds to send their first byte, and music is
+	// exactly the payload that lives on those hosts. Fast hosts are still cut
+	// off by the per-request adaptive deadline (2s floor) before this trips,
+	// so sprite/icon stalls keep failing fast.
+	defaultResponseHeaderTimeout = 15 * time.Second
 	tlsSessionCacheSize          = 64
 
 	// DefaultRequestTimeout caps the wait for response HEADERS to arrive
@@ -54,22 +66,26 @@ const (
 	// per-host deadline (adaptiveTimeout) is derived from the TTFB EWMA and
 	// clamped to this ceiling; once headers land the body read is governed by
 	// bodyTransferBudget instead. It bounds only the header wait so a stalled
-	// server frees its fetch worker fast.
-	DefaultRequestTimeout = 5 * time.Second
+	// server frees its fetch worker fast. 15s (not 5s) lets a slow-but-alive
+	// host (catbox) get its headers out; fast hosts still fail at the 2s
+	// adaptive floor, and a genuinely dead host is still bounded at 15s.
+	DefaultRequestTimeout = 15 * time.Second
 
 	// bodyTransferBudget caps the BODY download once headers have arrived,
 	// separately from the TTFB-derived header deadline. The two must not share
 	// a deadline: the TTFB EWMA is dominated by tiny sprite/icon probes on the
 	// same host, so reusing it for the body collapsed a large music track's
 	// download window toward adaptiveTimeoutFloor (2s) and cut multi-MB files
-	// mid-stream — "big music silently doesn't play" (§1.1). 60s is generous
-	// enough for a ~10-40MB track on a slow-but-flowing link (matching the
-	// videomux.go maxMusicBytes=40<<20 precedent) while still bounding a
-	// genuinely wedged socket so a fetch worker can never be pinned forever
-	// (rule 4). Deliberately fixed, not adaptive: body throughput and header
-	// latency are unrelated, and the largest payloads (music) are exactly the
-	// ones the small-asset EWMA under-serves.
-	bodyTransferBudget = 60 * time.Second
+	// mid-stream — "big music silently doesn't play" (§1.1). 180s (not 60s)
+	// because catbox.moe and similar free hosts throttle large bodies below
+	// ~166 KB/s, so a multi-MB mp3 can exceed a minute mid-download and get cut
+	// with "context canceled". 180s covers a ~10-40MB track on a slow-but-
+	// flowing link (matching the videomux.go maxMusicBytes=40<<20 precedent)
+	// while still bounding a genuinely wedged socket so a fetch worker can
+	// never be pinned forever (rule 4). Deliberately fixed, not adaptive: body
+	// throughput and header latency are unrelated, and the largest payloads
+	// (music) are exactly the ones the small-asset EWMA under-serves.
+	bodyTransferBudget = 180 * time.Second
 
 	// NotFoundCacheSize / NotFoundCacheTTL bound the negative cache: a 404
 	// is never re-probed inside the TTL (spec §17.6).

@@ -561,6 +561,14 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 		a.startMusic(asset.Base, asset.Data, p.loop, p.effects, p.seekSec) // 2.9 loop/effects (#15) + cross-tab resume seek
 		return
 	}
+	// Diagnostic (late-music-drop): a music track delivered with NO pending entry
+	// was requested but its entry expired or was purged before the bytes landed —
+	// the download outlived pendingPlayTTL. loadChunk can't decode a stream and
+	// !wanted short-circuits below, so these bytes are silently discarded. Log it
+	// so the "big music silently doesn't play" report can be confirmed in the wild.
+	if asset.Type == assets.AssetTypeMusic {
+		log.Printf("render: late music dropped for %q (no pending entry)", asset.Base)
+	}
 	chunk := a.loadChunk(asset.Base, asset.Data)
 	if chunk == nil || !wanted {
 		return
@@ -737,6 +745,18 @@ func (a *Audio) expirePending() {
 	}
 	now := time.Now()
 	for base, p := range a.pending {
+		// Music is the one large/slow kind: the network layer budgets up to
+		// bodyTransferBudget (60s) for a single track body, so the 10s pending
+		// expiry here would drop a still-in-flight download's pending entry and
+		// silently discard the bytes when they land late (onAudioBytes finds no
+		// entry → "big music silently doesn't play"). Music pending entries are
+		// already bounded to at most one and fully lifecycle-managed by
+		// purgePendingMusic (supersession), StopMusic (cancellation) and
+		// onAudioBytes (delivery), so the timer adds nothing but this bug — leave
+		// them alone.
+		if p.kind == pendingMusic {
+			continue
+		}
 		if now.After(p.deadline) {
 			delete(a.pending, base)
 		}

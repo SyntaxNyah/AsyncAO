@@ -178,6 +178,22 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		return false, walk, nil // decimation needed — fall back to the full decode
 	}
 
+	// When downscaling, the native canvas is transient (YUV→RGB into it, then
+	// downscaled and discarded). Reuse ONE native buffer across the whole stream
+	// instead of churning the pixel pool per frame. When not downscaling the
+	// native buffer IS the delivered frame, so it cannot be reused.
+	var reuse *image.RGBA
+	var reuseToken *[]byte
+	if down {
+		reuse, reuseToken = newPooledRGBA(width, height)
+		pinner.Pin(&reuse.Pix[0])
+		defer func() {
+			if reuseToken != nil {
+				putPixBuf(reuseToken)
+			}
+		}()
+	}
+
 	for i := 0; i < walk; i++ {
 		if res := C.avifDecoderNextImage(dec); res != C.AVIF_RESULT_OK {
 			return true, walk, nil // truncated sequence: keep what decoded
@@ -190,13 +206,21 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 			continue // frame 0 already delivered by the progressive first frame
 		}
 
+		var rgba *image.RGBA
+		var token *[]byte
+		if down {
+			rgba = reuse
+		} else {
+			rgba, token = newPooledRGBA(width, height)
+		}
+
 		var rgb C.avifRGBImage
 		C.avifRGBImageSetDefaults(&rgb, dec.image)
 		rgb.format = C.AVIF_RGB_FORMAT_RGBA
 		rgb.depth = 8
-
-		rgba, token := newPooledRGBA(width, height)
-		pinner.Pin(&rgba.Pix[0])
+		if !down {
+			pinner.Pin(&rgba.Pix[0])
+		}
 		rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
 		rgb.rowBytes = C.uint32_t(rgba.Stride)
 
@@ -207,7 +231,6 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		out := rgba
 		if down {
 			small, smallTok := downscaleFrame(rgba, tw, th)
-			putPixBuf(token)
 			out = small
 			token = smallTok
 		}

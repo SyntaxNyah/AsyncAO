@@ -555,6 +555,60 @@ func foldEWMA(dst *atomic.Int64, sample time.Duration) {
 	dst.Store(old + (int64(sample)-old)/ewmaFoldWeightDen)
 }
 
+// --- animated-decode heap reclaim ---------------------------------------------
+//
+// An animated decode burst (a character's dozens of emotion animations decoded
+// in quick succession) frees a large amount of heap the moment its frames
+// upload and their raw RGBA buffers are released. The Go runtime's background
+// scavenger returns those pages to the OS over a few seconds, so process RSS
+// can transiently read far above the GOMEMLIMIT budget. maybeReclaimHeap forces
+// a single GC from a decode worker once a burst has left a lot of idle heap, so
+// the heap stops re-growing while the scavenger catches up. It deliberately does
+// NOT call debug.FreeOSMemory: that stop-the-world scavenge would stall the
+// render thread and drop frames.
+
+const (
+	// reclaimHeapIdleThreshold is the minimum unused heap (HeapIdle, bytes)
+	// that triggers a forced GC. Below it the runtime's own pacing suffices.
+	reclaimHeapIdleThreshold = 128 << 20
+	// reclaimHeapMinInterval bounds how often a decode worker may force a GC so
+	// a burst of small animations cannot thrash the collector.
+	reclaimHeapMinInterval = time.Second
+)
+
+var (
+	reclaimMu       sync.Mutex
+	lastReclaimTime time.Time
+)
+
+func maybeReclaimHeap() {
+	reclaimMu.Lock()
+	if time.Since(lastReclaimTime) < reclaimHeapMinInterval {
+		reclaimMu.Unlock()
+		return
+	}
+	lastReclaimTime = time.Now()
+	reclaimMu.Unlock()
+
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	if ms.HeapIdle < reclaimHeapIdleThreshold {
+		return
+	}
+	runtime.GC()
+}
+
+// heapSysMiB reports the Go runtime's total memory obtained from the OS
+// (runtime.MemStats.Sys) in MiB — the Go-heap contribution to process RSS,
+// including freed-but-not-yet-returned pages. Logged on every animated decode
+// so the memory footprint of a large-animated-sprite burst is visible in an
+// exported console log without a profiler.
+func heapSysMiB() uint64 {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return ms.Sys >> 20
+}
+
 // NewDecoderPool starts workers decode goroutines (DecodeWorkers() when
 // workers <= 0).
 func NewDecoderPool(workers int) *DecoderPool {
@@ -730,6 +784,19 @@ func (p *DecoderPool) worker() {
 func (p *DecoderPool) runJob(req DecodeRequest) {
 	animated := req.PlayAnimations && sniffMaybeAnimated(req.Data)
 	streamable := animated && streamableFormat(req.Data)
+
+	// Animated decodes hold an animGate slot for their WHOLE run — both the
+	// establishing frame-0 decode and the full/streaming decode. The frame-0
+	// prefix used to run un-gated (up to NumCPU/2 at once), which multiplied the
+	// transient native-frame allocations into the multi-GiB RSS spike the gate
+	// exists to cap (docs/PERFORMANCE.md). Taking the slot up front bounds the
+	// entire animated decode to the configured concurrency without touching the
+	// render/playback path.
+	if animated {
+		p.animGate.acquire()
+		defer p.animGate.release()
+	}
+
 	if animated {
 		if first, err := DecodeImage(req.Data, false); err == nil {
 			// GIF/APNG can sniff "maybe" but decode static — only a real
@@ -757,15 +824,6 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		}
 	}
 
-	// The FULL animated decode is the memory spike (every authored frame held in
-	// RGBA until the render thread uploads it), so it takes an animGate slot
-	// before decoding. The progressive first frame above is one cheap frame, so
-	// it does not gate.
-	if animated {
-		p.animGate.acquire()
-		defer p.animGate.release()
-	}
-
 	// Streaming decode for the definitely-animated CGO formats: frames land one
 	// at a time and the page plays the growing prefix (see streamAnimated).
 	if streamable {
@@ -786,6 +844,12 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		foldEWMA(&p.decodeNsEWMA, time.Since(start))
 	}
 	req.OnDone(req.URL, d, err)
+
+	// A completed full animated decode (GIF/APNG — the streaming path reclaims
+	// in streamAnimated) just freed its burst; nudge the heap now.
+	if animated {
+		maybeReclaimHeap()
+	}
 }
 
 // sniffMaybeAnimated reports payloads worth a progressive first frame:
@@ -875,6 +939,9 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 	format := Sniff(req.Data)
 	maxH := p.fullSizeMaxH(req.Type)
 	start := time.Now()
+	// Reclaim the heap this burst frees once the stream (or its full-decode
+	// fallback) completes — every return path below runs it.
+	defer maybeReclaimHeap()
 
 	emit := func(chunk *Decoded) {
 		chunk = p.fit(req.Type, chunk)
@@ -925,14 +992,14 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 
 	if err != nil {
 		p.failed.Add(1)
-		log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v took=%s",
-			format, req.PlayAnimations, maxH, err, time.Since(start).Round(time.Millisecond))
+		log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v sys=%dMiB took=%s",
+			format, req.PlayAnimations, maxH, err, heapSysMiB(), time.Since(start).Round(time.Millisecond))
 		return
 	}
 	p.decoded.Add(1)
 	foldEWMA(&p.decodeNsEWMA, time.Since(start))
-	log.Printf("[anim-decode] %s playAnim=%v maxH=%d -> streamed source=%d budget=%dMiB took=%s",
-		format, req.PlayAnimations, maxH, total, maxAnimatedDecodedAssetBytes.Load()>>20, time.Since(start).Round(time.Millisecond))
+	log.Printf("[anim-decode] %s playAnim=%v maxH=%d -> streamed source=%d budget=%dMiB sys=%dMiB took=%s",
+		format, req.PlayAnimations, maxH, total, maxAnimatedDecodedAssetBytes.Load()>>20, heapSysMiB(), time.Since(start).Round(time.Millisecond))
 }
 
 // DecoderStats is a point-in-time counter snapshot.
@@ -976,14 +1043,14 @@ func DecodeImageSized(data []byte, playAnimations bool, maxH int) (d *Decoded, e
 		// triaged from the console log alone.
 		defer func() {
 			if err != nil {
-				log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v took=%s",
-					format, playAnimations, maxH, err, time.Since(start).Round(time.Millisecond))
+				log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v sys=%dMiB took=%s",
+					format, playAnimations, maxH, err, heapSysMiB(), time.Since(start).Round(time.Millisecond))
 				return
 			}
 			if d != nil {
-				log.Printf("[anim-decode] %s playAnim=%v maxH=%d -> %dx%d frames=%d source=%d animated=%v budget=%dMiB took=%s",
+				log.Printf("[anim-decode] %s playAnim=%v maxH=%d -> %dx%d frames=%d source=%d animated=%v budget=%dMiB sys=%dMiB took=%s",
 					format, playAnimations, maxH, d.Width, d.Height, len(d.Frames), d.SourceFrames, d.Animated,
-					maxAnimatedDecodedAssetBytes.Load()>>20, time.Since(start).Round(time.Millisecond))
+					maxAnimatedDecodedAssetBytes.Load()>>20, heapSysMiB(), time.Since(start).Round(time.Millisecond))
 			}
 		}()
 	}

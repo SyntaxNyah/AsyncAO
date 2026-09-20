@@ -14,8 +14,9 @@ const (
 	// SampleInterval is the sampler cadence.
 	SampleInterval = 1 * time.Second
 
-	heapBytesMetric = "/memory/classes/heap/objects:bytes"
-	gcPausesMetric  = "/sched/pauses/total/gc:seconds"
+	heapBytesMetric  = "/memory/classes/heap/objects:bytes"
+	totalBytesMetric = "/memory/classes/total:bytes"
+	gcPausesMetric   = "/sched/pauses/total/gc:seconds"
 
 	p99 = 0.99
 )
@@ -31,6 +32,7 @@ type StatsSource struct {
 type Sample struct {
 	When         time.Time
 	HeapBytes    uint64
+	TotalBytes   uint64
 	GCPauseP99   time.Duration
 	CacheHitRate float64 // 0..1; NaN-free (0 when no traffic)
 	Probes       int64
@@ -84,6 +86,7 @@ func (p *Profiler) loop() {
 	defer ticker.Stop()
 	samples := []metrics.Sample{
 		{Name: heapBytesMetric},
+		{Name: totalBytesMetric},
 		{Name: gcPausesMetric},
 	}
 	for {
@@ -96,8 +99,11 @@ func (p *Profiler) loop() {
 			if samples[0].Value.Kind() == metrics.KindUint64 {
 				s.HeapBytes = samples[0].Value.Uint64()
 			}
-			if samples[1].Value.Kind() == metrics.KindFloat64Histogram {
-				s.GCPauseP99 = histogramQuantile(samples[1].Value.Float64Histogram(), p99)
+			if samples[1].Value.Kind() == metrics.KindUint64 {
+				s.TotalBytes = samples[1].Value.Uint64()
+			}
+			if samples[2].Value.Kind() == metrics.KindFloat64Histogram {
+				s.GCPauseP99 = histogramQuantile(samples[2].Value.Float64Histogram(), p99)
 			}
 			if p.source.CacheHits != nil {
 				hits, misses := p.source.CacheHits()

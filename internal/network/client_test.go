@@ -381,3 +381,33 @@ func TestDNSPreResolveCachesLocalhost(t *testing.T) {
 		t.Error("fresh entry reported stale")
 	}
 }
+
+// TestTransportMusicTimeoutProfile pins the slow-host music timeout profile so a
+// future "tuning" can't silently re-tighten it. Catbox.moe-class hosts are slow at
+// every phase — TLS handshake, time-to-first-byte, and body transfer — so the
+// handshake and header budgets must both match DefaultRequestTimeout, and the body
+// budget must be far larger. Fast hosts are still cut by the request context's 2s
+// adaptive floor, so these generous ceilings cost them nothing.
+func TestTransportMusicTimeoutProfile(t *testing.T) {
+	c := NewClient()
+	tr, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.httpClient.Transport)
+	}
+	if tr.TLSHandshakeTimeout != defaultTLSHandshakeTimeout {
+		t.Errorf("TLSHandshakeTimeout = %v, want %v", tr.TLSHandshakeTimeout, defaultTLSHandshakeTimeout)
+	}
+	if tr.ResponseHeaderTimeout != defaultResponseHeaderTimeout {
+		t.Errorf("ResponseHeaderTimeout = %v, want %v", tr.ResponseHeaderTimeout, defaultResponseHeaderTimeout)
+	}
+	if c.bodyBudget != bodyTransferBudget {
+		t.Errorf("bodyBudget = %v, want %v", c.bodyBudget, bodyTransferBudget)
+	}
+	// The handshake and header ceilings must match the request deadline: a
+	// handshake/header budget that undercuts it is exactly the catbox bug
+	// ("TLS handshake timeout" / "fetching … deadline exceeded").
+	if defaultTLSHandshakeTimeout != DefaultRequestTimeout || defaultResponseHeaderTimeout != DefaultRequestTimeout {
+		t.Errorf("handshake/header timeouts (%v / %v) must match DefaultRequestTimeout (%v)",
+			defaultTLSHandshakeTimeout, defaultResponseHeaderTimeout, DefaultRequestTimeout)
+	}
+}

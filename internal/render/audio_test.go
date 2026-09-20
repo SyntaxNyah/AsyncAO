@@ -2,6 +2,7 @@ package render
 
 import (
 	"testing"
+	"time"
 	"unsafe"
 
 	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
@@ -208,5 +209,38 @@ func TestPurgePendingMusic(t *testing.T) {
 	}
 	if _, ok := a.pending["sounds/blips/blip.opus"]; !ok {
 		t.Errorf("pendingBlip entry was wrongly purged by purgePendingMusic(\"\")")
+	}
+}
+
+// TestExpirePendingSkipsMusic pins the "big music silently doesn't play" follow-up:
+// a slow music download can outlive pendingPlayTTL (the network layer budgets up to
+// bodyTransferBudget = 60s for a track body), so expirePending must NOT time-expire a
+// pendingMusic entry — dropping it would discard the bytes when they land late in
+// onAudioBytes. Small SFX/blip entries still expire to keep the map bounded. Headless:
+// expirePending only mutates the local a.pending map, no SDL/Manager needed.
+func TestExpirePendingSkipsMusic(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+	a := &Audio{pending: map[string]pendingPlay{
+		"http://cdn/song.opus":    {kind: pendingMusic, deadline: past},
+		"http://cdn/future.opus":  {kind: pendingMusic, deadline: future},
+		"sounds/general/sfx.opus": {kind: pendingSFX, deadline: past},
+		"sounds/blips/blip.opus":  {kind: pendingBlip, deadline: past},
+	}}
+	a.expirePending()
+	if _, ok := a.pending["http://cdn/song.opus"]; !ok {
+		t.Error("an over-deadline pendingMusic entry was expired — a slow music download would be silently dropped")
+	}
+	if _, ok := a.pending["http://cdn/future.opus"]; !ok {
+		t.Error("a future-deadline pendingMusic entry must survive")
+	}
+	if _, ok := a.pending["sounds/general/sfx.opus"]; ok {
+		t.Error("an over-deadline pendingSFX entry must still expire")
+	}
+	if _, ok := a.pending["sounds/blips/blip.opus"]; ok {
+		t.Error("an over-deadline pendingBlip entry must still expire")
+	}
+	if len(a.pending) != 2 {
+		t.Errorf("pending size after expire = %d, want 2 (the two music entries)", len(a.pending))
 	}
 }

@@ -99,3 +99,28 @@ func TestMusicWireCarriesTheMP3TrackThrough(t *testing.T) {
 		t.Errorf("URL for the mp3 event = %q, want an .mp3 suffix", got)
 	}
 }
+
+// TestMCTrimsLeadingWhitespaceFromDirectURL pins the third music fix: a DJ /play
+// link that arrives with a leading space (" https://files.catbox.moe/x.mp3") must
+// be trimmed at the MC ingress so the direct http(s):// URL is recognized by
+// isMusicURL — not misclassified as a server-relative name and rebuilt as
+// "origin/sounds/music/%20https://…". The trim also fixes Now-Playing/IC-log
+// display and ~stop/area-transfer classification, all from the one MC handler.
+func TestMCTrimsLeadingWhitespaceFromDirectURL(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "hdid")
+	evs := feed(t, s, "MC# https://files.catbox.moe/8ert9g.mp3#3#DJ#1#0#0#%")
+	if len(evs) != 1 || evs[0].Kind != EventMusic {
+		t.Fatalf("MC produced %+v, want one EventMusic", evs)
+	}
+	if evs[0].Text != "https://files.catbox.moe/8ert9g.mp3" {
+		t.Errorf("event track = %q, want the trimmed direct URL", evs[0].Text)
+	}
+	if s.MusicTrack != "https://files.catbox.moe/8ert9g.mp3" {
+		t.Errorf("remembered track = %q, want the trimmed direct URL", s.MusicTrack)
+	}
+	u := NewURLBuilder("http://cdn.example.com/base/")
+	if got := u.MusicURL(evs[0].Text); got != "https://files.catbox.moe/8ert9g.mp3" {
+		t.Errorf("MusicURL(trimmed event) = %q, want the direct URL verbatim", got)
+	}
+}

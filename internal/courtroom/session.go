@@ -792,7 +792,12 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "MC":
 		// Field 2 (showname) and field 1 (charID) name who played it for the IC
 		// log line; both are optional on the wire (short legacy MC packets).
-		track := p.Field(0)
+		// Field 0 is the track. Trim whitespace: a DJ /play link can arrive as
+		// " https://files.catbox.moe/x.mp3" and, left untrimmed, isMusicURL misses
+		// the http(s):// prefix so the direct URL is misread as a server-relative
+		// name and rebuilt as origin + "%20https://…" (a 404). One trim fixes the
+		// URL, Now-Playing/IC-log display and ~stop/area-transfer classification.
+		track := strings.TrimSpace(p.Field(0))
 		// Field 4 is the 2.9+ CHANNEL (AO2-Client courtroom.cpp handle_song:
 		// "Channel 0 is 'master music', other for ambient"; absent = 0). An
 		// ambience MC must never reach the music path: WAP-family servers
