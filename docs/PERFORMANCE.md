@@ -22,6 +22,16 @@ float64 kernel was the decode bottleneck. The 700 MiB limit covers the Go heap
 (a clip's decoded RGBA stays live there until its textures upload); the
 textures themselves live in VRAM.
 
+A decode burst (a character's dozens of emotion animations) still transiently
+spikes RSS above the limit, because the Go scavenger returns the freed pages to
+the OS over a few seconds. Since v1.98.6 the animated decode is gated for its
+whole run (including the establishing first frame), streaming decoders reuse one
+native decode buffer, and a throttled `runtime.GC()` runs after each large
+animated decode once the burst leaves >128 MiB of idle heap — keeping the peak
+near the budget without a stop-the-world scavenge that would drop frames.
+`[anim-decode]` log lines now report `sys=<MiB>` so the footprint is visible in
+an exported console log.
+
 Resident animated memory is further capped by **still-framing non-active
 characters** (v1.97.0): only the active speaker's idle/talk/preanim stay fully
 loaded; the pair and every previously-shown character collapse to their first

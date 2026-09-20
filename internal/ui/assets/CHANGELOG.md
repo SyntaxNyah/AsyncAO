@@ -4,6 +4,37 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.98.6 - 2026-09-20
+
+- **Animated sprites no longer balloon memory.** Loading a large animated sprite
+  (the Umamusume-style "uma" characters, 60-80 frames) could briefly push the
+  client past 6 GB of RAM — the decode burst allocated native frames faster than
+  the garbage collector reclaimed them, and the freed pages took a few seconds
+  to return to the OS. The animated decode is now concurrency-gated for its
+  whole run (the first-frame prefix used to run un-gated), streaming decoders
+  reuse a single decode buffer instead of allocating one per frame, and the
+  client nudges the garbage collector after each large decode — so the spike
+  stays near the 700 MiB budget and clears immediately. Animations still play
+  just as smoothly.
+- **Animated decodes now log their memory.** Every `[anim-decode]` line in the
+  console now ends with `sys=<MiB>` — the Go heap's share of process memory — so
+  a memory spike is visible straight from an exported log. The 1 Hz `--debug`
+  sampler line also gains a `sys=` figure.
+- **A music link with a leading space finally plays.** A DJ `/play` link like
+  `" https://…mp3"` hid its `http(s)://` prefix behind the space, so the client
+  misread it as a server-relative name and rebuilt it into a 404. The track name
+  is now trimmed at the door.
+- **Big music on slow hosts no longer cuts out.** The TLS-handshake, response-
+  header and body-transfer budgets were too tight for slow-but-alive hosts like
+  catbox.moe, so multi-MB tracks got dropped with "TLS handshake timeout" or
+  "context canceled". The budgets are now 15 s (handshake + headers) and 180 s
+  (body); sprite and icon fetches still fail fast through the adaptive 2 s floor.
+- **A slow music download is no longer thrown away on arrival.** The 10 s pending
+  expiry could drop a still-in-flight music download's entry, so the bytes landed
+  with nowhere to go and were silently discarded ("big music silently doesn't
+  play"). Music entries are now exempt from that timer, and a late drop is
+  logged so the report can be confirmed in the wild.
+
 ## v1.98.5 - 2026-09-20
 
 - **SFX and shout audio no longer go silently missing.** The "all sound effects

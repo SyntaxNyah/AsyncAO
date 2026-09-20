@@ -2,9 +2,11 @@
 
 > **Status:** Phase 1a (AVIF `maxThreads`) and Phase 2 (streaming/incremental
 > decode) are shipped, plus a **Phase 2 crash fix** (redundant re-decode no longer
-> shrinks a streaming page under the viewport's playback cursor). Phase 1b
+> shrinks a streaming page under the viewport's playback cursor). The decode-burst
+> memory spike is fixed in v1.98.6 (whole-run `animGate` gating + per-stream buffer
+> reuse + throttled heap reclaim; `[anim-decode]` now logs `sys=`). Phase 1b
 > (warm-on-join) and the larger benchmark fixture remain open.
-> **Date:** 2026-09-17
+> **Date:** 2026-09-20
 > **Relates to:** #110 (animation fps / choppy-animation fix), #100 (predictive
 > prefetch), #17 (networked frame effects), #72 (mounted content packs),
 > #119 (evidence system).
