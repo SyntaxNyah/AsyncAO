@@ -15,10 +15,11 @@ import (
 //
 // TWO SOURCES OF TRUTH, and they disagree. The WinINET registry values are what
 // "Use a proxy server" writes; the WinHTTP API additionally reports "Automatically
-// detect settings" (WPAD) and any auto-config script. Reading only the registry
-// is not enough, and this dev box is the proof: ProxyEnable is 0 while the
-// auto-detect flag is set, so a registry-only reader reports "no proxy" on a
-// machine that is in fact configured to discover one.
+// detect settings" (WPAD) and any auto-config script (PAC URL). We read the
+// registry for an explicit proxy and the WinHTTP API for an explicit PAC URL, but
+// deliberately IGNORE the WPAD "Automatically detect settings" flag — it is on by
+// default on Windows, and honouring it let a misbehaving WPAD server (or an ISP
+// redirecting WPAD) carry every asset and take the client down. See discoverWindows.
 //
 // ⚠ DLL PLANTING. stdlib's syscall.LazyDLL has no System flag (x/sys's does), so
 // syscall.NewLazyDLL("winhttp.dll") would use the default search order — which
@@ -51,13 +52,11 @@ const (
 	// that matters. See autoProxyPolicy for why this is resolved once.
 	autoProbeURL = "https://www.example.com/"
 
-	// winhttpAutoDetect / winhttpConfigURL are WINHTTP_AUTOPROXY_AUTO_DETECT and
-	// WINHTTP_AUTOPROXY_CONFIG_URL; dhcpAndDNS is
-	// WINHTTP_AUTO_DETECT_TYPE_DHCP | _DNS_A, which is the pair every browser
-	// uses for WPAD.
-	winhttpAutoDetect = 0x00000001
-	winhttpConfigURL  = 0x00000002
-	dhcpAndDNS        = 0x00000003
+	// winhttpConfigURL is WINHTTP_AUTOPROXY_CONFIG_URL — the flag that asks
+	// WinHTTP to evaluate an explicit auto-config script (PAC URL). The WPAD
+	// auto-detect flag (WINHTTP_AUTOPROXY_AUTO_DETECT) is deliberately NOT used:
+	// see discoverWindows for why.
+	winhttpConfigURL = 0x00000002
 
 	// errAutodetectionFailed is ERROR_WINHTTP_AUTODETECTION_FAILED. It is NOT an
 	// error condition for us: it means "no WPAD server answered on this network",
@@ -89,30 +88,24 @@ func discoverWindows() *Policy {
 		// WinHTTP is unavailable (a stripped container, a service context). The
 		// registry is still worth reading — it is the same data minus the
 		// auto-detect flag.
-		return registryPolicy(false)
+		return registryPolicy()
 	}
 	// The registry remains the source for the proxy itself: WinHTTP reports the
 	// current CONNECTION's settings, and the two agree for a desktop LAN user
 	// while the registry is the one that survives WinHTTP being unavailable.
-	if p := registryPolicy(cfg.autoDetect || cfg.autoConfigURL != ""); p != nil {
+	if p := registryPolicy(); p != nil {
 		return p
 	}
-	if !cfg.autoDetect && cfg.autoConfigURL == "" {
+	if cfg.autoConfigURL == "" {
 		return nil
 	}
-	// No explicit proxy, but the machine is set to find one automatically. This
-	// must NOT be assumed to mean "a proxy exists that we cannot reach": automatic
-	// detection is ON by default on Windows, including on the overwhelming
-	// majority of home machines that have no proxy at all, and it means "look for
-	// a WPAD server on this network; if there is none, connect directly". Failing
-	// closed on the flag alone would break every one of those users on first
-	// launch, which is a far worse outcome than the leak this exists to prevent.
-	//
-	// So we ask Windows to actually resolve it. WinHttpGetProxyForUrl performs the
-	// WPAD discovery and evaluates any auto-config script in-process — no
-	// JavaScript engine of our own, which is the reason this is worth the syscall
-	// surface. It answers definitively: a proxy, or "detection failed", which on a
-	// home network is the correct and common answer and means direct.
+	// An explicit auto-config script (PAC URL) is the only automatic proxy
+	// configuration honoured here. Windows' "Automatically detect settings"
+	// (WPAD) flag is deliberately NOT honoured: it is on by default on Windows,
+	// and a machine pointed at a misbehaving WPAD server — or an ISP that
+	// redirects WPAD to a captive proxy — would otherwise route every asset
+	// through it and can take the whole client down. A user who genuinely needs
+	// auto-discovery can still set an explicit PAC URL or proxy server.
 	return autoProxyPolicy(cfg)
 }
 
@@ -164,7 +157,7 @@ func autoProxyPolicy(cfg ieConfig) *Policy {
 }
 
 // registryPolicy reads ProxyEnable / ProxyServer / ProxyOverride.
-func registryPolicy(auto bool) *Policy {
+func registryPolicy() *Policy {
 	if regDWORD(internetSettingsKey, "ProxyEnable") == 0 {
 		return nil
 	}
@@ -172,13 +165,9 @@ func registryPolicy(auto bool) *Policy {
 	if httpVia == nil && httpsVia == nil {
 		return nil
 	}
-	src := "Windows proxy settings"
-	if auto {
-		src += " (automatic detection is also on)"
-	}
 	return &Policy{
 		Mode:   ModeSystem,
-		Source: src,
+		Source: "Windows proxy settings",
 		HTTP:   httpVia,
 		HTTPS:  httpsVia,
 		Bypass: parseBypass(regString(internetSettingsKey, "ProxyOverride")),
@@ -352,8 +341,9 @@ type winhttpAutoproxyOptions struct {
 	autoLogonIfChallenge int32
 }
 
-// winhttpProxyForURL asks Windows where a request to target should go, running
-// WPAD discovery and evaluating any auto-config script in-process.
+// winhttpProxyForURL asks Windows where a request to target should go by
+// evaluating an explicit auto-config script (PAC URL). WPAD auto-detection is
+// deliberately not requested here.
 func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	open, ok := system32Proc("winhttp.dll", "WinHttpOpen")
 	if !ok {
@@ -381,10 +371,6 @@ func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	defer syscall.SyscallN(closeHandle, session)
 
 	opts := winhttpAutoproxyOptions{autoLogonIfChallenge: 1}
-	if cfg.autoDetect {
-		opts.flags |= winhttpAutoDetect
-		opts.autoDetectFlags = dhcpAndDNS
-	}
 	if cfg.autoConfigURL != "" {
 		wide, err := syscall.UTF16PtrFromString(cfg.autoConfigURL)
 		if err != nil {
