@@ -1023,11 +1023,6 @@ func (a *App) jumpToArea(area string) {
 	a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves (it keys the outgoing log on the OLD curArea)
 	a.curArea = area             // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
 	a.updatePresence()
-	// Leave the current area's music behind: a server with no autoplay music for
-	// the target area sends no music MC, so without this the previous room's song
-	// keeps playing (and the stale track would be re-seeded by a later buildRoom).
-	// If the target area HAS music, its own MC re-populates the track and plays.
-	a.haltMusic()
 	a.sess.RequestMusic(area)
 	// Wipe the stage on OUR OWN area jump (#23). A deliberate ADDITION to the AO2
 	// path, not a conflict with it: akashi/KFO-family servers put a pos in the
