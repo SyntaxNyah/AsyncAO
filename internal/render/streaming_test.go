@@ -242,6 +242,60 @@ func TestResolveRestartsOnReplacement(t *testing.T) {
 	}
 }
 
+// TestResolveRestartsFromNilCursor pins the cold-load restart hole: a previous
+// miss leaves a.page == nil while a.frame still points at a longer, evicted
+// page. When a shorter replacement lands, resolve must restart the cursor from
+// nil — not leave a.frame stale, which is the panic the frame pacer hit on a
+// decimated re-decode.
+func TestResolveRestartsFromNilCursor(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	base := "srv/characters/witch/(a)normal"
+	for i := 0; i < 3; i++ {
+		if err := store.AppendStream(base, streamChunk(i, true, 3)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a := &animState{base: base}
+	if _, ok := a.resolve(store); !ok {
+		t.Fatal("resolve failed")
+	}
+	a.frame = 2 // cursor advanced while the page was resident
+
+	// Evict the page and resolve the miss: a.page becomes nil, a.frame stays put.
+	store.Remove(base)
+	if _, ok := a.resolve(store); ok {
+		t.Fatal("resolve should miss after eviction")
+	}
+	if a.frame != 2 {
+		t.Fatalf("a miss must leave the cursor stale: frame=%d, want 2", a.frame)
+	}
+
+	// A shorter replacement arrives; resolving from a nil page must restart.
+	short := &TexturePage{
+		Frames:  make([]*sdl.Texture, 1),
+		Delays:  []time.Duration{100 * time.Millisecond},
+		Partial: true,
+	}
+	store.storeOversized(base, short)
+	store.generation.Add(1)
+
+	p, ok := a.resolve(store)
+	if !ok || p != short {
+		t.Fatalf("resolve did not return the replacement page: ok=%v", ok)
+	}
+	if a.frame != 0 {
+		t.Fatalf("cursor not reset when resolving from a nil page: frame=%d, want 0", a.frame)
+	}
+}
+
 // TestAdvanceMaxClampsStaleCursor pins the belt-and-suspenders guard: a frame
 // cursor that somehow exceeds the page's frame count is clamped instead of
 // panicking on the Delays index.

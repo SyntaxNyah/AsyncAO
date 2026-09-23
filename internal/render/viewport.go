@@ -187,9 +187,10 @@ func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 		// The page POINTER changed while the base did not: the resident page was
 		// replaced (shrink on a redundant re-establish, or a partial→full swap).
 		// Restart playback so a.frame can't run past the new page's frame count.
-		if a.page != nil {
-			a.restart()
-		}
+		// This must fire even when a.page is nil: a previous miss left the cursor
+		// pointing at a longer, evicted page, and a cold base's page arriving now
+		// is still a fresh playback start.
+		a.restart()
 		a.page = page
 	}
 	a.pageGen = gen
@@ -859,7 +860,11 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 		if !visible || a.finished || a.page == nil || len(a.page.Frames) <= 1 {
 			return
 		}
-		delay := a.page.Delays[a.frame]
+		// Clamp the cursor like the draw path: a re-decode can replace the page
+		// with a shorter one between resolves, and NextAnimDue must never index a
+		// frame that no longer exists (resolve.restart handles the normal case,
+		// but the pacer reads cached state and must be panic-proof on its own).
+		delay := a.page.Delays[clampFrame(a.frame, len(a.page.Frames))]
 		if maxDelay > 0 && delay > maxDelay {
 			delay = maxDelay // the overlay's per-frame clamp shortens its own deadline too
 		}

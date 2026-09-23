@@ -85,6 +85,26 @@ func TestNextAnimDue(t *testing.T) {
 	}
 }
 
+// TestNextAnimDueClampsStaleCursor pins the defensive cursor clamp: a page
+// replaced by a shorter re-decode can leave a.frame pointing past the page's
+// frame count, and NextAnimDue must still schedule a deadline (never panic)
+// while the next Update's advance clamps the cursor back into range.
+func TestNextAnimDueClampsStaleCursor(t *testing.T) {
+	v := NewViewport(nil)
+	scene := &courtroom.Scene{}
+	scene.Speaker.Visible = true
+	v.speakerAnim.page = &TexturePage{
+		Frames: make([]*sdl.Texture, 3),
+		Delays: []time.Duration{100 * time.Millisecond, 100 * time.Millisecond, 100 * time.Millisecond},
+	}
+	v.speakerAnim.frame = 15 // stale cursor from a longer, evicted page
+
+	due, ok := v.NextAnimDue(scene)
+	if !ok || due != 100*time.Millisecond {
+		t.Fatalf("stale cursor: due=%v ok=%v, want 100ms true", due, ok)
+	}
+}
+
 // TestNextAnimDueFloor pins the schedule floor: an asset authored below
 // minAnimFrameDelay (decoders honor any positive delay verbatim — a delay=1
 // GIF is 10 ms, WebP/APNG/AVIF can author 1 ms) must schedule redraws at the
