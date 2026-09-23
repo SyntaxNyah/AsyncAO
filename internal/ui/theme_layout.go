@@ -1506,7 +1506,17 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
 	}
-	skinPage, skinned := a.themePage(themeStemChatbox)
+	// Per-character chatbox wins over the theme skin (AO2 get_chat priority),
+	// exactly like the classic overlay; the theme's ink still applies over it
+	// (skinned below is "any skin drew", not "the theme's skin drew").
+	var charSkin *sdl.Texture
+	if sc.ChatSkinBase != "" {
+		if page, ok := a.d.Store.Get(sc.ChatSkinBase); ok && len(page.Frames) > 0 {
+			charSkin = page.Frames[0]
+		}
+	}
+	skinPage, themeSkinned := a.themePage(themeStemChatbox)
+	skinned := charSkin != nil || themeSkinned
 	// ONE resolution, shared verbatim with the export's themed chatbox
 	// (drawGifThemedChatbox) so video and comic frames can never disagree with what
 	// the player was looking at. It also lands the Qt insets AO2 gets for free:
@@ -1520,7 +1530,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+chatBoxTopStrip)
 
 	nameCol := ColAccent
-	if skinned && a.themeHasName {
+	if skinned && sc.ChatSkinNameHas {
+		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
+	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
@@ -1537,17 +1549,30 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// widens by showname_extra_width and swaps the chatbox art for the wider plate
 	// the theme author drew for exactly that case, twice over if the theme shipped
 	// a `big` as well. Both variants are pinned theme art, so this is map reads and
-	// integer arithmetic — see chatboxSkinLadder for the residency contract.
-	nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
-	// AO2's OTHER per-message skin decision, and the one that left narration posts
-	// wearing an empty name plate: a blank showname takes the plate-less `chatblank`
-	// art and hides the label (courtroom.cpp:3320-3331). AFTER the widen ladder
-	// because AO2's ladder lives in the non-blank arm — a blank name can never widen
-	// — and chatboxSkinLadder already returns the base rung for empty text, so the
-	// two can never disagree about which page won.
-	skinPage, _ = a.chatboxSkinForShowname(sc.ShownameText, skinPage)
+	// integer arithmetic — see chatboxSkinLadder for the residency contract. These
+	// variant picks are THEME art: a per-character skin has none, so both are skipped
+	// for it (the name simply stays in its base rect).
+	if charSkin == nil {
+		nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+		// AO2's OTHER per-message skin decision, and the one that left narration posts
+		// wearing an empty name plate: a blank showname takes the plate-less `chatblank`
+		// art and hides the label (courtroom.cpp:3320-3331). AFTER the widen ladder
+		// because AO2's ladder lives in the non-blank arm — a blank name can never widen
+		// — and chatboxSkinLadder already returns the base rung for empty text, so the
+		// two can never disagree about which page won.
+		skinPage, _ = a.chatboxSkinForShowname(sc.ShownameText, skinPage)
+	}
 
-	if skinned {
+	if charSkin != nil {
+		c.cgoRect = box
+		// Same A4 tilt contract as the theme skin below: the skin art rotates, the
+		// showname/message text stays axis-aligned.
+		if ang := lay.angle(themeChatboxKey); ang == 0 {
+			_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
+		} else {
+			_ = c.Ren.CopyEx(charSkin, nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
+		}
+	} else if themeSkinned {
 		// &box into cgo would heap-allocate the PARAMETER on every themed frame that
 		// has a message up — and because escape analysis is static, on the unskinned
 		// frames too. Shared scratch instead (ui.go cgoRect contract: SDL copies the

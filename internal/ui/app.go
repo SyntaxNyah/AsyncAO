@@ -2837,10 +2837,12 @@ type sessionState struct {
 	prevDown  bool // mouseDown edge detection for drag begin
 
 	// chat raster invalidation extras (text/color tracked separately)
-	rasterScale   int
-	rasterW       int32
-	rasterSkinned bool  // theme skin gates theme text colors (readability)
-	rasterDevPct  int32 // #77: the device font scale the raster was built at — a UI-scale change must rebuild it
+	rasterScale      int
+	rasterW          int32
+	rasterSkinned    bool      // a drawn chatbox skin (theme OR per-character) gates theme text colors (readability)
+	rasterChatMsg    theme.RGB // per-character chatbox ink the message raster was built with (cache key)
+	rasterChatMsgHas bool
+	rasterDevPct     int32 // #77: the device font scale the raster was built at — a UI-scale change must rebuild it
 
 	// pairing panel
 	pairSearch string

@@ -197,6 +197,33 @@ build has been asked about; it isn't offered, for two independent reasons:
 | `go build -tags novoice ...` | voice chat compiled out entirely — the LemmyAO/Nyathena VS_* relay + Opus codec, plus its UI, buttons and settings (see below). Opus **music** is unaffected. |
 | `CGO_ENABLED=0 go build ./cmd/asyncao-cache` | cache companion CLI (stats/inspect/prune/warm T3) — pure Go, no SDL/CGO, builds anywhere |
 
+## Debug builds & crash logs
+
+For crash diagnosis (e.g. a custom sprite or asset that hard-crashes the
+client), build the symbolized, Delve-friendly test build:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-debug.ps1      # build to testbuild-debug\
+powershell -ExecutionPolicy Bypass -File scripts\build-debug.ps1 -Run # build, then launch with -debug
+```
+
+`build-debug.ps1` keeps the console subsystem (stderr stays visible), omits
+`-s -w` (keeps symbols), and passes `-gcflags "all=-N -l"` (no optimization or
+inlining — full `file:line` traces, and the binary loads in Delve:
+`dlv exec testbuild-debug\asyncao.exe`).
+
+Every build now installs a **process-wide crash hook** at startup
+(`cmd/asyncao/main.go` → `setupCrashOutput`) via `runtime/debug.SetCrashOutput`,
+so any unhandled panic or fatal runtime error — including cgo signal faults from
+the SDL2/webp/avif decode paths — is written with a full goroutine dump
+(`debug.SetTraceback("all")`) to:
+
+- `asyncao-crash.log` — next to the exe (all builds)
+- `recordings\scene-maker-crash.log` — frame-loop / picker panics recovered by the UI
+
+`-debug` additionally exposes `http://localhost:6060/debug/pprof/` for live
+heap / goroutine snapshots.
+
 ## Discord (never required)
 
 **Building AsyncAO never requires Discord, a Discord SDK, or any

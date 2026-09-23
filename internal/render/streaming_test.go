@@ -74,6 +74,62 @@ func TestAppendStreamGrowsResidentPage(t *testing.T) {
 	}
 }
 
+// TestAppendStreamKeepsLatchedScaleMode pins the filter regression: once a
+// streamed page's filter is latched (frame 0 drawn under Nearest), frames
+// appended afterward must inherit that same filter instead of keeping the
+// client-wide linear hint. Without the AppendStream fix, only frame 0 reads
+// back Nearest and every appended frame stays Linear — the "frame 0 crisp,
+// the rest blurry" report.
+func TestAppendStreamKeepsLatchedScaleMode(t *testing.T) {
+	if !scaleModeSupported {
+		t.Skip("SDL < 2.0.12: per-texture scale mode is compiled out by design")
+	}
+	// The client runs HINT_RENDER_SCALE_QUALITY="1" (linear) — cmd/asyncao/main.go
+	// — so every newly created texture defaults to bilinear. Reproduce that here,
+	// or the bug can't be seen: the headless SDL default is "nearest", which would
+	// make this test pass even without the AppendStream fix.
+	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "1")
+	defer sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "0")
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	base := "srv/characters/witch/(a)normal"
+	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+		t.Fatalf("establish: %v", err)
+	}
+	page, ok := store.Get(base)
+	if !ok {
+		t.Fatal("establish: page must be resident")
+	}
+	// A draw latches the filter exactly the way viewport.go does.
+	page.applyScaleMode(ren, sdl.ScaleModeNearest)
+
+	if err := store.AppendStream(base, streamChunk(1, true, 3)); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := store.AppendStream(base, streamChunk(2, true, 3)); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	page, _ = store.Get(base)
+	if len(page.Frames) != 3 {
+		t.Fatalf("frames = %d, want 3", len(page.Frames))
+	}
+	for i, tex := range page.Frames {
+		got, ok := textureScaleMode(tex)
+		if !ok {
+			t.Fatalf("frame %d read back: %v", i, sdl.GetError())
+		}
+		if got != sdl.ScaleModeNearest {
+			t.Errorf("frame %d = %d, want nearest (%d) — appended frames must inherit the latched filter", i, got, sdl.ScaleModeNearest)
+		}
+	}
+}
+
 // TestAppendStreamDropsOutOfOrder pins the ordering guard: an append that skips
 // the next kept-frame index is stale and must be dropped, so a fuller page
 // never regresses.

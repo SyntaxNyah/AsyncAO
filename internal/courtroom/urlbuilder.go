@@ -557,6 +557,56 @@ func (u URLBuilder) OverlayEffectManifest(folder string) string {
 	return u.origin + segPath(miscDir+folder+"/"+overlayEffectsManifest)
 }
 
+// chatboxFontsIni / chatboxChatConfigIni are the fixed filenames of a
+// per-character chatbox's own colour INIs. AO2 Courtroom::set_font reads
+// showname_color/message_color from courtroom_fonts.ini and the default IC colour
+// c0 from chat_config.ini, both resolved against get_chat(p_char).
+const (
+	chatboxFontsIni      = "courtroom_fonts.ini"
+	chatboxChatConfigIni = "chat_config.ini"
+)
+
+// ChatboxChatConfigIni returns the ordered spellings of a misc chatbox's
+// chat_config.ini (the default text colour c0): lowercase identity first, then the
+// authored folder case for case-preserving mirrors. Not assets: fetch their bytes
+// (FetchRaw), never format-probe them.
+func (u URLBuilder) ChatboxChatConfigIni(misc string) []string {
+	return u.chatboxIniCandidates(misc, chatboxChatConfigIni, "")
+}
+
+// ChatboxFontsIni returns the ordered spellings of a misc chatbox's
+// courtroom_fonts.ini (showname_color / message_color). The FILE is also tried at
+// AO2's authored casing (Courtroom_Fonts.ini) because real packs ship it capitalised.
+func (u URLBuilder) ChatboxFontsIni(misc string) []string {
+	return u.chatboxIniCandidates(misc, chatboxFontsIni, "Courtroom_Fonts.ini")
+}
+
+// chatboxIniCandidates builds the ≤4 spellings of misc/<folder>/<file>: each file
+// spelling (lowercase, then authored) × each folder spelling (lowercase identity,
+// then authored case).
+func (u URLBuilder) chatboxIniCandidates(misc, file, authoredFile string) []string {
+	misc = strings.TrimSpace(misc)
+	if misc == "" {
+		return nil
+	}
+	files := []string{file}
+	if authoredFile != "" && authoredFile != file {
+		files = append(files, authoredFile)
+	}
+	lower := escapePreservingSlashes(strings.ToLower(misc))
+	authored := escapePreservingSlashes(misc)
+	out := make([]string, 0, len(files)*2)
+	for _, f := range files {
+		out = append(out, u.origin+"misc/"+lower+"/"+f)
+	}
+	if authored != lower {
+		for _, f := range files {
+			out = append(out, u.origin+"misc/"+authored+"/"+f)
+		}
+	}
+	return out
+}
+
 // overlayEffectCandidates builds the ≤2 spellings of misc/<folder>/<element>.
 func (u URLBuilder) overlayEffectCandidates(folder, element string) []string {
 	folder = strings.TrimSpace(folder)

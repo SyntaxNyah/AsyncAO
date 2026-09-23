@@ -348,3 +348,63 @@ func frameSectionTags(ini *theme.INI, section string, remaining *int) string {
 	}
 	return b.String()
 }
+
+// ParseChatboxDefaultColor parses a misc chatbox's chat_config.ini, returning the
+// default IC text colour: c0, palette index 0 (the colour AO2 uses for uncoloured
+// text). ok=false when the key is absent or malformed.
+func ParseChatboxDefaultColor(data []byte) (theme.RGB, bool) {
+	ini, err := theme.ParseINI(bytes.NewReader(data))
+	if err != nil {
+		return theme.RGB{}, false
+	}
+	raw, ok := ini.GetSection("", "c0")
+	if !ok {
+		return theme.RGB{}, false
+	}
+	return parseRGBTuple(raw)
+}
+
+// ParseChatboxFontsIni parses a misc chatbox's courtroom_fonts.ini, returning
+// showname_color and message_color (the latter a secondary default-text source for
+// packs that set it there instead of chat_config.ini c0). Set flags false = absent
+// or malformed → the theme's colour stays.
+func ParseChatboxFontsIni(data []byte) (showname theme.RGB, shownameSet bool, message theme.RGB, messageSet bool) {
+	ini, err := theme.ParseINI(bytes.NewReader(data))
+	if err != nil {
+		return theme.RGB{}, false, theme.RGB{}, false
+	}
+	if raw, ok := ini.GetSection("", "showname_color"); ok {
+		if rgb, ok := parseRGBTuple(raw); ok {
+			showname, shownameSet = rgb, true
+		}
+	}
+	if raw, ok := ini.GetSection("", "message_color"); ok {
+		if rgb, ok := parseRGBTuple(raw); ok {
+			message, messageSet = rgb, true
+		}
+	}
+	return
+}
+
+// parseRGBTuple parses AO2's "r, g, b" colour tuple (the same shape the theme
+// package's message_color / showname_color use). ok=false on any malformed part.
+func parseRGBTuple(raw string) (theme.RGB, bool) {
+	parts := strings.Split(raw, ",")
+	if len(parts) < 3 {
+		return theme.RGB{}, false
+	}
+	var rgb [3]uint8
+	for i := 0; i < 3; i++ {
+		n, err := strconv.Atoi(strings.TrimSpace(parts[i]))
+		if err != nil {
+			return theme.RGB{}, false
+		}
+		if n < 0 {
+			n = 0
+		} else if n > 255 {
+			n = 255
+		}
+		rgb[i] = uint8(n)
+	}
+	return theme.RGB{R: rgb[0], G: rgb[1], B: rgb[2]}, true
+}

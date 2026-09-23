@@ -9,6 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 const (
@@ -175,6 +176,14 @@ type Scene struct {
 	// chat=<misc> → misc/<misc>/chatbox), "" for the client's normal box. Set
 	// per message in begin(); the ui draws it when the texture is resident.
 	ChatSkinBase string
+	// ChatSkinMsgColor / ChatSkinNameColor are the speaker's own chatbox ink: the
+	// default text colour (misc/<chat>/chat_config.ini c0) and showname colour
+	// (courtroom_fonts.ini showname_color), AO2's per-chatbox colours. Has flags
+	// false = not fetched or not declared → the theme's colour wins.
+	ChatSkinMsgColor  theme.RGB
+	ChatSkinMsgHas    bool
+	ChatSkinNameColor theme.RGB
+	ChatSkinNameHas   bool
 	// MessageStyles colors runs of MessageText (inline \cN markup). MessageRaw
 	// is the pre-strip message — the raster cache keys on it, since two
 	// differently-colored messages can share the same stripped MessageText.
@@ -330,6 +339,13 @@ type Courtroom struct {
 	// (char.ini [Options] chat, AO2-Client get_chat) — same cache/fetch
 	// behaviour as BlipNameFor. "" = no per-character skin.
 	ChatSkinFor func(char string) string
+
+	// ChatInkFor resolves a speaker's own chatbox ink — misc/<chat>/courtroom_fonts.ini
+	// message_color / showname_color (AO2 Courtroom::set_font resolved against
+	// get_chat) — from the SAME per-URL char.ini cache as ChatSkinFor, so it costs
+	// zero extra network work. Both ok flags false = no per-character chatbox, or its
+	// fonts INI declares no colours → the theme's colours win.
+	ChatInkFor func(char string) (msg theme.RGB, msgOK bool, name theme.RGB, nameOK bool)
 
 	// IniShownameFor, when set, is AOApplication::get_showname for a speaker —
 	// the char.ini [Options] showname (with the needs_showname opt-out),
@@ -1463,6 +1479,17 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			cands := c.urls.MiscChatboxCandidates(misc)
 			c.Scene.ChatSkinBase = cands[0]
 			c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
+		}
+	}
+	// The speaker's own chatbox ink rides the same per-message resolution: AO2
+	// colours the chatbox from misc/<chat>/courtroom_fonts.ini (get_chat), falling
+	// back to the theme. Set flags false = keep the theme's colour.
+	c.Scene.ChatSkinMsgColor, c.Scene.ChatSkinMsgHas = theme.RGB{}, false
+	c.Scene.ChatSkinNameColor, c.Scene.ChatSkinNameHas = theme.RGB{}, false
+	if c.ChatInkFor != nil {
+		if msg, mOK, name, nOK := c.ChatInkFor(speakerName); mOK || nOK {
+			c.Scene.ChatSkinMsgColor, c.Scene.ChatSkinMsgHas = msg, mOK
+			c.Scene.ChatSkinNameColor, c.Scene.ChatSkinNameHas = name, nOK
 		}
 	}
 

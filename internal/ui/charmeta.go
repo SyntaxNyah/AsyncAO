@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // Remote-speaker char.ini metadata (playtest: characters' own blip sets and
@@ -37,6 +38,14 @@ const (
 type charMeta struct {
 	blips string // [Options] blips / legacy gender ("" = none declared)
 	chat  string // [Options] chat — the misc chatbox-skin folder ("" = none)
+	// chatMsgRGB / chatNameRGB are the speaker's own chatbox ink: the default text
+	// colour (chat_config.ini c0) and the showname colour (courtroom_fonts.ini
+	// showname_color), fetched as a follow-up to the char.ini when chat != "". Has
+	// flags false = absent or not yet fetched → the theme's colours win.
+	chatMsgRGB  theme.RGB
+	chatMsgHas  bool
+	chatNameRGB theme.RGB
+	chatNameHas bool
 	// effects is [Options] effects — the misc SCREEN-EFFECT folder
 	// (misc/<effects>/effects.ini + art). It rides this same single fetch, so a
 	// character's own effect pack costs no extra network work; it is also the
@@ -85,6 +94,10 @@ type charMetaFetch struct {
 	showname    string
 	idle        string
 	scaling     courtroom.ScalingMode
+	chatMsgRGB  theme.RGB
+	chatMsgHas  bool
+	chatNameRGB theme.RGB
+	chatNameHas bool
 }
 
 // charMetaFor answers from the cache and fires ONE async fetch on a miss.
@@ -134,6 +147,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 	if mgr == nil {
 		return
 	}
+	ub := a.urls // captured too: the goroutine must not read a.urls after spawn
 	resCh := a.charMetaRes
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
@@ -151,6 +165,31 @@ func (a *App) charMetaFetchOne(url, char string) {
 				res.scaling = ini.ScalingMode()
 				res.showname = ini.ShownameOrFolder(char) // AO2 get_showname, the ONE copy
 				res.idle = ini.IdleAnim()                 // emote 1's anim — the ONE copy of "their resting pose"
+				// The speaker's own chatbox ink: the default text colour
+				// (chat_config.ini c0) and the showname colour (courtroom_fonts.ini
+				// showname_color), each tried down its casing chain until one resolves.
+				if res.chat != "" {
+					for _, u := range ub.ChatboxChatConfigIni(res.chat) {
+						if data, err := mgr.FetchRawLayered(ctx, u); err == nil {
+							if rgb, ok := courtroom.ParseChatboxDefaultColor(data); ok {
+								res.chatMsgRGB, res.chatMsgHas = rgb, true
+							}
+							break
+						}
+					}
+					for _, u := range ub.ChatboxFontsIni(res.chat) {
+						if data, err := mgr.FetchRawLayered(ctx, u); err == nil {
+							showname, nameOK, message, msgOK := courtroom.ParseChatboxFontsIni(data)
+							if nameOK {
+								res.chatNameRGB, res.chatNameHas = showname, true
+							}
+							if msgOK && !res.chatMsgHas {
+								res.chatMsgRGB, res.chatMsgHas = message, true
+							}
+							break
+						}
+					}
+				}
 			}
 		}
 		select {
@@ -176,6 +215,8 @@ func (a *App) pollCharMeta() {
 				blips: res.blips, chat: res.chat, effects: res.effects,
 				realization: res.realization, scaling: res.scaling,
 				showname: res.showname, idle: res.idle, done: true,
+				chatMsgRGB: res.chatMsgRGB, chatMsgHas: res.chatMsgHas,
+				chatNameRGB: res.chatNameRGB, chatNameHas: res.chatNameHas,
 			}
 			// Our own character's effects folder may have just arrived: drop the
 			// picker's per-frame memos so the roster is re-resolved for it.
@@ -204,6 +245,14 @@ func (a *App) remoteChatSkinFor(char string) string {
 	return a.charMetaFor(char).chat
 }
 
+// remoteChatInkFor is the courtroom's ChatInkFor callback: the speaker's own
+// chatbox message/showname colours, off the SAME single char.ini fetch as the
+// skin (plus one follow-up fetch of the chatbox's courtroom_fonts.ini).
+func (a *App) remoteChatInkFor(char string) (theme.RGB, bool, theme.RGB, bool) {
+	m := a.charMetaFor(char)
+	return m.chatMsgRGB, m.chatMsgHas, m.chatNameRGB, m.chatNameHas
+}
+
 // remoteIniShownameFor is the courtroom's IniShownameFor callback — AO2's
 // get_showname for a speaker, off the SAME single char.ini fetch as blips,
 // skins, effects and scaling.
@@ -229,6 +278,7 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	}
 	room.BlipNameFor = a.remoteBlipFor
 	room.ChatSkinFor = a.remoteChatSkinFor
+	room.ChatInkFor = a.remoteChatInkFor
 	room.SpriteScaling = a.remoteScalingFor
 	room.IniShownameFor = a.remoteIniShownameFor
 	// Screen-effect overlays ride the same cache and the same single fetch

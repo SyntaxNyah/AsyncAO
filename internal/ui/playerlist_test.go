@@ -321,6 +321,31 @@ func TestJumpToAreaGuards(t *testing.T) {
 	}
 }
 
+// TestJumpToAreaStopsMusic pins the empty-room fix: jumping to an area must halt
+// the local stream and clear the persisted track, because a server with no
+// autoplay music for the new area sends NO music MC — without this the previous
+// area's song keeps playing, and a later buildRoom would re-seed the stale track.
+// If the target area HAS music, its own MC re-populates the track and plays.
+func TestJumpToAreaStopsMusic(t *testing.T) {
+	a := testTabApp(t)
+	var sent []protocol.Packet
+	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "h")
+	a.sess.MusicTrack = "Trial.opus"    // a song is playing in the area we leave
+	a.musicOwnerKey = "wss://live:2096" // ...and this tab owns the single stream
+
+	a.jumpToArea("Elsewhere")
+
+	if a.sess.MusicTrack != "" {
+		t.Errorf("an area jump must clear the persisted song (stale re-seed guard), got %q", a.sess.MusicTrack)
+	}
+	if a.musicOwnerKey != "" {
+		t.Errorf("an area jump must drop the owner stamp, got %q", a.musicOwnerKey)
+	}
+	if len(sent) != 1 || sent[0].Header != "MC" || sent[0].Fields[0] != "Elsewhere" {
+		t.Fatalf("jump must send the bare area transfer, got %+v", sent)
+	}
+}
+
 // scrollFollowTestApp builds a grouped roster with a known geometry for the
 // scroll-into-view math: at playerPct=100 a player row is playerRowH (44) and a
 // header is playerHeaderH (26). Rows come out as

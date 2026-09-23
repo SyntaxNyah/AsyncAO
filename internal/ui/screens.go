@@ -2808,7 +2808,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// translucent panel (themePage self-heals T1 eviction). Skin blits go via
 	// the Ctx scratch rect: &box into cgo would heap-allocate box at its
 	// CREATION above, every frame, even when neither skin branch runs.
-	skinned, themeSkinned := false, false
+	skinned := false
 	if charSkin != nil {
 		c.cgoRect = box
 		_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
@@ -2826,7 +2826,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			page, _ = a.chatboxSkinForShowname(sc.ShownameText, page)
 			c.cgoRect = box
 			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
-			skinned, themeSkinned = true, true
+			skinned = true
 		}
 	}
 	if !skinned {
@@ -2849,12 +2849,15 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// NoteAnimating cadence). Placed AFTER the skin/panel/border so the OUTSET
 	// glow rings ring around the box on top of any skin without covering the art.
 	a.drawChatEgg(box, sc.MessageText)
-	// Theme text colors are designed against the theme's own skin; on the
-	// flat fallback panel (or a per-character skin) they can be unreadable
-	// (black-on-dark was a real report), so they only apply while the THEME
-	// skin actually drew.
+	// Theme text ink applies over any drawn chatbox skin — the theme's own art OR
+	// a per-character skin (AO2's get_chat priority draws the speaker's box but still
+	// inks it with the theme's message/showname colour). Only the FLAT fallback panel
+	// (no skin at all) keeps the client's readable defaults, because there is no theme
+	// art to design against (black-on-dark was a real report).
 	nameCol := ColAccent
-	if themeSkinned && a.themeHasName {
+	if skinned && sc.ChatSkinNameHas {
+		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
+	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
@@ -2881,7 +2884,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// messagePct, NOT the themed fold: this overlay is AsyncAO's own chatbox, sized
 	// from the viewport rather than from a theme-authored design rect, so there is
 	// no canvas scale for it to keep a ratio to.
-	a.ensureChatRaster(wrapW, themeSkinned, a.messagePct()) // theme ink only with the THEME's skin; char skins keep our readable text
+	a.ensureChatRaster(wrapW, skinned, a.messagePct()) // theme ink over any drawn skin; only the flat panel keeps the client default
 	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
 	textRect := sdl.Rect{X: box.X + chatOverlayPadX, Y: box.Y + chatBoxTopStrip, W: wrapW, H: box.H - chatBoxTopStrip}
 	// The box follows its own crawl (chatcrawlscroll.go = AO2's ensureCursorVisible,
@@ -2967,7 +2970,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			if y+lineH > box.Y+box.H {
 				break
 			}
-			a.labelEmoji(msgFont, a.elemEmoji(elemMessage, a.messagePct()), textRect.X, y, wrapW, line, chatBaseColor(a, sc, themeSkinned, false))
+			a.labelEmoji(msgFont, a.elemEmoji(elemMessage, a.messagePct()), textRect.X, y, wrapW, line, chatBaseColor(a, sc, skinned, false))
 			y += lineH
 		}
 		_ = c.Ren.SetClipRect(nil)
@@ -3198,6 +3201,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	staleAnimChain := a.msAnim != nil && a.msAnim.ChainGen() != a.ctx.fontChainGen
 	if !staleAnimChain && (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
 		a.rasterScale == pct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
+		a.rasterChatMsg == sc.ChatSkinMsgColor && a.rasterChatMsgHas == sc.ChatSkinMsgHas &&
 		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
 	}
@@ -3250,6 +3254,8 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	a.rasterScale = pct
 	a.rasterW = wrapW
 	a.rasterSkinned = skinned
+	a.rasterChatMsg = sc.ChatSkinMsgColor
+	a.rasterChatMsgHas = sc.ChatSkinMsgHas
 	a.rasterEffSig = effSig
 	a.rasterCentered = sc.Centered
 	a.rasterDevPct = a.ctx.textDevPct // #77
@@ -8795,6 +8801,11 @@ func chatBaseColor(a *App, sc *courtroom.Scene, skinned, comicInk bool) sdl.Colo
 		// an explicit message colour always wins (reads on either background)
 	case comicInk:
 		col = comicBubbleInk
+	case skinned && sc.ChatSkinMsgHas:
+		// The speaker's OWN chatbox ink (misc/<chat>/courtroom_fonts.ini) wins over
+		// the theme's message colour — AO2's get_design_element ladder resolves the
+		// chatbox folder before the theme (Courtroom::set_font).
+		col = sdl.Color{R: sc.ChatSkinMsgColor.R, G: sc.ChatSkinMsgColor.G, B: sc.ChatSkinMsgColor.B, A: 255}
 	case skinned && a.themeHasMsg:
 		col = a.themeMsgCol
 	}

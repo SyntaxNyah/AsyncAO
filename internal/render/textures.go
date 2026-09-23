@@ -907,6 +907,18 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		if err != nil {
 			return err
 		}
+		// Streamed appends must inherit the page's already-latched filter.
+		// buildFrames creates each texture under the client-wide hint (linear),
+		// and applyScaleMode's memo skips a page whose scaleModeSet is already
+		// latched — so without this, only the establishing frame 0 keeps nearest
+		// while every appended frame stays bilinear (the "frame 0 crisp, the
+		// rest blurry" regression). No Flush is needed: these are brand-new
+		// textures with no copies queued in the batch yet.
+		if page.scaleModeSet && scaleModeSupported {
+			for _, t := range frames {
+				setTextureScaleMode(t, page.scaleMode)
+			}
+		}
 		page.Frames = append(page.Frames, frames...)
 		page.Delays = append(page.Delays, d.Delays...)
 		page.bytes += added

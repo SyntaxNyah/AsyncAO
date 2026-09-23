@@ -365,7 +365,7 @@ func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect)
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			j.chatRaster = a.fitChatRaster(sc, innerW, vp.H, j.chatPct, true) // comicInk → dark text
+			j.chatRaster = a.fitChatRaster(sc, innerW, vp.H, j.chatPct, false, true) // skinned=false: comicInk → dark text
 		}
 		j.chatText = sc.MessageText
 	}

@@ -1091,6 +1091,27 @@ func (a *App) cyclePos() {
 	a.applySide(next) // also /pos the server so the cycle moves you instantly
 }
 
+// haltMusic halts OUR local music stream and resets every music-ownership/await
+// latch, WITHOUT asking the server for anything. It is the shared "the stream is
+// now silent" teardown for every local stop site: the Stop-music button/hotkey
+// (which then also requests the ~stop sentinel), and the client-initiated area
+// jump (which sends MC#<area> instead — the new area's own MC, or the absence of
+// one, decides what plays next). Nil-safe on Audio (headless tests).
+func (a *App) haltMusic() {
+	if a.d.Audio != nil {
+		a.d.Audio.StopMusic()
+	}
+	a.musicTabDucked = false // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
+	a.clearMusicAwait()      // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
+	a.musicOwnerKey = ""     // drop the owner stamp; the next real track re-stamps it
+	if a.room != nil {
+		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
+	}
+	if a.sess != nil {
+		a.sess.MusicTrack = "" // clear the persisted song so a later room rebuild can't re-seed it
+	}
+}
+
 // stopMusic stops the music. It HALTS OUR playback immediately, then also asks
 // the server to stop the area music (AO has no stop packet, so AO2-Client
 // requests a fake track: "~stop.mp3", or the first extension-less list entry a
@@ -1099,13 +1120,7 @@ func (a *App) cyclePos() {
 // have the fake track), and a listener should be able to silence music in their
 // own client regardless of DJ rights.
 func (a *App) stopMusic() {
-	a.d.Audio.StopMusic()
-	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
-	a.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
-	a.musicAwaitSince = time.Time{} // and no dangling timeout stamp
-	if a.room != nil {
-		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
-	}
+	a.haltMusic()
 	if a.sess == nil {
 		return
 	}

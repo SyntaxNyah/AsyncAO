@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -63,6 +64,12 @@ func main() {
 	flag.Parse()
 
 	debug.SetMemoryLimit(memoryBudgetBytes)
+	// Crash reports must include every goroutine's stack (a decode/render crash
+	// spans threads), and any unhandled panic or fatal error — including cgo
+	// signal faults from the SDL2/webp/avif decode paths — must still land on
+	// disk even in -H=windowsgui builds where stderr goes nowhere.
+	debug.SetTraceback("all")
+	setupCrashOutput()
 
 	if *flagDebug {
 		go func() {
@@ -74,6 +81,31 @@ func main() {
 	if err := run(*flagServer, *flagMaster, *flagVsync, *flagDebug); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// setupCrashOutput wires the process-wide crash hook so any unhandled panic or
+// fatal runtime error is also written to asyncao-crash.log next to the
+// executable. This is the safety net for crashes the per-path recover sites
+// (frameCrashLog, writeDecodeCrash) miss — e.g. a panic on the main goroutine
+// outside Frame(), or a native fault in a decode library. It is effectively
+// free: the runtime only writes to the duplicated fd while the process is
+// already dying, so steady-state operation is unaffected.
+func setupCrashOutput() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(exe), "asyncao-crash.log"),
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	// SetCrashOutput duplicates f's descriptor; we can close f immediately.
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		_ = f.Close()
+		return
+	}
+	_ = f.Close()
 }
 
 // logSamples prints the 1 Hz profiler snapshot in --debug mode.

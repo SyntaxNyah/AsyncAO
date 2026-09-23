@@ -1132,13 +1132,13 @@ func gifChatboxHeight(textH, vpH int32) int32 {
 // the frame), so a full ~256-char line always fits instead of clipping — "fit it
 // no matter what". Converges fast (fewer wrapped lines as the font drops); bounded
 // iterations, floored at the min chat scale. Render thread only.
-func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comicInk bool) *render.MessageRaster {
+func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, skinned, comicInk bool) *render.MessageRaster {
 	maxTextH := vpH*3/5 - gifChatNameRowH - 10
 	if maxTextH < gifChatNameRowH {
 		maxTextH = gifChatNameRowH
 	}
 	for attempt := 0; attempt < 5; attempt++ {
-		r, err := renderRaster(a, sc, wrapW, false, pct, comicInk)
+		r, err := renderRaster(a, sc, wrapW, skinned, pct, comicInk)
 		if err != nil {
 			return nil
 		}
@@ -1156,7 +1156,7 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comi
 			pct = next
 		}
 	}
-	r, _ := renderRaster(a, sc, wrapW, false, config.MinChatScalePercent, comicInk) // safety: show text at the floor
+	r, _ := renderRaster(a, sc, wrapW, skinned, config.MinChatScalePercent, comicInk) // safety: show text at the floor
 	return r
 }
 
@@ -1296,7 +1296,17 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 		return
 	}
 	c := a.ctx
-	skinPage, skinned := a.themePage(themeStemChatbox)
+	// Per-character chatbox wins over the theme skin (AO2 get_chat priority),
+	// mirroring the live themed chatbox so an exported frame never disagrees with
+	// what the player watched.
+	var charSkin *sdl.Texture
+	if sc.ChatSkinBase != "" {
+		if page, ok := a.d.Store.Get(sc.ChatSkinBase); ok && len(page.Frames) > 0 {
+			charSkin = page.Frames[0]
+		}
+	}
+	skinPage, themeSkinned := a.themePage(themeStemChatbox)
+	skinned := charSkin != nil || themeSkinned
 
 	// showname/message sit at their chatbox-relative design rects (AO2 child
 	// semantics), falling back to the classic offsets when the theme omits them.
@@ -1313,7 +1323,9 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	msgX, msgY, wrapW := msgBox.X, msgBox.Y, msgBox.W
 
 	nameCol := ColAccent
-	if skinned && a.themeHasName {
+	if skinned && sc.ChatSkinNameHas {
+		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
+	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
@@ -1328,9 +1340,14 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	// showname that pushed the live chatbox onto its `med` skin must push the
 	// exported frame onto it too, against the layout built for the CAPTURE frame,
 	// or the video shows a narrow name plate with the name spilling off it.
-	nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+	if charSkin == nil {
+		nameBox, skinPage = a.chatboxSkinLadder(nameBox, lay, skinPage, snFont, snEmoji, sc.ShownameText, nameCol)
+	}
 
-	if skinned {
+	if charSkin != nil {
+		c.cgoRect = box
+		_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
+	} else if themeSkinned {
 		c.cgoRect = box
 		_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
 	} else {
@@ -1355,7 +1372,7 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			j.chatRaster = a.fitChatRaster(sc, wrapW, box.H, j.chatPct, false)
+			j.chatRaster = a.fitChatRaster(sc, wrapW, box.H, j.chatPct, skinned, false)
 		}
 		j.chatText = sc.MessageText
 	}
@@ -1382,7 +1399,7 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			j.chatRaster = a.fitChatRaster(sc, wrapW, vp.H, j.chatPct, false)
+			j.chatRaster = a.fitChatRaster(sc, wrapW, vp.H, j.chatPct, false, false)
 		}
 		j.chatText = sc.MessageText
 	}
