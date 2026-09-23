@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.0 - 2026-09-23
+
+- **Reverted the client-side music halt on area jump — area music is not the
+  client's responsibility.** An area `MC` is a move request, not a music
+  request, and the client can't tell "this room is silent" from the absence
+  of a music packet: KFO-family servers drive music entirely server-side
+  (`music_autoplay`), so stopping or keeping the track across a room change
+  is the server's call, not the client's. The client now just plays whatever
+  `MC` arrives and leaves the current song alone across an area change,
+  restoring the pre-v1.98.9 behaviour so multi-area roleplays keep their
+  exploration music.
+
 ## v1.98.9 - 2026-09-23
 
 - **Per-character chatboxes now carry their own colours.** A speaker's own
