@@ -319,8 +319,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   unreachable. The stock **default** now resolves against the app directory
   only, so it's always there; custom *named* themes still use your folder (and
   still fall back to its default for missing keys).
-- Theme text colors apply **only over their own skin** — on the flat
-  fallback panel the client's readable defaults win (black-on-dark fix).
+- Theme text colors apply over any drawn chatbox skin — the theme's own art
+  **or** a speaker's per-character chatbox — and a speaker's own chatbox can
+  override them with `c0` from its `chat_config.ini` (the default text colour)
+  and `showname_color` / `message_color` from its `courtroom_fonts.ini`,
+  resolved like AO2's `get_chat`. Only the flat fallback panel keeps the
+  client's readable defaults (black-on-dark fix).
 - **Ink readability guard**: at load time the theme's message/showname
   colors are luma-checked against the actual decoded chatbox pixels;
   ink with no contrast against its own skin (real themes ship dark ink

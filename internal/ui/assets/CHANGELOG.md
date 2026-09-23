@@ -4,6 +4,36 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.98.9 - 2026-09-23
+
+- **Per-character chatboxes now carry their own colours.** A speaker's own
+  chatbox (char.ini `chat=` → `misc/<folder>/`) can declare its text and
+  showname ink in two INIs beside the art — the default text colour as `c0`
+  in `chat_config.ini`, and `showname_color` (with a `message_color`
+  fallback) in `courtroom_fonts.ini` — exactly how AO2's `Courtroom::set_font`
+  resolves them against `get_chat`. Those colours now apply over the box, so a
+  white chatbox with black text (the "Endless Monday" box) reads black instead
+  of white. The classic overlay, the themed chatbox and the video export all
+  honour them, falling back to the theme's colours and keeping the client's
+  defaults only on the flat panel. Per-character chatboxes now also draw in
+  themed layouts (AO2's get_chat priority), not just the classic overlay.
+
+- **Music stops when you walk into a silent area.** Moving to a room with no
+  `music_autoplay` on a KFO-family server (which sends no music packet at all)
+  used to leave the previous area's track playing. The client-side area jump
+  now halts the stream and clears the persisted track before the area `MC` goes
+  out — so the old song can't linger, and if the new area does have music its
+  own `MC` starts normally.
+
+- **Appended animated-sprite frames keep their filter.** Streaming an animated
+  sprite appended new frames but dropped the latched `ScaleMode`, so the first
+  frame sampled nearest while the rest blurred bilinear. Appended frames now
+  inherit the stream's scale mode, keeping the whole animation on one filter.
+
+Thanks to **Nightingale** for the animated-sprite report, to **Dag** for the
+music-area report and for testing both fixes, and to **Lala** for the
+per-character chatbox colour report.
+
 ## v1.98.6 - 2026-09-20
 
 - **Animated sprites no longer balloon memory.** Loading a large animated sprite
