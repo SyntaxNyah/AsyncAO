@@ -918,6 +918,46 @@ func TestPreviewHoverClamp(t *testing.T) {
 	}
 }
 
+// TestICLogDepthRoundTrip pins the IC scrollback depth pref (Settings → Chat):
+// 0 = the shipped default, a typed number clamps into range, and the
+// ICLogDepthUnlimited "don't cap at all" sentinel survives save→load un-clamped.
+func TestICLogDepthRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.ICLogDepth() != 0 {
+		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.ICLogDepth())
+	}
+	p.SetICLogDepth(5000)
+	if got := p.ICLogDepth(); got != 5000 {
+		t.Fatalf("ICLogDepth = %d, want 5000", got)
+	}
+	p.SetICLogDepth(1 << 30)
+	if got := p.ICLogDepth(); got != ICLogDepthMax {
+		t.Fatalf("ICLogDepth clamp hi = %d, want %d", got, ICLogDepthMax)
+	}
+	p.SetICLogDepth(0)
+	if got := p.ICLogDepth(); got != 0 {
+		t.Fatalf("ICLogDepth back to default = %d, want 0", got)
+	}
+	p.SetICLogDepth(ICLogDepthUnlimited)
+	if got := p.ICLogDepth(); got != ICLogDepthUnlimited {
+		t.Fatalf("ICLogDepth unlimited = %d, want %d", got, ICLogDepthUnlimited)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.ICLogDepth() != ICLogDepthUnlimited {
+		t.Errorf("unlimited sentinel lost across save→load: %d, want %d", q.ICLogDepth(), ICLogDepthUnlimited)
+	}
+}
+
 // TestQoLPrefRoundTrip pins that the QoL prefs survive save→load — in
 // particular that an explicit SpritePreviews=false isn't clobbered by its
 // absent-default-ON pointer field.

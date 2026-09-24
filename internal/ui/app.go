@@ -11163,11 +11163,29 @@ func (a *App) pushICStyled(line string, color int, friend bool, friendColor int3
 		url = urls[0]
 	}
 	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-	if len(a.icLog) > icLogCap {
-		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
-		a.icLog = a.icLog[:icLogCap]
+	if cap := a.icLogCapFor(); cap > 0 && len(a.icLog) > cap {
+		copy(a.icLog, a.icLog[len(a.icLog)-cap:])
+		a.icLog = a.icLog[:cap]
 	}
 	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
+}
+
+// icLogCapFor returns the effective IC scrollback cap: 0 = don't cap at all,
+// otherwise that many entries. The "IC log depth" pref (Settings → Chat) is
+// read live so a change applies to the very next message. The pref's 0 sentinel
+// resolves to the shipped icLogCap; ICLogDepthUnlimited resolves to 0 (no cap).
+func (a *App) icLogCapFor() int {
+	if a.d.Prefs == nil {
+		return icLogCap
+	}
+	switch n := a.d.Prefs.ICLogDepth(); {
+	case n == config.ICLogDepthUnlimited:
+		return 0
+	case n == 0:
+		return icLogCap
+	default:
+		return n
+	}
 }
 
 // oocLineCap bounds ONE OOC entry (hostile-server guard). MOTDs and server

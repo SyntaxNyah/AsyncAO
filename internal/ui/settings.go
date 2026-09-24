@@ -36,10 +36,13 @@ type settingsState struct {
 	// memBufs backs the exact-number fields of the memory/scale slider rows
 	// (downscale %, animated height cap, animated budget, decode concurrency,
 	// texture budget) - reseeded while unfocused, applied on Enter.
-	memBufs   [5]string
-	tab       int                    // active settings tab (index into settingsTabNames)
-	tabScroll [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
-	search    string                 // settings search query (jumps to the matching tab)
+	memBufs [5]string
+	// logDepthBuf backs the "IC log depth" exact-number entry in the Chat tab's
+	// Chat log section — reseeded while unfocused, applied on Enter.
+	logDepthBuf string
+	tab         int                    // active settings tab (index into settingsTabNames)
+	tabScroll   [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
+	search      string                 // settings search query (jumps to the matching tab)
 	// scrollToSection holds a lowercased query for one frame after a search jump: the
 	// first section card whose title contains it scrolls itself to the top, so search
 	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
@@ -3316,6 +3319,55 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	y = a.settingsSection(y, w, "Chat log")
+	// IC log depth (Nightingale's report): how many IC lines the on-screen log
+	// keeps before the oldest scrolls away. Type an exact number, or press ∞ to
+	// never cap it.
+	c.Label(pad, y+4, "IC log depth:", ColText)
+	depth := a.d.Prefs.ICLogDepth()
+	depthFieldID := "iclogdepth"
+	depthField := sdl.Rect{X: pad + 150, Y: y, W: 64, H: fieldH}
+	if c.focusID != depthFieldID {
+		switch depth {
+		case config.ICLogDepthUnlimited:
+			settings.logDepthBuf = ""
+		case 0:
+			settings.logDepthBuf = strconv.Itoa(icLogCap)
+		default:
+			settings.logDepthBuf = strconv.Itoa(depth)
+		}
+	}
+	var depthEntered bool
+	settings.logDepthBuf, depthEntered = c.TextField(depthFieldID, depthField, settings.logDepthBuf, "lines")
+	if depthEntered {
+		if n, err := strconv.Atoi(strings.TrimSpace(settings.logDepthBuf)); err == nil && n > 0 {
+			a.d.Prefs.SetICLogDepth(n)
+		} else {
+			a.d.Prefs.SetICLogDepth(0) // blank / garbage → back to the default
+		}
+		c.focusID = ""
+	}
+	c.Tooltip(depthField, "How many IC lines the on-screen log keeps before the oldest scrolls away. Type an exact number, or press ∞ to never cap it.")
+	depthInf := sdl.Rect{X: depthField.X + depthField.W + 6, Y: y, W: 28, H: btnH}
+	if depth == config.ICLogDepthUnlimited {
+		c.Fill(sdl.Rect{X: depthInf.X - 2, Y: depthInf.Y - 2, W: depthInf.W + 4, H: depthInf.H + 4}, ColAccent)
+	}
+	if c.Button(depthInf, "∞") {
+		if depth == config.ICLogDepthUnlimited {
+			a.d.Prefs.SetICLogDepth(0)
+		} else {
+			a.d.Prefs.SetICLogDepth(config.ICLogDepthUnlimited)
+		}
+	}
+	c.Tooltip(depthInf, "Don't cap at all: keep every IC line for the whole session.")
+	depthLbl := "default (" + strconv.Itoa(icLogCap) + " lines)"
+	if depth == config.ICLogDepthUnlimited {
+		depthLbl = "don't cap"
+	} else if depth > 0 {
+		depthLbl = strconv.Itoa(depth) + " lines"
+	}
+	c.Label(depthInf.X+depthInf.W+8, y+4, depthLbl, ColAccent)
+	y += 28
+
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
 	areaScroll := a.d.Prefs.PerAreaScrollbackOn()
 	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {

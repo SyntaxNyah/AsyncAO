@@ -1143,6 +1143,7 @@ type AssetPreferences struct {
 	ShoutDurationMsVal       int                  `json:"shoutDurationMs,omitempty"`       // shout-bubble hold in ms (0/absent = the canonical default)
 	PreanimTimeoutMsVal      int                  `json:"preanimTimeoutMs,omitempty"`      // preanim wait cap in ms (0/absent = the canonical default)
 	ICQueueCapVal            int                  `json:"icQueueCap,omitempty"`            // IC backlog queue depth (0/absent = the canonical default 64)
+	ICLogDepthVal            int                  `json:"icLogDepth,omitempty"`            // IC scrollback depth (0/absent = default 1024; -1 = don't cap at all)
 	CatchUpLingerMsVal       int                  `json:"catchUpLingerMs,omitempty"`       // per-message linger while catching up, ms (default 0 = one per frame)
 	ThumbCache               bool                 `json:"thumbCache,omitempty"`            // opt-in persistent low-q sprite thumbnail cache (default OFF)
 	ThumbHeightPxVal         int                  `json:"thumbHeightPx,omitempty"`         // thumbnail height px (0/absent = 64)
@@ -1726,6 +1727,7 @@ type prefsJSON struct {
 	ShoutDurationMs        int                  `json:"shoutDurationMs"`      // shout hold in ms (0 = default)
 	PreanimTimeoutMs       int                  `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
 	ICQueueCap             int                  `json:"icQueueCap"`           // IC queue depth (0 = default 64)
+	ICLogDepth             int                  `json:"icLogDepth"`           // IC scrollback depth (0 = default 1024; -1 = uncapped)
 	CatchUpLingerMs        int                  `json:"catchUpLingerMs"`      // catch-up per-message linger ms (default 0)
 	ThumbCache             bool                 `json:"thumbCache"`           // low-q sprite thumbnail cache (default OFF)
 	ThumbHeightPx          int                  `json:"thumbHeightPx"`        // thumb height px (0 = 64)
@@ -2755,6 +2757,12 @@ func load(path string) (*AssetPreferences, error) {
 	p.ICQueueCapVal = onDisk.ICQueueCap
 	if p.ICQueueCapVal != 0 { // 0 = the canonical default (64)
 		p.ICQueueCapVal = clampPercent(p.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
+	}
+	p.ICLogDepthVal = onDisk.ICLogDepth
+	if p.ICLogDepthVal < 0 { // any negative = "don't cap at all" (defensive, like the FPS sentinel)
+		p.ICLogDepthVal = ICLogDepthUnlimited
+	} else if p.ICLogDepthVal != 0 { // 0 = the canonical default (1024)
+		p.ICLogDepthVal = clampPercent(p.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
 	}
 	p.CatchUpLingerMsVal = clampPercent(onDisk.CatchUpLingerMs, 0, CatchUpLingerMaxMs) // default IS zero, so no sentinel
 	p.ThumbCache = onDisk.ThumbCache
@@ -7881,6 +7889,12 @@ const (
 	ICQueueCapMax       = 256   // deepest backlog before "just read the log"
 	CatchUpLingerMaxMs  = 1000  // longest per-message flash while catching up (default 0 = one per frame)
 
+	// IC scrollback depth (the on-screen IC chat log). 0 = the shipped default
+	// (the client's own icLogCap, 1024); ICLogDepthUnlimited = never cap it.
+	ICLogDepthUnlimited = -1    // "don't cap at all" — the log grows for the whole session
+	ICLogDepthMin       = 1     // shallowest log worth keeping
+	ICLogDepthMax       = 65536 // deepest a typed number may set (still bounded; ∞ is the true uncap)
+
 	// Thumbnail-cache knobs (opt-in low-q sprite stand-ins). The defaults land
 	// ~1 KB per sprite: visibly low-quality by design — instantly recognisable,
 	// never mistaken for the real art.
@@ -8164,6 +8178,33 @@ func (p *AssetPreferences) SetICQueueCap(n int) {
 		return
 	}
 	p.ICQueueCapVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ICLogDepth reports the IC scrollback depth (0 = the client's canonical
+// default, 1024; ICLogDepthUnlimited = don't cap at all; else that many
+// entries kept in the on-screen IC log).
+func (p *AssetPreferences) ICLogDepth() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ICLogDepthVal
+}
+
+// SetICLogDepth persists the IC scrollback depth (0 = default; a negative =
+// ICLogDepthUnlimited / don't cap at all; else clamped).
+func (p *AssetPreferences) SetICLogDepth(n int) {
+	if n < 0 {
+		n = ICLogDepthUnlimited
+	} else if n != 0 {
+		n = clampPercent(n, ICLogDepthMin, ICLogDepthMax)
+	}
+	p.mu.Lock()
+	if p.ICLogDepthVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.ICLogDepthVal = n
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.1 - 2026-09-24
+
+- **IC log depth setting (Settings → Chat).** The on-screen IC log had a fixed
+  depth of 1024 lines with no way to change it, so long roleplays cut off the
+  oldest lines. There's now an **IC log depth** control in the Chat log section:
+  type any number of lines to keep, or press **∞** to never cap the log for the
+  whole session (the default stays 1024; "∞" is the uncapped escape hatch).
+
+  Thanks to **Nightingale** for the report.
+
 ## v1.99.0 - 2026-09-23
 
 - **Reverted the client-side music halt on area jump — area music is not the
