@@ -619,7 +619,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// and quietly cost the strip its anchor.
 			speaker := icSpeakerName(ev.Message, force, nil)
 			line, _, bodyRuneStart, styles := icLogEntry(ev.Message, force, "", nil)
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
 			if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
 				copy(s.icLog, s.icLog[len(s.icLog)-cap:])
 				s.icLog = s.icLog[:cap]

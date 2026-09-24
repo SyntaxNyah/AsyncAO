@@ -446,17 +446,23 @@ type App struct {
 	icFilterSeq   uint64
 	icFilterEpoch uint64
 	icFilterQuery string
+	// The filter cache also keys on the advanced filters (#129), so editing a
+	// showname/pos filter rebuilds without touching the log.
+	icFilterShowname string
+	icFilterPos      string
 	// IC wrapped-rows cache (playtest: log lines must break to the log's own
 	// width): filtered entries wrap to the list width;
 	// rebuilt only when the log, query, width, or font scale moved.
-	icWrap      []icWrapLine
-	icWrapSeq   uint64
-	icWrapEpoch uint64
-	icWrapQuery string
-	icWrapW     int32
-	icWrapPct   int
-	icWrapGen   int  // font chain generation baked into the wrap
-	icWrapStamp bool // ICTimestamps state baked into the wrap (toggling rewraps)
+	icWrap         []icWrapLine
+	icWrapSeq      uint64
+	icWrapEpoch    uint64
+	icWrapQuery    string
+	icWrapShowname string
+	icWrapPos      string
+	icWrapW        int32
+	icWrapPct      int
+	icWrapGen      int  // font chain generation baked into the wrap
+	icWrapStamp    bool // ICTimestamps state baked into the wrap (toggling rewraps)
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
 	// (App-global like the IC caches above, but keyed by logViewEpoch too so a
@@ -2343,11 +2349,17 @@ type sessionState struct {
 	icScrollVis float64
 	frameDtMs   float32
 	logSearch   string
-	oocSeq      uint64
-	oocLog      []string
-	oocSpeakers []string // parallel to oocLog: speaker per line ("" = system line); for name colours
-	oocScroll   int32
-	musicScroll int32
+	// Advanced log filters (#129): show ONLY entries whose speaker matches
+	// logFilterShowname and whose position matches logFilterPos ("" = no
+	// filter), stacked on top of the logSearch text match. Both inclusive.
+	logFilterShowname string
+	logFilterPos      string
+	logFilterOpen     bool // the filter sub-panel is expanded
+	oocSeq            uint64
+	oocLog            []string
+	oocSpeakers       []string // parallel to oocLog: speaker per line ("" = system line); for name colours
+	oocScroll         int32
+	musicScroll       int32
 	// Music-list search (AO2/webAO parity): the query plus a memoized filter so
 	// a list of thousands isn't re-scanned (and re-lowercased — that allocates)
 	// every frame. musicFiltered holds matching indices into a.sess.Music.
@@ -5135,6 +5147,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// uses (remoteIniShownameFor) — one chain, two surfaces.
 				line, speaker, bodyRuneStart, styles := icLogEntry(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
 				a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart)
+				// Store the speaker's courtroom position (wire Side) per entry so the
+				// advanced pos filter (#129) can narrow the log to one position.
+				a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
 				// This line has a message in the play queue behind it: the log is written
 				// on ARRIVAL, the courtroom speaks it later, and the ghost-text option
 				// (ghosttext.go) pairs the two by counting. Stamped here, next to the
@@ -5428,6 +5443,17 @@ func icBodyStyled(m *protocol.ChatMessage) (string, []courtroom.StyleRun) {
 // Stored on the entry so per-speaker name colours tint exactly that prefix.
 func icSpeakerName(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
 	return courtroom.DisplayName(m, forceChar, ini)
+}
+
+// icPos is an IC message's normalized courtroom position (the wire Side field):
+// lowercased and trimmed, so the pos filter and the stored icEntry.pos always
+// agree regardless of how a server or a custom SD list spells it. "" for a
+// system line (no speaker).
+func icPos(m *protocol.ChatMessage) string {
+	if m == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(m.Side))
 }
 
 // friendNick returns the personal nickname set for m's speaker if they're a
@@ -10829,6 +10855,7 @@ type icEntry struct {
 	friend      bool   // sender is a highlighted friend (showname match) — glows in the log
 	friendColor int32  // per-friend glow RGB (0xRRGGBB) from a `name=hex` entry; -1 = default friend tint
 	speaker     string // displayed name prefix (for per-speaker name colours); "" = system/evidence line
+	pos         string // sender's courtroom position (wire Side, lowercased+trimmed); "" = system line — keys the pos filter
 	stamp       string // local arrival time ("15:04"), formatted once on append; prefixed in the log when ICTimestamps is on
 	ref         uint32 // content-stable reaction ref (#2): MakeReactionRef(CharName, clean text); 0 = system line
 	// speech marks an entry that came from an IC MESSAGE and therefore has a

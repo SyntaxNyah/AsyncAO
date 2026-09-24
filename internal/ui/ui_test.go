@@ -849,6 +849,42 @@ func TestICLogFilterCache(t *testing.T) {
 	}
 }
 
+// TestICLogFilterShownamePos pins the advanced filter sub-panel predicates (#129):
+// a showname filter keeps only that speaker and a pos filter keeps only that
+// position, both inclusive and stackable on top of the text search.
+func TestICLogFilterShownamePos(t *testing.T) {
+	a := &App{}
+	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
+	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
+	a.pushIC("Judge: order in the court", 3, false, -1, "Judge")
+	a.icLog[0].pos = "def"
+	a.icLog[1].pos = "pro"
+	a.icLog[2].pos = "jud"
+
+	// No filter: all three.
+	if got := a.icLogFiltered(); len(got) != 3 {
+		t.Fatalf("unfiltered = %d, want 3", len(got))
+	}
+	// Showname only: Edgeworth.
+	a.logFilterShowname = "edgeworth"
+	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
+		t.Errorf("showname filter = %v, want [1]", got)
+	}
+	// Pos only: the judge.
+	a.logFilterShowname = ""
+	a.logFilterPos = "jud"
+	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 2 {
+		t.Errorf("pos filter = %v, want [2]", got)
+	}
+	// Showname + pos + text stack: Edgeworth's OBJECTION from the pro position.
+	a.logFilterShowname = "edgeworth"
+	a.logFilterPos = "pro"
+	a.logSearch = "objection"
+	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
+		t.Errorf("stacked filter = %v, want [1]", got)
+	}
+}
+
 // TestWrapTextCaps pins the lobby description wrapper: nil for blank
 // input, the line cap holds, and the capped line gains an ellipsis.
 // (Headless: TextWidth returns 0 without a font, so everything fits one

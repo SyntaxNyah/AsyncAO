@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.2 - 2026-09-24
+
+- **Advanced log filters — narrow the IC log by showname or courtroom
+  position.** A new **Filter** button on the Log tab opens a sub-panel with two
+  fields: **Showname** shows only that speaker, and **Pos** shows only that
+  position (e.g. `wit`). Both are inclusive and case-insensitive, and they
+  stack with the existing text search — so casing a long testimony is "who,
+  from where, and what did they say".
+
+  Thanks to **Crystalwarrior** for the issue report (#129).
+
 ## v1.99.1 - 2026-09-24
 
 - **IC log depth setting (Settings → Chat).** The on-screen IC log had a fixed

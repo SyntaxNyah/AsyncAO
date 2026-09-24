@@ -3479,17 +3479,30 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// stock font the max() keeps the row at exactly 24px — byte-identical.
 	rowY := inner.Y
 	rowH := logSearchRowH(int32(c.font.Height()))
-	searchW := inner.W - 3*logExportBtnPitch - 12
+	// "Filter" toggles the advanced filter sub-panel (showname + pos, #129).
+	// Reserved at the row's left edge so the search field and export buttons
+	// keep their existing right-side geometry.
+	const filterBtnW = int32(48)
+	filterBtn := sdl.Rect{X: inner.X, Y: rowY, W: filterBtnW, H: rowH}
+	if c.Button(filterBtn, "Filter") {
+		a.logFilterOpen = !a.logFilterOpen
+	}
+	if a.logFilterOpen {
+		c.Border(filterBtn, ColAccent) // active cue, matching the Vol toggle
+	}
+	c.Tooltip(filterBtn, "Show/hide advanced filters (only showname / position)")
+	searchX := inner.X + filterBtnW + 4
+	searchW := inner.W - filterBtnW - 4 - 3*logExportBtnPitch - 12
 	// A layout-edited slot can be too narrow for the export buttons: give the
-	// search field the whole row instead of drawing it at a degenerate width
-	// (the placeholder text has no box to live in at W <= 0).
+	// search field the rest of the row instead of drawing it at a degenerate
+	// width (the placeholder text has no box to live in at W <= 0).
 	showExports := searchW >= logSearchMinW
 	if !showExports {
-		searchW = inner.W
+		searchW = inner.W - (filterBtnW + 4)
 	}
-	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: inner.X, Y: rowY, W: searchW, H: rowH}, a.logSearch, "Search log...")
+	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: searchX, Y: rowY, W: searchW, H: rowH}, a.logSearch, "Search log...")
 	if showExports {
-		bx := inner.X + searchW + 4
+		bx := searchX + searchW + 4
 		if c.Button(sdl.Rect{X: bx, Y: rowY, W: logExportBtnW, H: rowH}, "Copy") {
 			a.copyICLog()
 		}
@@ -3500,9 +3513,20 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 			a.exportICLog(true)
 		}
 	}
+	listY := rowY + rowH + logSearchRowGap
+	// Advanced filters (#129): a second row of two fields — "Showname" (only that
+	// speaker) and "Pos" (only that position) — shown when Filter is expanded.
+	// Both are inclusive and stack on top of the text search above.
+	if a.logFilterOpen {
+		frH := rowH
+		half := (inner.W - 4) / 2
+		a.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.logFilterShowname, "Showname…")
+		a.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.logFilterPos, "Pos (e.g. wit)…")
+		listY += frH + logSearchRowGap
+	}
 	// false: this is the classic docked Log tab, AsyncAO chrome outside any theme's
 	// design canvas (#21 label 16).
-	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + rowH + logSearchRowGap, W: inner.W, H: inner.H - rowH - logSearchRowGap}, false)
+	a.drawICLogList(sdl.Rect{X: inner.X, Y: listY, W: inner.W, H: inner.H - (listY - inner.Y)}, false)
 }
 
 const (

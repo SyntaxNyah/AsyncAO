@@ -1819,7 +1819,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// #39: key on the RESOLVED scale (theme "ic_chatlog" size × the log zoom).
 	pct := a.elemPct(elemICChatlog, a.logPct)
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
-		a.icWrapQuery == a.logSearch &&
+		a.icWrapQuery == a.logSearch && a.icWrapShowname == a.logFilterShowname && a.icWrapPos == a.logFilterPos &&
 		a.icWrapW == width && a.icWrapPct == pct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
@@ -1880,6 +1880,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
 		out, a.icLogSeq, a.logSearch, width, pct, a.ctx.fontChainGen, showStamps
+	a.icWrapShowname, a.icWrapPos = a.logFilterShowname, a.logFilterPos
 	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
@@ -2158,26 +2159,40 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 
 // --- IC log export --------------------------------------------------------------------
 
-// icLogFiltered returns the indices of log entries matching the search
-// box ("" = all), cached against (log seq, query): while the log tab is
-// visible the per-frame cost is two comparisons instead of a 1024-line
-// scan plus a slice allocation.
+// icLogFiltered returns the indices of log entries matching the search box AND
+// the advanced filters (showname, pos) — "" means no filter on that axis. All
+// matches are inclusive and case-insensitive (showname is a substring match on
+// the speaker, pos is an exact match on the normalized position). Cached against
+// (log seq, epoch, query, showname, pos): while the log tab is visible the
+// per-frame cost is a handful of comparisons instead of a 1024-line scan plus a
+// slice allocation.
 func (a *App) icLogFiltered() []int {
 	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
-		a.icFilterQuery == a.logSearch {
+		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos {
 		return a.icFilter
 	}
 	out := a.icFilter[:0]
 	q := strings.ToLower(strings.TrimSpace(a.logSearch))
+	showname := strings.ToLower(strings.TrimSpace(a.logFilterShowname))
+	pos := strings.ToLower(strings.TrimSpace(a.logFilterPos))
 	for i := range a.icLog {
-		if q == "" || strings.Contains(strings.ToLower(a.icLog[i].text), q) {
-			out = append(out, i)
+		e := &a.icLog[i]
+		if q != "" && !strings.Contains(strings.ToLower(e.text), q) {
+			continue
 		}
+		if showname != "" && !strings.Contains(strings.ToLower(e.speaker), showname) {
+			continue
+		}
+		if pos != "" && !strings.EqualFold(e.pos, pos) {
+			continue
+		}
+		out = append(out, i)
 	}
 	if out == nil {
 		out = []int{} // non-nil marks the cache as populated
 	}
 	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
+	a.icFilterShowname, a.icFilterPos = a.logFilterShowname, a.logFilterPos
 	a.icFilterEpoch = a.logViewEpoch
 	return out
 }
