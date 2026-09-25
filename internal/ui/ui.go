@@ -467,6 +467,8 @@ type Ctx struct {
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
 	uiPct int32
+	// devScale: drawable px per window point (2 on macOS Retina, 1 elsewhere); folds into text raster only.
+	devScale float32
 
 	// renderPctOverride, when non-zero, is the scale percent Ren is ACTUALLY at,
 	// for the offscreen passes that bracket a SetScale of their own (the pinned-tab
@@ -812,6 +814,7 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 		fontDev:    font,
 		fontBigDev: fontBig,
 		textDevPct: DefaultScalePct,
+		devScale:   1.0,
 		textCache:  map[textKey]cachedText{},
 		widthCache: map[string]int32{},
 	}, nil
@@ -2470,7 +2473,23 @@ func (c *Ctx) SetUIScale(pct int) {
 		pct = DefaultScalePct
 	}
 	c.uiPct = int32(pct)
-	c.SetTextDevScale(pct) // fold the global scale into font point size (#77 Part A)
+	c.SetTextDevScale(int(float32(pct)*c.devScale + 0.5)) // device scale (crisp); mouse stays logical
+}
+
+// SetDeviceScaleFactor records the renderer drawable's device pixel scale
+// (drawable px per window point; 2 on a macOS Retina window, 1 elsewhere). It
+// folds into text rasterization only (via SetUIScale), never mouse unprojection:
+// SDL reports the mouse in POINTS on macOS, so the pointer must stay on the
+// logical scale. Called once at startup after the renderer is created.
+func (c *Ctx) SetDeviceScaleFactor(f float32) {
+	if f < 1 {
+		f = 1
+	}
+	if c.devScale == f {
+		return
+	}
+	c.devScale = f
+	c.SetTextDevScale(int(float32(c.uiPct)*f + 0.5))
 }
 
 // RenderScalePct reports the scale percent Ren is currently drawing at — what the
