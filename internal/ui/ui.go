@@ -2193,6 +2193,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.fullscreenReq = false
 	c.keyPressed = 0
 	c.pasted = ""
+	c.pastedRaw = ""
 	c.copyReq = false
 	c.cutReq = false
 	c.undoReq = false

@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.3 - 2026-09-25
+
+- **Fixed clipboard spam in the evidence Description editor (#133).** Pasting
+  (Ctrl+V) into the description re-inserted the clipboard text every frame —
+  the multiline field's raw paste buffer was never cleared between frames, so
+  a single paste repeated endlessly. The buffer is now reset each frame, so a
+  paste lands exactly once.
+
+  Thanks to **Mephisto-hash-dotcom** for the report.
+
 ## v1.99.2 - 2026-09-24
 
 - **Advanced log filters — narrow the IC log by showname or courtroom
