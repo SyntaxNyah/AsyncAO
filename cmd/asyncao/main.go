@@ -244,7 +244,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// through ui.CenteredWindowPos instead, which keeps it on the display it is on.
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
-		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
+		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE|highDPIFlags())
 	if err != nil {
 		return err
 	}
@@ -323,6 +323,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 	}
 	defer ren.Destroy()
+	// macOS Retina: with ALLOW_HIGHDPI the Metal drawable is 2x the window's
+	// point size; fold that into the render scale so the logical canvas still
+	// fills the window WITHOUT SetLogicalSize (which would also remap mouse
+	// events and break hit-testing). 1 off macOS / non-Retina.
+	retinaScale := retinaScaleFactor(ren, window)
 	// Draw-op alpha (taken overlays, chat box, selection highlights) needs
 	// the renderer's blend mode set: SDL defaults to NONE and renders
 	// every alpha Fill opaque. Textures set their own mode at upload.
@@ -701,7 +706,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		w, h := window.GetSize()
 		app.SetAutoScaleFromWindow(w, h) // window-relative auto scale (when auto-scale is on)
 		scale := float32(app.UIScale()) / 100
-		_ = ren.SetScale(scale, scale)
+		_ = ren.SetScale(scale*retinaScale, scale*retinaScale)
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
 		_ = ren.SetDrawColor(0, 0, 0, 255)

@@ -15,6 +15,14 @@ tagged "installed" below.
 
   Thanks to **Crystal Warrior** for testing and reporting.
 
+- **macOS Retina fix, scoped to macOS.** Restored the Retina-aware window and the
+  point→drawable bridge from v1.99.5, but replaced `SDL_RenderSetLogicalSize`
+  (which remapped mouse events and broke click hit-testing) with an equivalent
+  `SDL_RenderSetScale` factor, and pinned the macOS DPI seed to baseline so the
+  auto-scale stops double-counting to 200%. Windows/Linux builds are unchanged
+  (the `!darwin` path is a no-op). Thanks to the macOS testers for catching the
+  v1.99.5 click regression.
+
 ## v1.99.6 - 2026-09-25
 
 - **Reverted the v1.99.4/v1.99.5 renderer changes — they broke window resizing
