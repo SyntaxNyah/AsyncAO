@@ -242,9 +242,14 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// window yet, so there is no "current display" to prefer, and we persist a
 	// window size but never a position. Everywhere a window already exists we go
 	// through ui.CenteredWindowPos instead, which keeps it on the display it is on.
+	// WINDOW_ALLOW_HIGHDPI makes the window Retina-aware on macOS: GetSize and
+	// the mouse stay in POINTS while the renderer's drawable becomes the full
+	// 2x backing store, and SetLogicalSize below bridges the two. Without it
+	// macOS reports the window and pointer in mismatched spaces and the mouse
+	// drifts toward the bottom-right. A no-op on Windows/Linux.
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
-		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
+		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE|sdl.WINDOW_ALLOW_HIGHDPI)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.5 - 2026-09-25
+
+- **Fixed the macOS Retina mouse drift for real.** The window is now created
+  high-DPI aware (`SDL_WINDOW_ALLOW_HIGHDPI`), so its size and the mouse stay in
+  points while the renderer draws to the full 2× Retina backing store (bridged
+  by the renderer's logical size, added in v1.99.4). The auto UI-scale also no
+  longer double-counts Retina on macOS — a macOS window is sized in points, so
+  the display's physical DPI was inflating the scale to 200%. Clicks now land
+  exactly under the cursor and the UI starts at the right size. Windows and
+  Linux are unaffected.
+
+  Thanks to **Shinji** for the report.
+
 ## v1.99.4 - 2026-09-25
 
 - **Fixed mouse misalignment on macOS Retina displays.** On a high-DPI Mac the
