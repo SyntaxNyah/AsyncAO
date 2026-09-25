@@ -485,7 +485,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)
-	app.SetSpriteCapBase(spriteCapBase) // the Settings downscale sliders re-derive the cap from this live
+	app.SetSpriteCapBase(spriteCapBase)   // the Settings downscale sliders re-derive the cap from this live
+	app.SetDeviceScaleFactor(retinaScale) // macOS Retina: fold device pixel scale into the kit (no-op off macOS)
 
 	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
 	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a

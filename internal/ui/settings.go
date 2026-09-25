@@ -1627,7 +1627,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	if next := c.Checkbox(pad, y, scaleAutoLabel, scaleAuto); next != scaleAuto {
 		a.d.Prefs.SetUIScaleAuto(next)
-		a.ctx.SetUIScale(a.UIScale())
+		a.ctx.SetUIScale(a.deviceUIScalePct())
 	}
 	y += 26
 	if scaleAuto {
@@ -3087,7 +3087,7 @@ func (a *App) applyPrefsToState() {
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
 	a.oocPct = a.d.Prefs.OOCScale()
 	a.uiScalePct = a.d.Prefs.UIScale()
-	a.ctx.SetUIScale(a.UIScale())
+	a.ctx.SetUIScale(a.deviceUIScalePct())
 	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
 	a.refreshCharKeys()
 	a.applyThemeAsync()
@@ -5815,7 +5815,7 @@ func (a *App) applyManualUIScale(pct int) {
 		return
 	}
 	a.uiScalePct = pct
-	a.ctx.SetUIScale(pct)
+	a.ctx.SetUIScale(a.deviceUIScalePct())
 	a.d.Prefs.SetUIScale(pct)
 }
 

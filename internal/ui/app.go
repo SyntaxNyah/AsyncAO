@@ -1650,6 +1650,10 @@ type App struct {
 	// 100); SetAutoScaleFromWindow combines it with a window-size factor each
 	// frame so a maximized window fills out, and a resize recomputes cleanly.
 	dpiScalePct int
+	// devScale is the renderer drawable's device pixel scale (drawable px per
+	// window point): 1.0 everywhere except a macOS Retina window (2.0). Folded
+	// into Ctx.SetUIScale so mouse unprojection and text raster use device scale.
+	devScale float32
 	// lastDPIDisplayIndex is the display the DPI was last queried for (#77
 	// Part B). NoteDisplayChanged re-seeds the DPI only when the window has
 	// actually moved to a DIFFERENT display, so a window-move within one
@@ -3620,6 +3624,34 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	return a
 }
 
+// SetDeviceScaleFactor records the renderer drawable's device pixel scale
+// (drawable px per window point; 2 on a macOS Retina window, 1 elsewhere). It is
+// folded into Ctx.SetUIScale via deviceUIScalePct so the mouse unprojects
+// through the full device scale and text rasterizes at final device size. Called
+// once at startup after the renderer is created; values < 1 are clamped to 1 (a
+// non-retina factor must never shrink the UI).
+func (a *App) SetDeviceScaleFactor(f float32) {
+	if f < 1 {
+		f = 1
+	}
+	if a.devScale == f {
+		return
+	}
+	a.devScale = f
+	a.ctx.SetUIScale(a.deviceUIScalePct())
+}
+
+// deviceUIScalePct is UIScale() folded up to the drawable's device pixel scale,
+// so the kit's mouse unprojection (toLogical) and text device raster match the
+// real renderer scale on a Retina window (2x), while the user-facing percent
+// stays logical.
+func (a *App) deviceUIScalePct() int {
+	if a.devScale <= 1 {
+		return a.UIScale()
+	}
+	return int(float32(a.UIScale())*a.devScale + 0.5)
+}
+
 // UIScale exposes the global scale percent (main sets the renderer scale
 // from it each frame and sizes the logical canvas accordingly): the
 // DPI-detected value under auto-HiDPI, the manual setting otherwise.
@@ -3797,7 +3829,7 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
 	if pct != a.detectedScalePct {
 		a.detectedScalePct = pct
-		a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately
+		a.ctx.SetUIScale(a.deviceUIScalePct()) // mouse unprojection follows immediately
 	}
 }
 
