@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.6 - 2026-09-25
+
+- **Reverted the v1.99.4/v1.99.5 renderer changes — they broke window resizing
+  on Windows.** Setting the renderer's logical size each frame
+  (`SDL_RenderSetLogicalSize`) and the high-DPI window flag caused the client's
+  buttons to land in the wrong place when the window was stretched vertically.
+  Both are reverted to the v1.99.3 behavior. The macOS Retina mouse-drift fix is
+  still under investigation and will land separately, without touching the
+  Windows path.
+
+  Thanks to the server report for catching the Windows regression.
+
 ## v1.99.5 - 2026-09-25
 
 - **Fixed the macOS Retina mouse drift for real.** The window is now created
