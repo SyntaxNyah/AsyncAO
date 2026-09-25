@@ -698,7 +698,16 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// Global UI scale: render at logical size, let the GPU scale the
 		// whole frame; the kit unprojects the mouse through the same
 		// factor, so every widget scales without per-element math.
+		//
+		// SetLogicalSize pins the renderer's coordinate space to the window's
+		// POINT size and lets SDL map it onto the real drawable — which on
+		// macOS Retina is 2x the point size (the high-DPI backing store).
+		// Without it, GetSize() (points) and the pixel drawable diverge by the
+		// backing factor, and the mouse — reported in points — drifts
+		// progressively off the drawn UI toward the bottom-right. A no-op off
+		// Retina (drawable == window size).
 		w, h := window.GetSize()
+		_ = ren.SetLogicalSize(w, h)
 		app.SetAutoScaleFromWindow(w, h) // window-relative auto scale (when auto-scale is on)
 		scale := float32(app.UIScale()) / 100
 		_ = ren.SetScale(scale, scale)

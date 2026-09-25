@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.4 - 2026-09-25
+
+- **Fixed mouse misalignment on macOS Retina displays.** On a high-DPI Mac the
+  cursor drifted further from the element it actually selected the further it
+  moved right or down — the renderer drew at the display's full 2× pixel
+  resolution while the window size and mouse stayed in points, so the two
+  coordinate spaces never lined up. The renderer now maps its point-sized
+  logical space onto the Retina drawable (`SDL_RenderSetLogicalSize`), so
+  clicks land exactly under the cursor again. Windows and Linux are unaffected.
+
+  Thanks to **Shinji** for the report.
+
 ## v1.99.3 - 2026-09-25
 
 - **Fixed clipboard spam in the evidence Description editor (#133).** Pasting
