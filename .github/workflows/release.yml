@@ -257,8 +257,10 @@ jobs:
       - name: Build (version-stamped)
         run: |
           export CGO_ENABLED=1
+          # Embed NSHighResolutionCapable so the bare binary (no .app/Info.plist)
+          # still gets a 2x Retina backing store on macOS instead of 1x compat mode.
           go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
-            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
+            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }} -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist" \
             -o "${{ matrix.variant.asset }}" ./cmd/asyncao
       # Make the binary self-contained: bundle its dylib closure into a staging
       # folder with @rpath install names, and rewrite the bare `asset` in place so

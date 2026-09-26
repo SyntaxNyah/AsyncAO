@@ -202,7 +202,9 @@ jobs:
       - name: Build
         run: |
           export CGO_ENABLED=1
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+          # Embed NSHighResolutionCapable so the bare binary (no .app/Info.plist)
+          # still gets a 2x Retina backing store on macOS instead of 1x compat mode.
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist" -o asyncao ./cmd/asyncao
       # Run the release-time dylib bundler here too, BLOCKING, purely for its
       # built-in otool assertion: if a new dependency ever links against a
       # Homebrew path that the bundler can't rewrite, this fails the build and
