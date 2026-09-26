@@ -1641,13 +1641,18 @@ func (a *App) oocWrapped(width int32) []string {
 	// Per-CANDIDATE drawn-width measure, matching the OOC draw row for row: every
 	// wrapped candidate is measured exactly the way drawOOCLogRow will draw it —
 	// the row's own covering face for a plain row, the per-glyph raster's per-rune
-	// faces for an emoji / mixed-script one (#42). Hoisted so the rebuild loop
-	// doesn't re-alloc the closure per paragraph.
-	oocMeasure := func(s string) int32 { return a.logDrawnWidth(elemServerChatlog, a.oocPct, s) }
+	// faces for an emoji / mixed-script one (#42), and the bold speaker-name split
+	// drawLogLineNamed draws. Read once here; the per-entry closure below binds the
+	// speaker.
+	nameOn := a.d.Prefs.NameColorsOn()
+	boldNames := a.logRowBoldPref(logSelOOC)
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
 			sp = a.oocSpeakers[i]
+		}
+		measure := func(s string) int32 {
+			return a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, s, sp, nameOn, boldNames)
 		}
 		entryFirst := true // the speaker tints only the entry's FIRST display line
 		// The row budget is PER ENTRY (across all its \n paragraphs), not per
@@ -1689,9 +1694,9 @@ func (a *App) oocWrapped(width int32) []string {
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
-				lines = render.WrapMeasured(oocMeasure, trimmed, width, probe)
+				lines = render.WrapMeasured(measure, trimmed, width, probe)
 			} else {
-				lines = wrapToWidthMeasured(oocMeasure, trimmed, width, probe)
+				lines = wrapToWidthMeasured(measure, trimmed, width, probe)
 			}
 			if len(lines) > remaining {
 				lines = lines[:remaining] // overflowed the budget — clip and flag the marker
@@ -1826,11 +1831,22 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	}
 	out := a.icWrap[:0]
 	// Per-CANDIDATE drawn-width measure, matching the IC draw row for row (the OOC
-	// log's twin), so the wrap and draw agree under a multi-face chain (#42).
-	// Hoisted once.
-	icMeasure := func(s string) int32 { return a.logDrawnWidth(elemICChatlog, a.logPct, s) }
+	// log's twin), so the wrap and draw agree under a multi-face chain (#42) and on
+	// the bold speaker/prefix split drawLogLineNamed draws. Read once here; the
+	// per-entry closure below binds the speaker. Prefs are nil in the bare-App
+	// headless fixtures, so guard them (the bold split is unreachable there anyway:
+	// a nil font measures through the 8 px/char fallback).
+	nameOn := false
+	boldNames := false
+	if a.d.Prefs != nil {
+		nameOn = a.d.Prefs.NameColorsOn()
+		boldNames = a.logRowBoldPref(logSelIC)
+	}
 	for _, i := range a.icLogFiltered() {
 		entry := &a.icLog[i]
+		measure := func(s string) int32 {
+			return a.logDrawnWidthNamed(elemICChatlog, a.logPct, s, entry.speaker, nameOn, boldNames)
+		}
 		text := entry.text
 		stampRunes := 0
 		if showStamps && entry.stamp != "" {
@@ -1847,9 +1863,9 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		a.ctx.noteScript(text)
 		var wrapped []string
 		if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(text) {
-			wrapped = render.WrapMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
+			wrapped = render.WrapMeasured(measure, text, width, icWrapMaxLinesPerEntry)
 		} else {
-			wrapped = wrapToWidthMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
+			wrapped = wrapToWidthMeasured(measure, text, width, icWrapMaxLinesPerEntry)
 		}
 		// Per-row body mapping for inline-colour entries (#123): each wrapped row is
 		// a contiguous rune slice of text, so track its rune offset and fold the
@@ -1947,6 +1963,17 @@ func fontWidth(font *ttf.Font, s string) int32 {
 // that element (#39) — measuring in one face and drawing in another is exactly
 // the desync #42 removed.
 func (a *App) logDrawnWidth(el themeFontElem, userPct int, s string) int32 {
+	return a.logDrawnWidthNamed(el, userPct, s, "", false, false)
+}
+
+// logDrawnWidthNamed is logDrawnWidth for a row that drawLogLineNamed draws with a
+// bold speaker span: it measures the leading name/prefix at bold weight and the
+// message after it at plain weight — the same split drawLogLineNamed uses. Without
+// this the wrap under-measures a bold name (bold glyphs are wider than plain), so
+// the last word of a named row overflowed into the scrollbar lane instead of
+// wrapping. speaker == "" (a system/MOTD line) or bold == false falls back to the
+// plain single-face measure.
+func (a *App) logDrawnWidthNamed(el themeFontElem, userPct int, s, speaker string, nameOn, bold bool) int32 {
 	c := a.ctx
 	primary := a.elemFontFor(el, userPct, s) // also populates the pick coversFace() reads below
 	if primary == nil {
@@ -1954,6 +1981,17 @@ func (a *App) logDrawnWidth(el themeFontElem, userPct int, s string) int32 {
 	}
 	ef := a.elemEmoji(el, userPct)
 	if (ef == nil || !render.NeedsEmojiFallback(s)) && c.coversFace(primary, s) {
+		if bold {
+			if _, boldEndByte, ok := c.logRowSplit(primary, ef, s, speaker, nameOn, bold); ok {
+				runes := []rune(s)
+				boldEnd := utf8.RuneCountInString(s[:boldEndByte])
+				nameW, nameOK := c.fontTextWidthWeight(primary, string(runes[:boldEnd]), true)
+				restW, restOK := c.fontTextWidthWeight(primary, string(runes[boldEnd:]), false)
+				if nameOK && restOK {
+					return nameW + restW
+				}
+			}
+		}
 		return fontWidth(primary, s)
 	}
 	runes := []rune(s)

@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.7 - 2026-09-26
+
+- **Fixed OOC log text clipping beside the scrollbar (#135).** The word-wrap
+  measured speaker names at plain weight while the rows drew them bold, so a
+  named message was a few pixels wider than the wrap predicted and its last word
+  was cut off under the scrollbar instead of wrapping. The wrap now measures the
+  bold name/prefix and the plain message separately, so named OOC (and IC) rows
+  wrap before the scrollbar again.
+
+  Thanks to **Crystal Warrior** for testing and reporting.
+
 ## v1.99.6 - 2026-09-25
 
 - **Reverted the v1.99.4/v1.99.5 renderer changes — they broke window resizing

@@ -434,3 +434,57 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestLogWrapBoldSpeakerRowsFitDrawnWidth pins the fix for the OOC scrollbar
+// truncation (issue #135): a bold speaker name is WIDER than the plain measure the
+// wrap used to take, so the last word of a named row overflowed the column and was
+// cut off beside the scrollbar. The wrap must measure the leading name at bold
+// weight (and the message after it at plain) — the same split drawLogLineNamed
+// draws — so every wrapped row of a named entry still fits the column.
+func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
+	if err := ttf.Init(); err != nil {
+		t.Skipf("SDL_ttf unavailable: %v", err)
+	}
+	defer ttf.Quit()
+	base, err := loadEmbeddedFont(UIFontSize)
+	if err != nil {
+		t.Skipf("embedded font: %v", err)
+	}
+	a := testTabApp(t)
+	a.ctx = &Ctx{font: base, textCache: map[textKey]cachedText{}, widthCache: map[string]int32{}}
+	a.oocPct = DefaultScalePct
+	a.d.Prefs.SetBoldNames(true) // bold is the stock default; set it so the fixture can't drift
+
+	// The bold/plain split has to be real, or the desync this test pins is
+	// invisible: a bold speaker must measure WIDER than the plain whole-line width.
+	const speaker = "Crystalwarrior"
+	const probe = speaker + ": map"
+	if bold, plain := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, probe, speaker, false, true),
+		a.logDrawnWidth(elemServerChatlog, a.oocPct, probe); bold <= plain {
+		t.Fatalf("fixture must show a bold-name delta: bold %d px, plain %d px for %q", bold, plain, probe)
+	}
+
+	const colW = 240
+	entry := speaker + ": " + strings.Repeat("word ", 20)
+	a.oocLog = append(a.oocLog, entry)
+	a.oocSpeakers = append(a.oocSpeakers, speaker)
+	a.oocSeq++
+
+	rows := a.oocWrapped(colW)
+	if len(rows) < 2 {
+		t.Fatalf("named entry must wrap, got %d rows", len(rows))
+	}
+	// Every row must fit the column when measured the way drawLogLineNamed will
+	// DRAW it: the first row's speaker is bold, its message (and every later row)
+	// is plain.
+	for i, row := range rows {
+		sp := ""
+		if i == 0 {
+			sp = speaker
+		}
+		if w := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, row, sp, false, true); w > colW {
+			t.Errorf("OOC row %d %q draws %d px wide (bold speaker), column is %d — it will overflow", i, row, w, colW)
+		}
+	}
+}
+
