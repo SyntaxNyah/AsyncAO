@@ -284,31 +284,18 @@ func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 		t.Fatal("test setup: the cursor must start over the buried theme button")
 	}
 
+	// #101: the floating strip is retired in normal play, so even pinned-open it
+	// must publish no fence — there is nothing parked over the theme's buttons to
+	// occlude, and the theme button underneath must stay live.
 	a.fenceCompactToolbox(w, h)
-	if c.overlayFenceN != 1 {
-		t.Fatalf("an expanded toolbox must publish exactly one fence, got depth %d", c.overlayFenceN)
+	if c.overlayFenceN != 0 {
+		t.Fatalf("a retired (normal-play) toolbox must publish no fence, got depth %d", c.overlayFenceN)
 	}
-	if c.hovering(themeBtn) {
-		t.Error("a theme button under the expanded toolbox strip must be inert (#26)")
+	if a.toolboxFence.draws {
+		t.Errorf("latch must say the strip does NOT paint in normal play: %+v", a.toolboxFence)
 	}
-	// The toolbox's own chips still work: drawCompactToolbox brackets itself with
-	// the mark the latch recorded (the depth from just before its own publication).
-	prev := c.pushOverlayOwner(a.toolboxFence.mark)
-	if !c.hovering(grip) {
-		t.Error("the toolbox must still hit-test its own grip inside pushOverlayOwner")
-	}
-	c.popOverlayOwner(prev)
-	// The latch the draw replays must describe exactly what was published.
-	if !a.toolboxFence.set || !a.toolboxFence.draws || !a.toolboxFence.expanded {
-		t.Errorf("latch must say the expanded strip paints in-pass: %+v", a.toolboxFence)
-	}
-	if a.toolboxFence.strip != strip {
-		t.Errorf("latch strip %+v must be the rect that was fenced and will be drawn (%+v)", a.toolboxFence.strip, strip)
-	}
-	// Left of the strip the same button is still live.
-	c.mouseX = strip.X - 30
 	if !c.hovering(themeBtn) {
-		t.Error("the part of the theme button that is NOT covered must stay clickable")
+		t.Error("the theme button must stay live now the strip is retired")
 	}
 
 	// Collapsed: cursor parked far away, nothing pinned → publish nothing.

@@ -622,6 +622,13 @@ func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 	if a.panelHidden(panelToolbox) {
 		return lat // drawCompactToolbox early-returns; nothing is painted, so nothing is fenced
 	}
+	// #101: the floating bottom-right grip is retired in normal play — its commands
+	// (Theater / Edit layout / Hide UI) live on the top menu bar's Extras menu, the
+	// command palette and the hotkeys. It still draws while a layout editor is armed,
+	// where the menu bar stands down and the strip is the reachable control surface.
+	if !a.classicEdit && !a.layoutEdit {
+		return lat
+	}
 	lat.draws = true
 	lat.strip = a.compactToolboxStripRect(w, h)
 	lat.expanded = a.compactToolboxExpanded(lat.strip, compactToolboxGripRect(lat.strip))
