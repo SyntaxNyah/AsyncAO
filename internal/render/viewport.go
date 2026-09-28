@@ -598,7 +598,8 @@ type Viewport struct {
 	srcRect  sdl.Rect // torn-glitch band source (texture coords; kept off the dst scratches)
 	reflRect sdl.Rect // #123 reflection blit destination
 	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
-	maskClip sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
+	maskClip  sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
+	stageClip sdl.Rect // #80: clip the full-viewport fills (bg / speedlines / desk / flash) to the UN-shaken stage so a shake/punch can't spill them over the UI
 	ovRect   sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
 	ovClip   sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
 	// splashClip is the shout bubble's containment clip. Its own field, not
@@ -1118,6 +1119,10 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		vp.Y += int32(amp / 2 * math.Cos(phase*1.3))
 	}
 
+	// #80: contain the full-viewport fills (background + speedlines) to the
+	// UN-shaken stage so a screenshake or shout punch can't spill them over the UI.
+	v.stageClip = stage
+	_ = ren.SetClipRect(&v.stageClip)
 	if v.fx.DoF {
 		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
@@ -1129,6 +1134,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
 		v.drawFill(ren, base, &v.speedlineAnim, vp, 100)
 	}
+	_ = ren.SetClipRect(nil)
 
 	// Pair hue offset for the "desync" effect: half a period so the two
 	// characters show opposite hues. Zero unless rainbow + desync are both on,
@@ -1195,7 +1201,11 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	// the characters, UNDER the desk overlay.
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerCharacter)
 	if scene.ShowDesk {
+		// #80: the desk is a full-viewport fill — clip it to the un-shaken stage.
+		v.stageClip = stage
+		_ = ren.SetClipRect(&v.stageClip)
 		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
+		_ = ren.SetClipRect(nil)
 	}
 	// layer = over: raise() inside the viewport (courtroom.cpp:3228-3232) — above
 	// the desk, below the shout splash.
@@ -1213,9 +1223,14 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		if frac > 1 {
 			frac = 1
 		}
+		// #80: the realization flash is a full-viewport fill — clip it to the
+		// un-shaken stage so it doesn't flicker over the UI during a shake.
+		v.stageClip = stage
+		_ = ren.SetClipRect(&v.stageClip)
 		v.fillRect = vp
 		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
 		_ = ren.FillRect(&v.fillRect)
+		_ = ren.SetClipRect(nil)
 	}
 
 	v.particles.draw(ren, stage) // #124 ambient weather over the stage (free when off), under the post-FX
