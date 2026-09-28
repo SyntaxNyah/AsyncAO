@@ -1313,6 +1313,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetSpriteWaitPreanim(true)
 	p.SetHoldPrevMaxAgeMs(9000)
 	p.SetHoldDebugTint(true)
+	p.SetDebugKeybinds(true)
 	p.SetShoutDurationMs(1000)
 	p.SetPreanimTimeoutMs(5000)
 	p.SetICQueueCap(128)
@@ -1360,6 +1361,9 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
 		t.Error("nuke must reset the hold-previous knobs")
+	}
+	if p.DebugKeybindsOn() {
+		t.Error("nuke must reset the debug-keybinds toggle to its default OFF")
 	}
 	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.CatchUpLingerMs() != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")

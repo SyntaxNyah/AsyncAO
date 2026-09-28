@@ -1140,6 +1140,7 @@ type AssetPreferences struct {
 	SpriteWaitPreanim        bool                 `json:"spriteWaitPreanim,omitempty"`     // wait mode also gates on the message's PREANIM (default OFF)
 	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
 	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
+	DebugKeybinds            bool                 `json:"debugKeybinds,omitempty"`         // opt-in debug/diagnostic keybinds (default OFF — power user)
 	ShoutDurationMsVal       int                  `json:"shoutDurationMs,omitempty"`       // shout-bubble hold in ms (0/absent = the canonical default)
 	PreanimTimeoutMsVal      int                  `json:"preanimTimeoutMs,omitempty"`      // preanim wait cap in ms (0/absent = the canonical default)
 	ICQueueCapVal            int                  `json:"icQueueCap,omitempty"`            // IC backlog queue depth (0/absent = the canonical default 64)
@@ -1724,6 +1725,7 @@ type prefsJSON struct {
 	SpriteWaitPreanim      bool                 `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
 	HoldPrevMaxAgeMs       int                  `json:"holdPrevMaxAgeMs"`     // hold-previous cap in ms (0 = forever)
 	HoldDebugTint          bool                 `json:"holdDebugTint"`        // tint stand-in sprites (default OFF)
+	DebugKeybinds          bool                 `json:"debugKeybinds"`           // opt-in debug/diagnostic keybinds (default OFF)
 	ShoutDurationMs        int                  `json:"shoutDurationMs"`      // shout hold in ms (0 = default)
 	PreanimTimeoutMs       int                  `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
 	ICQueueCap             int                  `json:"icQueueCap"`           // IC queue depth (0 = default 64)
@@ -2746,6 +2748,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.HoldPrevMaxAgeMsVal = clampPercent(p.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
 	}
 	p.HoldDebugTint = onDisk.HoldDebugTint
+	p.DebugKeybinds = onDisk.DebugKeybinds
 	p.ShoutDurationMsVal = onDisk.ShoutDurationMs
 	if p.ShoutDurationMsVal != 0 { // 0 = the canonical default
 		p.ShoutDurationMsVal = clampPercent(p.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
@@ -8111,6 +8114,18 @@ func (p *AssetPreferences) HoldDebugTintOn() bool {
 
 // SetHoldDebugTint persists the stand-in tint knob.
 func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
+// DebugKeybindsOn reports whether the diagnostic/debug keybinds (hide/show the
+// desk, reshow hidden sprites, full-character preload, connection ping chip) are
+// enabled. OFF by default: these chords are easy to trigger by accident (Ctrl+V
+// is paste) and belong behind an explicit power-user opt-in.
+func (p *AssetPreferences) DebugKeybindsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DebugKeybinds
+}
+
+// SetDebugKeybinds persists the debug-keybinds toggle.
+func (p *AssetPreferences) SetDebugKeybinds(on bool) { p.setBoolPref(&p.DebugKeybinds, on) }
 
 // ShoutDurationMs reports the shout-bubble hold in milliseconds (0 = the
 // canonical courtroom default — see courtroom.DefaultShoutDuration).
@@ -8802,6 +8817,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.SpriteWaitPreanim = false
 	p.HoldPrevMaxAgeMsVal = 0
 	p.HoldDebugTint = false
+	p.DebugKeybinds = false
 	p.ShoutDurationMsVal = 0
 	p.PreanimTimeoutMsVal = 0
 	p.ICQueueCapVal = 0
