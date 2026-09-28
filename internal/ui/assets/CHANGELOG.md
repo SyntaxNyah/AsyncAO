@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.8 - 2026-09-28
+
+- **The floating bottom-right toolbox is retired in normal play (#101).** The
+  burger menu no longer sits over an AO2 theme's own Settings / Call-Mod buttons.
+  Its commands — Theater, Edit layout, Hide UI pieces — already live on the top
+  menu bar's Extras menu, the command palette and the hotkeys, and stay reachable
+  there. The strip still draws while the layout editor is open, where the menu
+  bar stands down.
+
+- **Debug keybinds are opt-in (default OFF) (#99).** The full-character-preload
+  and connection-ping-chip toggles no longer fire from their Ctrl chords until
+  you turn on Settings → Power user → "Debug keybinds".
+
+- **The iniswap "From your base" browser shows character icons (#95).** It now
+  draws 64 px char-icon cells (with initials as a stand-in while art streams)
+  instead of a wall of bare folder names.
+
+- **The viewport is clipped to the stage boundary (#80).** Screenshake and the
+  shout punch no longer let the background, desk or realization flash encroach
+  on the UI beside the stage.
+
+- **Confirmed the position dropdown's background thumbnails (#106).** Each
+  position's background art already renders in the open rows and the closed
+  control when a background is loaded.
+
+  Thanks to **Crystal Warrior** for reporting all of these.
+
 ## v1.99.7 - 2026-09-26
 
 - **Fixed OOC log text clipping beside the scrollbar (#135).** The word-wrap
