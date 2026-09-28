@@ -23,8 +23,9 @@ package ui
 // cachedPage does not re-check the URL behind an index), and char select's Wardrobe
 // tab ranges it WHOLE. Merging a 4000-character roster into it would flood that tab
 // with the entire server and invalidate every cached icon page on each rebuild. This
-// browser keeps its own list, draws name buttons instead of index-keyed art cells,
-// and touches nothing the wardrobe owns.
+// browser keeps its own list AND its own icon page cache (a.iniBase.pages / .ask),
+// so it can draw the same 64 px char-icon cells without aliasing the wardrobe's, and
+// touches nothing the wardrobe owns.
 //
 // THREADING. The local scan is os.ReadDir on the user's disk, so it runs on a
 // goroutine and lands through a buffered channel that the draw drains — hard rule 2
@@ -38,8 +39,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 const (
@@ -56,11 +61,6 @@ const (
 	// iniBaseLocalFolderCap so a full local scan can still be joined by a large
 	// server roster; hub servers in the wild run to a few thousand characters.
 	iniBaseNameCap = 8192
-	// iniBaseCellW / iniBaseCellH / iniBaseCellGap size one name button. Wide enough
-	// for a long folder name at the chrome face, and a plain 22 px kit row tall.
-	iniBaseCellW   = int32(186)
-	iniBaseCellH   = int32(22)
-	iniBaseCellGap = int32(6)
 	// iniBaseSourceChipW is one source chip in the tab's own two-way switch.
 	iniBaseSourceChipW = int32(150)
 )
@@ -115,6 +115,13 @@ type iniBaseBrowser struct {
 	labelStatus  string // "<N> on this server · ★ adds one …"
 	labelServerN int    // the serverN they were built from
 	labelBaseN   int    // ...and the baseN
+
+	// Char icons for the base grid, index-keyed into the merged list (names) and
+	// generation-checked like the wardrobe's iniPages — but SEPARATE, because this
+	// list is its own indices and must never alias a.iniPages.
+	pages    []*render.TexturePage
+	pagesGen uint64
+	ask      []time.Time
 }
 
 // sourceLabels returns the two source-chip labels and the server-count status line
@@ -311,6 +318,7 @@ func (a *App) baseNames() ([]string, []string) {
 	}
 	b.names, b.lower = names, lower
 	b.namesKey, b.namesChars, b.namesLocal = a.serverKey, chars, len(b.local)
+	b.pages, b.pagesGen, b.ask = nil, 0, nil // the list changed: drop the index-keyed icon cache
 	return b.names, b.lower
 }
 
@@ -327,12 +335,13 @@ func (a *App) baseSourceCounts() (serverList, base int) {
 }
 
 // drawIniswapBaseBody draws the "From your base" source: a search-filtered grid of
-// name buttons, one per character folder, click to wear.
+// 64 px char-icon cells, one per character folder, click to wear.
 //
-// Deliberately NOT the wardrobe's art cells. Those are index-keyed into a.iniPages,
-// and a second list under the same indices is the cachedPage reorder trap the
-// wardrobe's own comments describe; a name button also costs no asset demand at all,
-// which is what keeps browsing a four-thousand-character roster free.
+// It draws art cells like the wardrobe, but through its OWN index-keyed page cache
+// (a.iniBase.pages / .ask) rather than a.iniPages — a second list under the same
+// indices is the cachedPage reorder trap the wardrobe's own comments describe.
+// Demand stays paced (only visible cells ask), so browsing a four-thousand-character
+// roster stays free.
 func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 	c := a.ctx
 	names, lower := a.baseNames()
@@ -363,7 +372,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
-	cols := gridW / (iniBaseCellW + iniBaseCellGap)
+	cols := gridW / (iconCell + iconGap)
 	if cols < 1 {
 		cols = 1
 	}
@@ -373,7 +382,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 			slots++
 		}
 	}
-	rowPitch := iniBaseCellH + iniBaseCellGap
+	rowPitch := iconCell + iconGap + charCellCaptionH
 	contentH := (slots + cols - 1) / cols * rowPitch
 	visibleH := panel.Y + panel.H - gridTop - pad
 	if visibleH <= 0 {
@@ -389,13 +398,29 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		if !visible(i) {
 			continue
 		}
-		x := panel.X + pad + (slot%cols)*(iniBaseCellW+iniBaseCellGap)
+		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
 		yy := gridTop + (slot/cols)*rowPitch - a.iniBase.scroll
 		slot++
-		if yy <= gridTop-iniBaseCellH || yy >= panel.Y+panel.H {
+		if yy <= gridTop-iconCell || yy >= panel.Y+panel.H-charCellCaptionH {
 			continue
 		}
-		if c.Button(sdl.Rect{X: x, Y: yy, W: iniBaseCellW, H: iniBaseCellH}, names[i]) {
+		cell := sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}
+		c.Tooltip(cell, names[i])
+		c.Fill(cell, ColBackground)
+		base := a.urls.CharIcon(names[i])
+		if page, ok := a.cachedPage(&a.iniBase.pages, &a.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
+			c.cgoRect = cell
+			_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
+		} else {
+			a.demandAsset(&a.iniBase.ask, len(names), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (base browser)
+			initial := names[i]
+			if len(initial) > 2 {
+				initial = initial[:2]
+			}
+			c.Label(cell.X+cell.W/2-8, cell.Y+cell.H/2-8, initial, ColTextDim)
+		}
+		c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, names[i], ColTextDim)
+		if c.hovering(cell) && c.clicked {
 			a.wearFromMenu(names[i]) // closes the modal and wears it (or claims a slot at char select)
 		}
 	}
