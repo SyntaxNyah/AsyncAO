@@ -3927,6 +3927,15 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap vs budget, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
 	y += 10
 
+	// Debug keybinds (#99): the diagnostic toggles are OFF by default — they're
+	// for testing/perf, not everyday play, so they need an explicit opt-in before
+	// their Ctrl chords fire.
+	dbg := a.d.Prefs.DebugKeybindsOn()
+	if next := c.Checkbox(pad, y, "Debug keybinds (OFF by default): enable the full-character-preload and connection-ping-chip toggles for testing and performance diagnosis.", dbg); next != dbg {
+		a.d.Prefs.SetDebugKeybinds(next)
+	}
+	y += 28
+
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
 	y += 4

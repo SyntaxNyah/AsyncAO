@@ -8114,10 +8114,10 @@ func (p *AssetPreferences) HoldDebugTintOn() bool {
 
 // SetHoldDebugTint persists the stand-in tint knob.
 func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
-// DebugKeybindsOn reports whether the diagnostic/debug keybinds (hide/show the
-// desk, reshow hidden sprites, full-character preload, connection ping chip) are
-// enabled. OFF by default: these chords are easy to trigger by accident (Ctrl+V
-// is paste) and belong behind an explicit power-user opt-in.
+// DebugKeybindsOn reports whether the diagnostic/debug keybinds (full-character
+// sprite preload and the connection ping chip) are enabled. OFF by default:
+// these toggles exist for testing and performance diagnosis, not everyday play,
+// so they sit behind an explicit power-user opt-in.
 func (p *AssetPreferences) DebugKeybindsOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

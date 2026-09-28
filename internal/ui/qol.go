@@ -539,9 +539,13 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyWeather):
 		a.cycleWeather()
 	case a.hotkeyFor(hotkeyCharBundle):
-		a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
+		if a.d.Prefs.DebugKeybindsOn() {
+			a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
+		}
 	case a.hotkeyFor(hotkeyPingChip):
-		a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
+		if a.d.Prefs.DebugKeybindsOn() {
+			a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
+		}
 	case a.hotkeyFor(hotkeyModDash):
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):
