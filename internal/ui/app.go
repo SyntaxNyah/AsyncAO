@@ -450,6 +450,9 @@ type App struct {
 	// showname/pos filter rebuilds without touching the log.
 	icFilterShowname string
 	icFilterPos      string
+	// icFilterColor is the colour filter baked into the filter cache key (#49);
+	// editing the colour dropdown rebuilds without touching the log.
+	icFilterColor int
 	// IC wrapped-rows cache (playtest: log lines must break to the log's own
 	// width): filtered entries wrap to the list width;
 	// rebuilt only when the log, query, width, or font scale moved.
@@ -459,6 +462,7 @@ type App struct {
 	icWrapQuery    string
 	icWrapShowname string
 	icWrapPos      string
+	icWrapColor    int // colour filter baked into the wrapped-rows cache key (#49)
 	icWrapW        int32
 	icWrapPct      int
 	icWrapGen      int  // font chain generation baked into the wrap
@@ -2354,6 +2358,7 @@ type sessionState struct {
 	// filter), stacked on top of the logSearch text match. Both inclusive.
 	logFilterShowname string
 	logFilterPos      string
+	logFilterColor    int  // colour filter (0 = "Any color"); index into logColorFilterChoices (#49)
 	logFilterOpen     bool // the filter sub-panel is expanded
 	oocSeq            uint64
 	oocLog            []string

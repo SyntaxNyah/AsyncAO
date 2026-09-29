@@ -3522,7 +3522,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		half := (inner.W - 4) / 2
 		a.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.logFilterShowname, "Showname…")
 		a.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.logFilterPos, "Pos (e.g. wit)…")
-		listY += frH + logSearchRowGap
+		// Colour filter (#49): a second row narrowing to entries that use the
+		// picked colour (message-level or any inline span). "Any color" = off.
+		a.logFilterColor, _ = c.Dropdown("logfilter_color", sdl.Rect{X: inner.X, Y: listY + frH + logSearchRowGap, W: inner.W, H: frH}, logColorFilterChoices, a.logFilterColor)
+		listY += 2*frH + 2*logSearchRowGap
 	}
 	// false: this is the classic docked Log tab, AsyncAO chrome outside any theme's
 	// design canvas (#21 label 16).

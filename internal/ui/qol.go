@@ -1829,6 +1829,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	pct := a.elemPct(elemICChatlog, a.logPct)
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
 		a.icWrapQuery == a.logSearch && a.icWrapShowname == a.logFilterShowname && a.icWrapPos == a.logFilterPos &&
+		a.icWrapColor == a.logFilterColor &&
 		a.icWrapW == width && a.icWrapPct == pct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
@@ -1900,7 +1901,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
 		out, a.icLogSeq, a.logSearch, width, pct, a.ctx.fontChainGen, showStamps
-	a.icWrapShowname, a.icWrapPos = a.logFilterShowname, a.logFilterPos
+	a.icWrapShowname, a.icWrapPos, a.icWrapColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
 	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
@@ -2210,7 +2211,8 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 // slice allocation.
 func (a *App) icLogFiltered() []int {
 	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
-		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos {
+		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos &&
+		a.icFilterColor == a.logFilterColor {
 		return a.icFilter
 	}
 	out := a.icFilter[:0]
@@ -2228,13 +2230,16 @@ func (a *App) icLogFiltered() []int {
 		if pos != "" && !strings.EqualFold(e.pos, pos) {
 			continue
 		}
+		if !icEntryUsesColor(e, a.logFilterColor) {
+			continue
+		}
 		out = append(out, i)
 	}
 	if out == nil {
 		out = []int{} // non-nil marks the cache as populated
 	}
 	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
-	a.icFilterShowname, a.icFilterPos = a.logFilterShowname, a.logFilterPos
+	a.icFilterShowname, a.icFilterPos, a.icFilterColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
 	a.icFilterEpoch = a.logViewEpoch
 	return out
 }
