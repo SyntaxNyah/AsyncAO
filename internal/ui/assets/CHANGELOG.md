@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.99.9 - 2026-09-29
+
+- **The IC log now filters by colour (#49).** A coloured IC message colours its
+  log line, and the log search (Ctrl+F) gains a colour filter in the advanced
+  Filter panel — pick "Any color", an AO palette colour, an extended colour or
+  rainbow — so a red objection or a green fact is one filter away.
+
+  Thanks to **Crystal Warrior** for the report and the colour-filter request.
+
+- **The mod dashboard's kick now sends the reason Nyathena/Athena requires.** Their
+  server-side validation rejects a bare `/kick -u <uid>`, so the kick box asks for a
+  reason (and refuses to send without one) instead of quietly doing nothing.
+
+- **Right-click moves back on the Sprite Style cycle buttons.** Restyle, Move and
+  Glitch step forward on left-click and now step backward on right-click.
+
+  Thanks to **cs** for both of these.
+
 ## v1.99.8 - 2026-09-28
 
 - **The floating bottom-right toolbox is retired in normal play (#101).** The
