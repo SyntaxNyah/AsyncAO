@@ -980,7 +980,11 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 
 	c.Label(x, y, "Reason:", ColTextDim)
 	y += 20
-	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
+	reasonHint := "reason (optional)"
+	if !isBan && courtroom.KickRequiresReason(sw) {
+		reasonHint = "reason (required on this server)"
+	}
+	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, reasonHint)
 	y += fieldH + 8
 
 	// Quick-reason templates: editable chips fill the field; the single box gets the manage row.
@@ -1016,6 +1020,8 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 			if c.Button(sdl.Rect{X: x, Y: y + 22, W: 240, H: btnH}, "Fetch area info (/getareas)") {
 				a.fetchAreaForBan()
 			}
+		case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBoxReason) == "":
+			c.LabelClipped(x, y, maxW, "A reason is required to kick on this server.", ColDanger)
 		default:
 			c.LabelClipped(x, y, maxW, "Missing the identifier this server needs to "+title+".", ColDanger)
 		}
@@ -1114,7 +1120,12 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 
 	c.Label(x, y, "Reason (applied to all):", ColTextDim)
 	y += 20
-	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
+	sw := a.detectedSoftware()
+	reasonHint := "reason (optional)"
+	if !isBan && courtroom.KickRequiresReason(sw) {
+		reasonHint = "reason (required on this server)"
+	}
+	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, reasonHint)
 	y += fieldH + 8
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
@@ -1133,6 +1144,8 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	switch {
 	case !a.dashSoftwareKnown():
 		c.LabelClipped(x, y, maxW, "Pick the server software first (Cancel, then Change).", ColDanger)
+	case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBoxReason) == "":
+		c.LabelClipped(x, y, maxW, "A reason is required to kick on this server.", ColDanger)
 	case ready == 0:
 		c.LabelClipped(x, y, maxW, "No targets are ready — this server needs IPIDs (mod-only). Fetch them:", ColDanger)
 		if c.Button(sdl.Rect{X: x, Y: y + 22, W: 210, H: btnH}, "Fetch area info (/getarea)") {

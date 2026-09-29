@@ -300,10 +300,12 @@ func banCommandWith(sw ServerSoftware, ipid, uid, d, reason string) string {
 	return ""
 }
 
-// KickCommand builds the OOC /kick for sw. A blank reason is allowed (the servers default it).
+// KickCommand builds the OOC /kick for sw. A blank reason is allowed on the families that default
+// it (KFO/Akashi/Whisker); the Athena/Nyathena family REQUIRES a reason — its server-side
+// validation rejects a bare "/kick -u <uid>", which read as "kick does nothing".
 // NOTE: kick is NOT the same as ban — it disconnects a CONNECTED client, so the Athena/Nyathena
 // family targets the live client UID (-u), never the IPID. "/kick -i <ipid>" is silently a no-op
-// there (the IPID is the offline-capable BAN identifier), which read as "kick does nothing".
+// there (the IPID is the offline-capable BAN identifier).
 func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	reason = sanitizeReason(reason)
 	switch sw {
@@ -312,8 +314,8 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 			return ""
 		}
 		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", ipid, reason))
-	case SoftwareAthena, SoftwareNyathena: // /kick -u <uid> <reason>  (connected client → UID, never IPID)
-		if uid == "" {
+	case SoftwareAthena, SoftwareNyathena: // /kick -u <uid> <reason>  (connected client → UID, never IPID; reason REQUIRED)
+		if uid == "" || reason == "" {
 			return ""
 		}
 		return strings.TrimSpace(fmt.Sprintf("/kick -u %s %s", uid, reason))
@@ -324,6 +326,13 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", uid, reason))
 	}
 	return ""
+}
+
+// KickRequiresReason reports whether sw's /kick requires a non-blank reason. Only the
+// Athena/Nyathena family does (Nyathena's server-side validation rejects a bare
+// "/kick -u <uid>"), so the UI can prompt for a reason and the builder refuses a blank one.
+func KickRequiresReason(sw ServerSoftware) bool {
+	return sw == SoftwareAthena || sw == SoftwareNyathena
 }
 
 // --- CM / area room controls (#130) -----------------------------------------------------------
@@ -385,14 +394,14 @@ func CommandReference(sw ServerSoftware) []string {
 	case SoftwareAthena:
 		return []string{
 			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
-			`Kick — /kick -u <uid>  reason`,
+			`Kick — /kick -u <uid>  reason (required)`,
 			`Area kick — /kickarea <uid>`,
 			`CM — /cm · /uncm · /lock [-s] · /unlock`,
 		}
 	case SoftwareNyathena: // forks Athena: same syntax, richer area/CM toolkit
 		return []string{
 			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
-			`Kick — /kick -u <uid>  reason`,
+			`Kick — /kick -u <uid>  reason (required)`,
 			`Area kick — /kickarea <uid>`,
 			`CM — /cm · /uncm · /lock [-s] · /unlock`,
 			`+ /invite · /uninvite · /lockbg · /lockmusic · /spectate · /status`,

@@ -55,8 +55,8 @@ func TestBanMissingIdentifier(t *testing.T) {
 	}
 }
 
-// TestKickCommand pins /kick per software, and that a blank reason is allowed (kick doesn't
-// force one) while ban does.
+// TestKickCommand pins /kick per software: a blank reason is allowed on the families that
+// default it, but the Athena/Nyathena family requires one (refused with an empty command).
 func TestKickCommand(t *testing.T) {
 	cases := []struct {
 		sw        ServerSoftware
@@ -72,12 +72,29 @@ func TestKickCommand(t *testing.T) {
 		{SoftwareAthena, "1234", "5", "spam", "/kick -u 5 spam"},
 		{SoftwareAthena, "", "5", "spam", "/kick -u 5 spam"},
 		{SoftwareNyathena, "1234", "5", "spamming", "/kick -u 5 spamming"},
-		{SoftwareAthena, "1234", "", "spam", ""}, // no UID → can't kick (won't fall back to the IPID)
-		{SoftwareWhisker, "", "5", "", "/kick 5"},
+		{SoftwareAthena, "1234", "", "spam", ""},  // no UID → can't kick (won't fall back to the IPID)
+		{SoftwareAthena, "1234", "5", "", ""},     // blank reason → refused (Athena/Nyathena require one)
+		{SoftwareNyathena, "1234", "5", "", ""},   // blank reason → refused
+		{SoftwareWhisker, "", "5", "", "/kick 5"}, // Whisker still defaults a blank reason
 	}
 	for _, tc := range cases {
 		if got := KickCommand(tc.sw, tc.ipid, tc.uid, tc.reason); got != tc.want {
 			t.Errorf("KickCommand(%v) = %q, want %q", tc.sw, got, tc.want)
+		}
+	}
+}
+
+// TestKickRequiresReason pins the family split: only Athena/Nyathena require a kick reason,
+// so the dashboard can prompt for one and the builder can refuse a blank one.
+func TestKickRequiresReason(t *testing.T) {
+	for _, sw := range []ServerSoftware{SoftwareAthena, SoftwareNyathena} {
+		if !KickRequiresReason(sw) {
+			t.Errorf("KickRequiresReason(%v) = false, want true", sw)
+		}
+	}
+	for _, sw := range []ServerSoftware{SoftwareTsuserver, SoftwareAkashi, SoftwareWitches, SoftwareWhisker, SoftwareUnknown} {
+		if KickRequiresReason(sw) {
+			t.Errorf("KickRequiresReason(%v) = true, want false", sw)
 		}
 	}
 }
