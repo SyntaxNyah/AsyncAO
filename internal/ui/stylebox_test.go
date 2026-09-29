@@ -124,6 +124,35 @@ func TestTwoTonePrefGating(t *testing.T) {
 	}
 }
 
+// TestPrevCycleHelpers pins the right-click move-back helpers as exact inverses of the
+// forward cycles the Restyle / Move / Glitch buttons do: prev∘next is the identity over
+// every value, and each wraps correctly at both ends (None↔PixelArt, None↔last motion,
+// Classic↔Echo).
+func TestPrevCycleHelpers(t *testing.T) {
+	if prevRestyle(0) != uint8(courtroom.VariantPixelArt) {
+		t.Errorf("prevRestyle(0) = %d, want PixelArt", prevRestyle(0))
+	}
+	for r := uint8(courtroom.VariantRedscale); r <= uint8(courtroom.VariantPixelArt); r++ {
+		if nextRestyle(prevRestyle(r)) != r {
+			t.Errorf("nextRestyle(prevRestyle(%d)) != %d", r, r)
+		}
+	}
+	if prevRestyle(uint8(courtroom.VariantRedscale)) != 0 {
+		t.Errorf("prevRestyle(Redscale) should wrap back to None")
+	}
+
+	for m := uint8(0); m < courtroom.MotionCount; m++ {
+		if prevMotion((m+1)%courtroom.MotionCount) != m {
+			t.Errorf("prevMotion((%d+1)%%N) != %d", m, m)
+		}
+	}
+	for m := uint8(0); m < courtroom.GlitchModeCount; m++ {
+		if prevGlitchMode((m+1)%courtroom.GlitchModeCount) != m {
+			t.Errorf("prevGlitchMode((%d+1)%%N) != %d", m, m)
+		}
+	}
+}
+
 // TestGlitchPrefGating pins styleFromPref's glitch normalization: the mode + fringe
 // colour pair reach the courtroom style only while Glitch itself is on, and an
 // out-of-range stored mode falls back to Classic (matching the wire decoder).

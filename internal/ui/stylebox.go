@@ -212,6 +212,31 @@ func nextRestyle(r uint8) uint8 {
 	}
 }
 
+// prevRestyle is nextRestyle's inverse (right-click on the Restyle button): cycles None ←
+// the 10 restyles ← None. The restyle values are contiguous, so it's the same wrap reversed.
+func prevRestyle(r uint8) uint8 {
+	switch {
+	case r == 0:
+		return uint8(courtroom.VariantPixelArt)
+	case r == uint8(courtroom.VariantRedscale):
+		return 0
+	default:
+		return r - 1
+	}
+}
+
+// prevMotion cycles the movement path backward (right-click on the Move button); the forward
+// cycle is the inline (m+1) % MotionCount.
+func prevMotion(m uint8) uint8 {
+	return (m + courtroom.MotionCount - 1) % courtroom.MotionCount
+}
+
+// prevGlitchMode cycles the glitch look backward (right-click on the Glitch button); the
+// forward cycle is the inline (m+1) % GlitchModeCount.
+func prevGlitchMode(m uint8) uint8 {
+	return (m + courtroom.GlitchModeCount - 1) % courtroom.GlitchModeCount
+}
+
 // glitchModeName labels the transmitted glitch look for its cycle button.
 func glitchModeName(m uint8) string {
 	switch m {
@@ -720,6 +745,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 26
 	// Extra restyle (#M5+): cycle one of 10 per-pixel looks (redscale, solarize, neon…), transmitted.
+	// Left-click moves next, right-click moves back.
 	rsb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
 	if c.Button(rsb, restyleName(p.Restyle)) {
 		p.Restyle = nextRestyle(p.Restyle)
@@ -727,8 +753,14 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			p.Tint, p.Grayscale = false, false // a Restyle overrides hue paint's grayscale half — exit hue paint cleanly
 		}
 		a.d.Prefs.SetSpriteStyle(p)
+	} else if c.rightClicked && c.hovering(rsb) {
+		p.Restyle = prevRestyle(p.Restyle)
+		if p.Restyle != 0 && p.Tint && p.Grayscale {
+			p.Tint, p.Grayscale = false, false // the same override exit when moving back
+		}
+		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
+	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it. Left-click next · right-click back.")
 	y += 30
 	// Movement path (#34): a transmitted looping motion — None → Orbit → Bounce → Sway →
 	// Drift. Other AsyncAO players see your sprite follow it; it stacks with the effects
@@ -737,8 +769,11 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if c.Button(mb, motionName(p.Motion)) {
 		p.Motion = (p.Motion + 1) % courtroom.MotionCount
 		a.d.Prefs.SetSpriteStyle(p)
+	} else if c.rightClicked && c.hovering(mb) {
+		p.Motion = prevMotion(p.Motion)
+		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Tooltip(mb, "A looping movement path your sprite follows on the viewport — orbit, bounce, sway or drift. Transmitted to other AsyncAO players; stacks with the colour/glow effects above.")
+	c.Tooltip(mb, "A looping movement path your sprite follows on the viewport — orbit, bounce, sway or drift. Transmitted to other AsyncAO players; stacks with the colour/glow effects above. Left-click next · right-click back.")
 	y += 30
 	y = a.drawStylePathEditor(x, y, p) // #34 B2: draw-your-own custom path
 
@@ -788,8 +823,11 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		if c.Button(gb, glitchModeName(p.GlitchMode)) {
 			p.GlitchMode = (p.GlitchMode + 1) % courtroom.GlitchModeCount
 			a.d.Prefs.SetSpriteStyle(p)
+		} else if c.rightClicked && c.hovering(gb) {
+			p.GlitchMode = prevGlitchMode(p.GlitchMode)
+			a.d.Prefs.SetSpriteStyle(p)
 		}
-		c.Tooltip(gb, "The glitch look — Classic (fringe + jolt), Heavy (wider, harder, oftener), Torn (VHS band tearing), Static (jitter + signal-loss flicker), Echo (far trailing ghosts). Transmitted; an older AsyncAO build shows Classic.")
+		c.Tooltip(gb, "The glitch look — Classic (fringe + jolt), Heavy (wider, harder, oftener), Torn (VHS band tearing), Static (jitter + signal-loss flicker), Echo (far trailing ghosts). Transmitted; an older AsyncAO build shows Classic. Left-click next · right-click back.")
 		y += 30
 		// Preset colour pairs: each swatch is the two ghost colours side by side.
 		c.Label(x, y+5, "Pair", ColTextDim)
