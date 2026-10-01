@@ -235,9 +235,11 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
-	// Install the both-wire codecs for the non-canonical voice headers, so the
-	// VS_* extension also round-trips as JSON (matching LemmyAO/Nyathena).
+	// Install the both-wire codecs for the non-canonical headers (voice VS_*,
+	// and the MS packet whose Fanta-only extensions aolib doesn't model), so
+	// every packet round-trips as JSON too (matching LemmyAO/Nyathena).
 	packetutil.RegisterVoiceCodecs()
+	packetutil.RegisterMSCodec()
 
 	backlogCap := readBacklogCap
 	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {
