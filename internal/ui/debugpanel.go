@@ -139,7 +139,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		raw = "(unannounced)"
 	}
 	line("Software: "+sw.String()+"   ["+raw+"]", ColAccent)
-	line(a.debugHealthLine(), ColText) // phase · server · last pkt · log fill
+	line(a.debugHealthLine(), ColText) // phase · server · wire · last pkt · log fill
 	line(a.debugDiagLine(), ColText)   // tabs · area · queue · ic · ooc · goroutines
 
 	rtt := a.pingRTT.Load()

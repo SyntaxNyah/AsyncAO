@@ -64,8 +64,12 @@ func (a *App) debugHealthLine() string {
 	if software == "" {
 		software = "(unannounced)"
 	}
-	return fmt.Sprintf("debug · phase %s · server %s · last pkt %s · log %d/%d",
-		a.sess.Phase(), software, age, len(a.debugLog), debugLogCap)
+	wire := "fanta"
+	if a.conn != nil && a.conn.JSONMode() {
+		wire = "json"
+	}
+	return fmt.Sprintf("debug · phase %s · server %s · wire %s · last pkt %s · log %d/%d",
+		a.sess.Phase(), software, wire, age, len(a.debugLog), debugLogCap)
 }
 
 // debugDiagLine is the second readout: live structural counts that catch leaks

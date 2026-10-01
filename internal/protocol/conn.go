@@ -6,13 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 
+	aolib "github.com/AO-Underground/aolib/go/v2"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
 const (
@@ -89,6 +93,14 @@ type Conn struct {
 	readErr  atomic.Pointer[error]
 	closed   chan struct{}
 	once     sync.Once
+
+	// decoder folds inbound S2C frames (Fanta or JSON) into the positional
+	// fields the courtroom switch consumes. Owned by readLoop (single goroutine).
+	decoder *packetutil.Decoder
+	// jsonMode is the outbound wire format: true = JSON, false = FantaCode. It
+	// auto-flips to true the first time a JSON frame arrives, and the client can
+	// force it earlier from the server's decryptor capability flag.
+	jsonMode atomic.Bool
 
 	// backlog decouples readLoop from Incoming (see readBacklogCap): readLoop is
 	// its only sender/closer and never blocks on it; deliverLoop moves packets on
@@ -232,6 +244,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 		incoming: make(chan Packet, incomingQueueCap),
 		backlog:  make(chan sizedPacket, backlogCap),
 		closed:   make(chan struct{}),
+		decoder:  packetutil.NewDecoder(),
 	}
 	if len(opts) > 0 && opts[0].KeepaliveInterval > 0 {
 		c.keepaliveEvery = opts[0].KeepaliveInterval
@@ -257,12 +270,33 @@ func (c *Conn) Err() error {
 	return nil
 }
 
+// SetJSONMode forces the outbound wire format (true = JSON). By default the
+// connection auto-detects JSON from the first inbound JSON frame; call this to
+// switch eagerly, e.g. when the server advertises JSON in its decryptor
+// capability flag.
+func (c *Conn) SetJSONMode(enabled bool) { c.jsonMode.Store(enabled) }
+
+// JSONMode reports the current outbound wire format.
+func (c *Conn) JSONMode() bool { return c.jsonMode.Load() }
+
 // Send serializes and writes one packet.
 func (c *Conn) Send(ctx context.Context, p Packet) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
+	mode := aolib.WireFanta
+	if c.jsonMode.Load() {
+		mode = aolib.WireJSON
+	}
+	raw, err := packetutil.BuildWire(p.Header, p.Fields, mode)
+	if err != nil {
+		// A packet that fails aolib validation is an edge case (out-of-range
+		// enum, etc.). Fall back to positional framing, which the server accepts
+		// regardless of wire mode (it auto-detects per frame), preserving the
+		// old never-drop behavior.
+		raw = []byte(p.String())
+	}
 	c.writeMu.Lock()
-	err := c.ws.Write(ctx, websocket.MessageText, []byte(p.String()))
+	err = c.ws.Write(ctx, websocket.MessageText, raw)
 	c.writeMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("protocol: sending %s: %w", p.Header, err)
@@ -375,9 +409,26 @@ func (c *Conn) readLoop() {
 		if msgType != websocket.MessageText {
 			continue // AO is a text protocol; ignore stray binary frames
 		}
-		packet, err := ParsePacket(string(data))
+		// Auto-detect the wire format and fold to positional fields. A JSON
+		// frame also flips the outbound mode so we answer the server in kind.
+		if packetutil.IsJSON(data) {
+			c.jsonMode.Store(true)
+		}
+		header, fields, err := c.decoder.DecodeBody(data)
 		if err != nil {
 			continue // tolerate malformed frames like AO2-Client does
+		}
+		packet := Packet{Header: header, Fields: fields}
+		// Nyathena advertises JSON support in the legacy decryptor greeting
+		// ("decryptor#JSON#%"). Flip outbound to JSON as soon as we see it, so
+		// the rest of the handshake (HI/ID/…) answers the server in kind.
+		if header == "decryptor" {
+			for _, f := range fields {
+				if strings.EqualFold(strings.TrimSpace(f), "json") {
+					c.jsonMode.Store(true)
+					break
+				}
+			}
 		}
 		c.received.Add(1)
 		if c.backlogBytes.Load()+int64(len(data)) > readBacklogMaxBytes {
