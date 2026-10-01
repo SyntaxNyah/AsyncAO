@@ -67,6 +67,7 @@ var aboutBlocks = []aboutBlock{
 	{abPara, "All credit to the original Attorney Online developers:"},
 	{abBullet, "FanatSors — creator of the original Attorney Online"},
 	{abBullet, "OmniTroid — original AO2-Client developer, and a huge help on the protocol documentation"},
+	{abBullet, "OmniTroid & SyntaxNyah — the aolib-go library and the JSON wire protocol it implements (created by OmniTroid, co-authored with SyntaxNyah), which AsyncAO now uses for all packet encoding"},
 	{abBullet, "The AttorneyOnline organization and every AO2-Client contributor — AsyncAO mirrors their protocol and courtroom semantics"},
 	{abBullet, "The webAO developers — the asset-URL conventions come from their work"},
 	{abBullet, "The AO-SDL developers — the SDL2 rendering model reference"},
@@ -116,6 +117,8 @@ var aboutLinks = []aboutLink{
 	{"hashicorp/golang-lru — LRU caches (MPL-2.0)", "https://github.com/hashicorp/golang-lru"},
 	{"kettek/apng — animated-PNG decoding (BSD)", "https://github.com/kettek/apng"},
 	{"klauspost/compress — compression (BSD-3)", "https://github.com/klauspost/compress"},
+	{"AO-Underground/aolib (go/v2) — AO2 wire protocol codec, FantaCode + JSON (MIT)", "https://github.com/AO-Underground/aolib"},
+	{"santhosh-tekuri/jsonschema (v6) — JSON Schema validation (Apache-2.0)", "https://github.com/santhosh-tekuri/jsonschema"},
 
 	{"Native engine — bundled C libraries (all free software)", ""},
 	{"SDL2 — windowing, rendering & audio (zlib)", "https://www.libsdl.org"},

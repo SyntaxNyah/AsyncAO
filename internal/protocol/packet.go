@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
 const (
@@ -17,29 +19,15 @@ const (
 	PacketTerminator = "#%"
 )
 
-// Escape sequences, mirroring AO2-Client AOPacket::encode/decode order.
-var encodeReplacer = strings.NewReplacer(
-	"#", "<num>",
-	"%", "<percent>",
-	"$", "<dollar>",
-	"&", "<and>",
-)
-
-var decodeReplacer = strings.NewReplacer(
-	"<num>", "#",
-	"<percent>", "%",
-	"<dollar>", "$",
-	"<and>", "&",
-)
-
-// EncodeField escapes one field for the wire.
+// EncodeField escapes one field for the wire. Delegated to aolib so the
+// metacharacter escaping has a single source of truth.
 func EncodeField(field string) string {
-	return encodeReplacer.Replace(field)
+	return aolib.EscapeFanta(field)
 }
 
-// DecodeField unescapes one field from the wire.
+// DecodeField unescapes one field from the wire. Delegated to aolib.
 func DecodeField(field string) string {
-	return decodeReplacer.Replace(field)
+	return aolib.UnescapeFanta(field)
 }
 
 // SanitizeText makes a server-authored string safe to RENDER, without changing what

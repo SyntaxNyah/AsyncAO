@@ -13,8 +13,12 @@ require (
 require github.com/coder/websocket v1.8.12
 
 require (
+	github.com/AO-Underground/aolib/go/v2 v2.4.3
 	github.com/klauspost/compress v1.18.6
 	github.com/veandco/go-sdl2 v0.4.40
 )
 
-require golang.org/x/text v0.37.0 // indirect
+require (
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
+	golang.org/x/text v0.37.0 // indirect
+)
