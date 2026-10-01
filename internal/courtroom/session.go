@@ -616,8 +616,230 @@ func (s *Session) KFOCompat() bool {
 	return strings.Contains(strings.ToLower(s.Software), "kfo")
 }
 
+// handleTyped reduces a canonical aolib typed packet to state + events. It
+// returns ok=false for headers whose aolib typed model is not a faithful
+// superset of what AsyncAO consumes, so those fall through to the positional
+// switch in HandlePacket:
+//   - MS: aolib's MSToClient drops blipname/slide and the custom shout name.
+//   - PU: the mod-only IPID feed (type 4) is outside PlayerDataType (0-3).
+//   - MC: aolib's MusicEffects drops the NO_REPEAT bit (8).
+//   - SM: fix_last_area category shift; BN: arity-keyed wipe; RT/TI: arity.
+func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
+	switch v := t.(type) {
+	case *aolib.Decryptor:
+		// Modern servers still open with this; FantaCrypt itself is dead — HI goes out plain.
+		s.reply(protocol.NewTypedPacket(&aolib.HI{HDID: s.HDID}))
+		return nil, true
+
+	case *aolib.IDToClient:
+		s.PlayerID = v.PlayerID
+		s.Software = v.Software
+		s.reply(protocol.NewTypedPacket(&aolib.IDToServer{Software: protocol.ClientName, Version: protocol.Version}))
+		return nil, true
+
+	case *aolib.FL:
+		s.Features = protocol.ParseFeatures(v.Features)
+		return nil, true
+
+	case *aolib.PN:
+		// Population marker: joining is client-initiated from here.
+		if s.phase == PhaseGreeting {
+			s.reply(protocol.NewTypedPacket(&aolib.Askchaa{}))
+		}
+		return nil, true
+
+	case *aolib.ASS:
+		if decoded, err := url.PathUnescape(v.AssetUrl); err == nil && decoded != "" {
+			s.AssetURL = decoded
+		} else {
+			s.AssetURL = v.AssetUrl
+		}
+		return []Event{{Kind: EventAssetURL, Text: s.AssetURL}}, true
+
+	case *aolib.SI:
+		s.phase = PhaseLoading
+		s.Chars = s.Chars[:0]
+		s.Music = s.Music[:0]
+		s.MusicTrack = "" // fresh handshake: let the server's join MC repopulate (no stale resume)
+		s.LastIC = nil    // ...and don't re-stage another room's message after a rejoin
+		s.Muted = false   // ...and start unmuted on a rejoin
+		s.Areas = s.Areas[:0]
+		s.reply(protocol.NewTypedPacket(&aolib.RC{}))
+		return nil, true
+
+	case *aolib.SC:
+		for _, it := range v.CharData {
+			s.Chars = append(s.Chars, CharacterSlot{Name: it.Name, Description: it.Desc})
+		}
+		s.reply(protocol.NewTypedPacket(&aolib.RM{}))
+		return []Event{{Kind: EventCharsUpdated}}, true
+
+	case *aolib.CharsCheck:
+		for i := 0; i < len(v.Taken) && i < len(s.Chars); i++ {
+			s.Chars[i].Taken = v.Taken[i] == aolib.CharAvailabilityTaken
+		}
+		return []Event{{Kind: EventCharsUpdated}}, true
+
+	case *aolib.PR:
+		id := v.ID
+		if id < 0 {
+			return nil, true
+		}
+		if v.Type == aolib.PlayerListUpdateRemove {
+			delete(s.players, id)
+		} else {
+			s.touchPlayer(id) // join (or a benign re-add); fields follow via PU
+		}
+		return []Event{{Kind: EventPlayersUpdated}}, true
+
+	case *aolib.FA:
+		// Fetch-areas refresh: the AREA list is replaced and the ARUP table resets.
+		s.Areas = append(s.Areas[:0], v.Areas...)
+		s.AreaInfo = make([]AreaInfo, len(s.Areas))
+		for i := range s.AreaInfo {
+			s.AreaInfo[i].Players = -1
+		}
+		return []Event{{Kind: EventAreasUpdated}}, true
+
+	case *aolib.FM:
+		// Fetch-music refresh: the MUSIC list alone is replaced, live.
+		s.Music = s.Music[:0]
+		for _, it := range v.MusicList {
+			s.Music = append(s.Music, it.Name)
+		}
+		return nil, true
+
+	case *aolib.DONE:
+		s.phase = PhaseReady
+		return []Event{{Kind: EventReady}}, true
+
+	case *aolib.PV:
+		s.MyCharID = v.CharID
+		// A mute is keyed to a cid; a new cid voids the old mute (defensive reset).
+		s.Muted = false
+		return []Event{{Kind: EventCharPicked, Int: s.MyCharID}}, true
+
+	case *aolib.CTToClient:
+		// Legacy mod-login detection: servers without auth_packet confirm a /login
+		// with this exact OOC line — emulate AUTH 1.
+		if !s.Features.Has(protocol.FeatureAuthPacket) && v.Message == "Logged in as a moderator." {
+			s.ModGranted = true
+			return []Event{
+				{Kind: EventOOC, Name: v.Name, Text: v.Message},
+				{Kind: EventAuth, Int: 1},
+			}, true
+		}
+		return []Event{{Kind: EventOOC, Name: v.Name, Text: v.Message}}, true
+
+	case *aolib.KK:
+		return []Event{{Kind: EventDisconnect, Text: "Kicked: " + capServerText(v.Reason)}}, true
+	case *aolib.KB:
+		return []Event{{Kind: EventDisconnect, Text: "Banned: " + capServerText(v.Reason)}}, true
+	case *aolib.BD:
+		return []Event{{Kind: EventDisconnect, Text: "Banned: " + capServerText(v.Reason)}}, true
+
+	case *aolib.CHECK:
+		// The tsuserver family answers every CH with CHECK; it only dates the clock correction.
+		s.notePong()
+		return nil, true
+
+	case *aolib.HPToClient:
+		if v.Value < 0 || v.Value > HPBarMax {
+			return nil, true
+		}
+		var bar int
+		switch v.Bar {
+		case aolib.PenaltyBarDefense:
+			bar, s.HPDef = 1, v.Value
+		case aolib.PenaltyBarProsecution:
+			bar, s.HPPro = 2, v.Value
+		default:
+			return nil, true
+		}
+		return []Event{{Kind: EventHP, Int: bar, Int2: v.Value}}, true
+
+	case *aolib.ZZToClient:
+		// Incoming modcall broadcast: the body is the pre-formatted notice line.
+		if v.Reason == "" {
+			return nil, true
+		}
+		return []Event{{Kind: EventModcall, Text: v.Reason}}, true
+
+	case *aolib.ARUP:
+		for i, d := range v.UpdateData {
+			if i >= len(s.AreaInfo) {
+				break
+			}
+			switch v.UpdateType {
+			case aolib.AreaUpdateTypePlayerCount:
+				s.AreaInfo[i].Players = atoiOr(d, -1)
+			case aolib.AreaUpdateTypeStatus:
+				s.AreaInfo[i].Status = d
+			case aolib.AreaUpdateTypeCaseManager:
+				s.AreaInfo[i].CM = d
+			case aolib.AreaUpdateTypeLocked:
+				s.AreaInfo[i].Lock = d
+			}
+		}
+		return []Event{{Kind: EventAreasUpdated}}, true
+
+	case *aolib.JD:
+		var n int
+		switch v.State {
+		case aolib.JudgeStateByPosition:
+			n = JudgePosDependent
+		case aolib.JudgeStateHidden:
+			n = JudgeHide
+		case aolib.JudgeStateShown:
+			n = JudgeShow
+		default:
+			return nil, true
+		}
+		s.Judge = n
+		return []Event{{Kind: EventJudge, Int: n}}, true
+
+	case *aolib.AUTH:
+		if !s.Features.Has(protocol.FeatureAuthPacket) {
+			return nil, true
+		}
+		var n int
+		switch v.AuthState {
+		case aolib.AuthStateLogout:
+			n = -1
+		case aolib.AuthStateFailed:
+			n = 0
+		case aolib.AuthStateSuccess:
+			n = 1
+		default:
+			return nil, true
+		}
+		s.ModGranted = n >= 1
+		return []Event{{Kind: EventAuth, Int: n}}, true
+
+	case *aolib.SP:
+		// SP#<pos>: the server forces our position (set_side).
+		if v.Side == "" {
+			return nil, true
+		}
+		return []Event{{Kind: EventSetPos, Text: string(v.Side)}}, true
+
+	case *aolib.BB:
+		// Server popup notice (call_notice). Capped like the removal reasons.
+		if v.Message == "" {
+			return nil, true
+		}
+		return []Event{{Kind: EventNotice, Text: capServerText(v.Message)}}, true
+	}
+	return nil, false
+}
+
 // HandlePacket reduces one server packet into state + events.
 func (s *Session) HandlePacket(p protocol.Packet) []Event {
+	if p.typed != nil {
+		if ev, ok := s.handleTyped(p.typed); ok {
+			return ev
+		}
+	}
 	switch p.Header {
 	case "decryptor":
 		// Modern servers still open with this; FantaCrypt itself is dead —
