@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	aolib "github.com/AO-Underground/aolib/go/v2"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
 // MS packet field indices, mirroring AO2-Client's CHAT_MESSAGE enum
@@ -397,9 +401,110 @@ func (o OutgoingMS) Fields(features FeatureSet) []string {
 	return fields
 }
 
-// Packet wraps Fields into the MS packet.
+// Packet wraps Fields into the MS packet, carrying aolib's canonical typed form
+// so the JSON wire is built from the typed struct (correct enum strings + field
+// mapping) rather than reconstructed from the positional args.
 func (o OutgoingMS) Packet(features FeatureSet) Packet {
-	return NewPacket("MS", o.Fields(features)...)
+	p := NewPacket("MS", o.Fields(features)...)
+	typed := o.ToAolibMSToServer(features)
+	p.typed = &typed
+	return p
+}
+
+// ToAolibMSToServer maps this message onto aolib's canonical typed MS struct,
+// honoring the same feature-gating as Fields. It uses aolib's own enum types so
+// the JSON encoder emits schema-valid values (never an empty enum), and drops
+// the Fanta-only extensions aolib doesn't model (custom shout name, pair
+// z-order, blip name/slide) exactly as the JSON wire does.
+func (o OutgoingMS) ToAolibMSToServer(features FeatureSet) aolib.MSToServer {
+	return aolib.MSToServer{
+		DeskModifier:           deskModifierSafe(clampDeskMod(o.DeskMod, features)),
+		Preanim:                o.PreEmote,
+		Character:              o.CharName,
+		Emote:                  o.Emote,
+		Message:                o.Message,
+		Side:                   aolib.Side(o.Side),
+		SfxName:                o.SFXName,
+		EmoteModifier:          emoteModifierSafe(o.EmoteMod),
+		CharID:                 o.CharID,
+		SfxDelay:               o.SFXDelay,
+		ShoutModifier:          shoutModifierSafe(o.Objection),
+		EvidenceID:             o.EvidenceID,
+		Flip:                   flipSafe(o.Flip),
+		Realization:            o.Realization,
+		TextColor:              textColorSafe(o.TextColor),
+		Showname:               o.Showname,
+		PairedCharID:           o.PairWith,
+		Offset:                 aolib.Offset{X: o.OffsetX, Y: o.OffsetY},
+		NoninterruptingPreanim: o.Immediate,
+		SfxLooping:             o.LoopingSFX,
+		Screenshake:            o.Screenshake,
+		FramesShake:            o.FrameShake,
+		FramesRealization:      o.FrameRealize,
+		FramesSfx:              o.FrameSFX,
+		Additive:               o.Additive,
+		Effect:                 parseEffect(o.Effects),
+	}
+}
+
+// deskModifierSafe maps a wire desk-mod integer to its enum, falling back to
+// aolib's own default (shown) for out-of-range values so the JSON never carries
+// an empty enum.
+func deskModifierSafe(mod int) aolib.DeskModifier {
+	if v, ok := packetutil.DeskModifierFromWire[mod]; ok {
+		return v
+	}
+	return aolib.DeskModifierShown
+}
+
+// emoteModifierSafe maps a wire emote-mod integer to its enum, defaulting to
+// no_preanim (aolib's default) for out-of-range values.
+func emoteModifierSafe(mod int) aolib.EmoteModifier {
+	if v, ok := packetutil.EmoteModifierFromWire[mod]; ok {
+		return v
+	}
+	return aolib.EmoteModifierNoPreanim
+}
+
+// shoutModifierSafe maps a wire shout integer to its enum, defaulting to none.
+func shoutModifierSafe(mod int) aolib.ShoutModifier {
+	if v, ok := packetutil.ShoutModifierFromWire[mod]; ok {
+		return v
+	}
+	return aolib.ShoutModifierNone
+}
+
+// textColorSafe maps a wire text-color integer to its enum, defaulting to white.
+func textColorSafe(c int) aolib.TextColor {
+	if v, ok := packetutil.TextColorFromWire[c]; ok {
+		return v
+	}
+	return aolib.TextColorWhite
+}
+
+// flipSafe maps AsyncAO's horizontal-only boolean flip to aolib's Flip enum.
+func flipSafe(flip bool) aolib.Flip {
+	if flip {
+		return aolib.FlipHorizontal
+	}
+	return aolib.FlipNone
+}
+
+// parseEffect splits the "name|folder|sound" effects slot into aolib's Effect,
+// mirroring aolib's own effectFromWire positionally.
+func parseEffect(raw string) aolib.Effect {
+	if raw == "" {
+		return aolib.Effect{}
+	}
+	parts := strings.SplitN(raw, "|", 3)
+	e := aolib.Effect{Name: parts[0]}
+	if len(parts) > 1 {
+		e.Folder = parts[1]
+	}
+	if len(parts) > 2 {
+		e.Sound = parts[2]
+	}
+	return e
 }
 
 // NormalizeOutgoingEmoteMod applies AO2-Client's on_chat_return_pressed

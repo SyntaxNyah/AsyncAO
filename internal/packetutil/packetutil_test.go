@@ -19,116 +19,6 @@ func TestIsJSON(t *testing.T) {
 	}
 }
 
-func TestBuildWireFanta(t *testing.T) {
-	cases := []struct {
-		header string
-		args   []string
-		want   string
-	}{
-		{"CC", []string{"1", "2", "hdid"}, "CC#1#2#hdid#%"},
-		{"HI", []string{"hdid"}, "HI#hdid#%"},
-		{"CH", []string{"7"}, "CH#7#%"},
-		{"ID", []string{"AsyncAO", "2.11.0-asyncao"}, "ID#AsyncAO#2.11.0-asyncao#%"},
-		// escaping: # % $ & -> <num> <percent> <dollar> <and>
-		{"CT", []string{"name", "hello#world"}, "CT#name#hello<num>world#%"},
-		{"CT", []string{"a&b", "c%d$e"}, "CT#a<and>b#c<percent>d<dollar>e#%"},
-		// MS has no typed model yet: falls through to positional framing and
-		// must preserve every field verbatim.
-		{"MS", []string{"0", "pre", "char", "emote", "msg"}, "MS#0#pre#char#emote#msg#%"},
-	}
-	for _, c := range cases {
-		got, err := BuildWire(c.header, c.args, aolib.WireFanta)
-		if err != nil {
-			t.Fatalf("BuildWire(%q, Fanta): %v", c.header, err)
-		}
-		if string(got) != c.want {
-			t.Errorf("BuildWire(%q, Fanta) = %q, want %q", c.header, got, c.want)
-		}
-	}
-}
-
-func TestBuildWireJSON(t *testing.T) {
-	raw, err := BuildWire("CC", []string{"1", "2", "hdid"}, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("BuildWire(CC, JSON): %v", err)
-	}
-	v, err := aolib.Decode(raw, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("decode CC JSON %q: %v", raw, err)
-	}
-	cc, ok := v.(*aolib.CC)
-	if !ok {
-		t.Fatalf("decoded %T, want *aolib.CC", v)
-	}
-	if cc.PlayerID != 1 || cc.CharID != 2 || cc.CharPassword != "hdid" {
-		t.Errorf("CC = %+v, want PlayerID=1 CharID=2 CharPassword=hdid", cc)
-	}
-
-	// CH (the keepalive) round-trips too.
-	raw, err = BuildWire("CH", []string{"7"}, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("BuildWire(CH, JSON): %v", err)
-	}
-	v, err = aolib.Decode(raw, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("decode CH JSON %q: %v", raw, err)
-	}
-	if ch, ok := v.(*aolib.CH); !ok || ch.CharID != 7 {
-		t.Errorf("CH = %+v (%T), want CharID=7", v, v)
-	}
-}
-
-func TestDecodeBodyFanta(t *testing.T) {
-	d := NewDecoder()
-	hdr, args, err := d.DecodeBody([]byte("PN#5#100#%"))
-	if err != nil {
-		t.Fatalf("DecodeBody(PN): %v", err)
-	}
-	if hdr != "PN" || strings.Join(args, ",") != "5,100" {
-		t.Errorf("got %q %v, want PN [5 100]", hdr, args)
-	}
-
-	// Escaped fields are unescaped on the way back out.
-	hdr, args, err = d.DecodeBody([]byte("CT#name#hello<num>world#%"))
-	if err != nil {
-		t.Fatalf("DecodeBody(CT): %v", err)
-	}
-	if hdr != "CT" || len(args) != 2 || args[1] != "hello#world" {
-		t.Errorf("got %q %v, want CT [name hello#world]", hdr, args)
-	}
-}
-
-func TestDecodeBodyJSON(t *testing.T) {
-	d := NewDecoder()
-
-	// Encode a server->client ID packet via aolib, then decode it back to the
-	// same positional fields the switch consumes.
-	raw, err := aolib.Encode(&aolib.IDToClient{PlayerID: 42, Software: "Nyathena", Version: "2.4.3"}, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("encode IDToClient JSON: %v", err)
-	}
-	hdr, args, err := d.DecodeBody(raw)
-	if err != nil {
-		t.Fatalf("DecodeBody(ID JSON) %q: %v", raw, err)
-	}
-	if hdr != "ID" || strings.Join(args, ",") != "42,Nyathena,2.4.3" {
-		t.Errorf("got %q %v, want ID [42 Nyathena 2.4.3]", hdr, args)
-	}
-
-	// PN with a description survives the fold-back.
-	raw, err = aolib.Encode(&aolib.PN{PlayerCount: 5, MaxPlayers: 100, ServerDescription: "test room"}, aolib.WireJSON)
-	if err != nil {
-		t.Fatalf("encode PN JSON: %v", err)
-	}
-	hdr, args, err = d.DecodeBody(raw)
-	if err != nil {
-		t.Fatalf("DecodeBody(PN JSON): %v", err)
-	}
-	if hdr != "PN" || strings.Join(args, ",") != "5,100,test room" {
-		t.Errorf("got %q %v, want PN [5 100 \"test room\"]", hdr, args)
-	}
-}
-
 func TestEscapeRoundTrip(t *testing.T) {
 	fields := []string{"plain", "hash#tag", "amp&ersand", "per%cent", "dol$lar", "all#&%$"}
 	escaped := EscapeAll(fields)
@@ -138,4 +28,80 @@ func TestEscapeRoundTrip(t *testing.T) {
 			t.Errorf("round-trip %d: %q -> %q -> %q", i, fields[i], escaped[i], back[i])
 		}
 	}
+}
+
+func TestEncodeCustomVoice(t *testing.T) {
+	RegisterVoiceCodecs()
+
+	// Outbound (client→server) Fanta.
+	for _, c := range []struct {
+		header string
+		val    aolib.Outgoing
+		want   string
+	}{
+		{"VS_JOIN", &VS_JOINToServer{}, "VS_JOIN#%"},
+		{"VS_LEAVE", &VS_LEAVEToServer{}, "VS_LEAVE#%"},
+		{"VS_SPEAK", &VS_SPEAKToServer{On: true}, "VS_SPEAK#1#%"},
+		{"VS_FRAME", &VS_FRAME{Payload: "b64"}, "VS_FRAME#b64#%"},
+	} {
+		got, err := EncodeCustom(c.header, c.val, aolib.WireFanta)
+		if err != nil {
+			t.Fatalf("EncodeCustom(%s, Fanta): %v", c.header, err)
+		}
+		if string(got) != c.want {
+			t.Errorf("EncodeCustom(%s, Fanta) = %q, want %q", c.header, got, c.want)
+		}
+	}
+
+	// Outbound JSON.
+	raw, err := EncodeCustom("VS_SPEAK", &VS_SPEAKToServer{On: true}, aolib.WireJSON)
+	if err != nil {
+		t.Fatalf("EncodeCustom(VS_SPEAK, JSON): %v", err)
+	}
+	if !strings.HasPrefix(string(raw), "{") || !strings.Contains(string(raw), `"$header":"VS_SPEAK"`) || !strings.Contains(string(raw), `"on":true`) {
+		t.Errorf("VS_SPEAK JSON = %q", raw)
+	}
+
+	// Unknown header has no codec.
+	if _, err := EncodeCustom("NOPE", &VS_FRAME{}, aolib.WireFanta); err == nil {
+		t.Error("EncodeCustom for an unregistered header should error")
+	}
+}
+
+func TestVoiceCodecInbound(t *testing.T) {
+	RegisterVoiceCodecs()
+
+	// aolib's session decodes custom headers through the registered codec and
+	// hands the typed value to OnCustom — the full inbound path the conn uses.
+	var got aolib.Outgoing
+	sess := aolib.NewServer(aolib.SessionConfig{
+		Send: func([]byte) {},
+	})
+	_ = sess.OnCustom("VS_CAPS", func(p any) { got = p.(aolib.Outgoing) })
+	sess.Receive([]byte("VS_CAPS#1#0#10#opus#48000#20#4096#%"))
+	caps, ok := got.(*VS_CAPS)
+	if !ok {
+		t.Fatalf("decoded %T, want *VS_CAPS", got)
+	}
+	if !caps.Enabled || caps.PttOnly || caps.MaxPeers != 10 || caps.Codec != "opus" || caps.SampleRate != 48000 || caps.FrameMs != 20 || caps.MaxFrameBytes != 4096 {
+		t.Errorf("VS_CAPS = %+v", caps)
+	}
+
+	_ = sess.OnCustom("VS_PEERS", func(p any) { got = p.(aolib.Outgoing) })
+	sess.Receive([]byte(`{"$header":"VS_PEERS","uids":[1,2,3]}`))
+	peers, ok := got.(*VS_PEERS)
+	if !ok {
+		t.Fatalf("decoded %T, want *VS_PEERS", got)
+	}
+	if strings.Join(intsToStrs(peers.Uids), ",") != "1,2,3" {
+		t.Errorf("VS_PEERS = %+v", peers)
+	}
+}
+
+func intsToStrs(ns []int) []string {
+	out := make([]string, len(ns))
+	for i, n := range ns {
+		out[i] = Itoa(n)
+	}
+	return out
 }

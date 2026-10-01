@@ -30,8 +30,8 @@ func jsonDecoder[T any](raw string) (any, error) {
 
 // RegisterVoiceCodecs installs the both-wire codecs for every VS_* header. The
 // bidirectional headers (VS_JOIN / VS_LEAVE / VS_SPEAK) carry a different shape
-// per direction, so decodeFanta reconstructs the client→server shape (what
-// BuildWire sends) while the JSON decode produces the server→client shape.
+// per direction, so decodeFanta reconstructs the client→server shape (what the
+// outbound direction sends) while the JSON decode produces the server→client shape.
 func RegisterVoiceCodecs() {
 	registerVS("VS_CAPS", func(a []string) (any, error) { return ParseVS_CAPS(a) }, jsonDecoder[VS_CAPS])
 	registerVS("VS_PEERS", func(a []string) (any, error) { return ParseVS_PEERS(a) }, jsonDecoder[VS_PEERS])

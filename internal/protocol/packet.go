@@ -66,11 +66,36 @@ func SanitizeText(s string) string {
 type Packet struct {
 	Header string
 	Fields []string
+
+	// typed is the optional canonical aolib form of an OUTBOUND packet. When
+	// set, Conn.Send encodes it through aolib (correct enum strings + field
+	// mapping, valid JSON) instead of reconstructing a typed value from the
+	// positional Fields. Fields is still populated (unescaped) for tests and
+	// the Fanta fallback.
+	typed aolib.Outgoing
 }
 
 // NewPacket builds a packet from a header and raw (unescaped) fields.
 func NewPacket(header string, fields ...string) Packet {
 	return Packet{Header: header, Fields: fields}
+}
+
+// NewTypedPacket builds an outbound packet from an aolib typed value (a
+// canonical C2S struct, or a custom value with a registered codec). Conn.Send
+// encodes it through aolib.
+func NewTypedPacket(o aolib.Outgoing) Packet {
+	return Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o}
+}
+
+// unescapeArgs unescapes aolib's Fanta-form Args (which are already escaped for
+// the wire) back to unescaped fields, so Packet.Fields stays unescaped for any
+// positional consumer (tests, fallback).
+func unescapeArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = aolib.UnescapeFanta(a)
+	}
+	return out
 }
 
 // String serializes the packet with field escaping:

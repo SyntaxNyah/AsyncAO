@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	aolib "github.com/AO-Underground/aolib/go/v2"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -620,12 +622,12 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "decryptor":
 		// Modern servers still open with this; FantaCrypt itself is dead —
 		// HI goes out plain (noencryption era).
-		s.reply(protocol.NewPacket("HI", s.HDID))
+		s.reply(protocol.NewTypedPacket(&aolib.HI{HDID: s.HDID}))
 
 	case "ID":
 		s.PlayerID = atoiOr(p.Field(0), 0)
 		s.Software = p.Field(1)
-		s.reply(protocol.NewPacket("ID", protocol.ClientName, protocol.Version))
+		s.reply(protocol.NewTypedPacket(&aolib.IDToServer{Software: protocol.ClientName, Version: protocol.Version}))
 
 	case "FL":
 		s.Features = protocol.ParseFeatures(p.Fields)
@@ -637,7 +639,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// (networkmanager.cpp join_to_server); the server answers with SI.
 		// Phase guard: population re-broadcasts must not reload the lists.
 		if s.phase == PhaseGreeting {
-			s.reply(protocol.NewPacket("askchaa"))
+			s.reply(protocol.NewTypedPacket(&aolib.Askchaa{}))
 		}
 
 	case "ASS":
@@ -656,7 +658,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.LastIC = nil    // ...and don't re-stage another room's message after a rejoin
 		s.Muted = false   // ...and start unmuted on a rejoin (the server re-sends MU if still muted)
 		s.Areas = s.Areas[:0]
-		s.reply(protocol.NewPacket("RC"))
+		s.reply(protocol.NewTypedPacket(&aolib.RC{}))
 
 	case "SC":
 		for _, field := range p.Fields {
@@ -669,7 +671,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			}
 			s.Chars = append(s.Chars, slot)
 		}
-		s.reply(protocol.NewPacket("RM"))
+		s.reply(protocol.NewTypedPacket(&aolib.RM{}))
 		return []Event{{Kind: EventCharsUpdated}}
 
 	case "CharsCheck":
@@ -752,7 +754,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		for i := range s.AreaInfo {
 			s.AreaInfo[i].Players = -1
 		}
-		s.reply(protocol.NewPacket("RD"))
+		s.reply(protocol.NewTypedPacket(&aolib.RD{}))
 
 	case "FM":
 		// Fetch-music refresh (AO2-Client packet_distribution "FM"): the
@@ -924,7 +926,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// and Whisker; AO2-Client names it only to exclude it from a debug log,
 		// inside #ifdef DEBUG_NETWORK at packet_distribution.cpp:40). So the
 		// stamp below is not the production latency source. See latency.go.
-		s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
+		s.reply(protocol.NewTypedPacket(&aolib.CH{CharID: s.MyCharID}))
 		s.stampPing() // the CHECK that answers this CH times the round trip
 
 	case "CHECK":
@@ -1269,7 +1271,7 @@ func HasAudioExt(name string) bool {
 
 // PickCharacter requests a character (CC packet).
 func (s *Session) PickCharacter(charID int) {
-	s.reply(protocol.NewPacket("CC", strconv.Itoa(s.PlayerID), strconv.Itoa(charID), s.HDID))
+	s.reply(protocol.NewTypedPacket(&aolib.CC{PlayerID: s.PlayerID, CharID: charID, CharPassword: s.HDID}))
 }
 
 // SendChat sends an IC message shaped for this server's features.
@@ -1279,7 +1281,7 @@ func (s *Session) SendChat(msg protocol.OutgoingMS) {
 
 // SendOOC sends an out-of-character line.
 func (s *Session) SendOOC(name, text string) {
-	s.reply(protocol.NewPacket("CT", name, text))
+	s.reply(protocol.NewTypedPacket(&aolib.CTToServer{Name: name, Message: text}))
 }
 
 // RequestMusic asks the server to play a track (or area transfer by name), in the
@@ -1287,7 +1289,7 @@ func (s *Session) SendOOC(name, text string) {
 // appends nothing at all (courtroom.cpp:6036-6044), and a server that reads field
 // 3 as a showname must not see one for a jump.
 func (s *Session) RequestMusic(track string) {
-	s.reply(protocol.NewPacket("MC", track, strconv.Itoa(s.MyCharID)))
+	s.reply(protocol.NewTypedPacket(&aolib.MCToServer{Name: track, CharID: s.MyCharID}))
 }
 
 // RequestMusicWithFlags is AO2's TRACK-PLAY shape,
@@ -1333,7 +1335,7 @@ func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 // latency.go, "the missing call site", for why that leaves the TI correction
 // inert.
 func (s *Session) Ping() {
-	s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
+	s.reply(protocol.NewTypedPacket(&aolib.CH{CharID: s.MyCharID}))
 	// AO2's ping_server does exactly this pairing: send CH, start the timer the
 	// CHECK reply stops (courtroom.cpp:6637-6653).
 	s.stampPing()
@@ -1354,7 +1356,7 @@ func (s *Session) KeepalivePacket() string {
 // on_call_mod_clicked sends {reason, "-1"}).
 func (s *Session) CallMod(reason string) {
 	if s.Features.Has(protocol.FeatureModcallReason) {
-		s.reply(protocol.NewPacket("ZZ", reason, "-1"))
+		s.reply(protocol.NewTypedPacket(&aolib.ZZToServer{Reason: reason, ReportedPlayerID: -1}))
 		return
 	}
 	s.reply(protocol.NewPacket("ZZ"))
@@ -1366,7 +1368,11 @@ func (s *Session) SendHP(bar, state int) {
 	if state < 0 || state > HPBarMax || (bar != 1 && bar != 2) {
 		return
 	}
-	s.reply(protocol.NewPacket("HP", strconv.Itoa(bar), strconv.Itoa(state)))
+	side := aolib.PenaltyBarDefense
+	if bar == 2 {
+		side = aolib.PenaltyBarProsecution
+	}
+	s.reply(protocol.NewTypedPacket(&aolib.HPToServer{Bar: side, Value: state}))
 }
 
 // SendWTCE fires a judge splash: testimony1/testimony2 plain, judgeruling
@@ -1381,17 +1387,17 @@ func (s *Session) SendWTCE(name string, variant int) {
 
 // AddEvidence appends a global evidence item (PE#name#desc#image).
 func (s *Session) AddEvidence(name, desc, image string) {
-	s.reply(protocol.NewPacket("PE", name, desc, image))
+	s.reply(protocol.NewTypedPacket(&aolib.PE{Name: name, Description: desc, Image: image}))
 }
 
 // DeleteEvidence removes the item at index (DE#id).
 func (s *Session) DeleteEvidence(id int) {
-	s.reply(protocol.NewPacket("DE", strconv.Itoa(id)))
+	s.reply(protocol.NewTypedPacket(&aolib.DE{ID: id}))
 }
 
 // EditEvidence replaces the item at index (EE#id#name#desc#image).
 func (s *Session) EditEvidence(id int, name, desc, image string) {
-	s.reply(protocol.NewPacket("EE", strconv.Itoa(id), name, desc, image))
+	s.reply(protocol.NewTypedPacket(&aolib.EE{ID: id, Name: name, Description: desc, Image: image}))
 }
 
 // SetCasingPrefs subscribes to CASEA announcements by role. The leading

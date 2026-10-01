@@ -71,6 +71,17 @@ func encodeCustom(header string, p any, c aolib.Codec, mode aolib.WireMode) ([]b
 	}
 }
 
+// EncodeCustom encodes a typed value for a header that has a registered codec
+// (the VS_* voice headers) in the given wire mode. It is the both-wire path for
+// custom packets; canonical packets go through aolib.Encode instead.
+func EncodeCustom(header string, p any, mode aolib.WireMode) ([]byte, error) {
+	c, ok := customCodecs[header]
+	if !ok {
+		return nil, fmt.Errorf("packetutil: no codec for %q", header)
+	}
+	return encodeCustom(header, p, c, mode)
+}
+
 // frameFanta frames header + positional args into HEADER#a#b#...#%. The args
 // are expected to already be escaped (aolib's EncodeFanta contract).
 func frameFanta(header string, args []string) []byte {
@@ -93,12 +104,4 @@ func ensureHeader(raw []byte, header string) ([]byte, error) {
 	h, _ := json.Marshal(header)
 	obj["$header"] = h
 	return json.Marshal(obj)
-}
-
-// bareEnvelope emits the JSON envelope for a header with no typed model:
-// {"$header":"<header>"}.
-func bareEnvelope(header string) []byte {
-	h, _ := json.Marshal(header)
-	raw, _ := json.Marshal(map[string]json.RawMessage{"$header": h})
-	return raw
 }

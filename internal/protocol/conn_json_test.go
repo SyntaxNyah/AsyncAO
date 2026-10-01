@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
 // TestConnJSONModeFromDecryptorCapability pins the Nyathena JSON negotiation:
@@ -53,7 +55,7 @@ func TestConnJSONModeFromDecryptorCapability(t *testing.T) {
 		t.Fatal("JSON mode not detected from decryptor#JSON#%")
 	}
 
-	if err := conn.Send(context.Background(), NewPacket("HI", "hdid")); err != nil {
+	if err := conn.Send(context.Background(), NewTypedPacket(&aolib.HI{HDID: "hdid"})); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	select {
@@ -107,7 +109,7 @@ func TestConnJSONModeFromJSONFrame(t *testing.T) {
 		t.Fatal("JSON mode not auto-detected from an inbound JSON frame")
 	}
 
-	if err := conn.Send(context.Background(), NewPacket("ID", "AsyncAO", "2.11.0-asyncao")); err != nil {
+	if err := conn.Send(context.Background(), NewTypedPacket(&aolib.IDToServer{Software: "AsyncAO", Version: "2.11.0-asyncao"})); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	select {
