@@ -103,7 +103,8 @@ driver headlessly (they skip if SDL is unavailable).
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |
 | `internal/assets` | AssetType enum, lock-free resolver (learned formats), tier-walking manager, decode pool (magic-byte sniffing), WebP CGO binding + fallback, local mounts, Markov prefetcher | no (decoder is SDL-free by rule) |
-| `internal/protocol` | AO wire framing/escaping, MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
+| `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
+| `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, VS_*/MS both-wire codecs | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
