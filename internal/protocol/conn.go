@@ -235,6 +235,10 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
+	// Install the both-wire codecs for the non-canonical voice headers, so the
+	// VS_* extension also round-trips as JSON (matching LemmyAO/Nyathena).
+	packetutil.RegisterVoiceCodecs()
+
 	backlogCap := readBacklogCap
 	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {
 		backlogCap = opts[0].ReadBacklogCap
