@@ -102,22 +102,3 @@ func bareEnvelope(header string) []byte {
 	raw, _ := json.Marshal(map[string]json.RawMessage{"$header": h})
 	return raw
 }
-
-// jsonHeader reads the packet header from a JSON frame, accepting both the
-// canonical "$header" and the legacy "header" key.
-func jsonHeader(raw []byte) (string, error) {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return "", err
-	}
-	for _, k := range []string{"$header", "header"} {
-		if v, ok := obj[k]; ok {
-			var h string
-			if err := json.Unmarshal(v, &h); err != nil {
-				return "", err
-			}
-			return h, nil
-		}
-	}
-	return "", fmt.Errorf("packetutil: JSON packet missing \"$header\"")
-}
