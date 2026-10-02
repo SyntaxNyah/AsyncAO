@@ -1620,7 +1620,11 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// Group pairing (JSON-only GP roster): stage the other members behind the
 	// speaker/pair, in roster z-order. Empty when no group is active.
 	c.Scene.Group = c.Scene.Group[:0]
-	if gp := c.sess.GroupPair; gp != nil {
+	var gp *protocol.GroupPair
+	if c.sess != nil {
+		gp = c.sess.GroupPair
+	}
+	if gp != nil {
 		for _, m := range gp.Members {
 			if m.CharID == msg.CharID {
 				continue // the speaker is already on the Speaker layer

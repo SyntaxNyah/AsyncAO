@@ -646,9 +646,12 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 	case *aolib.FL:
 		s.Features = protocol.ParseFeatures(v.Features)
-		// Symmetric FL: advertise our own capabilities back. Only "grouppair" is
-		// gated today (Nyathena sends GP/additional_chars to peers that have it).
-		s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
+		// Symmetric FL: advertise our own capabilities back, but only features
+		// the server itself supports — advertising grouppair to a server that
+		// never sent it would gain nothing (and surprises packet-count tests).
+		if s.Features.Has(protocol.FeatureGroupPair) {
+			s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
+		}
 		return nil, true
 
 	case *aolib.PN:
@@ -863,7 +866,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "FL":
 		s.Features = protocol.ParseFeatures(p.Fields)
-		s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
+		if s.Features.Has(protocol.FeatureGroupPair) {
+			s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
+		}
 
 	case "GP":
 		if gp := protocol.GroupPairFromPacket(p); gp != nil {
