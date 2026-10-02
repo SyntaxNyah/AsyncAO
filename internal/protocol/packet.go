@@ -125,6 +125,11 @@ func (p Packet) Field(i int) string {
 	return p.Fields[i]
 }
 
+// Typed returns the packet's canonical aolib form, or nil for positional-only
+// packets (tests, unmodeled headers). The courtroom reducer reads it to consume
+// the typed value directly.
+func (p Packet) Typed() aolib.Outgoing { return p.typed }
+
 // ParsePacket parses one wire message (one WebSocket text frame): it must
 // end with #%, the first #-segment is the header, and every following field
 // is unescaped — exactly AO2-Client's websocketconnection.cpp.

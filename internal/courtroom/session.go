@@ -835,8 +835,8 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 // HandlePacket reduces one server packet into state + events.
 func (s *Session) HandlePacket(p protocol.Packet) []Event {
-	if p.typed != nil {
-		if ev, ok := s.handleTyped(p.typed); ok {
+	if typed := p.Typed(); typed != nil {
+		if ev, ok := s.handleTyped(typed); ok {
 			return ev
 		}
 	}
