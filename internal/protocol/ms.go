@@ -121,6 +121,10 @@ type ChatMessage struct {
 	Effects      string
 	Blipname     string
 	Slide        bool
+
+	// Additional is the per-message group roster (additional_chars), populated
+	// only when a group member speaks. Empty for a non-member message.
+	Additional []GroupPairMember
 }
 
 // ParseMS validates and parses an incoming MS packet's fields. Mirrors

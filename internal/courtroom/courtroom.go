@@ -1596,13 +1596,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// phase (zoomEmote). SpeakerInFront is still read from the wire — it orders the
 	// two layers whenever the pair IS on stage, and the pair layer below is left
 	// zeroed, so a stale one from a previous message cannot draw.
-	// A group roster (GP) supersedes the 2-person pair: the pair layer would
-	// re-draw the first partner the group already renders.
-	var gp *protocol.GroupPair
-	if c.sess != nil {
-		gp = c.sess.GroupPair
-	}
-	hasGroup := gp != nil && len(gp.Members) >= 2
+	// A group roster supersedes the 2-person pair: the pair layer would re-draw
+	// the first partner the group already renders. The roster comes from the
+	// per-message additional_chars (present only when a group member speaks), so
+	// a non-member speaking renders nothing extra and a new entrant still sees
+	// the group.
+	hasGroup := len(msg.Additional) >= 2
 	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod) && !hasGroup
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
 	if c.Scene.PairActive {
@@ -1628,28 +1627,26 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.Scene.Pair = SpriteLayer{}
 	}
 
-	// Group pairing (JSON-only GP roster): stage the other members behind the
-	// speaker/pair, in roster z-order. Empty when no group is active.
+	// Group pairing (additional_chars): stage the other members behind the
+	// speaker/pair, in roster z-order. Empty when no group member is speaking.
 	c.Scene.Group = c.Scene.Group[:0]
-	if gp != nil {
-		for _, m := range gp.Members {
-			if m.CharID == msg.CharID {
-				continue // the speaker is already on the Speaker layer
-			}
-			base := c.urls.Emote(m.Name, m.Emote, EmoteIdle)
-			c.mgr.PrefetchChain(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)
-			c.Scene.Group = append(c.Scene.Group, SpriteLayer{
-				Name:     m.Name,
-				IdleBase: base,
-				Active:   base,
-				Flip:     m.FlipH(),
-				OffsetX:  m.OffsetX,
-				OffsetY:  m.OffsetY,
-				Side:     m.Side,
-				Visible:  true,
-				Scaling:  c.scalingFor(m.Name),
-			})
+	for _, m := range msg.Additional {
+		if m.CharID == msg.CharID {
+			continue // the speaker is already on the Speaker layer
 		}
+		base := c.urls.Emote(m.Name, m.Emote, EmoteIdle)
+		c.mgr.PrefetchChain(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)
+		c.Scene.Group = append(c.Scene.Group, SpriteLayer{
+			Name:     m.Name,
+			IdleBase: base,
+			Active:   base,
+			Flip:     m.FlipH(),
+			OffsetX:  m.OffsetX,
+			OffsetY:  m.OffsetY,
+			Side:     m.Side,
+			Visible:  true,
+			Scaling:  c.scalingFor(m.Name),
+		})
 	}
 
 	c.Scene.ShownameText = c.displayName(msg)

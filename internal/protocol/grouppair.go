@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"encoding/json"
+
 	aolib "github.com/AO-Underground/aolib/go/v2"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
@@ -66,4 +68,45 @@ func GroupPairFromPacket(p Packet) *GroupPair {
 // FlipH reports whether the member is horizontally mirrored (AO's pair flip).
 func (m GroupPairMember) FlipH() bool {
 	return m.Flip == aolib.FlipHorizontal || m.Flip == aolib.FlipHorizontalAndVertical
+}
+
+// ParseAdditionalChars converts the JSON-only `additional_chars` MS field
+// (aolib's MSToClient.Extras["additional_chars"]) into the render model. The
+// server broadcasts it on every MS from a group member, so non-members (a new
+// entrant) can render the group without holding the GP roster.
+func ParseAdditionalChars(v any) []GroupPairMember {
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	type wireMember struct {
+		CharID int          `json:"charid"`
+		Name   string       `json:"name"`
+		Emote  string       `json:"emote"`
+		Side   string       `json:"side"`
+		Offset aolib.Offset `json:"offset"`
+		Flip   aolib.Flip   `json:"flip"`
+		Order  int          `json:"order"`
+	}
+	var wire []wireMember
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return nil
+	}
+	out := make([]GroupPairMember, 0, len(wire))
+	for _, w := range wire {
+		out = append(out, GroupPairMember{
+			CharID:  w.CharID,
+			Name:    w.Name,
+			Emote:   w.Emote,
+			Side:    w.Side,
+			OffsetX: w.Offset.X,
+			OffsetY: w.Offset.Y,
+			Flip:    w.Flip,
+			Order:   w.Order,
+		})
+	}
+	return out
 }

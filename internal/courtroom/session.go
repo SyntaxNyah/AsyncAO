@@ -1034,6 +1034,11 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			// broken MS packets is exactly what the overlay exists for.
 			return []Event{{Kind: EventDebug, Text: "MS dropped: " + err.Error()}}
 		}
+		// additional_chars (JSON-only): the per-message group roster, broadcast
+		// on every MS from a group member so non-members can render the group.
+		if typed, ok := p.Typed().(*aolib.MSToClient); ok {
+			msg.Additional = protocol.ParseAdditionalChars(typed.Extras["additional_chars"])
+		}
 		s.LastIC = msg // the stage-restore seed for rooms rebuilt later (see field doc)
 		return []Event{{Kind: EventMessage, Message: msg}}
 
