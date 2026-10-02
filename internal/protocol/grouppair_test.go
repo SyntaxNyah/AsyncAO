@@ -53,3 +53,34 @@ func TestGroupPairFromPacket(t *testing.T) {
 		t.Fatalf("non-GP packet should yield nil, got %+v", got)
 	}
 }
+
+func TestParseAdditionalChars(t *testing.T) {
+	raw := []byte(`[
+		{"charid":0,"name":"Phoenix","emote":"normal","side":"def","offset":{"x":0,"y":0},"flip":"none","order":0},
+		{"charid":1,"name":"Maya","emote":"normal","side":"pro","offset":{"x":10,"y":20},"flip":"horizontal","order":1}
+	]`)
+
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	members := ParseAdditionalChars(v)
+	if len(members) != 2 {
+		t.Fatalf("members = %d, want 2", len(members))
+	}
+	m0, m1 := members[0], members[1]
+	if m0.CharID != 0 || m0.Name != "Phoenix" || m0.Side != "def" || m0.OffsetX != 0 || m0.OffsetY != 0 || m0.Flip != aolib.FlipNone {
+		t.Errorf("member[0]: %+v", m0)
+	}
+	if m1.CharID != 1 || m1.Side != "pro" || m1.OffsetX != 10 || m1.OffsetY != 20 || m1.Flip != aolib.FlipHorizontal || m1.Order != 1 {
+		t.Errorf("member[1]: %+v", m1)
+	}
+
+	if got := ParseAdditionalChars(nil); got != nil {
+		t.Errorf("nil -> %+v, want nil", got)
+	}
+	if got := ParseAdditionalChars("not-an-array"); got != nil {
+		t.Errorf("non-array -> %+v, want nil", got)
+	}
+}
