@@ -25,6 +25,7 @@ const (
 	FeatureAuthPacket       = "auth_packet"        // 2.9.1
 	FeaturePrezoom          = "prezoom"
 	FeatureCustomBlips      = "custom_blips"
+	FeatureGroupPair        = "grouppair" // Nyathena extension: group pairing (GP + additional_chars)
 )
 
 // FeatureSet is the set of features a server advertised.

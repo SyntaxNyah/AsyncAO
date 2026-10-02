@@ -472,6 +472,7 @@ type Viewport struct {
 
 	speakerAnim   animState
 	pairAnim      animState
+	groupAnims    []animState
 	shoutAnim     animState
 	bgAnim        animState
 	deskAnim      animState
@@ -592,16 +593,16 @@ type Viewport struct {
 	// scratch rects reused every frame (no allocs in the loop): taking the
 	// address of a stack value for a cgo call would force a heap escape
 	// per draw, so every Copy destination lives on the Viewport.
-	dstRect  sdl.Rect
-	fillRect sdl.Rect
-	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
-	srcRect  sdl.Rect // torn-glitch band source (texture coords; kept off the dst scratches)
-	reflRect sdl.Rect // #123 reflection blit destination
-	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
+	dstRect   sdl.Rect
+	fillRect  sdl.Rect
+	fxRect    sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
+	srcRect   sdl.Rect // torn-glitch band source (texture coords; kept off the dst scratches)
+	reflRect  sdl.Rect // #123 reflection blit destination
+	reflClip  sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
 	maskClip  sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
 	stageClip sdl.Rect // #80: clip the full-viewport fills (bg / speedlines / desk / flash) to the UN-shaken stage so a shake/punch can't spill them over the UI
-	ovRect   sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
-	ovClip   sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
+	ovRect    sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
+	ovClip    sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
 	// splashClip is the shout bubble's containment clip. Its own field, not
 	// ovClip's: an overlay and a shout can be up in the SAME frame (an effect
 	// plays over an objection), and SDL keeps the pointer live for the length of
@@ -745,12 +746,22 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
+	// Group pairing: one animation state per group member.
+	if len(v.groupAnims) != len(scene.Group) {
+		v.groupAnims = make([]animState, len(scene.Group))
+	}
+	for i := range scene.Group {
+		v.syncAnim(&v.groupAnims[i], scene.Group[i].Active)
+	}
 	v.syncAnim(&v.speedlineAnim, effectiveSpeedlineBase(scene, v.store))
 	v.reduceInactiveAnimations(scene)
 	// Hold-previous max-age clock: how long each char layer has been cold
 	// (resolve is generation-cached — steady state is pointer math).
 	v.tickCold(&v.speakerAnim, dt)
 	v.tickCold(&v.pairAnim, dt)
+	for i := range scene.Group {
+		v.tickCold(&v.groupAnims[i], dt)
+	}
 
 	if page, ok := v.bgAnim.resolve(v.store); ok {
 		v.bgAnim.advance(page, dt, false)
@@ -791,6 +802,11 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	if scene.PairActive {
 		if page, ok := v.pairAnim.resolve(v.store); ok {
 			v.pairAnim.advance(page, dt, false)
+		}
+	}
+	for i := range scene.Group {
+		if page, ok := v.groupAnims[i].resolve(v.store); ok {
+			v.groupAnims[i].advance(page, dt, false)
 		}
 	}
 	// Screen-effect overlay (effects.ini). loop=true wraps forever and makes cull
@@ -1176,6 +1192,11 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if spriteClip {
 		v.maskClip = stage
 		_ = ren.SetClipRect(&v.maskClip)
+	}
+	// Group pairing (JSON-only GP roster): draw the other members behind the
+	// speaker/pair, front-most last so the roster's z-order holds.
+	for i := range scene.Group {
+		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], vp, 0, spotPct)
 	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		// Speaker behind: draw speaker first, pair over it.

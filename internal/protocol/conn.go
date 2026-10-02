@@ -245,6 +245,8 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	// Install the both-wire codecs for the non-canonical headers (voice VS_*).
 	// Canonical packets (including MS) are handled by aolib's typed session.
 	packetutil.RegisterVoiceCodecs()
+	// GP is the JSON-only group-pair roster announcement (Nyathena extension).
+	packetutil.RegisterGroupPairCodec()
 
 	backlogCap := readBacklogCap
 	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {

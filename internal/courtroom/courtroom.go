@@ -140,8 +140,11 @@ type Scene struct {
 	DeskBase       string
 	ShowDesk       bool
 
-	Speaker        SpriteLayer
-	Pair           SpriteLayer
+	Speaker SpriteLayer
+	Pair    SpriteLayer
+	// Group holds the extra group-pair members (GP extension, JSON-only), drawn
+	// behind the speaker/pair in roster z-order. Empty when not in a group.
+	Group          []SpriteLayer
 	PairActive     bool
 	SpeakerInFront bool
 
@@ -1095,6 +1098,7 @@ func (c *Courtroom) wipeStage() {
 	// departed pair's order.
 	c.Scene.Speaker = SpriteLayer{}
 	c.Scene.Pair = SpriteLayer{}
+	c.Scene.Group = nil
 	c.Scene.PairActive = false
 	c.Scene.SpeakerInFront = true
 
@@ -1611,6 +1615,29 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		}
 	} else {
 		c.Scene.Pair = SpriteLayer{}
+	}
+
+	// Group pairing (JSON-only GP roster): stage the other members behind the
+	// speaker/pair, in roster z-order. Empty when no group is active.
+	c.Scene.Group = c.Scene.Group[:0]
+	if gp := c.sess.GroupPair; gp != nil {
+		for _, m := range gp.Members {
+			if m.CharID == msg.CharID {
+				continue // the speaker is already on the Speaker layer
+			}
+			base := c.urls.Emote(m.Name, m.Emote, EmoteIdle)
+			c.mgr.PrefetchChain(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)
+			c.Scene.Group = append(c.Scene.Group, SpriteLayer{
+				Name:     m.Name,
+				IdleBase: base,
+				Active:   base,
+				Flip:     m.FlipH(),
+				OffsetX:  m.OffsetX,
+				OffsetY:  m.OffsetY,
+				Visible:  true,
+				Scaling:  c.scalingFor(m.Name),
+			})
+		}
 	}
 
 	c.Scene.ShownameText = c.displayName(msg)

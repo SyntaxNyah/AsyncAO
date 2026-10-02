@@ -259,6 +259,9 @@ const (
 	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid,
 	// Text = base64 opus payload. Consumed by the audio layer (decode + play).
 	EventVoiceAudio
+	// EventGroupPair signals the group-pair roster changed (GP); the UI re-reads
+	// Session.GroupPair.
+	EventGroupPair
 )
 
 // Evidence operation kinds, carried in EventEvidenceChanged.Int2.
@@ -542,6 +545,10 @@ type Session struct {
 	// confirmation line on servers without auth_packet).
 	ModGranted bool
 
+	// GroupPair is the active group roster (GP extension), ordered front→back
+	// with the speaker included. nil/empty when not in a group.
+	GroupPair *protocol.GroupPair
+
 	// Voice (Nyathena/LemmyAO VS_* relay): the caps the server advertised, the
 	// live voice peer set, and who's currently transmitting. All mutated only by
 	// HandlePacket on the caller's loop, like the rest of the live state.
@@ -639,6 +646,9 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 	case *aolib.FL:
 		s.Features = protocol.ParseFeatures(v.Features)
+		// Symmetric FL: advertise our own capabilities back. Only "grouppair" is
+		// gated today (Nyathena sends GP/additional_chars to peers that have it).
+		s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
 		return nil, true
 
 	case *aolib.PN:
@@ -853,6 +863,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "FL":
 		s.Features = protocol.ParseFeatures(p.Fields)
+		s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
+
+	case "GP":
+		if gp := protocol.GroupPairFromPacket(p); gp != nil {
+			s.GroupPair = gp
+		} else {
+			s.GroupPair = nil
+		}
+		return []Event{{Kind: EventGroupPair}}
 
 	case "PN":
 		// Population marker, the tail of every server family's greeting.

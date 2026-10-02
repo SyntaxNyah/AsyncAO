@@ -71,4 +71,11 @@ func (c *Conn) registerInbound() {
 			}
 		})
 	}
+
+	// GP: the JSON-only group-pair roster announcement (Nyathena extension).
+	_ = s.OnCustom("GP", func(p any) {
+		if o, ok := p.(aolib.Outgoing); ok {
+			c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})
+		}
+	})
 }
