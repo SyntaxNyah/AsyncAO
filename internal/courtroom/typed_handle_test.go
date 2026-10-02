@@ -65,6 +65,9 @@ func TestHandleTypedConsumesTypedStructs(t *testing.T) {
 func TestHandleTypedFallsBackForIncompleteModels(t *testing.T) {
 	s := NewSession(func(protocol.Packet) error { return nil }, "h")
 	s.Chars = []CharacterSlot{{Name: "A"}, {Name: "B"}}
+	// ParseMS reads the ≥15 fields (incl. blipname at slot 30) only when the
+	// server advertised the corresponding features.
+	s.Features = protocol.ParseFeatures([]string{protocol.FeatureCCCCIC, protocol.FeatureCustomBlips})
 
 	// MS carries a blipname (slot 30) that aolib's MSToClient drops; the
 	// positional ParseMS must still read it from the full field slice.
