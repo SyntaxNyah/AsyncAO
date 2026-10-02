@@ -1,5 +1,5 @@
-github.com/AO-Underground/aolib/go/v2 v2.5.1 h1:6phbapQV61p/HoOz2DYG+2WVpCd0otODa6oPG70XD58=
-github.com/AO-Underground/aolib/go/v2 v2.5.1/go.mod h1:8zK2xBlP1VOw+YZNhyv+slbFv7OP6B8AnDGRuFq7q3A=
+github.com/AO-Underground/aolib/go/v2 v2.6.0 h1:/r6IX/yvSRwurQ2sHPByDGpFgezu05EOsEcLZ7pwH7Q=
+github.com/AO-Underground/aolib/go/v2 v2.6.0/go.mod h1:8zK2xBlP1VOw+YZNhyv+slbFv7OP6B8AnDGRuFq7q3A=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/coder/websocket v1.8.12 h1:5bUXkEPPIbewrnkU8LTCLVaxi4N4J8ahufH2vlo4NAo=
