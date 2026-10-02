@@ -117,7 +117,11 @@ type SpriteLayer struct {
 	Flip     bool
 	// OffsetX/Y are percent of viewport dimensions (−100..100).
 	OffsetX, OffsetY int
-	Visible          bool
+	// Side is the member's AO position (def/pro/wit/…), carried from the GP
+	// roster so the renderer can place cross-position group members on their own
+	// bench. Empty for the speaker/pair layers (they inherit scene.Position).
+	Side    string
+	Visible bool
 	// Style is this layer's transmitted sprite customization (recolour / glow /
 	// opacity / motion): the speaker's is decoded from this message's text, a
 	// pair partner's is recalled by char id (the wire carries no partner style —
@@ -1641,6 +1645,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 				Flip:     m.FlipH(),
 				OffsetX:  m.OffsetX,
 				OffsetY:  m.OffsetY,
+				Side:     m.Side,
 				Visible:  true,
 				Scaling:  c.scalingFor(m.Name),
 			})

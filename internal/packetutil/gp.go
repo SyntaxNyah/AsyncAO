@@ -20,6 +20,7 @@ type GPMember struct {
 	CharID int          `json:"char_id"`
 	Name   string       `json:"name"`
 	Emote  string       `json:"emote"`
+	Side   string       `json:"side"`
 	Offset aolib.Offset `json:"offset"`
 	Flip   aolib.Flip   `json:"flip"`
 	Order  int          `json:"order"`

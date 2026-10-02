@@ -13,6 +13,7 @@ type GroupPairMember struct {
 	CharID           int
 	Name             string
 	Emote            string
+	Side             string
 	OffsetX, OffsetY int
 	Flip             aolib.Flip
 	Order            int
@@ -43,6 +44,7 @@ func FromGP(gp *packetutil.GP) *GroupPair {
 			CharID:  m.CharID,
 			Name:    m.Name,
 			Emote:   m.Emote,
+			Side:    m.Side,
 			OffsetX: m.Offset.X,
 			OffsetY: m.Offset.Y,
 			Flip:    m.Flip,
