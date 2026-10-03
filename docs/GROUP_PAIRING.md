@@ -75,3 +75,8 @@ per-member `▲`/`▼` buttons that send `/pairorder <uid> up|down`, so any memb
 can be moved to any position. `App.sendPairOrder(uid, op)` is the single send
 helper (see `internal/ui/pairorder_test.go`); the tooltip on the control
 explains whichever wire the user is on.
+
+Note: aolib models the classic (non-group) order as `MS.paired_order` (packed
+as `<id>^order` on FantaCode, a separate field on JSON) — that is what LemmyAO
+uses. AsyncAO keeps its own `PairInfo`/`formatPairID` model for FantaCode `^`;
+the `/pairorder` command is the shared JSON group-reorder mechanism.
