@@ -204,7 +204,7 @@ it's free *all the way down*. **Every dependency is open-source under an
 AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces:
 
 - **Go libraries** — ISC ([coder/websocket](https://github.com/coder/websocket)),
-  MIT ([aolib-go](https://github.com/AO-Underground/aolib/tree/main/go),
+  MIT ([aolib](https://github.com/AO-Underground/aolib/tree/main/go),
   [xxhash](https://github.com/cespare/xxhash)), Apache-2.0
   ([jsonschema](https://github.com/santhosh-tekuri/jsonschema)), BSD-3
   ([go-sdl2](https://github.com/veandco/go-sdl2),
