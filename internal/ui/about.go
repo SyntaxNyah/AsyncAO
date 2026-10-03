@@ -76,6 +76,7 @@ var aboutBlocks = []aboutBlock{
 	{abPara, "Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop · Nightingale ·"},
 	{abAccent, "Special thanks to Nightingale — a huge share of AsyncAO's quality-of-life ideas and UI suggestions, from v1.0.x through the releases since, came straight from their relentless, detailed playtesting. Go show them some love."},
 	{abAccent, "And to Crystalwarrior and ZeitHeld — whose suggestions, feedback and detailed issue reports drove the whole v1.1.0 release (the IC-bar rework, the floating evidence window and the audio fixes all came from what they asked for). The ideas are theirs; go support them too."},
+	{abAccent, "And to Crystalwarrior and the entire KFO (Killing Fever Online) community — for helping direct updates, extensive bug testing and pushing the client to its limits."},
 	{abPara, "A special thank-you to Northgate — who backed this project, including financially, and gave me the inspiration to keep going. Without that support AsyncAO wouldn't have come this far this fast. Thank you."},
 	{abMayo, "Mayo — the AsyncAO mascot and app icon. The client was almost named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya representation, since the AO2 client only ever showed Phoenix and Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace Attorney, with the Go gopher's blue palette (AsyncAO is written in Go)."},
 	{abPara, "Art commissioned by Nyah and illustrated by hlenbchan — please go support their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life."},
