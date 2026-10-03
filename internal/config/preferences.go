@@ -1145,8 +1145,7 @@ type AssetPreferences struct {
 	ShoutBypassQueue         bool                 `json:"shoutBypassQueue"`                // shouts skip the queue and play immediately (default ON, AO2 parity). NOT omitempty: an explicit OFF must persist.
 	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
 	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
-	DebugKeybinds            bool                 `json:"debugKeybinds,omitempty"`         // opt-in debug/diagnostic keybinds (default OFF — power user)
-	FXKeybinds               bool                 `json:"fxKeybinds,omitempty"`            // opt-in viewer-FX keybinds: spotlight / idle-breath / reflection / weather (default OFF)
+	HotkeysEnabled           bool                 `json:"hotkeysEnabled,omitempty"`        // opt-in keyboard hotkeys (all Ctrl+key chords), default OFF
 	ShoutDurationMsVal       int                  `json:"shoutDurationMs,omitempty"`       // shout-bubble hold in ms (0/absent = the canonical default)
 	PreanimTimeoutMsVal      int                  `json:"preanimTimeoutMs,omitempty"`      // preanim wait cap in ms (0/absent = the canonical default)
 	ICQueueCapVal            int                  `json:"icQueueCap,omitempty"`            // IC backlog queue depth (0/absent = the canonical default 64)
@@ -1732,8 +1731,7 @@ type prefsJSON struct {
 	ShoutBypassQueue       *bool                `json:"shoutBypassQueue"`     // shouts skip the queue (absent = default ON, AO2 parity)
 	HoldPrevMaxAgeMs       int                  `json:"holdPrevMaxAgeMs"`     // hold-previous cap in ms (0 = forever)
 	HoldDebugTint          bool                 `json:"holdDebugTint"`        // tint stand-in sprites (default OFF)
-	DebugKeybinds          bool                 `json:"debugKeybinds"`        // opt-in debug/diagnostic keybinds (default OFF)
-	FXKeybinds             bool                 `json:"fxKeybinds"`           // opt-in viewer-FX keybinds (default OFF)
+	HotkeysEnabled         bool                 `json:"hotkeysEnabled"`       // opt-in keyboard hotkeys (default OFF)
 	ShoutDurationMs        int                  `json:"shoutDurationMs"`      // shout hold in ms (0 = default)
 	PreanimTimeoutMs       int                  `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
 	ICQueueCap             int                  `json:"icQueueCap"`           // IC queue depth (0 = default 64)
@@ -2760,8 +2758,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.HoldPrevMaxAgeMsVal = clampPercent(p.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
 	}
 	p.HoldDebugTint = onDisk.HoldDebugTint
-	p.DebugKeybinds = onDisk.DebugKeybinds
-	p.FXKeybinds = onDisk.FXKeybinds
+	p.HotkeysEnabled = onDisk.HotkeysEnabled
 	p.ShoutDurationMsVal = onDisk.ShoutDurationMs
 	if p.ShoutDurationMsVal != 0 { // 0 = the canonical default
 		p.ShoutDurationMsVal = clampPercent(p.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
@@ -8139,32 +8136,17 @@ func (p *AssetPreferences) HoldDebugTintOn() bool {
 // SetHoldDebugTint persists the stand-in tint knob.
 func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
 
-// DebugKeybindsOn reports whether the diagnostic/debug keybinds (full-character
-// sprite preload and the connection ping chip) are enabled. OFF by default:
-// these toggles exist for testing and performance diagnosis, not everyday play,
-// so they sit behind an explicit power-user opt-in.
-func (p *AssetPreferences) DebugKeybindsOn() bool {
+// HotkeysEnabledOn reports whether the keyboard hotkeys (every Ctrl+key chord in
+// Settings → Hotkeys) fire. OFF by default: they are opt-in, so a fresh install
+// has no surprise chords until the user enables them.
+func (p *AssetPreferences) HotkeysEnabledOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.DebugKeybinds
+	return p.HotkeysEnabled
 }
 
-// SetDebugKeybinds persists the debug-keybinds toggle.
-func (p *AssetPreferences) SetDebugKeybinds(on bool) { p.setBoolPref(&p.DebugKeybinds, on) }
-
-// FXKeybindsOn reports whether the viewer-FX keybinds (speaker spotlight, idle
-// breathing, glass-floor reflection, ambient weather) fire from the keyboard.
-// OFF by default — they live on the free Ctrl+symbol keys and were the source of
-// accidental snow/spotlight — so they sit behind an explicit opt-in. The
-// Settings → Hotkeys tab still rebinds them either way.
-func (p *AssetPreferences) FXKeybindsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FXKeybinds
-}
-
-// SetFXKeybinds persists the viewer-FX keybinds toggle.
-func (p *AssetPreferences) SetFXKeybinds(on bool) { p.setBoolPref(&p.FXKeybinds, on) }
+// SetHotkeysEnabled persists the hotkeys opt-in.
+func (p *AssetPreferences) SetHotkeysEnabled(on bool) { p.setBoolPref(&p.HotkeysEnabled, on) }
 
 // ShoutDurationMs reports the shout-bubble hold in milliseconds (0 = the
 // canonical courtroom default — see courtroom.DefaultShoutDuration).
@@ -8857,8 +8839,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ShoutBypassQueue = defaultShoutBypassQueue
 	p.HoldPrevMaxAgeMsVal = 0
 	p.HoldDebugTint = false
-	p.DebugKeybinds = false
-	p.FXKeybinds = false
+	p.HotkeysEnabled = false
 	p.ShoutDurationMsVal = 0
 	p.PreanimTimeoutMsVal = 0
 	p.ICQueueCapVal = 0

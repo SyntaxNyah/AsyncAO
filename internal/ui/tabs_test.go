@@ -28,6 +28,10 @@ func testTabApp(t testing.TB) *App {
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{ctx: &Ctx{}, activeTab: -1}
 	a.d.Prefs = prefs
+	// Hotkeys are opt-in in production, but the test fixtures exercise the
+	// dispatcher directly — enable them so those tests keep their old, on-by-default
+	// behaviour without each one having to opt in.
+	a.d.Prefs.SetHotkeysEnabled(true)
 	a.resetSessionState()
 	return a
 }

@@ -424,6 +424,12 @@ func (a *App) handleHotkeys() {
 	if key == 0 || a.sess == nil {
 		return
 	}
+	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until the user ticks
+	// "Enable hotkeys" in Settings → Hotkeys. A fresh install fires none of them,
+	// so no surprise chord (shout, FX, menu) can happen by accident.
+	if !a.d.Prefs.HotkeysEnabledOn() {
+		return
+	}
 	name := strings.ToLower(sdl.GetKeyName(key))
 	switch name {
 	// The four shout chords ARM the interjection, exactly like the buttons they
@@ -531,32 +537,17 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeySpotlight):
-		// Viewer-FX toggles are OFF by default (opt-in via Settings → Hotkeys):
-		// they sit on the free Ctrl+symbol keys and were the source of accidental
-		// snow/spotlight. The effect prefs themselves are still reachable in Settings.
-		if a.d.Prefs.FXKeybindsOn() {
-			a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
-		}
+		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
 	case a.hotkeyFor(hotkeyIdleBreath):
-		if a.d.Prefs.FXKeybindsOn() {
-			a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
-		}
+		a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
 	case a.hotkeyFor(hotkeyReflection):
-		if a.d.Prefs.FXKeybindsOn() {
-			a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
-		}
+		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
-		if a.d.Prefs.FXKeybindsOn() {
-			a.cycleWeather()
-		}
+		a.cycleWeather()
 	case a.hotkeyFor(hotkeyCharBundle):
-		if a.d.Prefs.DebugKeybindsOn() {
-			a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
-		}
+		a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
 	case a.hotkeyFor(hotkeyPingChip):
-		if a.d.Prefs.DebugKeybindsOn() {
-			a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
-		}
+		a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
 	case a.hotkeyFor(hotkeyModDash):
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):

@@ -3941,15 +3941,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap vs budget, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
 	y += 10
 
-	// Debug keybinds (#99): the diagnostic toggles are OFF by default — they're
-	// for testing/perf, not everyday play, so they need an explicit opt-in before
-	// their Ctrl chords fire.
-	dbg := a.d.Prefs.DebugKeybindsOn()
-	if next := c.Checkbox(pad, y, "Debug keybinds (OFF by default): enable the full-character-preload and connection-ping-chip toggles for testing and performance diagnosis.", dbg); next != dbg {
-		a.d.Prefs.SetDebugKeybinds(next)
-	}
-	y += 28
-
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
 	y += 4
@@ -4522,12 +4513,12 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Hotkeys")
 	y = a.settingsDesc(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
 	y += 8
-	// Viewer-FX keybinds are OFF by default — they sit on the free Ctrl+symbol keys
-	// and an accidental press used to summon snow / spotlight. Tick to make them
-	// fire; the bindings below stay editable either way.
-	fxKeys := a.d.Prefs.FXKeybindsOn()
-	if next := c.Checkbox(pad, y, "Enable the viewer-FX keybinds (speaker spotlight, idle breathing, glass-floor reflection, ambient weather) — OFF by default", fxKeys); next != fxKeys {
-		a.d.Prefs.SetFXKeybinds(next)
+	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until this is ticked,
+	// so a fresh install fires none of them (no accidental shout / FX / menu). The
+	// bindings stay editable either way.
+	hk := a.d.Prefs.HotkeysEnabledOn()
+	if next := c.Checkbox(pad, y, "Enable hotkeys (Ctrl+key shortcuts) — OFF by default", hk); next != hk {
+		a.d.Prefs.SetHotkeysEnabled(next)
 	}
 	y += 28
 	// Conflict scan: two actions resolving to the same key clash — only the first
