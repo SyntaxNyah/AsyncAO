@@ -30,6 +30,8 @@ Nothing AsyncAO ships is under a proprietary or AGPL-incompatible licence.
 | Module | Role | Licence |
 |---|---|---|
 | [coder/websocket](https://github.com/coder/websocket) | WebSocket client (the only transport) | ISC |
+| [AO-Underground/aolib (go/v2)](https://github.com/AO-Underground/aolib/tree/main/go) | AO2 wire protocol codec (FantaCode + JSON) | MIT |
+| [santhosh-tekuri/jsonschema (v6)](https://github.com/santhosh-tekuri/jsonschema) | JSON Schema validation (via aolib-go) | Apache-2.0 |
 | [veandco/go-sdl2](https://github.com/veandco/go-sdl2) | SDL2 / mixer / ttf bindings | BSD-3-Clause |
 | [golang.org/x/image](https://pkg.go.dev/golang.org/x/image) | image scaling (Catmull-Rom) & codecs | BSD-3-Clause |
 | [golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync) | concurrency primitives (singleflight, errgroup) | BSD-3-Clause |

@@ -1,6 +1,9 @@
 package protocol
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestBuildServerMSRoundTrip pins the .demo export serializer: a maxed-out
 // 2.8/2.9 message survives BuildServerMS → wire → ParsePacket → ParseMS
@@ -58,7 +61,7 @@ func TestBuildServerMSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *got != *src {
+	if !reflect.DeepEqual(*got, *src) {
 		t.Fatalf("round-trip mismatch:\n got %+v\nwant %+v", got, src)
 	}
 }
@@ -82,7 +85,7 @@ func TestBuildServerMSMinimal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *got != *src {
+	if !reflect.DeepEqual(*got, *src) {
 		t.Fatalf("round-trip mismatch:\n got %+v\nwant %+v", got, src)
 	}
 }

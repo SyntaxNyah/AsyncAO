@@ -4,6 +4,13 @@ Reference: AO2-Client 2.11 source (which wins every conflict) and live server
 behavior. Everything here is implemented in `internal/protocol` and
 `internal/courtroom/session.go`, with tests pinning each rule.
 
+> **Dual wire.** AsyncAO speaks **both** wire formats — the classic FantaCode
+> (documented below) and the JSON wire used by Nyathena/LemmyAO — via
+> [`aolib-go`](https://github.com/AO-Underground/aolib/tree/main/go). The wire
+> encoding, JSON schema validation, enum/offset/bool typing, and the voice/MS
+> custom codecs are all owned by that library. See
+> [AOLIBGO.md](AOLIBGO.md) for the full contract and how it's wired in.
+
 ## Transport
 
 WebSocket text frames only (`ws://` / `wss://`), one packet per frame.

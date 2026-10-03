@@ -117,7 +117,11 @@ type SpriteLayer struct {
 	Flip     bool
 	// OffsetX/Y are percent of viewport dimensions (−100..100).
 	OffsetX, OffsetY int
-	Visible          bool
+	// Side is the member's AO position (def/pro/wit/…), carried from the GP
+	// roster so the renderer can place cross-position group members on their own
+	// bench. Empty for the speaker/pair layers (they inherit scene.Position).
+	Side    string
+	Visible bool
 	// Style is this layer's transmitted sprite customization (recolour / glow /
 	// opacity / motion): the speaker's is decoded from this message's text, a
 	// pair partner's is recalled by char id (the wire carries no partner style —
@@ -140,8 +144,11 @@ type Scene struct {
 	DeskBase       string
 	ShowDesk       bool
 
-	Speaker        SpriteLayer
-	Pair           SpriteLayer
+	Speaker SpriteLayer
+	Pair    SpriteLayer
+	// Group holds the extra group-pair members (GP extension, JSON-only), drawn
+	// behind the speaker/pair in roster z-order. Empty when not in a group.
+	Group          []SpriteLayer
 	PairActive     bool
 	SpeakerInFront bool
 
@@ -1095,6 +1102,7 @@ func (c *Courtroom) wipeStage() {
 	// departed pair's order.
 	c.Scene.Speaker = SpriteLayer{}
 	c.Scene.Pair = SpriteLayer{}
+	c.Scene.Group = nil
 	c.Scene.PairActive = false
 	c.Scene.SpeakerInFront = true
 
@@ -1588,7 +1596,13 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// phase (zoomEmote). SpeakerInFront is still read from the wire — it orders the
 	// two layers whenever the pair IS on stage, and the pair layer below is left
 	// zeroed, so a stale one from a previous message cannot draw.
-	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod)
+	// A group roster supersedes the 2-person pair: the pair layer would re-draw
+	// the first partner the group already renders. The roster comes from the
+	// per-message additional_chars (present only when a group member speaks), so
+	// a non-member speaking renders nothing extra and a new entrant still sees
+	// the group.
+	hasGroup := len(msg.Additional) >= 2
+	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod) && !hasGroup
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
 	if c.Scene.PairActive {
 		c.Scene.Pair = SpriteLayer{
@@ -1611,6 +1625,28 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		}
 	} else {
 		c.Scene.Pair = SpriteLayer{}
+	}
+
+	// Group pairing (additional_chars): stage the other members behind the
+	// speaker/pair, in roster z-order. Empty when no group member is speaking.
+	c.Scene.Group = c.Scene.Group[:0]
+	for _, m := range msg.Additional {
+		if m.CharID == msg.CharID {
+			continue // the speaker is already on the Speaker layer
+		}
+		base := c.urls.Emote(m.Name, m.Emote, EmoteIdle)
+		c.mgr.PrefetchChain(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)
+		c.Scene.Group = append(c.Scene.Group, SpriteLayer{
+			Name:     m.Name,
+			IdleBase: base,
+			Active:   base,
+			Flip:     m.FlipH(),
+			OffsetX:  m.OffsetX,
+			OffsetY:  m.OffsetY,
+			Side:     m.Side,
+			Visible:  true,
+			Scaling:  c.scalingFor(m.Name),
+		})
 	}
 
 	c.Scene.ShownameText = c.displayName(msg)

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
 const (
@@ -17,29 +19,15 @@ const (
 	PacketTerminator = "#%"
 )
 
-// Escape sequences, mirroring AO2-Client AOPacket::encode/decode order.
-var encodeReplacer = strings.NewReplacer(
-	"#", "<num>",
-	"%", "<percent>",
-	"$", "<dollar>",
-	"&", "<and>",
-)
-
-var decodeReplacer = strings.NewReplacer(
-	"<num>", "#",
-	"<percent>", "%",
-	"<dollar>", "$",
-	"<and>", "&",
-)
-
-// EncodeField escapes one field for the wire.
+// EncodeField escapes one field for the wire. Delegated to aolib so the
+// metacharacter escaping has a single source of truth.
 func EncodeField(field string) string {
-	return encodeReplacer.Replace(field)
+	return aolib.EscapeFanta(field)
 }
 
-// DecodeField unescapes one field from the wire.
+// DecodeField unescapes one field from the wire. Delegated to aolib.
 func DecodeField(field string) string {
-	return decodeReplacer.Replace(field)
+	return aolib.UnescapeFanta(field)
 }
 
 // SanitizeText makes a server-authored string safe to RENDER, without changing what
@@ -78,11 +66,36 @@ func SanitizeText(s string) string {
 type Packet struct {
 	Header string
 	Fields []string
+
+	// typed is the optional canonical aolib form of an OUTBOUND packet. When
+	// set, Conn.Send encodes it through aolib (correct enum strings + field
+	// mapping, valid JSON) instead of reconstructing a typed value from the
+	// positional Fields. Fields is still populated (unescaped) for tests and
+	// the Fanta fallback.
+	typed aolib.Outgoing
 }
 
 // NewPacket builds a packet from a header and raw (unescaped) fields.
 func NewPacket(header string, fields ...string) Packet {
 	return Packet{Header: header, Fields: fields}
+}
+
+// NewTypedPacket builds an outbound packet from an aolib typed value (a
+// canonical C2S struct, or a custom value with a registered codec). Conn.Send
+// encodes it through aolib.
+func NewTypedPacket(o aolib.Outgoing) Packet {
+	return Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o}
+}
+
+// unescapeArgs unescapes aolib's Fanta-form Args (which are already escaped for
+// the wire) back to unescaped fields, so Packet.Fields stays unescaped for any
+// positional consumer (tests, fallback).
+func unescapeArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = aolib.UnescapeFanta(a)
+	}
+	return out
 }
 
 // String serializes the packet with field escaping:
@@ -111,6 +124,11 @@ func (p Packet) Field(i int) string {
 	}
 	return p.Fields[i]
 }
+
+// Typed returns the packet's canonical aolib form, or nil for positional-only
+// packets (tests, unmodeled headers). The courtroom reducer reads it to consume
+// the typed value directly.
+func (p Packet) Typed() aolib.Outgoing { return p.typed }
 
 // ParsePacket parses one wire message (one WebSocket text frame): it must
 // end with #%, the first #-segment is the header, and every following field

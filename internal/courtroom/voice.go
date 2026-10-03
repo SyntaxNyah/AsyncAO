@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -163,21 +164,19 @@ func (s *Session) VoiceIsSpeaking(uid int) bool { return s.voiceSpeaking[uid] }
 
 // VoiceJoin / VoiceLeave enter or leave the area's voice channel (the server
 // attaches our uid and rebroadcasts).
-func (s *Session) VoiceJoin()  { s.reply(protocol.NewPacket("VS_JOIN")) }
-func (s *Session) VoiceLeave() { s.reply(protocol.NewPacket("VS_LEAVE")) }
+func (s *Session) VoiceJoin()  { s.reply(protocol.NewTypedPacket(&packetutil.VS_JOINToServer{})) }
+func (s *Session) VoiceLeave() { s.reply(protocol.NewTypedPacket(&packetutil.VS_LEAVEToServer{})) }
 
 // VoiceSpeak announces our speaking-state change (PTT press/release, or open-mic
 // VAD). Sent on the caller's loop.
 func (s *Session) VoiceSpeak(on bool) {
-	v := "0"
-	if on {
-		v = "1"
-	}
-	s.reply(protocol.NewPacket("VS_SPEAK", v))
+	s.reply(protocol.NewTypedPacket(&packetutil.VS_SPEAKToServer{On: on}))
 }
 
 // VoiceFrame sends one base64-encoded opus frame upstream (VS_FRAME). NOTE: the
 // audio-capture slice must funnel frames through the session's loop (or a
 // write-serialised path) — never call this directly from the SDL audio thread, or
 // it races other packet writes.
-func (s *Session) VoiceFrame(b64 string) { s.reply(protocol.NewPacket("VS_FRAME", b64)) }
+func (s *Session) VoiceFrame(b64 string) {
+	s.reply(protocol.NewTypedPacket(&packetutil.VS_FRAME{Payload: b64}))
+}

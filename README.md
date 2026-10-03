@@ -49,6 +49,10 @@ everything in memory and on disk, and renders without allocating.
   compatibility mode**. WebSocket-only (AO2 2.11-compatible); legacy raw-TCP
   servers are intentionally unsupported (the lobby pins them to the bottom in
   black with a note to upgrade).
+- **Speaks both wire formats** — the classic FantaCode (`HEADER#a#b#…#%`) *and*
+  the JSON wire (`{"$header":"MS",…}`) used by Nyathena and LemmyAO, via the
+  [aolib-go](https://github.com/AO-Underground/aolib/tree/main/go) library. The
+  client auto-detects the wire per frame and answers the server in kind.
 - **Full pairing** — two characters with offsets, flip and z-order, fetched in
   parallel so a paired message costs the same wall-clock as a solo one.
 - **Looks the way you want** — AO2 theme support (point it at your `themes/`
@@ -153,6 +157,9 @@ of their work and follows their protocol and conventions:
   model reference
 - **[KFO](https://github.com/Killing-Fever-Online)** — [Crystalwarrior](https://github.com/Crystalwarrior) and the entire KFO community for helping direct updates, extensive bug testing and pushing the client to it's limits.
 - The whole AO community at [aceattorneyonline.com](https://aceattorneyonline.com)
+- **[aolib-go](https://github.com/AO-Underground/aolib/tree/main/go)** — the AO2
+  wire-protocol library (FantaCode **and** JSON) that AsyncAO now uses for every
+  packet encode/decode. Created by **OmniTroid**, co-authored with **SyntaxNyah**.
 
 ### Beta testers
 
@@ -197,7 +204,9 @@ it's free *all the way down*. **Every dependency is open-source under an
 AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces:
 
 - **Go libraries** — ISC ([coder/websocket](https://github.com/coder/websocket)),
-  MIT ([xxhash](https://github.com/cespare/xxhash)), BSD-3
+  MIT ([aolib-go](https://github.com/AO-Underground/aolib/tree/main/go),
+  [xxhash](https://github.com/cespare/xxhash)), Apache-2.0
+  ([jsonschema](https://github.com/santhosh-tekuri/jsonschema)), BSD-3
   ([go-sdl2](https://github.com/veandco/go-sdl2),
   [kettek/apng](https://github.com/kettek/apng),
   [klauspost/compress](https://github.com/klauspost/compress), and the

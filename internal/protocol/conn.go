@@ -6,13 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 
+	aolib "github.com/AO-Underground/aolib/go/v2"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
 const (
@@ -89,6 +93,21 @@ type Conn struct {
 	readErr  atomic.Pointer[error]
 	closed   chan struct{}
 	once     sync.Once
+
+	// sess is the aolib session representing the remote server: it decodes
+	// inbound frames (Fanta or JSON) and dispatches them to the typed On*
+	// handlers registered in registerInbound. Receive is called only by
+	// readLoop; the handlers run on that same goroutine.
+	sess *aolib.ServerSession
+	// frameBytes is the wire size of the frame currently being received, set by
+	// readLoop just before sess.Receive so the On* handlers can charge the
+	// backlog's byte bound correctly. Single-writer (readLoop), read by the same
+	// goroutine's handler closures.
+	frameBytes int
+	// jsonMode is the outbound wire format: true = JSON, false = FantaCode. It
+	// auto-flips to true the first time a JSON frame arrives, and the client can
+	// force it earlier from the server's decryptor capability flag.
+	jsonMode atomic.Bool
 
 	// backlog decouples readLoop from Incoming (see readBacklogCap): readLoop is
 	// its only sender/closer and never blocks on it; deliverLoop moves packets on
@@ -223,6 +242,12 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
+	// Install the both-wire codecs for the non-canonical headers (voice VS_*).
+	// Canonical packets (including MS) are handled by aolib's typed session.
+	packetutil.RegisterVoiceCodecs()
+	// GP is the JSON-only group-pair roster announcement (Nyathena extension).
+	packetutil.RegisterGroupPairCodec()
+
 	backlogCap := readBacklogCap
 	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {
 		backlogCap = opts[0].ReadBacklogCap
@@ -233,6 +258,22 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 		backlog:  make(chan sizedPacket, backlogCap),
 		closed:   make(chan struct{}),
 	}
+	c.sess = aolib.NewServer(aolib.SessionConfig{
+		Send: func(wire []byte) { _ = c.write(wire) },
+		// Unknown headers are the handful of AsyncAO/AO2 extensions aolib's
+		// spec doesn't model (MU, UM, SD, CASEA, checkconnection): frame them
+		// positionally from the Fanta wire so the courtroom still sees them.
+		OnUnknownHeader: func(header string, wire []byte) {
+			pkt, err := aolib.NewPacket(strings.TrimSuffix(string(wire), "%"))
+			if err != nil {
+				return
+			}
+			c.enqueue(Packet{Header: header, Fields: unescapeArgs(pkt.Body)})
+		},
+		// Malformed / undecodable frames are tolerated (dropped), matching
+		// AO2-Client's tolerance of a bad server frame.
+	})
+	c.registerInbound()
 	if len(opts) > 0 && opts[0].KeepaliveInterval > 0 {
 		c.keepaliveEvery = opts[0].KeepaliveInterval
 	}
@@ -257,18 +298,71 @@ func (c *Conn) Err() error {
 	return nil
 }
 
+// SetJSONMode forces the outbound wire format (true = JSON). By default the
+// connection auto-detects JSON from the first inbound JSON frame; call this to
+// switch eagerly, e.g. when the server advertises JSON in its decryptor
+// capability flag.
+func (c *Conn) SetJSONMode(enabled bool) { c.jsonMode.Store(enabled) }
+
+// JSONMode reports the current outbound wire format.
+func (c *Conn) JSONMode() bool { return c.jsonMode.Load() }
+
 // Send serializes and writes one packet.
 func (c *Conn) Send(ctx context.Context, p Packet) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
+	mode := aolib.WireFanta
+	if c.jsonMode.Load() {
+		mode = aolib.WireJSON
+	}
+	raw, err := c.encode(p, mode)
+	if err != nil {
+		// A packet that fails aolib validation is an edge case (out-of-range
+		// enum, etc.). Fall back to positional framing, which the server accepts
+		// regardless of wire mode (it auto-detects per frame), preserving the
+		// old never-drop behavior.
+		raw = []byte(p.String())
+	}
 	c.writeMu.Lock()
-	err := c.ws.Write(ctx, websocket.MessageText, []byte(p.String()))
+	err = c.ws.Write(ctx, websocket.MessageText, raw)
 	c.writeMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("protocol: sending %s: %w", p.Header, err)
 	}
 	c.sent.Add(1)
 	return nil
+}
+
+// encode serializes one outbound packet in the given wire mode. A packet that
+// carries a canonical typed form is encoded through aolib directly (so MS and
+// the other C2S packets get correct enum strings and a valid JSON shape); a
+// custom header (VS_*) goes through its registered codec; and a positional
+// packet (tests, unmodeled headers) is framed as Fanta.
+func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
+	if p.typed != nil {
+		if packetutil.IsCustom(p.Header) {
+			return packetutil.EncodeCustom(p.Header, p.typed, mode)
+		}
+		raw, err := aolib.Encode(p.typed, mode)
+		if err != nil {
+			// JSON validation failed (e.g. an out-of-range enum): fall back to
+			// Fanta for this frame, which the server accepts per-frame.
+			return aolib.Encode(p.typed, aolib.WireFanta)
+		}
+		return raw, nil
+	}
+	return []byte(p.String()), nil
+}
+
+// write writes one already-encoded frame to the socket, serializing with the
+// keepalive goroutine. Used by the session's Send callback.
+func (c *Conn) write(raw []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+	defer cancel()
+	c.writeMu.Lock()
+	err := c.ws.Write(ctx, websocket.MessageText, raw)
+	c.writeMu.Unlock()
+	return err
 }
 
 // SetKeepalive installs (or clears, with an empty string) the CH ping payload the
@@ -375,28 +469,40 @@ func (c *Conn) readLoop() {
 		if msgType != websocket.MessageText {
 			continue // AO is a text protocol; ignore stray binary frames
 		}
-		packet, err := ParsePacket(string(data))
-		if err != nil {
-			continue // tolerate malformed frames like AO2-Client does
+		// A JSON frame flips the outbound mode so we answer the server in kind.
+		if packetutil.IsJSON(data) {
+			c.jsonMode.Store(true)
 		}
-		c.received.Add(1)
-		if c.backlogBytes.Load()+int64(len(data)) > readBacklogMaxBytes {
-			c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
-			c.Close()
-			return
-		}
-		select {
-		case c.backlog <- sizedPacket{p: packet, n: len(data)}:
-			c.backlogBytes.Add(int64(len(data)))
-		case <-c.closed:
-			return
-		default:
-			// Backlog full: the app hasn't drained Incoming for the entire
-			// bound while packets kept arriving — wedged, not napping.
-			c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
-			c.Close()
-			return
-		}
+		// Decode + dispatch through aolib's typed session. The On* handlers
+		// registered in registerInbound enqueue each packet to the backlog
+		// (non-blocking); the decryptor handler flips jsonMode on decryptor#JSON.
+		c.frameBytes = len(data)
+		c.sess.Receive(data)
+	}
+}
+
+// enqueue hands one decoded packet to the backlog, charging the backlog's byte
+// bound and tearing the connection down (deliberately) if the drain has been
+// stalled for the whole bound. It runs on readLoop, or its On* handler closures
+// (the same goroutine), so frameBytes is read without a lock.
+func (c *Conn) enqueue(p Packet) {
+	c.received.Add(1)
+	n := c.frameBytes
+	if c.backlogBytes.Load()+int64(n) > readBacklogMaxBytes {
+		c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
+		c.Close()
+		return
+	}
+	select {
+	case c.backlog <- sizedPacket{p: p, n: n}:
+		c.backlogBytes.Add(int64(n))
+	case <-c.closed:
+		return
+	default:
+		// Backlog full: the app hasn't drained Incoming for the entire
+		// bound while packets kept arriving — wedged, not napping.
+		c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
+		c.Close()
 	}
 }
 
