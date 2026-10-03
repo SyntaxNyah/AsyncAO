@@ -531,17 +531,22 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeySpotlight):
-		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
+		// Viewer-FX toggles are OFF by default (opt-in via Settings → Hotkeys):
+		// they sit on the free Ctrl+symbol keys and were the source of accidental
+		// snow/spotlight. The effect prefs themselves are still reachable in Settings.
+		if a.d.Prefs.FXKeybindsOn() {
+			a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
+		}
 	case a.hotkeyFor(hotkeyIdleBreath):
-		a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
+		if a.d.Prefs.FXKeybindsOn() {
+			a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
+		}
 	case a.hotkeyFor(hotkeyReflection):
-		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
+		if a.d.Prefs.FXKeybindsOn() {
+			a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
+		}
 	case a.hotkeyFor(hotkeyWeather):
-		// Gated behind the debug-keybinds opt-in: the cycle's first non-off stop is
-		// snow, and an accidental Ctrl+' is how the ambient weather kept appearing
-		// "by default" (the effect itself ships OFF). Opt-in keeps it hands-free
-		// only for people who asked for it.
-		if a.d.Prefs.DebugKeybindsOn() {
+		if a.d.Prefs.FXKeybindsOn() {
 			a.cycleWeather()
 		}
 	case a.hotkeyFor(hotkeyCharBundle):

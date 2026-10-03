@@ -617,9 +617,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   suppressed by Reduce-motion like wobble/spin; and **glass-floor reflection** (#123) mirrors
   the characters below the floor line as a flipped, faded copy (one `CopyEx` with
   `FLIP_VERTICAL`, clipped to the stage, drawn before the desk so it occludes naturally), with
-  an Opacity slider. Each has a **rebindable keybind** (Settings → Controls; the Ctrl+letter
+  an Opacity slider. Each has a **rebindable keybind** (Settings → Hotkeys; the Ctrl+letter
   space is full so the viewer-FX toggles default to the free symbol keys — spotlight `Ctrl+[`,
-  breathing `Ctrl+]`, reflection `Ctrl+;`).
+  breathing `Ctrl+]`, reflection `Ctrl+;`). Those four viewer-FX keybinds are **OFF by default**
+  (an "Enable the viewer-FX keybinds" checkbox in Settings → Hotkeys turns them on) so an
+  accidental symbol-key press can't toggle them on.
 - **Particle weather** (#124, Settings → General, **OFF by default**): an ambient overlay of
   **snow / rain / sakura / embers** drifting over the scene. A fixed, bounded particle pool
   (§17.4) drawn from **one cached soft-dot texture**, tinted + shaped per weather (rain
@@ -629,8 +631,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   frame (`TestParticleWeatherZeroAlloc` covers the uniform-alpha and the fade/additive paths)
   and **byte-identical when off** (early return). Confined to the stage with the same
   don't-stomp-the-zoom-clip guard as the reflection. The picker cycles None → Snow → Rain →
-  Sakura → Embers; the `Ctrl+'` keybind cycles it hands-free but is **opt-in** (gated
-  behind the debug-keybinds toggle) so an accidental press can't summon snow.
+  Sakura → Embers; the `Ctrl+'` keybind cycles it hands-free but is **opt-in** (part of the
+  viewer-FX keybinds, OFF by default) so an accidental press can't summon snow.
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

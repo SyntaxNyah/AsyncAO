@@ -4522,6 +4522,14 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Hotkeys")
 	y = a.settingsDesc(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
 	y += 8
+	// Viewer-FX keybinds are OFF by default — they sit on the free Ctrl+symbol keys
+	// and an accidental press used to summon snow / spotlight. Tick to make them
+	// fire; the bindings below stay editable either way.
+	fxKeys := a.d.Prefs.FXKeybindsOn()
+	if next := c.Checkbox(pad, y, "Enable the viewer-FX keybinds (speaker spotlight, idle breathing, glass-floor reflection, ambient weather) — OFF by default", fxKeys); next != fxKeys {
+		a.d.Prefs.SetFXKeybinds(next)
+	}
+	y += 28
 	// Conflict scan: two actions resolving to the same key clash — only the first
 	// in the dispatch switch fires — so flag both rather than fail silently.
 	hkConflicts := a.hotkeyConflictKeys()
