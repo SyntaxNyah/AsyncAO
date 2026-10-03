@@ -151,7 +151,7 @@ of their work and follows their protocol and conventions:
   conventions over HTTP come from their work
 - **[AO-SDL](https://github.com/AttorneyOnline/AO-SDL)** — the SDL2 rendering
   model reference
-- **[KFO](https://github.com/Killing-Fever-Online)** — Crystal Warrior and the entire KFO community for helping direct updates, extensive bug testing and pushing the client to it's limits.
+- **[KFO](https://github.com/Killing-Fever-Online)** — [Crystalwarrior](https://github.com/Crystalwarrior) and the entire KFO community for helping direct updates, extensive bug testing and pushing the client to it's limits.
 - The whole AO community at [aceattorneyonline.com](https://aceattorneyonline.com)
 
 ### Beta testers
