@@ -629,7 +629,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   frame (`TestParticleWeatherZeroAlloc` covers the uniform-alpha and the fade/additive paths)
   and **byte-identical when off** (early return). Confined to the stage with the same
   don't-stomp-the-zoom-clip guard as the reflection. The picker cycles None → Snow → Rain →
-  Sakura → Embers; keybind `Ctrl+'` cycles it hands-free.
+  Sakura → Embers; the `Ctrl+'` keybind cycles it hands-free but is **opt-in** (gated
+  behind the debug-keybinds toggle) so an accidental press can't summon snow.
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

@@ -537,7 +537,13 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyReflection):
 		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
-		a.cycleWeather()
+		// Gated behind the debug-keybinds opt-in: the cycle's first non-off stop is
+		// snow, and an accidental Ctrl+' is how the ambient weather kept appearing
+		// "by default" (the effect itself ships OFF). Opt-in keeps it hands-free
+		// only for people who asked for it.
+		if a.d.Prefs.DebugKeybindsOn() {
+			a.cycleWeather()
+		}
 	case a.hotkeyFor(hotkeyCharBundle):
 		if a.d.Prefs.DebugKeybindsOn() {
 			a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
