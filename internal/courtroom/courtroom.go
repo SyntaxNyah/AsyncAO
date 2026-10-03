@@ -463,19 +463,22 @@ type Courtroom struct {
 	// either way.
 	SpriteWaitPair    bool
 	SpriteWaitPreanim bool
-	// SequentialWait is the EXPERIMENTAL strict-sequencing override (power
-	// user, ON by default on the test build): wait for EVERY asset the message
-	// will present — character sprites (speaker idle/talk/preanim, pair
-	// partner, group members), the position background + desk, the custom
-	// chatbox skin, zoom speedlines, and the emote SFX + blip — to settle
-	// before each message begins. It forces the wait gate on regardless of
-	// SpriteWait and drops the hold timeout, so release is settled-only
-	// (resident in T1 / decoded, or conclusively 404'd — the per-host fetch
-	// deadline guarantees every asset eventually settles, so the room can't
-	// hang). It does NOT touch catch-up: AO2's skip-to-newest is a SEPARATE
-	// knob (CatchUp, ON by default) that keeps fast-forwarding a backlog, and
-	// shouts still bypass the queue entirely — full AO2 parity.
+	// SequentialWait is the "Default" loading mode (power user, the default):
+	// wait for EVERY asset the message will present — character sprites
+	// (speaker idle/talk/preanim, pair partner, group members), the position
+	// background + desk, the custom chatbox skin, zoom speedlines, the emote
+	// SFX + blip, screen-effect art + realization/effect sounds, and (for a
+	// queued shout) its bubble + cry — to settle before each message begins.
+	// It forces the wait gate on regardless of SpriteWait and drops the hold
+	// timeout, so release is settled-only (resident in T1 / decoded, or
+	// conclusively 404'd — the per-host fetch deadline guarantees every asset
+	// eventually settles, so the room can't hang). It does NOT touch catch-up:
+	// AO2's skip-to-newest is a SEPARATE knob (CatchUp, ON by default).
 	SequentialWait bool
+	// ShoutBypassQueue is AO2's default: a shout nukes the queue and plays NOW
+	// (no wait). When the user turns it OFF, shouts enqueue and wait like any
+	// other message (and, under SequentialWait, wait for their bubble + cry).
+	ShoutBypassQueue bool
 
 	// ShoutDuration / PreanimTimeout are the core message-ceremony timings,
 	// exposed as power-user knobs (defaults = the canonical AO2-flavoured
@@ -681,6 +684,9 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		PreanimTimeout: DefaultPreanimTimeout,
 		QueueCap:       messageQueueCap,
 		CatchUpLinger:  catchUpLinger,
+		// Shouts skip the queue by default (AO2 parity); the App pushes the user's
+		// pref, and direct callers (tests/embedders) keep the canonical behaviour.
+		ShoutBypassQueue: true,
 	}
 	c.Scene.SpeakerInFront = true
 	return c
@@ -949,7 +955,7 @@ func preanimWillPlay(msg *protocol.ChatMessage) bool {
 // PREFIXED base: PrefetchWithFallback keeps it the asset's identity whichever
 // spelling the server ships (CLAUDE.md).
 func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
-	if c.SpriteReady == nil || msg == nil || msg.IsShout() {
+	if c.SpriteReady == nil || msg == nil {
 		return false
 	}
 	if !c.SpriteWait && !c.SequentialWait {
@@ -1056,6 +1062,41 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				ready = c.audioSettled(ref.Base)
 			}
 		}
+		// A queued shout (bypass off) also waits for its bubble art + cry.
+		if ready && msg.IsShout() {
+			charBase, defaultBase, shoutSFX := c.shoutBases(msg)
+			ready = c.spriteSettled(charBase)
+			if ready && defaultBase != "" {
+				ready = c.spriteSettled(defaultBase)
+			}
+			if ready && c.AudioReady != nil && shoutSFX != "" {
+				ready = c.audioSettled(shoutSFX)
+			}
+		}
+		// Screen effects: the legacy REALIZATION=1 sound, and the 2.8 EFFECTS
+		// field's overlay art + sound — the last assets a message can present.
+		if ready && msg.Realization && c.AudioReady != nil {
+			if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
+				ready = c.audioSettled(sfx)
+			}
+		}
+		if ready && msg.Effects != "" {
+			fx, folder, sound := parseEffectsField(msg.Effects)
+			if folder == "" {
+				folder = c.OverlayEffectsFolderFor(msg.CharName)
+			}
+			if c.AudioReady != nil && OverlaySoundPlayable(sound) {
+				ready = c.audioSettled(c.urls.SFX(sound))
+			}
+			// Overlay ART is best-effort: a still-pending resolve has no base to
+			// wait on yet (the deferred-overlay mechanism re-arms it once it
+			// lands). A resolved base gates like any other T1 texture.
+			if ready && c.OverlayFor != nil {
+				if res, ok := c.OverlayFor(fx, folder); ok && !res.Pending && res.Base != "" {
+					ready = c.spriteSettled(res.Base)
+				}
+			}
+		}
 	}
 	if ready {
 		c.waitFor = nil
@@ -1109,6 +1150,29 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			if ref, pending := c.blipRefFor(blipWire, msg.CharName); !pending && ref.Base != "" {
 				c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh) // AssetType: Blip (wait-gate warm)
 			}
+			if msg.IsShout() {
+				charBase, defaultBase, shoutSFX := c.shoutBases(msg)
+				c.mgr.Prefetch(charBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble (wait-gate warm)
+				if defaultBase != "" {
+					c.mgr.Prefetch(defaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble (wait-gate warm)
+				}
+				if shoutSFX != "" {
+					c.mgr.Prefetch(shoutSFX, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, shout cry)
+				}
+			}
+			if msg.Realization {
+				if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
+					c.mgr.Prefetch(sfx, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, realization)
+				}
+			}
+			if msg.Effects != "" {
+				_, _, sound := parseEffectsField(msg.Effects)
+				if OverlaySoundPlayable(sound) {
+					c.mgr.Prefetch(c.urls.SFX(sound), assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, effect sound)
+				}
+				// The overlay ART resolve is kicked by the gate's OverlayFor call in
+				// the ready-check above (the App owns the demand); nothing to prefetch.
+			}
 		}
 	}
 	// Strict sequencing waits for settlement, never a timeout: the network
@@ -1131,7 +1195,7 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 	if msg == nil {
 		return
 	}
-	if msg.IsShout() {
+	if msg.IsShout() && c.ShoutBypassQueue {
 		c.queue = c.queue[:0]
 		c.begin(msg)
 		return
@@ -1577,25 +1641,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 
 	if msg.IsShout() {
-		shout := ShoutName(msg.Objection)
-		custom := msg.Objection == protocol.ShoutCustom
-		c.ShoutCharBase = c.urls.ShoutBubble(speakerName, shout, custom)
-		shoutSFX := c.urls.ShoutSFX(speakerName, shout)
-		if custom && msg.CustomShout != "" {
-			// 2.10 named interjection: art and sound live under
-			// custom_objections/<name> (courtroom.cpp objection_custom).
-			c.ShoutCharBase = c.urls.NamedCustomShout(speakerName, msg.CustomShout)
-			shoutSFX = c.ShoutCharBase
-		}
-		c.ShoutDefaultBase = ""
-		if !custom {
-			c.ShoutDefaultBase = c.urls.DefaultShoutBubble(shout)
-			if !c.restoring { // settled form never shows the bubble — don't probe for it
-				c.mgr.Prefetch(c.ShoutDefaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+		charBase, defaultBase, shoutSFX := c.shoutBases(msg)
+		c.ShoutCharBase = charBase
+		c.ShoutDefaultBase = defaultBase
+		if !c.restoring { // settled form never shows the bubble — don't probe for it
+			if defaultBase != "" {
+				c.mgr.Prefetch(defaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
 			}
-		}
-		if !c.restoring {
-			c.mgr.Prefetch(c.ShoutCharBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+			c.mgr.Prefetch(charBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
 		}
 		c.audio.PlayShout(shoutSFX) // AssetType: SFX
 	}
@@ -1873,6 +1926,27 @@ func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
 		return AssetRef{}, true // char.ini still in flight
 	}
 	return c.urls.BlipRef(defaultBlipSet), false
+}
+
+// shoutBases is the ONE mint for a shout's art + cry: the per-character bubble
+// base, the default (misc) bubble base, and the cry SFX base. Shared by begin()
+// (the play path) and the strict-sequencing gate so the two can never disagree
+// about what a queued shout will show and play.
+func (c *Courtroom) shoutBases(msg *protocol.ChatMessage) (charBase, defaultBase, sfx string) {
+	shout := ShoutName(msg.Objection)
+	custom := msg.Objection == protocol.ShoutCustom
+	charBase = c.urls.ShoutBubble(msg.CharName, shout, custom)
+	sfx = c.urls.ShoutSFX(msg.CharName, shout)
+	if custom && msg.CustomShout != "" {
+		// 2.10 named interjection: art and sound live under
+		// custom_objections/<name> (courtroom.cpp objection_custom).
+		charBase = c.urls.NamedCustomShout(msg.CharName, msg.CustomShout)
+		sfx = charBase
+	}
+	if !custom {
+		defaultBase = c.urls.DefaultShoutBubble(shout)
+	}
+	return charBase, defaultBase, sfx
 }
 
 // beginCaughtUp shows a backlog message's text for ~one frame with no

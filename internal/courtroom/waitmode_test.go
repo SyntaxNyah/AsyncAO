@@ -575,3 +575,70 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		}
 	})
 }
+
+// TestShoutBypassQueue pins the shout-bypass toggle: ON (default, AO2 parity) a
+// shout nukes the queue and plays NOW; OFF it queues like any other message.
+func TestShoutBypassQueue(t *testing.T) {
+	t.Run("default bypasses the queue", func(t *testing.T) {
+		room, _, _, _ := newCourtroomRig(t)
+		if !room.ShoutBypassQueue {
+			t.Fatal("premise: shouts must bypass by default (AO2 parity)")
+		}
+		m := waitMsg("Phoenix", "normal", "OBJECTION!")
+		m.Objection = protocol.ShoutObjection
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.Phase() != PhaseShout || room.QueueLen() != 0 {
+			t.Fatalf("a shout must play immediately when bypass is on: phase=%v queue=%d", room.Phase(), room.QueueLen())
+		}
+	})
+
+	t.Run("off queues the shout", func(t *testing.T) {
+		room, _, _, _ := newCourtroomRig(t)
+		room.ShoutBypassQueue = false
+		room.SequentialWait = true
+		ready := map[string]bool{}
+		room.SpriteWaitTimeout = 50 * time.Millisecond
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		m := waitMsg("Phoenix", "normal", "OBJECTION!")
+		m.Objection = protocol.ShoutObjection
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.QueueLen() != 1 || room.Phase() != PhaseIdle {
+			t.Fatalf("a queued shout must wait for its assets: queue=%d phase=%v", room.QueueLen(), room.Phase())
+		}
+		readySpeaker(room, ready, "Phoenix", "normal")
+		charBase, defaultBase, _ := room.shoutBases(m)
+		ready[charBase] = true
+		ready[defaultBase] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("a queued shout must release once its sprites + bubble settle")
+		}
+	})
+}
+
+// TestSequentialWaitEffects pins the last strict-sequencing assets: the legacy
+// REALIZATION=1 sound holds the message until it decodes, then releases.
+func TestSequentialWaitEffects(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	ready := map[string]bool{}
+	audio := map[string]bool{}
+	room.SequentialWait = true
+	room.SpriteWaitTimeout = 50 * time.Millisecond
+	room.SpriteReady = func(base string) bool { return ready[base] }
+	room.AudioReady = func(base string) bool { return audio[base] }
+	room.RealizationSFX = room.urls.SFX("realization") // the theme's realization sound
+
+	readySpeaker(room, ready, "Phoenix", "normal")
+	audio[room.urls.BlipRef(defaultBlipSet).Base] = true // pre-settle the blip so only the realization is cold
+	m := waitMsg("Phoenix", "normal", "hi")
+	m.Realization = true
+	room.HandleEvent(Event{Kind: EventMessage, Message: m})
+	if room.QueueLen() != 1 {
+		t.Fatal("a cold realization SFX must hold the message")
+	}
+	audio[room.RealizationSFX] = true
+	room.Update(16 * time.Millisecond)
+	if room.QueueLen() != 0 {
+		t.Fatal("the realization SFX landing must release the hold")
+	}
+}

@@ -3860,16 +3860,30 @@ func formatWaitMs(ms int) string {
 	return strconv.FormatFloat(float64(ms)/1000, 'f', -1, 64) + " s"
 }
 
-// spriteLoadModeLabel is the cycle-button label for the power-user cold-load sprite
-// behaviour: what a character layer shows while its NEW (uncached) sprite streams.
+// spriteLoadModeLabel is the cycle-button label for the power-user loading mode.
 func spriteLoadModeLabel(mode int) string {
 	switch mode {
+	case config.SpriteLoadDefault:
+		return "Loading mode: Default — wait for every asset before each message plays"
 	case config.SpriteLoadHoldPrev:
-		return "Uncached sprite: keep the previous one (webAO-style, default)"
+		return "Loading mode: webAO — keep the previous sprite until the new one loads"
 	case config.SpriteLoadWait:
-		return "Uncached sprite: hold the message until it loads (client-AO-style)"
+		return "Loading mode: Hold the message — wait for the speaker sprite (timeout)"
 	}
-	return "Uncached sprite: show nothing until it loads"
+	return "Loading mode: Show nothing — blank until the sprite loads"
+}
+
+// spriteLoadModeDesc is the per-mode WHAT-IT-DOES shown under the cycle button.
+func spriteLoadModeDesc(mode int) string {
+	switch mode {
+	case config.SpriteLoadDefault:
+		return "Default: every message holds until ALL its assets have loaded — character sprites (speaker, pair, group), the background + desk, the custom chatbox, zoom speedlines, the emote SFX + blip, and any screen-effect art or realization/effect sound. Nothing pops in mid-ceremony. Shouts still skip the queue (toggle below), and catch-up (AO2's skip-to-newest, above) still fast-forwards a backlog."
+	case config.SpriteLoadHoldPrev:
+		return "webAO: while an uncached sprite is still downloading, the layer's last drawn sprite stays on screen until the new one lands (the old default)."
+	case config.SpriteLoadWait:
+		return "Hold the message: the message stays off-stage until its speaker sprite decodes, capped by the timeout below (a broken sprite only ever delays it)."
+	}
+	return "Show nothing: blank until the sprite lands (the original behaviour, the cold-load flash)."
 }
 
 // powerUserToggleLabel is the reveal-button label for the advanced (power-user) settings.
@@ -3996,18 +4010,19 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
 	y += 10
 
-	// Renderer — what a character layer shows while a NEW, uncached sprite is still
-	// streaming + decoding (the playtest cold-load flash report). Purely cosmetic and
-	// fully isolated (it can't break a connection or an asset fetch), but it touches
-	// the render path, so it sits behind the reveal with the rest of the advanced kit.
-	y = a.settingsSection(y, w, "Renderer — uncached sprite loading")
+	// Message sequencing — how each IC message is presented while its assets are
+	// still streaming + decoding. Four named modes; Default (strict sequencing) is
+	// the shipped default. Fully isolated (it can't break a connection or an asset
+	// fetch), but it touches the render/message path, so it sits behind the reveal
+	// with the rest of the advanced kit.
+	y = a.settingsSection(y, w, "Message sequencing")
 	slm := a.d.Prefs.SpriteLoadMode()
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 460, H: btnH}, spriteLoadModeLabel(slm)) {
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 520, H: btnH}, spriteLoadModeLabel(slm)) {
 		a.d.Prefs.SetSpriteLoadMode((slm + 1) % config.SpriteLoadModeCount)
 		a.applyTimingToRoom() // the wait gate lives on the live room — flip it now
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "What shows while an uncached sprite is still downloading. Show nothing = blank until it lands. Keep the previous one = the last sprite stays until the new one is ready (webAO-style). Hold the message = the message waits for its sprite, capped by the timeout below (a broken sprite only ever delays it; on timeout the previous sprite is kept). Cosmetic only; no cost once a sprite is cached.", ColTextDim)
+	y = a.settingsDesc(pad, y, spriteLoadModeDesc(slm), ColTextDim)
 	y += 6
 	if slm == config.SpriteLoadWait {
 		c.Label(pad, y+4, "Max hold per message:", ColText)
@@ -4078,18 +4093,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
 	y += 10
 
-	// Experimental — strict sequencing (#136). Waits for every asset a message
-	// presents before it plays. Marked experimental; ON by default on the test
-	// build. It supersedes the cold-load sprite mode but does NOT touch the
-	// catch-up setting (AO2's skip-to-newest) — that stays its own knob above.
-	y = a.settingsSection(y, w, "Experimental")
-	seq := a.d.Prefs.SequentialWaitOn()
-	if next := c.Checkbox(pad, y, "Strict sequencing — wait for every on-screen sprite and sound before each message plays", seq); next != seq {
-		a.d.Prefs.SetSequentialWait(next)
+	// Shouts — AO2's default is that an interjection (Hold it!/Objection!/…) skips
+	// the queue and plays immediately. The toggle off queues shouts like any other
+	// message, so under the Default mode they wait for their bubble art + cry too.
+	y = a.settingsSection(y, w, "Shouts")
+	shoutBypass := a.d.Prefs.ShoutBypassQueueOn()
+	if next := c.Checkbox(pad, y, "Shouts skip the queue and play immediately (AO2 default)", shoutBypass); next != shoutBypass {
+		a.d.Prefs.SetShoutBypassQueue(next)
 		a.applyTimingToRoom()
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "ON (default, test build): every message holds until ALL its assets (character sprites, background, desk, custom chatbox, zoom speedlines, emote SFX and blip) have loaded or conclusively 404'd. Shouts still skip the queue and play immediately, and catch-up (AO2's skip-to-newest, above) still fast-forwards a backlog — full AO2 parity. OFF: the normal queue — an uncached sprite is bridged by the cold-load mode above.", ColTextDim)
+	y = a.settingsDesc(pad, y, "ON (default): a shout clears the backlog and plays at once, exactly like AO2. OFF: shouts queue in order and, under the Default loading mode, wait for their bubble art and cry like any other message.", ColTextDim)
 	y += 10
 
 	// (The missing-sprite "missingno" placeholder controls moved to Settings →

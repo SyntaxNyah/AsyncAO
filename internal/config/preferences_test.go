@@ -236,17 +236,17 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 	}
 }
 
-// TestSpriteLoadModeDefaultAndMigration pins the webAO-style default flip: a fresh
-// install defaults to hold-previous; a legacy prefs file that predates the key (the
-// old Blank default was dropped by omitempty, so the key is simply absent) loads as
-// the new default; and an EXPLICIT Blank(0) round-trips (the reason the save field is
-// no longer omitempty — otherwise 0 would be dropped and read back as "absent →
-// hold-previous", silently losing the choice).
+// TestSpriteLoadModeDefaultAndMigration pins the Default-mode flip: a fresh install
+// defaults to Default (strict sequencing); a legacy prefs file that predates the key
+// (the old Blank default was dropped by omitempty, so the key is simply absent) loads
+// as the new default; and an EXPLICIT Blank(0) round-trips (the reason the save field
+// is no longer omitempty — otherwise 0 would be dropped and read back as "absent →
+// default", silently losing the choice).
 func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
-	// 1) Fresh install (no file) → hold-previous.
+	// 1) Fresh install (no file) → Default.
 	fresh, path := newTestPrefs(t)
-	if got := fresh.SpriteLoadMode(); got != SpriteLoadHoldPrev {
-		t.Fatalf("fresh default SpriteLoadMode = %d, want hold-previous (%d)", got, SpriteLoadHoldPrev)
+	if got := fresh.SpriteLoadMode(); got != SpriteLoadDefault {
+		t.Fatalf("fresh default SpriteLoadMode = %d, want Default (%d)", got, SpriteLoadDefault)
 	}
 
 	// 2) Legacy file with the key ABSENT → the new default, not Blank.
@@ -259,8 +259,8 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 		t.Fatalf("load legacy: %v", err)
 	}
 	defer lp.Close()
-	if got := lp.SpriteLoadMode(); got != SpriteLoadHoldPrev {
-		t.Errorf("legacy (absent key) SpriteLoadMode = %d, want the new default hold-previous (%d)", got, SpriteLoadHoldPrev)
+	if got := lp.SpriteLoadMode(); got != SpriteLoadDefault {
+		t.Errorf("legacy (absent key) SpriteLoadMode = %d, want the new default Default (%d)", got, SpriteLoadDefault)
 	}
 
 	// 3) An EXPLICIT Blank must persist across a save/reload (omitempty removed).

@@ -7648,13 +7648,13 @@ func (a *App) applySpriteCap() {
 	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.AnimDecodeConcurrency())
 }
 
-// vpSpriteLoadMode maps the 3-way cold-load pref onto the renderer's 2-way switch:
-// Wait is a MESSAGE-lifecycle gate (courtroom), so for the renderer it falls back to
-// hold-previous — if a hold times out (404 / dead link) the stage keeps the previous
-// sprite instead of flashing blank, composing the two mitigations.
+// vpSpriteLoadMode maps the 4-way loading-mode pref onto the renderer's 2-way switch:
+// Wait and Default are MESSAGE-lifecycle gates (courtroom), so for the renderer they
+// fall back to hold-previous — if a hold times out (404 / dead link) the stage keeps
+// the previous sprite instead of flashing blank, composing the two mitigations.
 func (a *App) vpSpriteLoadMode() int {
 	mode := a.d.Prefs.SpriteLoadMode()
-	if mode == config.SpriteLoadWait {
+	if mode == config.SpriteLoadWait || mode == config.SpriteLoadDefault {
 		return config.SpriteLoadHoldPrev
 	}
 	return mode
@@ -7672,11 +7672,12 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.BlipTyping() // #7: blip cadence + skip-whitespace
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
-	a.room.SpriteWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadWait               // cold-load mode 3: hold a message until its sprite decodes
+	a.room.SpriteWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadWait               // "Hold the message": hold until its speaker sprite decodes
 	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
 	a.room.SpriteWaitPair = a.d.Prefs.SpriteWaitPairOn()                                  // strictness: gate on the pair partner too
 	a.room.SpriteWaitPreanim = a.d.Prefs.SpriteWaitPreanimOn()                            // strictness: gate on the preanim too
-	a.room.SequentialWait = a.d.Prefs.SequentialWaitOn()                                  // EXPERIMENTAL: 1:1 AO2 queue — wait for every on-screen sprite, never fast-forward
+	a.room.SequentialWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadDefault        // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.ShoutBypassQueueOn()                              // AO2 parity: shouts skip the queue (toggleable)
 	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                 // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.ShoutDurationMs(); ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
@@ -10635,7 +10636,7 @@ func (a *App) drainWarnings() {
 			// are a no-op; the preanim side effect in NotifyAssetMissing is guarded
 			// by base == Scene.Speaker.PreanimBase, which these types never equal.
 			switch w.Type {
-			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip:
+			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip, assets.AssetTypeShoutBubble:
 				if a.room != nil {
 					a.room.NotifyAssetMissing(w.Base)
 				}

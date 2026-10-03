@@ -88,18 +88,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   and a **diagnostic amber tint** so you can SEE it bridging. A cached scene is
   **byte-identical** whatever the mode, and holding is **0-alloc**
   (`TestSpriteLoadHoldPrevious`, `TestHoldMaxAgeAndTint`, `TestSpriteWaitGate`).
-- **Experimental strict sequencing** (Settings → Power user → Experimental, **ON by
-  default on the test build**, #136): hold each message until **every** asset it
-  presents — character sprites (speaker idle/talk/preanim, pair partner, group
-  members), the position background + desk, the custom chatbox skin, zoom
-  speedlines, and the emote SFX + blip — has settled (decoded or conclusively
-  404'd). It forces the wait gate on regardless of the cold-load sprite mode and
-  drops the hold timeout (release is settled-only; the per-host fetch deadline
-  guarantees settlement, and the warning relay records a conclusive 404 so it
-  releases instead of hanging). It is **independent of catch-up** — AO2's optional
-  skip-to-newest stays its own knob (ON by default) — and **shouts still skip the
-  queue** and play immediately, for full AO2 parity. The queue stays bounded by the
-  IC depth above (`TestSequentialWait`, `TestSequentialWaitSceneryAndAudio`).
+- **Default loading mode** (Settings → Power user → Message sequencing, the shipped
+  default, #136): hold each message until **every** asset it presents has settled
+  (decoded or conclusively 404'd) — character sprites (speaker idle/talk/preanim,
+  pair partner, group members), the position background + desk, the custom chatbox
+  skin, zoom speedlines, the emote SFX + blip, and the screen-effect art +
+  realization/effect sound. It drops the hold timeout (release is settled-only; the
+  per-host fetch deadline guarantees settlement, and the warning relay records a
+  conclusive 404 so it releases instead of hanging). The other three named modes
+  remain as choices: **webAO** (keep the previous sprite), **Show nothing** (blank),
+  and **Hold the message** (legacy speaker-sprite wait with a timeout). A separate
+  **Shouts** toggle (ON by default) controls whether shouts skip the queue and play
+  immediately (AO2 parity) or queue like any other message; catch-up (AO2's
+  skip-to-newest) stays its own independent knob. The queue stays bounded by the IC
+  depth above (`TestSequentialWait`, `TestSequentialWaitSceneryAndAudio`,
+  `TestShoutBypassQueue`, `TestSequentialWaitEffects`).
 
 - **Core message timings + queue knobs** (Settings → Power user, every slider's far
   left = the canonical default): **shout bubble duration** (~0.72 s), **preanim wait

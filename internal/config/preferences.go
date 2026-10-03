@@ -164,13 +164,9 @@ const defaultThemeFonts = true
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
 const defaultCatchUpWhenBehind = true
 
-// defaultSequentialWait ships ON (test build): the EXPERIMENTAL strict
-// sequencing (#136) — wait for every asset a message presents (sprites,
-// background, desk, chatbox, speedlines, SFX, blip) before it plays. Catch-up
-// (AO2's optional skip-to-newest) stays a SEPARATE knob, and shouts still skip
-// the queue — full AO2 parity. The test build opts in because the current
-// placeholder-flash behaviour is the worse alternative.
-const defaultSequentialWait = true
+// defaultShoutBypassQueue ships ON: shouts skip the queue and play immediately,
+// exactly as AO2 does. Toggle OFF to queue shouts like any other message.
+const defaultShoutBypassQueue = true
 
 // Catch-up queue-depth threshold: engage once this many messages (or more) are
 // waiting behind the one starting. The default is the floor (1) so the IC stage
@@ -1146,7 +1142,7 @@ type AssetPreferences struct {
 	SpriteWaitMsVal          int                  `json:"spriteWaitMs,omitempty"`          // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
 	SpriteWaitPair           bool                 `json:"spriteWaitPair,omitempty"`        // wait mode also gates on the PAIR partner's idle sprite (default OFF)
 	SpriteWaitPreanim        bool                 `json:"spriteWaitPreanim,omitempty"`     // wait mode also gates on the message's PREANIM (default OFF)
-	SequentialWait           bool                 `json:"sequentialWait"`                  // EXPERIMENTAL strict sequencing: wait for every asset a message presents before it plays (default ON, test build). NOT omitempty: an explicit OFF must persist.
+	ShoutBypassQueue         bool                 `json:"shoutBypassQueue"`                // shouts skip the queue and play immediately (default ON, AO2 parity). NOT omitempty: an explicit OFF must persist.
 	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
 	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
 	DebugKeybinds            bool                 `json:"debugKeybinds,omitempty"`         // opt-in debug/diagnostic keybinds (default OFF — power user)
@@ -1732,7 +1728,7 @@ type prefsJSON struct {
 	SpriteWaitMs           int                  `json:"spriteWaitMs"`         // wait-mode hold cap in ms (0 = default)
 	SpriteWaitPair         bool                 `json:"spriteWaitPair"`       // wait mode gates on the pair too (default OFF)
 	SpriteWaitPreanim      bool                 `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
-	SequentialWait         *bool                `json:"sequentialWait"`       // EXPERIMENTAL strict sequencing (absent = default ON, test build)
+	ShoutBypassQueue       *bool                `json:"shoutBypassQueue"`     // shouts skip the queue (absent = default ON, AO2 parity)
 	HoldPrevMaxAgeMs       int                  `json:"holdPrevMaxAgeMs"`     // hold-previous cap in ms (0 = forever)
 	HoldDebugTint          bool                 `json:"holdDebugTint"`        // tint stand-in sprites (default OFF)
 	DebugKeybinds          bool                 `json:"debugKeybinds"`        // opt-in debug/diagnostic keybinds (default OFF)
@@ -2235,11 +2231,11 @@ func defaultPrefs(path string) *AssetPreferences {
 		ThemeFonts:                   defaultThemeFonts,
 		UIScaleAutoOn:                defaultUIScaleAuto,
 		CatchUpOn:                    defaultCatchUpWhenBehind,
-		SequentialWait:               defaultSequentialWait,
+		ShoutBypassQueue:             defaultShoutBypassQueue,
 		CatchUpThreshold:             DefaultCatchUpThreshold,
 		MultiTabCap:                  DefaultMultiTabCap,
 		MusicFlagsVal:                DefaultMusicFlags,           // AO2's own default (courtroom.h:551 music_flags = FADE_OUT)
-		SpriteLoadModeVal:            defaultSpriteLoadMode,       // webAO-style hold-previous by default (kills the cold-load flash)
+		SpriteLoadModeVal:            defaultSpriteLoadMode,       // Default mode (strict sequencing) by default
 		MotionRedrawPerEvent:         defaultMotionRedrawPerEvent, // per-event motion redraw ON by default (less GPU on a moving cursor)
 		DiscordRPC:                   defaultDiscordPrefs(),
 		MyAutoStatus:                 defaultAutoStatusPref(),
@@ -2754,8 +2750,8 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.SpriteWaitPair = onDisk.SpriteWaitPair
 	p.SpriteWaitPreanim = onDisk.SpriteWaitPreanim
-	if onDisk.SequentialWait != nil { // absent = the default (ON, test build)
-		p.SequentialWait = *onDisk.SequentialWait
+	if onDisk.ShoutBypassQueue != nil { // absent = the default (ON, AO2 parity)
+		p.ShoutBypassQueue = *onDisk.ShoutBypassQueue
 	}
 	p.HoldPrevMaxAgeMsVal = onDisk.HoldPrevMaxAgeMs
 	if p.HoldPrevMaxAgeMsVal != 0 { // 0 = bridge forever; a set value clamps into range
@@ -7820,17 +7816,17 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 // render.SpriteLoad* (the UI mirrors the pref straight into the viewport); kept as
 // plain ints here to avoid a config→render import.
 const (
-	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (the original behaviour; the cold-load flash)
-	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style; the default)
-	SpriteLoadWait      = 2 // hold the MESSAGE off-stage until its sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
-	SpriteLoadModeCount = 3 // number of valid modes (for the Settings cycle button + load clamp)
+	SpriteLoadBlank     = 0 // Show nothing — draw nothing until the sprite lands (the original behaviour; the cold-load flash)
+	SpriteLoadHoldPrev  = 1 // webAO — keep the previous sprite until the new one lands (webAO-style; the old default)
+	SpriteLoadWait      = 2 // Hold the message — hold the MESSAGE off-stage until its speaker sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
+	SpriteLoadDefault   = 3 // Default — strict sequencing: wait for EVERY asset a message presents before it plays (the courtroom SequentialWait gate)
+	SpriteLoadModeCount = 4 // number of valid modes (for the Settings mode picker + load clamp)
 
 	// defaultSpriteLoadMode is what a fresh install (and a power-user reset) uses:
-	// hold-previous, so a cold idle↔talk sprite swap bridges with the last good frame
-	// instead of the ~¼-second empty flash SpriteLoadBlank leaves (the playtest report,
-	// worst on packs whose idle and talk are one bare sprite — the swap should be a
-	// no-op but each spelling is a separate T1 key, so the gap reads as a pure blink).
-	defaultSpriteLoadMode = SpriteLoadHoldPrev
+	// Default (strict sequencing) — wait for every sprite, the background, desk,
+	// chatbox, speedlines, SFX and blip before a message plays, so nothing ever
+	// pops in mid-ceremony.
+	defaultSpriteLoadMode = SpriteLoadDefault
 )
 
 // Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
@@ -7844,9 +7840,9 @@ const (
 	SpriteWaitMaxMs     = 30000
 )
 
-// SpriteLoadMode reports the power-user cold-load sprite behaviour (SpriteLoadBlank
-// default). It never affects a cached sprite — only what shows during the fetch/
-// decode gap for an uncached one.
+// SpriteLoadMode reports the power-user loading mode (SpriteLoadDefault by
+// default — strict sequencing). It never affects a cached sprite — only what
+// shows during the fetch/decode gap for an uncached one.
 func (p *AssetPreferences) SpriteLoadMode() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -8096,18 +8092,16 @@ func (p *AssetPreferences) SpriteWaitPreanimOn() bool {
 // SetSpriteWaitPreanim persists the wait-covers-preanim knob.
 func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
 
-// SequentialWaitOn reports the EXPERIMENTAL strict-sequencing toggle (ON by
-// default on the test build): wait for every asset a message presents (sprites,
-// background, desk, chatbox, speedlines, SFX, blip) to settle before it plays.
-// Catch-up stays a separate knob; shouts still skip the queue (AO2 parity).
-func (p *AssetPreferences) SequentialWaitOn() bool {
+// ShoutBypassQueueOn reports whether shouts skip the queue and play immediately
+// (ON by default, AO2 parity). OFF queues shouts like any other message.
+func (p *AssetPreferences) ShoutBypassQueueOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.SequentialWait
+	return p.ShoutBypassQueue
 }
 
-// SetSequentialWait persists the experimental strict-sequencing toggle.
-func (p *AssetPreferences) SetSequentialWait(on bool) { p.setBoolPref(&p.SequentialWait, on) }
+// SetShoutBypassQueue persists the shout-bypass toggle.
+func (p *AssetPreferences) SetShoutBypassQueue(on bool) { p.setBoolPref(&p.ShoutBypassQueue, on) }
 
 // HoldPrevMaxAgeMs reports how long hold-previous may bridge a cold sprite before
 // giving up to blank (0 = bridge forever, the default).
@@ -8843,7 +8837,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.SpriteWaitMsVal = 0
 	p.SpriteWaitPair = false
 	p.SpriteWaitPreanim = false
-	p.SequentialWait = defaultSequentialWait
+	p.ShoutBypassQueue = defaultShoutBypassQueue
 	p.HoldPrevMaxAgeMsVal = 0
 	p.HoldDebugTint = false
 	p.DebugKeybinds = false

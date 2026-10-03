@@ -401,22 +401,22 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 	}
 }
 
-// TestSequentialWaitRoundTrips proves the experimental strict-sequencing toggle
-// saves AND loads back (the assetCharCase class: a field that joins the in-memory
-// struct without its DTO twin + load-overlay line silently reverts on launch).
-func TestSequentialWaitRoundTrips(t *testing.T) {
+// TestShoutBypassQueueRoundTrips proves the shout-bypass toggle saves AND loads
+// back (the assetCharCase class: a field that joins the in-memory struct without
+// its DTO twin + load-overlay line silently reverts on launch).
+func TestShoutBypassQueueRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if !p.SequentialWaitOn() {
-		t.Fatal("default strict sequencing must be ON (test build)")
+	if !p.ShoutBypassQueueOn() {
+		t.Fatal("default shout-bypass must be ON (AO2 parity)")
 	}
 	// An explicit OFF must survive a restart despite the ON default — the *bool
 	// DTO distinguishes "absent → default" from a deliberately-written OFF.
-	p.SetSequentialWait(false)
+	p.SetShoutBypassQueue(false)
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).SequentialWaitOn(); got {
-		t.Error("strict sequencing after reload = true — an explicit OFF did not load back")
+	if got := loadPrefs(t, path).ShoutBypassQueueOn(); got {
+		t.Error("shout-bypass after reload = true — an explicit OFF did not load back")
 	}
 }

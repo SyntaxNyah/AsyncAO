@@ -1311,7 +1311,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetSpriteWaitMs(4000)
 	p.SetSpriteWaitPair(true)
 	p.SetSpriteWaitPreanim(true)
-	p.SetSequentialWait(false) // off the default (ON) — the nuke must restore it
+	p.SetShoutBypassQueue(false) // off the default (ON) — the nuke must restore it
 	p.SetHoldPrevMaxAgeMs(9000)
 	p.SetHoldDebugTint(true)
 	p.SetDebugKeybinds(true)
@@ -1356,12 +1356,12 @@ func TestResetPowerUser(t *testing.T) {
 	if p.AssetCharCasing() != 0 {
 		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.AssetCharCasing())
 	}
-	if p.SpriteLoadMode() != SpriteLoadHoldPrev || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+	if p.SpriteLoadMode() != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
-		t.Error("nuke must reset the cold-load mode to its default (hold-previous) + the wait knobs")
+		t.Error("nuke must reset the loading mode to its default (Default) + the wait knobs")
 	}
-	if !p.SequentialWaitOn() {
-		t.Error("nuke must restore strict sequencing to its default ON (test build)")
+	if !p.ShoutBypassQueueOn() {
+		t.Error("nuke must restore the shout-bypass toggle to its default ON (AO2 parity)")
 	}
 	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
 		t.Error("nuke must reset the hold-previous knobs")
