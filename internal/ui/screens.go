@@ -7790,6 +7790,16 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // drawPairPanel: partner picking is a searchable click-to-pick list (the
 // old one-by-one </> cycle was unusable on 4000-char servers); offsets,
 // flip and z-order live in the right column.
+// sendPairOrder issues a /pairorder command to reorder the active group roster.
+// uid is the member's player UID and op is front|back|up|down. No-op without a
+// session (the Pair panel is only reachable in-court, but guard anyway).
+func (a *App) sendPairOrder(uid int, op string) {
+	if a.sess == nil {
+		return
+	}
+	a.sess.SendOOC(a.oocNameOrDefault(), fmt.Sprintf("/pairorder %d %s", uid, op))
+}
+
 func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.pairWin.dragging || a.pairWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -7879,14 +7889,23 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	ry += 34
 	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
 	ry += 28
-	// Explicit two-segment order control. The prior single cycling button ("Order: In
-	// front" / "Order: Behind") read as a LABEL rather than a control, so the order was
-	// hard to discover. The active segment is accent-filled and clicking the other
-	// switches; presentation only, same a.pairOrder field + wire behavior. Mirrors the
-	// content panel's source picker idiom (drawContentSourcePicker). Wording follows
-	// AO2-Client's ui_pair_order_dropdown ("To front"/"To behind", courtroom.cpp:400-401).
-	// Sized to fit the pair panel's right column at its minimum width (pairPanelMinW): two
-	// pairOrderSegW segments + a gap stay inside the ~200px column the offset rows use.
+	// Explicit two-segment order control — WIRE-AWARE. On a FantaCode server the
+	// classic ^order suffix is the only mechanism, so the segments set a.pairOrder
+	// exactly as before. In a group (JSON) the server owns the roster and /pairorder
+	// reorders it, so the same segments send the OOC command instead. The button
+	// therefore "changes to reflect the wire" without changing its look. Wording
+	// follows AO2-Client's ui_pair_order_dropdown ("To front"/"To behind").
+	gp := a.sess.GroupPair
+	inGroup := gp != nil && !gp.Empty()
+	myIdx := -1
+	if inGroup {
+		for i, m := range gp.Members {
+			if m.CharID == a.sess.MyCharID {
+				myIdx = i
+				break
+			}
+		}
+	}
 	c.Label(rx, ry+4, "Order:", ColText)
 	const (
 		pairOrderLabelW = 44 // "Order:" label lead before the segments
@@ -7908,16 +7927,65 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		}
 		return c.Button(r, label)
 	}
-	if orderSeg("To front", a.pairOrder == protocol.PairSpeakerInFront) {
-		a.pairOrder = protocol.PairSpeakerInFront
+	// Tooltip explains the nuance of whichever wire we're on.
+	orderTip := "Pair order rides the classic ^0/^1 suffix (FantaCode): ^0 = you in front, ^1 = you behind. FantaCode can only carry one partner."
+	if inGroup {
+		orderTip = "Group order (JSON additional_chars): reorders the whole group roster — any member to any position, not just front/behind."
 	}
-	if orderSeg("To behind", a.pairOrder != protocol.PairSpeakerInFront) {
-		a.pairOrder = protocol.PairSpeakerBehind
+	c.Tooltip(sdl.Rect{X: rx, Y: ry, W: pairOrderLabelW + 2*pairOrderSegW + pairOrderSegGap, H: btnH}, orderTip)
+
+	frontActive := a.pairOrder == protocol.PairSpeakerInFront
+	if inGroup {
+		frontActive = myIdx == 0
+	}
+	if orderSeg("To front", frontActive) {
+		if inGroup {
+			a.sendPairOrder(a.sess.PlayerID, "front")
+		} else {
+			a.pairOrder = protocol.PairSpeakerInFront
+		}
+	}
+	if orderSeg("To behind", !frontActive) {
+		if inGroup {
+			a.sendPairOrder(a.sess.PlayerID, "back")
+		} else {
+			a.pairOrder = protocol.PairSpeakerBehind
+		}
 	}
 	ry += 36
-	c.Label(rx, ry, "Both sides must pair with each other;", ColTextDim)
-	c.Label(rx, ry+18, "applies from your next message.", ColTextDim)
-	ry += 42
+
+	if inGroup {
+		// Group roster (front→back) with per-member reorder buttons. Each row moves
+		// that member one step toward the front (▲) or back (▼) via /pairorder.
+		c.Label(rx, ry, "Group (front→back):", ColText)
+		ry += 20
+		for _, m := range gp.Members {
+			upR := sdl.Rect{X: rx, Y: ry, W: 22, H: btnH}
+			dnR := sdl.Rect{X: rx + 26, Y: ry, W: 22, H: btnH}
+			name := m.Name
+			if name == "" {
+				name = fmt.Sprintf("char %d", m.CharID)
+			}
+			if m.CharID == a.sess.MyCharID {
+				name += " (you)"
+			}
+			c.Tooltip(upR, "Move this member toward the front")
+			if c.Button(upR, "▲") {
+				a.sendPairOrder(m.UID, "up")
+			}
+			c.Tooltip(dnR, "Move this member toward the back")
+			if c.Button(dnR, "▼") {
+				a.sendPairOrder(m.UID, "down")
+			}
+			c.LabelClipped(rx+54, ry+4, r.W/2-2*pad-54, name, ColText)
+			ry += 24
+		}
+		ry += 4
+	} else {
+		c.Label(rx, ry, "Both sides must pair with each other;", ColTextDim)
+		c.Label(rx, ry+18, "applies from your next message.", ColTextDim)
+		ry += 42
+	}
 
 	// Offset ghost editor: drag your sprite live; partner shows as a
 	// translucent ghost at their last-known placement.
