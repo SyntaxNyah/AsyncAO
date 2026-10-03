@@ -15,10 +15,13 @@
 # Env: APPIMAGE_OUTPUT overrides the output filename (default
 # AsyncAO-x86_64.AppImage) — used by CI to name the Discord-free variant.
 #
-# Note: SDL2_mixer codec back-ends that are dlopen()ed at runtime (rather than
-# linked) are not visible to ldd and so are not bundled; the host's SDL2_mixer
-# codecs fill in. Music/SFX of the common formats (Opus/OGG/MP3/WAV) work on
-# desktops that ship SDL2_mixer, which is the overwhelming majority.
+# Note: the binary links SDL Mixer X (libSDL2_mixer_ext). Its OGG/MP3/FLAC codecs
+# are compiled in, but its Opus codec is dlopen()ed at runtime (libopusfile →
+# libopus) and is therefore invisible to ldd, so linuxdeploy does NOT bundle it.
+# On hosts without libopusfile installed, .opus blips/SFX fail to decode. That is
+# now a silent miss (the strict-sequencing gate settles a decode failure —
+# internal/render/audio.go) rather than a stuck room, but bundling the Opus codec
+# chain here is the proper follow-up fix.
 set -euo pipefail
 
 # --- locate the repo root (this script lives in scripts/) --------------------

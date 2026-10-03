@@ -1,6 +1,7 @@
 package render
 
 import (
+	"strconv"
 	"testing"
 	"time"
 	"unsafe"
@@ -45,6 +46,31 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 	live.PlayMusicAt("http://cdn/song.opus", true, 0, 30) // same URL → idempotent
 	if len(live.pending) != 0 {
 		t.Error("PlayMusicAt for the already-playing URL must NOT queue a fetch (idempotent, position preserved)")
+	}
+}
+
+// TestAudioFailedRecordsDecodeFailures pins the strict-sequencing decode-failure
+// probe: recordFailed marks a base "conclusively unplayable" (Failed), an empty
+// base is ignored, and the set is bounded so a runaway session can't grow it past
+// audioFailedCap.
+func TestAudioFailedRecordsDecodeFailures(t *testing.T) {
+	a := &Audio{failed: map[string]struct{}{}}
+	if a.Failed("sounds/general/sfx.opus") {
+		t.Fatal("a never-seen base must not report failed")
+	}
+	a.recordFailed("sounds/general/sfx.opus")
+	if !a.Failed("sounds/general/sfx.opus") {
+		t.Fatal("recordFailed must make Failed report true")
+	}
+	a.recordFailed("")
+	if len(a.failed) != 1 {
+		t.Fatalf("an empty base must not be recorded: len=%d", len(a.failed))
+	}
+	for i := 0; i < audioFailedCap+5; i++ {
+		a.recordFailed("base/" + strconv.Itoa(i))
+	}
+	if len(a.failed) > audioFailedCap {
+		t.Fatalf("failed set grew past the cap: %d > %d", len(a.failed), audioFailedCap)
 	}
 }
 

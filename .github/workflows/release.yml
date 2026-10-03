@@ -34,7 +34,7 @@ permissions:
   contents: write # gh release create writes a Release on this repo
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
   # The version stamped into every binary for the self-update check (inlined into
   # each build step as `…Version=${{ github.ref_name }}`). github.ref_name is the
   # tag (e.g. v0.1.0) on a tag push; a manual dispatch from a branch stamps the

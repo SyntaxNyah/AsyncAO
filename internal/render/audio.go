@@ -47,6 +47,12 @@ const (
 	// safety over the C audio callback).
 	chunkCacheHardMax = chunkCacheMax + mixChannelCount
 
+	// audioFailedCap bounds the decode-failure set (mirrors the courtroom's
+	// missingSpritesCap). A decode that fails once keeps failing (the bytes
+	// don't change), so remembering it lets the strict-sequencing gate settle on
+	// "can never play" without growing the set unboundedly.
+	audioFailedCap = 512
+
 	// pendingPlayTTL drops play requests whose asset never arrived.
 	pendingPlayTTL = 10 * time.Second
 
@@ -71,13 +77,6 @@ const (
 	musicEffectFadeIn  = 1 << 0 // ramp the NEW track up (config.MusicFlagFadeIn)
 	musicEffectFadeOut = 1 << 1 // ramp the PREVIOUS track down (config.MusicFlagFadeOut)
 	musicEffectSyncPos = 1 << 2 // start new track at previous track's position (config.MusicFlagSyncPos)
-
-	// mixInitOpus is MIX_INIT_OPUS (0x40). go-sdl2 v0.4.40's mix package
-	// predates the Opus flag and doesn't export it, but the SDL2_mixer.dll we
-	// ship supports Opus — so we pass the raw value to Mix_Init. Without this,
-	// the on-demand opus DLLs (libopusfile/libopus) never load and .opus
-	// content (Discord /play links, .opus alert sounds) won't decode.
-	mixInitOpus = 0x40
 )
 
 // Compile-time assertion: render-side effect constants must match config's wire values.
@@ -118,6 +117,11 @@ type Audio struct {
 	chunks     map[string]*mix.Chunk // key: asset base
 	chunkOrder []string              // FIFO eviction order
 	pending    map[string]pendingPlay
+	// failed remembers bases that fetched fine but FAILED to decode (a missing
+	// codec on this platform, a corrupt file). Bounded (audioFailedCap); read by
+	// Failed — the strict-sequencing gate's "this can never play, settle now"
+	// probe, the audio analogue of a conclusively-404'd base.
+	failed map[string]struct{}
 
 	// alert is the built-in notification ping — the guaranteed-audible default
 	// for callword/friend alerts whenever the user set no custom sound file.
@@ -226,6 +230,27 @@ func (a *Audio) HasChunk(base string) bool {
 	return a.chunks[base] != nil
 }
 
+// Failed reports whether base fetched successfully but FAILED to decode (a
+// missing codec on this platform, a corrupt file) — the strict-sequencing
+// gate's "conclusively unplayable" probe. Same-thread, a plain map read; the
+// audio analogue of a 404'd base. Cleared when the same base later decodes.
+func (a *Audio) Failed(base string) bool {
+	_, ok := a.failed[base]
+	return ok
+}
+
+// recordFailed remembers a decode failure (bounded). Only written from
+// loadChunk's error path; a later successful decode clears it there.
+func (a *Audio) recordFailed(base string) {
+	if base == "" {
+		return
+	}
+	if len(a.failed) >= audioFailedCap {
+		return
+	}
+	a.failed[base] = struct{}{}
+}
+
 // NewAudio opens the mixer. A failed device (headless CI) degrades to a
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
@@ -236,6 +261,7 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		mgr:       mgr,
 		chunks:    map[string]*mix.Chunk{},
 		pending:   map[string]pendingPlay{},
+		failed:    map[string]struct{}{},
 		loopMeta:  map[string]loopMeta{},
 		musicVol:  fullVolumePercent,
 		sfxVol:    fullVolumePercent,
@@ -251,7 +277,7 @@ func NewAudio(mgr *assets.Manager) *Audio {
 	// promises pointed at a codec that could never load. Best-effort — Init
 	// reports an error if any one codec's DLL is missing, but the codecs that
 	// DID load stay usable, so we log and continue.
-	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mixInitOpus | mix.INIT_FLAC); err != nil {
+	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mix.INIT_OPUS | mix.INIT_FLAC); err != nil {
 		log.Printf("render: some audio codecs unavailable (opus/ogg/mp3/flac): %v", err)
 	}
 	if err := mix.OpenAudio(audioFrequency, mix.DEFAULT_FORMAT, audioChannels, audioChunkSize); err != nil {
@@ -597,8 +623,10 @@ func (a *Audio) loadChunk(base string, data []byte) *mix.Chunk {
 	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
 	if err != nil {
 		log.Printf("render: audio decode %s failed: %v", base, err)
+		a.recordFailed(base)
 		return nil
 	}
+	delete(a.failed, base) // a later successful decode supersedes a remembered failure
 	a.evictChunk()
 	a.chunks[base] = chunk
 	a.chunkOrder = append(a.chunkOrder, base)

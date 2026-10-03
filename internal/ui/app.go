@@ -6113,6 +6113,7 @@ func (a *App) buildRoom() {
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
 	a.room.AudioReady = func(base string) bool { return a.d.Audio.HasChunk(base) }        // strict-sequencing audio probe (decoded chunk cached, same-thread map read)
+	a.room.AudioFailed = func(base string) bool { return a.d.Audio.Failed(base) }         // strict-sequencing decode-failure probe (settles the gate instead of hanging)
 	a.room.LocalSide = a.mySide                                                           // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between

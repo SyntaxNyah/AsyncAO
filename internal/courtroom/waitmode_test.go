@@ -642,3 +642,34 @@ func TestSequentialWaitEffects(t *testing.T) {
 		t.Fatal("the realization SFX landing must release the hold")
 	}
 }
+
+// TestSequentialWaitAudioDecodeFailure pins the decode-failure settlement arm of
+// audioSettled (#138 follow-up): a fetch that SUCCEEDED but failed to decode is
+// conclusively unplayable, so under SequentialWait (which has no timeout) the
+// gate must settle on it instead of hanging the room — a missing codec (e.g.
+// Opus not bundled in a Linux AppImage) would otherwise deadlock the queue.
+func TestSequentialWaitAudioDecodeFailure(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	ready := map[string]bool{}
+	audio := map[string]bool{}
+	failed := map[string]bool{}
+	room.SequentialWait = true
+	room.SpriteWaitTimeout = 50 * time.Millisecond
+	room.SpriteReady = func(base string) bool { return ready[base] }
+	room.AudioReady = func(base string) bool { return audio[base] }
+	room.AudioFailed = func(base string) bool { return failed[base] }
+
+	readySpeaker(room, ready, "Phoenix", "normal")
+	m := waitMsg("Phoenix", "normal", "hi")
+	m.SFXName, m.EmoteMod = "bang", protocol.EmoteModPreanim
+	failed[room.urls.BlipRef(defaultBlipSet).Base] = true // pre-settle the blip; only the SFX is cold
+	room.HandleEvent(Event{Kind: EventMessage, Message: m})
+	if room.QueueLen() != 1 {
+		t.Fatal("setup: a cold emote SFX must hold the message")
+	}
+	failed[room.sfxBaseFor(m)] = true // decode failure, NOT a 404 — the gate must still settle
+	room.Update(16 * time.Millisecond)
+	if room.QueueLen() != 0 {
+		t.Fatal("a decode-failed SFX must settle the no-timeout gate, not hang the room")
+	}
+}

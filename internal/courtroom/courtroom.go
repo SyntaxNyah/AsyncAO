@@ -448,6 +448,12 @@ type Courtroom struct {
 	// is not gated, so courtroom stays SDL-free). The strict-sequencing gate
 	// consults it for the message's emote SFX and blip.
 	AudioReady func(base string) bool
+	// AudioFailed reports whether base fetched fine but FAILED to decode (a
+	// missing codec, a corrupt file) — the App wires render.Audio.Failed. The
+	// strict-sequencing gate treats it as "conclusively unplayable" so a decode
+	// failure settles instead of hanging the room (which, unlike a 404, the
+	// missing-sprites relay never records).
+	AudioFailed func(base string) bool
 	// SpriteScaling reports a character's char.ini [Options] scaling= request
 	// (get_scaling). Same shape as SpriteReady — a nil hook means "nobody asked",
 	// which resolves to ScalingAuto and lets the renderer's geometry rule decide.
@@ -925,6 +931,12 @@ func (c *Courtroom) spriteSettled(base string) bool {
 // shared set (a 404'd audio base records there via the warning relay).
 func (c *Courtroom) audioSettled(base string) bool {
 	if c.AudioReady != nil && c.AudioReady(base) {
+		return true
+	}
+	// A fetch that succeeded but FAILED to decode is conclusively unplayable —
+	// settle on it like a 404 so a missing codec (e.g. Opus not bundled in a
+	// Linux AppImage) can never hang the no-timeout SequentialWait gate.
+	if c.AudioFailed != nil && c.AudioFailed(base) {
 		return true
 	}
 	return c.spriteConfirmedMissing(base)
