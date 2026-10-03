@@ -56,3 +56,22 @@ list). There is no size limit.
 - **`ParseAdditionalChars`** converts the JSON `additional_chars` array
   (`charid`, `name`, `emote`, `side`, `offset`, `flip`, `order`) into
   `[]GroupPairMember`; it returns `nil` for nil / non-array input.
+
+## Pair order (wire-aware)
+
+AsyncAO's pair-order control is **wire-aware** — the same "To front"/"To
+behind" segments mean different things per wire:
+
+- **FantaCode (no active group)** → sets `a.pairOrder`, which `formatPairID`
+  serializes as the classic `^0`/`^1` suffix. This is the pre-existing AO2
+  behavior, unchanged.
+- **JSON (a `Session.GroupPair` roster is active)** → sends the OOC
+  `/pairorder <uid> front|back` command instead, which reorders the server's
+  roster. The roster is only present over JSON (GP is JSON-only), so this
+  branch implicitly gates on the wire.
+
+When a group is active the panel also renders the roster (front→back) with
+per-member `▲`/`▼` buttons that send `/pairorder <uid> up|down`, so any member
+can be moved to any position. `App.sendPairOrder(uid, op)` is the single send
+helper (see `internal/ui/pairorder_test.go`); the tooltip on the control
+explains whichever wire the user is on.
