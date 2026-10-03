@@ -92,3 +92,63 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 		t.Error("a missing BACKGROUND must not be marked missing — the background arm of set_scene has a fallback, the desk arm does not")
 	}
 }
+
+// TestDrainWarningsRelaysBackgroundMissToGate pins the strict-sequencing half of the
+// #136 scenery relay: a conclusively-404'd BACKGROUND rides the warning lane into
+// Courtroom.NotifyAssetMissing, so a message held by SequentialWait on its position
+// background releases on the miss signal instead of hanging (the gate has no
+// timeout). It also re-pins the Store side of the split: a background miss is
+// relayed to the courtroom but NOT MarkMissing'd (the background arm has a
+// witness-fallback, unlike the desk).
+func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
+	a := testTabApp(t)
+	dir := t.TempDir() // empty pack: background/gs4/<pos> exists in no format
+	local, cleanup := wireLocalManager(t, a, dir)
+	defer cleanup()
+	a.d.Prefs.SetFormatOrder(assets.AssetTypeBackground.Name(), []string{config.ExtPNG})
+
+	urls := courtroom.NewURLBuilder(local.BaseURL())
+	bgPart, _ := courtroom.PositionScene("wit")
+	bgBase := urls.Background("gs4", bgPart)
+
+	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
+	sess.Background = "gs4"
+	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
+	a.room = room
+	room.SequentialWait = true
+	// Everything but the position background resolves as "settled", so the gate
+	// parks on the background and nothing else (DeskHide, no chatbox, no audio).
+	room.SpriteReady = func(base string) bool { return base != bgBase }
+
+	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", Side: "wit",
+	}})
+	if room.QueueLen() != 1 {
+		t.Fatal("test setup: the message must hold on the cold background")
+	}
+
+	// The gate's arm block already prefetched the background at HIGH; drain the
+	// warning lane until the conclusive 404 reaches the room and releases it.
+	deadline := time.Now().Add(5 * time.Second)
+	for room.QueueLen() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("background miss never released the gate: queue=%d", room.QueueLen())
+		}
+		a.drainWarnings()
+		room.Update(16 * time.Millisecond)
+		select {
+		case d := <-a.d.Manager.Decoded():
+			if d.Asset != nil {
+				d.Asset.Release()
+			}
+		default:
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+
+	// The split stays honest: the background was relayed to the courtroom gate but
+	// never MarkMissing'd in the texture store (it has a witness fallback).
+	if a.d.Store.IsMissing(bgBase) {
+		t.Error("a missing BACKGROUND must not be marked missing in the texture store")
+	}
+}

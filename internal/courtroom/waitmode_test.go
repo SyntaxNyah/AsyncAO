@@ -414,17 +414,29 @@ func TestSequentialWait(t *testing.T) {
 		}
 	})
 
-	t.Run("never fast-forwards a backlog", func(t *testing.T) {
+	t.Run("catch-up stays an independent AO2 knob", func(t *testing.T) {
+		// Catch-up OFF: a backlog waits under strict sequencing (1:1 queue).
 		room, _ := newRig(t)
-		room.CatchUp, room.CatchUpThreshold = true, 1
+		room.CatchUp, room.CatchUpThreshold = false, 1
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "one")})
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Edgeworth", "normal", "two")})
 		if room.QueueLen() != 2 {
 			t.Fatalf("setup: both messages should be queued (head held), got %d", room.QueueLen())
 		}
-		room.Update(16 * time.Millisecond) // the backlog threshold would fast-forward the normal gate
+		room.Update(16 * time.Millisecond)
 		if room.QueueLen() != 2 {
-			t.Fatal("strict sequencing must NOT fast-forward a backlog (1:1 queue)")
+			t.Fatal("with catch-up OFF a backlog must wait, not fast-forward")
+		}
+
+		// Catch-up ON (AO2 default): the backlog still fast-forwards, independent
+		// of strict sequencing.
+		room2, _ := newRig(t)
+		room2.CatchUp, room2.CatchUpThreshold = true, 1
+		room2.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "one")})
+		room2.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Edgeworth", "normal", "two")})
+		room2.Update(16 * time.Millisecond)
+		if room2.QueueLen() != 1 {
+			t.Fatal("with catch-up ON a backlog must fast-forward (AO2 parity)")
 		}
 	})
 
@@ -441,6 +453,125 @@ func TestSequentialWait(t *testing.T) {
 		room.Update(16 * time.Millisecond)
 		if room.QueueLen() != 0 {
 			t.Fatal("settlement must still release after the no-timeout hold")
+		}
+	})
+}
+
+// TestSequentialWaitSceneryAndAudio pins the strict-sequencing gate's scenery and
+// audio arms: a message also holds until its position background, desk, custom
+// chatbox and emote SFX settle (resident or conclusively 404'd) — and a 404'd
+// base releases the no-timeout gate instead of hanging it.
+func TestSequentialWaitSceneryAndAudio(t *testing.T) {
+	newRig := func(t *testing.T) (*Courtroom, map[string]bool) {
+		room, _, _, _ := newCourtroomRig(t)
+		ready := map[string]bool{}
+		room.SequentialWait = true
+		room.SpriteWaitTimeout = 50 * time.Millisecond // far under every Update below
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		return room, ready
+	}
+
+	t.Run("background holds until ready", func(t *testing.T) {
+		room, sess, _, _ := newCourtroomRig(t)
+		sess.Background = "court"
+		ready := map[string]bool{}
+		room.SequentialWait = true
+		room.SpriteWaitTimeout = 50 * time.Millisecond
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		readySpeaker(room, ready, "Phoenix", "normal")
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+		if room.QueueLen() != 1 {
+			t.Fatal("a cold background must hold the message")
+		}
+		bgPart, _ := PositionScene("wit")
+		ready[room.urls.Background("court", bgPart)] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("the background landing must release the hold")
+		}
+	})
+
+	t.Run("desk holds until ready", func(t *testing.T) {
+		room, sess, _, _ := newCourtroomRig(t)
+		sess.Background = "court"
+		ready := map[string]bool{}
+		room.SequentialWait = true
+		room.SpriteWaitTimeout = 50 * time.Millisecond
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		m := waitMsg("Phoenix", "normal", "hi")
+		m.DeskMod = protocol.DeskShow // the desk is on screen, so it must be waited for
+		readySpeaker(room, ready, "Phoenix", "normal")
+		bgPart, deskPart := PositionScene("wit")
+		ready[room.urls.Background("court", bgPart)] = true // background settled; only the desk is cold
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.QueueLen() != 1 {
+			t.Fatal("a cold desk must hold the message")
+		}
+		ready[room.urls.Background("court", deskPart)] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("the desk landing must release the hold")
+		}
+	})
+
+	t.Run("chatbox holds until ready", func(t *testing.T) {
+		room, ready := newRig(t)
+		room.ChatSkinFor = func(char string) string { return "YTTD" }
+		readySpeaker(room, ready, "Phoenix", "normal")
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+		if room.QueueLen() != 1 {
+			t.Fatal("a cold custom chatbox must hold the message")
+		}
+		cands := room.urls.MiscChatboxCandidates("YTTD")
+		ready[cands[0]] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("the chatbox landing must release the hold")
+		}
+	})
+
+	t.Run("emote SFX holds until ready", func(t *testing.T) {
+		room, ready := newRig(t)
+		audio := map[string]bool{}
+		room.AudioReady = func(base string) bool { return audio[base] }
+		readySpeaker(room, ready, "Phoenix", "normal")
+		audio[room.urls.BlipRef(defaultBlipSet).Base] = true // pre-settle the blip so only the SFX is cold
+		m := waitMsg("Phoenix", "normal", "hi")
+		m.SFXName, m.EmoteMod = "bang", protocol.EmoteModPreanim
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.QueueLen() != 1 {
+			t.Fatal("a cold emote SFX must hold the message")
+		}
+		audio[room.urls.SFX("bang")] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("the SFX landing must release the hold")
+		}
+	})
+
+	t.Run("a conclusively-404'd background releases, never hangs", func(t *testing.T) {
+		room, sess, _, _ := newCourtroomRig(t)
+		sess.Background = "court"
+		ready := map[string]bool{}
+		room.SequentialWait = true
+		room.SpriteWaitTimeout = 50 * time.Millisecond
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		readySpeaker(room, ready, "Phoenix", "normal")
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+		if room.QueueLen() != 1 {
+			t.Fatal("setup: a cold background must hold")
+		}
+		for i := 0; i < 20; i++ {
+			room.Update(16 * time.Millisecond) // 320 ms — far past any timeout; must never release
+		}
+		if room.QueueLen() != 1 {
+			t.Fatal("a cold background must NOT release on any timeout under strict sequencing")
+		}
+		bgPart, _ := PositionScene("wit")
+		room.NotifyAssetMissing(room.urls.Background("court", bgPart)) // the warning relay
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("a conclusively-404'd background must release the hold on the miss signal")
 		}
 	})
 }

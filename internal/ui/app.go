@@ -6112,6 +6112,7 @@ func (a *App) buildRoom() {
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
+	a.room.AudioReady = func(base string) bool { return a.d.Audio.HasChunk(base) }        // strict-sequencing audio probe (decoded chunk cached, same-thread map read)
 	a.room.LocalSide = a.mySide                                                           // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
@@ -10620,6 +10621,32 @@ func (a *App) drainWarnings() {
 				// appears (server repack, local mount added) recovers with no restart.
 				if a.d.Store != nil {
 					a.d.Store.MarkMissing(w.Base)
+				}
+			}
+			// Scenery + audio conclusive-404s feed the strict-sequencing gate's
+			// shared missing set (Courtroom.NotifyAssetMissing records the base), so
+			// a message holding on a background / chatbox / speedlines / SFX / blip
+			// releases on the miss signal instead of hanging (SequentialWait has no
+			// timeout). Deliberately NO Store.MarkMissing here: unlike a char sprite
+			// (missingno) or a desk (hide the layer), a missing background / chatbox
+			// / sound has no render-side placeholder to swap in — the renderer's own
+			// fallback (black bg / normal chatbox / silent) already covers it.
+			// Each room string-compares against its own scene, so wrong-room bases
+			// are a no-op; the preanim side effect in NotifyAssetMissing is guarded
+			// by base == Scene.Speaker.PreanimBase, which these types never equal.
+			switch w.Type {
+			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip:
+				if a.room != nil {
+					a.room.NotifyAssetMissing(w.Base)
+				}
+				if a.splitRoom != nil {
+					a.splitRoom.NotifyAssetMissing(w.Base)
+				}
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyAssetMissing(w.Base)
+				}
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 			}
 			line := "Missing asset: " + w.Base

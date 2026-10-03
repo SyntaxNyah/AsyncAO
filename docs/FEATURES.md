@@ -89,14 +89,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **byte-identical** whatever the mode, and holding is **0-alloc**
   (`TestSpriteLoadHoldPrevious`, `TestHoldMaxAgeAndTint`, `TestSpriteWaitGate`).
 - **Experimental strict sequencing** (Settings → Power user → Experimental, **ON by
-  default on the test build**, #136): an override for the whole AO2/webAO queue —
-  play messages **1:1, one at a time**, holding each until **every** on-screen
-  sprite (speaker idle/talk/preanim, pair partner, group members) has settled
-  (decoded or conclusively 404'd), and **never fast-forwarding a backlog**. It
-  forces the wait gate on regardless of the cold-load sprite mode, drops the hold
-  timeout (release is settled-only; the per-host fetch deadline guarantees
-  settlement), and supersedes catch-up so a pile-up drains in full rather than
-  flashing past. The queue stays bounded by the IC depth above (`TestSequentialWait`).
+  default on the test build**, #136): hold each message until **every** asset it
+  presents — character sprites (speaker idle/talk/preanim, pair partner, group
+  members), the position background + desk, the custom chatbox skin, zoom
+  speedlines, and the emote SFX + blip — has settled (decoded or conclusively
+  404'd). It forces the wait gate on regardless of the cold-load sprite mode and
+  drops the hold timeout (release is settled-only; the per-host fetch deadline
+  guarantees settlement, and the warning relay records a conclusive 404 so it
+  releases instead of hanging). It is **independent of catch-up** — AO2's optional
+  skip-to-newest stays its own knob (ON by default) — and **shouts still skip the
+  queue** and play immediately, for full AO2 parity. The queue stays bounded by the
+  IC depth above (`TestSequentialWait`, `TestSequentialWaitSceneryAndAudio`).
 
 - **Core message timings + queue knobs** (Settings → Power user, every slider's far
   left = the canonical default): **shout bubble duration** (~0.72 s), **preanim wait

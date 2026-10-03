@@ -219,6 +219,13 @@ func (a *Audio) SetBlipScale(pct int) {
 	a.blipScale = pct
 }
 
+// HasChunk reports whether a decoded chunk for base is cached and ready to play
+// (the strict-sequencing gate's audio-residency probe — the audio analogue of
+// TextureStore.Contains). Same-thread, a plain map read.
+func (a *Audio) HasChunk(base string) bool {
+	return a.chunks[base] != nil
+}
+
 // NewAudio opens the mixer. A failed device (headless CI) degrades to a
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {

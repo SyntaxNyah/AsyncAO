@@ -165,10 +165,11 @@ const defaultThemeFonts = true
 const defaultCatchUpWhenBehind = true
 
 // defaultSequentialWait ships ON (test build): the EXPERIMENTAL strict
-// sequencing (#136) — a 1:1 AO2-style queue that waits for every on-screen
-// sprite before each message plays and never fast-forwards the backlog. The
-// test build opts in by default because the current fast-forward + placeholder
-// behaviour is the worse alternative; a stable build can flip it back to OFF.
+// sequencing (#136) — wait for every asset a message presents (sprites,
+// background, desk, chatbox, speedlines, SFX, blip) before it plays. Catch-up
+// (AO2's optional skip-to-newest) stays a SEPARATE knob, and shouts still skip
+// the queue — full AO2 parity. The test build opts in because the current
+// placeholder-flash behaviour is the worse alternative.
 const defaultSequentialWait = true
 
 // Catch-up queue-depth threshold: engage once this many messages (or more) are
@@ -1145,7 +1146,7 @@ type AssetPreferences struct {
 	SpriteWaitMsVal          int                  `json:"spriteWaitMs,omitempty"`          // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
 	SpriteWaitPair           bool                 `json:"spriteWaitPair,omitempty"`        // wait mode also gates on the PAIR partner's idle sprite (default OFF)
 	SpriteWaitPreanim        bool                 `json:"spriteWaitPreanim,omitempty"`     // wait mode also gates on the message's PREANIM (default OFF)
-	SequentialWait           bool                 `json:"sequentialWait"`                  // EXPERIMENTAL strict sequencing: queue 1:1 AO2-style — wait for every on-screen sprite, never fast-forward (default ON, test build). NOT omitempty: an explicit OFF must persist.
+	SequentialWait           bool                 `json:"sequentialWait"`                  // EXPERIMENTAL strict sequencing: wait for every asset a message presents before it plays (default ON, test build). NOT omitempty: an explicit OFF must persist.
 	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
 	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
 	DebugKeybinds            bool                 `json:"debugKeybinds,omitempty"`         // opt-in debug/diagnostic keybinds (default OFF — power user)
@@ -8096,9 +8097,9 @@ func (p *AssetPreferences) SpriteWaitPreanimOn() bool {
 func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
 
 // SequentialWaitOn reports the EXPERIMENTAL strict-sequencing toggle (ON by
-// default on the test build): queue messages 1:1 AO2-style — wait for every
-// on-screen sprite (speaker idle/talk/preanim, pair partner, group members) to
-// settle before each message plays, and never fast-forward the backlog.
+// default on the test build): wait for every asset a message presents (sprites,
+// background, desk, chatbox, speedlines, SFX, blip) to settle before it plays.
+// Catch-up stays a separate knob; shouts still skip the queue (AO2 parity).
 func (p *AssetPreferences) SequentialWaitOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

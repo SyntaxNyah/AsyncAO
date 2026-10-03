@@ -442,6 +442,12 @@ type Courtroom struct {
 	SpriteWait        bool
 	SpriteWaitTimeout time.Duration
 	SpriteReady       func(base string) bool
+	// AudioReady reports whether a decoded audio chunk for base is cached and
+	// ready to play — the audio analogue of SpriteReady (the App wires
+	// render.Audio.HasChunk, same-thread and a plain map probe; nil = audio
+	// is not gated, so courtroom stays SDL-free). The strict-sequencing gate
+	// consults it for the message's emote SFX and blip.
+	AudioReady func(base string) bool
 	// SpriteScaling reports a character's char.ini [Options] scaling= request
 	// (get_scaling). Same shape as SpriteReady — a nil hook means "nobody asked",
 	// which resolves to ScalingAuto and lets the renderer's geometry rule decide.
@@ -458,13 +464,17 @@ type Courtroom struct {
 	SpriteWaitPair    bool
 	SpriteWaitPreanim bool
 	// SequentialWait is the EXPERIMENTAL strict-sequencing override (power
-	// user, ON by default on the test build): queue messages 1:1 AO2-style —
-	// wait for EVERY on-screen character sprite (speaker idle/talk/preanim,
-	// pair partner, group members) to settle before each message begins, and
-	// never fast-forward the backlog. It forces the wait gate on regardless
-	// of SpriteWait and drops the hold timeout, so release is settled-only
-	// (resident in T1, or conclusively 404'd — the per-host fetch deadline
-	// guarantees every sprite eventually settles, so the room can't hang).
+	// user, ON by default on the test build): wait for EVERY asset the message
+	// will present — character sprites (speaker idle/talk/preanim, pair
+	// partner, group members), the position background + desk, the custom
+	// chatbox skin, zoom speedlines, and the emote SFX + blip — to settle
+	// before each message begins. It forces the wait gate on regardless of
+	// SpriteWait and drops the hold timeout, so release is settled-only
+	// (resident in T1 / decoded, or conclusively 404'd — the per-host fetch
+	// deadline guarantees every asset eventually settles, so the room can't
+	// hang). It does NOT touch catch-up: AO2's skip-to-newest is a SEPARATE
+	// knob (CatchUp, ON by default) that keeps fast-forwarding a backlog, and
+	// shouts still bypass the queue entirely — full AO2 parity.
 	SequentialWait bool
 
 	// ShoutDuration / PreanimTimeout are the core message-ceremony timings,
@@ -495,11 +505,15 @@ type Courtroom struct {
 	waitFor  *protocol.ChatMessage
 	// missingSprites remembers bases the asset manager conclusively 404'd,
 	// recorded from the SAME NotifyAssetMissing warning relay the play path uses.
-	// The wait gate consults it so a declared-but-absent preanim — live packs
-	// fill the char.ini preanim field with a dummy "-<n>" on every emote — releases
-	// the hold on the miss signal instead of burning the full SpriteWaitTimeout
-	// (the play path already skips such a preanim via NotifyAssetMissing; the gate
-	// now matches it). Bounded (missingSpritesCap); lazily allocated; game-thread only.
+	// Despite the name it is the gate's shared "conclusively-missing base" set:
+	// the strict-sequencing gate consults it for character sprites AND the
+	// background / chatbox / speedlines / SFX / blip bases it waits on, so a
+	// 404'd scenery or audio base releases the hold on the miss signal instead of
+	// hanging (there is no timeout under SequentialWait). It is also what lets a
+	// declared-but-absent preanim — live packs fill the char.ini preanim field
+	// with a dummy "-<n>" on every emote — release on the miss instead of burning
+	// the full SpriteWaitTimeout. Bounded (missingSpritesCap); lazily allocated;
+	// game-thread only.
 	missingSprites map[string]struct{}
 	// missingDesks remembers DESK bases the asset manager conclusively 404'd, fed
 	// by the same warning relay (NotifyDeskMissing). AO2-Client's set_scene calls
@@ -898,6 +912,18 @@ func (c *Courtroom) spriteSettled(base string) bool {
 	return c.SpriteReady(base) || c.spriteConfirmedMissing(base)
 }
 
+// audioSettled reports whether an audio base has resolved one way or the other:
+// decoded and cached (AudioReady, the render.Audio chunk probe), or
+// conclusively 404'd. Same contract as spriteSettled, for the blip/SFX bases the
+// strict-sequencing gate also waits on; the conclusively-missing arm is the SAME
+// shared set (a 404'd audio base records there via the warning relay).
+func (c *Courtroom) audioSettled(base string) bool {
+	if c.AudioReady != nil && c.AudioReady(base) {
+		return true
+	}
+	return c.spriteConfirmedMissing(base)
+}
+
 // preanimWillPlay reports whether this message's preanimation is the thing the
 // stage shows FIRST — the selection enterAfterShout makes (playPre), lifted out
 // so the wait gate cannot drift from the play path. AO2's handle_emote_mod
@@ -929,9 +955,10 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if !c.SpriteWait && !c.SequentialWait {
 		return false
 	}
-	// Catch-up wins UNLESS strict sequencing overrides it: a 1:1 AO2 queue
-	// never fast-forwards a backlog past the wait.
-	if c.CatchUp && !c.SequentialWait && behind >= c.CatchUpThreshold {
+	// Catch-up wins (AO2's optional skip-to-newest, ON by default): a backlog
+	// fast-forwards past the wait. Deliberately INDEPENDENT of strict
+	// sequencing — the two are separate knobs, exactly as AO2 keeps them.
+	if c.CatchUp && behind >= c.CatchUpThreshold {
 		c.waitFor = nil // catch-up wins: this message fast-forwards, waiting would only add lag
 		return false
 	}
@@ -991,6 +1018,45 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			}
 		}
 	}
+	// Scenery + audio (strict sequencing only): the background, desk, custom
+	// chatbox, zoom speedlines, emote SFX and blip are all on screen/audible the
+	// instant the message begins, so a 1:1 queue waits for them too. Each is
+	// computed the same way begin() computes it, so the gate can never disagree
+	// with the play path about what will be shown or heard.
+	if ready && c.SequentialWait {
+		if c.sess != nil && c.sess.Background != "" {
+			bgPart, deskPart := PositionScene(msg.Side)
+			bgBase := c.urls.Background(c.sess.Background, bgPart)
+			ready = c.spriteSettled(bgBase) // identity base; the witness ladder resolves/404s under it
+			if ready && deskVisible(msg.DeskMod, false) && !zoomEmote(msg.EmoteMod) {
+				ready = c.deskResolutionOf(c.urls.Background(c.sess.Background, deskPart)) != DeskUnresolved
+			}
+		}
+		if ready && c.ChatSkinFor != nil {
+			if misc := c.ChatSkinFor(msg.CharName); misc != "" {
+				cands := c.urls.MiscChatboxCandidates(misc)
+				ready = c.spriteSettled(cands[0])
+			}
+		}
+		if ready && zoomEmote(msg.EmoteMod) {
+			chain := c.urls.SpeedlinesCandidates(msg.CharName, msg.Side)
+			ready = c.spriteSettled(chain[0])
+		}
+		if ready && c.AudioReady != nil && preanimSFXPlays(msg) {
+			if sfx := c.sfxBaseFor(msg); sfx != "" {
+				ready = c.audioSettled(sfx)
+			}
+		}
+		if ready && c.AudioReady != nil {
+			blipWire := msg.Blipname
+			if !validBlipName(blipWire) {
+				blipWire = ""
+			}
+			if ref, pending := c.blipRefFor(blipWire, msg.CharName); !pending && ref.Base != "" {
+				ready = c.audioSettled(ref.Base)
+			}
+		}
+	}
 	if ready {
 		c.waitFor = nil
 		return false
@@ -1012,6 +1078,36 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 					continue
 				}
 				c.mgr.PrefetchChain(c.urls.Emote(m.Name, m.Emote, EmoteIdle), c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, group)
+			}
+			// Scenery + audio warm: the same prefetches begin() / armSFXDelay /
+			// resolveBlip would issue, at HIGH so the gate can actually end
+			// (singleflight makes begin()'s repeat a no-op).
+			if c.sess != nil && c.sess.Background != "" {
+				bgPart, deskPart := PositionScene(msg.Side)
+				c.mgr.PrefetchChain(c.urls.Background(c.sess.Background, bgPart), backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
+				c.mgr.Prefetch(c.urls.Background(c.sess.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityHigh)                                                         // AssetType: DeskOverlay (wait-gate warm)
+			}
+			if c.ChatSkinFor != nil {
+				if misc := c.ChatSkinFor(msg.CharName); misc != "" {
+					cands := c.urls.MiscChatboxCandidates(misc)
+					c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (wait-gate warm, chatbox)
+				}
+			}
+			if zoomEmote(msg.EmoteMod) {
+				chain := c.urls.SpeedlinesCandidates(msg.CharName, msg.Side)
+				c.mgr.PrefetchChain(chain[0], chain[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (wait-gate warm, speedlines)
+			}
+			if preanimSFXPlays(msg) {
+				if sfx := c.sfxBaseFor(msg); sfx != "" {
+					c.mgr.Prefetch(sfx, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm)
+				}
+			}
+			blipWire := msg.Blipname
+			if !validBlipName(blipWire) {
+				blipWire = ""
+			}
+			if ref, pending := c.blipRefFor(blipWire, msg.CharName); !pending && ref.Base != "" {
+				c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh) // AssetType: Blip (wait-gate warm)
 			}
 		}
 	}
@@ -1354,9 +1450,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// plays in full only when nothing is queued behind it (so calm back-and-forth
 	// still plays every line; only a genuine pile-up flashes past). The IC log
 	// already holds every message's full text.
-	// Strict sequencing overrides catch-up: a 1:1 AO2 queue never fast-forwards
-	// a backlog, so every message plays its full ceremony with its sprites.
-	if c.CatchUp && !c.SequentialWait && len(c.queue) >= c.CatchUpThreshold {
+	// Catch-up (AO2's optional skip-to-newest) fast-forwards a backlog behind
+	// this message — independent of strict sequencing, exactly as AO2 keeps the
+	// two knobs separate.
+	if c.CatchUp && len(c.queue) >= c.CatchUpThreshold {
 		c.beginCaughtUp(msg)
 		return
 	}
@@ -1741,13 +1838,29 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // AssetType: Blip
 func (c *Courtroom) resolveBlip() {
 	c.blipPending = false
-	if c.blipWire != "" {
-		c.blipRef = c.urls.BlipRef(c.blipWire)
-		c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
+	ref, pending := c.blipRefFor(c.blipWire, c.blipSpeaker)
+	if pending {
+		// In-flight: hold, don't default. The talk ticks re-ask until known.
+		c.blipPending = true
+		c.blipRef = AssetRef{}
 		return
 	}
+	c.blipRef = ref
+	c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh)
+}
+
+// blipRefFor mints the blip chain for a (wire, speaker) pair WITHOUT touching the
+// message fields, so the strict-sequencing wait gate can resolve the same chain
+// begin() will before the message is current. pending means the speaker's char.ini
+// blip set is still in flight and there is nothing to wait for yet (resolveBlip
+// re-asks on the talk ticks); the caller should skip the blip rather than hold.
+// ONE mint, shared with resolveBlip, so the gate and the play path cannot drift.
+func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
+	if blipWire != "" {
+		return c.urls.BlipRef(blipWire), false
+	}
 	if c.BlipNameFor != nil {
-		name, known := c.BlipNameFor(c.blipSpeaker)
+		name, known := c.BlipNameFor(blipSpeaker)
 		if known {
 			if !validBlipName(name) {
 				name = "" // a char.ini is server bytes too — same one guard, not a second copy
@@ -1755,17 +1868,11 @@ func (c *Courtroom) resolveBlip() {
 			if name == "" {
 				name = defaultBlipSet // get_blipname's last resort (text_file_functions.cpp:510)
 			}
-			c.blipRef = c.urls.BlipRef(name)
-			c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
-			return
+			return c.urls.BlipRef(name), false
 		}
-		// In-flight: hold, don't default. The talk ticks re-ask until known.
-		c.blipPending = true
-		c.blipRef = AssetRef{}
-		return
+		return AssetRef{}, true // char.ini still in flight
 	}
-	c.blipRef = c.urls.BlipRef(defaultBlipSet)
-	c.mgr.PrefetchChain(c.blipRef.Base, c.blipRef.Alts, c.blipRef.Type, network.PriorityHigh)
+	return c.urls.BlipRef(defaultBlipSet), false
 }
 
 // beginCaughtUp shows a backlog message's text for ~one frame with no
@@ -1931,12 +2038,21 @@ func preanimSFXPlays(msg *protocol.ChatMessage) bool {
 // and are a DISJOINT emote-mod set, so there's no double-fire. Nothing is armed
 // when there is neither an SFX to play nor a preanim shake to fire — a zero-
 // delay SFX still routes through the deadline (fires on the first Update tick).
-func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
-	base := ""
-	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" &&
-		(c.SFXMuted == nil || !c.SFXMuted(msg.SFXName)) { // M11: per-SFX mute
-		base = c.urls.SFX(msg.SFXName)
+// sfxBaseFor resolves the message's emote SFX base ("" = no audible sound: a
+// silent sentinel, or muted per-SFX, M11). Shared by armSFXDelay and the strict-
+// sequencing gate so the two can never disagree about which sound will play.
+func (c *Courtroom) sfxBaseFor(msg *protocol.ChatMessage) string {
+	if msg.SFXName == "" || msg.SFXName == "0" || msg.SFXName == "1" {
+		return ""
 	}
+	if c.SFXMuted != nil && c.SFXMuted(msg.SFXName) {
+		return ""
+	}
+	return c.urls.SFX(msg.SFXName)
+}
+
+func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
+	base := c.sfxBaseFor(msg)
 	// The preanim screenshake (AO2 play_sfx) fires for preanim-mod messages when
 	// SCREENSHAKE=1; effectsVisible gates the visual (reduce-motion / toggle).
 	preanimMod := msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom
