@@ -400,3 +400,23 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 		t.Errorf("the highest VALID mode must survive a reload: got %d, want %d", got, AssetCharCaseMax)
 	}
 }
+
+// TestSequentialWaitRoundTrips proves the experimental strict-sequencing toggle
+// saves AND loads back (the assetCharCase class: a field that joins the in-memory
+// struct without its DTO twin + load-overlay line silently reverts on launch).
+func TestSequentialWaitRoundTrips(t *testing.T) {
+	path := tempPrefsPath(t)
+	p := loadPrefs(t, path)
+	if !p.SequentialWaitOn() {
+		t.Fatal("default strict sequencing must be ON (test build)")
+	}
+	// An explicit OFF must survive a restart despite the ON default — the *bool
+	// DTO distinguishes "absent → default" from a deliberately-written OFF.
+	p.SetSequentialWait(false)
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPrefs(t, path).SequentialWaitOn(); got {
+		t.Error("strict sequencing after reload = true — an explicit OFF did not load back")
+	}
+}

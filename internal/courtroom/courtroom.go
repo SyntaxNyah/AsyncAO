@@ -457,6 +457,15 @@ type Courtroom struct {
 	// either way.
 	SpriteWaitPair    bool
 	SpriteWaitPreanim bool
+	// SequentialWait is the EXPERIMENTAL strict-sequencing override (power
+	// user, ON by default on the test build): queue messages 1:1 AO2-style —
+	// wait for EVERY on-screen character sprite (speaker idle/talk/preanim,
+	// pair partner, group members) to settle before each message begins, and
+	// never fast-forward the backlog. It forces the wait gate on regardless
+	// of SpriteWait and drops the hold timeout, so release is settled-only
+	// (resident in T1, or conclusively 404'd — the per-host fetch deadline
+	// guarantees every sprite eventually settles, so the room can't hang).
+	SequentialWait bool
 
 	// ShoutDuration / PreanimTimeout are the core message-ceremony timings,
 	// exposed as power-user knobs (defaults = the canonical AO2-flavoured
@@ -914,10 +923,15 @@ func preanimWillPlay(msg *protocol.ChatMessage) bool {
 // PREFIXED base: PrefetchWithFallback keeps it the asset's identity whichever
 // spelling the server ships (CLAUDE.md).
 func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
-	if !c.SpriteWait || c.SpriteReady == nil || msg == nil || msg.IsShout() {
+	if c.SpriteReady == nil || msg == nil || msg.IsShout() {
 		return false
 	}
-	if c.CatchUp && behind >= c.CatchUpThreshold {
+	if !c.SpriteWait && !c.SequentialWait {
+		return false
+	}
+	// Catch-up wins UNLESS strict sequencing overrides it: a 1:1 AO2 queue
+	// never fast-forwards a backlog past the wait.
+	if c.CatchUp && !c.SequentialWait && behind >= c.CatchUpThreshold {
 		c.waitFor = nil // catch-up wins: this message fast-forwards, waiting would only add lag
 		return false
 	}
@@ -938,7 +952,9 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if ready {
 		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
-	if ready && c.SpriteWaitPair && msg.Pair.Active() { // strictness knob: the pair partner's idle too
+	// The pair partner's idle sprite — the SpriteWaitPair strictness knob, or
+	// always under strict sequencing (the pair is on screen whenever active).
+	if ready && (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
 		ready = c.spriteSettled(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
 	}
 	// The preanimation is what the stage SHOWS first whenever it will actually
@@ -961,6 +977,20 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// path's NotifyAssetMissing skip.
 		ready = c.spriteSettled(pre)
 	}
+	// Group pairing: every other member's idle sprite is also on screen, and
+	// strict sequencing waits for all of them too (begin() stages each as an
+	// on-screen layer). The speaker is already covered by the Speaker checks.
+	if ready && c.SequentialWait {
+		for _, m := range msg.Additional {
+			if m.CharID == msg.CharID {
+				continue
+			}
+			ready = c.spriteSettled(c.urls.Emote(m.Name, m.Emote, EmoteIdle))
+			if !ready {
+				break
+			}
+		}
+	}
 	if ready {
 		c.waitFor = nil
 		return false
@@ -970,12 +1000,26 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		c.waitLeft = c.SpriteWaitTimeout
 		c.mgr.PrefetchChain(idle, c.spriteAlts(msg.CharName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
 		c.mgr.PrefetchChain(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), c.spriteAlts(msg.CharName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
-		if c.SpriteWaitPair && msg.Pair.Active() {
+		if (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
 			c.mgr.PrefetchChain(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
 		}
 		if hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
 		}
+		if c.SequentialWait {
+			for _, m := range msg.Additional {
+				if m.CharID == msg.CharID {
+					continue
+				}
+				c.mgr.PrefetchChain(c.urls.Emote(m.Name, m.Emote, EmoteIdle), c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, group)
+			}
+		}
+	}
+	// Strict sequencing waits for settlement, never a timeout: the network
+	// layer's per-host deadline guarantees every sprite eventually settles
+	// (resident, or conclusively 404'd), so the gate can't hang the room.
+	if c.SequentialWait {
+		return true
 	}
 	c.waitLeft -= dt
 	if c.waitLeft <= 0 {
@@ -1310,7 +1354,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// plays in full only when nothing is queued behind it (so calm back-and-forth
 	// still plays every line; only a genuine pile-up flashes past). The IC log
 	// already holds every message's full text.
-	if c.CatchUp && len(c.queue) >= c.CatchUpThreshold {
+	// Strict sequencing overrides catch-up: a 1:1 AO2 queue never fast-forwards
+	// a backlog, so every message plays its full ceremony with its sprites.
+	if c.CatchUp && !c.SequentialWait && len(c.queue) >= c.CatchUpThreshold {
 		c.beginCaughtUp(msg)
 		return
 	}

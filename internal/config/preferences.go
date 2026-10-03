@@ -164,6 +164,13 @@ const defaultThemeFonts = true
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
 const defaultCatchUpWhenBehind = true
 
+// defaultSequentialWait ships ON (test build): the EXPERIMENTAL strict
+// sequencing (#136) — a 1:1 AO2-style queue that waits for every on-screen
+// sprite before each message plays and never fast-forwards the backlog. The
+// test build opts in by default because the current fast-forward + placeholder
+// behaviour is the worse alternative; a stable build can flip it back to OFF.
+const defaultSequentialWait = true
+
 // Catch-up queue-depth threshold: engage once this many messages (or more) are
 // waiting behind the one starting. The default is the floor (1) so the IC stage
 // stays real-time — in a busy room the newest message types out in full (with
@@ -1138,6 +1145,7 @@ type AssetPreferences struct {
 	SpriteWaitMsVal          int                  `json:"spriteWaitMs,omitempty"`          // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
 	SpriteWaitPair           bool                 `json:"spriteWaitPair,omitempty"`        // wait mode also gates on the PAIR partner's idle sprite (default OFF)
 	SpriteWaitPreanim        bool                 `json:"spriteWaitPreanim,omitempty"`     // wait mode also gates on the message's PREANIM (default OFF)
+	SequentialWait           bool                 `json:"sequentialWait"`                  // EXPERIMENTAL strict sequencing: queue 1:1 AO2-style — wait for every on-screen sprite, never fast-forward (default ON, test build). NOT omitempty: an explicit OFF must persist.
 	HoldPrevMaxAgeMsVal      int                  `json:"holdPrevMaxAgeMs,omitempty"`      // hold-previous stand-in cap in ms (0/absent = bridge forever)
 	HoldDebugTint            bool                 `json:"holdDebugTint,omitempty"`         // amber-tint stand-in sprites (power-user diagnostics, default OFF)
 	DebugKeybinds            bool                 `json:"debugKeybinds,omitempty"`         // opt-in debug/diagnostic keybinds (default OFF — power user)
@@ -1723,9 +1731,10 @@ type prefsJSON struct {
 	SpriteWaitMs           int                  `json:"spriteWaitMs"`         // wait-mode hold cap in ms (0 = default)
 	SpriteWaitPair         bool                 `json:"spriteWaitPair"`       // wait mode gates on the pair too (default OFF)
 	SpriteWaitPreanim      bool                 `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
+	SequentialWait         *bool                `json:"sequentialWait"`       // EXPERIMENTAL strict sequencing (absent = default ON, test build)
 	HoldPrevMaxAgeMs       int                  `json:"holdPrevMaxAgeMs"`     // hold-previous cap in ms (0 = forever)
 	HoldDebugTint          bool                 `json:"holdDebugTint"`        // tint stand-in sprites (default OFF)
-	DebugKeybinds          bool                 `json:"debugKeybinds"`           // opt-in debug/diagnostic keybinds (default OFF)
+	DebugKeybinds          bool                 `json:"debugKeybinds"`        // opt-in debug/diagnostic keybinds (default OFF)
 	ShoutDurationMs        int                  `json:"shoutDurationMs"`      // shout hold in ms (0 = default)
 	PreanimTimeoutMs       int                  `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
 	ICQueueCap             int                  `json:"icQueueCap"`           // IC queue depth (0 = default 64)
@@ -2225,6 +2234,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ThemeFonts:                   defaultThemeFonts,
 		UIScaleAutoOn:                defaultUIScaleAuto,
 		CatchUpOn:                    defaultCatchUpWhenBehind,
+		SequentialWait:               defaultSequentialWait,
 		CatchUpThreshold:             DefaultCatchUpThreshold,
 		MultiTabCap:                  DefaultMultiTabCap,
 		MusicFlagsVal:                DefaultMusicFlags,           // AO2's own default (courtroom.h:551 music_flags = FADE_OUT)
@@ -2743,6 +2753,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.SpriteWaitPair = onDisk.SpriteWaitPair
 	p.SpriteWaitPreanim = onDisk.SpriteWaitPreanim
+	if onDisk.SequentialWait != nil { // absent = the default (ON, test build)
+		p.SequentialWait = *onDisk.SequentialWait
+	}
 	p.HoldPrevMaxAgeMsVal = onDisk.HoldPrevMaxAgeMs
 	if p.HoldPrevMaxAgeMsVal != 0 { // 0 = bridge forever; a set value clamps into range
 		p.HoldPrevMaxAgeMsVal = clampPercent(p.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
@@ -8082,6 +8095,19 @@ func (p *AssetPreferences) SpriteWaitPreanimOn() bool {
 // SetSpriteWaitPreanim persists the wait-covers-preanim knob.
 func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
 
+// SequentialWaitOn reports the EXPERIMENTAL strict-sequencing toggle (ON by
+// default on the test build): queue messages 1:1 AO2-style — wait for every
+// on-screen sprite (speaker idle/talk/preanim, pair partner, group members) to
+// settle before each message plays, and never fast-forward the backlog.
+func (p *AssetPreferences) SequentialWaitOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SequentialWait
+}
+
+// SetSequentialWait persists the experimental strict-sequencing toggle.
+func (p *AssetPreferences) SetSequentialWait(on bool) { p.setBoolPref(&p.SequentialWait, on) }
+
 // HoldPrevMaxAgeMs reports how long hold-previous may bridge a cold sprite before
 // giving up to blank (0 = bridge forever, the default).
 func (p *AssetPreferences) HoldPrevMaxAgeMs() int {
@@ -8114,6 +8140,7 @@ func (p *AssetPreferences) HoldDebugTintOn() bool {
 
 // SetHoldDebugTint persists the stand-in tint knob.
 func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
+
 // DebugKeybindsOn reports whether the diagnostic/debug keybinds (full-character
 // sprite preload and the connection ping chip) are enabled. OFF by default:
 // these toggles exist for testing and performance diagnosis, not everyday play,
@@ -8815,6 +8842,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.SpriteWaitMsVal = 0
 	p.SpriteWaitPair = false
 	p.SpriteWaitPreanim = false
+	p.SequentialWait = defaultSequentialWait
 	p.HoldPrevMaxAgeMsVal = 0
 	p.HoldDebugTint = false
 	p.DebugKeybinds = false

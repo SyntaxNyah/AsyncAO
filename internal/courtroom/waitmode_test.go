@@ -356,3 +356,91 @@ func TestWaitGateAndPlayPathAgreeOnThePreanim(t *testing.T) {
 		})
 	}
 }
+
+// TestSequentialWait pins the EXPERIMENTAL strict-sequencing override (#136): a
+// 1:1 AO2-style queue that holds each message until EVERY on-screen sprite
+// (speaker idle/talk, pair partner, group members) has settled, never
+// fast-forwards a backlog, and never times out. It is an override of the normal
+// sequencing, so it holds even when the cold-load "wait" mode (SpriteWait) is
+// off.
+func TestSequentialWait(t *testing.T) {
+	newRig := func(t *testing.T) (*Courtroom, map[string]bool) {
+		room, _, _, _ := newCourtroomRig(t)
+		ready := map[string]bool{}
+		room.SequentialWait = true
+		// Far under any Update below, so a timeout burn would be unmistakable.
+		room.SpriteWaitTimeout = 50 * time.Millisecond
+		room.SpriteReady = func(base string) bool { return ready[base] }
+		return room, ready
+	}
+
+	t.Run("forces the wait even with the cold-load wait mode off", func(t *testing.T) {
+		room, ready := newRig(t)
+		room.SpriteWait = false // the normal wait gate is OFF; strict sequencing overrides it
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+		if room.QueueLen() != 1 || room.Scene.Speaker.Visible {
+			t.Fatalf("a cold sprite must hold under strict sequencing: queue=%d visible=%v", room.QueueLen(), room.Scene.Speaker.Visible)
+		}
+		readySpeaker(room, ready, "Phoenix", "normal")
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 || !room.Scene.Speaker.Visible {
+			t.Fatal("the settled sprite must begin the held message")
+		}
+	})
+
+	t.Run("waits for every on-screen sprite", func(t *testing.T) {
+		room, ready := newRig(t)
+		m := waitMsg("Phoenix", "normal", "hi")
+		m.CharID = 3
+		m.Pair = protocol.PairInfo{CharID: 1, Name: "Edgeworth", Emote: "normal"}
+		m.Additional = []protocol.GroupPairMember{
+			{CharID: 3, Name: "Phoenix", Emote: "normal"}, // the speaker — already on the Speaker layer, skipped
+			{CharID: 5, Name: "Maya", Emote: "normal"},
+		}
+		readySpeaker(room, ready, "Phoenix", "normal") // speaker idle + talk ready
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.QueueLen() != 1 {
+			t.Fatal("setup: cold pair/group sprites must hold the message")
+		}
+		ready[room.urls.Emote("Edgeworth", "normal", EmoteIdle)] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 1 {
+			t.Fatal("the cold GROUP member must keep holding after the pair landed")
+		}
+		ready[room.urls.Emote("Maya", "normal", EmoteIdle)] = true
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("all on-screen sprites settled must release the message")
+		}
+	})
+
+	t.Run("never fast-forwards a backlog", func(t *testing.T) {
+		room, _ := newRig(t)
+		room.CatchUp, room.CatchUpThreshold = true, 1
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "one")})
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Edgeworth", "normal", "two")})
+		if room.QueueLen() != 2 {
+			t.Fatalf("setup: both messages should be queued (head held), got %d", room.QueueLen())
+		}
+		room.Update(16 * time.Millisecond) // the backlog threshold would fast-forward the normal gate
+		if room.QueueLen() != 2 {
+			t.Fatal("strict sequencing must NOT fast-forward a backlog (1:1 queue)")
+		}
+	})
+
+	t.Run("never times out", func(t *testing.T) {
+		room, ready := newRig(t)
+		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+		for i := 0; i < 20; i++ {
+			room.Update(16 * time.Millisecond) // 320 ms total — well past the 50 ms timeout
+		}
+		if room.QueueLen() != 1 {
+			t.Fatal("strict sequencing must wait for settlement, never burn a timeout")
+		}
+		readySpeaker(room, ready, "Phoenix", "normal")
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 {
+			t.Fatal("settlement must still release after the no-timeout hold")
+		}
+	})
+}

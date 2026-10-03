@@ -4078,6 +4078,21 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
 	y += 10
 
+	// Experimental — strict sequencing (#136). An override for the whole
+	// AO2/webAO queue: play messages 1:1, one at a time, waiting for every
+	// on-screen sprite before each begins. Marked experimental; ON by default
+	// on the test build, and while ON it supersedes catch-up and the cold-load
+	// sprite mode.
+	y = a.settingsSection(y, w, "Experimental")
+	seq := a.d.Prefs.SequentialWaitOn()
+	if next := c.Checkbox(pad, y, "Strict sequencing — wait for every on-screen sprite before each message plays, and never fast-forward the backlog", seq); next != seq {
+		a.d.Prefs.SetSequentialWait(next)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "ON (default, test build): every message plays one at a time in full, holding each until ALL its on-screen sprites (speaker, pair, group) have loaded or conclusively 404'd; the backlog is never skipped, so a busy room can lag behind real-time while a big queue drains. OFF: the normal AO2-style queue — under a pile-up the client fast-forwards the backlog to stay real-time, and an uncached sprite is bridged by the cold-load mode above.", ColTextDim)
+	y += 10
+
 	// (The missing-sprite "missingno" placeholder controls moved to Settings →
 	// Assets in v1.70.1 — playtest: nobody looked for them under Power User.)
 

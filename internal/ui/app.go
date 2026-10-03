@@ -7675,6 +7675,7 @@ func (a *App) applyTimingToRoom() {
 	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
 	a.room.SpriteWaitPair = a.d.Prefs.SpriteWaitPairOn()                                  // strictness: gate on the pair partner too
 	a.room.SpriteWaitPreanim = a.d.Prefs.SpriteWaitPreanimOn()                            // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.SequentialWaitOn()                                  // EXPERIMENTAL: 1:1 AO2 queue — wait for every on-screen sprite, never fast-forward
 	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                 // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.ShoutDurationMs(); ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
