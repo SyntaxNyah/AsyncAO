@@ -1137,8 +1137,13 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 
 	// #80: contain the full-viewport fills (background + speedlines) to the
 	// UN-shaken stage so a screenshake or shout punch can't spill them over the UI.
-	v.stageClip = stage
-	_ = ren.SetClipRect(&v.stageClip)
+	// Defer to an already-active clip (the camera-zoom clip in internal/ui/vpzoom.go,
+	// itself the stage) so zooming never stomps it and lets the scene escape.
+	contain := !ren.IsClipEnabled()
+	if contain {
+		v.stageClip = stage
+		_ = ren.SetClipRect(&v.stageClip)
+	}
 	if v.fx.DoF {
 		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
@@ -1150,7 +1155,9 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
 		v.drawFill(ren, base, &v.speedlineAnim, vp, 100)
 	}
-	_ = ren.SetClipRect(nil)
+	if contain {
+		_ = ren.SetClipRect(nil)
+	}
 
 	// Pair hue offset for the "desync" effect: half a period so the two
 	// characters show opposite hues. Zero unless rainbow + desync are both on,
@@ -1223,10 +1230,17 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerCharacter)
 	if scene.ShowDesk {
 		// #80: the desk is a full-viewport fill — clip it to the un-shaken stage.
-		v.stageClip = stage
-		_ = ren.SetClipRect(&v.stageClip)
+		// Defer to an already-active clip (the camera-zoom clip) so zooming never
+		// stomps it and lets the desk escape the viewport.
+		contain := !ren.IsClipEnabled()
+		if contain {
+			v.stageClip = stage
+			_ = ren.SetClipRect(&v.stageClip)
+		}
 		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
-		_ = ren.SetClipRect(nil)
+		if contain {
+			_ = ren.SetClipRect(nil)
+		}
 	}
 	// layer = over: raise() inside the viewport (courtroom.cpp:3228-3232) — above
 	// the desk, below the shout splash.
@@ -1245,13 +1259,19 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 			frac = 1
 		}
 		// #80: the realization flash is a full-viewport fill — clip it to the
-		// un-shaken stage so it doesn't flicker over the UI during a shake.
-		v.stageClip = stage
-		_ = ren.SetClipRect(&v.stageClip)
+		// un-shaken stage so it doesn't flicker over the UI during a shake. Defer to
+		// an already-active clip (the camera-zoom clip) so zooming never stomps it.
+		contain := !ren.IsClipEnabled()
+		if contain {
+			v.stageClip = stage
+			_ = ren.SetClipRect(&v.stageClip)
+		}
 		v.fillRect = vp
 		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
 		_ = ren.FillRect(&v.fillRect)
-		_ = ren.SetClipRect(nil)
+		if contain {
+			_ = ren.SetClipRect(nil)
+		}
 	}
 
 	v.particles.draw(ren, stage) // #124 ambient weather over the stage (free when off), under the post-FX
