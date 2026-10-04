@@ -141,6 +141,13 @@ type SpriteLayer struct {
 type Scene struct {
 	Position       string
 	BackgroundBase string
+	// BackgroundAlts is the witness ladder (BackgroundFallbacks) as URLs under
+	// this scene's background name, built alongside BackgroundBase. The UI's
+	// scenery re-demand sites (healScenery + keepSceneAssetsWarm) prefetch
+	// BackgroundBase WITH these alts, so a witness-resolved position re-probes
+	// its whole chain instead of the primary stem alone — which would 404, fire
+	// a Warning, and blank/flash the stage (the "different bg for a frame" bug).
+	BackgroundAlts []string
 	DeskBase       string
 	ShowDesk       bool
 
@@ -1265,6 +1272,7 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	}
 	bgPart, deskPart := PositionScene(c.Scene.Position)
 	c.Scene.BackgroundBase = c.urls.Background(bg, bgPart)
+	c.Scene.BackgroundAlts = backgroundAltURLs(c.urls, bg, bgPart)
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
 	c.prefetchScenery(bg, bgPart)
 	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
@@ -1726,6 +1734,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if c.sess != nil && c.sess.Background != "" {
 		bgPart, deskPart := PositionScene(msg.Side)
 		c.Scene.BackgroundBase = c.urls.Background(c.sess.Background, bgPart)
+		c.Scene.BackgroundAlts = backgroundAltURLs(c.urls, c.sess.Background, bgPart)
 		c.Scene.DeskBase = c.urls.Background(c.sess.Background, deskPart)
 		// HIGH like every other live-message asset: this scenery is on
 		// screen NOW. At low priority a busy lane shed these, and the

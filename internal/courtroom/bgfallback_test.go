@@ -199,6 +199,30 @@ func TestBackgroundFallbacksNeverProbeThePrimaryTwice(t *testing.T) {
 	}
 }
 
+// TestSceneBackgroundAltsCarriesTheWitnessLadder pins the UI re-demand fix: the
+// Scene carries the background's witness ladder (BackgroundAlts) beside
+// BackgroundBase, so healScenery / keepSceneAssetsWarm re-demand the WHOLE chain
+// instead of the primary stem alone. A primary-only re-demand 404s a
+// witness-resolved position, fires a Warning, and flashes/blanks the stage — the
+// "different background for a frame" sequencing symptom.
+func TestSceneBackgroundAltsCarriesTheWitnessLadder(t *testing.T) {
+	rig := newBGRig(t)
+	rig.room.HandleEvent(Event{Kind: EventMessage, Message: &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", Message: "hi", Side: "night",
+	}})
+	bgPart, _ := PositionScene("night")
+	want := backgroundAltURLs(rig.room.urls, "court", bgPart)
+	got := rig.room.Scene.BackgroundAlts
+	if len(got) != len(want) {
+		t.Fatalf("BackgroundAlts = %d entries %q, want the whole ladder %q", len(got), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("BackgroundAlts[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // TestSceneAssetsCarriesTheBackgroundLadder pins the ladder onto the OTHER
 // consumer inside this package: the archive/replay enumerator. SceneAssets used
 // to list the position's primary stem alone, so a scene staged at a position

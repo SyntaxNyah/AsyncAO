@@ -4228,12 +4228,17 @@ func (a *App) keepSceneAssetsWarm() {
 		// conclusive-miss verdict on a shorter chain than the one that actually
 		// resolved the sprite (missChainFor keys on exact chain identity). The
 		// 404 cache absorbs the extra probes inside their TTL and the latch stops
-		// the repeats. bg/desk/chatskin have no alt spelling, so they keep the
-		// plain single Prefetch.
+		// the repeats. desk/chatskin have no alt spelling; the BACKGROUND has the
+		// witness ladder (BackgroundFallbacks), so it re-demands through that chain
+		// too (Scene.BackgroundAlts) — a primary-only re-demand would 404 a
+		// witness-resolved position and flash/blank the stage.
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
-			if t == assets.AssetTypeCharSprite {
+			switch t {
+			case assets.AssetTypeCharSprite:
 				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (bare + folder, so no spelling ever false-flags missing)
-			} else {
+			case assets.AssetTypeBackground:
+				a.d.Manager.PrefetchChain(base, sc.BackgroundAlts, t, network.PriorityHigh) // AssetType: Background (witness ladder — a primary-only re-demand would 404 a witness-resolved position)
+			default:
 				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			}
 			demanded = true
@@ -10833,7 +10838,7 @@ func (a *App) healScenery() {
 	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
 	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
-		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+		a.d.Manager.PrefetchChain(sc.BackgroundBase, sc.BackgroundAlts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (witness ladder — a primary-only re-demand would 404 a witness-resolved position)
 	}
 	// IsMissing is checked alongside Contains because a base that 404'd
 	// conclusively can never become Contains: without this the desk arm re-demanded
