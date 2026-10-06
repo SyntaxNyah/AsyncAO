@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,6 +20,16 @@ import (
 // DefaultMasterServerURL is the canonical AO master server list endpoint
 // (same JSON API webAO and AO2-Client use).
 const DefaultMasterServerURL = "https://servers.aceattorneyonline.com/servers"
+
+// DefaultMasterServerURLs is the ordered set of master server endpoints
+// AsyncAO polls. Every list is fetched and merged, so servers advertised on
+// any one of them appear in the lobby. DefaultMasterServerURL stays the first
+// entry for the --master flag default, the Settings placeholder, and any
+// caller that wants a single canonical endpoint.
+var DefaultMasterServerURLs = []string{
+	DefaultMasterServerURL,
+	"https://servers.umineko.online/servers",
+}
 
 // masterFetchTimeout caps the server-list request.
 const masterFetchTimeout = 10 * time.Second
@@ -249,6 +260,56 @@ func ParseServerList(data []byte) ([]ServerEntry, error) {
 		return nil, fmt.Errorf("network: parsing server list: %w", err)
 	}
 	return entries, nil
+}
+
+// MergeServerLists concatenates server lists from several master servers,
+// dropping later duplicates so a server advertised on more than one list shows
+// exactly once. Duplicates are keyed by WebSocketURL; legacy TCP-only entries
+// (no WS URL) fall back to ip:port.
+func MergeServerLists(lists ...[]ServerEntry) []ServerEntry {
+	var merged []ServerEntry
+	seen := make(map[string]struct{})
+	for _, list := range lists {
+		for _, e := range list {
+			key := e.WebSocketURL()
+			if key == "" {
+				if e.IP == "" {
+					// No usable identity: skip (never happens for real master JSON).
+					continue
+				}
+				key = fmt.Sprintf("%s:%d", e.IP, e.Port)
+			}
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, e)
+		}
+	}
+	return merged
+}
+
+// FetchServerLists fetches every endpoint in urls and merges the results
+// (deduped by MergeServerLists). A single unreachable endpoint does not fail
+// the whole fetch: as long as at least one list returns entries, they are
+// returned without error so a partial outage still shows a usable lobby. An
+// error is returned only when every endpoint failed and nothing was fetched.
+func FetchServerLists(ctx context.Context, urls []string) ([]ServerEntry, error) {
+	var lists [][]ServerEntry
+	var errs []error
+	for _, u := range urls {
+		entries, err := FetchServerList(ctx, u)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		lists = append(lists, entries)
+	}
+	merged := MergeServerLists(lists...)
+	if len(merged) == 0 && len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return merged, nil
 }
 
 // ProbeLatency measures the TCP connect round-trip to addr ("host:port") — a

@@ -189,6 +189,80 @@ func TestFetchServerListETagRevalidation(t *testing.T) {
 	}
 }
 
+// TestMergeServerLists pins the multi-list dedupe: a server advertised on two
+// lists (same WebSocketURL) shows exactly once, in first-seen order, while
+// legacy TCP-only rows dedupe on ip:port.
+func TestMergeServerLists(t *testing.T) {
+	shared := ServerEntry{IP: "shared.example", WSSPort: 2096, Name: "Shared", Players: 5}
+	onlyA := ServerEntry{IP: "a.example", WSPort: 50001, Name: "Only A", Players: 2}
+	onlyB := ServerEntry{IP: "b.example", WSPort: 50002, Name: "Only B", Players: 9}
+	legacy := ServerEntry{IP: "legacy.example", Port: 27016, Name: "Legacy", Players: 0}
+
+	merged := MergeServerLists(
+		[]ServerEntry{shared, onlyA, legacy},
+		[]ServerEntry{onlyB, shared, legacy},
+	)
+	if len(merged) != 4 {
+		t.Fatalf("merged = %d entries, want 4 (shared + legacy deduped): %v", len(merged), names(merged))
+	}
+	got := names(merged)
+	want := []string{"Shared", "Only A", "Legacy", "Only B"}
+	if len(got) != len(want) {
+		t.Fatalf("names = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestFetchServerLists pins end-to-end multi-endpoint polling: two lists are
+// fetched, merged and deduped into one combined list.
+func TestFetchServerLists(t *testing.T) {
+	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"ip":"shared.example","wss_port":2096,"players":5,"name":"Shared"},{"ip":"a.example","ws_port":50001,"players":2,"name":"Only A"}]`))
+	}))
+	defer srvA.Close()
+	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"ip":"b.example","ws_port":50002,"players":9,"name":"Only B"},{"ip":"shared.example","wss_port":2096,"players":5,"name":"Shared"}]`))
+	}))
+	defer srvB.Close()
+
+	entries, err := FetchServerLists(context.Background(), []string{srvA.URL, srvB.URL})
+	if err != nil {
+		t.Fatalf("FetchServerLists: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3 (shared deduped): %v", len(entries), names(entries))
+	}
+}
+
+// TestFetchServerListsPartialFailure pins the resilience requirement: one bad
+// endpoint must not fail the whole fetch — the remaining list still shows.
+func TestFetchServerListsPartialFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"ip":"a.example","ws_port":50001,"players":2,"name":"Only A"}]`))
+	}))
+	defer srv.Close()
+
+	entries, err := FetchServerLists(context.Background(), []string{"://no-network", srv.URL})
+	if err != nil {
+		t.Fatalf("partial failure returned an error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "Only A" {
+		t.Fatalf("entries = %v, want the single surviving list", names(entries))
+	}
+
+	// Every endpoint down: the error must surface.
+	if _, err := FetchServerLists(context.Background(), []string{"://no-network"}); err == nil {
+		t.Error("all endpoints failing must return an error")
+	}
+}
+
 // TestAdaptiveTimeout pins the per-host deadline math: global timeout
 // until samples exist, multiple×EWMA after, clamped both ways.
 func TestAdaptiveTimeout(t *testing.T) {

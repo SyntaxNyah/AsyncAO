@@ -8731,18 +8731,29 @@ func (a *App) RefreshServers() {
 	// wipe used to provide. Ping mode itself only exits via its toggle button
 	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
 	// correct for whichever list is showing, so neither needs abandoning.
-	// The Settings override wins over the built-in default, but an
-	// explicit --master flag (anything non-default in Deps) wins over both.
-	url := a.d.MasterURL
-	if alt := a.d.Prefs.MasterList(); alt != "" && url == network.DefaultMasterServerURL {
-		url = alt
-	}
+	// An explicit --master flag (anything non-default in Deps) wins over the
+	// Settings override, which wins over the built-in defaults.
+	urls := a.masterListURLs()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
-		entries, err := network.FetchServerList(ctx, url)
+		entries, err := network.FetchServerLists(ctx, urls)
 		a.lobbyResult <- lobbyFetch{entries: entries, err: err}
 	}()
+}
+
+// masterListURLs resolves the master server endpoints to poll. An explicit
+// --master flag (a non-empty, non-default Deps.MasterURL) is used verbatim;
+// otherwise the Settings override is used when set; otherwise the built-in
+// defaults (aceattorneyonline + umineko) are polled and merged.
+func (a *App) masterListURLs() []string {
+	if a.d.MasterURL != "" && a.d.MasterURL != network.DefaultMasterServerURL {
+		return []string{a.d.MasterURL}
+	}
+	if alt := a.d.Prefs.MasterList(); alt != "" {
+		return []string{alt}
+	}
+	return network.DefaultMasterServerURLs
 }
 
 // lobbyAutoRefreshDue reports whether an on-open lobby auto-refresh should
