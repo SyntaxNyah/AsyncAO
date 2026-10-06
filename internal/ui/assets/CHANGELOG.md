@@ -4,6 +4,72 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.0.0 - 2026-10-06
+
+AsyncAO 2.0. The headline this time is the wire: every packet now goes through
+aolib-go, the canonical AO2 protocol library, so the client speaks both
+FantaCode and JSON instead of hand-rolling FantaCode. That's the foundation the
+rest of the release is built on — group pairing is the first feature to ride it.
+
+### The JSON wire (aolib-go)
+- Every packet now encodes and decodes through aolib-go, the same protocol
+  library family LemmyAO uses. AsyncAO speaks both wires on the same connection
+  and auto-detects which one a server wants, so it just works on classic AO2,
+  Nyathena and JSON servers alike. The debug overlay shows which wire you're on.
+- The old hand-rolled FantaCode framer is gone, and FantaCrypt stays dead — HI
+  now goes out plain. Packets are a real typed schema instead of positional
+  `HEADER#a#b#…#%` strings.
+- Why it matters: it's the AO lib, just AO reimplemented cleaner. A real schema
+  means validation, defaults and both wire forms for free, so adding a feature
+  is "define the packet and register it" instead of counting `#` fields by
+  hand. Group pairing below is the first thing built on it.
+- Huge thanks to **OmniTroid**, who created aolib-go and the JSON wire protocol
+  and gave a massive amount of help wiring it into AsyncAO. This release doesn't
+  exist without them.
+
+### Group pairing (/grouppair)
+- Unbounded group pairing: any number of players form a group, and when one of
+  them speaks everyone renders front-to-back behind the speaker. No size limit.
+- It rides a custom GP packet plus an additional_chars field on each message,
+  all over the JSON wire — a clean example of what the new protocol unlocks.
+- For now it's Skrapegropen-only (that's the server with the matching server
+  side), but it's the template for how much cleaner new features are going to be.
+
+### Pair order
+- Pair order is now wire-aware. Classic servers keep the `^0`/`^1` behaviour;
+  JSON group rosters get a `/pairorder <uid> front|back` command plus a
+  front-to-back roster with per-member up/down buttons.
+
+### Message sequencing
+- New "Default" loading mode (now the shipped default): a message waits for
+  everything it presents — sprites, background, desk, chatbox, speedlines, SFX
+  and blip — before it plays, one at a time, instead of fast-forwarding the
+  backlog.
+- A "Shouts" toggle (on by default) lets shouts queue instead of skipping, so a
+  queued shout waits for its bubble art and cry.
+
+### Controls
+- All keyboard hotkeys are now opt-in and off by default, including the
+  viewer-FX keybinds and the ambient-weather keybind. No more accidental snow or
+  spotlight from a stray Ctrl chord — turn them on in Settings → Hotkeys.
+
+### Multi-server list
+- The lobby now polls both the classic and Umineko master lists
+  (servers.aceattorneyonline.com and servers.umineko.online) and merges them,
+  sorted by player count, so servers on either list show up.
+
+### Fixes & polish
+- Camera zoom keeps the scene inside the stage instead of spilling onto the UI.
+- KFO community credit (Crystalwarrior + KFO) added to the About dialog.
+
+### Thanks
+- **OmniTroid** — aolib-go and the JSON wire, and an enormous amount of help
+  getting AsyncAO onto it.
+- **Crystalwarrior** and the whole **KFO** community — constant bug testing and
+  pushing the client to its limits.
+- Everyone who filed issue reports and feature ideas for this release (#136,
+  #138 and more). The ideas are yours.
+
 ## v1.99.9 - 2026-09-29
 
 - **The IC log now filters by colour (#49).** A coloured IC message colours its
