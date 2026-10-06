@@ -28,7 +28,7 @@ const DefaultMasterServerURL = "https://servers.aceattorneyonline.com/servers"
 // caller that wants a single canonical endpoint.
 var DefaultMasterServerURLs = []string{
 	DefaultMasterServerURL,
-	"https://servers.umineko.online/servers",
+	"https://servers.umineko.online/servers/",
 }
 
 // masterFetchTimeout caps the server-list request.
