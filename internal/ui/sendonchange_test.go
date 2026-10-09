@@ -67,20 +67,20 @@ func TestRecEventSelfContainsStyle(t *testing.T) {
 	// A NO-marker line from char 5 is recorded WITH the style re-injected.
 	bare := msgFor(5, "Phoenix", "no marker here")
 	re := a.recEventFrom(courtroom.Event{Kind: courtroom.EventMessage, Message: bare})
-	if !courtroom.HasSpriteMarker(re.Message.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(re.Message.Message); clean == re.Message.Message {
 		t.Fatal("a styled speaker's no-marker line was recorded WITHOUT its style — clips would lose it")
 	}
 	if got, _ := courtroom.DecodeSpriteStyle(re.Message.Message); got != style {
 		t.Errorf("re-injected style = %+v, want %+v", got, style)
 	}
 	// The LIVE message must be untouched — the recording copies, never mutates it.
-	if courtroom.HasSpriteMarker(bare.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(bare.Message); clean != bare.Message {
 		t.Error("recEventFrom mutated the live message instead of copying")
 	}
 
 	// An UNSTYLED speaker's line is left bare (no spurious marker).
 	re2 := a.recEventFrom(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(9, "Maya", "plain")})
-	if courtroom.HasSpriteMarker(re2.Message.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(re2.Message.Message); clean != re2.Message.Message {
 		t.Error("an unstyled speaker's line was given a marker")
 	}
 }
