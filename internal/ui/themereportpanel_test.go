@@ -214,7 +214,7 @@ func TestTheReportChipAllocatesNothingPerFrame(t *testing.T) {
 	rail := sdl.Rect{X: 0, Y: editBannerH, W: editRailW, H: frameHarnessH - editBannerH}
 	y := rail.Y + rail.H - editRowH*2
 	a.drawEditorReportChip(rail, y) // one warm draw: the label bakes, the face memoises
-	if n := allocsPerFrame(allocGateFrames, 0, func() { a.drawEditorReportChip(rail, y) }); n != 0 {
+	if n := gateZeroAlloc(func() { a.drawEditorReportChip(rail, y) }); n != 0 {
 		t.Errorf("the rail chip allocates %.0f/op — its label is being rebuilt at the draw", n)
 	}
 
@@ -223,7 +223,7 @@ func TestTheReportChipAllocatesNothingPerFrame(t *testing.T) {
 	// larger.
 	a.openThemeReport()
 	a.drawThemeReportPanel(frameHarnessW, frameHarnessH)
-	if n := allocsPerFrame(allocGateFrames, 0, func() {
+	if n := gateZeroAlloc(func() {
 		a.drawThemeReportPanel(frameHarnessW, frameHarnessH)
 	}); n != 0 {
 		t.Errorf("the report panel allocates %.0f/op — the wrap is running on the draw instead of on change", n)

@@ -152,7 +152,7 @@ func TestDrawCourtroomZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -181,7 +181,7 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed-font drawCourtroom allocates %.1f/op, want 0 — the per-element font path leaks (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -247,7 +247,7 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -284,7 +284,7 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with divergent panel zooms allocates %.1f/op, want 0 — "+
 			"two panels are sharing one fontSet and rebuilding it every frame (fix the alloc, don't equalise the fixture)", n)
 	}
@@ -327,7 +327,7 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 		t.Fatalf("the staged showname %q measures %d px — the centring path is doing no work", name, px)
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with a centred showname allocates %.1f/op, want 0 — "+
 			"the showname measure is not hitting a cache (fix the alloc, don't left-align the fixture)", n)
 	}
@@ -361,7 +361,7 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	// instead of shipping unmeasured.
 	draw := func() { a.noteScreenTransition(); a.drawLobby(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled drawLobby allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }

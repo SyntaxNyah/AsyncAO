@@ -542,7 +542,7 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		if a.eggKind != tc.want {
 			t.Fatalf("egg for %q = %d, want %d — the zero-alloc gate would measure the wrong (or no) path", tc.text, a.eggKind, tc.want)
 		}
-		if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+		if n := gateZeroAlloc(draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
 		}
 	}

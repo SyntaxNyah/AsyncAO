@@ -24,7 +24,7 @@ func TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout(t *testing.T) {
 	list := sdl.Rect{X: 0, Y: 0, W: 420, H: 300}
 	draw := func() { a.drawICLogList(list, false) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("drawICLogList allocates %.1f/op with the Fonts debug readout in the tree, want 0 — "+
 			"the readout must never run on the real per-frame draw path (fix the alloc, don't loosen the gate)", n)
 	}
