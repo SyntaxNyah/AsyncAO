@@ -48,10 +48,10 @@ func newTimerSession(t *testing.T) *Session {
 // the session sends CH and closed when CHECK arrives, both on this goroutine.
 func measureRTT(t *testing.T, s *Session, rtt time.Duration) {
 	t.Helper()
-	s.Ping()
+	s.stampPing()
 	s.pingSentAt = s.pingSentAt.Add(-rtt) // backdate the stamp: the reply is "rtt late"
 	feed(t, s, "CHECK#%")
-	if got := s.Latency(); got < rtt || got > rtt+time.Second {
+	if got := s.latency; got < rtt || got > rtt+time.Second {
 		t.Fatalf("measured latency = %v, want ≈ %v", got, rtt)
 	}
 }
@@ -86,7 +86,7 @@ func TestTimerStartSubtractsHalfTheMeasuredRoundTrip(t *testing.T) {
 	// dropping the correction lands the deadline rtt/2 (200 ms) late and applying
 	// the whole latency lands it rtt/2 early, both hundreds of milliseconds outside
 	// a window this narrow.
-	want := serverMs*time.Millisecond - s.Latency()/2
+	want := serverMs*time.Millisecond - s.latency/2
 	got := s.Timers[0].Deadline
 	if got.Before(before.Add(want)) || got.After(after.Add(want)) {
 		t.Errorf("deadline is %v out from the corrected anchor (want now+%v)", got.Sub(before.Add(want)), want)
@@ -119,8 +119,8 @@ func TestPausedTimerIsNotFlightCorrected(t *testing.T) {
 // correction, never a guess.
 func TestUnmeasuredLatencyLeavesTheAnchorAlone(t *testing.T) {
 	s := newTimerSession(t)
-	if s.Latency() != 0 {
-		t.Fatalf("fresh session latency = %v, want 0", s.Latency())
+	if s.latency != 0 {
+		t.Fatalf("fresh session latency = %v, want 0", s.latency)
 	}
 	before := time.Now()
 	feed(t, s, "TI#0#0#30000#%")
@@ -138,21 +138,21 @@ func TestUnmeasuredLatencyLeavesTheAnchorAlone(t *testing.T) {
 func TestAbsurdRoundTripIsNotAMeasurement(t *testing.T) {
 	s := newTimerSession(t)
 	measureRTT(t, s, 200*time.Millisecond)
-	sane := s.Latency()
+	sane := s.latency
 
-	s.Ping()
+	s.stampPing()
 	s.pingSentAt = s.pingSentAt.Add(-(maxLatencySample + time.Second))
 	feed(t, s, "CHECK#%")
-	if got := s.Latency(); got != sane {
+	if got := s.latency; got != sane {
 		t.Errorf("latency after a stalled round trip = %v, want the last sane %v", got, sane)
 	}
 
-	s.NoteLatency(maxLatencySample + time.Second)
-	if got := s.Latency(); got != sane {
+	s.noteLatencySample(maxLatencySample + time.Second)
+	if got := s.latency; got != sane {
 		t.Errorf("NoteLatency accepted an implausible sample: %v", got)
 	}
-	s.NoteLatency(-time.Second)
-	if got := s.Latency(); got != sane {
+	s.noteLatencySample(-time.Second)
+	if got := s.latency; got != sane {
 		t.Errorf("NoteLatency accepted a negative sample: %v", got)
 	}
 }
@@ -164,14 +164,14 @@ func TestAbsurdRoundTripIsNotAMeasurement(t *testing.T) {
 func TestCheckWithoutAnOutstandingPingIsIgnored(t *testing.T) {
 	s := newTimerSession(t)
 	feed(t, s, "CHECK#%")
-	if s.Latency() != 0 {
-		t.Errorf("unsolicited CHECK produced a latency of %v", s.Latency())
+	if s.latency != 0 {
+		t.Errorf("unsolicited CHECK produced a latency of %v", s.latency)
 	}
 
 	measureRTT(t, s, 150*time.Millisecond)
-	sane := s.Latency()
+	sane := s.latency
 	feed(t, s, "CHECK#%") // duplicate reply, no stamp outstanding
-	if got := s.Latency(); got != sane {
+	if got := s.latency; got != sane {
 		t.Errorf("duplicate CHECK re-timed the round trip: %v (want %v)", got, sane)
 	}
 }
@@ -324,7 +324,7 @@ func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 		feed(t, s, "CHECK#%")
 	}
 
-	if got := s.Latency(); got != 0 {
+	if got := s.latency; got != 0 {
 		t.Fatalf("latency = %v after %d production keepalive round trips — a latency source IS wired now, "+
 			"so delete this tripwire, drop the INERT IN PRODUCTION notes in latency.go/session.go, and "+
 			"re-label the item CLOSED", got, keepaliveRoundTrips)

@@ -125,23 +125,6 @@ func (s *Session) notePong() {
 	s.pingSentAt = time.Time{}
 }
 
-// NoteLatency feeds the session an externally measured round trip. This is the
-// sanctioned door for the wiring item 7 is deferred on: the caller lives outside
-// this package (a WebSocket-level ping, or a keepalive-sent notification), and
-// this package must not reach for it. It has NO caller today, so the seam is
-// open and unused by design rather than by oversight — the encapsulation test
-// TestTimerFlightCorrectionIsInertInProduction states that in the suite so the
-// state cannot be mistaken for "working" again. Same plausibility bound as the
-// wire path. Game thread only, like the rest of Session.
-func (s *Session) NoteLatency(rtt time.Duration) { s.noteLatencySample(rtt) }
-
-// Latency is the last accepted round trip (0 = never measured). Its only
-// consumer today is clockLead below — nothing outside this package reads it, and
-// in production it always answers 0 (see "the missing call site"). It is
-// exported so the connection chip / debug panel can show the session's own
-// measurement once one exists, alongside the wiring NoteLatency is waiting for.
-func (s *Session) Latency() time.Duration { return s.latency }
-
 // clockLead is the correction subtracted from a TI type-0 value: half the round
 // trip, i.e. the one-way flight the value spent getting here. Zero until a round
 // trip has been measured, which is precisely canon's behavior before its first
