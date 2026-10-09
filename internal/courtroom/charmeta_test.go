@@ -186,4 +186,3 @@ func TestBlipHeldWhileCharINIPending(t *testing.T) {
 		t.Errorf("first message must blip with the landed set, got %q", room.blipRef.Base)
 	}
 }
-
