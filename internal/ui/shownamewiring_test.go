@@ -113,4 +113,3 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 		t.Errorf("nil rung = %q, want the folder name", got)
 	}
 }
-

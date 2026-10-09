@@ -33,7 +33,7 @@ var leakAllowlist = []string{
 	"TestDeliberateDisconnectDoesNotReconnect.func1", // hijacked handler, same
 	"TestPumpConnectionSurfacesHalfDeadWrite.func1",  // hijacked handler, same
 	"TestPumpConnectionSurvivesServerKick.func1",     // hijacked handler, same
-	"hashicorp/golang-lru/v2/expirable",             // expirable.LRU janitor: library has no Stop; production creates one Client
+	"hashicorp/golang-lru/v2/expirable",              // expirable.LRU janitor: library has no Stop; production creates one Client
 }
 
 // leakedStacks polls briefly for goroutines winding down on a close handshake,

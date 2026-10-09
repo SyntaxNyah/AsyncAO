@@ -142,4 +142,3 @@ func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	}
 	return time.Duration(h.Buckets[len(h.Buckets)-1] * float64(time.Second))
 }
-
