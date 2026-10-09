@@ -13,24 +13,6 @@ func IsJSON(raw []byte) bool {
 	return len(raw) > 0 && raw[0] == '{'
 }
 
-// EscapeAll escapes every positional field for the Fanta wire.
-func EscapeAll(args []string) []string {
-	out := make([]string, len(args))
-	for i, a := range args {
-		out[i] = aolib.EscapeFanta(a)
-	}
-	return out
-}
-
-// UnescapeAll unescapes every positional field from the Fanta wire.
-func UnescapeAll(args []string) []string {
-	out := make([]string, len(args))
-	for i, a := range args {
-		out[i] = aolib.UnescapeFanta(a)
-	}
-	return out
-}
-
 // Codec is a both-wire codec for a custom header (packetutil's own type-erased
 // shape; aolib 2.6.0's typed RegisterPacket is wrapped below). The outbound
 // encode path dispatches any payload through it without a type switch.
