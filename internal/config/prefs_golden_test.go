@@ -114,6 +114,31 @@ func fillGoldenPrefs() *AssetPreferences {
 	return p
 }
 
+// TestGoldenFixtureCoversEveryField pins that fillGoldenPrefs reaches every exported,
+// json-tagged field: a field whose type the reflection fill does not handle (and which
+// therefore stays zero) would be silently absent from the golden, and a newly added
+// field would ship untested. saveOnlyPrefTags are the deliberate exceptions.
+func TestGoldenFixtureCoversEveryField(t *testing.T) {
+	full := fillGoldenPrefs()
+	data, err := json.Marshal(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	tags := prefJSONTags(reflect.TypeOf(AssetPreferences{}))
+	for tag := range tags {
+		if _, ok := saveOnlyPrefTags[tag]; ok {
+			continue
+		}
+		if _, ok := m[tag]; !ok {
+			t.Errorf("fixture does not cover field %q — add a fill case or a pinned value in fillGoldenPrefs", tag)
+		}
+	}
+}
+
 // TestGoldenFixtureRegenerate rebuilds the committed golden fixtures. One-shot: it
 // runs only under GOLDEN_REGEN=1 so a normal test run never rewrites checked-in bytes.
 func TestGoldenFixtureRegenerate(t *testing.T) {
