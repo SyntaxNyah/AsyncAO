@@ -1056,11 +1056,11 @@ func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
 	}
 }
 
-// TestTabCap pins the bound: maxTabs sessions, the next connect refuses
-// with a visible reason and leaves the active session untouched.
+// TestTabCap pins the bound: config.DefaultMultiTabCap sessions, the next connect
+// refuses with a visible reason and leaves the active session untouched.
 func TestTabCap(t *testing.T) {
 	a := testTabApp(t)
-	for i := 0; i < maxTabs; i++ {
+	for i := 0; i < config.DefaultMultiTabCap; i++ {
 		if !a.allocateTab() {
 			t.Fatalf("allocate %d must succeed", i)
 		}
@@ -1068,7 +1068,7 @@ func TestTabCap(t *testing.T) {
 		a.parkActive()
 	}
 	if a.allocateTab() {
-		t.Fatalf("allocate beyond maxTabs=%d must refuse", maxTabs)
+		t.Fatalf("allocate beyond the multi-tab cap=%d must refuse", config.DefaultMultiTabCap)
 	}
 	if a.connErr == "" {
 		t.Fatal("the refusal must explain itself on connErr")

@@ -16,16 +16,16 @@ func TestExtrasBoxVisibility(t *testing.T) {
 	a.room = &courtroom.Courtroom{}
 
 	a.showWidgets = true
-	if !a.extrasBoxVisible() {
+	if !(a.showWidgets && a.extrasSurfaceLive()) {
 		t.Fatal("open box in a live courtroom must be visible")
 	}
 	a.showIni = true // a blocking courtroom popup (showEvid is non-blocking now, #5)
-	if a.extrasBoxVisible() {
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a blocking popup must hide the box (it reappears when that closes)")
 	}
 	a.showIni = false
 	a.showWidgets = false
-	if a.extrasBoxVisible() {
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a closed box must not be visible")
 	}
 }

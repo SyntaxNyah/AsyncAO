@@ -409,7 +409,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row)) <= 1 {
 			continue // a lone rune wider than the column can't be split any further
 		}
-		if w := a.logDrawnWidth(elemServerChatlog, a.oocPct, row); w > colW {
+		if w := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, row, "", false, false); w > colW {
 			t.Errorf("OOC row %d %q draws %d px wide, column is %d — it will overflow", i, row, w, colW)
 		}
 	}
@@ -429,7 +429,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row.text)) <= 1 {
 			continue
 		}
-		if w := a.logDrawnWidth(elemICChatlog, a.logPct, row.text); w > colW {
+		if w := a.logDrawnWidthNamed(elemICChatlog, a.logPct, row.text, "", false, false); w > colW {
 			t.Errorf("IC row %d %q draws %d px wide, column is %d — it will overflow", i, row.text, w, colW)
 		}
 	}
@@ -460,7 +460,7 @@ func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
 	const speaker = "Crystalwarrior"
 	const probe = speaker + ": map"
 	if bold, plain := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, probe, speaker, false, true),
-		a.logDrawnWidth(elemServerChatlog, a.oocPct, probe); bold <= plain {
+		a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, probe, "", false, false); bold <= plain {
 		t.Fatalf("fixture must show a bold-name delta: bold %d px, plain %d px for %q", bold, plain, probe)
 	}
 

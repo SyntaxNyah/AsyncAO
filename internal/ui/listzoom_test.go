@@ -10,25 +10,26 @@ import "testing"
 // are pure (font metric passed in / an int pct), so no SDL font is needed —
 // mirroring how playerlist_test pins rowHeight geometry with a bare &App{}.
 
-// TestAreaRowLineHScales pins that the two-row area card height is 2×fontH plus
+// TestAreaRowLineHNScales pins that the two-row area card height is 2×fontH plus
 // the fixed slack, grows monotonically with the font, and that contentH is
 // exactly shown×lineH (the VScrollbar content-height the draw feeds).
-func TestAreaRowLineHScales(t *testing.T) {
+func TestAreaRowLineHNScales(t *testing.T) {
+	lineH := func(fontH int32) int32 { return areaRowLineHN(fontH, 2) }
 	// At the historical 100%-zoom chrome height (~17px) the formula reproduces
 	// the old literal `font.Height()*2 + 11`.
-	if got, want := areaRowLineH(17), int32(17*2+11); got != want {
-		t.Fatalf("areaRowLineH(17) = %d, want %d (historical font.Height()*2 + 11)", got, want)
+	if got, want := lineH(17), int32(17*2+11); got != want {
+		t.Fatalf("lineH(17) = %d, want %d (historical font.Height()*2 + 11)", got, want)
 	}
 	// Monotonic: a zoomed (taller) font must give a strictly taller row.
-	small := areaRowLineH(17)
-	big := areaRowLineH(34) // ~200% zoom doubles the glyph height
+	small := lineH(17)
+	big := lineH(34) // ~200% zoom doubles the glyph height
 	if big <= small {
-		t.Fatalf("areaRowLineH must grow with the font: small=%d big=%d", small, big)
+		t.Fatalf("areaRowLineHN must grow with the font: small=%d big=%d", small, big)
 	}
 	// contentH the scrollbar sees = shown × lineH, so more/bigger rows push the
 	// clamp down and the two zoom levels differ.
 	const shown = int32(12)
-	if got := shown * small; got != shown*areaRowLineH(17) {
+	if got := shown * small; got != shown*lineH(17) {
 		t.Fatalf("contentH mismatch: %d", got)
 	}
 	if shown*big <= shown*small {

@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // #33 "Stretching the window stretches the emote buttons": the themed emote
@@ -47,17 +45,6 @@ func TestGridRowsHonoursGap(t *testing.T) {
 		if got := gridRows(tc.h, cellH, tc.gap); got < 1 {
 			t.Errorf("gridRows(h=%d, gap=%d) returned %d — it must never drop below 1", tc.h, tc.gap, got)
 		}
-	}
-}
-
-// TestEmoteGridGapDefaultMatchesPref pins the two halves of the default in step:
-// screens.go's emoteGridGap fallback constant and the preference's shipped value
-// have to agree, or a fresh install's grid would differ from the paths that still
-// read the constant.
-func TestEmoteGridGapDefaultMatchesPref(t *testing.T) {
-	if int(emoteGridGap) != config.DefaultEmoteGridGapPx {
-		t.Errorf("emoteGridGap = %d but config.DefaultEmoteGridGapPx = %d — the shipped spacing must be one number",
-			emoteGridGap, config.DefaultEmoteGridGapPx)
 	}
 }
 

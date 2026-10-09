@@ -118,18 +118,3 @@ func (a *App) drawEmoteFavToggle(btn sdl.Rect) {
 	}
 	c.Tooltip(btn, "Show only your favourite emotes — click the ★ on an emote to add it")
 }
-
-// emotePageOf returns the page (0-based) holding real emote index ri within the
-// current visible list, or -1 if ri isn't visible (e.g. a non-favourite picked
-// while the favs-only filter is on) — callers then leave the page unchanged.
-func (a *App) emotePageOf(ri int) int {
-	if a.emotePerPage <= 0 {
-		return -1
-	}
-	for k, idx := range a.emoteVisible {
-		if idx == ri {
-			return k / a.emotePerPage
-		}
-	}
-	return -1
-}
