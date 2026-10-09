@@ -106,20 +106,6 @@ const (
 
 	// editStatusMs is how long a rail chip ("cap reached", "saved") stays up.
 	editStatusMs = 4000
-
-	// editorChromeAllocBudget bounds what ONE editor frame's rails may allocate.
-	//
-	// NAMED AND NON-ZERO, deliberately, and the honesty is the point: the rails format
-	// numbers, hand strings to text fields and build hex readouts, and pretending an
-	// inspector allocates nothing would be a gate that had to be weakened the first
-	// time somebody read it. The CANVAS is gated at zero (it is the courtroom frame,
-	// which every existing alloc gate already covers); the chrome is gated at a budget.
-	//
-	// 512 is roughly one allocation per drawn control at the widest rail — enough that
-	// a normal frame never trips it, tight enough that a per-frame string built in a
-	// LOOP (the classic regression: formatting every element rail row's index) blows
-	// straight through it.
-	editorChromeAllocBudget = 512
 )
 
 // ---------------------------------------------------------------------------

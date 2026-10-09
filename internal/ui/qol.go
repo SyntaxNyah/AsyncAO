@@ -1948,31 +1948,6 @@ func fontWidth(font *ttf.Font, s string) int32 {
 	return int32(w)
 }
 
-// logDrawnWidth reports the pixel width one IC/OOC log row will occupy when
-// drawLogLineNamed DRAWS it at pct — the metric both log wraps break against, so
-// a wrapped row can never be measured in a face other than the one it lands in
-// (#42). It reproduces that function's own two-way gate:
-//
-//   - a plain row draws through LabelClippedFont in ONE covering face
-//     (LogFontFor), so SizeUTF8 on that face is exact;
-//   - an emoji row, or a mixed-script row no single face covers, draws through
-//     the per-glyph raster (labelEmoji → RasterizeFallback), which lays out
-//     per-RUNE faces — coverRunes for text, the colour-emoji face for emoji.
-//     Measuring such a row with the single picked face is what broke here: with
-//     a custom font installed the chain is multi-face, an emoji-laden MOTD
-//     paragraph picks the LAST face (nothing covers emoji) while its plain rows
-//     draw in the custom face — 73% wider for OpenDyslexic — and overflowed.
-//
-// Build-time only (both wraps are cached), never the render loop.
-//
-// el is the courtroom_fonts.ini element these rows belong to, so the measure runs
-// in the SAME face and point size the draw will use even when a theme dresses
-// that element (#39) — measuring in one face and drawing in another is exactly
-// the desync #42 removed.
-func (a *App) logDrawnWidth(el themeFontElem, userPct int, s string) int32 {
-	return a.logDrawnWidthNamed(el, userPct, s, "", false, false)
-}
-
 // logDrawnWidthNamed is logDrawnWidth for a row that drawLogLineNamed draws with a
 // bold speaker span: it measures the leading name/prefix at bold weight and the
 // message after it at plain weight — the same split drawLogLineNamed uses. Without

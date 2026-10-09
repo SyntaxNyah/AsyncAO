@@ -15,39 +15,6 @@ import (
 // (drawUICfgPanel), are both RETIRED: per-piece hiding lives entirely in the pinned
 // panel, which is cleaner and reachable in and out of the editor, in both layouts.
 
-// hideableSlot maps a hideable element id → the layout slot the editor positions it
-// through. The map records which hideable elements own a movable layout slot (vs. the
-// penalty bars, timers, testimony, judge, extras, the shouts/knobs inside the controls
-// block, and the tabs — which the tab tray tears — that have none). For the control
-// buttons the hideable id IS the slot key.
-var hideableSlot = map[string]string{
-	panelEmotes:       slotEmotes,
-	panelOOC:          slotOOC,
-	panelLog:          slotRightCol,
-	"ctrl.character":  "ctrl.character",
-	"ctrl.wardrobe":   "ctrl.wardrobe",
-	"ctrl.restyle":    "ctrl.restyle",
-	"ctrl.background": "ctrl.background",
-	"ctrl.evidence":   "ctrl.evidence",
-	"ctrl.mods":       "ctrl.mods",
-	"ctrl.settings":   "ctrl.settings",
-	"ctrl.hotkeys":    "ctrl.hotkeys",
-	"ctrl.about":      "ctrl.about",
-	"ctrl.login":      "ctrl.login",
-}
-
-// hideableForSlot returns the hideable element id a slot key positions, or "" when the
-// slot has no hideable mapping (the viewport, the IC bar, the controls block, …). The
-// inverse lookup over hideableSlot; pinned by TestHideableForSlot.
-func hideableForSlot(slotKey string) string {
-	for id, sk := range hideableSlot {
-		if sk == slotKey {
-			return id
-		}
-	}
-	return ""
-}
-
 // --- compact hover toolbox (#27) ---------------------------------------------------
 //
 // Show/hide config was previously split three ways (the toolbar's UI…/Edit-Layout

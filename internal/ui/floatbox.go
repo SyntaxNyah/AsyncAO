@@ -522,12 +522,6 @@ func (a *App) extrasSurfaceLive() bool {
 	return a.room != nil && a.sess != nil && !a.blockingCourtPopup()
 }
 
-// extrasBoxVisible reports whether the MAIN box should draw: opened (showWidgets)
-// on a live surface. (Torn-off boxes are gated only by extrasSurfaceLive.)
-func (a *App) extrasBoxVisible() bool {
-	return a.showWidgets && a.extrasSurfaceLive()
-}
-
 // extrasBoxRect is the main box's screen rect: the (possibly user-resized) size
 // at the dragged position once placed, else a centered-near-the-top default.
 // Size clamps to [min, window] and the position clamps fully on-screen, so a
@@ -641,7 +635,7 @@ func (a *App) widgetDetached(id int) bool {
 // boxFencesPointer reports whether the courtroom pass should run pointer-blind
 // this frame: any Extras box is up under the cursor, or a box drag/resize is in
 // flight (so a fast drag can't leak a click to the scene between frames). Gated
-// on extrasSurfaceLive — NOT extrasBoxVisible — so torn-off boxes still fence
+// on extrasSurfaceLive (not the main box's opened state) so torn-off boxes still fence
 // the scene when the main box is closed (else clicks would leak through them).
 func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {

@@ -106,12 +106,6 @@ type themeSlot struct {
 	draw func(*App, sdl.Rect)
 }
 
-// themeSlotCap bounds the registry (hard rule 4). AO2's whole set_size_and_pos
-// inventory is 86 identifiers and AsyncAO's courtroom scope is a subset plus the
-// asyncao_* opt-ins. 160 leaves room for KFO's extras without ever being a real
-// limit, and the table test fails loudly rather than silently truncating.
-const themeSlotCap = 160
-
 // themeSlots is the registry. Order is NOT load-bearing: themeLayoutKeys sorts,
 // and the dispatcher orders by phase.
 var themeSlots = [...]themeSlot{

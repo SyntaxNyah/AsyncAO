@@ -51,7 +51,7 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 			if !a.extrasSurfaceLive() {
 				t.Error("the Extras surface must stay live behind it")
 			}
-			if !a.extrasBoxVisible() {
+			if !(a.showWidgets && a.extrasSurfaceLive()) {
 				t.Error("the Extras box must stay visible — you open the Timer FROM it")
 			}
 		})

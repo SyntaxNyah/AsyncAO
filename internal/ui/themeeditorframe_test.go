@@ -16,6 +16,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
+// editorChromeAllocBudget is TEST-ONLY: it bounds what one editor frame's rails may
+// allocate (moved here from themeeditor.go — the canvas is gated at zero allocations,
+// and the rails' named budget is asserted only by the editor frame tests).
+const editorChromeAllocBudget = 512
+
 // stageEditorApp is a frame-driven App with the theme editor open over a sidecar
 // carrying one probe element.
 func stageEditorApp(t *testing.T) (*App, func()) {

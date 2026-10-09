@@ -63,6 +63,10 @@ func TestUnboundDesignKeysNamesOnlyTheOrphans(t *testing.T) {
 	}
 }
 
+// themeSlotCap is TEST-ONLY: the registry cap (hard rule 4) moved here from
+// themeslots.go. TestThemeSlotTableIsTotal asserts len(themeSlots) stays under it.
+const themeSlotCap = 160
+
 // TestThemeSlotTableIsTotal pins the registry's structural invariants. The table is
 // the contract every later #21 commit binds against, so a duplicate row or a
 // mis-derived table would silently mis-place a widget rather than fail.

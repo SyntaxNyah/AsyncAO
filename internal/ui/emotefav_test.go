@@ -81,16 +81,6 @@ func TestRefreshEmoteView(t *testing.T) {
 		t.Errorf("steady-state refreshEmoteView allocs/op = %v, want 0", n)
 	}
 
-	// emotePageOf maps a real index to its page within the visible list (-1 when
-	// the index isn't visible — e.g. a non-favourite while favs-only is on).
-	a.emotePerPage = 10
-	if p := a.emotePageOf(3); p != 0 {
-		t.Errorf("emotePageOf(3) = %d, want 0", p)
-	}
-	if p := a.emotePageOf(0); p != -1 {
-		t.Errorf("emotePageOf(0) = %d, want -1 (emote 0 is filtered out)", p)
-	}
-
 	// favBoxList holds the favourites regardless of the grid filter: with
 	// favs-only OFF the grid shows everything but the box still shows just [1 3].
 	prefs.SetEmoteFavOnly(false)

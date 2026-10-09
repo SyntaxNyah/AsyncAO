@@ -865,8 +865,9 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 const modAuditSubLinePad = int32(4)
 
 // auditRowHeight is the on-screen height of one two-line audit row at a given font height (two text
-// lines + the inter-line pad + a bottom margin). Pure and testable, matching areaRowLineH's shape;
-// at 100% zoom (chrome-height ≈ 17) it lands near the historical fixed 38.
+// lines + the inter-line pad + a bottom margin). Pure and testable, matching the area
+// row-height formula's shape; at 100% zoom (chrome-height ≈ 17) it lands near the
+// historical fixed 38.
 func auditRowHeight(fontH int32) int32 {
 	return fontH*2 + modAuditSubLinePad + modAuditRowBottomPad
 }

@@ -51,13 +51,6 @@ const (
 	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
 	// they page in the same uniform grid as image chips (labels clip).
 	emoteTextCellW int32 = 104
-	// emoteGridGap is the SHIPPED spacing of the classic emote grid (both axes).
-	// Settings → Interface makes it adjustable; the pref (config.EmoteGridGap,
-	// seeded to config.DefaultEmoteGridGapPx == this) is what the grid reads, and
-	// this constant remains the fallback for the paths that have no App/prefs to
-	// consult. Themed (AO2) grids are unaffected — they scale the theme's own
-	// emote_button_spacing (theme_layout.go), which is theirs to own.
-	emoteGridGap int32 = config.DefaultEmoteGridGapPx
 	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
 	scrollBarW   int32 = 12
 	scrollBarGap int32 = 6
@@ -4459,19 +4452,7 @@ func (a *App) themedListSearchDrew() bool {
 // that stays in lock-step with the label offsets inside drawAreaList.
 const areaRowHeaderPad = int32(11)
 
-// areaRowLineH is the on-screen height of one two-LINE area card at a given
-// font height (name line + indented detail line + areaRowHeaderPad slack).
-// Pure so the row/scroll geometry can be pinned without an SDL font: at
-// areaPct=100 it matches the historical `font.Height()*2 + 11`, and it
-// scales monotonically with the zoomed font so the click hitboxes and the
-// scrollbar content-height track the text (the fixed-height-rows +
-// big-fonts bug class). Kept as the 2-line case of areaRowLineHN below —
-// most rows still are two lines; only long names/details (Issue #22) grow.
-func areaRowLineH(fontH int32) int32 {
-	return areaRowLineHN(fontH, 2)
-}
-
-// areaRowLineHN is areaRowLineH generalized to an arbitrary visual line
+// areaRowLineHN is the area row height generalized to an arbitrary visual line
 // count, for rows whose name and/or detail text wrapped to more than one
 // line each (Issue #22 — ARUP area names/details previously never wrapped
 // and just clipped off the panel edge).
