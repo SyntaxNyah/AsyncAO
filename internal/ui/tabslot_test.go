@@ -112,7 +112,7 @@ func TestTabBarSlotOverrideRepositions(t *testing.T) {
 // move-only (its width comes from the chips, so resize is meaningless) and registers
 // itself while editing so drawClassicEditor can grab it.
 func TestTabBarSlotIsMoveOnlyAndRegisters(t *testing.T) {
-	if slotResizable(slotTabBar) {
+	if slotResizeEdges(slotTabBar) != 0 {
 		t.Error("the server-tab strip must be move-only (width is chip-driven)")
 	}
 	if got := classicSlotLabel(slotTabBar); !strings.Contains(got, "Server tabs") {

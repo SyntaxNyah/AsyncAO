@@ -50,7 +50,7 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 // TestMessagesSlotEditorMetadata pins the editor integration: the panel is a
 // resizable slot and carries a human label naming Group Chat.
 func TestMessagesSlotEditorMetadata(t *testing.T) {
-	if !slotResizable(slotMessages) {
+	if slotResizeEdges(slotMessages) == 0 {
 		t.Error("the Group Chat panel must be resizable in the layout editor")
 	}
 	if got := classicSlotLabel(slotMessages); !strings.Contains(got, "Group Chat") {

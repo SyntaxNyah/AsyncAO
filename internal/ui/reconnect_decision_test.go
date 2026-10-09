@@ -215,7 +215,7 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	sendFails := func(protocol.Packet) error { return context.DeadlineExceeded }
 	a.sess = courtroom.NewSession(sendFails, "test-hdid")
 	// Record a write failure into the session (as a failed keepalive/reply would).
-	a.sess.Ping()
+	a.sess.SendChat(protocol.OutgoingMS{})
 	if a.sess.SendErr() == nil {
 		t.Fatal("test setup: the failing send should have recorded SendErr")
 	}
@@ -260,7 +260,7 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	defer conn.Close()
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return context.DeadlineExceeded }, "test-hdid")
-	a.sess.Ping() // record a write failure so pumpConnection takes the SendErr branch
+	a.sess.SendChat(protocol.OutgoingMS{}) // record a write failure so pumpConnection takes the SendErr branch
 
 	a.deliberateClose = true // the user meant to leave
 	a.pumpConnection()

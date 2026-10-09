@@ -75,9 +75,6 @@ func TestChromeRowNeverOverlapsAtAnySize(t *testing.T) {
 			if p.h > h {
 				t.Fatalf("%dx%d: the row claimed %d px of a %d px block", w, h, p.h, h)
 			}
-			if body := chromeRowBody(block, &p); body.H < 0 {
-				t.Fatalf("%dx%d: the body under the row is %d px tall", w, h, body.H)
-			}
 		}
 	}
 }

@@ -242,7 +242,7 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 // smear it. The classic layout system already registers the SAME widget move-only, and
 // the two editors must agree.
 func TestThemedEditorRefusesToResizeTheTabStrip(t *testing.T) {
-	if slotResizable(slotTabBar) {
+	if slotResizeEdges(slotTabBar) != 0 {
 		t.Fatal("fixture: the classic slot is supposed to be move-only — the two editors must agree")
 	}
 	a, ctx, cleanup := stripEditFixture(t)
