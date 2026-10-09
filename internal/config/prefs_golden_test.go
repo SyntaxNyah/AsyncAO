@@ -241,3 +241,40 @@ func TestGoldenDefaultPrefsRoundTrip(t *testing.T) {
 	saved := decodeJSON(t, out)
 	assertSameKeysAndValues(t, golden, saved)
 }
+
+// TestGoldenLegacyLayoutPresetsMigrate pins the ONE legacy-key migration: a file
+// carrying the retired `layoutPresets` key (classic slots only) migrates into
+// `layoutProfiles` on load, and the legacy key is never written back.
+func TestGoldenLegacyLayoutPresetsMigrate(t *testing.T) {
+	legacy := `{"layoutPresets":{"Mine":{"emotes":[0.25,0.25,0.5,0.5]}}}`
+	out := filepath.Join(t.TempDir(), "prefs.json")
+	if err := os.WriteFile(out, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(out)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer p.Close()
+	prof, ok := p.LayoutProfiles["Mine"]
+	if !ok {
+		t.Fatalf("legacy preset did not migrate into LayoutProfiles")
+	}
+	if got := prof.Classic["emotes"]; got != [4]float64{0.25, 0.25, 0.5, 0.5} {
+		t.Errorf("migrated classic = %v, want [0.25 0.25 0.5 0.5]", got)
+	}
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]any
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := saved["layoutPresets"]; ok {
+		t.Error("layoutPresets written back after migration — the legacy key must stay retired")
+	}
+}
