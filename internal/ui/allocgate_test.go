@@ -4,7 +4,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"testing"
 )
@@ -79,7 +82,24 @@ func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 			lowest = n
 		}
 	}
+	dumpAllocDiagnostic(draw)
 	return lowest
+}
+
+// dumpAllocDiagnostic prints the goroutine stacks and the allocation sites seen
+// in a short burst of draw. It runs only when every one of a gate's windows
+// came back dirty, so a recurrence self-diagnoses: the goroutine dump names any
+// leaked worker, and the MemProfileRate=1 alloc profile names the allocating
+// line.
+func dumpAllocDiagnostic(draw func()) {
+	_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+	prev := runtime.MemProfileRate
+	runtime.MemProfileRate = 1
+	for i := 0; i < 10; i++ {
+		draw()
+	}
+	_ = pprof.Lookup("allocs").WriteTo(os.Stderr, 1)
+	runtime.MemProfileRate = prev
 }
 
 // allocGateSink keeps the contract tests' allocations escaping and alive.
