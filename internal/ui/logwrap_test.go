@@ -487,4 +487,3 @@ func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
 		}
 	}
 }
-
