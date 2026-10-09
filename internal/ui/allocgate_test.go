@@ -82,20 +82,30 @@ func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 			lowest = n
 		}
 	}
-	dumpAllocDiagnostic(draw)
 	return lowest
 }
 
+// gateZeroAlloc runs a zero-alloc draw gate: allocsPerFrame at budget 0, and on
+// a dirty window dumps the goroutine stacks and the allocation sites so a
+// recurrence names itself. The characterization tests (which intentionally
+// allocate) call allocsPerFrame directly and never reach the diagnostic.
+func gateZeroAlloc(draw func()) float64 {
+	n := allocsPerFrame(allocGateFrames, 0, draw)
+	if n != 0 {
+		dumpAllocDiagnostic(draw)
+	}
+	return n
+}
+
 // dumpAllocDiagnostic prints the goroutine stacks and the allocation sites seen
-// in a short burst of draw. It runs only when every one of a gate's windows
-// came back dirty, so a recurrence self-diagnoses: the goroutine dump names any
-// leaked worker, and the MemProfileRate=1 alloc profile names the allocating
-// line.
+// in a short burst of draw, so a recurrence self-diagnoses: the goroutine dump
+// names any leaked worker and the MemProfileRate=1 alloc profile names the
+// allocating line.
 func dumpAllocDiagnostic(draw func()) {
 	_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
 	prev := runtime.MemProfileRate
 	runtime.MemProfileRate = 1
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 3; i++ {
 		draw()
 	}
 	_ = pprof.Lookup("allocs").WriteTo(os.Stderr, 1)

@@ -289,7 +289,7 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 		t.Fatalf("a theme with no elements dispatched %d painter calls, want 0", len(seen))
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with NO elements allocates %.1f/op, want 0 — "+
 			"the element model is charging every install for a feature it does not use "+
 			"(fix the alloc, don't loosen the gate)", n)
@@ -352,7 +352,7 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 		}
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with %d elements allocates %.1f/op, want 0 — "+
 			"a painter is allocating per frame (fix the painter, don't shrink the fixture)", theme.ElementCap, n)
 	}
@@ -397,7 +397,7 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 	// b.N measures steady-state frames rather than the app warming up. The gates'
 	// own helper does the settling; its reading is what THEY assert on, and here
 	// only the warmed state it leaves behind matters.
-	allocsPerFrame(allocGateFrames, 0, draw)
+	gateZeroAlloc(draw)
 
 	b.ReportAllocs()
 	b.ResetTimer()
