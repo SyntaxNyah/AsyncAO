@@ -34,8 +34,13 @@ func testTabApp(t testing.TB) *App {
 	a.resetSessionState()
 	// Detailed transcript logging is ON by default, so any test that writes an IC
 	// message opens a transcript writer goroutine (transcriptFor). Join it here so
-	// the suite does not leak one goroutine per message-writing test.
+	// the suite does not leak one goroutine per message-writing test. A test that
+	// dials (connectWith) leaves a live protocol Conn — close it so its
+	// read/deliver/keepalive loops and the peer's websocket/handler all stop.
 	t.Cleanup(func() {
+		if a.conn != nil {
+			a.conn.Close()
+		}
 		a.CloseTranscript()
 		_ = prefs.Close()
 	})
