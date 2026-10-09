@@ -201,13 +201,8 @@ func (c *Client) SetAssetOrigin(origin string) {
 	c.assetOrigin.Store(&origin)
 }
 
-// NewClient builds a Client with the §7 transport tuning.
-func NewClient() *Client {
-	return newClient(DefaultRequestTimeout, NotFoundCacheTTL)
-}
-
-// NewClientNotFoundTTL is NewClient with a power-user negative-cache TTL (how
-// long a 404 stays "missing" before a re-probe is allowed; 0 = the default
+// NewClientNotFoundTTL is the boot-applied constructor: the negative-cache TTL
+// (how long a 404 stays "missing" before a re-probe is allowed; 0 = the default
 // NotFoundCacheTTL). BOOT-applied by design: the expirable LRU takes its TTL at
 // construction, and rebuilding it live would flush every cached 404 — the
 // Settings row says "applies on restart".

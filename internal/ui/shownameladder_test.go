@@ -449,7 +449,7 @@ func ladderHarness(t *testing.T) (*App, func()) {
 		cleanup()
 		t.Skipf("Ctx unavailable: %v", err)
 	}
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)

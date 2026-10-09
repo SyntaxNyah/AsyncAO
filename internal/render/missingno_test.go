@@ -41,7 +41,7 @@ func greenPage() *assets.Decoded {
 func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 func TestMissingnoNeverFlashesForPreanim(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

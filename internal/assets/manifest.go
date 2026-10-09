@@ -76,17 +76,6 @@ const bundledVanillaManifestJSON = `{
 // format profile (Settings → Assets).
 const BundledVanillaManifestJSON = bundledVanillaManifestJSON
 
-// BundledVanillaManifest returns the parsed official-vanilla default manifest,
-// used to seed a host that has no reachable extensions.json. Parsed fresh on
-// each (rare) call; the const is always valid so the error path can't trigger.
-func BundledVanillaManifest() *Manifest {
-	m, err := ParseManifest([]byte(bundledVanillaManifestJSON))
-	if err != nil {
-		return &Manifest{}
-	}
-	return m
-}
-
 // ParseManifest decodes and sanitizes extensions.json content.
 func ParseManifest(data []byte) (*Manifest, error) {
 	var m Manifest

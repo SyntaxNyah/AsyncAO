@@ -70,7 +70,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// that reads a.now()) are deterministic across the measured frames.
 	a.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
 
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)

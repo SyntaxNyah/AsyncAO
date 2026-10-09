@@ -76,7 +76,7 @@ func TestApplyPixelArt(t *testing.T) {
 func TestVariantPageInverts(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestEvictVariantPrefersPaint(t *testing.T) {
 func TestPaintPageBuildsAndCaches(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

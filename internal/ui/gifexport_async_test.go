@@ -219,7 +219,7 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
 	a.ctx.Ren = ren
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -332,7 +332,7 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 	ren, cleanup := newCaptureHarness(t)
 	t.Cleanup(cleanup)
 	a.ctx.Ren = ren
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}

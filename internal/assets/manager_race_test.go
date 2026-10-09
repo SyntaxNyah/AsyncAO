@@ -102,7 +102,7 @@ func TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets(t *testing
 		}
 	}
 	cs := newCountingServer(t, payloads)
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 
 	host := hostOf(cs.srv.URL + "/x")
 	// Seed the learned format once, mirroring the extensions.json manifest seed

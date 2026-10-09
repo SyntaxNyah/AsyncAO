@@ -12,7 +12,7 @@ import (
 func TestDepthOfFieldZeroAlloc(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

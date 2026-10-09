@@ -51,7 +51,7 @@ func packApp(t *testing.T, files map[string]string) *App {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClient(),
+		Source:   network.NewClientNotFoundTTL(0),
 		Pool:     pool,
 		Decoder:  decoder,
 	})

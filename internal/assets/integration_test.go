@@ -32,7 +32,7 @@ func TestPairedPrefetchResolvesConcurrently(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 
 	start := time.Now()
 	rig.manager.Prefetch(srv.URL+"/characters/phoenix/(a)normal", AssetTypeCharSprite, network.PriorityHigh)   // AssetType: CharSprite (speaker)
@@ -83,7 +83,7 @@ func TestProbeBudget200CharServer(t *testing.T) {
 		payloads["/background/courtroom/"+part+".webp"] = sprite
 	}
 	cs := newCountingServer(t, payloads)
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 
 	// Drain decoded assets concurrently, exactly like the real client's
 	// per-frame pump — the pipeline's bounded channels backpressure
@@ -150,7 +150,7 @@ func TestPrefetcherPredictsAlternatingSpeakers(t *testing.T) {
 		"/characters/maya/(a)normal.webp":    sprite,
 		"/characters/phoenix/(a)normal.webp": sprite,
 	})
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	pf := NewPrefetcher(func(char, emote string) {
 		if emote == "" {
 			emote = "normal"
