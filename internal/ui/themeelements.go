@@ -49,15 +49,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// bakedElementByteCeil bounds one baked entry, and through it the whole array:
-// theme.ElementCap (96) entries at this ceiling is ~12 KiB of App, a fixed
-// allocation that never grows and never churns. It is a NAMED ceiling rather than a
-// comment because the array is inline in themeLayoutCache — every byte added here is
-// multiplied by 96 and paid by every install, themed or not, so growing the baked
-// row has to be a decision somebody takes on purpose. Pinned by
-// TestBakedElementStaysSmall.
-const bakedElementByteCeil = 128
-
 // bakedEffect is an element's motion, resolved at bake time: the effect id plus its
 // two parameters. The RESOLVER that turns it into design §6.6 R2's
 // (offset, scale, alpha, rot, static) is resolveElementEffect (themeclock.go, W5);

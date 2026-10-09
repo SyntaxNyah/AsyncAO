@@ -2,6 +2,10 @@ package courtroom
 
 import "time"
 
+// PR NOTE: latency seam inert — the stamp source (Session.Ping / the checkconnection
+// arm) is unreachable in production, so latency stays 0 and clockLead returns 0.
+// Kept as canon-parity instrumentation; see 0e68a06.
+
 // This file owns ONE concern: how long a packet takes to reach us, and the half
 // of that the TI server clocks have to be corrected by.
 //
