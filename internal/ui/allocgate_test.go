@@ -71,6 +71,12 @@ const (
 // A non-zero return therefore means every one of allocGateWindows windows was
 // dirty, which is a per-frame cost and not a warm-up. Callers keep their own
 // failure messages: what they assert has not changed.
+//
+// BLIND SPOT: AllocsPerRun truncates its integer division, so any leak under one
+// allocation per frame reads 0 — an every-4th-frame alloc (0.25/op) or a
+// race-mode sync.Pool drop at ~25% passes forever. Only a constant ≥1-alloc/frame
+// cost is caught. Tightening to an exact runtime.MemStats count is a deliberate
+// decision, not made here.
 func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 	var lowest float64
 	for i := 0; i < allocGateWindows; i++ {

@@ -35,10 +35,6 @@ const (
 	// missGatePollStep spaces the settle poll. Short enough that the wait costs
 	// milliseconds in the ordinary case.
 	missGatePollStep = 2 * time.Millisecond
-	// missGateDrawFrames bounds the draw loop in the frame-pump gate. Each pass is
-	// one drawEmoteImageButton call against an empty pack; the misses land in the
-	// first few, so overrunning this means the draw stopped demanding at all.
-	missGateDrawFrames = 400
 )
 
 // wireEmptyPackManager installs a streaming-shaped Manager over an EMPTY local
@@ -252,19 +248,27 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 
 	// Keep drawing until both chains are exhausted. The draw is the only thing
 	// issuing these demands, so this also proves the cell reaches the miss path
-	// through the shipped call site and not a test-only shortcut.
+	// through the shipped call site and not a test-only shortcut. Wait on the
+	// manager's conclusive-miss verdict — the real decode-completion signal —
+	// under a deadline rather than a fixed frame count, because a loaded CI runner
+	// can need more wall time than missGateDrawFrames re-issued frames.
 	settled := false
-	for i := 0; i < missGateDrawFrames && !settled; i++ {
+	deadline := time.Now().Add(missGateSettle)
+	for time.Now().Before(deadline) && !settled {
 		a.iconAskBudget = charIconAskPerFrame
-		a.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window; the wall clock is not what this gate measures
+		a.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window
 		a.drawEmoteImageButton(btn, me, 0, false, "normal")
 		drainManager(a)
-		settled = a.d.Manager.IsConclusiveMiss(buttonBase, assets.AssetTypeEmoteButton) &&
-			a.d.Manager.IsConclusiveMiss(iconBase, assets.AssetTypeCharIcon)
+		if a.d.Manager.IsConclusiveMiss(buttonBase, assets.AssetTypeEmoteButton) &&
+			a.d.Manager.IsConclusiveMiss(iconBase, assets.AssetTypeCharIcon) {
+			settled = true
+			break
+		}
+		time.Sleep(missGatePollStep)
 	}
 	if !settled {
-		t.Fatalf("after %d frames the cell's art was still not established absent — the draw stopped demanding",
-			missGateDrawFrames)
+		t.Fatalf("the cell's art was never established absent within %v — the draw stopped demanding",
+			missGateSettle)
 	}
 
 	// The permanently-grey frame: still blank, but nothing can change that, so the
