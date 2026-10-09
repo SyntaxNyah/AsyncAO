@@ -25,7 +25,6 @@ func testTabApp(t testing.TB) *App {
 	if err != nil {
 		t.Fatalf("prefs: %v", err)
 	}
-	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{ctx: &Ctx{}, activeTab: -1}
 	a.d.Prefs = prefs
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
@@ -33,6 +32,13 @@ func testTabApp(t testing.TB) *App {
 	// behaviour without each one having to opt in.
 	a.d.Prefs.SetHotkeysEnabled(true)
 	a.resetSessionState()
+	// Detailed transcript logging is ON by default, so any test that writes an IC
+	// message opens a transcript writer goroutine (transcriptFor). Join it here so
+	// the suite does not leak one goroutine per message-writing test.
+	t.Cleanup(func() {
+		a.CloseTranscript()
+		_ = prefs.Close()
+	})
 	return a
 }
 
