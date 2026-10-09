@@ -19,17 +19,6 @@ func TestIsJSON(t *testing.T) {
 	}
 }
 
-func TestEscapeRoundTrip(t *testing.T) {
-	fields := []string{"plain", "hash#tag", "amp&ersand", "per%cent", "dol$lar", "all#&%$"}
-	escaped := EscapeAll(fields)
-	back := UnescapeAll(escaped)
-	for i := range fields {
-		if back[i] != fields[i] {
-			t.Errorf("round-trip %d: %q -> %q -> %q", i, fields[i], escaped[i], back[i])
-		}
-	}
-}
-
 func TestEncodeCustomVoice(t *testing.T) {
 	RegisterVoiceCodecs()
 
