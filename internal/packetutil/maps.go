@@ -43,24 +43,6 @@ func BoolToWire(b bool) string {
 // WireToBool decodes a "1"/"0" token to a boolean.
 func WireToBool(s string) bool { return s == "1" }
 
-// IntsToStrs maps an int slice to its decimal string form.
-func IntsToStrs(ns []int) []string {
-	out := make([]string, len(ns))
-	for i, n := range ns {
-		out[i] = strconv.Itoa(n)
-	}
-	return out
-}
-
-// StrsToInts maps a string slice to ints (lenient).
-func StrsToInts(ss []string) []int {
-	out := make([]int, len(ss))
-	for i, s := range ss {
-		out[i] = AtoiOrZero(s)
-	}
-	return out
-}
-
 // DeskModifierToWire maps a DeskModifier to its legacy wire integer.
 var DeskModifierToWire = map[aolib.DeskModifier]int{
 	aolib.DeskModifierHidden:                      0,

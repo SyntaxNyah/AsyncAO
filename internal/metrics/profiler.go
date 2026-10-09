@@ -4,7 +4,6 @@
 package metrics
 
 import (
-	"fmt"
 	"runtime/metrics"
 	"sync/atomic"
 	"time"
@@ -144,48 +143,3 @@ func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	return time.Duration(h.Buckets[len(h.Buckets)-1] * float64(time.Second))
 }
 
-// ColdLoad tracks the first load burst after connect for the §15 report
-// line: "Cold load: 87 ms, 212 probes, 3 misses".
-type ColdLoad struct {
-	start   time.Time
-	probes  atomic.Int64
-	misses  atomic.Int64
-	stopped atomic.Bool
-	took    atomic.Int64 // nanoseconds
-}
-
-// NewColdLoad starts timing now.
-func NewColdLoad() *ColdLoad {
-	return &ColdLoad{start: time.Now()}
-}
-
-// AddProbe counts one network probe (call from fetch instrumentation).
-func (c *ColdLoad) AddProbe() {
-	if !c.stopped.Load() {
-		c.probes.Add(1)
-	}
-}
-
-// AddMiss counts one all-formats-missing asset.
-func (c *ColdLoad) AddMiss() {
-	if !c.stopped.Load() {
-		c.misses.Add(1)
-	}
-}
-
-// Finish freezes the measurement (first fully-loaded frame).
-func (c *ColdLoad) Finish() {
-	if c.stopped.CompareAndSwap(false, true) {
-		c.took.Store(int64(time.Since(c.start)))
-	}
-}
-
-// Report renders the §15 line.
-func (c *ColdLoad) Report() string {
-	took := time.Duration(c.took.Load())
-	if !c.stopped.Load() {
-		took = time.Since(c.start)
-	}
-	return fmt.Sprintf("Cold load: %d ms, %d probes, %d misses",
-		took.Milliseconds(), c.probes.Load(), c.misses.Load())
-}

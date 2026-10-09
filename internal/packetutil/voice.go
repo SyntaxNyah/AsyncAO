@@ -146,10 +146,6 @@ func (p *VS_SPEAKToServer) Header() string { return "VS_SPEAK" }
 
 func (p *VS_SPEAKToServer) Args() []string { return []string{BoolToWire(p.On)} }
 
-func ParseVS_SPEAKToServer(body []string) (*VS_SPEAKToServer, error) {
-	return &VS_SPEAKToServer{On: WireToBool(GetStr(body, 0))}, nil
-}
-
 // VS_AUDIO relays one Opus frame to a peer (server→client).
 type VS_AUDIO struct {
 	FromUID int    `json:"fromUid"`
