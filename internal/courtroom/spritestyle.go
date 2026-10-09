@@ -579,11 +579,6 @@ func (s SpriteStyle) EncodeChangeMarker(prev SpriteStyle) string {
 	return "" // one inactive variant to another: no visible change, send nothing
 }
 
-// HasSpriteMarker reports whether text carries a sprite-style marker — used by the
-// recorder to tell a style UPDATE from a no-marker line that inherits the speaker's
-// last style (send-on-change), so it can keep recordings self-contained.
-func HasSpriteMarker(text string) bool { return hasMarker(text) }
-
 // hasMarker is a fast guard: the common message has no style, so the strip path
 // must not allocate or scan-rebuild when there's no sentinel present.
 func hasMarker(text string) bool {

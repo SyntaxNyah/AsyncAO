@@ -82,7 +82,9 @@ func (p WireProfile) payloadBytes() []byte {
 }
 
 // EncodeMarker returns the invisible zero-width run that carries this profile, to append
-// to an outgoing IC message. "" for an empty profile (nothing to send).
+// to an outgoing IC message. "" for an empty profile (nothing to send). TEST-SUPPORT in
+// production terms: the live send path uses EncodeChangeMarker (send-on-change), while
+// this always-builder stages a marker for the codec tests in both packages.
 func (p WireProfile) EncodeMarker() string {
 	if p.Empty() {
 		return ""
