@@ -1573,25 +1573,6 @@ func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 	s.reply(protocol.NewPacket("MC", fields...))
 }
 
-// Ping sends the CH keepalive AO2-Client fires every 45 s
-// (courtroom.cpp keepalive_timer → ping_server). Servers idle-kick
-// silent clients; without this, sitting minimized (no chat traffic)
-// got the connection dropped.
-//
-// NO PRODUCTION CALLER. The minimized case is exactly the one a render-loop
-// ping loses, so the app moved the keepalive off this thread: internal/ui hands
-// KeepalivePacket to Conn.SetKeepalive and internal/protocol's goroutine writes
-// it (ui/app.go:4187, ui/app.go:4669, ui/tabs.go:540). What survives here is the
-// reply-side wire shape plus the CHECK timing pair, both driven by tests — see
-// latency.go, "the missing call site", for why that leaves the TI correction
-// inert.
-func (s *Session) Ping() {
-	s.reply(protocol.NewTypedPacket(&aolib.CH{CharID: s.MyCharID}))
-	// AO2's ping_server does exactly this pairing: send CH, start the timer the
-	// CHECK reply stops (courtroom.cpp:6637-6653).
-	s.stampPing()
-}
-
 // KeepalivePacket returns the CH keepalive as a wire string for the connection's
 // background keepalive goroutine (Conn.SetKeepalive), which sends it off the render
 // loop so it keeps firing while the window is minimized. Built here so it carries

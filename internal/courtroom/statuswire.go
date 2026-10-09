@@ -60,12 +60,6 @@ func DecodeStatusMarker(text string) (Status, bool) {
 	return StatusNone, false
 }
 
-// HasStatusMarker reports whether text carries a status frame specifically.
-func HasStatusMarker(text string) bool {
-	_, ok := DecodeStatusMarker(text)
-	return ok
-}
-
 // --- per-character status memory (send-on-change) ----------------------------
 
 // maxRememberedStatuses bounds the per-character status memory (hard rule §17.4). A

@@ -122,12 +122,6 @@ func DecodeProfileMarker(text string) (WireProfile, bool) {
 	return WireProfile{}, false
 }
 
-// HasProfileMarker reports whether text carries a profile frame specifically.
-func HasProfileMarker(text string) bool {
-	_, ok := DecodeProfileMarker(text)
-	return ok
-}
-
 // --- per-character profile memory (send-on-change) ---------------------------
 
 // maxRememberedProfiles bounds the per-character profile memory (#101, hard rule §17.4)

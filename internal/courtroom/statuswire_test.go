@@ -60,7 +60,7 @@ func TestStatusCoexist(t *testing.T) {
 	if HasStyleMarker(sOnly) {
 		t.Error("a status-only message falsely reported a style marker")
 	}
-	if HasProfileMarker(sOnly) {
+	if _, ok := DecodeProfileMarker(sOnly); ok {
 		t.Error("a status-only message falsely reported a profile marker")
 	}
 }

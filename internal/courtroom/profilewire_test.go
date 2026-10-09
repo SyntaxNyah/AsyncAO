@@ -93,7 +93,7 @@ func TestProfileStyleCoexist(t *testing.T) {
 
 	// A style-ONLY message: not a profile.
 	sOnly := "x" + style.EncodeMarker()
-	if HasProfileMarker(sOnly) {
+	if _, ok := DecodeProfileMarker(sOnly); ok {
 		t.Error("a style-only message falsely reported a profile")
 	}
 }

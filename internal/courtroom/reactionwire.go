@@ -140,10 +140,3 @@ func DecodeReactionMarker(text string) (WireReaction, bool) {
 	}
 	return WireReaction{}, false
 }
-
-// HasReactionMarker reports whether text carries a reaction frame specifically (used by the
-// recorder, so a reaction-only line is told apart from a no-marker line).
-func HasReactionMarker(text string) bool {
-	_, ok := DecodeReactionMarker(text)
-	return ok
-}
