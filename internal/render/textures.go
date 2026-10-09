@@ -353,14 +353,10 @@ func (s *TextureStore) clearFailed(base string) {
 	s.failedMu.Unlock()
 }
 
-// NewTextureStore builds T1 over the given renderer at the default budget.
-func NewTextureStore(ren *sdl.Renderer) (*TextureStore, error) {
-	return NewTextureStoreBudget(ren, int64(T1BudgetBytes))
-}
-
-// NewTextureStoreBudget is NewTextureStore with a power-user T1 byte budget
-// (≤ 0 = the default). BOOT-applied by design: resizing a live LRU would be an
-// eviction storm mid-session — the Settings row says "applies on restart".
+// NewTextureStoreBudget builds T1 over the given renderer at a power-user T1
+// byte budget (≤ 0 = the default). BOOT-applied by design: resizing a live LRU
+// would be an eviction storm mid-session — the Settings row says "applies on
+// restart".
 func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore, error) {
 	if budgetBytes <= 0 {
 		budgetBytes = int64(T1BudgetBytes)

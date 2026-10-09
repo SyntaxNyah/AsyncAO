@@ -508,7 +508,7 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 	if err != nil {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}

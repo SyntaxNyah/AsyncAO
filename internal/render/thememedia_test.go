@@ -202,7 +202,7 @@ func TestThemeMediaKeysAreThemeNamespaced(t *testing.T) {
 func TestUploadPinnedRejectsThemeMediaPrefixes(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestUploadPinnedRejectsThemeMediaPrefixes(t *testing.T) {
 func TestThemeMediaAdmissionIsBounded(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestThemeMediaAdmissionIsBounded(t *testing.T) {
 func TestThemeMediaOneItemCannotEatTheBudget(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestThemeMediaAdmissionByteTotalIsOrderIndependent(t *testing.T) {
 	const budgetMiB = 64
 
 	admit := func(order []int) (map[string]bool, int64) {
-		store, err := NewTextureStore(ren)
+		store, err := NewTextureStoreBudget(ren, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -433,7 +433,7 @@ func TestThemeMediaAdmissionByteTotalIsOrderIndependent(t *testing.T) {
 func TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

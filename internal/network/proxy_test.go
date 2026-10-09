@@ -29,7 +29,7 @@ func withProxyFor(t *testing.T, host string) {
 // their proxy (that path inherits http.DefaultTransport) and then streamed every
 // asset around it.
 func TestAssetTransportCarriesTheProxy(t *testing.T) {
-	c := NewClient()
+	c := NewClientNotFoundTTL(0)
 	tr, ok := c.httpClient.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("asset client transport is %T, want *http.Transport", c.httpClient.Transport)
@@ -54,7 +54,7 @@ func TestAssetTransportCarriesTheProxy(t *testing.T) {
 // name the user routed through a proxy in order not to disclose.
 func TestPreResolveSkipsProxiedHosts(t *testing.T) {
 	withProxyFor(t, "localhost")
-	c := NewClient()
+	c := NewClientNotFoundTTL(0)
 	c.PreResolve(context.Background(), "localhost")
 	if addrs, _, found := c.dns.lookup("localhost"); found {
 		t.Errorf("pre-resolved a PROXIED host to %v — the origin's name must not reach the local resolver", addrs)
@@ -66,7 +66,7 @@ func TestPreResolveSkipsProxiedHosts(t *testing.T) {
 // probe after connect from paying a DNS round-trip.
 func TestPreResolveStillWarmsDirectHosts(t *testing.T) {
 	withProxyFor(t, "somewhere.else.invalid")
-	c := NewClient()
+	c := NewClientNotFoundTTL(0)
 	c.PreResolve(context.Background(), "localhost")
 	if _, _, found := c.dns.lookup("localhost"); !found {
 		t.Skip("localhost did not resolve in this environment")

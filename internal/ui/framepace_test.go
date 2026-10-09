@@ -251,7 +251,7 @@ func TestTalkBudget(t *testing.T) {
 func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -317,7 +317,7 @@ func animSpeaker(t *testing.T, store *render.TextureStore, a *App, base string, 
 func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}

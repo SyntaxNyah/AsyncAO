@@ -55,7 +55,7 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
 	a.ctx = ctx
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -82,7 +82,7 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClient(), // stream over HTTP: every request 404s (the all-404 origin)
+		Source:   network.NewClientNotFoundTTL(0), // stream over HTTP: every request 404s (the all-404 origin)
 		Pool:     pool,
 		Decoder:  decoder,
 	})

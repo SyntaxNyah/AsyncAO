@@ -24,7 +24,7 @@ func TestKeepSceneAssetsWarm(t *testing.T) {
 
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 	a := testTabApp(t)
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestHealSceneryFutilityLatch(t *testing.T) {
 	a := testTabApp(t)
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestSceneHealBudget(t *testing.T) {
 	// (the nil Manager is the tripwire).
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	a := testTabApp(t)
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}

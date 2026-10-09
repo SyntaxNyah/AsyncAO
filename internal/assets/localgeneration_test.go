@@ -81,7 +81,7 @@ func TestRetiredMountOriginsStayServable(t *testing.T) {
 // leak, and the OLDEST generations are the ones that fall off (rule §17.4).
 func TestRetiredMountOriginsAreBounded(t *testing.T) {
 	const rel = "background/gs4/defenseempty.webp"
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 
 	// One more generation than the cap can hold, plus the live overlay.
 	total := localOriginHistoryCap + 2
@@ -124,7 +124,7 @@ func TestRetiredMountOriginsAreBounded(t *testing.T) {
 func TestRePushingTheSameMountSetRetiresNothing(t *testing.T) {
 	const rel = "sounds/general/sfx-realization.opus"
 	mount := mountWith(t, rel, "SFX")
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 
 	first := NewLocalFetcher([]string{mount})
 	rig.manager.SetLocalOverlay(first)
@@ -148,7 +148,7 @@ func TestRePushingTheSameMountSetRetiresNothing(t *testing.T) {
 func TestClearingTheOverlayKeepsThePreviousGenerationServable(t *testing.T) {
 	const rel = "characters/Edgeworth/(a)normal.webp"
 	lf := NewLocalFetcher([]string{mountWith(t, rel, "ART")})
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(lf)
 	rig.manager.SetLocalOverlay(nil)
 

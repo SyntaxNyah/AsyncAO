@@ -115,7 +115,7 @@ func TestRemoveWhereNilPredicateIsSafe(t *testing.T) {
 func packStore(t *testing.T) (*TextureStore, func()) {
 	t.Helper()
 	ren, cleanup := newHeadlessRenderer(t)
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Fatal(err)

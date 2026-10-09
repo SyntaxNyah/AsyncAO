@@ -37,7 +37,7 @@ func TestMP3MusicFetchesExactlyTheURLItWasGiven(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	url := srv.URL + "/sounds/music/cornered.mp3"
 	rig.manager.PrefetchExact(url, AssetTypeMusic, network.PriorityHigh) // AssetType: Music (Exact)
 

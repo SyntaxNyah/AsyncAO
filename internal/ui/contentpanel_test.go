@@ -300,7 +300,7 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 // for the inline base-setup flow ("Local base" works while streaming).
 func streamingProbeApp(t *testing.T) *App {
 	t.Helper()
-	return headlessProbeApp(t, network.NewClient(), false)
+	return headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
 }
 
 // writeDemoFile writes a minimal .demo (SC + one MS) under a temp dir and returns

@@ -59,7 +59,7 @@ func TestSplashFitRectKeepsTheAspectAndCentres(t *testing.T) {
 	t.Run("the blit never leaves the stage", func(t *testing.T) {
 		ren, cleanup := newHeadlessRenderer(t)
 		defer cleanup()
-		store, err := NewTextureStore(ren)
+		store, err := NewTextureStoreBudget(ren, 0)
 		if err != nil {
 			t.Skipf("texture store unavailable: %v", err)
 		}

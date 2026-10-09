@@ -35,7 +35,7 @@ func TestStreamingManagerLocalOverlayServes(t *testing.T) {
 	overlay := NewLocalFetcher([]string{mount})
 
 	// Streaming rig: the source is a real network client, NOT a LocalFetcher.
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(overlay)
 
 	url := overlay.BaseURL() + "characters/phoenix/(a)normal.png"
@@ -55,7 +55,7 @@ func TestStreamingManagerLocalOverlayServes(t *testing.T) {
 func TestStreamingManagerLocalOverlay404Conclusive(t *testing.T) {
 	mount := t.TempDir() // empty: every relative path is absent
 	overlay := NewLocalFetcher([]string{mount})
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(overlay)
 
 	url := overlay.BaseURL() + "characters/nobody/(a)normal.png"
@@ -72,7 +72,7 @@ func TestStreamingManagerLocalOverlay404Conclusive(t *testing.T) {
 // treat as unreachable, never as "the asset is absent" (which would make every
 // asset falsely [missing]).
 func TestStreamingManagerNilOverlayCannotServe(t *testing.T) {
-	rig := newRig(t, network.NewClient(), false) // no SetLocalOverlay
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false) // no SetLocalOverlay
 
 	url := LocalScheme + "m-deadbeef/characters/phoenix/(a)normal.png"
 	_, err := rig.manager.FetchRaw(context.Background(), url)
@@ -99,7 +99,7 @@ func TestStreamingManagerLocalOverlaySkipsDisk(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/miles/(a)normal.png": []byte("NETBYTES"),
 	})
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(overlay)
 
 	localURL := overlay.BaseURL() + "characters/phoenix/(a)normal.png"
@@ -132,7 +132,7 @@ func TestStreamingManagerOverlayOfflineStillServes(t *testing.T) {
 	mount := t.TempDir()
 	seedOverlayMount(t, mount, "background/court/defenseempty.png", []byte("BGBYTES"))
 	overlay := NewLocalFetcher([]string{mount})
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(overlay)
 	rig.manager.SetOffline(true) // rehearsal: no network egress
 
@@ -160,7 +160,7 @@ func TestLocalOverlaySwapDuringFetchesRaceClean(t *testing.T) {
 	ovA := NewLocalFetcher([]string{mountA})
 	ovB := NewLocalFetcher([]string{mountB})
 
-	rig := newRig(t, network.NewClient(), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
 	rig.manager.SetLocalOverlay(ovA)
 
 	stop := make(chan struct{})
@@ -320,7 +320,7 @@ func TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder(t *testing.T) {
 func TestUnknownLocalOriginIsNotServedByAMismatchedOverlay(t *testing.T) {
 	mount := t.TempDir()
 	seedOverlayMount(t, mount, "characters/phoenix/(a)normal.png", []byte("MINE"))
-	rig := newRig(t, network.NewClient(), false) // STREAMING
+	rig := newRig(t, network.NewClientNotFoundTTL(0), false) // STREAMING
 	rig.manager.SetLocalOverlay(NewLocalFetcher([]string{mount}))
 
 	foreign := LocalScheme + "m-deadbeef/characters/phoenix/(a)normal.png"

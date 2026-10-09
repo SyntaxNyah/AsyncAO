@@ -427,7 +427,7 @@ func TestNoOverlayFrameIsByteIdentical(t *testing.T) {
 func TestOverlayDrawZeroAlloc(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatalf("texture store: %v", err)
 	}
@@ -498,7 +498,7 @@ func opaqueDecoded(w, h int) *assets.Decoded {
 func TestOverlayIsClippedToTheStage(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatalf("texture store: %v", err)
 	}

@@ -95,7 +95,7 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	// learned format (what a real extensions.json / a prior learned hit provides).
 	resolver.RecordSuccess(assets.HostOf(base), assets.AssetTypeCharSprite, config.ExtPNG)
 
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +136,8 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	}))
 	defer srvCorrupt.Close()
 
-	mgr, _ := buildPumpManager(t, network.NewClient(), false)
-	store, err := NewTextureStore(ren)
+	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0), false)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

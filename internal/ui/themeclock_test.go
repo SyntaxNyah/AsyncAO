@@ -87,7 +87,7 @@ func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 func fxTestStore(t *testing.T) *render.TextureStore {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)
