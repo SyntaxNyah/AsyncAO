@@ -183,25 +183,24 @@ func TestDisplayLanesStripTheZeroWidthSidechannel(t *testing.T) {
 		Message:  body + marker,
 	}
 
-	// icLogLineDisplay is the formatter the LIVE IC log actually calls (app.go, the
-	// EventMessage branch), and its friend-nick arm hand-builds the line instead of
-	// delegating to icLogLine — so it is a second, separate place the strip has to
-	// happen and the only one the running client uses. Both of its arms are driven.
-	nickLine, nickSpeaker := icLogLineDisplay(m, false, "Ace", nil)
-	plainLine, plainSpeaker := icLogLineDisplay(m, false, "", nil)
+	// icLogEntry is the formatter the LIVE IC log actually calls (app.go, the
+	// EventMessage branch), and its friend-nick arm hand-builds the line. Both of
+	// its arms are driven.
+	nickLine, nickSpeaker, _, _ := icLogEntry(m, false, "Ace", nil)
+	plainLine, plainSpeaker, _, _ := icLogEntry(m, false, "", nil)
 	if nickSpeaker != "Nick" || plainSpeaker != "Nick" {
-		t.Errorf("icLogLineDisplay speaker = %q / %q, want %q both — the speaker field is the real identity, not the nickname", nickSpeaker, plainSpeaker, "Nick")
+		t.Errorf("icLogEntry speaker = %q / %q, want %q both — the speaker field is the real identity, not the nickname", nickSpeaker, plainSpeaker, "Nick")
 	}
 
+	styledBody, _ := icBodyStyled(m)
 	cases := []struct {
 		name string
 		got  string
 		want string
 	}{
-		{"icMessageBody", icMessageBody(m), body},
-		{"icLogLine", icLogLine(m, false, nil), "Nick: " + body},
-		{"icLogLineDisplay (nick arm)", nickLine, "Ace (Nick): " + body},
-		{"icLogLineDisplay (plain arm)", plainLine, "Nick: " + body},
+		{"icBodyStyled", styledBody, body},
+		{"icLogEntry (nick arm)", nickLine, "Ace (Nick): " + body},
+		{"icLogEntry (plain arm)", plainLine, "Nick: " + body},
 		// capLogLine is the chokepoint every STORED icEntry.text passes through
 		// (pushIC for the active tab, routeBackgroundEvent for a parked one). Driven
 		// with a line that was never formatted, which is what an unremembered future
@@ -221,8 +220,8 @@ func TestDisplayLanesStripTheZeroWidthSidechannel(t *testing.T) {
 	// A message with no marker must come back untouched — the strip is a no-op on the
 	// overwhelmingly common line, not a reformatter.
 	plain := &protocol.ChatMessage{CharName: "Phoenix", Showname: "Nick", Message: body}
-	if got := icMessageBody(plain); got != body {
-		t.Errorf("icMessageBody mangled an unmarked message: %q, want %q", got, body)
+	if got, _ := icBodyStyled(plain); got != body {
+		t.Errorf("icBodyStyled mangled an unmarked message: %q, want %q", got, body)
 	}
 }
 
@@ -244,7 +243,7 @@ func TestEveryDisplayLaneStripsTheSidechannel(t *testing.T) {
 	lanes := []struct {
 		file, fn, callee, why string
 	}{
-		{"app.go", "icMessageBody", "StripSpriteStyle", "the IC log's body for the active tab"},
+		{"app.go", "icBodyStyled", "StripSpriteStyle", "the IC log's body for the active tab"},
 		{"app.go", "capLogLine", "stripDisplayTail", "the chokepoint every STORED icEntry.text passes through"},
 		{"app.go", "pushOOC", "stripDisplayTail", "the OOC panel, which AsyncAO's own DMs ride on"},
 		{"tabs.go", "routeBackgroundEvent", "stripDisplayTail", "a PARKED tab's OOC log, which does not go through pushOOC"},
@@ -296,7 +295,7 @@ func TestEveryDisplayLaneStripsTheSidechannel(t *testing.T) {
 	// the string, and an AST name match cannot tell those two apart. Requiring the value
 	// to pass through a strip-bearing formatter cannot be satisfied by moving the read
 	// out of sight, and cannot misfire on CharName.
-	sanctioned := []string{"capLogLine", "icLogLine", "icLogLineDisplay", "icMessageBody", "StripSpriteStyle", "stripDisplayTail"}
+	sanctioned := []string{"capLogLine", "icLogEntry", "icBodyStyled", "StripSpriteStyle", "stripDisplayTail"}
 	textIdx := icEntryTextIndex(t)
 	sites := 0
 	packageFuncs(t, func(file, fn string, fnBody *ast.BlockStmt) {
@@ -326,7 +325,7 @@ func TestEveryDisplayLaneStripsTheSidechannel(t *testing.T) {
 // routedThrough reports that val reaches its icEntry.text slot via one of the named
 // formatters, accepting the two idioms this package actually uses:
 //
-//	INLINE  text: capLogLine(icLogLine(...), speaker)   — tabs.go's parked-tab write
+//	INLINE  text: capLogLine(icLogEntry(...), speaker)   — tabs.go's parked-tab write
 //	REBIND  line = capLogLine(line, speaker) … text: line — app.go's pushIC
 //
 // The rebind form exists because pushIC has to describe the STORED text afterwards

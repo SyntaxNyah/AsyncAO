@@ -5395,42 +5395,12 @@ func icLogEntry(m *protocol.ChatMessage, forceChar bool, nick string, ini courtr
 	return head + body, speaker, utf8.RuneCountInString(head), styles
 }
 
-func icLogLine(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
-	line, _, _, _ := icLogEntry(m, forceChar, "", ini)
-	return line
-}
-
-// icMessageBody is an IC message's display text for the log: the zero-width sidechannel
-// dropped, markup stripped (no raw \cN / { }) and known :shortcode: inline emotes (#18)
-// expanded to their emoji — the same expansion the live chatbox does
-// (Courtroom.InlineEmote), so the log and the box agree.
-//
-// StripSpriteStyle FIRST, and it is not optional. AsyncAO transmits sprite styles,
-// profiles, reactions and status over an invisible run of zero-width runes appended to
-// the IC body (courtroom/spritestyle.go), and the receiver deliberately leaves
-// msg.Message literal so a recording replays the same marker — the chatbox reads a
-// separately-decoded clean lane (Courtroom.currentText) instead. This is the log's copy
-// of that lane, and it was missing: the codec runes reached the log verbatim, where they
-// counted against the line cap, rode into the clipboard and the URL scan, and — the
-// visible symptom — walked the whole row's font pick off the primary face, so an
-// occasional line drew in a stray family. Only style-CHANGE messages carry a marker,
-// which is why it was only ever an occasional line. Zero-alloc when absent (one
-// ContainsRune), so an ordinary message pays nothing.
-// icMessageBody is an IC message's display text for the log: the zero-width
-// sidechannel dropped, markup stripped (no raw \cN / { }) and known :shortcode:
-// inline emotes (#18) expanded to their emoji — the same expansion the live
-// chatbox does, so the log and the box agree. StripSpriteStyle is called directly
-// here (not via icBodyStyled) because the sidechannel gate pins that seam.
-func icMessageBody(m *protocol.ChatMessage) string {
-	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(courtroom.StripSpriteStyle(m.Message)), inlineEmoteFor)
-}
-
 // icBodyStyled returns an IC message's display body and its inline-colour style
-// runs over that body — the styled twin of icMessageBody. Emoji are expanded first
+// runs over that body. Emoji are expanded first
 // (the transform commutes with markup stripping: emoji colons are not markup runes
 // and vice versa), then the typewriter strips the markup and records the colour
 // runs in one tested pass (the SAME parser the chatbox uses). The clean text is
-// identical to icMessageBody's; styles is a single default run for a plain message.
+// identical to the unstyled body's; styles is a single default run for a plain message.
 func icBodyStyled(m *protocol.ChatMessage) (string, []courtroom.StyleRun) {
 	raw := courtroom.ExpandInlineEmotes(courtroom.StripSpriteStyle(m.Message), inlineEmoteFor)
 	tw := courtroom.NewTypewriter()
@@ -5475,16 +5445,6 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 	}
 	_, _, nick := a.d.Prefs.ServerFriendInfo(a.serverKey, name)
 	return nick
-}
-
-// icLogLineDisplay builds the IC log line text and its speaker field. When a
-// friend has a nickname AND we're not in force-char (anti-impersonation) mode,
-// the line reads "nick (showname): msg" so you see your own label for them — but
-// the SPEAKER field stays the REAL name, so double-click-to-pair (UID lookup) and
-// the per-speaker colour still key off the true identity. Pure, for testing.
-func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string, ini courtroom.IniShowname) (line, speaker string) {
-	line, speaker, _, _ = icLogEntry(m, force, nick, ini)
-	return line, speaker
 }
 
 // installAssetOrigin points this session's URL builder at origin — the ONE
@@ -11344,7 +11304,7 @@ func appendCapped(list []string, line string, cap int) []string {
 
 // speakerHeadLen is the byte length of the "<speaker>: " head a composed log line
 // opens with, or 0 when there is none (a system line with no speaker, or a line the
-// speaker does not appear in). icLogLineDisplay's nick arm writes "Ace (Nick): …",
+// speaker does not appear in). icLogEntry's nick arm writes "Ace (Nick): …",
 // where the speaker sits INSIDE the head, so the name is located by index rather
 // than assumed to start at 0.
 func speakerHeadLen(line, speaker string) int {
