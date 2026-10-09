@@ -300,14 +300,3 @@ func chromeRowLineBudget(h, maxLines int32) int32 {
 	}
 	return n
 }
-
-// chromeRowBody is the block body left UNDER a plan. A plan that placed nothing hands
-// the whole block back rather than reserving room for a row that did not draw.
-func chromeRowBody(block sdl.Rect, p *chromeRowPlan) sdl.Rect {
-	if p == nil || p.n == 0 {
-		return block
-	}
-	block.Y += p.h
-	block.H -= p.h
-	return block
-}

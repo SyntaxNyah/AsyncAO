@@ -428,10 +428,6 @@ func slotResizeEdges(name string) uint8 {
 	}
 }
 
-// slotResizable reports whether a slot honours ANY resize edge (label + handle
-// gating; the per-edge mask above does the precise work).
-func slotResizable(name string) bool { return slotResizeEdges(name) != 0 }
-
 // pickResizeSlot chooses which slot a resize grip at (mx,my) targets. It RESPECTS the
 // hovered box — the same box move would act on (the highlighted, Tab-selectable one) —
 // so "if I can move it, I can resize it": resize the hovered box when it's resizable
