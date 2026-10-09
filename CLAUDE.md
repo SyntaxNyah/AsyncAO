@@ -39,32 +39,16 @@ add TCP framing back.
 8. **Race-detector clean.** `go test -race ./...` must pass before any commit.
 9. **No magic numbers.** Every constant is named and commented.
 10. **No push, no PRs from automation.** Local commits only; the user pushes.
-11. **Structural changes are analysed against the common OO design
-    principles, in Go terms, and every new seam ships encapsulation tests.**
-    The implementer's report names each principle and either passes it or
-    justifies the deviation:
-    - *Single responsibility* — one concern per type/file; a file that
-      needs "and" in its one-line description is two files.
-    - *Open–closed* — what the seam is OPEN to (name the concrete future
-      call sites) and CLOSED against (unchanged test expectations are the
-      evidence; a rewritten assertion is a behavior change until proven
-      otherwise).
-    - *Substitutability* — anything satisfying an interface honours the
-      full contract its consumers assume, including the undocumented parts
-      a test pins.
-    - *Interface segregation* — interfaces are consumer-defined and
-      minimal; a fat interface is a dependency magnet.
-    - *Dependency direction* — imports point at abstractions; a package
-      never reaches into a sibling's internals or re-implements them.
-    Encapsulation tests are a GENERAL requirement — every new abstraction
-    in any package, feature and refactor alike: constructing or driving it
-    outside the sanctioned path must not compile or must fail loudly, and
-    a test must prove the seam cannot be bypassed or deleted while the
-    suite stays green. Mirror-tests that re-implement the seam's logic
-    instead of driving it do not count — the sidecar `[overrides]` tier
-    shipped parsed-but-never-applied through four waves behind exactly such
-    a mirror; `TestThemeApplyRunsTheOverridesTier` is the model for what
-    does count.
+11. **Tests prove behaviour through the public API.** No `go/ast` or
+    source-scanning tests: a test that parses this package's own files to
+    pin where, or in what order, production code calls something is pinning
+    implementation, not behaviour, and is rejected. Seams are enforced by
+    construction — package boundaries (`internal/`), unexported types, and
+    compile-time checks (`var _ I = (*T)(nil)`) — never by a test that
+    parses source. A structural change's report states which responsibility
+    the change moves and which way dependencies point. No comment cites a
+    test file by name; such a citation rots and is deleted with the test it
+    points at.
 
 ## Build & test commands (Windows dev box)
 
