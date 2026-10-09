@@ -311,7 +311,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   char grid's ~1200 labels cost a handful of binds instead of 1200.
 - **Frame pacing**: dt clamp after stalls + a 144 Hz zero-missed-reveal
   typewriter gate in CI.
-- See docs/PERFORMANCE-ROADMAP.md for designs and measurements.
 
 ## Themes
 
