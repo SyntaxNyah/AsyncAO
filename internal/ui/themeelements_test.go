@@ -582,6 +582,14 @@ func TestEveryElementKindHasAPainter(t *testing.T) {
 // Gate 6 — the baked row stays small
 // ---------------------------------------------------------------------------
 
+// bakedElementByteCeil is TEST-ONLY (moved here from themeelements.go), pinned by
+// TestBakedElementStaysSmall below. It bounds ONE bakedElement's INLINE footprint —
+// the fixed struct bytes every install pays × theme.ElementCap — NOT its variable
+// data: bakedElement carries a `label string` (heap-backed text) and a
+// `page *render.TexturePage` (heap-backed art), so unsafe.Sizeof sees only the
+// 16-byte string header and the 8-byte pointer, never the bytes they point at.
+const bakedElementByteCeil = 128
+
 // TestBakedElementStaysSmall pins the memory the model costs every install.
 //
 // The baked array is INLINE in themeLayoutCache, which is a field on App, so its
