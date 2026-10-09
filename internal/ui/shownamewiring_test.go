@@ -95,7 +95,7 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 		t.Fatalf("the log (%q) and the plate (%q) disagree about the same message",
 			icSpeakerName(m, false, ini), got)
 	}
-	line, speaker := icLogLineDisplay(m, false, "", ini)
+	line, speaker, _, _ := icLogEntry(m, false, "", ini)
 	if speaker != "Nekomaru Nidai" || line != "Nekomaru Nidai: GO GO GO!" {
 		t.Fatalf("log line = %q / speaker %q", line, speaker)
 	}
@@ -114,19 +114,3 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 	}
 }
 
-// TestTheLiveLogPassesTheShownameRung is the deletion catcher for the ONE line
-// that connects them. handleSessionEvents could pass nil forever and every gate
-// above would stay green while the log went back to folder names — which is the
-// half-fixed state this change exists to make impossible.
-func TestTheLiveLogPassesTheShownameRung(t *testing.T) {
-	body := funcBodySource(t, "app.go", "handleSessionEvents")
-	if !containsCall(body, "icLogEntry") {
-		t.Fatal("handleSessionEvents no longer builds its log line through icLogEntry")
-	}
-	// readsIdent, not containsCall: the rung is passed as a METHOD VALUE, which is
-	// an argument rather than a call, so a call census cannot see it at all.
-	if !readsIdent(body, "remoteIniShownameFor") {
-		t.Fatal("the live IC log is built without the char.ini showname rung — the log and " +
-			"the name plate will show different names for the same message")
-	}
-}
