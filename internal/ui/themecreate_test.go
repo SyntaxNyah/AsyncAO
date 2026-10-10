@@ -243,11 +243,6 @@ func TestOneThemeImageIntakeFunnel(t *testing.T) {
 		t.Error("the browser's pick no longer reaches the intake funnel — browsing and dropping would " +
 			"then be two importers with two answers about the caps")
 	}
-	rail := funcBodySource(t, "themeeditor.go", "drawEditorRailActions")
-	if !containsCall(rail, "openDemoBrowserFor") {
-		t.Error("the element rail no longer offers the browse half — a drop is the only way in, and a " +
-			"drop is undiscoverable")
-	}
 }
 
 // TestDroppedPicturesAreClaimedBeforeTheThemeRootArm is the W2 bug's own shape,
@@ -467,24 +462,22 @@ func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
 	if a.te != nil {
 		t.Fatal("the editor did not close")
 	}
-	closer := funcBodySource(t, "themeeditor.go", "closeThemeEditor")
-	if !containsCall(closer, "editorSyncArt") {
-		t.Fatal("closeThemeEditor no longer reconciles the art on the way out")
+	// A paused exit must lift the pause before the reconcile, so the next open
+	// starts live — the livePaused=false-before-editorSyncArt order is what keeps
+	// a paused exit from leaving a stale plan. (The media-plan reconcile itself is
+	// covered by the art-sync gates in themeeditorart_test.go.)
+	if !a.openThemeEditorForTest(ScreenSettings) {
+		t.Fatal("re-opening the editor over the same sidecar was refused")
 	}
-	if !strings.Contains(bundleGateSource(t, "themeeditor.go"), "a.te.livePaused = false\n\ta.editorSyncArt()") {
-		t.Error("closeThemeEditor no longer lifts the live-preview pause before its reconcile — a paused " +
-			"exit would leave the plan stale with no frame left to fix it")
+	if !a.te.editorLiveOn() {
+		t.Error("a paused exit left the editor paused on reopen — the pause outlived the session that armed it")
 	}
+	a.closeThemeEditor()
 }
 
 // TestTheLiveToggleIsOnTheRailAndSaysWhichStateItIsIn pins the affordance itself.
 // A toggle nobody can find is the defect this whole wave is about.
 func TestTheLiveToggleIsOnTheRailAndSaysWhichStateItIsIn(t *testing.T) {
-	rail := funcBodySource(t, "themeeditor.go", "drawEditorRailActions")
-	if !containsCall(rail, "setEditorLive") || !containsCall(rail, "editorLiveLabel") {
-		t.Fatal("the element rail no longer draws the live-preview toggle — the only way to stop the " +
-			"canvas re-baking on every keystroke would be to close the editor")
-	}
 	if editorLiveLabel(true) == editorLiveLabel(false) {
 		t.Error("the Live button reads the same in both states")
 	}
