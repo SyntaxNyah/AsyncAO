@@ -254,7 +254,8 @@ func SessionLabel(file string) string {
 	return name
 }
 
-func TruncateRunes(s string, max int) string {
+// truncateRunes caps s at max runes, appending "…" when it cut. Pure.
+func truncateRunes(s string, max int) string {
 	if max <= 0 {
 		return s
 	}
@@ -316,7 +317,7 @@ func readLogScope(root, server, session string) []Line {
 			if strings.TrimSpace(t) == "" {
 				continue
 			}
-			t = TruncateRunes(t, maxLogLineRunes)
+			t = truncateRunes(t, maxLogLineRunes)
 			lines = append(lines, Line{Server: srv, Session: label, Text: t, Lower: strings.ToLower(t), Who: ParseWho(t)})
 		}
 		return true

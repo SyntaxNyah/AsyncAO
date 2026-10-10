@@ -48,7 +48,8 @@ add TCP framing back.
     parses source. A structural change's report states which responsibility
     the change moves and which way dependencies point. No comment cites a
     test file by name; such a citation rots and is deleted with the test it
-    points at.
+    points at. An AST/source-scan test is only ever deleted or converted to a
+    behavioural test — never retargeted to a new file or package.
 
 ## Build & test commands (Windows dev box)
 

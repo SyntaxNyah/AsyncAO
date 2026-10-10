@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 func TestSessionLabel(t *testing.T) {
@@ -16,10 +18,10 @@ func TestSessionLabel(t *testing.T) {
 }
 
 func TestTruncateRunes(t *testing.T) {
-	if got := TruncateRunes("hello", 10); got != "hello" {
+	if got := truncateRunes("hello", 10); got != "hello" {
 		t.Errorf("no-trunc = %q", got)
 	}
-	if got := TruncateRunes("hello", 3); got != "hel…" {
+	if got := truncateRunes("hello", 3); got != "hel…" {
 		t.Errorf("trunc = %q", got)
 	}
 }
@@ -96,5 +98,36 @@ func TestLoadScope(t *testing.T) {
 	// All servers.
 	if got := Load(root, "", "", 0); len(got.Lines) != 3 {
 		t.Errorf("all-servers scope lines = %d, want 3", len(got.Lines))
+	}
+}
+
+// TestLoadStripsTheSidechannel is the behavioural form of the log-browser display
+// lane: a transcript line carrying a sprite-style marker (the zero-width codec runes
+// the writer appends to styled messages) must come back from Load with the marker
+// gone. The browser reads HISTORY — logs written by older builds that still carry
+// the runes — so the strip has to happen at read time, not just at write time.
+func TestLoadStripsTheSidechannel(t *testing.T) {
+	marker := courtroom.SpriteStyle{Glow: true}.EncodeMarker()
+	root := t.TempDir()
+	dir := filepath.Join(root, "miku.pizza")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// One marker on the line's tail and one mid-text, so the strip is proven to drop
+	// the codec wherever it sits, not just trailing.
+	body := "[t] Phoenix: hi" + marker + "\n[t] Phoenix: objection" + marker + "!\n"
+	if err := os.WriteFile(filepath.Join(dir, "2026-06-29_08-00-00.log"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := Load(root, "miku.pizza", "", 0)
+	if len(res.Lines) != 2 {
+		t.Fatalf("lines = %d, want 2", len(res.Lines))
+	}
+	if got, want := res.Lines[0].Text, "[t] Phoenix: hi"; got != want {
+		t.Errorf("line 0 = %q, want %q — the trailing marker was not stripped", got, want)
+	}
+	if got, want := res.Lines[1].Text, "[t] Phoenix: objection!"; got != want {
+		t.Errorf("line 1 = %q, want %q — the mid-text marker was not stripped", got, want)
 	}
 }
