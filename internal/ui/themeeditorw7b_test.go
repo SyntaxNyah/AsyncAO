@@ -500,7 +500,7 @@ func TestFontBindIsUndoableAndHashReverts(t *testing.T) {
 	before := docHash(t, doc)
 
 	// Rebind class 0 to nothing, then back.
-	if !a.editorApply(a.mutateFontBind(0, "")) {
+	if !a.editorApply(a.te.mutateFontBind(0, "")) {
 		t.Fatal("clearing a binding did nothing")
 	}
 	if _, ok := doc.side.BoundFamily(theme.FontElements[0]); ok {
@@ -517,7 +517,7 @@ func TestFontBindIsUndoableAndHashReverts(t *testing.T) {
 	}
 
 	// A binding to a family that already holds is not an edit.
-	if _, res := doc.apply(a.mutateFontBind(0, "Court Serif")); res != applyNoChange {
+	if _, res := doc.apply(a.te.mutateFontBind(0, "Court Serif")); res != applyNoChange {
 		t.Errorf("re-binding to the same family answered %d, want applyNoChange", res)
 	}
 }
@@ -535,7 +535,7 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 	// hash round trip is the right evidence for a VALUE edit (see
 	// TestFontBindIsUndoableAndHashReverts, which clears an existing row and restores
 	// it) and is the wrong evidence for a structural one.
-	if !a.editorApply(a.mutateFontFamily(0, "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(0, "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("adding the first family did nothing")
 	}
 	if len(doc.side.Fonts) != 1 || doc.side.Fonts[0].Family != "Court Serif" ||
@@ -554,12 +554,12 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 
 	// Fill to the cap, then refuse.
 	for i := 0; i < theme.FontCap; i++ {
-		if !a.editorApply(a.mutateFontFamily(i, "fam"+itoa(i), "f"+itoa(i)+".otf")) {
+		if !a.editorApply(a.te.mutateFontFamily(i, "fam"+itoa(i), "f"+itoa(i)+".otf")) {
 			t.Fatalf("family %d refused below the cap", i)
 		}
 	}
 	a.te.status = ""
-	if a.editorApply(a.mutateFontFamily(theme.FontCap, "one too many", "x.otf")) {
+	if a.editorApply(a.te.mutateFontFamily(theme.FontCap, "one too many", "x.otf")) {
 		t.Fatalf("the %dth family was accepted past theme.FontCap (%d)", theme.FontCap+1, theme.FontCap)
 	}
 	if len(doc.side.Fonts) != theme.FontCap {
@@ -587,8 +587,8 @@ func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	doc = newThemeDoc(doc.name, doc.side)
 	a.te.doc = doc
 
-	a.editorApply(a.mutateFontFamily(1, "Added", "a.otf"))
-	a.editorApply(a.mutateFontBind(0, "Added"))
+	a.editorApply(a.te.mutateFontFamily(1, "Added", "a.otf"))
+	a.editorApply(a.te.mutateFontBind(0, "Added"))
 	doc.restoreBaseline()
 
 	if len(doc.side.Fonts) != 1 || doc.side.Fonts[0].Family != "Original" {
@@ -669,10 +669,10 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	defer cleanup()
 	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
 
-	if !a.editorApply(a.mutateFontFamily(len(a.te.doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(len(a.te.doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("the fixture family was refused")
 	}
-	if !a.editorApply(a.mutateFontBind(0, "Court Serif")) {
+	if !a.editorApply(a.te.mutateFontBind(0, "Court Serif")) {
 		t.Fatal("the fixture binding was refused")
 	}
 
@@ -766,7 +766,7 @@ func TestASaveDoesNotStaleTheTypeSignature(t *testing.T) {
 	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
 	doc := a.te.doc
 
-	if !a.editorApply(a.mutateFontFamily(len(doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(len(doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("the fixture family was refused")
 	}
 	a.editorSave()

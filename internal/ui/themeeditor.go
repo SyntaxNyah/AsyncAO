@@ -420,12 +420,12 @@ func (a *App) editorApply(op themeEditOp) bool {
 // paused editor does exactly the work an idle one does. That is the zero-cost-closed
 // discipline, and it is the direction that makes the toggle worth having — a toggle
 // whose off-state still rebaked in the background would be a label.
-func (a *App) editorLiveOn() bool { return a.te == nil || !a.te.livePaused }
+func (te *themeEditor) editorLiveOn() bool { return te == nil || !te.livePaused }
 
 // editorInvalidateLive is invalidateThemeCanvases, gated by the toggle. One
 // spelling, so a future edit path cannot forget the gate and re-bake anyway.
 func (a *App) editorInvalidateLive() {
-	if !a.editorLiveOn() {
+	if !a.te.editorLiveOn() {
 		return
 	}
 	a.invalidateThemeCanvases()
@@ -827,7 +827,7 @@ func (a *App) drawEditorHeader(w int32) {
 	// statement that fills their banner. Without it an opaque 22 px strip paints over
 	// Undo / Redo / Save / Back after the screen dispatch.
 	a.noteEditorBanner()
-	c.Fill(band, a.editorPlate(ColPanel))
+	c.Fill(band, a.te.editorPlate(ColPanel))
 	name := a.te.doc.name
 	if name == "" {
 		name = "(unnamed theme)"
@@ -845,7 +845,7 @@ func (a *App) drawEditorHeader(w int32) {
 	}
 	stateX := w/3 + editRowPad
 	if stateW := clampLabelColumn(w/4, stateX, edge); stateW > 0 {
-		c.LabelClipped(stateX, 5, stateW, a.editorStateLabel(), ColTextDim)
+		c.LabelClipped(stateX, 5, stateW, a.te.editorStateLabel(), ColTextDim)
 	}
 
 	const btnW, btnGap = editorHeaderBtnW, editorHeaderBtnGap
@@ -987,11 +987,11 @@ func editorImageBtnLabel(busy bool) string {
 // per state rather than a formatted one: it sits in the header of every frame, and
 // the label cache keys on the string, so a value that changed per frame would
 // rasterise a fresh texture sixty times a second.
-func (a *App) editorStateLabel() string {
+func (te *themeEditor) editorStateLabel() string {
 	switch {
-	case a.te.save != nil:
+	case te.save != nil:
 		return "Saving…"
-	case a.te.doc.dirty:
+	case te.doc.dirty:
 		return "Unsaved edits"
 	}
 	return "Saved"
@@ -999,9 +999,9 @@ func (a *App) editorStateLabel() string {
 
 // editorPlate is a rail/band plate colour at the current peek alpha. ONE function,
 // so the peek can never apply to one surface and not another.
-func (a *App) editorPlate(base sdl.Color) sdl.Color {
+func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 	base.A = editRailAlpha
-	if a.te != nil && a.te.peek {
+	if te != nil && te.peek {
 		base.A = editRailPeekAlpha
 	}
 	return base
@@ -1016,7 +1016,7 @@ func (a *App) editorPlate(base sdl.Color) sdl.Color {
 func (a *App) drawEditorElementRail(w, h int32) {
 	c := a.ctx
 	rail := sdl.Rect{X: 0, Y: editBannerH, W: editRailW, H: h - editBannerH}
-	c.Fill(rail, a.editorPlate(ColPanel))
+	c.Fill(rail, a.te.editorPlate(ColPanel))
 	c.Label(editRowPad, rail.Y+4, "Elements", ColText)
 	a.drawEditorRailActions(rail)
 
@@ -1086,7 +1086,7 @@ func (a *App) drawEditorRailActions(rail sdl.Rect) {
 	c := a.ctx
 	// Laid out from the RIGHT edge so the "Elements" label keeps the left and the
 	// two buttons cannot push each other off the rail as their labels change.
-	live := a.editorLiveOn()
+	live := a.te.editorLiveOn()
 	liveR := sdl.Rect{
 		X: rail.X + rail.W - editRowPad - editRailLiveBtnW,
 		Y: rail.Y + 2,
@@ -1179,7 +1179,7 @@ func lockGlyph(locked bool) string {
 func (a *App) drawEditorInspector(w, h int32) {
 	c := a.ctx
 	rail := sdl.Rect{X: w - editRailW, Y: editBannerH, W: editRailW, H: h - editBannerH}
-	c.Fill(rail, a.editorPlate(ColPanel))
+	c.Fill(rail, a.te.editorPlate(ColPanel))
 	t := a.te.primary()
 	if !t.armed() {
 		c.Label(rail.X+editRowPad, rail.Y+4, "Nothing selected", ColTextDim)

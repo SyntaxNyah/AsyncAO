@@ -141,7 +141,7 @@ func (a *App) drawEditorFontBinds(r sdl.Rect, y int32) int32 {
 	c := a.ctx
 	c.Label(r.X+editRowPad, y+3, "Bind a face to an AO2 element", ColAccent)
 	y += editFontRowH
-	names := a.editorFontFamilyNames()
+	names := a.te.editorFontFamilyNames()
 	for i, class := range theme.FontElements {
 		if y > r.Y+r.H-editFontRowH*2 {
 			break
@@ -151,7 +151,7 @@ func (a *App) drawEditorFontBinds(r sdl.Rect, y int32) int32 {
 		cur, _ := a.te.doc.side.BoundFamily(class)
 		ctl := sdl.Rect{X: row.X + editFontLabelW, Y: row.Y, W: row.W - editFontLabelW, H: row.H}
 		if next := a.editorFontCycler(ctl, cur, names); next != cur {
-			a.editorApply(a.mutateFontBind(i, next))
+			a.editorApply(a.te.mutateFontBind(i, next))
 		}
 		y += editFontRowH
 	}
@@ -180,7 +180,7 @@ func (a *App) drawEditorFontFamilies(r sdl.Rect, y int32) int32 {
 		// element that used it. Removing is the honest destructive action, it is one
 		// undo step, and re-adding under a new name is two.
 		if c.Button(sdl.Rect{X: row.X + row.W - editStepW, Y: row.Y, W: editStepW, H: row.H}, "x") {
-			a.editorApply(a.mutateFontFamily(i, "", ""))
+			a.editorApply(a.te.mutateFontFamily(i, "", ""))
 			return y
 		}
 		y += editFontRowH
@@ -230,15 +230,15 @@ func (a *App) editorFontCycler(r sdl.Rect, cur string, names []string) string {
 // reuses the inspector's own cached pickFace list minus its class-id half, because the
 // two lists answer different questions — a BINDING may only name a family, while an
 // element's `font` may also name a class to inherit from.
-func (a *App) editorFontFamilyNames() []string {
-	a.te.fontNames = a.te.fontNames[:0]
-	a.te.fontNames = append(a.te.fontNames, pickAnchorNone)
-	for i := range a.te.doc.side.Fonts {
-		if f := a.te.doc.side.Fonts[i].Family; f != "" {
-			a.te.fontNames = append(a.te.fontNames, f)
+func (te *themeEditor) editorFontFamilyNames() []string {
+	te.fontNames = te.fontNames[:0]
+	te.fontNames = append(te.fontNames, pickAnchorNone)
+	for i := range te.doc.side.Fonts {
+		if f := te.doc.side.Fonts[i].Family; f != "" {
+			te.fontNames = append(te.fontNames, f)
 		}
 	}
-	return a.te.fontNames
+	return te.fontNames
 }
 
 // ---------------------------------------------------------------------------
@@ -248,23 +248,23 @@ func (a *App) editorFontFamilyNames() []string {
 // mutateFontBind / mutateFontFamily build the two type-table ops. They are METHODS
 // only because they need the document to intern a string; they still write nothing,
 // which is the property the funnel's censuses are about.
-func (a *App) mutateFontBind(classIdx int, family string) themeEditOp {
+func (te *themeEditor) mutateFontBind(classIdx int, family string) themeEditOp {
 	if classIdx < 0 || classIdx >= len(theme.FontElements) {
 		return themeEditOp{}
 	}
 	return themeEditOp{
 		kind: opFontBind, target: fontTarget(classIdx), field: editFieldFont,
-		after: editValueStr(a.te.doc.intern(family)),
+		after: editValueStr(te.doc.intern(family)),
 	}
 }
 
-func (a *App) mutateFontFamily(idx int, family, file string) themeEditOp {
-	if idx < 0 || idx > len(a.te.doc.side.Fonts) {
+func (te *themeEditor) mutateFontFamily(idx int, family, file string) themeEditOp {
+	if idx < 0 || idx > len(te.doc.side.Fonts) {
 		return themeEditOp{}
 	}
 	return themeEditOp{
 		kind: opFontFamily, target: fontTarget(idx), field: editFieldFont,
-		after: editValueStr(a.te.doc.intern(fontRowValue(family, file))),
+		after: editValueStr(te.doc.intern(fontRowValue(family, file))),
 	}
 }
 
@@ -359,7 +359,7 @@ func (a *App) pollEditorFont() {
 			return
 		}
 		// THE ROW LANDS THROUGH THE FUNNEL, so it is one Ctrl+Z like everything else.
-		if !a.editorApply(a.mutateFontFamily(len(a.te.doc.side.Fonts), job.family, job.file)) {
+		if !a.editorApply(a.te.mutateFontFamily(len(a.te.doc.side.Fonts), job.family, job.file)) {
 			a.te.note(job.family + " could not be added — the [fonts] table is full")
 			return
 		}

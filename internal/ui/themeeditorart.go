@@ -74,7 +74,7 @@ func (a *App) editorSyncArt() {
 	// closeThemeEditor un-pauses before its own call so the last frame always
 	// reconciles — a plan that outlived the editor stale is the defect this file's
 	// second call site exists to prevent.
-	if !a.editorLiveOn() {
+	if !a.te.editorLiveOn() {
 		return
 	}
 	if a.themeMediaPlan.ArtSig == themeArtSig(a.te.doc.side) {
