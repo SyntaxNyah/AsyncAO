@@ -720,7 +720,8 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 	a.warnLine = "Exporting self-contained archive… downloading assets (this can take a moment)."
 	a.warnAt = time.Now()
 	mgr := a.d.Manager
-	go func() { a.makerExportCh <- runArchiveExport(mgr, snap, stem) }()
+	ch := a.makerExportCh
+	go func() { ch <- runArchiveExport(mgr, snap, stem) }()
 }
 
 // runArchiveExport (off-thread) resolves+writes every asset the scene needs into
