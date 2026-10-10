@@ -135,15 +135,16 @@ func (a *App) startMountIndexBuild(mounts []string, key string) {
 		a.mountIndexRes = make(chan mountIndexResult, 1)
 	}
 	a.mountIndexing = true
+	ch := a.mountIndexRes
 	go func() {
 		idx, errs := assets.BuildMountIndex(mounts)
 		// Cap-1 channel: drain any undelivered older result before sending, or a
 		// second producer would block forever on a full buffer.
 		select {
-		case <-a.mountIndexRes:
+		case <-ch:
 		default:
 		}
-		a.mountIndexRes <- mountIndexResult{idx: idx, errs: errs, key: key}
+		ch <- mountIndexResult{idx: idx, errs: errs, key: key}
 	}()
 }
 
