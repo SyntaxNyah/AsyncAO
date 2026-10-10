@@ -119,6 +119,11 @@ type themeEditor struct {
 	doc  *themeDoc
 	ring themeEditRing
 
+	// editorReturn is where Back goes. The editor carries its OWN return target
+	// rather than joining prevScreen (App.prevScreen is one field written at many
+	// sites; the editor keeps its own on the struct that owns the session).
+	editorReturn Screen
+
 	// sel is the selection: a FIXED array (see themeSelCap).
 	sel  [themeSelCap]editTarget
 	selN int
@@ -263,7 +268,7 @@ func (a *App) armThemeEditor(from Screen) bool {
 	// has to move a pixel as well as write a row (themeDoc.live).
 	doc.bindLive(a.themeRects)
 	a.te = &themeEditor{doc: doc}
-	a.editorReturn = from
+	a.te.editorReturn = from
 	return true
 }
 
@@ -333,7 +338,7 @@ func (a *App) closeThemeEditor() {
 	// site in themeeditorart.go exists to close.
 	a.te.livePaused = false
 	a.editorSyncArt()
-	back := a.editorReturn
+	back := a.te.editorReturn
 	a.te = nil
 	if back == ScreenThemeEditor { // never bounce back into ourselves
 		back = ScreenSettings

@@ -230,7 +230,7 @@ func TestEditingParamsDoesNotLeakTiles(t *testing.T) {
 // be measuring a DELETE, not a revert. Two production doors, no second construction path.
 func reopenEditorAtBaseline(t *testing.T, a *App) {
 	t.Helper()
-	from := a.editorReturn
+	from := a.te.editorReturn
 	a.closeThemeEditor()
 	if !a.openThemeEditor(from) {
 		t.Fatal("re-opening the editor over the same theme was refused")

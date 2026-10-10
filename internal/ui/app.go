@@ -204,12 +204,6 @@ type App struct {
 	// when closed: no goroutine, no timer, no per-frame read from any courtroom draw
 	// site. This is the "0 base = 0 cost" rule.
 	te *themeEditor
-	// editorReturn is where Back goes. The editor carries its OWN return target
-	// rather than joining prevScreen, which is a single field written at ~10 sites
-	// across 8 files — a screenStack refactor
-	// is the right long-term fix and is a follow-up, not a passenger on the
-	// flagship's riskiest wave.
-	editorReturn Screen
 
 	// --- connection lifecycle (lobby-global; deliberately NOT in sessionState) ---
 	// These outlive any single session: the lobby shows the last disconnect
