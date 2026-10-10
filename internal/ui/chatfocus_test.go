@@ -7,11 +7,20 @@ import (
 	"go/ast"
 	"go/token"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+// stringLitValue unquotes a Go string literal (interpreted or raw).
+func stringLitValue(lit string) (string, error) {
+	if len(lit) >= 2 && lit[0] == '`' {
+		return lit[1 : len(lit)-1], nil
+	}
+	return strconv.Unquote(lit)
+}
 
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —
 // the state claimTypingForIC requires before it will take a keystroke.
