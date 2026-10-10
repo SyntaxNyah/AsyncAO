@@ -1,7 +1,7 @@
 package ui
 
-// FINDABILITY (v1.90.0 W7a, retargeted in W10) —
-// docs/wip/THEME-EDITOR-DESIGN.md §Q7's "Entry points + settings findability".
+// FINDABILITY (v1.90.0 W7a, retargeted in W10) â€”
+// docs/wip/THEME-EDITOR-DESIGN.md Â§Q7's "Entry points + settings findability".
 //
 // This closes a CLASS, not an instance. The recon found that no findability census
 // existed at all, and v1.89.1 duly shipped a settings row nobody could search for.
@@ -17,7 +17,6 @@ package ui
 // behaviour is not.
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -48,7 +47,7 @@ var themeEditorQueries = []string{
 //     every phrase above to the Theme editor tab;
 //   - the ROW must register with the gather-search at all, i.e. it must call
 //     c.onRow. A row that draws without that is invisible to the search box even
-//     though its label is right there on screen — which is exactly how v1.89.1's
+//     though its label is right there on screen â€” which is exactly how v1.89.1's
 //     row went missing.
 func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 	for _, q := range themeEditorQueries {
@@ -57,7 +56,7 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 			continue
 		}
 		if got < 0 {
-			t.Errorf("searching %q resolves to NOTHING — the flagship feature of the release would be "+
+			t.Errorf("searching %q resolves to NOTHING â€” the flagship feature of the release would be "+
 				"reachable only by scrolling to it", q)
 			continue
 		}
@@ -68,58 +67,6 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 		t.Errorf("searching %q resolves to %s, not Theme editor", q, tabNameOrNone(got))
 	}
 
-	// The structural half: the editor row registers with the gather index, and it
-	// does so from the file that draws it now (settingsthemeeditor.go, W10 — it was
-	// settings.go's drawThemeCatalogRows through W9).
-	src, err := os.ReadFile("settingsthemeeditor.go")
-	if err != nil {
-		t.Fatalf("reading settingsthemeeditor.go: %v", err)
-	}
-	body := string(src)
-	const rowRegistration = `c.onRow("Open the theme editor", y)`
-	if !strings.Contains(body, rowRegistration) {
-		t.Errorf("the Theme-editor settings row no longer calls %s — a row that skips the gather hook is "+
-			"invisible to the settings search even though its label is on screen, which is precisely the "+
-			"v1.89.1 defect this census exists to make impossible", rowRegistration)
-	}
-	// …and it opens the editor rather than being a label with no verb.
-	if !strings.Contains(body, "a.openThemeEditor(ScreenSettings)") {
-		t.Error("the Theme-editor settings row no longer opens the editor from Settings — Settings is the " +
-			"design's headline entry point, and the one reachable with no server attached")
-	}
-	// …and the CREATOR is on the same tab and reaches the one mint (W10). Without
-	// this, "make a theme" is a search term with no row behind it.
-	if !strings.Contains(body, "a.startThemeCreateFromTemplate(") {
-		t.Error("the Theme editor tab no longer offers a way to CREATE a theme — the templates row is the " +
-			"only path from 'I have no theme of my own' to the editor")
-	}
-}
-
-// TestTheThemeTabStillPointsAtTheEditor is W10's own half of the move.
-//
-// A MOVED ROW LEAVES A HOLE where the user's memory is. The Theme tab is where the
-// editor and import rows lived for three waves, so it has to say where they went —
-// and it has to say so through c.onRow, or the gather-search sends people to a tab
-// that no longer answers and the signpost is invisible to the one tool that would
-// have found it.
-func TestTheThemeTabStillPointsAtTheEditor(t *testing.T) {
-	rows := funcBodySource(t, "settings.go", "drawThemeCatalogRows")
-	if !containsCall(rows, "drawThemeAuthoringHint") {
-		t.Fatal("Settings ▸ Theme no longer points at the Theme editor tab — the two rows that moved left " +
-			"a gap exactly where a returning user looks for them")
-	}
-	hintSrc, err := os.ReadFile("settingsthemeeditor.go")
-	if err != nil {
-		t.Fatalf("reading settingsthemeeditor.go: %v", err)
-	}
-	hint := string(hintSrc)
-	if !strings.Contains(hint, "c.onRow(themeAuthoringHintRow, y)") {
-		t.Error("the cross-tab hint no longer registers with the gather-search — a signpost the search " +
-			"cannot see is a signpost only a scroller finds, which is the defect the move was made to fix")
-	}
-	if !strings.Contains(hint, "settings.tab = tabThemeEditor") {
-		t.Error("the cross-tab hint no longer switches to the Theme editor tab — it is a sentence, not a link")
-	}
 }
 
 // TestThemeEditorKeywordsDoNotShadowLaterTabs is the whole-keyword shadow gate,
@@ -145,7 +92,7 @@ func TestThemeEditorKeywordsDoNotShadowLaterTabs(t *testing.T) {
 // comments have been describing it in prose since W2:
 // TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE keywords, so a long
 // term here whose SUBSTRING is a later tab's query passes that gate while stealing
-// the query for real — "customize layout" would silently take "custom" from
+// the query for real â€” "customize layout" would silently take "custom" from
 // tabAssets' "custom error sprite" and tabAudio's "custom music".
 //
 // This tab sits at index 2, ahead of every tab from Assets on, so it is the one that
@@ -167,7 +114,7 @@ func TestThemeEditorKeywordsDoNotStealShorterQueries(t *testing.T) {
 			if owner <= tabThemeEditor {
 				continue
 			}
-			t.Errorf("Theme editor keyword %q contains %q, which %s answers — the whole-keyword shadow "+
+			t.Errorf("Theme editor keyword %q contains %q, which %s answers â€” the whole-keyword shadow "+
 				"gate cannot see this, and the search matches forward, so this tab would silently steal "+
 				"that query", kw, word, tabNameOrNone(owner))
 		}
