@@ -10,7 +10,8 @@
 *.test
 *.prof
 *.pprof
-coverage.out
+*.out
+*.log
 
 # Local CGO dev dependencies (SDL2, libwebp, ...) fetched by scripts/
 /.deps/
