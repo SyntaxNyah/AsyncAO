@@ -640,7 +640,7 @@ func (a *App) drawSettings(w, h int32) {
 		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
 		case settingsDropImportSettings:
 			settings.importArmed = false
-			importSettingsAsync(a, c.dropped)
+			importSettingsAsync(a.d, c.dropped)
 		case settingsDropIgnore:
 			// HandleFileDrop is the single owner of dropped recordings, theme
 			// bundles and theme FONTS.
@@ -4611,7 +4611,7 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	y += 38
 	if !config.ConfigIsPortable() {
 		if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Make portable (copy beside AsyncAO)") {
-			makePortableAsync(a)
+			makePortableAsync(a.d)
 		}
 		c.Label(pad+270, y+6, "Copies settings next to the program; takes effect on restart.", ColTextDim)
 		y += 38
@@ -4621,7 +4621,7 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
 	y += 6
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Export settings") {
-		exportSettingsAsync(a)
+		exportSettingsAsync(a.d)
 	}
 	importLabel := "Import settings..."
 	if settings.importArmed {
@@ -4641,14 +4641,14 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	y += 6
 	settings.presetName, _ = c.TextField("presetname", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, settings.presetName, "preset name (e.g. casing)")
 	if c.Button(sdl.Rect{X: pad + 228, Y: y, W: 170, H: btnH}, "💾 Save as preset") {
-		savePresetAsync(a, settings.presetName)
+		savePresetAsync(a.d, settings.presetName)
 		settings.presetName = ""
 	}
 	y += btnH + 8
 	for _, name := range a.d.Prefs.ListPresets() {
 		c.Label(pad, y+4, name, ColText)
 		if c.Button(sdl.Rect{X: pad + 240, Y: y, W: 150, H: btnH}, "Apply (restart)") {
-			applyPresetAsync(a, name)
+			applyPresetAsync(a.d, name)
 		}
 		if c.Button(sdl.Rect{X: pad + 396, Y: y, W: 30, H: btnH}, "×") {
 			_ = a.d.Prefs.DeletePreset(name)
@@ -4666,10 +4666,10 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 
 // savePresetAsync snapshots the current settings under presets/<name>.json
 // (the export machinery: flush, strip passwords, write) off-thread.
-func savePresetAsync(a *App, name string) {
+func savePresetAsync(d Deps, name string) {
 	go func() {
 		line := "Preset saved — pick it from the list any time."
-		if err := a.d.Prefs.SavePreset(name); err != nil {
+		if err := d.Prefs.SavePreset(name); err != nil {
 			line = "Save preset failed: " + err.Error()
 		}
 		select {
@@ -4681,10 +4681,10 @@ func savePresetAsync(a *App, name string) {
 
 // applyPresetAsync stages a preset as the live settings (the import machinery:
 // validate + atomic replace, applied on the next start) off-thread.
-func applyPresetAsync(a *App, name string) {
+func applyPresetAsync(d Deps, name string) {
 	go func() {
 		line := "Preset \"" + name + "\" staged — RESTART AsyncAO to apply (changes made this session won't save)."
-		if err := a.d.Prefs.ApplyPreset(name); err != nil {
+		if err := d.Prefs.ApplyPreset(name); err != nil {
 			line = "Apply preset failed: " + err.Error()
 		}
 		select {
@@ -4735,12 +4735,12 @@ func learnedExportPath() (string, error) {
 
 // exportLearnedAsync writes the learned table off-thread (§17.2: no sync
 // disk I/O on the render thread) and reports on the status line.
-func exportLearnedAsync(a *App) {
+func exportLearnedAsync(d Deps) {
 	go func() {
 		path, err := learnedExportPath()
 		if err == nil {
 			var data []byte
-			if data, err = a.d.Prefs.ExportLearnedJSON(); err == nil {
+			if data, err = d.Prefs.ExportLearnedJSON(); err == nil {
 				err = os.WriteFile(path, data, 0o644)
 			}
 		}
@@ -4766,9 +4766,9 @@ func exportLearnedAsync(a *App) {
 // with ErrThemesNotMigrated rather than an opaque error. That case is reported as
 // what it is — the settings DID move — because "Make portable failed" would send
 // the user hunting for settings that are already in place.
-func makePortableAsync(a *App) {
+func makePortableAsync(d Deps) {
 	go func() {
-		dest, err := a.d.Prefs.MigrateToPortable()
+		dest, err := d.Prefs.MigrateToPortable()
 		var line string
 		switch {
 		case err == config.ErrAlreadyPortable:
@@ -4790,14 +4790,14 @@ func makePortableAsync(a *App) {
 
 // exportSettingsAsync writes the whole-settings bundle beside the exe
 // (timestamped, so repeated exports never clobber each other).
-func exportSettingsAsync(a *App) {
+func exportSettingsAsync(d Deps) {
 	go func() {
 		var path string
 		exe, err := os.Executable()
 		if err == nil {
 			path = filepath.Join(filepath.Dir(exe),
 				"asyncao-settings-"+time.Now().Format("20060102-150405")+".json")
-			err = a.d.Prefs.ExportSettings(path)
+			err = d.Prefs.ExportSettings(path)
 		}
 		line := "Settings exported to " + path + " — copy it to the new PC and Import there. (Saved passwords are NOT exported; re-enter them there.)"
 		if err != nil {
@@ -4813,10 +4813,10 @@ func exportSettingsAsync(a *App) {
 // importSettingsAsync replaces the preferences file with a dropped
 // bundle; the import owns the file from then on (saver freezes) and
 // applies on the next start.
-func importSettingsAsync(a *App, path string) {
+func importSettingsAsync(d Deps, path string) {
 	go func() {
 		line := "Settings imported — RESTART AsyncAO to apply (changes made this session won't save)."
-		if err := a.d.Prefs.ImportSettings(path); err != nil {
+		if err := d.Prefs.ImportSettings(path); err != nil {
 			line = "Settings import failed: " + err.Error()
 		}
 		select {
@@ -4828,7 +4828,7 @@ func importSettingsAsync(a *App, path string) {
 
 // importLearnedAsync merges a learned-formats export and republishes the
 // resolver snapshot (its table swap is atomic — safe off-thread).
-func importLearnedAsync(a *App) {
+func importLearnedAsync(d Deps) {
 	go func() {
 		var line string
 		path, err := learnedExportPath()
@@ -4836,8 +4836,8 @@ func importLearnedAsync(a *App) {
 			var data []byte
 			if data, err = os.ReadFile(path); err == nil {
 				var n int
-				if n, err = a.d.Prefs.ImportLearnedJSON(data); err == nil {
-					a.d.Resolver.WarmFromPrefs()
+				if n, err = d.Prefs.ImportLearnedJSON(data); err == nil {
+					d.Resolver.WarmFromPrefs()
 					line = fmt.Sprintf("Imported %d learned entries from %s", n, path)
 				}
 			}
