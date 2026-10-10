@@ -96,15 +96,16 @@ func (a *App) kickLogScope() {
 	lb.gen++
 	lb.loading = true
 	gen := lb.gen
+	ch := a.logBrowserRes
 	go func() {
 		out := logbrowser.Load(logbrowser.RootDir(), server, session, gen)
 		// Latest-wins: clear any stale pending result, then post ours.
 		select {
-		case <-a.logBrowserRes:
+		case <-ch:
 		default:
 		}
 		select {
-		case a.logBrowserRes <- out:
+		case ch <- out:
 		default:
 		}
 		PushWake() // wake the event-driven loop so Background drains this at idle=0
