@@ -202,12 +202,11 @@ type App struct {
 	//
 	// ONE POINTER, nil while the editor is shut, and that is the whole of its cost
 	// when closed: no goroutine, no timer, no per-frame read from any courtroom draw
-	// site. TestClosedThemeEditorCostsNothing benchmarks the claim rather than
-	// asserting it (the "0 base = 0 cost" rule).
+	// site. This is the "0 base = 0 cost" rule.
 	te *themeEditor
 	// editorReturn is where Back goes. The editor carries its OWN return target
 	// rather than joining prevScreen, which is a single field written at ~10 sites
-	// across 8 files and asserted on in menucontent_test.go — a screenStack refactor
+	// across 8 files — a screenStack refactor
 	// is the right long-term fix and is a follow-up, not a passenger on the
 	// flagship's riskiest wave.
 	editorReturn Screen
@@ -909,7 +908,7 @@ type App struct {
 	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go)
 	// show all of it. Before that panel existed this field was written on every
 	// apply and read by one test — the parsed-but-never-applied shape rule 11 names
-	// by example. TestTheImportReportReachesAUserSurface is what keeps it read.
+	// by example.
 	themeReport []string
 	// themeImp is the .aotheme TRANSPORT state machine (themeimport.go): the
 	// pending consent, and the one bundle job that may be in flight. On App
@@ -1378,8 +1377,8 @@ type App struct {
 	// a voice channel (opt-in); nil = presence-only / not in voice (voiceaudio.go).
 	voiceAudio *voiceEngine
 	// micTest is the Settings → Voice "Test microphone" tool (#84): an independent
-	// capture (+ optional sidetone playback) device, non-nil only while a test runs
-	// (voicemictest.go). micTestSidetone remembers the "hear myself" toggle.
+	// capture (+ optional sidetone playback) device, non-nil only while a test runs.
+	// micTestSidetone remembers the "hear myself" toggle.
 	micTest         *micTester
 	micTestSidetone bool
 	// makerExportPack > 0: the "include your own files in this bundle?" dialog is
@@ -3260,8 +3259,8 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // bolting it onto a table whose whole contract is "one per theme, pinned" would
 // either leak textures or silently stop honouring the pack.
 //
-// What is kept green in the meantime: TestChatboxLadderOrderIsUnchangedWithMisc
-// pins the stem order AND the position the misc rungs must take when the tier is
+// What is kept green in the meantime:
+// the stem order AND the position the misc rungs must take when the tier is
 // built, so the wave that builds it has a fixed target instead of a guess.
 func themeImageStems() map[string][]string {
 	m := map[string][]string{
@@ -3755,11 +3754,9 @@ func (a *App) NoteFocusLost() {
 //     surface — the chatbox body, IC/OOC log lines and shownames (labelEmoji /
 //     labelCoveringCentered), the text field's emoji-fallback branch, and the
 //     floating reaction badges (Badge.Draw, render/badge.go) — not just the chatbox
-//     body it started on; TestMessageRasterDrawIsExportOnly is the class gate
-//     (a source scan banning the plain Draw everywhere outside the two export
-//     passes, which legitimately bracket their own scale) and
-//     TestAutoScaleStepRerastersTextAtDeviceScale pins the raster-rebuild wiring at
-//     this exact threshold.
+//     body it started on; a source scan bans the plain Draw everywhere outside the
+//     two export passes (which legitimately bracket their own scale), and the
+//     raster-rebuild wiring is pinned at this exact threshold.
 //   - RECT CHROME (panels, borders, bars) is resolution-independent: SDL rasterizes
 //     a filled rect at the scaled coordinates, so there is no resample to soften —
 //     only an edge that can land a pixel either way.
@@ -7906,7 +7903,7 @@ func (a *App) setIniswap(name string) {
 }
 
 // wardrobeAct is the resolved action for clicking a Characters-tab favourite.
-// Pure + table-tested (TestWardrobeAction) because this is the bit users are
+// Pure + table-tested because this is the bit users are
 // touchy about — a favourite must never silently iniswap when it could switch.
 type wardrobeAct int
 
@@ -9569,8 +9566,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 //
 // Everything else about the ordering lives in themeSearchRoots, which the theme
 // PICKER and the catalog build from too: what the loader resolves and what the
-// user can SEE in the dropdown must never disagree about which directories exist
-// (TestThemePickerAndLoaderSearchTheSameRoots).
+// user can SEE in the dropdown must never disagree about which directories exist.
 func themeLoadRoots(name, customRoot, exeDir, configBase string) []string {
 	if name == theme.DefaultThemeName {
 		// #87, above: the stock default is the one theme a custom root may not answer.
@@ -9599,8 +9595,7 @@ const themeSearchRootCap = 3
 // unwritable exe dir) puts the themes the client itself writes — imports,
 // editable copies — so it must be searched; but inserting it any earlier would
 // silently flip which theme wins for anyone holding the same name in two places,
-// which is a live regression traded for nothing. Appended, never inserted:
-// TestThemeLoadRootOrderIsUnchangedForExistingInstalls holds that.
+// which is a live regression traded for nothing. Appended, never inserted.
 //
 // The samePath skip is DEFENSIVE — it is not a state production reaches.
 // config.ConfigBaseDir never returns the executable's directory: it resolves to
@@ -10675,7 +10670,7 @@ func (a *App) warnActive() bool {
 // spriteFX builds the optional sprite colour-FX struct from the user prefs
 // (all off by default). A handful of uncontended RLocks once per frame — far
 // cheaper than any snapshot/cache layer, and the render path stays 0-alloc
-// regardless (pinned by TestRenderFrameRainbowZeroAllocs). The colour is only
+// regardless. The colour is only
 // fetched when the solid wash is actually active. Shared by the live + replay
 // render paths.
 func (a *App) spriteFX() render.SpriteFX {
