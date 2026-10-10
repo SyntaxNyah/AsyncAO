@@ -447,7 +447,7 @@ func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
 	// (editorInvalidateLive) is what every edit path goes through, so a live edit
 	// that skipped it would keep drawing stale geometry.
 	a.themeLay.valid = true
-	if !a.editorApply(mutateElemField(elementTarget(0), editFieldHidden, editValueBool(sc.Elements[0].Hidden))) {
+	if !a.editorApply(mutateElemField(elementTarget(0), editFieldHidden, editValueBool(!sc.Elements[0].Hidden))) {
 		t.Fatal("an edit with live preview on was refused")
 	}
 	if a.themeLay.valid {
