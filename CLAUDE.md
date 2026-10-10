@@ -51,6 +51,37 @@ add TCP framing back.
     points at. An AST/source-scan test is only ever deleted or converted to a
     behavioural test — never retargeted to a new file or package.
 
+    **Kept source-scan gates (grandfathered deletion-catchers).** Rule 11
+    admits no NEW AST test; the ones below survive only because each pins a
+    placement/order/dependency property no construction seam enforces yet.
+    Remove one the day its seam is enforced by construction, and record the
+    removal here. Each entry: invariant → why no construction today → removal.
+    - **hdidgate** (`internal/ui/hdidgate_test.go`): the per-server HDID is
+      derived from the address being dialled, at the call. Every wrong answer
+      is a well-shaped id, so no behavioural test can distinguish it. Remove
+      when the id becomes a value the session constructor is handed.
+    - **blipcensus** (`internal/courtroom/blipcensus_test.go`): a blip URL has
+      exactly one mint, `URLBuilder.BlipRef`, in both directions. `AssetRef` is
+      a plain struct so no type funnel exists (an opaque blip type would ripple
+      through SFX/background refs — deferred, unverified). Remove when the blip
+      ref type is opaque.
+    - **packcharini** (`internal/ui/packcharini_test.go`): every char.ini read
+      goes through `FetchRawLayered`, never `FetchRaw`. `FetchRaw` returns good
+      bytes of the wrong side, invisible to behaviour. Remove when the two lanes
+      are distinct types.
+    - **the remaining `funcBodySource`/`packageFuncs` gates** (`zerowidthlanes`,
+      `frameharness`, `areamenu`, `arupstatus`, `basewizard`, `charidle`,
+      `chatboxskin`, `chatcrawlscroll`, `chatfocus`, `conclusivemiss`, `eggs`,
+      `emotepreviewfollow`, `emotescroll`, `fieldwordops`, `ghosttext`, `heal`,
+      `icarms`, `icsfx`, `logselect_wire`, `menuzorder`, `musicmarquee`,
+      `pacingfocus`, `pairpreview`, `poststickyreset` in `internal/ui`;
+      `preanimend`, `servertext`, `timerclock` in `internal/courtroom`;
+      `sidecar_census`, `preset` in `internal/theme`; `transportcensus` in
+      `internal/netproxy`): the same deletion-catcher shape — a wiring/order
+      property a behavioural test cannot observe. Remove individually the day
+      that seam is enforced by construction; this list is the audit trail, keep
+      it in sync when one goes.
+
 ## Build & test commands (Windows dev box)
 
 ```powershell
