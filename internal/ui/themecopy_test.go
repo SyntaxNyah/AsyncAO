@@ -106,14 +106,24 @@ func TestTheCopyPrimitiveHasAProductionDriver(t *testing.T) {
 	if !containsCall(action, "copyThemeForEditing") {
 		t.Error("the row's copy action no longer starts a copy")
 	}
-	save := funcBodySource(t, "themeeditorsave.go", "editorSave")
-	if !containsCall(save, "offerCopyOnSaveRefusal") {
-		t.Error("editorSave no longer routes its refusal through the copy offer — a bundled theme takes a " +
-			"session's work and then tells the user to go and copy a folder in Explorer")
+}
+
+// TestSaveRefusalOffersTheCopy drives the real editorSave on a bundled theme and
+// asserts the refusal: the first Save arms the copy offer (the press-again chip),
+// and the note names the act that fixes it — so a bundled theme can't take a
+// session's work and then strand the user with advice to copy a folder by hand.
+func TestSaveRefusalOffersTheCopy(t *testing.T) {
+	a, _, _ := copyRig(t, themeOriginBundled)
+	a.themeSidecar = theme.NewSidecar()
+	if !a.openThemeEditorForTest(ScreenLobby) {
+		t.Fatal("a bundled theme with a native tier would not open in the editor")
 	}
-	offer := funcBodySource(t, "themeeditorsave.go", "offerCopyOnSaveRefusal")
-	if !containsCall(offer, "copyThemeForEditing") {
-		t.Error("the save refusal offers a copy it never starts")
+	a.editorSave()
+	if a.te.copyAt.IsZero() {
+		t.Error("Save on a bundled theme did not arm the copy offer — a second Save never starts the copy")
+	}
+	if !strings.Contains(a.te.status, "Press Save again") {
+		t.Errorf("the refusal note %q does not name the act that fixes it", a.te.status)
 	}
 }
 
