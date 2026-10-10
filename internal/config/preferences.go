@@ -9512,27 +9512,69 @@ func (p *AssetPreferences) WardrobeFolderMap(serverKey string) map[string]string
 	return out
 }
 
-// SetWardrobeFolder files a wardrobe character under a folder (category) on one
-// server; an empty folder clears it. Bounded by WardrobeCap.
-func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
-	char = strings.ToLower(strings.TrimSpace(char))
+// fileFolder files one key under a per-server folder map (or clears it when
+// folder is empty), bounded by cap. get/set read/write the map field on the
+// warm server info; the wardrobe and favourite-background folders share the
+// body so a fix to one cannot miss the other.
+func (p *AssetPreferences) fileFolder(serverKey, key, folder string, cap int,
+	get func(*ServerWarmInfo) map[string]string, set func(*ServerWarmInfo, map[string]string)) {
+	key = strings.ToLower(strings.TrimSpace(key))
 	folder = strings.TrimSpace(folder)
-	if char == "" || serverKey == "" {
+	if key == "" || serverKey == "" {
 		return
 	}
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		m := get(w)
 		if folder == "" {
-			delete(w.WardrobeFolder, char)
+			delete(m, key) // deleting from a nil map is a no-op
 			return
 		}
-		if w.WardrobeFolder == nil {
-			w.WardrobeFolder = map[string]string{}
+		if m == nil {
+			m = map[string]string{}
+			set(w, m)
 		}
-		if _, exists := w.WardrobeFolder[char]; !exists && len(w.WardrobeFolder) >= WardrobeCap {
+		if _, exists := m[key]; !exists && len(m) >= cap {
 			return
 		}
-		w.WardrobeFolder[char] = folder
+		m[key] = folder
 	})
+}
+
+// deleteFolder ungroups one folder (or, when keepMembers is false, also drops
+// each member from the flat list). list/setList read/write the member list the
+// same way fileFolder's accessors do the folder map.
+func (p *AssetPreferences) deleteFolder(serverKey, folder string, keepMembers bool,
+	get func(*ServerWarmInfo) map[string]string, list func(*ServerWarmInfo) []string, setList func(*ServerWarmInfo, []string)) {
+	folder = strings.TrimSpace(folder)
+	if folder == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		for lc, f := range get(w) {
+			if !strings.EqualFold(f, folder) {
+				continue
+			}
+			delete(get(w), lc)
+			if keepMembers {
+				continue
+			}
+			l := list(w)
+			for i, have := range l {
+				if strings.ToLower(have) == lc {
+					setList(w, append(l[:i], l[i+1:]...))
+					break
+				}
+			}
+		}
+	})
+}
+
+// SetWardrobeFolder files a wardrobe character under a folder (category) on one
+// server; an empty folder clears it. Bounded by WardrobeCap.
+func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
+	p.fileFolder(serverKey, char, folder, WardrobeCap,
+		func(w *ServerWarmInfo) map[string]string { return w.WardrobeFolder },
+		func(w *ServerWarmInfo, m map[string]string) { w.WardrobeFolder = m })
 }
 
 // DeleteWardrobeFolder removes a whole wardrobe folder on one server in a single
@@ -9541,27 +9583,10 @@ func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
 // wardrobe entirely. Either way the folder — being membership-derived — ceases
 // to exist once nothing is filed under it.
 func (p *AssetPreferences) DeleteWardrobeFolder(serverKey, folder string, keepMembers bool) {
-	folder = strings.TrimSpace(folder)
-	if folder == "" || serverKey == "" {
-		return
-	}
-	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		for lc, f := range w.WardrobeFolder {
-			if !strings.EqualFold(f, folder) {
-				continue
-			}
-			delete(w.WardrobeFolder, lc)
-			if keepMembers {
-				continue
-			}
-			for i, have := range w.Wardrobe { // also drop the character from the wardrobe
-				if strings.ToLower(have) == lc {
-					w.Wardrobe = append(w.Wardrobe[:i], w.Wardrobe[i+1:]...)
-					break
-				}
-			}
-		}
-	})
+	p.deleteFolder(serverKey, folder, keepMembers,
+		func(w *ServerWarmInfo) map[string]string { return w.WardrobeFolder },
+		func(w *ServerWarmInfo) []string { return w.Wardrobe },
+		func(w *ServerWarmInfo, l []string) { w.Wardrobe = l })
 }
 
 // --- Favorite backgrounds (per server) ----------------------------------------
@@ -9633,51 +9658,19 @@ func (p *AssetPreferences) FavBackgroundFolderMap(serverKey string) map[string]s
 // server; an empty folder clears it. Bounded by FavBackgroundCap. Mirrors
 // SetWardrobeFolder.
 func (p *AssetPreferences) SetFavBackgroundFolder(serverKey, bg, folder string) {
-	bg = strings.ToLower(strings.TrimSpace(bg))
-	folder = strings.TrimSpace(folder)
-	if bg == "" || serverKey == "" {
-		return
-	}
-	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		if folder == "" {
-			delete(w.FavBackgroundFolder, bg)
-			return
-		}
-		if w.FavBackgroundFolder == nil {
-			w.FavBackgroundFolder = map[string]string{}
-		}
-		if _, exists := w.FavBackgroundFolder[bg]; !exists && len(w.FavBackgroundFolder) >= FavBackgroundCap {
-			return
-		}
-		w.FavBackgroundFolder[bg] = folder
-	})
+	p.fileFolder(serverKey, bg, folder, FavBackgroundCap,
+		func(w *ServerWarmInfo) map[string]string { return w.FavBackgroundFolder },
+		func(w *ServerWarmInfo, m map[string]string) { w.FavBackgroundFolder = m })
 }
 
 // DeleteFavBackgroundFolder removes a whole background folder on one server.
 // keepMembers true ungroups (the backgrounds stay favourited, unfiled); false
 // unstars those backgrounds entirely. Mirrors DeleteWardrobeFolder.
 func (p *AssetPreferences) DeleteFavBackgroundFolder(serverKey, folder string, keepMembers bool) {
-	folder = strings.TrimSpace(folder)
-	if folder == "" || serverKey == "" {
-		return
-	}
-	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		for lc, f := range w.FavBackgroundFolder {
-			if !strings.EqualFold(f, folder) {
-				continue
-			}
-			delete(w.FavBackgroundFolder, lc)
-			if keepMembers {
-				continue
-			}
-			for i, have := range w.FavBackgrounds {
-				if strings.ToLower(have) == lc {
-					w.FavBackgrounds = append(w.FavBackgrounds[:i], w.FavBackgrounds[i+1:]...)
-					break
-				}
-			}
-		}
-	})
+	p.deleteFolder(serverKey, folder, keepMembers,
+		func(w *ServerWarmInfo) map[string]string { return w.FavBackgroundFolder },
+		func(w *ServerWarmInfo) []string { return w.FavBackgrounds },
+		func(w *ServerWarmInfo, l []string) { w.FavBackgrounds = l })
 }
 
 // --- Character keybinds (per server) -------------------------------------------
