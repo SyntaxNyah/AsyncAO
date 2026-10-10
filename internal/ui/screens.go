@@ -1328,7 +1328,7 @@ func (a *App) randomChar() {
 // controls don't blink. Off the hot path — only drawn when a preview is up.
 func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c := a.ctx
-	// Detached (v1.93.0 preview-window-wire, requirement 2): the in-app box
+	// Detached (preview-window-wire, requirement 2): the in-app box
 	// does not exist AT ALL while the sprite lives in its own OS window —
 	// drawing both would show the same pick twice, and this box's own
 	// clamp-to-window math (baseX/hiX/baseY/hiY below) is exactly the thing
@@ -1473,7 +1473,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 		// so a name that fit yesterday must not run under it when the box is pinned.
 		c.LabelClipped(strip.X+4, strip.Y+3, frame.W-8-previewChromeW, name, ColAccent)
 	}
-	// Pop-out toggle (v1.93.0 preview-window-wire, requirement 1): detaches the
+	// Pop-out toggle (preview-window-wire, requirement 1): detaches the
 	// sprite into its own OS window, freely movable off AsyncAO's own borders —
 	// "somewhere out of the way", the user's own stated workflow. Always drawn
 	// plain (never a lit "active" state): this whole box stops drawing the
@@ -1520,7 +1520,7 @@ func previewGripRect(frame sdl.Rect) sdl.Rect {
 const (
 	previewChromeBtn   = int32(18) // square px per chrome button
 	previewChromeGap   = int32(2)  // inset from the frame edge, and between buttons
-	previewChromeSlots = int32(3)  // pop-out + pin + close (v1.93.0 preview-window-wire)
+	previewChromeSlots = int32(3)  // pop-out + pin + close (preview-window-wire)
 	// previewChromeW is the width the name strip must keep clear of them.
 	previewChromeW = previewChromeSlots * (previewChromeBtn + previewChromeGap)
 )
@@ -1538,7 +1538,7 @@ func previewPinRect(frame sdl.Rect) sdl.Rect {
 }
 
 // previewDetachRect is the slot immediately left of the pin button — the
-// pop-out-to-its-own-window toggle (v1.93.0 preview-window-wire, requirement
+// pop-out-to-its-own-window toggle (preview-window-wire, requirement
 // 1). Only ever clickable while ATTACHED: this whole box does not draw at
 // all once detached (drawSpritePreview's early return), so there is no
 // in-app affordance to re-attach — closing the OS window (its own titlebar
@@ -1554,12 +1554,12 @@ func previewDetachRect(frame sdl.Rect) sdl.Rect {
 // a right-click open, or by this box's own pin button), the sticky preference,
 // OR the sprite currently being detached into its own OS window.
 //
-// The detached arm (v1.93.0 preview-window-wire, requirement 3) is the ENTIRE
+// The detached arm (preview-window-wire, requirement 3) is the ENTIRE
 // wiring the detached window needs to keep following emote picks: it is what
 // makes followPinnedPreview's own `!a.previewIsPinned()` guard pass while
 // detached, so all three of its existing call sites (selectEmote,
 // drawEmoteGridThemed, applyStylePreset) retarget the window for free through
-// the exact same seam wave 1 shipped — no fourth pick implementation, and the
+// the exact same seam shipped — no fourth pick implementation, and the
 // AST census (TestEveryEmotePickImplementationFollowsThePinnedPreview) never
 // has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
@@ -1987,7 +1987,7 @@ func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
 
 func (a *App) drawCourtroom(w, h int32) {
 	c := a.ctx
-	// v1.50.5 (reported by Nightingale: hidden buttons still showed handles in the
+	// (reported by Nightingale: hidden buttons still showed handles in the
 	// editor view): the slot registry is rebuilt from THIS frame's draws while editing, so a
 	// piece hidden mid-session stops ghosting handles the moment it stops
 	// drawing — stale registrations from when it was visible used to live in
@@ -2254,7 +2254,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 			}
 		}
 	}
-	c.Fill(box, a.partPanelOr(partOOC, ColPanel)) // per-part tint (v1.52.0)
+	c.Fill(box, a.partPanelOr(partOOC, ColPanel)) // per-part tint
 	c.Border(box, ColAccent)
 	// Titled header bar so it reads as a clean, distinct box (brighter label = legible at a glance).
 	hdr := sdl.Rect{X: box.X + 1, Y: box.Y + 1, W: box.W - 2, H: cleanHeaderH}
@@ -2828,7 +2828,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// render gate (that's render.Viewport; this UI overlay already reads prefs).
 		alpha := uint8(255 * a.d.Prefs.ChatboxOpacityPct() / 100)
 		bg := sdl.Color{R: 16, G: 16, B: 24, A: alpha}
-		if col, ok := a.partPanel(partChatbox); ok { // per-part tint (v1.52.0): custom base, opacity kept
+		if col, ok := a.partPanel(partChatbox); ok { // per-part tint: custom base, opacity kept
 			bg = sdl.Color{R: col.R, G: col.G, B: col.B, A: alpha}
 		}
 		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
@@ -3294,7 +3294,7 @@ func clampF64(v, min, max float64) float64 {
 // volStripRowsH is the height of the quick volume popover's two slider rows:
 // "label NN%" (click = mute) over a full-width slider. Named (rule 9) and
 // shared with drawLogPanel's box height so the two can't drift apart. (The
-// v1.70.0 "stream custom music" checkbox row was removed in v1.70.1 —
+// the "stream custom music" checkbox row was removed —
 // playtest: it cluttered the popover; the toggle lives ONLY in Settings →
 // Audio now.)
 const volStripRowsH = int32(44)
@@ -3380,7 +3380,7 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
-	c.Fill(r, a.partPanelOr(partLog, ColPanel)) // per-part tint (v1.52.0): the log column can carry its own colour
+	c.Fill(r, a.partPanelOr(partLog, ColPanel)) // per-part tint: the log column can carry its own colour
 	c.Border(r, ColAccent)                      // match the rest of the UI (buttons/OOC box/panels all border in the accent) — playtest: the log panel was the lone grey outline
 	// A "🔊" toggle at the right end drops a compact volume strip above the panel
 	// content — adjust volume while the log stays on screen and you keep chatting
@@ -3418,7 +3418,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	innerY := r.Y + btnH + logPanelRowGapPx
 	if a.volStripOn {
 		// Just the two slider rows — the streaming checkbox moved to Settings →
-		// Audio only (v1.70.1; the popover was getting cluttered).
+		// Audio only (the popover was getting cluttered).
 		a.drawVolumeStrip(sdl.Rect{X: r.X + logPanelInsetPx, Y: innerY, W: r.W - 2*logPanelInsetPx, H: volStripRowsH})
 		innerY += volStripRowsH + logPanelRowGapPx
 	}
@@ -6109,7 +6109,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// therefore the block's row count and height — matches the classic layout exactly
 	// (clusterX == pad, y == defY, dy == 0 ⇒ every rect, every wrap edge identical:
 	// the un-edited courtroom stays pixel-identical). An override translates the block
-	// and, since v1.52.0 (Tifera), its WIDTH drives the wrap edge — narrowing re-wraps
+	// and (Tifera) its WIDTH drives the wrap edge — narrowing re-wraps
 	// the buttons into a taller stack, and the judge strip / emote grid below anchor to
 	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
 	// content-driven. The override is read lock-free; off the edit path this is one map
@@ -6176,7 +6176,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
 	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
 	// the top now, to place the control block below this bar.)
-	// v1.50.5 (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
+	// (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
 	// every element below is its own independent movable+resizable slot, so the
 	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
 	// override in prefs is simply ignored; Reset all clears it.)
@@ -6359,7 +6359,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			}
 		}
 	}
-	if !a.panelHidden("ctrl.pair") { // hideable (v1.50.5): hiding compacts, like ctrlSlot
+	if !a.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
 		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
 			a.showPair = !a.showPair
 		}
@@ -6697,7 +6697,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		y2 += btnH + 4
 		x = clusterX
 	}
-	if !a.panelHidden("ctrl.disconnect") { // hideable (v1.50.5): Esc still leaves the server
+	if !a.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
 		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
 			a.requestDisconnect()
 			return y2, true
@@ -6714,13 +6714,13 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 // layouts can't drift (moved verbatim from drawICControls).
 func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	c := a.ctx
-	// The pieces fill the SLOT rect (v1.50.5): a resize genuinely widens the
+	// The pieces fill the SLOT rect: a resize genuinely widens the
 	// dropdown / grows the row height instead of being silently ignored.
 	swatch := sdl.Rect{X: colorBox.X, Y: colorBox.Y, W: 26, H: colorBox.H}
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
+	a.icSwatchRect = swatch // the free-hex wheel anchors here
 	if a.icCustomOn && c.clicked && c.hovering(swatch) {
 		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
 	}
@@ -6767,7 +6767,7 @@ func icBarButtonFits(barW, used, demand, tailReserve int32) bool {
 }
 
 // IC-bar optional-button widths (package-level so the row and its layout tests share
-// one source of truth — rule 9). preW was trimmed from 60 (v1.63.0+ redesign) so the
+// one source of truth — rule 9). preW was trimmed from 60 (redesign) so the
 // default-visible Pre + Text-FX pair fits the 720p classic bar with margin: at the
 // 1280×720 default the bar is 666px and 372px is consumed before the optionals, leaving
 // 666-372-minICInputW(150) = 144px; Pre(preW+6=58) + FX(fxBtnW+4=78) = 136 <= 144, an
@@ -6807,7 +6807,7 @@ const (
 	// guard) whenever the server advertises flipping — matching AO2-Client's ui_flip which also
 	// has no width guard (courtroom.cpp:1629-1636). It sits after Pre+FX but before SFX/emoji in
 	// the cursor chain; at very narrow bars SFX/emoji may drop to make room, but Flip itself
-	// never drops. (v1.80.2)
+	// never drops.
 	icFlipW = 60
 )
 
@@ -6830,7 +6830,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// the slot; the row cursor below flows from the DEFAULT nameX so moving it never
 	// cascades the rest.
 	nameBox := a.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
-	// v1.50.5 fix ("the showname box is not resizable — it has the ui for it but
+	// fix ("the showname box is not resizable — it has the ui for it but
 	// it does nothing"): the field fills the SLOT'S live width/height, not the
 	// fixed default, so the editor's resize handles actually take effect.
 	snW, snDD := nameBox.W, int32(0)
@@ -6899,7 +6899,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// slot (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no
 	// closure) to keep this per-frame row allocation-free.
 	//
-	// DRAW / DROP ORDER (v1.63.0+ redesign): Pre, FX, SFX-dropdown, emoji. Pre sits beside
+	// DRAW / DROP ORDER (redesign): Pre, FX, SFX-dropdown, emoji. Pre sits beside
 	// Immediate (AO2-canonical) and FX draws right after it; because row order == survival
 	// order under this drop discipline, drawing Pre and FX EARLY makes them outrank the SFX
 	// dropdown and the emoji button — those two now yield first on a tight bar, so the
@@ -6924,14 +6924,14 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// an un-edited bar is pixel-identical and moving it never cascades the rest.
 	// slotRect is alloc-free off the edit path.
 	//
-	// Pre is now a CORE button (v1.63.0+ redesign): drawing it FIRST (before SFX/emoji)
+	// Pre is now a CORE button (redesign): drawing it FIRST (before SFX/emoji)
 	// makes it outrank them, so its guard prices in only its OWN width + the input floor —
 	// SFX and emoji, drawn later, drop first on a narrow bar. This inverts the old
 	// self-sacrifice lookahead (which made Pre yield to the whole SFX+emoji+FX tail); that
 	// was needed only while Pre drew AFTER them. preW (package-level, trimmed from 60) keeps
 	// the Pre+FX pair inside the 720p default bar with margin — see the width table on the
 	// const. Inlined arithmetic (no closure) — this row is inside the whole-screen 0-alloc gate.
-	// OVERRIDE / EDITOR win over the width drop (v1.63.0+): a dropped button never
+	// OVERRIDE / EDITOR win over the width drop: a dropped button never
 	// reached slotRect, so it never registered a slot and could not be grabbed in the
 	// editor — nor did a saved override force it back. Draw when the width guard passes
 	// OR the user has a saved slot override OR the editor is armed (hidden still hides).
@@ -6949,7 +6949,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
-	// A CORE button like Pre (v1.63.0+ redesign): drawn BEFORE the SFX dropdown and the emoji
+	// A CORE button like Pre (redesign): drawn BEFORE the SFX dropdown and the emoji
 	// button so it outranks them under the drop discipline — on a narrow bar SFX/emoji yield
 	// first and FX survives (the reverse of the pre-redesign order, where FX dropped so SFX
 	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
@@ -6974,13 +6974,13 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
 	//
-	// Flip is UNCONDITIONAL on flipping servers (v1.80.2): no width guard. AO2-Client shows
+	// Flip is UNCONDITIONAL on flipping servers: no width guard. AO2-Client shows
 	// ui_flip whenever the server feature is present regardless of bar width, and the prior
 	// width-guarded form meant Flip could vanish at any window size, which users found
 	// indistinguishable from the feature being removed. At narrow bars (720p additive) the
 	// IC text input shrinks slightly past the ideal floor; that is the accepted tradeoff for
 	// guaranteed discoverability. SFX/emoji still carry their own width guards; since Flip
-	// now always draws first, the v1.80.1 flipDrewOrAbsent priority-latch is no longer needed.
+	// now always draws first, the flipDrewOrAbsent priority-latch is no longer needed.
 	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
 	if flipInChain && !a.panelHidden(slotICFlip) {
 		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
@@ -6994,7 +6994,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	}
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
 	// emote's own sound until set back to "auto". Picking one previews it. Drawn AFTER
-	// Pre/FX (v1.63.0+ redesign), so on a narrow bar it yields BEFORE them — SFX is no
+	// Pre/FX (redesign), so on a narrow bar it yields BEFORE them — SFX is no
 	// longer a survives-longest core button; Pre and FX outrank it now.
 	a.ensureSFXChoices()
 	// Override / editor win over the drop (same rule as Pre above). SFX has no
@@ -7048,7 +7048,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
-	// buttons (v1.63.0+ redesign), so it's the FIRST to yield on a narrow bar. Override /
+	// buttons (redesign), so it's the FIRST to yield on a narrow bar. Override /
 	// editor win over the drop (same rule as Pre); hidden still hides.
 	_, emojiOv := a.classicOv[slotICEmoji]
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
@@ -7061,7 +7061,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// The #2 React BUTTON was removed by request (playtest: unused) — incoming
 	// reaction floats still render (and Hide-reactions still hides them), the
 	// IC bar just doesn't spend a slot on sending one. (FX moved up above SFX in the
-	// v1.63.0+ redesign so it outranks SFX/emoji on a narrow bar.)
+	// redesign so it outranks SFX/emoji on a narrow bar.)
 	icW := icBar.W - (icX - icBar.X)
 	if icW < minICInputW {
 		icW = minICInputW // defensive floor: never collapse the input, even on a tiny stage
@@ -7191,7 +7191,7 @@ func (a *App) previewedEmoteName() string {
 
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
-	// Per-part tint (v1.52.0): the grid has NO backing panel by default, so a
+	// Per-part tint: the grid has NO backing panel by default, so a
 	// set colour ADDS one — un-set stays exactly as before (no fill at all).
 	if col, ok := a.partPanel(partEmotes); ok {
 		c.Fill(r, col)
@@ -7322,7 +7322,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 
 	// ★ Favs filter toggle (always present, so you can switch it off even with an
 	// empty favs-only grid) + Random. Their DEFAULT is the grid's bottom-right
-	// corner, but each is its own movable slot now (v1.50.5 — "the random char
+	// corner, but each is its own movable slot now ("the random char
 	// button is always stuck in the emote grid corner") and hideable like any
 	// control button.
 	if !a.panelHidden("ctrl.favsfilter") {
@@ -8058,7 +8058,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		// anim, AO2's emote 1) rather than minting the "normal" literal at them.
 		//
 		// It was the literal, and for the partner it was the WHOLE preview: your own
-		// ghost has been the selected emote's idle since v1.53.0, but theirs had no
+		// ghost has been the selected emote's idle, but theirs had no
 		// such signal, so every pack whose poses are spelled SNormal/HSmug previewed
 		// as an empty box with a name in the middle. The char.ini this reads was
 		// already being fetched for their blips, skin and showname, so honesty here
@@ -8282,7 +8282,7 @@ func (a *App) pairLabel() string {
 // funColor applies the optional outgoing message-colour modes (M61, both off by
 // default): rainbow wraps the text in the \cr inline-colour markup (per-rune
 // palette cycle), else random swaps the message's palette colour. customRGB ≥ 0
-// is the free hex pick (v1.52.0, Tifera): the exact colour rides as `\c#RRGGBB`
+// is the free hex pick (Tifera): the exact colour rides as `\c#RRGGBB`
 // markup for AsyncAO clients, the wire text_color falls back to the nearest
 // standard index. Pure (the random index is supplied) so the rule is testable;
 // blank/space sends are left alone, and rainbow wins if several are set.
@@ -9019,7 +9019,7 @@ func (a *App) applyICColorChoice(next int) {
 	a.icCustomOn = false // every non-Custom pick turns the free hex off (mutual exclusion)
 	switch {
 	case next == icColorCustomIdx:
-		// Free hex pick (v1.52.0, Tifera): seed from the last persisted custom
+		// Free hex pick (Tifera): seed from the last persisted custom
 		// colour and open the wheel. Selecting Custom… again just reopens it.
 		a.icCustomOn = true
 		a.icCustomRGB = a.d.Prefs.ICCustomColorRGB()
@@ -9222,7 +9222,7 @@ func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorS
 			}
 		case s.Color == courtroom.ColorDefault:
 			out = append(out, render.ColorSpan{Len: s.Len, Color: def, Bold: s.Bold, Italic: s.Italic})
-		case s.Color >= courtroom.ColorHexBase: // exact transmitted hex (v1.52.0): unpack 0xRRGGBB
+		case s.Color >= courtroom.ColorHexBase: // exact transmitted hex: unpack 0xRRGGBB
 			rgb := s.Color - courtroom.ColorHexBase
 			col := sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: 255}
 			out = append(out, render.ColorSpan{Len: s.Len, Color: col, Bold: s.Bold, Italic: s.Italic})
