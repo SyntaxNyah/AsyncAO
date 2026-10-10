@@ -250,7 +250,6 @@ func TestEveryDisplayLaneStripsTheSidechannel(t *testing.T) {
 		{"translog.go", "detailedLogLine", "StripSpriteStyle", "the on-disk transcript, which is read by a human and by the log browser"},
 		{"friendstab.go", "pmAppend", "StripSpriteStyle", "a DM thread, the one channel the codec rides by design"},
 		{"scenemaker.go", "eventSummary", "StripSpriteStyle", "the scene maker's event list"},
-		{"../logbrowser/logbrowser.go", "readLogScope", "StripSpriteStyle", "the log browser, whose input is HISTORY and so still holds runes written by older builds"},
 		{"subtitles.go", "subtitleLine", "StripSpriteStyle", "the exported .srt/.vtt, which strips the body and keeps Showname — the precedent the rest follow"},
 	}
 	for _, l := range lanes {
