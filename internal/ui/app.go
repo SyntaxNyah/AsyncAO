@@ -5757,8 +5757,11 @@ func (a *App) fetchManifestAsync() {
 	if !a.d.Prefs.FormatAutoDetect() {
 		return
 	}
+	mgr := a.d.Manager
+	prefs := a.d.Prefs
+	ch := a.manifestRes
 	go func() {
-		res := seedOriginFormats(a.d.Manager, a.d.Prefs, origin)
+		res := seedOriginFormats(mgr, prefs, origin)
 		mf := manifestFetch{host: host, seeded: res.seeded, status: res.status, err: res.err}
 		// Preserve the session path's prior semantics: pollManifest treats a nil
 		// err as "seeded, republish + log N classes". A host with no manifest
@@ -5769,10 +5772,10 @@ func (a *App) fetchManifestAsync() {
 			mf.err = network.ErrAssetNotFound
 		}
 		select {
-		case <-a.manifestRes:
+		case <-ch:
 		default:
 		}
-		a.manifestRes <- mf
+		ch <- mf
 	}()
 }
 
@@ -8030,20 +8033,22 @@ func (a *App) ensureIniList() {
 	url := a.urls.Origin() + iniswapFileName
 	bgURL := a.urls.BackgroundsRoot()
 	key := a.serverKey
+	mgr := a.d.Manager
+	ch := a.iniRes
 	go func() {
 		// Same guard as the background-list goroutine: a malformed autoindex
 		// tripping parseAutoindexDirs must degrade, never hard-crash off-thread.
 		defer func() {
 			if r := recover(); r != nil {
 				writeCrashLog("iniswap list goroutine panic: ", r)
-				a.iniRes <- iniswapFetch{key: key, err: fmt.Errorf("iniswap list failed: %v", r)}
+				ch <- iniswapFetch{key: key, err: fmt.Errorf("iniswap list failed: %v", r)}
 			}
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
-		data, err := a.d.Manager.FetchRaw(ctx, url)
+		data, err := mgr.FetchRaw(ctx, url)
 		if err != nil {
-			a.iniRes <- iniswapFetch{key: key, err: err}
+			ch <- iniswapFetch{key: key, err: err}
 			return
 		}
 		names := parseIniswapList(data)
@@ -8052,10 +8057,10 @@ func (a *App) ensureIniList() {
 		// FILTER the list; a host with no listing is not an error (nil = the
 		// remembered names alone do the filtering).
 		var bgs []string
-		if bgData, bgErr := a.d.Manager.FetchRaw(ctx, bgURL); bgErr == nil {
+		if bgData, bgErr := mgr.FetchRaw(ctx, bgURL); bgErr == nil {
 			bgs = parseAutoindexDirs(bgData)
 		}
-		a.iniRes <- iniswapFetch{key: key, names: names, bgs: bgs}
+		ch <- iniswapFetch{key: key, names: names, bgs: bgs}
 	}()
 }
 
@@ -8392,12 +8397,14 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 	a.previewEmoteIdx = 0
 	url := a.charINIURL(name)
 	key := a.serverKey
+	mgr := a.d.Manager
+	ch := a.previewEmoteRes
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
 		// LAYERED, like loadCharINI: previewing a character the user's own pack
 		// supplies must cycle THEIR emotes, not the server's idea of that folder.
-		data, err := a.d.Manager.FetchRawLayered(ctx, url)
+		data, err := mgr.FetchRawLayered(ctx, url)
 		if err != nil {
 			return
 		}
@@ -8414,7 +8421,7 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 			anims = append(anims, e.Anim)
 			labels = append(labels, e.Comment)
 		}
-		a.previewEmoteRes <- previewEmoteFetch{key: key, char: name, anims: anims, labels: labels}
+		ch <- previewEmoteFetch{key: key, char: name, anims: anims, labels: labels}
 	}()
 }
 
@@ -8549,17 +8556,19 @@ func (a *App) loadCharINI() {
 	url := a.charINIURL(name)
 	a.charINIBusy = true
 	key := a.serverKey
+	mgr := a.d.Manager
+	ch := a.charINIres
 	go func() {
 		// LAYERED: a character served out of the user's own folders must bring its
 		// own emote list, or their sprites load under somebody else's poses (#72).
-		data, err := a.d.Manager.FetchRawLayered(context.Background(), url)
+		data, err := mgr.FetchRawLayered(context.Background(), url)
 		if err != nil {
-			a.charINIres <- charINIFetch{key: key, err: err}
+			ch <- charINIFetch{key: key, err: err}
 			PushWake() // wake the event-driven loop so Background drains this at idle=0
 			return
 		}
 		ini, err := courtroom.ParseCharINI(data)
-		a.charINIres <- charINIFetch{key: key, ini: ini, err: err}
+		ch <- charINIFetch{key: key, ini: ini, err: err}
 		PushWake() // wake the event-driven loop so Background drains this at idle=0
 	}()
 }
@@ -9685,6 +9694,7 @@ func (a *App) applyThemeAsync() uint64 {
 	// goroutine below must not take the preferences lock.
 	texBudgetMiB := a.d.Prefs.TexBudgetMiB()
 	gen := a.themeGen.Add(1)
+	themeRes := &a.themeRes
 	go func() {
 		res := themeApply{
 			gen:    gen,
@@ -9985,12 +9995,12 @@ func (a *App) applyThemeAsync() uint64 {
 		// this is memory bookkeeping, not I/O, and the render thread never touches
 		// either value again.
 		for {
-			old := a.themeRes.Load()
+			old := themeRes.Load()
 			if old != nil && old.gen > gen {
 				res.releaseDecoded() // outraced by a later pick: this load never lands
 				return
 			}
-			if a.themeRes.CompareAndSwap(old, &res) {
+			if themeRes.CompareAndSwap(old, &res) {
 				if old != nil {
 					old.releaseDecoded() // displaced before the render thread consumed it
 				}
