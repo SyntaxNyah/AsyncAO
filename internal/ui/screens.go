@@ -86,11 +86,10 @@ const (
 // those literals ran off the left edge of the window long before config.MinWindowW:
 // "What's New" landed at x=-78 and "Logs" at x=-198 on a 640-wide window.
 //
-// It used to be seven buttons — Refresh / Settings / About / Ping / Phone Book /
-// What's New / Logs — which is what made the row crowded enough to run off the
-// window in the first place. Six of them are now rows of the app-wide menu bar
-// (menubar.go): Refresh, Ping and Direct-connect focus under Servers; Settings under
-// Extras; About, What's New and Logs under Help.
+// Six of the cluster's buttons — Refresh, Settings, About, Ping, What's New,
+// Logs — are rows of the app-wide menu bar now (menubar.go); only the Phone
+// Book toggle and the centred Privacy/Glossary/What's New trio stay in the
+// header.
 //
 // PHONE BOOK STAYS. Its label flips to "← All servers" on the phone-book page, so it
 // is not really a command — it is that page's only way BACK, and burying a back
@@ -124,8 +123,8 @@ const (
 	// (Refresh / Sort) sits; lobbyListActionW is each button's width there. The
 	// strip owns the full window width, so unlike the header cluster it needs no
 	// shrink ladder. Named so lobbyListTop can be the single source both drawLobby
-	// and its tests read — the star-remove test used to duplicate this arithmetic
-	// as a literal and broke the moment the strip pushed the list down.
+	// and its callers read — duplicating this arithmetic as a literal broke the
+	// moment the strip pushed the list down.
 	lobbyDirectRowDropY   int32 = 56
 	lobbyListActionsDropY int32 = 34
 	lobbyListActionW      int32 = 110
@@ -255,10 +254,9 @@ func lobbyUtilStop(w, i int32) int32 {
 }
 
 // lobbyDirectRowY and lobbyListTop derive the lobby's two lower rows from the
-// chrome band, so drawLobby and its tests read ONE source. The star-remove test
-// used to re-derive the list's top as a literal `(topChromeH+pad+56)+40` and broke
-// the moment the list's action strip pushed it down — a duplicated layout constant
-// is a test that fails for the wrong reason.
+// chrome band, so drawLobby and its callers read ONE source. Re-deriving the
+// list's top as a literal `(topChromeH+pad+56)+40` broke the moment the list's
+// action strip pushed it down — a duplicated layout constant fails for the wrong reason.
 func lobbyDirectRowY(topChrome int32) int32 { return topChrome + pad + lobbyDirectRowDropY }
 func lobbyListTop(topChrome int32) int32 {
 	return lobbyDirectRowY(topChrome) + lobbyListActionsDropY + btnH + lobbyListActionsGapY
