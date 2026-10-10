@@ -1518,7 +1518,8 @@ func (a *App) finishGifExport() {
 	delayCs, loop := j.delayCs, j.loop
 	a.warnLine = fmt.Sprintf("Encoding GIF (%d frames)…", len(frames))
 	a.warnAt = time.Now()
-	go func() { a.gifResultCh <- encodeAndWriteGIF(frames, stem, delayCs, loop) }()
+	ch := a.gifResultCh
+	go func() { ch <- encodeAndWriteGIF(frames, stem, delayCs, loop) }()
 }
 
 // finishWebpExport assembles the streamed WebP frames and writes the file. The
@@ -1538,14 +1539,15 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 	enc := j.webp
 	a.warnLine = fmt.Sprintf("Encoding WebP (%d frames)…", j.captured)
 	a.warnAt = time.Now()
+	ch := a.gifResultCh
 	go func() {
 		data, err := enc.Assemble()
 		enc.Close()
 		if err != nil {
-			a.gifResultCh <- exportResult{msg: "WebP export failed: " + err.Error()}
+			ch <- exportResult{msg: "WebP export failed: " + err.Error()}
 			return
 		}
-		a.gifResultCh <- writeWebp(data, stem)
+		ch <- writeWebp(data, stem)
 	}()
 }
 
@@ -1598,10 +1600,11 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	subFps := j.fps
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
+	ch := a.gifResultCh
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
-			a.gifResultCh <- exportResult{msg: "Video export failed: " + err.Error()}
+			ch <- exportResult{msg: "Video export failed: " + err.Error()}
 			return
 		}
 		// Mux FIRST so we know the final on-disk name: on a successful mux the video is
@@ -1632,7 +1635,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		if writeSubtitleFiles(finalPath, subs, subFps) {
 			subNote = "  + subtitles (.srt/.vtt)"
 		}
-		a.gifResultCh <- exportResult{msg: videoSavedMsg(finalPath) + soundNote + subNote, path: finalPath}
+		ch <- exportResult{msg: videoSavedMsg(finalPath) + soundNote + subNote, path: finalPath}
 	}()
 }
 
