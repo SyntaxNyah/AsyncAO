@@ -104,10 +104,11 @@ func (a *App) ensureEmojiFontLoad() {
 		return
 	}
 	a.emojiLoadStarted = true
+	ch := a.emojiFontRes
 	go func() {
 		if b := bestEmojiFont(); len(b) > 0 {
 			select {
-			case a.emojiFontRes <- b:
+			case ch <- b:
 			default:
 			}
 		}
