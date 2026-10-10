@@ -1560,7 +1560,7 @@ func previewDetachRect(frame sdl.Rect) sdl.Rect {
 // detached, so all three of its existing call sites (selectEmote,
 // drawEmoteGridThemed, applyStylePreset) retarget the window for free through
 // the exact same seam shipped — no fourth pick implementation, and the
-// AST census (TestEveryEmotePickImplementationFollowsThePinnedPreview) never
+// the pinned-preview census never
 // has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
 	return a.previewPinned || a.d.Prefs.PreviewPinnedOn() || a.previewIsDetached()
@@ -2701,8 +2701,7 @@ func (a *App) reshowSprites() {
 // chatOverlayPadX / chatOverlayNameY name the rest of the classic overlay's inset,
 // which drawChatOverlay used to spell as bare 8 / 4 / 16 literals sprinkled across a
 // dozen expressions (hard rule 9). VALUES ARE UNCHANGED — this is naming only, and
-// TestClassicChatOverlayInsetValuesUnchanged (chatboxfit_test.go) pins the classic
-// box to the exact pixels it drew before.
+// the classic box draws at the exact pixels it drew before.
 //
 // There WAS a chatOverlayBoldNudge here — the 1 px right shift of a faux-bold second
 // draw pass. It is gone (F1b): weight belongs in the glyphs, not in a second blit,
@@ -4387,7 +4386,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 // areaWrapped, the Players tab's headcount in drawAreaHeaderRow) rather than
 // knowing in advance which fields are set — see areaWrapped above and
 // drawAreaHeaderRow in playerlist.go, the two production call sites
-// TestArupStatusTextSharedAcrossAreaAndPlayerTabs pins. A caller with
+// share it. A caller with
 // nothing else on the line (drawCurrentAreaStatusStrip) trims it back off.
 //
 // AsyncAO deliberately keeps its own simplified status colour buckets
@@ -6113,8 +6112,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// the buttons into a taller stack, and the judge strip / emote grid below anchor to
 	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
 	// content-driven. The override is read lock-free; off the edit path this is one map
-	// lookup, no alloc. controlsBlockOrigin is the pure core (unit-pinned:
-	// TestControlsBlockOrigin).
+	// lookup, no alloc. controlsBlockOrigin is the pure core.
 	ctrlOv, ctrlEdited := a.classicOv[slotControls]
 	var ctrlRect sdl.Rect
 	if ctrlEdited {
@@ -6771,7 +6769,7 @@ func icBarButtonFits(barW, used, demand, tailReserve int32) bool {
 // default-visible Pre + Text-FX pair fits the 720p classic bar with margin: at the
 // 1280×720 default the bar is 666px and 372px is consumed before the optionals, leaving
 // 666-372-minICInputW(150) = 144px; Pre(preW+6=58) + FX(fxBtnW+4=78) = 136 <= 144, an
-// 8px margin. See drawICInputRow's drop-order note and TestICBarPreFXSurvive720p.
+// 8px margin. See drawICInputRow's drop-order note.
 const (
 	minICInputW  = 150 // the IC text input never shrinks below this (the tail reserve / floor)
 	shownameBoxW = 140 // the per-session showname box width
@@ -6970,7 +6968,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// (single source of truth: a.pairFlip; no new state, no handler). The pair-panel
 	// checkbox stays unconditional; this one is feature-gated because AO2 hides ui_flip on
 	// non-flipping servers. Placed here (after Pre+FX, before SFX/emoji) in a movable slot
-	// (#4a). pairFlip is SESSION state that already parks/resets per tab (tabs_test.go:162-200),
+	// (#4a). pairFlip is SESSION state that already parks/resets per tab,
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
 	//
@@ -7127,8 +7125,8 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 // never touched it, or this stops being a fix and becomes an annoyance. And
 // !previewIsPinned() leaves an unpinned OPEN box to its existing close-on-click
 // contract (closeSpritePreviewOnLeave / dismissPreviewOnClick) — a bare hover
-// preview still vanishes on a click, exactly as TestSpritePreviewTravelCorridor
-// pins. One boolean short-circuit, so a click with the box closed (the common
+// preview still vanishes on a click.
+// One boolean short-circuit, so a click with the box closed (the common
 // case) costs nothing beyond the field read already sitting in a register.
 func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
 	if a.previewBase == "" || !a.previewIsPinned() {
@@ -8945,7 +8943,7 @@ func animColors(sc *courtroom.Scene, base sdl.Color) []sdl.Color {
 }
 
 // toRenderEffectSpans maps the courtroom (SDL-free) spans to the render package's spans. The
-// effect ids are pinned equal by TestEffectIDsMatchRender, so the cast is a straight copy.
+// effect ids are pinned equal, so the cast is a straight copy.
 // Allocates once per effects message (build time), never per frame.
 func toRenderEffectSpans(spans []courtroom.TextEffectSpan) []render.EffectSpan {
 	if len(spans) == 0 {
