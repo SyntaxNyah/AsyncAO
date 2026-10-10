@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 )
 
 // TestTwoTabsOnOneServerGetTwoLogSessions pins the identity half: a fresh live slot
@@ -99,8 +100,8 @@ func TestTranscriptFilenameDisambiguatesWithinASecond(t *testing.T) {
 		}
 		seen[name] = true
 		// The browser has to be able to read every one of them back.
-		if label := sessionLabel(name); label == name {
-			t.Errorf("sessionLabel(%q) fell through to the raw file name — the log browser would show a per-tab log as a corrupt entry", name)
+		if label := logbrowser.SessionLabel(name); label == name {
+			t.Errorf("logbrowser.SessionLabel(%q) fell through to the raw file name — the log browser would show a per-tab log as a corrupt entry", name)
 		}
 	}
 }
@@ -110,19 +111,19 @@ func TestTranscriptFilenameDisambiguatesWithinASecond(t *testing.T) {
 // share transcriptStampLayout precisely so they cannot drift.
 func TestSessionLabelReadsBothNameShapes(t *testing.T) {
 	now := time.Date(2026, 8, 7, 15, 4, 5, 0, time.UTC)
-	if got, want := sessionLabel(transcriptFilename(now, 1)), "2026-08-07 15:04"; got != want {
-		t.Errorf("sessionLabel(first) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel(transcriptFilename(now, 1)), "2026-08-07 15:04"; got != want {
+		t.Errorf("logbrowser.SessionLabel(first) = %q, want %q", got, want)
 	}
-	if got, want := sessionLabel(transcriptFilename(now, 3)), "2026-08-07 15:04 (tab 3)"; got != want {
-		t.Errorf("sessionLabel(third) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel(transcriptFilename(now, 3)), "2026-08-07 15:04 (tab 3)"; got != want {
+		t.Errorf("logbrowser.SessionLabel(third) = %q, want %q", got, want)
 	}
 	// A name that is neither shape still degrades to the stem, as it always did.
-	if got, want := sessionLabel("notes.log"), "notes"; got != want {
-		t.Errorf("sessionLabel(unrecognised) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel("notes.log"), "notes"; got != want {
+		t.Errorf("logbrowser.SessionLabel(unrecognised) = %q, want %q", got, want)
 	}
 	// A server folder full of hyphens must not be mistaken for an ordinal.
-	if got := sessionLabel("my-session.log"); got != "my-session" {
-		t.Errorf("sessionLabel(%q) = %q — a non-numeric tail must not parse as a tab ordinal", "my-session.log", got)
+	if got := logbrowser.SessionLabel("my-session.log"); got != "my-session" {
+		t.Errorf("logbrowser.SessionLabel(%q) = %q — a non-numeric tail must not parse as a tab ordinal", "my-session.log", got)
 	}
 }
 

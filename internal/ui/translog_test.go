@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -49,7 +50,7 @@ func TestDetailedLogLine(t *testing.T) {
 
 // TestOOCLogLineFormat pins the AO2-matching OOC transcript line — "[OOC][timestamp] " prepended
 // to whatever the on-screen OOC panel already showed (../AO2-Client/src/courtroom.cpp:1932) — and
-// that parseLogWho (logbrowser.go) still recovers the right speaker from it (or degrades to "" for
+// that logbrowser.ParseWho still recovers the right speaker from it (or degrades to "" for
 // a system line with no ": ", rather than guessing).
 func TestOOCLogLineFormat(t *testing.T) {
 	now := time.Date(2026, 6, 14, 15, 4, 5, 0, time.UTC)
@@ -84,8 +85,8 @@ func TestOOCLogLineFormat(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("got  %q\nwant %q", got, tc.want)
 			}
-			if who := parseLogWho(got); who != tc.who {
-				t.Errorf("parseLogWho(%q) = %q, want %q", got, who, tc.who)
+			if who := logbrowser.ParseWho(got); who != tc.who {
+				t.Errorf("logbrowser.ParseWho(%q) = %q, want %q", got, who, tc.who)
 			}
 		})
 	}

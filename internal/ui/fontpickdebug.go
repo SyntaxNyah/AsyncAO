@@ -32,6 +32,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -131,7 +132,7 @@ func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 		}
 		setName, slot, slotOf := fontSetLabel(c, font)
 		out = append(out, fontPickRow{
-			text:     truncateRunes(text, debugFontTextCap),
+			text:     logbrowser.TruncateRunes(text, debugFontTextCap),
 			setName:  setName,
 			slot:     slot,
 			slotOf:   slotOf,

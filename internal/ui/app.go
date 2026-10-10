@@ -25,6 +25,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/hwid"
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -629,7 +630,7 @@ type App struct {
 	// --- log browser (ScreenLogs): search saved transcripts across servers ---
 	// Global (not per-session): the loader runs off-thread, lands on logBrowserRes.
 	logBrowser    logBrowserState
-	logBrowserRes chan logBrowserLoad
+	logBrowserRes chan logbrowser.Result
 
 	// --- case notebook loads (per-server; payload routes by key) ---
 	notebookRes chan notebookLoad
@@ -3499,7 +3500,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		casingRes:           make(chan casingProbeResult, 1),
 		mountIndexRes:       make(chan mountIndexResult, 1),
 		fontRes:             make(chan fontLoad, 1),
-		logBrowserRes:       make(chan logBrowserLoad, 1),
+		logBrowserRes:       make(chan logbrowser.Result, 1),
 		emojiFontRes:        make(chan []byte, 1),
 		fallbackFontRes:     make(chan [][]byte, 1),
 		cjkFontRes:          make(chan [][]byte, 1),
