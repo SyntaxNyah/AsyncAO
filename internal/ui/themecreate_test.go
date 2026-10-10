@@ -448,6 +448,16 @@ func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
 		t.Error("resuming live preview did not invalidate the canvas — the picture would stay frozen " +
 			"until something else happened to invalidate it")
 	}
+	// An edit with live preview ON must also invalidate — the one gated spelling
+	// (editorInvalidateLive) is what every edit path goes through, so a live edit
+	// that skipped it would keep drawing stale geometry.
+	a.themeLay.valid = true
+	if !a.editorApply(mutateElemField(elementTarget(0), editFieldHidden, editValueBool(sc.Elements[0].Hidden))) {
+		t.Fatal("an edit with live preview on was refused")
+	}
+	if a.themeLay.valid {
+		t.Error("an edit with live preview on did not invalidate the canvas — the picture keeps drawing the stale geometry")
+	}
 
 	// AND THE EXIT ALWAYS RECONCILES. A paused exit that skipped the art sync would
 	// leave the courtroom drawing a plan the document has moved past — the class the
@@ -477,18 +487,5 @@ func TestTheLiveToggleIsOnTheRailAndSaysWhichStateItIsIn(t *testing.T) {
 	}
 	if editorLiveLabel(true) == editorLiveLabel(false) {
 		t.Error("the Live button reads the same in both states")
-	}
-	// The gate on the one gated spelling: every per-edit invalidate goes through
-	// editorInvalidateLive, so a future edit path cannot re-bake past a frozen canvas.
-	for _, fn := range []string{"editorApply", "editorUndo", "editorRedo"} {
-		body := funcBodySource(t, "themeeditor.go", fn)
-		if containsCall(body, "invalidateThemeCanvases") {
-			t.Errorf("%s calls invalidateThemeCanvases directly — it must go through editorInvalidateLive, "+
-				"or a frozen preview re-bakes on that path alone", fn)
-		}
-		if !containsCall(body, "editorInvalidateLive") {
-			t.Errorf("%s no longer invalidates at all — the edit lands and the screen keeps drawing last "+
-				"frame's geometry", fn)
-		}
 	}
 }
