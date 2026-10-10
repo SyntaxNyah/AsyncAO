@@ -86,29 +86,29 @@ type pickCache struct {
 // returns an empty list, it just caches one first — so it is what
 // TestOnlyPickerRowsNameAPickSource asserts. Deleting the pickNone disjunct fails
 // that test; a test on the return value alone would not notice.
-func (a *App) editorPickNames(src pickSource) []string {
+func (te *themeEditor) editorPickNames(src pickSource) []string {
 	if src == pickNone || int(src) >= int(pickSourceCount) {
 		return nil
 	}
 	if s := pickStatic[src]; s != nil {
 		return s
 	}
-	if a.te == nil || a.te.doc == nil {
+	if te == nil || te.doc == nil {
 		return nil
 	}
-	key := a.editorPickKey(src)
-	c := &a.te.picks
+	key := te.editorPickKey(src)
+	c := &te.picks
 	if c.built[src] && c.key[src] == key {
 		return c.names[src]
 	}
-	c.names[src] = a.buildPickNames(src, c.names[src][:0])
+	c.names[src] = te.buildPickNames(src, c.names[src][:0])
 	c.key[src], c.built[src] = key, true
 	return c.names[src]
 }
 
 // editorPickKey is the cheap validity key for a dynamic list. See pickCache.
-func (a *App) editorPickKey(src pickSource) int {
-	d := a.te.doc
+func (te *themeEditor) editorPickKey(src pickSource) int {
+	d := te.doc
 	switch src {
 	case pickAnchor:
 		return len(d.live)*2 + len(d.side.Panes)
@@ -120,8 +120,8 @@ func (a *App) editorPickKey(src pickSource) int {
 
 // buildPickNames fills out one dynamic list, reusing the cached backing array so a
 // rebuild costs at most one grow rather than a fresh allocation every time.
-func (a *App) buildPickNames(src pickSource, out []string) []string {
-	d := a.te.doc
+func (te *themeEditor) buildPickNames(src pickSource, out []string) []string {
+	d := te.doc
 	switch src {
 	case pickAnchor:
 		// EVERY key this build actually PLACED, not every key the registry knows: an

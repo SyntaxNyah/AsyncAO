@@ -1185,7 +1185,7 @@ func (a *App) drawEditorInspector(w, h int32) {
 		c.Label(rail.X+editRowPad, rail.Y+4, "Nothing selected", ColTextDim)
 		return
 	}
-	rows := a.inspectorRowsFor(t)
+	rows := a.te.inspectorRowsFor(t)
 	if len(rows) == 0 {
 		c.Label(rail.X+editRowPad, rail.Y+4, "Nothing editable here", ColTextDim)
 		return
@@ -1341,7 +1341,7 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 // same value, never a gate on it.
 func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, old string) {
 	c := a.ctx
-	names := a.editorPickNames(f.pick)
+	names := a.te.editorPickNames(f.pick)
 	field := ctl
 	if len(names) > 0 {
 		// BOTH BUTTONS ARE ALWAYS DRAWN — never `if back { } else if fwd { }`. Ctx.Button
