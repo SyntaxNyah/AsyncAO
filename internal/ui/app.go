@@ -4418,10 +4418,11 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.ensureThemeForSession()
 	// Case notebook: per-server pins load off-thread, land via the poll
 	// (the payload carries the key so it routes even after a tab switch).
+	ch := a.notebookRes
 	go func(key string) {
 		if nb, err := config.LoadNotebook(key); err == nil {
 			select {
-			case a.notebookRes <- notebookLoad{key: key, nb: nb}:
+			case ch <- notebookLoad{key: key, nb: nb}:
 			default:
 			}
 		}
@@ -5548,10 +5549,11 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
 	a.ensureThemeForSession()
 	a.screen = ScreenCharSelect
+	ch := a.notebookRes
 	go func(k string) {
 		if nb, err := config.LoadNotebook(k); err == nil {
 			select {
-			case a.notebookRes <- notebookLoad{key: k, nb: nb}:
+			case ch <- notebookLoad{key: k, nb: nb}:
 			default:
 			}
 		}
@@ -5955,6 +5957,7 @@ func (a *App) loadFontChainAsync(raw string) {
 	if len(paths) > fontChainCap {
 		paths = paths[:fontChainCap]
 	}
+	ch := a.fontRes
 	go func() {
 		var res fontLoad
 		var failed []string
@@ -5981,7 +5984,7 @@ func (a *App) loadFontChainAsync(raw string) {
 			res.note = "Font chain: " + strings.Join(res.names, " → ")
 		}
 		select {
-		case a.fontRes <- res:
+		case ch <- res:
 		default: // a newer load superseded this one
 		}
 	}()
@@ -8701,11 +8704,12 @@ func (a *App) RefreshServers() {
 	// An explicit --master flag (anything non-default in Deps) wins over the
 	// Settings override, which wins over the built-in defaults.
 	urls := a.masterListURLs()
+	ch := a.lobbyResult
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
 		entries, err := network.FetchServerLists(ctx, urls)
-		a.lobbyResult <- lobbyFetch{entries: entries, err: err}
+		ch <- lobbyFetch{entries: entries, err: err}
 	}()
 }
 
