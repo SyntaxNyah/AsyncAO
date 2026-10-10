@@ -23,7 +23,15 @@ func wsTestServer(t *testing.T) string {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		// Drain until the client's close frame (or the request context) ends the
+		// stream. Draining is what answers the client's graceful Close() handshake,
+		// so a.conn.Close() in testTabApp's cleanup returns at once instead of
+		// waiting out the full close-handshake timeout (5s per dialled test).
+		for {
+			if _, _, err := ws.Read(r.Context()); err != nil {
+				return
+			}
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return "ws" + strings.TrimPrefix(srv.URL, "http")
