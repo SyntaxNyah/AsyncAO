@@ -69,6 +69,13 @@ add TCP framing back.
       goes through `FetchRawLayered`, never `FetchRaw`. `FetchRaw` returns good
       bytes of the wrong side, invisible to behaviour. Remove when the two lanes
       are distinct types.
+    - **closeThemeEditor order** (`internal/ui/themecreate_test.go`): the editor
+      lifts `livePaused = false` before its `editorSyncArt`, so a paused exit still
+      reconciles the media plan. The reconcile needs a real `render.TextureStore`
+      (`a.d.Store`), which the headless rig does not build, so no behavioural test
+      can be made to fail here (the reopen-not-paused replacement is vacuous —
+      `armThemeEditor` builds a fresh editor). Remove when the rig injects a Store
+      and a one-commit failing test exists.
     - **the remaining `funcBodySource`/`packageFuncs` gates** (`zerowidthlanes`,
       `frameharness`, `areamenu`, `arupstatus`, `basewizard`, `charidle`,
       `chatboxskin`, `chatcrawlscroll`, `chatfocus`, `conclusivemiss`, `eggs`,
