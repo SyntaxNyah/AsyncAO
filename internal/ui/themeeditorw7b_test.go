@@ -54,7 +54,7 @@ func editSlotRig(t *testing.T) (*App, *themeDoc, editTarget) {
 // without failing here.
 func TestSlotInspectorOffersGeometryAndNothingElse(t *testing.T) {
 	a, _, tgt := editSlotRig(t)
-	rows := a.inspectorRowsFor(tgt)
+	rows := a.te.inspectorRowsFor(tgt)
 	if len(rows) != 1 {
 		t.Fatalf("the AO2 widget rail offers %d rows, want exactly 1 — a theme may restate an AO2 "+
 			"widget's rect and nothing else about it", len(rows))
@@ -352,7 +352,7 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 	doc.side.Panes = []theme.Pane{{ID: "sidebar"}}
 	doc.side.Fonts = []theme.FontFamily{{Family: "Court Serif", File: "fonts/CourtSerif.otf"}}
 
-	anchors := a.editorPickNames(pickAnchor)
+	anchors := a.te.editorPickNames(pickAnchor)
 	if anchors[0] != pickAnchorNone {
 		t.Errorf("the anchor picker starts at %q, want %q first", anchors[0], pickAnchorNone)
 	}
@@ -368,7 +368,7 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 		t.Error("the anchor picker offered music_list, which this theme does not place")
 	}
 
-	fonts := a.editorPickNames(pickFace)
+	fonts := a.te.editorPickNames(pickFace)
 	if pickIndexOf(fonts, "Court Serif") < 0 {
 		t.Error("the font picker does not offer the theme's own [fonts] family")
 	}
@@ -379,13 +379,13 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 
 	// The CACHE must follow the document: adding a family has to show up.
 	doc.side.Fonts = append(doc.side.Fonts, theme.FontFamily{Family: "Loose", File: "Loose.otf"})
-	if pickIndexOf(a.editorPickNames(pickFace), "Loose") < 0 {
+	if pickIndexOf(a.te.editorPickNames(pickFace), "Loose") < 0 {
 		t.Error("the font picker's cache did not notice a new family — a cached list that cannot go " +
 			"stale is a list that is never right")
 	}
 
 	// The static lists are the BUILD's own, sorted, and never the registry's map order.
-	gens := a.editorPickNames(pickGenerator)
+	gens := a.te.editorPickNames(pickGenerator)
 	if len(gens) != len(GeneratorNames()) {
 		t.Errorf("the generator picker offers %d names, the registry has %d", len(gens), len(GeneratorNames()))
 	}
@@ -420,7 +420,7 @@ func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 	// names[pickNone][:0] — a nil-backed empty slice that compares == nil. The observable
 	// only the guard produces is the one its doc comment promises ("it must not take a
 	// cache slot to be told so"): the slot stays unbuilt.
-	if got := a.editorPickNames(pickNone); got != nil {
+	if got := a.te.editorPickNames(pickNone); got != nil {
 		t.Errorf("the no-source list is %v, want nil", got)
 	}
 	if a.te.picks.built[pickNone] {
@@ -428,9 +428,10 @@ func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 			"ahead of the cache, or every non-picker row that reaches this table burns a slot on " +
 			"a list nothing draws")
 	}
-	// ANTI-VACUITY for the check above: `built` has to be a flag that actually moves, or
-	// a slot left false proves nothing. A real dynamic source must set its own.
-	a.editorPickNames(pickAnchor)
+	a.te.
+		// ANTI-VACUITY for the check above: `built` has to be a flag that actually moves, or
+		// a slot left false proves nothing. A real dynamic source must set its own.
+		editorPickNames(pickAnchor)
 	if !a.te.picks.built[pickAnchor] {
 		t.Fatal("a real dynamic list did not mark its cache slot built — the pickNone check above " +
 			"would then hold against any implementation")

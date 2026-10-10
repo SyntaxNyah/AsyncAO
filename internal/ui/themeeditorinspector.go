@@ -442,18 +442,18 @@ var slotFields = []inspectorField{{
 // wants from an imported theme (nudge this box to an exact number) was mouse-only.
 // The parity rule is unchanged and is now enforced by the table's shape rather than
 // by the absence of one.
-func (a *App) inspectorRowsFor(t editTarget) []inspectorField {
-	if a.te == nil {
+func (te *themeEditor) inspectorRowsFor(t editTarget) []inspectorField {
+	if te == nil {
 		return nil
 	}
 	switch t.space {
 	case spaceDesign:
-		if !a.te.doc.slotEditable(t.designKey()) {
+		if !te.doc.slotEditable(t.designKey()) {
 			return nil
 		}
 		return slotFields
 	case spaceElement:
-		el := a.te.doc.element(t)
+		el := te.doc.element(t)
 		if el == nil || int(el.Kind) >= len(inspectorFields) {
 			return nil
 		}
