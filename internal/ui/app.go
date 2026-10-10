@@ -7721,7 +7721,7 @@ func (a *App) applyMusicAcrossTabs(on bool) {
 // resumeSeek) does NOT use this cap: it wraps by the real duration instead.
 const musicResumeMaxSeekSec = 600 // 10 minutes
 
-// resumeSeek is the exact, loop-aware cross-tab resume math (wave 13), split out
+// resumeSeek is the exact, loop-aware cross-tab resume math, split out
 // as a pure func so it's unit-pinnable headlessly like applyResumeDuck /
 // mixChannels. Given a takeover snapshot — the outgoing track's position snapPos
 // and total duration snapDur (seconds) captured at swap-out — plus elapsedSec of
@@ -7807,7 +7807,7 @@ func (a *App) resumeActiveTabMusic() {
 	seekSec := 0.0
 	play := true
 	if snapPos, snapDur, snapAt, ok := a.d.Audio.SwappedOutSnap(url); ok {
-		// Exact, loop-aware resume (wave 13): the outgoing track's TRUE position at
+		// Exact, loop-aware resume: the outgoing track's TRUE position at
 		// swap-out plus the wall time it kept playing during the download, wrapped by
 		// its real duration. This is the drift-free path the users were promised.
 		elapsed := a.now().Sub(snapAt).Seconds()
