@@ -147,6 +147,7 @@ func (a *App) ensureFallbackFontLoad() {
 	if len(cands) == 0 {
 		return
 	}
+	ch := a.fallbackFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cands {
@@ -158,7 +159,7 @@ func (a *App) ensureFallbackFontLoad() {
 			return
 		}
 		select {
-		case a.fallbackFontRes <- data:
+		case ch <- data:
 		default:
 		}
 	}()
@@ -288,6 +289,7 @@ func (a *App) ensureCJKFontLoad() {
 		return
 	}
 	a.cjkLoadStarted = true
+	ch := a.cjkFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cjkFontList() {
@@ -299,7 +301,7 @@ func (a *App) ensureCJKFontLoad() {
 			return
 		}
 		select {
-		case a.cjkFontRes <- data:
+		case ch <- data:
 		default:
 		}
 	}()
