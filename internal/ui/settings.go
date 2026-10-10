@@ -5943,22 +5943,18 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 	return y + 20
 }
 
-// previewDelayRow draws the sprite-preview hover dwell as a draggable slider
-// with a seconds readout (the value is stored in milliseconds; a raw "5000"
-// would be opaque). Bounds mirror the config clamp — SetPreviewHoverMs is
-// authoritative — and the result snaps to the half-second grid.
-func (a *App) previewDelayRow(y int32, ms int) int {
+// delayRow draws a hover-dwell slider with a seconds readout and returns the
+// picked ms, clamped to [minMs, maxMs] and snapped to the half-second grid.
+// Shared by previewDelayRow and emoteNameDelayRow, which differ only in the row
+// label, widget id and upper bound (the config setters are authoritative).
+func (a *App) delayRow(y int32, ms int, label, id string, maxMs int) int {
 	c := a.ctx
 	pad := a.formX
-	const (
-		minMs  = 500   // == config.minPreviewHoverMs (setter is authoritative)
-		maxMs  = 15000 // == config.maxPreviewHoverMs
-		stepMs = 500   // half-second grid
-	)
-	c.Label(pad, y+4, "Preview after hovering:", ColText)
+	const minMs, stepMs = 500, 500 // half-second dwell grid
+	c.Label(pad, y+4, label, ColText)
 	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
 	if span := maxMs - minMs; span > 0 {
-		ms = minMs + int(c.Slider("previewdelay", track, int32(ms-minMs), int32(span)))
+		ms = minMs + int(c.Slider(id, track, int32(ms-minMs), int32(span)))
 	}
 	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
@@ -5978,39 +5974,20 @@ func (a *App) previewDelayRow(y int32, ms int) int {
 	return ms
 }
 
+// previewDelayRow draws the sprite-preview hover dwell as a draggable slider
+// with a seconds readout (the value is stored in milliseconds; a raw "5000"
+// would be opaque). Bounds mirror the config clamp — SetPreviewHoverMs is
+// authoritative — and the result snaps to the half-second grid.
+func (a *App) previewDelayRow(y int32, ms int) int {
+	return a.delayRow(y, ms, "Preview after hovering:", "previewdelay", 15000) // == config.maxPreviewHoverMs
+}
+
 // emoteNameDelayRow draws the emote-name hover dwell as a draggable slider with
 // a seconds readout (mirrors previewDelayRow; the value is stored in ms). Bounds
 // mirror the config clamp — SetEmoteHoverNamesMs is authoritative — and the
 // result snaps to the half-second grid.
 func (a *App) emoteNameDelayRow(y int32, ms int) int {
-	c := a.ctx
-	pad := a.formX
-	const (
-		minMs  = 500   // == config.minEmoteHoverNamesMs (setter is authoritative)
-		maxMs  = 10000 // == config.maxEmoteHoverNamesMs
-		stepMs = 500   // half-second grid
-	)
-	c.Label(pad, y+4, "Name after hovering:", ColText)
-	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
-	if span := maxMs - minMs; span > 0 {
-		ms = minMs + int(c.Slider("emotenamedelay", track, int32(ms-minMs), int32(span)))
-	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		ms += int(c.wheelY) * stepMs
-	}
-	if ms < minMs {
-		ms = minMs
-	}
-	if ms > maxMs {
-		ms = maxMs
-	}
-	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
-	if ms > maxMs {
-		ms = maxMs
-	}
-	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
-	return ms
+	return a.delayRow(y, ms, "Name after hovering:", "emotenamedelay", 10000) // == config.maxEmoteHoverNamesMs
 }
 
 // emoteGridGapRow draws the emote-grid icon-spacing slider and returns the picked
