@@ -19,14 +19,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 )
-
-// strconvUnquote is strconv.Unquote, wrapped so the harvesters can be read without
-// an import that looks unrelated to string literals.
-func strconvUnquote(lit string) (string, error) { return strconv.Unquote(lit) }
 
 // parsedFile parses one file of this package, cached per test run is unnecessary —
 // these gates run once each and the files are small.
