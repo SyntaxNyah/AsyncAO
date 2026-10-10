@@ -160,7 +160,8 @@ func (a *App) finishComicExport(j *gifExportJob) {
 	stem := j.name + "-comic-" + time.Now().Format("20060102-150405")
 	a.warnLine = fmt.Sprintf("Encoding comic (%d panels)…", len(panels))
 	a.warnAt = time.Now()
-	go func() { a.gifResultCh <- composeAndWriteComic(panels, stem, capped) }()
+	ch := a.gifResultCh
+	go func() { ch <- composeAndWriteComic(panels, stem, capped) }()
 }
 
 // paginateComic splits the captured panels into pages of at most perPage each, in
