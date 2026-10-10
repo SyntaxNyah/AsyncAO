@@ -159,15 +159,15 @@ func (a *App) startSelfUpdate() {
 		case "windows":
 			// Windows self-updates via the DLL bundle (exe + runtime DLLs beside
 			// it), so a new engine ships with its libraries.
-			err = a.applyBundleUpdate(url, sumsURL, assetName, exe, "")
+			err = applyBundleUpdate(url, sumsURL, assetName, exe, "")
 		case "darwin":
 			// macOS self-updates via the bundle tarball (binary + lib/), so a
 			// SONAME bump no longer strands a bare binary against a stale lib/.
-			err = a.applyBundleUpdate(url, sumsURL, assetName, exe, "lib")
+			err = applyBundleUpdate(url, sumsURL, assetName, exe, "lib")
 		default:
 			// Linux ships a self-contained AppImage — a single-file swap is the
 			// whole update.
-			err = a.applyBinaryUpdate(url, sumsURL, assetName, exe)
+			err = applyBinaryUpdate(url, sumsURL, assetName, exe)
 		}
 		res <- err
 	}()
@@ -176,7 +176,7 @@ func (a *App) startSelfUpdate() {
 // applyBinaryUpdate is the single-binary self-update path (Linux AppImage,
 // macOS bare binary): download the one asset, verify it against the release's
 // SHA256SUMS manifest when published, and stage-replace the running binary.
-func (a *App) applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
+func applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
 	staged := update.StagedPath(exe)
 	if _, err := update.Download(context.Background(), url, staged); err != nil {
 		return err
@@ -216,7 +216,7 @@ func (a *App) applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
 // "" on Windows (DLLs beside the exe) and "lib" on macOS (dylibs). This fixes
 // the v1.95.1 class of breakage, where a bare-binary swap updated the executable
 // but left stale engine libraries beside it so the new build couldn't launch.
-func (a *App) applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
+func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
 	archivePath := update.StagedPath(exe) + ".archive"
 	defer os.Remove(archivePath)
 	if _, err := update.Download(context.Background(), url, archivePath); err != nil {
