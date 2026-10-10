@@ -12,17 +12,14 @@ package ui
 // scope kicks an off-thread load that lands on logBrowserRes (polled per frame).
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -44,35 +41,20 @@ const (
 	logFilterUnset = "\x00unset"
 )
 
-// logSession is one saved transcript file for a server.
-type logSession struct {
-	file  string // file name (with .log) — used to read it
-	label string // readable label derived from the timestamp name
-}
-
-// logLine is one parsed transcript line held in memory for the open scope.
-type logLine struct {
-	server  string // server folder it came from
-	session string // session label
-	text    string // the line as written ("[ts] who: message"), truncated
-	lower   string // text lowercased once, for the 0-alloc live filter
-	who     string // speaker parsed from the line, for the per-character filter
-}
-
 // logBrowserState is all the browser's state (one field on App).
 type logBrowserState struct {
 	servers    []string // server folders under logs/
 	selServer  int      // index into servers; -1 = all servers
-	sessions   []logSession
+	sessions   []logbrowser.Session
 	selSession int // index into sessions; -1 = all sessions of the server
 
 	query         string
-	useRegex      bool      // treat the query as a regular expression
-	charFilter    string    // restrict to one speaker ("" = all)
-	regexErr      bool      // the current regex query didn't compile (matched as text)
-	chars         []string  // distinct speakers in the loaded scope (the speaker-filter cycle)
-	showStats     bool      // results pane shows per-speaker stats instead of lines
-	stats         []logStat // per-speaker line/word counts, computed once on load
+	useRegex      bool              // treat the query as a regular expression
+	charFilter    string            // restrict to one speaker ("" = all)
+	regexErr      bool              // the current regex query didn't compile (matched as text)
+	chars         []string          // distinct speakers in the loaded scope (the speaker-filter cycle)
+	showStats     bool              // results pane shows per-speaker stats instead of lines
+	stats         []logbrowser.Stat // per-speaker line/word counts, computed once on load
 	statLines     int
 	statWords     int
 	statSessions  int
@@ -80,27 +62,12 @@ type logBrowserState struct {
 	serverScroll  int32
 	sessionScroll int32
 
-	lines     []logLine // the loaded scope, in memory
-	filtered  []int     // indices into lines matching the filter (memoized)
-	filterKey string    // the filter (query + regex + speaker) filtered was built for
+	lines     []logbrowser.Line // the loaded scope, in memory
+	filtered  []int             // indices into lines matching the filter (memoized)
+	filterKey string            // the filter (query + regex + speaker) filtered was built for
 
 	loading bool
 	gen     int // scope-load generation; a stale async result is dropped
-}
-
-// logReq is one off-thread scope-load request.
-type logReq struct {
-	gen     int
-	server  string // "" = all servers
-	session string // "" = all sessions of server
-}
-
-// logBrowserLoad is the off-thread loader's result, polled on the render thread.
-type logBrowserLoad struct {
-	gen      int
-	servers  []string
-	sessions []logSession
-	lines    []logLine
 }
 
 // openLogBrowser resets the browser to "all servers" and kicks the first load.
@@ -123,14 +90,14 @@ func (a *App) kickLogScope() {
 	if lb.selServer >= 0 && lb.selServer < len(lb.servers) {
 		server = lb.servers[lb.selServer]
 		if lb.selSession >= 0 && lb.selSession < len(lb.sessions) {
-			session = lb.sessions[lb.selSession].file
+			session = lb.sessions[lb.selSession].File
 		}
 	}
 	lb.gen++
 	lb.loading = true
-	req := logReq{gen: lb.gen, server: server, session: session}
+	gen := lb.gen
 	go func() {
-		out := loadLogData(req)
+		out := logbrowser.Load(logbrowser.RootDir(), server, session, gen)
 		// Latest-wins: clear any stale pending result, then post ours.
 		select {
 		case <-a.logBrowserRes:
@@ -149,16 +116,16 @@ func (a *App) pollLogBrowser() {
 	select {
 	case out := <-a.logBrowserRes:
 		lb := &a.logBrowser
-		if out.gen != lb.gen {
+		if out.Gen != lb.gen {
 			return // a newer request superseded this one
 		}
 		lb.loading = false
 		a.uiDirty = true // the log scope just loaded: force a redraw so the session list + log area appear at idle=0 (not just the chrome)
-		lb.servers = out.servers
-		lb.sessions = out.sessions
-		lb.lines = out.lines
-		lb.chars = distinctChars(out.lines)
-		lb.stats, lb.statLines, lb.statWords, lb.statSessions = computeLogStats(out.lines)
+		lb.servers = out.Servers
+		lb.sessions = out.Sessions
+		lb.lines = out.Lines
+		lb.chars = logbrowser.DistinctChars(out.Lines)
+		lb.stats, lb.statLines, lb.statWords, lb.statSessions = logbrowser.ComputeStats(out.Lines)
 		lb.charFilter = "" // a new scope resets the speaker filter
 		lb.filtered = nil
 		lb.filterKey = logFilterUnset // force one refilter against the new data
@@ -172,199 +139,11 @@ func (a *App) logFiltered() []int {
 	lb := &a.logBrowser
 	key := fmt.Sprintf("%t\x00%s\x00%s", lb.useRegex, lb.charFilter, lb.query)
 	if lb.filterKey != key {
-		lb.regexErr = lb.useRegex && strings.TrimSpace(lb.query) != "" && !validRegex(lb.query)
-		lb.filtered = filterLogLines(lb.lines, lb.query, lb.useRegex, lb.charFilter)
+		lb.regexErr = lb.useRegex && strings.TrimSpace(lb.query) != "" && !logbrowser.ValidRegex(lb.query)
+		lb.filtered = logbrowser.FilterLines(lb.lines, lb.query, lb.useRegex, lb.charFilter)
 		lb.filterKey = key
 	}
 	return lb.filtered
-}
-
-// filterLogLines returns the indices of lines whose text contains query
-// (case-insensitive). An empty query matches everything. Pure — unit-tested.
-func filterLogLines(lines []logLine, query string, useRegex bool, who string) []int {
-	who = strings.ToLower(strings.TrimSpace(who))
-	q := strings.TrimSpace(query)
-	var re *regexp.Regexp
-	if useRegex && q != "" {
-		re, _ = regexp.Compile("(?i)" + q) // nil on a bad pattern → falls through to substring
-	}
-	ql := strings.ToLower(q)
-	idx := make([]int, 0, 64)
-	for i := range lines {
-		if who != "" && strings.ToLower(lines[i].who) != who {
-			continue
-		}
-		switch {
-		case q == "":
-		case re != nil:
-			if !re.MatchString(lines[i].text) {
-				continue
-			}
-		default:
-			if !strings.Contains(lines[i].lower, ql) {
-				continue
-			}
-		}
-		idx = append(idx, i)
-	}
-	return idx
-}
-
-// validRegex reports whether q compiles as a case-insensitive regex.
-func validRegex(q string) bool {
-	_, err := regexp.Compile("(?i)" + strings.TrimSpace(q))
-	return err == nil
-}
-
-// parseLogWho extracts the speaker from a transcript line "[ts] who: message".
-func parseLogWho(line string) string {
-	i := strings.Index(line, "] ")
-	if i < 0 {
-		return ""
-	}
-	rest := line[i+2:]
-	j := strings.Index(rest, ": ")
-	if j < 0 {
-		return ""
-	}
-	return strings.TrimSpace(rest[:j])
-}
-
-// logStat is one speaker's tally in the loaded scope.
-type logStat struct {
-	name  string
-	lines int
-	words int
-}
-
-// computeLogStats tallies per-speaker line and word counts plus scope totals. Pure
-// — unit-tested. Speakers sort by line count, descending.
-func computeLogStats(lines []logLine) (stats []logStat, totalLines, totalWords, sessions int) {
-	byName := map[string]*logStat{}
-	sess := map[string]bool{}
-	for i := range lines {
-		ln := &lines[i]
-		sess[ln.session] = true
-		w := len(strings.Fields(ln.text))
-		totalLines++
-		totalWords += w
-		who := ln.who
-		if who == "" {
-			who = "(server)"
-		}
-		s := byName[who]
-		if s == nil {
-			s = &logStat{name: who}
-			byName[who] = s
-		}
-		s.lines++
-		s.words += w
-	}
-	stats = make([]logStat, 0, len(byName))
-	for _, s := range byName {
-		stats = append(stats, *s)
-	}
-	sort.Slice(stats, func(i, j int) bool {
-		if stats[i].lines != stats[j].lines {
-			return stats[i].lines > stats[j].lines
-		}
-		return stats[i].name < stats[j].name
-	})
-	return stats, totalLines, totalWords, len(sess)
-}
-
-// distinctChars returns the distinct speakers across lines, sorted, bounded.
-func distinctChars(lines []logLine) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, 32)
-	for i := range lines {
-		w := lines[i].who
-		if w == "" || seen[strings.ToLower(w)] {
-			continue
-		}
-		seen[strings.ToLower(w)] = true
-		out = append(out, w)
-		if len(out) >= 200 {
-			break
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// cycleChar advances the speaker filter: "" (All) → chars[0] → … → "".
-func cycleChar(chars []string, cur string) string {
-	if cur == "" {
-		if len(chars) > 0 {
-			return chars[0]
-		}
-		return ""
-	}
-	for i, ch := range chars {
-		if ch == cur {
-			if i+1 < len(chars) {
-				return chars[i+1]
-			}
-			return ""
-		}
-	}
-	return ""
-}
-
-// sessionLabel turns a transcript file name into a readable label:
-// "2006-01-02_15-04-05.log" → "2006-01-02 15:04", and the per-tab sibling
-// "2006-01-02_15-04-05-2.log" → "2006-01-02 15:04 (tab 2)". An unrecognized name
-// shows without .log. Pure — unit-tested.
-//
-// The "-<n>" suffix is transcriptFilename's second-and-later file for one server in
-// one run (F4: two tabs on the same server are two logs). Without this arm the
-// browser fell through to the raw file name for every tab past the first, which
-// read as a corrupt entry beside its correctly-dated sibling.
-func sessionLabel(file string) string {
-	name := strings.TrimSuffix(file, ".log")
-	if t, err := time.Parse(transcriptStampLayout, name); err == nil {
-		return t.Format(sessionLabelLayout)
-	}
-	if i := strings.LastIndexByte(name, '-'); i > 0 {
-		if seq, err := strconv.Atoi(name[i+1:]); err == nil && seq > 1 {
-			if t, err := time.Parse(transcriptStampLayout, name[:i]); err == nil {
-				return t.Format(sessionLabelLayout) + " (tab " + strconv.Itoa(seq) + ")"
-			}
-		}
-	}
-	return name
-}
-
-// sessionLabelLayout is how a parsed session stamp READS in the browser list —
-// minute precision, because the seconds in the file name exist to make the name
-// unique, not to be shown.
-const sessionLabelLayout = "2006-01-02 15:04"
-
-// truncateRunes caps s at max runes, appending "…" when it cut. Pure.
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return s
-	}
-	count := 0
-	for i := range s {
-		if count == max {
-			return s[:i] + "…"
-		}
-		count++
-	}
-	return s
-}
-
-// --- disk (off-thread only) -------------------------------------------------
-
-// logsRootDir is logs\ next to the exe (mirrors recordingsDir / the transcript
-// writer's own path). Empty when the exe path can't be resolved.
-func logsRootDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(exe), "logs")
 }
 
 // exportLogView writes the current filtered result lines to a timestamped text file
@@ -381,12 +160,12 @@ func (a *App) exportLogView(idx []int) {
 	lines := make([]string, 0, len(idx))
 	for _, i := range idx {
 		ln := lb.lines[i]
-		lines = append(lines, "["+ln.server+" · "+ln.session+"] "+ln.text)
+		lines = append(lines, "["+ln.Server+" · "+ln.Session+"] "+ln.Text)
 	}
 	stamp := time.Now().Format("2006-01-02_15-04-05")
 	a.warnLine = clampLine("Exported " + strconv.Itoa(len(lines)) + " lines -> logs/exports/search-" + stamp + ".txt")
 	a.warnAt = a.now()
-	root := logsRootDir()
+	root := logbrowser.RootDir()
 	go func() {
 		if root == "" {
 			return
@@ -413,7 +192,7 @@ func (a *App) autoClipModcall(server string, log []icEntry, notice string) {
 	if !a.d.Prefs.AutoClipModcallOn() {
 		return
 	}
-	root := logsRootDir()
+	root := logbrowser.RootDir()
 	if root == "" {
 		return
 	}
@@ -456,155 +235,6 @@ func buildModcallClip(server, notice string, log []icEntry, n int, now time.Time
 	return lines
 }
 
-// listLogServerDirs returns the server folder names under logs\, sorted, bounded.
-func listLogServerDirs(root string) []string {
-	if root == "" {
-		return nil
-	}
-	ents, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(ents))
-	for _, e := range ents {
-		if e.IsDir() {
-			out = append(out, e.Name())
-			if len(out) >= maxLogServers {
-				break
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// listLogSessionFiles returns one server's .log files, newest first, bounded.
-func listLogSessionFiles(root, server string) []logSession {
-	if root == "" || server == "" {
-		return nil
-	}
-	ents, err := os.ReadDir(filepath.Join(root, server))
-	if err != nil {
-		return nil
-	}
-	type fe struct {
-		name string
-		mod  time.Time
-	}
-	files := make([]fe, 0, len(ents))
-	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
-			continue
-		}
-		mt := time.Time{}
-		if info, err := e.Info(); err == nil {
-			mt = info.ModTime()
-		}
-		files = append(files, fe{e.Name(), mt})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].mod.After(files[j].mod) })
-	if len(files) > maxLogSessions {
-		files = files[:maxLogSessions]
-	}
-	out := make([]logSession, len(files))
-	for i, f := range files {
-		out[i] = logSession{file: f.name, label: sessionLabel(f.name)}
-	}
-	return out
-}
-
-// loadLogData reads the servers list, the selected server's sessions, and the
-// scope's lines — all off-thread, all bounded. Returns everything the browser
-// needs for one scope.
-func loadLogData(req logReq) logBrowserLoad {
-	out := logBrowserLoad{gen: req.gen}
-	root := logsRootDir()
-	out.servers = listLogServerDirs(root)
-	if req.server != "" {
-		out.sessions = listLogSessionFiles(root, req.server)
-	}
-	out.lines = readLogScope(root, req.server, req.session)
-	return out
-}
-
-// readLogScope reads the lines for a scope into memory, honoring the caps. With
-// no server it spans every server (newest sessions first); with a server but no
-// session it spans that server's sessions; with both it reads one file.
-func readLogScope(root, server, session string) []logLine {
-	if root == "" {
-		return nil
-	}
-	lines := make([]logLine, 0, 256)
-	files := 0
-	// addFile appends one log's lines; returns false once a cap is hit (stop).
-	addFile := func(srv, file string) bool {
-		if files >= maxLogScopeFiles || len(lines) >= maxLogScopeLines {
-			return false
-		}
-		files++
-		path := filepath.Join(root, srv, file)
-		info, err := os.Stat(path)
-		if err != nil || info.Size() > maxLogFileBytes {
-			return true // skip this one, keep going
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return true
-		}
-		defer f.Close()
-		label := sessionLabel(file)
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 0, 64*1024), 1<<20) // tolerate long lines
-		for sc.Scan() {
-			if len(lines) >= maxLogScopeLines {
-				return false
-			}
-			// Strip the zero-width sidechannel on READ as well as on write. The
-			// writer (detailedLogLine) drops it now, but every log file already on
-			// disk was written before that and still carries the runes — and the
-			// browser is the one lane whose input is HISTORY, so it is the only
-			// place a fix at the write seam cannot reach. Also the reason it is
-			// applied before the blank test and the lowercase search key: an
-			// invisible run must not make an empty line look non-empty, and must
-			// not sit inside the text a search matches against.
-			t := courtroom.StripSpriteStyle(strings.TrimRight(sc.Text(), "\r"))
-			if strings.TrimSpace(t) == "" {
-				continue
-			}
-			t = truncateRunes(t, maxLogLineRunes)
-			lines = append(lines, logLine{server: srv, session: label, text: t, lower: strings.ToLower(t), who: parseLogWho(t)})
-		}
-		return true
-	}
-
-	switch {
-	case server != "" && session != "":
-		addFile(server, session)
-	case server != "":
-		for _, s := range listLogSessionFiles(root, server) {
-			if !addFile(server, s.file) {
-				break
-			}
-		}
-	default: // all servers
-		for _, srv := range listLogServerDirs(root) {
-			stop := false
-			for _, s := range listLogSessionFiles(root, srv) {
-				if !addFile(srv, s.file) {
-					stop = true
-					break
-				}
-			}
-			if stop {
-				break
-			}
-		}
-	}
-	return lines
-}
-
-// --- UI (render thread) -----------------------------------------------------
-
 // drawLogBrowser paints the full-window log browser screen: a left column to
 // pick the server then the session, and a main pane with a live text filter over
 // the matching lines (click a line to copy it). Back / Esc returns to prevScreen.
@@ -637,14 +267,14 @@ func (a *App) drawLogBrowser(w, h int32) {
 	if lb.selServer >= 0 && lb.selServer < len(lb.servers) {
 		scope = lb.servers[lb.selServer]
 		if lb.selSession >= 0 && lb.selSession < len(lb.sessions) {
-			scope += " · " + lb.sessions[lb.selSession].label
+			scope += " · " + lb.sessions[lb.selSession].Label
 		}
 	}
 	status := fmt.Sprintf("%s — %d / %d lines", scope, len(idx), len(lb.lines))
 	switch {
 	case lb.loading:
 		status = "loading…"
-	case len(lb.lines) >= maxLogScopeLines:
+	case len(lb.lines) >= logbrowser.MaxScopeLines:
 		status += fmt.Sprintf(" (showing the first %d — narrow the scope or filter)", maxLogScopeLines)
 	}
 	c.Label(pad, hdrY+30, status, ColTextDim)
@@ -683,7 +313,7 @@ func (a *App) drawLogBrowser(w, h int32) {
 		sesLabels := make([]string, 0, len(lb.sessions)+1)
 		sesLabels = append(sesLabels, "All sessions")
 		for _, s := range lb.sessions {
-			sesLabels = append(sesLabels, s.label)
+			sesLabels = append(sesLabels, s.Label)
 		}
 		if clicked := a.drawLogList("logses", sesR, sesLabels, lb.selSession+1, &lb.sessionScroll); clicked >= 0 {
 			if ns := clicked - 1; ns != lb.selSession {
@@ -706,7 +336,7 @@ func (a *App) drawLogBrowser(w, h int32) {
 		cbW = 220
 	}
 	if c.Button(sdl.Rect{X: mainX + 90, Y: fy - 2, W: cbW, H: btnH}, charLabel) {
-		lb.charFilter = cycleChar(lb.chars, lb.charFilter)
+		lb.charFilter = logbrowser.CycleChar(lb.chars, lb.charFilter)
 	}
 	if lb.regexErr {
 		c.LabelClipped(mainX+96+cbW, fy, mainW-96-cbW, "invalid regex — matching as text", ColDanger)
@@ -735,8 +365,8 @@ func (a *App) drawLogStats(box sdl.Rect) {
 		fmt.Sprintf("%d lines · %d words · %d session(s)", lb.statLines, lb.statWords, lb.statSessions), ColAccent)
 	y += 22
 	maxLines := 1
-	if len(lb.stats) > 0 && lb.stats[0].lines > 0 {
-		maxLines = lb.stats[0].lines
+	if len(lb.stats) > 0 && lb.stats[0].Lines > 0 {
+		maxLines = lb.stats[0].Lines
 	}
 	const rowH = int32(18)
 	clipPrev, clipHad := c.pushClip(box)
@@ -747,13 +377,13 @@ func (a *App) drawLogStats(box sdl.Rect) {
 		if y > box.Y+box.H-rowH {
 			break
 		}
-		c.LabelClipped(box.X+8, y, 158, s.name, ColText)
+		c.LabelClipped(box.X+8, y, 158, s.Name, ColText)
 		if barMaxW > 0 {
-			if bw := int32(s.lines) * barMaxW / int32(maxLines); bw > 0 {
+			if bw := int32(s.Lines) * barMaxW / int32(maxLines); bw > 0 {
 				c.Fill(sdl.Rect{X: barX, Y: y + 2, W: bw, H: rowH - 6}, ColAccent)
 			}
 		}
-		c.LabelClipped(box.X+box.W-90, y, 84, fmt.Sprintf("%dL  %dW", s.lines, s.words), ColTextDim)
+		c.LabelClipped(box.X+box.W-90, y, 84, fmt.Sprintf("%dL  %dW", s.Lines, s.Words), ColTextDim)
 		y += rowH
 	}
 }
@@ -850,22 +480,22 @@ func (a *App) drawLogResults(r sdl.Rect, idx []int) {
 						a.warnLine = clampLine("Jumped to context")
 						a.warnAt = a.now()
 					} else {
-						_ = sdl.SetClipboardText(ln.text)
-						a.warnLine = clampLine("Copied: " + ln.text)
+						_ = sdl.SetClipboardText(ln.Text)
+						a.warnLine = clampLine("Copied: " + ln.Text)
 						a.warnAt = a.now()
 					}
 				}
 			}
 			tx := rr.X + 6
 			if gutter > 0 {
-				prefix := ln.session
+				prefix := ln.Session
 				if lb.selServer < 0 {
-					prefix = ln.server + " · " + ln.session
+					prefix = ln.Server + " · " + ln.Session
 				}
 				c.LabelClipped(tx, rr.Y+(rowH-14)/2, gutter-10, prefix, ColTextDim)
 				tx += gutter
 			}
-			a.labelName(tx, rr.Y+(rowH-14)/2, rr.X+rr.W-tx-4, ln.text, ColText) // CJK-safe transcript (showname + message)
+			a.labelName(tx, rr.Y+(rowH-14)/2, rr.X+rr.W-tx-4, ln.Text, ColText) // CJK-safe transcript (showname + message)
 		}
 		rowY += rowH
 	}

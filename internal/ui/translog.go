@@ -150,7 +150,7 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 // the file always matches what the screen showed rather than a second,
 // independently-derived rendering of it. Pure — unit-tested.
 //
-// Still readable by parseLogWho (logbrowser.go): the literal "[OOC]" tag has
+// Still readable by logbrowser.ParseWho: the literal "[OOC]" tag has
 // no "] " substring of its own (its "]" is immediately followed by "[", never
 // a space), so the first "] " in the result is still the one right after the
 // timestamp, exactly as detailedLogLine's callers expect.
@@ -230,7 +230,7 @@ func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
 }
 
 // transcriptFilename is the name rule alone: "<stamp>.log" for the first file of a run and
-// "<stamp>-<seq>.log" after it. Pure, so the naming and the log browser's sessionLabel can be
+// "<stamp>-<seq>.log" after it. Pure, so the naming and logbrowser.SessionLabel can be
 // pinned against each other without touching disk.
 func transcriptFilename(now time.Time, seq int) string {
 	stamp := now.Format(transcriptStampLayout)
