@@ -609,10 +609,10 @@ func (a *App) drawFormatsLearnedTools(y, w int32) int32 {
 	a.noteSearchRow(exportLabel, y)
 	a.noteSearchRow(importLabel, y)
 	if c.Button(sdl.Rect{X: pad + 200, Y: y, W: 190, H: btnH}, exportLabel) {
-		exportLearnedAsync(a)
+		exportLearnedAsync(a.d)
 	}
 	if c.Button(sdl.Rect{X: pad + 400, Y: y, W: 190, H: btnH}, importLabel) {
-		importLearnedAsync(a)
+		importLearnedAsync(a.d)
 	}
 	y += btnH + 4
 	y = a.settingsDesc(pad, y, "Export writes the whole table beside the program so it can be shared or carried to another machine; import merges one in, which warms every server it covers before you ever visit them.", ColTextDim)
