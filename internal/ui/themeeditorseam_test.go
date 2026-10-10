@@ -221,9 +221,9 @@ func TestSpacePeekIsAnAlphaChangeNeverAClip(t *testing.T) {
 	defer cleanup()
 
 	a.te.peek = false
-	normal := a.editorPlate(ColPanel)
+	normal := a.te.editorPlate(ColPanel)
 	a.te.peek = true
-	peeked := a.editorPlate(ColPanel)
+	peeked := a.te.editorPlate(ColPanel)
 
 	if normal.R != peeked.R || normal.G != peeked.G || normal.B != peeked.B {
 		t.Errorf("peek changed the plate's COLOUR (%v -> %v), not just its alpha — a peek that repaints "+

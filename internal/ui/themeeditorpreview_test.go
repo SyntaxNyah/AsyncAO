@@ -145,7 +145,7 @@ func TestPreviewHidesEveryPieceOfEditingChrome(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	liveBefore := a.editorLiveOn()
+	liveBefore := a.te.editorLiveOn()
 	enterPreviewByButton(t, a)
 	driveFrames(a, 2)
 
@@ -158,7 +158,7 @@ func TestPreviewHidesEveryPieceOfEditingChrome(t *testing.T) {
 	}
 	lx, ly := frameHarnessRectCentre(liveR)
 	driveClickAt(a, lx, ly)
-	if a.editorLiveOn() != liveBefore {
+	if a.te.editorLiveOn() != liveBefore {
 		t.Error("a click in the element rail's Live/Frozen box flipped the toggle — the rail is still drawn under the demo")
 	}
 	if !a.editorPreviewOn() {
@@ -1252,16 +1252,16 @@ func TestPreviewDoesNotTouchTheLiveToggle(t *testing.T) {
 	defer cleanup()
 	driveFrame(a)
 	a.setEditorLive(false)
-	if a.editorLiveOn() {
+	if a.te.editorLiveOn() {
 		t.Fatal("fixture: the freeze switch did not take")
 	}
 	enterPreviewByButton(t, a)
 	driveFrames(a, 3)
-	if a.editorLiveOn() {
+	if a.te.editorLiveOn() {
 		t.Error("entering the demo re-armed the live-preview freeze switch — they are separate states")
 	}
 	pressEscFrame(a)
-	if a.editorLiveOn() {
+	if a.te.editorLiveOn() {
 		t.Error("leaving the demo re-armed the freeze switch — a preview must not decide whether the canvas re-bakes")
 	}
 	for _, fn := range []string{"enterEditorPreview", "exitEditorPreview", "driveEditorPreview"} {

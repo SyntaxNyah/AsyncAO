@@ -417,7 +417,7 @@ func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
 		t.Fatal("the editor refused to open over a sidecar")
 	}
 	editUnlockAll(a.te.doc)
-	if !a.editorLiveOn() {
+	if !a.te.editorLiveOn() {
 		t.Fatal("a fresh editor starts frozen — the zero value must be the behaviour every session " +
 			"before the toggle existed had")
 	}
