@@ -906,8 +906,8 @@ type App struct {
 	// themeReportCap and replaced wholesale at each landing, never appended to.
 	//
 	// TWO READERS, both load-bearing: noteThemeReport says the headline on the warn
-	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go,
-	// W9) show all of it. Before that panel existed this field was written on every
+	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go)
+	// show all of it. Before that panel existed this field was written on every
 	// apply and read by one test — the parsed-but-never-applied shape rule 11 names
 	// by example. TestTheImportReportReachesAUserSurface is what keeps it read.
 	themeReport []string
@@ -1021,7 +1021,7 @@ type App struct {
 	// cadence the pool cares about.
 	themeFXFrame uint64
 	// themeFXOver records that the pool ran out during THIS pass — the editor's chip
-	// (W7) and the F8 line read it. Cleared by every sweep, so it describes the last
+	// and the F8 line read it. Cleared by every sweep, so it describes the last
 	// pass rather than the session.
 	themeFXOver bool
 	// themeFXFrozen latches ReduceMotion for the FRAME. ONE prefs read per frame,
@@ -1101,16 +1101,16 @@ type App struct {
 	// --- live layout editor (themed courtroom; overrides persist per theme) ---
 	layoutEdit bool
 	// editTgt is the themed editor's selection — the generalized "thing being
-	// dragged" (edittarget.go, W6). It replaces the bare design-key string this
-	// field used to be: the space is now carried explicitly, so W7's editor can
+	// dragged" (edittarget.go). It replaces the bare design-key string this
+	// field used to be: the space is now carried explicitly, so the editor can
 	// select a FREE ELEMENT (spaceElement, identity = the sidecar index) through the
-	// same field, the same nudge router and the same handle machinery. Nothing in
-	// W6 constructs an element target — the wave ships no new UI — so this holds a
+	// same field, the same nudge router and the same handle machinery. Nothing
+	// constructs an element target — the wave ships no new UI — so this holds a
 	// spaceDesign key or nothing, exactly as before.
 	editTgt  editTarget
 	editDrag int // 0 none, 1 move, 2 resize
 	// editEdges is which edges a themed RESIZE drags (edgeL/R/T/B), the design-space
-	// twin of classicEditEdges. Before W6 the themed editor had one grip (the
+	// twin of classicEditEdges. Before the themed editor had one grip (the
 	// bottom-right corner) and this mask was implicit — hard-coded as edgeR|edgeB at
 	// the two sites that needed it. With all eight handles wired the gripped edges
 	// have to be remembered from the press, because the drag arithmetic, the grid
@@ -1169,7 +1169,7 @@ type App struct {
 	classicRot map[string]uint8
 	slotReg    map[string]slotInfo
 	// classicTgt is the classic editor's selection, the spaceClassic half of the
-	// shared edit-target model (edittarget.go, W6). It was a bare slot-name string;
+	// shared edit-target model (edittarget.go). It was a bare slot-name string;
 	// the space it lives in — SCREEN px, persisted as a window fraction — is now part
 	// of the value rather than something the reader had to know.
 	classicTgt       editTarget
@@ -3236,8 +3236,8 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // handle_wtce's filenames with the bare legacy spelling second.
 //
 // THE PER-CHARACTER MISC CHATBOX IS DEFERRED, and this is where the decision is
-// recorded (design §W8 scoped "FindAssetMisc wired into the chatbox ladder";
-// W9 declines it and says why).
+// recorded (the design scoped "FindAssetMisc wired into the chatbox ladder";
+// and why it was declined).
 //
 // What AO2 actually does: `p_misc` is a per-CHARACTER chatbox pack, read from the
 // speaking character's own char.ini (`get_chat(customchar)`, courtroom.cpp:3299)
@@ -3256,7 +3256,7 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // a char.ini this client reads over the network, and honouring it means a
 // re-resolve, a decode and an upload on every character change, with its own cap
 // and its own lifetime so a roster of 4000 cannot pin 4000 skins. That is a tier,
-// not a rung — the same shape as the media plan W4 built for [media] — and
+// not a rung — the same shape as the media plan built for [media] — and
 // bolting it onto a table whose whole contract is "one per theme, pinned" would
 // either leak textures or silently stop honouring the pack.
 //
@@ -8963,7 +8963,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				//
 				// THE PANEL IS A RUNG (design §Q7's Esc row, "close top panel → deselect →
 				// leave"). It was missing while the Fonts panel was cosmetic and became a real
-				// hole the moment W7b made it an input mode that fences BOTH rails: Esc walked
+				// hole the moment it became an input mode that fences BOTH rails: Esc walked
 				// straight past the thing on top of the screen and armed the discard chip
 				// instead. It sits above the selection because while a panel is up the
 				// selection cannot be changed at all (editorPanelUp fences the canvas and the
@@ -9588,7 +9588,7 @@ const themeSearchRootCap = 3
 // themeSearchRoots is THE ordered list of directories that may hold a themes/
 // folder. The loader (themeLoadRoots), the picker (scanThemes) and the browser
 // catalog (scanThemeCatalog) all build from this one function, so none of the
-// three can drift into searching a root the others don't — the W2 bug where a
+// three can drift into searching a root the others don't — the bug where a
 // theme resolved by name, appeared in the catalog, sat in the folder "Open
 // folder" opens, and was still absent from the dropdown.
 //
@@ -9726,13 +9726,13 @@ func (a *App) applyThemeAsync() uint64 {
 			res.sidecar = t.Sidecar()
 			// A sidecar that EXISTS and could not be parsed. theme.Load swallows it by
 			// design (format rule 1 — reading never refuses), so this is the only place
-			// the fact can be picked up at all, and until W4 nothing picked it up: the
+			// the fact can be picked up at all, and until then nothing picked it up: the
 			// theme applied with its whole AsyncAO tier missing and no surface said so.
 			if err := t.SidecarErr(); err != nil {
 				res.sidecarErr = themeSidecarRefusalLine(name, t.SidecarDir(), err)
 				res.sidecarTip = themeSidecarRefusalTip(name, err)
 			}
-			// The theme's own art (W4): PLANNED against the media budget first, then
+			// The theme's own art: PLANNED against the media budget first, then
 			// loaded — so nothing a stranger declared is decoded before it is known to
 			// fit, and an entry that does not fit becomes a self-describing placeholder
 			// instead of a silent absence (design §Q2).
@@ -9746,7 +9746,7 @@ func (a *App) applyThemeAsync() uint64 {
 			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
 			// here, on this goroutine — never on the render thread (hard rule 2).
 			res.buildThemeFontTable(t, systemFontDirs())
-			// W4 font intake: the AsyncAO tier's [fonts]/[fontbind] bind an element to a
+			// Font intake: the AsyncAO tier's [fonts]/[fontbind] bind an element to a
 			// FILE INSIDE THE THEME, which is what lets a native theme carry its own
 			// type instead of naming a family and hoping. After the AO2 table, because
 			// it overrides it; before applyPanelFonts, because the USER still wins.
@@ -9964,11 +9964,11 @@ func (a *App) applyThemeAsync() uint64 {
 			anyOnDisk := t != nil && t.HasAnyFontFile()
 			res.themeFontWarn = themeFontWarning(res.themeFontsMissing, anyOnDisk, res.userFontsDir)
 		}
-		// THE IMPORT REPORT (W8, themereport.go). Built HERE — after the fonts, which
+		// THE IMPORT REPORT (themereport.go). Built HERE — after the fonts, which
 		// are one of its three inputs — because every input is already on this
 		// goroutine and the render thread must never walk the notes (hard rule 2).
 		// It is the surface that stops Sidecar.Notes() being collected and read by
-		// nothing but tests, W8's own metadata degrade included: a
+		// nothing but tests, its own metadata degrade included: a
 		// degrade-with-a-note whose note reaches nobody is a silent truncation with
 		// extra steps.
 		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
@@ -10087,7 +10087,7 @@ func (a *App) pollThemeApply() {
 	// guarded on the theme NAME, so switching themes mid-session correctly loses the
 	// document rather than pasting the old theme's elements onto the new one.
 	a.reclaimThemeDoc()
-	// The theme's own art (W4), landed BEFORE the canvases are invalidated for the
+	// The theme's own art, landed BEFORE the canvases are invalidated for the
 	// same reason the sidecar is: the next themeLayoutIn rebuild is what bakes the
 	// elements, and an element resolving its page against a key that has not landed
 	// yet would bake a nil and paint nothing until something else invalidated.
@@ -10168,7 +10168,7 @@ func (a *App) pollThemeApply() {
 		a.pushDebug(res.sidecarErr)
 		settings.statusLine = clampLine(res.sidecarErr)
 	}
-	// THE IMPORT REPORT (W8, themereport.go). It SUBSUMES the #21 unbound-key
+	// THE IMPORT REPORT (themereport.go). It SUBSUMES the #21 unbound-key
 	// line, which used to be pushed to the debug log here and nowhere else: the
 	// report carries it as one entry, still logged, now also counted on a surface
 	// a human looks at. Every other input to it — the sidecar's own degrade notes,
@@ -10201,7 +10201,7 @@ func (a *App) pollThemeApply() {
 	// note that the stale-generation guard above already returned for anything
 	// older than what is applied, so such a landing can never spend the arming.
 	a.maybeResizeToThemeDesign(res.gen)
-	// And the copy-for-editing hand-off (W8), armed by the same kind of one-shot:
+	// And the copy-for-editing hand-off, armed by the same kind of one-shot:
 	// "Copy for editing" is one act, and the editor can only open over a theme
 	// that has APPLIED — which is this landing (themecopy.go).
 	a.maybeOpenEditorAfterCopy(res.gen)
