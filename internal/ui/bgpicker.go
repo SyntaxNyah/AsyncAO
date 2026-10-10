@@ -124,6 +124,8 @@ func (a *App) ensureBgList() {
 	a.bgPick.listErr = ""
 	listURL := a.urls.BackgroundsRoot()
 	key := a.serverKey
+	ch := a.bgPick.res
+	mgr := a.d.Manager
 	go func() {
 		// A background list fetch/parse must NEVER crash the app: this is off the
 		// main thread, so no recover up the stack catches a panic here (e.g. a
@@ -132,17 +134,17 @@ func (a *App) ensureBgList() {
 		defer func() {
 			if r := recover(); r != nil {
 				writeCrashLog("background list goroutine panic: ", r)
-				a.bgPick.res <- bgFetch{key: key, err: fmt.Errorf("background list failed: %v", r)}
+				ch <- bgFetch{key: key, err: fmt.Errorf("background list failed: %v", r)}
 			}
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), bgFetchTimeout)
 		defer cancel()
-		data, err := a.d.Manager.FetchRaw(ctx, listURL)
+		data, err := mgr.FetchRaw(ctx, listURL)
 		if err != nil {
-			a.bgPick.res <- bgFetch{key: key, err: err}
+			ch <- bgFetch{key: key, err: err}
 			return
 		}
-		a.bgPick.res <- bgFetch{key: key, names: parseAutoindexDirs(data)}
+		ch <- bgFetch{key: key, names: parseAutoindexDirs(data)}
 	}()
 }
 
