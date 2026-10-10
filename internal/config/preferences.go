@@ -477,8 +477,8 @@ const defaultEventDrivenLoop = true
 
 // defaultMotionRedrawPerEvent makes bare pointer motion render one frame per motion
 // event (then re-park) instead of holding the full frame rate through the motion
-// grace — less GPU/power on a moving cursor over static UI. Default ON as of
-// v1.55.1; the Settings toggle turns it off for the old hold-full-rate behaviour.
+// grace — less GPU/power on a moving cursor over static UI. Default ON; the
+// Settings toggle turns it off for the old hold-full-rate behaviour.
 const defaultMotionRedrawPerEvent = true
 
 // defaultMusicHistory ships ON: AsyncAO keeps a session list of the songs played
@@ -502,7 +502,7 @@ const defaultMusicStreaming = true
 // load DTO): an explicit OFF must persist, not read back as "absent → default ON".
 const defaultShowMissingPlaceholder = true
 
-// defaultICCustomColor seeds the free IC hex colour picker (v1.52.0) before
+// defaultICCustomColor seeds the free IC hex colour picker before
 // the user's first pick: a readable sky-blue on the dark chatbox, packed
 // 0xRRGGBB like the highlight colour below.
 const defaultICCustomColor = 0x7ADCF0
@@ -1016,7 +1016,7 @@ type AssetPreferences struct {
 	UpdateCheck              bool                 `json:"updateCheck"`
 	UpdateExperimental       bool                 `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
 	HighlightColor           int                  `json:"highlightColor"`
-	ICCustomColor            int                  `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
+	ICCustomColor            int                  `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB)
 	NameColors               bool                 `json:"nameColors"`
 	NameSat                  int                  `json:"nameColorSat"`
 	NameVal                  int                  `json:"nameColorVal"`
@@ -1077,7 +1077,7 @@ type AssetPreferences struct {
 	VoicePTTKey              string               `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
 	QuitConfirmSkip          bool                 `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
 	LegacyDevTheme           bool                 `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
-	OOCInLogTab              bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default OFF since v1.87.0 — OOC gets its own box.
+	OOCInLogTab              bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default OFF — OOC gets its own box.
 	MyProfile                ProfilePref          `json:"profile"`                    // the user's character profile (#101)
 	ChatboxOpacity           int                  `json:"chatboxOpacity"`
 	RainbowSpriteVividness   int                  `json:"rainbowSpriteVividness"`
@@ -1165,7 +1165,7 @@ type AssetPreferences struct {
 	InputGraceFramesVal      int                  `json:"inputGraceFrames,omitempty"`      // full-rate hold after a click/key, in frames (0/absent = default 1)
 	EventDrivenLoop          bool                 `json:"eventDrivenLoop"`                 // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	DisableFrameLimiter      bool                 `json:"disableFrameLimiter,omitempty"`   // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
-	MotionRedrawPerEvent     bool                 `json:"motionRedrawPerEvent"`            // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default ON (v1.55.1). NOT omitempty: an explicit OFF must persist, not read back as "absent → default ON".
+	MotionRedrawPerEvent     bool                 `json:"motionRedrawPerEvent"`            // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default ON. NOT omitempty: an explicit OFF must persist, not read back as "absent → default ON".
 	SpriteDownscalePctVal    int                  `json:"spriteDownscalePct,omitempty"`    // decode downscale target as % of display height (0/absent = 100)
 	AnimatedSpriteCapPxVal   int                  `json:"animatedSpriteCapPx,omitempty"`   // opt-in animated-only height cap in px (0/absent = off)
 	TexBudgetMiBVal          int                  `json:"texBudgetMiB,omitempty"`          // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
@@ -1302,12 +1302,12 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // v1.89.0: read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
+	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
 	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent). NEVER 0 in memory: defaultPrefs seeds DefaultScalePercent and the load overlay resolves the legacy on-disk 0 (= inherit the IC log size once, then diverge). A 0 here reaches buildSet as a 0% scale and renders the OOC log at 1 px.
 	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
-	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints (v1.52.0): hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
+	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints: hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
@@ -1658,7 +1658,7 @@ type prefsJSON struct {
 	VoicePTTKey            string               `json:"voicePttKey,omitempty"`      // push-to-talk toggle key
 	QuitConfirmSkip        bool                 `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on quit
 	LegacyDevTheme         bool                 `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
-	OOCInLogTab            bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default OFF (= OOC box). No omitempty ON PURPOSE: it is what makes an existing user's opt-in survive the v1.87.0 default flip.
+	OOCInLogTab            bool                 `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default OFF (= OOC box). No omitempty ON PURPOSE: it is what makes an existing user's opt-in survive the default flip.
 	Profile                *ProfilePref         `json:"profile"`                    // absent = no profile (#101)
 	ChatboxOpacity         *int                 `json:"chatboxOpacity"`             // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int                 `json:"rainbowSpriteVividness"`     // absent = default (0 is valid → pointer)
@@ -1752,7 +1752,7 @@ type prefsJSON struct {
 	EventDrivenLoop        *bool                `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	DisableFrameLimiter    bool                 `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
 	DisableAltEmoteRow     bool                 `json:"disableAltEmoteRow"`   // remove the Alt+1..9 emote number row (default OFF)
-	MotionRedrawPerEvent   *bool                `json:"motionRedrawPerEvent"` // per-event motion redraw (default ON as of v1.55.1; pointer: absent → the default, distinct from an explicit OFF)
+	MotionRedrawPerEvent   *bool                `json:"motionRedrawPerEvent"` // per-event motion redraw (default ON; pointer: absent → the default, distinct from an explicit OFF)
 	SpriteDownscalePct     int                  `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	AnimatedSpriteCapPx    int                  `json:"animatedSpriteCapPx"`  // animated-only height cap px (0 = off)
 	TexBudgetMiB           int                  `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
@@ -1847,12 +1847,12 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // v1.89.0: read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
+	LocalAssetsLayered bool                      `json:"localAssetsLayered"`    // read local mounts ALONGSIDE streaming (folders win at the same path). Deliberately INDEPENDENT of LocalAssetsEnabled rather than a tri-state enum, so localAssetsEnabled keeps its exact meaning and no saved prefs.json changes meaning on upgrade — no migration stamp needed. Ignored while LocalAssetsEnabled (see LayeredAssets()).
 	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
-	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints (v1.52.0): hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
+	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints: hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
@@ -1927,7 +1927,7 @@ type DiscordPrefs struct {
 	ShowArea   bool `json:"showArea"`
 	// AppID is retained for back-compat with older saved prefs only; the dial
 	// now uses the baked-in DefaultDiscordAppID and the field is no longer
-	// user-editable (the Settings box was removed).
+	// user-editable.
 	AppID string `json:"appId,omitempty"`
 }
 
@@ -2254,7 +2254,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		OOCScalePct:    DefaultScalePercent,
 		InputHeightPct: DefaultScalePercent,
 		UIScalePct:     DefaultScalePercent,
-		// OOC gets its OWN BOX on a fresh install (v1.87.0). Every call site already
+		// OOC gets its OWN BOX on a fresh install. Every call site already
 		// documents the box as "the new default" — only this seed still said otherwise,
 		// so a first-run user got the Legacy-style hybrid (a log tab PLUS a second
 		// always-visible OOC bar at the bottom) the rest of the UI treats as opt-in.
@@ -3211,8 +3211,7 @@ func (p *AssetPreferences) saverLoop() {
 
 // resetContentFields names the user-CONTENT fields ResetSettings PRESERVES
 // (everything else — the tunable settings — reverts to default). ResetAll
-// preserves nothing. Keyed by Go field name (checked against the struct by
-// TestResetFieldNames so a rename can't silently break it).
+// preserves nothing. Keyed by Go field name so a rename can't silently break it.
 var resetContentFields = map[string]bool{
 	"Favorites":          true, // saved servers (phone book)
 	"Wardrobe":           true, // legacy flat wardrobe
@@ -4204,7 +4203,7 @@ func (p *AssetPreferences) SetHighlightColor(rgb int) {
 }
 
 // ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
-// (v1.52.0 — seeds the colour wheel; defaultICCustomColor until first use).
+// (seeds the colour wheel; defaultICCustomColor until first use).
 func (p *AssetPreferences) ICCustomColorRGB() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -7236,7 +7235,7 @@ func (p *AssetPreferences) HiddenPanels() []string {
 }
 
 // SetHiddenPanels replaces the hidden-chrome set. Dedups blank/duplicate ids and
-// bounds the slice at maxHiddenPanels (rule §17.4 — it was previously uncapped).
+// bounds the slice at maxHiddenPanels (rule §17.4).
 func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 	clean := sanitizeHiddenPanels(ids)
 	p.mu.Lock()
@@ -7338,7 +7337,7 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 }
 
 // LayoutPartColorCount is the number of individually-tintable layout parts
-// (v1.52.0, requested by Tifera: colour individual parts of the layout). The ui package
+// (requested by Tifera: colour individual parts of the layout). The ui package
 // owns the index meanings (log / OOC / emote grid / chatbox); this package
 // just stores the hex slots, blank = use the chrome default.
 const LayoutPartColorCount = 4
@@ -8646,7 +8645,7 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 }
 
 // MotionRedrawPerEventOn reports the "redraw once per mouse-move event" pacing
-// (event-driven loop only, default ON as of v1.55.1): bare pointer motion renders
+// (event-driven loop only, default ON): bare pointer motion renders
 // exactly the one frame its event earns and then re-parks, instead of arming the
 // short full-rate motion grace — so hovering/sweeping the cursor over nothing stops
 // pinning the frame rate to the cap. Real input (click/key/wheel) keeps its normal
@@ -11262,7 +11261,7 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	return true
 }
 
-// LayeredAssets reports the v1.89.0 mode where local mounts are read ALONGSIDE
+// LayeredAssets reports the mode where local mounts are read ALONGSIDE
 // the server's stream, with the user's own files winning at the same path.
 //
 // It is the ONE place the two stored bools are normalized, so the reachable
