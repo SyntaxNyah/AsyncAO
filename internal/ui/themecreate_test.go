@@ -462,17 +462,18 @@ func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
 	if a.te != nil {
 		t.Fatal("the editor did not close")
 	}
-	// A paused exit must lift the pause before the reconcile, so the next open
-	// starts live — the livePaused=false-before-editorSyncArt order is what keeps
-	// a paused exit from leaving a stale plan. (The media-plan reconcile itself is
-	// covered by the art-sync gates in themeeditorart_test.go.)
-	if !a.openThemeEditorForTest(ScreenSettings) {
-		t.Fatal("re-opening the editor over the same sidecar was refused")
+	// closeThemeEditor must lift the pause before its reconcile and sync the art on
+	// the way out. This guard is kept as an AST read (rule 11, kept list): the
+	// reconcile needs a real render.TextureStore (a.d.Store) which the headless rig
+	// does not provide, so no behavioural test can be made to fail here in one commit.
+	closer := funcBodySource(t, "themeeditor.go", "closeThemeEditor")
+	if !containsCall(closer, "editorSyncArt") {
+		t.Fatal("closeThemeEditor no longer reconciles the art on the way out")
 	}
-	if !a.te.editorLiveOn() {
-		t.Error("a paused exit left the editor paused on reopen — the pause outlived the session that armed it")
+	if !strings.Contains(bundleGateSource(t, "themeeditor.go"), "a.te.livePaused = false\n\ta.editorSyncArt()") {
+		t.Error("closeThemeEditor no longer lifts the live-preview pause before its reconcile — a paused " +
+			"exit would leave the plan stale with no frame left to fix it")
 	}
-	a.closeThemeEditor()
 }
 
 // TestTheLiveToggleIsOnTheRailAndSaysWhichStateItIsIn pins the affordance itself.
