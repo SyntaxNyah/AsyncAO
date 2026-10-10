@@ -57,7 +57,7 @@ const (
 	// ScreenHelp is the newcomer Help screen (glossary of AO terms + a plain-English
 	// privacy explainer), reached from the lobby top bar and the courtroom Extras menu.
 	ScreenHelp
-	// ScreenThemeEditor is the v1.90.0 theme editor: the live courtroom at full
+	// ScreenThemeEditor is the theme editor: the live courtroom at full
 	// window size with two floating rails over it (themeeditor.go). APPENDED, which
 	// is safe because the enum is not persisted anywhere — no preference, no wire
 	// field and no on-disk cache stores a Screen value.
@@ -166,7 +166,7 @@ type Deps struct {
 	Viewport *render.Viewport
 	Pump     *render.Pump
 	Audio    *render.Audio
-	// Preview is the detachable emote-preview OS window (v1.93.0
+	// Preview is the detachable emote-preview OS window (
 	// preview-window-wire). NEVER nil in production (main.go always
 	// constructs one via render.NewPreviewWindow, closed by default — the
 	// "closed = free" contract), but every consumer must stay nil-safe
@@ -198,17 +198,17 @@ type App struct {
 	screen     Screen
 	prevScreen Screen // for settings/about back navigation
 
-	// --- the theme editor (v1.90.0 W7; themeeditor.go) --------------------------
+	// --- the theme editor (themeeditor.go) --------------------------
 	//
 	// ONE POINTER, nil while the editor is shut, and that is the whole of its cost
 	// when closed: no goroutine, no timer, no per-frame read from any courtroom draw
 	// site. TestClosedThemeEditorCostsNothing benchmarks the claim rather than
-	// asserting it (the v1.89.0 "0 base = 0 cost" rule).
+	// asserting it (the "0 base = 0 cost" rule).
 	te *themeEditor
 	// editorReturn is where Back goes. The editor carries its OWN return target
 	// rather than joining prevScreen, which is a single field written at ~10 sites
 	// across 8 files and asserted on in menucontent_test.go — a screenStack refactor
-	// is the right long-term fix and is a v1.91 follow-up, not a passenger on the
+	// is the right long-term fix and is a follow-up, not a passenger on the
 	// flagship's riskiest wave.
 	editorReturn Screen
 
@@ -542,7 +542,7 @@ type App struct {
 	casingProbedHost string           // host already probed this session (probe once per host)
 	casingRes        chan casingProbeResult
 
-	// --- local-pack layer (v1.89.0): see mountlayer.go ---
+	// --- local-pack layer: see mountlayer.go ---
 	mountIndex     *assets.MountIndex // the live index (nil = none built); its own Mounts() is the identity, so no separate key can drift
 	mountIndexing  bool               // a walk is in flight (single-flight latch)
 	mountIndexRes  chan mountIndexResult
@@ -978,7 +978,7 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
-	// --- free elements (v1.90.0 W3; themeelements.go / themeelementbake.go) -----
+	// --- free elements (themeelements.go / themeelementbake.go) -----
 	//
 	// themeSidecar is the applied theme's parsed asyncao_theme.ini, or nil for a
 	// stock AO2 theme — which is every theme that has never been opened in the
@@ -1004,7 +1004,7 @@ type App struct {
 	condGen  uint64
 	// condSpeaking is the one VALUE-LESS condition axis: a message is on the stage.
 	condSpeaking bool
-	// --- element clocks + effects (v1.90.0 W5; themeclock.go) -------------------
+	// --- element clocks + effects (themeclock.go) -------------------
 	//
 	// themeClocks is the FIXED authoring-clock pool. Clock 0 is the shared themeAt
 	// anchor, so the ZERO VALUE of this array is "every element runs exactly as
@@ -1051,7 +1051,7 @@ type App struct {
 	// apply that still refuses, so dismissing it can never lose the state — and never
 	// cleared on a timer, because the condition does not expire on its own.
 	themeSidecarErrAck bool
-	// --- theme media (v1.90.0 W4; thememedia.go) --------------------------------
+	// --- theme media (thememedia.go) --------------------------------
 	//
 	// themeMediaKeys is the set of theme:// media and generator keys THIS client
 	// uploaded — the declared set the swap prune reconciles against. It is a UI-side
@@ -1769,14 +1769,14 @@ type sessionState struct {
 	debugFontBuf    []fontPickRow
 	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
 	showFxPicker bool
-	// showICColorWheel floats the free-hex colour wheel (v1.52.0) anchored to
+	// showICColorWheel floats the free-hex colour wheel anchored to
 	// the IC colour swatch; icSwatchRect remembers where that swatch drew this
 	// frame (either layout), icColorHexBuf is the wheel's hex-field edit buffer.
 	showICColorWheel bool
 	icSwatchRect     sdl.Rect
 	icColorHexBuf    string
 	fxBtnRect        sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
-	// Per-part layout colours (v1.52.0): the parsed draw cache (refreshPartColors),
+	// Per-part layout colours: the parsed draw cache (refreshPartColors),
 	// the Settings wheel's selected part, and its hex-field edit buffer.
 	partColors   [config.LayoutPartColorCount]sdl.Color
 	partColorOn  [config.LayoutPartColorCount]bool
@@ -2140,7 +2140,7 @@ type sessionState struct {
 	// render.ExtColorAt (icExtColor-1); 0 = none, so the &App{} zero value stays
 	// idle. Mutually exclusive with the wire palette / Rainbow / Random.
 	icExtColor int
-	// icCustomOn/icCustomRGB: the free hex chat colour (v1.52.0, Tifera). The
+	// icCustomOn/icCustomRGB: the free hex chat colour (Tifera). The
 	// exact colour ships as inline `\c#RRGGBB` markup with a nearest-standard
 	// wire fallback (funColor); per-tab like every other colour pick. The last
 	// pick also persists globally (Prefs.ICCustomColorRGB seeds a fresh tab).
@@ -3589,7 +3589,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		}
 	}
 	a.applyChromePreset(d.Prefs.ChromeTheme()) // #M3: apply the saved client chrome theme at launch
-	a.refreshPartColors()                      // per-part layout tints (v1.52.0): parse the saved hexes once
+	a.refreshPartColors()                      // per-part layout tints: parse the saved hexes once
 	// Corrupt-prefs notice (#3): if the settings file failed to parse at
 	// startup, config quarantined it (renamed aside) so the saver couldn't
 	// overwrite the only copy with defaults. Surface a one-time banner via the
@@ -3924,11 +3924,11 @@ func (a *App) Background(dt time.Duration) {
 	a.processOOCQueue()
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
-	// Auto-reconnect is deliberately NOT polled here (v1.70.0 behaviour, restored by
+	// Auto-reconnect is deliberately NOT polled here (behaviour, restored by
 	// user request): pumpConnection above still detects a drop and lands us on the
 	// lobby with the retry armed, but the retry itself fires only from the foreground
 	// Frame loop (pollAutoReconnect). So a drop taken while the window is minimized
-	// waits at the lobby until the user returns — instead of the v1.80.0 behaviour of
+	// waits at the lobby until the user returns — instead of the behaviour of
 	// silently reconnecting in the background and stranding them at char-select on a
 	// churn of retries before they even restore the window.
 	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
@@ -4027,7 +4027,7 @@ func (a *App) keepActiveAssetsWarm() {
 // The scene-heal futility budget: how the heal machinery (keepSceneAssetsWarm,
 // healScenery, keepActiveAssetsWarm) distinguishes a heal worth repeating from
 // a futile one. Two independent bounds, because there are two distinct failure
-// shapes and conflating them regressed (v1.56.0 shipped a single demand
+// shapes and conflating them regressed (shipped a single demand
 // counter, and a merely-SLOW load burned it against ONE in-flight fetch —
 // three 250 ms keeper ticks — leaving a healthy scene latched for the epoch):
 //
@@ -5094,7 +5094,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// per-server level. Harmless if already "" ; the next real track re-stamps.
 				a.musicOwnerKey = ""
 			}
-		// NOTE (2026-08-08): these three arms used to call maybeRefetchRoster, which
+		// NOTE: these three arms used to call maybeRefetchRoster, which
 		// sent a /gas back at the server on a 3 s debounce. That automatic tier is
 		// deleted — see the header comment in liveroster.go for the field report, the
 		// per-site verdict and the trade-off. All three now do nothing but rebuild the
@@ -6921,7 +6921,7 @@ const motionInputGrace = 200 * time.Millisecond
 // (byte-identical pacing to before).
 func (a *App) NoteMotion() {
 	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
-		// Per-event motion redraw (default ON since v1.55.1): don't arm the full-rate
+		// Per-event motion redraw (default ON): don't arm the full-rate
 		// grace. The motion event already earns its single wake-frame (SkipFrame refuses on
 		// sawEvent), then the loop re-parks — so a moving cursor redraws once per
 		// motion event instead of holding full rate through a 200 ms tail. Saves
@@ -8461,7 +8461,7 @@ func (a *App) pollPreviewEmotes() {
 // "normal" is a convention, not a guarantee. A pack whose poses are spelled
 // SNormal/SCry/HSmug had no recovery at all here and previewed as a permanently
 // empty box (its cell icon still loaded — that's char_icon.png — so it read as
-// "the sprite is broken"). Same trap v1.53.0 fixed for the pair-menu preview
+// "the sprite is broken"). Same trap fixed for the pair-menu preview
 // ("always looked for a sprite named 'normal', which plenty of packs simply
 // don't have"); the fix was never carried over to this grid.
 //
@@ -9062,7 +9062,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.ctx.hotkey = 0
 		}
 	}
-	// The v1.90.0 THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
+	// The THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
 	// Ctrl+Y here, and the site is the fix rather than a tidy-up.
 	//
 	// editorUndoChord's only other caller is handleHotkeys, which runs from the three
