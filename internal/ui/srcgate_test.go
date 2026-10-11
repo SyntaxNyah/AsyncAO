@@ -78,7 +78,7 @@ func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[st
 	srcParseMu.Lock()
 	defer srcParseMu.Unlock()
 	if pp, ok := srcParseCache[key]; ok {
-		return pp.fset, pp.files
+		return pp.fset, cloneFileMap(pp.files)
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -101,7 +101,18 @@ func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[st
 		t.Fatal("no production sources found — the census would be vacuous")
 	}
 	srcParseCache[key] = &parsedPackage{fset: fset, files: files}
-	return fset, files
+	return fset, cloneFileMap(files)
+}
+
+// cloneFileMap returns a shallow copy of files so a caller that mutates the map (the
+// icsfx sentinel gate deletes its own file before policing the rest) cannot corrupt the
+// shared cache. The *ast.File values are shared but only ever read, never written.
+func cloneFileMap(files map[string]*ast.File) map[string]*ast.File {
+	out := make(map[string]*ast.File, len(files))
+	for k, v := range files {
+		out[k] = v
+	}
+	return out
 }
 
 // funcBodySource returns the AST body of the named function (or method), looked up
