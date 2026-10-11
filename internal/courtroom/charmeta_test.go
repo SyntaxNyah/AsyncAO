@@ -48,12 +48,12 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		}
 		return "", true
 	}}
-	room.ChatSkinFor = func(char string) string {
+	room.Chars = charFake{skin: func(char string) string {
 		if char == "dorothy" {
 			return "dorothybox"
 		}
 		return ""
-	}
+	}}
 
 	msg := icMsg("hello")
 	msg.CharName = "dorothy"
@@ -83,7 +83,7 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	// as an alt (MiscChatboxCandidates), never the scene key.
 	msgCase := icMsg("case test")
 	msgCase.CharName = "dorothy"
-	room.ChatSkinFor = func(string) string { return "VA-11 HallA/Jill Stingray" }
+	room.Chars = charFake{skin: func(string) string { return "VA-11 HallA/Jill Stingray" }}
 	room.HandleEvent(Event{Kind: EventMessage, Message: msgCase})
 	room.SkipToIdle()
 	if !strings.Contains(room.Scene.ChatSkinBase, "misc/va-11%20halla/jill%20stingray/chat") {
@@ -91,12 +91,12 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	}
 
 	// A skinless speaker clears the scene's skin (no stale carry-over).
-	room.ChatSkinFor = func(char string) string {
+	room.Chars = charFake{skin: func(char string) string {
 		if char == "dorothy" {
 			return "dorothybox"
 		}
 		return ""
-	}
+	}}
 	msg3 := icMsg("yo")
 	msg3.CharName = "phoenix"
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg3})

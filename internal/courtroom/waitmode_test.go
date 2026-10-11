@@ -516,7 +516,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 
 	t.Run("chatbox holds until ready", func(t *testing.T) {
 		room, ready := newRig(t)
-		room.ChatSkinFor = func(char string) string { return "YTTD" }
+		room.Chars = charFake{skin: func(char string) string { return "YTTD" }}
 		readySpeaker(room, ready, "Phoenix", "normal")
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
 		if room.QueueLen() != 1 {

@@ -268,6 +268,29 @@ type BlipResolver interface {
 	BlipNameFor(char string) (name string, known bool)
 }
 
+// CharResolver is the consumer-provided char.ini lookup surface: a speaker's
+// chatbox skin folder, chatbox ink, custom showname and custom realization sound.
+// nil = the AO defaults (no speaker-specific overrides). The App sets it from its
+// per-URL char.ini cache, so all four answers come from the same single fetch.
+type CharResolver interface {
+	// ChatSkinFor resolves a speaker's chatbox-skin misc folder
+	// (char.ini [Options] chat, AO2-Client get_chat). "" = no per-character skin.
+	ChatSkinFor(char string) string
+	// ChatInkFor resolves a speaker's own chatbox ink — misc/<chat>/courtroom_fonts.ini
+	// message_color / showname_color. Both ok flags false = no per-character chatbox,
+	// or its fonts INI declares no colours → the theme's colours win.
+	ChatInkFor(char string) (msg theme.RGB, msgOK bool, name theme.RGB, nameOK bool)
+	// IniShownameFor is AOApplication::get_showname: the char.ini [Options] showname
+	// (with the needs_showname opt-out). known=false means "no char.ini yet" (the
+	// name chain falls back to the folder); a known-but-EMPTY answer is a deliberate
+	// blank plate (needs_showname=false) and is honoured as one.
+	IniShownameFor(char string) (showname string, known bool)
+	// CustomRealizationFor resolves a speaker's OWN realization sound to a full
+	// SFX url (char.ini [Options] realization). "" = the character declares none;
+	// RealizationSFX (the theme's value) is the fallback.
+	CustomRealizationFor(char string) string
+}
+
 type Courtroom struct {
 	urls  URLBuilder
 	mgr   *assets.Manager
@@ -338,32 +361,10 @@ type Courtroom struct {
 	// from live prefs + its per-URL char.ini cache.
 	Blips BlipResolver
 
-	// ChatSkinFor, when set, resolves a speaker's chatbox-skin misc folder
-	// (char.ini [Options] chat, AO2-Client get_chat) — same cache/fetch
-	// behaviour as BlipNameFor. "" = no per-character skin.
-	ChatSkinFor func(char string) string
-
-	// ChatInkFor resolves a speaker's own chatbox ink — misc/<chat>/courtroom_fonts.ini
-	// message_color / showname_color (AO2 Courtroom::set_font resolved against
-	// get_chat) — from the SAME per-URL char.ini cache as ChatSkinFor, so it costs
-	// zero extra network work. Both ok flags false = no per-character chatbox, or its
-	// fonts INI declares no colours → the theme's colours win.
-	ChatInkFor func(char string) (msg theme.RGB, msgOK bool, name theme.RGB, nameOK bool)
-
-	// IniShownameFor, when set, is AOApplication::get_showname for a speaker —
-	// the char.ini [Options] showname (with the needs_showname opt-out),
-	// resolved from the SAME per-URL char.ini cache BlipNameFor answers from,
-	// so the name plate costs no extra network work.
-	//
-	// It is the MIDDLE rung of canon's three-step name chain and the one AsyncAO
-	// shipped without: a wire showname wins, then this, then the character folder
-	// (courtroom.cpp:3283-3292 initialize_chatbox, :2528-2538 log_chatmessage).
-	// AO2 can always answer because it reads the ini off disk; a streaming client
-	// cannot, which is what `known` is for — false means "no char.ini yet"
-	// (or none is wired) and displayName falls back to the folder name, exactly
-	// as canon does for an unreadable ini. A known-but-EMPTY answer is
-	// needs_showname=false, a deliberate blank plate, and is honoured as one.
-	IniShownameFor func(char string) (showname string, known bool)
+	// Chars is the consumer-provided char.ini lookup surface (see CharResolver):
+	// chatbox skin folder, chatbox ink, custom showname and custom realization.
+	// nil = no per-character overrides (the AO defaults).
+	Chars CharResolver
 
 	// EffectsFolderFor resolves a speaker's screen-effect misc folder (char.ini
 	// [Options] effects, AO2-Client get_effect's p_folder default,
@@ -372,16 +373,6 @@ type Courtroom struct {
 	// costs zero extra network work. Consulted only for the 1- and 2-part wire
 	// shapes, which omit the folder. "" = the theme's own effects only.
 	EffectsFolderFor func(char string) string
-
-	// CustomRealizationFor resolves a speaker's OWN realization sound to a full
-	// SFX url — char.ini [Options] realization, AO2's get_custom_realization
-	// (text_file_functions.cpp:896-903). Canon calls it from the legacy
-	// REALIZATION=1 path (courtroom.cpp:4175) INSTEAD of the theme's court sfx, so
-	// a character shipping its own realization sound is heard everywhere. It rides
-	// the same per-URL char.ini cache as EffectsFolderFor — zero extra network
-	// work. "" (or nil) = the character declares none; RealizationSFX, the theme's
-	// courtroom_sounds.ini value, is the fallback exactly as it is in canon.
-	CustomRealizationFor func(char string) string
 
 	// OverlayFor resolves an effect NAME + misc FOLDER to its merged effects.ini
 	// properties and the T1 key / URL its art lives under. The App owns it: the
@@ -1034,8 +1025,8 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				ready = c.deskResolutionOf(c.urls.Background(c.sess.Background, deskPart)) != DeskUnresolved
 			}
 		}
-		if ready && c.ChatSkinFor != nil {
-			if misc := c.ChatSkinFor(msg.CharName); misc != "" {
+		if ready && c.Chars != nil {
+			if misc := c.Chars.ChatSkinFor(msg.CharName); misc != "" {
 				cands := c.urls.MiscChatboxCandidates(misc)
 				ready = c.spriteSettled(cands[0])
 			}
@@ -1124,8 +1115,8 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				c.mgr.PrefetchChain(c.urls.Background(c.sess.Background, bgPart), backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
 				c.mgr.Prefetch(c.urls.Background(c.sess.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityHigh)                                                         // AssetType: DeskOverlay (wait-gate warm)
 			}
-			if c.ChatSkinFor != nil {
-				if misc := c.ChatSkinFor(msg.CharName); misc != "" {
+			if c.Chars != nil {
+				if misc := c.Chars.ChatSkinFor(msg.CharName); misc != "" {
 					cands := c.urls.MiscChatboxCandidates(misc)
 					c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (wait-gate warm, chatbox)
 				}
@@ -1674,8 +1665,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// walk in order; the first candidate stays the asset's identity (same
 	// shape as the (a)-sprite / bare-sprite chain).
 	c.Scene.ChatSkinBase = ""
-	if c.ChatSkinFor != nil {
-		if misc := c.ChatSkinFor(speakerName); misc != "" {
+	if c.Chars != nil {
+		if misc := c.Chars.ChatSkinFor(speakerName); misc != "" {
 			cands := c.urls.MiscChatboxCandidates(misc)
 			c.Scene.ChatSkinBase = cands[0]
 			c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
@@ -1686,8 +1677,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// back to the theme. Set flags false = keep the theme's colour.
 	c.Scene.ChatSkinMsgColor, c.Scene.ChatSkinMsgHas = theme.RGB{}, false
 	c.Scene.ChatSkinNameColor, c.Scene.ChatSkinNameHas = theme.RGB{}, false
-	if c.ChatInkFor != nil {
-		if msg, mOK, name, nOK := c.ChatInkFor(speakerName); mOK || nOK {
+	if c.Chars != nil {
+		if msg, mOK, name, nOK := c.Chars.ChatInkFor(speakerName); mOK || nOK {
 			c.Scene.ChatSkinMsgColor, c.Scene.ChatSkinMsgHas = msg, mOK
 			c.Scene.ChatSkinNameColor, c.Scene.ChatSkinNameHas = name, nOK
 		}
@@ -2896,5 +2887,9 @@ func (c *Courtroom) applyDeskMods(preanim bool) {
 // function: the plate and the log used to reach the same answer only because
 // they happened to implement the same two of canon's three rungs.
 func (c *Courtroom) displayName(msg *protocol.ChatMessage) string {
-	return DisplayName(msg, c.ForceCharNames, c.IniShownameFor)
+	var ini IniShowname
+	if c.Chars != nil {
+		ini = c.Chars.IniShownameFor
+	}
+	return DisplayName(msg, c.ForceCharNames, ini)
 }

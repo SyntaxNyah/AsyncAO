@@ -279,6 +279,22 @@ func (r roomBlipResolver) BlipNameFor(char string) (string, bool) {
 	return r.a.remoteBlipFor(char)
 }
 
+// roomCharResolver implements courtroom.CharResolver from the App's per-URL
+// char.ini cache (chatbox skin/ink, custom showname, custom realization), so a
+// speaker skins and names identically in every mode.
+type roomCharResolver struct{ a *App }
+
+func (r roomCharResolver) ChatSkinFor(char string) string { return r.a.remoteChatSkinFor(char) }
+func (r roomCharResolver) ChatInkFor(char string) (theme.RGB, bool, theme.RGB, bool) {
+	return r.a.remoteChatInkFor(char)
+}
+func (r roomCharResolver) IniShownameFor(char string) (string, bool) {
+	return r.a.remoteIniShownameFor(char)
+}
+func (r roomCharResolver) CustomRealizationFor(char string) string {
+	return r.a.overlayCustomRealizationFor(char)
+}
+
 // wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
 // speaker blips and skins identically in every mode.
 //
@@ -290,10 +306,8 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 		return
 	}
 	room.Blips = roomBlipResolver{a}
-	room.ChatSkinFor = a.remoteChatSkinFor
-	room.ChatInkFor = a.remoteChatInkFor
+	room.Chars = roomCharResolver{a}
 	room.SpriteScaling = a.remoteScalingFor
-	room.IniShownameFor = a.remoteIniShownameFor
 	// Screen-effect overlays ride the same cache and the same single fetch
 	// (effectspicker.go).
 	a.wireRoomOverlay(room)

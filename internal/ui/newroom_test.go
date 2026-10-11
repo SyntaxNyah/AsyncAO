@@ -291,16 +291,13 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				if room.EffectsFolderFor == nil {
 					t.Error("EffectsFolderFor is nil — the room cannot find the character's effects folder")
 				}
-				if room.CustomRealizationFor == nil {
-					t.Error("CustomRealizationFor is nil — a character's own realization sound is lost")
-				}
 				// The char.ini tier (charmeta.go): the same speaker must blip,
 				// skin and scale identically in every mode.
 				if room.Blips == nil {
 					t.Error("Blips is nil — the speaker's own blip set is ignored in this mode")
 				}
-				if room.ChatSkinFor == nil {
-					t.Error("ChatSkinFor is nil — the speaker's own chatbox skin is ignored in this mode")
+				if room.Chars == nil {
+					t.Error("Chars is nil — the speaker's own skin/ink/showname/realization is ignored in this mode")
 				}
 				if room.SpriteScaling == nil {
 					t.Error("SpriteScaling is nil — the character's declared scaling filter is ignored in this mode")

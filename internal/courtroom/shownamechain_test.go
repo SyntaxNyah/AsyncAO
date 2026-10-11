@@ -40,7 +40,7 @@ func iniShownameFromBytes(t *testing.T, ini string) IniShowname {
 // must put the DECLARED name on the plate — not the folder it lives in.
 func TestCharINIShownameReachesTheNamePlate(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.IniShownameFor = iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n[Emotions]\nnumber = 0\n")
+	room.Chars = charFake{name: iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n[Emotions]\nnumber = 0\n")}
 
 	room.RestoreMessage(&protocol.ChatMessage{
 		CharName: "DR2/Nekomaru Nidai", // the nested folder the report showed
@@ -62,7 +62,7 @@ func TestCharINIShownameReachesTheNamePlate(t *testing.T) {
 // wire field instead of below it.
 func TestCustomShownameStillBeatsTheCharINI(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.IniShownameFor = iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n")
+	room.Chars = charFake{name: iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n")}
 
 	room.RestoreMessage(&protocol.ChatMessage{
 		CharName: "DR2/Nekomaru Nidai",
@@ -80,7 +80,7 @@ func TestCustomShownameStillBeatsTheCharINI(t *testing.T) {
 // fallback (text_file_functions.cpp:470-472) and not a client shortcut.
 func TestShownamelessCharINIFallsBackToTheFolder(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.IniShownameFor = iniShownameFromBytes(t, "[Options]\nblips = male\n[Emotions]\nnumber = 0\n")
+	room.Chars = charFake{name: iniShownameFromBytes(t, "[Options]\nblips = male\n[Emotions]\nnumber = 0\n")}
 
 	room.RestoreMessage(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Message: "hi"})
 	if got := room.Scene.ShownameText; got != "Phoenix" {
@@ -95,8 +95,8 @@ func TestShownamelessCharINIFallsBackToTheFolder(t *testing.T) {
 // both the name AND the wrong chatbox art back.
 func TestNeedsShownameFalseDrawsABlankPlate(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.IniShownameFor = iniShownameFromBytes(t,
-		"[Options]\nshowname = Narrator\nneeds_showname = false\n")
+	room.Chars = charFake{name: iniShownameFromBytes(t,
+		"[Options]\nshowname = Narrator\nneeds_showname = false\n")}
 
 	room.RestoreMessage(&protocol.ChatMessage{CharName: "Narration", Emote: "normal", Message: "..."})
 	if got := room.Scene.ShownameText; got != "" {
@@ -110,7 +110,7 @@ func TestNeedsShownameFalseDrawsABlankPlate(t *testing.T) {
 // show the folder name rather than an empty plate.
 func TestUnresolvedCharINIDegradesToTheFolder(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.IniShownameFor = func(string) (string, bool) { return "", false } // fetch in flight
+	room.Chars = charFake{name: func(string) (string, bool) { return "", false }} // fetch in flight
 
 	room.RestoreMessage(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", Message: "hm"})
 	if got := room.Scene.ShownameText; got != "Edgeworth" {
@@ -118,7 +118,7 @@ func TestUnresolvedCharINIDegradesToTheFolder(t *testing.T) {
 	}
 	// …and with no callback wired at all (a direct NewCourtroom caller: replay,
 	// export, the scene maker) the behaviour is identical.
-	room.IniShownameFor = nil
+	room.Chars = nil
 	room.RestoreMessage(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", Message: "hm"})
 	if got := room.Scene.ShownameText; got != "Edgeworth" {
 		t.Fatalf("nil callback: name plate = %q, want the folder name", got)
@@ -132,7 +132,7 @@ func TestUnresolvedCharINIDegradesToTheFolder(t *testing.T) {
 func TestForceCharNamesStillConsultsTheCharINI(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.ForceCharNames = true
-	room.IniShownameFor = iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n")
+	room.Chars = charFake{name: iniShownameFromBytes(t, "[Options]\nshowname = Nekomaru Nidai\n")}
 
 	room.RestoreMessage(&protocol.ChatMessage{
 		CharName: "DR2/Nekomaru Nidai",
@@ -187,10 +187,10 @@ func TestShownameOrFolderIsGetShownameTransposed(t *testing.T) {
 func TestTheNamePlateRoutesThroughTheSharedChain(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	seen := 0
-	room.IniShownameFor = func(char string) (string, bool) {
+	room.Chars = charFake{name: func(char string) (string, bool) {
 		seen++
 		return "FROM THE CHAIN", true
-	}
+	}}
 	room.RestoreMessage(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Message: "hi"})
 	if seen == 0 {
 		t.Fatal("the name plate never asked IniShownameFor — displayName is not going through DisplayName")
@@ -199,10 +199,10 @@ func TestTheNamePlateRoutesThroughTheSharedChain(t *testing.T) {
 		t.Fatalf("plate = %q: the plate asked the chain and then ignored it", room.Scene.ShownameText)
 	}
 	// And the shared function is the one that decides, for any caller.
-	if got := DisplayName(&protocol.ChatMessage{CharName: "Phoenix"}, false, room.IniShownameFor); got != "FROM THE CHAIN" {
+	if got := DisplayName(&protocol.ChatMessage{CharName: "Phoenix"}, false, room.Chars.IniShownameFor); got != "FROM THE CHAIN" {
 		t.Fatalf("DisplayName = %q", got)
 	}
-	if got := DisplayName(nil, false, room.IniShownameFor); got != "" {
+	if got := DisplayName(nil, false, room.Chars.IniShownameFor); got != "" {
 		t.Fatalf("DisplayName(nil) = %q, want the empty string", got)
 	}
 }
