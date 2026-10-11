@@ -54,5 +54,3 @@ func TestFuncBodySourceAmbiguousFails(t *testing.T) {
 		t.Error("funcBodySource did not fail on a function declared in two files — it would read one of two bodies")
 	}
 }
-
-
