@@ -207,13 +207,6 @@ func TestSettingsFormArmsAndReleasesTheRowLabelLimit(t *testing.T) {
 		t.Errorf("drawSettings pops the row-label limit %d time(s); it needs the deferred one for its early returns AND a straight-line "+
 			"one where the card's clip closes, or the trailing full-window chrome draws under the card's bound (F2)", pops)
 	}
-	cb := funcBodySource(t, "ui.go", "Checkbox")
-	if !containsCall(cb, "fitRowLabel") {
-		t.Error("Ctx.Checkbox no longer consults fitRowLabel â€” the bound is armed but nothing honours it")
-	}
-	if !containsCall(cb, "onRow") {
-		t.Error("Ctx.Checkbox stopped feeding the settings-search collect pass â€” search must still index the FULL label a row had to shorten")
-	}
 	// The bare help lines are drawn by the general primitives, NOT by Checkbox: about
 	// a hundred c.Label calls plus the FONTS chain line's c.LabelClipped. They are the
 	// class the first pass at this fix left hard-clipping at the card edge, so each
@@ -223,5 +216,51 @@ func TestSettingsFormArmsAndReleasesTheRowLabelLimit(t *testing.T) {
 			t.Errorf("Ctx.%s no longer consults fitRowLabel â€” the settings help lines would go back to a hard cut at the card's clip edge, "+
 				"with no ellipsis, which is the reported 'cut off at the right border' (F2)", fn)
 		}
+	}
+}
+
+// TestCheckboxHonoursTheRowLabelLimit is the behavioural replacement for the old
+// "Checkbox consults fitRowLabel + onRow" source scan. It drives a real Checkbox
+// under an armed row-label limit and observes the DRAWN result: onRow still receives
+// the FULL label (the settings-search collect pass indexes the whole sentence), and
+// the drawn row is ellipsised — Checkbox registers a hover tooltip carrying the full
+// text only when it had to shorten the row (fit=false), which is the one way the full
+// sentence stays reachable on screen.
+func TestCheckboxHonoursTheRowLabelLimit(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Fatalf("NewCtx: %v", err)
+	}
+	defer c.Destroy()
+
+	long := settingsCheckboxLabels(t)[0]
+	x, y := int32(200), int32(0)
+	right := x + 300
+	if c.TextWidth(long) <= right-x {
+		t.Fatalf("fixture: the checkbox label is not long enough to overflow a %d px row", right-x)
+	}
+
+	var sawLabel string
+	var sawY int32
+	c.onRow = func(label string, y int32) { sawLabel, sawY = label, y }
+
+	// Rest the pointer on the checkbox so the truncation tooltip (the DRAWN signal
+	// that a row was shortened) is what we read back.
+	c.mouseX, c.mouseY = x+1, y
+
+	prev := c.pushRowLabelLimit(right)
+	c.Checkbox(x, y, long, false)
+	c.popRowLabelLimit(prev)
+
+	if sawLabel != long {
+		t.Errorf("onRow received %q, want the FULL label %q — search would stop matching the sentence a row had to shorten", sawLabel, long)
+	}
+	if sawY != y {
+		t.Errorf("onRow y = %d, want %d", sawY, y)
+	}
+	if c.tipText != long {
+		t.Errorf("Checkbox drew the row un-shortened under an armed limit (no truncation tooltip) — the label would run off the card again (F2)")
 	}
 }
