@@ -942,7 +942,7 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 
 	before := existingAorecs(t)
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
-	a.stopRecording()
+	done := a.stopRecording()
 
 	// The busy holder is untouched: no new job replaced it, contentBusy still set.
 	if a.content != held {
@@ -955,7 +955,7 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 	// Wait on the write's own signal, not the filesystem — polling races the
 	// goroutine under the race detector.
 	select {
-	case <-a.recSaveDone:
+	case <-done:
 	case <-time.After(10 * time.Second):
 	}
 	name := newestAorec(t, before)
