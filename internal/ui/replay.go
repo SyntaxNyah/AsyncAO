@@ -331,9 +331,12 @@ func formatReplayWindow(d time.Duration) string {
 
 // stopRecording ends capture and writes the .aorec next to the exe under
 // recordings\ off the render thread (§17.2: file I/O never blocks rendering).
-func (a *App) stopRecording() {
+// It returns a done channel closed when the deferred .aorec write finishes (or
+// gives up), so a caller can wait for the file instead of polling the filesystem;
+// nil when nothing was written.
+func (a *App) stopRecording() <-chan struct{} {
 	if !a.recActive {
-		return
+		return nil
 	}
 	a.recActive = false
 	rec := a.rec
@@ -341,16 +344,15 @@ func (a *App) stopRecording() {
 	if rec == nil || len(rec.Events) == 0 {
 		a.warnLine = "Recording discarded — no scene happened while recording."
 		a.warnAt = time.Now()
-		return
+		return nil
 	}
 	stamp := time.Now().Format("20060102-150405")
 	stem := "asyncao-" + stamp
 	name, done, err := saveSceneRecording(rec, stem)
 	if err != nil {
 		a.pushDebug("recording: " + err.Error())
-		return
+		return nil
 	}
-	a.recSaveDone = done
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
 	a.warnAt = time.Now()
 
@@ -366,6 +368,7 @@ func (a *App) stopRecording() {
 	if a.d.Prefs.RecordingsKeepAssetsOn() {
 		a.startAutoBundle(rec, stem)
 	}
+	return done
 }
 
 // saveSceneRecording marshals a scene to pretty-printed (hand-editable) JSON and
