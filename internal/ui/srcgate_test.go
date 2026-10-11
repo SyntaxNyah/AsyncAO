@@ -79,8 +79,13 @@ func parseNonTestSources(t testing.TB, fset *token.FileSet, mode parser.Mode) ma
 func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 	t.Helper()
 	fset := token.NewFileSet()
-	files := parseNonTestSources(t, fset, 0)
+	return findFuncBodyInFiles(t, parseNonTestSources(t, fset, 0), file, fn)
+}
 
+// findFuncBodyInFiles is the testable core of funcBodySource: it locates fn in
+// files (the hinted file first, then the rest sorted) and fails the census on an
+// absent function or one declared in two files.
+func findFuncBodyInFiles(t testing.TB, files map[string]*ast.File, file, fn string) *ast.BlockStmt {
 	if f, ok := files[file]; ok {
 		if b := findFuncBody(f, fn); b != nil {
 			return b
