@@ -144,7 +144,7 @@ type settingsState struct {
 	// themeArt memoizes the theme-art budget bar's label. See themeArtBarText.
 	themeArt themeArtBarText
 
-	// --- Settings ▸ Theme editor, the authoring tab (v1.90.0 W10) ------------
+	// --- Settings ▸ Theme editor, the authoring tab ------------
 	//
 	// The CREATOR's four pieces of UI state. On settingsState rather than on App
 	// because they are exactly that — what the tab's controls are showing — and they
@@ -236,7 +236,7 @@ const (
 	tabTheme
 	// tabThemeEditor owns AUTHORING: making a theme, opening the editor over one,
 	// and taking a bundle somebody sent you. It exists because the editor — the
-	// flagship of v1.90.0 — was ONE row two thirds of the way down the Theme tab,
+	// flagship — was ONE row two thirds of the way down the Theme tab,
 	// between "Get themes" and "Your themes folder", and a feature you have to
 	// scroll past a subtheme dropdown to discover is a feature nobody discovers.
 	//
@@ -309,7 +309,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// section, and the gather-search matches its ROW LABELS first regardless.
 		"layout", "fit", "courtroom design", "lobby", "theme preview", "bind", "binding",
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
-		// v1.90.0 W2: the themes folder, its badges and AO2 subthemes. Terms are
+		// the themes folder, its badges and AO2 subthemes. Terms are
 		// picked to avoid the shadow trap (the table is scanned in TAB ORDER and
 		// matches forward, so a term here swallows every later tab's query hidden
 		// inside it): NOT "rescan" (Assets owns it), NOT anything containing
@@ -334,7 +334,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
-		// The theme EDITOR's terms USED TO LIVE HERE (v1.90.0 W7) and moved to
+		// The theme EDITOR's terms USED TO LIVE HERE and moved to
 		// tabThemeEditor below — the row moved, so its search terms had to move with
 		// it or the search would land people on the tab the feature just left.
 	},
@@ -345,7 +345,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// The table is scanned in TAB ORDER and matches FORWARD (the query must be a
 		// substring of a term), so a term on this tab swallows every later tab's
 		// query hidden inside it. This tab is index 2, so "later" is Assets onwards —
-		// the same set the W7 block was vetted against at index 1, minus Theme
+		// the same set the theme-editor block was vetted against at index 1, minus Theme
 		// itself, which sits BEFORE us and therefore still wins its own words.
 		//
 		// Each exclusion below is a word a later tab owns outright:
@@ -353,7 +353,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		//     no "export theme" and no "import theme" either. "aotheme" and "theme
 		//     bundle" carry the transport rows instead; they contain neither word.
 		//   - nothing containing "layer" (tabAssets owns "layer"/"layered", the
-		//     v1.89.0 layered assets). THIS is why the editor's noun is "element".
+		//     layered assets). THIS is why the editor's noun is "element".
 		//   - nothing containing "custom" (tabAudio's "custom music", tabAssets'
 		//     "custom error sprite"). This is why the brief's suggested "customize
 		//     layout" is NOT here: it would steal the bare "custom" from both. The
@@ -394,7 +394,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// Cache. (Everything format-related lives on the Formats tab.)
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
 		"local assets", "local", "mount", "downloader", "download",
-		// The v1.89.0 layered source. Terms stay specific — the table is scanned in
+		// The layered source. Terms stay specific — the table is scanned in
 		// tab order with substring matching, so a broad word would hijack the query.
 		// NB: NOT a bare "stream" — the table is scanned in tab order with substring
 		// matching, and General's "streamer mode" already owns that prefix.
@@ -807,7 +807,7 @@ func (a *App) drawSettings(w, h int32) {
 	// Warn banner, mirroring the lobby/char-select/courtroom draw sites: Settings
 	// was the ONE screen without it, so every Studio-picker message (import
 	// confirmation, extension rejection, picker failure) went invisible exactly
-	// where the user stood (v1.72.0 hotfix review find). Fixed position, outside
+	// where the user stood (a hotfix review find). Fixed position, outside
 	// the scrolled clip, so it can't scroll away.
 	if a.warnActive() {
 		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
@@ -1319,7 +1319,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "AsyncAO appearance")
 	y = a.drawChromeSettings(y, w)
 	y = a.drawShapeSettings(y)     // A5 chrome SHAPE presets (sharp/rounded/pill)
-	y = a.drawPartColorSettings(y) // per-part layout tints (v1.52.0, Tifera)
+	y = a.drawPartColorSettings(y) // per-part layout tints
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")
@@ -1892,7 +1892,7 @@ const (
 // drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
 // top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
 // idiom) with a one-line pitch, the in-app Import file browser (ALL platforms —
-// v1.72.2 replaced the Windows-only native dialog that failed foreground twice),
+// which replaced the Windows-only native dialog that failed foreground twice),
 // the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
 // Shadows pad/w per the mandatory settings idiom.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
@@ -2841,7 +2841,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 
 	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
 	// character sprite whose whole fallback chain 404'd. Lives HERE (moved from
-	// Power User in v1.70.1 — this is where people look for it). Distinct from
+	// Power User — this is where people look for it). Distinct from
 	// the still-loading hold: this fires ONLY once there is nothing left to
 	// fetch, so it never flashes over a sprite that's merely streaming.
 	y = a.settingsSection(y, w, "Missing sprites (missingno)")
@@ -3374,7 +3374,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetPerAreaScrollback(next)
 	}
 	y += 26
-	// Detailed transcript logging (opt-OUT since the 2026-08-09 flip — every other
+	// Detailed transcript logging (opt-OUT since the flip — every other
 	// AO client saves the log, and people only discover they wanted it afterwards).
 	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
 	// off here sticks forever.
@@ -4098,7 +4098,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 10
 
 	// (The missing-sprite "missingno" placeholder controls moved to Settings →
-	// Assets in v1.70.1 — playtest: nobody looked for them under Power User.)
+	// Assets — playtest: nobody looked for them under Power User.)
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
@@ -4468,7 +4468,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	y = a.drawProxySettings(y, w)
 
-	// Image formats lived here from v1.70.1 until they got their own tab. They are
+	// Image formats lived here until they got their own tab. They are
 	// NOT power-user knobs: art failing to render is a first-week problem, and
 	// burying its fix behind a tab called Power user is why it went unfound. A
 	// pointer stays because the casing control above is the OTHER reason a server's
@@ -5392,8 +5392,8 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 
 	// --- THE AUTHORING CROSS-LINK ------------------------------------------
 	//
-	// Two rows used to sit here: "Import:" (the .aotheme browse, W8) and "Theme
-	// editor:" (W7). Both moved to the Theme editor tab, and this is the gap they
+	// Two rows used to sit here: "Import:" (the .aotheme browse) and "Theme
+	// editor:". Both moved to the Theme editor tab, and this is the gap they
 	// left — the place a user who remembers seeing them will look. The cross-tab
 	// hint machinery is the tool for exactly that (drawThemeAuthoringHint).
 	y = a.drawThemeAuthoringHint(y, w)
@@ -5542,7 +5542,7 @@ func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
 // that order — off-thread; pollThemeScan picks up the result. It builds from the
 // same function the LOADER does on purpose: this list is the only source for the
 // theme dropdown and for cycleTheme's ◀ ▶, so a root the loader searches and this
-// one does not is a theme that resolves by name yet cannot be picked (the W2 bug
+// one does not is a theme that resolves by name yet cannot be picked (the bug
 // on every non-portable install). TestThemePickerAndLoaderSearchTheSameRoots.
 //
 // fromUser distinguishes a scan the user asked for from the Settings screen's
@@ -6116,7 +6116,7 @@ const pickFailed = "\x00"
 // themePickerCap bounds the theme dropdown's list (hard rule 4). It is derived
 // from themeCatalogCap, not a second number: the picker and the browser answer
 // the same question about the same directories, and a name in one but not the
-// other is the W2 class of bug where a theme resolves yet cannot be picked.
+// other is the class of bug where a theme resolves yet cannot be picked.
 // Past it the list stops and the row says so — the themes are still on disk and
 // still load by name, which is what the truncation note tells the user.
 //
