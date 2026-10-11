@@ -12,7 +12,7 @@ func TestResolveBlipHoldsWhileCharINIInFlight(t *testing.T) {
 
 	room.blipWire = "" // no wire blip: fall through to char.ini
 	room.blipSpeaker = "Phoenix"
-	room.BlipNameFor = func(char string) (string, bool) { return "", false } // in-flight
+	room.Blips = blipFake{name: func(char string) (string, bool) { return "", false }} // in-flight
 
 	room.resolveBlip()
 	if !room.blipPending || room.blipRef.Base != "" {
@@ -20,7 +20,7 @@ func TestResolveBlipHoldsWhileCharINIInFlight(t *testing.T) {
 	}
 
 	// char.ini lands: known=true with the character's own set.
-	room.BlipNameFor = func(char string) (string, bool) { return "female", true }
+	room.Blips = blipFake{name: func(char string) (string, bool) { return "female", true }}
 	room.resolveBlip()
 	if room.blipPending {
 		t.Fatal("a known char.ini must not leave the blip pending")
@@ -30,7 +30,7 @@ func TestResolveBlipHoldsWhileCharINIInFlight(t *testing.T) {
 	}
 
 	// An empty-but-known answer falls back to AO's default, never a stale ref.
-	room.BlipNameFor = func(char string) (string, bool) { return "", true }
+	room.Blips = blipFake{name: func(char string) (string, bool) { return "", true }}
 	room.resolveBlip()
 	if want := room.urls.BlipRef(defaultBlipSet).Base; room.blipRef.Base != want {
 		t.Fatalf("empty known answer must default: base = %q, want %q", room.blipRef.Base, want)

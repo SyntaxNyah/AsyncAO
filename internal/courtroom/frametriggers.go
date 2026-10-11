@@ -154,7 +154,7 @@ func (c *Courtroom) resolveFrameSFX(name string) string {
 	if name == "" || name == "0" || name == "1" {
 		return ""
 	}
-	if c.SFXMuted != nil && c.SFXMuted(name) {
+	if c.Blips != nil && c.Blips.SFXMuted(name) {
 		return ""
 	}
 	return c.urls.SFX(name)

@@ -258,6 +258,16 @@ func (NopAudio) StopMusic()                    {}
 // Courtroom drives the courtroom state machine: it consumes session events,
 // prefetches every asset a message needs, and advances Scene each tick. No
 // SDL calls anywhere in this type (spec §17.1).
+// BlipResolver is the consumer-provided audio/blip lookup surface: per-SFX mute
+// (M11), per-character blip attenuation, and the char.ini blip-set fallback
+// (webAO parity). nil = the AO defaults (play everything, full volume, wire blip
+// only). The App sets it from live prefs + its per-URL char.ini cache.
+type BlipResolver interface {
+	SFXMuted(name string) bool
+	BlipVolumeFor(char string) int
+	BlipNameFor(char string) (name string, known bool)
+}
+
 type Courtroom struct {
 	urls  URLBuilder
 	mgr   *assets.Manager
@@ -322,25 +332,11 @@ type Courtroom struct {
 	// (tests/export/replay) keep playing music; the App pushes the user's pref.
 	StreamMusic bool
 
-	// SFXMuted, when set, reports whether an emote SFX name should be silenced
-	// (M11 per-SFX mute). Set by the App to read live prefs; nil = play everything.
-	SFXMuted func(name string) bool
-
-	// BlipVolumeFor, when set, returns the per-character blip attenuation
-	// (0–100, 100 = no attenuation; M11 per-character blip volume) for a
-	// character folder name. Set by the App to read live prefs; nil = full.
-	BlipVolumeFor func(char string) int
-
-	// BlipNameFor, when set, resolves a speaker's blip set from their char.ini
-	// ([Options] blips / legacy gender) — the webAO-parity fallback for
-	// messages whose wire Blipname field is empty (pre-2.10.2 senders, short
-	// packets). The App answers from its per-URL char.ini cache and fires the
-	// fetch on a miss. known=false means the char.ini is still in flight (the
-	// blip is HELD — not defaulted to "male" — until it lands, so a character's
-	// first message already blips with their own set); known=true with an empty
-	// name means the ini genuinely declares none and the AO default plays. The
-	// contract mirrors IniShownameFor's (string, known) shape.
-	BlipNameFor func(char string) (name string, known bool)
+	// Blips, when set, resolves per-SFX mute (M11), per-character blip
+	// attenuation, and the char.ini blip-set fallback (webAO parity). nil = the
+	// AO defaults (play everything, full volume, wire blip only). Set by the App
+	// from live prefs + its per-URL char.ini cache.
+	Blips BlipResolver
 
 	// ChatSkinFor, when set, resolves a speaker's chatbox-skin misc folder
 	// (char.ini [Options] chat, AO2-Client get_chat) — same cache/fetch
@@ -1700,8 +1696,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// M11 per-character blip volume: attenuate this speaker's blips by their
 	// stored scale. One int-set per message — the render loop is untouched.
 	blipScale := blipVolumeFull
-	if c.BlipVolumeFor != nil {
-		blipScale = c.BlipVolumeFor(speakerName)
+	if c.Blips != nil {
+		blipScale = c.Blips.BlipVolumeFor(speakerName)
 	}
 	c.audio.SetBlipScale(blipScale)
 
@@ -1912,8 +1908,8 @@ func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
 	if blipWire != "" {
 		return c.urls.BlipRef(blipWire), false
 	}
-	if c.BlipNameFor != nil {
-		name, known := c.BlipNameFor(blipSpeaker)
+	if c.Blips != nil {
+		name, known := c.Blips.BlipNameFor(blipSpeaker)
 		if known {
 			if !validBlipName(name) {
 				name = "" // a char.ini is server bytes too — same one guard, not a second copy
@@ -2119,7 +2115,7 @@ func (c *Courtroom) sfxBaseFor(msg *protocol.ChatMessage) string {
 	if msg.SFXName == "" || msg.SFXName == "0" || msg.SFXName == "1" {
 		return ""
 	}
-	if c.SFXMuted != nil && c.SFXMuted(msg.SFXName) {
+	if c.Blips != nil && c.Blips.SFXMuted(msg.SFXName) {
 		return ""
 	}
 	return c.urls.SFX(msg.SFXName)

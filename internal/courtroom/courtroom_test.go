@@ -1641,10 +1641,10 @@ func TestBlipVolumeScalesSpeaker(t *testing.T) {
 	setupReadySession(t, sess)
 
 	var gotChar string
-	room.BlipVolumeFor = func(char string) int {
+	room.Blips = blipFake{vol: func(char string) int {
 		gotChar = char
 		return 30
-	}
+	}}
 	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Quiet")})
 	if gotChar != "Phoenix" {
 		t.Errorf("BlipVolumeFor got char %q, want the speaker %q", gotChar, "Phoenix")
