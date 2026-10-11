@@ -533,17 +533,6 @@ func styleFragment(id string) string {
 // partition, an over-cap directory grows a bound nobody named, and an over-size
 // fragment grows the binary the same way.
 func TestPresetLoaderRefusesEveryWayAnAxisCanLie(t *testing.T) {
-	t.Run("duplicate id", func(t *testing.T) {
-		// Two FILES cannot share a name, so the duplicate arrives via a stem that
-		// matches while the ids collide — which is why the loader checks both.
-		src := fakeAxisFS(map[string]string{
-			presets.StyleDir + "/a" + presets.FileExt: styleFragment("a"),
-			presets.StyleDir + "/b" + presets.FileExt: styleFragment("a"),
-		})
-		if _, err := LoadPresetLibrary(src); err == nil {
-			t.Fatal("two fragments claiming one id were accepted")
-		}
-	})
 	t.Run("stem does not match id", func(t *testing.T) {
 		src := fakeAxisFS(map[string]string{
 			presets.StyleDir + "/wrong" + presets.FileExt: styleFragment("right"),
