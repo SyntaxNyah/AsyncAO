@@ -3,6 +3,7 @@ package ui
 import (
 	"math"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -848,6 +849,12 @@ func TestCharGridPlanIsAllocFree(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	a, lay, g := themedStockPlan(t)
 	gridTop := charSelectGridTop(a)
+	// Self-contained: the plan builder is pure integer arithmetic, so the only way it
+	// "allocates" is if a PRIOR test left a timer/poller running whose allocations land
+	// inside AllocsPerRun's GOMAXPROCS(1) window. Settle the scheduler + heap first so
+	// the gate does not depend on which tests ran before it.
+	runtime.GC()
+	runtime.Gosched()
 	if n := testing.AllocsPerRun(200, func() { a.charSelectGridPlan(w, h, gridTop, lay) }); n != 0 {
 		t.Errorf("charSelectGridPlan allocates %v per call, want 0", n)
 	}
