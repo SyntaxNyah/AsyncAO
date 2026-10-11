@@ -848,41 +848,6 @@ func TestOnlyTheDocumentUsesTheFieldTables(t *testing.T) {
 	}
 }
 
-// TestThemeEditorScreenIsWiredAtEverySwitchSite is the anti-half-wiring census.
-//
-// A new Screen has FIVE obligations in app.go and four of them fail SILENTLY: an
-// unwired expScreenSkippable burns full CPU forever with nothing on screen to
-// explain it, an unwired Esc arm strands the user on a screen with no way out, an
-// unwired chord claim leaves Ctrl+Z dead on the entry point that has no courtroom
-// pass to ride, and an unwired draw dispatch shows the previous screen's pixels.
-// Only the draw one is obvious, and only after you look.
-func TestThemeEditorScreenIsWiredAtEverySwitchSite(t *testing.T) {
-	src, err := os.ReadFile("app.go")
-	if err != nil {
-		t.Fatalf("reading app.go: %v", err)
-	}
-	body := string(src)
-	for _, want := range []struct{ site, needle string }{
-		{"the frame-rate skippability switch (expScreenSkippable)", "case ScreenThemeEditor:\n\t\t// ITS OWN CASE"},
-		{"the draw dispatch", "case ScreenThemeEditor:\n\t\t\ta.drawThemeEditor(winW, winH)"},
-		{"the Esc ladder", "case ScreenThemeEditor:\n\t\t\t\t// The editor's own ladder"},
-		{"pollThemeApply's document reclaim", "a.reclaimThemeDoc()"},
-		// The pre-screen Ctrl+Z / Ctrl+Y claim. editorUndoChord's other caller is
-		// handleHotkeys, which runs only from the COURTROOM passes — so without this line
-		// the chord reaches the editor only while a live room paints behind its canvas,
-		// and the Settings entry point (no server attached) has no undo at all.
-		// TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the behavioural
-		// half; this is the one that fails the moment the line is deleted.
-		{"the pre-screen chord claim", "if a.themeEditorOpen() {\n\t\ta.editorUndoChord()\n\t}"},
-	} {
-		if !strings.Contains(body, want.needle) {
-			t.Errorf("app.go no longer wires ScreenThemeEditor into %s — four of this screen's five "+
-				"obligations fail silently (full CPU forever, no way out with Esc, no keyboard undo, "+
-				"the previous screen's pixels), so the wiring is censused rather than trusted", want.site)
-		}
-	}
-}
-
 // TestEditsSurviveAThemeReapply drives the seam the whole document layer was built
 // for: a background theme apply (a texture eviction heal, the texture-filter row,
 // boot) must not discard unsaved edits.

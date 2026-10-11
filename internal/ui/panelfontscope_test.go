@@ -196,33 +196,6 @@ func TestEveryPanelBracketsItsFont(t *testing.T) {
 	}
 }
 
-// funcBodyOf returns the source of the function whose declaration starts with
-// prefix, brace-balanced from its opening brace.
-func funcBodyOf(src, prefix string) string {
-	i := strings.Index(src, prefix)
-	if i < 0 {
-		return ""
-	}
-	open := strings.IndexByte(src[i:], '{')
-	if open < 0 {
-		return ""
-	}
-	start := i + open
-	depth := 0
-	for j := start; j < len(src); j++ {
-		switch src[j] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return src[start : j+1]
-			}
-		}
-	}
-	return ""
-}
-
 // TestPanelScopeArmsUnderTheDyslexiaSwitch is the second graft. Under that
 // switch landThemeFonts merges with faces=false, so a user who picked only a
 // FAMILY for a panel gets no face of their own — but they still asked for that
