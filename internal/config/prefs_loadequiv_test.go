@@ -46,35 +46,6 @@ func collectPresence(raw map[string]json.RawMessage, prefix string, out map[stri
 	}
 }
 
-// presenceSensitive returns the JSON key paths whose absence-vs-explicit-zero the old
-// load() distinguished, DERIVED from prefsJSON by reflection: every pointer field
-// (nil = absent). Nested structs are walked so export.*, discord.* etc. are covered.
-func presenceSensitive() map[string]bool {
-	pt := reflect.TypeOf(prefsJSON{})
-	out := map[string]bool{}
-	var walk func(t reflect.Type, prefix string)
-	walk = func(t reflect.Type, prefix string) {
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			key := jsonKey(f)
-			if key == "" {
-				continue
-			}
-			path := prefix + key
-			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
-				out[path] = true
-				ft = ft.Elem()
-			}
-			if ft.Kind() == reflect.Struct {
-				walk(ft, path+".")
-			}
-		}
-	}
-	walk(pt, "")
-	return out
-}
-
 // snapshotLoad is the B0 candidate load: start from the defaults, unmarshal the file
 // OVER them, then normalize (clamps + stamps) using the presence pre-pass.
 func snapshotLoad(data []byte) *AssetPreferences {
