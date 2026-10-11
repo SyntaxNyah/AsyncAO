@@ -678,7 +678,7 @@ func (a *App) makerSave() {
 		a.makerScene.RecordedAt = time.Now().Format(time.RFC3339)
 	}
 	stem := sanitizeStem(a.makerName) + "-" + time.Now().Format("20060102-150405")
-	name, err := saveSceneRecording(a.makerScene, stem)
+	name, _, err := saveSceneRecording(a.makerScene, stem)
 	if err != nil {
 		a.warnLine = "Save failed: " + err.Error()
 		a.warnAt = time.Now()

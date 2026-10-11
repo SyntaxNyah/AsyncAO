@@ -952,7 +952,13 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 		t.Error("the running job should still be the manual holder, not an auto-build")
 	}
 	// The flat .aorec still lands (auto-build skip is silent, recording save intact).
-	name := waitForNewAorec(t, before, 5*time.Second)
+	// Wait on the write's own signal, not the filesystem — polling races the
+	// goroutine under the race detector.
+	select {
+	case <-a.recSaveDone:
+	case <-time.After(10 * time.Second):
+	}
+	name := newestAorec(t, before)
 	if name == "" {
 		t.Fatal("flat .aorec must still be written even when the auto-build is skipped")
 	}

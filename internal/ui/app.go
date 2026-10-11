@@ -763,6 +763,10 @@ type App struct {
 	recActive bool
 	rec       *sceneRecording
 	recStart  time.Time
+	// recSaveDone is closed when the async .aorec write stopRecording kicked off
+	// finishes (or gives up) — a signal the recording tests wait on instead of
+	// polling the recordings directory.
+	recSaveDone <-chan struct{}
 
 	// Instant replay (rolling clip buffer, see replay.go): when the opt-in pref is
 	// on, every scene-mutating event is also stamped into replayBuf — a bounded
