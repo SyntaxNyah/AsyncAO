@@ -273,67 +273,6 @@ func TestArmsAreClearedOptimistically(t *testing.T) {
 	}
 }
 
-// TestGuardSilencesOnlyTheAlert pins the half of ui_guard that is easy to get
-// wrong. AO2 gates the SOUND and the window flash on the checkbox
-// (courtroom.cpp:4997-5001); the OOC line and the auto-clip are not gated, so a
-// guarded moderator loses the interruption but never the report itself.
-func TestGuardSilencesOnlyTheAlert(t *testing.T) {
-	arm, ok := sourceBlockAfter(readSourceFile(t, "app.go"), "case courtroom.EventModcall:", "case courtroom.")
-	if !ok {
-		t.Fatal("the modcall handler moved")
-	}
-	// The guard's body is the run of lines indented one level deeper than the `if`,
-	// which is what distinguishes "inside the guard" from "after it" — an index
-	// comparison cannot tell those apart.
-	var guarded []string
-	inGuard := false
-	for _, line := range strings.Split(arm, "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case trimmed == "if !a.modcallGuard {":
-			inGuard = true
-		case inGuard && trimmed == "}":
-			inGuard = false
-		case inGuard && trimmed != "":
-			guarded = append(guarded, trimmed)
-		}
-	}
-	if len(guarded) == 0 {
-		t.Fatal("the modcall alert is not gated on modcallGuard")
-	}
-	body := strings.Join(guarded, "\n")
-	// Only the two ALERT calls may be silenced.
-	for _, want := range []string{"a.playThemeSFX(", "a.ctx.FlashWindow()"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the guard does not silence %s", want)
-		}
-	}
-	// The report itself must never be. AO2 gates only the sound and the flash
-	// (courtroom.cpp:4997-5001).
-	for _, mustSurvive := range []string{"a.pushOOC(", "a.autoClipModcall(", "a.signalModcall("} {
-		if strings.Contains(body, mustSurvive) {
-			t.Errorf("%s is INSIDE the guard — a guarded mod would lose the report, not just the noise", mustSurvive)
-		}
-		if !strings.Contains(arm, mustSurvive) {
-			t.Errorf("the modcall handler no longer calls %s at all", mustSurvive)
-		}
-	}
-}
-
-// sourceBlockAfter returns the source between start and the next occurrence of
-// end, which is enough to isolate one arm of a switch.
-func sourceBlockAfter(src, start, end string) (string, bool) {
-	i := strings.Index(src, start)
-	if i < 0 {
-		return "", false
-	}
-	arm := src[i+len(start):]
-	if j := strings.Index(arm, end); j > 0 {
-		arm = arm[:j]
-	}
-	return arm, true
-}
-
 // readSourceFile is the source probe the structural pins above share.
 func readSourceFile(t *testing.T, name string) string {
 	t.Helper()

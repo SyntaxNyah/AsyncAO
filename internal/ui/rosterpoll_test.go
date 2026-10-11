@@ -115,7 +115,7 @@ type rosterFetchSite struct {
 var rosterFetchSites = []rosterFetchSite{
 	{"liveroster.go", "fetchRoster's own definition"},
 	{"playerlist.go", "the Players panel's on-open / area-change pull — the user opened it, or moved"},
-	{"app.go", "the one-shot after a successful /login (EventAuth ≥ 1): the user typed the command, and it fires once per auth transition, not on a clock"},
+	{"app_connect.go", "the one-shot after a successful /login (EventAuth ≥ 1): the user typed the command, and it fires once per auth transition, not on a clock"},
 }
 
 // TestOnlyUserActionsFetchTheRoster is the deletion catcher. Growing the poll back means
