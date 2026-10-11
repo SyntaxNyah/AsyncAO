@@ -105,17 +105,18 @@ func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	}
 }
 
-// rosterFetchSite is one file allowed to start a roster pull, and why. Each entry IS the
-// audit: every survivor is a person acting, never a timer and never a server packet.
+// rosterFetchSite is one function allowed to start a roster pull, and why. Each entry IS the
+// audit: every survivor is a person acting, never a timer and never a server packet. Keyed by
+// FUNCTION NAME, not file, so a file split that moves the call site keeps the census green.
 type rosterFetchSite struct {
-	file string
-	why  string
+	fn  string
+	why string
 }
 
 var rosterFetchSites = []rosterFetchSite{
-	{"liveroster.go", "fetchRoster's own definition"},
-	{"playerlist.go", "the Players panel's on-open / area-change pull — the user opened it, or moved"},
-	{"app_connect.go", "the one-shot after a successful /login (EventAuth ≥ 1): the user typed the command, and it fires once per auth transition, not on a clock"},
+	{"fetchRoster", "fetchRoster's own definition"},
+	{"drawPlayerList", "the Players panel's on-open / area-change pull — the user opened it, or moved"},
+	{"handleSessionEvents", "the one-shot after a successful /login (EventAuth ≥ 1): the user typed the command, and it fires once per auth transition, not on a clock"},
 }
 
 // TestOnlyUserActionsFetchTheRoster is the deletion catcher. Growing the poll back means
@@ -127,53 +128,47 @@ func TestOnlyUserActionsFetchTheRoster(t *testing.T) {
 	_, files := parseNonTestSources(t, parser.SkipObjectResolution)
 	seen := make([]bool, len(rosterFetchSites))
 	var offenders []string
-	for path, file := range files {
-		base := path
-		if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-			base = base[i+1:]
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch v := n.(type) {
-			case *ast.FuncDecl:
-				if v.Name.Name == "fetchRoster" {
-					if i := rosterSiteIndex(base); i >= 0 {
-						seen[i] = true
-					} else {
-						offenders = append(offenders, base+" defines fetchRoster")
-					}
-				}
-			case *ast.CallExpr:
-				sel, ok := v.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "fetchRoster" {
-					return true
-				}
-				if i := rosterSiteIndex(base); i >= 0 {
-					seen[i] = true
-					return true
-				}
-				offenders = append(offenders, base+" calls fetchRoster")
+	for _, file := range files {
+		for _, d := range file.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok {
+				continue
 			}
-			return true
-		})
+			if fd.Name.Name == "fetchRoster" {
+				if i := rosterSiteIndex(fd.Name.Name); i >= 0 {
+					seen[i] = true
+				} else {
+					offenders = append(offenders, fd.Name.Name+" defines fetchRoster")
+				}
+				continue
+			}
+			if containsCall(fd.Body, "fetchRoster") {
+				if i := rosterSiteIndex(fd.Name.Name); i >= 0 {
+					seen[i] = true
+				} else {
+					offenders = append(offenders, fd.Name.Name+" calls fetchRoster")
+				}
+			}
+		}
 	}
 	if len(offenders) > 0 {
-		t.Errorf("roster pull started from unlisted file(s):\n  %s\n\n"+
+		t.Errorf("roster pull started from an unlisted function:\n  %s\n\n"+
 			"The automatic roster poll was deleted by user order (liveroster.go): a roster command may only "+
-			"leave this client because a PERSON asked for it. If this really is a user action, add the file to "+
+			"leave this client because a PERSON asked for it. If this really is a user action, add the function to "+
 			"rosterFetchSites with the reason; if it is a packet handler or a timer, it is the poll growing back "+
 			"— and with it the v1.82 OOC rate-limit kick class.", strings.Join(offenders, "\n  "))
 	}
 	for i := range rosterFetchSites {
 		if !seen[i] {
-			t.Errorf("rosterFetchSites lists %q (%s) but nothing there fetches any more — either it moved "+
-				"(point the census at it) or the control is gone", rosterFetchSites[i].file, rosterFetchSites[i].why)
+			t.Errorf("rosterFetchSites lists %q (%s) but no function of that name fetches any more — a rename "+
+				"or removal broke the census; re-point the entry or drop it", rosterFetchSites[i].fn, rosterFetchSites[i].why)
 		}
 	}
 }
 
-func rosterSiteIndex(base string) int {
+func rosterSiteIndex(fn string) int {
 	for i := range rosterFetchSites {
-		if rosterFetchSites[i].file == base {
+		if rosterFetchSites[i].fn == fn {
 			return i
 		}
 	}
