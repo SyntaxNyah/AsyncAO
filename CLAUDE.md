@@ -239,3 +239,12 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   structural. Never key by bare path.
 - New dependencies require a written justification in docs/ARCHITECTURE.md.
 - Milestone-sized local commits; never push.
+- Naming: name length is proportional to scope. Receivers are 1–2 letters,
+  identical for every method of a type, and never shadowed by params.
+  Single-letter locals are allowed only within ~15 lines of their declaration
+  or from the conventional set (`i`, `j`, `k`, `n`, `err`, `ok`, `t`, `b`,
+  `x`, `y`, `w`, `h` in geometry, `r`/`w` for `io.Reader`/`io.Writer`). In
+  functions over ~60 lines, anything referenced across more than ~15 lines gets
+  a descriptive name. The same short name means the same type throughout a
+  package; struct fields and package-level names are descriptive. Prefer
+  splitting a long function to renaming inside it.
