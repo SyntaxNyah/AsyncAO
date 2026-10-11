@@ -283,13 +283,11 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				if room == nil {
 					t.Fatal("the path produced no room at all")
 				}
-				// The overlay engine (effectspicker.go). Without these three an
-				// authored effect resolves to nothing, silently.
-				if room.OverlayFor == nil {
-					t.Error("OverlayFor is nil — this room can never resolve a screen-effect overlay, and nothing on screen says so")
-				}
-				if room.EffectsFolderFor == nil {
-					t.Error("EffectsFolderFor is nil — the room cannot find the character's effects folder")
+				// The overlay engine + asset probes (effectspicker.go / the render &
+				// audio stores). Without these an authored effect resolves to nothing
+				// and the wait/strict-sequencing gates never hold.
+				if room.Assets == nil {
+					t.Error("Assets is nil — the overlay engine, residency probes and scaling filter are all missing")
 				}
 				// The char.ini tier (charmeta.go): the same speaker must blip,
 				// skin and scale identically in every mode.
@@ -298,9 +296,6 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				}
 				if room.Chars == nil {
 					t.Error("Chars is nil — the speaker's own skin/ink/showname/realization is ignored in this mode")
-				}
-				if room.SpriteScaling == nil {
-					t.Error("SpriteScaling is nil — the character's declared scaling filter is ignored in this mode")
 				}
 				// The visual gates: pref-driven for a viewing room, exempt for an
 				// authoring one. ForceCharNames is pref-driven in BOTH — it

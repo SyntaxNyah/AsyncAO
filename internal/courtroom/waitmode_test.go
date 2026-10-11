@@ -35,7 +35,7 @@ func TestSpriteWaitGate(t *testing.T) {
 		ready := map[string]bool{}
 		room.SpriteWait = true
 		room.SpriteWaitTimeout = 500 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		return room, ready
 	}
 
@@ -178,7 +178,7 @@ func TestWaitGateCoversThePreanimItWillPlay(t *testing.T) {
 		ready := map[string]bool{}
 		room.SpriteWait = true
 		room.SpriteWaitTimeout = 500 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		return room, ready
 	}
 
@@ -260,7 +260,7 @@ func TestWaitGateCoversTheTalkSpriteItOpensOn(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	ready := map[string]bool{}
 	room.SpriteWait, room.SpriteWaitTimeout = true, 500*time.Millisecond
-	room.SpriteReady = func(base string) bool { return ready[base] }
+	room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 
 	ready[room.urls.Emote("Phoenix", "normal", EmoteIdle)] = true // idle in, talk still cold
 	room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
@@ -288,7 +288,7 @@ func TestWaitGateReleasesOnAConclusivelyMissingTalkSprite(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	ready := map[string]bool{}
 	room.SpriteWait, room.SpriteWaitTimeout = true, 10*time.Second // long enough that a burn is unmistakable
-	room.SpriteReady = func(base string) bool { return ready[base] }
+	room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 
 	ready[room.urls.Emote("Phoenix", "normal", EmoteIdle)] = true
 	room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
@@ -329,7 +329,7 @@ func TestWaitGateAndPlayPathAgreeOnThePreanim(t *testing.T) {
 			// The PLAY path's answer, observed through the stage it produces: with
 			// every sprite resident, Active lands on the preanim iff it plays.
 			room, _, _, _ := newCourtroomRig(t)
-			room.SpriteReady = func(string) bool { return true }
+			room.Assets = assetFake{sprite: func(string) bool { return true }}
 			room.HandleEvent(Event{Kind: EventMessage, Message: m})
 			playedIt := room.Scene.Speaker.PlayOnce && room.Scene.Speaker.Active == room.Scene.Speaker.PreanimBase
 			if playedIt != want {
@@ -346,7 +346,7 @@ func TestWaitGateAndPlayPathAgreeOnThePreanim(t *testing.T) {
 				gated.urls.Emote("Phoenix", "normal", EmoteIdle): true,
 				gated.urls.Emote("Phoenix", "normal", EmoteTalk): true,
 			}
-			gated.SpriteReady = func(base string) bool { return speaker[base] }
+			gated.Assets = assetFake{sprite: func(base string) bool { return speaker[base] }}
 			m2 := waitMsg("Phoenix", "normal", "hi")
 			m2.EmoteMod, m2.Immediate, m2.PreEmote = row.mod, row.imm, row.pre
 			gated.HandleEvent(Event{Kind: EventMessage, Message: m2})
@@ -370,7 +370,7 @@ func TestSequentialWait(t *testing.T) {
 		room.SequentialWait = true
 		// Far under any Update below, so a timeout burn would be unmistakable.
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		return room, ready
 	}
 
@@ -467,7 +467,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		ready := map[string]bool{}
 		room.SequentialWait = true
 		room.SpriteWaitTimeout = 50 * time.Millisecond // far under every Update below
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		return room, ready
 	}
 
@@ -477,7 +477,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		ready := map[string]bool{}
 		room.SequentialWait = true
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		readySpeaker(room, ready, "Phoenix", "normal")
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
 		if room.QueueLen() != 1 {
@@ -497,7 +497,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		ready := map[string]bool{}
 		room.SequentialWait = true
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		m := waitMsg("Phoenix", "normal", "hi")
 		m.DeskMod = protocol.DeskShow // the desk is on screen, so it must be waited for
 		readySpeaker(room, ready, "Phoenix", "normal")
@@ -533,7 +533,10 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 	t.Run("emote SFX holds until ready", func(t *testing.T) {
 		room, ready := newRig(t)
 		audio := map[string]bool{}
-		room.AudioReady = func(base string) bool { return audio[base] }
+		room.Assets = assetFake{
+			sprite: func(base string) bool { return ready[base] },
+			audio:  func(base string) bool { return audio[base] },
+		}
 		readySpeaker(room, ready, "Phoenix", "normal")
 		audio[room.urls.BlipRef(defaultBlipSet).Base] = true // pre-settle the blip so only the SFX is cold
 		m := waitMsg("Phoenix", "normal", "hi")
@@ -555,7 +558,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		ready := map[string]bool{}
 		room.SequentialWait = true
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		readySpeaker(room, ready, "Phoenix", "normal")
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
 		if room.QueueLen() != 1 {
@@ -598,7 +601,7 @@ func TestShoutBypassQueue(t *testing.T) {
 		room.SequentialWait = true
 		ready := map[string]bool{}
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.SpriteReady = func(base string) bool { return ready[base] }
+		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
 		m := waitMsg("Phoenix", "normal", "OBJECTION!")
 		m.Objection = protocol.ShoutObjection
 		room.HandleEvent(Event{Kind: EventMessage, Message: m})
@@ -624,8 +627,10 @@ func TestSequentialWaitEffects(t *testing.T) {
 	audio := map[string]bool{}
 	room.SequentialWait = true
 	room.SpriteWaitTimeout = 50 * time.Millisecond
-	room.SpriteReady = func(base string) bool { return ready[base] }
-	room.AudioReady = func(base string) bool { return audio[base] }
+	room.Assets = assetFake{
+		sprite: func(base string) bool { return ready[base] },
+		audio:  func(base string) bool { return audio[base] },
+	}
 	room.RealizationSFX = room.urls.SFX("realization") // the theme's realization sound
 
 	readySpeaker(room, ready, "Phoenix", "normal")

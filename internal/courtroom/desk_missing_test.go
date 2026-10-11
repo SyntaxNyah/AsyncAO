@@ -222,7 +222,7 @@ func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
 	// The desk lands after all. The residency probe is the same one the sprite
 	// wait-gate uses; an unwired room keeps the old two-state answer.
 	resident := map[string]bool{}
-	room.SpriteReady = func(base string) bool { return resident[base] }
+	room.Assets = assetFake{sprite: func(base string) bool { return resident[base] }}
 	if got := room.deskResolution(); got != DeskAbsent {
 		t.Error("a probe that reports NOT resident must leave the miss standing")
 	}

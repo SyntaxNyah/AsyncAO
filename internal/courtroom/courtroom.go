@@ -291,6 +291,30 @@ type CharResolver interface {
 	CustomRealizationFor(char string) string
 }
 
+// AssetResolver is the consumer-provided asset/scene/overlay/scaling surface: a
+// speaker's effects folder, the overlay engine's resolve, texture/audio residency
+// probes, and the per-character scaling filter. nil = the AO defaults (no overlay
+// engine, no wait gating, auto scaling). The App sets it from the render store, the
+// audio store and the per-URL char.ini cache.
+type AssetResolver interface {
+	// EffectsFolderFor resolves a speaker's screen-effect misc folder
+	// (char.ini [Options] effects). "" = the theme's own effects only.
+	EffectsFolderFor(char string) string
+	// OverlayFor resolves an effect NAME + misc FOLDER to its merged effects.ini
+	// properties and the T1 key / URL its art lives under. STATEFUL and render-thread
+	// only; ok=true does not mean the art is resident (the result carries a pending
+	// state, so a substitute must pin behaviour, not just shape).
+	OverlayFor(name, folder string) (OverlayResolved, bool)
+	// SpriteReady reports texture residency (the render store's uploaded-texture
+	// probe). Same-thread, a plain map probe.
+	SpriteReady(base string) bool
+	// AudioReady reports whether a decoded audio chunk for base is cached and ready
+	// to play (the render.Audio chunk probe). Same-thread, a plain map probe.
+	AudioReady(base string) bool
+	// SpriteScaling reports a character's char.ini [Options] scaling= request.
+	SpriteScaling(charName string) ScalingMode
+}
+
 type Courtroom struct {
 	urls  URLBuilder
 	mgr   *assets.Manager
@@ -366,39 +390,11 @@ type Courtroom struct {
 	// nil = no per-character overrides (the AO defaults).
 	Chars CharResolver
 
-	// EffectsFolderFor resolves a speaker's screen-effect misc folder (char.ini
-	// [Options] effects, AO2-Client get_effect's p_folder default,
-	// text_file_functions.cpp:836-839). It rides the SAME per-URL char.ini cache
-	// as BlipNameFor / ChatSkinFor, so honouring a character's own effects pack
-	// costs zero extra network work. Consulted only for the 1- and 2-part wire
-	// shapes, which omit the folder. "" = the theme's own effects only.
-	EffectsFolderFor func(char string) string
-
-	// OverlayFor resolves an effect NAME + misc FOLDER to its merged effects.ini
-	// properties and the T1 key / URL its art lives under. The App owns it: the
-	// theme tier is disk (theme.FindOverlayElement) and the misc tier is an origin
-	// chain, and neither belongs in an SDL-free state machine. It also OWNS the
-	// demand — the App kicks off the read/prefetch, this side only records the
-	// base. nil = no overlay engine (headless tests, the maker preview), which
-	// leaves the legacy flash/shake fallback in charge.
-	//
-	// IT IS NOT A PURE LOOKUP, and the sentence above reads like one, so the three
-	// clauses a substitute has to honour are written out here — a substitute that
-	// meets only the signature is a map, and a map is wrong on all three:
-	//
-	//  1. RENDER THREAD ONLY. The shipped implementation reads and writes App state
-	//     (the roster cache, the in-flight set, the T1 store). Calling it from a
-	//     goroutine is a -race failure, not a slow path.
-	//  2. IT IS STATEFUL. The first call for an unseen (name, folder) KICKS a resolve
-	//     and reports what it knows so far; later calls answer from the landed
-	//     roster. Two calls with the same arguments may legitimately differ.
-	//  3. ok=true DOES NOT MEAN THE ART IS RESIDENT. The resolved value carries a
-	//     pending state — a promise that the base is being fetched — and the caller
-	//     must tolerate a frame (or many) with nothing to draw yet.
-	//
-	// Substitutes in tests therefore pin BEHAVIOUR, not just shape: a stub that
-	// always answers instantly hides every ordering bug this contract exists around.
-	OverlayFor func(name, folder string) (OverlayResolved, bool)
+	// Assets is the consumer-provided asset/scene/overlay/scaling surface (see
+	// AssetResolver): a speaker's effects folder, the overlay engine's resolve,
+	// texture/audio residency probes, and the per-character scaling filter.
+	// nil = the AO defaults (no overlay engine, no wait gating, auto scaling).
+	Assets AssetResolver
 
 	// LocalSide, when set, reports OUR OWN side — the pos dropdown's value, with
 	// AO2's default when it is unset. It mirrors AO2-Client's
@@ -418,32 +414,14 @@ type Courtroom struct {
 	// Cold-load "wait" mode (the third SpriteLoadMode; client-AO flavour): hold a
 	// message OFF-STAGE until its speaker's idle sprite has decoded, so the stage
 	// never shows the message with a missing sprite. SpriteWait turns it on;
-	// SpriteReady reports texture residency (the App wires render.TextureStore
-	// .Contains — same-thread, a plain map probe; nil = gate off, so courtroom
-	// stays SDL-free); SpriteWaitTimeout caps one message's hold so a 404 or a
-	// decode failure can only ever DELAY a message, never hang the queue (a zero
-	// timeout deliberately never holds — a wiring bug degrades to mode-off).
-	// Shouts bypass (AO2 parity: they nuke the queue and play NOW) and packed-room
-	// catch-up wins (a backlog never waits — beginCaughtUp doesn't redraw the
-	// sprite anyway).
+	// Assets.SpriteReady reports texture residency (nil = gate off); SpriteWaitTimeout
+	// caps one message's hold so a 404 or a decode failure can only ever DELAY a
+	// message, never hang the queue (a zero timeout deliberately never holds — a
+	// wiring bug degrades to mode-off). Shouts bypass (AO2 parity: they nuke the
+	// queue and play NOW) and packed-room catch-up wins (a backlog never waits —
+	// beginCaughtUp doesn't redraw the sprite anyway).
 	SpriteWait        bool
 	SpriteWaitTimeout time.Duration
-	SpriteReady       func(base string) bool
-	// AudioReady reports whether a decoded audio chunk for base is cached and
-	// ready to play — the audio analogue of SpriteReady (the App wires
-	// render.Audio.HasChunk, same-thread and a plain map probe; nil = audio
-	// is not gated, so courtroom stays SDL-free). The strict-sequencing gate
-	// consults it for the message's emote SFX and blip.
-	AudioReady func(base string) bool
-	// SpriteScaling reports a character's char.ini [Options] scaling= request
-	// (get_scaling). Same shape as SpriteReady — a nil hook means "nobody asked",
-	// which resolves to ScalingAuto and lets the renderer's geometry rule decide.
-	//
-	// The App answers it from the same per-speaker char.ini cache that already
-	// backs BlipNameFor / ChatSkinFor (ui/charmeta.go), so every speaker's filter
-	// is honoured for no extra network probe. Called once per message when the
-	// sprite layers are built, never per render frame.
-	SpriteScaling func(charName string) ScalingMode
 	// SpriteWaitPair / SpriteWaitPreanim widen the gate (power-user strictness
 	// knobs, both default off): also hold until the pair partner's idle sprite /
 	// the message's preanimation have decoded. The timeout caps the whole hold
@@ -902,7 +880,10 @@ func isAreaTransfer(track string) bool {
 // answers, and the wait gate must never hold for one it has already received —
 // the "never wait past the conclusively-missing rules" bound.
 func (c *Courtroom) spriteSettled(base string) bool {
-	return c.SpriteReady(base) || c.spriteConfirmedMissing(base)
+	if c.Assets != nil && c.Assets.SpriteReady(base) {
+		return true
+	}
+	return c.spriteConfirmedMissing(base)
 }
 
 // audioSettled reports whether an audio base has resolved one way or the other:
@@ -911,7 +892,7 @@ func (c *Courtroom) spriteSettled(base string) bool {
 // strict-sequencing gate also waits on; the conclusively-missing arm is the SAME
 // shared set (a 404'd audio base records there via the warning relay).
 func (c *Courtroom) audioSettled(base string) bool {
-	if c.AudioReady != nil && c.AudioReady(base) {
+	if c.Assets != nil && c.Assets.AudioReady(base) {
 		return true
 	}
 	return c.spriteConfirmedMissing(base)
@@ -942,7 +923,7 @@ func preanimWillPlay(msg *protocol.ChatMessage) bool {
 // PREFIXED base: PrefetchWithFallback keeps it the asset's identity whichever
 // spelling the server ships (CLAUDE.md).
 func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
-	if c.SpriteReady == nil || msg == nil {
+	if c.Assets == nil || msg == nil {
 		return false
 	}
 	if !c.SpriteWait && !c.SequentialWait {
@@ -1035,12 +1016,12 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			chain := c.urls.SpeedlinesCandidates(msg.CharName, msg.Side)
 			ready = c.spriteSettled(chain[0])
 		}
-		if ready && c.AudioReady != nil && preanimSFXPlays(msg) {
+		if ready && c.Assets != nil && preanimSFXPlays(msg) {
 			if sfx := c.sfxBaseFor(msg); sfx != "" {
 				ready = c.audioSettled(sfx)
 			}
 		}
-		if ready && c.AudioReady != nil {
+		if ready && c.Assets != nil {
 			blipWire := msg.Blipname
 			if !validBlipName(blipWire) {
 				blipWire = ""
@@ -1056,13 +1037,13 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			if ready && defaultBase != "" {
 				ready = c.spriteSettled(defaultBase)
 			}
-			if ready && c.AudioReady != nil && shoutSFX != "" {
+			if ready && c.Assets != nil && shoutSFX != "" {
 				ready = c.audioSettled(shoutSFX)
 			}
 		}
 		// Screen effects: the legacy REALIZATION=1 sound, and the 2.8 EFFECTS
 		// field's overlay art + sound — the last assets a message can present.
-		if ready && msg.Realization && c.AudioReady != nil {
+		if ready && msg.Realization && c.Assets != nil {
 			if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
 				ready = c.audioSettled(sfx)
 			}
@@ -1072,14 +1053,14 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			if folder == "" {
 				folder = c.OverlayEffectsFolderFor(msg.CharName)
 			}
-			if c.AudioReady != nil && OverlaySoundPlayable(sound) {
+			if c.Assets != nil && OverlaySoundPlayable(sound) {
 				ready = c.audioSettled(c.urls.SFX(sound))
 			}
 			// Overlay ART is best-effort: a still-pending resolve has no base to
 			// wait on yet (the deferred-overlay mechanism re-arms it once it
 			// lands). A resolved base gates like any other T1 texture.
-			if ready && c.OverlayFor != nil {
-				if res, ok := c.OverlayFor(fx, folder); ok && !res.Pending && res.Base != "" {
+			if ready && c.Assets != nil {
+				if res, ok := c.Assets.OverlayFor(fx, folder); ok && !res.Pending && res.Base != "" {
 					ready = c.spriteSettled(res.Base)
 				}
 			}
@@ -2765,7 +2746,7 @@ func (c *Courtroom) deskResolutionOf(base string) DeskResolution {
 	if base == "" {
 		return DeskUnresolved
 	}
-	if c.SpriteReady != nil && c.SpriteReady(base) {
+	if c.Assets != nil && c.Assets.SpriteReady(base) {
 		delete(c.missingDesks, base)
 		return DeskResolved
 	}
