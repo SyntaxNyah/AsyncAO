@@ -68,10 +68,10 @@ func ParseScalingMode(raw string) ScalingMode {
 // scalingFor asks the App what filter a character requested. Called once per
 // message when the sprite layers are built — never per render frame.
 func (c *Courtroom) scalingFor(charName string) ScalingMode {
-	if c.SpriteScaling == nil || charName == "" {
+	if c.Assets == nil || charName == "" {
 		return ScalingAuto
 	}
-	return c.SpriteScaling(charName)
+	return c.Assets.SpriteScaling(charName)
 }
 
 // ResolveScalingMode applies AO2's precedence: the user's mode unless it is

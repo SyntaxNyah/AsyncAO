@@ -227,7 +227,7 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 	if name == "" {
 		return c.Scene.Overlay.Active()
 	}
-	if overlayNameIsNone(name) || c.OverlayFor == nil {
+	if overlayNameIsNone(name) || c.Assets == nil {
 		c.clearOverlay()
 		return false
 	}
@@ -252,7 +252,7 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 		c.clearOverlay()
 		return false
 	}
-	res, ok := c.OverlayFor(name, folder)
+	res, ok := c.Assets.OverlayFor(name, folder)
 	if ok && res.Pending {
 		// The folder's roster is still resolving, so the LOCAL ladder cannot be
 		// walked yet. DEFER rather than arm: arming now would spend the one network
@@ -385,8 +385,8 @@ func (c *Courtroom) realizationSFXFor(char string) string {
 // (text_file_functions.cpp:836-839). Costs no network work — charMeta already
 // fetched and cached that char.ini for the blip set and chatbox skin.
 func (c *Courtroom) OverlayEffectsFolderFor(char string) string {
-	if c.EffectsFolderFor == nil || char == "" {
+	if c.Assets == nil || char == "" {
 		return ""
 	}
-	return strings.TrimSpace(c.EffectsFolderFor(char))
+	return strings.TrimSpace(c.Assets.EffectsFolderFor(char))
 }

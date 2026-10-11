@@ -295,6 +295,23 @@ func (r roomCharResolver) CustomRealizationFor(char string) string {
 	return r.a.overlayCustomRealizationFor(char)
 }
 
+// roomAssetResolver implements courtroom.AssetResolver from the render/audio stores
+// and the per-URL char.ini cache: a speaker's effects folder, the overlay engine's
+// resolve, texture/audio residency probes and the per-character scaling filter.
+type roomAssetResolver struct{ a *App }
+
+func (r roomAssetResolver) EffectsFolderFor(char string) string {
+	return r.a.overlayEffectsFolderFor(char)
+}
+func (r roomAssetResolver) OverlayFor(name, folder string) (courtroom.OverlayResolved, bool) {
+	return r.a.overlayResolve(name, folder)
+}
+func (r roomAssetResolver) SpriteReady(base string) bool { return r.a.d.Store.Contains(base) }
+func (r roomAssetResolver) AudioReady(base string) bool  { return r.a.d.Audio.HasChunk(base) }
+func (r roomAssetResolver) SpriteScaling(charName string) courtroom.ScalingMode {
+	return r.a.remoteScalingFor(charName)
+}
+
 // wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
 // speaker blips and skins identically in every mode.
 //
@@ -307,7 +324,7 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	}
 	room.Blips = roomBlipResolver{a}
 	room.Chars = roomCharResolver{a}
-	room.SpriteScaling = a.remoteScalingFor
+	room.Assets = roomAssetResolver{a}
 	// Screen-effect overlays ride the same cache and the same single fetch
 	// (effectspicker.go).
 	a.wireRoomOverlay(room)

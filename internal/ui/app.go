@@ -6065,11 +6065,9 @@ func (a *App) buildRoom() {
 	if a.sess == nil {
 		return
 	}
-	a.room = a.newRoom(a.urls, a.sess, a.d.Audio)                                   // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
-	a.room.InlineEmote = inlineEmoteFor                                             // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
-	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) } // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
-	a.room.AudioReady = func(base string) bool { return a.d.Audio.HasChunk(base) }  // strict-sequencing audio probe (decoded chunk cached, same-thread map read)
-	a.room.LocalSide = a.mySide                                                     // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
+	a.room = a.newRoom(a.urls, a.sess, a.d.Audio) // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
+	a.room.InlineEmote = inlineEmoteFor           // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
+	a.room.LocalSide = a.mySide                   // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
 	// two in-court tabs carries each server's own volumes / muted blips.

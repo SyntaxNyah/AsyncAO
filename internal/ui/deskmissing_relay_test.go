@@ -11,6 +11,20 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
+// spriteProbe implements courtroom.AssetResolver for the one residency lookup this
+// test exercises; the rest answer their nil defaults.
+type spriteProbe func(base string) bool
+
+func (f spriteProbe) EffectsFolderFor(string) string { return "" }
+func (f spriteProbe) OverlayFor(string, string) (courtroom.OverlayResolved, bool) {
+	return courtroom.OverlayResolved{}, false
+}
+func (f spriteProbe) SpriteReady(base string) bool { return f(base) }
+func (f spriteProbe) AudioReady(string) bool       { return false }
+func (f spriteProbe) SpriteScaling(string) courtroom.ScalingMode {
+	return courtroom.ScalingAuto
+}
+
 // TestDrainWarningsRelaysDeskMissing pins the #44 bridge end to end over the REAL
 // asset pipeline: a background whose position ships no desk image exhausts its whole
 // candidate chain, the Manager reports it missing on the existing (droppable,
@@ -118,7 +132,7 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	room.SequentialWait = true
 	// Everything but the position background resolves as "settled", so the gate
 	// parks on the background and nothing else (DeskHide, no chatbox, no audio).
-	room.SpriteReady = func(base string) bool { return base != bgBase }
+	room.Assets = spriteProbe(func(base string) bool { return base != bgBase })
 
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Side: "wit",

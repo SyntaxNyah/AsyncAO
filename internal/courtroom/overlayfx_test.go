@@ -11,13 +11,13 @@ import (
 
 // overlayStub wires a room's OverlayFor to resolve exactly the named effects.
 func overlayStub(room *Courtroom, table map[string]theme.OverlayFX) {
-	room.OverlayFor = func(name, folder string) (OverlayResolved, bool) {
+	room.Assets = assetFake{overlay: func(name, folder string) (OverlayResolved, bool) {
 		fx, ok := table[strings.ToLower(name)]
 		if !ok {
 			return OverlayResolved{}, false
 		}
 		return OverlayResolved{FX: fx, Base: "fx://" + folder + "/" + strings.ToLower(name)}, true
-	}
+	}}
 }
 
 // TestParseEffectsFieldThreeShapes — courtroom.cpp:4154-4172 verbatim, INCLUDING
@@ -84,7 +84,7 @@ func TestUnresolvableEffectClearsTheOverlay(t *testing.T) {
 		}
 	}
 	room.fireOverlay("wash", "pack", false, 0, 0)
-	room.OverlayFor = nil
+	room.Assets = nil
 	room.fireOverlay("wash", "pack", false, 0, 0)
 	if room.Scene.Overlay.Active() {
 		t.Error("with no overlay engine wired the effect must clear, never linger")
@@ -327,16 +327,18 @@ func TestOverlayClearsOnBackgroundChange(t *testing.T) {
 // (text_file_functions.cpp:836-839).
 func TestOverlayFolderFallsBackToCharINIWhenFieldOmitsIt(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.EffectsFolderFor = func(char string) string {
-		if char == "Phoenix" {
-			return "transitions"
-		}
-		return ""
-	}
 	var gotFolder string
-	room.OverlayFor = func(name, folder string) (OverlayResolved, bool) {
-		gotFolder = folder
-		return OverlayResolved{Base: "fx://x"}, true
+	room.Assets = assetFake{
+		effects: func(char string) string {
+			if char == "Phoenix" {
+				return "transitions"
+			}
+			return ""
+		},
+		overlay: func(name, folder string) (OverlayResolved, bool) {
+			gotFolder = folder
+			return OverlayResolved{Base: "fx://x"}, true
+		},
 	}
 	room.fireMessageEffects(&protocol.ChatMessage{CharName: "Phoenix", Effects: "tv on"})
 	if gotFolder != "transitions" {
@@ -516,10 +518,10 @@ func TestVisualGateOffCostsNoResolve(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			room, _, _, audio := newCourtroomRig(t)
 			resolves := 0
-			room.OverlayFor = func(name, folder string) (OverlayResolved, bool) {
+			room.Assets = assetFake{overlay: func(name, folder string) (OverlayResolved, bool) {
 				resolves++
 				return OverlayResolved{Base: "fx://" + name}, true
-			}
+			}}
 			room.ScreenEffects, room.ReduceMotion = tc.screenEffects, tc.reduceMot
 			room.fireMessageEffects(&protocol.ChatMessage{Effects: "wash|packpack|boom"})
 			if resolves != 0 {
@@ -543,7 +545,7 @@ func TestVisualGateOffCostsNoResolve(t *testing.T) {
 func TestPendingRosterDefersInsteadOfArmingWithDefaults(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	inFlight := true
-	room.OverlayFor = func(name, folder string) (OverlayResolved, bool) {
+	room.Assets = assetFake{overlay: func(name, folder string) (OverlayResolved, bool) {
 		if inFlight {
 			return OverlayResolved{Pending: true}, true
 		}
@@ -551,7 +553,7 @@ func TestPendingRosterDefersInsteadOfArmingWithDefaults(t *testing.T) {
 			FX:   theme.OverlayFX{Loop: true, Stretch: true, Layer: theme.OverlayLayerOver},
 			Base: "theme://fx/tv on",
 		}, true
-	}
+	}}
 	room.fireMessageEffects(&protocol.ChatMessage{Effects: "tv on|transitions|"})
 	if room.Scene.Overlay.Active() {
 		t.Fatal("a deferred effect must NOT arm before its roster lands — it would play at the wrong layer with default geometry")
@@ -584,10 +586,10 @@ func TestPendingRosterDefersInsteadOfArmingWithDefaults(t *testing.T) {
 func TestPendingOverlayGivesUpAndFallsBack(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	asks := 0
-	room.OverlayFor = func(name, folder string) (OverlayResolved, bool) {
+	room.Assets = assetFake{overlay: func(name, folder string) (OverlayResolved, bool) {
 		asks++
 		return OverlayResolved{Pending: true}, true
-	}
+	}}
 	room.fireMessageEffects(&protocol.ChatMessage{Effects: "realization|pack|"})
 	if room.Scene.FlashLeft != 0 {
 		t.Fatal("the legacy fallback must WAIT for the resolve, never fire beside an overlay that may still arm")
