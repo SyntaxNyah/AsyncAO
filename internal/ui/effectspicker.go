@@ -943,7 +943,6 @@ func (a *App) wireRoomOverlay(room *courtroom.Courtroom) {
 	}
 	room.OverlayFor = a.overlayResolve
 	room.EffectsFolderFor = a.overlayEffectsFolderFor
-	room.CustomRealizationFor = a.overlayCustomRealizationFor
 }
 
 // drawOverlayChatLayer paints the `chat`-rung overlay. AO2 reparents that one

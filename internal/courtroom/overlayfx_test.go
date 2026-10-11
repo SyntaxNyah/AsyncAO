@@ -407,12 +407,12 @@ func TestCustomRealizationOverridesTheThemeSound(t *testing.T) {
 
 	// The speaker declares one: it wins.
 	audio.sfx = nil
-	room.CustomRealizationFor = func(char string) string {
+	room.Chars = charFake{realz: func(char string) string {
 		if char == "Phoenix" {
 			return "https://x.test/base/sounds/general/nickrealize"
 		}
 		return ""
-	}
+	}}
 	room.fireMessageEffects(&protocol.ChatMessage{Realization: true, CharName: "Phoenix"})
 	if len(audio.sfx) != 1 || audio.sfx[0] != "https://x.test/base/sounds/general/nickrealize" {
 		t.Fatalf("the SENDER's own realization sound must win (courtroom.cpp:4175), got %v", audio.sfx)

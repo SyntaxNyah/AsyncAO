@@ -371,8 +371,8 @@ const OverlayRealizationEffect = "realization"
 // REALIZATION=1 receive path and the outgoing effects field — so it lives in one
 // helper here rather than being re-derived at each.
 func (c *Courtroom) realizationSFXFor(char string) string {
-	if c.CustomRealizationFor != nil && char != "" {
-		if sfx := strings.TrimSpace(c.CustomRealizationFor(char)); sfx != "" {
+	if c.Chars != nil && char != "" {
+		if sfx := strings.TrimSpace(c.Chars.CustomRealizationFor(char)); sfx != "" {
 			return sfx
 		}
 	}
