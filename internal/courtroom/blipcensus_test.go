@@ -24,30 +24,33 @@ import (
 // or tags a blip URL outside the mint fails, and DELETING a listed site fails
 // too, so the mint cannot quietly lose its callers and pass by being unused.
 
-// blipSite is one file a census knows about: where it is (repo-relative,
-// slash-separated) and why it is allowed to do what it does. An exemption
-// cannot be added without writing the reason next to it.
+// blipSite is one declaration a census knows about: the NAME of the enclosing function
+// (or const/var) and why it is allowed to do what it does. Keyed by NAME, not file, so a
+// file split that moves the declaration keeps the census green. An exemption cannot be
+// added without writing the reason next to it.
 type blipSite struct {
-	path string
+	name string
 	why  string
 }
 
-// blipTypeSites are the files allowed to name assets.AssetTypeBlip — the sites
-// that hand a blip to the asset pipeline, plus the enum's own declaration. The
-// live message funnel (internal/courtroom/courtroom.go) is deliberately NOT
-// here: it prefetches the ref the mint returned, type and all, so it does not
-// name the type at all any more. If it ever does again, this census says so.
+// blipTypeSites are the declarations allowed to name assets.AssetTypeBlip — the sites
+// that hand a blip to the asset pipeline, plus the enum's own declaration. The live
+// message funnel (internal/courtroom/courtroom.go) is deliberately NOT here: it
+// prefetches the ref the mint returned, type and all, so it does not name the type at
+// all any more. If it ever does again, this census says so.
 var blipTypeSites = []blipSite{
-	{"internal/assets/types.go", "the AssetType enum + its config-name table (the declaration itself)"},
-	{"internal/courtroom/blipurl.go", "the ONE mint: BlipRef tags the chain it builds"},
-	{"internal/ui/contentjob.go", "the content report's category mapping for an already-minted ref"},
-	{"internal/ui/app_ic.go", "drainWarnings routes a conclusively-404'd blip base to the strict-sequencing gate's shared missing set (tags the type, mints no URL)"},
-	{"internal/assets/manifest.go", "manifest seeding maps blips_extensions onto the Blip type for format learning (tags the type, mints no URL)"},
+	{"AssetTypeBlip", "the AssetType enum value (the declaration itself)"},
+	{"typeNames", "the enum's config-name table"},
+	{"IsAudio", "the audio-type predicate that names the blip type"},
+	{"BlipRef", "the ONE mint: BlipRef tags the chain it builds"},
+	{"categoryForType", "the content report's category mapping for an already-minted ref"},
+	{"drainWarnings", "routes a conclusively-404'd blip base to the strict-sequencing gate's shared missing set (tags the type, mints no URL)"},
+	{"manifestSeedTargets", "manifest seeding maps blips_extensions onto the Blip type for format learning (tags the type, mints no URL)"},
 	// Tests are listed too: a test is where a fourth production site would first
 	// appear, disguised as a fixture.
-	{"internal/assets/manager_test.go", "pins that the manager tags a blip fetch with the blip type"},
-	{"internal/courtroom/blipurl_test.go", "pins the mint's own output"},
-	{"internal/ui/contentjob_test.go", "pins that the report rides the mint"},
+	{"TestManagerAudioBypassesDecode", "pins that the manager tags a blip fetch with the blip type"},
+	{"TestBlipRefIdentityIsUnchanged", "pins the mint's own output"},
+	{"TestReportBlipsRideTheOneMint", "pins that the report rides the mint"},
 }
 
 // blipURLLiterals are the files allowed to spell a blip path out of string
@@ -55,15 +58,15 @@ var blipTypeSites = []blipSite{
 // asks them. Test files are exempt wholesale — asserting the exact URL a mint
 // produced is the entire point of a test.
 var blipURLLiterals = []blipSite{
-	{"internal/courtroom/urlbuilder.go", "soundsBlips, the sounds/blips/ path constant"},
-	{"internal/courtroom/blipurl.go", "legacyBlipPrefix, AO1's sfx-blip stem"},
+	{"soundsBlips", "soundsBlips, the sounds/blips/ path constant"},
+	{"legacyBlipPrefix", "legacyBlipPrefix, AO1's sfx-blip stem"},
 }
 
 // blipBuilderCallers are the NON-test files allowed to call URLBuilder.Blip or
 // BlipAuthored directly instead of going through BlipRef: sites that genuinely
 // want ONE spelling rather than the resolution chain.
 var blipBuilderCallers = []blipSite{
-	{"internal/courtroom/blipurl.go", "BlipCandidates composes the ladder out of them"},
+	{"BlipCandidates", "BlipCandidates composes the ladder out of them"},
 	// internal/ui/downloader.go used to be listed here ("wants the single modern
 	// spelling") — W7b upgraded its offline mirror to walk BlipCandidates, the
 	// sanctioned ladder, so it no longer calls the raw builders at all and an
@@ -107,50 +110,20 @@ func TestBlipURLsHaveExactlyOneMint(t *testing.T) {
 		rel = filepath.ToSlash(rel)
 		isTest := strings.HasSuffix(rel, "_test.go")
 
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch v := n.(type) {
-			case *ast.Ident:
-				if v.Name != "AssetTypeBlip" {
-					return true
+		for _, d := range f.Decls {
+			switch v := d.(type) {
+			case *ast.FuncDecl:
+				blipInspect(v.Name.Name, isTest, v.Body, seenType, seenLiteral, seenCaller, &offenders)
+			case *ast.GenDecl:
+				for _, spec := range v.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || len(vs.Names) == 0 {
+						continue
+					}
+					blipInspect(vs.Names[0].Name, isTest, vs, seenType, seenLiteral, seenCaller, &offenders)
 				}
-				if i := blipSiteIndex(blipTypeSites, rel); i >= 0 {
-					seenType[i] = true
-					return true
-				}
-				offenders = append(offenders, rel+" tags AssetTypeBlip outside the mint")
-			case *ast.BasicLit:
-				if isTest || v.Kind != token.STRING {
-					return true
-				}
-				// The weakest of the three nets: it matches the JOINED literal
-				// only, so filepath.Join(base, "sounds", "blips") would evade it —
-				// a site shaped that way must surface in the AssetTypeBlip or
-				// Blip()-call nets instead. (downloader.go was the live example
-				// until W7b moved it onto BlipCandidates; none ships today.)
-				if !strings.Contains(v.Value, "sounds/blips") && !strings.Contains(v.Value, "sfx-blip") {
-					return true
-				}
-				if i := blipSiteIndex(blipURLLiterals, rel); i >= 0 {
-					seenLiteral[i] = true
-					return true
-				}
-				offenders = append(offenders, rel+" spells a blip path in a literal: "+v.Value)
-			case *ast.CallExpr:
-				sel, ok := v.Fun.(*ast.SelectorExpr)
-				if !ok || isTest {
-					return true
-				}
-				if sel.Sel.Name != "Blip" && sel.Sel.Name != "BlipAuthored" {
-					return true
-				}
-				if i := blipSiteIndex(blipBuilderCallers, rel); i >= 0 {
-					seenCaller[i] = true
-					return true
-				}
-				offenders = append(offenders, rel+" calls URLBuilder."+sel.Sel.Name+" directly")
 			}
-			return true
-		})
+		}
 		return nil
 	})
 	if err != nil {
@@ -159,7 +132,7 @@ func TestBlipURLsHaveExactlyOneMint(t *testing.T) {
 	if len(offenders) > 0 {
 		t.Errorf("blip URLs minted outside URLBuilder.BlipRef:\n  %s\n\n"+
 			"Every blip URL in this client comes from BlipRef (internal/courtroom/blipurl.go): it applies the "+
-			"sentinel/path guard and returns AO2's whole get_blips ladder. Call it, or add the file to the "+
+			"sentinel/path guard and returns AO2's whole get_blips ladder. Call it, or add the declaration to the "+
 			"matching census with the reason it must build its own.", strings.Join(offenders, "\n  "))
 	}
 	// Deletion catchers: a census that silently shrinks is a census that stopped
@@ -169,9 +142,59 @@ func TestBlipURLsHaveExactlyOneMint(t *testing.T) {
 	checkSeen(t, "blipBuilderCallers", blipBuilderCallers, seenCaller)
 }
 
-func blipSiteIndex(sites []blipSite, rel string) int {
+// blipInspect scans one declaration (a function body or a const/var spec) for blip
+// mint/tag sites, keying each match by the DECLARATION NAME rather than the file it
+// lives in, so a file split that moves the declaration keeps the census green.
+func blipInspect(name string, isTest bool, n ast.Node, seenType, seenLiteral, seenCaller []bool, offenders *[]string) {
+	ast.Inspect(n, func(node ast.Node) bool {
+		switch v := node.(type) {
+		case *ast.Ident:
+			if v.Name != "AssetTypeBlip" {
+				return true
+			}
+			if i := blipSiteIndex(blipTypeSites, name); i >= 0 {
+				seenType[i] = true
+				return true
+			}
+			*offenders = append(*offenders, name+" tags AssetTypeBlip outside the mint")
+		case *ast.BasicLit:
+			if isTest || v.Kind != token.STRING {
+				return true
+			}
+			// The weakest of the three nets: it matches the JOINED literal
+			// only, so filepath.Join(base, "sounds", "blips") would evade it —
+			// a site shaped that way must surface in the AssetTypeBlip or
+			// Blip()-call nets instead. (downloader.go was the live example
+			// until W7b moved it onto BlipCandidates; none ships today.)
+			if !strings.Contains(v.Value, "sounds/blips") && !strings.Contains(v.Value, "sfx-blip") {
+				return true
+			}
+			if i := blipSiteIndex(blipURLLiterals, name); i >= 0 {
+				seenLiteral[i] = true
+				return true
+			}
+			*offenders = append(*offenders, name+" spells a blip path in a literal: "+v.Value)
+		case *ast.CallExpr:
+			sel, ok := v.Fun.(*ast.SelectorExpr)
+			if !ok || isTest {
+				return true
+			}
+			if sel.Sel.Name != "Blip" && sel.Sel.Name != "BlipAuthored" {
+				return true
+			}
+			if i := blipSiteIndex(blipBuilderCallers, name); i >= 0 {
+				seenCaller[i] = true
+				return true
+			}
+			*offenders = append(*offenders, name+" calls URLBuilder."+sel.Sel.Name+" directly")
+		}
+		return true
+	})
+}
+
+func blipSiteIndex(sites []blipSite, name string) int {
 	for i := range sites {
-		if sites[i].path == rel {
+		if sites[i].name == name {
 			return i
 		}
 	}
@@ -182,9 +205,9 @@ func checkSeen(t *testing.T, census string, sites []blipSite, seen []bool) {
 	t.Helper()
 	for i := range sites {
 		if !seen[i] {
-			t.Errorf("%s lists %q (%s) but nothing there matches any more — either the site moved "+
-				"(point the census at it) or it is gone (drop the entry, and check its behaviour did not go with it)",
-				census, sites[i].path, sites[i].why)
+			t.Errorf("%s lists %q (%s) but nothing of that name matches any more — a rename or removal "+
+				"broke it (the lookup is by declaration name); re-point the entry or drop it, and check its behaviour did not go with it",
+				census, sites[i].name, sites[i].why)
 		}
 	}
 }
