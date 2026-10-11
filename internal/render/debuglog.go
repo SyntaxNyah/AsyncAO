@@ -47,7 +47,12 @@ func (d *debugLogSink) Write(p []byte) (n int, err error) {
 }
 
 var (
-	debugLogChan   chan string
+	// debugLogChan is allocated eagerly so the F8 panel's PollDebugLogs can drain it
+	// before EnableDebugLogCapture has run (or while it is running on the audio
+	// goroutine) without racing a lazy write. A nil-check read against the
+	// sync.Once write was a data race: the Once serializes the writers, not the
+	// reader.
+	debugLogChan   = make(chan string, 64) // buffer 64 lines
 	debugLogOnce   sync.Once
 	originalStderr *os.File
 )
@@ -56,7 +61,6 @@ var (
 // the UI can drain via PollDebugLogs. Called once at Audio creation time.
 func EnableDebugLogCapture() {
 	debugLogOnce.Do(func() {
-		debugLogChan = make(chan string, 64) // buffer 64 lines
 		sink := &debugLogSink{sink: debugLogChan}
 		originalStderr = os.Stderr
 		log.SetOutput(io.MultiWriter(sink, originalStderr))
@@ -66,9 +70,6 @@ func EnableDebugLogCapture() {
 // PollDebugLogs drains any pending log lines captured from the render package.
 // Returns all available lines (may be empty). Non-blocking.
 func PollDebugLogs() []string {
-	if debugLogChan == nil {
-		return nil
-	}
 	var lines []string
 	for {
 		select {
