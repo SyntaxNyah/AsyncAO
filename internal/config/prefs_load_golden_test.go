@@ -37,6 +37,11 @@ func loadGoldenCorpus(t *testing.T) []struct {
 		{"nameColorVal_belowMin", map[string]any{"nameColorVal": -1000}},
 		{"highlightColor_belowMin", map[string]any{"highlightColor": -1000}},
 		{"export_partial", map[string]any{"export": map[string]any{"heightPx": 1000000, "fps": 0}}},
+		// Multi-field migrations the single-field table cannot see:
+		{"layoutProfile_legacyPresets", map[string]any{"layoutPresets": map[string]any{"streamer": map[string]any{"viewport": []any{0, 0, 0.74, 0.66}}}}},
+		{"oocScale_inherit", map[string]any{"logScalePct": 170}},
+		{"subtheme_sanitize", map[string]any{"subtheme": "../../secret"}},
+		{"proxyMode_clamp", map[string]any{"proxyMode": 99}},
 	}
 	// The full golden prefs fixture, decoded, as one corpus case.
 	golden := decodeJSON(t, filepath.Join("testdata", goldenPrefsName))
