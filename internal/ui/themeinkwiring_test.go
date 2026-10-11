@@ -34,9 +34,9 @@ func TestCanvasInkCallSitesDeclareTheirPass(t *testing.T) {
 		{"theme_layout.go", "drawAreaList", 1, "true", "the themed area_list element"},
 		{"theme_layout.go", "drawMusicList", 1, "true", "the themed music_list element"},
 
-		{"screens.go", "drawICLogList", 1, "false", "the classic docked Log tab is chrome"},
-		{"screens.go", "drawAreaList", 1, "false", "the classic docked Areas tab is chrome"},
-		{"screens.go", "drawMusicList", 1, "false", "the classic docked Music tab is chrome"},
+		{"screenschat.go", "drawICLogList", 1, "false", "the classic docked Log tab is chrome"},
+		{"screenschat.go", "drawAreaList", 1, "false", "the classic docked Areas tab is chrome"},
+		{"screenschat.go", "drawMusicList", 1, "false", "the classic docked Music tab is chrome"},
 
 		{"torntabs.go", "drawAreaList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
 		{"torntabs.go", "drawMusicList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
@@ -106,7 +106,7 @@ func callArgs(src, prefix string) [][]string {
 // box must hand it ColText. That box fills its own ColPanel background, so a
 // theme colour authored against the theme's art would land on the wrong thing.
 func TestDrawOOCLogRowKeepsChromeInk(t *testing.T) {
-	src, err := os.ReadFile("screens.go")
+	src, err := os.ReadFile("screensooc.go")
 	if err != nil {
 		t.Fatal(err)
 	}

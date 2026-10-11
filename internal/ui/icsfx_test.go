@@ -136,9 +136,9 @@ func assignsIdent(n ast.Node, name string) bool {
 // gate (courtroom.preanimSFXPlays) that now decides whether the value is ever heard.
 func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "screens.go", nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, "screensemote.go", nil, parser.SkipObjectResolution)
 	if err != nil {
-		t.Fatalf("parse screens.go: %v", err)
+		t.Fatalf("parse screensemote.go: %v", err)
 	}
 	callsRule := false
 	ast.Inspect(f, func(n ast.Node) bool {

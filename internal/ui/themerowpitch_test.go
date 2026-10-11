@@ -168,9 +168,9 @@ func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 // source-level facts, so this reads the source: a behavioural test cannot see a
 // call that was never written.
 func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
-	src, err := os.ReadFile("screens.go")
+	src, err := os.ReadFile("screensemote.go")
 	if err != nil {
-		t.Fatalf("screens.go: %v", err)
+		t.Fatalf("screensemote.go: %v", err)
 	}
 	text := string(src)
 
