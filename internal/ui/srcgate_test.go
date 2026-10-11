@@ -45,7 +45,7 @@ func parsedFile(t *testing.T, name string) (*token.FileSet, *ast.File) {
 // dropped because it ignores build tags when associating files with packages
 // (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
 // result is a failure, not a pass: a census that read nothing passes everything.
-func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
+func parseNonTestSources(t testing.TB, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
 	t.Helper()
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -76,7 +76,7 @@ func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) ma
 // method elsewhere, so existing disambiguated gates keep their meaning. Fails the
 // test when fn is absent (a renamed function must break its gate loudly) or when it
 // landed in two files (the census would read one of two bodies).
-func funcBodySource(t *testing.T, file, fn string) *ast.BlockStmt {
+func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 	t.Helper()
 	fset := token.NewFileSet()
 	files := parseNonTestSources(t, fset, 0)
