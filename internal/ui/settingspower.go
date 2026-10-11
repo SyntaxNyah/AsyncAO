@@ -14,7 +14,7 @@ import (
 // drawSettingsPowerUser is the advanced Settings card (its own left-sidebar tab): TLS validation,
 // the Asset Origin header, character-folder casing, and image-format tuning — options that can
 // BREAK connections or asset fetching if set wrong. The whole card hides behind a reveal button and
-// its warnings are red. Moved here out of Account / Assets so everyday settings stay uncluttered.
+// its warnings are red. Kept out of Account / Assets so everyday settings stay uncluttered.
 func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -188,8 +188,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "ON (default): a shout clears the backlog and plays at once, exactly like AO2. OFF: shouts queue in order and, under the Default loading mode, wait for their bubble art and cry like any other message.", ColTextDim)
 	y += 10
 
-	// (The missing-sprite "missingno" placeholder controls moved to Settings →
-	// Assets — playtest: nobody looked for them under Power User.)
+	// (The missing-sprite "missingno" placeholder controls are on Settings → Assets.)
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
@@ -559,7 +558,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	y = a.drawProxySettings(y, w)
 
-	// Image formats lived here until they got their own tab. They are
+	// Image formats have their own tab. They are
 	// NOT power-user knobs: art failing to render is a first-week problem, and
 	// burying its fix behind a tab called Power user is why it went unfound. A
 	// pointer stays because the casing control above is the OTHER reason a server's
@@ -670,7 +669,7 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	// Bind a key to a canned IC line your CHARACTER says (the IC counterpart to macros).
 	y = a.drawICPhraseSettings(y, w)
 	y += 8
-	// (Export / Import / Open config moved to their own "Data" tab.)
+	// (Export / Import / Open config are on the "Data" tab.)
 	return y
 }
 

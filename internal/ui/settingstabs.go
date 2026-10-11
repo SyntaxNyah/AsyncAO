@@ -482,10 +482,8 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 // drawSettingsStageFX: every render-side stage/viewport look — the sprite
 // colour washes, motion FX, the retro post-process overlays (CRT / vignette /
 // scanlines / grain), chatbox skins, the stage frame and the ambient extras
-// (spotlight, breathing, reflection, weather). Lived in General → Display &
-// behaviour; moved to the Theme tab on playtest feedback (Tifera: settings
-// were overwhelming — these edit how the VIEWPORT looks, which is theme
-// territory). Rows are unchanged, only re-homed.
+// (spotlight, breathing, reflection, weather). These edit how the VIEWPORT
+// looks, which is theme territory.
 func (a *App) drawSettingsStageFX(y int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase every pad-relative box into the content card
@@ -807,7 +805,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 
 // drawSettingsAssets: predictive prefetch, the missing-sprite placeholder, local
 // mounts, the opt-in downloader, and the cache browser/actions. Format probing
-// and the learned-format tools moved to the Formats tab (settingsformats.go).
+// and the learned-format tools are on the Formats tab (settingsformats.go).
 // prefetchAggroLabel names the predictive-prefetch level (#100) for the slider readout.
 func prefetchAggroLabel(n int) string {
 	switch n {
@@ -853,7 +851,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.PrefetchAggressiveness()), ColAccent)
 	y += 30
 
-	// (Image formats + desk-format policy moved to the Power user tab.)
+	// (Image formats are on the Formats tab; desk-format policy is on Power user.)
 
 	// #127 full-character bundle prefetch (default OFF): pre-grab a character's whole sprite
 	// set on load so emote switches are instant — speculative + low priority, so it sheds
@@ -890,8 +888,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y += 28
 
 	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
-	// character sprite whose whole fallback chain 404'd. Lives HERE (moved from
-	// Power User — this is where people look for it). Distinct from
+	// character sprite whose whole fallback chain 404'd. This is where people
+	// look for it. Distinct from
 	// the still-loading hold: this fires ONLY once there is nothing left to
 	// fetch, so it never flashes over a sprite that's merely streaming.
 	y = a.settingsSection(y, w, "Missing sprites (missingno)")
@@ -931,7 +929,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
 	y += 10
 
-	// (The per-type audio-format fallbacks moved to the Formats tab, with the
+	// (The per-type audio-format fallbacks are on the Formats tab, with the
 	// image ones — they are the same control for a different asset class.)
 
 	y = a.settingsSection(y, w, "Asset source")
@@ -993,10 +991,9 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	y += 32
 
-	// Cache actions. (The learned-format buttons that used to sit on this row —
-	// clear / export / import, and "Fix stuck images" — moved to the Formats tab:
-	// they are format state, not cache state, and splitting them across two tabs
-	// is why nobody could find either half.)
+	// Cache actions. (The learned-format buttons — clear / export / import, and
+	// "Fix stuck images" — are on the Formats tab: they are format state, not
+	// cache state.)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Clear disk cache") {
 		if err := a.d.Manager.ClearDisk(); err != nil {
 			settings.statusLine = "Clear failed: " + err.Error()
