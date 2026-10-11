@@ -207,16 +207,6 @@ func TestSettingsFormArmsAndReleasesTheRowLabelLimit(t *testing.T) {
 		t.Errorf("drawSettings pops the row-label limit %d time(s); it needs the deferred one for its early returns AND a straight-line "+
 			"one where the card's clip closes, or the trailing full-window chrome draws under the card's bound (F2)", pops)
 	}
-	// The bare help lines are drawn by the general primitives, NOT by Checkbox: about
-	// a hundred c.Label calls plus the FONTS chain line's c.LabelClipped. They are the
-	// class the first pass at this fix left hard-clipping at the card edge, so each
-	// one is its own deletion-catcher.
-	for _, fn := range []string{"Label", "LabelClipped"} {
-		if !containsCall(funcBodySource(t, "ui.go", fn), "fitRowLabel") {
-			t.Errorf("Ctx.%s no longer consults fitRowLabel â€” the settings help lines would go back to a hard cut at the card's clip edge, "+
-				"with no ellipsis, which is the reported 'cut off at the right border' (F2)", fn)
-		}
-	}
 }
 
 // TestCheckboxHonoursTheRowLabelLimit is the behavioural replacement for the old
@@ -262,5 +252,49 @@ func TestCheckboxHonoursTheRowLabelLimit(t *testing.T) {
 	}
 	if c.tipText != long {
 		t.Errorf("Checkbox drew the row un-shortened under an armed limit (no truncation tooltip) — the label would run off the card again (F2)")
+	}
+}
+
+// TestLabelAndLabelClippedHonourTheRowLabelLimit is the behavioural replacement for
+// the old "Label/LabelClipped consult fitRowLabel" source scan. Both general label
+// primitives must ellipsise under an armed row-label limit; the observable is the
+// DRAWN width — Label's return value, and the last blit's dst width for the void
+// LabelClipped — never the truncation memo.
+func TestLabelAndLabelClippedHonourTheRowLabelLimit(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Fatalf("NewCtx: %v", err)
+	}
+	defer c.Destroy()
+
+	long := settingsHelpLabels(t)[0]
+	x, y := int32(0), int32(0)
+	right := int32(300)
+	if c.TextWidth(long) <= right-x {
+		t.Fatalf("fixture: the label is not long enough to overflow a %d px bound", right-x)
+	}
+	maxW := c.TextWidth(long) + 500 // a clip WIDER than the full label, so unarmed LabelClipped draws it whole
+
+	// Label reports the width of what it DREW; under the armed limit that is the
+	// ellipsised text, which fits the card edge.
+	prev := c.pushRowLabelLimit(right)
+	labelW := c.Label(x, y, long, ColText)
+	c.popRowLabelLimit(prev)
+	if x+labelW > right {
+		t.Errorf("Label drew past the armed row-label limit (%d > %d) — a settings help line would run off the card again (F2)", x+labelW, right)
+	}
+
+	// LabelClipped is void, so observe the last blit's dst width: armed it must be
+	// strictly narrower than unarmed, or it is hard-clipping instead of ellipsising.
+	c.LabelClipped(x, y, maxW, long, ColText)
+	unarmedW := c.drawDst.W
+	prev = c.pushRowLabelLimit(right)
+	c.LabelClipped(x, y, maxW, long, ColText)
+	armedW := c.drawDst.W
+	c.popRowLabelLimit(prev)
+	if armedW >= unarmedW {
+		t.Errorf("LabelClipped drew the label as wide armed (%d px) as unarmed (%d px) — it did not ellipsise at the card edge (F2)", armedW, unarmedW)
 	}
 }
