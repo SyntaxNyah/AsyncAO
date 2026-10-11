@@ -18,11 +18,69 @@ func jsonKey(f reflect.StructField) string {
 	return strings.Split(tag, ",")[0]
 }
 
-// simpleUnmarshalOverDefaults is the B0 candidate load: start from the defaults and
-// unmarshal the file OVER them (absent keys keep the default), with no normalize.
-func simpleUnmarshalOverDefaults(data []byte) *AssetPreferences {
+// presencePrepass decodes data into the set of PRESENT (non-null) JSON key paths,
+// recursing into nested objects. A JSON null counts as absent, matching the old
+// pointer-field load(): a nil *T meant "key not written", so explicit null and an
+// absent key were the same thing.
+func presencePrepass(data []byte) map[string]bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	collectPresence(raw, "", out)
+	return out
+}
+
+func collectPresence(raw map[string]json.RawMessage, prefix string, out map[string]bool) {
+	for k, v := range raw {
+		if strings.TrimSpace(string(v)) == "null" {
+			continue // null == absent
+		}
+		key := prefix + k
+		out[key] = true
+		var nested map[string]json.RawMessage
+		if json.Unmarshal(v, &nested) == nil {
+			collectPresence(nested, key+".", out)
+		}
+	}
+}
+
+// presenceSensitive returns the JSON key paths whose absence-vs-explicit-zero the old
+// load() distinguished, DERIVED from prefsJSON by reflection: every pointer field
+// (nil = absent). Nested structs are walked so export.*, discord.* etc. are covered.
+func presenceSensitive() map[string]bool {
+	pt := reflect.TypeOf(prefsJSON{})
+	out := map[string]bool{}
+	var walk func(t reflect.Type, prefix string)
+	walk = func(t reflect.Type, prefix string) {
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			key := jsonKey(f)
+			if key == "" {
+				continue
+			}
+			path := prefix + key
+			ft := f.Type
+			if ft.Kind() == reflect.Ptr {
+				out[path] = true
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				walk(ft, path+".")
+			}
+		}
+	}
+	walk(pt, "")
+	return out
+}
+
+// snapshotLoad is the B0 candidate load: start from the defaults, unmarshal the file
+// OVER them, then normalize (clamps + stamps) using the presence pre-pass.
+func snapshotLoad(data []byte) *AssetPreferences {
 	p := defaultPrefs("")
 	_ = json.Unmarshal(data, p)
+	p.normalize(presencePrepass(data))
 	return p
 }
 
@@ -43,6 +101,215 @@ func nonZeroValue(t reflect.Type) any {
 	default:
 		return nil
 	}
+}
+
+// normalize reproduces load()'s range clamps and one-shot stamps over a
+// snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
+// load() for every field and case. The clamps are the same functions/constants load()
+// uses; the resets use the defaultPrefs reference so a default change keeps them in step.
+func (p *AssetPreferences) normalize(presence map[string]bool) {
+	def := defaultPrefs("")
+
+	// (i) clamp/normalise — unconditional (pointer fields load() clamped regardless).
+	p.NameVal = clampPercent(p.NameVal, minNameColorVal, 100)
+	p.RainbowSpriteSpeed = clampPercent(p.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	p.ReplayPlaybackSpeed = clampPercent(p.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	p.CatchUpThreshold = clampPercent(p.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	p.MultiTabCap = clampPercent(p.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	p.PreviewHoverMs = clampPercent(p.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	p.EmoteHoverNamesMs = clampPercent(p.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+
+	// (i) clamp/normalise — explicit zero keeps the default (load() used `!= 0`).
+	if p.ViewportPct == 0 {
+		p.ViewportPct = def.ViewportPct
+	} else {
+		p.ViewportPct = clampPercent(p.ViewportPct, MinViewportPercent, MaxViewportPercent)
+	}
+	if p.ChatScalePct == 0 {
+		p.ChatScalePct = def.ChatScalePct
+	} else {
+		p.ChatScalePct = clampPercent(p.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+	}
+	if p.ChatBoxPct == 0 {
+		p.ChatBoxPct = def.ChatBoxPct
+	} else {
+		p.ChatBoxPct = clampPercent(p.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+	}
+	if p.LogScalePct == 0 {
+		p.LogScalePct = def.LogScalePct
+	} else {
+		p.LogScalePct = clampPercent(p.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	if p.OOCScalePct == 0 {
+		p.OOCScalePct = def.OOCScalePct
+	} else {
+		p.OOCScalePct = clampPercent(p.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	if p.InputHeightPct == 0 {
+		p.InputHeightPct = def.InputHeightPct
+	} else {
+		p.InputHeightPct = clampPercent(p.InputHeightPct, MinInputPercent, MaxInputPercent)
+	}
+	if p.UIScalePct == 0 {
+		p.UIScalePct = def.UIScalePct
+	} else {
+		p.UIScalePct = clampPercent(p.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+	}
+	if p.HoldClearMs == 0 {
+		p.HoldClearMs = def.HoldClearMs
+	} else {
+		p.HoldClearMs = clampPercent(p.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+	}
+	if p.TextCrawlMs == 0 {
+		p.TextCrawlMs = def.TextCrawlMs
+	} else {
+		p.TextCrawlMs = clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	}
+	if p.BlipRate == 0 {
+		p.BlipRate = def.BlipRate
+	} else {
+		p.BlipRate = clampPercent(p.BlipRate, MinBlipRate, MaxBlipRate)
+	}
+	if p.ThemeFitZoom == 0 {
+		p.ThemeFitZoom = def.ThemeFitZoom
+	} else {
+		p.ThemeFitZoom = clampPercent(p.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	}
+
+	// (i)/(iii) enums and string defaults: invalid or empty keeps the default.
+	if p.ChromeShapeKey != chromeShapeRounded && p.ChromeShapeKey != chromeShapePill {
+		p.ChromeShapeKey = def.ChromeShapeKey
+	}
+	if p.HoldClearKey == "" {
+		p.HoldClearKey = def.HoldClearKey
+	}
+
+	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
+	if p.BgSlideshowSecs == 0 {
+		p.BgSlideshowSecs = def.BgSlideshowSecs
+	}
+
+	// (ii) one-shot migration stamps — re-apply load()'s stamp decision.
+	if presence["spriteScalingMigrated"] && p.SpriteScalingMigrated {
+		p.SpriteScaling = ClampSpriteScaling(p.SpriteScaling)
+	} else {
+		p.SpriteScaling = defaultSpriteScaling
+		p.SpriteScalingMigrated = true
+	}
+	if presence["autoReconnectDefaultMigrated"] && p.AutoReconnectDefaultMigrated {
+		// already migrated: the on-disk value is honoured as-is
+	} else {
+		p.AutoReconnect = false
+		p.AutoReconnectDefaultMigrated = true
+	}
+	if presence["themeFitDefaultMigrated"] && p.ThemeFitDefaultMigrated {
+		p.ThemeFit = clampPercent(p.ThemeFit, ThemeFitStretch, themeFitModeMax)
+	} else {
+		saved := clampPercent(p.ThemeFit, ThemeFitStretch, themeFitModeMax)
+		if saved == ThemeFitStretch {
+			p.ThemeFit = defaultThemeFit
+		} else {
+			p.ThemeFit = saved
+		}
+		p.ThemeFitDefaultMigrated = true
+	}
+	if presence["blipSpeedDefaultMigrated"] && p.BlipSpeedDefaultMigrated {
+		if p.TextCrawlMs != 0 {
+			p.TextCrawlMs = clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		}
+	} else {
+		saved := clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		if p.TextCrawlMs == 0 || saved == preMoveTextCrawlMs {
+			p.TextCrawlMs = DefaultTextCrawlMs
+		} else {
+			p.TextCrawlMs = saved
+		}
+		p.BlipSpeedDefaultMigrated = true
+	}
+	if presence["deskManifestDefaultMigrated"] && p.DeskManifestDefaultMigrated {
+		// honoured as-is
+	} else {
+		p.DeskFollowManifest = true
+		p.DeskManifestDefaultMigrated = true
+	}
+	if presence["detailedLogDefaultMigrated"] && p.DetailedLogDefaultMigrated {
+		// honoured as-is
+	} else {
+		p.DetailedLog = true
+		p.DetailedLogDefaultMigrated = true
+	}
+
+	// (i) enum clamp: a garbage / newer sprite-load mode falls back to the default.
+	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
+		p.SpriteLoadModeVal = defaultSpriteLoadMode
+	}
+
+	// (iii) non-zero nested defaults the unmarshal-over-defaults zeroed.
+	if len(p.AssetTypes) == 0 {
+		p.AssetTypes = def.AssetTypes
+	} else {
+		for name, tp := range p.AssetTypes {
+			if len(tp.FormatOrder) == 0 {
+				tp.FormatOrder = DefaultFormatOrder(name)
+			}
+			if name == TypeMisc && len(tp.FormatOrder) == 1 && tp.FormatOrder[0] == ExtWebP {
+				tp.FormatOrder = DefaultFormatOrder(name)
+			}
+			p.AssetTypes[name] = tp
+		}
+	}
+	if p.MusicHosts == nil {
+		p.MusicHosts = def.MusicHosts
+	} else {
+		p.MusicHosts = sanitizeMusicHosts(p.MusicHosts)
+	}
+	if p.LearnedFormats == nil {
+		p.LearnedFormats = def.LearnedFormats
+	}
+	{
+		e := defaultExportOptions()
+		if p.Export.HeightPx > 0 {
+			e.HeightPx = clampPercent(p.Export.HeightPx, minExportHeight, maxExportHeight)
+		}
+		if p.Export.FPS > 0 {
+			e.FPS = clampPercent(p.Export.FPS, minExportFPS, maxExportFPS)
+		}
+		if p.Export.Quality > 0 {
+			e.Quality = clampPercent(p.Export.Quality, minExportQuality, maxExportQuality)
+		}
+		if p.Export.TextScale > 0 {
+			e.TextScale = clampPercent(p.Export.TextScale, minExportText, maxExportText)
+		}
+		if p.Export.VideoFormat != "" {
+			e.VideoFormat = normalizeVideoFormat(p.Export.VideoFormat)
+		}
+		e.Loop = p.Export.Loop
+		p.Export = e
+	}
+	// discord + autoStatus: load() copied the whole on-disk struct when the key was
+	// PRESENT, so a present-but-omitempty field reads as ZERO, not the defaultPrefs
+	// value (which the unmarshal-over-defaults keeps). An ABSENT key keeps the default.
+	if presence["discord"] && !presence["discord.appId"] {
+		p.DiscordRPC.AppID = ""
+	}
+	if presence["autoStatus"] {
+		if !presence["autoStatus.clearWords"] {
+			p.MyAutoStatus.ClearWords = ""
+		}
+		if !presence["autoStatus.afkWords"] {
+			p.MyAutoStatus.AFKWords = ""
+		}
+		if !presence["autoStatus.busyWords"] {
+			p.MyAutoStatus.BusyWords = ""
+		}
+		if !presence["autoStatus.writingWords"] {
+			p.MyAutoStatus.WritingWords = ""
+		}
+		if !presence["autoStatus.lfrpWords"] {
+			p.MyAutoStatus.LFRPWords = ""
+		}
+	}
+	p.MyAutoStatus = sanitizeAutoStatus(p.MyAutoStatus)
 }
 
 // TestLoadEquivalence drives the B0 gap question directly: for every field with a
@@ -99,7 +366,7 @@ func TestLoadEquivalence(t *testing.T) {
 			}
 			oldv := reflect.ValueOf(oldp).Elem().Field(i).Interface()
 
-			newv := reflect.ValueOf(simpleUnmarshalOverDefaults(raw)).Elem().Field(i).Interface()
+			newv := reflect.ValueOf(snapshotLoad(raw)).Elem().Field(i).Interface()
 			if !reflect.DeepEqual(oldv, newv) {
 				record(key, cs.name, oldv, newv)
 			}
@@ -107,11 +374,12 @@ func TestLoadEquivalence(t *testing.T) {
 	}
 
 	if len(diffs) > 0 {
-		t.Logf("load-equivalence differences (%d) — each is a case the snapshot's normalize() must reproduce before B0 part 2 proceeds:", len(diffs))
+		// The allowlist must reach empty: each difference is a case the snapshot's
+		// normalize() failed to reproduce from load(). Report every one, then fail.
 		for _, d := range diffs {
-			t.Logf("  %s", d)
+			t.Errorf("snapshot load differs from load(): %s", d)
 		}
-		return // report, not a gate: the snapshot does not exist yet, so differences are expected
+		t.Fatalf("%d load-equivalence differences remain — the snapshot's normalize() must close every one (allowlist must be empty)", len(diffs))
 	}
 }
 
