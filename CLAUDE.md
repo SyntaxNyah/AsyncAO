@@ -49,7 +49,11 @@ add TCP framing back.
     the change moves and which way dependencies point. No comment cites a
     test file by name; such a citation rots and is deleted with the test it
     points at. An AST/source-scan test is only ever deleted or converted to a
-    behavioural test — never retargeted to a new file or package.
+    behavioural test — never retargeted to a different function or package.
+    Relocating the looked-up code between files in the same package is not a
+    retarget: a gate may switch its lookup from a literal filename to a
+    package-wide search (e.g. `funcBodyInPackage`) provided it keeps checking
+    the SAME function; pointing it at a different function or package is not.
 
     **Kept source-scan gates (grandfathered deletion-catchers).** Rule 11
     admits no NEW AST test; the ones below survive only because each pins a
