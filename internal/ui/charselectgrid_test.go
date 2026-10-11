@@ -3,6 +3,9 @@ package ui
 import (
 	"math"
 	"reflect"
+	"runtime"
+	"runtime/pprof"
+	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -840,6 +843,27 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	}
 }
 
+// dumpDirtyWindow names the allocator when a zero-alloc gate fails. AllocsPerRun pins
+// GOMAXPROCS(1), so a timer/poller goroutine left running by an earlier test can land its
+// allocations inside our measurement window and turn a clean run into "17 allocs". Dumping
+// the live goroutine stacks + the alloc profile on failure means a recurrence reports its
+// source instead of just the count.
+func dumpDirtyWindow(t *testing.T) {
+	t.Helper()
+	runtime.MemProfileRate = 1
+	runtime.GC()
+	var b strings.Builder
+	if p := pprof.Lookup("goroutine"); p != nil {
+		_ = p.WriteTo(&b, 1)
+	}
+	t.Logf("dirty-window goroutine dump:\n%s", b.String())
+	b.Reset()
+	if p := pprof.Lookup("allocs"); p != nil {
+		_ = p.WriteTo(&b, 0)
+	}
+	t.Logf("dirty-window alloc profile:\n%s", b.String())
+}
+
 // TestCharGridPlanIsAllocFree keeps the builder off the heap. It runs once per frame
 // on both tabs and cellAt runs per visible cell; neither may allocate. (This is NOT
 // the whole-screen gate the spec rules out — drawCharSelect still allocates a char
@@ -849,6 +873,7 @@ func TestCharGridPlanIsAllocFree(t *testing.T) {
 	a, lay, g := themedStockPlan(t)
 	gridTop := charSelectGridTop(a)
 	if n := testing.AllocsPerRun(200, func() { a.charSelectGridPlan(w, h, gridTop, lay) }); n != 0 {
+		dumpDirtyWindow(t)
 		t.Errorf("charSelectGridPlan allocates %v per call, want 0", n)
 	}
 	if n := testing.AllocsPerRun(200, func() {
@@ -857,6 +882,7 @@ func TestCharGridPlanIsAllocFree(t *testing.T) {
 			_ = cell
 		}
 	}); n != 0 {
+		dumpDirtyWindow(t)
 		t.Errorf("cellAt/visible allocate %v per cell, want 0", n)
 	}
 }
