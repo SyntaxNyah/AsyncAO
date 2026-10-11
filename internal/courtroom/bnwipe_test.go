@@ -210,7 +210,7 @@ func TestWipedPairDoesNotResurrectOnDeskMiss(t *testing.T) {
 // just left. That would be a NEW visible bug in exactly the scenario #23 is about.
 func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = func() string { return "def" }
+	room.Env = envFake{side: func() string { return "def" }}
 	room.Scene.Position = "wit" // the previous area's last speaker
 
 	room.setBackground("newarea", "", true) // akashi's default: wipe, no pos
@@ -231,7 +231,7 @@ func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 // carry a pos moves us there, and it beats the LocalSide fallback.
 func TestBackgroundWipeReScenesAtTheNewPos(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = func() string { return "def" }
+	room.Env = envFake{side: func() string { return "def" }}
 	room.Scene.Position = "wit"
 
 	room.setBackground("newarea", "pro", true)
@@ -246,7 +246,7 @@ func TestBackgroundWipeReScenesAtTheNewPos(t *testing.T) {
 // behaviour rather than panicking or blanking the position.
 func TestBackgroundWipeWithNoLocalSideHookIsSafe(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = nil
+	room.Env = nil
 	room.Scene.Position = "wit"
 	room.setBackground("newarea", "", true) // must not panic
 	if room.Scene.Position != "wit" {

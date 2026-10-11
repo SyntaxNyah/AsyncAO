@@ -6066,8 +6066,6 @@ func (a *App) buildRoom() {
 		return
 	}
 	a.room = a.newRoom(a.urls, a.sess, a.d.Audio) // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
-	a.room.InlineEmote = inlineEmoteFor           // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
-	a.room.LocalSide = a.mySide                   // AO2 current_or_default_side: a wiping BN with no pos re-scenes at OUR side (#23)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
 	// two in-court tabs carries each server's own volumes / muted blips.
@@ -6298,12 +6296,12 @@ func (a *App) pinToSplit(t *courtTab) {
 	// re-scene at THAT tab's side, never the active tab's (#23). Reading through t
 	// keeps it correct for the pane's whole lifetime; a.mySide would be the wrong
 	// tab entirely.
-	a.splitRoom.LocalSide = func() string {
+	a.splitRoom.Env = envResolver{a: a, side: func() string {
 		if t.state.sidePref != "" {
 			return t.state.sidePref
 		}
 		return defaultSide
-	}
+	}}
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
 	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown              // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)

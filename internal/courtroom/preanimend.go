@@ -94,8 +94,8 @@ func (c *Courtroom) endPreanim(reason PreanimEndReason) {
 	}
 	c.Scene.Speaker.PlayOnce = false
 	c.preanimEnd = reason
-	if c.OnPreanimEnd != nil {
-		c.OnPreanimEnd(reason)
+	if c.Env != nil {
+		c.Env.OnPreanimEnd(reason)
 	}
 }
 
