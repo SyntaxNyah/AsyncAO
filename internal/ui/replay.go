@@ -304,7 +304,7 @@ func (a *App) clipInstantReplay() {
 		return
 	}
 	stem := "asyncao-clip-" + now.Format("20060102-150405")
-	name, err := saveSceneRecording(clip, stem)
+	name, _, err := saveSceneRecording(clip, stem)
 	if err != nil {
 		a.pushDebug("instant replay: " + err.Error())
 		a.warnLine = "Clip failed: " + err.Error()
@@ -345,11 +345,12 @@ func (a *App) stopRecording() {
 	}
 	stamp := time.Now().Format("20060102-150405")
 	stem := "asyncao-" + stamp
-	name, err := saveSceneRecording(rec, stem)
+	name, done, err := saveSceneRecording(rec, stem)
 	if err != nil {
 		a.pushDebug("recording: " + err.Error())
 		return
 	}
+	a.recSaveDone = done
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
 	a.warnAt = time.Now()
 
@@ -370,16 +371,20 @@ func (a *App) stopRecording() {
 // saveSceneRecording marshals a scene to pretty-printed (hand-editable) JSON and
 // writes it under recordings\ as <stem>.aorec OFF the render thread (§17.2: no
 // synchronous disk I/O on the render path). The marshal is cheap and done on the
-// caller; only the WriteFile is deferred. Returns the filename it will land as.
+// caller; only the WriteFile is deferred. Returns the filename it will land as and
+// a done channel closed when the write goroutine finishes (or gives up), so a
+// caller can wait for the file instead of polling the filesystem.
 // Shared by recording (stopRecording) and the scene maker's Save so both produce
 // identical, reopenable .aorec files.
-func saveSceneRecording(rec *sceneRecording, stem string) (string, error) {
+func saveSceneRecording(rec *sceneRecording, stem string) (string, <-chan struct{}, error) {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	name := stem + recordingExt
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		dir := recordingsDir()
 		if dir == "" {
 			return
@@ -389,7 +394,7 @@ func saveSceneRecording(rec *sceneRecording, stem string) (string, error) {
 		}
 		_ = os.WriteFile(filepath.Join(dir, name), data, 0o644)
 	}()
-	return name, nil
+	return name, done, nil
 }
 
 // --- M16 [2/2]: replay player ---
