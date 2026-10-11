@@ -237,21 +237,21 @@ func TestAceAttorney2xDeclaresTheWholeToggleRow(t *testing.T) {
 // following line flashes and shakes, which is both obnoxious and hard to trace
 // back to its cause.
 func TestOneShotArmsClearOnSend(t *testing.T) {
-	src := readSourceFile(t, "screensemote.go")
+	body := funcBodyText(t, "", "sendIC")
 	// Matched loosely on purpose: gofmt realigns struct literals and multi-assign
 	// statements, so pinning exact spacing makes the test fail on formatting rather
 	// than on behaviour. (It did, once.)
-	if !strings.Contains(src, "a.icSlide, a.icRealize, a.icShake = false, false, false") {
+	if !strings.Contains(body, "a.icSlide, a.icRealize, a.icShake = false, false, false") {
 		t.Error("the one-shot arms are not all cleared after a send — a stuck arm rides every following message")
 	}
 	// All three must reach the wire too, or they are decorative toggles.
 	for _, field := range []string{"Slide:", "Realization:", "Screenshake:"} {
-		if !strings.Contains(src, field) {
+		if !strings.Contains(body, field) {
 			t.Errorf("the OutgoingMS literal does not set %s", field)
 		}
 	}
 	for _, backing := range []string{"a.icSlide", "a.icRealize", "a.icShake"} {
-		if !strings.Contains(src, backing) {
+		if !strings.Contains(body, backing) {
 			t.Errorf("%s never reaches the send path", backing)
 		}
 	}
@@ -264,16 +264,11 @@ func TestOneShotArmsClearOnSend(t *testing.T) {
 // arms take the opposite trade on purpose: losing one flash to a swallowed send is
 // invisible, a stuck arm is not.
 func TestArmsAreClearedOptimistically(t *testing.T) {
-	src := readSourceFile(t, "screensemote.go")
-	arm := strings.Index(src, "a.icSlide, a.icRealize, a.icShake = false, false, false")
-	if arm < 0 {
-		t.Fatal("the one-shot clear moved — re-check it is still on the send path")
+	const clear = "a.icSlide, a.icRealize, a.icShake = false, false, false"
+	if !strings.Contains(funcBodyText(t, "", "sendIC"), clear) {
+		t.Fatal("the one-shot clear moved out of sendIC — re-check it is still on the send path")
 	}
-	echo := strings.Index(src, "func (s *sessionState) noteOwnICEcho")
-	if echo < 0 {
-		t.Fatal("noteOwnICEcho moved")
-	}
-	if arm > echo {
+	if strings.Contains(funcBodyText(t, "", "noteOwnICEcho"), clear) {
 		t.Error("the arms are cleared in the ECHO handler — a swallowed send would leave them armed forever")
 	}
 }

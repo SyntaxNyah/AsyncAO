@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -201,11 +200,7 @@ func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 // overflow menu's action table. Both properties still hold, so this asserts them
 // where they now live rather than against the old spellings.
 func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
-	src, err := os.ReadFile("screenswardrobe.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
+	body := funcBodyText(t, "", "drawMusicList")
 
 	// The themed panel must resolve to the track list whatever the pref says...
 	if !strings.Contains(body, "a.musicVolMode && !themed") {
@@ -221,11 +216,7 @@ func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
 	// The user's choice must still be persisted from wherever the control now
 	// lives (musicMenuAct's Volume row). Dropping the write would turn a
 	// themed-only rule into a global behaviour change.
-	menu, err := os.ReadFile("musicheader.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(menu), "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
+	if !strings.Contains(funcBodyText(t, "", "musicMenuAct"), "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
 		t.Error("the Volume view toggle must still persist the user's choice")
 	}
 }

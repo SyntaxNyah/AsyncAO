@@ -82,6 +82,27 @@ func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 	return findFuncBodyInFiles(t, parseNonTestSources(t, fset, 0), file, fn)
 }
 
+// funcBodyText returns the on-disk source of fn's body (opening brace through
+// closing brace), looked up package-wide exactly as funcBodySource does (file is a
+// hint, not a lock). The text is sliced by token position, so it is the file's real
+// bytes — no re-render — and string gates keep matching the source's exact
+// formatting, however a later split re-indents it.
+func funcBodyText(t testing.TB, file, fn string) string {
+	t.Helper()
+	fset := token.NewFileSet()
+	body := findFuncBodyInFiles(t, parseNonTestSources(t, fset, 0), file, fn)
+	pos := fset.Position(body.Pos())
+	end := fset.Position(body.End())
+	src, err := os.ReadFile(pos.Filename)
+	if err != nil {
+		t.Fatalf("read %s: %v", pos.Filename, err)
+	}
+	if pos.Offset < 0 || end.Offset < 0 || pos.Offset > end.Offset || end.Offset > len(src) {
+		t.Fatalf("function %s body positions not resolvable in %s", fn, pos.Filename)
+	}
+	return string(src[pos.Offset:end.Offset])
+}
+
 // findFuncBodyInFiles is the testable core of funcBodySource: it locates fn in
 // files (the hinted file first, then the rest sorted) and fails the census on an
 // absent function or one declared in two files.
