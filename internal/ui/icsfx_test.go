@@ -136,22 +136,10 @@ func assignsIdent(n ast.Node, name string) bool {
 // gate (courtroom.preanimSFXPlays) that now decides whether the value is ever heard.
 func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "screensemote.go", nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse screensemote.go: %v", err)
-	}
-	callsRule := false
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "outgoingSFXName" {
-			callsRule = true
-		}
-		return true
-	})
-	if !callsRule {
+
+	// sendIC is the IC send path; outgoingSFXName is the one place that decides the
+	// SFX_NAME. Resolved package-wide so a split cannot strand this gate.
+	if !strings.Contains(funcBodyText(t, "", "sendIC"), "outgoingSFXName(") {
 		t.Error("the IC send path no longer calls outgoingSFXName — either it moved (point this test at it) " +
 			"or the SFX_NAME decision was inlined again, which is exactly how the non-Pre sound shipped")
 	}

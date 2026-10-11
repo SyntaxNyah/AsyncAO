@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -20,35 +19,31 @@ import (
 // canvasInkArg is one pinned call site: the helper, the zero-based index of its
 // canvas flag, and the literal every call in that file must pass.
 type canvasInkArg struct {
-	file string
-	fn   string
-	arg  int
-	want string
-	why  string
+	caller string
+	fn     string
+	arg    int
+	want   string
+	why    string
 }
 
 func TestCanvasInkCallSitesDeclareTheirPass(t *testing.T) {
 	for _, tc := range []canvasInkArg{
-		{"theme_layout.go", "drawICLogList", 1, "true", "the themed ic_chatlog element"},
-		{"theme_layout.go", "drawOOCLogList", 1, "true", "the themed server_chatlog element"},
-		{"theme_layout.go", "drawAreaList", 1, "true", "the themed area_list element"},
-		{"theme_layout.go", "drawMusicList", 1, "true", "the themed music_list element"},
+		{"drawCourtroomThemed", "drawICLogList", 1, "true", "the themed ic_chatlog element"},
+		{"drawCourtroomThemed", "drawOOCLogList", 1, "true", "the themed server_chatlog element"},
+		{"drawCourtroomThemed", "drawAreaList", 1, "true", "the themed area_list element"},
+		{"drawCourtroomThemed", "drawMusicList", 1, "true", "the themed music_list element"},
 
-		{"screenschat.go", "drawICLogList", 1, "false", "the classic docked Log tab is chrome"},
-		{"screenschat.go", "drawAreaList", 1, "false", "the classic docked Areas tab is chrome"},
-		{"screenschat.go", "drawMusicList", 1, "false", "the classic docked Music tab is chrome"},
+		{"drawLogPanel", "drawICLogList", 1, "false", "the classic docked Log tab is chrome"},
+		{"drawLogPanel", "drawAreaList", 1, "false", "the classic docked Areas tab is chrome"},
+		{"drawLogPanel", "drawMusicList", 1, "false", "the classic docked Music tab is chrome"},
 
-		{"torntabs.go", "drawAreaList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
-		{"torntabs.go", "drawMusicList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
+		{"drawTabContent", "drawAreaList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
+		{"drawTabContent", "drawMusicList", 1, "false", "a torn-off tab is a floating window, drawn AFTER the courtroom pass"},
 	} {
-		t.Run(tc.file+":"+tc.fn, func(t *testing.T) {
-			src, err := os.ReadFile(tc.file)
-			if err != nil {
-				t.Fatalf("read %s: %v", tc.file, err)
-			}
-			args := callArgs(string(src), "a."+tc.fn+"(")
+		t.Run(tc.caller+":"+tc.fn, func(t *testing.T) {
+			args := callArgs(funcBodyText(t, "", tc.caller), "a."+tc.fn+"(")
 			if len(args) == 0 {
-				t.Fatalf("no %s call found in %s — the gate went blind (renamed helper?)", tc.fn, tc.file)
+				t.Fatalf("no %s call found in %s — the gate went blind (renamed helper?)", tc.fn, tc.caller)
 			}
 			for _, got := range args {
 				if tc.arg >= len(got) {
@@ -106,17 +101,16 @@ func callArgs(src, prefix string) [][]string {
 // box must hand it ColText. That box fills its own ColPanel background, so a
 // theme colour authored against the theme's art would land on the wrong thing.
 func TestDrawOOCLogRowKeepsChromeInk(t *testing.T) {
-	src, err := os.ReadFile("screensooc.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := callArgs(string(src), "a.drawOOCLogRow(")
-	if len(calls) != 2 {
-		t.Fatalf("expected exactly two drawOOCLogRow call sites (themed list + classic box), found %d", len(calls))
-	}
+	// drawOOCLogList is the themed (design-canvas) caller, drawOOCPanel the classic
+	// OOC box. Each is resolved package-wide so a split cannot strand this gate.
 	var bases []string
-	for _, c := range calls {
-		bases = append(bases, c[len(c)-1])
+	for _, caller := range []string{"drawOOCLogList", "drawOOCPanel"} {
+		for _, c := range callArgs(funcBodyText(t, "", caller), "a.drawOOCLogRow(") {
+			bases = append(bases, c[len(c)-1])
+		}
+	}
+	if len(bases) != 2 {
+		t.Fatalf("expected exactly two drawOOCLogRow call sites (themed list + classic box), found %d", len(bases))
 	}
 	// One canvas caller passing the resolved server_chatlog ink, one chrome caller
 	// passing ColText. Order-independent so a reshuffle of the file does not fail.

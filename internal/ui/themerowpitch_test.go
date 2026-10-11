@@ -4,7 +4,6 @@ package ui
 // the gate that keeps the chatbox from growing a second opinion about it.
 
 import (
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -168,18 +167,18 @@ func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 // source-level facts, so this reads the source: a behavioural test cannot see a
 // call that was never written.
 func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
-	src, err := os.ReadFile("screensemote.go")
-	if err != nil {
-		t.Fatalf("screensemote.go: %v", err)
-	}
-	text := string(src)
+	// The chatbox raster is three functions, resolved package-wide so a split cannot
+	// strand this census: renderRaster (the three static build paths), centerRaster
+	// (the seam that applies the row pitch) and renderAnimated (the effects path).
 
 	// (1) Nothing in the chatbox may derive a row pitch straight from a face.
 	// messageRowPitchLogical (themerowpitch.go) is the ONE place that is allowed
 	// to, because it is the place that raises it to Qt's.
-	if n := strings.Count(text, "render.FontLineSpacing("); n != 0 {
-		t.Errorf("screens.go calls render.FontLineSpacing %d time(s) — route row pitches through "+
-			"App.messageRowPitchLogical, or the geometry stops matching what the raster draws", n)
+	for _, fn := range []string{"renderRaster", "centerRaster", "renderAnimated"} {
+		if n := strings.Count(funcBodyText(t, "", fn), "render.FontLineSpacing("); n != 0 {
+			t.Errorf("%s calls render.FontLineSpacing %d time(s) — route row pitches through "+
+				"App.messageRowPitchLogical, or the geometry stops matching what the raster draws", fn, n)
+		}
 	}
 
 	// (2) Every MessageRaster the chatbox builds is returned through centerRaster,
@@ -190,17 +189,18 @@ func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
 	// to the next line-initial "\n}" swallowed every build BELOW it in the same
 	// function, so a site that stopped returning through centerRaster was covered
 	// by a LATER site's call and the census printed ok — only the last build in a
-	// function was genuinely checked, and screens.go builds three in one. Sites are
+	// function was genuinely checked, and renderRaster builds three in one. Sites are
 	// collected across all three constructors and sorted, so the windows partition
 	// the source instead of overlapping.
+	body := funcBodyText(t, "", "renderRaster")
 	var sites []int
 	for _, ctor := range []string{"render.Rasterize(", "render.RasterizeStyled(", "render.RasterizeFallback("} {
-		for i := strings.Index(text, ctor); i >= 0; {
+		for i := strings.Index(body, ctor); i >= 0; {
 			sites = append(sites, i)
 			// The next occurrence, as an ABSOLUTE offset. The scan used to advance by the
 			// RELATIVE one, which visited a bogus position and then cycled forever between
 			// two — invisible today only because each constructor appears once.
-			next := strings.Index(text[i+1:], ctor)
+			next := strings.Index(body[i+1:], ctor)
 			if next < 0 {
 				break
 			}
@@ -208,29 +208,29 @@ func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
 		}
 	}
 	if len(sites) == 0 {
-		t.Fatal("screens.go builds no MessageRaster at all — this census is checking nothing")
+		t.Fatal("renderRaster builds no MessageRaster at all — this census is checking nothing")
 	}
 	sort.Ints(sites)
 	for n, i := range sites {
-		end := len(text)
-		if rel := strings.Index(text[i:], "\n}"); rel >= 0 {
+		end := len(body)
+		if rel := strings.Index(body[i:], "\n}"); rel >= 0 {
 			end = i + rel // end of the enclosing function, when no site follows inside it
 		}
 		if n+1 < len(sites) && sites[n+1] < end {
 			end = sites[n+1]
 		}
-		if !strings.Contains(text[i:end], "centerRaster(") {
-			t.Errorf("the MessageRaster build at screens.go:%d does not return through centerRaster "+
-				"— it would skip the Qt row pitch", 1+strings.Count(text[:i], "\n"))
+		if !strings.Contains(body[i:end], "centerRaster(") {
+			t.Errorf("the MessageRaster build in renderRaster does not return through centerRaster " +
+				"— it would skip the Qt row pitch")
 		}
 	}
-	if !strings.Contains(text, "m.UseRowPitch(rowPitch)") {
+	if !strings.Contains(funcBodyText(t, "", "centerRaster"), "m.UseRowPitch(rowPitch)") {
 		t.Error("centerRaster no longer applies the row pitch — every themed message loses its AO2 leading")
 	}
 
 	// (3) The animated path applies it too, or an effects message is spaced
 	// differently from the identical message without effects.
-	if !strings.Contains(text, "at.UseRowPitch(a.themeRowPitchLogical(elemMessage, pct))") {
+	if !strings.Contains(funcBodyText(t, "", "renderAnimated"), "at.UseRowPitch(a.themeRowPitchLogical(elemMessage, pct))") {
 		t.Error("renderAnimated no longer applies the row pitch")
 	}
 }

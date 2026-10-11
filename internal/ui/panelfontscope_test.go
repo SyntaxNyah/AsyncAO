@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -172,25 +171,18 @@ func TestBeginFrameDisarmsThePanelScope(t *testing.T) {
 // one scale and the rows drawn at another.
 func TestEveryPanelBracketsItsFont(t *testing.T) {
 	for _, tc := range []struct {
-		file, fn, elem, pct string
+		fn, elem, pct string
 	}{
-		{"playerlist.go", "drawPlayerList", "elemPlayerList", "a.playerPct"},
-		{"notebook.go", "drawNotesTab", "elemNotes", "a.logPct"},
-		{"friendstab.go", "drawFriendsTab", "elemFriends", "DefaultScalePct"},
-		{"screensooc.go", "drawICLogList", "elemICChatlog", "a.logPct"},
-		{"screensooc.go", "drawOOCLogList", "elemServerChatlog", "a.oocPct"},
-		{"screensooc.go", "drawAreaList", "elemAreaList", "a.areaPct"},
-		{"screenswardrobe.go", "drawMusicList", "elemMusicList", "a.musicPct"},
+		{"drawPlayerList", "elemPlayerList", "a.playerPct"},
+		{"drawNotesTab", "elemNotes", "a.logPct"},
+		{"drawFriendsTab", "elemFriends", "DefaultScalePct"},
+		{"drawICLogList", "elemICChatlog", "a.logPct"},
+		{"drawOOCLogList", "elemServerChatlog", "a.oocPct"},
+		{"drawAreaList", "elemAreaList", "a.areaPct"},
+		{"drawMusicList", "elemMusicList", "a.musicPct"},
 	} {
 		t.Run(tc.fn, func(t *testing.T) {
-			src, err := os.ReadFile(tc.file)
-			if err != nil {
-				t.Fatalf("read %s: %v", tc.file, err)
-			}
-			body := funcBodyOf(string(src), "func (a *App) "+tc.fn+"(")
-			if body == "" {
-				t.Fatalf("could not find %s in %s — the gate went blind", tc.fn, tc.file)
-			}
+			body := funcBodyText(t, "", tc.fn)
 			want := "pushPanelFont(a.elemChromeFont(" + tc.elem + ", " + tc.pct + ")"
 			if !strings.Contains(body, want) {
 				t.Errorf("%s does not bracket its font with %q.\n"+
