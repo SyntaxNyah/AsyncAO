@@ -80,6 +80,15 @@ add TCP framing back.
       can be made to fail here (the reopen-not-paused replacement is vacuous —
       `armThemeEditor` builds a fresh editor). Remove when the rig injects a Store
       and a one-commit failing test exists.
+    - **settingsoverflow drawSettings arm/release** (`internal/ui/settingsoverflow_test.go`):
+      `drawSettings` arms the row-label limit (`pushRowLabelLimit`), releases it with
+      `defer` (so its early returns cannot strand it), and releases it a second time,
+      straight-line, before the full-window overlays. The behavioural smoke test
+      (`TestSettingsSearchReleasesTheRowLabelLimit`) only fails the release-on-early-return;
+      the arm and the release-before-overlays are mid-frame properties no headless test
+      can observe without a draw-capture seam. Remove when `drawSettings` is split so the
+      card region and overlay region are separate methods with the limit scoped to the
+      card method (a `pushPanelFont`-style bracket).
     - **the remaining `funcBodySource`/`packageFuncs` gates** (`zerowidthlanes`,
       `frameharness`, `areamenu`, `arupstatus`, `basewizard`, `charidle`,
       `chatboxskin`, `chatcrawlscroll`, `chatfocus`, `conclusivemiss`, `eggs`,
