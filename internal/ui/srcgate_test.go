@@ -69,20 +69,62 @@ func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) ma
 	return files
 }
 
-// funcBodySource returns the AST body of the named function (or method) declared in
-// file. Fails the test when it is absent — a renamed function must break its gate
-// loudly, not silently stop being checked.
+// funcBodySource returns the AST body of the named function (or method), looked up
+// PACKAGE-WIDE. The file argument is a HINT, not a lock: the body is read from file
+// when it still declares fn, else from whichever other non-test file now holds it —
+// so a pure file split never breaks a gate. The hint still wins over a same-named
+// method elsewhere, so existing disambiguated gates keep their meaning. Fails the
+// test when fn is absent (a renamed function must break its gate loudly) or when it
+// landed in two files (the census would read one of two bodies).
 func funcBodySource(t *testing.T, file, fn string) *ast.BlockStmt {
 	t.Helper()
-	_, f := parsedFile(t, file)
+	fset := token.NewFileSet()
+	files := parseNonTestSources(t, fset, 0)
+
+	if f, ok := files[file]; ok {
+		if b := findFuncBody(f, fn); b != nil {
+			return b
+		}
+	}
+	var body *ast.BlockStmt
+	foundIn := ""
+	for _, name := range sortedNames(files) {
+		if name == file {
+			continue
+		}
+		if b := findFuncBody(files[name], fn); b != nil {
+			if body != nil {
+				t.Fatalf("%s: function %s now declared in both %s and %s — this census would read one of two bodies", file, fn, foundIn, name)
+			}
+			body = b
+			foundIn = name
+		}
+	}
+	if body == nil {
+		t.Fatalf("%s: no function %s in any non-test file — it was renamed or removed, and its wiring gate now checks nothing", file, fn)
+	}
+	return body
+}
+
+// findFuncBody returns the body of the named function in f, or nil when absent.
+func findFuncBody(f *ast.File, fn string) *ast.BlockStmt {
 	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if ok && fd.Name.Name == fn && fd.Body != nil {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == fn && fd.Body != nil {
 			return fd.Body
 		}
 	}
-	t.Fatalf("%s: no function %s — it was renamed or removed, and its wiring gate now checks nothing", file, fn)
 	return nil
+}
+
+// sortedNames returns the file names in files in sorted order, for a deterministic
+// package-wide census.
+func sortedNames(files map[string]*ast.File) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // containsCall reports whether n contains a call whose function NAME (the selector's
