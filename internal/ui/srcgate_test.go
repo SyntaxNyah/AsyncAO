@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -39,18 +40,51 @@ func parsedFile(t *testing.T, name string) (*token.FileSet, *ast.File) {
 	return fset, f
 }
 
-// parseNonTestSources parses every non-test .go file in this package's directory
-// into fset, returning a filename→AST map in the same shape the deprecated
-// parser.ParseDir used to hand back (its per-package Files map). ParseDir was
-// dropped because it ignores build tags when associating files with packages
-// (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
-// result is a failure, not a pass: a census that read nothing passes everything.
-func parseNonTestSources(t testing.TB, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
+// parsedPackage is the memoized result of parsing this package's non-test sources.
+type parsedPackage struct {
+	fset  *token.FileSet
+	files map[string]*ast.File
+}
+
+// parseKey identifies a memoized parse: the package directory and the parser mode.
+type parseKey struct {
+	dir  string
+	mode parser.Mode
+}
+
+var (
+	srcParseMu    sync.Mutex
+	srcParseCache = map[parseKey]*parsedPackage{}
+)
+
+// parseNonTestSources parses every non-test .go file in this package's directory into
+// fset, returning a filename→AST map in the same shape the deprecated parser.ParseDir
+// used to hand back (its per-package Files map). ParseDir was dropped because it
+// ignores build tags when associating files with packages (SA1019); the explicit walk +
+// parser.ParseFile keeps the census exact. An empty result is a failure, not a pass: a
+// census that read nothing passes everything.
+//
+// The parse is memoized per test binary and per parser.Mode (see parseKey): this package
+// has 200+ files and these gates used to re-read and re-parse all of them once per call
+// (~26k parses a run, slower still under -race). The on-disk sources are immutable during
+// a run, so one parse per (directory, mode) is behaviour-identical.
+func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[string]*ast.File) {
 	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	key := parseKey{dir: wd, mode: mode}
+	srcParseMu.Lock()
+	defer srcParseMu.Unlock()
+	if pp, ok := srcParseCache[key]; ok {
+		return pp.fset, pp.files
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read package directory: %v", err)
 	}
+	fset := token.NewFileSet()
 	files := make(map[string]*ast.File)
 	for _, e := range entries {
 		name := e.Name()
@@ -66,7 +100,8 @@ func parseNonTestSources(t testing.TB, fset *token.FileSet, mode parser.Mode) ma
 	if len(files) == 0 {
 		t.Fatal("no production sources found — the census would be vacuous")
 	}
-	return files
+	srcParseCache[key] = &parsedPackage{fset: fset, files: files}
+	return fset, files
 }
 
 // funcBodySource returns the AST body of the named function (or method), looked up
@@ -78,8 +113,8 @@ func parseNonTestSources(t testing.TB, fset *token.FileSet, mode parser.Mode) ma
 // landed in two files (the census would read one of two bodies).
 func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 	t.Helper()
-	fset := token.NewFileSet()
-	return findFuncBodyInFiles(t, parseNonTestSources(t, fset, 0), file, fn)
+	_, files := parseNonTestSources(t, 0)
+	return findFuncBodyInFiles(t, files, file, fn)
 }
 
 // funcBodyText returns the on-disk source of fn's body (opening brace through
@@ -89,8 +124,8 @@ func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 // formatting, however a later split re-indents it.
 func funcBodyText(t testing.TB, file, fn string) string {
 	t.Helper()
-	fset := token.NewFileSet()
-	body := findFuncBodyInFiles(t, parseNonTestSources(t, fset, 0), file, fn)
+	fset, files := parseNonTestSources(t, 0)
+	body := findFuncBodyInFiles(t, files, file, fn)
 	pos := fset.Position(body.Pos())
 	end := fset.Position(body.End())
 	src, err := os.ReadFile(pos.Filename)
