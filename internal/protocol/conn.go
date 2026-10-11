@@ -186,6 +186,18 @@ type DialOptions struct {
 	ReadBacklogCap int
 }
 
+// registerCodecsOnce serialises codec registration so the packet registry maps
+// are written exactly once, before any session's read loop can read them (§17.8:
+// aolib.RegisterPacket and packetutil.customCodecs are plain maps; a second Dial
+// re-writing them while an existing session's receiveCustom reads is a concurrent
+// map read/write fatal — the two-tab connect crash).
+var registerCodecsOnce sync.Once
+
+func registerCodecs() {
+	packetutil.RegisterVoiceCodecs()
+	packetutil.RegisterGroupPairCodec()
+}
+
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
 // An optional DialOptions controls TLS verification; the zero value verifies.
 func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error) {
@@ -242,11 +254,11 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
-	// Install the both-wire codecs for the non-canonical headers (voice VS_*).
-	// Canonical packets (including MS) are handled by aolib's typed session.
-	packetutil.RegisterVoiceCodecs()
-	// GP is the JSON-only group-pair roster announcement (Nyathena extension).
-	packetutil.RegisterGroupPairCodec()
+	// Install the both-wire codecs for the non-canonical headers (voice VS_*,
+	// the JSON-only GP roster). Registered EXACTLY ONCE via the package Once:
+	// re-writing the registry maps on a second Dial races a live session's
+	// readLoop (receiveCustom) — see registerCodecsOnce's doc.
+	registerCodecsOnce.Do(registerCodecs)
 
 	backlogCap := readBacklogCap
 	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {
