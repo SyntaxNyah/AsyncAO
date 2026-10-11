@@ -312,12 +312,31 @@ func (r roomAssetResolver) SpriteScaling(charName string) courtroom.ScalingMode 
 	return r.a.remoteScalingFor(charName)
 }
 
-// wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
-// speaker blips and skins identically in every mode.
+// envResolver implements courtroom.EnvResolver from the App: our side (the pos
+// dropdown, or a per-tab override for the split pane), the :shortcode: registry, and
+// a no-op preanim-end stream (the App reads LastPreanimEnd instead of streaming).
+type envResolver struct {
+	a    *App
+	side func() string // nil = a.mySide
+}
+
+func (r envResolver) LocalSide() string {
+	if r.side != nil {
+		return r.side()
+	}
+	return r.a.mySide()
+}
+func (r envResolver) InlineEmote(stem string) (string, bool)  { return inlineEmoteFor(stem) }
+func (r envResolver) OnPreanimEnd(courtroom.PreanimEndReason) {}
+
+// wireRoomCharMeta attaches every consumer-defined surface to a room — the
+// char.ini lookups (blips, chatbox skin/ink/showname/realization, scaling), the
+// asset/overlay engine, and the local env (side, inline emotes, preanim-end) — so
+// a room behaves identically in every mode.
 //
 // ONE production caller: App.newRoom (newroom.go). Construction and wiring are
-// the same step on purpose — this used to be a second line every call site had
-// to remember, and two of the five forgot it.
+// the same step on purpose — this used to be several call sites, and two of the
+// five forgot it.
 func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	if room == nil {
 		return
@@ -325,9 +344,7 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	room.Blips = roomBlipResolver{a}
 	room.Chars = roomCharResolver{a}
 	room.Assets = roomAssetResolver{a}
-	// Screen-effect overlays ride the same cache and the same single fetch
-	// (effectspicker.go).
-	a.wireRoomOverlay(room)
+	room.Env = envResolver{a: a}
 }
 
 // iniIdleAnimFor is THE seam for "what pose does this character stand in".

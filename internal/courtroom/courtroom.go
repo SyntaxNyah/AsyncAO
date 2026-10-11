@@ -315,6 +315,22 @@ type AssetResolver interface {
 	SpriteScaling(charName string) ScalingMode
 }
 
+// EnvResolver is the consumer-provided local-state/event surface: our own side (the
+// pos dropdown), the :shortcode: emoji resolver, and the preanimation-end
+// notification. nil = the AO defaults (no shortcode expansion, no end notification,
+// and the side degrades to Scene.Position). The App sets it; the split pane swaps in
+// a per-tab side override.
+type EnvResolver interface {
+	// LocalSide reports OUR OWN side — the pos dropdown's value with AO2's default
+	// when it is unset (current_or_default_side).
+	LocalSide() string
+	// InlineEmote resolves a :shortcode: stem to its emoji (#18). ok=false = unknown.
+	InlineEmote(stem string) (string, bool)
+	// OnPreanimEnd is called with the reason every time a one-shot preanimation is
+	// released. Diagnostic only; the App reads LastPreanimEnd instead of streaming.
+	OnPreanimEnd(reason PreanimEndReason)
+}
+
 type Courtroom struct {
 	urls  URLBuilder
 	mgr   *assets.Manager
@@ -396,20 +412,10 @@ type Courtroom struct {
 	// nil = the AO defaults (no overlay engine, no wait gating, auto scaling).
 	Assets AssetResolver
 
-	// LocalSide, when set, reports OUR OWN side — the pos dropdown's value, with
-	// AO2's default when it is unset. It mirrors AO2-Client's
-	// current_or_default_side(), which is what set_background's re-stage passes to
-	// set_scene. It is consulted ONLY on a wiping BN that carried no pos (the
-	// default form on akashi and on KFO's remote-listen path): without it the
-	// freshly-wiped stage would re-scene at Scene.Position, which tracks the last
-	// SPEAKER's side, and an area jump would drop you at whoever talked last.
-	// nil degrades to that old behaviour, so tests and the split pane are safe.
-	LocalSide func() string
-
-	// InlineEmote, when set, resolves a :shortcode: stem to its emoji (#18). begin()
-	// substitutes known shortcodes in the speaker's text so the chatbox renders them like
-	// the IC log; nil = leave the text as-is. Set by the App (the registry lives in ui).
-	InlineEmote func(stem string) (string, bool)
+	// Env is the consumer-provided local-state/event surface (see EnvResolver): our
+	// own side, the :shortcode: emoji resolver, and the preanimation-end stream.
+	// nil = the AO defaults (no shortcode expansion, side degrades to Scene.Position).
+	Env EnvResolver
 
 	// Cold-load "wait" mode (the third SpriteLoadMode; client-AO flavour): hold a
 	// message OFF-STAGE until its speaker's idle sprite has decoded, so the stage
@@ -589,13 +595,6 @@ type Courtroom struct {
 	// preanimEnd records why the last one-shot preanimation ended (preanimend.go).
 	// Diagnostic only — nothing in the machine branches on it.
 	preanimEnd PreanimEndReason
-
-	// OnPreanimEnd, when set, is called with the reason every time a one-shot
-	// preanimation is released. Optional and nil by default: the always-on cost
-	// of the instrumentation is one nil check per release, and a release happens
-	// at most once per message. Set it to stream "who ended the preanim" to a log
-	// or the debug panel while chasing an interrupt report.
-	OnPreanimEnd func(PreanimEndReason)
 
 	// restoring is set for the span of RestoreMessage: begin() then skips the
 	// prefetches for art the settled form can never draw (shout bubbles, the
@@ -1212,8 +1211,8 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 // AssetType: Background
 func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	if wipe {
-		if pos == "" && c.LocalSide != nil {
-			pos = c.LocalSide()
+		if pos == "" && c.Env != nil {
+			pos = c.Env.LocalSide()
 		}
 		if pos != "" {
 			c.Scene.Position = pos
@@ -1537,8 +1536,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// Typewriter.Start — so the reveal, the blankpost test, and the raster all consume the
 	// same substituted text. The wire msg.Message is untouched, so the reaction ref and the
 	// recording stay literal/cross-client-stable.
-	if c.InlineEmote != nil && len(c.pendingEffects) == 0 {
-		c.currentText = ExpandInlineEmotes(c.currentText, c.InlineEmote)
+	if c.Env != nil && len(c.pendingEffects) == 0 {
+		c.currentText = ExpandInlineEmotes(c.currentText, c.Env.InlineEmote)
 	}
 	// Filter the speaker's style through the viewer's accessibility opt-outs. The
 	// SAME helper filters the pair partner's recalled style below, so a paired player
@@ -1940,9 +1939,9 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	}
 	// #18 inline emotes: mirror begin()'s gated expansion so a backlog flash agrees with the
 	// (already-expanded) IC log. Same gate — no expansion when the message carries effect spans.
-	if c.InlineEmote != nil {
+	if c.Env != nil {
 		if _, hasEffects := DecodeEffectsMarker(msg.Message); !hasEffects {
-			c.currentText = ExpandInlineEmotes(c.currentText, c.InlineEmote)
+			c.currentText = ExpandInlineEmotes(c.currentText, c.Env.InlineEmote)
 		}
 	}
 	if HasStyleMarker(msg.Message) {

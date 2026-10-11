@@ -173,7 +173,7 @@ func TestPreanimEndHookFiresOncePerRelease(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
 	var got []PreanimEndReason
-	room.OnPreanimEnd = func(r PreanimEndReason) { got = append(got, r) }
+	room.Env = envFake{end: func(r PreanimEndReason) { got = append(got, r) }}
 
 	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "hi")})
 	mustPhase(t, room, PhasePreanim)
@@ -275,7 +275,7 @@ func wantReason(t *testing.T, room *Courtroom, want PreanimEndReason) {
 }
 
 // compile-time proof the hook keeps the shape internal/ui would wire it with.
-var _ = func(c *Courtroom) { c.OnPreanimEnd = func(PreanimEndReason) {} }
+var _ = func(c *Courtroom) { c.Env = envFake{end: func(PreanimEndReason) {}} }
 var _ = protocol.ChatMessage{}
 
 // parseNonTestSources parses every non-test .go file in this package's directory
