@@ -298,3 +298,27 @@ func TestLabelAndLabelClippedHonourTheRowLabelLimit(t *testing.T) {
 		t.Errorf("LabelClipped drew the label as wide armed (%d px) as unarmed (%d px) — it did not ellipsise at the card edge (F2)", armedW, unarmedW)
 	}
 }
+
+// TestSettingsSearchReleasesTheRowLabelLimit is the behavioural attempt at the old
+// "drawSettings arms and releases the row-label limit" source scan. drawSettings is
+// reached by zero other tests, so driving it through the real dispatcher is itself a
+// gain; the assertion is the release: on the search-results EARLY RETURN (the branch
+// the deferred pop exists to cover), the limit must not leak onto the next screen.
+func TestSettingsSearchReleasesTheRowLabelLimit(t *testing.T) {
+	a, cleanup := stageFrameDrivenApp(t)
+	defer cleanup()
+
+	a.screen = ScreenSettings
+	settings.loaded = true // skip the first-draw theme scan + catalog probe
+	settings.search = "fps"
+	defer func() {
+		settings.loaded = false
+		settings.search = ""
+	}()
+
+	driveFrame(a)
+
+	if a.ctx.rowLabelRight != 0 {
+		t.Errorf("drawSettings leaked the row-label limit (right=%d) on its search early-return — the next screen's chrome would be truncated at the settings card's edge (F2)", a.ctx.rowLabelRight)
+	}
+}
