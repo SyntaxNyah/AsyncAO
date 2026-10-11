@@ -201,7 +201,7 @@ func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 // overflow menu's action table. Both properties still hold, so this asserts them
 // where they now live rather than against the old spellings.
 func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
-	src, err := os.ReadFile("screens.go")
+	src, err := os.ReadFile("screenswardrobe.go")
 	if err != nil {
 		t.Fatal(err)
 	}

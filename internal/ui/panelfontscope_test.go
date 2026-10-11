@@ -177,10 +177,10 @@ func TestEveryPanelBracketsItsFont(t *testing.T) {
 		{"playerlist.go", "drawPlayerList", "elemPlayerList", "a.playerPct"},
 		{"notebook.go", "drawNotesTab", "elemNotes", "a.logPct"},
 		{"friendstab.go", "drawFriendsTab", "elemFriends", "DefaultScalePct"},
-		{"screens.go", "drawICLogList", "elemICChatlog", "a.logPct"},
-		{"screens.go", "drawOOCLogList", "elemServerChatlog", "a.oocPct"},
-		{"screens.go", "drawAreaList", "elemAreaList", "a.areaPct"},
-		{"screens.go", "drawMusicList", "elemMusicList", "a.musicPct"},
+		{"screensooc.go", "drawICLogList", "elemICChatlog", "a.logPct"},
+		{"screensooc.go", "drawOOCLogList", "elemServerChatlog", "a.oocPct"},
+		{"screensooc.go", "drawAreaList", "elemAreaList", "a.areaPct"},
+		{"screenswardrobe.go", "drawMusicList", "elemMusicList", "a.musicPct"},
 	} {
 		t.Run(tc.fn, func(t *testing.T) {
 			src, err := os.ReadFile(tc.file)

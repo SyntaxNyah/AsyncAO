@@ -237,7 +237,7 @@ func TestAceAttorney2xDeclaresTheWholeToggleRow(t *testing.T) {
 // following line flashes and shakes, which is both obnoxious and hard to trace
 // back to its cause.
 func TestOneShotArmsClearOnSend(t *testing.T) {
-	src := readSourceFile(t, "screens.go")
+	src := readSourceFile(t, "screensemote.go")
 	// Matched loosely on purpose: gofmt realigns struct literals and multi-assign
 	// statements, so pinning exact spacing makes the test fail on formatting rather
 	// than on behaviour. (It did, once.)
@@ -264,7 +264,7 @@ func TestOneShotArmsClearOnSend(t *testing.T) {
 // arms take the opposite trade on purpose: losing one flash to a swallowed send is
 // invisible, a stuck arm is not.
 func TestArmsAreClearedOptimistically(t *testing.T) {
-	src := readSourceFile(t, "screens.go")
+	src := readSourceFile(t, "screensemote.go")
 	arm := strings.Index(src, "a.icSlide, a.icRealize, a.icShake = false, false, false")
 	if arm < 0 {
 		t.Fatal("the one-shot clear moved — re-check it is still on the send path")
