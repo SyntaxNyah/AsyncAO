@@ -645,14 +645,14 @@ func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 // file is about — fails here even on a pct/text combination the pixel test
 // above does not happen to cover.
 func TestBlitLabelDispatchesToDeviceExactBranch(t *testing.T) {
-	body := funcBodySource(t, "ui.go", "blitLabel")
-	if !containsCall(body, "uiDeviceExactAt") {
+	body := funcBodyInPackage(t, "func (c *Ctx) blitLabel(")
+	if !strings.Contains(body, "uiDeviceExactAt(") {
 		t.Error("blitLabel no longer gates on uiDeviceExactAt — every plain Label/Button/Checkbox draw would silently fall back to the pre-fix ambient-scale blit at any fractional UI scale")
 	}
-	if !containsCall(body, "blitLabelExact") {
+	if !strings.Contains(body, "blitLabelExact(") {
 		t.Error("blitLabel no longer calls blitLabelExact — the device-exact branch this file's blur fix depends on is gone even if the gate itself survived")
 	}
-	if !containsCall(body, "blitLabelScaled") {
+	if !strings.Contains(body, "blitLabelScaled(") {
 		t.Error("blitLabel no longer calls blitLabelScaled — the export/pinned-tab fallback (a renderer scale that disagrees with the texture's own devPct) has nowhere left to draw")
 	}
 }
