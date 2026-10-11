@@ -118,9 +118,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 		y += 30
 	}
-	// Message-send extras — lived in General → Display & behaviour; moved here
-	// on playtest feedback (Tifera: the messaging settings belong in Chat). They
-	// shape the messages you TYPE, so they belong with text & typing.
+	// Message-send extras — they shape the messages you TYPE, so they belong
+	// with text & typing.
 	re := a.d.Prefs.RandomEmoteOn()
 	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
 		a.d.Prefs.SetRandomEmote(next)

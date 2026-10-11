@@ -452,9 +452,8 @@ func (a *App) pollFolderPick() {
 
 // pickFailed marks a native-picker shell-out FAILURE on folderRes, distinct from
 // "" (user cancelled). NUL can never be a real path, so it can't collide. Used by
-// browseForFolder (the THEME folder picker); the .demo picker moved fully in-app
-// (demobrowser.go) after the native dialog's foreground fragility failed live, so
-// this is now the theme picker's alone.
+// browseForFolder (the THEME folder picker); the .demo picker is in-app
+// (demobrowser.go), so this is the theme picker's alone.
 const pickFailed = "\x00"
 
 // themePickerCap bounds the theme dropdown's list (hard rule 4). It is derived

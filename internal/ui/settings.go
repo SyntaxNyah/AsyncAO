@@ -157,7 +157,7 @@ type settingsState struct {
 	// folder picking: native dialog output / resolved drag-drops land
 	// here from goroutines (never block or stat on the render thread). Still used
 	// by the THEME folder picker (browseForFolder) — the .demo picker moved fully
-	// in-app (demobrowser.go) after the native dialog failed foreground twice.
+	// in-app (demobrowser.go), so this is the theme picker's alone.
 	folderRes  chan string
 	browseBusy bool
 
@@ -225,9 +225,8 @@ const (
 	tabTheme
 	// tabThemeEditor owns AUTHORING: making a theme, opening the editor over one,
 	// and taking a bundle somebody sent you. It exists because the editor — the
-	// flagship — was ONE row two thirds of the way down the Theme tab,
-	// between "Get themes" and "Your themes folder", and a feature you have to
-	// scroll past a subtheme dropdown to discover is a feature nobody discovers.
+	// flagship — deserves a dedicated tab: a feature you have to scroll to
+	// discover is a feature nobody discovers.
 	//
 	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
 	// one" / "make one"), and the sidebar is scanned top to bottom, so the
@@ -237,11 +236,8 @@ const (
 	tabThemeEditor
 	tabAssets
 	// tabFormats owns EVERY control that decides which image/audio file type is
-	// asked for. They used to be split across Assets (server profile, audio
-	// fallbacks, learned-format tools) and Power user (probe order, per-type
-	// fallbacks, autodetect, desk policy) — three places, none of them where a
-	// player looks when art doesn't render. It sits next to Assets because that's
-	// the neighbourhood people browse when something didn't load.
+	// asked for. It sits next to Assets because that's the neighbourhood people
+	// browse when something didn't load.
 	tabFormats
 	tabAudio
 	tabChat
@@ -323,9 +319,8 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
-		// The theme EDITOR's terms USED TO LIVE HERE and moved to
-		// tabThemeEditor below — the row moved, so its search terms had to move with
-		// it or the search would land people on the tab the feature just left.
+		// The theme EDITOR's terms are on tabThemeEditor below — search terms stay
+		// with the row they describe.
 	},
 	tabThemeEditor: {
 		// sections: New theme, The editor, Bring a theme in.
@@ -374,8 +369,8 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"animated image", "theme art", "theme image",
 		// Live preview, the editor rail's own toggle.
 		"live preview", "live", "freeze the preview", "preview while editing",
-		// The transport rows that moved here with the editor: taking in what a friend
-		// sent, and (in the editor's header) handing one back.
+		// The transport rows: taking in what a friend sent, and (in the editor's
+		// header) handing one back.
 		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
@@ -445,7 +440,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"mod tools", "moderator", "modcall", "ipid",
 	},
 	tabAccount: {
-		// sections: Login, Master list, Discord. (TLS / Asset Origin moved to Power user.)
+		// sections: Login, Master list, Discord. (TLS / Asset Origin are on Power user.)
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
 	},
@@ -479,7 +474,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	},
 	tabPowerUser: {
 		// sections: TLS, Asset Origin, character-folder casing, Proxy, and the
-		// render/GPU knobs. (Image formats moved to the Formats tab — see tabFormats.)
+		// render/GPU knobs. (Image formats are on the Formats tab — see tabFormats.)
 		"power user", "advanced", "expert",
 		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
@@ -623,9 +618,8 @@ func (a *App) drawSettings(w, h int32) {
 		// Anything unclaimed still points the theme folder, which is the
 		// documented folder-import path (#21).
 		// The routing itself is settingsDropAction (dropclaim.go) — a named
-		// function with a table test on it, because this switch used to live
-		// inline in a draw function no test calls, and the arm that stops a .ttf
-		// or a .aotheme from repointing the theme root could be deleted green.
+		// function with a table test on it, so the arm that stops a .ttf or a
+		// .aotheme from repointing the theme root cannot be deleted green.
 		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
 		case settingsDropImportSettings:
 			settings.importArmed = false
@@ -1471,7 +1465,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// (Emote-grid icon spacing moved to Theme > Layout & fit — it is a layout
+	// (Emote-grid icon spacing lives under Theme > Layout & fit — it is a layout
 	// measurement and AO2 themes override it, which is where people look for it.)
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
@@ -1880,8 +1874,7 @@ const (
 
 // drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
 // top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
-// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms —
-// which replaced the Windows-only native dialog that failed foreground twice),
+// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms),
 // the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
 // Shadows pad/w per the mandatory settings idiom.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {

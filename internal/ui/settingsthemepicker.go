@@ -280,13 +280,8 @@ const themeDropNote = "drop a theme folder in here (or anywhere on this screen) 
 // themeGetNote is the discovery row's one line. A const, so the row costs no
 // allocation to draw (the settings-text doctrine — see themeRowText).
 //
-// It used to name the COUNT and the two ways to fetch the files, because the
-// repository's themes/ folder held the only copy of fourteen hand-authored themes
-// and "go to the repo" on its own strands a non-developer (Code ▸ Download ZIP is
-// the path for someone who has never used git). That corpus has been retired, so
-// there is no download left to advertise and this says so rather than pointing at
-// a folder that is no longer there. What the repository still carries for a theme
-// author is the format reference, which is what this row is for now.
+// The source repository still carries the theme format reference
+// (docs/THEME-FORMAT.md) for theme authors, which is what this row points at.
 const themeGetNote = "themes are not bundled with the client — the source repository carries the theme format reference (docs/THEME-FORMAT.md) if you want to write one"
 
 // themeRowLabelW is the label gutter shared by the catalog rows below, so
@@ -556,10 +551,9 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 
 	// --- THE AUTHORING CROSS-LINK ------------------------------------------
 	//
-	// Two rows used to sit here: "Import:" (the .aotheme browse) and "Theme
-	// editor:". Both moved to the Theme editor tab, and this is the gap they
-	// left — the place a user who remembers seeing them will look. The cross-tab
-	// hint machinery is the tool for exactly that (drawThemeAuthoringHint).
+	// A user who remembers the old "Import:" / "Theme editor:" rows will look
+	// here for them; the cross-tab hint machinery points them at the Theme editor
+	// tab (drawThemeAuthoringHint).
 	y = a.drawThemeAuthoringHint(y, w)
 
 	// --- the write root, and the button that opens it ----------------------
