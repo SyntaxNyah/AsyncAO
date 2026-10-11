@@ -2,7 +2,6 @@ package ui
 
 import (
 	"go/ast"
-	"go/token"
 	"testing"
 )
 
@@ -39,8 +38,7 @@ var singleFaceLabels = []string{
 // that function's plain-text fast path, reached only after the covering gate has
 // already decided the face can draw the whole string.
 func TestUserTextSurfacesUseACoveringFace(t *testing.T) {
-	fset := token.NewFileSet()
-	files := parseNonTestSources(t, fset, 0)
+	fset, files := parseNonTestSources(t, 0)
 	want := map[string]bool{}
 	for _, fn := range userTextDrawSites {
 		want[fn] = false

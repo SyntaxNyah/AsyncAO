@@ -3,7 +3,6 @@ package ui
 import (
 	"go/ast"
 	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 	"time"
@@ -125,8 +124,7 @@ var rosterFetchSites = []rosterFetchSite{
 // too — so the census cannot quietly stop covering anything (losing the Players-panel
 // pull would leave a PR/PU-less server with no way to refresh its roster at all).
 func TestOnlyUserActionsFetchTheRoster(t *testing.T) {
-	fset := token.NewFileSet()
-	files := parseNonTestSources(t, fset, parser.SkipObjectResolution)
+	_, files := parseNonTestSources(t, parser.SkipObjectResolution)
 	seen := make([]bool, len(rosterFetchSites))
 	var offenders []string
 	for path, file := range files {

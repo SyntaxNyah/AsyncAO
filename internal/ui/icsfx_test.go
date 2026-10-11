@@ -135,8 +135,6 @@ func assignsIdent(n ast.Node, name string) bool {
 // literally how the defect shipped, and a second copy would drift from the receive-side
 // gate (courtroom.preanimSFXPlays) that now decides whether the value is ever heard.
 func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
-	fset := token.NewFileSet()
-
 	// sendIC is the IC send path; outgoingSFXName is the one place that decides the
 	// SFX_NAME. Resolved package-wide so a split cannot strand this gate.
 	if !strings.Contains(funcBodyText(t, "", "sendIC"), "outgoingSFXName(") {
@@ -146,7 +144,7 @@ func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
 
 	// And nothing in the package may spell the wire sentinel by hand: one constant, so
 	// the send rule and any future reader agree on what "no sound" is.
-	files := parseNonTestSources(t, fset, parser.SkipObjectResolution)
+	_, files := parseNonTestSources(t, parser.SkipObjectResolution)
 	delete(files, "icsfx.go") // the sentinel is defined here; only the OTHER files are policed
 	for name, file := range files {
 		base := name
