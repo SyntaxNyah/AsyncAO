@@ -62,10 +62,6 @@ const (
 var (
 	// ErrPresetCap reports an axis directory holding more fragments than its cap.
 	ErrPresetCap = errors.New("theme: preset library exceeds a named cap")
-	// ErrPresetDuplicate reports two fragments claiming one id. Refused rather
-	// than last-wins: the id is what a theme's [theme] layout_preset stores, so a
-	// duplicate makes a saved theme mean two different things.
-	ErrPresetDuplicate = errors.New("theme: two presets claim the same id")
 	// ErrPresetIDMismatch reports a fragment whose [preset] id disagrees with its
 	// FILE STEM. Both are the identity — the stem is what a reviewer reads in a
 	// diff, the key is what the loader indexes — and one theme cannot have two
@@ -152,9 +148,6 @@ func LoadPresetLibrary(src fs.FS) (*PresetLibrary, error) {
 				return nil, fmt.Errorf("%w: %s/%s declares kind = %s",
 					ErrPresetAxisDir, dir, e.Name(), p.Kind)
 			}
-			if _, dup := lib.byID[kind][p.ID]; dup {
-				return nil, fmt.Errorf("%w: %s/%s", ErrPresetDuplicate, dir, e.Name())
-			}
 			if len(*axis.into) >= axis.cap {
 				return nil, fmt.Errorf("%w: %s holds more than %d fragments",
 					ErrPresetCap, dir, axis.cap)
@@ -207,6 +200,10 @@ func loadOnePreset(src fs.FS, dir, name string) (*Preset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("theme: preset %s/%s: %w", dir, name, err)
 	}
+	// The stem/id equality is also the duplicate guard: because a file's name must
+	// equal its id, two fragments can only collide on an id if they also collide on
+	// a file name, which a directory cannot hold. There is no separate by-id
+	// duplicate check (it was unreachable behind this one, so it was removed).
 	if stem := strings.TrimSuffix(name, presets.FileExt); stem != p.ID {
 		return nil, fmt.Errorf("%w: %s/%s declares id = %s", ErrPresetIDMismatch, dir, name, p.ID)
 	}
