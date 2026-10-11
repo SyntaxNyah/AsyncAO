@@ -118,6 +118,20 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	p.MultiTabCap = clampPercent(p.MultiTabCap, minMultiTabCap, maxMultiTabCap)
 	p.PreviewHoverMs = clampPercent(p.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
 	p.EmoteHoverNamesMs = clampPercent(p.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	p.MusicVol = clampPercent(p.MusicVol, 0, defaultAudioVolume)
+	p.SFXVol = clampPercent(p.SFXVol, 0, defaultAudioVolume)
+	p.BlipVol = clampPercent(p.BlipVol, 0, defaultAudioVolume)
+	p.AlertVol = clampPercent(p.AlertVol, 0, defaultAudioVolume)
+	p.MasterVol = clampPercent(p.MasterVol, 0, defaultAudioVolume)
+	p.HighlightColor &= 0xFFFFFF
+	p.ICCustomColor &= 0xFFFFFF
+	p.SpriteTintColor &= 0xFFFFFF
+	p.ChatboxOpacity = clampPercent(p.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
+	p.RainbowSpriteVividness = clampPercent(p.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	p.NameSat = clampPercent(p.NameSat, 0, 100)
+	p.MusicFlagsVal &= MusicFlagsMask
+	p.TextStayMs = clampPercent(p.TextStayMs, 0, MaxTextStayMs)
+	p.EmoteGridGapPx = clampPercent(p.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 
 	// (i) clamp/normalise — explicit zero keeps the default (load() used `!= 0`).
 	if p.ViewportPct == 0 {
@@ -185,7 +199,7 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	}
 
 	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
-	if p.BgSlideshowSecs == 0 {
+	if p.BgSlideshowSecs <= 0 {
 		p.BgSlideshowSecs = def.BgSlideshowSecs
 	}
 
@@ -341,19 +355,57 @@ func TestLoadEquivalence(t *testing.T) {
 		cases := []struct {
 			name  string
 			value any
+			write bool // false = the key is absent from the file
 		}{
-			{"absent", nil},
-			{"zero", reflect.Zero(f.Type).Interface()},
+			{"absent", nil, false},
+			{"null", nil, true}, // JSON null — must read as absent, like the old pointer-field load()
+			{"zero", reflect.Zero(f.Type).Interface(), true},
 		}
 		if nv := nonZeroValue(f.Type); nv != nil {
 			cases = append(cases, struct {
 				name  string
 				value any
-			}{"nonzero", nv})
+				write bool
+			}{"nonzero", nv, true})
+		}
+		// below-min / above-max exercise the clamps, not just absent/zero/non-zero.
+		switch f.Type.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			cases = append(cases,
+				struct {
+					name  string
+					value any
+					write bool
+				}{"below-min", int64(-1000), true},
+				struct {
+					name  string
+					value any
+					write bool
+				}{"above-max", int64(1000000), true},
+			)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			cases = append(cases, struct {
+				name  string
+				value any
+				write bool
+			}{"above-max", uint64(1000000), true})
+		case reflect.Float32, reflect.Float64:
+			cases = append(cases,
+				struct {
+					name  string
+					value any
+					write bool
+				}{"below-min", float64(-1000), true},
+				struct {
+					name  string
+					value any
+					write bool
+				}{"above-max", float64(1000000), true},
+			)
 		}
 		for _, cs := range cases {
 			obj := map[string]any{}
-			if cs.value != nil {
+			if cs.write {
 				obj[key] = cs.value
 			}
 			raw, _ := json.Marshal(obj)
