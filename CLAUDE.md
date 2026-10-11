@@ -89,6 +89,13 @@ add TCP framing back.
       can observe without a draw-capture seam. Remove when `drawSettings` is split so the
       card region and overlay region are separate methods with the limit scoped to the
       card method (a `pushPanelFont`-style bracket).
+    - **basewizard drawSettings paint order** (`internal/ui/basewizard_test.go`):
+      `drawSettings` draws the base wizard before the demo browser (topmost = drawn
+      last), offers a drop to the open wizard (`baseWizardTakesDrop`) before the
+      theme-root default, and keeps `baseWizard` inside the modal fence. Paint order
+      and the fence are wiring properties no headless test can observe without a
+      draw-order capture. Remove when the overlay stack is a construction seam (a
+      z-ordered overlay list drawn last-to-first).
     - **the remaining `funcBodySource`/`packageFuncs` gates** (`zerowidthlanes`,
       `frameharness`, `areamenu`, `arupstatus`, `basewizard`, `charidle`,
       `chatboxskin`, `chatcrawlscroll`, `chatfocus`, `conclusivemiss`, `eggs`,
