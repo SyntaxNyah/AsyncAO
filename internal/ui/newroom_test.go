@@ -296,8 +296,8 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				}
 				// The char.ini tier (charmeta.go): the same speaker must blip,
 				// skin and scale identically in every mode.
-				if room.BlipNameFor == nil {
-					t.Error("BlipNameFor is nil — the speaker's own blip set is ignored in this mode")
+				if room.Blips == nil {
+					t.Error("Blips is nil — the speaker's own blip set is ignored in this mode")
 				}
 				if room.ChatSkinFor == nil {
 					t.Error("ChatSkinFor is nil — the speaker's own chatbox skin is ignored in this mode")

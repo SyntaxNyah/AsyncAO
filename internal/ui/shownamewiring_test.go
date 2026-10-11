@@ -30,7 +30,7 @@ func TestEveryRoomGetsTheShownameRung(t *testing.T) {
 	// The siblings it rides with must still be wired: it shares their single fetch,
 	// so an accidental swap that dropped one would cost a network probe as well as
 	// the feature.
-	if room.BlipNameFor == nil || room.ChatSkinFor == nil || room.SpriteScaling == nil {
+	if room.Blips == nil || room.ChatSkinFor == nil || room.SpriteScaling == nil {
 		t.Error("wireRoomCharMeta dropped one of the char.ini callbacks the showname rung shares its fetch with")
 	}
 	// nil room is a no-op, not a panic (the guard every wire* helper keeps).

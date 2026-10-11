@@ -266,6 +266,19 @@ func (a *App) remoteIniShownameFor(char string) (string, bool) {
 	return m.showname, m.done
 }
 
+// roomBlipResolver implements courtroom.BlipResolver from the App's prefs (per-SFX
+// mute, per-character blip volume) and the per-URL char.ini cache (blip set), so a
+// speaker blips identically in every mode.
+type roomBlipResolver struct{ a *App }
+
+func (r roomBlipResolver) SFXMuted(name string) bool { return r.a.d.Prefs.IsSFXMuted(name) }
+func (r roomBlipResolver) BlipVolumeFor(char string) int {
+	return r.a.d.Prefs.BlipVolumeFor(char)
+}
+func (r roomBlipResolver) BlipNameFor(char string) (string, bool) {
+	return r.a.remoteBlipFor(char)
+}
+
 // wireRoomCharMeta attaches the char.ini-driven callbacks to a room, so a
 // speaker blips and skins identically in every mode.
 //
@@ -276,7 +289,7 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	if room == nil {
 		return
 	}
-	room.BlipNameFor = a.remoteBlipFor
+	room.Blips = roomBlipResolver{a}
 	room.ChatSkinFor = a.remoteChatSkinFor
 	room.ChatInkFor = a.remoteChatInkFor
 	room.SpriteScaling = a.remoteScalingFor

@@ -46,12 +46,12 @@ func TestValidBlipNameRejectsSentinels(t *testing.T) {
 // guaranteed miss, once per message, forever.
 func TestSentinelBlipnameNeverBecomesAURL(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.BlipNameFor = func(char string) (string, bool) {
+	room.Blips = blipFake{name: func(char string) (string, bool) {
 		if char == "dorothy" {
 			return "deep", true
 		}
 		return "", true
-	}
+	}}
 	msg := &protocol.ChatMessage{
 		CharName: "dorothy", Emote: "normal", Message: "hello", Side: "wit",
 		EmoteMod: protocol.EmoteModIdle,
@@ -68,7 +68,7 @@ func TestSentinelBlipnameNeverBecomesAURL(t *testing.T) {
 
 	// With no char.ini answer either (known-but-empty), the AO default plays —
 	// never the sentinel.
-	room.BlipNameFor = func(string) (string, bool) { return "", true }
+	room.Blips = blipFake{name: func(string) (string, bool) { return "", true }}
 	msg2 := &protocol.ChatMessage{
 		CharName: "stranger", Emote: "normal", Message: "hi", Side: "wit",
 		EmoteMod: protocol.EmoteModIdle,
