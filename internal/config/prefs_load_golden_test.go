@@ -43,6 +43,7 @@ func loadGoldenCorpus(t *testing.T) []struct {
 		{"subtheme_sanitize", map[string]any{"subtheme": "../../secret"}},
 		{"proxyMode_clamp", map[string]any{"proxyMode": 99}},
 	}
+	cases = append(cases, sanitizeGarbageCases()...)
 	// The full golden prefs fixture, decoded, as one corpus case.
 	golden := decodeJSON(t, filepath.Join("testdata", goldenPrefsName))
 	cases = append(cases, struct {
@@ -50,6 +51,56 @@ func loadGoldenCorpus(t *testing.T) []struct {
 		input map[string]any
 	}{"golden_fixture", golden})
 	return cases
+}
+
+// sanitizeGarbageCases are hand-editable-file garbage inputs for the load-side
+// sanitize helpers: over-cap maps/slices, blank names/ids, and out-of-range values.
+// Each helper's clean-up must reproduce load()'s output exactly, not just pass
+// absent/zero — this is the golden for rows 5-15 of the persistence-swap migration
+// list (the sanitize tail the single-field normalize() does not yet cover).
+func sanitizeGarbageCases() []struct {
+	name  string
+	input map[string]any
+} {
+	return []struct {
+		name  string
+		input map[string]any
+	}{
+		{"panelFonts_garbage", map[string]any{"panelFonts": map[string]any{
+			"  ID1  ": map[string]any{"family": "  Arial  ", "sizePx": 999999},
+			"id2":     map[string]any{"family": "very-long-family-name-over-max-len", "sizePx": -5},
+			"":        map[string]any{"family": "x"},
+		}}},
+		{"macros_garbage", map[string]any{"macros": []any{
+			map[string]any{"name": "  m1  ", "key": "  KEY1  ", "lines": []any{"  l1  ", "", "  l2  "}},
+		}}},
+		{"stylePresets_garbage", map[string]any{"stylePresets": []any{
+			map[string]any{"name": "  ", "key": "K"},
+			map[string]any{"name": "ok", "key": "K2", "style": map[string]any{"opacity": 255}},
+		}}},
+		{"chromeShape_garbage", map[string]any{"chromeShape": "garbage"}},
+		{"hiddenPanels_garbage", map[string]any{"hiddenPanels": []any{"a", "a", "", "b"}}},
+		{"classicLayout_garbage", map[string]any{"classicLayout": map[string]any{
+			"a": []any{0, 0, 0.5, 0.5},
+			"b": []any{0, 0, -1, 1},
+			"c": []any{5, 0, 0.5, 0.5},
+		}}},
+		{"layoutGridPx_garbage", map[string]any{"layoutGridPx": 100000}},
+		{"classicAnchors_garbage", map[string]any{"classicAnchors": map[string]any{
+			"a": map[string]any{"mode": "garbage", "winW": 999999, "winH": -5},
+		}}},
+		{"classicRotations_garbage", map[string]any{"classicRotations": map[string]any{
+			"a": 90, "b": 180, "": 45,
+		}}},
+		{"themeRectRotations_garbage", map[string]any{"themeRectRotations": map[string]any{
+			"t1": map[string]any{"k1": 90, "": 45},
+			"":   map[string]any{"k": 1},
+		}}},
+		{"layoutProfiles_garbage", map[string]any{"layoutProfiles": map[string]any{
+			"p1": map[string]any{"classic": map[string]any{"a": []any{0, 0, -1, 1}}, "gridPx": 99999},
+			"":   map[string]any{"hidden": []any{"x"}},
+		}}},
+	}
 }
 
 // loadGoldenOutput runs the OLD load() on an input and returns the whole-Prefs struct

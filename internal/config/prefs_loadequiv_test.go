@@ -414,3 +414,40 @@ func stableV(v reflect.Value) string {
 	}
 	return stableString(v)
 }
+
+// dumpPrefs renders an AssetPreferences as a comparable map: the exported fields via
+// JSON, plus the unexported DATA fields (themeFitMovedToNative / themeFitStampPending)
+// that json.Marshal skips. The mutex, the dirty/stop/done channels and any timer are
+// runtime state, not persisted data, so they are deliberately excluded. This is the
+// comparator the swap-equivalence test uses to prove new == old INCLUDING the one-shot
+// stamp side-effects.
+func dumpPrefs(p *AssetPreferences) map[string]any {
+	b, err := json.Marshal(p)
+	if err != nil {
+		panic(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	m["__themeFitMovedToNative"] = p.themeFitMovedToNative
+	m["__themeFitStampPending"] = p.themeFitStampPending
+	return m
+}
+
+// themeFitFlagCases are the unexported one-shot side-effect cases: a file still on the
+// legacy Stretch default arms the move-to-native (movedToNative) and always stamps
+// (stampPending); a deliberate non-Stretch pick keeps the value but still stamps; an
+// already-migrated file does neither. The JSON golden cannot see these, so the swap
+// equivalence test reads them via dumpPrefs.
+func themeFitFlagCases() []struct {
+	name  string
+	input map[string]any
+} {
+	return []struct {
+		name  string
+		input map[string]any
+	}{
+		{"themeFit_stretch_moves", map[string]any{"themeFit": 0}},
+		{"themeFit_letterbox_keeps", map[string]any{"themeFit": 1}},
+		{"themeFit_migrated_honours", map[string]any{"themeFit": 2, "themeFitDefaultMigrated": true}},
+	}
+}
