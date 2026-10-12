@@ -100,9 +100,6 @@ func TestDXTEncodeSize(t *testing.T) {
 	if got := len(EncodeDXT5(img)); got != (64/4)*(64/4)*16 {
 		t.Fatalf("DXT5 size = %d, want %d", got, (64/4)*(64/4)*16)
 	}
-	if got := CompressedBlockBytes(DXT5FourCC, 64, 64); got != (64/4)*(64/4)*16 {
-		t.Fatalf("CompressedBlockBytes = %d", got)
-	}
 }
 
 func TestDXT1SolidOpaqueRoundTrip(t *testing.T) {
@@ -185,7 +182,7 @@ func TestDecodedCompress(t *testing.T) {
 	if d.Frames != nil {
 		t.Fatal("Frames not released after compress")
 	}
-	if want := int64(3 * CompressedBlockBytes(DXT5FourCC, w, h)); d.PixelBytes() != want {
+	if want := int64(3 * (w / 4) * (h / 4) * 16); d.PixelBytes() != want {
 		t.Fatalf("PixelBytes = %d, want %d (compressed size)", d.PixelBytes(), want)
 	}
 }

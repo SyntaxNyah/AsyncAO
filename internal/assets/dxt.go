@@ -21,16 +21,6 @@ const (
 	dxt5BlockBytes = 16
 )
 
-// CompressedBlockBytes returns the encoded size of one frame in the given
-// FOURCC format. Width and height must already be multiples of 4.
-func CompressedBlockBytes(format uint32, w, h int) int {
-	bytes := dxt1BlockBytes
-	if format == DXT5FourCC {
-		bytes = dxt5BlockBytes
-	}
-	return (w / dxtBlockDim) * (h / dxtBlockDim) * bytes
-}
-
 // EncodeDXT1 compresses an RGBA image to DXT1 (BC1, 4 bpp). Width and height
 // MUST be multiples of 4. Fully-opaque blocks use the 4-color mode; a block
 // containing a semi-transparent texel uses the 3-color + transparent mode.
