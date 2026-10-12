@@ -539,11 +539,10 @@ type App struct {
 	// while the Settings screen is open — never on a draw path.
 	themeFaceNames   []string
 	panelFontMissing []string
-	// themeFontsMissing / themeFontWarn are the THEME's own unresolved families and
-	// the ready-made sentence about them. Kept after the toast has faded so the
-	// Settings screen can still explain it — the toast is gone by the time anyone
-	// goes looking for why the font is wrong.
-	themeFontsMissing []string
+	// themeFontWarn is the ready-made sentence about the THEME's own unresolved
+	// families. Kept after the toast has faded so the Settings screen can still
+	// explain it — the toast is gone by the time anyone goes looking for why the
+	// font is wrong.
 	themeFontWarn     string
 	// fontWarnDlg is the missing-fonts modal. On App and NOT on sessionState,
 	// unlike disconnectDlg: that dialog belongs to one tab's frozen session, while
@@ -924,7 +923,6 @@ type App struct {
 	themeHealAt     time.Time       // last eviction heal (themeHealPeriod pacing)
 	themeTex        map[string]bool // theme:// stems resident in T1
 	themeSounds     map[string]string
-	themeChatbox    bool // theme://chatbox resident (mirror of themeTex)
 	themeMsgCol     sdl.Color
 	themeHasMsg     bool
 	themePalette    theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it

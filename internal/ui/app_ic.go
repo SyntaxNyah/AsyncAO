@@ -393,7 +393,6 @@ func (a *App) pollThemeApply() {
 			delete(a.themeTex, stem)
 		}
 	}
-	a.themeChatbox = a.themeTex[themeStemChatbox]
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
 	//
@@ -498,7 +497,6 @@ func (a *App) pollThemeApply() {
 	// nothing about it — from the user's side that reads as "the client got the
 	// font wrong", which is exactly how it was reported. Say so, once per apply,
 	// on screen AND in the debug log, and name the fix rather than the fault.
-	a.themeFontsMissing = res.themeFontsMissing
 	a.themeFontWarn = res.themeFontWarn
 	if res.themeFontWarn != "" {
 		// The debug log ALWAYS, the modal at most once per theme. A theme with
