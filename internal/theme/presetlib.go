@@ -177,13 +177,6 @@ func presetAxisDir(k PresetKind) string {
 	return ""
 }
 
-// presetFragmentPath is where one fragment ships inside the embedded tree. The
-// id IS the file stem (loadOnePreset refuses any fragment where it is not), so
-// the library's own ids are enough to name every shipped file.
-func presetFragmentPath(k PresetKind, id string) string {
-	return path.Join(presetAxisDir(k), id+presets.FileExt)
-}
-
 // loadOnePreset reads and parses one fragment, checking the stem/id agreement.
 func loadOnePreset(src fs.FS, dir, name string) (*Preset, error) {
 	raw, err := fs.ReadFile(src, path.Join(dir, name))

@@ -30,6 +30,7 @@ package theme
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -38,6 +39,12 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/theme/presets"
 )
+
+// presetFragmentPath is where one fragment ships inside the embedded tree (test-only
+// mirror of the shipped layout — the library's own ids name every shipped file).
+func presetFragmentPath(k PresetKind, id string) string {
+	return path.Join(presetAxisDir(k), id+presets.FileExt)
+}
 
 // presetProseMinCommentsPerFragment is the floor the scan must clear IN EVERY
 // SHIPPED FRAGMENT before its silence means anything.
