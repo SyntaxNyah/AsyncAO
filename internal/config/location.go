@@ -181,16 +181,6 @@ func userThemesDir(portable bool, exeDir, configBase string) string {
 	return filepath.Join(configBase, ThemesDirName)
 }
 
-// OSConfigDir returns the classic OS config location (<os.UserConfigDir>/AsyncAO),
-// independent of which location is active. Empty string if it can't be resolved.
-func OSConfigDir() string {
-	osDir, err := os.UserConfigDir()
-	if err != nil || osDir == "" {
-		return ""
-	}
-	return filepath.Join(osDir, PrefsDirName)
-}
-
 // resolveConfigBase is the pure resolution policy (no I/O of its own — existence
 // and writability are injected so it's unit-testable). Returns the chosen base
 // directory and whether that base is the portable one.
