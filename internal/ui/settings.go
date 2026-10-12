@@ -1573,7 +1573,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		// frame-resolved Ctx pointers before anything shaped draws this frame.
 		a.invalidateShapeMasks()
 		c.purgeTextCache()
-		a.themeChatbox = false
 		a.applyThemeAsync()
 		// Purge also destroyed the pinned missingno placeholder — re-pin the
 		// embedded default (render thread) and re-kick a custom image if set, so
