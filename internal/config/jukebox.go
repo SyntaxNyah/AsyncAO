@@ -214,20 +214,6 @@ func (j *Jukebox) RemovePlaylist(i int) {
 	}
 }
 
-// RenamePlaylist renames playlist i (ignored for an empty name / bad index).
-func (j *Jukebox) RenamePlaylist(i int, name string) {
-	name = clampStr(strings.TrimSpace(name), jukeboxMaxNameLen)
-	if name == "" {
-		return
-	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if i >= 0 && i < len(j.playlists) {
-		j.playlists[i].Name = name
-		j.touchLocked()
-	}
-}
-
 // SetPlaylistKey binds (or clears, with "") playlist i's shuffle key.
 func (j *Jukebox) SetPlaylistKey(i int, key string) {
 	key = normalizeJukeKey(key)
