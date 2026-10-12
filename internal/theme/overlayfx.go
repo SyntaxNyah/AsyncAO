@@ -74,15 +74,6 @@ const (
 // stated here so the theme-local effect ladder cannot drift from it.
 var overlayImageExts = [...]string{".webp", ".apng", ".gif", ".png"}
 
-// OverlayImageExts returns a COPY of the effect art extension ladder
-// (.webp → .apng → .gif → .png). A copy, because FindAsset takes a []string and
-// an exported slice would be mutable by every caller.
-func OverlayImageExts() []string {
-	out := make([]string, len(overlayImageExts))
-	copy(out, overlayImageExts[:])
-	return out
-}
-
 // OverlayLayer is where do_effect parents the overlay (courtroom.cpp:3216-3237).
 type OverlayLayer uint8
 
