@@ -696,8 +696,8 @@ func TestOverlayExtensionLadderIsWebPApngGifPng(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := OverlayImageExts(); len(got) != 4 || got[0] != ".webp" || got[3] != ".png" {
-		t.Errorf("OverlayImageExts = %v, want .webp .apng .gif .png", got)
+	if len(overlayImageExts) != 4 || overlayImageExts[0] != ".webp" || overlayImageExts[3] != ".png" {
+		t.Errorf("overlayImageExts = %v, want .webp .apng .gif .png", overlayImageExts)
 	}
 }
 
@@ -718,7 +718,7 @@ func TestOverlayMiscRungsUseFindAssetMisc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	viaShared, ok := th.FindAssetMisc(miscName, "fx", OverlayImageExts())
+	viaShared, ok := th.FindAssetMisc(miscName, "fx", append([]string(nil), overlayImageExts[:]...))
 	if !ok {
 		t.Fatal("FindAssetMisc missed the theme-local misc rung (path_functions.cpp:181-189)")
 	}
