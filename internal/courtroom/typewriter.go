@@ -167,11 +167,6 @@ func AO2MarkupFor(p int) (start, end rune, ok bool) {
 // the swatch row draws one cube per colour. Colour 0 (default) has no markup.
 const AO2ColorCount = len(ao2Markups)
 
-// AO2ColorPalette returns the palette index (1..8) of the i-th swatch (0-based),
-// so the UI can draw the cubes in AO2 colour order and resolve each to its
-// render colour via render.TextColor without hard-coding the mapping.
-func AO2ColorPalette(i int) int { return ao2Markups[i].Palette }
-
 // ao2ColorStack is the parse-time nesting stack for AO2 markup, mirroring
 // std::stack<int> ic_color_stack in filter_ic_text (courtroom.cpp:3539). It
 // holds AO palette indices of the OPEN colours; the innermost (top) is the
