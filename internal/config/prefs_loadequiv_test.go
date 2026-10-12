@@ -451,3 +451,35 @@ func themeFitFlagCases() []struct {
 		{"themeFit_migrated_honours", map[string]any{"themeFit": 2, "themeFitDefaultMigrated": true}},
 	}
 }
+
+// TestThemeFitFlagsCharacterized pins the OLD load()'s unexported one-shot side-effects
+// via dumpPrefs, giving the swap's normalize() a target for the
+// themeFitMovedToNative/themeFitStampPending flags the JSON golden cannot see.
+func TestThemeFitFlagsCharacterized(t *testing.T) {
+	want := map[string][2]bool{
+		"themeFit_stretch_moves":    {true, true},   // Stretch arms the move, always stamps
+		"themeFit_letterbox_keeps":  {false, true},  // non-Stretch keeps value, still stamps
+		"themeFit_migrated_honours": {false, false}, // already migrated: neither
+	}
+	for _, c := range themeFitFlagCases() {
+		raw, err := json.Marshal(c.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "p.json")
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("%s: load: %v", c.name, err)
+		}
+		d := dumpPrefs(p)
+		moved := d["__themeFitMovedToNative"].(bool)
+		stamp := d["__themeFitStampPending"].(bool)
+		w := want[c.name]
+		if moved != w[0] || stamp != w[1] {
+			t.Errorf("%s: moved=%v stamp=%v, want moved=%v stamp=%v", c.name, moved, stamp, w[0], w[1])
+		}
+	}
+}
