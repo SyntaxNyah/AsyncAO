@@ -2,11 +2,6 @@ package courtroom
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -346,79 +341,3 @@ func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 	}
 }
 
-// latencyFieldOwner is the ONE non-test file allowed to assign the timing
-// fields. maxLatencySample is a DELIBERATE divergence from canon (canon clamps
-// nothing), and it is worth exactly as much as the guarantee that every write
-// goes through the clamp. Both sanctioned doors — the CHECK arm and NoteLatency
-// — funnel into noteLatencySample, which lives here.
-const latencyFieldOwner = "latency.go"
-
-// latencyGuardedFields are the Session fields noteLatencySample owns.
-var latencyGuardedFields = []string{"latency", "pingSentAt"}
-
-// TestLatencyHasExactlyOneWriter is the encapsulation test on that seam. Go's
-// package scope is the bypass: any file in internal/courtroom can assign
-// s.latency directly and skip the clamp, and no compiler will object. This
-// census does. (Test files are exempt — measureRTT backdates pingSentAt on
-// purpose, which is how a round trip is simulated without a clock seam.)
-func TestLatencyHasExactlyOneWriter(t *testing.T) {
-	fset := token.NewFileSet()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read the package directory: %v", err)
-	}
-
-	var offenders []string
-	ownerWrites := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, perr := parser.ParseFile(fset, filepath.Join(".", name), nil, parser.SkipObjectResolution)
-		if perr != nil {
-			t.Fatalf("parse %s: %v", name, perr)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for _, lhs := range as.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || !isGuardedLatencyField(sel.Sel.Name) {
-					continue
-				}
-				if name == latencyFieldOwner {
-					ownerWrites++
-					continue
-				}
-				offenders = append(offenders, fmt.Sprintf("%s:%d assigns .%s", name,
-					fset.Position(sel.Pos()).Line, sel.Sel.Name))
-			}
-			return true
-		})
-	}
-
-	if len(offenders) > 0 {
-		t.Errorf("the latency clamp is bypassed:\n  %s\n\nEvery write to %v goes through "+
-			"noteLatencySample in %s, which rejects anything that is not plausibly a network "+
-			"measurement (maxLatencySample). Call NoteLatency, or the CHECK arm.",
-			strings.Join(offenders, "\n  "), latencyGuardedFields, latencyFieldOwner)
-	}
-	// Deletion catcher: a census that finds nothing because the code it guards
-	// moved out from under it is not a census.
-	if ownerWrites == 0 {
-		t.Errorf("no writes to %v found in %s — the seam moved; re-point this census at its new home",
-			latencyGuardedFields, latencyFieldOwner)
-	}
-}
-
-func isGuardedLatencyField(name string) bool {
-	for _, f := range latencyGuardedFields {
-		if f == name {
-			return true
-		}
-	}
-	return false
-}

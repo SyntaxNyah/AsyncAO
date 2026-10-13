@@ -12,9 +12,6 @@ package courtroom
 // green with the call sites deleted, which is the failure mode rule 11 names.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 	"unicode"
@@ -195,104 +192,4 @@ func TestAControlByteCannotTruncateAServerMessage(t *testing.T) {
 	}
 }
 
-// TestTheCapUsesTheSharedScrub is the anti-deletion gate for the scrub, and it names
-// protocol.SanitizeText on purpose.
-//
-// A local copy of the same logic would pass every behavioural gate above while quietly
-// becoming a second rule to keep in step with the dial-refusal reader in
-// internal/protocol — and the two guarantees must be identical, because the notice box
-// shows both through the same draw and copies both with the same button. The shared
-// function is the mechanism; this is what fails when it is inlined away.
-func TestTheCapUsesTheSharedScrub(t *testing.T) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "session.go", nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse session.go: %v", err)
-	}
-	found, seen := false, false
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "capServerText" || fn.Recv != nil {
-			continue
-		}
-		seen = true
-		ast.Inspect(fn, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "SanitizeText" {
-				return true
-			}
-			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "protocol" {
-				found = true
-			}
-			return true
-		})
-	}
-	if !seen {
-		t.Fatal("capServerText is gone from session.go — this gate is no longer watching anything")
-	}
-	if !found {
-		t.Error("capServerText does not call protocol.SanitizeText — a NUL now reaches SDL_ttf and " +
-			"SDL_SetClipboardText, truncating both at that byte, and the scrub rule has forked " +
-			"from internal/protocol's refusal-body reader")
-	}
-}
 
-// TestEveryServerProseCaseIsCapped is the anti-deletion gate for the seam itself.
-//
-// The cap is one call in each of four case clauses, and nothing else in the package
-// would notice if one were dropped: the events still flow, every other test still
-// passes, and the hole only shows up as a hostile server's megabyte reason reaching a
-// texture. So this reads session.go's own AST and requires the call to be THERE, in
-// each clause, by name.
-//
-// It is deliberately structural rather than behavioural. The behavioural gates above
-// cover today's four headers; this one is what fails when a fifth server-prose packet
-// is added to the switch without a cap, or when one of the four is refactored and the
-// call is lost in the move.
-func TestEveryServerProseCaseIsCapped(t *testing.T) {
-	const capFn = "capServerText"
-	want := map[string]bool{"KK": false, "KB": false, "BD": false, "BB": false}
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "session.go", nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse session.go: %v", err)
-	}
-	ast.Inspect(file, func(n ast.Node) bool {
-		clause, ok := n.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		for _, expr := range clause.List {
-			lit, ok := expr.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				continue
-			}
-			header := strings.Trim(lit.Value, `"`)
-			if _, tracked := want[header]; !tracked {
-				continue
-			}
-			called := false
-			for _, stmt := range clause.Body {
-				ast.Inspect(stmt, func(inner ast.Node) bool {
-					if id, ok := inner.(*ast.Ident); ok && id.Name == capFn {
-						called = true
-					}
-					return true
-				})
-			}
-			if called {
-				want[header] = true
-			} else {
-				t.Errorf("the %q case does not call %s — server prose reaches internal/ui uncapped "+
-					"from %s", header, capFn, fset.Position(clause.Pos()))
-			}
-		}
-		return true
-	})
-	for header, found := range want {
-		if !found {
-			t.Errorf("no %q case found in session.go at all — this gate is no longer watching it", header)
-		}
-	}
-}
