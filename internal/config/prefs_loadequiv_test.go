@@ -293,9 +293,6 @@ var equivalenceAllowlist = map[string]string{
 	"themeRectRotations_garbage.__themeFitStampPending":           "themeFit: stampPending flag",
 	"layoutProfiles_garbage.__themeFitMovedToNative":              "themeFit: movedToNative flag",
 	"layoutProfiles_garbage.__themeFitStampPending":               "themeFit: stampPending flag",
-	// non-themeFit migrations.
-	"subtheme_sanitize.subtheme": "subtheme: sanitize",
-	"proxyMode_clamp.proxyMode":                  "proxyMode: clamp",
 	// sanitize tail
 	"panelFonts_garbage.panelFonts.":                    "sanitize: panelFonts",
 	"panelFonts_garbage.panelFonts.  ID1  ":             "sanitize: panelFonts padded id",
