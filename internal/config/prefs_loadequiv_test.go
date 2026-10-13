@@ -294,7 +294,6 @@ var equivalenceAllowlist = map[string]string{
 	"layoutProfiles_garbage.__themeFitMovedToNative":              "themeFit: movedToNative flag",
 	"layoutProfiles_garbage.__themeFitStampPending":               "themeFit: stampPending flag",
 	// non-themeFit migrations.
-	"export_partial.export.loop":                 "export: nested object replace, not merge",
 	"layoutProfile_legacyPresets.layoutProfiles": "layoutProfiles: legacyPresets migration (no clobber)",
 	"subtheme_sanitize.subtheme":                 "subtheme: sanitize",
 	"proxyMode_clamp.proxyMode":                  "proxyMode: clamp",
