@@ -291,6 +291,18 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	if p.LearnedFormats == nil {
 		p.LearnedFormats = def.LearnedFormats
 	}
+	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups — bounds, blank
+	// name/id drops, and dedupe — so a hand-edited file cannot grow or corrupt the maps.
+	p.SavedStyles = sanitizeStylePresets(p.SavedStyles)
+	p.PanelFontsVal = sanitizePanelFonts(p.PanelFontsVal)
+	p.UserMacros = sanitizeMacros(p.UserMacros)
+	p.HiddenPanelIDs = sanitizeHiddenPanels(p.HiddenPanelIDs)
+	p.ClassicLayout = sanitizeClassicLayout(p.ClassicLayout)
+	p.ClassicAnchors = sanitizeClassicAnchors(p.ClassicAnchors)
+	p.ClassicRotations = sanitizeClassicRotations(p.ClassicRotations)
+	p.ThemeRectRotations = sanitizeThemeRectRotations(p.ThemeRectRotations)
+	p.LayoutProfiles = sanitizeLayoutProfiles(p.LayoutProfiles)
+	p.LayoutGridPx = clampLayoutGridPx(p.LayoutGridPx)
 	{
 		e := defaultExportOptions()
 		if p.Export.HeightPx > 0 {
