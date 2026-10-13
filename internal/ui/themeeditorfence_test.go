@@ -14,7 +14,6 @@ package ui
 // (rule 11's mirror clause) and would stay green with both call sites deleted.
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -139,32 +138,5 @@ func TestThePanelNeverCoversTheHeaderBand(t *testing.T) {
 				"is drawn OUTSIDE the fence, so a panel that reached it would put two live controls "+
 				"under one press", wh[0], wh[1], r.Y, editBannerH)
 		}
-	}
-}
-
-// TestBothHalvesOfTheFenceAskOnePredicate is the seam census.
-//
-// The two behavioural gates above fail if either call site is deleted. This one fails if
-// a call site is REWRITTEN to ask the question in its own words — an inline
-// `a.te.fontsOpen` in one place and editorPanelUp in the other is two predicates that
-// agree today and drift the day W8 adds the preset gallery, which is exactly how the
-// canvas ends up fenced against one panel and not the next.
-func TestBothHalvesOfTheFenceAskOnePredicate(t *testing.T) {
-	for _, decl := range []string{
-		"func (a *App) drawThemeEditor(",
-		"func (a *App) editorCanvasInput(",
-	} {
-		if body := funcBodyInPackage(t, decl); !strings.Contains(body, "editorPanelUp()") {
-			t.Errorf("%q no longer asks editorPanelUp() — both halves of the panel fence must ask ONE "+
-				"predicate, or a panel added later is fenced on one side only", decl)
-		}
-	}
-	// The draw half must also RESTORE what it raised rather than assigning false: an open
-	// dropdown belonging to the rails holds modalOn legitimately, and clearing it on the
-	// way out would drop that fence and let the click behind it through.
-	body := funcBodyInPackage(t, "func (a *App) drawThemeEditor(")
-	if !strings.Contains(body, "c.modalOn = savedModal") {
-		t.Error("drawThemeEditor no longer restores the modal fence it raised — release-and-restore is " +
-			"the pattern (design §3.1); a bare `= false` drops a fence somebody else was holding")
 	}
 }

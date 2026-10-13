@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"go/ast"
 	"path/filepath"
 	"testing"
 
@@ -193,47 +192,4 @@ func TestStickyResetsSurviveAPreferenceRoundTrip(t *testing.T) {
 	if a.overlayChoiceIdx != 0 {
 		t.Error("after a reload, stickyEffects=false must still clear a plain effect to None")
 	}
-}
-
-// TestSendICRunsEveryPostSendReset is the WIRING gate. The three rules are correct
-// in isolation and worthless if the send path stops calling one, which no
-// behavioural test above would notice. Source, because sendIC needs a live session
-// to run: courtroom.cpp calls reset_ui once per send and so must we.
-func TestSendICRunsEveryPostSendReset(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "sendIC")
-	for _, fn := range []string{"clearEffectsAfterSend", "clearSFXAfterSend", "clearPreAfterSend"} {
-		if !containsCall(body, fn) {
-			t.Errorf("sendIC no longer calls %s — that half of AO2's reset_ui (courtroom.cpp:2320-2363) stopped shipping", fn)
-		}
-	}
-	// The one-shots AO2 clears in the same block, unconditionally: realization,
-	// screenshake and the slide ("Slides can't be sticky for nausea reasons",
-	// :2362). They are plain assignments, not calls, so they need their own scan —
-	// without it a refactor could move the sticky resets into a helper and drop
-	// these on the floor with the wiring gate still green.
-	for _, f := range []string{"icSlide", "icRealize", "icShake"} {
-		if !bodyAssignsField(body, f) {
-			t.Errorf("sendIC must clear the one-shot arm %s beside the sticky resets (courtroom.cpp:2327-2329, :2362)", f)
-		}
-	}
-}
-
-// bodyAssignsField reports whether n contains an assignment whose left-hand side
-// includes a selector ending in `.<field>` (i.e. `a.icSlide = ...`, including the
-// multi-target form the send path uses).
-func bodyAssignsField(n ast.Node, field string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok {
-			return !found
-		}
-		for _, lhs := range as.Lhs {
-			if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == field {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
 }

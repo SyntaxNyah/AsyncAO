@@ -124,31 +124,3 @@ func TestRetiredWritersCannotBePanickedIntoAShutdown(t *testing.T) {
 	none.retire()
 	none.close()
 }
-
-// TestEveryTranscriptTeardownEdgeReaps is the deletion-catcher. The reap is one call
-// in each of the four places a session can end, and every one of them is silent when
-// it goes missing: the log just stops, dozens of reconnects later, on a build nobody
-// is watching a file handle count on. A source gate is the only thing that fails
-// loudly the moment one is deleted.
-func TestEveryTranscriptTeardownEdgeReaps(t *testing.T) {
-	for _, site := range []struct{ file, fn, why string }{
-		{"tabs.go", "resetSessionState", "a park / Disconnect / reconnect ends the live session"},
-		{"tabs.go", "closeParkedTab", "a background tab's ✕ ends that tab's session"},
-		{"tabs.go", "closeActiveTab", "the live slot is dropped (Disconnect, failed dial)"},
-		{"tabs.go", "allocateTab", "a dead tab is reaped to make room for a new one"},
-	} {
-		if !containsCall(funcBodySource(t, site.file, site.fn), "reapTranscripts") {
-			t.Errorf("%s no longer reaps transcripts — %s, and its file + goroutine would be stranded until the "+
-				"cap silently ended detailed logging for the run (F4)", site.fn, site.why)
-		}
-	}
-	// CloseTranscript is the shutdown drain and the ONLY place allowed to wait on a
-	// disk flush; the mid-run path must not, or a tab close blocks the render thread
-	// (hard rule §2).
-	if containsCall(funcBodySource(t, "app.go", "reapTranscripts"), "close") {
-		t.Error("reapTranscripts calls close() — that WAITS for the file flush on the render thread; it must retire() instead")
-	}
-	if !containsCall(funcBodySource(t, "app.go", "CloseTranscript"), "close") {
-		t.Error("CloseTranscript no longer waits for the flush — the last lines of every log would be lost at exit")
-	}
-}

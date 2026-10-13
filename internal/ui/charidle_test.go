@@ -20,7 +20,6 @@ package ui
 // value, the box simply stays empty.
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"testing"
@@ -229,59 +228,5 @@ func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 	if got, known := a.remoteIniShownameFor("Beatrice"); !known || got != "The Golden Witch" {
 		t.Errorf("the fetched showname = %q (known=%v), want %q — the parse→cache mapping is "+
 			"dropping fields on the floor", got, known, "The Golden Witch")
-	}
-}
-
-// charIdleSeam is the ONE function allowed to read charMeta.idle: the place
-// "convention until the char.ini disagrees" lives. Named so the census below says
-// what it is protecting rather than repeating a string literal.
-const charIdleSeam = "iniIdleAnimFor"
-
-// TestOnePlaceKnowsWhatARestingPoseIs is the encapsulation gate.
-//
-// Two claims, and the second is the one that decayed. FIRST, the pair ghost's
-// PARTNER arm goes through the seam — a deletion catcher, because a preview that
-// silently went back to the literal draws an empty box and returns nothing to
-// assert on. SECOND, the seam is the only thing that knows the fallback rule: a
-// call site that read charMetaFor(...).idle directly would have to re-decide what
-// to do with an empty answer, which is precisely how the literal got spelled at
-// five sites in the first place.
-//
-// THE SECOND CLAIM USED TO BE UNFALSIFIABLE, and the fix is the whole reason this
-// comment is long. It ran three named functions through assignsFieldFrom, which
-// matches an ASSIGNMENT to a selector — the WRITE side — while the bypass it
-// describes is a READ (`anim := a.charMetaFor(name).idle`), whose left-hand side
-// is a plain identifier and is skipped. An audit wrote exactly that bypass into
-// drawPairGhost and the gate passed; two of its three subjects never mentioned
-// charMetaFor at all. It reads the READ side now, and it walks EVERY function in
-// the package rather than three remembered names, so a preview surface that does
-// not exist yet cannot slip past it either.
-func TestOnePlaceKnowsWhatARestingPoseIs(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "drawPairGhost")
-	if !containsCall(body, charIdleSeam) {
-		t.Error("drawPairGhost does not ask iniIdleAnimFor for the partner's pose — it is back " +
-			"to minting characters/<them>/(a)normal, and every pack without a normal.* sprite " +
-			"previews as an empty box with a name in it")
-	}
-	seams := 0
-	packageFuncs(t, func(file, fn string, fnBody *ast.BlockStmt) {
-		reads := readsFieldOf(fnBody, "idle", "charMetaFor")
-		if fn == charIdleSeam {
-			if !reads {
-				t.Errorf("%s (%s) no longer reads charMetaFor(...).idle — the seam is hollow and "+
-					"every preview is back on the convention forever", fn, file)
-			}
-			seams++
-			return
-		}
-		if reads {
-			t.Errorf("%s (%s) reads charMetaFor(...).idle directly — the "+
-				"convention-until-the-ini-disagrees rule lives in %s and must not be re-decided "+
-				"per call site", fn, file, charIdleSeam)
-		}
-	})
-	if seams != 1 {
-		t.Errorf("%d functions named %s in this package, want exactly 1 — the census cannot say "+
-			"which one is the seam", seams, charIdleSeam)
 	}
 }

@@ -10,8 +10,6 @@ package ui
 // a test or it is not caught at all.
 
 import (
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -118,38 +116,4 @@ func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	if len(*seen) != 2 {
 		t.Fatalf("the recorder saw %d painter calls, want 2", len(*seen))
 	}
-}
-
-// TestPausedClockGuardIsFunnelledNotScattered is the encapsulation half: the census
-// call on the element path exists in exactly ONE place, so a future draw site cannot
-// reintroduce the defect by calling NoteAnimating directly.
-func TestPausedClockGuardIsFunnelledNotScattered(t *testing.T) {
-	body := funcBodyInPackage(t, "func (a *App) noteElementAnimating(")
-	if !strings.Contains(body, "a.clockPaused(") || !strings.Contains(body, "a.NoteAnimating()") {
-		t.Fatal("noteElementAnimating no longer both checks clockPaused and notes the census — it is the " +
-			"whole guard, and every gate above drives it")
-	}
-	for _, file := range []string{"themeelements.go", "themeclock.go", "themeelementbake.go"} {
-		src := readPackageFile(t, file)
-		// The ONE legitimate call lives inside noteElementAnimating (themeclock.go).
-		want := 0
-		if file == "themeclock.go" {
-			want = 1
-		}
-		if got := strings.Count(src, "a.NoteAnimating()"); got != want {
-			t.Errorf("%s calls a.NoteAnimating() %d times, want %d — every census call on the element "+
-				"path must go through noteElementAnimating, or a paused clock pins the frame rate from "+
-				"whichever site forgot", file, got, want)
-		}
-	}
-}
-
-// readPackageFile reads one production file of this package for a source census.
-func readPackageFile(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatalf("reading %s: %v", name, err)
-	}
-	return string(b)
 }

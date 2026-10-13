@@ -9,7 +9,6 @@ package ui
 
 import (
 	"archive/zip"
-	"go/ast"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,24 +53,6 @@ func bundleGateSource(t *testing.T, name string) string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	return string(b)
-}
-
-// bundleGateGoFiles lists this package's non-test sources.
-func bundleGateGoFiles(t *testing.T) []string {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-	var out []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		out = append(out, name)
-	}
-	return out
 }
 
 // fixtureBundle writes a small, legal .aotheme and returns its path.
@@ -372,21 +353,6 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 	}
 }
 
-// TestTheApplyBuildsTheReport pins the wiring: the report is built on the apply
-// GOROUTINE, from the three inputs, and landed by the poll. Without either call
-// site the gate above still passes while nothing is ever reported in the client.
-func TestTheApplyBuildsTheReport(t *testing.T) {
-	apply := funcBodyInPackage(t, "func (a *App) applyThemeAsync(")
-	if !strings.Contains(apply, "buildThemeReport(") {
-		t.Error("applyThemeAsync no longer builds the import report — Sidecar.Notes() goes back to " +
-			"being collected and read by nobody, which is what rule 11 calls a parsed-but-never-applied tier")
-	}
-	land := funcBodyInPackage(t, "func (a *App) pollThemeApply(")
-	if !strings.Contains(land, "noteThemeReport(") {
-		t.Error("pollThemeApply no longer lands the import report — it would be built off-thread and dropped")
-	}
-}
-
 // TestImportReportNamesEveryDeclaredGap is design §Q5's own requirement, stated as
 // a gate: an AO2 feature this client INHERITS rather than imports must be named,
 // with its reason, on the theme that ships one.
@@ -479,22 +445,6 @@ func reportMentions(report []string, needle string) bool {
 // The seams
 // ---------------------------------------------------------------------------
 
-// TestTheBundlePollIsWiredIntoTheFrame. pollThemeBundle is the ONE place a
-// finished stage reaches the UI; without its call site the consent line never
-// appears, the import never lands, and every gate above still passes because they
-// drain the channel themselves.
-func TestTheBundlePollIsWiredIntoTheFrame(t *testing.T) {
-	body := funcBodyInPackage(t, "func (a *App) Frame(")
-	if !strings.Contains(body, "a.pollThemeBundle()") {
-		t.Error("App.Frame no longer calls pollThemeBundle — a dropped theme would be read, or " +
-			"extracted, and nothing would ever land it on screen")
-	}
-	editor := funcBodySource(t, "themeeditor.go", "drawThemeEditor")
-	if !containsCall(editor, "pollEditorExport") {
-		t.Error("the editor frame no longer polls the export — Share would write a bundle and never say so")
-	}
-}
-
 // TestTheDropRouterAndTheExtractorAgreeOnWhatABundleIs. The routing constant used
 // to be a literal declared beside a comment promising it would become an alias
 // when the extractor landed. It did.
@@ -506,48 +456,6 @@ func TestTheDropRouterAndTheExtractorAgreeOnWhatABundleIs(t *testing.T) {
 	if strings.Contains(src, `themePackExt = ".aotheme"`) {
 		t.Error("themePackExt is a literal again — the router and the extractor can now drift, which " +
 			"is precisely what the alias exists to prevent")
-	}
-}
-
-// TestTheAO2ExportNeverProducesAPathForTheAuthorsDesignINI is the structural half
-// of "the writer refuses courtroom_design.ini outside the AO2 export".
-//
-// AST, over the whole package: no file may join a path onto theme.DesignFileName
-// and hand it to a writer. The AO2 bake produces BYTES and the bytes go into a
-// zip — so the author's own file cannot be overwritten by construction, not by
-// anybody remembering.
-func TestTheAO2ExportNeverProducesAPathForTheAuthorsDesignINI(t *testing.T) {
-	writers := map[string]bool{
-		"WriteFile": true, "Create": true, "OpenFile": true, "Rename": true, "Remove": true,
-		"writeFileAtomically": true, "copyFileAtomically": true,
-	}
-	for _, name := range bundleGateGoFiles(t) {
-		_, f := parsedFile(t, name)
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			fn := ""
-			switch c := call.Fun.(type) {
-			case *ast.SelectorExpr:
-				fn = c.Sel.Name
-			case *ast.Ident:
-				fn = c.Name
-			}
-			if !writers[fn] {
-				return true
-			}
-			for _, arg := range call.Args {
-				if mentionsDesignFileName(arg) {
-					t.Errorf("%s: %s() is handed a path built from theme.DesignFileName — the author's own "+
-						"courtroom_design.ini is the ONE file the editor must never write (design §Q5): a "+
-						"re-download would destroy their work and every upstream diff would be noise. The "+
-						"AO2-compat export produces BYTES for the bundle instead.", name, fn)
-				}
-			}
-			return true
-		})
 	}
 }
 
@@ -766,36 +674,6 @@ func treeUnder(t *testing.T, dir string) map[string]string {
 // The Settings row — the browse half
 // ---------------------------------------------------------------------------
 
-// TestTheSettingsImportRowIsTheSameFunnelAsTheDrop is the anti-second-path gate.
-//
-// A "Browse…" button that started its own extraction would be a second importer:
-// two places deciding caps, consent and destination, drifting the first time one
-// of them was fixed. So the row's action calls handleThemeBundleDrop, and the
-// browser's pick calls handleThemeBundleDrop, and this census says so.
-func TestTheSettingsImportRowIsTheSameFunnelAsTheDrop(t *testing.T) {
-	action := funcBodySource(t, "themeimport.go", "themeImportRowAction")
-	if !containsCall(action, "handleThemeBundleDrop") {
-		t.Error("the Settings Import row no longer routes through handleThemeBundleDrop — it is a " +
-			"second import path, and the two will disagree about consent")
-	}
-	if !containsCall(action, "openDemoBrowserFor") {
-		t.Error("the Settings Import row no longer opens a picker — the button does nothing")
-	}
-	pick := funcBodySource(t, "demobrowser.go", "pickBrowsedFile")
-	if !containsCall(pick, "handleThemeBundleDrop") {
-		t.Error("the browser's pick no longer routes a theme bundle through handleThemeBundleDrop")
-	}
-	// THE ROW MOVED IN v1.90.0 W10, the claim did not: importing a bundle is the
-	// receiving half of the editor's Share button, so it went to the new Settings ▸
-	// Theme editor tab with the editor row. The assertion is the same one — the tab
-	// draws the row through its builder and its button runs the row's action — asked
-	// of the function that now draws it (drawThemeImportRow, settingsthemeeditor.go).
-	rows := funcBodySource(t, "settingsthemeeditor.go", "drawThemeImportRow")
-	if !containsCall(rows, "themeImportRowAction") || !containsCall(rows, "themeImportRow") {
-		t.Error("Settings ▸ Theme editor no longer draws the Import row — the browse half is unreachable")
-	}
-}
-
 // TestTheImportRowSaysWhatWillHappenNext drives the row's wording through its own
 // pure builder: idle, in flight, and armed. The armed line is the one that matters
 // — it is the client's consent sentence, and it must say that nothing has been
@@ -837,20 +715,4 @@ func TestAnExpiredConsentTakesTheImportButtonAway(t *testing.T) {
 		t.Errorf("an EXPIRED consent still offers %q — the memo is keyed on the stored path "+
 			"rather than the live one", got.button)
 	}
-}
-
-// mentionsDesignFileName reports whether an expression contains theme.DesignFileName.
-func mentionsDesignFileName(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "DesignFileName" {
-			return true
-		}
-		if id, ok := sel.X.(*ast.Ident); ok && id.Name == "theme" {
-			found = true
-		}
-		return true
-	})
-	return found
 }

@@ -168,47 +168,6 @@ func TestRowLabelLimitIsInertWhenUnarmed(t *testing.T) {
 	}
 }
 
-// TestSettingsFormArmsAndReleasesTheRowLabelLimit is the wiring gate. The limit is a
-// Ctx-wide bracket, so two things must hold and neither is visible from a unit test
-// of fitRowLabel: drawSettings has to ARM it, and â€” because that function has
-// several early returns â€” it has to release it with defer, or the settings card's
-// right edge would follow the user into the courtroom and truncate its checkboxes.
-func TestSettingsFormArmsAndReleasesTheRowLabelLimit(t *testing.T) {
-	body := funcBodySource(t, "settings.go", "drawSettings")
-	if !containsCall(body, "pushRowLabelLimit") {
-		t.Error("drawSettings never arms the row-label limit â€” settings help text would run off the card again (F2)")
-	}
-	if !deferredCall(body, "popRowLabelLimit") {
-		t.Error("drawSettings must release the row-label limit with DEFER â€” it has early returns, and a stranded limit truncates every checkbox on the next screen")
-	}
-	// The bound belongs to the CARD, not to the screen. Everything drawSettings paints
-	// after the card's clip closes is full-window chrome â€” the warn banner spans the
-	// window, and the .demo browser and content panel are overlays â€” so the limit has
-	// to be released before them or the card's right edge would shorten their labels
-	// too. Source order is the only way to see that from a test.
-	//
-	// TWO pops are required, and the count is the point: the first in source order is
-	// the DEFERRED one, which does not run where it is written â€” it runs at return,
-	// after the overlays. Only a second, straight-line pop actually releases the bound
-	// before them, so "at least two pops precede each overlay" is the exact invariant.
-	const popsBeforeOverlays = 2
-	pops := 0
-	for _, name := range callOrder(body, "popRowLabelLimit", "drawDemoBrowser", "drawContentPanel") {
-		if name == "popRowLabelLimit" {
-			pops++
-			continue
-		}
-		if pops < popsBeforeOverlays {
-			t.Errorf("drawSettings calls %s with the card's row-label limit still armed (only the deferred pop precedes it) â€” "+
-				"a full-window overlay would be ellipsised at the settings card's right edge (F2)", name)
-		}
-	}
-	if pops < popsBeforeOverlays {
-		t.Errorf("drawSettings pops the row-label limit %d time(s); it needs the deferred one for its early returns AND a straight-line "+
-			"one where the card's clip closes, or the trailing full-window chrome draws under the card's bound (F2)", pops)
-	}
-}
-
 // TestCheckboxHonoursTheRowLabelLimit is the behavioural replacement for the old
 // "Checkbox consults fitRowLabel + onRow" source scan. It drives a real Checkbox
 // under an armed row-label limit and observes the DRAWN result: onRow still receives

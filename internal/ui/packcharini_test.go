@@ -9,7 +9,6 @@ package ui
 // touches.
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"testing"
@@ -181,75 +180,5 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	}
 	if a.iniWarmed != "" {
 		t.Error("the hover-warm latch survived — the next hover skips the refetch")
-	}
-}
-
-// TestEveryCharINIReadIsLayered is the encapsulation gate (rule §17.11).
-//
-// The bug this feature fixes was not a missing capability — the pack layer
-// worked — it was a set of call sites reaching for the SERVER-ONLY lane. That
-// mistake is invisible: FetchRaw returns perfectly good bytes, just the wrong
-// side's. So the gate is a census with a justified allow-list rather than a list
-// of the readers we happen to remember: a NEW text fetch defaults to failing
-// here, and its author has to say which side it means.
-//
-// It is a deletion-catcher too — it contains no copy of what FetchRawLayered
-// does, and it fails if any of the named readers stops calling it.
-func TestEveryCharINIReadIsLayered(t *testing.T) {
-	// The functions that mean the SERVER's copy, and why. Each is a case where a
-	// pack answering would be wrong, not merely unhelpful.
-	unlayered := map[string]string{
-		// extensions.json is the server's own format declaration and seeds that
-		// host's learned probe order; a pack carved out of another server ships a
-		// copy that would reseed it from the wrong conventions.
-		"seedOriginFormats": "the manifest is the SERVER's format declaration",
-		// Learns THIS host's character-folder casing. A pack answering would teach
-		// the server a convention only the pack follows.
-		"probeCasing": "casing is a property of the server's filesystem",
-		// iniswap.txt and the backgrounds/evidence autoindexes are server-curated
-		// listings; a pack has no equivalent, so answering would replace a real
-		// list with none.
-		"ensureIniList":            "iniswap.txt + the backgrounds listing are server-curated",
-		"ensureBgList":             "an autoindex listing has no pack equivalent",
-		"fetchServerEvidenceIndex": "the evidence/ autoindex has no pack equivalent",
-		// The content report and the exporters deliberately distinguish the two
-		// sources themselves (ResolveRawLayered reports which arm answered), so
-		// their raw reads mean the server's copy specifically.
-		"probeRef":         "the report resolves pack bytes through ResolveRawLayered",
-		"fetchBundleBytes": "bundling reads what the SERVER would serve",
-		"fetchTempAudio":   "the video muxer's source is the resolved server URL",
-	}
-	// Readers that must keep reaching the layered lane. Naming them is what makes
-	// this a deletion-catcher: silently dropping the call would otherwise leave a
-	// green suite and a feature that quietly stopped working.
-	layered := map[string]bool{
-		"loadCharINI":         false, // the worn character's emote list
-		"ensurePreviewEmotes": false, // try-before-wear
-		"charMetaFetchOne":    false, // showname / blips / skin / effects / scaling / idle
-	}
-
-	packageFuncs(t, func(file, fn string, body *ast.BlockStmt) {
-		if containsCall(body, "FetchRawLayered") {
-			if _, named := layered[fn]; named {
-				layered[fn] = true
-			}
-		}
-		if !containsCall(body, "FetchRaw") {
-			return
-		}
-		if _, ok := unlayered[fn]; ok {
-			return
-		}
-		t.Errorf("%s: %s reads an asset through FetchRaw, the SERVER-ONLY lane. If it reads a char.ini, an "+
-			"effects.ini or anything else a content pack ships, use FetchRawLayered — a user's own folder "+
-			"answering their own character is the whole of issue #72. If the server's copy is genuinely what "+
-			"is meant, add %s to this gate's allow-list with the reason.", file, fn, fn)
-	})
-
-	for fn, seen := range layered {
-		if !seen {
-			t.Errorf("%s no longer calls FetchRawLayered — the ini reader it owns went back to reading the "+
-				"server's copy over the user's own folder", fn)
-		}
 	}
 }

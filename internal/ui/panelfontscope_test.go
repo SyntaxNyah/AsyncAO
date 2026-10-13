@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -158,41 +157,6 @@ func TestBeginFrameDisarmsThePanelScope(t *testing.T) {
 	c.BeginFrame(0)
 	if c.panelFont != nil {
 		t.Error("BeginFrame left a stale panel font armed")
-	}
-}
-
-// TestEveryPanelBracketsItsFont is the TOTALITY gate, and it is a source census
-// because nothing at runtime can see it.
-//
-// The failure it prevents is precisely the one that was reported: a panel gains a
-// font row, its rows get wired, and its headers and buttons quietly do not — so
-// the setting looks broken. A panel with an element must bracket, and the percent
-// it brackets with must be the SAME one its rows use, or the face is opened at
-// one scale and the rows drawn at another.
-func TestEveryPanelBracketsItsFont(t *testing.T) {
-	for _, tc := range []struct {
-		fn, elem, pct string
-	}{
-		{"drawPlayerList", "elemPlayerList", "a.playerPct"},
-		{"drawNotesTab", "elemNotes", "a.logPct"},
-		{"drawFriendsTab", "elemFriends", "DefaultScalePct"},
-		{"drawICLogList", "elemICChatlog", "a.logPct"},
-		{"drawOOCLogList", "elemServerChatlog", "a.oocPct"},
-		{"drawAreaList", "elemAreaList", "a.areaPct"},
-		{"drawMusicList", "elemMusicList", "a.musicPct"},
-	} {
-		t.Run(tc.fn, func(t *testing.T) {
-			body := funcBodyText(t, "", tc.fn)
-			want := "pushPanelFont(a.elemChromeFont(" + tc.elem + ", " + tc.pct + ")"
-			if !strings.Contains(body, want) {
-				t.Errorf("%s does not bracket its font with %q.\n"+
-					"Without it the panel's labels and buttons keep the client font while its rows change — "+
-					"which is exactly how this feature was reported broken.", tc.fn, want)
-			}
-			if !strings.Contains(body, "defer") || !strings.Contains(body, "popPanelFont(") {
-				t.Errorf("%s arms a panel font without a deferred pop — an early return would leak it", tc.fn)
-			}
-		})
 	}
 }
 

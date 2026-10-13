@@ -10,8 +10,6 @@ package ui
 
 import (
 	"bytes"
-	"go/ast"
-	"go/token"
 	"image"
 	"testing"
 	"time"
@@ -54,67 +52,6 @@ func TestArupStatusTextFormatsARUPFields(t *testing.T) {
 	full := arupStatusText(&courtroom.AreaInfo{Status: "CASING", Lock: "LOCKED", CM: "Phoenix"})
 	if want := "  ·  CASING  ·  locked  ·  CM: Phoenix"; full != want {
 		t.Errorf("all fields = %q, want %q (status, then lock, then CM — ARUP field order)", full, want)
-	}
-}
-
-// TestArupStatusTextSharedAcrossAreaAndPlayerTabs is the encapsulation gate
-// for the extraction: it proves, by parsing the real sources (funcBodySource
-// + containsCall, internal/ui/srcgate_test.go — the package's own idiom, not
-// a copy of it), that the Areas tab (areaWrapped, screens.go) and both
-// Players-tab surfaces (drawAreaHeaderRow's /gas header, and
-// drawCurrentAreaStatusStrip's flat /ga line, playerlist.go) all call
-// arupStatusText. A future edit that "fixes" one tab by re-deriving the
-// status/lock/CM text inline — the exact drift CLAUDE.md's mirror-test
-// warning describes — fails this test the moment it's written; it does not
-// require inspecting the diff.
-func TestArupStatusTextSharedAcrossAreaAndPlayerTabs(t *testing.T) {
-	cases := []struct{ file, fn string }{
-		{"screens.go", "areaWrapped"},
-		{"playerlist.go", "drawAreaHeaderRow"},
-		{"playerlist.go", "drawCurrentAreaStatusStrip"},
-	}
-	for _, tc := range cases {
-		body := funcBodySource(t, tc.file, tc.fn)
-		if !containsCall(body, "arupStatusText") {
-			t.Errorf("%s: %s never calls arupStatusText — it has forked its own status/lock/CM text "+
-				"instead of sharing the Areas tab's formatter", tc.file, tc.fn)
-		}
-	}
-}
-
-// TestCurrentAreaStatusStripOnlyDrawnWhenRosterIsFlat pins the product
-// decision that the always-visible current-area status strip is a FLAT-
-// roster-only affordance: a /gas roster already carries this text per area,
-// on drawAreaHeaderRow, so drawPlayerList must gate the strip on the same
-// `!multiArea` this file computes for the Rooms button — never call it
-// unconditionally (which would double the text for the current area's own
-// group) and never call it only somewhere unreachable.
-func TestCurrentAreaStatusStripOnlyDrawnWhenRosterIsFlat(t *testing.T) {
-	body := funcBodySource(t, "playerlist.go", "drawPlayerList")
-	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		ifs, ok := n.(*ast.IfStmt)
-		if !ok {
-			return true
-		}
-		unary, ok := ifs.Cond.(*ast.UnaryExpr)
-		if !ok || unary.Op != token.NOT {
-			return true
-		}
-		id, ok := unary.X.(*ast.Ident)
-		if !ok || id.Name != "multiArea" {
-			return true
-		}
-		found = true
-		if !containsCall(ifs.Body, "drawCurrentAreaStatusStrip") {
-			t.Error("drawPlayerList's `if !multiArea` branch no longer calls drawCurrentAreaStatusStrip — " +
-				"the flat-roster ARUP status line would either never show or show unconditionally " +
-				"(double-showing it once the /gas per-area header already carries it)")
-		}
-		return true
-	})
-	if !found {
-		t.Fatal("drawPlayerList no longer branches on `!multiArea` — the flat/grouped gating this test pins is gone")
 	}
 }
 

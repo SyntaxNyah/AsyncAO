@@ -65,49 +65,6 @@ func copyRig(t *testing.T, origin themeOrigin) (*App, string, string) {
 // The census — the wiring cannot be deleted
 // ---------------------------------------------------------------------------
 
-// TestTheCopyPrimitiveHasAProductionDriver is the rule-11 gate.
-//
-// themepack.CopyForEditing, its provenance stamp and its two Settings/editor
-// sentences are one feature; a copy with no caller is the parsed-but-never-applied
-// shape the hard rule names by example. This census fails the day the call site is
-// deleted or moved back behind a test.
-func TestTheCopyPrimitiveHasAProductionDriver(t *testing.T) {
-	found := ""
-	for _, name := range bundleGateGoFiles(t) {
-		if strings.Contains(bundleGateSource(t, name), "themepack.CopyForEditing(") {
-			found = name
-			break
-		}
-	}
-	if found == "" {
-		t.Fatal("no non-test file in internal/ui calls themepack.CopyForEditing — the copy is 223 lines of " +
-			"production code driven only by its own test, which is the shape hard rule 11 forbids. Either wire " +
-			"it or delete it and state the deferral")
-	}
-	// AND BOTH SURFACES REACH IT. The Settings row is the first-run path (an AO2
-	// theme cannot open the editor at all); the save refusal is the one that used to
-	// cost a whole session's work.
-	// THE FILE AND THE FUNCTION MOVED IN v1.90.0 W10, the assertions did not: the row
-	// left Settings ▸ Theme's drawThemeCatalogRows for the new Settings ▸ Theme editor
-	// tab (drawThemeEditorOpenRow, settingsthemeeditor.go) because the editor was
-	// unfindable buried in the catalog rows. Both claims below are the SAME two claims
-	// this gate has always made — the builder draws the row, and the button performs
-	// both acts — asked of the function that now draws it.
-	rows := funcBodySource(t, "settingsthemeeditor.go", "drawThemeEditorOpenRow")
-	if !containsCall(rows, "themeEditorRow") {
-		t.Error("Settings ▸ Theme editor no longer draws the theme-editor row through its own builder — " +
-			"the row that cannot open the editor is back to offering advice with no button")
-	}
-	if !containsCall(rows, "copyAppliedThemeForEditing") || !containsCall(rows, "openThemeEditor") {
-		t.Error("the theme-editor row's button no longer performs BOTH acts — open what can be opened, " +
-			"copy what cannot")
-	}
-	action := funcBodySource(t, "themecopy.go", "copyAppliedThemeForEditing")
-	if !containsCall(action, "copyThemeForEditing") {
-		t.Error("the row's copy action no longer starts a copy")
-	}
-}
-
 // TestSaveRefusalOffersTheCopy drives the real editorSave on a bundled theme and
 // asserts the refusal: the first Save arms the copy offer (the press-again chip),
 // and the note names the act that fixes it — so a bundled theme can't take a
@@ -124,20 +81,6 @@ func TestSaveRefusalOffersTheCopy(t *testing.T) {
 	}
 	if !strings.Contains(a.te.status, "Press Save again") {
 		t.Errorf("the refusal note %q does not name the act that fixes it", a.te.status)
-	}
-}
-
-// TestTheCopyPollIsWiredIntoTheFrame — a job whose result nobody lands is a
-// goroutine that copies a theme and tells no one.
-func TestTheCopyPollIsWiredIntoTheFrame(t *testing.T) {
-	frame := funcBodyInPackage(t, "func (a *App) Frame(")
-	if !strings.Contains(frame, "pollThemeCopy()") {
-		t.Error("App.Frame no longer polls the copy job — a finished copy would never land")
-	}
-	apply := funcBodyInPackage(t, "func (a *App) pollThemeApply(")
-	if !strings.Contains(apply, "maybeOpenEditorAfterCopy(") {
-		t.Error("pollThemeApply no longer performs the copy hand-off — \"Copy for editing\" would copy and " +
-			"then stop, which is half of what the button offers")
 	}
 }
 

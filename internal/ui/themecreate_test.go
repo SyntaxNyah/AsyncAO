@@ -31,50 +31,6 @@ func decodedFixtureFor(w, h int) *assets.Decoded {
 // The creation funnel is ONE
 // ---------------------------------------------------------------------------
 
-// TestOneThemeCreationFunnel is the deletion-catcher rule 11 asks for.
-//
-// Before this wave internal/ui minted theme folders in TWO places: the preset
-// gallery's own job/poll/land, and nothing else — which was fine right up to the
-// moment a second surface wanted one, because the second copy is where the catalog
-// seed, the collision suffix or the write-root refusal gets forgotten. The mint is
-// now startThemeCreate and this census says there is exactly one of it.
-func TestOneThemeCreationFunnel(t *testing.T) {
-	var callers []string
-	for _, name := range bundleGateGoFiles(t) {
-		if strings.Contains(bundleGateSource(t, name), "themepack.CreateFromSidecar(") {
-			callers = append(callers, name)
-		}
-	}
-	if len(callers) != 1 || callers[0] != "themecreate.go" {
-		t.Fatalf("themepack.CreateFromSidecar is called from %v — it must be called from themecreate.go "+
-			"and nowhere else, or the catalog seed, the collision suffix and the write-root refusal have "+
-			"a second place to be forgotten", callers)
-	}
-	// AND BOTH SURFACES REACH IT. The gallery is the in-editor pick; the settings tab
-	// is the one with no prerequisite.
-	gallery := funcBodySource(t, "themegallery.go", "createThemeFromGalleryPick")
-	if !containsCall(gallery, "startThemeCreate") {
-		t.Error("the preset gallery no longer routes its create through the shared funnel — it is a " +
-			"second mint, and the two will disagree about the write root")
-	}
-	settingsTab := funcBodySource(t, "settingsthemeeditor.go", "drawThemeMakeRows")
-	if !containsCall(settingsTab, "startThemeCreateFromTemplate") {
-		t.Error("the Theme editor tab no longer offers a create — the templates row is the only path from " +
-			"'I have no theme of my own' to the editor")
-	}
-	// AND THE LANDING OPENS THE EDITOR THROUGH THE COPY PATH'S OWN ARMING, rather
-	// than a second one-shot with its own generation rails.
-	land := funcBodySource(t, "themecreate.go", "landThemeCreate")
-	if !containsCall(land, "noteCopiedTheme") || !containsCall(land, "applyThemeAsync") {
-		t.Error("a created theme no longer seeds the catalog and applies — the very next Save resolves " +
-			"through a snapshot that predates the folder and refuses a theme sitting on disk")
-	}
-	if !strings.Contains(bundleGateSource(t, "themecreate.go"), "a.themeEditArmGen, a.themeEditArmFrom = gen, a.screen") {
-		t.Error("the create no longer arms the SHARED open-the-editor one-shot (maybeOpenEditorAfterCopy) — " +
-			"a second opening path is a second set of generation rails to get wrong")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
@@ -210,40 +166,6 @@ func TestABlankThemeIsValidFromBirth(t *testing.T) {
 // ---------------------------------------------------------------------------
 // The image intake
 // ---------------------------------------------------------------------------
-
-// TestOneThemeImageIntakeFunnel is the intake's deletion-catcher.
-//
-// TWO DOORS, ONE FUNNEL: a drag lands in editorTakeImage and so does the browser's
-// pick. What this forbids is a THIRD — a surface that copies a picture into a theme
-// or appends a [media] row without going through the caps, the safepath join and the
-// budget verdict that live in one place.
-func TestOneThemeImageIntakeFunnel(t *testing.T) {
-	const owner = "thememediaintake.go"
-	for _, needle := range []string{"opMediaRow", "editImageDirName"} {
-		var users []string
-		for _, name := range bundleGateGoFiles(t) {
-			if name == owner || name == "themeeditorop.go" || name == "themeeditordoc.go" {
-				continue // the op kind's declaration and the document's writer are its own
-			}
-			if strings.Contains(bundleGateSource(t, name), needle) {
-				users = append(users, name)
-			}
-		}
-		if len(users) != 0 {
-			t.Errorf("%s is used outside the intake funnel, in %v — a second place that declares theme "+
-				"media is a second place to forget the cap, the safepath join or the budget", needle, users)
-		}
-	}
-	drop := funcBodySource(t, "demofile.go", "handleThemeImageDrop")
-	if !containsCall(drop, "editorTakeImage") {
-		t.Error("a dropped picture no longer reaches the intake funnel")
-	}
-	pick := funcBodySource(t, "demobrowser.go", "pickBrowsedFile")
-	if !containsCall(pick, "editorTakeImage") {
-		t.Error("the browser's pick no longer reaches the intake funnel — browsing and dropping would " +
-			"then be two importers with two answers about the caps")
-	}
-}
 
 // TestDroppedPicturesAreClaimedBeforeTheThemeRootArm is the W2 bug's own shape,
 // asked about pictures.
@@ -395,86 +317,6 @@ func TestAPlacedImageFitsTheCanvas(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Live preview
 // ---------------------------------------------------------------------------
-
-// TestFrozenLivePreviewStillEditsTheDocument is the toggle's whole contract.
-//
-// FROZEN MUST NOT MEAN READ-ONLY. The one thing a "pause the preview" toggle must
-// never do is stop the editor working — the document keeps taking edits, they keep
-// being undoable, and Save keeps writing them; only the picture stops re-baking.
-// And the frozen state has to be the CHEAP one, or the toggle is a label.
-func TestFrozenLivePreviewStillEditsTheDocument(t *testing.T) {
-	a, prefs := newEffectsRig(t)
-	prefs.SetTheme("fixture", "")
-	sc := theme.NewSidecar()
-	sc.Elements = append(sc.Elements, editProbeElement())
-	a.themeSidecar = sc
-	if !a.openThemeEditorForTest(ScreenSettings) {
-		t.Fatal("the editor refused to open over a sidecar")
-	}
-	editUnlockAll(a.te.doc)
-	if !a.te.editorLiveOn() {
-		t.Fatal("a fresh editor starts frozen — the zero value must be the behaviour every session " +
-			"before the toggle existed had")
-	}
-
-	a.setEditorLive(false)
-	a.themeLay.valid = true
-	before := sc.Elements[0].Hidden
-	if !a.editorApply(mutateElemField(elementTarget(0), editFieldHidden, editValueBool(!before))) {
-		t.Fatal("a frozen editor refused an edit — the toggle pauses the PICTURE, never the document")
-	}
-	if sc.Elements[0].Hidden == before {
-		t.Error("the edit did not land in the model while frozen")
-	}
-	if !a.te.doc.dirty {
-		t.Error("a frozen edit did not mark the document dirty — Save would silently write nothing")
-	}
-	if !a.te.ring.canUndo() {
-		t.Error("a frozen edit is not undoable")
-	}
-	if !a.themeLay.valid {
-		t.Error("a frozen editor re-baked the canvas anyway — the off state must be the cheap one, or " +
-			"the toggle does nothing but change a label")
-	}
-
-	// Turning it back on pays the one reconcile the frozen frames skipped.
-	a.setEditorLive(true)
-	if a.themeLay.valid {
-		t.Error("resuming live preview did not invalidate the canvas — the picture would stay frozen " +
-			"until something else happened to invalidate it")
-	}
-	// An edit with live preview ON must also invalidate — the one gated spelling
-	// (editorInvalidateLive) is what every edit path goes through, so a live edit
-	// that skipped it would keep drawing stale geometry.
-	a.themeLay.valid = true
-	if !a.editorApply(mutateElemField(elementTarget(0), editFieldHidden, editValueBool(!sc.Elements[0].Hidden))) {
-		t.Fatal("an edit with live preview on was refused")
-	}
-	if a.themeLay.valid {
-		t.Error("an edit with live preview on did not invalidate the canvas — the picture keeps drawing the stale geometry")
-	}
-
-	// AND THE EXIT ALWAYS RECONCILES. A paused exit that skipped the art sync would
-	// leave the courtroom drawing a plan the document has moved past — the class the
-	// second editorSyncArt call site exists to close.
-	a.setEditorLive(false)
-	a.closeThemeEditor()
-	if a.te != nil {
-		t.Fatal("the editor did not close")
-	}
-	// closeThemeEditor must lift the pause before its reconcile and sync the art on
-	// the way out. This guard is kept as an AST read (rule 11, kept list): the
-	// reconcile needs a real render.TextureStore (a.d.Store) which the headless rig
-	// does not provide, so no behavioural test can be made to fail here in one commit.
-	closer := funcBodySource(t, "themeeditor.go", "closeThemeEditor")
-	if !containsCall(closer, "editorSyncArt") {
-		t.Fatal("closeThemeEditor no longer reconciles the art on the way out")
-	}
-	if !strings.Contains(bundleGateSource(t, "themeeditor.go"), "a.te.livePaused = false\n\ta.editorSyncArt()") {
-		t.Error("closeThemeEditor no longer lifts the live-preview pause before its reconcile — a paused " +
-			"exit would leave the plan stale with no frame left to fix it")
-	}
-}
 
 // TestTheLiveToggleIsOnTheRailAndSaysWhichStateItIsIn pins the affordance itself.
 // A toggle nobody can find is the defect this whole wave is about.

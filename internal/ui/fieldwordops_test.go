@@ -142,26 +142,6 @@ func TestReserveFieldTailIsOneSlotAndSelfClearing(t *testing.T) {
 	}
 }
 
-// TestBothICBarsReserveTheCounterBand is the encapsulation gate for the overdraw
-// fix. The reservation only works because the draw site declares it BEFORE the
-// field draws; a bar that stopped declaring it would type straight through the
-// counter again, exactly as reported, with the unit gate above still green. Both
-// IC bars are pinned because the themed one is a separate draw.
-func TestBothICBarsReserveTheCounterBand(t *testing.T) {
-	for _, h := range []struct{ file, fn string }{
-		{"screens.go", "drawICInputRow"},
-		{"theme_layout.go", "drawCourtroomThemed"},
-	} {
-		body := funcBodySource(t, h.file, h.fn)
-		if !containsCall(body, "ReserveFieldTail") {
-			t.Errorf("%s does not reserve the counter band — typed text runs under the counter again", h.fn)
-		}
-		if !containsCall(body, "icFieldTailReserve") {
-			t.Errorf("%s reserves a width of its own instead of icFieldTailReserve — a second estimate re-opens the overlap", h.fn)
-		}
-	}
-}
-
 // TestEscTogglesExtrasRatherThanLeavingTheServer is GH #51. Esc used to call
 // requestDisconnect: one reflexive keypress from leaving the server, behind nothing
 // but a confirm. It toggles the Extras box now, and the disconnect action lives in

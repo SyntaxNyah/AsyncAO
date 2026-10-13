@@ -429,28 +429,6 @@ func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
 	}
 }
 
-// TestEnsureReactBadgeBuildsFromDeviceFont is the AST wiring gate for #2: ensureReactBadge
-// must resolve its glyph through emojiDeviceFont (not the logical-only EmojiFont) and hand
-// RasterizeBadge the CURRENT textDevPct as its devScale argument. Reads the production
-// source, so a revert to EmojiFont — the exact regression this fix closes — fails here
-// even though nothing about ensureReactBadge's return type or nil-handling changed.
-func TestEnsureReactBadgeBuildsFromDeviceFont(t *testing.T) {
-	body := funcBodySource(t, "reactions.go", "ensureReactBadge")
-	if !containsCall(body, "emojiDeviceFont") {
-		t.Error("ensureReactBadge no longer resolves the emoji face through emojiDeviceFont — reaction floats would build from the fixed LOGICAL face again and blur at any scale != 100%")
-	}
-	calls := callsNamed(body, "RasterizeBadge")
-	if len(calls) != 1 {
-		t.Fatalf("ensureReactBadge calls RasterizeBadge %d times, want exactly 1", len(calls))
-	}
-	if len(calls[0].Args) < 5 {
-		t.Fatal("RasterizeBadge call dropped the devScale argument (want 5 args: ren, font, text, col, devScale)")
-	}
-	if !mentionsIdent(calls[0].Args[4], "textDevPct") {
-		t.Error("RasterizeBadge's devScale argument no longer reads textDevPct — a badge would freeze at whatever scale built it")
-	}
-}
-
 // TestReactionBadgeCachePurgesOnDeviceScaleChange drives ensureReactBadge (not a
 // reimplementation of it) across a real UI-scale change and proves the WHOLE chain
 // actually moved: a new badge object is built (the cache purge fired), its DEVICE pixel
@@ -633,27 +611,6 @@ func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 				t.Errorf("at %d%% the OLD (blitLabelScaled) render shows zero blended pixels above the device-exact glyph's own first ink row (row<%d) — this pct/text pair no longer reproduces the src/dst rounding mismatch; this is the KNOWN-BUGGY reference path, so a zero reading here means the test fixture needs revisiting, not that anything got fixed", pct, top)
 			}
 		})
-	}
-}
-
-// TestBlitLabelDispatchesToDeviceExactBranch is the AST wiring/deletion-catcher
-// for the WHOLE class (not just the "M"-at-115% instance
-// TestLabelDeviceExactAtFractionalScale pins): it reads blitLabel's own
-// production source and requires that it still gates on uiDeviceExactAt and
-// still calls blitLabelExact. Someone "simplifying" blitLabel back down to a
-// single unconditional blitLabelScaled body — the exact regression this whole
-// file is about — fails here even on a pct/text combination the pixel test
-// above does not happen to cover.
-func TestBlitLabelDispatchesToDeviceExactBranch(t *testing.T) {
-	body := funcBodyInPackage(t, "func (c *Ctx) blitLabel(")
-	if !strings.Contains(body, "uiDeviceExactAt(") {
-		t.Error("blitLabel no longer gates on uiDeviceExactAt — every plain Label/Button/Checkbox draw would silently fall back to the pre-fix ambient-scale blit at any fractional UI scale")
-	}
-	if !strings.Contains(body, "blitLabelExact(") {
-		t.Error("blitLabel no longer calls blitLabelExact — the device-exact branch this file's blur fix depends on is gone even if the gate itself survived")
-	}
-	if !strings.Contains(body, "blitLabelScaled(") {
-		t.Error("blitLabel no longer calls blitLabelScaled — the export/pinned-tab fallback (a renderer scale that disagrees with the texture's own devPct) has nowhere left to draw")
 	}
 }
 

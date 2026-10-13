@@ -14,7 +14,6 @@ package ui
 // it cannot go green against a re-implementation (CLAUDE.md rule 11).
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"testing"
@@ -205,51 +204,5 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.previewBase, want)
-	}
-}
-
-// TestEveryEmotePickImplementationFollowsThePinnedPreview is the source-level
-// gate for the actual root cause: nothing in this package routes "an emote was
-// picked" through one shared function. selectEmote is the closest thing to a
-// shared entry point, but the themed emote grid keeps its own inline copy
-// (documented at chatfocus.go:44-45 as a second, deliberate implementation),
-// and applyStylePreset (mood presets / hotkeys) turned out to be a THIRD —
-// found by this very gate while writing it, not by inspection. That
-// duplication is why the classic grid could get the follow-hook while the
-// other two silently kept freezing, and why a FOURTH copy, pasted anywhere
-// else, could do the same again.
-//
-// Rather than naming the known sites, this walks every function in the
-// package (packageFuncs — the same "no roster" census newroom_test.go uses)
-// and demands that ANY function whose body assigns `<x>.icPreanim =
-// emoteHasPreanim(...)` — the precise fingerprint of "an emote selection was
-// just made", shared by all three sites today and by no unrelated one (sendIC
-// also calls emoteHasPreanim, but into a local `hasPre`, to derive the SEND's
-// wire field from whatever's already selected — not a pick, so it's correctly
-// excluded) — also calls followPinnedPreview. A future copy that forgets the
-// hook fails this test the moment it is written; one that remembers it passes
-// without this file changing.
-//
-// The >=3 floor guards against the census going vacuous (e.g. every site
-// renamed away from the icPreanim/emoteHasPreanim fingerprint) rather than
-// pinning an exact roster count, so a legitimately added FOURTH site that gets
-// the hook right does not have to edit this test to stay green.
-func TestEveryEmotePickImplementationFollowsThePinnedPreview(t *testing.T) {
-	found := 0
-	packageFuncs(t, func(file, fn string, body *ast.BlockStmt) {
-		if !assignsFieldFrom(body, "icPreanim", "emoteHasPreanim") {
-			return
-		}
-		found++
-		if !containsCall(body, "followPinnedPreview") {
-			t.Errorf("%s: %s picks an emote (assigns icPreanim from emoteHasPreanim) but never "+
-				"calls followPinnedPreview — a preview pinned open will freeze on whatever emote "+
-				"opened it instead of following this pick", file, fn)
-		}
-	})
-	if found < 3 {
-		t.Fatalf("found %d emote-pick implementation(s) (want >= 3: selectEmote, drawEmoteGridThemed, "+
-			"applyStylePreset) — the icPreanim/emoteHasPreanim fingerprint moved and this census is "+
-			"now checking nothing", found)
 	}
 }

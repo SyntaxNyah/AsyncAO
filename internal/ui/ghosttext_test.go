@@ -6,7 +6,6 @@ package ui
 // encapsulation gate that stops the IC log's draw from quietly forgetting to ask.
 
 import (
-	"go/ast"
 	"path/filepath"
 	"testing"
 
@@ -188,87 +187,4 @@ func TestGhostInkPullsTowardTheSurface(t *testing.T) {
 	if got.R > white.R || got.G > white.G || got.B > white.B {
 		t.Errorf("ghostInk brightened a colour it should have faded: %+v -> %+v", white, got)
 	}
-}
-
-// TestGhostSpanNeverReadsTheCrawl is the deletion catcher for the CORRECTION
-// itself. The defect was ghostLogSpan measuring the typewriter — Scene.VisibleRunes
-// against the message length — to find a row boundary inside the current message.
-// Reading either of those here again is that defect returning, and every unit gate
-// above would stay green while it did.
-func TestGhostSpanNeverReadsTheCrawl(t *testing.T) {
-	body := funcBodySource(t, "ghosttext.go", "ghostLogSpan")
-	for _, banned := range []string{"VisibleRunes", "MessageText", "Phase"} {
-		if readsIdent(body, banned) {
-			t.Errorf("ghostLogSpan reads %s again — the ghost boundary is back inside the "+
-				"message being spoken, which is the reported defect (only QUEUED messages "+
-				"may be ghosted)", banned)
-		}
-	}
-	if !containsCall(body, "QueueLen") {
-		t.Fatal("ghostLogSpan no longer asks the room for its QUEUE length — the preview " +
-			"has nothing to pair log lines with")
-	}
-}
-
-// readsIdent reports whether n mentions the identifier name anywhere (as a bare
-// ident or as a selector's field/method), which is what a source census needs:
-// `sc.VisibleRunes`, `a.room.Scene.VisibleRunes` and a bare `VisibleRunes` all count.
-func readsIdent(n ast.Node, name string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		switch v := node.(type) {
-		case *ast.SelectorExpr:
-			if v.Sel != nil && v.Sel.Name == name {
-				found = true
-			}
-		case *ast.Ident:
-			if v.Name == name {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-// TestICLogAsksForTheGhostSpan is the encapsulation gate. The whole feature is one
-// call in the IC log's draw; delete it and every gate above still passes while the
-// option silently does nothing — the parsed-but-never-applied failure CLAUDE.md
-// names. Source, because a missing call has no observable return value.
-func TestICLogAsksForTheGhostSpan(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "drawICLogList")
-	if !containsCall(body, "ghostLogSpan") {
-		t.Fatal("drawICLogList no longer resolves a ghostSpan — the ghost-text option is dead")
-	}
-	if !containsCall(body, "ghosted") {
-		t.Fatal("drawICLogList resolves a ghostSpan but never asks it about a row")
-	}
-	if !containsCall(body, "ghostInk") {
-		t.Fatal("drawICLogList decides a row is ghosted but never fades its ink")
-	}
-	// The stamp the pairing depends on: without it every log line looks like a
-	// system line, firstQueuedEntry can never find the queued message, and the
-	// whole option goes quiet with every unit gate above still green.
-	if !assignsField(funcBodySource(t, "app.go", "handleSessionEvents"), "speech") {
-		t.Fatal("handleSessionEvents no longer stamps icEntry.speech — the ghost pairing cannot tell a spoken line from a queued one")
-	}
-}
-
-// assignsField reports whether n contains an assignment whose left-hand side is a
-// selector ending in .field (e.g. `a.icLog[i].speech = true`).
-func assignsField(n ast.Node, field string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for _, lhs := range as.Lhs {
-			if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == field {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
 }

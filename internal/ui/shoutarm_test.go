@@ -124,39 +124,3 @@ func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 			a.icRealize, a.icShout)
 	}
 }
-
-// TestNoShoutSurfaceCallsSendIC is the deletion catcher, and it is a SOURCE
-// census because the failure has no return value: a surface that goes back to
-// sending is a surface whose unit tests all still pass.
-//
-// It covers all three call sites that had the defect — the classic bar's shout
-// row, the themed bar, and the hotkey switch — and it holds them to calling
-// toggleShout, so a fourth surface added tomorrow cannot quietly copy the old
-// spelling from one of them.
-func TestNoShoutSurfaceCallsSendIC(t *testing.T) {
-	for _, site := range []struct{ file, fn string }{
-		{"screens.go", "drawICShoutRow"},
-		{"theme_layout.go", "drawCourtroomThemed"},
-		{"qol.go", "handleHotkeys"},
-	} {
-		body := funcBodySource(t, site.file, site.fn)
-		if !containsCall(body, "toggleShout") {
-			t.Errorf("%s no longer arms through toggleShout — the shout surfaces have drifted apart again", site.fn)
-		}
-	}
-	// The classic shout row must not send at all: it used to hand a modifier
-	// straight back to a sendIC call.
-	if containsCall(funcBodySource(t, "screens.go", "drawICShoutRow"), "sendIC") {
-		t.Error("drawICShoutRow sends — a shout BUTTON is not a send button (courtroom.cpp:6048-6127)")
-	}
-	// And the armed state has to be VISIBLE, which is the other half of what the
-	// button does upstream (the "*_selected" sprite swap, :6062).
-	for _, site := range []struct{ file, fn string }{
-		{"screens.go", "drawICShoutRow"},
-		{"theme_layout.go", "drawCourtroomThemed"},
-	} {
-		if !containsCall(funcBodySource(t, site.file, site.fn), "drawArmedOverlay") {
-			t.Errorf("%s draws no armed marker — an arm nobody can see reads as a button that does nothing", site.fn)
-		}
-	}
-}

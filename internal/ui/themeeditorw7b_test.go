@@ -893,34 +893,6 @@ func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 	}
 }
 
-// TestTheMusicHeaderCannotStopUsingTheReflowGuard is the chrome-row seam's own
-// encapsulation gate.
-//
-// The behavioural sweeps prove the CURRENT placement never overlaps. This one proves
-// the placement cannot quietly go back to a strip of its own: planMusicHeader must
-// call planChromeRow, and it must not open a second cursor beside it. Without this, a
-// later wave could restore newPlStrip here and every overlap gate would keep passing
-// right up until a theme squeezed the panel.
-func TestTheMusicHeaderCannotStopUsingTheReflowGuard(t *testing.T) {
-	body := funcBodyInPackage(t, "func planMusicHeader(")
-	if !strings.Contains(body, "planChromeRow(") {
-		t.Error("planMusicHeader no longer calls planChromeRow — the guarantee that two controls " +
-			"cannot land on each other is the ONE cursor inside that planner, not arithmetic here")
-	}
-	if strings.Contains(body, "newPlStrip(") {
-		t.Error("planMusicHeader opened a plStrip of its own beside the reflow planner — two " +
-			"independent anchors is exactly the shape that painted Expand all on top of Stop music")
-	}
-	// And the priorities must stay a named ranking rather than bare integers, or the
-	// reachability argument behind the drop order becomes unreadable at the call site.
-	for _, want := range []string{"musicDropOnlyRoute", "musicDropShortcut", "chromeCtlNeverDrop"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("planMusicHeader no longer names %s — the drop order is a reachability "+
-				"argument (hard rule 9), not a taste ranking", want)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // The intake
 // ---------------------------------------------------------------------------

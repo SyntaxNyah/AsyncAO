@@ -128,27 +128,6 @@ func funcBodySource(t testing.TB, file, fn string) *ast.BlockStmt {
 	return findFuncBodyInFiles(t, files, file, fn)
 }
 
-// funcBodyText returns the on-disk source of fn's body (opening brace through
-// closing brace), looked up package-wide exactly as funcBodySource does (file is a
-// hint, not a lock). The text is sliced by token position, so it is the file's real
-// bytes — no re-render — and string gates keep matching the source's exact
-// formatting, however a later split re-indents it.
-func funcBodyText(t testing.TB, file, fn string) string {
-	t.Helper()
-	fset, files := parseNonTestSources(t, 0)
-	body := findFuncBodyInFiles(t, files, file, fn)
-	pos := fset.Position(body.Pos())
-	end := fset.Position(body.End())
-	src, err := os.ReadFile(pos.Filename)
-	if err != nil {
-		t.Fatalf("read %s: %v", pos.Filename, err)
-	}
-	if pos.Offset < 0 || end.Offset < 0 || pos.Offset > end.Offset || end.Offset > len(src) {
-		t.Fatalf("function %s body positions not resolvable in %s", fn, pos.Filename)
-	}
-	return string(src[pos.Offset:end.Offset])
-}
-
 // findFuncBodyInFiles is the testable core of funcBodySource: it locates fn in
 // files (the hinted file first, then the rest sorted) and fails the census on an
 // absent function or one declared in two files.
@@ -230,29 +209,6 @@ func callsNamed(n ast.Node, fn string) []*ast.CallExpr {
 	return out
 }
 
-// bindingOf returns the name the single-value assignment `x := fn(...)` binds inside
-// n, or "" when fn's result is not assigned to one plain identifier. A gate uses it to
-// learn what a helper's result is CALLED here, so the rest of the gate can require
-// other expressions to be derived from that name without hard-coding it — rename the
-// variable and the gate follows; stop using the helper and the gate fails.
-func bindingOf(n ast.Node, fn string) string {
-	name := ""
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		if call, ok := as.Rhs[0].(*ast.CallExpr); !ok || callName(call) != fn {
-			return true
-		}
-		if id, ok := as.Lhs[0].(*ast.Ident); ok {
-			name = id.Name
-		}
-		return false
-	})
-	return name
-}
-
 // mentionsIdent reports whether the expression e reads the identifier name anywhere
 // inside it. Deliberately "mentions" and not "equals": a coordinate that legitimately
 // grows to `head.count.X+2` still derives from head, while one rebuilt out of the
@@ -261,47 +217,6 @@ func mentionsIdent(e ast.Expr, name string) bool {
 	found := false
 	ast.Inspect(e, func(node ast.Node) bool {
 		if id, ok := node.(*ast.Ident); ok && id.Name == name {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// deferredCall reports whether n contains `defer <...>fn(...)`.
-func deferredCall(n ast.Node, fn string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		d, ok := node.(*ast.DeferStmt)
-		if !ok {
-			return true
-		}
-		if callName(d.Call) == fn {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// readsFieldOf reports whether n contains `<expr containing a call to src>.<field>`
-// — a READ of that field off the helper's result, wherever it appears.
-//
-// It is assignsFieldFrom's missing half, and the omission was load-bearing: that
-// one matches an assignment TO a selector field, so a census built on it can only
-// ever see writes. The bypass a "one place knows this rule" gate is written to
-// catch is a READ — `anim := a.charMetaFor(name).idle` — whose left-hand side is a
-// plain identifier, so it went straight through. This walks expressions instead of
-// statements, which catches the read in every position it can take (an assignment,
-// an if-init, a call argument, a return).
-func readsFieldOf(n ast.Node, field, src string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		sel, ok := node.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != field {
-			return true
-		}
-		if containsCall(sel.X, src) {
 			found = true
 		}
 		return !found
@@ -353,41 +268,4 @@ func callName(call *ast.CallExpr) string {
 		return fn.Name
 	}
 	return ""
-}
-
-// callOrder returns the source ORDER of the named calls inside n: for each call
-// found, its index into want. Calls not in want are ignored, and a name that appears
-// twice contributes twice. Used to pin paint order in a single-pass draw.
-func callOrder(n ast.Node, want ...string) []string {
-	type hit struct {
-		pos  token.Pos
-		name string
-	}
-	var hits []hit
-	inWant := make(map[string]bool, len(want))
-	for _, w := range want {
-		inWant[w] = true
-	}
-	ast.Inspect(n, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if name := callName(call); inWant[name] {
-			hits = append(hits, hit{pos: call.Pos(), name: name})
-		}
-		return true
-	})
-	// ast.Inspect is already in source order for a single file, but sort defensively
-	// on position so a future nesting change cannot reorder the answer silently.
-	for i := 1; i < len(hits); i++ {
-		for j := i; j > 0 && hits[j].pos < hits[j-1].pos; j-- {
-			hits[j], hits[j-1] = hits[j-1], hits[j]
-		}
-	}
-	out := make([]string, 0, len(hits))
-	for _, h := range hits {
-		out = append(out, h.name)
-	}
-	return out
 }

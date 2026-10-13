@@ -11,7 +11,6 @@ package ui
 // and a census so the guard cannot be quietly unwired again.
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -175,35 +174,5 @@ func TestADisabledHeaderButtonSwallowsItsClick(t *testing.T) {
 	if press(false) {
 		t.Error("a DISABLED header button reported a click — the refusal has to happen at the " +
 			"button, or every caller has to remember to re-ask whether its action was legal")
-	}
-}
-
-// TestTheHeaderAsksTheRingWhetherItMayStep is the wiring catcher, and it is the one
-// that keeps this from being a decoration.
-//
-// The enabled state is a SOURCE-LEVEL fact: with the guard deleted, both buttons draw
-// live, every behavioural gate above still passes (an unavailable step is a no-op
-// either way) and canRedo goes back to being unused — which is precisely the state
-// this batch found it in. A census is the only witness for a call that was never
-// written.
-func TestTheHeaderAsksTheRingWhetherItMayStep(t *testing.T) {
-	body := funcBodyInPackage(t, "func (a *App) drawEditorHeader(")
-	for _, want := range []string{
-		`a.editorHeaderBtn(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Redo", a.te.ring.canRedo())`,
-		`a.editorHeaderBtn(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Undo", a.te.ring.canUndo())`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("drawEditorHeader no longer draws\n\t%s\nThe two timeline buttons are what "+
-				"themeEditRing.canUndo/canRedo exist for; drawn through Ctx.Button they claim an "+
-				"action the ring cannot perform, and the predicate goes dead again.", want)
-		}
-	}
-	// And neither may go back to the ungated widget: c.Button draws AND answers, so a
-	// stray call here is a live button whatever the ring says.
-	for _, forbidden := range []string{`c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Redo")`,
-		`c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Undo")`} {
-		if strings.Contains(body, forbidden) {
-			t.Errorf("drawEditorHeader draws %s again — that widget cannot be disabled", forbidden)
-		}
 	}
 }

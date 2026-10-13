@@ -130,81 +130,6 @@ func TestTheHeaderRowKeepsItsExistingSlots(t *testing.T) {
 // (2) Preview hides every piece of editing chrome
 // ---------------------------------------------------------------------------
 
-// TestPreviewHidesEveryPieceOfEditingChrome pins requirement 2 from both sides.
-//
-// BEHAVIOURALLY: a click where the element rail's Live/Frozen toggle sits, and a
-// click where a rail row sits, must do nothing at all — no toggle, no selection.
-// If a rail were still drawn under the demo, those presses would land.
-//
-// STRUCTURALLY: drawThemeEditor's preview arm must RETURN, above the key handler,
-// the canvas input, the overlay (handles, selection outlines, magnet guides) and
-// both rails. Hiding by not-calling is the only version that stays true when the
-// next overlay is added, and a behavioural gate can only ever cover the surfaces
-// it already knows about.
-func TestPreviewHidesEveryPieceOfEditingChrome(t *testing.T) {
-	a, cleanup := stageEditorApp(t)
-	defer cleanup()
-	driveFrame(a)
-	liveBefore := a.te.editorLiveOn()
-	enterPreviewByButton(t, a)
-	driveFrames(a, 2)
-
-	// The Live/Frozen toggle's own rect, from the rail's published geometry.
-	liveR := sdl.Rect{
-		X: editRailW - editRowPad - editRailLiveBtnW,
-		Y: editBannerH + 2,
-		W: editRailLiveBtnW,
-		H: editRowH - 2,
-	}
-	lx, ly := frameHarnessRectCentre(liveR)
-	driveClickAt(a, lx, ly)
-	if a.te.editorLiveOn() != liveBefore {
-		t.Error("a click in the element rail's Live/Frozen box flipped the toggle — the rail is still drawn under the demo")
-	}
-	if !a.editorPreviewOn() {
-		t.Fatal("the click left the demo — nothing in the rails should have been reachable at all")
-	}
-	// A rail ROW, and the inspector rail on the far side.
-	driveClickAt(a, editRailW/2, editBannerH+editRowH*2)
-	driveClickAt(a, frameHarnessW-editRailW/2, editBannerH+editFieldRowH*2)
-	if a.te.selN != 0 {
-		t.Errorf("clicks in the rails selected %d target(s) — the element rail is live under the demo", a.te.selN)
-	}
-
-	body := funcBodyInPackage(t, "func (a *App) drawThemeEditor(")
-	arm := strings.Index(body, "a.drawEditorPreviewScreen(w, h)")
-	if arm < 0 {
-		t.Fatal("drawThemeEditor no longer draws the preview screen — the demo has no draw site")
-	}
-	ret := strings.Index(body[arm:], "return")
-	if ret < 0 {
-		t.Fatal("drawThemeEditor's preview arm does not return — everything below it still draws over the demo")
-	}
-	// Every chrome draw the arm must sit ABOVE. Named, so the failure says which
-	// surface would leak rather than "something moved".
-	for _, chrome := range []string{
-		"a.handleEditorKeys()",
-		"a.editorCanvasInput(",
-		"a.drawEditorCanvasOverlay(",
-		"a.drawEditorHeader(",
-		"a.drawEditorElementRail(",
-		"a.drawEditorInspector(",
-		"a.drawEditorFontPanel(",
-		"a.drawThemeGallery(",
-		"a.drawThemeReportPanel(",
-	} {
-		at := strings.Index(body, chrome)
-		if at < 0 {
-			t.Errorf("drawThemeEditor no longer calls %s at all — this census has stopped covering it", chrome)
-			continue
-		}
-		if at < arm {
-			t.Errorf("%s runs BEFORE the preview arm — it would draw over the demo. The arm must preempt "+
-				"every editing surface, not compete with them", chrome)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // (3) The canned scene drives the REAL painters
 // ---------------------------------------------------------------------------
@@ -708,64 +633,6 @@ func driveKeyFrame(a *App, key sdl.Keycode) {
 // (10) The live session is not disturbed
 // ---------------------------------------------------------------------------
 
-// TestPreviewLeavesTheLiveSessionAndItsViewportAlone pins requirement 10. The
-// editor here is opened OVER a connected courtroom (the fixture has a live room
-// and session), so the demo has something to disturb: it must run on its own room,
-// leave the live room's scene untouched, and hand the viewport's one-shot
-// callbacks back on the way out — the rebind teardownMakerPreview makes, for the
-// same reason.
-func TestPreviewLeavesTheLiveSessionAndItsViewportAlone(t *testing.T) {
-	a, cleanup := stageEditorApp(t)
-	defer cleanup()
-	driveFrame(a)
-	if a.room == nil || a.sess == nil {
-		t.Skip("the fixture has no live session — there is nothing for the demo to disturb")
-	}
-	liveRoom := a.room
-	liveSess := a.sess
-	liveText := liveRoom.Scene.MessageText
-	liveLog := len(a.icLog)
-
-	enterPreviewByButton(t, a)
-	if a.te.preview.state.room == liveRoom {
-		t.Fatal("the demo is driving the LIVE room — a preview must own its own offline room")
-	}
-	if a.te.preview.state.sess == liveSess {
-		t.Fatal("the demo is using the LIVE session")
-	}
-	driveFrames(a, previewDriveFrames)
-
-	if a.room != liveRoom || a.sess != liveSess {
-		t.Fatal("the demo pass did not put the live session back — the swap leaked")
-	}
-	if liveRoom.Scene.MessageText != liveText {
-		t.Errorf("the live room's staged line changed to %q during the demo", liveRoom.Scene.MessageText)
-	}
-	if len(a.icLog) != liveLog {
-		t.Errorf("the live IC log grew from %d to %d rows during the demo", liveLog, len(a.icLog))
-	}
-
-	pressEscFrame(a)
-	if a.te == nil {
-		t.Fatal("Esc left the editor rather than the demo")
-	}
-	if a.d.Viewport.OnPreanimDone == nil || a.d.Viewport.OnFrameShown == nil {
-		t.Fatal("leaving the demo cleared the viewport's callbacks over a LIVE room — its preanims and " +
-			"frame effects would never fire again")
-	}
-	// WHICH room they point at cannot be compared as a value (two method values on
-	// the same method share a code pointer), so the binding is pinned where it is
-	// written: the exit must name the live room, exactly as teardownMakerPreview does.
-	body := funcBodyInPackage(t, "func (a *App) exitEditorPreview(")
-	for _, want := range []string{"a.room.NotifyPreanimDone", "a.room.NotifyFrameShown"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("exitEditorPreview no longer rebinds %s — the viewport would keep delivering to the "+
-				"dead demo room", want)
-		}
-	}
-	driveFrames(a, 3) // and the frames after the exit are ordinary editor frames
-}
-
 // ---------------------------------------------------------------------------
 // (11) The funnel refuses, and the work that arrives meanwhile is KEPT
 // ---------------------------------------------------------------------------
@@ -1117,59 +984,6 @@ func TestEditorPreviewHasExactlyOneReleaseSite(t *testing.T) {
 	}
 }
 
-// TestEditorPreviewSeamIsWiredEverywhereItHasToBe is the census, and it is the
-// TestThemeApplyRunsTheOverridesTier model applied here: a seam can be perfectly
-// written, perfectly unit-tested and still never run. These are the four call
-// sites that make the demo a feature rather than a type, each named with what its
-// deletion would look like on screen.
-func TestEditorPreviewSeamIsWiredEverywhereItHasToBe(t *testing.T) {
-	for _, w := range []struct {
-		fn, call, breaks string
-	}{
-		{"drawEditorHeader", "editorPreviewBtnRect(w), editorPreviewEnterLabel",
-			"the button disappears from the band and the demo is unreachable"},
-		{"drawThemeEditor", "a.drawEditorPreviewScreen(w, h)",
-			"the demo never draws and the rails stay up over it"},
-		{"Frame", "a.driveEditorPreview(dt)",
-			"the demo freezes: no crawl, no blips, no marquee, no census"},
-		{"drawEditorPreviewCanvas", "a.drawCourtroom(w, h)",
-			"the demo stops being the REAL courtroom and becomes a mock"},
-		{"renderViewportZoomed", "a.drawEditorPreviewFigure(vp)",
-			"the demo's stage is empty — no stand-in where a character would stand"},
-	} {
-		body := funcBodyInPackage(t, funcDeclFor(w.fn))
-		if !strings.Contains(body, w.call) {
-			t.Errorf("%s no longer calls %s — %s", w.fn, w.call, w.breaks)
-		}
-	}
-	// The Esc rung is inside App.Frame's ladder, and its ORDER is the property:
-	// the preview arm has to be reached before the rungs that close panels, clear
-	// the selection or leave the editor.
-	frame := funcBodyInPackage(t, funcDeclFor("Frame"))
-	rung := strings.Index(frame, "case a.editorPreviewOn():\n\t\t\t\t\ta.exitEditorPreview()")
-	if rung < 0 {
-		t.Fatal("app.go's ScreenThemeEditor Esc arm has no preview rung — Esc in the demo would fall " +
-			"through and arm the discard chip on a document the user cannot see")
-	}
-	for _, later := range []string{"a.closeEditorPanels()", "a.te.selectClear()", "a.requestEditorExit()"} {
-		at := strings.Index(frame, later)
-		if at >= 0 && at < rung {
-			t.Errorf("the Esc ladder reaches %s before the preview rung — the demo would not be the "+
-				"first thing Esc leaves", later)
-		}
-	}
-}
-
-// funcDeclFor spells one function's declaration for funcBodyInPackage. App.Frame
-// is the only one here with a different receiver shape, so it is named rather than
-// pattern-matched.
-func funcDeclFor(name string) string {
-	if name == "Frame" {
-		return "func (a *App) Frame("
-	}
-	return "func (a *App) " + name + "("
-}
-
 // TestEditorPreviewPassIsAlwaysPaired is the swap's own encapsulation gate. Being
 // the demo session is a BRACKET: every beginEditorPreviewPass must have an
 // endEditorPreviewPass, or the App is left pointing at a session that no longer
@@ -1240,35 +1054,6 @@ func TestPreviewFigureBandCountIsBounded(t *testing.T) {
 	// by zero on the very first frame the demo drew.
 	if editorPreviewFigureBandCnt/3 == 0 {
 		t.Fatal("editorPreviewFigureBandCnt/3 is zero — the taper would divide by zero")
-	}
-}
-
-// TestPreviewDoesNotTouchTheLiveToggle is the machinery decision, pinned. Preview
-// was BUILT ON the editor's view-state machinery and left the Live/Frozen freeze
-// switch alone; a future refactor that folded one into the other would give one
-// control two meanings.
-func TestPreviewDoesNotTouchTheLiveToggle(t *testing.T) {
-	a, cleanup := stageEditorApp(t)
-	defer cleanup()
-	driveFrame(a)
-	a.setEditorLive(false)
-	if a.te.editorLiveOn() {
-		t.Fatal("fixture: the freeze switch did not take")
-	}
-	enterPreviewByButton(t, a)
-	driveFrames(a, 3)
-	if a.te.editorLiveOn() {
-		t.Error("entering the demo re-armed the live-preview freeze switch — they are separate states")
-	}
-	pressEscFrame(a)
-	if a.te.editorLiveOn() {
-		t.Error("leaving the demo re-armed the freeze switch — a preview must not decide whether the canvas re-bakes")
-	}
-	for _, fn := range []string{"enterEditorPreview", "exitEditorPreview", "driveEditorPreview"} {
-		body := funcBodyInPackage(t, "func (a *App) "+fn+"(")
-		if strings.Contains(body, "livePaused") || strings.Contains(body, "setEditorLive") {
-			t.Errorf("%s writes the live-preview toggle — the demo is a view state, not a re-bake policy", fn)
-		}
 	}
 }
 

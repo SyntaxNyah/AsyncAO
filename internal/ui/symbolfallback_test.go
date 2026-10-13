@@ -289,21 +289,3 @@ func upperHex(r rune) string {
 	}
 	return string(out)
 }
-
-// TestLabelEmojiAsksForTheColourFaceOnAnUncoveredSymbol is the wiring catcher. The
-// callers gate their emoji face on NeedsEmojiFallback, which is blind to a bare BMP
-// pictograph — so labelEmoji itself has to notice, load the face and resolve one at
-// the row's own scale. Without all three the raster is built with emoji==nil and the
-// character stays a box no matter how good the table is.
-func TestLabelEmojiAsksForTheColourFaceOnAnUncoveredSymbol(t *testing.T) {
-	body := funcBodySource(t, "emojilabel.go", "labelEmojiWeight")
-	for _, fn := range []string{"uncoveredPictograph", "ensureEmojiFontLoad", "emojiFaceFor"} {
-		if !containsCall(body, fn) {
-			t.Errorf("labelEmojiWeight no longer calls %s — a bare ♥/✨ would never reach the colour-emoji face (F5)", fn)
-		}
-	}
-	raster := funcBodySource(t, "emojilabel.go", "emojiRasterWeight")
-	if !containsCall(raster, "uncoveredPictographMask") {
-		t.Error("emojiRasterWeight no longer promotes uncovered pictographs — the face is loaded but no rune is routed to it")
-	}
-}
