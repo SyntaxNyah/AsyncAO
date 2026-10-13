@@ -1,9 +1,14 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
-	"reflect"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -12,35 +17,63 @@ import (
 //
 //	REAL_PREFS=/path/to/prefs.json go test ./internal/config -run TestRealPrefsIdentical -v
 //
-// It compares load() (the snapshot path) against a direct snapshotLoad of the same bytes
-// and prints ONLY "identical" or "not identical" — never the contents of the file.
+// The old load() is deleted, so it can no longer compare against it directly; instead it
+// prints ONLY the per-section SHA-256 (error class, exported JSON, unexported dump, dirty
+// flag, Save bytes, ImportSettings accept/reject) — never file contents. Build prefsdump
+// at bb9f414 and here, run both on the same file, and diff (see HANDOFF.md).
 func TestRealPrefsIdentical(t *testing.T) {
 	path := os.Getenv("REAL_PREFS")
 	if path == "" {
-		t.Skip("set REAL_PREFS=/path/to/prefs.json to compare the real file against the snapshot")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	oldp, err := load(path)
-	if err != nil {
-		t.Fatalf("load %s: %v", path, err)
-	}
-	newp, perr := snapshotLoad(data)
-	if perr != nil {
-		t.Fatalf("snapshotLoad: %v", perr)
+		t.Skip("set REAL_PREFS=/path/to/prefs.json to print the per-section SHA-256")
 	}
 
-	oldJSON, _ := json.Marshal(oldp)
-	newJSON, _ := json.Marshal(newp)
-	var oldM, newM map[string]any
-	_ = json.Unmarshal(oldJSON, &oldM)
-	_ = json.Unmarshal(newJSON, &newM)
+	p, lerr := load(path)
 
-	if reflect.DeepEqual(oldM, newM) {
-		t.Log("identical")
+	sha := func(b []byte) string {
+		s := sha256.Sum256(b)
+		return hex.EncodeToString(s[:])
+	}
+
+	t.Logf("errclass=%s", sha([]byte(diffErrClassStr(lerr))))
+	if p == nil {
+		return
+	}
+	ej, _ := json.Marshal(p)
+	t.Logf("exported=%s", sha(ej))
+	t.Logf("unexported=%s", sha([]byte(fmt.Sprintf("moved=%v stamp=%v", p.themeFitMovedToNative, p.themeFitStampPending))))
+	t.Logf("dirty=%s", sha([]byte(fmt.Sprintf("pending=%v", p.pending.Load()))))
+
+	dir, derr := os.MkdirTemp("", "realprefs")
+	if derr != nil {
+		return
+	}
+	defer os.RemoveAll(dir)
+	savePath := filepath.Join(dir, "save.json")
+	p.path = savePath
+	if serr := p.SaveNow(); serr != nil {
+		t.Logf("save=%s", sha([]byte("err:"+serr.Error())))
 	} else {
-		t.Log("not identical")
+		sb, _ := os.ReadFile(savePath)
+		t.Logf("save=%s", sha(sb))
 	}
+}
+
+// diffErrClassStr is a struct-name-agnostic error class for the real-prefs hash.
+func diffErrClassStr(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	for err != nil {
+		switch e := err.(type) {
+		case *json.SyntaxError:
+			return "syntax:" + e.Error()
+		case *json.UnmarshalTypeError:
+			if e.Field == "" {
+				return "type:root=" + e.Value
+			}
+			return "type:" + e.Field + "=" + e.Value + "->" + strings.TrimPrefix(e.Type.String(), "*")
+		}
+		err = errors.Unwrap(err)
+	}
+	return "other"
 }
