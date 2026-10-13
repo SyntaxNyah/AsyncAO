@@ -236,12 +236,83 @@ func TestThemeFitFlagsCharacterized(t *testing.T) {
 }
 
 // equivalenceAllowlist is the explicit set of KNOWN load-equivalence differences the
-// snapshot does not yet reproduce (Order 1A-a). Each key is "jsonKey|case" (the prefix
-// of a diff line before "old="); the value names the gap. The per-migration commits
-// (Order 1A-b) delete their entries as they close each gap; the final commit (Order
-// 1A-c) asserts this map is empty.
+// snapshot does not yet reproduce (Order 1A-a). Key is "case.field"; value is
+// "category: reason". Each per-migration commit (1A-b) deletes its entries; the final
+// commit (1A-c) asserts empty.
 var equivalenceAllowlist = map[string]string{
-	// populated by the per-migration commits: export, layoutPresets->layoutProfiles,
-	// subtheme, proxyMode, themeFit flags, sanitize tail.
+	// themeFit unexported one-shot flags.
+	"legacy_smoothScaling.__themeFitMovedToNative":                "themeFit: movedToNative flag",
+	"legacy_smoothScaling.__themeFitStampPending":                 "themeFit: stampPending flag",
+	"legacy_spriteScalingMigrated.__themeFitMovedToNative":        "themeFit: movedToNative flag",
+	"legacy_spriteScalingMigrated.__themeFitStampPending":         "themeFit: stampPending flag",
+	"legacy_autoReconnectDefaultMigrated.__themeFitMovedToNative": "themeFit: movedToNative flag",
+	"legacy_autoReconnectDefaultMigrated.__themeFitStampPending":  "themeFit: stampPending flag",
+	"legacy_themeFitDefaultMigrated.__themeFitMovedToNative":      "themeFit: movedToNative flag",
+	"legacy_themeFitDefaultMigrated.__themeFitStampPending":       "themeFit: stampPending flag",
+	"legacy_blipSpeedDefaultMigrated.__themeFitMovedToNative":     "themeFit: movedToNative flag",
+	"legacy_blipSpeedDefaultMigrated.__themeFitStampPending":      "themeFit: stampPending flag",
+	"legacy_deskManifestDefaultMigrated.__themeFitMovedToNative":  "themeFit: movedToNative flag",
+	"legacy_deskManifestDefaultMigrated.__themeFitStampPending":   "themeFit: stampPending flag",
+	"legacy_detailedLogDefaultMigrated.__themeFitMovedToNative":   "themeFit: movedToNative flag",
+	"legacy_detailedLogDefaultMigrated.__themeFitStampPending":    "themeFit: stampPending flag",
+	"viewportPercent_aboveMax.__themeFitMovedToNative":            "themeFit: movedToNative flag",
+	"viewportPercent_aboveMax.__themeFitStampPending":             "themeFit: stampPending flag",
+	"nameColorVal_belowMin.__themeFitMovedToNative":               "themeFit: movedToNative flag",
+	"nameColorVal_belowMin.__themeFitStampPending":                "themeFit: stampPending flag",
+	"highlightColor_belowMin.__themeFitMovedToNative":             "themeFit: movedToNative flag",
+	"highlightColor_belowMin.__themeFitStampPending":              "themeFit: stampPending flag",
+	"export_partial.__themeFitMovedToNative":                      "themeFit: movedToNative flag",
+	"export_partial.__themeFitStampPending":                       "themeFit: stampPending flag",
+	"layoutProfile_legacyPresets.__themeFitMovedToNative":         "themeFit: movedToNative flag",
+	"layoutProfile_legacyPresets.__themeFitStampPending":          "themeFit: stampPending flag",
+	"oocScale_inherit.__themeFitMovedToNative":                    "themeFit: movedToNative flag",
+	"oocScale_inherit.__themeFitStampPending":                     "themeFit: stampPending flag",
+	"subtheme_sanitize.__themeFitMovedToNative":                   "themeFit: movedToNative flag",
+	"subtheme_sanitize.__themeFitStampPending":                    "themeFit: stampPending flag",
+	"proxyMode_clamp.__themeFitMovedToNative":                     "themeFit: movedToNative flag",
+	"proxyMode_clamp.__themeFitStampPending":                      "themeFit: stampPending flag",
+	"panelFonts_garbage.__themeFitMovedToNative":                  "themeFit: movedToNative flag",
+	"panelFonts_garbage.__themeFitStampPending":                   "themeFit: stampPending flag",
+	"macros_garbage.__themeFitMovedToNative":                      "themeFit: movedToNative flag",
+	"macros_garbage.__themeFitStampPending":                       "themeFit: stampPending flag",
+	"stylePresets_garbage.__themeFitMovedToNative":                "themeFit: movedToNative flag",
+	"stylePresets_garbage.__themeFitStampPending":                 "themeFit: stampPending flag",
+	"chromeShape_garbage.__themeFitMovedToNative":                 "themeFit: movedToNative flag",
+	"chromeShape_garbage.__themeFitStampPending":                  "themeFit: stampPending flag",
+	"hiddenPanels_garbage.__themeFitMovedToNative":                "themeFit: movedToNative flag",
+	"hiddenPanels_garbage.__themeFitStampPending":                 "themeFit: stampPending flag",
+	"classicLayout_garbage.__themeFitMovedToNative":               "themeFit: movedToNative flag",
+	"classicLayout_garbage.__themeFitStampPending":                "themeFit: stampPending flag",
+	"layoutGridPx_garbage.__themeFitMovedToNative":                "themeFit: movedToNative flag",
+	"layoutGridPx_garbage.__themeFitStampPending":                 "themeFit: stampPending flag",
+	"classicAnchors_garbage.__themeFitMovedToNative":              "themeFit: movedToNative flag",
+	"classicAnchors_garbage.__themeFitStampPending":               "themeFit: stampPending flag",
+	"classicRotations_garbage.__themeFitMovedToNative":            "themeFit: movedToNative flag",
+	"classicRotations_garbage.__themeFitStampPending":             "themeFit: stampPending flag",
+	"themeRectRotations_garbage.__themeFitMovedToNative":          "themeFit: movedToNative flag",
+	"themeRectRotations_garbage.__themeFitStampPending":           "themeFit: stampPending flag",
+	"layoutProfiles_garbage.__themeFitMovedToNative":              "themeFit: movedToNative flag",
+	"layoutProfiles_garbage.__themeFitStampPending":               "themeFit: stampPending flag",
+	// non-themeFit migrations.
+	"export_partial.export.loop":                 "export: nested object replace, not merge",
+	"layoutProfile_legacyPresets.layoutProfiles": "layoutProfiles: legacyPresets migration (no clobber)",
+	"subtheme_sanitize.subtheme":                 "subtheme: sanitize",
+	"proxyMode_clamp.proxyMode":                  "proxyMode: clamp",
+	// sanitize tail
+	"panelFonts_garbage.panelFonts.":                    "sanitize: panelFonts",
+	"panelFonts_garbage.panelFonts.  ID1  ":             "sanitize: panelFonts padded id",
+	"panelFonts_garbage.panelFonts.id1":                 "sanitize: panelFonts id",
+	"macros_garbage.macros":                             "sanitize: macros",
+	"stylePresets_garbage.stylePresets":                 "sanitize: stylePresets",
+	"hiddenPanels_garbage.hiddenPanels":                 "sanitize: hiddenPanels dedupe",
+	"classicLayout_garbage.classicLayout.b":             "sanitize: classicLayout clamp",
+	"classicLayout_garbage.classicLayout.c":             "sanitize: classicLayout clamp",
+	"layoutGridPx_garbage.layoutGridPx":                 "sanitize: layoutGridPx clamp",
+	"classicAnchors_garbage.classicAnchors":             "sanitize: classicAnchors",
+	"classicRotations_garbage.classicRotations.":        "sanitize: classicRotations",
+	"themeRectRotations_garbage.themeRectRotations.":    "sanitize: themeRectRotations",
+	"themeRectRotations_garbage.themeRectRotations.t1.": "sanitize: themeRectRotations",
+	"layoutProfiles_garbage.layoutProfiles.":            "sanitize: layoutProfiles",
+	"layoutProfiles_garbage.layoutProfiles.p1.classic":  "sanitize: layoutProfiles classic",
+	"layoutProfiles_garbage.layoutProfiles.p1.gridPx":   "sanitize: layoutProfiles gridPx",
 }
-
