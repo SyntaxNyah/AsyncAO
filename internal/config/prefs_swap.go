@@ -262,6 +262,11 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 			e.VideoFormat = normalizeVideoFormat(p.Export.VideoFormat)
 		}
 		e.Loop = p.Export.Loop
+		if presence["export"] && !presence["export.loop"] {
+			// Mutation (export): the old load read onDisk.Export.Loop — a present export
+			// object without a loop key reads false, not the default.
+			e.Loop = false
+		}
 		p.Export = e
 	}
 	// discord + autoStatus: load() copied the whole on-disk struct when the key was
