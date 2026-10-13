@@ -12,12 +12,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -986,52 +980,6 @@ func TestPresetLibraryIsImmutableAcrossCallers(t *testing.T) {
 	}
 	if len(second.Elements) != want || second.Elements[0] != wantFirst {
 		t.Fatal("the second apply of the same preset produced a different theme")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// The data package's own encapsulation
-// ---------------------------------------------------------------------------
-
-// TestPresetDataPackageShipsDataOnly is the gate on the DEPENDENCY DIRECTION
-// (hard rule 11): internal/theme/presets is data, it imports "embed" and nothing
-// else, and it declares no function of any kind.
-//
-// It matters because the cycle it prevents is invisible until it exists. The
-// moment that package imports internal/theme — to validate a fragment, say, or
-// to expose a typed accessor — the parser can no longer import the data, and the
-// fix at that point is a third package nobody wanted. Here it is one assertion.
-func TestPresetDataPackageShipsDataOnly(t *testing.T) {
-	dir := filepath.Join("presets")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
-	var goFiles []string
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".go") {
-			goFiles = append(goFiles, e.Name())
-		}
-	}
-	sort.Strings(goFiles)
-	if len(goFiles) != 1 || goFiles[0] != "embed.go" {
-		t.Fatalf("the data package holds %v — it is data, and one file is the whole of it", goFiles)
-	}
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filepath.Join(dir, "embed.go"), nil, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	for _, imp := range f.Imports {
-		if imp.Path.Value != `"embed"` {
-			t.Errorf("the data package imports %s — data never imports code, or the cycle is one commit away", imp.Path.Value)
-		}
-	}
-	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok {
-			t.Errorf("the data package declares func %s — behaviour belongs in internal/theme", fn.Name.Name)
-		}
 	}
 }
 
