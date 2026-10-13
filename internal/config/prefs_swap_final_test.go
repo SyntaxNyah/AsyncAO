@@ -94,3 +94,42 @@ func TestNullReadsAsAbsent(t *testing.T) {
 		t.Errorf("explicit null differs from absent: %v", diffs)
 	}
 }
+
+// TestMigrationStampsMarkDirty pins the "dirty after load" side-effect the allowlist
+// harness missed: a file missing any one-shot migration stamp arms the pending flag
+// (markDirty) so the debounced saver persists it, while a fully-stamped file and an
+// already-migrated one do not. The expected flags are the OLD load()'s (confirmed equal
+// by the differential proof: every un-migrated stamp marks dirty).
+func TestMigrationStampsMarkDirty(t *testing.T) {
+	fullyStamped := map[string]any{
+		"spriteScalingMigrated": true, "spriteScaling": 2,
+		"autoReconnectDefaultMigrated": true, "autoReconnect": true,
+		"themeFitDefaultMigrated": true, "themeFit": 2,
+		"blipSpeedDefaultMigrated": true, "textCrawlMs": 18,
+		"deskManifestDefaultMigrated": true, "deskFollowManifest": true,
+		"detailedLogDefaultMigrated": true, "detailedLog": true,
+	}
+	cases := []struct {
+		name  string
+		input map[string]any
+		dirty bool
+	}{
+		{"fully_stamped", fullyStamped, false},
+		{"spriteScaling_unmigrated", map[string]any{"smoothScaling": true}, true},
+		{"autoReconnect_unmigrated", map[string]any{"autoReconnectDefaultMigrated": false, "autoReconnect": true}, true},
+		{"themeFit_unmigrated", map[string]any{"themeFitDefaultMigrated": false, "themeFit": 0}, true},
+		{"blipSpeed_unmigrated", map[string]any{"blipSpeedDefaultMigrated": false, "textCrawlMs": 18}, true},
+		{"deskManifest_unmigrated", map[string]any{"deskManifestDefaultMigrated": false, "deskFollowManifest": false}, true},
+		{"detailedLog_unmigrated", map[string]any{"detailedLogDefaultMigrated": false, "detailedLog": false}, true},
+	}
+	for _, c := range cases {
+		raw, _ := json.Marshal(c.input)
+		p, err := snapshotLoad(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got := p.pending.Load(); got != c.dirty {
+			t.Errorf("%s: pending after load = %v, want %v", c.name, got, c.dirty)
+		}
+	}
+}
