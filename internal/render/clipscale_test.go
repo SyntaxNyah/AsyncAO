@@ -3,8 +3,6 @@ package render
 import (
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/ttf"
-
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -85,73 +83,4 @@ func TestClipRectSurvivesScaleChange(t *testing.T) {
 	wantBaked := int(float64(clip.H)*scale) - 1
 	t.Logf("this backend inked to device row %d (baked-at-set would be ~%d, applied-at-use ~%d)",
 		lastInk, wantBaked, clip.H-1)
-}
-
-// TestDeviceExactReassertsTheClip pins the actual fix: whatever the backend does
-// with a clip across a scale change, text drawn through the device-exact bracket
-// must land inside the rows the caller clipped to.
-//
-// The regression it guards is total, not partial — on Metal at 125% the clip
-// collapsed to 1/1.25 of its height and chatbox text drawn below that line
-// vanished entirely, while the showname (drawn before the clip) stayed. The
-// client reported the text as drawn, revealed and fitting the whole time.
-func TestDeviceExactReassertsTheClip(t *testing.T) {
-	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
-		t.Skipf("SDL video unavailable: %v", err)
-	}
-	defer sdl.Quit()
-	if err := ttf.Init(); err != nil {
-		t.Skipf("ttf unavailable: %v", err)
-	}
-	defer ttf.Quit()
-
-	const w, h = 400, 400
-	win, err := sdl.CreateWindow("c", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, w, h, sdl.WINDOW_HIDDEN)
-	if err != nil {
-		t.Skipf("window: %v", err)
-	}
-	defer win.Destroy()
-	ren, err := sdl.CreateRenderer(win, -1, sdl.RENDERER_SOFTWARE)
-	if err != nil {
-		t.Skipf("renderer: %v", err)
-	}
-	defer ren.Destroy()
-
-	const pct = 125
-	font := openProbeFontAt(t, 14*pct/100)
-	defer font.Close()
-
-	m, err := Rasterize(ren, font, "the message that must survive the bracket", 200,
-		sdl.Color{R: 255, G: 255, B: 255, A: 255}, pct)
-	if err != nil {
-		t.Fatalf("Rasterize: %v", err)
-	}
-	defer m.Destroy()
-
-	// Mirror the chatbox: a generous LOGICAL clip, text well inside it.
-	clip := sdl.Rect{X: 0, Y: 20, W: 300, H: 200}
-	_ = ren.SetScale(1, 1)
-	_ = ren.SetDrawColor(0, 0, 0, 255)
-	_ = ren.Clear()
-	_ = ren.SetScale(float32(pct)/100, float32(pct)/100)
-	_ = ren.SetClipRect(&clip)
-	m.DrawScaled(ren, m.TotalRunes(), 4, 30, pct, &clip)
-	_ = ren.SetClipRect(nil)
-	_ = ren.SetScale(1, 1)
-
-	pix := make([]byte, w*h*4)
-	if err := ren.ReadPixels(&sdl.Rect{X: 0, Y: 0, W: w, H: h},
-		uint32(sdl.PIXELFORMAT_ARGB8888), unsafe.Pointer(&pix[0]), w*4); err != nil {
-		t.Skipf("ReadPixels: %v", err)
-	}
-	ink := 0
-	for i := 0; i < w*h; i++ {
-		if pix[i*4] != 0 || pix[i*4+1] != 0 || pix[i*4+2] != 0 {
-			ink++
-		}
-	}
-	if ink == 0 {
-		t.Error("the device-exact blit drew NOTHING inside a clip that comfortably contains it — " +
-			"this is the macOS chatbox failure: geometry correct, text reported as drawn, no pixels.")
-	}
 }

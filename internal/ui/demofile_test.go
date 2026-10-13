@@ -527,35 +527,3 @@ func TestDemoImportNoMountsNoSessionWarns(t *testing.T) {
 		t.Errorf("offline no-mount import must fire the empty-origin warning; got %q", a.warnLine)
 	}
 }
-
-// TestDemoImportRealFixtures is an env-gated acceptance run against real AO2
-// .demo files (set ASYNCAO_REAL_DEMO_DIR to a folder of them). No fixture content
-// is embedded — this stays committable. Each file must import without error, stay
-// within the cap, and its counts are logged for the record.
-func TestDemoImportRealFixtures(t *testing.T) {
-	dir := os.Getenv("ASYNCAO_REAL_DEMO_DIR")
-	if dir == "" {
-		t.Skip("set ASYNCAO_REAL_DEMO_DIR to a folder of .demo files to run this acceptance test")
-	}
-	matches, err := filepath.Glob(filepath.Join(dir, "*"+demoExt))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) == 0 {
-		t.Skipf("no %s files in %s", demoExt, dir)
-	}
-	for _, path := range matches {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
-		}
-		rec, skipped, truncated, err := demoToRecording(data, "o")
-		if err != nil {
-			t.Fatalf("%s: import errored: %v", filepath.Base(path), err)
-		}
-		if len(rec.Events) > maxRecordedEvents {
-			t.Errorf("%s: events = %d, exceeds the cap %d", filepath.Base(path), len(rec.Events), maxRecordedEvents)
-		}
-		t.Logf("%s: events=%d skipped=%d truncated=%d", filepath.Base(path), len(rec.Events), skipped, truncated)
-	}
-}

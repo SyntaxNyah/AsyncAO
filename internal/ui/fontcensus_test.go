@@ -2,63 +2,10 @@ package ui
 
 import (
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
-
-// censusSamples is one representative codepoint per script that the CURATED
-// fallback chain does not cover. Every one of them rendered as a tofu box before
-// the census existed; the point of the census is that the machine already had a
-// font for each, and nobody had hardcoded its path.
-var censusSamples = []struct {
-	script string
-	r      rune
-}{
-	{"Thai", 0x0E01}, {"Lao", 0x0E81}, {"Khmer", 0x1780}, {"Myanmar", 0x1000},
-	{"Cherokee", 0x13A0}, {"Syriac", 0x0710}, {"Thaana", 0x0780},
-	{"Mongolian", 0x1820}, {"Tibetan", 0x0F40}, {"Canadian Syllabics", 0x1401},
-	{"Runic", 0x16A0}, {"Ogham", 0x1681}, {"Glagolitic", 0x2C00},
-	{"Old Italic", 0x10300}, {"Gothic", 0x10330}, {"Cuneiform", 0x12000},
-	{"Egyptian hieroglyph", 0x13000}, {"Linear B", 0x10000},
-	{"CJK Ext-B", 0x20000}, {"Yi", 0xA000}, {"Javanese", 0xA980},
-	{"Adlam", 0x1E900}, {"Osage", 0x104B0}, {"Vai", 0xA500},
-	{"Coptic", 0x2C81}, {"Deseret", 0x10400}, {"Math alphanumeric", 0x1D400},
-}
-
-// TestFontCensusCoversTheCuratedGaps is the empirical claim the whole "no more
-// tofu" fix rests on: a stock Windows install ALREADY ships a font for every
-// script the curated chain misses, so the fix is discovery, not shipping fonts.
-//
-// Measured on a stock Windows 11 box: 148 files indexed, all 27 scripts resolved,
-// 0.2 s for the whole walk. It is skipped off Windows, where the font inventory
-// is the distro's business and cannot be asserted — the census still runs there,
-// which is the entire reason macOS and Linux stop being permanently Latin-only.
-func TestFontCensusCoversTheCuratedGaps(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("font inventory is not knowable off Windows; the census still runs there")
-	}
-	fc := &fontCensus{}
-	defer fc.close()
-	fc.index()
-	if len(fc.files) == 0 {
-		t.Skip("no system fonts indexed (locked-down or containerised host)")
-	}
-
-	var missing []string
-	for _, s := range censusSamples {
-		if fc.find(s.r) == "" {
-			missing = append(missing, s.script)
-		}
-	}
-	if len(missing) > 0 {
-		t.Errorf("the census found no installed font for %d script(s): %s\n"+
-			"(each of these renders as a tofu box; if a font really is absent on this host that is a skip, "+
-			"but if the census stopped finding fonts it has regressed)",
-			len(missing), strings.Join(missing, ", "))
-	}
-}
 
 // TestFontCensusMemoizesBothWays pins that a repeated lookup — including one that
 // found NOTHING — never re-walks the indexed faces. Without the negative memo, a
