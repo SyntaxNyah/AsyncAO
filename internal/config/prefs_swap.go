@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // presencePrepass decodes data into the set of PRESENT (non-null) JSON key paths,
@@ -187,6 +189,14 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	}
 	if p.HoldClearKey == "" {
 		p.HoldClearKey = def.HoldClearKey
+	}
+	// Mutation (subtheme): sanitize the subtheme folder on the way in (traversal is
+	// stripped), matching load()'s theme.SanitizeSubtheme call.
+	p.SubthemeName = theme.SanitizeSubtheme(p.SubthemeName)
+	// Mutation (proxyMode): clamp on the way in exactly as SetProxyMode clamps on the way
+	// out; an out-of-range value keeps the shipped default (ProxyModeSystem).
+	if p.ProxyModeVal < 0 || p.ProxyModeVal >= ProxyModeCount {
+		p.ProxyModeVal = def.ProxyModeVal
 	}
 
 	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
