@@ -217,16 +217,26 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 		p.AutoReconnect = false
 		p.AutoReconnectDefaultMigrated = true
 	}
+	// Mutation (themeFit flags): the migration reads the ON-DISK themeFit (zero when the
+	// key is absent), not the default-prefs value the unmarshal-over-defaults left there.
+	effectiveThemeFit := p.ThemeFit
+	if !presence["themeFit"] {
+		effectiveThemeFit = 0
+	}
 	if presence["themeFitDefaultMigrated"] && p.ThemeFitDefaultMigrated {
-		p.ThemeFit = clampPercent(p.ThemeFit, ThemeFitStretch, themeFitModeMax)
+		p.ThemeFit = clampPercent(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
 	} else {
-		saved := clampPercent(p.ThemeFit, ThemeFitStretch, themeFitModeMax)
+		saved := clampPercent(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
 		if saved == ThemeFitStretch {
+			// Mutation (themeFit flags): only a file still on the legacy Stretch default
+			// arms the one-shot move-to-native; every un-migrated file stamps.
 			p.ThemeFit = defaultThemeFit
+			p.themeFitMovedToNative = true
 		} else {
 			p.ThemeFit = saved
 		}
 		p.ThemeFitDefaultMigrated = true
+		p.themeFitStampPending = true
 	}
 	if presence["blipSpeedDefaultMigrated"] && p.BlipSpeedDefaultMigrated {
 		if p.TextCrawlMs != 0 {
