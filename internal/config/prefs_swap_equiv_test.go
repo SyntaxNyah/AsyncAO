@@ -88,7 +88,11 @@ func TestSwapCorpusEquivalence(t *testing.T) {
 
 	for _, c := range cases {
 		oldDump := loadGoldenDump(t, c.input)
-		newDump := dumpPrefs(snapshotLoad(mustJSON(t, c.input)))
+		newP, err := snapshotLoad(mustJSON(t, c.input))
+		if err != nil {
+			t.Fatalf("%s: snapshotLoad: %v", c.name, err)
+		}
+		newDump := dumpPrefs(newP)
 		for _, f := range diffJSON(oldDump, newDump, "") {
 			key := c.name + "." + f
 			reason, ok := equivalenceAllowlist[key]
