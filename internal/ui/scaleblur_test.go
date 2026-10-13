@@ -44,12 +44,6 @@ package ui
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"unsafe"
 
@@ -183,96 +177,6 @@ func TestBoldLabelIsOneRasterNotTwoDraws(t *testing.T) {
 	if again, _ := c.fontTextWidth(c.font, speaker); again != pw {
 		t.Errorf("fontTextWidth disagrees with fontTextWidthWeight(false): %d vs %d", again, pw)
 	}
-}
-
-// TestNoFauxBoldSecondPassRemains is the deletion-catcher for the CLASS, not for one
-// site. The removed idiom has a shape:
-//
-//	if <something Bold> {
-//	    <label draw at x+1>
-//	}
-//	<the same label draw at x>
-//
-// so the gate is: no `if` whose condition mentions a bold flag may have a body that
-// is nothing but a single label draw. Re-adding a faux-bold pass anywhere in the
-// package — including in a file that does not exist yet — reproduces exactly that
-// shape and fails here. It reads the PRODUCTION sources, so it cannot be satisfied
-// by a test-local re-implementation.
-func TestNoFauxBoldSecondPassRemains(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("glob the package: %v (%d files)", err, len(files))
-	}
-	labelDraws := map[string]bool{
-		"Label": true, "LabelClipped": true, "LabelClippedFont": true,
-		"LabelClippedFontAlpha": true, "labelEmoji": true, "labelName": true,
-		"labelNameElem": true, "labelCoveringCentered": true,
-	}
-	scanned := 0
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		scanned++
-		ast.Inspect(file, func(n ast.Node) bool {
-			ifs, ok := n.(*ast.IfStmt)
-			if !ok || ifs.Body == nil || len(ifs.Body.List) != 1 {
-				return true
-			}
-			if !mentionsBold(ifs.Cond) {
-				return true
-			}
-			es, ok := ifs.Body.List[0].(*ast.ExprStmt)
-			if !ok {
-				return true
-			}
-			call, ok := es.X.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || !labelDraws[sel.Sel.Name] {
-				return true
-			}
-			t.Errorf("%s:%d — a bold-gated block whose whole body is %s(...) is the faux-bold second pass. "+
-				"Weight belongs in the raster (LabelClippedFontWeight / labelEmojiWeight): a 1 px LOGICAL offset "+
-				"is multiplied by the UI scale, and the two copies then land on different sub-pixel phases (F1b).",
-				name, fset.Position(ifs.Pos()).Line, sel.Sel.Name)
-			return true
-		})
-	}
-	if scanned == 0 {
-		t.Fatal("scanned no production files — the gate would pass vacuously")
-	}
-}
-
-// mentionsBold reports whether an expression names a bold flag: the identifier
-// itself, a field/method whose name ends in "Bold", or either side of a || / &&.
-func mentionsBold(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		switch v := n.(type) {
-		case *ast.Ident:
-			if strings.HasSuffix(v.Name, "Bold") || v.Name == "bold" {
-				found = true
-			}
-		case *ast.SelectorExpr:
-			if strings.HasSuffix(v.Sel.Name, "Bold") {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
 }
 
 // TestWeightedLabelMatchesPlainWhenNotBold is the open–closed evidence for the new

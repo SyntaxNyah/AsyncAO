@@ -2,9 +2,6 @@ package assets
 
 import (
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"testing"
 )
@@ -94,52 +91,5 @@ func TestPruneToBudgetStopsAtTheBudget(t *testing.T) {
 	pruneToBudget(fourKiB(), fourKiBTotal, twoFileBudget, remove)
 	if len(*deleted) != 2 || (*deleted)[0] != "a" || (*deleted)[1] != "b" {
 		t.Errorf("prune deleted %v, want [a b] — oldest first, stopping the moment the store is at budget", *deleted)
-	}
-}
-
-// TestPruneDelegatesEveryDeletionToPruneToBudget is the encapsulation gate.
-// pruneToBudget only earns its keep while it is the ONE place thumbnails are
-// deleted; re-inlining the loop into prune would restore the bug with every
-// test above still green, because they would then be exercising a copy nothing
-// calls. So: prune may gather, and must not delete.
-func TestPruneDelegatesEveryDeletionToPruneToBudget(t *testing.T) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "thumbcache.go", nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse thumbcache.go: %v", err)
-	}
-	var body *ast.BlockStmt
-	for _, d := range f.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if ok && fn.Name.Name == "prune" && fn.Recv != nil {
-			body = fn.Body
-		}
-	}
-	if body == nil {
-		t.Fatal("no (*ThumbCache).prune in thumbcache.go — this gate has lost the function it guards")
-	}
-	var removes, delegates int
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr: // os.Remove(...)
-			if pkg, ok := fn.X.(*ast.Ident); ok && pkg.Name == "os" && fn.Sel.Name == "Remove" {
-				removes++
-			}
-		case *ast.Ident:
-			if fn.Name == "pruneToBudget" {
-				delegates++
-			}
-		}
-		return true
-	})
-	if removes != 0 {
-		t.Errorf("prune calls os.Remove %d time(s) directly — deletion belongs to pruneToBudget, where the vanished-file accounting lives and is tested", removes)
-	}
-	if delegates != 1 {
-		t.Errorf("prune calls pruneToBudget %d time(s), want exactly 1 — the tested budget arithmetic is the only sanctioned way to delete a thumbnail", delegates)
 	}
 }

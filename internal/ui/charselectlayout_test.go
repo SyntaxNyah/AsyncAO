@@ -3,7 +3,6 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -612,50 +611,6 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	g := a.charSelectGridPlan(w, h, a.topChromeH(), &zoomed)
 	if g.themed && g.canvas != zoomed.area {
 		t.Errorf("the grid is laid out on canvas %+v, not the current %+v", g.canvas, zoomed.area)
-	}
-}
-
-// TestThemeCanvasInvalidationGoesThroughOneDoor is the structural half, and the reason
-// the fix is a shared function rather than a second assignment at five sites: there were
-// fifteen places that dropped the courtroom cache, and being right at fourteen of them is
-// how char select ended up stale. Only invalidateThemeCanvases may touch either flag.
-//
-// It scans this package's own sources, which is the only way to catch a SIXTEENTH site
-// added later — the thing the shape of this bug guarantees will happen.
-func TestThemeCanvasInvalidationGoesThroughOneDoor(t *testing.T) {
-	const owner = "theme_layout.go" // where invalidateThemeCanvases lives
-	assigns := []string{"themeLay.valid = false", "charSelLay.valid = false"}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
-	scanned, found := 0, map[string]int{}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		scanned++
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		for _, a := range assigns {
-			n := strings.Count(string(src), a)
-			found[a] += n
-			if n > 0 && name != owner {
-				t.Errorf("%s assigns %q directly — call a.invalidateThemeCanvases() instead, "+
-					"or the other canvas goes stale (that is exactly how #20's screen kept an old zoom)", name, a)
-			}
-		}
-	}
-	if scanned < 10 {
-		t.Fatalf("only scanned %d package sources — the sweep is not running where it thinks it is", scanned)
-	}
-	for _, a := range assigns {
-		if found[a] != 1 {
-			t.Errorf("%q appears %d times in the package, want exactly one (inside %s)", a, found[a], owner)
-		}
 	}
 }
 

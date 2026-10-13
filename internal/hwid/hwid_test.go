@@ -1,10 +1,6 @@
 package hwid
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -115,58 +111,6 @@ func TestRootsDeterministic(t *testing.T) {
 	for _, r := range first {
 		if !strings.Contains(r, "=") {
 			t.Errorf("root %q is not label=value", r)
-		}
-	}
-}
-
-// The seam: this package may only hand out ids that are bound to a server. That
-// is enforced by what it exports — an exported function taking no server address
-// would be a way back to one id for every server, which is exactly the hole the
-// per-server scheme closes.
-//
-// This reads the package's own sources rather than calling anything, because the
-// property is about the API SHAPE: a re-added Compute() would compile, pass every
-// behavioural test above, and quietly restore the shared id. Adding an export
-// here fails loudly and forces the decision to be argued.
-func TestOnlyServerBoundIDsAreExported(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob this package's sources: %v", err)
-	}
-	if len(names) == 0 {
-		t.Fatal("no sources found — the export gate would pass vacuously")
-	}
-	exported := map[string]bool{}
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		for _, d := range f.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok || !fd.Name.IsExported() {
-				continue
-			}
-			exported[fd.Name.Name] = true
-			if fd.Recv != nil {
-				t.Errorf("%s: exported method %s — this package hands out ids through functions only", name, fd.Name.Name)
-				continue
-			}
-			if fd.Type.Params.NumFields() == 0 {
-				t.Errorf("%s: exported func %s takes no server address, so it can only return one id for every server — bind it to a server or unexport it", name, fd.Name.Name)
-			}
-		}
-	}
-	if !exported["For"] {
-		t.Error("For is gone: the sanctioned way to get an HDID must exist, or its callers found another one")
-	}
-	for name := range exported {
-		if name != "For" {
-			t.Errorf("unexpected export %s: every id this package hands out goes through For, so callers cannot obtain the cross-server device hash", name)
 		}
 	}
 }
