@@ -42,72 +42,18 @@ add TCP framing back.
 11. **Tests prove behaviour through the public API.** No `go/ast` or
     source-scanning tests: a test that parses this package's own files to
     pin where, or in what order, production code calls something is pinning
-    implementation, not behaviour, and is rejected. Seams are enforced by
-    construction — package boundaries (`internal/`), unexported types, and
-    compile-time checks (`var _ I = (*T)(nil)`) — never by a test that
-    parses source. A structural change's report states which responsibility
-    the change moves and which way dependencies point. No comment cites a
-    test file by name; such a citation rots and is deleted with the test it
-    points at. An AST/source-scan test is only ever deleted or converted to a
-    behavioural test — never retargeted to a different function or package.
-    Relocating the looked-up code between files in the same package is not a
-    retarget: a gate may switch its lookup from a literal filename to a
-    package-wide search (e.g. `funcBodyInPackage`) provided it keeps checking
-    the SAME function; pointing it at a different function or package is not.
+    implementation, not behaviour, and is rejected. Invariants are enforced by
+    compiler boundaries (`internal/`, unexported types, and compile-time checks
+    `var _ I = (*T)(nil)`) or behavioural tests — never by a test that parses
+    source. No comment cites a test file by name; such a citation rots and is
+    deleted with the test it points at.
 
-    **Kept source-scan gates (grandfathered deletion-catchers).** Rule 11
-    admits no NEW AST test; the ones below survive only because each pins a
-    placement/order/dependency property no construction seam enforces yet.
-    Remove one the day its seam is enforced by construction, and record the
-    removal here. Each entry: invariant → why no construction today → removal.
-    - **hdidgate** (`internal/ui/hdidgate_test.go`): the per-server HDID is
-      derived from the address being dialled, at the call. Every wrong answer
-      is a well-shaped id, so no behavioural test can distinguish it. Remove
-      when the id becomes a value the session constructor is handed.
-    - **blipcensus** (`internal/courtroom/blipcensus_test.go`): a blip URL has
-      exactly one mint, `URLBuilder.BlipRef`, in both directions. `AssetRef` is
-      a plain struct so no type funnel exists (an opaque blip type would ripple
-      through SFX/background refs — deferred, unverified). Remove when the blip
-      ref type is opaque.
-    - **packcharini** (`internal/ui/packcharini_test.go`): every char.ini read
-      goes through `FetchRawLayered`, never `FetchRaw`. `FetchRaw` returns good
-      bytes of the wrong side, invisible to behaviour. Remove when the two lanes
-      are distinct types.
-    - **closeThemeEditor order** (`internal/ui/themecreate_test.go`): the editor
-      lifts `livePaused = false` before its `editorSyncArt`, so a paused exit still
-      reconciles the media plan. The reconcile needs a real `render.TextureStore`
-      (`a.d.Store`), which the headless rig does not build, so no behavioural test
-      can be made to fail here (the reopen-not-paused replacement is vacuous —
-      `armThemeEditor` builds a fresh editor). Remove when the rig injects a Store
-      and a one-commit failing test exists.
-    - **settingsoverflow drawSettings arm/release** (`internal/ui/settingsoverflow_test.go`):
-      `drawSettings` arms the row-label limit (`pushRowLabelLimit`), releases it with
-      `defer` (so its early returns cannot strand it), and releases it a second time,
-      straight-line, before the full-window overlays. The behavioural smoke test
-      (`TestSettingsSearchReleasesTheRowLabelLimit`) only fails the release-on-early-return;
-      the arm and the release-before-overlays are mid-frame properties no headless test
-      can observe without a draw-capture seam. Remove when `drawSettings` is split so the
-      card region and overlay region are separate methods with the limit scoped to the
-      card method (a `pushPanelFont`-style bracket).
-    - **basewizard drawSettings paint order** (`internal/ui/basewizard_test.go`):
-      `drawSettings` draws the base wizard before the demo browser (topmost = drawn
-      last), offers a drop to the open wizard (`baseWizardTakesDrop`) before the
-      theme-root default, and keeps `baseWizard` inside the modal fence. Paint order
-      and the fence are wiring properties no headless test can observe without a
-      draw-order capture. Remove when the overlay stack is a construction seam (a
-      z-ordered overlay list drawn last-to-first).
-    - **the remaining `funcBodySource`/`packageFuncs` gates** (`zerowidthlanes`,
-      `frameharness`, `areamenu`, `arupstatus`, `basewizard`, `charidle`,
-      `chatboxskin`, `chatcrawlscroll`, `chatfocus`, `conclusivemiss`, `eggs`,
-      `emotepreviewfollow`, `emotescroll`, `fieldwordops`, `ghosttext`, `heal`,
-      `icarms`, `icsfx`, `logselect_wire`, `menuzorder`, `musicmarquee`,
-      `pacingfocus`, `pairpreview`, `poststickyreset` in `internal/ui`;
-      `preanimend`, `servertext`, `timerclock` in `internal/courtroom`;
-      `sidecar_census`, `preset` in `internal/theme`; `transportcensus` in
-      `internal/netproxy`): the same deletion-catcher shape — a wiring/order
-      property a behavioural test cannot observe. Remove individually the day
-      that seam is enforced by construction; this list is the audit trail, keep
-      it in sync when one goes.
+    **Sole exception — the HDID privacy gate** (`internal/ui/hdidgate_test.go`):
+    the per-server HDID is derived from the address being dialled, at the call;
+    every wrong answer is a well-shaped id, so no behavioural test can distinguish
+    it. It is the one surviving source-scan test, keyed by function name for any
+    receiver, and is removed the day the id becomes a value the session constructor
+    is handed.
 
 ## Build & test commands (Windows dev box)
 
