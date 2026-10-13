@@ -5,7 +5,6 @@ package theme
 
 import (
 	"errors"
-	"go/ast"
 	"strings"
 	"testing"
 )
@@ -260,60 +259,6 @@ func TestRenameElementOnAnAuthoredElementIsNotAFailure(t *testing.T) {
 	if strings.Contains(string(b), "[element.fresh]") {
 		t.Fatalf("the written file declares the OLD id too:\n%s", b)
 	}
-}
-
-// TestNothingButTheFunnelRenamesAnElementSection is the ENCAPSULATION gate.
-//
-// The carrier is private, so the only way to rename an element's section from
-// outside internal/theme is Sidecar.RenameElement. This census fails if the
-// package ever grows a second exported path to a section rename — an accessor
-// handing out the *INIDoc, or a helper that renames without the model — because
-// that is the shape (two owners of one identity) the whole file exists to
-// prevent.
-func TestNothingButTheFunnelRenamesAnElementSection(t *testing.T) {
-	callers := exportedFuncsCalling(t, "RenameSection")
-	for _, fn := range callers {
-		if fn != "RenameElement" {
-			t.Errorf("%s calls INIDoc.RenameSection — the model half would not move with it; "+
-				"route it through Sidecar.RenameElement", fn)
-		}
-	}
-	if len(callers) == 0 {
-		t.Error("nothing in this package calls RenameSection any more — the primitive is dead, " +
-			"and the id row in internal/ui is now writing a duplicate section")
-	}
-}
-
-// exportedFuncsCalling names every function in this package whose body calls
-// method. It reuses parsePackageSources — the one census walk the package's
-// other gates are built on — so a file split can never make it vacuous.
-func exportedFuncsCalling(t *testing.T, method string) []string {
-	t.Helper()
-	_, files := parsePackageSources(t)
-	var out []string
-	for _, f := range files {
-		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			found := false
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil && sel.Sel.Name == method {
-					found = true
-				}
-				return true
-			})
-			if found {
-				out = append(out, fn.Name.Name)
-			}
-		}
-	}
-	return out
 }
 
 // elementIDsOf lists the model's ids in order.

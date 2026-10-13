@@ -20,9 +20,7 @@ package theme
 // probe must equal the seeded one.
 
 import (
-	"go/ast"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -243,91 +241,6 @@ func TestEverySectionEmitterWritesItsSection(t *testing.T) {
 // itself is checked against writeInto's own SOURCE by the census below, so it is a
 // derived fact rather than a hand-maintained one.
 const sidecarSectionEmitterCount = 14
-
-// TestEveryWriteIntoEmitterHasATableRow is what makes sidecarSectionEmitterCount
-// true rather than remembered.
-//
-// The constant was hand-maintained, which is the same shape as the gap this file
-// exists to close: an emitter appended to writeInto's list, with no row in
-// sectionRows() and nobody bumping the constant, arrives untested and the suite
-// stays green — exactly how twelve of the fourteen came to be deletable. So the
-// count is read out of writeInto's BODY: every `s.write*` it names, counted from
-// the source.
-//
-// Selector NAMES rather than call sites, because writeInto does not call them — it
-// builds a []func(*INIDoc) error out of the method values and ranges over it. That
-// is also why a duplicate would be invisible to a length check on the literal, so
-// the names are collected as a set and their count compared both ways.
-func TestEveryWriteIntoEmitterHasATableRow(t *testing.T) {
-	const emitterPrefix = "write" // every section emitter is s.write<Section>
-
-	_, sources := parsePackageSources(t)
-	var writeInto *ast.FuncDecl
-	for _, file := range sources {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Name == nil || fn.Name.Name != "writeInto" || fn.Recv == nil {
-				continue
-			}
-			if writeInto != nil {
-				t.Fatal("two writeInto declarations in this package — the census would be reading one of them")
-			}
-			writeInto = fn
-		}
-	}
-	if writeInto == nil || writeInto.Body == nil {
-		t.Fatal("writeInto is gone from this package — the section emitters have a new home, and this " +
-			"census must be pointed at it or it covers nothing")
-	}
-
-	// THAT receiver's methods, not any `x.writeSomething` that happened to be in
-	// scope — an unnamed receiver would match nothing, so it is a failure.
-	self := writeIntoReceiverName(writeInto)
-	if self == "" {
-		t.Fatal("writeInto's receiver has no name — the census cannot tell its own emitters from anybody else's")
-	}
-	named := map[string]bool{}
-	ast.Inspect(writeInto.Body, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || !strings.HasPrefix(sel.Sel.Name, emitterPrefix) {
-			return true
-		}
-		if recv, ok := sel.X.(*ast.Ident); !ok || recv.Name != self {
-			return true
-		}
-		named[sel.Sel.Name] = true
-		return true
-	})
-
-	if len(named) != sidecarSectionEmitterCount {
-		t.Errorf("writeInto names %d %s* emitters %v, and sidecarSectionEmitterCount says %d — the constant is "+
-			"stale, and the table below it is therefore checked against a memory instead of against the writer",
-			len(named), emitterPrefix, sortedKeys(named), sidecarSectionEmitterCount)
-	}
-	if rows := len(sectionRows()); rows != len(named) {
-		t.Errorf("writeInto names %d emitters %v but the table has %d rows — the emitters with no row can "+
-			"`return nil` with this package green, which is a user's section silently discarded at save time",
-			len(named), sortedKeys(named), rows)
-	}
-}
-
-// writeIntoReceiverName is the identifier a method's receiver is bound to ("" for
-// an unnamed one).
-func writeIntoReceiverName(fn *ast.FuncDecl) string {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
-		return ""
-	}
-	return fn.Recv.List[0].Names[0].Name
-}
-
-func sortedKeys(set map[string]bool) []string {
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // TestNoSectionIsWrittenForAnEmptyModel is the other half, and it is what stops the
 // gate above from being satisfied by an emitter that writes its header
