@@ -129,7 +129,11 @@ func TestLoadEquivalence(t *testing.T) {
 			}
 			oldv := reflect.ValueOf(oldp).Elem().Field(i).Interface()
 
-			newv := reflect.ValueOf(snapshotLoad(raw)).Elem().Field(i).Interface()
+			newp, err := snapshotLoad(raw)
+			if err != nil {
+				t.Fatalf("snapshotLoad(%s): %v", key, err)
+			}
+			newv := reflect.ValueOf(newp).Elem().Field(i).Interface()
 			if !reflect.DeepEqual(oldv, newv) {
 				record(key, cs.name, oldv, newv)
 			}
