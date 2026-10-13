@@ -27,22 +27,10 @@ func loadPrefs(t *testing.T, path string) *AssetPreferences {
 	return p
 }
 
-// Preferences are SAVED by marshalling AssetPreferences (SaveNow) and LOADED by
-// unmarshalling into prefsJSON and then copying field by field in a hand-written
-// overlay. Two structs, two lists, no compiler tying them together — so a new
-// preference that joins only the first one saves perfectly and silently reverts
-// to its default on every launch.
-//
-// That is not hypothetical: assetCharCase shipped that way and stayed broken
-// until this gate was written. The trap is called out in CLAUDE.md and was still
-// unenforced by anything.
-//
-// This closes the class. Every json tag on AssetPreferences must have a twin on
-// prefsJSON, unless it is on the deliberate list below with a reason.
-
-// saveOnlyPrefTags are the AssetPreferences json tags that intentionally have no
-// prefsJSON twin. Each needs a reason, and the gate below fails if an entry here
-// stops being save-only — so an accidental fix cannot leave a stale excuse behind.
+// saveOnlyPrefTags are the AssetPreferences json tags that the golden fixture
+// deliberately does not cover (or that have no on-disk round-trip). Each needs a
+// reason, and TestGoldenFixtureCoversEveryField fails if an entry here stops being
+// save-only — so an accidental fix cannot leave a stale excuse behind.
 var saveOnlyPrefTags = map[string]string{}
 
 // prefJSONTags collects the json tag name of every exported field of t,
@@ -75,39 +63,9 @@ func prefJSONTags(t reflect.Type) map[string]bool {
 	return out
 }
 
-func TestEverySavedPreferenceIsAlsoLoaded(t *testing.T) {
-	saved := prefJSONTags(reflect.TypeOf(AssetPreferences{}))
-	loaded := prefJSONTags(reflect.TypeOf(prefsJSON{}))
-
-	for tag := range saved {
-		if loaded[tag] {
-			continue
-		}
-		if why, ok := saveOnlyPrefTags[tag]; ok {
-			t.Logf("save-only by design: %q — %s", tag, why)
-			continue
-		}
-		t.Errorf("preference %q is written by SaveNow but has no prefsJSON field, so it saves and never loads back. "+
-			"Add the field to prefsJSON with the SAME json tag AND a line to the load overlay, "+
-			"or list it in saveOnlyPrefTags with a reason.", tag)
-	}
-
-	// The allow-list must not rot: an entry that has since gained a DTO field is a
-	// stale excuse, and one that is no longer saved at all is dead weight.
-	for tag := range saveOnlyPrefTags {
-		if !saved[tag] {
-			t.Errorf("saveOnlyPrefTags[%q] names a tag AssetPreferences no longer has", tag)
-		}
-		if loaded[tag] {
-			t.Errorf("saveOnlyPrefTags[%q] is loaded now — drop the exemption", tag)
-		}
-	}
-}
-
-// TestAssetCharCasingRoundTrips is the instance the gate above was written for:
-// the power-user character-folder casing saved but reverted to lowercase on every
-// launch, which silently 404s every character on a capitalised-folder server for
-// anyone who set it and then restarted.
+// TestAssetCharCasingRoundTrips proves the character-folder casing setting saves and
+// loads back (a field that saves but reverts to lowercase on launch would silently 404
+// every character on a capitalised-folder server for anyone who set it and restarted).
 func TestAssetCharCasingRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
