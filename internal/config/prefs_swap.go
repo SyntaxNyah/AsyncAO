@@ -150,10 +150,12 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	} else {
 		p.LogScalePct = clampPercent(p.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
-	if p.OOCScalePct == 0 {
-		p.OOCScalePct = def.OOCScalePct
-	} else {
+	if presence["oocScalePercent"] && p.OOCScalePct != 0 {
 		p.OOCScalePct = clampPercent(p.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	} else {
+		// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade
+		// (absent or explicit zero, matching load()'s `onDisk.OOCScalePct != 0`).
+		p.OOCScalePct = p.LogScalePct
 	}
 	if p.InputHeightPct == 0 {
 		p.InputHeightPct = def.InputHeightPct
@@ -213,12 +215,14 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	} else {
 		p.SpriteScaling = defaultSpriteScaling
 		p.SpriteScalingMigrated = true
+		p.markDirty() // persist the stamp promptly so the move never re-fires
 	}
 	if presence["autoReconnectDefaultMigrated"] && p.AutoReconnectDefaultMigrated {
 		// already migrated: the on-disk value is honoured as-is
 	} else {
 		p.AutoReconnect = false
 		p.AutoReconnectDefaultMigrated = true
+		p.markDirty()
 	}
 	// Mutation (themeFit flags): the migration reads the ON-DISK themeFit (zero when the
 	// key is absent), not the default-prefs value the unmarshal-over-defaults left there.
@@ -240,6 +244,7 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 		}
 		p.ThemeFitDefaultMigrated = true
 		p.themeFitStampPending = true
+		p.markDirty()
 	}
 	if presence["blipSpeedDefaultMigrated"] && p.BlipSpeedDefaultMigrated {
 		if p.TextCrawlMs != 0 {
@@ -253,18 +258,21 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 			p.TextCrawlMs = saved
 		}
 		p.BlipSpeedDefaultMigrated = true
+		p.markDirty()
 	}
 	if presence["deskManifestDefaultMigrated"] && p.DeskManifestDefaultMigrated {
 		// honoured as-is
 	} else {
 		p.DeskFollowManifest = true
 		p.DeskManifestDefaultMigrated = true
+		p.markDirty()
 	}
 	if presence["detailedLogDefaultMigrated"] && p.DetailedLogDefaultMigrated {
 		// honoured as-is
 	} else {
 		p.DetailedLog = true
 		p.DetailedLogDefaultMigrated = true
+		p.markDirty()
 	}
 
 	// (i) enum clamp: a garbage / newer sprite-load mode falls back to the default.
@@ -306,6 +314,7 @@ func (p *AssetPreferences) normalize(presence map[string]bool) {
 	p.ThemeRectRotations = sanitizeThemeRectRotations(p.ThemeRectRotations)
 	p.LayoutProfiles = sanitizeLayoutProfiles(p.LayoutProfiles)
 	p.LayoutGridPx = clampLayoutGridPx(p.LayoutGridPx)
+	p.FontWarnThemes = clampStrings(p.FontWarnThemes, FontWarnThemesCap)
 	{
 		e := defaultExportOptions()
 		if p.Export.HeightPx > 0 {

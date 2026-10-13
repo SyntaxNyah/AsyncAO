@@ -2189,11 +2189,11 @@ func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-read the file: %v", err)
 	}
-	var onDisk prefsJSON
+	var onDisk AssetPreferences
 	if err := json.Unmarshal(data, &onDisk); err != nil {
 		t.Fatalf("parse the file: %v", err)
 	}
-	if onDisk.ThemeFitDefaultMigrated == nil || !*onDisk.ThemeFitDefaultMigrated {
+	if !onDisk.ThemeFitDefaultMigrated {
 		t.Error("the stamp had not reached disk — a crash here re-runs the migration and re-snaps the window")
 	}
 	if onDisk.ThemeFit != ThemeFitNative {

@@ -60,8 +60,7 @@ func malformedErrClass(err error) string {
 // snapshot does not yet reproduce (Order 1A-a). Key is "case"; each entry is removed by
 // the commit that closes it. A difference not listed, or a listed entry that no longer
 // differs, both fail.
-var malformedAllowlist = map[string]string{
-}
+var malformedAllowlist = map[string]string{}
 
 // TestMalformedParity runs every malformed case through the old load() (a real file) and
 // snapshotLoad (the raw bytes) and compares the error class and the whole-struct dump
