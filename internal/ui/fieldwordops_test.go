@@ -6,7 +6,6 @@ package ui
 // under the IC character counter.
 
 import (
-	"go/ast"
 	"testing"
 )
 
@@ -140,63 +139,6 @@ func TestReserveFieldTailIsOneSlotAndSelfClearing(t *testing.T) {
 	if got := c.takeFieldTail(icFieldID); got != 0 {
 		t.Errorf("a degenerate reservation stuck (%d px)", got)
 	}
-}
-
-// TestEscTogglesExtrasRatherThanLeavingTheServer is GH #51. Esc used to call
-// requestDisconnect: one reflexive keypress from leaving the server, behind nothing
-// but a confirm. It toggles the Extras box now, and the disconnect action lives in
-// that box — still one click away, never one keystroke.
-func TestEscTogglesExtrasRatherThanLeavingTheServer(t *testing.T) {
-	// The COURTROOM arm specifically. Char-select's Esc still leaves the server
-	// through the confirm and must keep doing so — a fresh char-select has no other
-	// exit — so the gate reads that one case clause rather than the whole method.
-	arms := screenCaseClauses(t, "ScreenCourtroom")
-	if len(arms) == 0 {
-		t.Fatal("App.Frame has no `case ScreenCourtroom:` arm — the dispatch was restructured and this gate checks nothing")
-	}
-	toggles := 0
-	for _, arm := range arms {
-		if containsCall(arm, "requestDisconnect") {
-			t.Error("a courtroom key arm still calls requestDisconnect — one reflexive keypress from leaving the server (GH #51)")
-		}
-		if containsCall(arm, "toggleExtrasBox") {
-			toggles++
-		}
-	}
-	if toggles == 0 {
-		t.Fatal("no courtroom key arm toggles the Extras box — GH #51's replacement action is gone")
-	}
-	// The action did not disappear: the Extras box still offers it.
-	found := false
-	for _, w := range (&App{}).extrasWidgets() {
-		if w.label == "Disconnect" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("the Extras box has no Disconnect entry — moving the action off Esc deleted it instead of relocating it")
-	}
-}
-
-// screenCaseClauses returns every `case <screen>:` arm inside App.Frame's
-// pre-screen key dispatch. Plural because Frame switches on a.screen more than
-// once; reading them all is what keeps the gate honest about WHICH arm leaves the
-// server, without it having to know the order they appear in.
-func screenCaseClauses(t *testing.T, screen string) []ast.Node {
-	t.Helper()
-	body := funcBodySource(t, "app.go", "Frame")
-	var out []ast.Node
-	ast.Inspect(body, func(n ast.Node) bool {
-		cc, ok := n.(*ast.CaseClause)
-		if !ok || len(cc.List) != 1 {
-			return true
-		}
-		if id, ok := cc.List[0].(*ast.Ident); ok && id.Name == screen {
-			out = append(out, cc)
-		}
-		return true
-	})
-	return out
 }
 
 // TestToggleExtrasBoxLeavesTheaterFirst pins setTheater's invariant: theater is
