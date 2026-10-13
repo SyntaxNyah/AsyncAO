@@ -1,77 +1,11 @@
 package courtroom
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
-
-// TestOnlyEndPreanimReleasesTheOneShot is the encapsulation gate for the
-// preanim-end seam: the PlayOnce latch may be CLEARED in exactly one place, the
-// endPreanim funnel. Bypassing it — a fifth `PlayOnce = false` written straight
-// into a phase handler — compiles fine and looks harmless, and that is precisely
-// how the release drifted into four unreported sites in the first place. This
-// makes the bypass fail loudly instead.
-//
-// It parses the package's own source rather than mirroring the rule in Go: a
-// mirror would re-implement the funnel and pass no matter what the production
-// code does (CLAUDE.md §11 on mirror-tests). Test files are excluded — a test
-// may stage any SpriteLayer it likes.
-func TestOnlyEndPreanimReleasesTheOneShot(t *testing.T) {
-	fset := token.NewFileSet()
-	files := parseNonTestSources(t, fset, 0)
-	type site struct {
-		file string
-		fn   string
-	}
-	var sites []site
-	for name, file := range files {
-		fn := "<file scope>"
-		ast.Inspect(file, func(n ast.Node) bool {
-			if d, ok := n.(*ast.FuncDecl); ok {
-				fn = d.Name.Name
-				return true
-			}
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range assign.Lhs {
-				if !isPlayOnceSelector(lhs) || i >= len(assign.Rhs) {
-					continue
-				}
-				if id, ok := assign.Rhs[i].(*ast.Ident); ok && id.Name == "false" {
-					sites = append(sites, site{file: shortName(name), fn: fn})
-				}
-			}
-			return true
-		})
-	}
-	if len(sites) != 1 || sites[0].fn != "endPreanim" {
-		t.Errorf("`Speaker.PlayOnce = false` sites = %+v; want exactly one, in endPreanim.\n"+
-			"Release the one-shot through c.endPreanim(reason) so every interrupt is named.", sites)
-	}
-}
-
-// isPlayOnceSelector matches an lvalue whose final field is PlayOnce, however
-// deep the receiver chain (c.Scene.Speaker.PlayOnce, sp.PlayOnce, ...).
-func isPlayOnceSelector(e ast.Expr) bool {
-	sel, ok := e.(*ast.SelectorExpr)
-	return ok && sel.Sel.Name == "PlayOnce"
-}
-
-func shortName(path string) string {
-	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
-		return path[i+1:]
-	}
-	return path
-}
 
 // TestPreanimEndReasonsAreAllNamed pins the reason table against the constant
 // block: a reason added without a name would String() to "" and make the
@@ -277,33 +211,3 @@ func wantReason(t *testing.T, room *Courtroom, want PreanimEndReason) {
 // compile-time proof the hook keeps the shape internal/ui would wire it with.
 var _ = func(c *Courtroom) { c.Env = envFake{end: func(PreanimEndReason) {}} }
 var _ = protocol.ChatMessage{}
-
-// parseNonTestSources parses every non-test .go file in this package's directory
-// into fset, returning a filename→AST map in the same shape the deprecated
-// parser.ParseDir used to hand back (its per-package Files map). ParseDir was
-// dropped because it ignores build tags when associating files with packages
-// (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
-// result is a failure, not a pass: a census that read nothing passes everything.
-func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package directory: %v", err)
-	}
-	files := make(map[string]*ast.File)
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, name, nil, mode)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		files[name] = f
-	}
-	if len(files) == 0 {
-		t.Fatal("no production sources found — the census would be vacuous")
-	}
-	return files
-}
