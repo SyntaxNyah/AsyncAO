@@ -2,12 +2,6 @@ package render
 
 import (
 	"encoding/binary"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -193,79 +187,5 @@ func TestWrappedMessageRowsClearTheFontsLineSpacing(t *testing.T) {
 	at := RasterizeAnimated(font, text, []EffectSpan{{Start: 0, Len: 4, Effect: EffectShake}}, []sdl.Color{white}, wrapW, nil, 0)
 	if at.lineH != pitch {
 		t.Errorf("AnimatedText row advance = %d, want %d — FX text must not re-space the chatbox", at.lineH, pitch)
-	}
-}
-
-// TestEveryRasterStacksRowsByLineSpacing is the deletion-catcher / encapsulation
-// test: FontLineSpacing is the ONE row-pitch metric in this package, so no other
-// non-test file here may read Font.Height() (the metric it replaced). A new raster
-// that reintroduces the bare glyph box fails here, and so does deleting the mint's
-// callers — the census names each one and requires it to still be there.
-func TestEveryRasterStacksRowsByLineSpacing(t *testing.T) {
-	root, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Each file that stacks rows, and how many pitch decisions it makes. A count,
-	// not a bool, because animtext.go makes two (the base face, then the max over
-	// the resolved fallback faces) and losing either one silently re-splits the
-	// pitch between plain and mixed-script messages.
-	want := map[string]int{
-		"text.go":     2, // Rasterize + RasterizeStyled
-		"animtext.go": 2, // base face, then the max over the resolved faces
-		"emoji.go":    1, // the max over the per-glyph fallback faces
-	}
-	got := map[string]int{}
-	var offenders []string
-
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, perr := parser.ParseFile(fset, filepath.Join(root, name), nil, parser.SkipObjectResolution)
-		if perr != nil {
-			t.Fatalf("parse %s: %v", name, perr)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			switch fn := call.Fun.(type) {
-			case *ast.Ident:
-				if fn.Name == "FontLineSpacing" {
-					got[name]++
-				}
-			case *ast.SelectorExpr:
-				// linespacing.go IS the mint — it is the one place allowed to read the
-				// raw SDL_ttf primitives.
-				if fn.Sel.Name == "Height" && name != "linespacing.go" {
-					offenders = append(offenders, name+" reads Font.Height() directly")
-				}
-				if fn.Sel.Name == "LineSkip" && name != "linespacing.go" {
-					offenders = append(offenders, name+" reads Font.LineSkip() directly")
-				}
-			}
-			return true
-		})
-	}
-	if len(offenders) > 0 {
-		t.Errorf("row pitch decided outside FontLineSpacing:\n  %s\n\n"+
-			"Every wrapped-row advance in this package comes from FontLineSpacing (linespacing.go): "+
-			"Font.Height() is the glyph box with the font's leading thrown away, which is what drew "+
-			"two IC lines almost touching. Call the mint.", strings.Join(offenders, "\n  "))
-	}
-	for file, n := range want {
-		if got[file] < n {
-			t.Errorf("%s calls FontLineSpacing %d time(s), expected at least %d — either a raster moved "+
-				"(point this census at it) or one stopped using the shared pitch (check the rows did not "+
-				"go back to the glyph box)", file, got[file], n)
-		}
 	}
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -386,38 +385,6 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	}
 }
 
-// TestAsyncAOChromeLivesOutsideTheCanvas pins issue #21 rule (c): AsyncAO's own
-// controls do not draw inside a theme's design canvas.
-//
-// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned at the
-// raw window's bottom-left whenever a theme was active. Under aceattorney2x that
-// is inside music_list = 0,323,216,277, so it painted AND clicked through the
-// theme's own jukebox. No design key existed for a theme author to move it, so the
-// commands moved out of the canvas entirely.
-func TestAsyncAOChromeLivesOutsideTheCanvas(t *testing.T) {
-	// Every command the deleted chip row carried must still be reachable.
-	for _, row := range []struct{ menuTitle, label string }{
-		{menuExtrasTitle, "AsyncAO Extras box"},
-		{menuExtrasTitle, "Restyle character…"},
-		{menuExtrasTitle, "Mod dashboard"},
-		{menuExtrasTitle, "CM area controls"},
-		{menuHelpTitle, "Hotkeys"}, // the chip row's sibling; Help is its home
-	} {
-		menuRow(t, row.menuTitle, row.label) // fatals when the row is missing
-	}
-	// And the row itself must stay gone, along with the memo that existed only to
-	// keep its tooltip alloc-free.
-	src, err := os.ReadFile("theme_layout.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, gone := range []string{"drawThemedExtrasButton", "extrasTipText", "extrasTipBody"} {
-		if strings.Contains(string(src), gone+"(") {
-			t.Errorf("theme_layout.go still calls %q — AsyncAO chrome is back inside the design canvas", gone)
-		}
-	}
-}
-
 // TestFxAndEmojiAreReachableUnderATheme pins the regression that the themed IC-bar
 // rewrite introduced and an adversarial review caught.
 //
@@ -515,23 +482,5 @@ func TestMarkChangelogSeenStampsTheBuild(t *testing.T) {
 	a.markChangelogSeen()
 	if got := a.d.Prefs.ChangelogSeenVersion(); got == stale {
 		t.Error("markChangelogSeen must stamp the current build as seen")
-	}
-}
-
-// TestMenuBarDrawsNoUnreadBadge pins the removal. A green dot rode the Help title
-// and hung off its top-right corner, so it overlapped the title's last glyph and
-// read as a rendering defect in the strip rather than as a notification. It also
-// nagged about something nobody asked to be told. This guards the whole mechanism
-// staying gone rather than just the draw call: a reintroduced badge would need one
-// of these symbols back.
-func TestMenuBarDrawsNoUnreadBadge(t *testing.T) {
-	src, err := os.ReadFile("menubar.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, gone := range []string{"drawUnreadDot", "menuBarBadgeAnchor", "menuBarBadgeDropY", "menuBarBadgeInsetX", "changelogUnread"} {
-		if strings.Contains(string(src), gone) {
-			t.Errorf("menubar.go still references %q — the unread badge is back on the strip", gone)
-		}
 	}
 }

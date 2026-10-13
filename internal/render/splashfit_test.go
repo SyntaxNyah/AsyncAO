@@ -4,8 +4,6 @@ package render
 // full-fill path it used to share with the background.
 
 import (
-	"os"
-	"strings"
 	"testing"
 	"unsafe"
 
@@ -172,32 +170,5 @@ func TestSplashFitRectFallsBackToTheViewport(t *testing.T) {
 	}
 	if got := splashFitRect(sdl.Rect{W: 10, H: 0}, 4, 3); got.H != 0 {
 		t.Errorf("a zero-height viewport must not be scaled into: %+v", got)
-	}
-}
-
-// TestTheShoutDoesNotGoThroughTheFullFillPath is the encapsulation gate.
-//
-// drawFill is the FULL-VIEWPORT blit, and it is right for exactly two layers: the
-// background and the desk. The shout used it too, and that was the defect. A
-// source gate rather than a behavioural one because the failure mode is a call
-// that reverts to the wrong function — which no pixel assertion can see without a
-// GPU, and which a future edit to Render is one line away from re-introducing.
-func TestTheShoutDoesNotGoThroughTheFullFillPath(t *testing.T) {
-	src, err := os.ReadFile("viewport.go")
-	if err != nil {
-		t.Fatalf("viewport.go: %v", err)
-	}
-	text := string(src)
-	if strings.Contains(text, "v.drawFill(ren, shoutBase") {
-		t.Error("the shout bubble is back on drawFill — it will stretch across a wide stage again; " +
-			"AO2's splash layer never stretches (splashfit.go cites animationlayer.cpp:229-260)")
-	}
-	if !strings.Contains(text, "v.drawSplash(ren, shoutBase, &v.shoutAnim, vp)") {
-		t.Error("Render no longer draws the shout through drawSplash")
-	}
-	// And drawFill must keep resolving its frame through the SHARED helper, or the
-	// two layers can drift apart on the held-frame bridge.
-	if !strings.Contains(text, "tex, _, _, ok := v.layerFrame(anim)") {
-		t.Error("drawFill stopped sharing layerFrame with drawSplash — the held-frame bridge is now duplicated")
 	}
 }

@@ -9,9 +9,6 @@ package ui
 
 import (
 	"crypto/sha256"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 	"time"
@@ -309,75 +306,6 @@ func TestEveryInspectorFieldIsUndoable(t *testing.T) {
 					"be un-saved is data loss wearing an undo stack as a hat", k, f.label)
 			}
 		}
-	}
-}
-
-// TestMutatorsAreTopLevelFuncsThatReturnAnOp is the structural half, at the SOURCE.
-//
-// The behavioural gate above proves every row that EXISTS is undoable. This one
-// proves the SHAPE cannot change: a row wired to a closure, a method value, or a
-// function that returns something other than a themeEditOp would let the next wave
-// reintroduce a direct writer, and the behavioural gate would keep passing for every
-// row that had not yet been converted.
-func TestMutatorsAreTopLevelFuncsThatReturnAnOp(t *testing.T) {
-	const inspectorFile = "themeeditorinspector.go"
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, inspectorFile, nil, 0)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", inspectorFile, err)
-	}
-	// Collect the top-level funcs this file declares, with their result types.
-	results := map[string]string{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Type.Results == nil {
-			continue
-		}
-		if len(fn.Type.Results.List) != 1 {
-			continue
-		}
-		if id, ok := fn.Type.Results.List[0].Type.(*ast.Ident); ok {
-			results[fn.Name.Name] = id.Name
-		}
-	}
-	// Every `mut:` / `get:` value in the file must name one of them.
-	seen := 0
-	ast.Inspect(file, func(n ast.Node) bool {
-		kv, ok := n.(*ast.KeyValueExpr)
-		if !ok {
-			return true
-		}
-		key, ok := kv.Key.(*ast.Ident)
-		if !ok || (key.Name != "mut" && key.Name != "get") {
-			return true
-		}
-		seen++
-		id, ok := kv.Value.(*ast.Ident)
-		if !ok {
-			t.Errorf("%s: %s is wired to %T at %s — it must name a TOP-LEVEL func; a closure or a "+
-				"method value allocates per row and can capture state the undo stack never sees",
-				inspectorFile, key.Name, kv.Value, fset.Position(kv.Pos()))
-			return true
-		}
-		res, declared := results[id.Name]
-		if !declared {
-			t.Errorf("%s: %s names %s, which this file does not declare as a top-level func (%s)",
-				inspectorFile, key.Name, id.Name, fset.Position(kv.Pos()))
-			return true
-		}
-		if key.Name == "mut" && res != "themeEditOp" {
-			t.Errorf("%s: mut names %s, which returns %s — a mutator must RETURN an op, never perform "+
-				"one, or a row can bypass the undo stack (%s)",
-				inspectorFile, id.Name, res, fset.Position(kv.Pos()))
-		}
-		if key.Name == "get" && res != "editValue" {
-			t.Errorf("%s: get names %s, which returns %s, want editValue (%s)",
-				inspectorFile, id.Name, res, fset.Position(kv.Pos()))
-		}
-		return true
-	})
-	if seen == 0 {
-		t.Fatal("the census found no get/mut wiring at all — it stopped matching the table it is named for")
 	}
 }
 

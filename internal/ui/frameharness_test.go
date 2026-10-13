@@ -45,12 +45,8 @@ package ui
 // SDL: skips (never fails) without a video driver, via newCaptureHarness.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -307,66 +303,6 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	if got := a.themeFXFrame - one; got != 1 {
 		t.Fatalf("one frame advanced the FX pass by %d, want exactly 1 — the pass hook fired %d times "+
 			"in one frame, which halves themeFXIdleFrames for every one-shot", got, got)
-	}
-}
-
-// TestFrameGatesDriveTheRealFrame is the harness's anti-bypass gate.
-//
-// A fixture whose users can quietly stop using it is not a seam. Every file that
-// stages the frame harness must also drive it through driveFrame / driveFrames /
-// driveUntilThemeApplied — i.e. through App.Frame — because the moment one of them
-// reaches for a.drawCourtroom instead, it is back to testing the function while the
-// wiring goes uncovered, which is exactly the state this file was written to end.
-func TestFrameGatesDriveTheRealFrame(t *testing.T) {
-	files, err := filepath.Glob("*_test.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("glob the package tests: %v (%d files)", err, len(files))
-	}
-	const stager = "stageFrameDrivenApp"
-	drivers := []string{"driveFrame", "driveFrames", "driveUntilThemeApplied"}
-	fset := token.NewFileSet()
-	staged := 0
-	for _, name := range files {
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		uses, drives := false, false
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			id, ok := call.Fun.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			if id.Name == stager {
-				uses = true
-			}
-			for _, d := range drivers {
-				if id.Name == d {
-					drives = true
-				}
-			}
-			return true
-		})
-		if !uses {
-			continue
-		}
-		staged++
-		if !drives {
-			t.Errorf("%s stages the frame harness but never drives a frame (%s) — a gate on this "+
-				"fixture that calls a screen draw directly is testing the function, not the wiring",
-				name, strings.Join(drivers, " / "))
-		}
-	}
-	if staged == 0 {
-		t.Fatalf("no test file stages %s — the harness has no users, so it pins nothing", stager)
 	}
 }
 

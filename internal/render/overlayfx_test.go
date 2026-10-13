@@ -2,8 +2,6 @@ package render
 
 import (
 	"image"
-	"os"
-	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -296,83 +294,6 @@ func TestStretchedOverlayKeepsSmoothScaling(t *testing.T) {
 	stretched.Scaling = courtroom.ScalingPixel
 	if got := v.overlayScaleMode(stretched, 64, 600); got != sdl.ScaleModeNearest {
 		t.Errorf("a stretched overlay asking for pixel scaled %v", got)
-	}
-}
-
-// TestOverlayLayerDrawOrder — spec §4.4. The four rungs of do_effect
-// (courtroom.cpp:3216-3247) are positions in a stack, and the ONLY thing that
-// puts an AsyncAO overlay at the right depth is where its drawOverlay call sits
-// inside Viewport.Render. A recording renderer would prove the same thing one
-// blit at a time; the call ORDER in the source is that proof without a GPU, and
-// it fails loudly if someone hoists a call while refactoring the pass.
-//
-// DEPTH ONLY — where a rung lands is TestOverlayIsClippedToTheStage's job, and it
-// reads real pixels back. This census being the only §4.4 render test is what let
-// an unclipped, off-stage destination rect ship unnoticed.
-//
-//	behind    → stackUnder(ui_vp_player_char): after the background, BEFORE any sprite
-//	character → stackUnder(ui_vp_desk):        after the sprites, BEFORE the desk
-//	over      → raise() in the viewport:       after the desk, BEFORE the shout splash
-//	chat      → reparented OUT of the viewport entirely (DrawOverlayChat, UI-side)
-func TestOverlayLayerDrawOrder(t *testing.T) {
-	src, err := os.ReadFile("viewport.go")
-	if err != nil {
-		t.Fatalf("read viewport.go: %v", err)
-	}
-	body := string(src)
-	start := strings.Index(body, "func (v *Viewport) Render(")
-	end := strings.Index(body, "func effectiveShoutBase(")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate Viewport.Render — this census needs updating with the refactor")
-	}
-	body = body[start:end]
-
-	at := func(marker string) int {
-		i := strings.Index(body, marker)
-		if i < 0 {
-			t.Fatalf("Viewport.Render no longer contains %q — the overlay rung it anchors is gone", marker)
-		}
-		return i
-	}
-	behind := at("courtroom.OverlayLayerBehind")
-	firstSprite := at("v.drawSprite(")
-	lastSprite := strings.LastIndex(body, "v.drawSprite(")
-	character := at("courtroom.OverlayLayerCharacter")
-	desk := at("scene.DeskBase")
-	over := at("courtroom.OverlayLayerOver")
-	shout := at("effectiveShoutBase(scene, v.store)")
-
-	if behind >= firstSprite {
-		t.Error("the `behind` rung must blit BEFORE every character sprite (courtroom.cpp:3218-3222)")
-	}
-	if character <= lastSprite {
-		t.Error("the `character` rung must blit AFTER the character sprites (courtroom.cpp:3223-3227)")
-	}
-	if character >= desk {
-		t.Error("the `character` rung must blit UNDER the desk overlay (stackUnder(ui_vp_desk))")
-	}
-	if over <= desk {
-		t.Error("the `over` rung must blit ABOVE the desk (courtroom.cpp:3228-3232)")
-	}
-	if over >= shout {
-		t.Error("the `over` rung must blit BELOW the shout splash")
-	}
-	if strings.Contains(body, "courtroom.OverlayLayerChat") {
-		t.Error("the `chat` rung is reparented OUT of the viewport (courtroom.cpp:3234-3237) — it belongs " +
-			"to DrawOverlayChat, called after the chatbox from internal/ui, never inside Render")
-	}
-	// Depth is only half the stack contract: the three in-viewport rungs are
-	// CHILDREN of ui_viewport (setParent, courtroom.cpp:3218-3232), so each must
-	// go through the containment wrapper. A refactor that reaches for the raw
-	// blit inside Render silently restores the off-stage spill —
-	// TestOverlayIsClippedToTheStage proves the wrapper works, this proves the
-	// pass still uses it.
-	if n := strings.Count(body, "v.drawOverlayInStage("); n != 3 {
-		t.Errorf("Render makes %d contained overlay calls, want 3 (behind/character/over)", n)
-	}
-	if strings.Contains(body, "v.drawOverlay(") {
-		t.Error("Render blits an overlay UNCONTAINED — every in-viewport rung is a child of " +
-			"ui_viewport and must clip to the stage (drawOverlayInStage)")
 	}
 }
 

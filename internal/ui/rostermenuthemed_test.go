@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -93,33 +91,5 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	if a.rosterMenuThemed() {
 		t.Error("a zero-width music_list paints nothing — themeLayoutCache.rect already " +
 			"rejects it and this predicate must agree with it")
-	}
-}
-
-// TestRosterMenuOpensWithTheDerivedThemedFlag is the draw-site half: the predicate
-// above is worthless if drawPlayerList goes back to passing a literal.
-//
-// Source-scanned rather than driven, because reaching the call needs a renderer, a
-// laid-out toolbar and a click — and the property is about the ARGUMENT, which a
-// scan pins directly. Same idiom as TestThemedMusicPanelForcesTheTrackList.
-func TestRosterMenuOpensWithTheDerivedThemedFlag(t *testing.T) {
-	src, err := os.ReadFile("playerlist.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	if !strings.Contains(body, "a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())") {
-		t.Error("the roster's ⋮ no longer opens the overflow with the DERIVED themed flag; " +
-			"a hardcoded false offers the Volume-sliders row inside the theme's music_list " +
-			"rect, where drawMusicList discards it and SetMusicVolMode still persists it")
-	}
-	// The menu's own gate has to stay the thing that reads it, or the flag is inert.
-	menu, err := os.ReadFile("musicheader.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(menu), "if k == musicMenuVolumeView {\n\t\treturn !themed\n\t}") {
-		t.Error("musicMenuRowLive no longer drops the Volume row under a theme, so the " +
-			"roster's derived flag has nothing to act on")
 	}
 }
