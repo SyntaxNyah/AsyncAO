@@ -240,21 +240,4 @@ func TestThemeFitFlagsCharacterized(t *testing.T) {
 // "category: reason". Each per-migration commit (1A-b) deletes its entries; the final
 // commit (1A-c) asserts empty.
 var equivalenceAllowlist = map[string]string{
-	// sanitize tail
-	"panelFonts_garbage.panelFonts.":                    "sanitize: panelFonts",
-	"panelFonts_garbage.panelFonts.  ID1  ":             "sanitize: panelFonts padded id",
-	"panelFonts_garbage.panelFonts.id1":                 "sanitize: panelFonts id",
-	"macros_garbage.macros":                             "sanitize: macros",
-	"stylePresets_garbage.stylePresets":                 "sanitize: stylePresets",
-	"hiddenPanels_garbage.hiddenPanels":                 "sanitize: hiddenPanels dedupe",
-	"classicLayout_garbage.classicLayout.b":             "sanitize: classicLayout clamp",
-	"classicLayout_garbage.classicLayout.c":             "sanitize: classicLayout clamp",
-	"layoutGridPx_garbage.layoutGridPx":                 "sanitize: layoutGridPx clamp",
-	"classicAnchors_garbage.classicAnchors":             "sanitize: classicAnchors",
-	"classicRotations_garbage.classicRotations.":        "sanitize: classicRotations",
-	"themeRectRotations_garbage.themeRectRotations.":    "sanitize: themeRectRotations",
-	"themeRectRotations_garbage.themeRectRotations.t1.": "sanitize: themeRectRotations",
-	"layoutProfiles_garbage.layoutProfiles.":            "sanitize: layoutProfiles",
-	"layoutProfiles_garbage.layoutProfiles.p1.classic":  "sanitize: layoutProfiles classic",
-	"layoutProfiles_garbage.layoutProfiles.p1.gridPx":   "sanitize: layoutProfiles gridPx",
 }
