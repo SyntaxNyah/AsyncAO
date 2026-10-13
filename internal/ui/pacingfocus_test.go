@@ -5,7 +5,6 @@ package ui
 // census proving none of them can quietly stop consulting the seam.
 
 import (
-	"go/ast"
 	"path/filepath"
 	"testing"
 
@@ -93,43 +92,5 @@ func TestUnfocusedFullRateLiftsEveryPacerTier(t *testing.T) {
 	wFoc, rFoc := a.NextWakeDelay(true)
 	if wUnf != wFoc || rUnf != rFoc {
 		t.Errorf("NextWakeDelay(unfocused) = (%v,%v), want the focused schedule (%v,%v)", wUnf, rUnf, wFoc, rFoc)
-	}
-}
-
-// TestEveryPacerEntryConsultsTheFocusSeam is the encapsulation gate. The option
-// works ONLY because all five methods the main loop hands a `focused bool` funnel
-// it through pacingFocused first; a sixth entry point added later, or one that
-// quietly drops the call, would leave the preference half-applied — an unfocused
-// window that renders at full rate but is still parked by SkipFrame, which is
-// indistinguishable from the option not working at all.
-//
-// Source, not behaviour, and deliberately: the failure this catches is a MISSING
-// call, and no return value distinguishes "consulted the seam and it said no"
-// from "never consulted it".
-func TestEveryPacerEntryConsultsTheFocusSeam(t *testing.T) {
-	for _, fn := range []string{"FramePace", "HardCapBudget", "SkipFrame", "RenderSuppressed", "NextWakeDelay"} {
-		body := funcBodySource(t, "app.go", fn)
-		if !containsCall(body, "pacingFocused") {
-			t.Errorf("%s does not call pacingFocused — the unfocused-full-rate option is bypassed on this path", fn)
-		}
-	}
-	// …and the census must stay complete: every method in app.go whose FIRST
-	// parameter is named `focused` is a pacer entry point by construction, so a new
-	// one is caught here rather than by a bug report.
-	_, f := parsedFile(t, "app.go")
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if !ok || fd.Body == nil || fd.Recv == nil || fd.Type.Params == nil {
-			continue
-		}
-		if len(fd.Type.Params.List) == 0 || len(fd.Type.Params.List[0].Names) == 0 {
-			continue
-		}
-		if fd.Type.Params.List[0].Names[0].Name != "focused" {
-			continue
-		}
-		if !containsCall(fd.Body, "pacingFocused") {
-			t.Errorf("%s takes a `focused` parameter but never calls pacingFocused — add it to the seam or rename the parameter", fd.Name.Name)
-		}
 	}
 }

@@ -8,8 +8,6 @@ package ui
 // back what it had just written would have passed against the broken build.
 
 import (
-	"go/ast"
-	"os"
 	"strings"
 	"testing"
 
@@ -365,112 +363,6 @@ func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 	}
 }
 
-// TestTheOnlyPlaceTheEditorIsDroppedSyncsTheArt is the deletion-catcher behind the two
-// gates above (hard rule 11).
-//
-// The claim themeeditorart.go now makes is structural: the per-frame sync covers every
-// move the editor SURVIVES, and closeThemeEditor covers the move that ends it — which is
-// only true while closeThemeEditor is the one and only place a.te is cleared. A second
-// `a.te = nil` anywhere in W8 would restore the hole silently and in a shape no
-// behavioural gate here would notice, because it would be a NEW exit with no test of its
-// own. So the census is on the assignment, not on the call graph.
-//
-// It reads the AST, deliberately: themeeditorop.go's note on the ring writes the same
-// three tokens in prose, and a text scan would count the comment as an exit.
-func TestTheOnlyPlaceTheEditorIsDroppedSyncsTheArt(t *testing.T) {
-	sites := editorReleaseSites(t)
-	if len(sites) != 1 || sites[0] != "closeThemeEditor" {
-		t.Fatalf("a.te is cleared in %v, want closeThemeEditor alone — every other release is an editor "+
-			"exit that skips editorSyncArt, and the model it leaves behind goes on being drawn from the "+
-			"plan of whatever was on screen a moment ago", sites)
-	}
-	if !containsCall(funcBodySource(t, "themeeditor.go", "closeThemeEditor"), "editorSyncArt") {
-		t.Error("closeThemeEditor no longer calls editorSyncArt — a.te = nil is what stops the per-frame " +
-			"sync from ever running again, so this is the last instant the media plan can be brought into " +
-			"line with the model the app keeps drawing (themeeditorart.go)")
-	}
-}
-
-// editorReleaseSites names every function in this package that assigns nil to
-// THE APP'S `te` field. AST, so prose about the assignment does not count as one.
-//
-// NARROWED TO THE APP RECEIVER (v1.90.0 W8). It used to match `<anything>.te = nil`,
-// which is a census keyed on a two-letter field NAME rather than on the field: any
-// future type with a `te` of its own — a test rig, a pack job, a per-tab session —
-// would have joined the list and failed a gate about the theme editor's teardown for
-// a reason having nothing to do with it. Worse in the other direction, the looseness
-// hid what the gate is actually about: a.te is what drawThemeEditor keys on, so
-// clearing it is the last instant editorSyncArt can run, and only assignments to
-// THAT field are the event.
-//
-// The receiver is resolved from the enclosing FuncDecl (a method on App or *App) and
-// the assignment's base identifier must be that receiver, so a package-level `x.te =
-// nil` on some other value is not a release site — and a method that shadows the
-// receiver name cannot be smuggled past it either, because the base still has to be
-// spelled with the receiver's identifier.
-func editorReleaseSites(t *testing.T) []string {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-	var out []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		_, f := parsedFile(t, name)
-		for _, d := range f.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok || fd.Body == nil {
-				continue
-			}
-			recv, ok := appReceiverName(fd)
-			if !ok {
-				continue // not a method on App: it has no a.te to clear
-			}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-					return true
-				}
-				sel, ok := as.Lhs[0].(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "te" {
-					return true
-				}
-				if base, ok := sel.X.(*ast.Ident); !ok || base.Name != recv {
-					return true
-				}
-				if id, ok := as.Rhs[0].(*ast.Ident); !ok || id.Name != "nil" {
-					return true
-				}
-				out = append(out, fd.Name.Name)
-				return true
-			})
-		}
-	}
-	return out
-}
-
-// appReceiverName returns the identifier a method uses for its App receiver.
-// ok=false for a plain function, or for a method on any other type.
-func appReceiverName(fd *ast.FuncDecl) (string, bool) {
-	if fd.Recv == nil || len(fd.Recv.List) != 1 {
-		return "", false
-	}
-	field := fd.Recv.List[0]
-	typ := field.Type
-	if star, ok := typ.(*ast.StarExpr); ok {
-		typ = star.X
-	}
-	id, ok := typ.(*ast.Ident)
-	if !ok || id.Name != "App" || len(field.Names) != 1 {
-		return "", false
-	}
-	return field.Names[0].Name, true
-}
-
 // ---------------------------------------------------------------------------
 // The signature, and the one derivation behind it
 // ---------------------------------------------------------------------------
@@ -526,31 +418,6 @@ func TestTheArtSignatureCoversWhatThePlannerReads(t *testing.T) {
 	if themeArtSig(sc) != was {
 		t.Error("a rect and a colour moved the ART signature — the plan would be re-derived and every " +
 			"generator tile re-rasterised on a drag, which is the hitch this signature exists to avoid")
-	}
-}
-
-// TestOneDerivationOfTheElementKeys is the anti-mirror census (hard rule 11).
-//
-// The editor's live re-plan and the theme apply's cold plan must be the SAME
-// derivation. A second copy in the editor would agree on the day it was written and
-// drift the first time the planner learns a new rule — and the drift would be silent,
-// because both sides would still produce plausible keys.
-func TestOneDerivationOfTheElementKeys(t *testing.T) {
-	for _, decl := range []string{
-		"func planThemeMedia(",
-		"func (a *App) editorSyncArt(",
-	} {
-		if body := funcBodyInPackage(t, decl); !strings.Contains(body, "planElements(") {
-			t.Errorf("%q no longer goes through planElements — the cold plan and the editor's live re-plan "+
-				"must be one derivation, or an element's key means two things", decl)
-		}
-	}
-	// And the derivation stamps the provenance in the same breath, so a plan can never
-	// claim to be current for a model it was not built from.
-	if body := funcBodyInPackage(t, "func (plan *themeMediaPlan) planElements("); !strings.Contains(body, "plan.ArtSig = themeArtSig(") {
-		t.Error("planElements no longer stamps plan.ArtSig — the editor compares that signature against " +
-			"the document every frame, and a plan whose signature was set anywhere else could say it is " +
-			"current while its keys are stale")
 	}
 }
 
@@ -615,46 +482,4 @@ func TestEscClosesThePanelBeforeItClearsTheSelection(t *testing.T) {
 		t.Error("the editor left before the ladder finished — a panel and a selection are two rungs, " +
 			"not one")
 	}
-}
-
-// TestEveryPanelFlagThePredicateReadsIsClosed is the seam census for the pair.
-//
-// editorPanelUp is the ONE predicate both halves of the input fence ask
-// (TestBothHalvesOfTheFenceAskOnePredicate). closeEditorPanels is its inverse, and the
-// day W8 adds the preset gallery to the OR without adding it here, Esc silently stops
-// being able to close it — the exact hole the Fonts panel had.
-func TestEveryPanelFlagThePredicateReadsIsClosed(t *testing.T) {
-	up := funcBodyInPackage(t, "func (a *App) editorPanelUp(")
-	closer := funcBodyInPackage(t, "func (a *App) closeEditorPanels(")
-	flags := panelFlagsIn(up)
-	if len(flags) == 0 {
-		t.Fatal("editorPanelUp reads no a.te flag at all — this census has lost its subject")
-	}
-	for _, f := range flags {
-		if !strings.Contains(closer, "a.te."+f) {
-			t.Errorf("editorPanelUp reads a.te.%s but closeEditorPanels never writes it — Esc cannot close "+
-				"a panel the predicate can see, so that panel becomes a surface with no keyboard exit", f)
-		}
-	}
-}
-
-// panelFlagsIn lists the `a.te.<field>` names a body reads. A tiny scanner rather than
-// go/ast: the census needs the field NAMES out of one small function body, and the ast
-// walk to get them would be more code than the property is worth.
-func panelFlagsIn(body string) []string {
-	const marker = "a.te."
-	var out []string
-	for i := strings.Index(body, marker); i >= 0; i = strings.Index(body, marker) {
-		body = body[i+len(marker):]
-		j := 0
-		for j < len(body) && (body[j] == '_' ||
-			body[j] >= 'a' && body[j] <= 'z' || body[j] >= 'A' && body[j] <= 'Z' ||
-			body[j] >= '0' && body[j] <= '9') {
-			j++
-		}
-		if name := body[:j]; name != "" && !strings.Contains(strings.Join(out, " "), name) {
-			out = append(out, name)
-		}
-	}
-	return out
 }

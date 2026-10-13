@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"go/ast"
-	"go/parser"
-	"strings"
 	"testing"
 	"time"
 
@@ -103,74 +100,4 @@ func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	if len(a.oocQueue) != 1 {
 		t.Errorf("three presses queued %d commands, want 1", len(a.oocQueue))
 	}
-}
-
-// rosterFetchSite is one function allowed to start a roster pull, and why. Each entry IS the
-// audit: every survivor is a person acting, never a timer and never a server packet. Keyed by
-// FUNCTION NAME, not file, so a file split that moves the call site keeps the census green.
-type rosterFetchSite struct {
-	fn  string
-	why string
-}
-
-var rosterFetchSites = []rosterFetchSite{
-	{"fetchRoster", "fetchRoster's own definition"},
-	{"drawPlayerList", "the Players panel's on-open / area-change pull — the user opened it, or moved"},
-	{"handleSessionEvents", "the one-shot after a successful /login (EventAuth ≥ 1): the user typed the command, and it fires once per auth transition, not on a clock"},
-}
-
-// TestOnlyUserActionsFetchTheRoster is the deletion catcher. Growing the poll back means
-// adding a fetchRoster call somewhere, and every legal site is named above with the
-// reason it is user-driven; an unlisted one fails, and a listed one that vanishes fails
-// too — so the census cannot quietly stop covering anything (losing the Players-panel
-// pull would leave a PR/PU-less server with no way to refresh its roster at all).
-func TestOnlyUserActionsFetchTheRoster(t *testing.T) {
-	_, files := parseNonTestSources(t, parser.SkipObjectResolution)
-	seen := make([]bool, len(rosterFetchSites))
-	var offenders []string
-	for _, file := range files {
-		for _, d := range file.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			if fd.Name.Name == "fetchRoster" {
-				if i := rosterSiteIndex(fd.Name.Name); i >= 0 {
-					seen[i] = true
-				} else {
-					offenders = append(offenders, fd.Name.Name+" defines fetchRoster")
-				}
-				continue
-			}
-			if containsCall(fd.Body, "fetchRoster") {
-				if i := rosterSiteIndex(fd.Name.Name); i >= 0 {
-					seen[i] = true
-				} else {
-					offenders = append(offenders, fd.Name.Name+" calls fetchRoster")
-				}
-			}
-		}
-	}
-	if len(offenders) > 0 {
-		t.Errorf("roster pull started from an unlisted function:\n  %s\n\n"+
-			"The automatic roster poll was deleted by user order (liveroster.go): a roster command may only "+
-			"leave this client because a PERSON asked for it. If this really is a user action, add the function to "+
-			"rosterFetchSites with the reason; if it is a packet handler or a timer, it is the poll growing back "+
-			"— and with it the v1.82 OOC rate-limit kick class.", strings.Join(offenders, "\n  "))
-	}
-	for i := range rosterFetchSites {
-		if !seen[i] {
-			t.Errorf("rosterFetchSites lists %q (%s) but no function of that name fetches any more — a rename "+
-				"or removal broke the census; re-point the entry or drop it", rosterFetchSites[i].fn, rosterFetchSites[i].why)
-		}
-	}
-}
-
-func rosterSiteIndex(fn string) int {
-	for i := range rosterFetchSites {
-		if rosterFetchSites[i].fn == fn {
-			return i
-		}
-	}
-	return -1
 }

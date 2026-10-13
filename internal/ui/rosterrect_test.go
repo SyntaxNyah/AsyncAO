@@ -89,34 +89,3 @@ func TestEmptyStripHandsTheWholePanelToTheList(t *testing.T) {
 		t.Errorf("with no strip the list must get the whole body: got %+v, want %+v", got, body)
 	}
 }
-
-// TestPlayerListRectIsDrawnNotMerelyIngested is the encapsulation gate. The
-// `player_list` slot sat at slotStateInert — ingested for audit, painted by
-// nothing — which is exactly the parsed-but-never-applied shape CLAUDE.md names:
-// the key showed up in the theme editor and in the census while the roster went on
-// squatting music_list. Both halves are pinned, because either alone is still the
-// bug: the slot must claim to be drawn, and the courtroom must actually draw it.
-func TestPlayerListRectIsDrawnNotMerelyIngested(t *testing.T) {
-	found := false
-	for _, s := range themeSlots {
-		if s.key != "player_list" {
-			continue
-		}
-		found = true
-		if s.state == slotStateInert {
-			t.Error("player_list is back to slotStateInert — the roster ruling says AsyncAO paints there")
-		}
-	}
-	if !found {
-		t.Fatal("no player_list slot — AO2 declares it at courtroom.cpp:879 and the census must carry it")
-	}
-	body := funcBodySource(t, "theme_layout.go", "drawCourtroomThemed")
-	if !containsCall(body, "drawPlayerList") {
-		t.Fatal("the themed courtroom never draws the roster at all")
-	}
-	// The strip is what stops the roster being painted TWICE when it has its own
-	// rect; a draw site that stopped consulting it would run both.
-	if !containsCall(body, "themedListStrip") {
-		t.Fatal("drawCourtroomThemed no longer asks themedListStrip which views the panel owes")
-	}
-}

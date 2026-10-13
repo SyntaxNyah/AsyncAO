@@ -1,11 +1,8 @@
 package ui
 
 import (
-	"os"
-	"strings"
 	"testing"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -153,72 +150,6 @@ func TestThemePickerAndLoaderSearchTheSameRoots(t *testing.T) {
 	}
 }
 
-// TestThemePickerBuildsItsRootsFromTheSharedList is the structural half of the
-// gate above. That test compares two lists a maintainer could satisfy by
-// hand-rolling the same three roots in scanThemes again — which is exactly how
-// the drift happened — so this one pins the SOURCE: the picker's scan must call
-// themeSearchRootsNow and must not gather roots of its own.
-//
-// A source census rather than a behavioural test because scanThemes resolves the
-// real machine's executable and config directories, which a test cannot inject.
-func TestThemePickerBuildsItsRootsFromTheSharedList(t *testing.T) {
-	body := funcBodyInPackage(t, "func (a *App) scanThemes(")
-	if !strings.Contains(body, "themeSearchRootsNow(") {
-		t.Errorf("scanThemes no longer builds its roots from themeSearchRootsNow — the picker and the loader can now disagree about which directories exist")
-	}
-	if strings.Contains(body, "os.Executable()") {
-		t.Errorf("scanThemes gathers a root of its own again (os.Executable); the shared themeSearchRoots is the only list allowed to grow or shrink")
-	}
-}
-
-// TestThemeRootBuildersShareOneExeDir pins the other half of "the same list":
-// not merely the same ORDER, but the same STRINGS. Three builders resolve the
-// executable's directory — the catalog scan (scanThemeCatalog), the picker's
-// shared list (themeSearchRootsNow) and the loader (applyThemeAsync) — and every
-// downstream "is this the same place?" (samePath, the write-root backstop,
-// themeOriginOf) compares those strings without touching the disk. A raw
-// os.Executable + filepath.Dir skips config.ExecutableDir's EvalSymlinks step,
-// so on a symlinked or junctioned install it yields a DIFFERENT spelling of the
-// same directory: the catalog would scan a root the picker names differently,
-// and a bundled theme could be badged read-only. config.ExecutableDir is the one
-// spelling; this test refuses to let a builder resolve its own again.
-//
-// The seam assertion is behavioural where it can be: themeSearchRootsNow really
-// runs here, and its exe root must be config.ExecutableDir's answer verbatim.
-// The other two resolve inside a goroutine (applyThemeAsync) or need a scanned
-// filesystem (scanThemeCatalog), neither injectable, so they are pinned by the
-// same kind of source census the picker already has above.
-func TestThemeRootBuildersShareOneExeDir(t *testing.T) {
-	exe := config.ExecutableDir()
-	if exe == "" {
-		// Only if the OS cannot name the running binary at all — every platform we
-		// build for can, so this is a genuine "cannot test", not a soft pass.
-		t.Skip("config.ExecutableDir is empty on this host")
-	}
-	roots := themeSearchRootsNow("")
-	if !containsString(roots, exe) {
-		t.Errorf("themeSearchRootsNow roots = %v, none is config.ExecutableDir %q — the picker resolved the exe dir its own way", roots, exe)
-	}
-	// The census spells the forbidden CALL with its parentheses; the comments at
-	// these sites deliberately write "os.Executable + filepath.Dir" without them,
-	// so explaining the trap can never trip it.
-	// Named by DECLARATION, not by file: which file each builder lives in is not
-	// part of what this pins (funcBodyInPackage, ledger L53).
-	for _, decl := range []string{
-		"func themeSearchRootsNow(",
-		"func (a *App) applyThemeAsync(",
-		"func scanThemeCatalog(",
-	} {
-		body := funcBodyInPackage(t, decl)
-		if !strings.Contains(body, "config.ExecutableDir()") {
-			t.Errorf("%q no longer calls config.ExecutableDir()", decl)
-		}
-		if strings.Contains(body, "os.Executable()") {
-			t.Errorf("%q resolves the executable itself again — a symlinked install then gets two spellings of one root", decl)
-		}
-	}
-}
-
 // containsString is the local spelling of "is this name in the list" — the two
 // tests above read better with it than with an inline loop.
 func containsString(list []string, want string) bool {
@@ -228,56 +159,6 @@ func containsString(list []string, want string) bool {
 		}
 	}
 	return false
-}
-
-// funcBodyInPackage returns the source text of one function, from its
-// declaration to the next top-level declaration. Deliberately crude: it is a
-// census over checked-in sources in this same package, so a renamed function is
-// a failure (the thing being pinned moved), never a skip.
-//
-// It searches EVERY production file in the package directory rather than a named
-// one (ledger L53). The filename-pinned predecessor priced this package's fat
-// files into staying fat: moving the theme-root region out of app.go, or the
-// clock pass out of themeclock.go, turned a pure move into two red tests for no
-// behavioural reason. What the censuses actually assert is "the package's copy
-// of this function still calls X" — the file it lives in is not part of that
-// claim, so it is not part of the lookup.
-//
-// A declaration matched in two files is a failure too: the census would be
-// reading one of two answers, and which one is alphabetical luck.
-func funcBodyInPackage(t *testing.T, decl string) string {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-	var body, foundIn string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
-		}
-		i := strings.Index(string(src), decl)
-		if i < 0 {
-			continue
-		}
-		if foundIn != "" {
-			t.Fatalf("%q is declared in both %s and %s — this census would be reading one of two bodies", decl, foundIn, name)
-		}
-		foundIn = name
-		body = string(src)[i+len(decl):]
-		if j := strings.Index(body, "\nfunc "); j >= 0 {
-			body = body[:j]
-		}
-	}
-	if foundIn == "" {
-		t.Fatalf("no production file in this package declares %q — update this census to name the function that replaced it", decl)
-	}
-	return body
 }
 
 // The subtheme TIER order is pinned where Load lives

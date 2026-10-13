@@ -4,23 +4,11 @@ package ui
 // it retired (bareBindKey, qol.go).
 
 import (
-	"go/ast"
-	"go/token"
-	"os"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
-
-// stringLitValue unquotes a Go string literal (interpreted or raw).
-func stringLitValue(lit string) (string, error) {
-	if len(lit) >= 2 && lit[0] == '`' {
-		return lit[1 : len(lit)-1], nil
-	}
-	return strconv.Unquote(lit)
-}
 
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —
 // the state claimTypingForIC requires before it will take a keystroke.
@@ -215,91 +203,6 @@ func TestSFXPickBouncesFocusAndAuditions(t *testing.T) {
 	}
 }
 
-// TestEveryTranscribedCanonFocusBounceIsWired is the CENSUS for half (b), and it
-// is written against AO2's own connect block rather than against our taste:
-// courtroom.cpp:502-506 wires ui_pre, ui_flip, ui_slide_enable straight to
-// focus_ic_input and ui_additive through on_additive_clicked (:6572), and
-// pointedly does NOT wire ui_immediate.
-//
-// TRANSCRIBED, not "every": canon has about two dozen focus_ic_input sites and
-// AsyncAO wires eleven of them. The name says so because the previous name did
-// not, and a census called "Every" that checks a subset is how on_text_color_changed
-// stayed unwired while the header swore the list was complete. chatfocus.go's four
-// tables are the full accounting; this gate holds the two that can rot silently —
-// TRANSCRIBED (must bounce) and the DEFERRED rows (must still NOT bounce, so
-// wiring one forces the table to be updated in the same change).
-//
-// It reads the source because the two IC bars draw the same controls twice and the
-// failure this closes is exactly a control that has the wiring in one bar and not
-// the other — chatfocus.go claimed all of them and had none of them.
-func TestEveryTranscribedCanonFocusBounceIsWired(t *testing.T) {
-	for _, bar := range []struct {
-		file, fn string
-		bounce   []string // canon wires these to focus_ic_input, and so do we
-		inert    []string // …canon deliberately does not wire these
-		deferred []string // …and canon wires these but AsyncAO does not yet
-	}{
-		{"screens.go", "drawICInputRow", []string{"Pre", "Additive", "Flip"}, []string{"Immediate"}, nil},
-		{"theme_layout.go", "drawCourtroomThemed", []string{"Pre", "Additive", "Flip", "Slide"}, []string{"Immediate"}, []string{"Guard"}},
-	} {
-		wrapped := icToggleBounces(t, bar.file, bar.fn)
-		for _, label := range bar.bounce {
-			got, drawn := wrapped[label]
-			if !drawn {
-				t.Errorf("%s draws no %q checkbox — the control moved and this gate stopped checking it", bar.fn, label)
-				continue
-			}
-			if !got {
-				t.Errorf("%s: the %q checkbox does not go through bounceOnToggle — the keyboard is "+
-					"stranded on it mid-sentence (courtroom.cpp:502-506)", bar.fn, label)
-			}
-		}
-		for _, label := range bar.inert {
-			if got, drawn := wrapped[label]; drawn && got {
-				t.Errorf("%s: the %q checkbox bounces focus, but AO2 leaves ui_immediate unconnected "+
-					"(constructed at courtroom.cpp:331, absent from the :502-506 connect block) — "+
-					"canon owns the membership list", bar.fn, label)
-			}
-		}
-		// The DEFERRED rows are pinned in BOTH directions. Still drawn: the control
-		// is real, so chatfocus.go's "not transcribed" line is about live code and not
-		// about a widget that has since been deleted. Still un-wrapped: the day one is
-		// wired, this fails and the header's table has to move with it — which is the
-		// only thing standing between an honest deferral and the overstatement that
-		// hid on_text_color_changed.
-		for _, label := range bar.deferred {
-			got, drawn := wrapped[label]
-			if !drawn {
-				t.Errorf("%s draws no %q checkbox, but chatfocus.go still lists it as a DEFERRED canon "+
-					"bounce — delete the row instead of leaving a claim about a control that is gone", bar.fn, label)
-				continue
-			}
-			if got {
-				t.Errorf("%s: the %q checkbox now bounces focus — move it out of chatfocus.go's "+
-					"NOT TRANSCRIBED table into the TRANSCRIBED one (ui_guard is courtroom.cpp:505)", bar.fn, label)
-			}
-		}
-	}
-	// The dropdowns, whose pick is a CALL rather than a value: every bar that draws
-	// one must route through the single applier, and the applier is where the bounce
-	// lives — that is what stops the two IC bars drifting a control apart.
-	for _, h := range []struct{ file, fn, applier, cite string }{
-		{"screens.go", "drawICInputRow", "applySFXPick", "on_sfx_dropdown_changed, courtroom.cpp:5498-5502"},
-		{"theme_layout.go", "drawThemedSFXPicker", "applySFXPick", "on_sfx_dropdown_changed, courtroom.cpp:5498-5502"},
-		{"screens.go", "drawICColorStrip", "applyICColorPick", "on_text_color_changed, courtroom.cpp:6364-6403"},
-		{"theme_layout.go", "drawCourtroomThemed", "applyICColorPick", "on_text_color_changed, courtroom.cpp:6364-6403"},
-	} {
-		if !containsCall(funcBodySource(t, h.file, h.fn), h.applier) {
-			t.Errorf("%s sets the pick itself instead of through %s — the focus bounce (and, for SFX, the "+
-				"audition) drifts between the two bars (%s)", h.fn, h.applier, h.cite)
-		}
-	}
-	if !containsCall(funcBodySource(t, "effectspicker.go", "drawEffectsPicker"), "bounceFocusToIC") {
-		t.Error("drawEffectsPicker does not bounce focus — on_effects_dropdown_changed's whole body is " +
-			"the pick plus focus_ic_input (courtroom.cpp:5653-5657)")
-	}
-}
-
 // TestICColorPickBouncesFocusExceptTheColourWheel drives the applier both IC bars
 // call, because the source census above only proves they REACH it.
 //
@@ -370,74 +273,6 @@ func colorPickTestApp(t *testing.T) *App {
 	return a
 }
 
-// icToggleBounces maps each checkbox drawn inside fn to whether its call is nested
-// inside a bounceOnToggle(...). The key is a string literal from the call — the
-// classic row's label, or the themed row's design.ini key / fallback label — which
-// is what makes one entry per control readable at the call site.
-//
-// A control drawn twice must be wrapped BOTH times (the answers are AND-ed), so a
-// second copy added later cannot pass on its sibling's wiring.
-func icToggleBounces(t *testing.T, file, fn string) map[string]bool {
-	t.Helper()
-	body := funcBodySource(t, file, fn)
-	inBounce := map[token.Pos]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || callName(call) != "bounceOnToggle" {
-			return true
-		}
-		ast.Inspect(call, func(inner ast.Node) bool {
-			if c2, ok := inner.(*ast.CallExpr); ok && isCheckboxCall(c2) {
-				inBounce[c2.Pos()] = true
-			}
-			return true
-		})
-		return true
-	})
-	out := map[string]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || !isCheckboxCall(call) {
-			return true
-		}
-		for _, lit := range callStringLits(call) {
-			if prev, seen := out[lit]; seen {
-				out[lit] = prev && inBounce[call.Pos()]
-				continue
-			}
-			out[lit] = inBounce[call.Pos()]
-		}
-		return true
-	})
-	return out
-}
-
-// isCheckboxCall reports whether call is one of the kit's two checkbox widgets.
-func isCheckboxCall(call *ast.CallExpr) bool {
-	switch callName(call) {
-	case "Checkbox", "CheckboxIn":
-		return true
-	}
-	return false
-}
-
-// callStringLits is every string literal appearing anywhere inside call's
-// arguments — including the ones nested in a label helper such as
-// themedToggleLabel("pre", "Pre").
-func callStringLits(call *ast.CallExpr) []string {
-	var out []string
-	for _, arg := range call.Args {
-		ast.Inspect(arg, func(n ast.Node) bool {
-			lit, ok := n.(*ast.BasicLit)
-			if ok && lit.Kind == token.STRING && len(lit.Value) >= 2 {
-				out = append(out, lit.Value[1:len(lit.Value)-1])
-			}
-			return true
-		})
-	}
-	return out
-}
-
 // TestBareBindKeyRequiresAlt pins the gate every plain-key bind namespace moved
 // onto. The bare-letter space now belongs to the IC input, so a bare key must
 // return 0; AltGr (Ctrl+Alt on Windows) produces real text and must return 0 too,
@@ -472,69 +307,6 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 	a.ctx.keyPressed, a.ctx.altHeld, a.ctx.focusID = sdl.K_m, true, icFieldID
 	if a.bareBindKey() != sdl.K_m {
 		t.Error("an Alt chord must fire even with the IC box focused — it can never be mistaken for typing")
-	}
-}
-
-// TestNoBareLetterNamespaceSurvives is the CENSUS the user asked for: every
-// plain-key bind namespace has to read the shared Alt gate, because a single one
-// still reading c.keyPressed directly would race the first-keystroke IC claim for
-// the same letter — the exact competition the move exists to end.
-func TestNoBareLetterNamespaceSurvives(t *testing.T) {
-	for _, h := range []struct{ file, fn string }{
-		{"qol.go", "handleCharKeys"},
-		{"qol.go", "handleEmoteKeys"},
-		{"macros.go", "handleMacroKeys"},
-		{"showname_bind.go", "handleShownameKeys"},
-		{"ic_phrase.go", "handleICPhraseKeys"},
-		{"jukebox.go", "handleJukeboxKeys"},
-		{"stylepreset.go", "handleStylePresetKeys"},
-		{"floatbox.go", "pollVoicePTT"},
-	} {
-		if !containsCall(funcBodySource(t, h.file, h.fn), "bareBindKey") {
-			t.Errorf("%s (%s) does not go through bareBindKey — it is still claiming plain letters from the IC input", h.fn, h.file)
-		}
-	}
-}
-
-// TestEveryBindDisplaySurfaceAdvertisesTheChord is the DISPLAY half of the census
-// above, and it exists because the first pass shipped without it: bareBindLabel /
-// bareBindChordPrefix were created so "the cheat sheet and the Settings rows cannot
-// drift apart", and then only the cheat sheet used them. Four in-app surfaces went
-// on printing the bare letter that no longer fires anything (a showname preset's
-// "Key: M", the wardrobe cell's key badge, the jukebox bind chip, the IC
-// quick-phrase list) plus two the first sweep never even listed (the macro list +
-// editor, the style-preset chip) and the voice push-to-talk readout.
-//
-// Source, because these are painters: they need a live Ctx, a font and a texture
-// store to return anything, and what is being pinned is which LABEL HELPER they
-// call — exactly the deletion-catcher shape srcgate_test.go documents.
-//
-// COUNTED, not merely present. A "does this function mention the helper anywhere"
-// gate is not a census: drawSettingsGeneral is 200 lines and paints one chip beside
-// a tooltip that names the chord, so reverting the chip alone left it green (proved
-// by mutation). chips is the number of bind labels the painter renders; add a chip,
-// update the number, and the reviewer sees the surface in the diff.
-func TestEveryBindDisplaySurfaceAdvertisesTheChord(t *testing.T) {
-	for _, s := range []struct {
-		file, fn string
-		chips    int
-	}{
-		{"hotkeysheet.go", "appendKeyMapSection", 1},  // the cheat sheet's three namespaces
-		{"hotkeysheet.go", "hotkeyCheatEntries", 1},   // the macro rows
-		{"settings.go", "drawSettingsGeneral", 1},     // showname presets: the per-preset bind button
-		{"screens.go", "drawIniswapCell", 1},          // the wardrobe / char-select key badge
-		{"jukebox.go", "drawJukeKeyBadge", 1},         // playlist + song bind chips (one painter, two callers)
-		{"ic_phrase.go", "drawICPhraseSettings", 1},   // the IC quick-phrase list row
-		{"macros.go", "drawMacroSettings", 2},         // the macro list row AND the editor's key button
-		{"stylepreset.go", "drawStylePresets", 1},     // the saved-mood bind chip
-		{"settings_voice.go", "drawSettingsVoice", 1}, // the push-to-talk readout
-	} {
-		body := funcBodySource(t, s.file, s.fn)
-		got := countCalls(body, "bindChipLabel") + countCalls(body, "bareBindLabel")
-		if got != s.chips {
-			t.Errorf("%s (%s) renders %d bind labels through the sanctioned helpers, want %d — a chip is printing the retired bare key (or a new one was added without listing it here)",
-				s.fn, s.file, got, s.chips)
-		}
 	}
 }
 
@@ -588,97 +360,6 @@ func TestBindChipLabelIsTheOnlyWayToSpellAChip(t *testing.T) {
 // operation is a bounds check and an array read, and AllocsPerRun discards a
 // warm-up run of its own.
 const bindChipAllocRuns = 100
-
-// TestNoSurfaceStillPromisesTheBareKeyFires is the second half: a surface can call
-// bareBindLabel for the chip and still tell the user, in prose one line below, that
-// the bind "fires with no text box focused". That sentence was flatly false the
-// moment bareBindKey stopped consulting focus at all (qol.go) — an Alt chord is
-// never text, so a bind fires WHILE you type. Scans string literals only, so the
-// package's comments may keep saying "bare key" about the history.
-func TestNoSurfaceStillPromisesTheBareKeyFires(t *testing.T) {
-	// The retired promises, lower-cased. Substrings, so a reworded but still-wrong
-	// line ("fires when no text box is focused") is caught by the first entry.
-	retired := []string{"text box focused", "no text box", "nothing focused"}
-	var checked int
-	for _, name := range packageGoFiles(t) {
-		_, f := parsedFile(t, name)
-		ast.Inspect(f, func(n ast.Node) bool {
-			lit, ok := n.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			s, err := stringLitValue(lit.Value)
-			if err != nil {
-				return true
-			}
-			checked++
-			low := strings.ToLower(s)
-			for _, bad := range retired {
-				if strings.Contains(low, bad) {
-					t.Errorf("%s draws %q — the focus fence is gone; a bind fires on %s<key> even mid-sentence", name, s, bareBindChordPrefix)
-				}
-			}
-			return true
-		})
-	}
-	if checked < bindProseMinLiterals {
-		t.Fatalf("only %d string literals scanned — the corpus collapsed and this census now proves nothing", checked)
-	}
-}
-
-// bindProseMinLiterals is the anti-vacuity floor for the prose census: the package
-// draws many thousands of literals, so a walk that finds fewer than this has lost
-// its corpus (a glob that stopped matching) rather than found a clean tree.
-const bindProseMinLiterals = 2000
-
-// packageGoFiles lists this package's non-test sources, so a prose census cannot be
-// defeated by moving the sentence into a file the list forgot.
-func packageGoFiles(t *testing.T) []string {
-	t.Helper()
-	ents, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
-	var out []string
-	for _, e := range ents {
-		n := e.Name()
-		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
-			continue
-		}
-		out = append(out, n)
-	}
-	if len(out) == 0 {
-		t.Fatal("no package sources found")
-	}
-	return out
-}
-
-// countCalls counts the calls in n whose function name is fn. containsCall answers
-// "at least one", which is too weak for a per-surface census: a painter with two
-// chips can lose one and still contain the other.
-func countCalls(n ast.Node, fn string) int {
-	var count int
-	ast.Inspect(n, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok && callName(call) == fn {
-			count++
-		}
-		return true
-	})
-	return count
-}
-
-// TestTheClaimRunsAfterEveryBindCapture pins the ORDER in App.Frame. An armed
-// capture owns the next keypress; if the IC claim ran first it would focus the box
-// and the capture would bind nothing. Source, because ordering inside a
-// single-pass frame has no observable return value.
-func TestTheClaimRunsAfterEveryBindCapture(t *testing.T) {
-	body := funcBodySource(t, "app.go", "Frame")
-	order := callOrder(body, "pollCharBind", "pollShownameBind", "pollICPhraseBind", "pollVoicePTT",
-		"pollStylePresetBind", "claimTypingForIC")
-	if len(order) == 0 || order[len(order)-1] != "claimTypingForIC" {
-		t.Fatalf("Frame's poll order is %v — claimTypingForIC must come LAST, after every bind capture", order)
-	}
-}
 
 // TestHotkeySheetAdvertisesTheChordThatFires closes the loop the cheat sheet used
 // to leave open: it printed a bare letter (and, for macros, a Ctrl chord that

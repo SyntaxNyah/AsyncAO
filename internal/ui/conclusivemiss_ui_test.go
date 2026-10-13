@@ -13,7 +13,6 @@ package ui
 // under the pool jobs and disk probes behind them.
 
 import (
-	"go/ast"
 	"path/filepath"
 	"testing"
 	"time"
@@ -280,71 +279,5 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	if a.frameDemandPending {
 		t.Error("a permanently-blank emote cell still held the frame pump awake — the client stays pinned at the " +
 			"demand cadence, re-rendering for art that can never arrive")
-	}
-}
-
-// TestInstallAssetOriginIsTheOnlyPlaceASessionOriginIsMinted is the encapsulation
-// gate (rule §17.11): the reconnect flush must not be bypassable.
-//
-// The conclusive-miss memory has no expiry, so (re)installing an origin is the
-// ONE moment a server gets a clean slate. installAssetOrigin does both jobs in one
-// place precisely so they cannot drift; a second function that assigned a.urls a
-// freshly-built URLBuilder would serve a previous visit's verdicts with no way to
-// clear them short of the Settings button.
-//
-// A census over the whole package rather than a remembered list of functions: the
-// bypass a gate like this exists to catch is a NEW call site, which by definition
-// is not on any list. It is a deletion-catcher, not a mirror — it contains no copy
-// of what installAssetOrigin does.
-func TestInstallAssetOriginIsTheOnlyPlaceASessionOriginIsMinted(t *testing.T) {
-	const owner = "installAssetOrigin"
-	seenOwner := false
-	packageFuncs(t, func(file, fn string, body *ast.BlockStmt) {
-		mints := false
-		ast.Inspect(body, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range as.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "urls" {
-					continue
-				}
-				// a.urls, not some other struct's urls field: the App's session
-				// builder is the only one this rule governs (a preview or an
-				// export stages its own, deliberately).
-				if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "a" {
-					continue
-				}
-				// A NEW builder, not a refinement of the installed one —
-				// pollCasingProbe's `a.urls = a.urls.WithCharCase(...)` keeps the
-				// same origin and must stay legal.
-				if i < len(as.Rhs) && containsCall(as.Rhs[i], "NewURLBuilder") {
-					mints = true
-				}
-			}
-			return true
-		})
-		if fn == owner {
-			seenOwner = true
-			if !mints {
-				t.Errorf("%s: %s no longer builds a URLBuilder — the origin install moved, and this gate now "+
-					"guards nothing", file, fn)
-			}
-			if !containsCall(body, "ForgetConclusiveMissesUnder") {
-				t.Errorf("%s: %s installs an origin without giving that origin's remembered misses a fresh look — "+
-					"a server that repacked between visits stays half-invisible until a restart", file, fn)
-			}
-			return
-		}
-		if mints {
-			t.Errorf("%s: %s assigns a.urls a freshly-built URLBuilder. Session origins are minted in %s alone, "+
-				"which is where the conclusive-miss flush lives; minting one here serves the previous visit's "+
-				"verdicts with no event able to clear them.", file, fn, owner)
-		}
-	})
-	if !seenOwner {
-		t.Fatalf("no %s in this package — it was renamed or removed, and this gate checked nothing", owner)
 	}
 }

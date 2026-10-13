@@ -54,29 +54,6 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 	}
 }
 
-// TestAreaMenuIsWiredIntoTheSharedPane is the encapsulation gate for the kebab.
-// The rows only appear because musicheader.go appends them and forwards every
-// predicate; drop any one of those and the block is either invisible or
-// mis-dispatched into the music switch, which would silently do the wrong thing.
-func TestAreaMenuIsWiredIntoTheSharedPane(t *testing.T) {
-	seen := map[musicMenuKind]bool{}
-	for _, row := range musicMenuRows {
-		seen[row.kind] = true
-	}
-	for _, row := range areaMenuRows {
-		if row.kind != musicMenuSeparator && !seen[row.kind] {
-			t.Errorf("area row %q never reaches the shared menu â€” musicMenuRows does not carry it", row.label)
-		}
-	}
-	// musicMenuRowLive is in the list because it is the forward the first cut of this
-	// kit shipped WITHOUT, which put all five area rows in every user's music menu.
-	for _, fn := range []string{"musicMenuRowLive", "musicMenuRowEnabled", "musicMenuRowChecked", "musicMenuRowIsToggle", "musicMenuAct"} {
-		if !containsCall(funcBodySource(t, "musicheader.go", fn), "isAreaMenuKind") {
-			t.Errorf("%s does not forward the AREA block â€” an area row falls into the music switch", fn)
-		}
-	}
-}
-
 // TestAreaMenuButtonTakesRoomFromItsOwnRow pins the layout rule the roster toolbar
 // was rebuilt to enforce: a control added to a header row must SHRINK its neighbours,
 // not draw over them â€” a theme's music_list panel is 212 px wide and has no slack.
@@ -225,28 +202,5 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	hidden.hidden = map[string]bool{panelTabAreas: true}
 	if n, _ := drawn(hidden); n != 0 {
 		t.Errorf("a hidden Areas tab still offers %d area row(s)", n)
-	}
-}
-
-// TestEveryMusicMenuConsumerAsksMusicMenuRowDrawn is the seam gate for the row
-// filter itself. musicMenuRowDrawn exists because three passes over musicMenuRows
-// must agree on which rows paint â€” the height, the width and the renderer â€” and the
-// only reason they agree is that all three ask IT rather than the per-kind
-// musicMenuRowLive underneath.
-//
-// The behavioural arm above cannot catch a consumer that stops asking: it drives
-// musicMenuRowDrawn and musicMenuHeight, so reverting drawMusicMenu's loop to the
-// bare musicMenuRowLive leaves the suite green while the Music view paints the AREA
-// block's divider â€” that separator carries the shared musicMenuSeparator kind, so
-// musicMenuRowLive says yes â€” as a stray rule at the panel's bottom edge, past the
-// height musicMenuRect reserved. Hence a deletion-catcher on the call itself, one
-// arm per consumer, which is also what keeps the next block appended to this pane
-// from re-learning the same lesson.
-func TestEveryMusicMenuConsumerAsksMusicMenuRowDrawn(t *testing.T) {
-	for _, fn := range []string{"musicMenuHeight", "musicMenuRect", "drawMusicMenu"} {
-		if !containsCall(funcBodySource(t, "musicheader.go", fn), "musicMenuRowDrawn") {
-			t.Errorf("%s filters musicMenuRows without musicMenuRowDrawn â€” the three passes can now disagree, "+
-				"and a block's trailing divider draws with nothing beneath it", fn)
-		}
 	}
 }

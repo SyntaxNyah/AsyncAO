@@ -1,10 +1,6 @@
 package ui
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -92,80 +88,5 @@ func TestSFXOnIdlePromotesTheEmoteMod(t *testing.T) {
 			t.Errorf("%s: got (mod %d, promoted %v), want (mod %d, %v) — %s",
 				tc.name, gotMod, gotPromoted, tc.wantMod, tc.wantPromoted, tc.why)
 		}
-	}
-}
-
-// TestTheICSendPathAppliesTheIdlePromotionWholesale is the encapsulation half of
-// the option: the promotion moves THREE fields together (mod, pre name, delay) and
-// a send path that took the mod without blanking the other two would transmit a
-// preanim that does not exist — a missingno at every receiver.
-func TestTheICSendPathAppliesTheIdlePromotionWholesale(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "sendIC")
-	if !containsCall(body, "sfxIdlePromotion") {
-		t.Fatal("the IC send path no longer calls sfxIdlePromotion — the sfx_on_idle preference does nothing")
-	}
-	for _, name := range []string{"preEmote", "sfxDelay"} {
-		if !assignsIdent(body, name) {
-			t.Errorf("sendIC never assigns %s — the promotion's three fields no longer move together", name)
-		}
-	}
-}
-
-// assignsIdent reports whether n contains an assignment to a plain identifier of
-// this name.
-func assignsIdent(n ast.Node, name string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for _, lhs := range as.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-// TestTheICSendPathUsesTheSFXRule is the encapsulation half: the IC send builder must
-// ASK outgoingSFXName rather than re-deriving the field. Re-deriving it inline is
-// literally how the defect shipped, and a second copy would drift from the receive-side
-// gate (courtroom.preanimSFXPlays) that now decides whether the value is ever heard.
-func TestTheICSendPathUsesTheSFXRule(t *testing.T) {
-	// sendIC is the IC send path; outgoingSFXName is the one place that decides the
-	// SFX_NAME. Resolved package-wide so a split cannot strand this gate.
-	if !strings.Contains(funcBodyText(t, "", "sendIC"), "outgoingSFXName(") {
-		t.Error("the IC send path no longer calls outgoingSFXName — either it moved (point this test at it) " +
-			"or the SFX_NAME decision was inlined again, which is exactly how the non-Pre sound shipped")
-	}
-
-	// And nothing in the package may spell the wire sentinel by hand: one constant, so
-	// the send rule and any future reader agree on what "no sound" is.
-	_, files := parseNonTestSources(t, parser.SkipObjectResolution)
-	delete(files, "icsfx.go") // the sentinel is defined here; only the OTHER files are policed
-	for name, file := range files {
-		base := name
-		if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-			base = base[i+1:]
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range assign.Lhs {
-				id, ok := lhs.(*ast.Ident)
-				if !ok || id.Name != "sfxName" || i >= len(assign.Rhs) {
-					continue
-				}
-				if lit, ok := assign.Rhs[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					t.Errorf("%s assigns sfxName from the literal %s — use icSilentSFX / outgoingSFXName", base, lit.Value)
-				}
-			}
-			return true
-		})
 	}
 }

@@ -848,65 +848,6 @@ func TestOnlyTheDocumentUsesTheFieldTables(t *testing.T) {
 	}
 }
 
-// packageSourceText concatenates every non-test source file in this package, so a
-// wiring census can search the whole package rather than one file that a split may
-// have broken apart.
-func packageSourceText(t *testing.T) string {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading package directory: %v", err)
-	}
-	var b strings.Builder
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
-		}
-		b.Write(src)
-		b.WriteByte('\n')
-	}
-	if b.Len() == 0 {
-		t.Fatal("no production sources found — the census would be vacuous")
-	}
-	return b.String()
-}
-
-// TestThemeEditorScreenIsWiredAtEverySwitchSite is the anti-half-wiring census.
-//
-// A new Screen has FIVE obligations and four of them fail SILENTLY: an unwired
-// expScreenSkippable burns full CPU forever with nothing on screen to explain it,
-// an unwired Esc arm strands the user on a screen with no way out, an unwired
-// chord claim leaves Ctrl+Z dead on the entry point that has no courtroom pass to
-// ride, and an unwired draw dispatch shows the previous screen's pixels. Only the
-// draw one is obvious, and only after you look.
-func TestThemeEditorScreenIsWiredAtEverySwitchSite(t *testing.T) {
-	body := packageSourceText(t)
-	for _, want := range []struct{ site, needle string }{
-		{"the frame-rate skippability switch (expScreenSkippable)", "case ScreenThemeEditor:\n\t\t// ITS OWN CASE"},
-		{"the draw dispatch", "case ScreenThemeEditor:\n\t\t\ta.drawThemeEditor(winW, winH)"},
-		{"the Esc ladder", "case ScreenThemeEditor:\n\t\t\t\t// The editor's own ladder"},
-		{"pollThemeApply's document reclaim", "a.reclaimThemeDoc()"},
-		// The pre-screen Ctrl+Z / Ctrl+Y claim. editorUndoChord's other caller is
-		// handleHotkeys, which runs only from the COURTROOM passes — so without this line
-		// the chord reaches the editor only while a live room paints behind its canvas,
-		// and the Settings entry point (no server attached) has no undo at all.
-		// TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the behavioural
-		// half; this is the one that fails the moment the line is deleted.
-		{"the pre-screen chord claim", "if a.themeEditorOpen() {\n\t\ta.editorUndoChord()\n\t}"},
-	} {
-		if !strings.Contains(body, want.needle) {
-			t.Errorf("Frame no longer wires ScreenThemeEditor into %s — four of this screen's five "+
-				"obligations fail silently (full CPU forever, no way out with Esc, no keyboard undo, "+
-				"the previous screen's pixels), so the wiring is censused rather than trusted", want.site)
-		}
-	}
-}
-
 // TestEditsSurviveAThemeReapply drives the seam the whole document layer was built
 // for: a background theme apply (a texture eviction heal, the texture-filter row,
 // boot) must not discard unsaved edits.

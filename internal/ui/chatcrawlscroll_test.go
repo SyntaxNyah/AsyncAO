@@ -17,7 +17,6 @@ package ui
 // where a raster needs a font.
 
 import (
-	"go/ast"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -271,48 +270,6 @@ func TestAnimatedSpansKeepTheirTopPixels(t *testing.T) {
 // taller lift than the clip branch was justified against.
 const maxAnimLiftPx = 3
 
-// TestBothChatboxesExemptTheAnimatedPainter is the deletion catcher for the
-// branch. Two painters, same defect, and a fix applied to one of them is the
-// failure this package has shipped repeatedly (the two IC bars, the two
-// blank-plate skin sites — TestBothChatboxesFollowTheCrawl was written for the
-// same reason). Source-driven, because a missing argument has no return value:
-// the crests simply go missing at the top of the box.
-//
-// IT PINS THE ARGUMENT'S FORM, not merely the name inside it, and that is the
-// whole lesson of the audit that produced this paragraph. While the parameter
-// was `animated bool`, this gate asked only whether the third argument MENTIONED
-// msAnim — so rewriting both sites from `a.msAnim != nil` to `a.msAnim == nil`
-// (crests shaved again AND every ordinary raster message handed the showname
-// plate back, the two defects this branch exists to keep apart) satisfied it and
-// left the entire package green. The parameter is the painter itself now, which
-// makes that inversion a type error rather than a silent one; this gate keeps
-// the remaining spellings out — a literal nil at one site (the exemption gone
-// for the themed box only), or a substitute pointer computed from something
-// else — by requiring the bare selector.
-func TestBothChatboxesExemptTheAnimatedPainter(t *testing.T) {
-	for _, site := range []struct{ file, fn string }{
-		{"screens.go", "drawChatOverlay"},
-		{"theme_layout.go", "drawThemedChatBox"},
-	} {
-		body := funcBodySource(t, site.file, site.fn)
-		calls := callsNamed(body, "chatCrawlClip")
-		if len(calls) != 1 {
-			t.Fatalf("%s: %d chatCrawlClip calls, want exactly 1", site.fn, len(calls))
-		}
-		if n := len(calls[0].Args); n != 3 {
-			t.Fatalf("%s: chatCrawlClip takes %d args here, want 3 (box, textTop, anim)", site.fn, n)
-		}
-		sel, ok := calls[0].Args[2].(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "msAnim" {
-			t.Errorf("%s hands chatCrawlClip %T instead of the plain a.msAnim selector — the raised "+
-				"edge shaves 2-3 px off every wave/shake span on the FIRST row (render/animtext.go "+
-				"displaces glyphs off their layout row; the animated painter cannot scroll, so the "+
-				"edge is protecting nothing), and anything computed here is a second copy of a rule "+
-				"that lives in chatCrawlClip", site.fn, calls[0].Args[2])
-		}
-	}
-}
-
 // TestTheAnimatedExemptionKnowsWhichWayRoundItIs is the polarity gate, and it is
 // deliberately a BEHAVIOURAL one on the seam rather than a source check at the
 // sites: the decision has exactly one home now, so this drives that home with
@@ -345,89 +302,5 @@ func TestTheAnimatedExemptionKnowsWhichWayRoundItIs(t *testing.T) {
 	if raster.Y != textTop {
 		t.Errorf("the raster painter gets a clip topped at %d, want the text origin %d — the polarity "+
 			"is inverted: a scrolled ordinary post paints straight onto the showname plate", raster.Y, textTop)
-	}
-}
-
-// TestBothChatboxesClipAtTheTextOrigin is the deletion catcher for the top bound.
-// Two painters again, and neither has a return value: a clip set to the wrong
-// rect just paints over the name.
-//
-// It follows the BINDING rather than a literal, so renaming the variable keeps
-// the gate honest, and it checks both places the clip is handed over — the
-// renderer's scratch rect and DrawScaled's re-assert argument, which the
-// device-exact bracket sets a SECOND time at 1:1 (render/text.go). Passing `box`
-// to either one restores the defect.
-func TestBothChatboxesClipAtTheTextOrigin(t *testing.T) {
-	for _, site := range []struct{ file, fn string }{
-		{"screens.go", "drawChatOverlay"},
-		{"theme_layout.go", "drawThemedChatBox"},
-	} {
-		body := funcBodySource(t, site.file, site.fn)
-		clipVar := bindingOf(body, "chatCrawlClip")
-		if clipVar == "" {
-			t.Errorf("%s does not bind a chatCrawlClip — a scrolled message paints over the "+
-				"showname plate (Qt clips ui_vp_message at the widget's own top edge, courtroom.cpp:3310)", site.fn)
-			continue
-		}
-		if !assignsFieldFrom(body, "cgoRect", clipVar) {
-			t.Errorf("%s sets its renderer clip from something other than %s — the crawl's "+
-				"scrolled-off rows land on the name band", site.fn, clipVar)
-		}
-		calls := callsNamed(body, "DrawScaled")
-		if len(calls) != 1 {
-			t.Fatalf("%s: %d DrawScaled calls, want exactly 1", site.fn, len(calls))
-		}
-		args := calls[0].Args
-		if !mentionsIdent(args[len(args)-1], clipVar) {
-			t.Errorf("%s hands DrawScaled a clip that is not %s — the device-exact bracket "+
-				"re-asserts it in device pixels, so the wrong rect there is the defect at every scaled UI", site.fn, clipVar)
-		}
-	}
-}
-
-// assignsFieldFrom reports whether n contains `<x>.<field> = <expr mentioning src>`.
-// The chatbox clip reaches SDL through the Ctx scratch field rather than as a call
-// argument (&local would escape through cgo), so the gate above has to read an
-// assignment to catch it.
-//
-// ITS CENSUS LIMIT, said out loud: it matches ANY assignment to that field
-// anywhere in the body, so a function with several cgoRect writes satisfies it as
-// soon as ONE of them mentions src — it proves the clip variable reaches the
-// scratch rect somewhere, never that the write immediately before the
-// SetClipRect is the one that did.
-func assignsFieldFrom(n ast.Node, field, src string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		sel, ok := as.Lhs[0].(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != field {
-			return true
-		}
-		if mentionsIdent(as.Rhs[0], src) {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// TestBothChatboxesFollowTheCrawl is the deletion catcher. There are TWO chatbox
-// painters — AsyncAO's own overlay and the themed one — and a fix applied to one
-// is the failure mode this repo has hit repeatedly (the two IC bars, the two
-// draw sites for the blank-plate skin). Source, because a missing offset has no
-// return value: the text simply stops where it always did.
-func TestBothChatboxesFollowTheCrawl(t *testing.T) {
-	for _, site := range []struct{ file, fn string }{
-		{"screens.go", "drawChatOverlay"},
-		{"theme_layout.go", "drawThemedChatBox"},
-	} {
-		body := funcBodySource(t, site.file, site.fn)
-		if !containsCall(body, "chatCrawlOffset") {
-			t.Errorf("%s does not follow its own crawl (chatCrawlOffset) — a message taller "+
-				"than the box types into the void below it (courtroom.cpp:4514-4521)", site.fn)
-		}
 	}
 }

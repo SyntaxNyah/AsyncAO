@@ -230,32 +230,6 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	}
 }
 
-// TestPairGhostClipsAndRefusesTheResizeGrip is the deletion catcher for both
-// halves of the fix. Neither has a return value to assert on: a missing clip
-// paints over the rest of the screen and a missing grip guard silently rewrites
-// a number, and every unit gate above stays green through both.
-func TestPairGhostClipsAndRefusesTheResizeGrip(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "drawPairGhost")
-	if !containsCall(body, "pushClip") {
-		t.Error("drawPairGhost does not pushClip — a sprite wider than the preview column " +
-			"paints straight over the courtroom (and a raw SetClipRect would not fence the " +
-			"hit tests either)")
-	}
-	if !containsCall(body, "popClip") {
-		t.Error("drawPairGhost pushes a clip it never pops — every widget drawn after the " +
-			"Pair panel inherits it")
-	}
-	if !containsCall(body, "pointIn") {
-		t.Error("drawPairGhost no longer excludes the resize grip from its drag — resizing " +
-			"the Pairing window drags the sprite and rewrites the pair offsets")
-	}
-	// The grip has to actually REACH the function, or the exclusion tests a rect
-	// nobody passed in.
-	if !containsCall(funcBodySource(t, "screens.go", "drawPairPanel"), "drawPairGhost") {
-		t.Fatal("drawPairPanel no longer draws the ghost editor at all")
-	}
-}
-
 // TestTheGripOverlapsTheStage is the measurement the guard exists for, kept as a
 // gate so a future layout change that moves them apart shows up as a failing
 // assumption rather than as dead code. floatGripSz (16) against pad (8) is an

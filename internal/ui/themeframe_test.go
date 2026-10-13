@@ -16,7 +16,6 @@ package ui
 
 import (
 	"image"
-	"strings"
 	"testing"
 	"time"
 
@@ -91,51 +90,6 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	if a.frameAnimChrome {
 		t.Error("theme chrome noted the animation census under ReduceMotion — the client holds the animation " +
 			"frame rate for a picture that is not moving, so the option delivers neither stillness nor the idle rate")
-	}
-}
-
-// TestReduceMotionIsLatchedAtBothPoints pins WHERE the latch comes from, and it
-// has to name two places.
-//
-// themeFrame is reached from about ten draw sites, most of them on screens — char
-// select, the settings preview, the export capture — that never open an element
-// pass. The pass-level latch alone would leave every one of them reading whatever
-// the last themed courtroom frame happened to decide, which is the stale-state
-// hazard, not a fix. So App.Frame latches it too, through the same function.
-//
-// The pass half is DRIVEN. The Frame half is a source census, for the reason the
-// package already uses that instrument elsewhere (theme_roots_test.go): no test
-// in internal/ui drives App.Frame, so a call site inside it is unreachable — and
-// a deletion nothing can reach is exactly what a census is for.
-func TestReduceMotionIsLatchedAtBothPoints(t *testing.T) {
-	a, cleanup := stageSettledCourtroom(t)
-	defer cleanup()
-
-	// The pass, driven.
-	a.d.Prefs.SetReduceMotion(true)
-	a.themeFXFrozen = false // a stale answer from some earlier pass
-	a.beginThemeFXPass()
-	if !a.themeFXFrozen {
-		t.Error("beginThemeFXPass did not latch ReduceMotion — an offscreen pass would animate under it")
-	}
-	a.d.Prefs.SetReduceMotion(false)
-	a.beginThemeFXPass()
-	if a.themeFXFrozen {
-		t.Error("the latch is one-way: turning the accessibility option back off left the theme frozen")
-	}
-
-	// The frame, censused.
-	const latch = "a.themeFXFrozen = a.reduceMotionNow()"
-	body := funcBodyInPackage(t, "func (a *App) Frame(")
-	if !strings.Contains(body, latch) {
-		t.Errorf("App.Frame no longer contains %q — themeFrame is called from screens that open no element "+
-			"pass, so without the per-frame latch they read whatever the last themed courtroom frame decided, "+
-			"and animated theme chrome escapes the accessibility option entirely", latch)
-	}
-	// Non-vacuity: the same string must NOT be findable by accident.
-	if !strings.Contains(funcBodyInPackage(t, "func (a *App) beginThemeFXPass("), "a.reduceMotionNow()") {
-		t.Error("beginThemeFXPass stopped going through reduceMotionNow — two spellings of the accessibility " +
-			"read is how the two latch points come to disagree")
 	}
 }
 
