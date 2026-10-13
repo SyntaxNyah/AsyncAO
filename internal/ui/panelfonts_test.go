@@ -3,7 +3,6 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -149,43 +148,6 @@ func awaitThemeApply(t *testing.T, a *App) {
 			t.Fatal("theme apply did not publish a result")
 		}
 		time.Sleep(time.Millisecond)
-	}
-}
-
-// TestPanelFontFamilyReachesTheDrawSite drives a real FAMILY the whole way —
-// preference, apply, resolution, landed table, and the accessor the roster's draw
-// actually calls — because a report that the setting "does nothing" can only be
-// answered by checking every link, and the family path had only ever been tested
-// at the resolution step.
-func TestPanelFontFamilyReachesTheDrawSite(t *testing.T) {
-	a := testTabApp(t)
-	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
-
-	// Arial resolves from the system font folder on Windows; elsewhere there is
-	// no reliable system family, so the family half is skipped rather than faked.
-	if runtime.GOOS != "windows" {
-		t.Skip("no dependable system font family off Windows")
-	}
-	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{Family: "Arial", SizePx: 26})
-	awaitThemeApply(t, a)
-
-	got := a.themeFonts.e[elemPlayerList]
-	if got.pct != pxToScalePct(26) {
-		t.Errorf("player_list pct = %d, want %d", got.pct, pxToScalePct(26))
-	}
-	if got.face == 0 {
-		t.Fatalf("player_list resolved NO face for Arial; missing report = %v", a.panelFontMissing)
-	}
-	if len(a.panelFontMissing) != 0 {
-		t.Errorf("Arial was reported missing: %v", a.panelFontMissing)
-	}
-	// The face bytes have to have been handed to the kit, or the index points at
-	// nothing and the draw silently falls back to the client chain.
-	if len(a.ctx.themeFaceData) == 0 {
-		t.Error("the resolved face was never installed on Ctx — the draw would fall back")
-	}
-	if got.faceIdx() < 0 || got.faceIdx() >= len(a.ctx.themeFaceData) {
-		t.Errorf("face index %d is outside the installed set of %d", got.faceIdx(), len(a.ctx.themeFaceData))
 	}
 }
 

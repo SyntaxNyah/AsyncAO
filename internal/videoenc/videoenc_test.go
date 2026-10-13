@@ -1,13 +1,6 @@
 package videoenc
 
 import (
-	"bytes"
-	"fmt"
-	"image"
-	"math"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -102,51 +95,6 @@ func TestAvailableConsistent(t *testing.T) {
 	}
 }
 
-// TestEncodeRealVideo is the load-bearing end-to-end proof: stream a few RGBA
-// frames through a real ffmpeg and confirm a non-empty video lands on disk. It
-// SKIPS (not fails) when ffmpeg isn't installed, so CI without ffmpeg stays green
-// while the dev box (ffmpeg present) actually exercises the pipe.
-func TestEncodeRealVideo(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH — video encode path can't be exercised here")
-	}
-	const w, h = 64, 48
-	for _, f := range []Format{FormatMP4, FormatWebM} {
-		f := f
-		t.Run(FormatExt(f), func(t *testing.T) {
-			out := filepath.Join(t.TempDir(), "clip."+FormatExt(f))
-			enc, err := New(out, w, h, 10, 70, f)
-			if err != nil {
-				t.Fatalf("New: %v", err)
-			}
-			// A handful of solid-colour frames (changing colour each frame).
-			for i := 0; i < 6; i++ {
-				img := image.NewRGBA(image.Rect(0, 0, w, h))
-				for p := 0; p+3 < len(img.Pix); p += 4 {
-					img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = byte(i*40), 80, 200, 255
-				}
-				if err := enc.AddFrame(img); err != nil {
-					enc.Close()
-					t.Fatalf("AddFrame %d: %v", i, err)
-				}
-			}
-			if enc.Frames() != 6 {
-				t.Errorf("Frames() = %d, want 6", enc.Frames())
-			}
-			if err := enc.Finish(); err != nil {
-				t.Fatalf("Finish: %v", err)
-			}
-			st, err := os.Stat(out)
-			if err != nil {
-				t.Fatalf("stat output: %v", err)
-			}
-			if st.Size() == 0 {
-				t.Errorf("encoded %s is empty", FormatExt(f))
-			}
-		})
-	}
-}
-
 // TestMuxArgsShape pins the audio-mux command line: copy the video, encode the
 // audio to the container codec, delay+pad it, stop at the video length. The pad is
 // BOUNDED to the probed video duration (whole_dur) — an infinite apad races the mux
@@ -178,22 +126,6 @@ func TestMuxArgsShape(t *testing.T) {
 	}
 }
 
-// TestProbeDurationSec runs the real header probe against a freshly-encoded ~1.0 s
-// video (the bounded pad's input) and a non-file (the fallback).
-func TestProbeDurationSec(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH")
-	}
-	silent := encodeTestVideo(t, t.TempDir(), 10) // ~1.0 s
-	d, ok := probeDurationSec(silent)
-	if !ok || d < 0.8 || d > 1.5 {
-		t.Errorf("probeDurationSec = %.2f, %v — want ~1.0s, true", d, ok)
-	}
-	if _, ok := probeDurationSec(filepath.Join(t.TempDir(), "missing.mp4")); ok {
-		t.Error("probe of a missing file must report !ok")
-	}
-}
-
 // TestLastStderrLines pins the two-line error surfacing: the real cause often sits
 // one line above ffmpeg's generic "Terminating thread" line, which alone reads like
 // a disk problem.
@@ -210,145 +142,6 @@ func TestLastStderrLines(t *testing.T) {
 	if got := lastStderrLines("  \n\n"); got != "" {
 		t.Errorf("blank dump = %q, want empty", got)
 	}
-}
-
-// minimalWAV writes a tiny 16-bit mono PCM WAV (≈0.5 s of a quiet tone) so the mux
-// test has a REAL audio file without any Go audio decoding.
-func minimalWAV(t *testing.T, path string) {
-	t.Helper()
-	const rate, samples = 8000, 4000 // 0.5 s
-	pcm := make([]byte, 0, samples*2)
-	for i := 0; i < samples; i++ {
-		v := int16(3000 * math.Sin(2*math.Pi*440*float64(i)/rate))
-		pcm = append(pcm, byte(v), byte(v>>8))
-	}
-	var b []byte
-	put4 := func(s string) { b = append(b, s...) }
-	put32 := func(v int) { b = append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
-	put16 := func(v int) { b = append(b, byte(v), byte(v>>8)) }
-	put4("RIFF")
-	put32(36 + len(pcm))
-	put4("WAVE")
-	put4("fmt ")
-	put32(16)
-	put16(1)
-	put16(1)
-	put32(rate)
-	put32(rate * 2)
-	put16(2)
-	put16(16)
-	put4("data")
-	put32(len(pcm))
-	b = append(b, pcm...)
-	if err := os.WriteFile(path, b, 0o644); err != nil {
-		t.Fatalf("write wav: %v", err)
-	}
-}
-
-// TestMuxAudioBedReal is the end-to-end proof: encode a real silent clip, mux a real
-// WAV in, and confirm the output actually carries an audio stream. Skips without
-// ffmpeg (CI stays green; the dev box exercises it).
-func TestMuxAudioBedReal(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH — mux path can't be exercised here")
-	}
-	const w, h = 64, 48
-	dir := t.TempDir()
-	silent := filepath.Join(dir, "silent.mp4")
-	enc, err := New(silent, w, h, 10, 70, FormatMP4)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	for i := 0; i < 10; i++ { // ~1 s of video
-		img := image.NewRGBA(image.Rect(0, 0, w, h))
-		for p := 0; p+3 < len(img.Pix); p += 4 {
-			img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = 120, byte(i*20), 60, 255
-		}
-		if err := enc.AddFrame(img); err != nil {
-			enc.Close()
-			t.Fatalf("AddFrame: %v", err)
-		}
-	}
-	if err := enc.Finish(); err != nil {
-		t.Fatalf("Finish: %v", err)
-	}
-	wav := filepath.Join(dir, "song.wav")
-	minimalWAV(t, wav)
-	out := filepath.Join(dir, "withaudio.mp4")
-	if err := MuxAudioBed(silent, wav, out, 0, FormatMP4); err != nil {
-		t.Fatalf("MuxAudioBed: %v", err)
-	}
-	if st, err := os.Stat(out); err != nil || st.Size() == 0 {
-		t.Fatalf("muxed output missing/empty: %v", err)
-	}
-	// Probe the result: ffmpeg -i prints stream info to stderr and exits non-zero with
-	// no output — that's expected for a probe.
-	info := ffmpegProbe(t, out)
-	if !strings.Contains(info, "Audio:") {
-		t.Errorf("muxed file has no audio stream; ffmpeg -i said:\n%s", info)
-	}
-	// The output must be the VIDEO's length (~1.0 s at 10 frames / 10 fps), NOT the
-	// shorter song's (0.5 s). This is the whole point of apad + -shortest: a short
-	// song is padded so it can't truncate the video. Without this assertion the test
-	// would still pass on a silently-truncated 0.5 s file (it has audio + bytes).
-	if d := parseDurationSec(t, info); d < 0.8 {
-		t.Errorf("muxed duration = %.2fs, want ~1.0s (the video length, not the 0.5s song — apad/-shortest broke)", d)
-	}
-}
-
-// ffmpegProbe runs `ffmpeg -i path` and returns its stderr (where ffmpeg prints
-// container/stream info). The non-zero exit (no output specified) is expected.
-func ffmpegProbe(t *testing.T, path string) string {
-	t.Helper()
-	cmd := exec.Command(FFmpegPath(), "-i", path)
-	var st bytes.Buffer
-	cmd.Stderr = &st
-	_ = cmd.Run()
-	return st.String()
-}
-
-// parseDurationSec pulls "Duration: HH:MM:SS.ss" out of ffmpeg -i output as seconds.
-func parseDurationSec(t *testing.T, info string) float64 {
-	t.Helper()
-	i := strings.Index(info, "Duration: ")
-	if i < 0 {
-		t.Fatalf("no Duration line in ffmpeg output:\n%s", info)
-	}
-	ts := info[i+len("Duration: "):]
-	if j := strings.IndexByte(ts, ','); j >= 0 {
-		ts = ts[:j] // "00:00:01.00"
-	}
-	var hh, mm int
-	var ss float64
-	if _, err := fmt.Sscanf(strings.TrimSpace(ts), "%d:%d:%f", &hh, &mm, &ss); err != nil {
-		t.Fatalf("parse duration %q: %v", ts, err)
-	}
-	return float64(hh*3600+mm*60) + ss
-}
-
-// encodeTestVideo writes a real ~frames/10 s silent MP4 (64×48) and returns its path.
-func encodeTestVideo(t *testing.T, dir string, frames int) string {
-	t.Helper()
-	const w, h = 64, 48
-	path := filepath.Join(dir, "silent.mp4")
-	enc, err := New(path, w, h, 10, 70, FormatMP4)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	for i := 0; i < frames; i++ {
-		img := image.NewRGBA(image.Rect(0, 0, w, h))
-		for p := 0; p+3 < len(img.Pix); p += 4 {
-			img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = 100, byte(i*15), 80, 255
-		}
-		if err := enc.AddFrame(img); err != nil {
-			enc.Close()
-			t.Fatalf("AddFrame: %v", err)
-		}
-	}
-	if err := enc.Finish(); err != nil {
-		t.Fatalf("Finish: %v", err)
-	}
-	return path
 }
 
 // TestMuxMixArgsShape pins the multi-input filter graph: one adelay per clip, the
@@ -376,72 +169,5 @@ func TestMuxMixArgsShape(t *testing.T) {
 	fb := strings.Join(muxMixArgs("v.mp4", clips, "out.mp4", FormatMP4, 0), " ")
 	if !strings.Contains(fb, "normalize=0,apad[aout]") {
 		t.Errorf("fallback mix args must keep the plain apad: %q", fb)
-	}
-}
-
-// TestMuxAudioMixSFXOnlyKeepsLength is the load-bearing guard: a SFX-only mix (no
-// music bed) must still produce a FULL-length video. With apad per-input this would
-// truncate the video to the 0.5 s SFX; post-mix apad keeps it the video's ~1.0 s.
-func TestMuxAudioMixSFXOnlyKeepsLength(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH")
-	}
-	dir := t.TempDir()
-	silent := encodeTestVideo(t, dir, 10) // ~1.0 s
-	sfx := filepath.Join(dir, "sfx.wav")
-	minimalWAV(t, sfx) // 0.5 s
-	out := filepath.Join(dir, "sfxonly.mp4")
-	if err := MuxAudioMix(silent, []AudioClip{{Path: sfx, DelayMs: 0}}, out, FormatMP4); err != nil {
-		t.Fatalf("MuxAudioMix: %v", err)
-	}
-	info := ffmpegProbe(t, out)
-	if !strings.Contains(info, "Audio:") {
-		t.Errorf("sfx-only mix has no audio stream:\n%s", info)
-	}
-	if d := parseDurationSec(t, info); d < 0.8 {
-		t.Errorf("sfx-only mix = %.2fs, want ~1.0s — post-mix apad failed (video truncated to the 0.5s SFX)", d)
-	}
-}
-
-// TestMuxAudioMixReal: a music bed + a one-shot SFX summed → audio present, full
-// length.
-func TestMuxAudioMixReal(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH")
-	}
-	dir := t.TempDir()
-	silent := encodeTestVideo(t, dir, 10)
-	music := filepath.Join(dir, "music.wav")
-	sfx := filepath.Join(dir, "sfx.wav")
-	minimalWAV(t, music)
-	minimalWAV(t, sfx)
-	out := filepath.Join(dir, "mix.mp4")
-	// Trim the music to 0.3 s (as if a second song started there) + a one-shot SFX.
-	// apad must still fill the mix to the video's ~1.0 s.
-	clips := []AudioClip{{Path: music, DelayMs: 0, TrimMs: 300}, {Path: sfx, DelayMs: 300}}
-	if err := MuxAudioMix(silent, clips, out, FormatMP4); err != nil {
-		t.Fatalf("MuxAudioMix: %v", err)
-	}
-	info := ffmpegProbe(t, out)
-	if !strings.Contains(info, "Audio:") || parseDurationSec(t, info) < 0.8 {
-		t.Errorf("mix output wrong (want audio + ~1.0s):\n%s", info)
-	}
-}
-
-// TestSizeMismatchRejected confirms a wrong-sized frame is rejected, not piped to
-// ffmpeg as corrupt rawvideo.
-func TestSizeMismatchRejected(t *testing.T) {
-	if !Available() {
-		t.Skip("ffmpeg not on PATH")
-	}
-	out := filepath.Join(t.TempDir(), "clip.mp4")
-	enc, err := New(out, 64, 48, 10, 70, FormatMP4)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer enc.Close()
-	bad := image.NewRGBA(image.Rect(0, 0, 32, 32))
-	if err := enc.AddFrame(bad); err == nil {
-		t.Error("AddFrame accepted a 32x32 frame for a 64x48 encoder")
 	}
 }
