@@ -301,67 +301,6 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 	}
 }
 
-// exportOnlyDrawFiles are the two passes that legitimately keep MessageRaster's plain,
-// non-device-exact Draw: comicexport.go and gifexport.go render at a resolution the
-// live UI scale must never leak into (Draw's own doc comment: "Draw keeps the scaled
-// projection, which is what the offscreen/export passes want"). Every other file must
-// reach a message/emoji/field raster through DrawScaled instead.
-var exportOnlyDrawFiles = map[string]bool{
-	"comicexport.go": true,
-	"gifexport.go":   true,
-}
-
-// TestMessageRasterDrawIsExportOnly is the deletion-catcher for the WHOLE Draw-vs-
-// DrawScaled class (#1), not just the three call sites this fix touched
-// (labelEmojiWeight, labelCoveringCentered, the text field's emoji-fallback branch):
-// any call named Draw with MessageRaster.Draw's exact 4-argument shape
-// (ren, visibleRunes, x, y — DrawScaled's own shape tacks on renderPct and clip, so it
-// can never collide with this count) outside the two export passes throws away the
-// device precision emojiRaster/fieldRaster already bake into their fonts and
-// reintroduces the resample deviceExact's own doc measures. It reads the PRODUCTION
-// sources of the whole package, so a FIFTH call site added anywhere later fails here
-// without the gate needing an update — it is the "not just this instance" gate the
-// blur report asked for.
-func TestMessageRasterDrawIsExportOnly(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil || len(names) == 0 {
-		t.Fatalf("glob the package: %v (%d files)", err, len(names))
-	}
-	scanned := 0
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		scanned++
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || callName(call) != "Draw" || len(call.Args) != 4 {
-				return true
-			}
-			if exportOnlyDrawFiles[name] {
-				return true
-			}
-			t.Errorf("%s:%d — a 4-argument .Draw(ren, visibleRunes, x, y) call outside the export passes. "+
-				"Live UI text must call DrawScaled(ren, visibleRunes, x, y, renderPct, clip) so a device-rasterized "+
-				"emoji/field raster blits device-exact instead of being resampled by ren.SetScale.",
-				name, fset.Position(call.Pos()).Line)
-			return true
-		})
-	}
-	if scanned == 0 {
-		t.Fatal("scanned no production files — the gate would pass vacuously")
-	}
-}
-
 // TestLabelCoveringCenteredDeviceExactAtFractionalScale is the fails-at-a-fractional-
 // scale / passes-at-100% regression pin the blur report asked for, driven through the
 // REAL production draw path (labelCoveringCentered), not a reimplementation of

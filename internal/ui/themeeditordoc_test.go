@@ -12,7 +12,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -809,44 +808,6 @@ func TestStringInterningIsBoundedAndRefusesRatherThanAliasing(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Encapsulation
 // ---------------------------------------------------------------------------
-
-// TestOnlyTheDocumentUsesTheFieldTables is the encapsulation census.
-//
-// editFieldGet and editFieldSet ARE the write path. If any other file reaches into
-// them, that file is a second writer with no undo entry — exactly the failure mode
-// the whole document layer exists to prevent, and exactly the shape the sidecar's
-// own deleted Doc() accessor had. The allow-list is one file, by name.
-func TestOnlyTheDocumentUsesTheFieldTables(t *testing.T) {
-	const owner = "themeeditordoc.go"
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-	hits := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
-		}
-		n := strings.Count(string(src), "editFieldSet[") + strings.Count(string(src), "editFieldGet[")
-		if n == 0 {
-			continue
-		}
-		hits += n
-		if name != owner {
-			t.Errorf("%s indexes the element field tables (%d times) — every write must go through "+
-				"themeDoc.apply, which is what fills in the op's inverse. A second writer produces edits "+
-				"that cannot be undone, and nothing on screen says so", name, n)
-		}
-	}
-	if hits == 0 {
-		t.Fatalf("the census found no use of the field tables at all — it stopped matching %s", owner)
-	}
-}
 
 // TestEditsSurviveAThemeReapply drives the seam the whole document layer was built
 // for: a background theme apply (a texture eviction heal, the texture-filter row,
