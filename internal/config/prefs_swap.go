@@ -40,16 +40,16 @@ func snapshotLoad(data []byte) *AssetPreferences {
 	p := defaultPrefs("")
 	_ = json.Unmarshal(data, p)
 	presence := presencePrepass(data)
-	migrateLegacyKeys(p, presence)
+	migrateLegacyKeys(p, data, presence)
 	p.normalize(presence)
 	return p
 }
 
 // legacyKey is one legacy → current JSON key migration. The migrate func receives the
-// presence set (which keys are written in this file) so it can honour "only when the
-// new key is absent".
+// raw file bytes (to decode legacy keys AssetPreferences no longer carries), plus the
+// presence set so it can honour "only when the new key is absent".
 type legacyKey struct {
-	migrate func(p *AssetPreferences, presence map[string]bool)
+	migrate func(p *AssetPreferences, data []byte, presence map[string]bool)
 }
 
 // legacyKeys lists the on-disk key migrations in the order they must apply. Order
@@ -57,13 +57,40 @@ type legacyKey struct {
 // file that already carries the new key is never clobbered. Each migration commits its
 // own entry (Order 1A-b) and removes the matching allowlist entry.
 var legacyKeys = []legacyKey{
-	// filled in by the per-migration commits.
+	{
+		// Mutation (layoutPresets → layoutProfiles): one-way, no clobber. A legacy
+		// layoutPresets file (classic slots only) wraps each sanitized preset into a
+		// Classic-only profile; skipped once any profile exists.
+		migrate: func(p *AssetPreferences, data []byte, presence map[string]bool) {
+			if presence["layoutProfiles"] || !presence["layoutPresets"] {
+				return
+			}
+			var raw struct {
+				LayoutPresets map[string]map[string][4]float64 `json:"layoutPresets"`
+			}
+			if json.Unmarshal(data, &raw) != nil {
+				return
+			}
+			legacy := sanitizeLayoutPresets(raw.LayoutPresets)
+			if len(legacy) == 0 {
+				return
+			}
+			p.LayoutProfiles = make(map[string]LayoutProfile, len(legacy))
+			for name, m := range legacy {
+				name = strings.TrimSpace(name)
+				if name == "" {
+					continue
+				}
+				p.LayoutProfiles[name] = LayoutProfile{Classic: m}
+			}
+		},
+	},
 }
 
 // migrateLegacyKeys applies every legacyKey in order.
-func migrateLegacyKeys(p *AssetPreferences, presence map[string]bool) {
+func migrateLegacyKeys(p *AssetPreferences, data []byte, presence map[string]bool) {
 	for _, lk := range legacyKeys {
-		lk.migrate(p, presence)
+		lk.migrate(p, data, presence)
 	}
 }
 
