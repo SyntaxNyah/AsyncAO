@@ -1799,7 +1799,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// Frame reconnects them one per frame. Capped to the live tab cap so we
 	// never queue a connect that allocateTab would reject. Off ⇒ nil queue ⇒
 	// pumpTabRestore is a single length check, so boot is byte-identical.
-	if d.Prefs.RestoreTabsOn() {
+	if d.Prefs.Load().RestoreTabs {
 		q := d.Prefs.OpenTabList()
 		if cap := d.Prefs.TabCap(); len(q) > cap {
 			q = q[:cap]

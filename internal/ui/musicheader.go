@@ -385,7 +385,7 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	case musicMenuRosterLegacy:
 		return a.rosterLegacy
 	case musicMenuPairStatus:
-		return a.d.Prefs.ShowPairStatusOn()
+		return a.d.Prefs.Load().ShowPairStatus
 	case musicMenuFollow:
 		return a.d.Prefs.Load().FollowEnabled
 	}
@@ -605,7 +605,7 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	case musicMenuRosterLegacy:
 		a.setRosterLegacy(!a.rosterLegacy) // drops the index-keyed icon cache, rebuilds live
 	case musicMenuPairStatus:
-		next := !a.d.Prefs.ShowPairStatusOn()
+		next := !a.d.Prefs.Load().ShowPairStatus
 		a.d.Prefs.SetShowPairStatus(next)
 		a.pairStatusShow = next
 	case musicMenuFollow:

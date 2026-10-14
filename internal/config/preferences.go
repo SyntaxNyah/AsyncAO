@@ -2389,13 +2389,6 @@ func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
 	p.mu.Unlock()
 }
 
-// SmoothScalingEnabled reports the linear texture-filtering toggle.
-func (p *AssetPreferences) SmoothScalingEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SmoothScaling
-}
-
 // SetSmoothScaling toggles linear texture filtering. The UI re-streams
 // resident textures so it applies live (the SDL hint only affects
 // textures created after it changes).
@@ -2470,14 +2463,6 @@ func (p *AssetPreferences) SetAssetWarnings(on bool) {
 
 // --- Sprite repositioning ---------------------------------------------------
 
-// SpriteMoveEnabled reports the click-drag sprite repositioning toggle
-// (OFF by default).
-func (p *AssetPreferences) SpriteMoveEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteMoveOn
-}
-
 // SetSpriteMove toggles click-drag sprite repositioning.
 func (p *AssetPreferences) SetSpriteMove(on bool) {
 	p.mu.Lock()
@@ -2506,13 +2491,6 @@ func (p *AssetPreferences) SetDeskFollowManifest(on bool) {
 
 // --- Sprite hover preview ---------------------------------------------------
 
-// SpritePreviewsOn reports the hover-preview toggle (ON by default).
-func (p *AssetPreferences) SpritePreviewsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpritePreviewOn
-}
-
 // SetSpritePreviews toggles the hover-preview pop-up.
 func (p *AssetPreferences) SetSpritePreviews(on bool) {
 	p.mu.Lock()
@@ -2523,14 +2501,6 @@ func (p *AssetPreferences) SetSpritePreviews(on bool) {
 	p.SpritePreviewOn = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// PreviewPinnedOn reports whether the hover-preview box stays open until it is
-// explicitly closed. Default OFF.
-func (p *AssetPreferences) PreviewPinnedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PreviewPinned
 }
 
 // SetPreviewPinned persists the sticky pin. Written by the box's own pin button
@@ -2773,14 +2743,6 @@ func (p *AssetPreferences) SetICTimestamps(on bool) {
 	p.mu.Unlock()
 }
 
-// SmoothLogScrollOn reports whether the IC log's NEW-MESSAGE follow glides (opt-in)
-// or snaps (default, AO2 parity). Read once per log draw, like ICTimestampsOn.
-func (p *AssetPreferences) SmoothLogScrollOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SmoothLogScroll
-}
-
 // SetSmoothLogScroll toggles the eased follow jump.
 func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
 	p.mu.Lock()
@@ -2827,14 +2789,6 @@ func (p *AssetPreferences) SetMusicStreaming(on bool) {
 	p.MusicStreaming = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ShowMissingPlaceholderOn reports whether the AO2 placeholder (missingno) draws
-// for a conclusively-missing character sprite (ON by default).
-func (p *AssetPreferences) ShowMissingPlaceholderOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowMissingPlaceholder
 }
 
 // SetShowMissingPlaceholder toggles the missing-sprite placeholder.
@@ -3046,15 +3000,6 @@ func (p *AssetPreferences) SetForceCharNames(on bool) {
 	p.mu.Unlock()
 }
 
-// RandomEmote reports the "auto-random emote" toggle (OFF by default): when on,
-// every IC send rolls a fresh emote from the current character's set so the
-// sprite changes each message without manual clicking.
-func (p *AssetPreferences) RandomEmoteOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RandomEmote
-}
-
 // SetRandomEmote toggles auto-random emote selection on send.
 func (p *AssetPreferences) SetRandomEmote(on bool) {
 	p.mu.Lock()
@@ -3113,14 +3058,6 @@ func (p *AssetPreferences) SetClipSpritesToStage(on bool) {
 	p.ClipSpritesToStage = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// RightClickHideSpriteOn reports whether right-clicking a sprite offers to hide
-// it from the viewport (ON by default; a Settings toggle disables it).
-func (p *AssetPreferences) RightClickHideSpriteOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RightClickHideSprite
 }
 
 // SetRightClickHideSprite toggles right-click-to-hide-sprite.
@@ -3184,15 +3121,6 @@ func (p *AssetPreferences) SetDNDSaved(on bool) {
 	p.mu.Unlock()
 }
 
-// RainbowMessagesOn reports the "rainbow my IC messages" toggle (OFF by default):
-// when on, sendIC prefixes \cr so the message renders as a per-rune colour cycle
-// (on clients that parse the inline-colour markup).
-func (p *AssetPreferences) RainbowMessagesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowMessages
-}
-
 // SetRainbowMessages toggles rainbow IC messages.
 func (p *AssetPreferences) SetRainbowMessages(on bool) {
 	p.mu.Lock()
@@ -3203,15 +3131,6 @@ func (p *AssetPreferences) SetRainbowMessages(on bool) {
 	p.RainbowMessages = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// RandomMessageColorOn reports the "random colour per IC message" toggle (OFF by
-// default): each message picks a random palette colour (the standard TextColor
-// field, so every client shows it).
-func (p *AssetPreferences) RandomMessageColorOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RandomMessageColor
 }
 
 // SetRandomMessageColor toggles random per-message colour.
@@ -3226,16 +3145,6 @@ func (p *AssetPreferences) SetRandomMessageColor(on bool) {
 	p.mu.Unlock()
 }
 
-// RainbowSpritesOn reports the "rainbow character sprites" toggle (OFF by
-// default): when on, the viewport washes every character layer through a
-// slow hue cycle (local-only eye-candy — purely a render-side colour mod, it
-// changes nothing on the wire and never touches other clients).
-func (p *AssetPreferences) RainbowSpritesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowSprites
-}
-
 // SetRainbowSprites toggles the rainbow character-sprite wash.
 func (p *AssetPreferences) SetRainbowSprites(on bool) {
 	p.mu.Lock()
@@ -3246,14 +3155,6 @@ func (p *AssetPreferences) SetRainbowSprites(on bool) {
 	p.RainbowSprites = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ShowRecordButtonOn reports the "show a small Record button on the courtroom"
-// toggle (OFF by default — the feature is otherwise keyboard-only, Ctrl+W).
-func (p *AssetPreferences) ShowRecordButtonOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowRecordButton
 }
 
 // SetShowRecordButton toggles the on-courtroom Record button.
@@ -3376,14 +3277,6 @@ func (p *AssetPreferences) SetMusicAcrossTabs(on bool) {
 	p.mu.Unlock()
 }
 
-// ShowSongURLOn reports whether the music log line shows the full song URL
-// instead of just the song name (default OFF).
-func (p *AssetPreferences) ShowSongURLOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowSongURL
-}
-
 // SetShowSongURL toggles showing the full song URL in the music log line.
 func (p *AssetPreferences) SetShowSongURL(on bool) {
 	p.mu.Lock()
@@ -3500,23 +3393,6 @@ func (p *AssetPreferences) SetLastServer(name, url string) {
 	p.mu.Unlock()
 }
 
-// RainbowSpeed reports the rainbow hue-rotation speed slider [1,100]
-// (higher = faster); render maps it to the cycle period.
-func (p *AssetPreferences) RainbowSpeed() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowSpriteSpeed
-}
-
-// ReplaySpeed reports the scene-replay playback speed percent [25,200] (100 =
-// the readable base, lower = slower). The UI maps it to the typewriter crawl +
-// linger when driving a replay.
-func (p *AssetPreferences) ReplaySpeed() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ReplayPlaybackSpeed
-}
-
 // SetReplaySpeed stores the replay playback speed (clamped to [25,200]).
 func (p *AssetPreferences) SetReplaySpeed(v int) {
 	v = clampPercent(v, minReplaySpeed, maxReplaySpeed)
@@ -3548,13 +3424,6 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	p.Export = o
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// SpriteStyle reports the user's own transmitted sprite customization (#103).
-func (p *AssetPreferences) SpriteStyle() SpriteStylePref {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MySpriteStyle
 }
 
 // SetSpriteStyle stores the user's sprite style (opacity clamped to [0,100]).
@@ -3997,13 +3866,6 @@ const (
 	ProxyModeCount = 3
 )
 
-// ProxyMode reports which proxy source is in effect.
-func (p *AssetPreferences) ProxyMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ProxyModeVal
-}
-
 // SetProxyMode picks the proxy source. An unknown mode falls back to System
 // rather than to Direct: a mangled value must not silently switch the feature
 // off for someone who never asked it to.
@@ -4019,13 +3881,6 @@ func (p *AssetPreferences) SetProxyMode(mode int) {
 	p.ProxyModeVal = mode
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ProxyURLValue is the operator's own proxy address (mode Manual only).
-func (p *AssetPreferences) ProxyURLValue() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ProxyURL
 }
 
 // SetProxyURL stores the operator's proxy address. Validation deliberately does
@@ -4168,14 +4023,6 @@ func (p *AssetPreferences) SetVoicePTT(k string) {
 	p.mu.Unlock()
 }
 
-// QuitConfirmSkipOn reports whether the user ticked "don't ask again" on the quit
-// dialog (so the quit hotkey exits immediately). Default OFF.
-func (p *AssetPreferences) QuitConfirmSkipOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.QuitConfirmSkip
-}
-
 // SetQuitConfirmSkip persists the quit-confirm "don't ask again" choice.
 func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
 	p.mu.Lock()
@@ -4193,13 +4040,6 @@ func (p *AssetPreferences) SetLegacyDevTheme(b bool) { p.setBoolPref(&p.LegacyDe
 
 // SetOOCInLogTab toggles OOC-as-a-log-tab (the old layout).
 func (p *AssetPreferences) SetOOCInLogTab(b bool) { p.setBoolPref(&p.OOCInLogTab, b) }
-
-// Profile reports the user's character profile (#101).
-func (p *AssetPreferences) Profile() ProfilePref {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MyProfile
-}
 
 // SetProfile stores the user's character profile (every field length-clamped).
 func (p *AssetPreferences) SetProfile(pr ProfilePref) {
@@ -4240,14 +4080,6 @@ func (p *AssetPreferences) SetRainbowSpriteSpeed(v int) {
 	p.mu.Unlock()
 }
 
-// RainbowVividness reports the rainbow saturation slider [0,100] (higher =
-// more vivid/neon); render maps it to the colour-mod channel floor.
-func (p *AssetPreferences) RainbowVividness() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowSpriteVividness
-}
-
 // SetRainbowSpriteVividness stores the saturation (clamped to [0,100]).
 func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
 	v = clampPercent(v, minRainbowVivid, maxRainbowVivid)
@@ -4259,14 +4091,6 @@ func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
 	p.RainbowSpriteVividness = v
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// RainbowSpriteGlowOn reports the additive-blend "neon glow" toggle (OFF by
-// default): the tint adds light instead of multiplying, so sprites glow.
-func (p *AssetPreferences) RainbowSpriteGlowOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowSpriteGlow
 }
 
 // SetRainbowSpriteGlow toggles the additive neon-glow blend.
@@ -4281,15 +4105,6 @@ func (p *AssetPreferences) SetRainbowSpriteGlow(on bool) {
 	p.mu.Unlock()
 }
 
-// RainbowPairDesyncOn reports the "desync pair colour" toggle (OFF by default):
-// the speaker and pair sprites cycle half a period apart, so they show
-// different hues at once.
-func (p *AssetPreferences) RainbowPairDesyncOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowPairDesync
-}
-
 // SetRainbowPairDesync toggles the pair hue offset.
 func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
 	p.mu.Lock()
@@ -4300,15 +4115,6 @@ func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
 	p.RainbowPairDesync = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// RainbowPerCharOn reports the "different hue per character" toggle (OFF by
-// default): with rainbow on, each character's hue is offset by a hash of its
-// name, so several on-stage characters show different colours at once.
-func (p *AssetPreferences) RainbowPerCharOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RainbowPerChar
 }
 
 // SetRainbowPerChar toggles the per-character hue offset.
@@ -4323,14 +4129,6 @@ func (p *AssetPreferences) SetRainbowPerChar(on bool) {
 	p.mu.Unlock()
 }
 
-// SpriteWobbleOn reports the "wobble" toggle (OFF by default): a gentle
-// continuous position sway over the on-stage sprites.
-func (p *AssetPreferences) SpriteWobbleOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteWobble
-}
-
 // SetSpriteWobble toggles the sprite wobble.
 func (p *AssetPreferences) SetSpriteWobble(on bool) {
 	p.mu.Lock()
@@ -4341,14 +4139,6 @@ func (p *AssetPreferences) SetSpriteWobble(on bool) {
 	p.SpriteWobble = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// SpriteSpinOn reports the "spin" toggle (OFF by default): the on-stage sprites
-// rotate slowly and continuously.
-func (p *AssetPreferences) SpriteSpinOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteSpin
 }
 
 // SetSpriteSpin toggles the sprite spin.
@@ -4363,14 +4153,6 @@ func (p *AssetPreferences) SetSpriteSpin(on bool) {
 	p.mu.Unlock()
 }
 
-// SpriteSolidTintOn reports the "solid colour tint" toggle (OFF by default): a
-// single fixed-colour wash over sprites (rainbow takes priority if both are on).
-func (p *AssetPreferences) SpriteSolidTintOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteSolidTint
-}
-
 // SetSpriteSolidTint toggles the fixed-colour sprite wash.
 func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
 	p.mu.Lock()
@@ -4381,14 +4163,6 @@ func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
 	p.SpriteSolidTint = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ShoutPunchOn reports the "shout punch" toggle (OFF by default): a quick scale-pop of the
-// whole stage when a shout/objection appears, for extra impact (#12). Viewer-local.
-func (p *AssetPreferences) ShoutPunchOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShoutPunch
 }
 
 // SetShoutPunch toggles the shout screen-punch.
@@ -4434,14 +4208,6 @@ const (
 	maxSpotlightStrength     = 90
 	defaultSpotlightStrength = 55
 )
-
-// SpotlightOn reports the #121 toggle (OFF by default): dim the non-speaker layers (the pair
-// partner + the desk) so the talking character pops.
-func (p *AssetPreferences) SpotlightOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.Spotlight
-}
 
 // SetSpotlight toggles the speaker spotlight.
 func (p *AssetPreferences) SetSpotlight(on bool) { p.setBoolPref(&p.Spotlight, on) }
@@ -4523,14 +4289,6 @@ func (p *AssetPreferences) SetBreathSpeed(v int) { p.setIntPref(&p.BreathRate, v
 // defaultReflectStrength is the #123 reflection opacity when unset (so the slider shows a
 // sensible value and enabling the toggle is visible at once).
 const defaultReflectStrength = 30
-
-// ReflectionOn reports the #123 toggle (OFF by default): a flipped, faded glass-floor mirror
-// of the sprites.
-func (p *AssetPreferences) ReflectionOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.Reflection
-}
 
 // SetReflection toggles the glass-floor reflection.
 func (p *AssetPreferences) SetReflection(on bool) { p.setBoolPref(&p.Reflection, on) }
@@ -4683,13 +4441,6 @@ func (p *AssetPreferences) SetFollowEnabled(on bool) {
 	p.FollowEnabled = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ShowPairStatusOn reports whether the player list shows each player's current pair (#20, opt-in).
-func (p *AssetPreferences) ShowPairStatusOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowPairStatus
 }
 
 // SetShowPairStatus toggles the opt-in pair-status chip in the player list.
@@ -4864,17 +4615,6 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 	p.ThemeDir = dir
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// Subtheme reports the AO2 subtheme folder to prefer inside the active theme
-// ("" = none). Kept separate from SetTheme because it is a different question
-// with a different lifetime: a subtheme belongs to the theme it lives in, and
-// switching theme leaves the pick alone (a theme with no such folder simply
-// probes a directory that isn't there — AO2 behaves identically).
-func (p *AssetPreferences) Subtheme() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SubthemeName
 }
 
 // SetSubtheme stores the AO2 subtheme folder ("" = none). The value is
@@ -5510,13 +5250,6 @@ func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 
 // --- OOC name -----------------------------------------------------------------
 
-// SavedOOCName reports the persisted OOC chat name.
-func (p *AssetPreferences) SavedOOCName() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.OOCName
-}
-
 // SetOOCName persists the OOC chat name (debounced saver flushes).
 func (p *AssetPreferences) SetOOCName(name string) {
 	p.mu.Lock()
@@ -5778,15 +5511,6 @@ func (p *AssetPreferences) SetMusicVolMuted(on bool) {
 	p.mu.Unlock()
 }
 
-// SFXVolMutedOn reports the persisted SFX-channel mute. Retained for schema
-// compatibility only: the SFX mute is now session-only and the app never reads
-// this (see ui.toggleSFXMute / ui.resetSessionState).
-func (p *AssetPreferences) SFXVolMutedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SFXVolMuted
-}
-
 // SetSFXVolMuted persists the SFX-channel mute toggle. Retained for schema
 // compatibility only: the SFX mute is now session-only and the app never writes
 // this (see ui.toggleSFXMute / ui.persistChannelMute).
@@ -5965,14 +5689,6 @@ func (p *AssetPreferences) SetTabCap(n int) {
 	p.mu.Unlock()
 }
 
-// RestoreTabsOn reports the "reopen my server tabs on launch" toggle (OFF by
-// default). When on, the open tabs are saved on exit and reconnected next time.
-func (p *AssetPreferences) RestoreTabsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RestoreTabs
-}
-
 // SetRestoreTabs toggles restore-on-launch.
 func (p *AssetPreferences) SetRestoreTabs(on bool) {
 	p.mu.Lock()
@@ -6033,15 +5749,6 @@ const (
 	SpriteWaitMinMs     = 50
 	SpriteWaitMaxMs     = 30000
 )
-
-// SpriteLoadMode reports the power-user loading mode (SpriteLoadDefault by
-// default — strict sequencing). It never affects a cached sprite — only what
-// shows during the fetch/decode gap for an uncached one.
-func (p *AssetPreferences) SpriteLoadMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteLoadModeVal
-}
 
 // SetSpriteLoadMode persists the cold-load sprite behaviour (clamped to a known mode).
 func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
@@ -6264,35 +5971,11 @@ func normalizeFPSPref(fps, min, max int) int {
 	return clampPercent(fps, min, max)
 }
 
-// SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
-// (both OFF by default): also hold a message for the pair partner's idle sprite /
-// its preanimation.
-func (p *AssetPreferences) SpriteWaitPairOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteWaitPair
-}
-
 // SetSpriteWaitPair persists the wait-covers-pair knob.
 func (p *AssetPreferences) SetSpriteWaitPair(on bool) { p.setBoolPref(&p.SpriteWaitPair, on) }
 
-// SpriteWaitPreanimOn reports the wait-covers-preanim knob.
-func (p *AssetPreferences) SpriteWaitPreanimOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteWaitPreanim
-}
-
 // SetSpriteWaitPreanim persists the wait-covers-preanim knob.
 func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
-
-// ShoutBypassQueueOn reports whether shouts skip the queue and play immediately
-// (ON by default, AO2 parity). OFF queues shouts like any other message.
-func (p *AssetPreferences) ShoutBypassQueueOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShoutBypassQueue
-}
 
 // SetShoutBypassQueue persists the shout-bypass toggle.
 func (p *AssetPreferences) SetShoutBypassQueue(on bool) { p.setBoolPref(&p.ShoutBypassQueue, on) }
@@ -6317,14 +6000,6 @@ func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebu
 
 // SetHotkeysEnabled persists the hotkeys opt-in.
 func (p *AssetPreferences) SetHotkeysEnabled(on bool) { p.setBoolPref(&p.HotkeysEnabled, on) }
-
-// ShoutDurationMs reports the shout-bubble hold in milliseconds (0 = the
-// canonical courtroom default — see courtroom.DefaultShoutDuration).
-func (p *AssetPreferences) ShoutDurationMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShoutDurationMsVal
-}
 
 // SetShoutDurationMs persists the shout hold (0 = default; else clamped).
 func (p *AssetPreferences) SetShoutDurationMs(ms int) {
@@ -6545,14 +6220,6 @@ func (p *AssetPreferences) SetAdaptiveLatMultiple(n int) {
 	p.AdaptiveLatMultipleVal = n
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// SpriteDownscaleOffOn reports whether the automatic decode downscale is
-// disabled entirely (default OFF = the downscale runs).
-func (p *AssetPreferences) SpriteDownscaleOffOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteDownscaleOff
 }
 
 // SetSpriteDownscaleOff persists the downscale-disable knob.
@@ -7042,15 +6709,6 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 	p.mu.Unlock()
 }
 
-// ReduceMotion reports the reduce-motion accessibility toggle: when on, the
-// jarring courtroom effects (screen shake, realization flash, and the M2 text
-// effects) are suppressed.
-func (p *AssetPreferences) ReduceMotion() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ReduceMotionOn
-}
-
 // SetReduceMotion toggles reduce-motion.
 func (p *AssetPreferences) SetReduceMotion(on bool) {
 	p.mu.Lock()
@@ -7087,15 +6745,6 @@ func (p *AssetPreferences) SetFontCensus(on bool) {
 	p.mu.Unlock()
 }
 
-// ScreenEffectsOn reports the AO2 screen-effects toggle (ON by default): the \s
-// screenshake / \f flash codes typed into a message and the field-based
-// shake/realization render when on. "Reduce motion" also suppresses them.
-func (p *AssetPreferences) ScreenEffectsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ScreenEffects
-}
-
 // SetScreenEffects toggles the AO2 screen effects.
 func (p *AssetPreferences) SetScreenEffects(on bool) {
 	p.mu.Lock()
@@ -7127,16 +6776,6 @@ func (p *AssetPreferences) SetWordDelete(on bool) {
 	p.WordDelete = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// RecordingsKeepAssetsOn reports whether an in-app scene recording auto-packages
-// its (already-warm) assets into a self-contained bundle folder when it stops
-// (ON by default). OFF leaves only the flat .aorec — the bundle is additive, so
-// off changes nothing else about the recording flow.
-func (p *AssetPreferences) RecordingsKeepAssetsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.RecordingsKeepAssets
 }
 
 // SetRecordingsKeepAssets toggles the auto-bundle-on-stop-recording behavior.
@@ -7206,13 +6845,6 @@ func (p *AssetPreferences) SetDetailedLog(on bool) {
 // getters read "does the pick SURVIVE the send", which is the config key's own
 // sense — NOT the upstream accessor's backwards name.
 
-// StickySoundsOn reports whether the IC SFX pick survives a send (ON by default).
-func (p *AssetPreferences) StickySoundsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.StickySounds
-}
-
 // SetStickySounds toggles whether the IC SFX pick survives a send.
 func (p *AssetPreferences) SetStickySounds(on bool) {
 	p.mu.Lock()
@@ -7223,15 +6855,6 @@ func (p *AssetPreferences) SetStickySounds(on bool) {
 	p.StickySounds = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// StickyEffectsOn reports whether the effects pick survives a send (ON by
-// default). With it OFF the effect's own `sticky` property still decides
-// (courtroom.cpp:2348-2354) — see App.clearEffectsAfterSend.
-func (p *AssetPreferences) StickyEffectsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.StickyEffects
 }
 
 // SetStickyEffects toggles whether the effects pick survives a send.
@@ -7246,14 +6869,6 @@ func (p *AssetPreferences) SetStickyEffects(on bool) {
 	p.mu.Unlock()
 }
 
-// StickyPreanimsOn reports whether the Pre checkbox survives a send (ON by
-// default).
-func (p *AssetPreferences) StickyPreanimsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.StickyPreanims
-}
-
 // SetStickyPreanims toggles whether the Pre checkbox survives a send.
 func (p *AssetPreferences) SetStickyPreanims(on bool) {
 	p.mu.Lock()
@@ -7264,14 +6879,6 @@ func (p *AssetPreferences) SetStickyPreanims(on bool) {
 	p.StickyPreanims = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// SFXOnIdleOn reports AO2's sfx_on_idle / "Always Send SFX" (OFF by default): a
-// hand-picked SFX rides a message even with Pre unticked.
-func (p *AssetPreferences) SFXOnIdleOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SFXOnIdle
 }
 
 // SetSFXOnIdle toggles sending a picked SFX on a non-preanim message.
@@ -8021,14 +7628,6 @@ func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 	p.AutoDetectFormats = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// StreamerMode reports the on-stream privacy toggle: OOC sender names
-// and IP-like tokens mask in the display, callwords stay silent.
-func (p *AssetPreferences) StreamerMode() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.StreamerModeOn
 }
 
 // SetStreamerMode toggles the on-stream privacy mode.
@@ -9378,13 +8977,6 @@ func (p *AssetPreferences) IsFavorite(url string) bool {
 }
 
 // --- Showname ----------------------------------------------------------------
-
-// SavedShowname returns the persisted in-character showname.
-func (p *AssetPreferences) SavedShowname() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.Showname
-}
 
 // SetShowname persists the in-character showname so it survives restarts and
 // is prefilled on the next session.

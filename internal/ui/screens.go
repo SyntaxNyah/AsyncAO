@@ -819,7 +819,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 	if a.dragVpDivider || a.courtModalOpen() {
 		return // the resize divider owns this press, or a blocking popup fences the stage
 	}
-	if !a.d.Prefs.SpriteMoveEnabled() {
+	if !a.d.Prefs.Load().SpriteMoveOn {
 		return // opt-in (Settings → General); off by default so stray clicks can't nudge sprites
 	}
 	c := a.ctx
@@ -864,7 +864,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 
 	// Right-click a sprite: drop its move override (back to server placement) —
 	// but only when right-click-to-hide is OFF, so the two don't both fire.
-	if c.rightClicked && !a.d.Prefs.RightClickHideSpriteOn() && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
+	if c.rightClicked && !a.d.Prefs.Load().RightClickHideSprite && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
 		for _, layer := range layers {
 			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) {
 				delete(a.spriteOv, strings.ToLower(layer.Name))
@@ -967,7 +967,7 @@ func (a *App) drawCloseTabConfirm(w, h int32) {
 // ask again", otherwise the confirm dialog. The Esc-in-lobby escape hatch (you
 // can't always reach the window's X in fullscreen) routes through here.
 func (a *App) requestQuit() {
-	if a.d.Prefs.QuitConfirmSkipOn() {
+	if a.d.Prefs.Load().QuitConfirmSkip {
 		a.doQuit()
 		return
 	}
@@ -991,7 +991,7 @@ func (a *App) drawQuitConfirm(w, h int32) {
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Quit AsyncAO?", ColText)
 	c.Label(m.X+pad, m.Y+50, "Close the AsyncAO window?", ColText)
-	skip := a.d.Prefs.QuitConfirmSkipOn()
+	skip := a.d.Prefs.Load().QuitConfirmSkip
 	if next := c.Checkbox(m.X+pad, m.Y+82, "Don't ask again", skip); next != skip {
 		a.d.Prefs.SetQuitConfirmSkip(next)
 	}
@@ -1011,7 +1011,7 @@ func (a *App) drawQuitConfirm(w, h int32) {
 // Only at 1× zoom (zoomed hit rects lie) and not over the chatbox area.
 func (a *App) handleSpriteHide(vp sdl.Rect) {
 	c := a.ctx
-	if !c.rightClicked || a.room == nil || !a.d.Prefs.RightClickHideSpriteOn() || a.courtModalOpen() {
+	if !c.rightClicked || a.room == nil || !a.d.Prefs.Load().RightClickHideSprite || a.courtModalOpen() {
 		return // a blocking popup fences the stage
 	}
 	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct

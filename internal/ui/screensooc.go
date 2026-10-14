@@ -162,7 +162,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		// exactly at the bottom, a scrollbar drag, and VScrollbar's clamp of a
 		// capped/cleared log all keep whatever smoothing they have today. Only the
 		// on-new-message follow changes.
-		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.SmoothLogScrollOn() {
+		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
 			a.icScrollVis = float64(maxScroll)
 		}
 		a.icScroll = maxScroll
@@ -198,7 +198,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// keeps the no-friend default path to a single pref read — no trig, no extra
 	// locks. Modulo-into-period keeps the sine argument small for precision.
 	friendAlpha := friendTintColor.A
-	pulseOn := friendsOn && a.d.Prefs.Load().FriendGlowPulse && !a.d.Prefs.ReduceMotion()
+	pulseOn := friendsOn && a.d.Prefs.Load().FriendGlowPulse && !a.d.Prefs.Load().ReduceMotionOn
 	if pulseOn {
 		period := int64(friendGlowPulsePeriod)
 		phase := math.Sin(float64(a.now().UnixNano()%period) / float64(period) * 2 * math.Pi)

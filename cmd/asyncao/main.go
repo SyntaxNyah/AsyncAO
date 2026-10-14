@@ -187,7 +187,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// already pinned to the render thread.) Nothing on a request path repeats it:
 	// the answer is a snapshot, refreshed only when the user changes the setting
 	// or asks for a re-check.
-	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.ProxyMode()), prefs.ProxyURLValue())
+	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
 	log.Printf("proxy: %s", proxyPolicy.Describe())
 
 	// Power-user network knobs: the 404 TTL is boot-applied (the negative-cache
@@ -210,7 +210,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// re-hints and re-streams live. Batching cuts draw-call overhead on
 	// label/icon-heavy frames.
 	scaleHint := "1"
-	if !prefs.SmoothScalingEnabled() {
+	if !prefs.Load().SmoothScaling {
 		scaleHint = "0"
 	}
 	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, scaleHint)
@@ -304,7 +304,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			// base: a percent scales the target, the off switch drops the cap
 			// entirely (config.EffectiveSpriteCap owns the math; the App re-derives
 			// it live when the Settings sliders move).
-			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.SpriteDownscaleOffOn(), prefs.SpriteDownscalePct()))
+			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.Load().SpriteDownscaleOff, prefs.SpriteDownscalePct()))
 			decoder.SetAnimatedSpriteCap(prefs.AnimatedSpriteCap())
 		}
 	}

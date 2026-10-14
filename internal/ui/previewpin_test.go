@@ -73,12 +73,12 @@ func TestTogglePreviewPinClearsBoth(t *testing.T) {
 	a.d.Prefs.SetPreviewPinned(true)
 	a.previewPinned = false
 	a.togglePreviewPin()
-	if a.previewIsPinned() || a.previewPinned || a.d.Prefs.PreviewPinnedOn() {
-		t.Fatalf("unpinning left it pinned: latch=%v pref=%v", a.previewPinned, a.d.Prefs.PreviewPinnedOn())
+	if a.previewIsPinned() || a.previewPinned || a.d.Prefs.Load().PreviewPinned {
+		t.Fatalf("unpinning left it pinned: latch=%v pref=%v", a.previewPinned, a.d.Prefs.Load().PreviewPinned)
 	}
 	a.togglePreviewPin()
-	if !a.previewPinned || !a.d.Prefs.PreviewPinnedOn() {
-		t.Fatalf("pinning must set both: latch=%v pref=%v", a.previewPinned, a.d.Prefs.PreviewPinnedOn())
+	if !a.previewPinned || !a.d.Prefs.Load().PreviewPinned {
+		t.Fatalf("pinning must set both: latch=%v pref=%v", a.previewPinned, a.d.Prefs.Load().PreviewPinned)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestClosePreviewClearsTheLatchNotThePreference(t *testing.T) {
 	if a.previewPinned {
 		t.Error("closing must clear the session latch")
 	}
-	if !a.d.Prefs.PreviewPinnedOn() {
+	if !a.d.Prefs.Load().PreviewPinned {
 		t.Error("closing must NOT clear the sticky preference")
 	}
 }

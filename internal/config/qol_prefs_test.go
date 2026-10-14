@@ -44,7 +44,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if !p.RecordingsKeepAssetsOn() {
+	if !p.Load().RecordingsKeepAssets {
 		t.Fatal("RecordingsKeepAssetsOn must default true (in-app recordings keep their assets)")
 	}
 	p.SetRecordingsKeepAssets(false) // default-ON *bool — explicit false must survive
@@ -55,7 +55,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.RecordingsKeepAssetsOn() {
+	if q.Load().RecordingsKeepAssets {
 		t.Error("RecordingsKeepAssets=false lost (absent-default ON must not clobber explicit false)")
 	}
 	// And the other direction: an explicit ON on a file that had it OFF survives
@@ -66,7 +66,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	if p2.RecordingsKeepAssetsOn() {
+	if p2.Load().RecordingsKeepAssets {
 		t.Fatal("reopened file must still carry the explicit OFF")
 	}
 	p2.SetRecordingsKeepAssets(true)
@@ -77,7 +77,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.RecordingsKeepAssetsOn() {
+	if !r.Load().RecordingsKeepAssets {
 		t.Error("RecordingsKeepAssets=true lost across save→load")
 	}
 }
@@ -100,7 +100,7 @@ func TestChangelogSeenRoundTrip(t *testing.T) {
 // desk-follows-manifest ON (auto-detect; the WebP pin is the opt-out).
 func TestQoLPrefDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if !p.SpritePreviewsOn() {
+	if !p.Load().SpritePreviewOn {
 		t.Error("SpritePreviewsOn default must be true")
 	}
 	if got := p.PreviewHoverMillis(); got != DefaultPreviewHoverMs {
@@ -109,7 +109,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.Load().ShowAssetWarnings {
 		t.Error("AssetWarningsOn default must be false (banner is opt-in)")
 	}
-	if p.SpriteMoveEnabled() {
+	if p.Load().SpriteMoveOn {
 		t.Error("SpriteMoveEnabled default must be false")
 	}
 	// Deliberate default flip (user order, 2026-08-08): desks auto-detect from
@@ -132,7 +132,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.Load().AutoReconnect {
 		t.Error("AutoReconnectOn default must be false (drops stay at the lobby; auto-retry is opt-in)")
 	}
-	if !p.ScreenEffectsOn() {
+	if !p.Load().ScreenEffects {
 		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
 	}
 	if !p.WordDeleteOn() {
@@ -144,14 +144,14 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.Load().MusicStreaming {
 		t.Error("MusicStreamingOn default must be true (custom /play streaming ships ON)")
 	}
-	if p.RainbowSpeed() != defaultRainbowSpeed || p.RainbowVividness() != defaultRainbowVivid {
+	if p.Load().RainbowSpriteSpeed != defaultRainbowSpeed || p.Load().RainbowSpriteVividness != defaultRainbowVivid {
 		t.Errorf("rainbow speed/vividness defaults = %d/%d, want %d/%d",
-			p.RainbowSpeed(), p.RainbowVividness(), defaultRainbowSpeed, defaultRainbowVivid)
+			p.Load().RainbowSpriteSpeed, p.Load().RainbowSpriteVividness, defaultRainbowSpeed, defaultRainbowVivid)
 	}
 	if p.SpriteTintColorRGB() != defaultSpriteTintColor {
 		t.Errorf("SpriteTintColor default = %06x, want %06x", p.SpriteTintColorRGB(), defaultSpriteTintColor)
 	}
-	if p.RainbowSpriteGlowOn() || p.RainbowPairDesyncOn() || p.SpriteSolidTintOn() {
+	if p.Load().RainbowSpriteGlow || p.Load().RainbowPairDesync || p.Load().SpriteSolidTint {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
 	}
 	if p.Load().LoopPreanim {
@@ -201,7 +201,7 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 // toggle) — the merge clause that would silently drop the style otherwise.
 func TestSpriteStylePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if s := p.SpriteStyle(); s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
+	if s := p.Load().MySpriteStyle; s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
 		t.Fatalf("default sprite style not empty: %+v", s)
 	}
 	if p.Load().HideSpriteStyles {
@@ -209,7 +209,7 @@ func TestSpriteStylePref(t *testing.T) {
 	}
 	// Opacity clamps to [0,100].
 	p.SetSpriteStyle(SpriteStylePref{Tint: true, R: 255, G: 60, B: 60, Opacity: 200})
-	if g := p.SpriteStyle(); g.Opacity != 100 {
+	if g := p.Load().MySpriteStyle; g.Opacity != 100 {
 		t.Errorf("opacity 200 clamped to %d, want 100", g.Opacity)
 	}
 
@@ -228,7 +228,7 @@ func TestSpriteStylePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if g := r.SpriteStyle(); g != want {
+	if g := r.Load().MySpriteStyle; g != want {
 		t.Errorf("reloaded sprite style = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
 	if !r.Load().HideSpriteStyles {
@@ -241,13 +241,13 @@ func TestSpriteStylePref(t *testing.T) {
 // silently drop the profile otherwise).
 func TestProfilePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if pr := p.Profile(); pr.Enabled || pr.ShowOnList || pr.Name != "" || pr.Bio != "" {
+	if pr := p.Load().MyProfile; pr.Enabled || pr.ShowOnList || pr.Name != "" || pr.Bio != "" {
 		t.Fatalf("default profile not empty: %+v", pr)
 	}
 	// Oversized fields clamp to their caps.
 	long := strings.Repeat("x", 1000)
 	p.SetProfile(ProfilePref{Enabled: true, Name: long, Bio: long, ArtURL: long})
-	g := p.Profile()
+	g := p.Load().MyProfile
 	if len([]rune(g.Name)) != profileNameMax || len([]rune(g.Bio)) != profileBioMax || len([]rune(g.ArtURL)) != profileURLMax {
 		t.Errorf("fields not clamped: name=%d bio=%d url=%d", len([]rune(g.Name)), len([]rune(g.Bio)), len([]rune(g.ArtURL)))
 	}
@@ -266,7 +266,7 @@ func TestProfilePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if g := r.Profile(); g != want {
+	if g := r.Load().MyProfile; g != want {
 		t.Errorf("reloaded profile = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
 }
@@ -301,7 +301,7 @@ func TestInstantDisconnectPref(t *testing.T) {
 // absent field keeps the default-ON, not a silent off).
 func TestRightClickHideSpritePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if !p.RightClickHideSpriteOn() {
+	if !p.Load().RightClickHideSprite {
 		t.Error("RightClickHideSprite must default ON")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -317,7 +317,7 @@ func TestRightClickHideSpritePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.RightClickHideSpriteOn() {
+	if r.Load().RightClickHideSprite {
 		t.Error("RightClickHideSprite=false lost on reload (absent != default-on)")
 	}
 }
@@ -1009,7 +1009,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.SpritePreviewsOn() {
+	if q.Load().SpritePreviewOn {
 		t.Error("SpritePreview=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if got := q.PreviewHoverMillis(); got != 8000 {
@@ -1018,7 +1018,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.Load().ShowAssetWarnings {
 		t.Error("ShowAssetWarnings lost")
 	}
-	if !q.SpriteMoveEnabled() {
+	if !q.Load().SpriteMoveOn {
 		t.Error("SpriteMove lost")
 	}
 	if q.Load().DeskFollowManifest {
@@ -1027,7 +1027,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().AutoLoginToast {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.ScreenEffectsOn() {
+	if q.Load().ScreenEffects {
 		t.Error("ScreenEffects=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.WordDeleteOn() {
@@ -1048,13 +1048,13 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().MusicStreaming {
 		t.Error("MusicStreaming=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if !q.RainbowSpritesOn() {
+	if !q.Load().RainbowSprites {
 		t.Error("RainbowSprites=true lost across reload")
 	}
 	if !q.Load().LoopPreanim {
 		t.Error("LoopPreanim=true lost across reload (default-OFF plain bool must persist an explicit ON)")
 	}
-	if !q.ShowRecordButtonOn() {
+	if !q.Load().ShowRecordButton {
 		t.Error("ShowRecordButton=true lost across reload")
 	}
 	if q.Load().DragLayout {
@@ -1081,13 +1081,13 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.UpdateChannelExperimentalOn() {
 		t.Error("UpdateExperimental=true lost across reload (the channel swap must stick)")
 	}
-	if q.RainbowSpeed() != 30 || q.RainbowVividness() != 95 {
-		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.RainbowSpeed(), q.RainbowVividness())
+	if q.Load().RainbowSpriteSpeed != 30 || q.Load().RainbowSpriteVividness != 95 {
+		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.Load().RainbowSpriteSpeed, q.Load().RainbowSpriteVividness)
 	}
-	if !q.RainbowSpriteGlowOn() || !q.RainbowPairDesyncOn() || !q.SpriteSolidTintOn() {
+	if !q.Load().RainbowSpriteGlow || !q.Load().RainbowPairDesync || !q.Load().SpriteSolidTint {
 		t.Error("a sprite-FX toggle (glow/desync/solid) lost across reload")
 	}
-	if !q.RainbowPerCharOn() || !q.SpriteWobbleOn() || !q.SpriteSpinOn() {
+	if !q.Load().RainbowPerChar || !q.Load().SpriteWobble || !q.Load().SpriteSpin {
 		t.Error("a wacky-FX toggle (per-char/wobble/spin) lost across reload")
 	}
 	if q.SpriteTintColorRGB() != 0x112233 {
@@ -1350,17 +1350,17 @@ func TestResetPowerUser(t *testing.T) {
 	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
 	// return to shipped defaults, and shipping with the proxy ignored is the
 	// defect the setting exists to fix.
-	if p.ProxyMode() != ProxyModeSystem || p.ProxyURLValue() != "" {
-		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.ProxyMode(), p.ProxyURLValue())
+	if p.Load().ProxyModeVal != ProxyModeSystem || p.Load().ProxyURL != "" {
+		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.Load().ProxyModeVal, p.Load().ProxyURL)
 	}
 	if p.Load().AssetCharCase != 0 {
 		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.Load().AssetCharCase)
 	}
-	if p.SpriteLoadMode() != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
-		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
+	if p.Load().SpriteLoadModeVal != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+		p.Load().SpriteWaitPair || p.Load().SpriteWaitPreanim {
 		t.Error("nuke must reset the loading mode to its default (Default) + the wait knobs")
 	}
-	if !p.ShoutBypassQueueOn() {
+	if !p.Load().ShoutBypassQueue {
 		t.Error("nuke must restore the shout-bypass toggle to its default ON (AO2 parity)")
 	}
 	if p.Load().HoldPrevMaxAgeMsVal != 0 || p.Load().HoldDebugTint {
@@ -1369,7 +1369,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().HotkeysEnabled {
 		t.Error("nuke must reset the hotkeys opt-in to its default OFF")
 	}
-	if p.ShoutDurationMs() != 0 || p.Load().PreanimTimeoutMsVal != 0 || p.Load().ICQueueCapVal != 0 || p.Load().CatchUpLingerMsVal != 0 {
+	if p.Load().ShoutDurationMsVal != 0 || p.Load().PreanimTimeoutMsVal != 0 || p.Load().ICQueueCapVal != 0 || p.Load().CatchUpLingerMsVal != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")
 	}
 	if !p.Load().ClipSpritesToStage {
@@ -1381,7 +1381,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().NotFoundTTLSecVal != 0 || p.AdaptiveLatMultiple() != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
-	if p.SpriteDownscaleOffOn() || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
+	if p.Load().SpriteDownscaleOff || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
 		t.Error("nuke must reset the downscale + texture-budget knobs")
 	}
 	if p.Load().CrossfadeMsVal != 0 {
@@ -1487,7 +1487,7 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.ShowPairStatusOn() {
+	if p.Load().ShowPairStatus {
 		t.Error("ShowPairStatus must default OFF")
 	}
 	p.SetShowPairStatus(true)
@@ -1498,7 +1498,7 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.ShowPairStatusOn() {
+	if !q.Load().ShowPairStatus {
 		t.Error("ShowPairStatus lost across save/load (missing copy-on-load line?)")
 	}
 }

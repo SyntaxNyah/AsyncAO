@@ -196,7 +196,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// still lay out and read normally, they just stop moving (animtext.go
 			// pins everything static under this flag), which is exactly what the
 			// toggle promises — no spinning, no waving, text still legible.
-			reduce := a.d.Prefs.ReduceMotion() || a.d.Prefs.Load().DisableEffects
+			reduce := a.d.Prefs.Load().ReduceMotionOn || a.d.Prefs.Load().DisableEffects
 			if a.msAnim.Animates(reduce) {
 				// Clock-driven text FX on screen: keep frames coming through the
 				// static skip (idle=0 froze/stuttered them — the FX-at-idle
@@ -1561,7 +1561,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	c := a.ctx
 	// shownameBoxW / immedW are package-level consts now (shared with the layout tests).
 	nameX := icBar.X + 32 + colorSelectW + 6 // DEFAULT spot; downstream (immedX) flows from here
-	namePlaceholder := a.d.Prefs.SavedShowname()
+	namePlaceholder := a.d.Prefs.Load().Showname
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
 	}

@@ -98,7 +98,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// fetch), but it touches the render/message path, so it sits behind the reveal
 	// with the rest of the advanced kit.
 	y = a.settingsSection(y, w, "Message sequencing")
-	slm := a.d.Prefs.SpriteLoadMode()
+	slm := a.d.Prefs.Load().SpriteLoadModeVal
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 520, H: btnH}, spriteLoadModeLabel(slm)) {
 		a.d.Prefs.SetSpriteLoadMode((slm + 1) % config.SpriteLoadModeCount)
 		a.applyTimingToRoom() // the wait gate lives on the live room — flip it now
@@ -118,13 +118,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			a.applyTimingToRoom()
 		}
 		y += 26
-		wp := a.d.Prefs.SpriteWaitPairOn()
+		wp := a.d.Prefs.Load().SpriteWaitPair
 		if next := c.Checkbox(pad, y, "Also wait for the pair partner's sprite", wp); next != wp {
 			a.d.Prefs.SetSpriteWaitPair(next)
 			a.applyTimingToRoom()
 		}
 		y += 24
-		wpre := a.d.Prefs.SpriteWaitPreanimOn()
+		wpre := a.d.Prefs.Load().SpriteWaitPreanim
 		if next := c.Checkbox(pad, y, "Also wait for the pre-animation", wpre); next != wpre {
 			a.d.Prefs.SetSpriteWaitPreanim(next)
 			a.applyTimingToRoom()
@@ -179,7 +179,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// the queue and plays immediately. The toggle off queues shouts like any other
 	// message, so under the Default mode they wait for their bubble art + cry too.
 	y = a.settingsSection(y, w, "Shouts")
-	shoutBypass := a.d.Prefs.ShoutBypassQueueOn()
+	shoutBypass := a.d.Prefs.Load().ShoutBypassQueue
 	if next := c.Checkbox(pad, y, "Shouts skip the queue and play immediately (AO2 default)", shoutBypass); next != shoutBypass {
 		a.d.Prefs.SetShoutBypassQueue(next)
 		a.applyTimingToRoom()
@@ -348,7 +348,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// Core message timings — the courtroom ceremony's hard-coded spans, exposed.
 	y = a.settingsSection(y, w, "Core message timings")
 	c.Label(pad, y+4, "Shout bubble duration:", ColText)
-	shoutMs := a.d.Prefs.ShoutDurationMs()
+	shoutMs := a.d.Prefs.Load().ShoutDurationMsVal
 	strack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	ns := int(clampI32(c.Slider("shoutdurms", strack, int32(shoutMs), config.ShoutDurationMaxMs), 0, config.ShoutDurationMaxMs))
 	if ns != 0 && ns < config.ShoutDurationMinMs {
@@ -503,7 +503,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Decode downscale + texture memory — how big decoded art lives on the GPU.
 	y = a.settingsSection(y, w, "Decode downscale & texture memory")
-	dsOff := a.d.Prefs.SpriteDownscaleOffOn()
+	dsOff := a.d.Prefs.Load().SpriteDownscaleOff
 	if next := c.Checkbox(pad, y, "Disable the automatic sprite downscale entirely (keep EXACT source art)", dsOff); next != dsOff {
 		a.d.Prefs.SetSpriteDownscaleOff(next)
 		a.applySpriteCap()

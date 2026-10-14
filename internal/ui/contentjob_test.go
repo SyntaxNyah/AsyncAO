@@ -795,7 +795,7 @@ func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
 	_, origin := autoBundleServer(t)
 
 	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
-	if !a.d.Prefs.RecordingsKeepAssetsOn() {
+	if !a.d.Prefs.Load().RecordingsKeepAssets {
 		t.Fatal("pref must default ON for this test")
 	}
 

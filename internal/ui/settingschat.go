@@ -120,17 +120,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	// Message-send extras — they shape the messages you TYPE, so they belong
 	// with text & typing.
-	re := a.d.Prefs.RandomEmoteOn()
+	re := a.d.Prefs.Load().RandomEmote
 	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
 		a.d.Prefs.SetRandomEmote(next)
 	}
 	y += 26
-	rmc := a.d.Prefs.RandomMessageColorOn()
+	rmc := a.d.Prefs.Load().RandomMessageColor
 	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
 		a.d.Prefs.SetRandomMessageColor(next)
 	}
 	y += 26
-	rbw := a.d.Prefs.RainbowMessagesOn()
+	rbw := a.d.Prefs.Load().RainbowMessages
 	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
 		a.d.Prefs.SetRainbowMessages(next)
 	}
@@ -229,7 +229,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 	// Show the full song URL in the "has played a song" log line instead of just
 	// the name (a song's link, on request).
-	songURL := a.d.Prefs.ShowSongURLOn()
+	songURL := a.d.Prefs.Load().ShowSongURL
 	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
 		a.d.Prefs.SetShowSongURL(next)
 	}
@@ -239,7 +239,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// turning this on brings back the glide. It governs the FOLLOW only — the wheel
 	// and the scrollbar keep their own easing either way.
 	const smoothLogLabel = "Smooth log scrolling (OFF by default): when a new IC message arrives the log jumps straight to it, like AO2. Turn on to glide instead."
-	smoothLog := a.d.Prefs.SmoothLogScrollOn()
+	smoothLog := a.d.Prefs.Load().SmoothLogScroll
 	if next := c.Checkbox(pad, y, smoothLogLabel, smoothLog); next != smoothLog {
 		a.d.Prefs.SetSmoothLogScroll(next)
 	}
@@ -394,22 +394,22 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Sending a message")
 	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, shipped with AsyncAO's defaults (reset after every send).", ColTextDim)
 	y += 6
-	ssnd := a.d.Prefs.StickySoundsOn()
+	ssnd := a.d.Prefs.Load().StickySounds
 	if next := c.Checkbox(pad, y, "Sticky sounds (OFF by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
 		a.d.Prefs.SetStickySounds(next)
 	}
 	y += 26
-	sfxx := a.d.Prefs.StickyEffectsOn()
+	sfxx := a.d.Prefs.Load().StickyEffects
 	if next := c.Checkbox(pad, y, "Sticky effects (OFF by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
 		a.d.Prefs.SetStickyEffects(next)
 	}
 	y += 26
-	spre := a.d.Prefs.StickyPreanimsOn()
+	spre := a.d.Prefs.Load().StickyPreanims
 	if next := c.Checkbox(pad, y, "Sticky preanims (OFF by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
 		a.d.Prefs.SetStickyPreanims(next)
 	}
 	y += 26
-	soi := a.d.Prefs.SFXOnIdleOn()
+	soi := a.d.Prefs.Load().SFXOnIdle
 	if next := c.Checkbox(pad, y, "Always send SFX (OFF by default): play a hand-picked sound even with Pre unticked", soi); next != soi {
 		a.d.Prefs.SetSFXOnIdle(next)
 	}

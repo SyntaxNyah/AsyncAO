@@ -245,7 +245,7 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 	// 1) Fresh install (no file) → Default.
 	fresh, path := newTestPrefs(t)
-	if got := fresh.SpriteLoadMode(); got != SpriteLoadDefault {
+	if got := fresh.Load().SpriteLoadModeVal; got != SpriteLoadDefault {
 		t.Fatalf("fresh default SpriteLoadMode = %d, want Default (%d)", got, SpriteLoadDefault)
 	}
 
@@ -259,7 +259,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 		t.Fatalf("load legacy: %v", err)
 	}
 	defer lp.Close()
-	if got := lp.SpriteLoadMode(); got != SpriteLoadDefault {
+	if got := lp.Load().SpriteLoadModeVal; got != SpriteLoadDefault {
 		t.Errorf("legacy (absent key) SpriteLoadMode = %d, want the new default Default (%d)", got, SpriteLoadDefault)
 	}
 
@@ -274,7 +274,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if got := re.SpriteLoadMode(); got != SpriteLoadBlank {
+	if got := re.Load().SpriteLoadModeVal; got != SpriteLoadBlank {
 		t.Errorf("explicit Blank did not persist: reloaded SpriteLoadMode = %d, want Blank (%d)", got, SpriteLoadBlank)
 	}
 }
@@ -423,7 +423,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if !q.Load().MusicVolMode {
 		t.Error("MusicVolMode lost")
 	}
-	if got := q.SavedShowname(); got != "Nyah" {
+	if got := q.Load().Showname; got != "Nyah" {
 		t.Errorf("Showname = %q, want %q", got, "Nyah")
 	}
 	if !q.Load().DebugOverlay {
@@ -986,8 +986,8 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if m, s, b := q.AudioVolumes(); m != 0 || s != 55 || b != 100 {
 		t.Fatalf("reloaded volumes = %d/%d/%d, want 0/55/100 (0 must survive)", m, s, b)
 	}
-	if q.SavedOOCName() != "arbok" {
-		t.Fatalf("reloaded OOC name = %q", q.SavedOOCName())
+	if q.Load().OOCName != "arbok" {
+		t.Fatalf("reloaded OOC name = %q", q.Load().OOCName)
 	}
 	if v, _, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
 		t.Fatalf("reloaded viewport = %d", v)
@@ -1290,7 +1290,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.Load().MasterVolMuted || p.Load().MusicVolMuted || p.SFXVolMutedOn() || p.Load().BlipVolMuted {
+	if p.Load().MasterVolMuted || p.Load().MusicVolMuted || p.Load().SFXVolMuted || p.Load().BlipVolMuted {
 		t.Fatal("all four channel mutes must default unmuted")
 	}
 	p.SetMasterVolMuted(true)
@@ -1307,7 +1307,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if !q.Load().MasterVolMuted {
 		t.Error("master mute lost across reload")
 	}
-	if !q.SFXVolMutedOn() {
+	if !q.Load().SFXVolMuted {
 		t.Error("SFX mute lost across reload")
 	}
 	if q.Load().MusicVolMuted || q.Load().BlipVolMuted {
@@ -1389,7 +1389,7 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	}
 	defer p.Close()
 
-	if p.RestoreTabsOn() {
+	if p.Load().RestoreTabs {
 		t.Error("RestoreTabs must default OFF")
 	}
 	if len(p.OpenTabList()) != 0 {
@@ -1409,7 +1409,7 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !q.RestoreTabsOn() {
+	if !q.Load().RestoreTabs {
 		t.Error("reloaded RestoreTabs must be ON")
 	}
 	got := q.OpenTabList()
@@ -1925,10 +1925,10 @@ func TestSendOptionDefaults(t *testing.T) {
 		got  bool
 		want bool
 	}{
-		{"stickySounds", p.StickySoundsOn(), false},
-		{"stickyEffects", p.StickyEffectsOn(), false},
-		{"stickyPreanims", p.StickyPreanimsOn(), false},
-		{"sfxOnIdle", p.SFXOnIdleOn(), false},
+		{"stickySounds", p.Load().StickySounds, false},
+		{"stickyEffects", p.Load().StickyEffects, false},
+		{"stickyPreanims", p.Load().StickyPreanims, false},
+		{"sfxOnIdle", p.Load().SFXOnIdle, false},
 		{"ghostCrawlText", p.Load().GhostCrawlText, true},
 		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},
 	} {
@@ -1957,10 +1957,10 @@ func TestSendOptionDefaults(t *testing.T) {
 		got  bool
 		want bool
 	}{
-		{"stickySounds", q.StickySoundsOn(), false},
-		{"stickyEffects", q.StickyEffectsOn(), false},
-		{"stickyPreanims", q.StickyPreanimsOn(), false},
-		{"sfxOnIdle", q.SFXOnIdleOn(), true},
+		{"stickySounds", q.Load().StickySounds, false},
+		{"stickyEffects", q.Load().StickyEffects, false},
+		{"stickyPreanims", q.Load().StickyPreanims, false},
+		{"sfxOnIdle", q.Load().SFXOnIdle, true},
 		{"ghostCrawlText", q.Load().GhostCrawlText, false},
 		{"unfocusedFullRate", q.UnfocusedFullRateOn(), true},
 	} {
@@ -1981,11 +1981,11 @@ func TestSmoothLogScrollPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.SmoothLogScrollOn() {
+	if p.Load().SmoothLogScroll {
 		t.Error("smooth log scrolling must default OFF (the log follows instantly, like AO2)")
 	}
 	p.SetSmoothLogScroll(true)
-	if !p.SmoothLogScrollOn() {
+	if !p.Load().SmoothLogScroll {
 		t.Fatal("SetSmoothLogScroll(true) did not stick")
 	}
 	if err := p.Close(); err != nil {
@@ -1995,7 +1995,7 @@ func TestSmoothLogScrollPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.SmoothLogScrollOn() {
+	if !q.Load().SmoothLogScroll {
 		t.Error("smoothLogScroll=true lost across save/load (missing copy-on-load line?)")
 	}
 }

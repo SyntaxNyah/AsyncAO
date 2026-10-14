@@ -1414,7 +1414,7 @@ func previewDetachRect(frame sdl.Rect) sdl.Rect {
 // the pinned-preview census never
 // has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
-	return a.previewPinned || a.d.Prefs.PreviewPinnedOn() || a.previewIsDetached()
+	return a.previewPinned || a.d.Prefs.Load().PreviewPinned || a.previewIsDetached()
 }
 
 // togglePreviewPin flips BOTH the latch and the preference, so unpinning a box

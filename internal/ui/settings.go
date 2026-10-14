@@ -1215,7 +1215,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Showname: write-through to prefs. A stale once-per-session copy here
 	// used to overwrite names typed in the courtroom on Back.
 	c.Label(pad, y+4, "Showname:", ColText)
-	shown := a.d.Prefs.SavedShowname()
+	shown := a.d.Prefs.Load().Showname
 	// CJK / non-Latin shownames must render as real glyphs while typed here too
 	// (a saved Japanese showname); plain ASCII keeps the single-font fast path.
 	snPrimary, snEmoji := a.icFieldFonts(shown)
@@ -1226,7 +1226,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// every NEW tab (blank sends a sticky AsyncAO<n>). The courtroom OOC-name
 	// fields are tab-local and never write this back.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
-	savedOOC := a.d.Prefs.SavedOOCName()
+	savedOOC := a.d.Prefs.Load().OOCName
 	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
 	if next, _ := c.TextFieldEmoji("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>", onPrimary, onEmoji); next != savedOOC {
 		a.d.Prefs.SetOOCName(next)
@@ -1308,7 +1308,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Display & behaviour")
 	// Streamer mode leads the section (playtest: it's the one people need to
 	// find FAST, right before going live).
-	streamer := a.d.Prefs.StreamerMode()
+	streamer := a.d.Prefs.Load().StreamerModeOn
 	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
 		a.d.Prefs.SetStreamerMode(next)
 	}
@@ -1318,7 +1318,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetAnimationsEnabled(next)
 	}
 	y += 26
-	reduce := a.d.Prefs.ReduceMotion()
+	reduce := a.d.Prefs.Load().ReduceMotionOn
 	if next := c.Checkbox(pad, y, "Reduce motion (accessibility): stop the screen shake / realization flash (effect sounds still play)", reduce); next != reduce {
 		a.d.Prefs.SetReduceMotion(next)
 		a.applyTimingToRoom() // push the flag to the live room
@@ -1390,7 +1390,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	// Gates ONLY the hover dwell — right-click previews always work.
-	prev := a.d.Prefs.SpritePreviewsOn()
+	prev := a.d.Prefs.Load().SpritePreviewOn
 	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
 		a.d.Prefs.SetSpritePreviews(next)
 	}
@@ -1439,7 +1439,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
 	// whose whole job is to point at a control. It would also be a lie: the box
 	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
-	pinned := a.d.Prefs.PreviewPinnedOn()
+	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
 		a.d.Prefs.SetPreviewPinned(next)
 	}
@@ -1470,7 +1470,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
-	move := a.d.Prefs.SpriteMoveEnabled()
+	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
 		a.d.Prefs.SetSpriteMove(next)
 	}
@@ -1485,7 +1485,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	// Hide-sprite ("Missingno"): right-click a sprite → confirm → hidden for the
 	// session (for players who'd rather not see certain art). ON by default.
-	hideRC := a.d.Prefs.RightClickHideSpriteOn()
+	hideRC := a.d.Prefs.Load().RightClickHideSprite
 	if next := c.Checkbox(pad, y, "Right-click a sprite to hide it from the viewport (ON by default): confirms, then hides it for the session. Reshow all with the Reshow-hidden-sprites key (Controls tab).", hideRC); next != hideRC {
 		a.d.Prefs.SetRightClickHideSprite(next)
 	}
@@ -1521,7 +1521,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
-	restoreTabs := a.d.Prefs.RestoreTabsOn()
+	restoreTabs := a.d.Prefs.Load().RestoreTabs
 	if next := c.Checkbox(pad, y, "Reopen my server tabs on launch (OFF by default): remembers open servers on exit and reconnects them next time", restoreTabs); next != restoreTabs {
 		a.d.Prefs.SetRestoreTabs(next)
 	}
@@ -1558,7 +1558,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetDragLayout(next)
 	}
 	y += 26
-	smooth := a.d.Prefs.SmoothScalingEnabled()
+	smooth := a.d.Prefs.Load().SmoothScaling
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)
 		hint := "1"
