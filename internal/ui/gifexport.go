@@ -1328,8 +1328,8 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
 	}
 	// Shared with the live chatbox (chatboxfit.go): the showname's point size folds
 	// with the export layout's OWN canvas scale — lay was built for the capture
@@ -1414,8 +1414,8 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 	c.Border(box, ColAccent)
 
 	nameCol := ColAccent
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour, same as the live chatbox
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	if a.d.Prefs.Load().NameColors { // per-speaker name colour, same as the live chatbox
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
 	}
 	// Same covering-face pick as the live nameplate, so a non-Latin showname renders
 	// into the exported comic/video instead of tofu (ASCII names keep the chrome font).

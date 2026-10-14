@@ -42,7 +42,7 @@ type musicHistEntry struct {
 // unlike the IC log line — it keeps system/area-played songs too (attribution
 // is best-effort), and it never indexes Chars out of range.
 func (a *App) noteMusicHistory(ev courtroom.Event) {
-	if !a.d.Prefs.MusicHistoryOn() {
+	if !a.d.Prefs.Load().MusicHistory {
 		return // history disabled in Settings (default ON)
 	}
 	_, song, ok := courtroom.MusicAction(ev.Text)

@@ -102,8 +102,8 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 		t.Fatalf("load after burst: %v", err)
 	}
 	wantVol := (burst - 1) % 100
-	if loaded.MasterVolume() != wantVol {
-		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.MasterVolume(), wantVol)
+	if loaded.Load().MasterVol != wantVol {
+		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.Load().MasterVol, wantVol)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 	// 1) Fresh install (no file) → ON.
 	fresh, path := newTestPrefs(t)
-	if !fresh.MotionRedrawPerEventOn() {
+	if !fresh.Load().MotionRedrawPerEvent {
 		t.Fatalf("fresh default MotionRedrawPerEvent = false, want ON")
 	}
 
@@ -302,7 +302,7 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 		t.Fatalf("load legacy: %v", err)
 	}
 	defer lp.Close()
-	if !lp.MotionRedrawPerEventOn() {
+	if !lp.Load().MotionRedrawPerEvent {
 		t.Error("legacy (absent key) MotionRedrawPerEvent = false, want the new default ON")
 	}
 
@@ -317,7 +317,7 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if re.MotionRedrawPerEventOn() {
+	if re.Load().MotionRedrawPerEvent {
 		t.Error("explicit OFF did not persist: reloaded MotionRedrawPerEvent = ON, want OFF")
 	}
 }
@@ -417,10 +417,10 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if got := learned[LearnedKey("assets.example.com", TypeCharSprite)]; !slices.Equal(got, []string{ExtWebP}) {
 		t.Errorf("learned format lost, snapshot=%v", learned)
 	}
-	if got := q.MasterVolume(); got != 37 {
+	if got := q.Load().MasterVol; got != 37 {
 		t.Errorf("MasterVolume = %d, want 37", got)
 	}
-	if !q.MusicVolModeOn() {
+	if !q.Load().MusicVolMode {
 		t.Error("MusicVolMode lost")
 	}
 	if got := q.SavedShowname(); got != "Nyah" {
@@ -777,7 +777,7 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.MusicVolModeOn() {
+	if !q.Load().MusicVolMode {
 		t.Error("pending change lost at Close")
 	}
 }
@@ -868,11 +868,11 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetMasterVolume(500)
-	if got := p.MasterVolume(); got != 100 {
+	if got := p.Load().MasterVol; got != 100 {
 		t.Errorf("MasterVolume = %d, want clamped 100", got)
 	}
 	p.SetMasterVolume(-3)
-	if got := p.MasterVolume(); got != 0 {
+	if got := p.Load().MasterVol; got != 0 {
 		t.Errorf("MasterVolume = %d, want clamped 0", got)
 	}
 }
@@ -951,8 +951,8 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Fatalf("default channel volumes = %d/%d/%d, want %d (start a bit under full, #9)", m, s, b, defaultStartVolume)
 	}
-	if p.MasterVolume() != defaultAudioVolume {
-		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.MasterVolume(), defaultAudioVolume)
+	if p.Load().MasterVol != defaultAudioVolume {
+		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.Load().MasterVol, defaultAudioVolume)
 	}
 	if crawl, stay, rate := p.Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
 		t.Fatalf("default timing = %d/%d/%d", crawl, stay, rate)
@@ -969,7 +969,7 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 		t.Fatalf("clamped timing = %d/%d/%d", crawl, stay, rate)
 	}
 	p.SetMasterList("  https://alt.example/servers  ")
-	if got := p.MasterList(); got != "https://alt.example/servers" {
+	if got := p.Load().MasterListURL; got != "https://alt.example/servers" {
 		t.Fatalf("master list = %q", got)
 	}
 
@@ -995,7 +995,7 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if _, stay, _ := q.Timing(); stay != MaxTextStayMs {
 		t.Fatalf("reloaded stay = %d", stay)
 	}
-	if got := q.MasterList(); got != "https://alt.example/servers" {
+	if got := q.Load().MasterListURL; got != "https://alt.example/servers" {
 		t.Fatalf("reloaded master list = %q", got)
 	}
 }
@@ -1057,14 +1057,14 @@ func TestOOCScaleIndependent(t *testing.T) {
 	// Set the IC log to a non-default size and the OOC independently.
 	p.SetLayoutScales(DefaultViewportPercent, DefaultScalePercent, DefaultScalePercent, 180, DefaultScalePercent)
 	p.SetOOCScale(130)
-	if got := p.OOCScale(); got != 130 {
+	if got := p.Load().OOCScalePct; got != 130 {
 		t.Fatalf("OOC scale = %d, want 130 (independent of the 180 log size)", got)
 	}
 	if _, _, _, logT, _ := p.LayoutScales(); logT != 180 {
 		t.Fatalf("log scale = %d, want 180 (OOC change must not touch it)", logT)
 	}
 	p.SetOOCScale(9999) // clamps to the log-scale ceiling
-	if got := p.OOCScale(); got != MaxLogScalePercent {
+	if got := p.Load().OOCScalePct; got != MaxLogScalePercent {
 		t.Fatalf("OOC clamp = %d, want %d", got, MaxLogScalePercent)
 	}
 	p.SetOOCScale(125)
@@ -1073,7 +1073,7 @@ func TestOOCScaleIndependent(t *testing.T) {
 	}
 	if q, err := load(path); err != nil {
 		t.Fatal(err)
-	} else if got := q.OOCScale(); got != 125 {
+	} else if got := q.Load().OOCScalePct; got != 125 {
 		t.Fatalf("reloaded OOC scale = %d, want 125", got)
 	}
 
@@ -1087,7 +1087,7 @@ func TestOOCScaleIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := lp.OOCScale(); got != 170 {
+	if got := lp.Load().OOCScalePct; got != 170 {
 		t.Fatalf("legacy OOC scale = %d, want 170 (inherit the IC log size)", got)
 	}
 }
@@ -1105,7 +1105,7 @@ func TestOOCScaleFirstRunDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fresh.OOCScale(); got != DefaultScalePercent {
+	if got := fresh.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("first-run OOC scale = %d, want %d — a never-saved config must not yield a 0%% font scale", got, DefaultScalePercent)
 	}
 	// Same for a corrupt file: load quarantines it and returns the same defaults.
@@ -1114,7 +1114,7 @@ func TestOOCScaleFirstRunDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	bp, _ := load(bad) // the parse error is expected; the prefs are the defaults
-	if got := bp.OOCScale(); got != DefaultScalePercent {
+	if got := bp.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("quarantined-config OOC scale = %d, want %d", got, DefaultScalePercent)
 	}
 	// The default must not defeat the legacy-inherit rule: an EXISTING file with a
@@ -1128,7 +1128,7 @@ func TestOOCScaleFirstRunDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ep.OOCScale(); got != DefaultScalePercent {
+	if got := ep.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("empty-config OOC scale = %d, want %d", got, DefaultScalePercent)
 	}
 }
@@ -1142,10 +1142,10 @@ func TestNameColorClamp(t *testing.T) {
 	}
 	defer p.Close()
 	p.SetNameColorSatVal(200, 0) // saturation over the top, brightness under the floor
-	if got := p.NameColorSat(); got != 100 {
+	if got := p.Load().NameSat; got != 100 {
 		t.Errorf("saturation = %d, want 100 (clamped)", got)
 	}
-	if got := p.NameColorVal(); got != minNameColorVal {
+	if got := p.Load().NameVal; got != minNameColorVal {
 		t.Errorf("brightness = %d, want %d (floor)", got, minNameColorVal)
 	}
 }
@@ -1290,7 +1290,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.MasterVolMutedOn() || p.MusicVolMutedOn() || p.SFXVolMutedOn() || p.Load().BlipVolMuted {
+	if p.Load().MasterVolMuted || p.Load().MusicVolMuted || p.SFXVolMutedOn() || p.Load().BlipVolMuted {
 		t.Fatal("all four channel mutes must default unmuted")
 	}
 	p.SetMasterVolMuted(true)
@@ -1304,13 +1304,13 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.MasterVolMutedOn() {
+	if !q.Load().MasterVolMuted {
 		t.Error("master mute lost across reload")
 	}
 	if !q.SFXVolMutedOn() {
 		t.Error("SFX mute lost across reload")
 	}
-	if q.MusicVolMutedOn() || q.Load().BlipVolMuted {
+	if q.Load().MusicVolMuted || q.Load().BlipVolMuted {
 		t.Error("unmuted channels came back muted after reload")
 	}
 }

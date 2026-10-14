@@ -369,9 +369,9 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 	// default) and a tab in the log panel (the old layout). Hidden on Legacy, where
 	// OOC is always a tab — toggling there would be a no-op. Lives here because this
 	// strip is "where tabs get arranged", which is what the maintainer asked for.
-	if !a.d.Prefs.LegacyDevThemeOn() {
+	if !a.d.Prefs.Load().LegacyDevTheme {
 		tx += 14 // separate it from the tear-off chips
-		inTab := a.d.Prefs.OOCInLogTabOn()
+		inTab := a.d.Prefs.Load().OOCInLogTab
 		label := "OOC: own box"
 		if inTab {
 			label = "OOC: log tab"

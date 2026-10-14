@@ -274,7 +274,7 @@ func (a *App) parkActive() {
 	// The MusicAcrossTabs pref (default OFF) instead keeps the backgrounded stream
 	// AUDIBLE (no duck). We never StopMusic here anymore — tab CLOSE / disconnect
 	// still do (closeParkedTab / Disconnect), so an orphaned stream can't leak.
-	a.musicTabDucked = !a.d.Prefs.MusicAcrossTabsOn()
+	a.musicTabDucked = !a.d.Prefs.Load().MusicAcrossTabs
 	// The outgoing tab's stream (whatever it is) is now the backgrounded one, freshly
 	// (re-)ducked; any await the just-parked tab held is void — the INCOMING tab's
 	// activateTab→buildRoom→resumeActiveTabMusic re-derives the correct await (or
@@ -487,7 +487,7 @@ func (a *App) requestCloseTab(i int) {
 		return // the active chip has no ✕; guard anyway
 	}
 	t := a.tabs[i]
-	if a.d.Prefs.InstantDisconnectOn() || t.dead {
+	if a.d.Prefs.Load().InstantDisconnect || t.dead {
 		a.closeParkedTab(i) // nothing to confirm — close now (unchanged behavior)
 		return
 	}
@@ -645,7 +645,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		// OOC still LOGS, but by default it doesn't bump the unread badge: servers
 		// post auto-messages in OOC (hourly "hydration" reminders, etc.) and a "(1)"
 		// when nobody chatted is just noise. Opt in to count OOC in Settings.
-		if a.d.Prefs.NotifyOnOOCOn() {
+		if a.d.Prefs.Load().NotifyOnOOC {
 			t.unread++
 		}
 		if a.d.Prefs.Load().CallwordsOOC && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
@@ -721,7 +721,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 // active-tab room would have played it. Reusing the existing Audio.PlayMusic start
 // machinery (no new goroutine, singleflight-collapsed fetch) is the caller's job.
 func (a *App) backgroundMusicFollow(s *sessionState) (url string, ok bool) {
-	if !a.d.Prefs.MusicAcrossTabsOn() || a.d.Audio == nil {
+	if !a.d.Prefs.Load().MusicAcrossTabs || a.d.Audio == nil {
 		return "", false
 	}
 	if a.musicOwnerKey == "" || a.musicOwnerKey != s.serverKey {
@@ -1432,8 +1432,8 @@ func (a *App) resetSessionState() {
 		// seeding made offsets "inexplicably saved" across client restarts
 		// (playtest), so pairing state deliberately does not persist.
 		pairWith:       protocol.UnpairedCharID,
-		playerSort:     clampMode(a.d.Prefs.PlayerListSortMode(), playerSortModes), // remembered Players-tab sorts
-		playerAreaSort: clampMode(a.d.Prefs.PlayerListAreaSortMode(), areaSortModes),
+		playerSort:     clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), // remembered Players-tab sorts
+		playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes),
 		// OOC name is per-tab (typed names leaked across tabs from App);
 		// fresh tabs start from the saved default.
 		oocName: a.defaultOOCName(),
@@ -1442,7 +1442,7 @@ func (a *App) resetSessionState() {
 		// hidden (playtest: the show/hide volume option did not persist).
 		// Seed them on every fresh session instead.
 		volStripOn:   a.d.Prefs.VolStripShownOn(),
-		musicVolMode: a.d.Prefs.MusicVolModeOn(),
+		musicVolMode: a.d.Prefs.Load().MusicVolMode,
 		// The master/music/blip channel mutes are the SAME failure mode as
 		// volStripOn just above (playtest never happened for this one, but the
 		// bug is identical by inspection): they PERSIST, but they live on
@@ -1453,8 +1453,8 @@ func (a *App) resetSessionState() {
 		// sfxMuted is the deliberate exception: the SFX mute is session-only
 		// (see toggleSFXMute) so an accidental hotkey press can't leave SFX
 		// silently muted across a restart.
-		masterMuted:  a.d.Prefs.MasterVolMutedOn(),
-		musicMuted:   a.d.Prefs.MusicVolMutedOn(),
+		masterMuted:  a.d.Prefs.Load().MasterVolMuted,
+		musicMuted:   a.d.Prefs.Load().MusicVolMuted,
 		sfxMuted:     false,
 		blipMuted:    a.d.Prefs.Load().BlipVolMuted,
 		spriteOv:     map[string][2]int{},

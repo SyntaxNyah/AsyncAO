@@ -32,11 +32,11 @@ func TestMentionSelfPref(t *testing.T) {
 	}
 	defer p.Close()
 
-	if p.MentionSelfOn() {
+	if p.Load().MentionSelf {
 		t.Error("self-mention should default OFF")
 	}
 	p.SetMentionSelf(true)
-	if !p.MentionSelfOn() {
+	if !p.Load().MentionSelf {
 		t.Error("SetMentionSelf(true) didn't take")
 	}
 }

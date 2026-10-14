@@ -2713,13 +2713,6 @@ func (p *AssetPreferences) SetCallwordToast(on bool) {
 	p.mu.Unlock()
 }
 
-// MessageCounterOn reports the IC character-counter toggle (ON by default).
-func (p *AssetPreferences) MessageCounterOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MessageCounter
-}
-
 // SetMessageCounter toggles the IC character counter.
 func (p *AssetPreferences) SetMessageCounter(on bool) {
 	p.mu.Lock()
@@ -2732,14 +2725,6 @@ func (p *AssetPreferences) SetMessageCounter(on bool) {
 	p.mu.Unlock()
 }
 
-// MentionSelfOn reports the self-mention toggle (OFF by default): treat your own
-// character name / showname as a callword so being addressed by name alerts you.
-func (p *AssetPreferences) MentionSelfOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MentionSelf
-}
-
 // SetMentionSelf toggles self-mention alerts.
 func (p *AssetPreferences) SetMentionSelf(on bool) {
 	p.mu.Lock()
@@ -2750,14 +2735,6 @@ func (p *AssetPreferences) SetMentionSelf(on bool) {
 	p.MentionSelf = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// LoopPreanimOn reports the "loop preanimations" toggle (OFF by default). ON =
-// preanims wrap while on stage; OFF (canonical, matching AO2) plays them once.
-func (p *AssetPreferences) LoopPreanimOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.LoopPreanim
 }
 
 // SetLoopPreanim toggles the non-canonical looping-preanimation behaviour.
@@ -2782,13 +2759,6 @@ func (p *AssetPreferences) SetDisableAltEmoteRow(on bool) {
 	p.DisableAltEmoteRow = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ICTimestampsOn reports the IC-log local-time prefix toggle (OFF by default).
-func (p *AssetPreferences) ICTimestampsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ICTimestamps
 }
 
 // SetICTimestamps toggles the IC-log local-time prefix.
@@ -2835,14 +2805,6 @@ func (p *AssetPreferences) SetAutoReconnect(on bool) {
 	p.mu.Unlock()
 }
 
-// MusicHistoryOn reports the jukebox "recently played" history toggle (ON by
-// default): capture the songs played in the room into the session list.
-func (p *AssetPreferences) MusicHistoryOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicHistory
-}
-
 // SetMusicHistory toggles the jukebox "recently played" session history.
 func (p *AssetPreferences) SetMusicHistory(on bool) {
 	p.mu.Lock()
@@ -2853,14 +2815,6 @@ func (p *AssetPreferences) SetMusicHistory(on bool) {
 	p.MusicHistory = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// MusicStreamingOn reports whether AsyncAO fetches and plays custom /play tracks
-// (ON by default). OFF = no /play song is ever downloaded on this client.
-func (p *AssetPreferences) MusicStreamingOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicStreaming
 }
 
 // SetMusicStreaming toggles custom /play music streaming.
@@ -2987,13 +2941,6 @@ func (p *AssetPreferences) SetICCustomColor(rgb int) {
 	p.mu.Unlock()
 }
 
-// NameColorsOn reports the per-speaker name-colour toggle (OFF by default).
-func (p *AssetPreferences) NameColorsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NameColors
-}
-
 // SetNameColors toggles per-speaker name colours.
 func (p *AssetPreferences) SetNameColors(on bool) {
 	p.mu.Lock()
@@ -3004,20 +2951,6 @@ func (p *AssetPreferences) SetNameColors(on bool) {
 	p.NameColors = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// NameColorSat / NameColorVal report the name-colour saturation and brightness
-// (0..100; value floored at minNameColorVal so names stay readable).
-func (p *AssetPreferences) NameColorSat() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NameSat
-}
-
-func (p *AssetPreferences) NameColorVal() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NameVal
 }
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
@@ -3335,15 +3268,6 @@ func (p *AssetPreferences) SetShowRecordButton(on bool) {
 	p.mu.Unlock()
 }
 
-// InstantDisconnectOn reports whether Disconnect acts immediately (true) or asks
-// for confirmation first (false, the default — the button is easy to hit by
-// accident).
-func (p *AssetPreferences) InstantDisconnectOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.InstantDisconnect
-}
-
 // SetInstantDisconnect toggles skip-the-confirm on the Disconnect button.
 func (p *AssetPreferences) SetInstantDisconnect(on bool) {
 	p.mu.Lock()
@@ -3427,16 +3351,6 @@ func (p *AssetPreferences) TimerRepeatOn() bool {
 	return p.TimerRepeat
 }
 
-// NotifyOnOOCOn reports whether OOC messages count toward a background tab's
-// unread badge. Default OFF: server auto-messages (hourly reminders, etc.) live
-// in OOC and shouldn't light up a "(1)" when nobody actually chatted — so only IC
-// counts unless the user opts in.
-func (p *AssetPreferences) NotifyOnOOCOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NotifyOnOOC
-}
-
 // SetNotifyOnOOC toggles whether OOC bumps the unread tab badge.
 func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 	p.mu.Lock()
@@ -3447,16 +3361,6 @@ func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 	p.NotifyOnOOC = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// MusicAcrossTabsOn reports whether a backgrounded tab's music stays audible
-// across a server-tab switch (default OFF). OFF ducks the backgrounded stream to
-// volume 0 so tabs are acoustically isolated (its position is preserved, not
-// stopped); ON keeps it playing at normal volume.
-func (p *AssetPreferences) MusicAcrossTabsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicAcrossTabs
 }
 
 // SetMusicAcrossTabs toggles keeping a backgrounded tab's music audible across a
@@ -3515,15 +3419,6 @@ func clampInstantReplaySeconds(s int) int {
 	default:
 		return s
 	}
-}
-
-// InstantReplayOn reports whether the always-on rolling clip buffer is enabled
-// (default OFF). When on, recent scene events are kept so the clip key can save
-// the last window WITHOUT a recording started in advance.
-func (p *AssetPreferences) InstantReplayOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.InstantReplay
 }
 
 // SetInstantReplay toggles the rolling clip buffer.
@@ -3784,14 +3679,6 @@ func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
 	return StylePreset{}, false
 }
 
-// HideSpriteStylesOn reports whether the viewer ignores others' transmitted
-// sprite styles (default false = show them).
-func (p *AssetPreferences) HideSpriteStylesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HideSpriteStyles
-}
-
 // SetHideSpriteStyles toggles ignoring others' transmitted sprite styles.
 func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
 	p.mu.Lock()
@@ -3802,14 +3689,6 @@ func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
 	p.HideSpriteStyles = b
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// HideReactionsOn reports whether the viewer ignores others' transmitted emoji
-// reactions (#2) (default false = show the floating emoji).
-func (p *AssetPreferences) HideReactionsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HideReactions
 }
 
 // SetHideReactions toggles ignoring others' transmitted emoji reactions.
@@ -3826,14 +3705,6 @@ func (p *AssetPreferences) SetHideReactions(b bool) {
 
 // SetCharBundlePrefetch toggles full-character bundle prefetch.
 func (p *AssetPreferences) SetCharBundlePrefetch(b bool) { p.setBoolPref(&p.CharBundlePrefetch, b) }
-
-// PingChipOn reports the #128 toggle (OFF by default): show the connection-quality signal-bar
-// chip (and run the background ping loop that measures latency).
-func (p *AssetPreferences) PingChipOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PingChip
-}
 
 // SetPingChip toggles the connection-quality chip.
 func (p *AssetPreferences) SetPingChip(b bool) { p.setBoolPref(&p.PingChip, b) }
@@ -4317,25 +4188,8 @@ func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
 	p.mu.Unlock()
 }
 
-// LegacyDevThemeOn reports whether the user ticked the built-in "Legacy Developer" theme (the old
-// look). Default OFF — the new optimal layout (OOC-as-a-box, grouped buttons) is the main theme.
-func (p *AssetPreferences) LegacyDevThemeOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.LegacyDevTheme
-}
-
 // SetLegacyDevTheme toggles the Legacy Developer theme tickbox.
 func (p *AssetPreferences) SetLegacyDevTheme(b bool) { p.setBoolPref(&p.LegacyDevTheme, b) }
-
-// OOCInLogTabOn reports whether OOC should render as a tab in the log panel (the old
-// layout) instead of its own box. Independent of the Legacy theme, which always tabs
-// OOC — so the effective "OOC is a tab" condition is LegacyDevThemeOn() || OOCInLogTabOn().
-func (p *AssetPreferences) OOCInLogTabOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.OOCInLogTab
-}
 
 // SetOOCInLogTab toggles OOC-as-a-log-tab (the old layout).
 func (p *AssetPreferences) SetOOCInLogTab(b bool) { p.setBoolPref(&p.OOCInLogTab, b) }
@@ -4561,21 +4415,6 @@ func (p *AssetPreferences) SetChatboxTint(on bool) {
 	p.mu.Unlock()
 }
 
-// Post-processing overlay toggles (#10, all OFF by default): retro looks blended over the
-// stage — a vignette, scanlines, and film grain.
-func (p *AssetPreferences) PostVignetteOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PostVignette
-}
-func (p *AssetPreferences) PostScanlinesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PostScanlines
-}
-func (p *AssetPreferences) PostGrainOn() bool { p.mu.RLock(); defer p.mu.RUnlock(); return p.PostGrain }
-func (p *AssetPreferences) PostCRTOn() bool   { p.mu.RLock(); defer p.mu.RUnlock(); return p.PostCRT }
-
 // SetPostVignette / SetPostScanlines / SetPostGrain / SetPostCRT toggle the overlays.
 func (p *AssetPreferences) SetPostVignette(on bool)  { p.setBoolPref(&p.PostVignette, on) }
 func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScanlines, on) }
@@ -4637,14 +4476,6 @@ const (
 	defaultBreathAmp   = 40
 	defaultBreathSpeed = 50
 )
-
-// IdleBreathOn reports the #122 master toggle (OFF by default): a gentle bob + breathing-scale
-// so static sprites feel alive (AsyncAO-only, viewer-local).
-func (p *AssetPreferences) IdleBreathOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.IdleBreath
-}
 
 // SetIdleBreath toggles idle breathing.
 func (p *AssetPreferences) SetIdleBreath(on bool) { p.setBoolPref(&p.IdleBreath, on) }
@@ -4818,15 +4649,6 @@ func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
 	p.mu.Unlock()
 }
 
-// PlayerListSortMode / PlayerListAreaSortMode return the remembered Players-tab
-// sort choices (the player sort, and the /gas area-group order). Stored raw; the
-// UI clamps to its current mode count when it seeds a session.
-func (p *AssetPreferences) PlayerListSortMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PlayerListSort
-}
-
 // SetPlayerListSort remembers the Players-tab player sort.
 func (p *AssetPreferences) SetPlayerListSort(v int) {
 	p.mu.Lock()
@@ -4837,13 +4659,6 @@ func (p *AssetPreferences) SetPlayerListSort(v int) {
 	p.PlayerListSort = v
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// PlayerListAreaSortMode returns the remembered Players-tab area-group order.
-func (p *AssetPreferences) PlayerListAreaSortMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PlayerListAreaSort
 }
 
 // SetPlayerListAreaSort remembers the Players-tab area-group order.
@@ -4922,14 +4737,6 @@ func (p *AssetPreferences) SetCallwordOSToast(on bool) {
 	p.mu.Unlock()
 }
 
-// ModcallToastOn / SetModcallToast: pop a desktop notification when a modcall
-// arrives (for mods who alt-tabbed away). OFF by default; Windows only.
-func (p *AssetPreferences) ModcallToastOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModcallToast
-}
-
 func (p *AssetPreferences) SetModcallToast(on bool) {
 	p.mu.Lock()
 	if p.ModcallToast != on {
@@ -4971,17 +4778,6 @@ func (p *AssetPreferences) SetFriendSoundPath(path string) {
 	p.mu.Unlock()
 }
 
-// Mod-command feedback sounds (#60, each OFF by default): play a distinct sound
-// when a ban / kick / mute happens. Fired by the OOC mod-action scan and the
-// kick/ban disconnect; each action has its own toggle and an optional custom
-// file ("" = the built-in synthesized default). A duty signal — deliberately
-// NOT silenced by DND / streamer mode (consistent with modcalls).
-func (p *AssetPreferences) ModBanSFXOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModBanSFX
-}
-
 func (p *AssetPreferences) SetModBanSFX(on bool) {
 	p.mu.Lock()
 	if p.ModBanSFX != on {
@@ -4991,12 +4787,6 @@ func (p *AssetPreferences) SetModBanSFX(on bool) {
 		return
 	}
 	p.mu.Unlock()
-}
-
-func (p *AssetPreferences) ModKickSFXOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModKickSFX
 }
 
 func (p *AssetPreferences) SetModKickSFX(on bool) {
@@ -5010,12 +4800,6 @@ func (p *AssetPreferences) SetModKickSFX(on bool) {
 	p.mu.Unlock()
 }
 
-func (p *AssetPreferences) ModMuteSFXOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModMuteSFX
-}
-
 func (p *AssetPreferences) SetModMuteSFX(on bool) {
 	p.mu.Lock()
 	if p.ModMuteSFX != on {
@@ -5027,12 +4811,6 @@ func (p *AssetPreferences) SetModMuteSFX(on bool) {
 	p.mu.Unlock()
 }
 
-func (p *AssetPreferences) ModBanSoundPath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModBanSoundFile
-}
-
 func (p *AssetPreferences) SetModBanSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
@@ -5041,24 +4819,12 @@ func (p *AssetPreferences) SetModBanSoundPath(path string) {
 	p.mu.Unlock()
 }
 
-func (p *AssetPreferences) ModKickSoundPath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModKickSoundFile
-}
-
 func (p *AssetPreferences) SetModKickSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.ModKickSoundFile = path
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-func (p *AssetPreferences) ModMuteSoundPath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ModMuteSoundFile
 }
 
 func (p *AssetPreferences) SetModMuteSoundPath(path string) {
@@ -5793,13 +5559,6 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 	p.mu.Unlock()
 }
 
-// OOCScale reports the OOC log text size percent (independent of the IC log).
-func (p *AssetPreferences) OOCScale() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.OOCScalePct
-}
-
 // SetOOCScale clamps and persists the OOC log text size.
 func (p *AssetPreferences) SetOOCScale(pct int) {
 	pct = clampPercent(pct, MinLogScalePercent, MaxLogScalePercent)
@@ -5830,13 +5589,6 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 // owns the index meanings (log / OOC / emote grid / chatbox); this package
 // just stores the hex slots, blank = use the chrome default.
 const LayoutPartColorCount = 4
-
-// LayoutPartColors returns the per-part hex overrides (rrggbb; "" = default).
-func (p *AssetPreferences) LayoutPartColors() [LayoutPartColorCount]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.LayoutPartHex
-}
 
 // SetLayoutPartColor stores one part's hex override ("" clears it back to the
 // chrome default). Out-of-range indices are ignored.
@@ -5978,14 +5730,6 @@ func (p *AssetPreferences) SetAlertVolume(v int) {
 	p.mu.Unlock()
 }
 
-// MasterVolume reports the master multiplier (0–100) that scales music/SFX/blip
-// together — the single "make everything quieter/louder" control.
-func (p *AssetPreferences) MasterVolume() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MasterVol
-}
-
 // SetMasterVolume clamps and persists the master volume multiplier.
 func (p *AssetPreferences) SetMasterVolume(v int) {
 	v = clampPercent(v, 0, defaultAudioVolume)
@@ -6010,13 +5754,6 @@ func (p *AssetPreferences) SetMasterVolume(v int) {
 // names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
 // and AssetPreferences.MutedSFX (the M11 per-name mute list).
 
-// MasterVolMutedOn reports the persisted master-channel mute.
-func (p *AssetPreferences) MasterVolMutedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MasterVolMuted
-}
-
 // SetMasterVolMuted persists the master-channel mute toggle.
 func (p *AssetPreferences) SetMasterVolMuted(on bool) {
 	p.mu.Lock()
@@ -6027,13 +5764,6 @@ func (p *AssetPreferences) SetMasterVolMuted(on bool) {
 	p.MasterVolMuted = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// MusicVolMutedOn reports the persisted music-channel mute.
-func (p *AssetPreferences) MusicVolMutedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicVolMuted
 }
 
 // SetMusicVolMuted persists the music-channel mute toggle.
@@ -6567,14 +6297,6 @@ func (p *AssetPreferences) ShoutBypassQueueOn() bool {
 // SetShoutBypassQueue persists the shout-bypass toggle.
 func (p *AssetPreferences) SetShoutBypassQueue(on bool) { p.setBoolPref(&p.ShoutBypassQueue, on) }
 
-// HoldPrevMaxAgeMs reports how long hold-previous may bridge a cold sprite before
-// giving up to blank (0 = bridge forever, the default).
-func (p *AssetPreferences) HoldPrevMaxAgeMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HoldPrevMaxAgeMsVal
-}
-
 // SetHoldPrevMaxAgeMs persists the stand-in cap (0 = forever; else clamped).
 func (p *AssetPreferences) SetHoldPrevMaxAgeMs(ms int) {
 	if ms != 0 {
@@ -6590,24 +6312,8 @@ func (p *AssetPreferences) SetHoldPrevMaxAgeMs(ms int) {
 	p.mu.Unlock()
 }
 
-// HoldDebugTintOn reports the stand-in diagnostic tint (OFF by default).
-func (p *AssetPreferences) HoldDebugTintOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HoldDebugTint
-}
-
 // SetHoldDebugTint persists the stand-in tint knob.
 func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
-
-// HotkeysEnabledOn reports whether the keyboard hotkeys (every Ctrl+key chord in
-// Settings → Hotkeys) fire. OFF by default: they are opt-in, so a fresh install
-// has no surprise chords until the user enables them.
-func (p *AssetPreferences) HotkeysEnabledOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HotkeysEnabled
-}
 
 // SetHotkeysEnabled persists the hotkeys opt-in.
 func (p *AssetPreferences) SetHotkeysEnabled(on bool) { p.setBoolPref(&p.HotkeysEnabled, on) }
@@ -6635,14 +6341,6 @@ func (p *AssetPreferences) SetShoutDurationMs(ms int) {
 	p.mu.Unlock()
 }
 
-// PreanimTimeoutMs reports the preanim wait cap in milliseconds (0 = the
-// canonical courtroom default — see courtroom.DefaultPreanimTimeout).
-func (p *AssetPreferences) PreanimTimeoutMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PreanimTimeoutMsVal
-}
-
 // SetPreanimTimeoutMs persists the preanim cap (0 = default; else clamped).
 func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
 	if ms != 0 {
@@ -6658,15 +6356,6 @@ func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
 	p.mu.Unlock()
 }
 
-// ICQueueCap reports the IC backlog queue depth (0 = the courtroom's canonical
-// default, 64). How many unplayed messages a packed room may stack before the
-// oldest drops (the IC log records everything regardless).
-func (p *AssetPreferences) ICQueueCap() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ICQueueCapVal
-}
-
 // SetICQueueCap persists the queue depth (0 = default; else clamped).
 func (p *AssetPreferences) SetICQueueCap(n int) {
 	if n != 0 {
@@ -6680,15 +6369,6 @@ func (p *AssetPreferences) SetICQueueCap(n int) {
 	p.ICQueueCapVal = n
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ICLogDepth reports the IC scrollback depth (0 = the client's canonical
-// default, 1024; ICLogDepthUnlimited = don't cap at all; else that many
-// entries kept in the on-screen IC log).
-func (p *AssetPreferences) ICLogDepth() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ICLogDepthVal
 }
 
 // SetICLogDepth persists the IC scrollback depth (0 = default; a negative =
@@ -6827,14 +6507,6 @@ func (p *AssetPreferences) SetDiskCacheBudgetMiB(mib int) {
 	p.DiskCacheBudgetMiBVal = mib
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// NotFoundTTLSec reports the 404 negative-cache TTL override in seconds
-// (0 = the network default; applies on restart).
-func (p *AssetPreferences) NotFoundTTLSec() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NotFoundTTLSecVal
 }
 
 // SetNotFoundTTLSec persists the 404 TTL (0 = default; else clamped).
@@ -7075,18 +6747,6 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.mu.Unlock()
 }
 
-// MotionRedrawPerEventOn reports the "redraw once per mouse-move event" pacing
-// (event-driven loop only, default ON): bare pointer motion renders
-// exactly the one frame its event earns and then re-parks, instead of arming the
-// short full-rate motion grace — so hovering/sweeping the cursor over nothing stops
-// pinning the frame rate to the cap. Real input (click/key/wheel) keeps its normal
-// full-rate hold; turn it off to restore the hold-full-rate-while-moving behaviour.
-func (p *AssetPreferences) MotionRedrawPerEventOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MotionRedrawPerEvent
-}
-
 // SetMotionRedrawPerEvent flips the per-event motion pacing (applies live — the
 // main loop re-reads it every pass).
 func (p *AssetPreferences) SetMotionRedrawPerEvent(on bool) {
@@ -7288,15 +6948,6 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// MusicVolModeOn reports whether the Music menu shows the volume sliders instead of
-// the track list. Persisted so the choice survives a restart (playtest: it used to
-// reset to the track list every launch).
-func (p *AssetPreferences) MusicVolModeOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicVolMode
 }
 
 // SetMusicVolMode persists the Music-menu volume-view toggle.
@@ -7512,14 +7163,6 @@ func (p *AssetPreferences) SetAdditiveText(on bool) {
 	p.mu.Unlock()
 }
 
-// MusicDucking reports the music-ducking toggle: lower the music while a
-// message is on stage so dialogue isn't drowned out.
-func (p *AssetPreferences) MusicDucking() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicDuckingOn
-}
-
 // SetMusicDucking toggles music ducking.
 func (p *AssetPreferences) SetMusicDucking(on bool) {
 	p.mu.Lock()
@@ -7530,15 +7173,6 @@ func (p *AssetPreferences) SetMusicDucking(on bool) {
 	p.MusicDuckingOn = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// PerAreaScrollbackOn reports the per-area IC scrollback toggle (OFF by
-// default): when on, switching areas swaps the IC log to that area's own
-// history instead of one continuous log.
-func (p *AssetPreferences) PerAreaScrollbackOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PerAreaScroll
 }
 
 // SetPerAreaScrollback toggles per-area IC scrollback.
@@ -7719,13 +7353,6 @@ func (p *AssetPreferences) SetGroupChatButton(on bool) {
 	p.GroupChatButton = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// MasterList reports the user's master-list override ("" = the default).
-func (p *AssetPreferences) MasterList() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MasterListURL
 }
 
 // SetMasterList persists the master-list override.
@@ -9411,14 +9038,6 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	p.ThemeFitPanX, p.ThemeFitPanY = x, y
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// PlainLobbyOn reports whether the lobby/server list uses the plain client
-// backdrop instead of the theme's lobbybackground (ON by default).
-func (p *AssetPreferences) PlainLobbyOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PlainLobby
 }
 
 // SetPlainLobby toggles the plain lobby backdrop.

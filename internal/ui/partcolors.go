@@ -28,7 +28,7 @@ var partColorLabels = [config.LayoutPartColorCount]string{"IC log / right column
 // refreshPartColors re-parses the pref hexes into the draw cache. Called at
 // launch and after every Settings edit — never per frame.
 func (a *App) refreshPartColors() {
-	hex := a.d.Prefs.LayoutPartColors()
+	hex := a.d.Prefs.Load().LayoutPartHex
 	for i := range hex {
 		col, ok := parseHexColor(hex[i])
 		a.partColorOn[i] = ok

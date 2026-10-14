@@ -1050,7 +1050,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		Entrance:        a.d.Prefs.Load().AnimateEntrances,
 		DoF:             a.d.Prefs.Load().DepthOfField,
 		Spotlight:       a.d.Prefs.SpotlightOn(),
-		IdleBreath:      a.d.Prefs.IdleBreathOn() && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
+		IdleBreath:      a.d.Prefs.Load().IdleBreath && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
 		BreathBob:       a.d.Prefs.BreathBobOn(),
 		BreathScale:     a.d.Prefs.BreathScaleOn(),
 		Reflection:      a.d.Prefs.ReflectionOn(),
@@ -1086,10 +1086,10 @@ func (a *App) postFX() render.PostFX {
 		return render.PostFX{}
 	}
 	return render.PostFX{
-		Vignette:  a.d.Prefs.PostVignetteOn(),
-		Scanlines: a.d.Prefs.PostScanlinesOn(),
-		Grain:     a.d.Prefs.PostGrainOn(),
-		CRT:       a.d.Prefs.PostCRTOn(),
+		Vignette:  a.d.Prefs.Load().PostVignette,
+		Scanlines: a.d.Prefs.Load().PostScanlines,
+		Grain:     a.d.Prefs.Load().PostGrain,
+		CRT:       a.d.Prefs.Load().PostCRT,
 	}
 }
 
@@ -1333,7 +1333,7 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 // friend toast's rate limit so a modcall storm can't flood the desktop. Called
 // at both seams (active + background tab).
 func (a *App) signalModcall(serverName, notice string) {
-	if !a.d.Prefs.ModcallToastOn() || a.d.Prefs.StreamerMode() || a.ctx.WindowFocused() {
+	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.StreamerMode() || a.ctx.WindowFocused() {
 		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
 	}
 	if time.Since(a.lastOSToast) < osToastMinInterval {
@@ -1354,7 +1354,7 @@ func (a *App) signalModcall(serverName, notice string) {
 // per frame, and no-ops entirely when off, so it costs the default path nothing.
 // Bounded FIFO over visited areas (rule §17.4). Both maps park per tab.
 func (a *App) switchAreaScrollback(toArea string) {
-	if !a.d.Prefs.PerAreaScrollbackOn() || toArea == a.curArea {
+	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.curArea {
 		return
 	}
 	if a.areaLogs == nil {
@@ -1563,7 +1563,7 @@ func (a *App) icLogCapFor() int {
 	if a.d.Prefs == nil {
 		return icLogCap
 	}
-	switch n := a.d.Prefs.ICLogDepth(); {
+	switch n := a.d.Prefs.Load().ICLogDepthVal; {
 	case n == config.ICLogDepthUnlimited:
 		return 0
 	case n == 0:

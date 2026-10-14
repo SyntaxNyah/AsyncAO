@@ -97,7 +97,7 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	if len(a.reactionFloats) != 0 {
 		t.Error("the master off-switch didn't suppress an incoming reaction float")
 	}
-	if prefs.HideReactionsOn() {
+	if prefs.Load().HideReactions {
 		t.Error("the master off-switch rewrote HideReactions; it must only overrule it")
 	}
 }

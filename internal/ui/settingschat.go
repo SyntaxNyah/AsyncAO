@@ -153,7 +153,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// keeps before the oldest scrolls away. Type an exact number, or press ∞ to
 	// never cap it.
 	c.Label(pad, y+4, "IC log depth:", ColText)
-	depth := a.d.Prefs.ICLogDepth()
+	depth := a.d.Prefs.Load().ICLogDepthVal
 	depthFieldID := "iclogdepth"
 	depthField := sdl.Rect{X: pad + 150, Y: y, W: 64, H: fieldH}
 	if c.focusID != depthFieldID {
@@ -199,7 +199,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 28
 
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
-	areaScroll := a.d.Prefs.PerAreaScrollbackOn()
+	areaScroll := a.d.Prefs.Load().PerAreaScroll
 	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {
 		a.d.Prefs.SetPerAreaScrollback(next)
 	}
@@ -292,7 +292,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// callword (whole-word match, never your own messages) so you're pinged when
 	// addressed by name without adding it manually. Honours the sound/toast/OS
 	// options below and the streamer / DND / login-grace suppressions.
-	ms := a.d.Prefs.MentionSelfOn()
+	ms := a.d.Prefs.Load().MentionSelf
 	if next := c.Checkbox(pad, y, "Alert me when someone says my name (OFF by default): treats your showname + character as callwords, matched as whole words and never on your own lines", ms); next != ms {
 		a.d.Prefs.SetMentionSelf(next)
 	}
@@ -418,13 +418,13 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 10
 
 	y = a.settingsSection(y, w, "Messages & connection")
-	mc := a.d.Prefs.MessageCounterOn()
+	mc := a.d.Prefs.Load().MessageCounter
 	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
 		a.d.Prefs.SetMessageCounter(next)
 	}
 	y += 26
 
-	ts := a.d.Prefs.ICTimestampsOn()
+	ts := a.d.Prefs.Load().ICTimestamps
 	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (OFF by default): prefixes each line with the time it arrived, so you can see when people spoke.", ts); next != ts {
 		a.d.Prefs.SetICTimestamps(next)
 	}
@@ -436,7 +436,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 
-	idc := a.d.Prefs.InstantDisconnectOn()
+	idc := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(pad, y, "Instant disconnect (OFF by default): the Disconnect button asks for confirmation first, since it's easy to hit by accident. Turn this on to disconnect immediately with no prompt.", idc); next != idc {
 		a.d.Prefs.SetInstantDisconnect(next)
 	}
@@ -526,7 +526,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "Music history")
 	// M12: keep a session "recently played" jukebox history (ON by default).
-	mh := a.d.Prefs.MusicHistoryOn()
+	mh := a.d.Prefs.Load().MusicHistory
 	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
 		a.d.Prefs.SetMusicHistory(next)
 	}
@@ -641,7 +641,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "Mod tools")
 	// Mod-call desktop toast (for moderators).
-	mct := a.d.Prefs.ModcallToastOn()
+	mct := a.d.Prefs.Load().ModcallToast
 	if next := c.Checkbox(pad, y, "Desktop notification on mod-call (OFF by default): pop a Windows toast when a modcall comes in — for mods who alt-tabbed away", mct); next != mct {
 		a.d.Prefs.SetModcallToast(next)
 	}
@@ -663,9 +663,9 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		setPth func(string)
 	}
 	for _, r := range []modSFXRow{
-		{"Ban", a.d.Prefs.ModBanSFXOn(), a.d.Prefs.ModBanSoundPath(), render.ModBan, a.d.Prefs.SetModBanSFX, a.d.Prefs.SetModBanSoundPath},
-		{"Kick", a.d.Prefs.ModKickSFXOn(), a.d.Prefs.ModKickSoundPath(), render.ModKick, a.d.Prefs.SetModKickSFX, a.d.Prefs.SetModKickSoundPath},
-		{"Mute", a.d.Prefs.ModMuteSFXOn(), a.d.Prefs.ModMuteSoundPath(), render.ModMute, a.d.Prefs.SetModMuteSFX, a.d.Prefs.SetModMuteSoundPath},
+		{"Ban", a.d.Prefs.Load().ModBanSFX, a.d.Prefs.Load().ModBanSoundFile, render.ModBan, a.d.Prefs.SetModBanSFX, a.d.Prefs.SetModBanSoundPath},
+		{"Kick", a.d.Prefs.Load().ModKickSFX, a.d.Prefs.Load().ModKickSoundFile, render.ModKick, a.d.Prefs.SetModKickSFX, a.d.Prefs.SetModKickSoundPath},
+		{"Mute", a.d.Prefs.Load().ModMuteSFX, a.d.Prefs.Load().ModMuteSoundFile, render.ModMute, a.d.Prefs.SetModMuteSFX, a.d.Prefs.SetModMuteSoundPath},
 	} {
 		if next := c.Checkbox(pad+16, y, r.label, r.on); next != r.on {
 			r.setOn(next)

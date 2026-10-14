@@ -98,7 +98,7 @@ func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 		return out
 	}
 	c := a.ctx
-	showStamps := a.d.Prefs != nil && a.d.Prefs.ICTimestampsOn()
+	showStamps := a.d.Prefs != nil && a.d.Prefs.Load().ICTimestamps
 	// canvasInk mirrors drawICLogList's own parameter: true only while the log
 	// draws INSIDE a theme's design canvas (theme_layout.go), which is the one
 	// case elemInkOr honours a theme's own ic_chatlog_color. a.themeLay.valid

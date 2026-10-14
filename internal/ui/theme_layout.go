@@ -593,7 +593,7 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 	// The lobby/server list defaults to the plain client backdrop: a busy AO2
 	// lobbybackground (built for AO2's own list) often renders our server list
 	// unreadable. Untick "plain lobby" in Settings → Theme to use the theme's.
-	if stem == "lobbybackground" && a.d.Prefs.PlainLobbyOn() {
+	if stem == "lobbybackground" && a.d.Prefs.Load().PlainLobby {
 		c.Fill(dst, ColBackground)
 		return
 	}
@@ -1058,7 +1058,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// AO2's own placeholder (courtroom.cpp ui_ic_chat_message).
 		// Same counter/chip reservation the classic bar makes (screens.go): the band
 		// is declared before the field so typed text clips short of it.
-		counterOn := a.d.Prefs.MessageCounterOn()
+		counterOn := a.d.Prefs.Load().MessageCounter
 		c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(counterOn))
 		a.icInput, send = c.TextFieldEmoji(icFieldID, in, a.icInput, "Message in-character", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
@@ -1535,8 +1535,8 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
 	}
 	// themedChatFace, not elemFontFor: inside a theme's own chatbox the point size
 	// folds with the canvas scale, because AO2 multiplies design rects and

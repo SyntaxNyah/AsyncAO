@@ -69,8 +69,8 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 // drawFriendRows lists the friends within the top listH of r.
 func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 	c := a.ctx
-	sat := float64(a.d.Prefs.NameColorSat()) / 100
-	val := float64(a.d.Prefs.NameColorVal()) / 100
+	sat := float64(a.d.Prefs.Load().NameSat) / 100
+	val := float64(a.d.Prefs.Load().NameVal) / 100
 	const rowH = int32(28)
 	y := r.Y + 26
 	for _, name := range names {
@@ -86,7 +86,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		nameCol := ColText
 		if fcol >= 0 {
 			nameCol = readableOnPanel(fcol)
-		} else if a.d.Prefs.NameColorsOn() {
+		} else if a.d.Prefs.Load().NameColors {
 			nameCol = nameColor(name, sat, val)
 		}
 		disp := name

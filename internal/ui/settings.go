@@ -1327,7 +1327,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// #103: viewer opt-out of OTHER players' transmitted sprite styles (your own
 	// is set in the Extras → Sprite Style picker). Reduce-motion already drops a
 	// received style's wobble/spin; this hides the whole thing.
-	hideStyles := a.d.Prefs.HideSpriteStylesOn()
+	hideStyles := a.d.Prefs.Load().HideSpriteStyles
 	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour, glow, spinning, wobble, motion paths and glitch)", hideStyles); next != hideStyles {
 		a.d.Prefs.SetHideSpriteStyles(next)
 		if a.room != nil {
@@ -1337,7 +1337,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	// #2: viewer opt-out of OTHER players' emoji reactions (the floating emoji over the
 	// stage). Sending your own reactions is unaffected — this only hides incoming floats.
-	hideReact := a.d.Prefs.HideReactionsOn()
+	hideReact := a.d.Prefs.Load().HideReactions
 	if next := c.Checkbox(pad, y, "Hide other players' emoji reactions: don't float their reaction emoji over the stage (#2)", hideReact); next != hideReact {
 		a.d.Prefs.SetHideReactions(next)
 	}
@@ -1374,7 +1374,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetDebugOverlay(next)
 	}
 	y += 26
-	notifOOC := a.d.Prefs.NotifyOnOOCOn()
+	notifOOC := a.d.Prefs.Load().NotifyOnOOC
 	if next := c.Checkbox(pad, y, "Count OOC in the unread tab badge (OFF by default): otherwise only IC chat lights up a background tab's \"(N)\" — so server auto-messages (hourly reminders, etc.) don't ping you", notifOOC); next != notifOOC {
 		a.d.Prefs.SetNotifyOnOOC(next)
 	}

@@ -76,7 +76,7 @@ func (a *App) buildRoom() {
 		// normally pushes it) runs below, but this resume event fires first — with
 		// StreamMusic left at NewCourtroom's default ON, a resumed track would play
 		// even when the user disabled streaming. §1.3.
-		a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()
+		a.room.StreamMusic = a.d.Prefs.Load().MusicStreaming
 		a.resumeActiveTabMusic()
 	}
 	a.applyTimingToRoom()
@@ -874,7 +874,7 @@ func (a *App) NoteMotion() {
 		// sawEvent), then the loop re-parks — so a moving cursor redraws once per
 		// motion event instead of holding full rate through a 200 ms tail. Saves
 		// power on hover sweeps that would otherwise pin the rate to the cap.
-		if a.d.Prefs.MotionRedrawPerEventOn() {
+		if a.d.Prefs.Load().MotionRedrawPerEvent {
 			return
 		}
 		a.lastMotionAt = time.Now()
@@ -1592,11 +1592,11 @@ func (a *App) applyTimingToRoom() {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}
 	a.room.PreanimTimeout = courtroom.DefaultPreanimTimeout
-	if ms := a.d.Prefs.PreanimTimeoutMs(); ms != 0 {
+	if ms := a.d.Prefs.Load().PreanimTimeoutMsVal; ms != 0 {
 		a.room.PreanimTimeout = time.Duration(ms) * time.Millisecond
 	}
 	a.room.QueueCap = courtroom.DefaultQueueCap // 0-pref = the canonical depth; always assigned so a nuke-reset restores it
-	if n := a.d.Prefs.ICQueueCap(); n != 0 {
+	if n := a.d.Prefs.Load().ICQueueCapVal; n != 0 {
 		a.room.QueueCap = n
 	}
 	a.room.CatchUpLinger = time.Duration(a.d.Prefs.Load().CatchUpLingerMsVal) * time.Millisecond
@@ -1607,7 +1607,7 @@ func (a *App) applyTimingToRoom() {
 	// default. This call is the LIVE room's re-push when a setting changes.
 	a.applyVisualPrefsToRoom(a.room)
 	a.room.AdditiveText = a.d.Prefs.Load().AdditiveText  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
-	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn() // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
+	a.room.StreamMusic = a.d.Prefs.Load().MusicStreaming // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
 }
 
 // applyMusicStreaming persists the custom-/play-music streaming toggle and pushes

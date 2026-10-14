@@ -826,7 +826,7 @@ func toolboxPieceMatches(id, queryLower string) bool {
 // roster grid. Mirrors the retired drawUICfgPanel's contentH arithmetic.
 func (a *App) toolboxPiecesContentH() int32 {
 	rows := int32(len(hideablePanels))
-	if !a.d.Prefs.LegacyDevThemeOn() {
+	if !a.d.Prefs.Load().LegacyDevTheme {
 		btnRows := (int32(len(hideableButtons)) + toolboxPiecesCols - 1) / toolboxPiecesCols
 		rows += 1 + btnRows // +1 sub-heading row
 	}
@@ -968,7 +968,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// The control-button grid only applies to the new-default toolbar; the
 	// legacy/themed row draws fixed inline buttons that ignore the hidden set, so
 	// a chip there would be a dead toggle (mirrors the retired dialog's guard).
-	showBtnGrid := !a.d.Prefs.LegacyDevThemeOn()
+	showBtnGrid := !a.d.Prefs.Load().LegacyDevTheme
 
 	body := sdl.Rect{X: panel.X, Y: panel.Y + toolboxPiecesHeaderH,
 		W: panel.W, H: panel.H - toolboxPiecesHeaderH - toolboxPiecesFooterH}

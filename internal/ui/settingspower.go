@@ -133,7 +133,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	if slm != config.SpriteLoadBlank { // hold-previous applies in Hold mode AND as Wait's timeout fallback
 		c.Label(pad, y+4, "Keep the previous sprite for:", ColText)
-		ageMs := a.d.Prefs.HoldPrevMaxAgeMs()
+		ageMs := a.d.Prefs.Load().HoldPrevMaxAgeMsVal
 		atrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 		na := int(clampI32(c.Slider("holdmaxage", atrack, int32(ageMs), config.HoldPrevMaxAgeMaxMs), 0, config.HoldPrevMaxAgeMaxMs))
 		if na != 0 && na < config.HoldPrevMaxAgeMinMs {
@@ -149,7 +149,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			a.d.Prefs.SetHoldPrevMaxAgeMs(na)
 		}
 		y += 26
-		tint := a.d.Prefs.HoldDebugTintOn()
+		tint := a.d.Prefs.Load().HoldDebugTint
 		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostic: shows when a stand-in is bridging a load)", tint); next != tint {
 			a.d.Prefs.SetHoldDebugTint(next)
 		}
@@ -247,7 +247,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
 	y += 10
-	mrp := a.d.Prefs.MotionRedrawPerEventOn()
+	mrp := a.d.Prefs.Load().MotionRedrawPerEvent
 	if next := c.Checkbox(pad, y, "Redraw once per mouse-move event (less power on cursor motion)", mrp); next != mrp {
 		a.d.Prefs.SetMotionRedrawPerEvent(next)
 	}
@@ -366,7 +366,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += 26
 	c.Label(pad, y+4, "Pre-animation wait cap:", ColText)
-	preMs := a.d.Prefs.PreanimTimeoutMs()
+	preMs := a.d.Prefs.Load().PreanimTimeoutMsVal
 	ptrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	np := int(clampI32(c.Slider("preanimms", ptrack, int32(preMs), config.PreanimTimeoutMaxMs), 0, config.PreanimTimeoutMaxMs))
 	if np != 0 && np < config.PreanimTimeoutMinMs {
@@ -384,7 +384,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += 26
 	c.Label(pad, y+4, "IC backlog queue depth:", ColText)
-	qcap := a.d.Prefs.ICQueueCap()
+	qcap := a.d.Prefs.Load().ICQueueCapVal
 	qtrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	nq := int(clampI32(c.Slider("icqueuecap", qtrack, int32(qcap), config.ICQueueCapMax), 0, config.ICQueueCapMax))
 	if nq != 0 && nq < config.ICQueueCapMin {
@@ -462,7 +462,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// Network tuning — the streaming pipeline's self-tuning bounds, exposed.
 	y = a.settingsSection(y, w, "Network tuning")
 	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
-	ttl := a.d.Prefs.NotFoundTTLSec()
+	ttl := a.d.Prefs.Load().NotFoundTTLSecVal
 	ntrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
 	nttl := int(clampI32(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
 	if nttl != 0 && nttl < config.NotFoundTTLMinSec {
@@ -583,7 +583,7 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Master list")
 	// Master list override (blank = official). Refresh in the lobby applies.
 	c.Label(pad, y+4, "URL:", ColTextDim)
-	master := a.d.Prefs.MasterList()
+	master := a.d.Prefs.Load().MasterListURL
 	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
 		a.d.Prefs.SetMasterList(next)
 	}
@@ -606,7 +606,7 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until this is ticked,
 	// so a fresh install fires none of them (no accidental shout / FX / menu). The
 	// bindings stay editable either way.
-	hk := a.d.Prefs.HotkeysEnabledOn()
+	hk := a.d.Prefs.Load().HotkeysEnabled
 	if next := c.Checkbox(pad, y, "Enable hotkeys (Ctrl+key shortcuts) — OFF by default", hk); next != hk {
 		a.d.Prefs.SetHotkeysEnabled(next)
 	}

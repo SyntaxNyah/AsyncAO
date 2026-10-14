@@ -123,10 +123,10 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.Load().CallwordToast {
 		t.Error("CallwordToastOn default must be true")
 	}
-	if !p.MessageCounterOn() {
+	if !p.Load().MessageCounter {
 		t.Error("MessageCounterOn default must be true")
 	}
-	if p.ICTimestampsOn() {
+	if p.Load().ICTimestamps {
 		t.Error("ICTimestampsOn default must be false (playtest: timestamps off by default)")
 	}
 	if p.Load().AutoReconnect {
@@ -138,10 +138,10 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.WordDeleteOn() {
 		t.Error("WordDeleteOn default must be true (Ctrl+Backspace word delete ships ON)")
 	}
-	if !p.MusicHistoryOn() {
+	if !p.Load().MusicHistory {
 		t.Error("MusicHistoryOn default must be true")
 	}
-	if !p.MusicStreamingOn() {
+	if !p.Load().MusicStreaming {
 		t.Error("MusicStreamingOn default must be true (custom /play streaming ships ON)")
 	}
 	if p.RainbowSpeed() != defaultRainbowSpeed || p.RainbowVividness() != defaultRainbowVivid {
@@ -154,7 +154,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.RainbowSpriteGlowOn() || p.RainbowPairDesyncOn() || p.SpriteSolidTintOn() {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
 	}
-	if p.LoopPreanimOn() {
+	if p.Load().LoopPreanim {
 		t.Error("LoopPreanim must default OFF (canonical AO2 plays preanims once)")
 	}
 }
@@ -204,7 +204,7 @@ func TestSpriteStylePref(t *testing.T) {
 	if s := p.SpriteStyle(); s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
 		t.Fatalf("default sprite style not empty: %+v", s)
 	}
-	if p.HideSpriteStylesOn() {
+	if p.Load().HideSpriteStyles {
 		t.Fatal("HideSpriteStyles should default OFF (show others' styles)")
 	}
 	// Opacity clamps to [0,100].
@@ -231,7 +231,7 @@ func TestSpriteStylePref(t *testing.T) {
 	if g := r.SpriteStyle(); g != want {
 		t.Errorf("reloaded sprite style = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
-	if !r.HideSpriteStylesOn() {
+	if !r.Load().HideSpriteStyles {
 		t.Error("HideSpriteStyles didn't persist")
 	}
 }
@@ -275,7 +275,7 @@ func TestProfilePref(t *testing.T) {
 // (confirm first), and the on state survives save→reload.
 func TestInstantDisconnectPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.InstantDisconnectOn() {
+	if p.Load().InstantDisconnect {
 		t.Error("InstantDisconnect must default OFF (Disconnect confirms first)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -291,7 +291,7 @@ func TestInstantDisconnectPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.InstantDisconnectOn() {
+	if !r.Load().InstantDisconnect {
 		t.Error("InstantDisconnect=true lost on reload")
 	}
 }
@@ -559,7 +559,7 @@ func TestServerFriendNickColor(t *testing.T) {
 // save→reload.
 func TestInstantReplayPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.InstantReplayOn() {
+	if p.Load().InstantReplay {
 		t.Error("InstantReplay must default OFF (opt-in)")
 	}
 	if got := p.InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
@@ -588,7 +588,7 @@ func TestInstantReplayPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.InstantReplayOn() {
+	if !r.Load().InstantReplay {
 		t.Error("InstantReplay=true lost on reload")
 	}
 	if got := r.InstantReplaySecondsValue(); got != 120 {
@@ -642,7 +642,7 @@ func TestTimerPref(t *testing.T) {
 // and survives save→reload when enabled.
 func TestNotifyOnOOCPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.NotifyOnOOCOn() {
+	if p.Load().NotifyOnOOC {
 		t.Error("NotifyOnOOC must default OFF (IC-only badge)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -658,7 +658,7 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.NotifyOnOOCOn() {
+	if !r.Load().NotifyOnOOC {
 		t.Error("NotifyOnOOC=true lost on reload")
 	}
 }
@@ -673,7 +673,7 @@ func TestNotifyOnOOCPref(t *testing.T) {
 // tab user silently becomes a box user on upgrade — this test is the tripwire.
 func TestOOCBoxIsTheDefault(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.OOCInLogTabOn() {
+	if p.Load().OOCInLogTab {
 		t.Error("a fresh install must default to the OOC BOX (OOCInLogTab OFF)")
 	}
 
@@ -691,7 +691,7 @@ func TestOOCBoxIsTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.OOCInLogTabOn() {
+	if !r.Load().OOCInLogTab {
 		t.Error("OOCInLogTab=true lost on reload — the opt-in must survive the default flip")
 	}
 
@@ -768,7 +768,7 @@ func TestEmoteGridGapPref(t *testing.T) {
 // not-load trap).
 func TestMusicAcrossTabsPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.MusicAcrossTabsOn() {
+	if p.Load().MusicAcrossTabs {
 		t.Error("MusicAcrossTabs must default OFF (backgrounded tab music ducks to 0)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -784,7 +784,7 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.MusicAcrossTabsOn() {
+	if !r.Load().MusicAcrossTabs {
 		t.Error("MusicAcrossTabs=true lost on reload")
 	}
 }
@@ -793,8 +793,8 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 // /gas area-group order) default to 0 and survive save→reload.
 func TestPlayerListSortPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.PlayerListSortMode() != 0 || p.PlayerListAreaSortMode() != 0 {
-		t.Fatalf("sort prefs must default to 0, got %d/%d", p.PlayerListSortMode(), p.PlayerListAreaSortMode())
+	if p.Load().PlayerListSort != 0 || p.Load().PlayerListAreaSort != 0 {
+		t.Fatalf("sort prefs must default to 0, got %d/%d", p.Load().PlayerListSort, p.Load().PlayerListAreaSort)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	q, err := newWithDebounce(path, testDebounce)
@@ -810,8 +810,8 @@ func TestPlayerListSortPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.PlayerListSortMode() != 1 || r.PlayerListAreaSortMode() != 2 {
-		t.Errorf("reloaded sorts = %d/%d, want 1/2", r.PlayerListSortMode(), r.PlayerListAreaSortMode())
+	if r.Load().PlayerListSort != 1 || r.Load().PlayerListAreaSort != 2 {
+		t.Errorf("reloaded sorts = %d/%d, want 1/2", r.Load().PlayerListSort, r.Load().PlayerListAreaSort)
 	}
 }
 
@@ -848,10 +848,10 @@ func TestChatboxOpacityPref(t *testing.T) {
 // with no custom file, and toggles + paths survive save→load.
 func TestModSFXPrefs(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ModBanSFXOn() || p.ModKickSFXOn() || p.ModMuteSFXOn() {
+	if p.Load().ModBanSFX || p.Load().ModKickSFX || p.Load().ModMuteSFX {
 		t.Error("mod-SFX toggles must default OFF")
 	}
-	if p.ModBanSoundPath() != "" || p.ModKickSoundPath() != "" || p.ModMuteSoundPath() != "" {
+	if p.Load().ModBanSoundFile != "" || p.Load().ModKickSoundFile != "" || p.Load().ModMuteSoundFile != "" {
 		t.Error("mod-SFX sound paths must default empty")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -872,11 +872,11 @@ func TestModSFXPrefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.ModBanSFXOn() || !r.ModKickSFXOn() || !r.ModMuteSFXOn() {
+	if !r.Load().ModBanSFX || !r.Load().ModKickSFX || !r.Load().ModMuteSFX {
 		t.Error("mod-SFX toggles lost across reload")
 	}
-	if r.ModBanSoundPath() != "ban.opus" || r.ModKickSoundPath() != "kick.wav" || r.ModMuteSoundPath() != "mute.ogg" {
-		t.Errorf("mod-SFX paths lost: %q %q %q", r.ModBanSoundPath(), r.ModKickSoundPath(), r.ModMuteSoundPath())
+	if r.Load().ModBanSoundFile != "ban.opus" || r.Load().ModKickSoundFile != "kick.wav" || r.Load().ModMuteSoundFile != "mute.ogg" {
+		t.Errorf("mod-SFX paths lost: %q %q %q", r.Load().ModBanSoundFile, r.Load().ModKickSoundFile, r.Load().ModMuteSoundFile)
 	}
 }
 
@@ -927,23 +927,23 @@ func TestICLogDepthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.ICLogDepth() != 0 {
-		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.ICLogDepth())
+	if p.Load().ICLogDepthVal != 0 {
+		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.Load().ICLogDepthVal)
 	}
 	p.SetICLogDepth(5000)
-	if got := p.ICLogDepth(); got != 5000 {
+	if got := p.Load().ICLogDepthVal; got != 5000 {
 		t.Fatalf("ICLogDepth = %d, want 5000", got)
 	}
 	p.SetICLogDepth(1 << 30)
-	if got := p.ICLogDepth(); got != ICLogDepthMax {
+	if got := p.Load().ICLogDepthVal; got != ICLogDepthMax {
 		t.Fatalf("ICLogDepth clamp hi = %d, want %d", got, ICLogDepthMax)
 	}
 	p.SetICLogDepth(0)
-	if got := p.ICLogDepth(); got != 0 {
+	if got := p.Load().ICLogDepthVal; got != 0 {
 		t.Fatalf("ICLogDepth back to default = %d, want 0", got)
 	}
 	p.SetICLogDepth(ICLogDepthUnlimited)
-	if got := p.ICLogDepth(); got != ICLogDepthUnlimited {
+	if got := p.Load().ICLogDepthVal; got != ICLogDepthUnlimited {
 		t.Fatalf("ICLogDepth unlimited = %d, want %d", got, ICLogDepthUnlimited)
 	}
 	if err := p.Close(); err != nil {
@@ -953,8 +953,8 @@ func TestICLogDepthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.ICLogDepth() != ICLogDepthUnlimited {
-		t.Errorf("unlimited sentinel lost across save→load: %d, want %d", q.ICLogDepth(), ICLogDepthUnlimited)
+	if q.Load().ICLogDepthVal != ICLogDepthUnlimited {
+		t.Errorf("unlimited sentinel lost across save→load: %d, want %d", q.Load().ICLogDepthVal, ICLogDepthUnlimited)
 	}
 }
 
@@ -1036,22 +1036,22 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().CallwordToast {
 		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.MessageCounterOn() {
+	if q.Load().MessageCounter {
 		t.Error("MessageCounter=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if !q.Load().AutoReconnect {
 		t.Error("AutoReconnect=true lost (absent-default OFF must not clobber explicit true)")
 	}
-	if q.MusicHistoryOn() {
+	if q.Load().MusicHistory {
 		t.Error("MusicHistory=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.MusicStreamingOn() {
+	if q.Load().MusicStreaming {
 		t.Error("MusicStreaming=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if !q.RainbowSpritesOn() {
 		t.Error("RainbowSprites=true lost across reload")
 	}
-	if !q.LoopPreanimOn() {
+	if !q.Load().LoopPreanim {
 		t.Error("LoopPreanim=true lost across reload (default-OFF plain bool must persist an explicit ON)")
 	}
 	if !q.ShowRecordButtonOn() {
@@ -1069,7 +1069,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.Load().DisableFrameLimiter {
 		t.Error("DisableFrameLimiter=true lost across reload")
 	}
-	if q.MotionRedrawPerEventOn() {
+	if q.Load().MotionRedrawPerEvent {
 		t.Error("MotionRedrawPerEvent=false lost across reload (default-ON *bool must persist an explicit OFF)")
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
@@ -1363,13 +1363,13 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.ShoutBypassQueueOn() {
 		t.Error("nuke must restore the shout-bypass toggle to its default ON (AO2 parity)")
 	}
-	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
+	if p.Load().HoldPrevMaxAgeMsVal != 0 || p.Load().HoldDebugTint {
 		t.Error("nuke must reset the hold-previous knobs")
 	}
-	if p.HotkeysEnabledOn() {
+	if p.Load().HotkeysEnabled {
 		t.Error("nuke must reset the hotkeys opt-in to its default OFF")
 	}
-	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.Load().CatchUpLingerMsVal != 0 {
+	if p.ShoutDurationMs() != 0 || p.Load().PreanimTimeoutMsVal != 0 || p.Load().ICQueueCapVal != 0 || p.Load().CatchUpLingerMsVal != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")
 	}
 	if !p.Load().ClipSpritesToStage {
@@ -1378,7 +1378,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
 		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
-	if p.NotFoundTTLSec() != 0 || p.AdaptiveLatMultiple() != 0 {
+	if p.Load().NotFoundTTLSecVal != 0 || p.AdaptiveLatMultiple() != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
 	if p.SpriteDownscaleOffOn() || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
@@ -1396,7 +1396,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().DisableFrameLimiter {
 		t.Error("nuke must restore the frame-limiter bypass to its default OFF")
 	}
-	if !p.MotionRedrawPerEventOn() {
+	if !p.Load().MotionRedrawPerEvent {
 		t.Error("nuke must restore per-event motion redraw to its default ON")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
@@ -1710,7 +1710,7 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	if p.ThemeZoom() != DefaultThemeZoom {
 		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
 	}
-	if !p.PlainLobbyOn() {
+	if !p.Load().PlainLobby {
 		t.Error("PlainLobbyOn default must be true (readable server list)")
 	}
 	p.SetThemeFit(99) // out of range → clamps to the last mode (Native)

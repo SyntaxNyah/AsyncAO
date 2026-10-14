@@ -77,7 +77,7 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase into the settings content card
 	_ = w
-	on := a.d.Prefs.NameColorsOn()
+	on := a.d.Prefs.Load().NameColors
 	if next := c.Checkbox(pad, y, "Colour each speaker's name (OFF by default): every name gets its own stable colour from its text", on); next != on {
 		a.d.Prefs.SetNameColors(next)
 	}
@@ -85,7 +85,7 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 	if !on {
 		return y
 	}
-	sat, val := a.d.Prefs.NameColorSat(), a.d.Prefs.NameColorVal()
+	sat, val := a.d.Prefs.Load().NameSat, a.d.Prefs.Load().NameVal
 	ns := a.sliderRow(y, "Name saturation", sat, 5, 0, 100)
 	c.Label(pad+270, y+4, "0 = grey · 100 = vivid", ColTextDim)
 	y += 30
@@ -96,7 +96,7 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 		a.d.Prefs.SetNameColorSatVal(ns, nv)
 	}
 	// Live preview — sample names in their hash colours at the current sliders.
-	fs, fv := float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100
+	fs, fv := float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100
 	c.Label(pad, y+4, "Preview:", ColTextDim)
 	px := pad + 70
 	for _, nm := range []string{"Phoenix", "Edgeworth", "Maya", "Franziska", "Klavier", "Apollo"} {

@@ -230,7 +230,7 @@ func TestICBarPreFXSurvive720p(t *testing.T) {
 	}
 	for _, counterOn := range []bool{true, false} {
 		a.d.Prefs.SetMessageCounter(counterOn)
-		if got := a.d.Prefs.MessageCounterOn(); got != counterOn {
+		if got := a.d.Prefs.Load().MessageCounter; got != counterOn {
 			t.Fatalf("SetMessageCounter(%v) didn't stick (got %v)", counterOn, got)
 		}
 		// Survival is a pure function of geometry (no counter term), so it stands in for the

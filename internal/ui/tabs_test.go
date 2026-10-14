@@ -442,7 +442,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	if a.musicAwaitURL != "" {
 		t.Error("toggle ON must clear the never-arriving await latch (the second silencer)")
 	}
-	if !a.d.Prefs.MusicAcrossTabsOn() {
+	if !a.d.Prefs.Load().MusicAcrossTabs {
 		t.Error("toggle ON must persist the pref")
 	}
 
@@ -465,7 +465,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	if !d.musicTabDucked {
 		t.Error("toggle OFF must re-duck live audio immediately — the label promises silent-now")
 	}
-	if d.d.Prefs.MusicAcrossTabsOn() {
+	if d.d.Prefs.Load().MusicAcrossTabs {
 		t.Error("toggle OFF must persist the pref")
 	}
 }

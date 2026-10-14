@@ -127,8 +127,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	} else if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
 	}
 	// Pick a covering face for the showname (a Tifinagh / Cyrillic NAME would tofu on
 	// the fixed chrome font); elemFontFor returns the chat set's chrome-sized face for
@@ -664,7 +664,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// — or the opt-in "OOC in the log tab" toggle — instead keeps OOC in the strip. If the active tab
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
-	oocAsTab := a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()
+	oocAsTab := a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab
 	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
 		a.logTab = logTabLog
 	}
@@ -874,7 +874,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// in which case the frame short-circuits exactly as the inline `return` did.
 	y2 := y + btnH + 4
 	var done bool
-	if a.d.Prefs.LegacyDevThemeOn() {
+	if a.d.Prefs.Load().LegacyDevTheme {
 		y2, done = a.drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h)
 	} else {
 		y2, done = a.drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h)
@@ -975,7 +975,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// no way to run a slash command. The invariant is one live OOC input in every
 	// state, and only an explicit "hide OOC chat" may take it away.
 	oocBoxUnreachable := a.panelHidden(panelLog)
-	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn() || oocBoxUnreachable) {
+	if !a.panelHidden(panelOOC) && (a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab || oocBoxUnreachable) {
 		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
 		// the bottom row, the row centred within the slot height. Registered only while it
 		// actually draws, so the editor offers a handle for it only when OOC is a tab.
@@ -1630,7 +1630,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	} else {
 		a.icAdditive = false
 	}
-	icCounterOn := a.d.Prefs.MessageCounterOn()
+	icCounterOn := a.d.Prefs.Load().MessageCounter
 	// The IC input must always keep at least minICInputW. Each optional IC-bar button is
 	// placed ONLY if it still leaves that room, so a narrow bar drops them in REVERSE draw
 	// order — emoji first, then SFX, then FX, then Pre — instead of pushing the text input
