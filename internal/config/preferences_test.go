@@ -974,7 +974,7 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 
 	p.SetAudioVolumes(0, 55, 200) // mute is a real value; 200 clamps
-	p.SetOOCName("arbok")
+	p.SetOOCName("testuser")
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -986,7 +986,7 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if m, s, b := q.AudioVolumes(); m != 0 || s != 55 || b != 100 {
 		t.Fatalf("reloaded volumes = %d/%d/%d, want 0/55/100 (0 must survive)", m, s, b)
 	}
-	if q.Load().OOCName != "arbok" {
+	if q.Load().OOCName != "testuser" {
 		t.Fatalf("reloaded OOC name = %q", q.Load().OOCName)
 	}
 	if v, _, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
