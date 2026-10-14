@@ -304,8 +304,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			// base: a percent scales the target, the off switch drops the cap
 			// entirely (config.EffectiveSpriteCap owns the math; the App re-derives
 			// it live when the Settings sliders move).
-			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.Load().SpriteDownscaleOff, prefs.SpriteDownscalePct()))
-			decoder.SetAnimatedSpriteCap(prefs.AnimatedSpriteCap())
+			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.Load().SpriteDownscaleOff, prefs.Load().SpriteDownscalePctVal))
+			decoder.SetAnimatedSpriteCap(prefs.Load().AnimatedSpriteCapPxVal)
 		}
 	}
 

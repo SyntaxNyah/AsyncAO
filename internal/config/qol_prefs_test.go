@@ -1381,7 +1381,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().NotFoundTTLSecVal != 0 || p.AdaptiveLatMultiple() != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
-	if p.Load().SpriteDownscaleOff || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
+	if p.Load().SpriteDownscaleOff || p.Load().SpriteDownscalePctVal != 0 || p.Load().AnimatedSpriteCapPxVal != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
 		t.Error("nuke must reset the downscale + texture-budget knobs")
 	}
 	if p.Load().CrossfadeMsVal != 0 {

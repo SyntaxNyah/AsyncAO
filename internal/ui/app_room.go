@@ -1551,8 +1551,8 @@ func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
 // power-user knobs) to the decoder pool. Called from the Settings rows; new
 // decodes pick it up (already-decoded textures keep their size until eviction).
 func (a *App) applySpriteCap() {
-	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.SpriteDownscalePct()))
-	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.AnimatedSpriteCap())
+	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.Load().SpriteDownscalePctVal))
+	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.Load().AnimatedSpriteCapPxVal)
 	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.AnimatedBudgetMiB())
 	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.AnimDecodeConcurrency())
 }
@@ -1581,13 +1581,13 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.BlipTyping() // #7: blip cadence + skip-whitespace
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
-	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait               // "Hold the message": hold until its speaker sprite decodes
-	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
-	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                  // strictness: gate on the pair partner too
-	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                            // strictness: gate on the preanim too
-	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault        // "Default": wait for every asset a message presents
-	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                              // AO2 parity: shouts skip the queue (toggleable)
-	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                 // core-timing knobs: 0 = the canonical defaults
+	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait        // "Hold the message": hold until its speaker sprite decodes
+	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond  // its user-tunable hold cap
+	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                          // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                            // AO2 parity: shouts skip the queue (toggleable)
+	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                  // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.Load().ShoutDurationMsVal; ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}

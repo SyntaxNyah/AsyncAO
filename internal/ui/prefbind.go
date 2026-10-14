@@ -28,7 +28,3 @@ func prefBool(p *config.AssetPreferences, get func(*config.Settings) bool, set f
 func prefInt(p *config.AssetPreferences, get func(*config.Settings) int, set func(int)) prefBinding[int] {
 	return bindPref(p, get, set)
 }
-
-func prefString(p *config.AssetPreferences, get func(*config.Settings) string, set func(string)) prefBinding[string] {
-	return bindPref(p, get, set)
-}
