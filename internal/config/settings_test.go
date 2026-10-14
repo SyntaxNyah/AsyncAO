@@ -90,3 +90,26 @@ func mutateValue(v reflect.Value) {
 		}
 	}
 }
+
+// TestLoadUpdateSwap pins the update path: Update clones, applies, and swaps the
+// snapshot, and marks dirty only on a real change.
+func TestLoadUpdateSwap(t *testing.T) {
+	p := defaultPrefs("")
+	if p.Load() == nil {
+		t.Fatal("Load() returned nil snapshot")
+	}
+	before := p.Load().SmoothScaling
+	p.Update(func(s *Settings) { s.SmoothScaling = !before })
+	if p.Load().SmoothScaling != !before {
+		t.Error("Update did not swap the snapshot")
+	}
+	if !p.pending.Load() {
+		t.Error("a real change did not mark dirty")
+	}
+
+	p.pending.Store(false)
+	p.Update(func(s *Settings) {}) // no change
+	if p.pending.Load() {
+		t.Error("a no-op Update marked dirty")
+	}
+}
