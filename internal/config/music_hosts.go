@@ -221,8 +221,8 @@ func (p *AssetPreferences) AddMusicHost(input string) bool {
 		}
 	}
 	p.MusicHosts = append(p.MusicHosts, lbl)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -233,8 +233,8 @@ func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 	for i, h := range p.MusicHosts {
 		if h == label {
 			p.MusicHosts = append(p.MusicHosts[:i], p.MusicHosts[i+1:]...)
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return true
 		}
 	}

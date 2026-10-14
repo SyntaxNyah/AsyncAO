@@ -92,32 +92,27 @@ func mutateValue(v reflect.Value) {
 	}
 }
 
-// TestLoadUpdateSwap pins the update path: Update clones, applies, and swaps the
-// snapshot, and marks dirty only on a real change.
-func TestLoadUpdateSwap(t *testing.T) {
+// TestSnapshotMirror pins the republish: a setter (markDirty) republishes the snapshot
+// from the inline fields, so Load() reflects the write; a no-op setter does not.
+func TestSnapshotMirror(t *testing.T) {
 	p := defaultPrefs("")
 	if p.Load() == nil {
 		t.Fatal("Load() returned nil snapshot")
 	}
 	before := p.Load().SmoothScaling
-	p.Update(func(s *Settings) { s.SmoothScaling = !before })
+	p.SetSmoothScaling(!before)
 	if p.Load().SmoothScaling != !before {
-		t.Error("Update did not swap the snapshot")
+		t.Error("snapshot did not reflect the setter (republish)")
 	}
-	if !p.pending.Load() {
-		t.Error("a real change did not mark dirty")
-	}
-
-	p.pending.Store(false)
-	p.Update(func(s *Settings) {}) // no change
-	if p.pending.Load() {
-		t.Error("a no-op Update marked dirty")
+	p.SetSmoothScaling(!before) // same value: early-return, no republish
+	if p.Load().SmoothScaling != !before {
+		t.Error("snapshot changed unexpectedly after a no-op setter")
 	}
 }
 
-// TestSnapshotRaceHammer runs one writer swapping the snapshot and eight readers
-// reading every field, under -race, to prove the atomic swap plus immutable snapshot
-// carries no data race.
+// TestSnapshotRaceHammer runs one writer republishing the snapshot through a real setter
+// and eight readers reading every field, under -race, to prove the atomic swap plus
+// immutable snapshot carries no data race.
 func TestSnapshotRaceHammer(t *testing.T) {
 	p := defaultPrefs("")
 	var wg sync.WaitGroup
@@ -137,7 +132,7 @@ func TestSnapshotRaceHammer(t *testing.T) {
 		}()
 	}
 	for i := 0; i < 200; i++ {
-		p.Update(func(s *Settings) { fillValue(reflect.ValueOf(s).Elem()) })
+		p.SetSmoothScaling(i%2 == 0)
 	}
 	close(stop)
 	wg.Wait()
