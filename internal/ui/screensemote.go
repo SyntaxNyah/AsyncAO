@@ -1277,7 +1277,7 @@ func (a *App) sendIC() {
 	// and to surface emotes they'd never pick. Behaviorally identical to picking
 	// that emote by hand (same Anim/Preanim/SFX/Mod ride along below). Placed
 	// after the command/blankpost/rate-limit guards so a dropped send won't roll.
-	if a.d.Prefs.RandomEmoteOn() {
+	if a.d.Prefs.Load().RandomEmote {
 		a.randomEmoteForSend()
 	}
 	emote := courtroom.Emote{Anim: "normal", Preanim: "-", DeskMod: protocol.DeskShow}
@@ -1295,7 +1295,7 @@ func (a *App) sendIC() {
 	// no animation runs. All three fields move together — see sfxIdlePromotion.
 	emoteMod := protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features)
 	preEmote, sfxDelay := emote.Preanim, emote.SFXDelay
-	if m, promoted := sfxIdlePromotion(emoteMod, a.sfxChoiceIdx, a.d.Prefs.SFXOnIdleOn(), a.sess.Features.Has(protocol.FeaturePrezoom)); promoted {
+	if m, promoted := sfxIdlePromotion(emoteMod, a.sfxChoiceIdx, a.d.Prefs.Load().SFXOnIdle, a.sess.Features.Has(protocol.FeaturePrezoom)); promoted {
 		emoteMod, preEmote, sfxDelay = m, "", 0
 	}
 	// Per-emote blip override (2.9.1 custom_blips), else the character's.
@@ -1324,7 +1324,7 @@ func (a *App) sendIC() {
 	if a.icCustomOn {
 		customRGB = a.icCustomRGB
 	}
-	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, customRGB, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
+	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, customRGB, a.d.Prefs.Load().RainbowMessages, a.d.Prefs.Load().RandomMessageColor, rand.IntN(render.TextColorCount))
 	// Transmitted sprite style (#103): append the invisible zero-width marker at
 	// the END of the text — other AsyncAO clients decode + render it on this
 	// character; AO2/webAO see nothing. End placement keeps the visible text intact
@@ -1502,10 +1502,10 @@ func (a *App) sendIC() {
 // transmits silently — see outgoingSFXName) is not thrown away before the user
 // gets to tick Pre and send it for real.
 func (a *App) clearSFXAfterSend() {
-	if a.d.Prefs.StickySoundsOn() {
+	if a.d.Prefs.Load().StickySounds {
 		return
 	}
-	if !a.d.Prefs.SFXOnIdleOn() && !a.icPreanim {
+	if !a.d.Prefs.Load().SFXOnIdle && !a.icPreanim {
 		return
 	}
 	a.sfxChoiceIdx = 0 // row 0 is the "auto" / Default row (sfxAutoLabel)
@@ -1515,7 +1515,7 @@ func (a *App) clearSFXAfterSend() {
 // checkbox unticks after every send. There is no second condition upstream, and
 // there is none here.
 func (a *App) clearPreAfterSend() {
-	if a.d.Prefs.StickyPreanimsOn() {
+	if a.d.Prefs.Load().StickyPreanims {
 		return
 	}
 	a.icPreanim = false
@@ -1962,9 +1962,9 @@ func (a *App) applyICColorChoice(next int) {
 // thing. Reads only fields/prefs the IC row already reads each frame (0 alloc).
 func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
 	switch {
-	case a.d.Prefs.RainbowMessagesOn():
+	case a.d.Prefs.Load().RainbowMessages:
 		return icColorRainbowIdx, chatRainbow[0]
-	case a.d.Prefs.RandomMessageColorOn():
+	case a.d.Prefs.Load().RandomMessageColor:
 		return icColorRandomIdx, ColTextDim
 	case a.icCustomOn:
 		return icColorCustomIdx, sdl.Color{R: uint8(a.icCustomRGB >> 16), G: uint8(a.icCustomRGB >> 8), B: uint8(a.icCustomRGB), A: 255}

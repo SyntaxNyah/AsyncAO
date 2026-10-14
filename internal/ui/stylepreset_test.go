@@ -50,7 +50,7 @@ func TestStylePresetSaveApply(t *testing.T) {
 	if a.emoteIdx != 1 {
 		t.Errorf("emote-by-name not applied: emoteIdx=%d, want 1 (angry)", a.emoteIdx)
 	}
-	if s := a.d.Prefs.SpriteStyle(); !s.Tint || s.R != 200 || !s.Glow {
+	if s := a.d.Prefs.Load().MySpriteStyle; !s.Tint || s.R != 200 || !s.Glow {
 		t.Errorf("style not applied: %+v", s)
 	}
 }

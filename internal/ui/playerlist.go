@@ -257,7 +257,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// drawPlayerRow consults followShow/pairStatusShow for every row, and the switches
 	// live in a menu that is usually closed, so the per-row answer has to come from
 	// the pref itself — otherwise a theme would silently turn the features off.
-	a.followShow, a.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.ShowPairStatusOn()
+	a.followShow, a.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.Load().ShowPairStatus
 	plan := planPlayerToolbar(r, labels, multiArea, c.TextWidth)
 	for i := 0; i < plan.n; i++ {
 		it := &plan.items[i]

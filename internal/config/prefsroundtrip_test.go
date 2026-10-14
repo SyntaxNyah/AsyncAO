@@ -89,20 +89,20 @@ func TestAssetCharCasingRoundTrips(t *testing.T) {
 func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if got := p.Subtheme(); got != "" {
+	if got := p.Load().SubthemeName; got != "" {
 		t.Fatalf("default subtheme = %q, want empty (AO2's own default)", got)
 	}
 	p.SetSubtheme("night")
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).Subtheme(); got != "night" {
+	if got := loadPrefs(t, path).Load().SubthemeName; got != "night" {
 		t.Errorf("subtheme after reload = %q, want %q — it saved but did not load back", got, "night")
 	}
 
 	// The setter refuses anything that is not one folder name...
 	p.SetSubtheme("../../secret")
-	if got := p.Subtheme(); got != "night" {
+	if got := p.Load().SubthemeName; got != "night" {
 		t.Errorf("a path-escaping subtheme was accepted (now %q)", got)
 	}
 	// ...and so does the loader, for a file edited by hand outside the client.
@@ -110,7 +110,7 @@ func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 	if err := os.WriteFile(hand, []byte(`{"subtheme":"../../secret"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, hand).Subtheme(); got != "" {
+	if got := loadPrefs(t, hand).Load().SubthemeName; got != "" {
 		t.Errorf("hand-edited subtheme loaded as %q, want it refused", got)
 	}
 }
@@ -122,11 +122,11 @@ func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 func TestProxyPrefsRoundTrip(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if p.ProxyMode() != ProxyModeSystem {
-		t.Fatalf("default proxy mode = %d, want ProxyModeSystem — ignoring the machine's setting is the bug", p.ProxyMode())
+	if p.Load().ProxyModeVal != ProxyModeSystem {
+		t.Fatalf("default proxy mode = %d, want ProxyModeSystem — ignoring the machine's setting is the bug", p.Load().ProxyModeVal)
 	}
-	if p.ProxyURLValue() != "" {
-		t.Fatalf("default proxy URL = %q, want empty", p.ProxyURLValue())
+	if p.Load().ProxyURL != "" {
+		t.Fatalf("default proxy URL = %q, want empty", p.Load().ProxyURL)
 	}
 	p.SetProxyMode(ProxyModeManual)
 	p.SetProxyURL("  socks5://box.example:1080  ") // trimmed on the way in
@@ -134,10 +134,10 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := loadPrefs(t, path)
-	if back.ProxyMode() != ProxyModeManual {
-		t.Errorf("mode after reload = %d, want ProxyModeManual", back.ProxyMode())
+	if back.Load().ProxyModeVal != ProxyModeManual {
+		t.Errorf("mode after reload = %d, want ProxyModeManual", back.Load().ProxyModeVal)
 	}
-	if got := back.ProxyURLValue(); got != "socks5://box.example:1080" {
+	if got := back.Load().ProxyURL; got != "socks5://box.example:1080" {
 		t.Errorf("url after reload = %q, want it trimmed and preserved", got)
 	}
 
@@ -148,7 +148,7 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeDirect {
+	if got := loadPrefs(t, path).Load().ProxyModeVal; got != ProxyModeDirect {
 		t.Errorf("mode after reload = %d, want ProxyModeDirect — the escape hatch must survive a restart", got)
 	}
 }
@@ -313,7 +313,7 @@ func TestProxyModeClampsGarbage(t *testing.T) {
 	p := loadPrefs(t, path)
 	for _, bad := range []int{-1, ProxyModeCount, ProxyModeCount + 50} {
 		p.SetProxyMode(bad)
-		if got := p.ProxyMode(); got != ProxyModeSystem {
+		if got := p.Load().ProxyModeVal; got != ProxyModeSystem {
 			t.Errorf("SetProxyMode(%d) landed on %d, want ProxyModeSystem", bad, got)
 		}
 	}
@@ -333,7 +333,7 @@ func TestProxyModeClampsGarbage(t *testing.T) {
 	if err := os.WriteFile(path, []byte(mangled), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeSystem {
+	if got := loadPrefs(t, path).Load().ProxyModeVal; got != ProxyModeSystem {
 		t.Errorf("a hand-edited mode of 99 loaded as %d, want the System fallback", got)
 	}
 }
@@ -365,7 +365,7 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 func TestShoutBypassQueueRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if !p.ShoutBypassQueueOn() {
+	if !p.Load().ShoutBypassQueue {
 		t.Fatal("default shout-bypass must be ON (AO2 parity)")
 	}
 	// An explicit OFF must survive a restart despite the ON default — the *bool
@@ -374,7 +374,7 @@ func TestShoutBypassQueueRoundTrips(t *testing.T) {
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ShoutBypassQueueOn(); got {
+	if got := loadPrefs(t, path).Load().ShoutBypassQueue; got {
 		t.Error("shout-bypass after reload = true — an explicit OFF did not load back")
 	}
 }

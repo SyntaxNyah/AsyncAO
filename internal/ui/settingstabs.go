@@ -31,7 +31,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	y += 18
 	c.Label(pad, y, "Record: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyRecordScene))+"   ·   Replay last: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyReplayLast))+"   (rebind in Controls). Files save under recordings\\.", ColTextDim)
 	y += 26
-	srb := a.d.Prefs.ShowRecordButtonOn()
+	srb := a.d.Prefs.Load().ShowRecordButton
 	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
 		a.d.Prefs.SetShowRecordButton(next)
 	}
@@ -40,7 +40,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	// recorded scene's already-warm assets into a self-contained bundle beside the
 	// flat .aorec, so the recording survives its server's CDN. Additive — the flat
 	// .aorec still saves either way.
-	rka := a.d.Prefs.RecordingsKeepAssetsOn()
+	rka := a.d.Prefs.Load().RecordingsKeepAssets
 	if next := c.Checkbox(pad, y, "Recordings keep their assets (ON): on stop, also save a self-contained bundle so the replay survives its server", rka); next != rka {
 		a.d.Prefs.SetRecordingsKeepAssets(next)
 	}
@@ -144,7 +144,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 		maxReplayPct  = 200
 		replayPctStep = 5
 	)
-	rspd := a.d.Prefs.ReplaySpeed()
+	rspd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if next := a.sliderRow(y, "  Playback speed %", rspd, replayPctStep, minReplayPct, maxReplayPct); next != rspd {
 		a.d.Prefs.SetReplaySpeed(next)
 	}
@@ -498,8 +498,8 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		a.d.Prefs.SetDisableEffects(next)
 		noFX = next
 		if a.room != nil { // apply to the live room immediately, like the rows below do
-			a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
-			a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX
+			a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
+			a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects && !noFX
 			a.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
 		}
 	}
@@ -511,7 +511,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// Screen effects (AO2 parity, ON by default): the \s screenshake and \f flash
 	// codes you can type into a message, plus the field-based shake / realization.
 	// Off keeps your screen still; "Reduce motion" (accessibility) also suppresses.
-	seff := a.d.Prefs.ScreenEffectsOn()
+	seff := a.d.Prefs.Load().ScreenEffects
 	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
 		a.d.Prefs.SetScreenEffects(next)
 		if a.room != nil {
@@ -522,13 +522,13 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// Sprite colour FX (all OFF by default): a render-side wash over the
 	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
 	// else sees it, and zero render cost when everything's off.
-	rbs := a.d.Prefs.RainbowSpritesOn()
+	rbs := a.d.Prefs.Load().RainbowSprites
 	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
 		a.d.Prefs.SetRainbowSprites(next)
 	}
 	y += 26
 	if rbs {
-		sp := a.d.Prefs.RainbowSpeed()
+		sp := a.d.Prefs.Load().RainbowSpriteSpeed
 		c.Label(pad+16, y+4, "Speed:", ColTextDim)
 		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
 			a.d.Prefs.SetRainbowSpriteSpeed(next)
@@ -536,7 +536,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
 		y += 26
-		vv := a.d.Prefs.RainbowVividness()
+		vv := a.d.Prefs.Load().RainbowSpriteVividness
 		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
 		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
 			a.d.Prefs.SetRainbowSpriteVividness(next)
@@ -544,18 +544,18 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
 		y += 26
-		dsy := a.d.Prefs.RainbowPairDesyncOn()
+		dsy := a.d.Prefs.Load().RainbowPairDesync
 		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
 			a.d.Prefs.SetRainbowPairDesync(next)
 		}
 		y += 26
-		pch := a.d.Prefs.RainbowPerCharOn()
+		pch := a.d.Prefs.Load().RainbowPerChar
 		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
 			a.d.Prefs.SetRainbowPerChar(next)
 		}
 		y += 26
 	}
-	sst := a.d.Prefs.SpriteSolidTintOn()
+	sst := a.d.Prefs.Load().SpriteSolidTint
 	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
 		a.d.Prefs.SetSpriteSolidTint(next)
 	}
@@ -578,24 +578,24 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		y += 28
 	}
 	if rbs || sst { // glow applies to whichever wash is on
-		glw := a.d.Prefs.RainbowSpriteGlowOn()
+		glw := a.d.Prefs.Load().RainbowSpriteGlow
 		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
 			a.d.Prefs.SetRainbowSpriteGlow(next)
 		}
 		y += 26
 	}
 	// Motion FX (independent of the colour wash, OFF by default).
-	wob := a.d.Prefs.SpriteWobbleOn()
+	wob := a.d.Prefs.Load().SpriteWobble
 	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
 		a.d.Prefs.SetSpriteWobble(next)
 	}
 	y += 26
-	spn := a.d.Prefs.SpriteSpinOn()
+	spn := a.d.Prefs.Load().SpriteSpin
 	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
 		a.d.Prefs.SetSpriteSpin(next)
 	}
 	y += 26
-	punch := a.d.Prefs.ShoutPunchOn()
+	punch := a.d.Prefs.Load().ShoutPunch
 	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
 		a.d.Prefs.SetShoutPunch(next)
 	}
@@ -651,7 +651,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	y += 26
 	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
 	// shows while it's on (like the rainbow knobs above).
-	spot := a.d.Prefs.SpotlightOn()
+	spot := a.d.Prefs.Load().Spotlight
 	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
 		a.d.Prefs.SetSpotlight(next)
 		spot = next
@@ -704,7 +704,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		y += 26
 	}
 	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
-	refl := a.d.Prefs.ReflectionOn()
+	refl := a.d.Prefs.Load().Reflection
 	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
 		a.d.Prefs.SetReflection(next)
 		refl = next
@@ -893,7 +893,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// the still-loading hold: this fires ONLY once there is nothing left to
 	// fetch, so it never flashes over a sprite that's merely streaming.
 	y = a.settingsSection(y, w, "Missing sprites (missingno)")
-	mno := a.d.Prefs.ShowMissingPlaceholderOn()
+	mno := a.d.Prefs.Load().ShowMissingPlaceholder
 	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
 		a.d.Prefs.SetShowMissingPlaceholder(next)
 	}
@@ -1142,8 +1142,8 @@ func (a *App) applyPrefsToState() {
 	if a.room != nil {
 		a.applyTimingToRoom()
 		a.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
-		a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
-		a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn()
+		a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn
+		a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects
 	}
 }
 

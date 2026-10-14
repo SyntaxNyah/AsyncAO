@@ -53,7 +53,7 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 
 // mySpriteStyle is the user's current transmitted style, for the send path.
 func (a *App) mySpriteStyle() courtroom.SpriteStyle {
-	return styleFromPref(a.d.Prefs.SpriteStyle())
+	return styleFromPref(a.d.Prefs.Load().MySpriteStyle)
 }
 
 // openSpriteStyle toggles the floating Sprite Style box (the Extras entry).

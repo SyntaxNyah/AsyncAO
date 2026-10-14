@@ -67,10 +67,10 @@ type oocSend struct {
 // default OOC name (the Settings field), else your saved showname —
 // per-tab edits in the courtroom never feed back into it.
 func (a *App) defaultOOCName() string {
-	if s := a.d.Prefs.SavedOOCName(); s != "" {
+	if s := a.d.Prefs.Load().OOCName; s != "" {
 		return s
 	}
-	return a.d.Prefs.SavedShowname()
+	return a.d.Prefs.Load().Showname
 }
 
 // oocNameOrDefault is the OOC identity every command/macro send uses:
@@ -255,7 +255,7 @@ func (a *App) autoLoginOnReady() {
 	// username confirms WHO you signed in as ("am I logged in rn?"), but
 	// streamer mode masks it like every other name.
 	line := "Auto-logging in"
-	if !a.d.Prefs.StreamerMode() {
+	if !a.d.Prefs.Load().StreamerModeOn {
 		line += " as " + info.LoginUser
 	}
 	if a.serverName != "" {
@@ -326,7 +326,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.loginFlowPreview(), ColAccent)
 	y += 22
 	userField := c.TextField
-	if a.d.Prefs.StreamerMode() {
+	if a.d.Prefs.Load().StreamerModeOn {
 		userField = c.PasswordField // names mask on stream too
 	}
 	a.loginUser, _ = userField("loginuser", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginUser, "username")
@@ -484,7 +484,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 	c.Label(pad+12, y+4, "Username:", ColText)
 	// Streamer mode treats the username as a name too — masked on stream.
 	userField := c.TextField
-	if a.d.Prefs.StreamerMode() {
+	if a.d.Prefs.Load().StreamerModeOn {
 		userField = c.PasswordField
 	}
 	settings.loginUser, _ = userField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, settings.loginUser, "username")

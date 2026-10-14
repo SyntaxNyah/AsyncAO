@@ -457,7 +457,7 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule: without this the row draws under the sidebar
 	cat := a.themeCatalogSnapshot()
-	sub := a.d.Prefs.Subtheme()
+	sub := a.d.Prefs.Load().SubthemeName
 	rows := &settings.themeRows
 	if rows.stale(cat, settings.themeName, sub) {
 		rows.rebuild(cat, settings.themeName, sub)

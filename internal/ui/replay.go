@@ -365,7 +365,7 @@ func (a *App) stopRecording() <-chan struct{} {
 	// and never block or slow the stop). Skips silently on an offline recording (no
 	// origin → nothing to package) or when a content job is already running. The
 	// single "Recording packaged…" toast lands when the build finishes (tickContentJob).
-	if a.d.Prefs.RecordingsKeepAssetsOn() {
+	if a.d.Prefs.Load().RecordingsKeepAssets {
 		a.startAutoBundle(rec, stem)
 	}
 	return done
@@ -601,7 +601,7 @@ func (a *App) toggleReplay() {
 // settle (Typewriter precomputes per-rune delays at Start; TextStay is read at
 // linger), which is exactly when a mid-replay speed change should bite.
 func (a *App) replayTiming() (crawl, stay time.Duration) {
-	spd := a.d.Prefs.ReplaySpeed()
+	spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if spd < 1 {
 		spd = 1 // defensive: the pref is clamped to ≥25, but never divide by zero
 	}
@@ -835,7 +835,7 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 		return
 	}
 	a.drawInstantReplayDot(vp) // armed-buffer indicator (independent of the Record button)
-	if !a.d.Prefs.ShowRecordButtonOn() {
+	if !a.d.Prefs.Load().ShowRecordButton {
 		return
 	}
 	label := "● Record"

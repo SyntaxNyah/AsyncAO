@@ -8,7 +8,7 @@ func BenchmarkSmoothScalingBefore(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.SmoothScalingEnabled()
+		_ = p.Load().SmoothScaling
 	}
 }
 
@@ -40,7 +40,7 @@ func BenchmarkReduceMotionBefore(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.ReduceMotion()
+		_ = p.Load().ReduceMotionOn
 	}
 }
 

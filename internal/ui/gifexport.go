@@ -378,7 +378,7 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	// Playback speed is shared with the replay player (it drives the export's
 	// pacing too) — surfaced here so the whole "look" is set in one place.
 	if withSpeed {
-		spd := a.d.Prefs.ReplaySpeed()
+		spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 		if next := a.sliderRow(y, "  Playback speed %", spd, 5, 25, 200); next != spd {
 			a.d.Prefs.SetReplaySpeed(next)
 		}

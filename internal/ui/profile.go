@@ -21,7 +21,7 @@ func (a *App) drawProfileSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase into the settings content card
 	_ = w          // laid out by formX/formW; w param kept for the call signature
-	pr := a.d.Prefs.Profile()
+	pr := a.d.Prefs.Load().MyProfile
 	if next := c.Checkbox(pad, y, "Enable my character profile — a small card other AsyncAO players can see", pr.Enabled); next != pr.Enabled {
 		pr.Enabled = next
 		a.d.Prefs.SetProfile(pr)
@@ -74,7 +74,7 @@ func (a *App) drawProfileSettings(y, w int32) int32 {
 // it stays allocation-free per row per frame.
 func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 	if isMe {
-		if pr := a.d.Prefs.Profile(); pr.Enabled && pr.ShowOnList {
+		if pr := a.d.Prefs.Load().MyProfile; pr.Enabled && pr.ShowOnList {
 			return pr, true
 		}
 		return config.ProfilePref{}, false
@@ -92,7 +92,7 @@ func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 // local card uses), so disabling either stops transmitting (and sends a clear). Only
 // pronouns + tagline travel — the receiver's card title uses our live showname.
 func (a *App) myWireProfile() courtroom.WireProfile {
-	pr := a.d.Prefs.Profile()
+	pr := a.d.Prefs.Load().MyProfile
 	if !pr.Enabled || !pr.ShowOnList {
 		return courtroom.WireProfile{}
 	}

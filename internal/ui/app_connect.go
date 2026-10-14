@@ -221,7 +221,7 @@ func (a *App) collectOpenTabs() []config.OpenTab {
 // once at shutdown (before the final SaveNow). No-op unless restore-on-launch
 // is enabled, so the feature is truly zero-cost when off.
 func (a *App) RememberOpenTabs() {
-	if !a.d.Prefs.RestoreTabsOn() {
+	if !a.d.Prefs.Load().RestoreTabs {
 		return
 	}
 	a.d.Prefs.SetOpenTabs(a.collectOpenTabs())
@@ -561,7 +561,7 @@ func (a *App) effectiveShowname() string {
 	if s := strings.TrimSpace(a.shownameOverride); s != "" {
 		return s
 	}
-	return a.d.Prefs.SavedShowname()
+	return a.d.Prefs.Load().Showname
 }
 
 // ensureNameOpts (re)builds the cached name-picker dropdown options — a leading
@@ -1065,7 +1065,7 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 	line := name + " " + action
 	if song != "" {
 		disp := song
-		if a.d.Prefs.ShowSongURLOn() && ev.Text != "" {
+		if a.d.Prefs.Load().ShowSongURL && ev.Text != "" {
 			disp = ev.Text // opt-in: the full song URL / raw track instead of the name
 		}
 		line += ": " + disp

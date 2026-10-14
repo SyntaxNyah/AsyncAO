@@ -1031,7 +1031,7 @@ func TestOOCNamePerTab(t *testing.T) {
 	if a.oocName != "DefaultName" {
 		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.oocName)
 	}
-	if got := a.d.Prefs.SavedOOCName(); got != "DefaultName" {
+	if got := a.d.Prefs.Load().OOCName; got != "DefaultName" {
 		t.Errorf("typing in the courtroom field must not rewrite the saved default, got %q", got)
 	}
 	if got := a.tabs[0].state.oocName; got != "TabOnlyName" {

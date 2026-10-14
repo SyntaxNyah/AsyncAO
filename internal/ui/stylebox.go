@@ -317,7 +317,7 @@ const (
 // from it (maxScroll = fullH - r.H) so the drawn height and the scroll range come
 // from the exact same section sum and can never disagree (#C).
 func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
-	p := a.d.Prefs.SpriteStyle()
+	p := a.d.Prefs.Load().MySpriteStyle
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
 	bh += 20                         // preview header row
@@ -389,7 +389,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 // dragging). Mirrors drawFavEmoteBox's frame.
 func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c := a.ctx
-	p := a.d.Prefs.SpriteStyle()
+	p := a.d.Prefs.Load().MySpriteStyle
 	r, fullH := a.styleBoxRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)

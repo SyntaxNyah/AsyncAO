@@ -34,7 +34,7 @@ func proxyModeLabel(mode int) string {
 // applyProxyPrefs re-resolves the policy from the saved preferences. Called on
 // every change and by the re-check button — never per request.
 func (a *App) applyProxyPrefs() {
-	p := netproxy.Configure(netproxy.Mode(a.d.Prefs.ProxyMode()), a.d.Prefs.ProxyURLValue())
+	p := netproxy.Configure(netproxy.Mode(a.d.Prefs.Load().ProxyModeVal), a.d.Prefs.Load().ProxyURL)
 	a.pushDebug("proxy: " + p.Describe())
 }
 
@@ -43,7 +43,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	pad := a.formX
 
 	y = a.settingsSection(y, w, "Proxy")
-	mode := a.d.Prefs.ProxyMode()
+	mode := a.d.Prefs.Load().ProxyModeVal
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, proxyModeLabel(mode)) {
 		a.d.Prefs.SetProxyMode((mode + 1) % config.ProxyModeCount)
 		a.applyProxyPrefs()
@@ -61,7 +61,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 
 	if mode == config.ProxyModeManual {
 		c.Label(pad, y+4, "Proxy address:", ColText)
-		cur := a.d.Prefs.ProxyURLValue()
+		cur := a.d.Prefs.Load().ProxyURL
 		if next, _ := c.TextField("proxyurl", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, cur,
 			"http://host:8080  ·  socks5://host:1080"); next != cur {
 			a.d.Prefs.SetProxyURL(next)

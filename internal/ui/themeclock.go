@@ -193,7 +193,7 @@ func clampClockSpeed(pct int16) int16 {
 // the two places that latch it (App.Frame and beginThemeFXPass). Nil-safe on
 // prefs so a hand-built App in a test behaves like the real one: no preferences
 // means nothing was asked for, which is "motion allowed".
-func (a *App) reduceMotionNow() bool { return a.d.Prefs != nil && a.d.Prefs.ReduceMotion() }
+func (a *App) reduceMotionNow() bool { return a.d.Prefs != nil && a.d.Prefs.Load().ReduceMotionOn }
 
 // elementElapsed is the element's own animation position: the shared anchor, scaled
 // by its clock group's speed, offset by its own free phase.

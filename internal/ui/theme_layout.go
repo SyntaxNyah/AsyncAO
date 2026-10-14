@@ -1241,7 +1241,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if nameR, ok := lay.rect("ao2_ic_chat_name"); ok {
 		// Session override box (matches the classic layout): blank falls
 		// back to — and shows — the persisted Settings showname.
-		namePlaceholder := a.d.Prefs.SavedShowname()
+		namePlaceholder := a.d.Prefs.Load().Showname
 		if namePlaceholder == "" {
 			namePlaceholder = "Showname"
 		}
@@ -1694,7 +1694,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 			a.drawChatSelHighlight(msgX, msgDrawY, wrapW, sc) // scrolled with the text it marks
 		}
 		if a.msAnim != nil { // #M5 animated message
-			reduce := a.d.Prefs.ReduceMotion()
+			reduce := a.d.Prefs.Load().ReduceMotionOn
 			if a.msAnim.Animates(reduce) {
 				a.NoteAnimating() // clock-driven text FX must not freeze at idle=0 — same census as the classic chatbox (screens.go)
 			}
@@ -2089,7 +2089,7 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	// remedy — no scroll, no ellipsis — and LabelClippedFontWeight hard-cuts it
 	// mid-glyph at avail.
 	w, measured := c.fontTextWidthWeight(font, label, bold)
-	if measured && marqueeScrolls(w, avail) && !a.d.Prefs.ReduceMotion() {
+	if measured && marqueeScrolls(w, avail) && !a.d.Prefs.Load().ReduceMotionOn {
 		a.drawMusicMarquee(font, dst, inset, ty, label, col, bold)
 	} else {
 		shown := label

@@ -906,7 +906,7 @@ func (a *App) outgoingEffectsField() string {
 // true, the same value options.cpp ships). Turning it OFF is what arms the
 // per-effect `sticky` half of courtroom.cpp:2348-2354 below.
 func (a *App) clearEffectsAfterSend() {
-	a.overlayPostSendReset(a.d.Prefs.StickyEffectsOn())
+	a.overlayPostSendReset(a.d.Prefs.Load().StickyEffects)
 }
 
 // overlayPostSendReset is the courtroom.cpp:2348-2354 rule with the global as a

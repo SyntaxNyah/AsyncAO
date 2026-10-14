@@ -51,7 +51,7 @@ func (a *App) saveStylePreset(name string) {
 	}
 	a.d.Prefs.AddStylePreset(config.StylePreset{
 		Name:  name,
-		Style: a.d.Prefs.SpriteStyle(),
+		Style: a.d.Prefs.Load().MySpriteStyle,
 		Color: a.icColor,
 		Emote: emote,
 	})

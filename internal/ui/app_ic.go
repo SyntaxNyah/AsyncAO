@@ -32,7 +32,7 @@ func (a *App) applyThemeAsync() uint64 {
 	// render thread, with every other preference this apply needs — the goroutine
 	// below must not take the preferences lock (the -race interleaving against the
 	// debounced saver that PanelFonts is snapshotted for).
-	sub := a.d.Prefs.Subtheme()
+	sub := a.d.Prefs.Load().SubthemeName
 	// Snapshot the per-panel overrides HERE, on the render thread, not inside the
 	// goroutine: PanelFonts takes the preferences' read lock, and reading them
 	// off-thread while the debounced saver marshals under its own lock is exactly
@@ -1039,23 +1039,23 @@ func (a *App) spriteFX() render.SpriteFX {
 		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())}
 	}
 	fx := render.SpriteFX{
-		Rainbow:         a.d.Prefs.RainbowSpritesOn(),
-		Solid:           a.d.Prefs.SpriteSolidTintOn(),
-		Glow:            a.d.Prefs.RainbowSpriteGlowOn(),
-		PairDesync:      a.d.Prefs.RainbowPairDesyncOn(),
-		PerCharHue:      a.d.Prefs.RainbowPerCharOn(),
-		Wobble:          a.d.Prefs.SpriteWobbleOn(),
-		Spin:            a.d.Prefs.SpriteSpinOn(),
-		ShoutPunch:      a.d.Prefs.ShoutPunchOn(),
+		Rainbow:         a.d.Prefs.Load().RainbowSprites,
+		Solid:           a.d.Prefs.Load().SpriteSolidTint,
+		Glow:            a.d.Prefs.Load().RainbowSpriteGlow,
+		PairDesync:      a.d.Prefs.Load().RainbowPairDesync,
+		PerCharHue:      a.d.Prefs.Load().RainbowPerChar,
+		Wobble:          a.d.Prefs.Load().SpriteWobble,
+		Spin:            a.d.Prefs.Load().SpriteSpin,
+		ShoutPunch:      a.d.Prefs.Load().ShoutPunch,
 		Entrance:        a.d.Prefs.Load().AnimateEntrances,
 		DoF:             a.d.Prefs.Load().DepthOfField,
-		Spotlight:       a.d.Prefs.SpotlightOn(),
-		IdleBreath:      a.d.Prefs.Load().IdleBreath && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
+		Spotlight:       a.d.Prefs.Load().Spotlight,
+		IdleBreath:      a.d.Prefs.Load().IdleBreath && !a.d.Prefs.Load().ReduceMotionOn, // #122; ReduceMotion suppresses (accessibility)
 		BreathBob:       a.d.Prefs.BreathBobOn(),
 		BreathScale:     a.d.Prefs.BreathScaleOn(),
-		Reflection:      a.d.Prefs.ReflectionOn(),
-		Speed:           a.d.Prefs.RainbowSpeed(),
-		Vividness:       a.d.Prefs.RainbowVividness(),
+		Reflection:      a.d.Prefs.Load().Reflection,
+		Speed:           a.d.Prefs.Load().RainbowSpriteSpeed,
+		Vividness:       a.d.Prefs.Load().RainbowSpriteVividness,
 		SpotlightLevel:  a.d.Prefs.SpotlightLevel(),
 		BreathAmp:       a.d.Prefs.BreathAmp(),
 		BreathSpeed:     a.d.Prefs.BreathSpeed(),
@@ -1285,7 +1285,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 // tab, so you're alerted even while looking at another server). The glow is
 // drawn separately in the log.
 func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
-	if a.d.Prefs.StreamerMode() || a.dndOn {
+	if a.d.Prefs.Load().StreamerModeOn || a.dndOn {
 		return
 	}
 	if a.d.Prefs.Load().FriendNotify {
@@ -1333,7 +1333,7 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 // friend toast's rate limit so a modcall storm can't flood the desktop. Called
 // at both seams (active + background tab).
 func (a *App) signalModcall(serverName, notice string) {
-	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.StreamerMode() || a.ctx.WindowFocused() {
+	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.Load().StreamerModeOn || a.ctx.WindowFocused() {
 		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
 	}
 	if time.Since(a.lastOSToast) < osToastMinInterval {

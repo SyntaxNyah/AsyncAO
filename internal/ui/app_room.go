@@ -778,7 +778,7 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 // crossfadeDur is the speaker-swap blend the viewports get: the pref, zeroed
 // under Reduce motion (a fade is motion — the accessibility floor wins).
 func (a *App) crossfadeDur() time.Duration {
-	if a.d.Prefs.ReduceMotion() {
+	if a.d.Prefs.Load().ReduceMotionOn {
 		return 0
 	}
 	return time.Duration(a.d.Prefs.Load().CrossfadeMsVal) * time.Millisecond
@@ -1551,7 +1551,7 @@ func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
 // power-user knobs) to the decoder pool. Called from the Settings rows; new
 // decodes pick it up (already-decoded textures keep their size until eviction).
 func (a *App) applySpriteCap() {
-	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.SpriteDownscaleOffOn(), a.d.Prefs.SpriteDownscalePct()))
+	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.SpriteDownscalePct()))
 	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.AnimatedSpriteCap())
 	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.AnimatedBudgetMiB())
 	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.AnimDecodeConcurrency())
@@ -1562,7 +1562,7 @@ func (a *App) applySpriteCap() {
 // fall back to hold-previous — if a hold times out (404 / dead link) the stage keeps
 // the previous sprite instead of flashing blank, composing the two mitigations.
 func (a *App) vpSpriteLoadMode() int {
-	mode := a.d.Prefs.SpriteLoadMode()
+	mode := a.d.Prefs.Load().SpriteLoadModeVal
 	if mode == config.SpriteLoadWait || mode == config.SpriteLoadDefault {
 		return config.SpriteLoadHoldPrev
 	}
@@ -1581,14 +1581,14 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.BlipTyping() // #7: blip cadence + skip-whitespace
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
-	a.room.SpriteWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadWait               // "Hold the message": hold until its speaker sprite decodes
+	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait               // "Hold the message": hold until its speaker sprite decodes
 	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
-	a.room.SpriteWaitPair = a.d.Prefs.SpriteWaitPairOn()                                  // strictness: gate on the pair partner too
-	a.room.SpriteWaitPreanim = a.d.Prefs.SpriteWaitPreanimOn()                            // strictness: gate on the preanim too
-	a.room.SequentialWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadDefault        // "Default": wait for every asset a message presents
-	a.room.ShoutBypassQueue = a.d.Prefs.ShoutBypassQueueOn()                              // AO2 parity: shouts skip the queue (toggleable)
+	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                  // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                            // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault        // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                              // AO2 parity: shouts skip the queue (toggleable)
 	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                 // core-timing knobs: 0 = the canonical defaults
-	if ms := a.d.Prefs.ShoutDurationMs(); ms != 0 {
+	if ms := a.d.Prefs.Load().ShoutDurationMsVal; ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}
 	a.room.PreanimTimeout = courtroom.DefaultPreanimTimeout

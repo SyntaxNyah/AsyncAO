@@ -537,11 +537,11 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeySpotlight):
-		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
+		a.toggleFXPref(a.d.Prefs.Load().Spotlight, a.d.Prefs.SetSpotlight, "Speaker spotlight")
 	case a.hotkeyFor(hotkeyIdleBreath):
 		a.toggleFXPref(a.d.Prefs.Load().IdleBreath, a.d.Prefs.SetIdleBreath, "Idle breathing")
 	case a.hotkeyFor(hotkeyReflection):
-		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
+		a.toggleFXPref(a.d.Prefs.Load().Reflection, a.d.Prefs.SetReflection, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
 		a.cycleWeather()
 	case a.hotkeyFor(hotkeyCharBundle):
@@ -1160,7 +1160,7 @@ func (a *App) inLoginGrace() bool {
 // Streamer mode suppresses both — an on-stream name ping is exactly the
 // leak the toggle exists to prevent.
 func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
-	if a.d.Prefs.StreamerMode() || a.dndOn {
+	if a.d.Prefs.Load().StreamerModeOn || a.dndOn {
 		return
 	}
 	// Brief grace after a login flow: the server's login replies (and the Akashi
@@ -1322,7 +1322,7 @@ func (a *App) mentionNames() []string {
 // selected character (session-scoped, so multi-server play pings the right name)
 // and your saved showname — a parked tab can't carry the live showname override.
 func (a *App) mentionNamesFor(s *sessionState) []string {
-	return []string{sessionCharName(s), a.d.Prefs.SavedShowname()}
+	return []string{sessionCharName(s), a.d.Prefs.Load().Showname}
 }
 
 // sessionCharName is the character a session is playing (its wire identity), or
@@ -1628,7 +1628,7 @@ func (a *App) oocRowLinks(li int) []oocLinkSpan {
 // (display only). Cached against (log seq, width, font scale, mask) —
 // rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
-	streamer := a.d.Prefs.StreamerMode()
+	streamer := a.d.Prefs.Load().StreamerModeOn
 	// #39: key on the RESOLVED scale (theme "server_chatlog" size × the OOC zoom),
 	// so a theme swap that only changes the point size re-wraps instead of leaving
 	// rows measured at the old size.

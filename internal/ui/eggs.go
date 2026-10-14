@@ -209,7 +209,7 @@ func (a *App) refreshEggKind(text string) (scanned bool) {
 // value params, no closure, so a settled frame stays inside the 0-alloc gate.
 func (a *App) drawChatEgg(box sdl.Rect, text string) {
 	a.refreshEggKind(text)
-	if a.eggKind != eggNone && a.d.Prefs.ScreenEffectsOn() && !a.d.Prefs.ReduceMotion() {
+	if a.eggKind != eggNone && a.d.Prefs.Load().ScreenEffects && !a.d.Prefs.Load().ReduceMotionOn {
 		a.drawCreatorEgg(box, a.eggKind)
 		a.NoteAnimating()
 	}
@@ -386,7 +386,7 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 // accessibility pair as the ring eggs and the AO2 screen effects.
 func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
 	a.refreshEggKind(eggSceneText(sc))
-	if !eggDrawsOnStage(a.eggKind) || !a.d.Prefs.ScreenEffectsOn() || a.d.Prefs.ReduceMotion() {
+	if !eggDrawsOnStage(a.eggKind) || !a.d.Prefs.Load().ScreenEffects || a.d.Prefs.Load().ReduceMotionOn {
 		return
 	}
 	t := a.d.Viewport.AnimClock().Seconds()
