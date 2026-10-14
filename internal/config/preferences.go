@@ -2029,8 +2029,11 @@ func (p *AssetPreferences) reportSaveError(err error) {
 }
 
 // markDirty records a pending change and wakes the saver without blocking,
-// regardless of how many signals are already queued.
+// regardless of how many signals are already queued. It also republishes the
+// settings snapshot from the inline fields; callers hold the write lock so the
+// republish is never torn.
 func (p *AssetPreferences) markDirty() {
+	p.syncSnapshot()
 	p.pending.Store(true)
 	select {
 	case p.dirty <- struct{}{}:
@@ -2107,6 +2110,7 @@ func (p *AssetPreferences) resetLocked(keep map[string]bool) {
 	}
 	p.formatGen.Add(1)   // format/fallback prefs may have changed; invalidate resolver caches
 	p.wardrobeGen.Add(1) // a reset can wipe ServerWarm (and its wardrobes)
+	p.syncSnapshot()
 }
 
 // ResetSettings reverts the tunable settings to defaults but KEEPS your content
@@ -2351,8 +2355,8 @@ func (p *AssetPreferences) SetAnimationsEnabled(enabled bool) {
 		return
 	}
 	p.PreferAnimated = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Emote button images ----------------------------------------------------
@@ -2374,8 +2378,8 @@ func (p *AssetPreferences) SetEmoteButtonImages(enabled bool) {
 		return
 	}
 	p.EmoteButtonImages = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Smooth scaling -----------------------------------------------------------
@@ -2400,8 +2404,8 @@ func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
 		return
 	}
 	p.SpriteScaling = mode
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SmoothScalingEnabled reports the linear texture-filtering toggle.
@@ -2421,8 +2425,8 @@ func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
 		return
 	}
 	p.SmoothScaling = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Update check ------------------------------------------------------------
@@ -2443,8 +2447,8 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 		return
 	}
 	p.UpdateCheck = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UpdateChannelExperimentalOn reports whether the launch check follows the
@@ -2465,8 +2469,8 @@ func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
 		return
 	}
 	p.UpdateExperimental = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Missing-asset report ----------------------------------------------------
@@ -2488,8 +2492,8 @@ func (p *AssetPreferences) SetAssetWarnings(on bool) {
 		return
 	}
 	p.ShowAssetWarnings = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Sprite repositioning ---------------------------------------------------
@@ -2510,8 +2514,8 @@ func (p *AssetPreferences) SetSpriteMove(on bool) {
 		return
 	}
 	p.SpriteMoveOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Desk format policy -----------------------------------------------------
@@ -2533,8 +2537,8 @@ func (p *AssetPreferences) SetDeskFollowManifest(on bool) {
 		return
 	}
 	p.DeskFollowManifest = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Sprite hover preview ---------------------------------------------------
@@ -2554,8 +2558,8 @@ func (p *AssetPreferences) SetSpritePreviews(on bool) {
 		return
 	}
 	p.SpritePreviewOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PreviewPinnedOn reports whether the hover-preview box stays open until it is
@@ -2575,8 +2579,8 @@ func (p *AssetPreferences) SetPreviewPinned(on bool) {
 		return
 	}
 	p.PreviewPinned = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
@@ -2615,8 +2619,8 @@ func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 		return
 	}
 	p.PreviewHeightPxVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PreviewWindowRect returns the detached emote-preview window's last saved
@@ -2646,8 +2650,8 @@ func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
 	}
 	p.PreviewWinRectValid = true
 	p.PreviewWinRectX, p.PreviewWinRectY, p.PreviewWinRectW, p.PreviewWinRectH = x, y, w, h
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
@@ -2659,8 +2663,8 @@ func (p *AssetPreferences) SetPreviewHoverMs(n int) {
 		return
 	}
 	p.PreviewHoverMs = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EmoteHoverNamesEnabled reports the emote-name tooltip toggle (ON by default):
@@ -2680,8 +2684,8 @@ func (p *AssetPreferences) SetEmoteHoverNames(on bool) {
 		return
 	}
 	p.EmoteHoverNamesOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
@@ -2709,8 +2713,8 @@ func (p *AssetPreferences) SetEmoteHoverNamesMs(n int) {
 		return
 	}
 	p.EmoteHoverNamesMs = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
@@ -2747,8 +2751,8 @@ func (p *AssetPreferences) SetAutoLoginToast(on bool) {
 		return
 	}
 	p.AutoLoginToast = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CallwordToastOn reports the callword-toast toggle (ON by default): an in-app
@@ -2767,8 +2771,8 @@ func (p *AssetPreferences) SetCallwordToast(on bool) {
 		return
 	}
 	p.CallwordToast = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MessageCounterOn reports the IC character-counter toggle (ON by default).
@@ -2786,8 +2790,8 @@ func (p *AssetPreferences) SetMessageCounter(on bool) {
 		return
 	}
 	p.MessageCounter = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MentionSelfOn reports the self-mention toggle (OFF by default): treat your own
@@ -2806,8 +2810,8 @@ func (p *AssetPreferences) SetMentionSelf(on bool) {
 		return
 	}
 	p.MentionSelf = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // LoopPreanimOn reports the "loop preanimations" toggle (OFF by default). ON =
@@ -2826,8 +2830,8 @@ func (p *AssetPreferences) SetLoopPreanim(on bool) {
 		return
 	}
 	p.LoopPreanim = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DisableAltEmoteRowOn reports the "remove Alt+1..9 emote number row" toggle
@@ -2846,8 +2850,8 @@ func (p *AssetPreferences) SetDisableAltEmoteRow(on bool) {
 		return
 	}
 	p.DisableAltEmoteRow = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ICTimestampsOn reports the IC-log local-time prefix toggle (OFF by default).
@@ -2865,8 +2869,8 @@ func (p *AssetPreferences) SetICTimestamps(on bool) {
 		return
 	}
 	p.ICTimestamps = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SmoothLogScrollOn reports whether the IC log's NEW-MESSAGE follow glides (opt-in)
@@ -2885,8 +2889,8 @@ func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
 		return
 	}
 	p.SmoothLogScroll = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BlipSpeedDefaultMoved reports whether the one-shot preMoveTextCrawlMs →
@@ -2917,8 +2921,8 @@ func (p *AssetPreferences) SetAutoReconnect(on bool) {
 		return
 	}
 	p.AutoReconnect = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicHistoryOn reports the jukebox "recently played" history toggle (ON by
@@ -2937,8 +2941,8 @@ func (p *AssetPreferences) SetMusicHistory(on bool) {
 		return
 	}
 	p.MusicHistory = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicStreamingOn reports whether AsyncAO fetches and plays custom /play tracks
@@ -2957,8 +2961,8 @@ func (p *AssetPreferences) SetMusicStreaming(on bool) {
 		return
 	}
 	p.MusicStreaming = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShowMissingPlaceholderOn reports whether the AO2 placeholder (missingno) draws
@@ -2977,8 +2981,8 @@ func (p *AssetPreferences) SetShowMissingPlaceholder(on bool) {
 		return
 	}
 	p.ShowMissingPlaceholder = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ErrorSpritePath reports the user-chosen custom placeholder image path ("" =
@@ -2998,8 +3002,8 @@ func (p *AssetPreferences) SetErrorSpritePath(path string) {
 		return
 	}
 	p.ErrorSpriteFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearLearnedType drops every host's learned format for one asset type (e.g.
@@ -3056,8 +3060,8 @@ func (p *AssetPreferences) SetHighlightColor(rgb int) {
 		return
 	}
 	p.HighlightColor = rgb
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
@@ -3077,8 +3081,8 @@ func (p *AssetPreferences) SetICCustomColor(rgb int) {
 		return
 	}
 	p.ICCustomColor = rgb
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // NameColorsOn reports the per-speaker name-colour toggle (OFF by default).
@@ -3096,8 +3100,8 @@ func (p *AssetPreferences) SetNameColors(on bool) {
 		return
 	}
 	p.NameColors = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // NameColorSat / NameColorVal report the name-colour saturation and brightness
@@ -3124,8 +3128,8 @@ func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 		return
 	}
 	p.NameSat, p.NameVal = sat, val
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BgSlideshowEnabled reports the idle background-slideshow toggle (OFF default).
@@ -3143,8 +3147,8 @@ func (p *AssetPreferences) SetBgSlideshow(on bool) {
 		return
 	}
 	p.BgSlideshow = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
@@ -3167,8 +3171,8 @@ func (p *AssetPreferences) SetBgSlideshowSeconds(n int) {
 		return
 	}
 	p.BgSlideshowSecs = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
@@ -3198,8 +3202,8 @@ func (p *AssetPreferences) SetDownloadCapKBps(n int) {
 		return
 	}
 	p.DownloadKBps = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ForceCharNames reports the "show character names, not custom shownames"
@@ -3219,8 +3223,8 @@ func (p *AssetPreferences) SetForceCharNames(on bool) {
 		return
 	}
 	p.ForceCharNames = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RandomEmote reports the "auto-random emote" toggle (OFF by default): when on,
@@ -3240,8 +3244,8 @@ func (p *AssetPreferences) SetRandomEmote(on bool) {
 		return
 	}
 	p.RandomEmote = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FriendHighlightOn reports the master toggle for friend (highlighted-showname)
@@ -3260,8 +3264,8 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 		return
 	}
 	p.FriendHighlight = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FriendButtonShown reports whether the player-list row menu offers the
@@ -3289,8 +3293,8 @@ func (p *AssetPreferences) SetDragLayout(on bool) {
 		return
 	}
 	p.DragLayout = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetShowFriendButton toggles the player-list friend button.
@@ -3301,8 +3305,8 @@ func (p *AssetPreferences) SetShowFriendButton(on bool) {
 		return
 	}
 	p.ShowFriendButton = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClipSpritesToStageOn reports the viewport sprite mask (ON by default): character
@@ -3322,8 +3326,8 @@ func (p *AssetPreferences) SetClipSpritesToStage(on bool) {
 		return
 	}
 	p.ClipSpritesToStage = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RightClickHideSpriteOn reports whether right-clicking a sprite offers to hide
@@ -3342,8 +3346,8 @@ func (p *AssetPreferences) SetRightClickHideSprite(on bool) {
 		return
 	}
 	p.RightClickHideSprite = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DyslexiaFontOn reports the dyslexia-friendly font toggle (OFF by default):
@@ -3363,8 +3367,8 @@ func (p *AssetPreferences) SetDyslexiaFont(on bool) {
 		return
 	}
 	p.DyslexiaFont = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FontEverywhereOn reports whether the active font override (the dyslexia
@@ -3386,8 +3390,8 @@ func (p *AssetPreferences) SetFontEverywhere(on bool) {
 		return
 	}
 	p.FontEverywhere = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DNDPersistOn reports the "remember Do Not Disturb across restarts" option (OFF
@@ -3407,8 +3411,8 @@ func (p *AssetPreferences) SetDNDPersist(on bool) {
 		return
 	}
 	p.DNDPersist = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DNDSavedOn reports the persisted Do Not Disturb state, restored at launch only
@@ -3428,8 +3432,8 @@ func (p *AssetPreferences) SetDNDSaved(on bool) {
 		return
 	}
 	p.DNDSaved = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowMessagesOn reports the "rainbow my IC messages" toggle (OFF by default):
@@ -3449,8 +3453,8 @@ func (p *AssetPreferences) SetRainbowMessages(on bool) {
 		return
 	}
 	p.RainbowMessages = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RandomMessageColorOn reports the "random colour per IC message" toggle (OFF by
@@ -3470,8 +3474,8 @@ func (p *AssetPreferences) SetRandomMessageColor(on bool) {
 		return
 	}
 	p.RandomMessageColor = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowSpritesOn reports the "rainbow character sprites" toggle (OFF by
@@ -3492,8 +3496,8 @@ func (p *AssetPreferences) SetRainbowSprites(on bool) {
 		return
 	}
 	p.RainbowSprites = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShowRecordButtonOn reports the "show a small Record button on the courtroom"
@@ -3512,8 +3516,8 @@ func (p *AssetPreferences) SetShowRecordButton(on bool) {
 		return
 	}
 	p.ShowRecordButton = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // InstantDisconnectOn reports whether Disconnect acts immediately (true) or asks
@@ -3533,8 +3537,8 @@ func (p *AssetPreferences) SetInstantDisconnect(on bool) {
 		return
 	}
 	p.InstantDisconnect = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // HideDeskOn reports whether the courtroom desk is hidden (default OFF). When on,
@@ -3553,8 +3557,8 @@ func (p *AssetPreferences) SetHideDesk(on bool) {
 		return
 	}
 	p.HideDesk = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Instant-replay capture-window bounds: a sane floor so a clip has context, and
@@ -3604,8 +3608,8 @@ func (p *AssetPreferences) SetTimerSeconds(s int) {
 		return
 	}
 	p.TimerSeconds = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // TimerRepeatOn reports whether the local timer restarts itself on each fire
@@ -3634,8 +3638,8 @@ func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 		return
 	}
 	p.NotifyOnOOC = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicAcrossTabsOn reports whether a backgrounded tab's music stays audible
@@ -3657,8 +3661,8 @@ func (p *AssetPreferences) SetMusicAcrossTabs(on bool) {
 		return
 	}
 	p.MusicAcrossTabs = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShowSongURLOn reports whether the music log line shows the full song URL
@@ -3677,8 +3681,8 @@ func (p *AssetPreferences) SetShowSongURL(on bool) {
 		return
 	}
 	p.ShowSongURL = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetTimerRepeat stores the timer's repeat toggle.
@@ -3689,8 +3693,8 @@ func (p *AssetPreferences) SetTimerRepeat(on bool) {
 		return
 	}
 	p.TimerRepeat = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 func clampInstantReplaySeconds(s int) int {
@@ -3723,8 +3727,8 @@ func (p *AssetPreferences) SetInstantReplay(on bool) {
 		return
 	}
 	p.InstantReplay = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // InstantReplaySecondsValue returns the clamped capture-window length in seconds
@@ -3745,8 +3749,8 @@ func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
 		return
 	}
 	p.InstantReplaySeconds = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FavEmoteBoxOn reports whether the floating favourite-emotes box is shown.
@@ -3764,8 +3768,8 @@ func (p *AssetPreferences) SetFavEmoteBox(on bool) {
 		return
 	}
 	p.FavEmoteBox = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AutoConnectOnLaunchOn reports whether the client auto-connects to the last
@@ -3785,8 +3789,8 @@ func (p *AssetPreferences) SetAutoConnectOnLaunch(on bool) {
 		return
 	}
 	p.AutoConnectOnLaunch = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // LastServer returns the last server connected to (name, ws URL) — the
@@ -3806,8 +3810,8 @@ func (p *AssetPreferences) SetLastServer(name, url string) {
 		return
 	}
 	p.LastServerName, p.LastServerURL = name, url
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowSpeed reports the rainbow hue-rotation speed slider [1,100]
@@ -3836,8 +3840,8 @@ func (p *AssetPreferences) SetReplaySpeed(v int) {
 		return
 	}
 	p.ReplayPlaybackSpeed = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ExportOpts reports the sticky scene-export options (GIF/WebP size/fps/quality/loop).
@@ -3863,8 +3867,8 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 		return
 	}
 	p.Export = o
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteStyle reports the user's own transmitted sprite customization (#103).
@@ -3883,8 +3887,8 @@ func (p *AssetPreferences) SetSpriteStyle(s SpriteStylePref) {
 		return
 	}
 	p.MySpriteStyle = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- #126 style presets (saved style+colour+emote moods) -----------------------------------
@@ -3938,8 +3942,8 @@ func (p *AssetPreferences) AddStylePreset(pr StylePreset) {
 		if p.SavedStyles[i].Name == pr.Name {
 			pr.Key = p.SavedStyles[i].Key // keep an existing key binding across an overwrite
 			p.SavedStyles[i] = pr
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return
 		}
 	}
@@ -3948,8 +3952,8 @@ func (p *AssetPreferences) AddStylePreset(pr StylePreset) {
 		return
 	}
 	p.SavedStyles = append(p.SavedStyles, pr)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DeleteStylePreset removes the preset at i (bounds-checked).
@@ -3979,8 +3983,8 @@ func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
 		}
 	}
 	p.SavedStyles[i].Key = key
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // StylePresetForKey returns the preset bound to a bare key (ok=false when none).
@@ -4012,8 +4016,8 @@ func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
 		return
 	}
 	p.HideSpriteStyles = b
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // HideReactionsOn reports whether the viewer ignores others' transmitted emoji
@@ -4032,8 +4036,8 @@ func (p *AssetPreferences) SetHideReactions(b bool) {
 		return
 	}
 	p.HideReactions = b
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CharBundlePrefetchOn reports the #127 toggle (OFF by default): when on, loading a character
@@ -4091,8 +4095,8 @@ func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 		return
 	}
 	p.AssetOrigin = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // WSOriginHeader reports the power-user Origin override sent on the WebSocket
@@ -4115,8 +4119,8 @@ func (p *AssetPreferences) SetWSOriginHeader(s string) {
 		return
 	}
 	p.WSOrigin = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PanelFont is one panel's user-chosen font. Both fields are optional and
@@ -4246,8 +4250,8 @@ func (p *AssetPreferences) MarkFontWarnShown(theme string) {
 	if len(p.FontWarnThemes) > FontWarnThemesCap {
 		p.FontWarnThemes = p.FontWarnThemes[len(p.FontWarnThemes)-FontWarnThemesCap:]
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearFontWarnThemes forgets every warned theme, so the warnings come back. The
@@ -4256,10 +4260,10 @@ func (p *AssetPreferences) ClearFontWarnThemes() {
 	p.mu.Lock()
 	had := len(p.FontWarnThemes) > 0
 	p.FontWarnThemes = nil
-	p.mu.Unlock()
 	if had {
 		p.markDirty()
 	}
+	p.mu.Unlock()
 }
 
 // PanelFonts returns a COPY of the per-panel overrides. A copy because the
@@ -4303,7 +4307,7 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 		pf.SizePx = clampPercent(pf.SizePx, PanelFontMinPx, PanelFontMaxPx)
 	}
 	p.mu.Lock()
-	defer func() { p.mu.Unlock(); p.markDirty() }()
+	defer func() { p.markDirty(); p.mu.Unlock() }()
 	if pf.Family == "" && pf.SizePx == 0 {
 		delete(p.PanelFontsVal, id)
 		if len(p.PanelFontsVal) == 0 {
@@ -4329,10 +4333,10 @@ func (p *AssetPreferences) ClearPanelFonts() {
 	p.mu.Lock()
 	had := len(p.PanelFontsVal) > 0
 	p.PanelFontsVal = nil
-	p.mu.Unlock()
 	if had {
 		p.markDirty()
 	}
+	p.mu.Unlock()
 }
 
 // Proxy modes. The values are persisted, so their ORDER is load-bearing and new
@@ -4376,8 +4380,8 @@ func (p *AssetPreferences) SetProxyMode(mode int) {
 		return
 	}
 	p.ProxyModeVal = mode
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ProxyURLValue is the operator's own proxy address (mode Manual only).
@@ -4400,8 +4404,8 @@ func (p *AssetPreferences) SetProxyURL(s string) {
 		return
 	}
 	p.ProxyURL = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AssetCharCaseMax is the highest valid character-folder casing mode. It mirrors
@@ -4432,8 +4436,8 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 		return
 	}
 	p.AssetCharCase = c
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // VoiceInput reports the chosen voice mic device name ("" = system default).
@@ -4451,8 +4455,8 @@ func (p *AssetPreferences) SetVoiceInput(s string) {
 		return
 	}
 	p.VoiceInputDevice = s
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
@@ -4481,8 +4485,8 @@ func (p *AssetPreferences) SetVoiceOutVol(v int) {
 		return
 	}
 	p.VoiceOutVolume = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
@@ -4512,8 +4516,8 @@ func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
 		return
 	}
 	p.PrefetchAggro = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // VoicePTT reports the push-to-talk toggle key name ("" = unbound).
@@ -4531,8 +4535,8 @@ func (p *AssetPreferences) SetVoicePTT(k string) {
 		return
 	}
 	p.VoicePTTKey = k
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // QuitConfirmSkipOn reports whether the user ticked "don't ask again" on the quit
@@ -4551,8 +4555,8 @@ func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
 		return
 	}
 	p.QuitConfirmSkip = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // LegacyDevThemeOn reports whether the user ticked the built-in "Legacy Developer" theme (the old
@@ -4594,8 +4598,8 @@ func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 		return
 	}
 	p.MyProfile = pr
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ChatboxOpacityPct reports the IC chatbox panel opacity (0–100, default 84) for
@@ -4615,8 +4619,8 @@ func (p *AssetPreferences) SetChatboxOpacity(v int) {
 		return
 	}
 	p.ChatboxOpacity = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
@@ -4628,8 +4632,8 @@ func (p *AssetPreferences) SetRainbowSpriteSpeed(v int) {
 		return
 	}
 	p.RainbowSpriteSpeed = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowVividness reports the rainbow saturation slider [0,100] (higher =
@@ -4649,8 +4653,8 @@ func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
 		return
 	}
 	p.RainbowSpriteVividness = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowSpriteGlowOn reports the additive-blend "neon glow" toggle (OFF by
@@ -4669,8 +4673,8 @@ func (p *AssetPreferences) SetRainbowSpriteGlow(on bool) {
 		return
 	}
 	p.RainbowSpriteGlow = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowPairDesyncOn reports the "desync pair colour" toggle (OFF by default):
@@ -4690,8 +4694,8 @@ func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
 		return
 	}
 	p.RainbowPairDesync = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RainbowPerCharOn reports the "different hue per character" toggle (OFF by
@@ -4711,8 +4715,8 @@ func (p *AssetPreferences) SetRainbowPerChar(on bool) {
 		return
 	}
 	p.RainbowPerChar = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteWobbleOn reports the "wobble" toggle (OFF by default): a gentle
@@ -4731,8 +4735,8 @@ func (p *AssetPreferences) SetSpriteWobble(on bool) {
 		return
 	}
 	p.SpriteWobble = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteSpinOn reports the "spin" toggle (OFF by default): the on-stage sprites
@@ -4751,8 +4755,8 @@ func (p *AssetPreferences) SetSpriteSpin(on bool) {
 		return
 	}
 	p.SpriteSpin = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteSolidTintOn reports the "solid colour tint" toggle (OFF by default): a
@@ -4771,8 +4775,8 @@ func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
 		return
 	}
 	p.SpriteSolidTint = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShoutPunchOn reports the "shout punch" toggle (OFF by default): a quick scale-pop of the
@@ -4791,8 +4795,8 @@ func (p *AssetPreferences) SetShoutPunch(on bool) {
 		return
 	}
 	p.ShoutPunch = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ChatboxTintOn reports the "per-character chatbox tint" toggle (OFF by default): the
@@ -4811,8 +4815,8 @@ func (p *AssetPreferences) SetChatboxTint(on bool) {
 		return
 	}
 	p.ChatboxTint = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Post-processing overlay toggles (#10, all OFF by default): retro looks blended over the
@@ -4897,8 +4901,8 @@ func (p *AssetPreferences) SetSpotlightLevel(v int) {
 		return
 	}
 	p.SpotlightStrength = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Idle-breathing (#122) defaults. The two components default ON (stored inverted so the
@@ -5050,8 +5054,8 @@ func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
 		return
 	}
 	*field = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // setIntPref clamps v to [lo,hi] and stores it under the lock, marking dirty only on a real
@@ -5064,8 +5068,8 @@ func (p *AssetPreferences) setIntPref(field *int, v, lo, hi int) {
 		return
 	}
 	*field = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
@@ -5084,8 +5088,8 @@ func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
 		return
 	}
 	p.SpriteTintColor = rgb
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FollowEnabledOn reports the opt-in player-follow toggle (OFF by default): when
@@ -5113,8 +5117,8 @@ func (p *AssetPreferences) SetPlayerListSort(v int) {
 		return
 	}
 	p.PlayerListSort = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PlayerListAreaSortMode returns the remembered Players-tab area-group order.
@@ -5132,8 +5136,8 @@ func (p *AssetPreferences) SetPlayerListAreaSort(v int) {
 		return
 	}
 	p.PlayerListAreaSort = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetFollowEnabled toggles the opt-in player-follow feature.
@@ -5144,8 +5148,8 @@ func (p *AssetPreferences) SetFollowEnabled(on bool) {
 		return
 	}
 	p.FollowEnabled = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShowPairStatusOn reports whether the player list shows each player's current pair (#20, opt-in).
@@ -5163,8 +5167,8 @@ func (p *AssetPreferences) SetShowPairStatus(on bool) {
 		return
 	}
 	p.ShowPairStatus = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FriendNotifyOn / SetFriendNotify: pop an in-app toast + flash the window when
@@ -5179,8 +5183,8 @@ func (p *AssetPreferences) SetFriendNotify(on bool) {
 	p.mu.Lock()
 	if p.FriendNotify != on {
 		p.FriendNotify = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5217,8 +5221,8 @@ func (p *AssetPreferences) SetFriendOSToast(on bool) {
 	p.mu.Lock()
 	if p.FriendOSToast != on {
 		p.FriendOSToast = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5236,8 +5240,8 @@ func (p *AssetPreferences) SetCallwordOSToast(on bool) {
 	p.mu.Lock()
 	if p.CallwordOSToast != on {
 		p.CallwordOSToast = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5255,8 +5259,8 @@ func (p *AssetPreferences) SetModcallToast(on bool) {
 	p.mu.Lock()
 	if p.ModcallToast != on {
 		p.ModcallToast = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5274,8 +5278,8 @@ func (p *AssetPreferences) SetFriendGlowPulse(on bool) {
 	p.mu.Lock()
 	if p.FriendGlowPulse != on {
 		p.FriendGlowPulse = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5293,8 +5297,8 @@ func (p *AssetPreferences) SetFriendSound(on bool) {
 	p.mu.Lock()
 	if p.FriendSound != on {
 		p.FriendSound = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5312,8 +5316,8 @@ func (p *AssetPreferences) SetFriendSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.FriendSoundFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Mod-command feedback sounds (#60, each OFF by default): play a distinct sound
@@ -5331,8 +5335,8 @@ func (p *AssetPreferences) SetModBanSFX(on bool) {
 	p.mu.Lock()
 	if p.ModBanSFX != on {
 		p.ModBanSFX = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5348,8 +5352,8 @@ func (p *AssetPreferences) SetModKickSFX(on bool) {
 	p.mu.Lock()
 	if p.ModKickSFX != on {
 		p.ModKickSFX = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5365,8 +5369,8 @@ func (p *AssetPreferences) SetModMuteSFX(on bool) {
 	p.mu.Lock()
 	if p.ModMuteSFX != on {
 		p.ModMuteSFX = on
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	p.mu.Unlock()
@@ -5382,8 +5386,8 @@ func (p *AssetPreferences) SetModBanSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.ModBanSoundFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 func (p *AssetPreferences) ModKickSoundPath() string {
@@ -5396,8 +5400,8 @@ func (p *AssetPreferences) SetModKickSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.ModKickSoundFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 func (p *AssetPreferences) ModMuteSoundPath() string {
@@ -5410,8 +5414,8 @@ func (p *AssetPreferences) SetModMuteSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.ModMuteSoundFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 func (p *AssetPreferences) CallwordSoundPath() string {
@@ -5424,8 +5428,8 @@ func (p *AssetPreferences) SetCallwordSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.CallwordSoundFile = path
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Theme -------------------------------------------------------------------
@@ -5447,8 +5451,8 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 	}
 	p.ThemeName = name
 	p.ThemeDir = dir
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Subtheme reports the AO2 subtheme folder to prefer inside the active theme
@@ -5481,8 +5485,8 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 		return
 	}
 	p.SubthemeName = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Debug overlay -------------------------------------------------------------
@@ -5502,8 +5506,8 @@ func (p *AssetPreferences) SetDebugOverlay(enabled bool) {
 		return
 	}
 	p.DebugOverlay = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CharDownloaderEnabled reports whether the opt-in single-asset downloader
@@ -5522,8 +5526,8 @@ func (p *AssetPreferences) SetCharDownloader(enabled bool) {
 		return
 	}
 	p.CharDownloaderOn = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ToolboxSeenOn reports whether the user has already expanded the compact
@@ -5545,8 +5549,8 @@ func (p *AssetPreferences) SetToolboxSeen(seen bool) {
 		return
 	}
 	p.ToolboxSeen = seen
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Casing alerts ---------------------------------------------------------------
@@ -5568,8 +5572,8 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 	}
 	p.CasingEnabled = enabled
 	p.CasingRoles = roles
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Discord Rich Presence ------------------------------------------------------------
@@ -5589,8 +5593,8 @@ func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
 		return
 	}
 	p.DiscordRPC = dp
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AutoStatus reports the auto-status configuration (#M1: typed words → presence status).
@@ -5609,8 +5613,8 @@ func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 		return
 	}
 	p.MyAutoStatus = a
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ChromeTheme reports the AsyncAO chrome theme preset key (#M3; "dark" default).
@@ -5631,8 +5635,8 @@ func (p *AssetPreferences) SetChromeTheme(key string) {
 		return
 	}
 	p.ChromeThemeKey = key
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Chrome SHAPE presets (A5): the valid keys for ChromeShapeKey. "sharp" is the
@@ -5696,8 +5700,8 @@ func (p *AssetPreferences) SetChromeShape(key string) {
 		return
 	}
 	p.ChromeShapeKey = key
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ChromeShapeTier reports the corner-radius size class for the "rounded" preset
@@ -5717,8 +5721,8 @@ func (p *AssetPreferences) SetChromeShapeTier(tier int) {
 		return
 	}
 	p.ChromeShapeTierIdx = tier
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Callwords + hotkeys -------------------------------------------------------------
@@ -5748,8 +5752,8 @@ func (p *AssetPreferences) SetCallWords(words []string) {
 	}
 	p.mu.Lock()
 	p.CallWordList = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AddCallWord adds one or more highlight words from a single input, split on
@@ -5815,14 +5819,15 @@ func (p *AssetPreferences) SetHotkey(action, key string) {
 	p.mu.Lock()
 	if p.HotkeyMap == nil {
 		p.HotkeyMap = map[string]string{}
+		p.syncSnapshot() // republish the nil -> empty lazy init before the early return
 	}
 	if p.HotkeyMap[action] == key {
 		p.mu.Unlock()
 		return
 	}
 	p.HotkeyMap[action] = key
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Per-server warm state -----------------------------------------------------------
@@ -6096,8 +6101,8 @@ func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo))
 	// remember marks dirty and the debounced saver coalesces the writes.
 	set(&w)
 	p.ServerWarm[key] = w
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Hidden UI panels ---------------------------------------------------------------
@@ -6117,8 +6122,8 @@ func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 	clean := sanitizeHiddenPanels(ids)
 	p.mu.Lock()
 	p.HiddenPanelIDs = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- OOC name -----------------------------------------------------------------
@@ -6138,8 +6143,8 @@ func (p *AssetPreferences) SetOOCName(name string) {
 		return
 	}
 	p.OOCName = name
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Layout scales --------------------------------------------------------------
@@ -6168,8 +6173,8 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 	}
 	p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct =
 		viewport, chatText, chatBox, logText, input
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // OOCScale reports the OOC log text size percent (independent of the IC log).
@@ -6188,8 +6193,8 @@ func (p *AssetPreferences) SetOOCScale(pct int) {
 		return
 	}
 	p.OOCScalePct = pct
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CustomChrome returns the user's "Custom" chrome scheme as 7 hex strings
@@ -6209,8 +6214,8 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 		return
 	}
 	p.CustomChromeHex = hex
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // LayoutPartColorCount is the number of individually-tintable layout parts
@@ -6238,8 +6243,8 @@ func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
 		return
 	}
 	p.LayoutPartHex[i] = hex
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BoldNamesOn reports whether speaker names render bold (IC/OOC log + chatbox).
@@ -6259,8 +6264,8 @@ func (p *AssetPreferences) SetBoldNames(on bool) {
 		return
 	}
 	p.BoldNamesOff = !on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UIScale reports the global UI scale percent.
@@ -6279,8 +6284,8 @@ func (p *AssetPreferences) SetUIScale(pct int) {
 		return
 	}
 	p.UIScalePct = pct
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
@@ -6306,8 +6311,8 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 		return
 	}
 	p.WindowW, p.WindowH = w, h
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // WindowFullscreen reports whether the client launches in borderless fullscreen.
@@ -6325,8 +6330,8 @@ func (p *AssetPreferences) SetWindowFullscreen(on bool) {
 		return
 	}
 	p.WindowFull = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Audio volumes ----------------------------------------------------------------
@@ -6349,8 +6354,8 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 		return
 	}
 	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AlertVolume reports the callword/friend ping volume (0–100), independent of
@@ -6370,8 +6375,8 @@ func (p *AssetPreferences) SetAlertVolume(v int) {
 		return
 	}
 	p.AlertVol = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MasterVolume reports the master multiplier (0–100) that scales music/SFX/blip
@@ -6391,8 +6396,8 @@ func (p *AssetPreferences) SetMasterVolume(v int) {
 		return
 	}
 	p.MasterVol = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // The master/music/blip channel-mute accessors below persist the volume
@@ -6421,8 +6426,8 @@ func (p *AssetPreferences) SetMasterVolMuted(on bool) {
 		return
 	}
 	p.MasterVolMuted = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicVolMutedOn reports the persisted music-channel mute.
@@ -6440,8 +6445,8 @@ func (p *AssetPreferences) SetMusicVolMuted(on bool) {
 		return
 	}
 	p.MusicVolMuted = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SFXVolMutedOn reports the persisted SFX-channel mute. Retained for schema
@@ -6463,8 +6468,8 @@ func (p *AssetPreferences) SetSFXVolMuted(on bool) {
 		return
 	}
 	p.SFXVolMuted = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BlipVolMutedOn reports the persisted blip-channel mute.
@@ -6482,8 +6487,8 @@ func (p *AssetPreferences) SetBlipVolMuted(on bool) {
 		return
 	}
 	p.BlipVolMuted = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
@@ -6502,8 +6507,8 @@ func (p *AssetPreferences) SetHoldClearOn(on bool) {
 		return
 	}
 	p.HoldClearOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetHoldClearKey rebinds the hold-to-clear key (an SDL key name; "" ignored).
@@ -6517,8 +6522,8 @@ func (p *AssetPreferences) SetHoldClearKey(key string) {
 		return
 	}
 	p.HoldClearKey = key
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetHoldClearMs clamps and persists the hold-to-clear duration.
@@ -6530,8 +6535,8 @@ func (p *AssetPreferences) SetHoldClearMs(ms int) {
 		return
 	}
 	p.HoldClearMs = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ExtrasBoxStyle reports the Extras-box theme: background / gradient-bottom /
@@ -6548,8 +6553,8 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 	p.mu.Lock()
 	p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient =
 		bg, bg2, border, title, text, gradient
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AreaHighlightColorHex is the current-area row highlight colour (hex like
@@ -6570,8 +6575,8 @@ func (p *AssetPreferences) SetAreaHighlightColorHex(hex string) {
 		return
 	}
 	p.AreaHighlightHex = hex
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Message timing & master list ----------------------------------------------
@@ -6596,8 +6601,8 @@ func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 		return
 	}
 	p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs = crawlMs, stayMs, rateLimitMs
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CatchUp reports the packed-room catch-up toggle and its queue-depth
@@ -6618,8 +6623,8 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 		return
 	}
 	p.CatchUpOn, p.CatchUpThreshold = on, threshold
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // TabCap is how many concurrent server tabs are allowed (clamped to
@@ -6643,8 +6648,8 @@ func (p *AssetPreferences) SetTabCap(n int) {
 		return
 	}
 	p.MultiTabCap = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RestoreTabsOn reports the "reopen my server tabs on launch" toggle (OFF by
@@ -6663,8 +6668,8 @@ func (p *AssetPreferences) SetRestoreTabs(on bool) {
 		return
 	}
 	p.RestoreTabs = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // VolStripShownOn reports the log panel's on-screen volume-strip toggle (OFF by
@@ -6683,8 +6688,8 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 		return
 	}
 	p.VolStripOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
@@ -6736,8 +6741,8 @@ func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
 		return
 	}
 	p.SpriteLoadModeVal = mode
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteWaitMs reports the wait-mode hold cap in milliseconds (SpriteWaitDefaultMs
@@ -6761,8 +6766,8 @@ func (p *AssetPreferences) SetSpriteWaitMs(ms int) {
 		return
 	}
 	p.SpriteWaitMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Bounds for the remaining renderer / core-timing power knobs. Every "0 = default"
@@ -6998,8 +7003,8 @@ func (p *AssetPreferences) SetHoldPrevMaxAgeMs(ms int) {
 		return
 	}
 	p.HoldPrevMaxAgeMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // HoldDebugTintOn reports the stand-in diagnostic tint (OFF by default).
@@ -7043,8 +7048,8 @@ func (p *AssetPreferences) SetShoutDurationMs(ms int) {
 		return
 	}
 	p.ShoutDurationMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PreanimTimeoutMs reports the preanim wait cap in milliseconds (0 = the
@@ -7066,8 +7071,8 @@ func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
 		return
 	}
 	p.PreanimTimeoutMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ICQueueCap reports the IC backlog queue depth (0 = the courtroom's canonical
@@ -7090,8 +7095,8 @@ func (p *AssetPreferences) SetICQueueCap(n int) {
 		return
 	}
 	p.ICQueueCapVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ICLogDepth reports the IC scrollback depth (0 = the client's canonical
@@ -7117,8 +7122,8 @@ func (p *AssetPreferences) SetICLogDepth(n int) {
 		return
 	}
 	p.ICLogDepthVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CatchUpLingerMs reports how long each fast-forwarded backlog message lingers
@@ -7138,8 +7143,8 @@ func (p *AssetPreferences) SetCatchUpLingerMs(ms int) {
 		return
 	}
 	p.CatchUpLingerMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThumbCacheOn reports the opt-in persistent low-quality sprite thumbnail cache
@@ -7176,8 +7181,8 @@ func (p *AssetPreferences) SetThumbHeightPx(px int) {
 		return
 	}
 	p.ThumbHeightPxVal = px
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
@@ -7201,8 +7206,8 @@ func (p *AssetPreferences) SetThumbQuality(q int) {
 		return
 	}
 	p.ThumbQualityVal = q
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
@@ -7227,8 +7232,8 @@ func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
 		return
 	}
 	p.ThumbBudgetMiBVal = mib
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DiskCacheBudgetMiB reports the T3 disk-cache auto-prune cap in MiB (#34).
@@ -7254,8 +7259,8 @@ func (p *AssetPreferences) SetDiskCacheBudgetMiB(mib int) {
 		return
 	}
 	p.DiskCacheBudgetMiBVal = mib
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // NotFoundTTLSec reports the 404 negative-cache TTL override in seconds
@@ -7277,8 +7282,8 @@ func (p *AssetPreferences) SetNotFoundTTLSec(sec int) {
 		return
 	}
 	p.NotFoundTTLSecVal = sec
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AdaptiveLatMultiple reports the per-host deadline multiple (0 = the network
@@ -7300,8 +7305,8 @@ func (p *AssetPreferences) SetAdaptiveLatMultiple(n int) {
 		return
 	}
 	p.AdaptiveLatMultipleVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SpriteDownscaleOffOn reports whether the automatic decode downscale is
@@ -7336,8 +7341,8 @@ func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 		return
 	}
 	p.SpriteDownscalePctVal = pct
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AnimatedSpriteCap reports the opt-in animated-only height cap in px
@@ -7364,8 +7369,8 @@ func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
 		return
 	}
 	p.AnimatedSpriteCapPxVal = px
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
@@ -7390,8 +7395,8 @@ func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
 		return
 	}
 	p.TexBudgetMiBVal = mib
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
@@ -7417,8 +7422,8 @@ func (p *AssetPreferences) SetAnimatedBudgetMiB(mib int) {
 		return
 	}
 	p.AnimatedBudgetMiBVal = mib
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AnimDecodeConcurrency reports the concurrent animated-decode bound
@@ -7444,8 +7449,8 @@ func (p *AssetPreferences) SetAnimDecodeConcurrency(n int) {
 		return
 	}
 	p.AnimDecodeConcurrencyVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // TexCompression reports the texture-compression mode (TexCompressOff /
@@ -7472,8 +7477,8 @@ func (p *AssetPreferences) SetTexCompression(mode int) {
 		return
 	}
 	p.TexCompressionVal = mode
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CrossfadeMs reports the speaker-swap crossfade duration (0 = off, the default).
@@ -7494,8 +7499,8 @@ func (p *AssetPreferences) SetCrossfadeMs(ms int) {
 		return
 	}
 	p.CrossfadeMsVal = ms
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EventDrivenLoopOn reports the EXPERIMENTAL event-driven render loop toggle
@@ -7517,8 +7522,8 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 		return
 	}
 	p.EventDrivenLoop = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MotionRedrawPerEventOn reports the "redraw once per mouse-move event" pacing
@@ -7542,8 +7547,8 @@ func (p *AssetPreferences) SetMotionRedrawPerEvent(on bool) {
 		return
 	}
 	p.MotionRedrawPerEvent = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FrameLimiterDisabled reports the #5 bypass: when ON the main loop renders
@@ -7567,8 +7572,8 @@ func (p *AssetPreferences) SetFrameLimiterDisabled(on bool) {
 		return
 	}
 	p.DisableFrameLimiter = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
@@ -7593,8 +7598,8 @@ func (p *AssetPreferences) SetFPSCap(fps int) {
 		return
 	}
 	p.FPSCapVal = fps
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
@@ -7617,8 +7622,8 @@ func (p *AssetPreferences) SetIdleFPS(fps int) {
 		return
 	}
 	p.IdleFPSVal = fps
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
@@ -7641,8 +7646,8 @@ func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
 		return
 	}
 	p.UnfocusedFPSVal = fps
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // InputGraceFrames reports the post-input full-rate hold in frames
@@ -7673,8 +7678,8 @@ func (p *AssetPreferences) SetInputGraceFrames(n int) {
 		return
 	}
 	p.InputGraceFramesVal = n
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EffectiveSpriteCap derives the decode-downscale height cap from the
@@ -7744,8 +7749,8 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.DisableFrameLimiter = false                        // #5 bypass resets OFF
 	p.MotionRedrawPerEvent = defaultMotionRedrawPerEvent // per-event motion redraw resets to its default (ON)
 	p.ClipSpritesToStage = defaultClipSpritesToStage
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicVolModeOn reports whether the Music menu shows the volume sliders instead of
@@ -7765,8 +7770,8 @@ func (p *AssetPreferences) SetMusicVolMode(on bool) {
 		return
 	}
 	p.MusicVolMode = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AO2 MUSIC_EFFECT bits, appended to an outgoing MC when the server advertises
@@ -7806,8 +7811,8 @@ func (p *AssetPreferences) SetMusicFlags(flags int) {
 		return
 	}
 	p.MusicFlagsVal = flags
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ChangelogSeenVersion reports the build version whose "What's New" the user last
@@ -7828,8 +7833,8 @@ func (p *AssetPreferences) SetChangelogSeen(v string) {
 		return
 	}
 	p.ChangelogSeen = v
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
@@ -7854,8 +7859,8 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 	copy(cp, tabs)
 	p.mu.Lock()
 	p.OpenTabs = cp
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ReduceMotion reports the reduce-motion accessibility toggle: when on, the
@@ -7875,8 +7880,8 @@ func (p *AssetPreferences) SetReduceMotion(on bool) {
 		return
 	}
 	p.ReduceMotionOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EffectsDisabled reports the master visual-effects off-switch (OFF by default =
@@ -7904,8 +7909,8 @@ func (p *AssetPreferences) SetDisableEffects(on bool) {
 		return
 	}
 	p.DisableEffects = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FontCensusOn reports the system-font census toggle (ON by default). Off, the
@@ -7925,8 +7930,8 @@ func (p *AssetPreferences) SetFontCensus(on bool) {
 		return
 	}
 	p.FontCensus = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ScreenEffectsOn reports the AO2 screen-effects toggle (ON by default): the \s
@@ -7946,8 +7951,8 @@ func (p *AssetPreferences) SetScreenEffects(on bool) {
 		return
 	}
 	p.ScreenEffects = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // WordDeleteOn reports the Ctrl+Backspace word-delete toggle (ON by default):
@@ -7967,8 +7972,8 @@ func (p *AssetPreferences) SetWordDelete(on bool) {
 		return
 	}
 	p.WordDelete = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RecordingsKeepAssetsOn reports whether an in-app scene recording auto-packages
@@ -7989,8 +7994,8 @@ func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
 		return
 	}
 	p.RecordingsKeepAssets = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AdditiveTextOn reports the 2.8 additive-text toggle (ON by default): honor an
@@ -8010,8 +8015,8 @@ func (p *AssetPreferences) SetAdditiveText(on bool) {
 		return
 	}
 	p.AdditiveText = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MusicDucking reports the music-ducking toggle: lower the music while a
@@ -8030,8 +8035,8 @@ func (p *AssetPreferences) SetMusicDucking(on bool) {
 		return
 	}
 	p.MusicDuckingOn = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PerAreaScrollbackOn reports the per-area IC scrollback toggle (OFF by
@@ -8051,8 +8056,8 @@ func (p *AssetPreferences) SetPerAreaScrollback(on bool) {
 		return
 	}
 	p.PerAreaScroll = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DetailedLogOn reports the detailed-logging toggle (ON by default since the
@@ -8074,8 +8079,8 @@ func (p *AssetPreferences) SetDetailedLog(on bool) {
 		return
 	}
 	p.DetailedLog = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- AO2 post-send "sticky" options + sfx_on_idle ------------------------------
@@ -8100,8 +8105,8 @@ func (p *AssetPreferences) SetStickySounds(on bool) {
 		return
 	}
 	p.StickySounds = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // StickyEffectsOn reports whether the effects pick survives a send (ON by
@@ -8121,8 +8126,8 @@ func (p *AssetPreferences) SetStickyEffects(on bool) {
 		return
 	}
 	p.StickyEffects = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // StickyPreanimsOn reports whether the Pre checkbox survives a send (ON by
@@ -8141,8 +8146,8 @@ func (p *AssetPreferences) SetStickyPreanims(on bool) {
 		return
 	}
 	p.StickyPreanims = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SFXOnIdleOn reports AO2's sfx_on_idle / "Always Send SFX" (OFF by default): a
@@ -8161,8 +8166,8 @@ func (p *AssetPreferences) SetSFXOnIdle(on bool) {
 		return
 	}
 	p.SFXOnIdle = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UnfocusedFullRateOn reports the "don't throttle when unfocused" option (OFF by
@@ -8182,8 +8187,8 @@ func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
 		return
 	}
 	p.UnfocusedFullRate = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // GhostCrawlTextOn reports the ghost-text option (ON by default): the tail of a
@@ -8203,8 +8208,8 @@ func (p *AssetPreferences) SetGhostCrawlText(on bool) {
 		return
 	}
 	p.GhostCrawlText = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // AutoClipModcallOn reports the auto-clip-on-modcall toggle (ON by default): when
@@ -8224,8 +8229,8 @@ func (p *AssetPreferences) SetAutoClipModcall(on bool) {
 		return
 	}
 	p.AutoClipModcall = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // CharChatboxOn reports the per-character chatbox-skin toggle (ON by default:
@@ -8244,8 +8249,8 @@ func (p *AssetPreferences) SetCharChatbox(on bool) {
 		return
 	}
 	p.CharChatbox = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // GroupChatButtonOn reports the on-screen Group Chat button toggle (ON by default).
@@ -8263,8 +8268,8 @@ func (p *AssetPreferences) SetGroupChatButton(on bool) {
 		return
 	}
 	p.GroupChatButton = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // MasterList reports the user's master-list override ("" = the default).
@@ -8283,8 +8288,8 @@ func (p *AssetPreferences) SetMasterList(url string) {
 		return
 	}
 	p.MasterListURL = url
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // --- Wardrobe (per server) ----------------------------------------------------
@@ -8822,8 +8827,8 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		p.LearnedFormats = map[string][]string{}
 	}
 	p.LearnedFormats[key] = next
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // RecordLearnedList persists the full ordered format list for (host, type) —
@@ -8849,8 +8854,8 @@ func (p *AssetPreferences) RecordLearnedList(host, typeName string, exts []strin
 		p.LearnedFormats = map[string][]string{}
 	}
 	p.LearnedFormats[key] = cloneStrings(exts) // caller's slice must not alias the stored one
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // equalStrings reports whether two string slices are element-wise equal.
@@ -8882,8 +8887,8 @@ func (p *AssetPreferences) SetCallwordsOOC(on bool) {
 		return
 	}
 	p.CallwordsOOC = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ExtProfile returns the per-host extensions.json format profile (raw JSON), or
@@ -8909,8 +8914,8 @@ func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
 	} else {
 		p.ExtProfiles[host] = profileJSON
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BlipTyping reports the chat-blip cadence: one blip per `rate` revealed letters
@@ -8934,8 +8939,8 @@ func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 		return
 	}
 	p.BlipRate, p.BlipOnSpaces = rate, onSpaces
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FormatAutoDetect reports whether the client fetches extensions.json on
@@ -8954,8 +8959,8 @@ func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 		return
 	}
 	p.AutoDetectFormats = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // StreamerMode reports the on-stream privacy toggle: OOC sender names
@@ -8974,8 +8979,8 @@ func (p *AssetPreferences) SetStreamerMode(enabled bool) {
 		return
 	}
 	p.StreamerModeOn = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DiskZstdEnabled reports whether new T3 blobs compress with zstd
@@ -8994,8 +8999,8 @@ func (p *AssetPreferences) SetDiskZstd(enabled bool) {
 		return
 	}
 	p.DiskZstd = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Layout-editor bounds (rule §17.4).
@@ -9136,8 +9141,8 @@ func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
 		return
 	}
 	m[key] = r
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearThemeRectOverride drops one widget's edit (key "" = the whole
@@ -9166,8 +9171,8 @@ func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 			}
 		}
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThemeRectRotationSnapshot returns a copy of one theme's per-widget rotation
@@ -9215,8 +9220,8 @@ func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
 		return
 	}
 	m[key] = deg
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearThemeRectRotation drops one widget's rotation (key "" = the whole theme's
@@ -9233,8 +9238,8 @@ func (p *AssetPreferences) ClearThemeRectRotation(theme, key string) {
 			}
 		}
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // sanitizeClassicLayout validates persisted default-courtroom slot overrides on
@@ -9500,8 +9505,8 @@ func (p *AssetPreferences) SaveLayoutProfile(name string, prof LayoutProfile) {
 		return
 	}
 	p.LayoutProfiles[name] = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // DeleteLayoutProfile removes a saved profile by name (A6).
@@ -9513,8 +9518,8 @@ func (p *AssetPreferences) DeleteLayoutProfile(name string) {
 			p.LayoutProfiles = nil
 		}
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClassicLayoutOverrides returns a sanitized copy of the default-courtroom slot
@@ -9548,8 +9553,8 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 		return
 	}
 	p.ClassicLayout[name] = frac
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearClassicSlot drops one slot's override (name "" clears every slot, the
@@ -9566,8 +9571,8 @@ func (p *AssetPreferences) ClearClassicSlot(name string) {
 		delete(p.ClassicAnchors, name)
 		delete(p.ClassicRotations, name)
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClassicAnchor pins one classic-layout slot to a window reference: Mode is
@@ -9666,8 +9671,8 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 		return
 	}
 	p.ClassicAnchors[name] = a
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearClassicAnchor drops one slot's window pin (the override stays; the
@@ -9675,8 +9680,8 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 func (p *AssetPreferences) ClearClassicAnchor(name string) {
 	p.mu.Lock()
 	delete(p.ClassicAnchors, name)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Layout-editor snap grid (playtest request, Tifera: a user-editable snap
@@ -9724,8 +9729,8 @@ func (p *AssetPreferences) SetLayoutGridSize(px int) {
 		return
 	}
 	p.LayoutGridPx = px
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetClassicLayout REPLACES every default-courtroom slot override at once — the
@@ -9746,8 +9751,8 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 		}
 		p.ClassicLayout = cp
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetClassicAnchors REPLACES every slot's window pin at once (symmetric to
@@ -9760,8 +9765,8 @@ func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
 	p.mu.Lock()
 	p.ClassicAnchors = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) —
@@ -9797,8 +9802,8 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 		return
 	}
 	p.ClassicRotations[name] = deg
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ClearClassicRotation drops one slot's rotation (the override stays; the slot
@@ -9806,8 +9811,8 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 func (p *AssetPreferences) ClearClassicRotation(name string) {
 	p.mu.Lock()
 	delete(p.ClassicRotations, name)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetClassicRotations REPLACES every slot's rotation at once (symmetric to
@@ -9818,8 +9823,8 @@ func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
 	clean := sanitizeClassicRotations(m) // drops blanks + bounds at classicSlotCap
 	p.mu.Lock()
 	p.ClassicRotations = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // Macros returns a copy of the user macro list.
@@ -9836,8 +9841,8 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 	clean := sanitizeMacros(in)
 	p.mu.Lock()
 	p.UserMacros = clean
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // FontPaths reports the raw IC/OOC font override list (semicolon- or
@@ -9856,8 +9861,8 @@ func (p *AssetPreferences) SetFontPaths(raw string) {
 		return
 	}
 	p.FontOverridePaths = raw
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UIScaleAuto reports whether the UI scale follows the display DPI
@@ -9876,8 +9881,8 @@ func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
 		return
 	}
 	p.UIScaleAutoOn = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThemeLayoutEnabled reports whether the courtroom adopts the theme's
@@ -9896,8 +9901,8 @@ func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 		return
 	}
 	p.ThemeLayoutOn = enabled
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThemeFitMode reports how an AO2 theme fills the window: ThemeFitNative
@@ -9942,8 +9947,8 @@ func (p *AssetPreferences) SetThemeFit(mode int) {
 		return
 	}
 	p.ThemeFit = mode
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
@@ -9973,8 +9978,8 @@ func (p *AssetPreferences) SetThemeFitZoom(z int) {
 		return
 	}
 	p.ThemeFitZoom = z
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // SetThemeFitPan clamps and stores the Custom-mode pan.
@@ -9987,8 +9992,8 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 		return
 	}
 	p.ThemeFitPanX, p.ThemeFitPanY = x, y
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // PlainLobbyOn reports whether the lobby/server list uses the plain client
@@ -10007,8 +10012,8 @@ func (p *AssetPreferences) SetPlainLobby(on bool) {
 		return
 	}
 	p.PlainLobby = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ThemeFontsOn reports whether the active theme's courtroom_fonts.ini drives the
@@ -10027,8 +10032,8 @@ func (p *AssetPreferences) SetThemeFonts(on bool) {
 		return
 	}
 	p.ThemeFonts = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ExportLearnedJSON snapshots the learned-format table as indented JSON —
@@ -10083,8 +10088,8 @@ func (p *AssetPreferences) ClearLearned() {
 		return
 	}
 	p.LearnedFormats = map[string][]string{}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // dropLearnedTypeLocked removes learned entries for one type across all
@@ -10133,8 +10138,8 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	}
 	p.LocalAssetsEnabled = enabled
 	p.LocalAssetsPaths = slices.Clone(mounts)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10170,8 +10175,8 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 	if layered {
 		p.LocalAssetsEnabled = false // the radio is exclusive; keep the store unambiguous
 	}
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // BaseMountsEqual reports whether want is exactly the mount list the asset
@@ -10228,14 +10233,14 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 			}
 			p.Favorites[i].Name = name
 			p.Favorites[i].Description = description
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return
 		}
 	}
 	p.Favorites = append(p.Favorites, FavoriteServer{Name: name, URL: url, Description: description})
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // UpdateFavorite renames and/or re-addresses an existing phone-book entry,
@@ -10277,8 +10282,8 @@ func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description s
 	p.Favorites[idx].Name = newName
 	p.Favorites[idx].URL = newURL
 	p.Favorites[idx].Description = description
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10354,8 +10359,8 @@ func (p *AssetPreferences) SetShowname(name string) {
 		return
 	}
 	p.Showname = name
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // ShownameCap bounds the saved showname presets (M6).
@@ -10402,8 +10407,8 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 		}
 	}
 	p.ShownamePresets = append(p.ShownamePresets, name)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10418,8 +10423,8 @@ func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 					delete(p.ShownameKeys, k)
 				}
 			}
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return true
 		}
 	}
@@ -10456,8 +10461,8 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 	p.mu.Lock()
 	if showname == "" {
 		delete(p.ShownameKeys, key)
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	if p.ShownameKeys == nil {
@@ -10468,8 +10473,8 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 		return
 	}
 	p.ShownameKeys[key] = showname
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // icPhraseKeyCap bounds the hotkeyed IC quick-phrases (hard rule #4: no unbounded maps).
@@ -10501,8 +10506,8 @@ func (p *AssetPreferences) SetICPhraseKey(key, phrase string) {
 	p.mu.Lock()
 	if phrase == "" {
 		delete(p.ICPhraseKeys, key)
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return
 	}
 	if p.ICPhraseKeys == nil {
@@ -10513,8 +10518,8 @@ func (p *AssetPreferences) SetICPhraseKey(key, phrase string) {
 		return
 	}
 	p.ICPhraseKeys[key] = phrase
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // mutedSFXCap bounds the per-SFX mute list (hard rule #4: no unbounded slices).
@@ -10568,8 +10573,8 @@ func (p *AssetPreferences) MuteSFX(name string) bool {
 		}
 	}
 	p.MutedSFX = append(p.MutedSFX, name)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10580,8 +10585,8 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	for i, m := range p.MutedSFX {
 		if m == name {
 			p.MutedSFX = append(p.MutedSFX[:i], p.MutedSFX[i+1:]...)
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return true
 		}
 	}
@@ -10633,8 +10638,8 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 	for i, s := range p.SfxFavorites {
 		if s == name {
 			p.SfxFavorites = append(p.SfxFavorites[:i], p.SfxFavorites[i+1:]...)
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return false
 		}
 	}
@@ -10643,8 +10648,8 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 		return false
 	}
 	p.SfxFavorites = append(p.SfxFavorites, name)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10697,8 +10702,8 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 		}
 	}
 	p.ModReasonTemplates = append(p.ModReasonTemplates, s)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10735,8 +10740,8 @@ func (p *AssetPreferences) AddModDuration(token string) bool {
 		}
 	}
 	p.ModDurations = append(p.ModDurations, token)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10747,8 +10752,8 @@ func (p *AssetPreferences) RemoveModDuration(token string) bool {
 	for i, t := range p.ModDurations {
 		if strings.EqualFold(t, token) {
 			p.ModDurations = append(p.ModDurations[:i], p.ModDurations[i+1:]...)
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return true
 		}
 	}
@@ -10764,8 +10769,8 @@ func (p *AssetPreferences) RemoveModReasonTemplate(s string) bool {
 	for i, t := range p.ModReasonTemplates {
 		if strings.EqualFold(t, s) {
 			p.ModReasonTemplates = append(p.ModReasonTemplates[:i], p.ModReasonTemplates[i+1:]...)
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return true
 		}
 	}
@@ -10830,8 +10835,8 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 			return false // already default
 		}
 		delete(p.BlipVols, char)
-		p.mu.Unlock()
 		p.markDirty()
+		p.mu.Unlock()
 		return true
 	}
 	if had && cur == pct {
@@ -10846,8 +10851,8 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 		p.BlipVols = make(map[string]int)
 	}
 	p.BlipVols[char] = pct
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10919,8 +10924,8 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 			} else {
 				p.EmoteFavs[char] = list
 			}
-			p.mu.Unlock()
 			p.markDirty()
+			p.mu.Unlock()
 			return false
 		}
 	}
@@ -10936,8 +10941,8 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 		p.EmoteFavs = make(map[string][]int)
 	}
 	p.EmoteFavs[char] = append(p.EmoteFavs[char], idx)
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 	return true
 }
 
@@ -10956,8 +10961,8 @@ func (p *AssetPreferences) SetEmoteFavOnly(on bool) {
 		return
 	}
 	p.EmoteFavOnly = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EmoteFavStarsOn reports whether the favourite ★ badges show on emote cells.
@@ -10977,8 +10982,8 @@ func (p *AssetPreferences) SetEmoteFavStars(on bool) {
 		return
 	}
 	p.EmoteFavStars = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // EmoteCaptionsOn reports whether the emote-name caption strip is drawn over
@@ -11001,8 +11006,8 @@ func (p *AssetPreferences) SetEmoteCaptions(on bool) {
 		return
 	}
 	p.EmoteCaptions = on
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
 
 // clampViewportExactPx normalizes the exact-viewport-width pref: 0 (off) passes
@@ -11040,6 +11045,6 @@ func (p *AssetPreferences) SetViewportExactWidth(px int) {
 		return
 	}
 	p.ViewportExactW = px
-	p.mu.Unlock()
 	p.markDirty()
+	p.mu.Unlock()
 }
