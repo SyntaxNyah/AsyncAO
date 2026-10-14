@@ -58,7 +58,7 @@ func (a *App) masterListURLs() []string {
 	if a.d.MasterURL != "" && a.d.MasterURL != network.DefaultMasterServerURL {
 		return []string{a.d.MasterURL}
 	}
-	if alt := a.d.Prefs.MasterList(); alt != "" {
+	if alt := a.d.Prefs.Load().MasterListURL; alt != "" {
 		return []string{alt}
 	}
 	return network.DefaultMasterServerURLs
@@ -552,12 +552,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
 		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                  // viewport sprite mask (default ON): offsets can't spill past the stage
-		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
-		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
+		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
+		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
 		a.d.Viewport.SetMissingno(a.d.Prefs.ShowMissingPlaceholderOn())                                // AO2 placeholder for conclusively-missing sprites (default ON)
 		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
-		a.d.Viewport.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
+		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
@@ -572,12 +572,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetSpriteFX(a.spriteFX())
 			a.splitVP.SetSpriteLoadMode(a.vpSpriteLoadMode())
 			a.splitVP.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)
-			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
-			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
+			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)
+			a.splitVP.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)
 			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
 			a.splitVP.SetMissingno(a.d.Prefs.ShowMissingPlaceholderOn())
 			a.splitVP.SetCrossfade(a.crossfadeDur())
-			a.splitVP.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())
+			a.splitVP.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/

@@ -427,7 +427,7 @@ func (a *App) handleHotkeys() {
 	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until the user ticks
 	// "Enable hotkeys" in Settings → Hotkeys. A fresh install fires none of them,
 	// so no surprise chord (shout, FX, menu) can happen by accident.
-	if !a.d.Prefs.HotkeysEnabledOn() {
+	if !a.d.Prefs.Load().HotkeysEnabled {
 		return
 	}
 	name := strings.ToLower(sdl.GetKeyName(key))
@@ -539,7 +539,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeySpotlight):
 		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
 	case a.hotkeyFor(hotkeyIdleBreath):
-		a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
+		a.toggleFXPref(a.d.Prefs.Load().IdleBreath, a.d.Prefs.SetIdleBreath, "Idle breathing")
 	case a.hotkeyFor(hotkeyReflection):
 		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
@@ -547,7 +547,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyCharBundle):
 		a.toggleFXPref(a.d.Prefs.Load().CharBundlePrefetch, a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
 	case a.hotkeyFor(hotkeyPingChip):
-		a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
+		a.toggleFXPref(a.d.Prefs.Load().PingChip, a.d.Prefs.SetPingChip, "Ping chip")
 	case a.hotkeyFor(hotkeyModDash):
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):
@@ -650,7 +650,7 @@ func (a *App) applyAudioVolumes() {
 		return
 	}
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
-	master := a.d.Prefs.MasterVolume()
+	master := a.d.Prefs.Load().MasterVol
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
 	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
 	// ServerAudio falls back to the global per channel for any level this server never
@@ -869,7 +869,7 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 // effectiveVolumes reads the volumes that apply right now: the active server's own
 // per-server profile if it has one, else the global defaults.
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
-	master = a.d.Prefs.MasterVolume()
+	master = a.d.Prefs.Load().MasterVol
 	music, sfx, blip = a.d.Prefs.AudioVolumes()
 	if a.serverKey != "" {
 		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
@@ -896,7 +896,7 @@ func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 // clamps it, applies it, and toasts the new level. Master scales every channel,
 // so this is the quick "turn it down/up" without reaching for a slider.
 func (a *App) nudgeMasterVolume(delta int) {
-	v := clampInt(a.d.Prefs.MasterVolume()+delta, 0, 100)
+	v := clampInt(a.d.Prefs.Load().MasterVol+delta, 0, 100)
 	a.d.Prefs.SetMasterVolume(v)
 	a.applyAudioVolumes()
 	a.warnLine = "Master volume: " + strconv.Itoa(v) + "%"
@@ -1189,7 +1189,7 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	// the server echoes your IC back and RP lines routinely contain your name.
 	// The names are session-scoped: the caller passes THIS message's session's
 	// identity, so multi-server play pings the right name per tab.
-	if mine || !a.d.Prefs.MentionSelfOn() {
+	if mine || !a.d.Prefs.Load().MentionSelf {
 		return
 	}
 	for _, n := range selfNames {
@@ -1650,7 +1650,7 @@ func (a *App) oocWrapped(width int32) []string {
 	// faces for an emoji / mixed-script one (#42), and the bold speaker-name split
 	// drawLogLineNamed draws. Read once here; the per-entry closure below binds the
 	// speaker.
-	nameOn := a.d.Prefs.NameColorsOn()
+	nameOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelOOC)
 	for i, entry := range a.oocLog {
 		sp := ""
@@ -1846,7 +1846,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	nameOn := false
 	boldNames := false
 	if a.d.Prefs != nil {
-		nameOn = a.d.Prefs.NameColorsOn()
+		nameOn = a.d.Prefs.Load().NameColors
 		boldNames = a.logRowBoldPref(logSelIC)
 	}
 	for _, i := range a.icLogFiltered() {

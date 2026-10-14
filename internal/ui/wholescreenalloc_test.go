@@ -64,7 +64,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// patch, which quietly papered over a shipped first-run bug — OOCScalePct had no
 	// entry in the config defaults block — AND hid the divergent-zoom allocation the
 	// sibling gate below now pins. Both are fixed; the patch is gone.)
-	a.oocPct = a.d.Prefs.OOCScale()
+	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
 	// that reads a.now()) are deterministic across the measured frames.

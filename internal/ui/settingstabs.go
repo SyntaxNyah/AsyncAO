@@ -51,7 +51,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	y += 18
 	c.Label(pad, y, "two as a .aorec — WITHOUT starting a recording first. Off by default; nothing is kept until you tick it.", ColTextDim)
 	y += 24
-	ir := a.d.Prefs.InstantReplayOn()
+	ir := a.d.Prefs.Load().InstantReplay
 	if next := c.Checkbox(pad, y, "Pre-record recent conversation (Instant Replay)", ir); next != ir {
 		a.d.Prefs.SetInstantReplay(next)
 	}
@@ -298,7 +298,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y += 30
 	// Built-in look: the new optimal layout (OOC as its own box, etc.) is the main theme; ticking
 	// "Legacy Developer" reverts to the old developer layout exactly (OOC back in a tab).
-	legacy := a.d.Prefs.LegacyDevThemeOn()
+	legacy := a.d.Prefs.Load().LegacyDevTheme
 	if next := c.Checkbox(pad, y, "Legacy Developer theme (revert to the old built-in look — OOC back in a tab; off = the new optimal layout)", legacy); next != legacy {
 		a.d.Prefs.SetLegacyDevTheme(next)
 	}
@@ -464,7 +464,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// Plain lobby: the server list keeps the readable client backdrop instead of
 	// the theme's lobbybackground (which is built for AO2's own list and often
 	// makes ours unreadable). The courtroom still uses the theme either way.
-	plain := a.d.Prefs.PlainLobbyOn()
+	plain := a.d.Prefs.Load().PlainLobby
 	if next := c.Checkbox(pad, y, "Plain lobby — keep my readable server-list backdrop, ignore the theme's lobby image (ON by default; the courtroom still uses the theme)", plain); next != plain {
 		a.d.Prefs.SetPlainLobby(next)
 	}
@@ -500,7 +500,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		if a.room != nil { // apply to the live room immediately, like the rows below do
 			a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
 			a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX
-			a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX
+			a.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
 		}
 	}
 	y += 26
@@ -602,22 +602,22 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	y += 26
 	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
 	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
-	crt := a.d.Prefs.PostCRTOn()
+	crt := a.d.Prefs.Load().PostCRT
 	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
 		a.d.Prefs.SetPostCRT(next)
 	}
 	y += 26
-	vig := a.d.Prefs.PostVignetteOn()
+	vig := a.d.Prefs.Load().PostVignette
 	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
 		a.d.Prefs.SetPostVignette(next)
 	}
 	y += 26
-	scan := a.d.Prefs.PostScanlinesOn()
+	scan := a.d.Prefs.Load().PostScanlines
 	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
 		a.d.Prefs.SetPostScanlines(next)
 	}
 	y += 26
-	grain := a.d.Prefs.PostGrainOn()
+	grain := a.d.Prefs.Load().PostGrain
 	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
 		a.d.Prefs.SetPostGrain(next)
 	}
@@ -670,7 +670,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// #122 idle breathing: a gentle bob + breathing-scale on static sprites (AsyncAO-only).
 	// The amplitude/speed sliders + the two component toggles show only while it's on. The
 	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
-	brth := a.d.Prefs.IdleBreathOn()
+	brth := a.d.Prefs.Load().IdleBreath
 	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
 		a.d.Prefs.SetIdleBreath(next)
 		brth = next
@@ -864,7 +864,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 
 	// #128 connection-quality chip: a tiny signal-bar icon (bottom-left) showing the server
 	// round-trip time, with the exact ms on hover. Off by default → no ping loop runs.
-	pingChip := a.d.Prefs.PingChipOn()
+	pingChip := a.d.Prefs.Load().PingChip
 	if next := c.Checkbox(pad, y, "Connection ping chip (OFF by default): a tiny signal-bar icon (bottom-left); hover it for the exact ms", pingChip); next != pingChip {
 		a.d.Prefs.SetPingChip(next)
 	}
@@ -881,7 +881,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 
 	// Loop preanimations (OFF by default): non-canonical. AO2 plays a preanim once
 	// and settles into talk/idle; ON keeps it wrapping while it's on stage.
-	loopPre := a.d.Prefs.LoopPreanimOn()
+	loopPre := a.d.Prefs.Load().LoopPreanim
 	if next := c.Checkbox(pad, y, "Loop preanimations (OFF by default): keep a preanim wrapping while it's on stage — AO2 plays them once", loopPre); next != loopPre {
 		a.d.Prefs.SetLoopPreanim(next)
 	}
@@ -1132,7 +1132,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 func (a *App) applyPrefsToState() {
 	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
-	a.oocPct = a.d.Prefs.OOCScale()
+	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.uiScalePct = a.d.Prefs.UIScale()
 	a.ctx.SetUIScale(a.UIScale())
 	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
@@ -1183,7 +1183,7 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	}
 	y += 32
 	// Music ducking (off by default): dip the music while a message plays.
-	duck := a.d.Prefs.MusicDucking()
+	duck := a.d.Prefs.Load().MusicDuckingOn
 	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {
 		a.d.Prefs.SetMusicDucking(next)
 	}
@@ -1191,7 +1191,7 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// Custom /play music streaming (ON by default): fetch and play /play tracks.
 	// OFF stops AsyncAO downloading any custom music — including your OWN plays,
 	// which go silent for you (they still play for everyone else).
-	stream := a.d.Prefs.MusicStreamingOn()
+	stream := a.d.Prefs.Load().MusicStreaming
 	if next := c.Checkbox(pad, y, "Stream custom /play music (off stops fetching /play tracks — including your own, which go silent for you)", stream); next != stream {
 		a.applyMusicStreaming(next) // persists + re-syncs the room + stops playback on OFF
 	}
@@ -1200,7 +1200,7 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// switch — it keeps playing and is ducked to silence by default so tabs stay
 	// acoustically isolated (switching back restores it in sync). ON keeps a
 	// backgrounded tab's music AUDIBLE while you browse another tab that has none.
-	across := a.d.Prefs.MusicAcrossTabsOn()
+	across := a.d.Prefs.Load().MusicAcrossTabs
 	if next := c.Checkbox(pad, y, "Keep music playing (audible) across server tabs (off = keep it playing but silent while backgrounded)", across); next != across {
 		// Both directions act immediately. ON un-wedges a backgrounded stream: it
 		// clears BOTH silencers (the duck AND the delivery-await latch) and re-applies

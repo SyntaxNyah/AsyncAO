@@ -306,7 +306,7 @@ func TestToolboxFilteredContentHShrinks(t *testing.T) {
 	a := testTabApp(t)
 	// Derive showBtnGrid exactly as drawToolboxPieces does, so the empty-filter
 	// height matches toolboxPiecesContentH regardless of the test theme.
-	showBtnGrid := !a.d.Prefs.LegacyDevThemeOn()
+	showBtnGrid := !a.d.Prefs.Load().LegacyDevTheme
 	full := a.toolboxPiecesFilteredContentH("", showBtnGrid)
 	if want := a.toolboxPiecesContentH(); full != want {
 		t.Errorf("empty-filter content height = %d, want the unfiltered %d", full, want)

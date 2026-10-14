@@ -146,7 +146,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	switch {
 	case rtt > 0:
 		line(fmt.Sprintf("Ping (WS round-trip): %d ms", rtt/int64(time.Millisecond)), ColText)
-	case a.d.Prefs.PingChipOn():
+	case a.d.Prefs.Load().PingChip:
 		line("Ping: measuring…", ColTextDim)
 	default:
 		line("Ping: off (enable the connection chip in Settings to measure it)", ColTextDim)

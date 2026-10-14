@@ -489,9 +489,9 @@ func menuToggleAspect(a *App, _ int) {
 	menuSetThemeFit(a, config.DefaultThemeFit)
 }
 
-func menuPlainBackdropsOn(a *App, _ int) bool { return a.d.Prefs.PlainLobbyOn() }
+func menuPlainBackdropsOn(a *App, _ int) bool { return a.d.Prefs.Load().PlainLobby }
 func menuTogglePlainBackdrops(a *App, _ int) {
-	a.d.Prefs.SetPlainLobby(!a.d.Prefs.PlainLobbyOn())
+	a.d.Prefs.SetPlainLobby(!a.d.Prefs.Load().PlainLobby)
 }
 
 func menuPerfHUDOn(a *App, _ int) bool { return a.perfHUD }

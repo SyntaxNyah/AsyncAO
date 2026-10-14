@@ -115,7 +115,7 @@ func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 
 // areaMenuRowChecked reports the block's one toggle.
 func (a *App) areaMenuRowChecked(k musicMenuKind) bool {
-	return k == areaMenuPerAreaLog && a.d.Prefs.PerAreaScrollbackOn()
+	return k == areaMenuPerAreaLog && a.d.Prefs.Load().PerAreaScroll
 }
 
 // areaMenuRowIsToggle keeps the menu open for the row that flips a switch, and
@@ -135,7 +135,7 @@ func (a *App) areaMenuAct(k musicMenuKind) {
 		a.warnLine = clampLine("Re-asking the server for the area list (" + areaRefreshCommand + ")…")
 		a.warnAt = a.now()
 	case areaMenuPerAreaLog:
-		a.d.Prefs.SetPerAreaScrollback(!a.d.Prefs.PerAreaScrollbackOn())
+		a.d.Prefs.SetPerAreaScrollback(!a.d.Prefs.Load().PerAreaScroll)
 	case areaMenuCMPanel:
 		a.toggleCMPanel()
 	}

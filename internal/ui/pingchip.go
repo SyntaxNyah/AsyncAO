@@ -37,7 +37,7 @@ var (
 // compare + one pref read in steady state.
 func (a *App) updatePingLoop() {
 	want := a.conn
-	if !a.d.Prefs.PingChipOn() {
+	if !a.d.Prefs.Load().PingChip {
 		want = nil
 	}
 	if want == a.pingConn {
@@ -116,7 +116,7 @@ func pingQuality(ms int, unknown bool) (bars int32, col sdl.Color) {
 // atomic RTT; the bars are Fill rects and the tooltip text is cached (rebuilt only when the ms
 // changes), so steady-state draw is 0-alloc.
 func (a *App) drawPingChip(x, y int32) {
-	if !a.d.Prefs.PingChipOn() || a.conn == nil {
+	if !a.d.Prefs.Load().PingChip || a.conn == nil {
 		return
 	}
 	c := a.ctx

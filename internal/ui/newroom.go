@@ -79,7 +79,7 @@ func (a *App) applyVisualPrefsToRoom(room *courtroom.Courtroom) {
 	noFX := a.d.Prefs.Load().DisableEffects
 	room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
 	room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX // AO2 \s/\f + field shake/flash (default ON)
-	room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX
+	room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
 	room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
 }
 

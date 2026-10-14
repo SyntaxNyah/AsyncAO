@@ -63,11 +63,11 @@ func (a *App) playModActionSFX(action render.ModAction) {
 	var path string
 	switch action {
 	case render.ModBan:
-		on, path = a.d.Prefs.ModBanSFXOn(), a.d.Prefs.ModBanSoundPath()
+		on, path = a.d.Prefs.Load().ModBanSFX, a.d.Prefs.Load().ModBanSoundFile
 	case render.ModKick:
-		on, path = a.d.Prefs.ModKickSFXOn(), a.d.Prefs.ModKickSoundPath()
+		on, path = a.d.Prefs.Load().ModKickSFX, a.d.Prefs.Load().ModKickSoundFile
 	case render.ModMute:
-		on, path = a.d.Prefs.ModMuteSFXOn(), a.d.Prefs.ModMuteSoundPath()
+		on, path = a.d.Prefs.Load().ModMuteSFX, a.d.Prefs.Load().ModMuteSoundFile
 	default:
 		return
 	}

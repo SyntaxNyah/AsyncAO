@@ -543,7 +543,7 @@ func (a *App) drawCourtroom(w, h int32) {
 		// OOC lives in its own box by default; the Legacy theme — or the opt-in
 		// "OOC in the log tab" toggle (the old layout, set in the layout editor) —
 		// instead routes the whole column to the tabbed log with an OOC tab.
-		if a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn() {
+		if a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab {
 			a.drawLogPanel(rcol, vpDef)
 		} else {
 			a.drawCleanRightColumn(rcol, vpDef, w, h)
@@ -879,7 +879,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 // button is easy to hit by accident). Internal disconnects — a closed tab, a
 // dropped connection, auto-reconnect teardown — keep calling Disconnect() direct.
 func (a *App) requestDisconnect() {
-	if a.d.Prefs.InstantDisconnectOn() {
+	if a.d.Prefs.Load().InstantDisconnect {
 		a.deliberateClose = true // user chose to leave — the drop paths must not auto-reconnect (#1)
 		a.Disconnect()
 		return
@@ -904,7 +904,7 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	// "Don't ask again" reuses the Quit-modal pattern: it ticks the existing
 	// Instant-disconnect pref, so future Disconnects — the button AND Esc, both
 	// routed through requestDisconnect — skip straight through. Untickable here too.
-	inst := a.d.Prefs.InstantDisconnectOn()
+	inst := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (disconnect instantly from now on)", inst); next != inst {
 		a.d.Prefs.SetInstantDisconnect(next)
 	}
@@ -950,7 +950,7 @@ func (a *App) drawCloseTabConfirm(w, h int32) {
 	// "Don't ask again" reuses the disconnect modal's pattern: it ticks the same
 	// Instant-disconnect pref, so future tab-✕ clicks (AND the Disconnect button /
 	// Esc) skip straight through. Untickable here too.
-	inst := a.d.Prefs.InstantDisconnectOn()
+	inst := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (close/disconnect instantly from now on)", inst); next != inst {
 		a.d.Prefs.SetInstantDisconnect(next)
 	}

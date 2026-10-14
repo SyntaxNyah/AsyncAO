@@ -208,12 +208,12 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 func TestMenuViewPlainBackdropsSharesTheSetting(t *testing.T) {
 	a := stageMenuBarApp(t)
 	row := menuRow(t, "View", "Plain backdrops")
-	before := a.d.Prefs.PlainLobbyOn()
+	before := a.d.Prefs.Load().PlainLobby
 	if row.checked(a, 0) != before {
 		t.Fatal("the row must read the live preference")
 	}
 	a.fireMenuItem(row)
-	if a.d.Prefs.PlainLobbyOn() == before {
+	if a.d.Prefs.Load().PlainLobby == before {
 		t.Error("the row must flip the shipped PlainLobby preference")
 	}
 }

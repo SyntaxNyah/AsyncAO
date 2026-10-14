@@ -182,7 +182,7 @@ type replayBufEntry struct {
 // feature is off and reset when the asset origin changes — a clip must never mix
 // two servers' assets (a long window can outlive a server switch).
 func (a *App) bufferReplayEvent(ev courtroom.Event) {
-	if !a.d.Prefs.InstantReplayOn() {
+	if !a.d.Prefs.Load().InstantReplay {
 		if a.replayBuf != nil { // turned off at runtime → free the ring
 			a.replayBuf = nil
 			a.replayBufN, a.replayBufW, a.replayBufOrigin = 0, 0, ""
@@ -281,7 +281,7 @@ func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string
 // the "save what just happened" key, with no recording started in advance. The
 // write is deferred off the render thread by saveSceneRecording.
 func (a *App) clipInstantReplay() {
-	if !a.d.Prefs.InstantReplayOn() {
+	if !a.d.Prefs.Load().InstantReplay {
 		a.warnLine = "Instant Replay is off — enable “Pre-record recent conversation” in Settings → Studio first."
 		a.warnAt = time.Now()
 		return
@@ -854,7 +854,7 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 // button/toast already says so) and off entirely unless the opt-in pref is on, so
 // the default client draws nothing here.
 func (a *App) drawInstantReplayDot(vp sdl.Rect) {
-	if a.recActive || !a.d.Prefs.InstantReplayOn() {
+	if a.recActive || !a.d.Prefs.Load().InstantReplay {
 		return
 	}
 	c := a.ctx

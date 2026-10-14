@@ -193,7 +193,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// Power-user network knobs: the 404 TTL is boot-applied (the negative-cache
 	// LRU takes its TTL at construction — the Settings row says "restart");
 	// the per-host deadline multiple is live but seeded here too.
-	client := network.NewClientNotFoundTTL(time.Duration(prefs.NotFoundTTLSec()) * time.Second)
+	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal) * time.Second)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.AdaptiveLatMultiple())
 	pool := network.NewPool(network.DefaultWorkers)

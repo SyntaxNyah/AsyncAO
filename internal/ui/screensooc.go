@@ -120,7 +120,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
-	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.ICTimestampsOn()) // per-frame pref read, like the IC counter
+	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.Load().ICTimestamps) // per-frame pref read, like the IC counter
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the log text.
@@ -186,12 +186,12 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	friendsOn := a.d.Prefs.Load().FriendHighlight // gates the per-line friend glow (read once)
 	// Per-speaker name colours (read once): tint each entry's name prefix on its
 	// first wrapped row. Short-circuit so the default OFF path adds nothing.
-	nameColorsOn := a.d.Prefs.NameColorsOn()
+	nameColorsOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelIC) // read once per frame, passed per line (#39: ic_chatlog_bold)
 	var nameSat, nameVal float64
 	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
-		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
+		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
 	}
 	// Glow alpha, computed once per frame: static by default, or a slow breathe
 	// when FriendGlowPulse is on (suppressed by reduce-motion). Short-circuit
@@ -404,12 +404,12 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	nameColorsOn := a.d.Prefs.Load().NameColors       // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
-		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
+		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
@@ -628,12 +628,12 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	nameColorsOn := a.d.Prefs.Load().NameColors       // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
-		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
+		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}

@@ -264,7 +264,7 @@ func (a *App) logRowBoldPref(which int) bool {
 // a continuation row, a ghosted (queued-but-unspoken) row, or name colours
 // being off can never be measured with a speaker the draw never tinted.
 func (a *App) logRowNameStyle(which, li int) (speaker string, nameOn, bold bool) {
-	nameOn = a.d.Prefs.NameColorsOn() // one global toggle, shared by both logs
+	nameOn = a.d.Prefs.Load().NameColors // one global toggle, shared by both logs
 	bold = a.logRowBoldPref(which)
 	if which != logSelIC {
 		if li >= 0 && li < len(a.oocWrapName) {

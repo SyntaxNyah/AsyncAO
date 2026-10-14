@@ -208,7 +208,7 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	c.Label(left, top, "Your music library — shared across every server. Play sends /play in OOC (DJ/CM only).", ColTextDim)
 
 	atTop := a.jukeOpen < 0 || a.jukeOpen >= len(a.jukeCache)
-	histOn := a.d.Prefs.MusicHistoryOn()
+	histOn := a.d.Prefs.Load().MusicHistory
 	if !histOn {
 		a.jukeShowRecent = false // feature disabled in Settings: never show the recent view
 	}

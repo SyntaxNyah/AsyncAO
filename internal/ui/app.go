@@ -1785,7 +1785,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}()
 	a.armBootThemeResize(a.applyThemeAsync())                                   // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
-	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
+	a.oocPct = d.Prefs.Load().OOCScalePct                                               // OOC log text size, independent of the IC log
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.areaPct = a.logPct                                                        // same for the Areas list (all three hosts: docked tab, torn, themed)
@@ -2214,7 +2214,7 @@ func (a *App) noteOverlayStart() {
 // window was restored.
 func (a *App) rederiveMessageDuck() {
 	p := a.room.Phase()
-	wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.MusicDucking()
+	wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.Load().MusicDuckingOn
 	if wantDuck != a.musicDucked {
 		a.musicDucked = wantDuck
 		a.applyAudioVolumes()
