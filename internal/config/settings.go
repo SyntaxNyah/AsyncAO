@@ -385,8 +385,18 @@ func cloneStructField(src, dst reflect.Value, i int) {
 }
 
 // Load returns the current settings snapshot. Callers must not mutate the returned
-// value (it is shared) and must not retain it across time.
+// value (it is shared) and must not retain it across time. It rebuilds from the
+// inline fields on the first call after a write, so a reader sees a consistent,
+// never-torn snapshot.
 func (p *AssetPreferences) Load() *Settings {
+	if p.stale.Load() {
+		p.mu.Lock()
+		if p.stale.Load() {
+			p.syncSnapshot()
+			p.stale.Store(false)
+		}
+		p.mu.Unlock()
+	}
 	return p.settings.Load()
 }
 

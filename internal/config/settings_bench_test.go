@@ -76,10 +76,27 @@ func BenchmarkTexBudgetMiBBefore(b *testing.B) {
 	}
 }
 
-func BenchmarkTexBudgetMiBAfter(b *testing.B) {
+func BenchmarkSyncSnapshot(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.Load().TexBudgetMiBVal
+		p.syncSnapshot()
 	}
 }
+
+func BenchmarkSetSmoothScaling(b *testing.B) {
+	p := defaultPrefs("")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.SetSmoothScaling(i%2 == 0)
+	}
+}
+
+func BenchmarkSetTexBudgetMiB(b *testing.B) {
+	p := defaultPrefs("")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.SetTexBudgetMiB(64 + i%256)
+	}
+}
+
