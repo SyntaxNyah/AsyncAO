@@ -112,7 +112,7 @@ func TestSettingsCoversDataFields(t *testing.T) {
 		"pending": true, "saveDelay": true, "closeOnce": true, "onSaveErr": true,
 		"frozen": true, "quarantine": true, "themeFitMovedToNative": true,
 		"themeFitStampPending": true, "formatGen": true, "wardrobeGen": true,
-		"settings": true,
+		"settings": true, "stale": true,
 	}
 	for i := 0; i < apType.NumField(); i++ {
 		name := apType.Field(i).Name

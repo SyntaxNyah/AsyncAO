@@ -1589,6 +1589,10 @@ type AssetPreferences struct {
 	// settings is the B0 snapshot of the data fields; readers call Load() and
 	// writers call Update(). It is swapped wholesale on a real change.
 	settings atomic.Pointer[Settings]
+
+	// stale records that a write has happened since the last snapshot republish;
+	// Load() rebuilds lazily on the first read after a write.
+	stale atomic.Bool
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -2028,11 +2032,11 @@ func (p *AssetPreferences) reportSaveError(err error) {
 }
 
 // markDirty records a pending change and wakes the saver without blocking,
-// regardless of how many signals are already queued. It also republishes the
-// settings snapshot from the inline fields; callers hold the write lock so the
-// republish is never torn.
+// regardless of how many signals are already queued. It also marks the snapshot
+// stale so Load() republishes lazily on the first read after the write; callers
+// hold the write lock.
 func (p *AssetPreferences) markDirty() {
-	p.syncSnapshot()
+	p.stale.Store(true)
 	p.pending.Store(true)
 	select {
 	case p.dirty <- struct{}{}:
@@ -2109,7 +2113,7 @@ func (p *AssetPreferences) resetLocked(keep map[string]bool) {
 	}
 	p.formatGen.Add(1)   // format/fallback prefs may have changed; invalidate resolver caches
 	p.wardrobeGen.Add(1) // a reset can wipe ServerWarm (and its wardrobes)
-	p.syncSnapshot()
+	p.stale.Store(true)
 }
 
 // ResetSettings reverts the tunable settings to defaults but KEEPS your content
@@ -5799,7 +5803,7 @@ func (p *AssetPreferences) SetHotkey(action, key string) {
 	p.mu.Lock()
 	if p.HotkeyMap == nil {
 		p.HotkeyMap = map[string]string{}
-		p.syncSnapshot() // republish the nil -> empty lazy init before the early return
+		p.stale.Store(true) // republish the nil -> empty lazy init before the early return
 	}
 	if p.HotkeyMap[action] == key {
 		p.mu.Unlock()
