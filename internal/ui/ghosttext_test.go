@@ -22,11 +22,11 @@ func TestGhostCrawlTextShipsOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.Close() })
-	if !p.GhostCrawlTextOn() {
+	if !p.Load().GhostCrawlText {
 		t.Fatal("GhostCrawlText must ship ON")
 	}
 	p.SetGhostCrawlText(false)
-	if p.GhostCrawlTextOn() {
+	if p.Load().GhostCrawlText {
 		t.Fatal("turning ghost text off must stick")
 	}
 }

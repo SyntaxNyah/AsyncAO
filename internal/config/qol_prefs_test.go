@@ -18,7 +18,7 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.FontEverywhereOn() {
+	if p.Load().FontEverywhere {
 		t.Fatal("FontEverywhere must default OFF")
 	}
 	p.SetFontEverywhere(true)
@@ -29,7 +29,7 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.FontEverywhereOn() {
+	if !q.Load().FontEverywhere {
 		t.Error("FontEverywhere=true lost across save→load")
 	}
 }
@@ -86,12 +86,12 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 // default, then it persists the version the user last opened.
 func TestChangelogSeenRoundTrip(t *testing.T) {
 	p := &AssetPreferences{}
-	if p.ChangelogSeenVersion() != "" {
-		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.ChangelogSeenVersion())
+	if p.Load().ChangelogSeen != "" {
+		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.Load().ChangelogSeen)
 	}
 	p.SetChangelogSeen("v1.30.0")
-	if p.ChangelogSeenVersion() != "v1.30.0" {
-		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.ChangelogSeenVersion())
+	if p.Load().ChangelogSeen != "v1.30.0" {
+		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.Load().ChangelogSeen)
 	}
 }
 
@@ -164,17 +164,17 @@ func TestQoLPrefDefaults(t *testing.T) {
 // clause that would silently reset every export to defaults if it were dropped.
 func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText || d.VideoFormat != defaultVideoFormat {
+	if d := p.Load().Export; d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText || d.VideoFormat != defaultVideoFormat {
 		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d/%s + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText, defaultVideoFormat)
 	}
 	// An unknown video format normalizes to the MP4 default (never crashes ffmpeg).
 	p.SetExportOpts(ExportOptions{HeightPx: 360, FPS: 12, Quality: 80, Loop: true, TextScale: 100, VideoFormat: "avi"})
-	if g := p.ExportOpts(); g.VideoFormat != defaultVideoFormat {
+	if g := p.Load().Export; g.VideoFormat != defaultVideoFormat {
 		t.Fatalf("bogus video format = %q, want normalized to %q", g.VideoFormat, defaultVideoFormat)
 	}
 	// Out-of-range values clamp to the configured bounds.
 	p.SetExportOpts(ExportOptions{HeightPx: 99999, FPS: 0, Quality: 999, Loop: false, TextScale: 9999})
-	if g := p.ExportOpts(); g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop || g.TextScale != maxExportText {
+	if g := p.Load().Export; g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop || g.TextScale != maxExportText {
 		t.Fatalf("clamped export opts = %+v, want max/min/max/maxText + loop off", g)
 	}
 
@@ -191,7 +191,7 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 || o.VideoFormat != "webm" {
+	if o := r.Load().Export; o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 || o.VideoFormat != "webm" {
 		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70/webm + loop (merge clause dropped a field?)", o)
 	}
 }
@@ -327,7 +327,7 @@ func TestRightClickHideSpritePref(t *testing.T) {
 // save→reload so the next launch knows where to dial.
 func TestAutoConnectOnLaunchPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.AutoConnectOnLaunchOn() {
+	if p.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch must default OFF (auto-connect is opt-in)")
 	}
 	if name, url := p.LastServer(); name != "" || url != "" {
@@ -347,7 +347,7 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.AutoConnectOnLaunchOn() {
+	if !r.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch=true lost on reload")
 	}
 	if name, url := r.LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
@@ -361,7 +361,7 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 // favourites and the favs-only display toggle survive a save→reload.
 func TestEmoteFavsPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.EmoteFavOnlyOn() {
+	if p.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly must default OFF")
 	}
 	if got := p.EmoteFavsFor("Apollo"); got != nil {
@@ -402,7 +402,7 @@ func TestEmoteFavsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.EmoteFavOnlyOn() {
+	if !r.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly=true lost on reload")
 	}
 	if !r.IsEmoteFav("Phoenix", 3) || !r.IsEmoteFav("Phoenix", 7) {
@@ -819,12 +819,12 @@ func TestPlayerListSortPref(t *testing.T) {
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ChatboxOpacityPct() != DefaultChatboxOpacity {
-		t.Fatalf("ChatboxOpacity default = %d, want %d", p.ChatboxOpacityPct(), DefaultChatboxOpacity)
+	if p.Load().ChatboxOpacity != DefaultChatboxOpacity {
+		t.Fatalf("ChatboxOpacity default = %d, want %d", p.Load().ChatboxOpacity, DefaultChatboxOpacity)
 	}
 	p.SetChatboxOpacity(999)
-	if p.ChatboxOpacityPct() != MaxChatboxOpacity {
-		t.Errorf("over-max = %d, want %d", p.ChatboxOpacityPct(), MaxChatboxOpacity)
+	if p.Load().ChatboxOpacity != MaxChatboxOpacity {
+		t.Errorf("over-max = %d, want %d", p.Load().ChatboxOpacity, MaxChatboxOpacity)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	q, err := newWithDebounce(path, testDebounce)
@@ -839,8 +839,8 @@ func TestChatboxOpacityPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.ChatboxOpacityPct() != 30 {
-		t.Errorf("reloaded opacity = %d, want 30", r.ChatboxOpacityPct())
+	if r.Load().ChatboxOpacity != 30 {
+		t.Errorf("reloaded opacity = %d, want 30", r.Load().ChatboxOpacity)
 	}
 }
 
@@ -1060,13 +1060,13 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().DragLayout {
 		t.Error("DragLayout=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.FriendButtonShown() {
+	if q.Load().ShowFriendButton {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.Load().EventDrivenLoop {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
-	if !q.FrameLimiterDisabled() {
+	if !q.Load().DisableFrameLimiter {
 		t.Error("DisableFrameLimiter=true lost across reload")
 	}
 	if q.MotionRedrawPerEventOn() {
@@ -1344,7 +1344,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	p.ResetPowerUser()
 
-	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
+	if p.ValidateTLSCertsOn() || p.Load().AssetOrigin != "" || p.WSOriginHeader() != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
 	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
@@ -1353,8 +1353,8 @@ func TestResetPowerUser(t *testing.T) {
 	if p.ProxyMode() != ProxyModeSystem || p.ProxyURLValue() != "" {
 		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.ProxyMode(), p.ProxyURLValue())
 	}
-	if p.AssetCharCasing() != 0 {
-		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.AssetCharCasing())
+	if p.Load().AssetCharCase != 0 {
+		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.Load().AssetCharCase)
 	}
 	if p.SpriteLoadMode() != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
@@ -1369,7 +1369,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.HotkeysEnabledOn() {
 		t.Error("nuke must reset the hotkeys opt-in to its default OFF")
 	}
-	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.CatchUpLingerMs() != 0 {
+	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.Load().CatchUpLingerMsVal != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")
 	}
 	if !p.Load().ClipSpritesToStage {
@@ -1384,7 +1384,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.SpriteDownscaleOffOn() || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
 		t.Error("nuke must reset the downscale + texture-budget knobs")
 	}
-	if p.CrossfadeMs() != 0 {
+	if p.Load().CrossfadeMsVal != 0 {
 		t.Error("nuke must reset the crossfade to off")
 	}
 	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
@@ -1393,7 +1393,7 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.Load().EventDrivenLoop {
 		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
-	if p.FrameLimiterDisabled() {
+	if p.Load().DisableFrameLimiter {
 		t.Error("nuke must restore the frame-limiter bypass to its default OFF")
 	}
 	if !p.MotionRedrawPerEventOn() {

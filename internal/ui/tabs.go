@@ -603,7 +603,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 				s.noteOwnICEcho()
 			}
 			fr, fc := a.friendMessage(s.serverKey, ev.Message)
-			force := a.d.Prefs.ForceCharNamesOn()
+			force := a.d.Prefs.Load().ForceCharNames
 			// nil char.ini rung, deliberately: charMetaFor resolves against the
 			// ACTIVE tab's asset origin, and a BACKGROUND tab's speaker is on a
 			// different server. Answering from the wrong origin's cache would put
@@ -648,7 +648,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		if a.d.Prefs.NotifyOnOOCOn() {
 			t.unread++
 		}
-		if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
+		if a.d.Prefs.Load().CallwordsOOC && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 			names := a.mentionNamesFor(s)
 			a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
 		}

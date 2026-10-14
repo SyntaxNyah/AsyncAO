@@ -69,14 +69,14 @@ func prefJSONTags(t reflect.Type) map[string]bool {
 func TestAssetCharCasingRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if got := p.AssetCharCasing(); got != 0 {
+	if got := p.Load().AssetCharCase; got != 0 {
 		t.Fatalf("default casing = %d, want 0 (lowercase — the safe default)", got)
 	}
 	p.SetAssetCharCasing(2) // title case
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).AssetCharCasing(); got != 2 {
+	if got := loadPrefs(t, path).Load().AssetCharCase; got != 2 {
 		t.Errorf("casing after reload = %d, want 2 — it saved but did not load back", got)
 	}
 }
@@ -346,7 +346,7 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 	p.SetAssetCharCasing(AssetCharCaseMax + 7)
-	if got := p.AssetCharCasing(); got != 0 {
+	if got := p.Load().AssetCharCase; got != 0 {
 		t.Errorf("setter accepted an out-of-range mode: got %d, want the lowercase fallback", got)
 	}
 	// ...and the same on the way in, because the setter is not the only door.
@@ -354,7 +354,7 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).AssetCharCasing(); got != AssetCharCaseMax {
+	if got := loadPrefs(t, path).Load().AssetCharCase; got != AssetCharCaseMax {
 		t.Errorf("the highest VALID mode must survive a reload: got %d, want %d", got, AssetCharCaseMax)
 	}
 }

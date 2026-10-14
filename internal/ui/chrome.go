@@ -75,7 +75,7 @@ func chromePresetIndex(key string) int {
 // half-filled custom scheme is always coherent (no black-on-black slots).
 func (a *App) customChromeColors() [7]sdl.Color {
 	out := defaultKitColors
-	hex := a.d.Prefs.CustomChrome()
+	hex := a.d.Prefs.Load().CustomChromeHex
 	for i := range out {
 		if col, ok := parseHexColor(hex[i]); ok {
 			out[i] = col
@@ -262,7 +262,7 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	labels := [7]string{"Background", "Panel", "Raised panel", "Accent", "Text", "Dim text", "Danger"}
-	hex := a.d.Prefs.CustomChrome()
+	hex := a.d.Prefs.Load().CustomChromeHex
 	colOf := func(i int) sdl.Color {
 		if col, ok := parseHexColor(hex[i]); ok {
 			return col

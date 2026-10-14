@@ -76,11 +76,11 @@ func (a *App) applyVisualPrefsToRoom(room *courtroom.Courtroom) {
 	if room == nil || a.d.Prefs == nil {
 		return
 	}
-	noFX := a.d.Prefs.EffectsDisabled()
+	noFX := a.d.Prefs.Load().DisableEffects
 	room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
 	room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX // AO2 \s/\f + field shake/flash (default ON)
 	room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX
-	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
 }
 
 // applyAuthoringVisualsToRoom takes the three EFFECT gates back off the viewer

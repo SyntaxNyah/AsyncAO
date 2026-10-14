@@ -493,7 +493,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// none of this. It doesn't rewrite the rows below — it overrules them — so
 	// unticking it hands back the exact set-up they had. The rows stay visible but
 	// muted while it's on, which is what tells them what it's actually suppressing.
-	noFX := a.d.Prefs.EffectsDisabled()
+	noFX := a.d.Prefs.Load().DisableEffects
 	if next := c.Checkbox(pad, y, "Disable all visual effects (OFF by default): one switch for a calm screen — stops other players' spinning / glowing / moving sprite styles, screen shake and flash, animated text, entrance slides, sprite washes and the post-processing overlays. Your settings below are remembered, just overruled while this is ticked.", noFX); next != noFX {
 		a.d.Prefs.SetDisableEffects(next)
 		noFX = next
@@ -644,7 +644,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		a.d.Prefs.SetAnimateEntrances(next)
 	}
 	y += 26
-	dof := a.d.Prefs.DepthOfFieldOn()
+	dof := a.d.Prefs.Load().DepthOfField
 	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
 		a.d.Prefs.SetDepthOfField(next)
 	}
@@ -856,7 +856,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// #127 full-character bundle prefetch (default OFF): pre-grab a character's whole sprite
 	// set on load so emote switches are instant — speculative + low priority, so it sheds
 	// under load and never blocks live fetches (it uses more bandwidth + cache up front).
-	bundle := a.d.Prefs.CharBundlePrefetchOn()
+	bundle := a.d.Prefs.Load().CharBundlePrefetch
 	if next := c.Checkbox(pad, y, "Preload a character's whole sprite set (OFF by default): grabs every emote up front so switching is instant — speculative, low-priority, more bandwidth", bundle); next != bundle {
 		a.d.Prefs.SetCharBundlePrefetch(next)
 	}
@@ -904,7 +904,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// on a bad path. The load runs OFF-THREAD (rule §17.2); Apply re-triggers it.
 	c.Label(pad, y+4, "Custom image:", ColText)
 	if !settings.errorSpriteLoaded {
-		settings.errorSpriteInput = a.d.Prefs.ErrorSpritePath()
+		settings.errorSpriteInput = a.d.Prefs.Load().ErrorSpriteFile
 		settings.errorSpriteLoaded = true
 	}
 	var esCommit bool
@@ -949,7 +949,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y, fmt.Sprintf("Memory cache (T2): %d entries · %.1f / %.0f MiB · %.0f%% hit rate · %d evictions",
 		t2.Entries, float64(t2.Bytes)/(1<<20), float64(t2.Budget)/(1<<20), hitPct, t2.Evictions), ColTextDim)
 	y += 24
-	zstdOn := a.d.Prefs.DiskZstdEnabled()
+	zstdOn := a.d.Prefs.Load().DiskZstd
 	if next := c.Checkbox(pad, y, "Compress disk cache with zstd (new writes only; smaller T3, tiny CPU on hits — old blobs always read fine)", zstdOn); next != zstdOn {
 		a.d.Prefs.SetDiskZstd(next)
 		a.d.Manager.SetDiskCompression(next)
@@ -960,7 +960,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// update never silently deletes a cache. Past a positive cap the writer
 	// goroutine sweeps the OLDEST blobs. The slider step keeps values round.
 	c.Label(pad, y+4, "Disk cache size limit:", ColText)
-	dcb := a.d.Prefs.DiskCacheBudgetMiB()
+	dcb := a.d.Prefs.Load().DiskCacheBudgetMiBVal
 	dcbTrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	ndcb := int(clampI32(c.Slider("diskcachebudget", dcbTrack, int32(dcb), config.DiskCacheBudgetMaxMiB), 0, config.DiskCacheBudgetMaxMiB))
 	if ndcb != 0 { // snap positive values to a coarse grid and pull sub-minimum up to the floor
@@ -977,7 +977,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad+200+236, y+4, dcbLabel, ColTextDim)
 	if ndcb != dcb {
 		a.d.Prefs.SetDiskCacheBudgetMiB(ndcb)
-		a.d.Manager.SetDiskBudget(int64(a.d.Prefs.DiskCacheBudgetMiB()) << 20) // live; writer prunes on next sweep
+		a.d.Manager.SetDiskBudget(int64(a.d.Prefs.Load().DiskCacheBudgetMiBVal) << 20) // live; writer prunes on next sweep
 	}
 	y += 28
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Measure disk cache") {
@@ -1141,7 +1141,7 @@ func (a *App) applyPrefsToState() {
 	a.applyAudioVolumes()
 	if a.room != nil {
 		a.applyTimingToRoom()
-		a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+		a.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
 		a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
 		a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn()
 	}
@@ -1177,7 +1177,7 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// Callword/friend ping volume — its OWN control, independent of SFX (so a quiet
 	// SFX mix or the SFX mute never silences your name-pings) and global (alerts
 	// should reach you the same on every server).
-	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.AlertVolume()); av != a.d.Prefs.AlertVolume() {
+	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.Load().AlertVol); av != a.d.Prefs.Load().AlertVol {
 		a.d.Prefs.SetAlertVolume(av)
 		a.applyAudioVolumes()
 	}

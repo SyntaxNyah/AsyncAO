@@ -320,9 +320,9 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				if p.authoring && room.ReduceMotion {
 					t.Error("ReduceMotion is set on an AUTHORING room — an export or preview carries the motion the author wrote, not this viewer's accessibility choice")
 				}
-				if room.ForceCharNames != a.d.Prefs.ForceCharNamesOn() {
+				if room.ForceCharNames != a.d.Prefs.Load().ForceCharNames {
 					t.Errorf("ForceCharNames = %v with the preference at %v — the naming pref is not part of the authoring exemption and must reach every room",
-						room.ForceCharNames, a.d.Prefs.ForceCharNamesOn())
+						room.ForceCharNames, a.d.Prefs.Load().ForceCharNames)
 				}
 			})
 		}

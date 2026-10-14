@@ -389,15 +389,17 @@ func cloneStructField(src, dst reflect.Value, i int) {
 // inline fields on the first call after a write, so a reader sees a consistent,
 // never-torn snapshot.
 func (p *AssetPreferences) Load() *Settings {
-	if p.stale.Load() {
-		p.mu.Lock()
-		if p.stale.Load() {
-			p.syncSnapshot()
-			p.stale.Store(false)
-		}
-		p.mu.Unlock()
+	if s := p.settings.Load(); s != nil && !p.stale.Load() {
+		return s
 	}
-	return p.settings.Load()
+	p.mu.Lock()
+	if p.settings.Load() == nil || p.stale.Load() {
+		p.syncSnapshot()
+		p.stale.Store(false)
+	}
+	s := p.settings.Load()
+	p.mu.Unlock()
+	return s
 }
 
 // syncSnapshot seeds the snapshot from the inline data fields — the B0 bridge: the

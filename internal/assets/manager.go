@@ -1330,7 +1330,7 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 		URL:            url,
 		Data:           data,
 		Type:           t,
-		PlayAnimations: m.prefs.AnimationsEnabled(),
+		PlayAnimations: m.prefs.Load().PreferAnimated,
 		OnDone: func(doneURL string, d *Decoded, err error) {
 			// Opt-in thumbnail store: every character sprite that decodes leaves a
 			// tiny low-q stand-in behind (ThumbCache gates on its own enable and

@@ -14,11 +14,11 @@ func TestCallwordOSToastPref(t *testing.T) {
 	}
 	defer p.Close()
 
-	if p.CallwordOSToastOn() {
+	if p.Load().CallwordOSToast {
 		t.Error("callword OS toast should default OFF")
 	}
 	p.SetCallwordOSToast(true)
-	if !p.CallwordOSToastOn() {
+	if !p.Load().CallwordOSToast {
 		t.Error("SetCallwordOSToast(true) didn't take")
 	}
 }

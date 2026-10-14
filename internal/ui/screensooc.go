@@ -183,7 +183,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// it pins the HOVERED line, like right-click. Resolved once (the chord is
 	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
-	friendsOn := a.d.Prefs.FriendHighlightOn() // gates the per-line friend glow (read once)
+	friendsOn := a.d.Prefs.Load().FriendHighlight // gates the per-line friend glow (read once)
 	// Per-speaker name colours (read once): tint each entry's name prefix on its
 	// first wrapped row. Short-circuit so the default OFF path adds nothing.
 	nameColorsOn := a.d.Prefs.NameColorsOn()
@@ -198,7 +198,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// keeps the no-friend default path to a single pref read — no trig, no extra
 	// locks. Modulo-into-period keeps the sine argument small for precision.
 	friendAlpha := friendTintColor.A
-	pulseOn := friendsOn && a.d.Prefs.FriendGlowPulseOn() && !a.d.Prefs.ReduceMotion()
+	pulseOn := friendsOn && a.d.Prefs.Load().FriendGlowPulse && !a.d.Prefs.ReduceMotion()
 	if pulseOn {
 		period := int64(friendGlowPulsePeriod)
 		phase := math.Sin(float64(a.now().UnixNano()%period) / float64(period) * 2 * math.Pi)

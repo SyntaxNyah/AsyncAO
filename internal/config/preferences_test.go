@@ -330,7 +330,7 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	// 1) Fresh install → ON, default dwell.
 	fresh, path := newTestPrefs(t)
-	if !fresh.EmoteHoverNamesEnabled() {
+	if !fresh.Load().EmoteHoverNamesOn {
 		t.Error("fresh default EmoteHoverNames = OFF, want ON")
 	}
 	if got := fresh.EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
@@ -346,7 +346,7 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load legacy: %v", err)
 	}
-	if !lp.EmoteHoverNamesEnabled() {
+	if !lp.Load().EmoteHoverNamesOn {
 		t.Error("legacy (absent key) EmoteHoverNames = OFF, want the default ON")
 	}
 	_ = lp.Close()
@@ -363,7 +363,7 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if re.EmoteHoverNamesEnabled() {
+	if re.Load().EmoteHoverNamesOn {
 		t.Error("explicit OFF did not persist: reloaded EmoteHoverNames = ON")
 	}
 	if got := re.EmoteHoverNamesMillis(); got != 2000 {
@@ -426,7 +426,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if got := q.SavedShowname(); got != "Nyah" {
 		t.Errorf("Showname = %q, want %q", got, "Nyah")
 	}
-	if !q.DebugOverlayEnabled() {
+	if !q.Load().DebugOverlay {
 		t.Error("DebugOverlay lost")
 	}
 }
@@ -440,7 +440,7 @@ func TestLearnedExportImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.FormatAutoDetect() {
+	if !p.Load().AutoDetectFormats {
 		t.Error("FormatAutoDetect should default ON")
 	}
 	p.SetFormatAutoDetect(false)
@@ -472,7 +472,7 @@ func TestLearnedExportImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.FormatAutoDetect() {
+	if q.Load().AutoDetectFormats {
 		t.Error("explicit FormatAutoDetect=false lost on reload")
 	}
 }
@@ -1170,7 +1170,7 @@ func TestResetSettings(t *testing.T) {
 	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Errorf("volumes not reset: %d/%d/%d", m, s, b)
 	}
-	if p.ForceCharNamesOn() {
+	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
 	if p.TabCap() != DefaultMultiTabCap {
@@ -1323,12 +1323,12 @@ func TestAlertVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.AlertVolume() != defaultAudioVolume {
-		t.Fatalf("AlertVolume default = %d, want %d", p.AlertVolume(), defaultAudioVolume)
+	if p.Load().AlertVol != defaultAudioVolume {
+		t.Fatalf("AlertVolume default = %d, want %d", p.Load().AlertVol, defaultAudioVolume)
 	}
 	p.SetAlertVolume(150) // over-max clamps to 100
-	if p.AlertVolume() != 100 {
-		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.AlertVolume())
+	if p.Load().AlertVol != 100 {
+		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.Load().AlertVol)
 	}
 	p.SetAlertVolume(40)
 	if err := p.Close(); err != nil {
@@ -1338,8 +1338,8 @@ func TestAlertVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.AlertVolume() != 40 {
-		t.Errorf("AlertVolume lost across reload: got %d, want 40", q.AlertVolume())
+	if q.Load().AlertVol != 40 {
+		t.Errorf("AlertVolume lost across reload: got %d, want 40", q.Load().AlertVol)
 	}
 }
 
@@ -1357,7 +1357,7 @@ func TestResetAll(t *testing.T) {
 
 	p.ResetAll()
 
-	if p.ForceCharNamesOn() {
+	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
 	if got := p.CallWords(); len(got) != 0 {
@@ -1619,7 +1619,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if crawl, _, _ := p.Timing(); crawl != DefaultTextCrawlMs {
 			t.Errorf("an older file's %d ms crawl must move to %d ms once, got %d", oldDefaultCrawlMs, DefaultTextCrawlMs, crawl)
 		}
-		if !p.BlipSpeedDefaultMoved() {
+		if !p.Load().BlipSpeedDefaultMigrated {
 			t.Error("the move must stamp the file so it never runs twice")
 		}
 	})
@@ -1648,7 +1648,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 			}
 			// The stamp is written EITHER WAY, so the move can never fire again and
 			// re-examine a value it has already decided to keep.
-			if !p.BlipSpeedDefaultMoved() {
+			if !p.Load().BlipSpeedDefaultMigrated {
 				t.Errorf("a preserved %d ms pick must still stamp the file", deliberate)
 			}
 		}
@@ -1689,7 +1689,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if crawl, _, _ := p.Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("a stamped file's explicit %d ms must be respected, got %d", oldDefaultCrawlMs, crawl)
 		}
-		if !p.BlipSpeedDefaultMoved() {
+		if !p.Load().BlipSpeedDefaultMigrated {
 			t.Error("the stamp was lost on load")
 		}
 		if err := p.SaveNow(); err != nil {
@@ -1699,7 +1699,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if !q.BlipSpeedDefaultMoved() {
+		if !q.Load().BlipSpeedDefaultMigrated {
 			t.Error("the stamp did not survive save → load — the move would re-fire on every launch")
 		}
 		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
@@ -1929,7 +1929,7 @@ func TestSendOptionDefaults(t *testing.T) {
 		{"stickyEffects", p.StickyEffectsOn(), false},
 		{"stickyPreanims", p.StickyPreanimsOn(), false},
 		{"sfxOnIdle", p.SFXOnIdleOn(), false},
-		{"ghostCrawlText", p.GhostCrawlTextOn(), true},
+		{"ghostCrawlText", p.Load().GhostCrawlText, true},
 		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},
 	} {
 		if tc.got != tc.want {
@@ -1961,7 +1961,7 @@ func TestSendOptionDefaults(t *testing.T) {
 		{"stickyEffects", q.StickyEffectsOn(), false},
 		{"stickyPreanims", q.StickyPreanimsOn(), false},
 		{"sfxOnIdle", q.SFXOnIdleOn(), true},
-		{"ghostCrawlText", q.GhostCrawlTextOn(), false},
+		{"ghostCrawlText", q.Load().GhostCrawlText, false},
 		{"unfocusedFullRate", q.UnfocusedFullRateOn(), true},
 	} {
 		if tc.got != tc.want {

@@ -290,7 +290,7 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	// caller's content origin so the rows + sliders land in the right column.
 	a.formX = x
 	pad := a.formX
-	opts := a.d.Prefs.ExportOpts()
+	opts := a.d.Prefs.Load().Export
 	fx := int32(pad + 130)
 
 	c.Label(pad, y+5, "Size:", ColText)
@@ -548,7 +548,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		return
 	}
 	// Resolve the sticky export options into this job's size/cadence.
-	opts := a.d.Prefs.ExportOpts()
+	opts := a.d.Prefs.Load().Export
 	h := int32(opts.HeightPx)
 	w := h * 4 / 3
 	// A comic page renders fixed, small panels (one per line) regardless of the
@@ -724,7 +724,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	// origin (local:// mount) or auto-detect-off skips straight to warming, where
 	// the demand pipeline + missingno still stage what resolves. tickGifSeed gates
 	// the first warm tick on the result.
-	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(scene.Origin) {
+	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(scene.Origin) {
 		a.markOriginSeeded(scene.Origin)
 		a.startExportSeed(a.gif, scene.Origin)
 		a.warnLine = "Checking the server's format manifest…"
@@ -1730,7 +1730,7 @@ func (a *App) pollGifExport() {
 	select {
 	case res := <-a.gifResultCh:
 		a.warnLine = res.msg
-		if res.path != "" && a.d.Prefs.ExportOpts().CopyToClipboard {
+		if res.path != "" && a.d.Prefs.Load().Export.CopyToClipboard {
 			if copyFileToClipboard(res.path) {
 				a.warnLine += "  📋 on the clipboard"
 			}

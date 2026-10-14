@@ -126,10 +126,10 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		return
 	}
 	me := a.activeCharName() // iniswap override drives emotes + buttons
-	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	useImages := a.d.Prefs.Load().EmoteButtonImages
 	// Emote-name hover tooltip config, read ONCE per grid draw (the pref RLock stays
 	// off the per-cell loop). When off, the loop's tooltip branch is skipped entirely.
-	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	a.refreshEmoteView() // build the favourite set + the visible-index list (#77)
 	vis := a.emoteVisible
@@ -226,7 +226,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		}
 	}
 	// Favs-only with nothing starred yet: explain how to get out / add some.
-	if len(vis) == 0 && a.d.Prefs.EmoteFavOnlyOn() {
+	if len(vis) == 0 && a.d.Prefs.Load().EmoteFavOnly {
 		c.Label(r.X, r.Y+4, "No favourite emotes yet — turn off ★ Favs, then click the ★ on an emote.", ColTextDim)
 	}
 
@@ -667,7 +667,7 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 		// Emote-name caption: opt-in (default OFF). Off ⇒ the fallback shows a clean
 		// icon with no text overlay, which is what most players want; on ⇒ the name
 		// strip returns for telling otherwise-identical fallback cells apart.
-		if a.d.Prefs.EmoteCaptionsOn() {
+		if a.d.Prefs.Load().EmoteCaptions {
 			strip := sdl.Rect{X: btn.X, Y: btn.Y + btn.H - 15, W: btn.W, H: 15}
 			c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 			c.LabelClipped(btn.X+3, strip.Y+1, btn.W-6, label, ColText)

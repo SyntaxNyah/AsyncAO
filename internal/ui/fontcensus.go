@@ -350,7 +350,7 @@ func (a *App) drainMissingRunes() {
 	// generation and purging the text caches as it goes. That makes it the first
 	// thing to eliminate when text misbehaves on a platform we cannot reproduce
 	// on, and an off switch turns a long guessing game into one A/B.
-	if !a.d.Prefs.FontCensusOn() {
+	if !a.d.Prefs.Load().FontCensus {
 		return
 	}
 	if len(a.ctx.censusData) >= censusFaceCap {

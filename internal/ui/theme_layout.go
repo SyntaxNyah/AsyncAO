@@ -1163,7 +1163,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// setting is rule (b). The live room is pushed too, so the change shows on the
 	// next line without waiting for a rejoin.
 	if r, ok := themedToggleRect(lay, "showname_enable", "", ""); ok {
-		show := !a.d.Prefs.ForceCharNamesOn()
+		show := !a.d.Prefs.Load().ForceCharNames
 		if next := c.CheckboxIn(r, lay.themedToggleLabel("showname_enable", "Shownames"), show); next != show {
 			a.d.Prefs.SetForceCharNames(!next)
 			// Push the LIVE room too, as the Settings surface does. Without this the
@@ -1601,7 +1601,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		if col, ok := a.partPanel(partChatbox); ok { // per-part tint (v1.52.0): custom base, opacity kept
 			bg = sdl.Color{R: col.R, G: col.G, B: col.B, A: bg.A}
 		}
-		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
+		if a.d.Prefs.Load().ChatboxTint && sc.ShownameText != "" { // #14 per-character tint
 			bg = chatboxTintFor(sc.ShownameText, bg)
 		}
 		c.Fill(box, bg)
@@ -1822,9 +1822,9 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	start := a.emoteFirstSlot()
 
 	me := a.activeCharName()
-	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	useImages := a.d.Prefs.Load().EmoteButtonImages
 	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
-	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
@@ -1875,7 +1875,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	}
 	// Favs-only with nothing starred yet: tell the user how to recover (the
 	// toggle lives in Settings for themed layouts, which are pixel-precise).
-	if len(vis) == 0 && a.d.Prefs.EmoteFavOnlyOn() {
+	if len(vis) == 0 && a.d.Prefs.Load().EmoteFavOnly {
 		c.Label(r.X, r.Y+4, "No favourite emotes — turn off \"favourites only\" in Settings, then click an emote's ★.", ColTextDim)
 	}
 

@@ -23,7 +23,7 @@ func (a *App) drawDiscordRow(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
-	dp := a.d.Prefs.Discord()
+	dp := a.d.Prefs.Load().DiscordRPC
 	changed := false
 	if next := c.Checkbox(pad, y, "Discord Rich Presence (\"Playing AsyncAO\" on your profile while Discord runs; fully optional)", dp.Enabled); next != dp.Enabled {
 		dp.Enabled = next

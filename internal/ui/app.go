@@ -1772,7 +1772,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// a failed custom load leaves a valid page in place (missingno.go).
 	a.uploadEmbeddedMissingno()
 	a.uploadEmbeddedSpeedlines() // #126 bundled zoom speedline fallback
-	if p := d.Prefs.ErrorSpritePath(); p != "" {
+	if p := d.Prefs.Load().ErrorSpriteFile; p != "" {
 		a.applyErrorSprite(p)
 	}
 	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
@@ -1810,7 +1810,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// anything, dial the last server on the first frames so you land straight on
 	// your chosen server — even when no tab was open at shutdown. Tab-restore wins
 	// if both are on (it reopens exactly what you had).
-	if d.Prefs.AutoConnectOnLaunchOn() && len(a.restoreQueue) == 0 {
+	if d.Prefs.Load().AutoConnectOnLaunch && len(a.restoreQueue) == 0 {
 		if _, url := d.Prefs.LastServer(); url != "" {
 			a.autoConnectPending = true
 		}

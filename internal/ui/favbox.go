@@ -93,9 +93,9 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	}
 
 	me := a.activeCharName()
-	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	useImages := a.d.Prefs.Load().EmoteButtonImages
 	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
-	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	cols := int32(len(a.favBoxList))
 	if cols > favBoxCols {

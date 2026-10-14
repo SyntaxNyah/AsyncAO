@@ -229,7 +229,7 @@ func (a *App) editorTakeImage(path string) bool {
 	// OFF THE RENDER THREAD (hard rule 2): the stat, the read, the hash, the copy
 	// and the decode all happen there, and the goroutine touches nothing but its own
 	// two paths and the flag it was handed.
-	anims := a.d.Prefs.AnimationsEnabled()
+	anims := a.d.Prefs.Load().PreferAnimated
 	go func() { job.done <- runEditImageJob(job, anims) }()
 	a.te.note("adding " + base + "…")
 	return true

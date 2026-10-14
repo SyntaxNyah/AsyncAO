@@ -781,7 +781,7 @@ func (a *App) crossfadeDur() time.Duration {
 	if a.d.Prefs.ReduceMotion() {
 		return 0
 	}
-	return time.Duration(a.d.Prefs.CrossfadeMs()) * time.Millisecond
+	return time.Duration(a.d.Prefs.Load().CrossfadeMsVal) * time.Millisecond
 }
 
 // --- frame pacing (the GPU-burn fix) -------------------------------------------
@@ -1599,7 +1599,7 @@ func (a *App) applyTimingToRoom() {
 	if n := a.d.Prefs.ICQueueCap(); n != 0 {
 		a.room.QueueCap = n
 	}
-	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
+	a.room.CatchUpLinger = time.Duration(a.d.Prefs.Load().CatchUpLingerMsVal) * time.Millisecond
 	// The four pref-driven VISUAL gates (including the master off-switch's
 	// precedence over both effect knobs) live in applyVisualPrefsToRoom, because
 	// newRoom seeds every OTHER room with them at construction and two spellings
@@ -2592,7 +2592,7 @@ func (a *App) pollCharINI() {
 		// (this branch runs on the char.ini result), and singleflight collapses any that are
 		// already cached/in-flight.
 		me := a.myCharName()
-		if a.d.Prefs.CharBundlePrefetchOn() {
+		if a.d.Prefs.Load().CharBundlePrefetch {
 			for _, e := range a.emotes {
 				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)

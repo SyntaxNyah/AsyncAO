@@ -156,7 +156,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 26
 	}
 	c.Label(pad, y+4, "Speaker-swap crossfade:", ColText)
-	cfMs := a.d.Prefs.CrossfadeMs()
+	cfMs := a.d.Prefs.Load().CrossfadeMsVal
 	cftrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	ncf := int(clampI32(c.Slider("crossfadems", cftrack, int32(cfMs), config.CrossfadeMaxMs), 0, config.CrossfadeMaxMs))
 	if ncf != 0 && ncf < config.CrossfadeMinMs {
@@ -254,7 +254,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "Event-driven renderer only. On (default): each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames and power. Off: moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
 	y += 10
-	nolimit := a.d.Prefs.FrameLimiterDisabled()
+	nolimit := a.d.Prefs.Load().DisableFrameLimiter
 	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {
 		a.d.Prefs.SetFrameLimiterDisabled(next)
 	}
@@ -402,7 +402,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += 26
 	c.Label(pad, y+4, "Catch-up flash linger:", ColText)
-	cul := a.d.Prefs.CatchUpLingerMs()
+	cul := a.d.Prefs.Load().CatchUpLingerMsVal
 	ctrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 	nc := int(clampI32(c.Slider("catchuplinger", ctrack, int32(cul), config.CatchUpLingerMaxMs), 0, config.CatchUpLingerMaxMs))
 	c.Tooltip(ctrack, "How long each fast-forwarded backlog message stays up while catch-up drains a pile-up. 0 (default) = one per frame — fastest; a little linger makes the backlog readable as it flashes past.")
@@ -442,7 +442,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// Origin overrides (asset fetches + the WS handshake).
 	y = a.settingsSection(y, w, "Origin overrides")
 	c.Label(pad, y+4, "Assets Origin/Referer:", ColText)
-	origin := a.d.Prefs.AssetOriginHeader()
+	origin := a.d.Prefs.Load().AssetOrigin
 	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
 		a.d.Prefs.SetAssetOriginHeader(next)
 		a.d.Manager.SetAssetOrigin(next)
@@ -547,7 +547,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Character-folder casing.
 	y = a.settingsSection(y, w, "Character folder casing")
-	cs := a.d.Prefs.AssetCharCasing()
+	cs := a.d.Prefs.Load().AssetCharCase
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, charCaseLabel(cs)) {
 		a.d.Prefs.SetAssetCharCasing((cs + 1) % courtroom.CharCaseCount)
 		a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately

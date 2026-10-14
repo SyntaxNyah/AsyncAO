@@ -989,7 +989,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	matches := rows.matches(query, showTaken)
 	a.charScroll = a.charGridScroll(w, "charscroll", g, a.charScroll, matches)
 
-	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
+	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	n := int32(0)
 	// AO2 raises char_selector ABOVE every button on hover (aocharbutton.cpp), so the
 	// hovered cell is remembered here and its halo painted after the loop — immediate

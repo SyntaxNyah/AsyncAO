@@ -480,7 +480,7 @@ func TestMarkChangelogSeenStampsTheBuild(t *testing.T) {
 	a.d.Prefs.SetChangelogSeen(stale)
 
 	a.markChangelogSeen()
-	if got := a.d.Prefs.ChangelogSeenVersion(); got == stale {
+	if got := a.d.Prefs.Load().ChangelogSeen; got == stale {
 		t.Error("markChangelogSeen must stamp the current build as seen")
 	}
 }

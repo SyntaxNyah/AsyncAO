@@ -27,7 +27,7 @@ func (a *App) applyThemeAsync() uint64 {
 	if a.themeBound != "" {
 		name = a.themeBound
 	}
-	anims := a.d.Prefs.AnimationsEnabled()
+	anims := a.d.Prefs.Load().PreferAnimated
 	// The AO2 subtheme folder to prefer inside that theme. Read HERE, on the
 	// render thread, with every other preference this apply needs — the goroutine
 	// below must not take the preferences lock (the -race interleaving against the
@@ -1031,7 +1031,7 @@ func (a *App) warnActive() bool {
 // fetched when the solid wash is actually active. Shared by the live + replay
 // render paths.
 func (a *App) spriteFX() render.SpriteFX {
-	if a.d.Prefs.EffectsDisabled() {
+	if a.d.Prefs.Load().DisableEffects {
 		// Master off-switch: every wash, motion and lighting extra goes, but
 		// UserScaling STAYS — it is how big a sprite is drawn (char.ini / the
 		// enlarging rule), not eye-candy, and zeroing it would silently resize
@@ -1048,7 +1048,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		Spin:            a.d.Prefs.SpriteSpinOn(),
 		ShoutPunch:      a.d.Prefs.ShoutPunchOn(),
 		Entrance:        a.d.Prefs.Load().AnimateEntrances,
-		DoF:             a.d.Prefs.DepthOfFieldOn(),
+		DoF:             a.d.Prefs.Load().DepthOfField,
 		Spotlight:       a.d.Prefs.SpotlightOn(),
 		IdleBreath:      a.d.Prefs.IdleBreathOn() && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
 		BreathBob:       a.d.Prefs.BreathBobOn(),
@@ -1082,7 +1082,7 @@ func (a *App) cycleWeather() {
 
 // postFX mirrors the user's #10 post-processing toggles onto the viewport each frame.
 func (a *App) postFX() render.PostFX {
-	if a.d.Prefs.EffectsDisabled() { // master off-switch: no overlay over the stage at all
+	if a.d.Prefs.Load().DisableEffects { // master off-switch: no overlay over the stage at all
 		return render.PostFX{}
 	}
 	return render.PostFX{
@@ -1112,7 +1112,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 	if room == nil {
 		return
 	}
-	hideDesk := a.d.Prefs.HideDeskOn()
+	hideDesk := a.d.Prefs.Load().HideDesk
 	if !hideDesk && len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
 		return // nothing hidden/moved (the common case): one pref read, then out
 	}
@@ -1264,7 +1264,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 	}
 	// Cheap gate: if NO friend signal (glow / notify / sound) is enabled, skip
 	// entirely — the default, so it costs nothing.
-	if !a.d.Prefs.FriendHighlightOn() && !a.d.Prefs.FriendNotifyOn() && !a.d.Prefs.FriendSoundOn() && !a.d.Prefs.FriendOSToastOn() {
+	if !a.d.Prefs.Load().FriendHighlight && !a.d.Prefs.Load().FriendNotify && !a.d.Prefs.Load().FriendSound && !a.d.Prefs.Load().FriendOSToast {
 		return false, -1
 	}
 	name := strings.TrimSpace(m.Showname)
@@ -1288,7 +1288,7 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	if a.d.Prefs.StreamerMode() || a.dndOn {
 		return
 	}
-	if a.d.Prefs.FriendNotifyOn() {
+	if a.d.Prefs.Load().FriendNotify {
 		name := strings.TrimSpace(m.Showname)
 		if name == "" {
 			name = strings.TrimSpace(m.CharName)
@@ -1301,11 +1301,11 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		a.warnAt = time.Now()
 		a.ctx.FlashWindow()
 	}
-	if a.d.Prefs.FriendSoundOn() {
+	if a.d.Prefs.Load().FriendSound {
 		// Custom sound if set, else the built-in ping — always audible. Same fix
 		// as callwords: routing through the theme's word_call silenced the alert
 		// on themes that name it but ship no loadable file.
-		if f := a.d.Prefs.FriendSoundPath(); f != "" {
+		if f := a.d.Prefs.Load().FriendSoundFile; f != "" {
 			a.d.Audio.PlayFile(f)
 		} else {
 			a.d.Audio.PlayAlert()
@@ -1313,7 +1313,7 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	}
 	// Desktop (OS) toast — only while you're tabbed away (#M4), rate-limited so a chatty
 	// friend can't storm it.
-	if a.d.Prefs.FriendOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+	if a.d.Prefs.Load().FriendOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
 		name := strings.TrimSpace(m.Showname)
 		if name == "" {

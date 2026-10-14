@@ -300,7 +300,7 @@ func (a *App) handleCharKeys() {
 // and only when the digit isn't a deliberate character keybind, the same fence
 // handleCharKeys has always had. Picking focuses the IC input, matching a click.
 func (a *App) handleEmoteKeys() {
-	if a.d.Prefs.DisableAltEmoteRowOn() {
+	if a.d.Prefs.Load().DisableAltEmoteRow {
 		return // the user removed the Alt+1..9 number row; the digits are plain text again
 	}
 	key := a.bareBindKey()
@@ -474,7 +474,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyEmoteCycle):
 		a.cycleEmote(1)
 	case a.hotkeyFor(hotkeyFriendHi):
-		on := !a.d.Prefs.FriendHighlightOn()
+		on := !a.d.Prefs.Load().FriendHighlight
 		a.d.Prefs.SetFriendHighlight(on)
 		a.warnLine = "Friend highlights off"
 		if on {
@@ -545,7 +545,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyWeather):
 		a.cycleWeather()
 	case a.hotkeyFor(hotkeyCharBundle):
-		a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
+		a.toggleFXPref(a.d.Prefs.Load().CharBundlePrefetch, a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
 	case a.hotkeyFor(hotkeyPingChip):
 		a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
 	case a.hotkeyFor(hotkeyModDash):
@@ -669,7 +669,7 @@ func (a *App) applyAudioVolumes() {
 	// hot-path safe; ownerMusicInputs is the pure resolution (unit-pinnable like
 	// mixChannels). See musicOwnerKey.
 	musicMaster, musicVol := a.ownerMusicInputs(master, music)
-	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX, always global
+	alert := a.d.Prefs.Load().AlertVol // callword/friend ping — independent of SFX, always global
 	// The music channel rides the OWNER's (master, music); sfx/blip/alert ride the ACTIVE
 	// tab's (master, sfx, blip). The per-channel mute/duck flags are App-level (the active
 	// user's) and apply to both. mixChannels is the pure per-channel mute/duck/master math
@@ -1210,7 +1210,7 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 // in-app toast, an optional rate-limited desktop toast while tabbed away, and a
 // window flash. Streamer / DND / login-grace are gated by the caller before here.
 func (a *App) callwordAlert(osTitle, body string) {
-	if f := a.d.Prefs.CallwordSoundPath(); f != "" {
+	if f := a.d.Prefs.Load().CallwordSoundFile; f != "" {
 		a.d.Audio.PlayFile(f)
 	} else {
 		a.d.Audio.PlayAlert()
@@ -1219,7 +1219,7 @@ func (a *App) callwordAlert(osTitle, body string) {
 		a.warnLine = clampLine(body)
 		a.warnAt = time.Now()
 	}
-	if a.d.Prefs.CallwordOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
 		showOSToast(osTitle, body)
 	}

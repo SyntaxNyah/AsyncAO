@@ -694,7 +694,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 	// it on and still cannot read one panel because of an override they set weeks
 	// ago would be right to call that broken.
 	tbl := res.fontTable
-	dyslexia := fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.FontPaths()) == fontSourceDyslexia
+	dyslexia := fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.Load().FontOverridePaths) == fontSourceDyslexia
 	switch {
 	case !a.d.Prefs.ThemeFontsOn():
 		// Opt-out: the zero table restores pre-#39 behaviour for the THEME's
@@ -703,7 +703,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 		// fonts but the client's" would silently disable a setting the user made
 		// somewhere else entirely.
 		tbl = themeFontTable{}
-	case dyslexia, strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
+	case dyslexia, strings.TrimSpace(a.d.Prefs.Load().FontOverridePaths) != "":
 		// A manual font override / the dyslexia toggle is the USER's pick and
 		// outranks the theme's FAMILIES — the same ladder applyFontConfig uses for
 		// the global chain. The theme's SIZES still apply: AO2 has no user font

@@ -81,7 +81,7 @@ func TestPackFormatListIsGenerationCached(t *testing.T) {
 		t.Errorf("steady-state PackFormatList allocates %.1f/op, want 0 — the snapshot is rebuilding per call", n)
 	}
 	// Moving the generation must invalidate it.
-	prefs.SetGlobalFallbacks(!prefs.GlobalFallbacks())
+	prefs.SetGlobalFallbacks(!prefs.Load().GlobalFallbacksEnabled)
 	if second := r.PackFormatList(AssetTypeCharSprite); len(second) == 0 {
 		t.Error("the list went empty after a format-pref change")
 	} else if &first[0] == &second[0] && prefs.FormatGeneration() == 0 {

@@ -240,7 +240,7 @@ func (a *App) startBgDownload(bg string) {
 // server has no asset URL, the same target is already active/queued, or the
 // queue is full — all render-thread state, no goroutine touches the queue.
 func (a *App) enqueueDownload(req dlReq) {
-	if !a.d.Prefs.CharDownloaderEnabled() {
+	if !a.d.Prefs.Load().CharDownloaderOn {
 		return
 	}
 	if a.d.Client == nil || a.urls.Origin() == "" {

@@ -239,7 +239,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 		source, col = "You have pinned this server's formats. That wins over everything else, on this server only.", ColAccent
 	case a.extProfileFor(host) != "":
 		source, col = "Using the built-in official-vanilla format list for this server (it serves classic PNG art).", ColAccent
-	case !a.d.Prefs.FormatAutoDetect():
+	case !a.d.Prefs.Load().AutoDetectFormats:
 		source = "Automatic detection is off, so this server's own format list is not being read — the per-type formats below decide everything."
 	case known && st == seedApplied:
 		source, col = "This server publishes a format list and AsyncAO read it — nothing here needs touching.", ColAccent
@@ -387,7 +387,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Automatic detection")
-	auto := a.d.Prefs.FormatAutoDetect()
+	auto := a.d.Prefs.Load().AutoDetectFormats
 	if next := c.Checkbox(pad, y, "Read the server's format list (extensions.json) when connecting (recommended, on by default)", auto); next != auto {
 		a.d.Prefs.SetFormatAutoDetect(next)
 		if next {
@@ -423,7 +423,7 @@ func (a *App) drawFormatsPerType(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Formats per asset type")
-	auto := a.d.Prefs.FormatAutoDetect()
+	auto := a.d.Prefs.Load().AutoDetectFormats
 	if auto {
 		y = a.settingsDesc(pad, y, "These are your fallback settings for servers that publish no format list — while automatic detection is on, a server that publishes one overrides them. Defaults: character icons PNG, chatbox skins PNG then WebP, everything else WebP.", ColTextDim)
 		y += 4
@@ -552,7 +552,7 @@ func (a *App) drawFormatsFallbacks(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Fallbacks (last resort)")
-	global := a.d.Prefs.GlobalFallbacks()
+	global := a.d.Prefs.Load().GlobalFallbacksEnabled
 	if next := c.Checkbox(pad, y, "If the preferred type isn't there, try the older ones too (off by default, affects EVERY server)", global); next != global {
 		a.d.Prefs.SetGlobalFallbacks(next)
 		a.d.Resolver.InvalidateAll()

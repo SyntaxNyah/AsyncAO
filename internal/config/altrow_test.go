@@ -16,11 +16,11 @@ func TestDisableAltEmoteRowPref(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p.DisableAltEmoteRowOn() {
+	if p.Load().DisableAltEmoteRow {
 		t.Error("the Alt+1..9 number row should default to WORKING (disable flag OFF)")
 	}
 	p.SetDisableAltEmoteRow(true)
-	if !p.DisableAltEmoteRowOn() {
+	if !p.Load().DisableAltEmoteRow {
 		t.Error("SetDisableAltEmoteRow(true) didn't take")
 	}
 
@@ -34,7 +34,7 @@ func TestDisableAltEmoteRowPref(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if !re.DisableAltEmoteRowOn() {
+	if !re.Load().DisableAltEmoteRow {
 		t.Error("the disabled state did not persist across a save/reload")
 	}
 }

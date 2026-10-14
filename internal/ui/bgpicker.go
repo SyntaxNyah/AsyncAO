@@ -328,7 +328,7 @@ func (a *App) drawBgPanel(w, h int32) {
 
 	// Clip the grid so a partially scrolled top/bottom row stays inside the
 	// panel (same overspill guard as the log lists).
-	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
+	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	// Texture budget for THIS frame's visible thumbnails (drawn top-to-bottom);
 	// once spent, further cells show their name instead of demanding a texture,
 	// so the resident set can't overflow T1 and thrash. See bgThumbBudgetBytes.
