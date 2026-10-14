@@ -434,7 +434,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// themeWindowLayout, not themeLayout: the design canvas is fitted into the height
 	// left UNDER the app-chrome band and offset down by it, so it can never slide
 	// beneath the menu bar / server-tab strip (#14).
-	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if a.classicEdit {
 			a.stopClassicEdit() // a themed layout took over; classic edit is default-only
 		}
@@ -479,7 +479,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// %-of-window size lands between multiples and blurs. If the chosen size doesn't
 	// fit the window, snap DOWN to the largest 256×192 multiple that does — clamping
 	// to raw px would re-introduce the very blur this control removes.
-	if ew := int32(a.d.Prefs.ViewportExactWidth()); ew > 0 {
+	if ew := int32(a.d.Prefs.Load().ViewportExactW); ew > 0 {
 		vpW, vpH = ew, ew*config.ViewportArtH/config.ViewportArtW
 		if vpW > w-2*pad || vpH > h-top-courtBottomFurnitureH {
 			fitM := (h - top - courtBottomFurnitureH) / config.ViewportArtH
@@ -777,7 +777,7 @@ func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 		// Grabbing the edge is a deliberate "size it freely" gesture, so it takes
 		// back control from an exact-px pin (else the drag would silently no-op
 		// against the shadowing fixed size).
-		if a.d.Prefs.ViewportExactWidth() != 0 {
+		if a.d.Prefs.Load().ViewportExactW != 0 {
 			a.d.Prefs.SetViewportExactWidth(0)
 		}
 		pct := int(int64(c.mouseX-vp.X) * int64(DefaultScalePct) / int64(w))

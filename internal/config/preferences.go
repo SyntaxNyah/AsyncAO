@@ -2405,14 +2405,6 @@ func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
 
 // --- Update check ------------------------------------------------------------
 
-// UpdateCheckEnabled reports whether the one-shot launch update check (M13)
-// runs. On by default; disabling it stops the outbound GitHub Releases call.
-func (p *AssetPreferences) UpdateCheckEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.UpdateCheck
-}
-
 // SetUpdateCheck toggles the launch update check.
 func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 	p.mu.Lock()
@@ -2423,16 +2415,6 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 	p.UpdateCheck = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// UpdateChannelExperimentalOn reports whether the launch check follows the
-// experimental channel — the full releases feed INCLUDING prereleases (test-
-// branch builds) — instead of stable-only. OFF by default; a Power-user
-// toggle for people who want riskier builds for extensive debugging.
-func (p *AssetPreferences) UpdateChannelExperimentalOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.UpdateExperimental
 }
 
 // SetUpdateChannelExperimental swaps the update channel (true = experimental).
@@ -3244,14 +3226,6 @@ func (p *AssetPreferences) SetTimerSeconds(s int) {
 	p.mu.Unlock()
 }
 
-// TimerRepeatOn reports whether the local timer restarts itself on each fire
-// (#97, default OFF).
-func (p *AssetPreferences) TimerRepeatOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.TimerRepeat
-}
-
 // SetNotifyOnOOC toggles whether OOC bumps the unread tab badge.
 func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 	p.mu.Lock()
@@ -3578,17 +3552,6 @@ func (p *AssetPreferences) SetCharBundlePrefetch(b bool) { p.setBoolPref(&p.Char
 // SetPingChip toggles the connection-quality chip.
 func (p *AssetPreferences) SetPingChip(b bool) { p.setBoolPref(&p.PingChip, b) }
 
-// ValidateTLSCertsOn reports the power-user Security toggle (OFF by default):
-// when ON, wss:// connections strictly verify the server's TLS certificate
-// chain. The default is OFF — most community AO servers run self-signed certs,
-// and rejecting them would leave them unreachable. Turning it ON trades that
-// reach for a guarantee the wss endpoint is who it claims to be.
-func (p *AssetPreferences) ValidateTLSCertsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ValidateTLSCerts
-}
-
 // SetValidateTLSCerts toggles strict wss certificate verification.
 func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.ValidateTLSCerts, b) }
 
@@ -3603,16 +3566,6 @@ func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 	p.AssetOrigin = s
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// WSOriginHeader reports the power-user Origin override sent on the WebSocket
-// HANDSHAKE (empty = none, the default). For servers that allowlist only their
-// own web client's origin on the socket — the connection-side sibling of
-// AssetOriginHeader (which covers asset fetches).
-func (p *AssetPreferences) WSOriginHeader() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.WSOrigin
 }
 
 // SetWSOriginHeader sets (or clears, when blank) the WS-handshake Origin override.
@@ -3924,13 +3877,6 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	p.mu.Unlock()
 }
 
-// VoiceInput reports the chosen voice mic device name ("" = system default).
-func (p *AssetPreferences) VoiceInput() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.VoiceInputDevice
-}
-
 // SetVoiceInput sets (or clears, for system default) the voice mic device.
 func (p *AssetPreferences) SetVoiceInput(s string) {
 	p.mu.Lock()
@@ -4002,13 +3948,6 @@ func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
 	p.PrefetchAggro = n
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// VoicePTT reports the push-to-talk toggle key name ("" = unbound).
-func (p *AssetPreferences) VoicePTT() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.VoicePTTKey
 }
 
 // SetVoicePTT sets (or clears) the push-to-talk toggle key.
@@ -4664,15 +4603,6 @@ func (p *AssetPreferences) SetCharDownloader(enabled bool) {
 	p.CharDownloaderOn = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ToolboxSeenOn reports whether the user has already expanded the compact
-// bottom-right toolbox at least once (A1). While false the collapsed grip
-// wears a faint accent discoverability ring; the first expand latches it true.
-func (p *AssetPreferences) ToolboxSeenOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ToolboxSeen
 }
 
 // SetToolboxSeen latches the toolbox-discoverability flag (A1). Idempotent: a
@@ -5360,13 +5290,6 @@ func (p *AssetPreferences) SetBoldNames(on bool) {
 	p.mu.Unlock()
 }
 
-// UIScale reports the global UI scale percent.
-func (p *AssetPreferences) UIScale() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.UIScalePct
-}
-
 // SetUIScale clamps and persists the global UI scale.
 func (p *AssetPreferences) SetUIScale(pct int) {
 	pct = clampPercent(pct, MinUIScalePercent, MaxUIScalePercent)
@@ -5405,13 +5328,6 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 	p.WindowW, p.WindowH = w, h
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// WindowFullscreen reports whether the client launches in borderless fullscreen.
-func (p *AssetPreferences) WindowFullscreen() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.WindowFull
 }
 
 // SetWindowFullscreen persists the fullscreen choice.
@@ -5699,14 +5615,6 @@ func (p *AssetPreferences) SetRestoreTabs(on bool) {
 	p.RestoreTabs = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// VolStripShownOn reports the log panel's on-screen volume-strip toggle (OFF by
-// default). Persisted so it survives a restart (playtest: it used to reset every launch).
-func (p *AssetPreferences) VolStripShownOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.VolStripOn
 }
 
 // SetVolStripShown persists the on-screen volume-strip toggle.
@@ -6075,16 +5983,6 @@ func (p *AssetPreferences) SetCatchUpLingerMs(ms int) {
 	p.CatchUpLingerMsVal = ms
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ThumbCacheOn reports the opt-in persistent low-quality sprite thumbnail cache
-// (OFF by default): every character sprite that decodes leaves a tiny (~1 KB)
-// heavily-compressed still behind, shown instantly as a stand-in when that
-// sprite is next needed cold.
-func (p *AssetPreferences) ThumbCacheOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThumbCache
 }
 
 // SetThumbCache persists the thumbnail-cache toggle.
@@ -6757,15 +6655,6 @@ func (p *AssetPreferences) SetScreenEffects(on bool) {
 	p.mu.Unlock()
 }
 
-// WordDeleteOn reports the Ctrl+Backspace word-delete toggle (ON by default):
-// when on, Ctrl+Backspace in any focused text field deletes the preceding word
-// instead of one rune. OFF restores plain-key behavior.
-func (p *AssetPreferences) WordDeleteOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.WordDelete
-}
-
 // SetWordDelete toggles Ctrl+Backspace word deletion.
 func (p *AssetPreferences) SetWordDelete(on bool) {
 	p.mu.Lock()
@@ -6891,15 +6780,6 @@ func (p *AssetPreferences) SetSFXOnIdle(on bool) {
 	p.SFXOnIdle = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// UnfocusedFullRateOn reports the "don't throttle when unfocused" option (OFF by
-// default). It is consumed by the PACER's focus decision (App.pacingFocused), not
-// by a bare check inside wantsFullRate — the census doctrine.
-func (p *AssetPreferences) UnfocusedFullRateOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.UnfocusedFullRate
 }
 
 // SetUnfocusedFullRate toggles full-speed rendering while unfocused.
@@ -8508,14 +8388,6 @@ func (p *AssetPreferences) SetFontPaths(raw string) {
 	p.mu.Unlock()
 }
 
-// UIScaleAuto reports whether the UI scale follows the display DPI
-// (default ON); off, the manual UIScale percent governs.
-func (p *AssetPreferences) UIScaleAuto() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.UIScaleAutoOn
-}
-
 // SetUIScaleAuto toggles DPI-driven UI scaling.
 func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
 	p.mu.Lock()
@@ -8528,14 +8400,6 @@ func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
 	p.mu.Unlock()
 }
 
-// ThemeLayoutEnabled reports whether the courtroom adopts the theme's
-// courtroom_design.ini geometry (default ON).
-func (p *AssetPreferences) ThemeLayoutEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThemeLayoutOn
-}
-
 // SetThemeLayout toggles theme-driven courtroom geometry.
 func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 	p.mu.Lock()
@@ -8546,15 +8410,6 @@ func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 	p.ThemeLayoutOn = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ThemeFitMode reports how an AO2 theme fills the window: ThemeFitNative
-// (the default), ThemeFitStretch, ThemeFitLetterbox, ThemeFitCrop or
-// ThemeFitCustom.
-func (p *AssetPreferences) ThemeFitMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThemeFit
 }
 
 // ThemeFitDefaultJustMoved reports whether THIS load performed the one-shot
@@ -8649,14 +8504,6 @@ func (p *AssetPreferences) SetPlainLobby(on bool) {
 	p.PlainLobby = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ThemeFontsOn reports whether the active theme's courtroom_fonts.ini drives the
-// per-element font family, point size and weight (ON by default — #39).
-func (p *AssetPreferences) ThemeFontsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThemeFonts
 }
 
 // SetThemeFonts toggles per-element theme fonts.
@@ -9624,14 +9471,6 @@ func clampViewportExactPx(px int) int {
 		return MaxViewportExactPx
 	}
 	return px
-}
-
-// ViewportExactWidth reports the user's fixed stage width in px (0 = size by the
-// View % knob / divider instead). Read once per courtroom frame; lock-light.
-func (p *AssetPreferences) ViewportExactWidth() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ViewportExactW
 }
 
 // SetViewportExactWidth pins (or clears, with 0) the exact stage width. The

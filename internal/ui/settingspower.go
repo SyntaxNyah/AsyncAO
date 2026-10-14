@@ -78,7 +78,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// move sideways or DOWN in version; the strict per-platform asset match
 	// still applies, and flipping back rejoins stable on its next release.
 	y = a.settingsSection(y, w, "Update channel")
-	expCh := a.d.Prefs.UpdateChannelExperimentalOn()
+	expCh := a.d.Prefs.Load().UpdateExperimental
 	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
 		a.d.Prefs.SetUpdateChannelExperimental(next)
 		// Re-arm the one-shot launch check so the swap takes effect NOW (next
@@ -210,7 +210,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// OPTION, never a default change: it overrides the focus boolean the whole pacer
 	// branches on, so the background rate above, the static park and the wake
 	// schedule all stop applying at once.
-	ufr := a.d.Prefs.UnfocusedFullRateOn()
+	ufr := a.d.Prefs.Load().UnfocusedFullRate
 	if next := c.Checkbox(pad, y, "Keep full speed when another window has focus (OFF by default)", ufr); next != ufr {
 		a.d.Prefs.SetUnfocusedFullRate(next)
 	}
@@ -269,7 +269,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y = a.settingsDesc(pad, y, "Unavailable in this build (the thumbnail store could not open).", ColTextDim)
 		y += 10
 	} else {
-		tcOn := a.d.Prefs.ThumbCacheOn()
+		tcOn := a.d.Prefs.Load().ThumbCache
 		if next := c.Checkbox(pad, y, "Keep tiny low-quality thumbnails of every sprite (default OFF)", tcOn); next != tcOn {
 			a.d.Prefs.SetThumbCache(next)
 			th.SetEnabled(next)
@@ -277,7 +277,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 26
 		y = a.settingsDesc(pad, y, "Every sprite that finishes loading leaves a ~1 KB low-quality thumbnail on disk (its own folder, kept after the full sprite is evicted). The next cold load shows the thumbnail instantly while the real one streams, then swaps — covering the case where there's no previous sprite to hold. Costs a little disk and a moment of visibly crunchy art.", ColTextDim)
 		y += 6
-		if a.d.Prefs.ThumbCacheOn() {
+		if a.d.Prefs.Load().ThumbCache {
 			c.Label(pad, y+4, "Thumbnail height:", ColText)
 			tHp := a.d.Prefs.ThumbHeightPx()
 			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
@@ -431,7 +431,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// TLS certificate validation.
 	y = a.settingsSection(y, w, "TLS certificate")
-	validate := a.d.Prefs.ValidateTLSCertsOn()
+	validate := a.d.Prefs.Load().ValidateTLSCerts
 	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
 		a.d.Prefs.SetValidateTLSCerts(next)
 	}
@@ -451,7 +451,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Sends this Origin/Referer header on asset downloads, so a server that only serves its base to its own web client still streams to AsyncAO. Wrong value = assets stop loading — leave it blank unless you know you need it.", ColDanger)
 	y += 8
 	c.Label(pad, y+4, "Connection Origin:", ColText)
-	wsOrigin := a.d.Prefs.WSOriginHeader()
+	wsOrigin := a.d.Prefs.Load().WSOrigin
 	if next, _ := c.TextField("wsorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, wsOrigin, "https://webao.example  (blank = off)"); next != wsOrigin {
 		a.d.Prefs.SetWSOriginHeader(next)
 	}

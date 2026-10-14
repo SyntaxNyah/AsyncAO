@@ -345,7 +345,7 @@ func (a *App) openLayoutEditor() {
 	if a.theaterOn {
 		a.setTheater(false)
 	}
-	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+	if a.themeLay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		a.startLayoutEdit()
 		return
 	}

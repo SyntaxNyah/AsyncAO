@@ -821,7 +821,7 @@ func TestMenuBarThemeFitSubmenuMirrorsSettings(t *testing.T) {
 		}
 		a.themeLay.valid = true
 		a.fireMenuItem(it)
-		if got := a.d.Prefs.ThemeFitMode(); got != it.arg {
+		if got := a.d.Prefs.Load().ThemeFit; got != it.arg {
 			t.Fatalf("row %d must apply mode %d through SetThemeFit, got %d", i, it.arg, got)
 		}
 		if a.themeLay.valid {

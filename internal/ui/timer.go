@@ -44,7 +44,7 @@ func (a *App) timerRemaining() time.Duration {
 func (a *App) openTimer() {
 	if !a.timerSeeded {
 		a.timerSetSec = a.d.Prefs.TimerSecondsValue()
-		a.timerRepeat = a.d.Prefs.TimerRepeatOn()
+		a.timerRepeat = a.d.Prefs.Load().TimerRepeat
 		a.timerSeeded = true
 	}
 	a.showTimer = true

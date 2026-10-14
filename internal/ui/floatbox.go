@@ -341,7 +341,7 @@ func (a *App) pollVoicePTT() {
 	if !a.voiceJoined || k == 0 {
 		return
 	}
-	if key := a.d.Prefs.VoicePTT(); key != "" && sdl.GetKeyName(k) == key {
+	if key := a.d.Prefs.Load().VoicePTTKey; key != "" && sdl.GetKeyName(k) == key {
 		a.voiceSetMic(!a.voiceMicOn)
 		c.keyPressed = 0
 	}

@@ -304,7 +304,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += 28
 	// Theme-driven courtroom geometry (courtroom_design.ini).
-	tlay := a.d.Prefs.ThemeLayoutEnabled()
+	tlay := a.d.Prefs.Load().ThemeLayoutOn
 	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
 		a.d.Prefs.SetThemeLayout(next)
 		a.invalidateThemeCanvases()
@@ -312,7 +312,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y += 28
 	// #39: per-element courtroom_fonts.ini parity. Re-applies the theme so the
 	// table is rebuilt (and the faces read) off-thread, exactly like a theme swap.
-	tfonts := a.d.Prefs.ThemeFontsOn()
+	tfonts := a.d.Prefs.Load().ThemeFonts
 	if next := c.Checkbox(pad, y, "Use the theme's fonts (courtroom_fonts.ini — per-element family, point size and bold)", tfonts); next != tfonts {
 		a.d.Prefs.SetThemeFonts(next)
 		a.applyThemeAsync()
@@ -326,7 +326,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// Theme fit: how the theme's FIXED design size fills your (differently
 	// shaped) window — the cause of those borders.
 	c.Label(pad, y+4, "Theme fit:", ColText)
-	fit := a.d.Prefs.ThemeFitMode()
+	fit := a.d.Prefs.Load().ThemeFit
 	if next, changed := c.Dropdown("themefit", sdl.Rect{X: pad + 90, Y: y, W: 230, H: fieldH}, themeFitLabels, themeFitRow(fit)); changed {
 		fit = themeFitModeAt(next) // rows are ordered for the user, modes for the disk
 		a.d.Prefs.SetThemeFit(fit)
@@ -1133,7 +1133,7 @@ func (a *App) applyPrefsToState() {
 	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
-	a.uiScalePct = a.d.Prefs.UIScale()
+	a.uiScalePct = a.d.Prefs.Load().UIScalePct
 	a.ctx.SetUIScale(a.UIScale())
 	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
 	a.refreshCharKeys()

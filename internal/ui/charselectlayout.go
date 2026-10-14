@@ -303,7 +303,7 @@ func (l *charSelectLayoutCache) cellScale() float64 {
 // and viewport are the only two rects present in 100% of the corpus), so this
 // costs no real theme its canvas.
 func (a *App) charSelectThemed() bool {
-	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.ThemeLayoutEnabled() {
+	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false
 	}
 	if r, ok := a.themeRects["courtroom"]; !ok || r.W <= 0 || r.H <= 0 {
@@ -325,7 +325,7 @@ func (a *App) charSelectLayout(w, h int32) *charSelectLayoutCache {
 // tests can drive, mirroring themeLayoutIn.
 func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	lay := &a.charSelLay
-	fit := a.d.Prefs.ThemeFitMode()
+	fit := a.d.Prefs.Load().ThemeFit
 	// charSelectThemed() is part of the TEST, not just the build: it reads a
 	// preference ("use the theme's layout") that the user can flip with no window,
 	// band, fit or theme change behind it. Left out, a cache built while the canvas

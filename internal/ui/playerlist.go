@@ -190,7 +190,7 @@ func playerSortLabel(mode int) string {
 // a theme is a torn-off MUSIC panel, and that panel passes themed=false from its own
 // header (torntabs.go), so the view is never made unreachable — only the ghost is.
 func (a *App) rosterMenuThemed() bool {
-	if !a.themeLay.valid || !a.d.Prefs.ThemeLayoutEnabled() {
+	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false // classic geometry: this panel is chrome, and so is any torn panel
 	}
 	if a.panelHidden(panelLog) {

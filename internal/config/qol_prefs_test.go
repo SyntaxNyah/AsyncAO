@@ -135,7 +135,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.Load().ScreenEffects {
 		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
 	}
-	if !p.WordDeleteOn() {
+	if !p.Load().WordDelete {
 		t.Error("WordDeleteOn default must be true (Ctrl+Backspace word delete ships ON)")
 	}
 	if !p.Load().MusicHistory {
@@ -601,7 +601,7 @@ func TestInstantReplayPref(t *testing.T) {
 // survive save→reload.
 func TestTimerPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.TimerRepeatOn() {
+	if p.Load().TimerRepeat {
 		t.Error("TimerRepeat must default OFF")
 	}
 	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
@@ -633,7 +633,7 @@ func TestTimerPref(t *testing.T) {
 	if got := r.TimerSecondsValue(); got != 90 {
 		t.Errorf("reloaded duration = %d, want 90", got)
 	}
-	if !r.TimerRepeatOn() {
+	if !r.Load().TimerRepeat {
 		t.Error("TimerRepeat=true lost on reload")
 	}
 }
@@ -1030,7 +1030,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().ScreenEffects {
 		t.Error("ScreenEffects=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.WordDeleteOn() {
+	if q.Load().WordDelete {
 		t.Error("WordDelete=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.Load().CallwordToast {
@@ -1078,7 +1078,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
 	}
-	if !q.UpdateChannelExperimentalOn() {
+	if !q.Load().UpdateExperimental {
 		t.Error("UpdateExperimental=true lost across reload (the channel swap must stick)")
 	}
 	if q.Load().RainbowSpriteSpeed != 30 || q.Load().RainbowSpriteVividness != 95 {
@@ -1344,7 +1344,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	p.ResetPowerUser()
 
-	if p.ValidateTLSCertsOn() || p.Load().AssetOrigin != "" || p.WSOriginHeader() != "" {
+	if p.Load().ValidateTLSCerts || p.Load().AssetOrigin != "" || p.Load().WSOrigin != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
 	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
@@ -1375,7 +1375,7 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.Load().ClipSpritesToStage {
 		t.Error("nuke must restore the sprite mask to its default ON")
 	}
-	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
+	if p.Load().ThumbCache || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
 		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
 	if p.Load().NotFoundTTLSecVal != 0 || p.AdaptiveLatMultiple() != 0 {
@@ -1704,8 +1704,8 @@ func TestShownamePresets(t *testing.T) {
 // Native, not Custom.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.Load().ThemeFit, ThemeFitNative)
 	}
 	if p.ThemeZoom() != DefaultThemeZoom {
 		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
@@ -1714,12 +1714,12 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 		t.Error("PlainLobbyOn default must be true (readable server list)")
 	}
 	p.SetThemeFit(99) // out of range → clamps to the last mode (Native)
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("SetThemeFit clamp = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("SetThemeFit clamp = %d, want Native(%d)", p.Load().ThemeFit, ThemeFitNative)
 	}
 	p.SetThemeFit(-1) // below the first mode → clamps to Stretch(0)
-	if p.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.ThemeFitMode(), ThemeFitStretch)
+	if p.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.Load().ThemeFit, ThemeFitStretch)
 	}
 	p.SetThemeFit(ThemeFitCustom) // restore a mid mode so the zoom/pan checks below are meaningful
 	p.SetThemeFitZoom(1 << 20)

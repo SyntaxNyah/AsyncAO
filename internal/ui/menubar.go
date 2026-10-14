@@ -474,7 +474,7 @@ func menuActQuit(a *App, _ int)       { a.requestQuit() }
 // aspect ratio. Stretch is the only mode that does not: Native, Letterbox, Crop and
 // Custom all scale both axes by one factor (Crop keeps the shape and trims the
 // overhang; Custom is a uniform zoom plus a pan).
-func menuAspectKept(a *App, _ int) bool { return a.d.Prefs.ThemeFitMode() != config.ThemeFitStretch }
+func menuAspectKept(a *App, _ int) bool { return a.d.Prefs.Load().ThemeFit != config.ThemeFitStretch }
 
 // menuToggleAspect goes to Stretch when unticked and back to the SHIPPED DEFAULT when
 // re-ticked — Native, i.e. 1:1 like the stock AO2 client, not whichever aspect-keeping
@@ -516,7 +516,7 @@ func menuActThemeDesignSize(a *App, _ int) { a.applyThemeDesignWindowSize() }
 
 func menuActFitToScreen(a *App, _ int) { a.fitWindowToScreen() }
 
-func menuFullscreenOn(a *App, _ int) bool { return a.d.Prefs.WindowFullscreen() }
+func menuFullscreenOn(a *App, _ int) bool { return a.d.Prefs.Load().WindowFull }
 func menuToggleFullscreen(a *App, _ int)  { a.toggleFullscreen() }
 
 // --- Extras (#26) ---
@@ -637,7 +637,7 @@ func (a *App) menuGoto(s Screen) {
 	a.screen = s
 }
 
-func menuThemeFitIs(a *App, mode int) bool { return a.d.Prefs.ThemeFitMode() == mode }
+func menuThemeFitIs(a *App, mode int) bool { return a.d.Prefs.Load().ThemeFit == mode }
 
 func menuSetThemeFit(a *App, mode int) {
 	a.d.Prefs.SetThemeFit(mode)

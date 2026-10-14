@@ -167,7 +167,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		thumbs = nil
 	} else {
 		defer thumbs.Close()
-		thumbs.SetEnabled(prefs.ThumbCacheOn())
+		thumbs.SetEnabled(prefs.Load().ThumbCache)
 		thumbs.SetParams(prefs.ThumbHeightPx(), prefs.ThumbQuality())
 		thumbs.SetBudget(int64(prefs.ThumbBudgetMiB()) << 20)
 	}
@@ -273,7 +273,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			}
 		}
 	}
-	if prefs.WindowFullscreen() {
+	if prefs.Load().WindowFull {
 		_ = window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP)
 	}
 

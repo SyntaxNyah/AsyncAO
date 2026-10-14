@@ -379,7 +379,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	defer c.popOverlayOwner(prevOwner)
 	expanded := lat.expanded
 
-	if expanded && !a.d.Prefs.ToolboxSeenOn() {
+	if expanded && !a.d.Prefs.Load().ToolboxSeen {
 		// First expand (hover or pin) latches the discoverability flag off so the
 		// ring stops. Idempotent setter → no per-frame markDirty once seen.
 		a.d.Prefs.SetToolboxSeen(true)
@@ -394,7 +394,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 			bar := sdl.Rect{X: grip.X + 4, Y: grip.Y + 5 + i*5, W: barW, H: 2}
 			c.Fill(bar, sdl.Color{R: 200, G: 200, B: 210, A: 180})
 		}
-		if !a.d.Prefs.ToolboxSeenOn() {
+		if !a.d.Prefs.Load().ToolboxSeen {
 			// Faint STATIC accent ring while never-expanded — a quiet "there's
 			// something here" hint. Static (not a pulse) so it never registers an
 			// animating frame and can't wake the render loop while idle. Constant

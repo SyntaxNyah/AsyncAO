@@ -174,7 +174,7 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 	}
 	a.themeLay.valid = true
 	a.fireMenuItem(keep)
-	if got := a.d.Prefs.ThemeFitMode(); got != config.ThemeFitStretch {
+	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitStretch {
 		t.Errorf("unticking must select Stretch, got mode %d", got)
 	}
 	if a.themeLay.valid {
@@ -186,7 +186,7 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 
 	a.themeLay.valid = true
 	a.fireMenuItem(keep)
-	if got := a.d.Prefs.ThemeFitMode(); got != config.DefaultThemeFit {
+	if got := a.d.Prefs.Load().ThemeFit; got != config.DefaultThemeFit {
 		t.Errorf("re-ticking must return to the shipped default %d, got %d", config.DefaultThemeFit, got)
 	}
 	if a.themeLay.valid {

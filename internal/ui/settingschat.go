@@ -63,7 +63,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Word delete (ON by default): Ctrl+Backspace removes the whole preceding
 	// word instead of one letter — the standard editor chord. Off restores
 	// plain-key behavior (Ctrl+Backspace does nothing inside a field).
-	wdOn := a.d.Prefs.WordDeleteOn()
+	wdOn := a.d.Prefs.Load().WordDelete
 	if next := c.Checkbox(pad, y, "Ctrl+Backspace deletes a word", wdOn); next != wdOn {
 		a.d.Prefs.SetWordDelete(next)
 	}

@@ -39,5 +39,5 @@ func (a *App) pacingFocused(focused bool) bool {
 	if focused {
 		return true
 	}
-	return a.d.Prefs != nil && a.d.Prefs.UnfocusedFullRateOn()
+	return a.d.Prefs != nil && a.d.Prefs.Load().UnfocusedFullRate
 }

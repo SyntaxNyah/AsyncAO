@@ -1504,7 +1504,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Application")
-	upd := a.d.Prefs.UpdateCheckEnabled()
+	upd := a.d.Prefs.Load().UpdateCheck
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
 		a.d.Prefs.SetUpdateCheck(next)
 	}
@@ -1602,7 +1602,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 24
 	y = a.settingsSection(y, w, "Scale & text size")
 	// Global scale: DPI-driven by default, manual spinbox when auto is off.
-	scaleAuto := a.d.Prefs.UIScaleAuto()
+	scaleAuto := a.d.Prefs.Load().UIScaleAutoOn
 	scaleAutoLabel := "Auto UI scale (fits the window + display DPI)"
 	if a.detectedScalePct > 0 {
 		scaleAutoLabel = fmt.Sprintf("Auto UI scale — fits the window + display DPI (now: %d%%)", a.detectedScalePct)
@@ -1660,12 +1660,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Window size / fullscreen: pick your own client dimensions (a window bigger
 	// than the monitor can't be dragged smaller; F11 + Fit to screen are the
 	// escapes). All window ops run here on the render thread.
-	full := a.d.Prefs.WindowFullscreen()
+	full := a.d.Prefs.Load().WindowFull
 	if next := c.Checkbox(pad, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
 		a.applyFullscreen(next)
 	}
 	y += 28
-	if a.d.Prefs.WindowFullscreen() {
+	if a.d.Prefs.Load().WindowFull {
 		c.LabelClipped(pad, y+4, a.formW, "Press F11 or untick Fullscreen to return to a window.", ColTextDim)
 		y += 28
 	} else {

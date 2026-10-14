@@ -237,7 +237,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// Ctrl+Backspace word-delete: stamp the pref so the kit's text fields can gate
 	// the captured chord at consumption (the flag is set in HandleEvent when focused).
-	a.ctx.SetWordDelete(a.d.Prefs.WordDeleteOn())
+	a.ctx.SetWordDelete(a.d.Prefs.Load().WordDelete)
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {
@@ -554,7 +554,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)                                     // amber-tint stand-ins (diagnostics)
-		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
+		a.d.Viewport.SetThumbSprites(a.d.Prefs.Load().ThumbCache)                                         // opt-in low-q thumbnail stand-ins on the cold miss path
 		a.d.Viewport.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)                                // AO2 placeholder for conclusively-missing sprites (default ON)
 		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
 		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
@@ -574,7 +574,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)
-			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
+			a.splitVP.SetThumbSprites(a.d.Prefs.Load().ThumbCache)
 			a.splitVP.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)
 			a.splitVP.SetCrossfade(a.crossfadeDur())
 			a.splitVP.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)

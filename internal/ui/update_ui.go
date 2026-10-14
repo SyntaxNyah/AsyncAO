@@ -60,11 +60,11 @@ func (a *App) maybeKickUpdateCheck() {
 			update.CleanupOldBundle(exe)
 		}
 	}()
-	if !a.d.Prefs.UpdateCheckEnabled() {
+	if !a.d.Prefs.Load().UpdateCheck {
 		return
 	}
 	res := a.updateRes
-	experimental := a.d.Prefs.UpdateChannelExperimentalOn() // read on the render thread; the goroutine only captures the bool
+	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
 	go func() {
 		// assetMatch identifies THIS platform's ONE swappable default binary
 		// (see update.SelfUpdateAssetMatch — a bare GOOS match could grab a

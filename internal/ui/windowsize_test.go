@@ -690,7 +690,7 @@ func TestThemeFitUpgradeSnapSkipsPreservedPicks(t *testing.T) {
 		t.Fatalf("load prefs: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	if got := prefs.ThemeFitMode(); got != config.ThemeFitCustom {
+	if got := prefs.Load().ThemeFit; got != config.ThemeFitCustom {
 		t.Fatalf("ThemeFitMode = %d, want the preserved Custom(%d)", got, config.ThemeFitCustom)
 	}
 	if prefs.ThemeFitDefaultJustMoved() {
@@ -717,7 +717,7 @@ func TestThemeDesignSizeRowFollowsTheThemedLayout(t *testing.T) {
 		t.Error("offered a design size with no theme loaded")
 	}
 	stageThemeCanvas(a, 714, 579)
-	if !a.d.Prefs.ThemeLayoutEnabled() {
+	if !a.d.Prefs.Load().ThemeLayoutOn {
 		t.Fatal("the themed layout is the shipped default; this test needs it on to start")
 	}
 	w, h, ok := a.themeDesignSizeOffer()

@@ -1011,19 +1011,19 @@ func TestViewportExactWidth(t *testing.T) {
 	}
 	defer p.Close()
 
-	if got := p.ViewportExactWidth(); got != 0 {
+	if got := p.Load().ViewportExactW; got != 0 {
 		t.Fatalf("default exact width = %d, want 0 (off)", got)
 	}
 	p.SetViewportExactWidth(100) // below Min → clamps up
-	if got := p.ViewportExactWidth(); got != MinViewportExactPx {
+	if got := p.Load().ViewportExactW; got != MinViewportExactPx {
 		t.Fatalf("clamp-up = %d, want %d", got, MinViewportExactPx)
 	}
 	p.SetViewportExactWidth(99999) // above Max → clamps down
-	if got := p.ViewportExactWidth(); got != MaxViewportExactPx {
+	if got := p.Load().ViewportExactW; got != MaxViewportExactPx {
 		t.Fatalf("clamp-down = %d, want %d", got, MaxViewportExactPx)
 	}
 	p.SetViewportExactWidth(512) // a clean 2× multiple passes through
-	if got := p.ViewportExactWidth(); got != 512 {
+	if got := p.Load().ViewportExactW; got != 512 {
 		t.Fatalf("exact = %d, want 512", got)
 	}
 	if err := p.SaveNow(); err != nil {
@@ -1033,11 +1033,11 @@ func TestViewportExactWidth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := q.ViewportExactWidth(); got != 512 {
+	if got := q.Load().ViewportExactW; got != 512 {
 		t.Fatalf("reloaded exact width = %d, want 512", got)
 	}
 	q.SetViewportExactWidth(0) // 0 turns it back off (must round-trip, not re-clamp to Min)
-	if got := q.ViewportExactWidth(); got != 0 {
+	if got := q.Load().ViewportExactW; got != 0 {
 		t.Fatalf("clear = %d, want 0", got)
 	}
 }
@@ -1428,7 +1428,7 @@ func TestToolboxSeenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if p.ToolboxSeenOn() {
+	if p.Load().ToolboxSeen {
 		t.Fatal("a fresh config must report ToolboxSeen=false (show the ring)")
 	}
 	p.SetToolboxSeen(true)
@@ -1440,7 +1440,7 @@ func TestToolboxSeenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !re.ToolboxSeenOn() {
+	if !re.Load().ToolboxSeen {
 		t.Fatal("ToolboxSeen must survive a save/reload — the DTO/overlay wiring is missing (save-but-not-load trap)")
 	}
 }
@@ -1930,7 +1930,7 @@ func TestSendOptionDefaults(t *testing.T) {
 		{"stickyPreanims", p.Load().StickyPreanims, false},
 		{"sfxOnIdle", p.Load().SFXOnIdle, false},
 		{"ghostCrawlText", p.Load().GhostCrawlText, true},
-		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},
+		{"unfocusedFullRate", p.Load().UnfocusedFullRate, false},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s defaults to %v, want %v", tc.name, tc.got, tc.want)
@@ -1962,7 +1962,7 @@ func TestSendOptionDefaults(t *testing.T) {
 		{"stickyPreanims", q.Load().StickyPreanims, false},
 		{"sfxOnIdle", q.Load().SFXOnIdle, true},
 		{"ghostCrawlText", q.Load().GhostCrawlText, false},
-		{"unfocusedFullRate", q.UnfocusedFullRateOn(), true},
+		{"unfocusedFullRate", q.Load().UnfocusedFullRate, true},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s did not survive save → load: %v, want %v", tc.name, tc.got, tc.want)
@@ -2032,7 +2032,7 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 				t.Fatalf("newWithDebounce: %v", err)
 			}
 			p.SetThemeFit(m.mode)
-			if got := p.ThemeFitMode(); got != m.mode {
+			if got := p.Load().ThemeFit; got != m.mode {
 				t.Fatalf("SetThemeFit(%s) = %d, want %d (clamped in the setter)", m.name, got, m.mode)
 			}
 			if err := p.Close(); err != nil {
@@ -2042,7 +2042,7 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reload: %v", err)
 			}
-			if got := q.ThemeFitMode(); got != m.mode {
+			if got := q.Load().ThemeFit; got != m.mode {
 				t.Errorf("after save→load ThemeFitMode = %d, want %s(%d) — the load clamp ate it", got, m.name, m.mode)
 			}
 		})
@@ -2071,8 +2071,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("an older file's baked Stretch must move to Native(%d) once, got %d", ThemeFitNative, p.ThemeFitMode())
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("an older file's baked Stretch must move to Native(%d) once, got %d", ThemeFitNative, p.Load().ThemeFit)
 	}
 	if !p.ThemeFitDefaultJustMoved() {
 		t.Error("the move must report itself, or the one-time upgrade window snap never arms")
@@ -2086,8 +2086,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if q.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("a stamped file's deliberate Stretch must be respected, got %d", q.ThemeFitMode())
+	if q.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("a stamped file's deliberate Stretch must be respected, got %d", q.Load().ThemeFit)
 	}
 	if q.ThemeFitDefaultJustMoved() {
 		t.Error("a stamped file must not report a move — the snap would fire on every launch")
@@ -2115,7 +2115,7 @@ func TestThemeFitDefaultMove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load pre-stamp file: %v", err)
 			}
-			if got := r.ThemeFitMode(); got != tc.want {
+			if got := r.Load().ThemeFit; got != tc.want {
 				t.Errorf("a deliberate pick was overwritten: ThemeFitMode = %d, want %d", got, tc.want)
 			}
 			if !r.ThemeFitDefaultMigrated {
@@ -2148,8 +2148,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fresh: %v", err)
 	}
-	if fresh.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.ThemeFitMode())
+	if fresh.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.Load().ThemeFit)
 	}
 	if !fresh.ThemeFitDefaultMigrated {
 		t.Error("a fresh install must be stamped as already-migrated, or the move re-fires over a later deliberate Stretch")
@@ -2237,8 +2237,8 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 	if second.ThemeFitDefaultJustMoved() {
 		t.Error("the move re-fired on the next launch — the stamp did not persist")
 	}
-	if second.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("the moved value did not persist: ThemeFitMode = %d", second.ThemeFitMode())
+	if second.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("the moved value did not persist: ThemeFitMode = %d", second.Load().ThemeFit)
 	}
 	// And the stamp is respected even against a value the user changes afterwards.
 	second.SetThemeFit(ThemeFitStretch)
@@ -2249,8 +2249,8 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("third load: %v", err)
 	}
-	if third.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("a deliberate post-stamp Stretch was moved again: ThemeFitMode = %d", third.ThemeFitMode())
+	if third.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("a deliberate post-stamp Stretch was moved again: ThemeFitMode = %d", third.Load().ThemeFit)
 	}
 	if third.ThemeFitDefaultJustMoved() {
 		t.Error("a deliberate post-stamp Stretch reported a move")
