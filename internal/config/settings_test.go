@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -111,5 +112,64 @@ func TestLoadUpdateSwap(t *testing.T) {
 	p.Update(func(s *Settings) {}) // no change
 	if p.pending.Load() {
 		t.Error("a no-op Update marked dirty")
+	}
+}
+
+// TestSnapshotRaceHammer runs one writer swapping the snapshot and eight readers
+// reading every field, under -race, to prove the atomic swap plus immutable snapshot
+// carries no data race.
+func TestSnapshotRaceHammer(t *testing.T) {
+	p := defaultPrefs("")
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				readAll(reflect.ValueOf(p.Load()).Elem())
+			}
+		}()
+	}
+	for i := 0; i < 200; i++ {
+		p.Update(func(s *Settings) { fillValue(reflect.ValueOf(s).Elem()) })
+	}
+	close(stop)
+	wg.Wait()
+}
+
+func readAll(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Bool:
+		_ = v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		_ = v.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		_ = v.Uint()
+	case reflect.Float32, reflect.Float64:
+		_ = v.Float()
+	case reflect.String:
+		_ = v.String()
+	case reflect.Array, reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			readAll(v.Index(i))
+		}
+	case reflect.Map:
+		for _, k := range v.MapKeys() {
+			readAll(v.MapIndex(k))
+		}
+	case reflect.Ptr:
+		if !v.IsNil() {
+			readAll(v.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			readAll(v.Field(i))
+		}
 	}
 }
