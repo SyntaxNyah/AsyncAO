@@ -1617,7 +1617,7 @@ func (a *App) applyFontConfig() {
 	// is narrower. Theme applies already invalidate; this covers the font sources.
 	defer a.invalidateThemeCanvases()
 
-	switch fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) {
+	switch fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.FontPaths()) {
 	case fontSourceDyslexia:
 		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})
 		// Font-everywhere (opt-in): the same face drives the chrome too;
@@ -1695,7 +1695,7 @@ func (a *App) pollFontChain() {
 		// Precedence guard: if the dyslexia toggle flipped on while this manual
 		// chain was loading off-thread, the embedded font already won — don't
 		// let the stale result clobber it.
-		if len(res.data) > 0 && !a.d.Prefs.DyslexiaFontOn() {
+		if len(res.data) > 0 && !a.d.Prefs.Load().DyslexiaFont {
 			a.ctx.SetFontChain(res.names, res.data)
 			// Font-everywhere (opt-in): the chain's PRIMARY face drives the
 			// chrome too; otherwise restore the embedded chrome (the toggle

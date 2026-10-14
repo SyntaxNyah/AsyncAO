@@ -2478,15 +2478,6 @@ func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
 
 // --- Missing-asset report ----------------------------------------------------
 
-// AssetWarningsOn reports whether the on-screen missing-asset report (the
-// menu-bar count chip) shows (OFF by default — failures still go to the
-// debug overlay).
-func (p *AssetPreferences) AssetWarningsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowAssetWarnings
-}
-
 // SetAssetWarnings toggles the on-screen missing-asset report.
 func (p *AssetPreferences) SetAssetWarnings(on bool) {
 	p.mu.Lock()
@@ -2522,15 +2513,6 @@ func (p *AssetPreferences) SetSpriteMove(on bool) {
 }
 
 // --- Desk format policy -----------------------------------------------------
-
-// DeskFollowsManifest reports whether desks adopt the server extensions.json
-// format (ON by default — auto-detect, like every other class; OFF pins
-// desks to WebP regardless of the manifest).
-func (p *AssetPreferences) DeskFollowsManifest() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DeskFollowManifest
-}
 
 // SetDeskFollowManifest toggles whether desks follow the server manifest.
 func (p *AssetPreferences) SetDeskFollowManifest(on bool) {
@@ -2738,14 +2720,6 @@ func (p *AssetPreferences) SetEmoteGridGap(n int) {
 	p.setIntPref(&p.EmoteGridGapPx, n, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 }
 
-// AutoLoginToastOn reports the auto-login notification toggle (ON by default):
-// a toast + desktop notification when a saved auto-login fires on join.
-func (p *AssetPreferences) AutoLoginToastOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AutoLoginToast
-}
-
 // SetAutoLoginToast toggles the auto-login notification.
 func (p *AssetPreferences) SetAutoLoginToast(on bool) {
 	p.mu.Lock()
@@ -2756,14 +2730,6 @@ func (p *AssetPreferences) SetAutoLoginToast(on bool) {
 	p.AutoLoginToast = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// CallwordToastOn reports the callword-toast toggle (ON by default): an in-app
-// toast naming the heard callword, alongside the flash + ping.
-func (p *AssetPreferences) CallwordToastOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CallwordToast
 }
 
 // SetCallwordToast toggles the callword toast.
@@ -2906,14 +2872,6 @@ func (p *AssetPreferences) BlipSpeedDefaultMoved() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.BlipSpeedDefaultMigrated
-}
-
-// AutoReconnectOn reports the auto-reconnect toggle (ON by default): retry the
-// last server with backoff after an unexpected drop.
-func (p *AssetPreferences) AutoReconnectOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AutoReconnect
 }
 
 // SetAutoReconnect toggles auto-reconnect on a dropped connection.
@@ -3135,13 +3093,6 @@ func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 	p.mu.Unlock()
 }
 
-// BgSlideshowEnabled reports the idle background-slideshow toggle (OFF default).
-func (p *AssetPreferences) BgSlideshowEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.BgSlideshow
-}
-
 // SetBgSlideshow toggles the idle background slideshow.
 func (p *AssetPreferences) SetBgSlideshow(on bool) {
 	p.mu.Lock()
@@ -3279,15 +3230,6 @@ func (p *AssetPreferences) FriendButtonShown() bool {
 	return p.ShowFriendButton
 }
 
-// DragLayoutOn reports whether the courtroom resizes by dragging panel edges
-// (ON by default) — when on, the viewport↔log divider is draggable and the +/−
-// layout-knob panel is hidden; off brings the knobs back.
-func (p *AssetPreferences) DragLayoutOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DragLayout
-}
-
 // SetDragLayout toggles drag-to-resize layout mode.
 func (p *AssetPreferences) SetDragLayout(on bool) {
 	p.mu.Lock()
@@ -3310,15 +3252,6 @@ func (p *AssetPreferences) SetShowFriendButton(on bool) {
 	p.ShowFriendButton = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ClipSpritesToStageOn reports the viewport sprite mask (ON by default): character
-// sprites are clipped to the stage so a big pair / reposition offset can't spill
-// over the chatbox or the log.
-func (p *AssetPreferences) ClipSpritesToStageOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ClipSpritesToStage
 }
 
 // SetClipSpritesToStage toggles the viewport sprite mask.
@@ -3351,15 +3284,6 @@ func (p *AssetPreferences) SetRightClickHideSprite(on bool) {
 	p.RightClickHideSprite = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// DyslexiaFontOn reports the dyslexia-friendly font toggle (OFF by default):
-// when on, the bundled OpenDyslexic font drives the IC/OOC chat + log text and
-// takes precedence over any manual font-path override.
-func (p *AssetPreferences) DyslexiaFontOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DyslexiaFont
 }
 
 // SetDyslexiaFont toggles the embedded dyslexia-friendly font.
@@ -3397,15 +3321,6 @@ func (p *AssetPreferences) SetFontEverywhere(on bool) {
 	p.mu.Unlock()
 }
 
-// DNDPersistOn reports the "remember Do Not Disturb across restarts" option (OFF
-// by default — DND normally clears every launch so it can't silently mute you
-// forever; the on-screen badge + opt-in are the guard when it's on).
-func (p *AssetPreferences) DNDPersistOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DNDPersist
-}
-
 // SetDNDPersist toggles whether the DND state survives a restart.
 func (p *AssetPreferences) SetDNDPersist(on bool) {
 	p.mu.Lock()
@@ -3416,14 +3331,6 @@ func (p *AssetPreferences) SetDNDPersist(on bool) {
 	p.DNDPersist = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// DNDSavedOn reports the persisted Do Not Disturb state, restored at launch only
-// when DNDPersistOn.
-func (p *AssetPreferences) DNDSavedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DNDSaved
 }
 
 // SetDNDSaved records the current DND state for next launch (called only while
@@ -3754,13 +3661,6 @@ func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
 	p.InstantReplaySeconds = s
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FavEmoteBoxOn reports whether the floating favourite-emotes box is shown.
-func (p *AssetPreferences) FavEmoteBoxOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FavEmoteBox
 }
 
 // SetFavEmoteBox toggles the floating favourite-emotes box.
@@ -4843,14 +4743,6 @@ func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScan
 func (p *AssetPreferences) SetPostGrain(on bool)     { p.setBoolPref(&p.PostGrain, on) }
 func (p *AssetPreferences) SetPostCRT(on bool)       { p.setBoolPref(&p.PostCRT, on) }
 
-// AnimateEntrancesOn reports the #9 entrance-slide toggle (OFF by default): a new speaker
-// slides in when they take the stage.
-func (p *AssetPreferences) AnimateEntrancesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AnimateEntrances
-}
-
 // SetAnimateEntrances toggles the entrance slide-in.
 func (p *AssetPreferences) SetAnimateEntrances(on bool) { p.setBoolPref(&p.AnimateEntrances, on) }
 
@@ -5093,14 +4985,6 @@ func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
 	p.SpriteTintColor = rgb
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FollowEnabledOn reports the opt-in player-follow toggle (OFF by default): when
-// on, each player-list row shows a Follow button that trails them across areas.
-func (p *AssetPreferences) FollowEnabledOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FollowEnabled
 }
 
 // PlayerListSortMode / PlayerListAreaSortMode return the remembered Players-tab
@@ -6456,13 +6340,6 @@ func (p *AssetPreferences) SetSFXVolMuted(on bool) {
 	p.mu.Unlock()
 }
 
-// BlipVolMutedOn reports the persisted blip-channel mute.
-func (p *AssetPreferences) BlipVolMutedOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.BlipVolMuted
-}
-
 // SetBlipVolMuted persists the blip-channel mute toggle.
 func (p *AssetPreferences) SetBlipVolMuted(on bool) {
 	p.mu.Lock()
@@ -7487,16 +7364,6 @@ func (p *AssetPreferences) SetCrossfadeMs(ms int) {
 	p.mu.Unlock()
 }
 
-// EventDrivenLoopOn reports the EXPERIMENTAL event-driven render loop toggle
-// (default ON on the test channel): static screens stop rendering between real
-// signals, input wakes the loop instantly, and packets/decodes push wake
-// events. OFF = the classic sleep-paced loop, byte-identical to before.
-func (p *AssetPreferences) EventDrivenLoopOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EventDrivenLoop
-}
-
 // SetEventDrivenLoop flips the experimental loop (applies live — the main loop
 // re-reads it every pass).
 func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
@@ -7982,15 +7849,6 @@ func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
 	p.mu.Unlock()
 }
 
-// AdditiveTextOn reports the 2.8 additive-text toggle (ON by default): honor an
-// incoming ADDITIVE=1 append and offer the outgoing Additive checkbox. OFF falls
-// back to the pre-2.8 replace behavior.
-func (p *AssetPreferences) AdditiveTextOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AdditiveText
-}
-
 // SetAdditiveText toggles 2.8 additive text.
 func (p *AssetPreferences) SetAdditiveText(on bool) {
 	p.mu.Lock()
@@ -8042,17 +7900,6 @@ func (p *AssetPreferences) SetPerAreaScrollback(on bool) {
 	p.PerAreaScroll = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// DetailedLogOn reports the detailed-logging toggle (ON by default since the
-// 2026-08-09 flip — see defaultDetailedLog): when on, IC and OOC lines are
-// both interleaved into one timestamped per-server transcript file (one file
-// per tab session — see internal/ui/translog.go), IC carrying character name
-// and showname; no area/pipe columns.
-func (p *AssetPreferences) DetailedLogOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DetailedLog
 }
 
 // SetDetailedLog toggles detailed transcript logging.
@@ -8196,15 +8043,6 @@ func (p *AssetPreferences) SetGhostCrawlText(on bool) {
 	p.mu.Unlock()
 }
 
-// AutoClipModcallOn reports the auto-clip-on-modcall toggle (ON by default): when
-// on, a modcall (sent or received) saves a small text clip of the recent IC log
-// to logs/<server>/modcalls/ as a frozen record for mods/CMs.
-func (p *AssetPreferences) AutoClipModcallOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AutoClipModcall
-}
-
 // SetAutoClipModcall toggles saving an IC-log clip when a modcall fires.
 func (p *AssetPreferences) SetAutoClipModcall(on bool) {
 	p.mu.Lock()
@@ -8215,14 +8053,6 @@ func (p *AssetPreferences) SetAutoClipModcall(on bool) {
 	p.AutoClipModcall = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// CharChatboxOn reports the per-character chatbox-skin toggle (ON by default:
-// a speaker's char.ini chat=<misc> art draws as their chatbox, AO2-parity).
-func (p *AssetPreferences) CharChatboxOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CharChatbox
 }
 
 // SetCharChatbox toggles per-character chatbox skins.

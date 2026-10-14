@@ -399,7 +399,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "On: AsyncAO reads the list the server publishes and asks for exactly what it ships, so the single request per asset is right first time. Off: the server's list is ignored and the per-type formats below decide everything — turn it off only if you are forcing formats by hand.", ColTextDim)
 	y += 8
 
-	deskWebP := !a.d.Prefs.DeskFollowsManifest()
+	deskWebP := !a.d.Prefs.Load().DeskFollowManifest
 	if next := c.Checkbox(pad, y, "Always use WebP for desks, even when the server's list says otherwise", deskWebP); next != deskWebP {
 		a.d.Prefs.SetDeskFollowManifest(!next)
 		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe

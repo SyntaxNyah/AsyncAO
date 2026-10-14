@@ -653,7 +653,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			// scenario a popped-out preview exists for (v1.94.0).
 			app.AdvanceDetachedPreview()
 			preview.Present()
-			if prefs.EventDrivenLoopOn() {
+			if prefs.Load().EventDrivenLoop {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
 				// have produced redraw-worthy work (packets, texture uploads):
 				// loop straight around and render it — the next pass's SkipFrame
@@ -823,8 +823,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			if sleep := pace - time.Since(now); sleep > 0 {
 				switch {
 				case audioPace:
-					fineAdvance(sleep, prefs.EventDrivenLoopOn())
-				case prefs.EventDrivenLoopOn():
+					fineAdvance(sleep, prefs.Load().EventDrivenLoop)
+				case prefs.Load().EventDrivenLoop:
 					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
 						pendingEv = ev
 					}

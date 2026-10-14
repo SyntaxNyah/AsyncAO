@@ -551,7 +551,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
-		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
+		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
@@ -571,7 +571,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.applySpriteOverridesTo(a.splitRoom) // Hide-desk / Missingno / offsets are user choices, not per-room ones
 			a.splitVP.SetSpriteFX(a.spriteFX())
 			a.splitVP.SetSpriteLoadMode(a.vpSpriteLoadMode())
-			a.splitVP.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())
+			a.splitVP.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
 			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())

@@ -1256,7 +1256,7 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.DNDPersistOn() || p.DNDSavedOn() {
+	if p.Load().DNDPersist || p.Load().DNDSaved {
 		t.Fatal("DND persistence + state must default OFF (session-only)")
 	}
 	p.SetDNDPersist(true)
@@ -1268,8 +1268,8 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.DNDPersistOn() || !q.DNDSavedOn() {
-		t.Errorf("DND persist/state lost across reload: persist=%v saved=%v", q.DNDPersistOn(), q.DNDSavedOn())
+	if !q.Load().DNDPersist || !q.Load().DNDSaved {
+		t.Errorf("DND persist/state lost across reload: persist=%v saved=%v", q.Load().DNDPersist, q.Load().DNDSaved)
 	}
 }
 
@@ -1290,7 +1290,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.MasterVolMutedOn() || p.MusicVolMutedOn() || p.SFXVolMutedOn() || p.BlipVolMutedOn() {
+	if p.MasterVolMutedOn() || p.MusicVolMutedOn() || p.SFXVolMutedOn() || p.Load().BlipVolMuted {
 		t.Fatal("all four channel mutes must default unmuted")
 	}
 	p.SetMasterVolMuted(true)
@@ -1310,7 +1310,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if !q.SFXVolMutedOn() {
 		t.Error("SFX mute lost across reload")
 	}
-	if q.MusicVolMutedOn() || q.BlipVolMutedOn() {
+	if q.MusicVolMutedOn() || q.Load().BlipVolMuted {
 		t.Error("unmuted channels came back muted after reload")
 	}
 }
@@ -1573,7 +1573,7 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if p.AutoReconnectOn() {
+	if p.Load().AutoReconnect {
 		t.Error("an older file's ON auto-reconnect must be forced OFF on update (the pull-back)")
 	}
 
@@ -1585,7 +1585,7 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if !q.AutoReconnectOn() {
+	if !q.Load().AutoReconnect {
 		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
 	}
 }
@@ -1735,7 +1735,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Error("an older file's WebP pin must be flipped to follow-the-manifest on update")
 		}
 		if !p.DeskManifestDefaultMigrated {
@@ -1752,7 +1752,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if p.DeskFollowsManifest() {
+		if p.Load().DeskFollowManifest {
 			t.Error("a stamped file's explicit WebP pin must be respected (the flip already ran)")
 		}
 	})
@@ -1766,7 +1766,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
 		p.SetDeskFollowManifest(false) // the user re-pins WebP after updating
@@ -1790,7 +1790,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if q.DeskFollowsManifest() {
+		if q.Load().DeskFollowManifest {
 			t.Error("a re-pinned WebP choice was lost — the flip re-fired instead of firing exactly once")
 		}
 	})
@@ -1804,7 +1804,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file without the key: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Error("absent deskFollowManifest read as a WebP pin — the DTO field must be a *bool so absent means 'default ON', not 'false'")
 		}
 	})
@@ -1831,7 +1831,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Error("an older file's OFF must be flipped ON once on update")
 		}
 		if !p.DetailedLogDefaultMigrated {
@@ -1848,7 +1848,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if p.DetailedLogOn() {
+		if p.Load().DetailedLog {
 			t.Error("a stamped file's explicit OFF must be respected (the flip already ran)")
 		}
 	})
@@ -1862,7 +1862,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
 		p.SetDetailedLog(false) // the user turns the transcript back off after updating
@@ -1886,7 +1886,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if q.DetailedLogOn() {
+		if q.Load().DetailedLog {
 			t.Error("the re-disable was lost — the flip re-fired instead of firing exactly once")
 		}
 	})
@@ -1900,7 +1900,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file without the key: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Error("absent detailedLog read as OFF — the DTO field must be a *bool so absent means 'default ON'")
 		}
 	})

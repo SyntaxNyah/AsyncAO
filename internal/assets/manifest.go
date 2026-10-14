@@ -159,7 +159,7 @@ func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int 
 	// background/desk manifest class was the original worry that once shipped
 	// the pin as the default). See defaultDeskFollowManifest / Settings →
 	// Formats → "Always use WebP for desks".
-	deskFollows := prefs.DeskFollowsManifest()
+	deskFollows := prefs.Load().DeskFollowManifest
 	seeded := 0
 	for _, target := range m.manifestSeedTargets() {
 		if len(target.exts) == 0 {

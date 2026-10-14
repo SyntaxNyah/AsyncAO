@@ -749,7 +749,7 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 // the View knob's own clamp so the two never disagree.
 func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 	c := a.ctx
-	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 || a.courtModalOpen() || a.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
+	if !a.d.Prefs.Load().DragLayout || a.vpZoom > 1 || a.courtModalOpen() || a.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
 		a.dragVpDivider = false
 		a.dividerPrevDwn = c.mouseDown
 		return

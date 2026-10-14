@@ -1142,7 +1142,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// master pref off, or moving to a server without the feature, hid the box while
 	// icAdditive stayed true and kept riding every message.
 	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
-		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
+		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		a.icAdditive = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive), a.icAdditive) // :504 → :6572
 		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 	} else {

@@ -1364,7 +1364,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.emoteFavRev++ // rebuild the visible list for the new filter state
 	}
 	y += 26
-	favBox := a.d.Prefs.FavEmoteBoxOn()
+	favBox := a.d.Prefs.Load().FavEmoteBox
 	if next := c.Checkbox(pad, y, "Favourite-emotes box (OFF by default): a small movable box of just your starred emotes as clickable buttons — press one to use that emote. Also opens with Ctrl+A (rebindable in the Controls tab).", favBox); next != favBox {
 		a.d.Prefs.SetFavEmoteBox(next)
 	}
@@ -1509,7 +1509,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetUpdateCheck(next)
 	}
 	y += 26
-	alt := a.d.Prefs.AutoLoginToastOn()
+	alt := a.d.Prefs.Load().AutoLoginToast
 	if next := c.Checkbox(pad, y, "Notify me when auto-login signs me in (toast + desktop notification — ON by default, so a mod knows they're logged in)", alt); next != alt {
 		a.d.Prefs.SetAutoLoginToast(next)
 	}
@@ -1539,7 +1539,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 28
 	y = a.settingsSection(y, w, "Stage")
-	slideOn := a.d.Prefs.BgSlideshowEnabled()
+	slideOn := a.d.Prefs.Load().BgSlideshow
 	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
 		a.d.Prefs.SetBgSlideshow(next)
 	}
@@ -1553,7 +1553,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+270, y+4, "only while idle — a message instantly shows the real area background again", ColTextDim)
 		y += 30
 	}
-	dragLay := a.d.Prefs.DragLayoutOn()
+	dragLay := a.d.Prefs.Load().DragLayout
 	if next := c.Checkbox(pad, y, "Drag panel edges to resize the courtroom (ON by default): grab the viewport's right edge to make it bigger / the log smaller — uncheck for the +/− View/Text/MsgBox/Log/Input knob buttons instead", dragLay); next != dragLay {
 		a.d.Prefs.SetDragLayout(next)
 	}
@@ -1792,7 +1792,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetFontCensus(next)
 	}
 	y += 26
-	dys := a.d.Prefs.DyslexiaFontOn()
+	dys := a.d.Prefs.Load().DyslexiaFont
 	if next := c.Checkbox(pad, y, "Dyslexia-friendly font (bundled OpenDyslexic) — applies to the chat & log text", dys); next != dys {
 		a.d.Prefs.SetDyslexiaFont(next)
 		a.applyFontConfig()

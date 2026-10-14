@@ -1456,7 +1456,7 @@ func (a *App) resetSessionState() {
 		masterMuted:  a.d.Prefs.MasterVolMutedOn(),
 		musicMuted:   a.d.Prefs.MusicVolMutedOn(),
 		sfxMuted:     false,
-		blipMuted:    a.d.Prefs.BlipVolMutedOn(),
+		blipMuted:    a.d.Prefs.Load().BlipVolMuted,
 		spriteOv:     map[string][2]int{},
 		pmThreads:    map[string][]pmLine{},
 		evidIdx:      -1,

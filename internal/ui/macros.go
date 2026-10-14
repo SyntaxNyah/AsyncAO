@@ -248,7 +248,7 @@ func (a *App) autoLoginOnReady() {
 	// latch above already ran, so a re-sent DONE (the WAP/Akashi fork, area
 	// changes) won't re-queue the login; a manual loginNow stays available.
 	a.loginNow()
-	if !a.d.Prefs.AutoLoginToastOn() {
+	if !a.d.Prefs.Load().AutoLoginToast {
 		return // the mod opted out of the notification (Settings → General)
 	}
 	// One notification per join (autoLoginOnReady fires once at PhaseReady). The

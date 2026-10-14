@@ -1105,7 +1105,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 		}
 		x += 80
 	}
-	if !a.panelHidden(panelKnobs) && !a.d.Prefs.DragLayoutOn() { // drag-resize mode hides the +/− knobs
+	if !a.panelHidden(panelKnobs) && !a.d.Prefs.Load().DragLayout { // drag-resize mode hides the +/− knobs
 		if a.d.Prefs.ViewportExactWidth() == 0 { // exact-px sizing shadows vpPct, so the View knob would no-op — hide it (set the size in Settings instead)
 			x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
 		}
@@ -1613,7 +1613,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Shown only when the server advertises additive AND the master pref is on (AO2
 	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
 	// When hidden the toggle is forced off so a stale check can't ride a message.
-	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
+	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		// icAddW ("Additive") is a package-level const, shared with the layout tests.
 		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
 		// slotRect so the editor can pull it out into its own spot, but the row cursor still

@@ -110,7 +110,7 @@ func (a *App) noteAssetMiss(base string, deskOnly bool, now time.Time) {
 // Gated on the same preference the old banner used (default OFF), so a player who
 // deliberately silenced missing-asset reporting keeps it silenced.
 func (a *App) assetMissChipActive() bool {
-	return a.assetMissCount > 0 && a.d.Prefs.AssetWarningsOn() &&
+	return a.assetMissCount > 0 && a.d.Prefs.Load().ShowAssetWarnings &&
 		a.now().Sub(a.assetMissAt) < assetMissChipShowDuration
 }
 

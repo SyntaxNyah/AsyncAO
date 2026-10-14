@@ -560,7 +560,7 @@ func (a *App) handleHotkeys() {
 // toggleFavEmoteBox flips the floating favourite-emotes box (its rebindable key
 // + the Settings tick). A short toast confirms, and points at how to fill it.
 func (a *App) toggleFavEmoteBox() {
-	on := !a.d.Prefs.FavEmoteBoxOn()
+	on := !a.d.Prefs.Load().FavEmoteBox
 	a.d.Prefs.SetFavEmoteBox(on)
 	if on {
 		a.warnLine = "Favourite-emotes box shown — ★ emotes in the grid to fill it"
@@ -1215,7 +1215,7 @@ func (a *App) callwordAlert(osTitle, body string) {
 	} else {
 		a.d.Audio.PlayAlert()
 	}
-	if a.d.Prefs.CallwordToastOn() {
+	if a.d.Prefs.Load().CallwordToast {
 		a.warnLine = clampLine(body)
 		a.warnAt = time.Now()
 	}

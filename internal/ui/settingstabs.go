@@ -625,7 +625,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	c.popMuted(unmute) // the next two rows are parity/decor, not effects — keep them live
 	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
 	// behaviour, default ON; off also stops the misc art fetches.
-	ccb := a.d.Prefs.CharChatboxOn()
+	ccb := a.d.Prefs.Load().CharChatbox
 	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
 		a.d.Prefs.SetCharChatbox(next)
 	}
@@ -639,7 +639,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
 	y += 30
 	defer c.popMuted(c.pushMuted(noFX)) // back under the master for the rest of the section
-	ent := a.d.Prefs.AnimateEntrancesOn()
+	ent := a.d.Prefs.Load().AnimateEntrances
 	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
 		a.d.Prefs.SetAnimateEntrances(next)
 	}
@@ -873,7 +873,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// Missing-asset chip: opt-in (default OFF). The failures always reach the
 	// debug log; this only governs the count chip in the menu bar (GH #27 —
 	// the old red banner it replaced is gone, so the label must not promise one).
-	showWarn := a.d.Prefs.AssetWarningsOn()
+	showWarn := a.d.Prefs.Load().ShowAssetWarnings
 	if next := c.Checkbox(pad, y, "Show missing-asset warnings (OFF by default): a count chip in the menu bar — click it for Debug ▸ Log", showWarn); next != showWarn {
 		a.d.Prefs.SetAssetWarnings(next)
 	}

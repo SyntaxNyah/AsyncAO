@@ -106,7 +106,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if got := p.PreviewHoverMillis(); got != DefaultPreviewHoverMs {
 		t.Errorf("PreviewHoverMillis default = %d, want %d", got, DefaultPreviewHoverMs)
 	}
-	if p.AssetWarningsOn() {
+	if p.Load().ShowAssetWarnings {
 		t.Error("AssetWarningsOn default must be false (banner is opt-in)")
 	}
 	if p.SpriteMoveEnabled() {
@@ -114,13 +114,13 @@ func TestQoLPrefDefaults(t *testing.T) {
 	}
 	// Deliberate default flip (user order, 2026-08-08): desks auto-detect from
 	// the server manifest like every other class; pinning WebP is the opt-out.
-	if !p.DeskFollowsManifest() {
+	if !p.Load().DeskFollowManifest {
 		t.Error("DeskFollowsManifest default must be true (desks auto-detect like every other class)")
 	}
-	if !p.AutoLoginToastOn() {
+	if !p.Load().AutoLoginToast {
 		t.Error("AutoLoginToastOn default must be true")
 	}
-	if !p.CallwordToastOn() {
+	if !p.Load().CallwordToast {
 		t.Error("CallwordToastOn default must be true")
 	}
 	if !p.MessageCounterOn() {
@@ -129,7 +129,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.ICTimestampsOn() {
 		t.Error("ICTimestampsOn default must be false (playtest: timestamps off by default)")
 	}
-	if p.AutoReconnectOn() {
+	if p.Load().AutoReconnect {
 		t.Error("AutoReconnectOn default must be false (drops stay at the lobby; auto-retry is opt-in)")
 	}
 	if !p.ScreenEffectsOn() {
@@ -884,7 +884,7 @@ func TestModSFXPrefs(t *testing.T) {
 // and an explicit ON survives save→load.
 func TestFollowEnabledPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.FollowEnabledOn() {
+	if p.Load().FollowEnabled {
 		t.Error("FollowEnabled must default OFF (opt-in)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -900,7 +900,7 @@ func TestFollowEnabledPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.FollowEnabledOn() {
+	if !r.Load().FollowEnabled {
 		t.Error("FollowEnabled=true lost across save/load")
 	}
 }
@@ -1015,16 +1015,16 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if got := q.PreviewHoverMillis(); got != 8000 {
 		t.Errorf("PreviewHoverMillis = %d, want 8000", got)
 	}
-	if !q.AssetWarningsOn() {
+	if !q.Load().ShowAssetWarnings {
 		t.Error("ShowAssetWarnings lost")
 	}
 	if !q.SpriteMoveEnabled() {
 		t.Error("SpriteMove lost")
 	}
-	if q.DeskFollowsManifest() {
+	if q.Load().DeskFollowManifest {
 		t.Error("DeskFollowManifest=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.AutoLoginToastOn() {
+	if q.Load().AutoLoginToast {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.ScreenEffectsOn() {
@@ -1033,13 +1033,13 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.WordDeleteOn() {
 		t.Error("WordDelete=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.CallwordToastOn() {
+	if q.Load().CallwordToast {
 		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.MessageCounterOn() {
 		t.Error("MessageCounter=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if !q.AutoReconnectOn() {
+	if !q.Load().AutoReconnect {
 		t.Error("AutoReconnect=true lost (absent-default OFF must not clobber explicit true)")
 	}
 	if q.MusicHistoryOn() {
@@ -1057,13 +1057,13 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.ShowRecordButtonOn() {
 		t.Error("ShowRecordButton=true lost across reload")
 	}
-	if q.DragLayoutOn() {
+	if q.Load().DragLayout {
 		t.Error("DragLayout=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.EventDrivenLoopOn() {
+	if q.Load().EventDrivenLoop {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
 	if !q.FrameLimiterDisabled() {
@@ -1372,7 +1372,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.CatchUpLingerMs() != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")
 	}
-	if !p.ClipSpritesToStageOn() {
+	if !p.Load().ClipSpritesToStage {
 		t.Error("nuke must restore the sprite mask to its default ON")
 	}
 	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
@@ -1390,7 +1390,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
 	}
-	if !p.EventDrivenLoopOn() {
+	if !p.Load().EventDrivenLoop {
 		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
 	if p.FrameLimiterDisabled() {
