@@ -320,7 +320,7 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 // every accessor returns the pre-#39 value — the opt-out has to be complete.
 func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 	a := testTabApp(t)
-	if !a.d.Prefs.ThemeFontsOn() {
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("theme fonts must ship ON (an AO2 theme's fonts are part of the theme)")
 	}
 	a.d.Prefs.SetThemeFonts(false)
@@ -393,15 +393,15 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 // the pref must be in the live struct, the on-disk DTO and the load overlay.
 func TestThemeFontsPrefRoundTrips(t *testing.T) {
 	a := testTabApp(t)
-	if !a.d.Prefs.ThemeFontsOn() {
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("default must be ON")
 	}
 	a.d.Prefs.SetThemeFonts(false)
-	if a.d.Prefs.ThemeFontsOn() {
+	if a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(false) did not stick")
 	}
 	a.d.Prefs.SetThemeFonts(true)
-	if !a.d.Prefs.ThemeFontsOn() {
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(true) did not stick")
 	}
 }

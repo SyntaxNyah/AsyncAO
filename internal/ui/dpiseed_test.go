@@ -14,9 +14,9 @@ import (
 // SeedDisplayDPIScale funnels through) must touch detected state only.
 func TestDPISeedNeverPersists(t *testing.T) {
 	a := testTabApp(t)
-	before := a.d.Prefs.UIScale()
+	before := a.d.Prefs.Load().UIScalePct
 	a.SetDisplayDPIScale(150) // as if a 144-dpi monitor seeded 150%
-	if got := a.d.Prefs.UIScale(); got != before {
+	if got := a.d.Prefs.Load().UIScalePct; got != before {
 		t.Fatalf("DPI seed leaked into the persisted scale: prefs = %d, want unchanged %d", got, before)
 	}
 	if a.dpiScalePct != 150 {
@@ -47,7 +47,7 @@ func TestExplicitScaleWinsOverSeed(t *testing.T) {
 	// …and a user who explicitly picked 125% (Auto off is required to reach the slider).
 	a.d.Prefs.SetUIScaleAuto(false)
 	a.uiScalePct = 125
-	if got := a.UIScale(); got != 125 {
+	if got := a.Load().UIScalePct; got != 125 {
 		t.Fatalf("explicit scale must win over the DPI seed: UIScale() = %d, want 125", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestSeededScaleFollowsAutoWhenUnset(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.SetUIScaleAuto(true)
 	a.detectedScalePct = 150 // as SetAutoScaleFromWindow would compute from the seed
-	if got := a.UIScale(); got != 150 {
+	if got := a.Load().UIScalePct; got != 150 {
 		t.Fatalf("with Auto on, UIScale() must follow the seed: got %d, want 150", got)
 	}
 }

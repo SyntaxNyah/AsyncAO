@@ -1193,7 +1193,7 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, skin
 // TestExportBorrowsTheThemeLayoutCacheWithoutThrashing pins it, because the
 // property depends on a precedence rule two files away.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
-	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if _, ok := lay.rect("viewport"); ok {
 			a.drawGifThemedFrame(j, sc, dst, lay)
 			return

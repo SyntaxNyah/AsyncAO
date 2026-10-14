@@ -1094,7 +1094,7 @@ func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
 	if a.screen != ScreenCourtroom || a.room == nil || a.theaterOn || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
 	}
-	if !a.themeLay.valid || !a.d.Prefs.ThemeLayoutEnabled() {
+	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return sdl.Rect{}, false
 	}
 	if !a.tabStripThemeParked() {
@@ -1441,7 +1441,7 @@ func (a *App) resetSessionState() {
 		// NewApp restored them once and every connect wiped them back to
 		// hidden (playtest: the show/hide volume option did not persist).
 		// Seed them on every fresh session instead.
-		volStripOn:   a.d.Prefs.VolStripShownOn(),
+		volStripOn:   a.d.Prefs.Load().VolStripOn,
 		musicVolMode: a.d.Prefs.Load().MusicVolMode,
 		// The master/music/blip channel mutes are the SAME failure mode as
 		// volStripOn just above (playtest never happened for this one, but the

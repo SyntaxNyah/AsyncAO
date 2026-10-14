@@ -210,10 +210,10 @@ func (a *App) applyManualUIScale(pct int) {
 func (a *App) drawViewportSizeRow(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	cur := a.d.Prefs.ViewportExactWidth()
+	cur := a.d.Prefs.Load().ViewportExactW
 	set := func(px int) { // apply + resync the entry buffer to the clamped result
 		a.d.Prefs.SetViewportExactWidth(px)
-		cur = a.d.Prefs.ViewportExactWidth()
+		cur = a.d.Prefs.Load().ViewportExactW
 		if cur == 0 {
 			a.vpExactBuf = ""
 		} else {

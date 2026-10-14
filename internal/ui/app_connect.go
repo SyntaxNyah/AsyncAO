@@ -127,8 +127,8 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	// TLS: default OFF accepts self-signed wss certs (most community AO servers);
 	// the power-user Security toggle flips on strict verification.
 	conn, err := protocol.Dial(dialCtx, wsURL, protocol.DialOptions{
-		SkipTLSVerify: !a.d.Prefs.ValidateTLSCertsOn(),
-		Origin:        a.d.Prefs.WSOriginHeader(), // power-user: servers that allowlist their web client's origin ("" = none)
+		SkipTLSVerify: !a.d.Prefs.Load().ValidateTLSCerts,
+		Origin:        a.d.Prefs.Load().WSOrigin, // power-user: servers that allowlist their web client's origin ("" = none)
 	})
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
@@ -313,7 +313,7 @@ func (a *App) Disconnect() {
 // it, so a too-big or off-screen window snaps back into view. Leaves fullscreen
 // first (a windowed resize is meaningless while fullscreen).
 func (a *App) applyWindowSize(w, h int) {
-	if a.d.Prefs.WindowFullscreen() {
+	if a.d.Prefs.Load().WindowFull {
 		a.ctx.SetWindowFullscreen(false)
 		a.d.Prefs.SetWindowFullscreen(false)
 	}
@@ -377,7 +377,7 @@ func (a *App) themeDesignWindowSize() (int, int, bool) {
 // canvas, like the stock AO2 client", which would then be false.
 func (a *App) themeDesignSizeOffer() (int, int, bool) {
 	w, h, ok := a.themeDesignWindowSize()
-	return w, h, ok && a.d.Prefs.ThemeLayoutEnabled()
+	return w, h, ok && a.d.Prefs.Load().ThemeLayoutOn
 }
 
 // themeDesignWindowInset is the extra window HEIGHT a snap-to-canvas has to ask for
@@ -480,7 +480,7 @@ func (a *App) maybeResizeToThemeDesign(gen uint64) {
 		return
 	}
 	a.themeResizeArmGen = 0
-	if a.d.Prefs.WindowFullscreen() || a.ctx.WindowMaximized() || !a.d.Prefs.ThemeLayoutEnabled() {
+	if a.d.Prefs.Load().WindowFull || a.ctx.WindowMaximized() || !a.d.Prefs.Load().ThemeLayoutOn {
 		return
 	}
 	w, h, ok := a.themeDesignWindowTarget()
@@ -553,7 +553,7 @@ func (a *App) applyFullscreen(on bool) {
 
 // toggleFullscreen flips fullscreen — shared by the F11 escape and the Settings
 // checkbox.
-func (a *App) toggleFullscreen() { a.applyFullscreen(!a.d.Prefs.WindowFullscreen()) }
+func (a *App) toggleFullscreen() { a.applyFullscreen(!a.d.Prefs.Load().WindowFull) }
 
 // effectiveShowname is the name outgoing messages carry: the courtroom
 // override box when filled, the persisted Settings showname otherwise.

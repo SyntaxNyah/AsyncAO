@@ -172,7 +172,7 @@ func TestThemeFitNativeFloorAndCeiling(t *testing.T) {
 // the correct-looking mode.
 func TestThemeFitNativeIsTheDefault(t *testing.T) {
 	a := testTabApp(t)
-	if got := a.d.Prefs.ThemeFitMode(); got != config.ThemeFitNative {
+	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitNative {
 		t.Fatalf("stock ThemeFitMode = %d, want Native(%d)", got, config.ThemeFitNative)
 	}
 	a.themeRects = map[string]theme.Rect{

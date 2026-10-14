@@ -27,7 +27,7 @@ func pacerPrefs(t *testing.T) *config.AssetPreferences {
 // behaviour change: a fresh install must pace an unfocused window exactly as it
 // did before this preference existed.
 func TestUnfocusedFullRateShipsOff(t *testing.T) {
-	if pacerPrefs(t).UnfocusedFullRateOn() {
+	if pacerPrefs(t).Load().UnfocusedFullRate {
 		t.Fatal("UnfocusedFullRate must ship OFF — turning it on by default IS the behaviour change the user ruled out")
 	}
 }

@@ -65,7 +65,7 @@ func TestManualUIScaleCommitOnRelease(t *testing.T) {
 	if a.uiScalePct != config.MaxUIScalePercent {
 		t.Fatalf("release must apply the dragged value, uiScalePct = %d, want %d", a.uiScalePct, config.MaxUIScalePercent)
 	}
-	if got := a.d.Prefs.UIScale(); got != config.MaxUIScalePercent {
+	if got := a.d.Prefs.Load().UIScalePct; got != config.MaxUIScalePercent {
 		t.Fatalf("release must persist the scale, prefs = %d", got)
 	}
 

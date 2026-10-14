@@ -260,7 +260,7 @@ func (a *App) invalidateThemeCanvases() {
 // (pollThemeApply invalidates).
 func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	lay := &a.themeLay
-	fit := a.d.Prefs.ThemeFitMode()
+	fit := a.d.Prefs.Load().ThemeFit
 	// Measured before the validity test, because they ARE part of the key (see
 	// themeLayoutCache.tabStripW / .tabStripParked). Both are alloc-free and
 	// independent of every value built below, so neither can recurse into this

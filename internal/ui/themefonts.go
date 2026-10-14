@@ -696,7 +696,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 	tbl := res.fontTable
 	dyslexia := fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.Load().FontOverridePaths) == fontSourceDyslexia
 	switch {
-	case !a.d.Prefs.ThemeFontsOn():
+	case !a.d.Prefs.Load().ThemeFonts:
 		// Opt-out: the zero table restores pre-#39 behaviour for the THEME's
 		// contribution. The user's own per-panel picks are re-applied below —
 		// that checkbox says "use the theme's fonts", and reading it as "use no

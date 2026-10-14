@@ -1790,7 +1790,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.areaPct = a.logPct                                                        // same for the Areas list (all three hosts: docked tab, torn, themed)
 	a.modDashPct = a.logPct                                                     // same for the Mod/CM dashboard lists
-	a.uiScalePct = d.Prefs.UIScale()
+	a.uiScalePct = d.Prefs.Load().UIScalePct
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
 	a.dndOn = d.Prefs.Load().DNDPersist && d.Prefs.Load().DNDSaved // else session-only: clears each launch
@@ -1857,7 +1857,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 // from it each frame and sizes the logical canvas accordingly): the
 // DPI-detected value under auto-HiDPI, the manual setting otherwise.
 func (a *App) UIScale() int {
-	if a.detectedScalePct > 0 && a.d.Prefs.UIScaleAuto() {
+	if a.detectedScalePct > 0 && a.d.Prefs.Load().UIScaleAutoOn {
 		return a.detectedScalePct
 	}
 	return a.uiScalePct
@@ -2014,7 +2014,7 @@ func (a *App) NoteFocusLost() {
 //     text/badge fixes — recorded here, still, so the next person does not have to
 //     re-derive either the mechanism or the risk.
 func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
-	if !a.d.Prefs.UIScaleAuto() {
+	if !a.d.Prefs.Load().UIScaleAutoOn {
 		return // manual scale governs; the detected value is unused
 	}
 	winPct := 100
