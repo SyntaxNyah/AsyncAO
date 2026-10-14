@@ -47,6 +47,7 @@ func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	presence := presencePrepass(data)
 	migrateLegacyKeys(p, data, presence)
 	p.normalize(presence)
+	p.syncSnapshot()
 	return p, nil
 }
 

@@ -1586,6 +1586,10 @@ type AssetPreferences struct {
 	// membership. The char-select star grid caches a lowercased membership
 	// set keyed by this generation, so the per-cell lookup stays lock-free.
 	wardrobeGen atomic.Uint64
+
+	// settings is the B0 snapshot of the data fields; readers call Load() and
+	// writers call Update(). It is swapped wholesale on a real change.
+	settings atomic.Pointer[Settings]
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -1828,7 +1832,7 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 // saver goroutine). Both load() (before overlaying the file) and the reset
 // methods use it, so the default state lives in exactly one place.
 func defaultPrefs(path string) *AssetPreferences {
-	return &AssetPreferences{
+	p := &AssetPreferences{
 		PreferAnimated:       defaultPreferAnimated,
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
@@ -1952,6 +1956,8 @@ func defaultPrefs(path string) *AssetPreferences {
 		LearnedFormats:  map[string][]string{},
 		path:            path,
 	}
+	p.syncSnapshot()
+	return p
 }
 
 // Quarantine records that an existing preferences file was unparseable at load

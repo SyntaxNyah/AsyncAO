@@ -383,3 +383,47 @@ func cloneStructField(src, dst reflect.Value, i int) {
 	df = reflect.NewAt(df.Type(), dbase).Elem()
 	cloneValue(sf, df)
 }
+
+// Load returns the current settings snapshot. Callers must not mutate the returned
+// value (it is shared) and must not retain it across time.
+func (p *AssetPreferences) Load() *Settings {
+	return p.settings.Load()
+}
+
+// Update applies fn to a clone of the current snapshot and commits the result,
+// marking the preferences dirty only when the snapshot actually changed.
+func (p *AssetPreferences) Update(fn func(*Settings)) {
+	p.commit(p.apply(fn))
+}
+
+func (p *AssetPreferences) apply(fn func(*Settings)) *Settings {
+	next := cloneSettings(p.Load())
+	fn(next)
+	return next
+}
+
+func (p *AssetPreferences) commit(next *Settings) {
+	if reflect.DeepEqual(p.settings.Load(), next) {
+		return
+	}
+	p.settings.Store(next)
+	p.markDirty()
+}
+
+// syncSnapshot seeds the snapshot from the inline data fields — the B0 bridge: the
+// fields and the snapshot coexist until the last method moves off the fields.
+func (p *AssetPreferences) syncSnapshot() {
+	s := &Settings{}
+	copyByName(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem())
+	p.settings.Store(s)
+}
+
+func copyByName(src, dst reflect.Value) {
+	for i := 0; i < dst.NumField(); i++ {
+		df := dst.Field(i)
+		sf := src.FieldByName(dst.Type().Field(i).Name)
+		if sf.IsValid() && sf.Type() == df.Type() && df.CanSet() {
+			df.Set(sf)
+		}
+	}
+}
