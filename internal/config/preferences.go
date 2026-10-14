@@ -6125,14 +6125,6 @@ func (p *AssetPreferences) SetSpriteDownscaleOff(off bool) {
 	p.setBoolPref(&p.SpriteDownscaleOff, off)
 }
 
-// SpriteDownscalePct reports the decode-downscale target as a % of display
-// height (0 = the default 100 %). Live-applied to NEW decodes.
-func (p *AssetPreferences) SpriteDownscalePct() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteDownscalePctVal
-}
-
 // SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 	if pct != 0 {
@@ -6146,14 +6138,6 @@ func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 	p.SpriteDownscalePctVal = pct
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// AnimatedSpriteCap reports the opt-in animated-only height cap in px
-// (0 = off, the default: animated sprites use the still sprite cap).
-func (p *AssetPreferences) AnimatedSpriteCap() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AnimatedSpriteCapPxVal
 }
 
 // SetAnimatedSpriteCap persists the opt-in animated-only height cap (0 = off;
