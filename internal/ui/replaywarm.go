@@ -120,7 +120,7 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 	// auto-detect + per-origin dedupe as the session and export paths — so a .demo's
 	// dead-origin replay probes the manifest format and a second replay of the same
 	// origin skips the (already-done) fetch.
-	if a.d.Prefs.FormatAutoDetect() && !a.originSeeded(rec.Origin) {
+	if a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(rec.Origin) {
 		a.markOriginSeeded(rec.Origin)
 		w.seeding = true
 		w.seedOrigin = rec.Origin

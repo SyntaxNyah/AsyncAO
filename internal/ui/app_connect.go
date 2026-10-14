@@ -595,7 +595,7 @@ func (a *App) updatePresence() {
 	if a.d.Presence == nil {
 		return
 	}
-	dp := a.d.Prefs.Discord()
+	dp := a.d.Prefs.Load().DiscordRPC
 	if !dp.Enabled {
 		a.d.Presence.Clear()
 		return
@@ -826,7 +826,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.routeIncomingPM(uid, sender, ev.Text)
 			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
-			if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
+			if a.d.Prefs.Load().CallwordsOOC && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 				names := a.mentionNames()
 				a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
 			}
@@ -843,7 +843,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 					continue // #81: ignored player — drop IC entirely (no log, no sprite/blip via room, no recording)
 				}
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
-				force := a.d.Prefs.ForceCharNamesOn()
+				force := a.d.Prefs.Load().ForceCharNames
 				// The log's name resolves through the SAME char.ini rung the plate
 				// uses (remoteIniShownameFor) — one chain, two surfaces.
 				line, speaker, bodyRuneStart, styles := icLogEntry(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
@@ -1326,7 +1326,7 @@ type casingProbeResult struct {
 // only when the user selected CharCaseAuto — the LEARNED casing for that host (lowercase until it's
 // learned). Resolving Auto here keeps it out of the SDL-free URLBuilder.
 func (a *App) charCasingFor(origin string) uint8 {
-	c := a.d.Prefs.AssetCharCasing()
+	c := a.d.Prefs.Load().AssetCharCase
 	if c != courtroom.CharCaseAuto {
 		return c // manual (incl. the lowercase default) — no probing, no learning
 	}
@@ -1342,7 +1342,7 @@ func (a *App) charCasingFor(origin string) uint8 {
 // has selected Auto casing, the char list is known, and this host hasn't been probed yet. A cheap
 // per-frame no-op otherwise, so it costs nothing unless Auto is on.
 func (a *App) maybeProbeCasing() {
-	if a.d.Prefs.AssetCharCasing() != courtroom.CharCaseAuto || a.casingProbing || a.sess == nil {
+	if a.d.Prefs.Load().AssetCharCase != courtroom.CharCaseAuto || a.casingProbing || a.sess == nil {
 		return
 	}
 	origin := a.urls.Origin()
@@ -1453,7 +1453,7 @@ func (a *App) fetchManifestAsync() {
 	}
 	// The NETWORK fetch of the server's own extensions.json is gated on auto-detect
 	// (the per-server profile above is not — it always applies).
-	if !a.d.Prefs.FormatAutoDetect() {
+	if !a.d.Prefs.Load().AutoDetectFormats {
 		return
 	}
 	mgr := a.d.Manager
@@ -1617,12 +1617,12 @@ func (a *App) applyFontConfig() {
 	// is narrower. Theme applies already invalidate; this covers the font sources.
 	defer a.invalidateThemeCanvases()
 
-	switch fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.FontPaths()) {
+	switch fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.Load().FontOverridePaths) {
 	case fontSourceDyslexia:
 		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})
 		// Font-everywhere (opt-in): the same face drives the chrome too;
 		// otherwise make sure the chrome is back on the embedded font.
-		if a.d.Prefs.FontEverywhereOn() {
+		if a.d.Prefs.Load().FontEverywhere {
 			a.ctx.SetChromeFont(openDyslexicOTF)
 		} else {
 			a.ctx.SetChromeFont(nil)
@@ -1632,7 +1632,7 @@ func (a *App) applyFontConfig() {
 		// Manual font paths win; otherwise the active theme's own bundled font
 		// (an AO theme that ships a .ttf — #6, Crystalwarrior); otherwise the
 		// embedded font (loadFontChainAsync clears on an empty string).
-		paths := strings.TrimSpace(a.d.Prefs.FontPaths())
+		paths := strings.TrimSpace(a.d.Prefs.Load().FontOverridePaths)
 		if paths == "" {
 			paths = a.themeFontFile
 		}
@@ -1701,7 +1701,7 @@ func (a *App) pollFontChain() {
 			// chrome too; otherwise restore the embedded chrome (the toggle
 			// may have just been switched off). On a failed open the chrome
 			// keeps the embedded font — say so instead of silently ignoring.
-			if !a.d.Prefs.FontEverywhereOn() {
+			if !a.d.Prefs.Load().FontEverywhere {
 				a.ctx.SetChromeFont(nil)
 			} else if !a.ctx.SetChromeFont(res.data[0]) {
 				res.note += " — chrome font failed to open, whole-UI font stays embedded"

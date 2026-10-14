@@ -433,7 +433,7 @@ func (a *App) overlayDemandTheme(path, key string) {
 		a.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
 	}
 	a.overlayTexLoading[key] = true
-	anims := a.d.Prefs.AnimationsEnabled()
+	anims := a.d.Prefs.Load().PreferAnimated
 	// Captured on the render thread for the reason overlayRosterFetchOne captures
 	// its own: the worker must read nothing off App (hard rule 8).
 	out := a.overlayTexRes

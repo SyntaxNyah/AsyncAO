@@ -817,7 +817,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.perfHUD {
 		a.drawPerfHUD(winW, winH)
 	}
-	if a.d.Prefs.DebugOverlayEnabled() {
+	if a.d.Prefs.Load().DebugOverlay {
 		a.drawDebugOverlay(winW, winH)
 	}
 	// The menu bar's OPEN pane paints here, above the two diagnostics overlays: a

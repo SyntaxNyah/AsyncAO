@@ -25,7 +25,7 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
-	on := a.d.Prefs.CharDownloaderEnabled()
+	on := a.d.Prefs.Load().CharDownloaderOn
 	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
 		a.d.Prefs.SetCharDownloader(next)
 	}

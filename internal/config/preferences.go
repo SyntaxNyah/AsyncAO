@@ -2317,13 +2317,6 @@ func (p *AssetPreferences) SetTypeFallbacks(typeName string, enabled bool) {
 	p.markDirty()
 }
 
-// GlobalFallbacks reports the global fallback toggle.
-func (p *AssetPreferences) GlobalFallbacks() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.GlobalFallbacksEnabled
-}
-
 // SetGlobalFallbacks toggles fallbacks for every type and invalidates all
 // learned formats (every type's effective probe list changed).
 func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
@@ -2341,13 +2334,6 @@ func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
 
 // --- Animation toggle -------------------------------------------------------
 
-// AnimationsEnabled reports the PreferAnimated decode/render toggle.
-func (p *AssetPreferences) AnimationsEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PreferAnimated
-}
-
 // SetAnimationsEnabled toggles animation playback (ON plays animation frames,
 // OFF renders first frames only). Purely decode/render-level: it never
 // changes the probe list.
@@ -2363,14 +2349,6 @@ func (p *AssetPreferences) SetAnimationsEnabled(enabled bool) {
 }
 
 // --- Emote button images ----------------------------------------------------
-
-// EmoteButtonImagesEnabled reports whether the courtroom emote picker draws
-// the character's emotions/button<N> art (text chips when off).
-func (p *AssetPreferences) EmoteButtonImagesEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EmoteButtonImages
-}
 
 // SetEmoteButtonImages toggles image emote buttons. Render-level only: the
 // probe list for the EmoteButton type is configured separately.
@@ -2652,15 +2630,6 @@ func (p *AssetPreferences) SetPreviewHoverMs(n int) {
 	p.mu.Unlock()
 }
 
-// EmoteHoverNamesEnabled reports the emote-name tooltip toggle (ON by default):
-// hovering an emote grid button shows that emote's name. (Named -Enabled, not
-// -On, because the struct field already owns the -On name.)
-func (p *AssetPreferences) EmoteHoverNamesEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EmoteHoverNamesOn
-}
-
 // SetEmoteHoverNames toggles the emote-name hover tooltip.
 func (p *AssetPreferences) SetEmoteHoverNames(on bool) {
 	p.mu.Lock()
@@ -2803,14 +2772,6 @@ func (p *AssetPreferences) SetLoopPreanim(on bool) {
 	p.mu.Unlock()
 }
 
-// DisableAltEmoteRowOn reports the "remove Alt+1..9 emote number row" toggle
-// (OFF by default: the row works unless the user disables it).
-func (p *AssetPreferences) DisableAltEmoteRowOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DisableAltEmoteRow
-}
-
 // SetDisableAltEmoteRow toggles the Alt+1..9 emote number row off/on.
 func (p *AssetPreferences) SetDisableAltEmoteRow(on bool) {
 	p.mu.Lock()
@@ -2860,18 +2821,6 @@ func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
 	p.SmoothLogScroll = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// BlipSpeedDefaultMoved reports whether the one-shot preMoveTextCrawlMs →
-// DefaultTextCrawlMs message-crawl move has RUN for this file — not that it
-// changed the value. Like its ThemeFit sibling the move is value-aware and
-// stamps either way, so a file whose deliberate crawl was preserved reads true
-// here too; the stamp is the whole record. The accessor exists so a test (and
-// any future startup notice) can read it without reaching into the struct.
-func (p *AssetPreferences) BlipSpeedDefaultMoved() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.BlipSpeedDefaultMigrated
 }
 
 // SetAutoReconnect toggles auto-reconnect on a dropped connection.
@@ -2944,14 +2893,6 @@ func (p *AssetPreferences) SetShowMissingPlaceholder(on bool) {
 	p.ShowMissingPlaceholder = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ErrorSpritePath reports the user-chosen custom placeholder image path ("" =
-// the embedded default missingno).
-func (p *AssetPreferences) ErrorSpritePath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ErrorSpriteFile
 }
 
 // SetErrorSpritePath persists a custom placeholder image path ("" clears it back
@@ -3160,15 +3101,6 @@ func (p *AssetPreferences) SetDownloadCapKBps(n int) {
 	p.mu.Unlock()
 }
 
-// ForceCharNames reports the "show character names, not custom shownames"
-// toggle (OFF by default) — applies to everyone's messages, in the chatbox and
-// the IC log, for true-roleplay immersion / anti-impersonation in casing.
-func (p *AssetPreferences) ForceCharNamesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ForceCharNames
-}
-
 // SetForceCharNames toggles forcing character names over custom shownames.
 func (p *AssetPreferences) SetForceCharNames(on bool) {
 	p.mu.Lock()
@@ -3202,14 +3134,6 @@ func (p *AssetPreferences) SetRandomEmote(on bool) {
 	p.mu.Unlock()
 }
 
-// FriendHighlightOn reports the master toggle for friend (highlighted-showname)
-// IC-log highlighting (OFF by default).
-func (p *AssetPreferences) FriendHighlightOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendHighlight
-}
-
 // SetFriendHighlight toggles friend IC-log highlighting.
 func (p *AssetPreferences) SetFriendHighlight(on bool) {
 	p.mu.Lock()
@@ -3220,14 +3144,6 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 	p.FriendHighlight = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FriendButtonShown reports whether the player-list row menu offers the
-// "+ Friend" / "Unfriend" action (ON by default; Settings can hide it).
-func (p *AssetPreferences) FriendButtonShown() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ShowFriendButton
 }
 
 // SetDragLayout toggles drag-to-resize layout mode.
@@ -3296,17 +3212,6 @@ func (p *AssetPreferences) SetDyslexiaFont(on bool) {
 	p.DyslexiaFont = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FontEverywhereOn reports whether the active font override (the dyslexia
-// toggle or the manual font chain) also drives the CHROME — every menu,
-// button, list and tab — instead of just the IC/OOC chat + log text. OFF by
-// default: the chrome's fixed row/button metrics are tuned for the embedded
-// face, so extending an override to the whole UI is an explicit opt-in.
-func (p *AssetPreferences) FontEverywhereOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FontEverywhere
 }
 
 // SetFontEverywhere toggles extending the font override to the whole UI.
@@ -3449,14 +3354,6 @@ func (p *AssetPreferences) SetInstantDisconnect(on bool) {
 	p.InstantDisconnect = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// HideDeskOn reports whether the courtroom desk is hidden (default OFF). When on,
-// the desk layer is suppressed so the character isn't grounded behind it.
-func (p *AssetPreferences) HideDeskOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HideDesk
 }
 
 // SetHideDesk toggles hiding the desk.
@@ -3675,15 +3572,6 @@ func (p *AssetPreferences) SetFavEmoteBox(on bool) {
 	p.mu.Unlock()
 }
 
-// AutoConnectOnLaunchOn reports whether the client auto-connects to the last
-// server on launch (default OFF). Distinct from M7 tab-restore: this fires even
-// when no tab was open at shutdown, so it always lands on your chosen server.
-func (p *AssetPreferences) AutoConnectOnLaunchOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AutoConnectOnLaunch
-}
-
 // SetAutoConnectOnLaunch toggles auto-connect-on-launch.
 func (p *AssetPreferences) SetAutoConnectOnLaunch(on bool) {
 	p.mu.Lock()
@@ -3745,13 +3633,6 @@ func (p *AssetPreferences) SetReplaySpeed(v int) {
 	p.ReplayPlaybackSpeed = v
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ExportOpts reports the sticky scene-export options (GIF/WebP size/fps/quality/loop).
-func (p *AssetPreferences) ExportOpts() ExportOptions {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.Export
 }
 
 // SetExportOpts stores the export options (each field clamped to its range).
@@ -3943,16 +3824,6 @@ func (p *AssetPreferences) SetHideReactions(b bool) {
 	p.mu.Unlock()
 }
 
-// CharBundlePrefetchOn reports the #127 toggle (OFF by default): when on, loading a character
-// pre-grabs its FULL emote set (every idle + talk) at low priority, so emote switches are
-// instant. Speculative + sheddable, so it never blocks live fetches; off keeps the lightweight
-// "first few emotes" default.
-func (p *AssetPreferences) CharBundlePrefetchOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CharBundlePrefetch
-}
-
 // SetCharBundlePrefetch toggles full-character bundle prefetch.
 func (p *AssetPreferences) SetCharBundlePrefetch(b bool) { p.setBoolPref(&p.CharBundlePrefetch, b) }
 
@@ -3980,14 +3851,6 @@ func (p *AssetPreferences) ValidateTLSCertsOn() bool {
 
 // SetValidateTLSCerts toggles strict wss certificate verification.
 func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.ValidateTLSCerts, b) }
-
-// AssetOriginHeader reports the power-user Origin/Referer override sent on asset
-// fetches (empty = none). For servers that gate their asset base by Origin/CORS.
-func (p *AssetPreferences) AssetOriginHeader() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AssetOrigin
-}
 
 // SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
 func (p *AssetPreferences) SetAssetOriginHeader(s string) {
@@ -4318,14 +4181,6 @@ func (p *AssetPreferences) SetProxyURL(s string) {
 // imports both — pins the two together.
 const AssetCharCaseMax uint8 = 3
 
-// AssetCharCasing returns the character-folder casing mode (0 lowercase default / 1 first-cap /
-// 2 title / 3 auto-detect). A POWER-USER setting: the wrong value 404s every character asset.
-func (p *AssetPreferences) AssetCharCasing() uint8 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AssetCharCase
-}
-
 // SetAssetCharCasing sets the character-folder casing mode. Out-of-range falls
 // back to lowercase, which is the safe answer for almost every server — the same
 // thing URLBuilder.WithCharCase does with a value it does not recognise.
@@ -4503,14 +4358,6 @@ func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 	p.MyProfile = pr
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// ChatboxOpacityPct reports the IC chatbox panel opacity (0–100, default 84) for
-// the flat fallback skin (0 = fully see-through, 100 = solid).
-func (p *AssetPreferences) ChatboxOpacityPct() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ChatboxOpacity
 }
 
 // SetChatboxOpacity clamps and persists the chatbox panel opacity percent.
@@ -4702,14 +4549,6 @@ func (p *AssetPreferences) SetShoutPunch(on bool) {
 	p.mu.Unlock()
 }
 
-// ChatboxTintOn reports the "per-character chatbox tint" toggle (OFF by default): the
-// chatbox panel takes a hint of each speaker's stable hue (#14). Viewer-local.
-func (p *AssetPreferences) ChatboxTintOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ChatboxTint
-}
-
 // SetChatboxTint toggles the per-character chatbox tint.
 func (p *AssetPreferences) SetChatboxTint(on bool) {
 	p.mu.Lock()
@@ -4745,14 +4584,6 @@ func (p *AssetPreferences) SetPostCRT(on bool)       { p.setBoolPref(&p.PostCRT,
 
 // SetAnimateEntrances toggles the entrance slide-in.
 func (p *AssetPreferences) SetAnimateEntrances(on bool) { p.setBoolPref(&p.AnimateEntrances, on) }
-
-// DepthOfFieldOn reports the #11 toggle (OFF by default): soft-focus + dim the background
-// behind the sharp speaker.
-func (p *AssetPreferences) DepthOfFieldOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DepthOfField
-}
 
 // SetDepthOfField toggles the background depth-of-field.
 func (p *AssetPreferences) SetDepthOfField(on bool) { p.setBoolPref(&p.DepthOfField, on) }
@@ -5058,14 +4889,6 @@ func (p *AssetPreferences) SetShowPairStatus(on bool) {
 	p.mu.Unlock()
 }
 
-// FriendNotifyOn / SetFriendNotify: pop an in-app toast + flash the window when
-// a friend speaks (OFF by default).
-func (p *AssetPreferences) FriendNotifyOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendNotify
-}
-
 func (p *AssetPreferences) SetFriendNotify(on bool) {
 	p.mu.Lock()
 	if p.FriendNotify != on {
@@ -5077,14 +4900,6 @@ func (p *AssetPreferences) SetFriendNotify(on bool) {
 	p.mu.Unlock()
 }
 
-// FriendOSToastOn / SetFriendOSToast: pop a DESKTOP (OS) notification when a
-// friend speaks (OFF by default; Windows only, rate-limited by the UI).
-func (p *AssetPreferences) FriendOSToastOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendOSToast
-}
-
 func (p *AssetPreferences) SetFriendOSToast(on bool) {
 	p.mu.Lock()
 	if p.FriendOSToast != on {
@@ -5094,14 +4909,6 @@ func (p *AssetPreferences) SetFriendOSToast(on bool) {
 		return
 	}
 	p.mu.Unlock()
-}
-
-// CallwordOSToastOn / SetCallwordOSToast: pop a DESKTOP (OS) notification when a callword
-// is heard while AsyncAO is in the background (#M4; OFF by default; Windows only).
-func (p *AssetPreferences) CallwordOSToastOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CallwordOSToast
 }
 
 func (p *AssetPreferences) SetCallwordOSToast(on bool) {
@@ -5134,14 +4941,6 @@ func (p *AssetPreferences) SetModcallToast(on bool) {
 	p.mu.Unlock()
 }
 
-// FriendGlowPulseOn / SetFriendGlowPulse: gently pulse the friend glow instead
-// of a static tint (OFF by default).
-func (p *AssetPreferences) FriendGlowPulseOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendGlowPulse
-}
-
 func (p *AssetPreferences) SetFriendGlowPulse(on bool) {
 	p.mu.Lock()
 	if p.FriendGlowPulse != on {
@@ -5153,14 +4952,6 @@ func (p *AssetPreferences) SetFriendGlowPulse(on bool) {
 	p.mu.Unlock()
 }
 
-// FriendSoundOn / SetFriendSound: play a sound when a friend speaks (OFF by
-// default). FriendSoundPath is the custom file ("" = the theme's word_call).
-func (p *AssetPreferences) FriendSoundOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendSound
-}
-
 func (p *AssetPreferences) SetFriendSound(on bool) {
 	p.mu.Lock()
 	if p.FriendSound != on {
@@ -5170,14 +4961,6 @@ func (p *AssetPreferences) SetFriendSound(on bool) {
 		return
 	}
 	p.mu.Unlock()
-}
-
-// FriendSoundPath / CallwordSoundPath are the custom alert sound files
-// ("" = fall back to the theme's word_call). Setters store the trimmed path.
-func (p *AssetPreferences) FriendSoundPath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FriendSoundFile
 }
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
@@ -5286,12 +5069,6 @@ func (p *AssetPreferences) SetModMuteSoundPath(path string) {
 	p.mu.Unlock()
 }
 
-func (p *AssetPreferences) CallwordSoundPath() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CallwordSoundFile
-}
-
 func (p *AssetPreferences) SetCallwordSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
@@ -5359,13 +5136,6 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 
 // --- Debug overlay -------------------------------------------------------------
 
-// DebugOverlayEnabled reports whether the on-screen failure log draws.
-func (p *AssetPreferences) DebugOverlayEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DebugOverlay
-}
-
 // SetDebugOverlay toggles the on-screen failure log.
 func (p *AssetPreferences) SetDebugOverlay(enabled bool) {
 	p.mu.Lock()
@@ -5376,14 +5146,6 @@ func (p *AssetPreferences) SetDebugOverlay(enabled bool) {
 	p.DebugOverlay = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// CharDownloaderEnabled reports whether the opt-in single-asset downloader
-// is on (off by default — it writes files to disk).
-func (p *AssetPreferences) CharDownloaderEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CharDownloaderOn
 }
 
 // SetCharDownloader toggles the opt-in single-asset downloader.
@@ -5446,13 +5208,6 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 
 // --- Discord Rich Presence ------------------------------------------------------------
 
-// Discord reports the Rich Presence configuration.
-func (p *AssetPreferences) Discord() DiscordPrefs {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DiscordRPC
-}
-
 // SetDiscord stores the Rich Presence configuration.
 func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
 	p.mu.Lock()
@@ -5463,13 +5218,6 @@ func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
 	p.DiscordRPC = dp
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// AutoStatus reports the auto-status configuration (#M1: typed words → presence status).
-func (p *AssetPreferences) AutoStatus() AutoStatusPref {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MyAutoStatus
 }
 
 // SetAutoStatus stores the auto-status configuration (word fields bounded).
@@ -6065,15 +5813,6 @@ func (p *AssetPreferences) SetOOCScale(pct int) {
 	p.mu.Unlock()
 }
 
-// CustomChrome returns the user's "Custom" chrome scheme as 7 hex strings
-// (bg, panel, panelHi, accent, text, textDim, danger); a blank slot means
-// "use the stock dark colour". Active only while ChromeTheme is "custom".
-func (p *AssetPreferences) CustomChrome() [7]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CustomChromeHex
-}
-
 // SetCustomChrome stores the 7-colour custom chrome scheme (hex strings).
 func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 	p.mu.Lock()
@@ -6224,14 +5963,6 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// AlertVolume reports the callword/friend ping volume (0–100), independent of
-// SFX so quietening or muting SFX never silences your name-pings.
-func (p *AssetPreferences) AlertVolume() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AlertVol
 }
 
 // SetAlertVolume clamps and persists the alert (callword/friend) volume.
@@ -6416,15 +6147,6 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 		bg, bg2, border, title, text, gradient
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// AreaHighlightColorHex is the current-area row highlight colour (hex like
-// "4ac96c"; "" = the stock green). The ui parses it, falling back to the
-// default on any malformed value.
-func (p *AssetPreferences) AreaHighlightColorHex() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AreaHighlightHex
 }
 
 // SetAreaHighlightColorHex persists the current-area highlight colour ("" =
@@ -6987,14 +6709,6 @@ func (p *AssetPreferences) SetICLogDepth(n int) {
 	p.mu.Unlock()
 }
 
-// CatchUpLingerMs reports how long each fast-forwarded backlog message lingers
-// while packed-room catch-up drains (default 0 = one per frame).
-func (p *AssetPreferences) CatchUpLingerMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CatchUpLingerMsVal
-}
-
 // SetCatchUpLingerMs persists the catch-up linger (clamped; 0 = the default).
 func (p *AssetPreferences) SetCatchUpLingerMs(ms int) {
 	ms = clampPercent(ms, 0, CatchUpLingerMaxMs)
@@ -7095,15 +6809,6 @@ func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
 	p.ThumbBudgetMiBVal = mib
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// DiskCacheBudgetMiB reports the T3 disk-cache auto-prune cap in MiB (#34).
-// 0 = UNLIMITED, the default — T3's unboundedness is a deliberate spec
-// exception, so an update never silently deletes a user's cache.
-func (p *AssetPreferences) DiskCacheBudgetMiB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DiskCacheBudgetMiBVal
 }
 
 // SetDiskCacheBudgetMiB persists the T3 prune cap (0 = unlimited; else clamped
@@ -7342,13 +7047,6 @@ func (p *AssetPreferences) SetTexCompression(mode int) {
 	p.mu.Unlock()
 }
 
-// CrossfadeMs reports the speaker-swap crossfade duration (0 = off, the default).
-func (p *AssetPreferences) CrossfadeMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CrossfadeMsVal
-}
-
 // SetCrossfadeMs persists the crossfade duration (0 = off; else clamped).
 func (p *AssetPreferences) SetCrossfadeMs(ms int) {
 	if ms != 0 {
@@ -7400,18 +7098,6 @@ func (p *AssetPreferences) SetMotionRedrawPerEvent(on bool) {
 	p.MotionRedrawPerEvent = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FrameLimiterDisabled reports the #5 bypass: when ON the main loop renders
-// every pass with no adaptive pacing and no static skip — vsync alone paces the
-// presents (and -vsync=false keeps a 60 fps floor so it can't busy-spin). Default
-// OFF: it's the deliberate high-GPU escape hatch for anyone who wants maximum
-// responsiveness regardless of cost. A fresh json key (not the retired test-build
-// "no limit" default) so a stale saved value can't silently leak the bypass on.
-func (p *AssetPreferences) FrameLimiterDisabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DisableFrameLimiter
 }
 
 // SetFrameLimiterDisabled flips the bypass (applies live — the main loop
@@ -7666,15 +7352,6 @@ func (p *AssetPreferences) SetMusicFlags(flags int) {
 	p.mu.Unlock()
 }
 
-// ChangelogSeenVersion reports the build version whose "What's New" the user last
-// opened (#23). Empty until they open it; compared to update.Version to decide the
-// unread dot after an app update.
-func (p *AssetPreferences) ChangelogSeenVersion() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ChangelogSeen
-}
-
 // SetChangelogSeen records that the user opened the changelog for build version v,
 // clearing the unread dot until the next update changes the version.
 func (p *AssetPreferences) SetChangelogSeen(v string) {
@@ -7735,23 +7412,6 @@ func (p *AssetPreferences) SetReduceMotion(on bool) {
 	p.mu.Unlock()
 }
 
-// EffectsDisabled reports the master visual-effects off-switch (OFF by default =
-// effects render). It is deliberately ONE preference that WINS over the whole
-// eye-candy family rather than a migration that rewrites the individual toggles:
-// a player who turns it off again gets their old choices back exactly as they
-// left them, and there is a single place to look when "why is nothing moving".
-//
-// What it suppresses is decided at the four render-side choke points, not here —
-// App.spriteFX / App.postFX (the local washes, motion and post-processing),
-// App.applyViewerKnobs (other players' TRANSMITTED sprite styles and the AO2
-// \s/\f screen effects) and the animated-text draw. Keeping the policy at the
-// draw sites means this getter stays a plain flag read on the hot path.
-func (p *AssetPreferences) EffectsDisabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DisableEffects
-}
-
 // SetDisableEffects toggles the master visual-effects off-switch.
 func (p *AssetPreferences) SetDisableEffects(on bool) {
 	p.mu.Lock()
@@ -7762,15 +7422,6 @@ func (p *AssetPreferences) SetDisableEffects(on bool) {
 	p.DisableEffects = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FontCensusOn reports the system-font census toggle (ON by default). Off, the
-// client uses only the fonts it ships and stops reading the machine's own — the
-// one lever that takes a whole platform-specific font path out of the picture.
-func (p *AssetPreferences) FontCensusOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FontCensus
 }
 
 // SetFontCensus toggles the system-font census.
@@ -8022,15 +7673,6 @@ func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
 	p.mu.Unlock()
 }
 
-// GhostCrawlTextOn reports the ghost-text option (ON by default): the tail of a
-// message the typewriter has not revealed yet is drawn transparent in the log
-// instead of missing, so the line keeps its final shape while it crawls.
-func (p *AssetPreferences) GhostCrawlTextOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.GhostCrawlText
-}
-
 // SetGhostCrawlText toggles the transparent un-revealed tail.
 func (p *AssetPreferences) SetGhostCrawlText(on bool) {
 	p.mu.Lock()
@@ -8065,13 +7707,6 @@ func (p *AssetPreferences) SetCharChatbox(on bool) {
 	p.CharChatbox = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// GroupChatButtonOn reports the on-screen Group Chat button toggle (ON by default).
-func (p *AssetPreferences) GroupChatButtonOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.GroupChatButton
 }
 
 // SetGroupChatButton toggles the courtroom's main Group Chat button.
@@ -8685,14 +8320,6 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// CallwordsOOCOn reports whether callwords also alert on OOC messages (default
-// OFF — IC only, so /ga rosters and OOC chatter don't constantly ping).
-func (p *AssetPreferences) CallwordsOOCOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CallwordsOOC
-}
-
 // SetCallwordsOOC toggles OOC callword alerts.
 func (p *AssetPreferences) SetCallwordsOOC(on bool) {
 	p.mu.Lock()
@@ -8757,14 +8384,6 @@ func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 	p.mu.Unlock()
 }
 
-// FormatAutoDetect reports whether the client fetches extensions.json on
-// connect to seed that server's formats (default ON).
-func (p *AssetPreferences) FormatAutoDetect() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AutoDetectFormats
-}
-
 // SetFormatAutoDetect toggles manifest-driven format detection.
 func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 	p.mu.Lock()
@@ -8795,14 +8414,6 @@ func (p *AssetPreferences) SetStreamerMode(enabled bool) {
 	p.StreamerModeOn = enabled
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// DiskZstdEnabled reports whether new T3 blobs compress with zstd
-// (default OFF — the CPU-vs-disk trade is the user's to take).
-func (p *AssetPreferences) DiskZstdEnabled() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.DiskZstd
 }
 
 // SetDiskZstd toggles T3 compression for new writes.
@@ -9657,14 +9268,6 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 	p.UserMacros = clean
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// FontPaths reports the raw IC/OOC font override list (semicolon- or
-// comma-separated TTF/TTC paths, chain order; "" = embedded font).
-func (p *AssetPreferences) FontPaths() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.FontOverridePaths
 }
 
 // SetFontPaths persists the font override list.
@@ -10760,13 +10363,6 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 	return true
 }
 
-// EmoteFavOnlyOn reports whether the emote grid is filtered to favourites only.
-func (p *AssetPreferences) EmoteFavOnlyOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EmoteFavOnly
-}
-
 // SetEmoteFavOnly toggles the favourites-only emote grid filter.
 func (p *AssetPreferences) SetEmoteFavOnly(on bool) {
 	p.mu.Lock()
@@ -10779,15 +10375,6 @@ func (p *AssetPreferences) SetEmoteFavOnly(on bool) {
 	p.mu.Unlock()
 }
 
-// EmoteFavStarsOn reports whether the favourite ★ badges show on emote cells.
-// The whole emote-favourites feature is opt-in (default OFF) so the badge can't
-// clutter the grid for people who don't use it.
-func (p *AssetPreferences) EmoteFavStarsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EmoteFavStars
-}
-
 // SetEmoteFavStars toggles the emote-favourites feature (the per-cell stars).
 func (p *AssetPreferences) SetEmoteFavStars(on bool) {
 	p.mu.Lock()
@@ -10798,18 +10385,6 @@ func (p *AssetPreferences) SetEmoteFavStars(on bool) {
 	p.EmoteFavStars = on
 	p.markDirty()
 	p.mu.Unlock()
-}
-
-// EmoteCaptionsOn reports whether the emote-name caption strip is drawn over
-// icon-fallback emote buttons (the buttons shown when a character has no
-// emotions/button art). Default OFF: the buttons show as clean icons with no
-// text overlay — players found the name strip cluttered, especially when every
-// fallback cell shows the same character icon. Opt-in for those who relied on
-// the captions to tell otherwise-identical fallback cells apart.
-func (p *AssetPreferences) EmoteCaptionsOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.EmoteCaptions
 }
 
 // SetEmoteCaptions toggles the icon-fallback emote-name caption overlay.

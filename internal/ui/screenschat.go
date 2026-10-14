@@ -100,12 +100,12 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// Panel opacity is user-tunable (Settings → see-through chatbox); the
 		// border stays solid for legibility. Read once here, off the 0-alloc
 		// render gate (that's render.Viewport; this UI overlay already reads prefs).
-		alpha := uint8(255 * a.d.Prefs.ChatboxOpacityPct() / 100)
+		alpha := uint8(255 * a.d.Prefs.Load().ChatboxOpacity / 100)
 		bg := sdl.Color{R: 16, G: 16, B: 24, A: alpha}
 		if col, ok := a.partPanel(partChatbox); ok { // per-part tint: custom base, opacity kept
 			bg = sdl.Color{R: col.R, G: col.G, B: col.B, A: alpha}
 		}
-		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
+		if a.d.Prefs.Load().ChatboxTint && sc.ShownameText != "" { // #14 per-character tint
 			bg = chatboxTintFor(sc.ShownameText, bg)
 		}
 		c.Fill(box, bg)
@@ -196,7 +196,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// still lay out and read normally, they just stop moving (animtext.go
 			// pins everything static under this flag), which is exactly what the
 			// toggle promises — no spinning, no waving, text still legible.
-			reduce := a.d.Prefs.ReduceMotion() || a.d.Prefs.EffectsDisabled()
+			reduce := a.d.Prefs.ReduceMotion() || a.d.Prefs.Load().DisableEffects
 			if a.msAnim.Animates(reduce) {
 				// Clock-driven text FX on screen: keep frames coming through the
 				// static skip (idle=0 froze/stuttered them — the FX-at-idle
@@ -1236,7 +1236,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
 	// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
-	if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4
@@ -1399,7 +1399,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// APPENDED at the end of the functional buttons so it can never shift the ones
 	// before it; when off it's skipped entirely (no x advance), so the row is
 	// byte-identical to before. A movable slot, so Edit Layout can reposition it.
-	if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4

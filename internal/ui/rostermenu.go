@@ -95,7 +95,7 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	if p.ipid != "" && !a.panelHidden(rosterBtnIPID) {
 		items = append(items, rosterMenuItem{rosterActCopyIPID, "Copy IPID"})
 	}
-	if fk != "" && a.serverKey != "" && a.d.Prefs.FriendButtonShown() {
+	if fk != "" && a.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
 		fl := "+ Friend"
 		if isF, _, _ := a.d.Prefs.ServerFriendInfo(a.serverKey, fk); isF {
 			fl = "Unfriend"

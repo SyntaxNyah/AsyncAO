@@ -15,7 +15,7 @@ func TestAutoStatusPref(t *testing.T) {
 	}
 	defer p.Close()
 
-	def := p.AutoStatus()
+	def := p.Load().MyAutoStatus
 	if def.Enabled {
 		t.Error("auto-status should default OFF")
 	}
@@ -25,7 +25,7 @@ func TestAutoStatusPref(t *testing.T) {
 
 	long := strings.Repeat("z", 500)
 	p.SetAutoStatus(AutoStatusPref{Enabled: true, AFKWords: "brb", BusyWords: long})
-	got := p.AutoStatus()
+	got := p.Load().MyAutoStatus
 	if !got.Enabled || got.AFKWords != "brb" {
 		t.Errorf("round trip = %+v", got)
 	}

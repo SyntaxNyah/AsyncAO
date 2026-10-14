@@ -1313,7 +1313,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetStreamerMode(next)
 	}
 	y += 26
-	anims := a.d.Prefs.AnimationsEnabled()
+	anims := a.d.Prefs.Load().PreferAnimated
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
 	}
@@ -1342,23 +1342,23 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetHideReactions(next)
 	}
 	y += 26
-	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
+	emoteImgs := a.d.Prefs.Load().EmoteButtonImages
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats in Assets)", emoteImgs); next != emoteImgs {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
 	y += 26
-	emoteCaps := a.d.Prefs.EmoteCaptionsOn()
+	emoteCaps := a.d.Prefs.Load().EmoteCaptions
 	if next := c.Checkbox(pad, y, "Emote-name captions (OFF by default): when a character has no button art, overlay the emote name on the fallback icon. Off keeps the buttons clean (just icons); on helps tell identical fallback icons apart.", emoteCaps); next != emoteCaps {
 		a.d.Prefs.SetEmoteCaptions(next)
 	}
 	y += 26
-	favStars := a.d.Prefs.EmoteFavStarsOn()
+	favStars := a.d.Prefs.Load().EmoteFavStars
 	if next := c.Checkbox(pad, y, "Emote favourites (OFF by default): show a ★ on every emote button so you can star the ones you use, plus the ★ Favs filter. Off keeps the grid clean if you don't use it.", favStars); next != favStars {
 		a.d.Prefs.SetEmoteFavStars(next)
 		a.emoteFavRev++ // rebuild the view for the new state
 	}
 	y += 26
-	favOnly := a.d.Prefs.EmoteFavOnlyOn()
+	favOnly := a.d.Prefs.Load().EmoteFavOnly
 	if next := c.Checkbox(pad, y, "Show favourite emotes only (OFF by default): hides everything but the emotes you've starred. Click the ★ on an emote button to favourite it (per character). The classic grid also has a ★ Favs button.", favOnly); next != favOnly {
 		a.d.Prefs.SetEmoteFavOnly(next)
 		a.emoteFavRev++ // rebuild the visible list for the new filter state
@@ -1369,7 +1369,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetFavEmoteBox(next)
 	}
 	y += 30
-	dbg := a.d.Prefs.DebugOverlayEnabled()
+	dbg := a.d.Prefs.Load().DebugOverlay
 	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {
 		a.d.Prefs.SetDebugOverlay(next)
 	}
@@ -1379,7 +1379,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetNotifyOnOOC(next)
 	}
 	y += 26
-	fcn := a.d.Prefs.ForceCharNamesOn()
+	fcn := a.d.Prefs.Load().ForceCharNames
 	if next := c.Checkbox(pad, y, "Force character names (OFF by default): show everyone's CHARACTER name, not custom shownames — true-roleplay / anti-impersonation (casing)", fcn); next != fcn {
 		a.d.Prefs.SetForceCharNames(next)
 		if a.room != nil {
@@ -1447,12 +1447,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Emote-name hover tooltips: rest the cursor on an emote button to see its
 	// name (independent of the sprite pop-up above). ON by default; the dwell is
 	// tunable. Lightweight — a name-only tooltip, not the full-size art.
-	names := a.d.Prefs.EmoteHoverNamesEnabled()
+	names := a.d.Prefs.Load().EmoteHoverNamesOn
 	if next := c.Checkbox(pad, y, "Emote name tooltips (ON by default): hovering an emote button shows its name after a short delay", names); next != names {
 		a.d.Prefs.SetEmoteHoverNames(next)
 	}
 	y += 26
-	altRow := a.d.Prefs.DisableAltEmoteRowOn()
+	altRow := a.d.Prefs.Load().DisableAltEmoteRow
 	if next := c.Checkbox(pad, y, "Disable the Alt+1..9 emote number row (OFF by default): the digits pick the emote shown on the current page. Disable to make Alt+1..9 type digits instead.", altRow); next != altRow {
 		a.d.Prefs.SetDisableAltEmoteRow(next)
 	}
@@ -1498,7 +1498,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		y += 32
 	}
 	// Hide the desk (the foreground table the character stands behind).
-	hideDesk := a.d.Prefs.HideDeskOn()
+	hideDesk := a.d.Prefs.Load().HideDesk
 	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows.", hideDesk); next != hideDesk {
 		a.d.Prefs.SetHideDesk(next)
 	}
@@ -1578,7 +1578,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		// embedded default (render thread) and re-kick a custom image if set, so
 		// the missing-sprite fallback survives a filtering swap (missingno.go).
 		a.uploadEmbeddedMissingno()
-		if p := a.d.Prefs.ErrorSpritePath(); p != "" {
+		if p := a.d.Prefs.Load().ErrorSpriteFile; p != "" {
 			a.applyErrorSprite(p)
 		}
 		settings.statusLine = "Re-streaming textures with new filtering."
@@ -1644,13 +1644,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 30
 	// See-through chatbox: panel opacity (0 = fully transparent, 100 = solid).
 	// Only affects the flat fallback skin; a theme chatbox keeps its own art.
-	op := a.d.Prefs.ChatboxOpacityPct()
+	op := a.d.Prefs.Load().ChatboxOpacity
 	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity,
 		"How see-through the chatbox panel is: 0 = text only, 100 = solid. Only the flat fallback panel — a theme's own skin keeps its art."); v != op {
 		a.d.Prefs.SetChatboxOpacity(v)
 	}
 	y += 34
-	tint := a.d.Prefs.ChatboxTintOn()
+	tint := a.d.Prefs.Load().ChatboxTint
 	if next := c.Checkbox(pad, y, "Per-character chatbox tint (OFF by default): the chatbox takes a hint of each speaker's colour", tint); next != tint {
 		a.d.Prefs.SetChatboxTint(next)
 	}
@@ -1787,7 +1787,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// behaviour differs per operating system. Exposed so a player seeing wrong or
 	// missing text can take the whole subsystem out of the picture in one click
 	// instead of waiting for a build.
-	census := a.d.Prefs.FontCensusOn()
+	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
 		a.d.Prefs.SetFontCensus(next)
 	}
@@ -1812,7 +1812,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// returns when you switch back.
 	c.Label(pad, y+4, "Custom font:", ColText)
 	if !settings.fontLoaded {
-		settings.fontInput = a.d.Prefs.FontPaths()
+		settings.fontInput = a.d.Prefs.Load().FontOverridePaths
 		settings.fontLoaded = true
 	}
 	var fontCommit bool
@@ -1840,7 +1840,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// above) to all chrome text too. Opt-in — the chrome's fixed row/button
 	// metrics are tuned for the embedded face, so an unusual font can sit tight
 	// in buttons; chat/log stay the reading-optimized surface either way.
-	few := a.d.Prefs.FontEverywhereOn()
+	few := a.d.Prefs.Load().FontEverywhere
 	if next := c.Checkbox(pad, y, "Use the font everywhere — menus, buttons, lists & tabs too (not just chat)", few); next != few {
 		a.d.Prefs.SetFontEverywhere(next)
 		a.applyFontConfig()
@@ -1849,7 +1849,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			settings.statusLine = "Whole-UI font off — chrome back on the built-in font."
 		case dys:
 			settings.statusLine = "OpenDyslexic now drives the whole UI."
-		case strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
+		case strings.TrimSpace(a.d.Prefs.Load().FontOverridePaths) != "":
 			settings.statusLine = "Custom font now drives the whole UI."
 		default:
 			settings.statusLine = "Whole-UI font armed — set a font above (or the dyslexia toggle) to see it."

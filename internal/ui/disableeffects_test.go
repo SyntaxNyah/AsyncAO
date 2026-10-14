@@ -110,7 +110,7 @@ func TestDisableEffectsRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.EffectsDisabled() {
+	if prefs.Load().DisableEffects {
 		t.Error("the master off-switch must default to OFF (effects render)")
 	}
 	prefs.SetDisableEffects(true)
@@ -124,7 +124,7 @@ func TestDisableEffectsRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reloaded.Close() })
-	if !reloaded.EffectsDisabled() {
+	if !reloaded.Load().DisableEffects {
 		t.Error("the master off-switch did not survive a save/load round trip")
 	}
 }

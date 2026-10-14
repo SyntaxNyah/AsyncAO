@@ -152,7 +152,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// #34: pass the T3 auto-prune cap up front so the writer's at-open sweep
 	// enforces it on whatever a previous session left (0 = unlimited, the
 	// default). The live SetDiskBudget below re-applies it for Settings changes.
-	disk, err := cache.NewDiskCache(diskRoot, int64(prefs.DiskCacheBudgetMiB())<<20)
+	disk, err := cache.NewDiskCache(diskRoot, int64(prefs.Load().DiskCacheBudgetMiBVal)<<20)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// LRU takes its TTL at construction — the Settings row says "restart");
 	// the per-host deadline multiple is live but seeded here too.
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.NotFoundTTLSec()) * time.Second)
-	client.SetAssetOrigin(prefs.AssetOriginHeader()) // power-user Origin/CORS override for asset streaming
+	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.AdaptiveLatMultiple())
 	pool := network.NewPool(network.DefaultWorkers)
 	defer pool.Close()
@@ -411,10 +411,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	if len(allMounts) > 0 {
 		manager.SetLocalOverlay(assets.NewLocalFetcher(allMounts))
 	}
-	manager.SetDiskCompression(prefs.DiskZstdEnabled())
+	manager.SetDiskCompression(prefs.Load().DiskZstd)
 	// #34: apply the T3 auto-prune cap (0 = unlimited, the default). The writer
 	// goroutine sweeps oldest-past-budget at open and every N stores.
-	manager.SetDiskBudget(int64(prefs.DiskCacheBudgetMiB()) << 20)
+	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
 
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)
@@ -643,7 +643,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// #5 bypass: with the frame limiter disabled the loop renders every pass
 		// (no static skip, no adaptive pacing) — vsync alone paces it. The
 		// deliberate high-GPU escape hatch; default OFF.
-		limiterOff := prefs.FrameLimiterDisabled()
+		limiterOff := prefs.Load().DisableFrameLimiter
 		if !limiterOff && app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
 			// Same reasoning as the minimized branch above: a detached preview

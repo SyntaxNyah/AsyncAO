@@ -482,7 +482,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if a.serverKey != "" && fk != "" {
 		isFriend, fColor, fNick = a.d.Prefs.ServerFriendInfo(a.serverKey, fk)
 	}
-	friend := isFriend && a.d.Prefs.FriendHighlightOn() // row tint gate (unchanged)
+	friend := isFriend && a.d.Prefs.Load().FriendHighlight // row tint gate (unchanged)
 	display := rosterName(p)                            // showname → OOC → character
 	if isFriend && fNick != "" {
 		display = fNick // your personal label for them (the character still shows after "·")
@@ -890,7 +890,7 @@ const areaHighlightWashAlpha = 56
 // areaHighlightCol resolves the current-area colour: the user's hex pref, or
 // the stock green when unset/malformed.
 func (a *App) areaHighlightCol() sdl.Color {
-	if col, ok := parseHexColor(a.d.Prefs.AreaHighlightColorHex()); ok {
+	if col, ok := parseHexColor(a.d.Prefs.Load().AreaHighlightHex); ok {
 		return col
 	}
 	return areaCurrentDefault

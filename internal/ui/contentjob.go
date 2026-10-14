@@ -648,7 +648,7 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	// straight to probing; probeRef's full-chain fallback still finds the assets on
 	// an unlearned host (the seed only makes the FIRST format correct — it doesn't
 	// gate correctness). Dedupe per origin per session via the shared marker.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(report.Origin) {
+	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		a.warnLine = "Checking the server's format manifest…"
@@ -731,7 +731,7 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	// on and not already seeded this session — an in-app recording's origin IS the
 	// live session origin, so it was usually seeded on connect and this skips
 	// straight to probing (no re-fetch). Same gate as StartContentReport.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(report.Origin) {
+	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		return

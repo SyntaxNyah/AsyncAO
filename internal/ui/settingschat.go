@@ -22,7 +22,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	w := a.formW2()
 
 	y = a.settingsSection(y, w, "Group chat")
-	gcBtn := a.d.Prefs.GroupChatButtonOn()
+	gcBtn := a.d.Prefs.Load().GroupChatButton
 	if next := c.Checkbox(pad, y, "Show the Group Chat button in the courtroom (ON by default): a main button to open DMs & group chats with other AsyncAO players. It's always in Extras → Group Chat too.", gcBtn); next != gcBtn {
 		a.d.Prefs.SetGroupChatButton(next)
 	}
@@ -216,7 +216,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Ghost text (Crystalwarrior's ask): the tail of a message the typewriter has
 	// not reached yet is drawn transparent instead of absent, so the line keeps its
 	// final shape and the log stops reflowing under the reader on every rune.
-	ghost := a.d.Prefs.GhostCrawlTextOn()
+	ghost := a.d.Prefs.Load().GhostCrawlText
 	if next := c.Checkbox(pad, y, "Ghost the text a message hasn't typed out yet (ON by default): the rest of the line shows faintly while it crawls, instead of the log growing a word at a time", ghost); next != ghost {
 		a.d.Prefs.SetGhostCrawlText(next)
 	}
@@ -252,7 +252,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// at a glance in the player list + mod dashboard; green by default,
 	// recolourable here (the Extras-box hex convention: blank = default).
 	c.Label(pad, y+4, "Your area's colour:", ColTextDim)
-	areaHex := a.d.Prefs.AreaHighlightColorHex()
+	areaHex := a.d.Prefs.Load().AreaHighlightHex
 	sw := sdl.Rect{X: pad + 160, Y: y + 1, W: 18, H: 18}
 	c.Fill(sw, a.areaHighlightCol())
 	c.Border(sw, ColTextDim)
@@ -329,14 +329,14 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 6
 	c.Label(pad, y+4, "Callword sound:", ColTextDim)
-	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
+	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.Load().CallwordSoundFile, "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.Load().CallwordSoundFile {
 		a.d.Prefs.SetCallwordSoundPath(next)
 	}
 	y += 32
 	if c.Button(sdl.Rect{X: pad + 120, Y: y, W: 130, H: btnH}, "Test sound") {
 		// Play exactly what a callword/friend alert fires: the custom file if set,
 		// else the built-in ping — so people can confirm it's actually audible.
-		if f := a.d.Prefs.CallwordSoundPath(); f != "" {
+		if f := a.d.Prefs.Load().CallwordSoundFile; f != "" {
 			a.d.Audio.PlayFile(f)
 		} else {
 			a.d.Audio.PlayAlert()
@@ -349,12 +349,12 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetCallwordToast(next)
 	}
 	y += 26
-	cot := a.d.Prefs.CallwordOSToastOn()
+	cot := a.d.Prefs.Load().CallwordOSToast
 	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification when AsyncAO is in the background (OFF by default; Windows; rate-limited)", cot); next != cot {
 		a.d.Prefs.SetCallwordOSToast(next)
 	}
 	y += 26
-	cooc := a.d.Prefs.CallwordsOOCOn()
+	cooc := a.d.Prefs.Load().CallwordsOOC
 	if next := c.Checkbox(pad, y, "Check OOC messages for callwords too (OFF by default — IC only; on = also ping on OOC, e.g. someone typing your room ID)", cooc); next != cooc {
 		a.d.Prefs.SetCallwordsOOC(next)
 	}
@@ -442,7 +442,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 
-	acl := a.d.Prefs.AutoConnectOnLaunchOn()
+	acl := a.d.Prefs.Load().AutoConnectOnLaunch
 	lastName, lastURL := a.d.Prefs.LastServer()
 	label := "Auto-connect to my last server on launch (OFF by default): opens straight onto the server you last used, even after a disconnect. Also bound to a Connect-to-last-server key (Controls tab)."
 	if lastURL != "" {
@@ -562,39 +562,39 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Friends")
 	// Player-list friend button (ON by default): the per-row "+ Friend" /
 	// "Unfriend" button. Hide it if it clutters the panel.
-	sfb := a.d.Prefs.FriendButtonShown()
+	sfb := a.d.Prefs.Load().ShowFriendButton
 	if next := c.Checkbox(pad, y, "Show the \"+ Friend\" / \"Unfriend\" button on player-list rows (ON by default): one click adds or removes a friend.", sfb); next != sfb {
 		a.d.Prefs.SetShowFriendButton(next)
 	}
 	y += 26
 	// Highlighted friends (per server): shownames whose IC messages glow.
-	fh := a.d.Prefs.FriendHighlightOn()
+	fh := a.d.Prefs.Load().FriendHighlight
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
 		a.d.Prefs.SetFriendHighlight(next)
 	}
 	y += 26
-	fgp := a.d.Prefs.FriendGlowPulseOn()
+	fgp := a.d.Prefs.Load().FriendGlowPulse
 	if next := c.Checkbox(pad+16, y, "Pulse the friend glow (gentle breathing animation; obeys reduce-motion)", fgp); next != fgp {
 		a.d.Prefs.SetFriendGlowPulse(next)
 	}
 	y += 26
-	fn := a.d.Prefs.FriendNotifyOn()
+	fn := a.d.Prefs.Load().FriendNotify
 	if next := c.Checkbox(pad+16, y, "Notify + flash the taskbar when a friend speaks (fires even from a backgrounded server tab)", fn); next != fn {
 		a.d.Prefs.SetFriendNotify(next)
 	}
 	y += 26
-	fot := a.d.Prefs.FriendOSToastOn()
+	fot := a.d.Prefs.Load().FriendOSToast
 	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification — a real Windows toast (rate-limited so it can't storm)", fot); next != fot {
 		a.d.Prefs.SetFriendOSToast(next)
 	}
 	y += 26
-	fsnd := a.d.Prefs.FriendSoundOn()
+	fsnd := a.d.Prefs.Load().FriendSound
 	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
 		a.d.Prefs.SetFriendSound(next)
 	}
 	y += 26
 	c.Label(pad+16, y+4, "Friend sound:", ColTextDim)
-	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.FriendSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.FriendSoundPath() {
+	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.Load().FriendSoundFile, "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.Load().FriendSoundFile {
 		a.d.Prefs.SetFriendSoundPath(next)
 	}
 	y += 32
