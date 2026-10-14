@@ -109,7 +109,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		}
 		add(a.detachedBoxRect(i, w, h))
 	}
-	if a.d.Prefs.FavEmoteBoxOn() && !a.favBoxDragging {
+	if a.d.Prefs.Load().FavEmoteBox && !a.favBoxDragging {
 		add(a.favBoxRect(w, h))
 	}
 	if a.showStyleBox && !a.styleBoxDragging {

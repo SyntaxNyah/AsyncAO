@@ -239,7 +239,7 @@ func (a *App) remoteBlipFor(char string) (string, bool) {
 // remoteChatSkinFor is the courtroom's ChatSkinFor callback — gated on the
 // pref so turning skins off also stops the misc art fetches.
 func (a *App) remoteChatSkinFor(char string) string {
-	if !a.d.Prefs.CharChatboxOn() {
+	if !a.d.Prefs.Load().CharChatbox {
 		return ""
 	}
 	return a.charMetaFor(char).chat

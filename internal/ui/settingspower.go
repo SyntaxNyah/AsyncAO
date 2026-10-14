@@ -240,7 +240,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 6
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
-	edl := a.d.Prefs.EventDrivenLoopOn()
+	edl := a.d.Prefs.Load().EventDrivenLoop
 	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {
 		a.d.Prefs.SetEventDrivenLoop(next)
 	}
@@ -421,7 +421,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Viewport sprite mask — confine offset sprites to the stage.
 	y = a.settingsSection(y, w, "Viewport sprite mask")
-	clipS := a.d.Prefs.ClipSpritesToStageOn()
+	clipS := a.d.Prefs.Load().ClipSpritesToStage
 	if next := c.Checkbox(pad, y, "Clip sprites to the stage (default ON)", clipS); next != clipS {
 		a.d.Prefs.SetClipSpritesToStage(next)
 	}

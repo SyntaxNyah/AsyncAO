@@ -745,7 +745,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 			return true
 		}
 	}
-	if a.d.Prefs.FavEmoteBoxOn() && pointIn(mx, my, a.favBoxRect(w, h)) {
+	if a.d.Prefs.Load().FavEmoteBox && pointIn(mx, my, a.favBoxRect(w, h)) {
 		return true
 	}
 	if a.showStyleBox {
@@ -1072,7 +1072,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 // drawFloatingExtras draws the Extras boxes (main + torn-off + favourite-emotes +
 // Sprite Style), sharing the press edge from drawFloatingPanels.
 func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
-	favOpen := a.d.Prefs.FavEmoteBoxOn()
+	favOpen := a.d.Prefs.Load().FavEmoteBox
 	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
 		return // every Extras box closed — nothing to draw
 	}

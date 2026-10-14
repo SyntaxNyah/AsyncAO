@@ -868,7 +868,7 @@ const motionInputGrace = 200 * time.Millisecond
 // arms the short motion grace; under the classic loop motion is plain input
 // (byte-identical pacing to before).
 func (a *App) NoteMotion() {
-	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
+	if a.d.Prefs != nil && a.d.Prefs.Load().EventDrivenLoop {
 		// Per-event motion redraw (default ON): don't arm the full-rate
 		// grace. The motion event already earns its single wake-frame (SkipFrame refuses on
 		// sawEvent), then the loop re-parks — so a moving cursor redraws once per
@@ -1165,7 +1165,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 	// the classic loop's lobby/caret renders became a zero-sleep spin here, and
 	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
 	// resolves through the cap so a finite cap still rules.
-	if a.d.Prefs.EventDrivenLoopOn() || idleOff || idleUnlimited {
+	if a.d.Prefs.Load().EventDrivenLoop || idleOff || idleUnlimited {
 		a.lastPacerTier = pacerIdleActiveCap
 		return backstopBudget(full)
 	}
@@ -1221,7 +1221,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return true
 		}
 	}
-	exp := a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()
+	exp := a.d.Prefs != nil && a.d.Prefs.Load().EventDrivenLoop
 	if exp {
 		if !a.expScreenSkippable() {
 			return false
@@ -1606,7 +1606,7 @@ func (a *App) applyTimingToRoom() {
 	// of "what a room shows" is how four of the five ended up on a hardcoded
 	// default. This call is the LIVE room's re-push when a setting changes.
 	a.applyVisualPrefsToRoom(a.room)
-	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
+	a.room.AdditiveText = a.d.Prefs.Load().AdditiveText  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
 	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn() // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
 }
 

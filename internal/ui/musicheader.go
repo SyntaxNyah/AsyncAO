@@ -387,7 +387,7 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	case musicMenuPairStatus:
 		return a.d.Prefs.ShowPairStatusOn()
 	case musicMenuFollow:
-		return a.d.Prefs.FollowEnabledOn()
+		return a.d.Prefs.Load().FollowEnabled
 	}
 	flags := a.d.Prefs.MusicFlags()
 	switch k {
@@ -609,7 +609,7 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 		a.d.Prefs.SetShowPairStatus(next)
 		a.pairStatusShow = next
 	case musicMenuFollow:
-		next := !a.d.Prefs.FollowEnabledOn()
+		next := !a.d.Prefs.Load().FollowEnabled
 		a.d.Prefs.SetFollowEnabled(next)
 		a.followShow = next
 		if !next {

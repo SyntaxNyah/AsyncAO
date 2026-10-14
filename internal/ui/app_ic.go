@@ -880,7 +880,7 @@ func (a *App) drainWarnings() {
 	// sparse-pack servers); read the toggle once per drain. We still drain
 	// the channel (it's bounded) and log every failure to the debug overlay
 	// regardless, so nothing is lost — only the chip is gated.
-	show := a.d.Prefs.AssetWarningsOn()
+	show := a.d.Prefs.Load().ShowAssetWarnings
 	for {
 		select {
 		case w := <-a.d.Manager.Warnings():
@@ -1047,7 +1047,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		Wobble:          a.d.Prefs.SpriteWobbleOn(),
 		Spin:            a.d.Prefs.SpriteSpinOn(),
 		ShoutPunch:      a.d.Prefs.ShoutPunchOn(),
-		Entrance:        a.d.Prefs.AnimateEntrancesOn(),
+		Entrance:        a.d.Prefs.Load().AnimateEntrances,
 		DoF:             a.d.Prefs.DepthOfFieldOn(),
 		Spotlight:       a.d.Prefs.SpotlightOn(),
 		IdleBreath:      a.d.Prefs.IdleBreathOn() && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
@@ -1390,7 +1390,7 @@ func (a *App) switchAreaScrollback(toArea string) {
 // parked tab's message while a DIFFERENT tab is live: reading the live session
 // would have filed every backgrounded tab's lines under the foreground tab's log.
 func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
-	if m == nil || !a.d.Prefs.DetailedLogOn() {
+	if m == nil || !a.d.Prefs.Load().DetailedLog {
 		return
 	}
 	if w := a.transcriptFor(server, session); w != nil {
@@ -1408,7 +1408,7 @@ func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
 // a.logSession read here: the background seam runs while a DIFFERENT tab is
 // live.
 func (a *App) logDetailedOOC(server string, session int, line string) {
-	if !a.d.Prefs.DetailedLogOn() {
+	if !a.d.Prefs.Load().DetailedLog {
 		return
 	}
 	if w := a.transcriptFor(server, session); w != nil {

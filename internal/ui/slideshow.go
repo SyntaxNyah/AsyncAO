@@ -18,7 +18,7 @@ import (
 // phase; a no-op (and clears the override) whenever the slideshow is off or the
 // courtroom isn't idle.
 func (a *App) updateSlideshow(phase courtroom.MessagePhase) {
-	if !a.d.Prefs.BgSlideshowEnabled() || phase != courtroom.PhaseIdle {
+	if !a.d.Prefs.Load().BgSlideshow || phase != courtroom.PhaseIdle {
 		a.slideBG = "" // off, or a message is on stage: show the real scene
 		return
 	}

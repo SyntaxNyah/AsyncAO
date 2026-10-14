@@ -49,7 +49,7 @@ func (a *App) maybeFollowJump() {
 	if a.followUID == "" || a.sess == nil {
 		return
 	}
-	if !a.d.Prefs.FollowEnabledOn() {
+	if !a.d.Prefs.Load().FollowEnabled {
 		a.followUID = "" // feature is off (opt-in): stop trailing
 		return
 	}

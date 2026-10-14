@@ -694,7 +694,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 	// it on and still cannot read one panel because of an override they set weeks
 	// ago would be right to call that broken.
 	tbl := res.fontTable
-	dyslexia := fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) == fontSourceDyslexia
+	dyslexia := fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.FontPaths()) == fontSourceDyslexia
 	switch {
 	case !a.d.Prefs.ThemeFontsOn():
 		// Opt-out: the zero table restores pre-#39 behaviour for the THEME's

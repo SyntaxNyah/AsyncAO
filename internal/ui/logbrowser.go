@@ -190,7 +190,7 @@ const modcallClipLines = 60
 // before the writer goroutine runs, so it never races the live icLog. Opt-out via
 // the AutoClipModcall pref (default ON); a no-op (one pref read) when off.
 func (a *App) autoClipModcall(server string, log []icEntry, notice string) {
-	if !a.d.Prefs.AutoClipModcallOn() {
+	if !a.d.Prefs.Load().AutoClipModcall {
 		return
 	}
 	root := logbrowser.RootDir()

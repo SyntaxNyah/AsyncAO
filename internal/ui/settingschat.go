@@ -139,7 +139,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// (it appends to the previous message, mirroring AO2's additive_previous) and
 	// offer the Additive checkbox on servers that advertise it. Off falls back to
 	// the pre-2.8 replace behavior.
-	add := a.d.Prefs.AdditiveTextOn()
+	add := a.d.Prefs.Load().AdditiveText
 	if next := c.Checkbox(pad, y, "Additive text (ON by default): let a message add to the previous one instead of replacing it (2.8 narration RP) — shows the Additive checkbox on servers that support it", add); next != add {
 		a.d.Prefs.SetAdditiveText(next)
 		if a.room != nil {
@@ -208,7 +208,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// AO client saves the log, and people only discover they wanted it afterwards).
 	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
 	// off here sticks forever.
-	detLog := a.d.Prefs.DetailedLogOn()
+	detLog := a.d.Prefs.Load().DetailedLog
 	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.SetDetailedLog(next)
 	}
@@ -222,7 +222,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 	// Auto-clip on modcall (opt-out): save the recent IC log when a modcall fires.
-	clipMod := a.d.Prefs.AutoClipModcallOn()
+	clipMod := a.d.Prefs.Load().AutoClipModcall
 	if next := c.Checkbox(pad, y, "Auto-clip on modcall (ON by default): when a mod is called, save the last IC lines to logs/<server>/modcalls/ as evidence", clipMod); next != clipMod {
 		a.d.Prefs.SetAutoClipModcall(next)
 	}
@@ -344,7 +344,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	c.Label(pad+260, y+6, "play the alert sound now to check it works", ColTextDim)
 	y += 34
-	ct := a.d.Prefs.CallwordToastOn()
+	ct := a.d.Prefs.Load().CallwordToast
 	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
 		a.d.Prefs.SetCallwordToast(next)
 	}
@@ -363,7 +363,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Do Not Disturb: session-only by default (clears every launch so it can't
 	// silently kill your callwords days later) — mutes the personal pings only.
 	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
-	dndPersist := a.d.Prefs.DNDPersistOn()
+	dndPersist := a.d.Prefs.Load().DNDPersist
 	dndTail := "Clears on restart."
 	if dndPersist {
 		dndTail = "Remembered across restarts (option below)."
@@ -430,7 +430,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 
-	ar := a.d.Prefs.AutoReconnectOn()
+	ar := a.d.Prefs.Load().AutoReconnect
 	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (OFF by default): a drop otherwise returns you to the lobby to click Reconnect. When ON, retries the last server with backoff (which re-runs the join handshake, so you land at character select). A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
 		a.d.Prefs.SetAutoReconnect(next)
 	}

@@ -1793,7 +1793,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
-	a.dndOn = d.Prefs.DNDPersistOn() && d.Prefs.DNDSavedOn() // else session-only: clears each launch
+	a.dndOn = d.Prefs.Load().DNDPersist && d.Prefs.Load().DNDSaved // else session-only: clears each launch
 	a.RefreshServers()
 	// Restore-on-launch (opt-in, OFF by default): queue the remembered tabs;
 	// Frame reconnects them one per frame. Capped to the live tab cap so we
@@ -2054,7 +2054,7 @@ func (a *App) setTheater(on bool) {
 // the Settings toggle, the Ctrl+D hotkey, and the badge's click-to-undo.
 func (a *App) setDND(on bool) {
 	a.dndOn = on
-	if a.d.Prefs.DNDPersistOn() {
+	if a.d.Prefs.Load().DNDPersist {
 		a.d.Prefs.SetDNDSaved(on)
 	}
 }

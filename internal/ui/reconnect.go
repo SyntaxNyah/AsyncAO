@@ -108,7 +108,7 @@ func shouldAutoReconnect(reason string, deliberate bool) bool {
 // closed-channel / SendErr drop paths (after Disconnect tore the session down);
 // the caller has already vetted intent via shouldAutoReconnect.
 func (a *App) scheduleAutoReconnect() {
-	if a.lastConnURL == "" || !a.d.Prefs.AutoReconnectOn() {
+	if a.lastConnURL == "" || !a.d.Prefs.Load().AutoReconnect {
 		return
 	}
 	a.autoReconnectTries = 0
