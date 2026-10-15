@@ -353,7 +353,19 @@ func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
 // because of an override they set weeks ago, would be right to call that broken.
 // Their SIZES still apply — the switch is about the letterforms.
 func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetDyslexiaFont(true) })
+	a := landWithPanel(t, func(a *App) {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DyslexiaFont =
+
+				true
+
+		})
+
+	})
 	if got := a.themeFonts.e[elemICChatlog].face; got != 0 {
 		t.Errorf("ic_chatlog face = %d, want 0 — the dyslexia font must claim every family", got)
 	}

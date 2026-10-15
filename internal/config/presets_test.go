@@ -18,7 +18,17 @@ func TestSettingPresets(t *testing.T) {
 	}
 	defer p.Close()
 
-	p.SetCrossfadeMs(300) // a fingerprint to recognise the snapshot by
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CrossfadeMsVal =
+
+			300
+
+	})
+
+	// a fingerprint to recognise the snapshot by
 	if err := p.SavePreset("  My Casing Setup!  "); err != nil {
 		t.Fatalf("SavePreset: %v", err)
 	}
@@ -41,7 +51,17 @@ func TestSettingPresets(t *testing.T) {
 
 	// Apply stages the preset over the live file (restart-applied — the file
 	// content is what the next boot loads).
-	p.SetCrossfadeMs(500) // diverge the live state
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CrossfadeMsVal =
+
+			500
+
+	})
+
+	// diverge the live state
 	if err := p.ApplyPreset("My Casing Setup"); err != nil {
 		t.Fatalf("ApplyPreset: %v", err)
 	}

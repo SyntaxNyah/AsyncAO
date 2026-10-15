@@ -175,7 +175,18 @@ func TestLogPointAtDoesNotReportFullSelectionBeforeTheRowsTrueRightEdge(t *testi
 func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 	a := scaleTestApp(t)
 	a.logPct = DefaultScalePct
-	a.d.Prefs.SetNameColors(true) // IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			NameColors =
+
+			true
+
+	})
+
+	// IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
 	const speaker = "Wright"
 	a.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
 	a.icLogSeq++

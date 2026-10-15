@@ -8,6 +8,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -313,7 +314,17 @@ func TestThemeFontsOffClearsInk(t *testing.T) {
 // theme's palette too.
 func TestElemInkSurvivesAUserFontOverride(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetDyslexiaFont(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DyslexiaFont =
+
+			true
+
+	})
+
 	th := loadAceAttorney2x(t)
 	res := &themeApply{}
 	res.buildThemeFontTable(th, nil)

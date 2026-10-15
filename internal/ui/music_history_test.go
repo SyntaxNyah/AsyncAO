@@ -72,7 +72,17 @@ func TestNoteMusicHistoryCap(t *testing.T) {
 func TestNoteMusicHistoryDisabled(t *testing.T) {
 	a := testTabApp(t)
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.d.Prefs.SetMusicHistory(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicHistory =
+
+			false
+
+	})
+
 	a.noteMusicHistory(courtroom.Event{Kind: courtroom.EventMusic, Text: "https://files.catbox.moe/x.mp3", Int: 0})
 	if len(a.musicHist) != 0 {
 		t.Errorf("history disabled but captured %d entries", len(a.musicHist))

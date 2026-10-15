@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -68,7 +69,17 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	// Match the applied theme so Disconnect()→ensureThemeForSession is a no-op
 	// (no async theme reload in a headless test), as the kick test does.
 	name, _ := a.d.Prefs.Theme()
@@ -133,7 +144,17 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	name, _ := a.d.Prefs.Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
@@ -187,7 +208,17 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 // the first keepalive/reply records sendErr.
 func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	name, _ := a.d.Prefs.Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
@@ -238,7 +269,17 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 // close-trigger stand-in (both drop paths gate on shouldAutoReconnect the same way).
 func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	name, _ := a.d.Prefs.Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"

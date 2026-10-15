@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -79,7 +80,17 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 	_ = w
 	on := a.d.Prefs.Load().NameColors
 	if next := c.Checkbox(pad, y, "Colour each speaker's name (OFF by default): every name gets its own stable colour from its text", on); next != on {
-		a.d.Prefs.SetNameColors(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				NameColors =
+
+				next
+
+		})
+
 	}
 	y += 26
 	if !on {
@@ -247,7 +258,18 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 // default a fresh tab seeds from.
 func (a *App) setICCustomRGB(rgb int) {
 	a.icCustomRGB = rgb & 0xFFFFFF
-	a.d.Prefs.SetICCustomColor(a.icCustomRGB)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			ICCustomColor =
+
+			a.
+				icCustomRGB
+
+	})
+
 }
 
 // drawICColorWheel paints the free-hex chat-colour picker: the shared hue/sat
@@ -401,7 +423,17 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 	c.Label(pad, y, "Log selection highlight colour (drag the wheel, slide brightness, or type a hex code):", ColText)
 	wy := y + 22
 	nextY, hx := a.drawWheelPicker(pad, wy, cur, func(rgb int) {
-		a.d.Prefs.SetHighlightColor(rgb)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HighlightColor =
+
+				rgb
+
+		})
+
 	})
 	if c.focusID != "highlighthex" {
 		a.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
@@ -409,7 +441,17 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.colorHex, "RRGGBB"); next != a.colorHex {
 		a.colorHex = next
 		if rgb, ok := parseHex6(next); ok {
-			a.d.Prefs.SetHighlightColor(rgb)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					HighlightColor =
+
+					rgb
+
+			})
+
 		}
 	}
 	c.Label(hx, wy+42+fieldH+4, "hex code", ColTextDim)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -50,7 +51,18 @@ func TestStartReplayWarmSkipsEmptyOrigin(t *testing.T) {
 // turned OFF so no seed goroutine interposes — the split is what's under test.
 func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 	a, _ := newWarmHarness(t)
-	a.d.Prefs.SetFormatAutoDetect(false) // no seed sub-phase; isolate the enumeration
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// no seed sub-phase; isolate the enumeration
 
 	a.startReplayWarm(replayWarmRec("http://example.test/"))
 	w := a.replayWarm
@@ -86,7 +98,18 @@ func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 // includes-missing path can end this within the tick budget.
 func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 	a, store := newWarmHarness(t)
-	a.d.Prefs.SetFormatAutoDetect(false) // isolate the warm from the seed sub-phase
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// isolate the warm from the seed sub-phase
 
 	// A big scene: more sprite refs than the in-flight window, so the never-settled
 	// stall shape applies (the first window fills; without the miss release nothing
@@ -135,7 +158,16 @@ func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 // and one tick must clear the phase.
 func TestTickReplayWarmHardCapBackstop(t *testing.T) {
 	a, _ := newWarmHarness(t) // never mark anything resident/missing: the never-settled shape
-	a.d.Prefs.SetFormatAutoDetect(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
 
 	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.test/", StartBg: "courtroom"}
 	for i := 0; i < warmInFlightWindow+10; i++ {
@@ -163,7 +195,16 @@ func TestTickReplayWarmHardCapBackstop(t *testing.T) {
 // PrefetchExact a real (missing) submit; we assert the one-shot latch flips.
 func TestTickReplayWarmPrefetchesMusicOnce(t *testing.T) {
 	a, _ := newWarmHarness(t)
-	a.d.Prefs.SetFormatAutoDetect(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
 
 	a.startReplayWarm(replayWarmRec("http://example.test/"))
 	if a.replayWarm == nil || len(a.replayWarm.musicRefs) == 0 {

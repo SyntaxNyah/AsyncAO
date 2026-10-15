@@ -24,7 +24,16 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Group chat")
 	gcBtn := a.d.Prefs.Load().GroupChatButton
 	if next := c.Checkbox(pad, y, "Show the Group Chat button in the courtroom (ON by default): a main button to open DMs & group chats with other AsyncAO players. It's always in Extras → Group Chat too.", gcBtn); next != gcBtn {
-		a.d.Prefs.SetGroupChatButton(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				GroupChatButton =
+
+				next
+
+		})
 	}
 	y += 30
 
@@ -33,7 +42,16 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// box at once instead of deleting char-by-char.
 	hcOn, hcKey, hcMs := a.d.Prefs.HoldClear()
 	if next := c.Checkbox(pad, y, "Hold a key to clear a text box (a fast wipe — no holding backspace char-by-char)", hcOn); next != hcOn {
-		a.d.Prefs.SetHoldClearOn(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HoldClearOn =
+
+				next
+
+		})
 	}
 	y += 28
 	if hcOn {
@@ -54,7 +72,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 		y += btnH + 6
 		if next := a.sliderRow(y, "  Hold time (ms)", hcMs, 100, config.MinHoldClearMs, config.MaxHoldClearMs); next != hcMs {
-			a.d.Prefs.SetHoldClearMs(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					HoldClearMs =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+270, y+4, "how long to hold before it clears (default 1.5 s)", ColTextDim)
 		y += 30
@@ -141,7 +169,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// the pre-2.8 replace behavior.
 	add := a.d.Prefs.Load().AdditiveText
 	if next := c.Checkbox(pad, y, "Additive text (ON by default): let a message add to the previous one instead of replacing it (2.8 narration RP) — shows the Additive checkbox on servers that support it", add); next != add {
-		a.d.Prefs.SetAdditiveText(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AdditiveText =
+
+				next
+
+		})
+
 		if a.room != nil {
 			a.room.AdditiveText = next // apply live
 		}
@@ -170,9 +208,30 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	settings.logDepthBuf, depthEntered = c.TextField(depthFieldID, depthField, settings.logDepthBuf, "lines")
 	if depthEntered {
 		if n, err := strconv.Atoi(strings.TrimSpace(settings.logDepthBuf)); err == nil && n > 0 {
-			a.d.Prefs.SetICLogDepth(n)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					ICLogDepthVal =
+
+					n
+
+			})
+
 		} else {
-			a.d.Prefs.SetICLogDepth(0) // blank / garbage → back to the default
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					ICLogDepthVal =
+
+					0
+
+			})
+
+			// blank / garbage → back to the default
 		}
 		c.focusID = ""
 	}
@@ -183,9 +242,30 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	if c.Button(depthInf, "∞") {
 		if depth == config.ICLogDepthUnlimited {
-			a.d.Prefs.SetICLogDepth(0)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					ICLogDepthVal =
+
+					0
+
+			})
+
 		} else {
-			a.d.Prefs.SetICLogDepth(config.ICLogDepthUnlimited)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					ICLogDepthVal =
+
+					config.
+						ICLogDepthUnlimited
+
+			})
+
 		}
 	}
 	c.Tooltip(depthInf, "Don't cap at all: keep every IC line for the whole session.")
@@ -201,7 +281,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
 	areaScroll := a.d.Prefs.Load().PerAreaScroll
 	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {
-		a.d.Prefs.SetPerAreaScrollback(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				PerAreaScroll =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// Detailed transcript logging (opt-OUT since the flip — every other
@@ -210,7 +300,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// off here sticks forever.
 	detLog := a.d.Prefs.Load().DetailedLog
 	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
-		a.d.Prefs.SetDetailedLog(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DetailedLog =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// Ghost text (Crystalwarrior's ask): the tail of a message the typewriter has
@@ -218,13 +318,33 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// final shape and the log stops reflowing under the reader on every rune.
 	ghost := a.d.Prefs.Load().GhostCrawlText
 	if next := c.Checkbox(pad, y, "Ghost the text a message hasn't typed out yet (ON by default): the rest of the line shows faintly while it crawls, instead of the log growing a word at a time", ghost); next != ghost {
-		a.d.Prefs.SetGhostCrawlText(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				GhostCrawlText =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// Auto-clip on modcall (opt-out): save the recent IC log when a modcall fires.
 	clipMod := a.d.Prefs.Load().AutoClipModcall
 	if next := c.Checkbox(pad, y, "Auto-clip on modcall (ON by default): when a mod is called, save the last IC lines to logs/<server>/modcalls/ as evidence", clipMod); next != clipMod {
-		a.d.Prefs.SetAutoClipModcall(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoClipModcall =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// Show the full song URL in the "has played a song" log line instead of just
@@ -294,7 +414,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// options below and the streamer / DND / login-grace suppressions.
 	ms := a.d.Prefs.Load().MentionSelf
 	if next := c.Checkbox(pad, y, "Alert me when someone says my name (OFF by default): treats your showname + character as callwords, matched as whole words and never on your own lines", ms); next != ms {
-		a.d.Prefs.SetMentionSelf(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MentionSelf =
+
+				next
+
+		})
+
 	}
 	y += 30
 	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
@@ -346,17 +476,47 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 34
 	ct := a.d.Prefs.Load().CallwordToast
 	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
-		a.d.Prefs.SetCallwordToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CallwordToast =
+
+				next
+
+		})
+
 	}
 	y += 26
 	cot := a.d.Prefs.Load().CallwordOSToast
 	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification when AsyncAO is in the background (OFF by default; Windows; rate-limited)", cot); next != cot {
-		a.d.Prefs.SetCallwordOSToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CallwordOSToast =
+
+				next
+
+		})
+
 	}
 	y += 26
 	cooc := a.d.Prefs.Load().CallwordsOOC
 	if next := c.Checkbox(pad, y, "Check OOC messages for callwords too (OFF by default — IC only; on = also ping on OOC, e.g. someone typing your room ID)", cooc); next != cooc {
-		a.d.Prefs.SetCallwordsOOC(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CallwordsOOC =
+
+				next
+
+		})
+
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Do Not Disturb")
@@ -379,9 +539,31 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 	if next := c.Checkbox(pad+16, y, "Remember Do Not Disturb across restarts (default off — DND normally clears every launch)", dndPersist); next != dndPersist {
-		a.d.Prefs.SetDNDPersist(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DNDPersist =
+
+				next
+
+		})
+
 		if next {
-			a.d.Prefs.SetDNDSaved(a.dndOn) // snapshot the current state so it restores correctly
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DNDSaved =
+
+					a.
+						dndOn
+
+			})
+
+			// snapshot the current state so it restores correctly
 		}
 	}
 	y += 30
@@ -420,25 +602,65 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Messages & connection")
 	mc := a.d.Prefs.Load().MessageCounter
 	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
-		a.d.Prefs.SetMessageCounter(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MessageCounter =
+
+				next
+
+		})
+
 	}
 	y += 26
 
 	ts := a.d.Prefs.Load().ICTimestamps
 	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (OFF by default): prefixes each line with the time it arrived, so you can see when people spoke.", ts); next != ts {
-		a.d.Prefs.SetICTimestamps(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ICTimestamps =
+
+				next
+
+		})
+
 	}
 	y += 26
 
 	ar := a.d.Prefs.Load().AutoReconnect
 	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (OFF by default): a drop otherwise returns you to the lobby to click Reconnect. When ON, retries the last server with backoff (which re-runs the join handshake, so you land at character select). A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
-		a.d.Prefs.SetAutoReconnect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoReconnect =
+
+				next
+
+		})
+
 	}
 	y += 26
 
 	idc := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(pad, y, "Instant disconnect (OFF by default): the Disconnect button asks for confirmation first, since it's easy to hit by accident. Turn this on to disconnect immediately with no prompt.", idc); next != idc {
-		a.d.Prefs.SetInstantDisconnect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				InstantDisconnect =
+
+				next
+
+		})
+
 	}
 	y += 26
 
@@ -449,7 +671,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		label = "Auto-connect on launch to \"" + lastName + "\" (OFF by default): your last server. Reconnect there with the Connect-to-last-server key (Controls tab) too."
 	}
 	if next := c.Checkbox(pad, y, label, acl); next != acl {
-		a.d.Prefs.SetAutoConnectOnLaunch(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoConnectOnLaunch =
+
+				next
+
+		})
+
 	}
 	y += 30
 
@@ -528,7 +760,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// M12: keep a session "recently played" jukebox history (ON by default).
 	mh := a.d.Prefs.Load().MusicHistory
 	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
-		a.d.Prefs.SetMusicHistory(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MusicHistory =
+
+				next
+
+		})
+
 	}
 	y += 30
 
@@ -570,27 +812,77 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.Load().FriendHighlight
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
-		a.d.Prefs.SetFriendHighlight(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendHighlight =
+
+				next
+
+		})
+
 	}
 	y += 26
 	fgp := a.d.Prefs.Load().FriendGlowPulse
 	if next := c.Checkbox(pad+16, y, "Pulse the friend glow (gentle breathing animation; obeys reduce-motion)", fgp); next != fgp {
-		a.d.Prefs.SetFriendGlowPulse(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendGlowPulse =
+
+				next
+
+		})
+
 	}
 	y += 26
 	fn := a.d.Prefs.Load().FriendNotify
 	if next := c.Checkbox(pad+16, y, "Notify + flash the taskbar when a friend speaks (fires even from a backgrounded server tab)", fn); next != fn {
-		a.d.Prefs.SetFriendNotify(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendNotify =
+
+				next
+
+		})
+
 	}
 	y += 26
 	fot := a.d.Prefs.Load().FriendOSToast
 	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification — a real Windows toast (rate-limited so it can't storm)", fot); next != fot {
-		a.d.Prefs.SetFriendOSToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendOSToast =
+
+				next
+
+		})
+
 	}
 	y += 26
 	fsnd := a.d.Prefs.Load().FriendSound
 	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
-		a.d.Prefs.SetFriendSound(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendSound =
+
+				next
+
+		})
+
 	}
 	y += 26
 	c.Label(pad+16, y+4, "Friend sound:", ColTextDim)
@@ -643,7 +935,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// Mod-call desktop toast (for moderators).
 	mct := a.d.Prefs.Load().ModcallToast
 	if next := c.Checkbox(pad, y, "Desktop notification on mod-call (OFF by default): pop a Windows toast when a modcall comes in — for mods who alt-tabbed away", mct); next != mct {
-		a.d.Prefs.SetModcallToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ModcallToast =
+
+				next
+
+		})
+
 	}
 	y += 28
 

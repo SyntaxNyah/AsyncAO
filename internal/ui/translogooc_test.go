@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -20,7 +21,16 @@ import (
 // so a user who turned logging off never gets a file appearing on disk.
 func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			false
+
+	})
 	a.serverName = "Skrapegropen-ooc-pref-off"
 
 	a.pushOOC("Nyah: should not be logged", "Nyah")
@@ -67,7 +77,17 @@ func transcriptNewFile(t *testing.T, server string, before map[string]bool) (str
 func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 	const server = "Skrapegropen-ooc-suppressed"
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 	a.frameNow = time.Now()
@@ -108,7 +128,17 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	const server = "Skrapegropen-ooc-split"
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 

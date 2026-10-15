@@ -282,7 +282,18 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
-	a.d.Prefs.SetFormatAutoDetect(true) // the seed gate respects the same pref the session path does
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			true
+
+	})
+
+	// the seed gate respects the same pref the session path does
 	origin := srv.URL + "/"
 	host := hostOfURL(origin)
 

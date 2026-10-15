@@ -146,12 +146,32 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		}
 		c.Label(pad+200+236, y+4, ageLabel, ColTextDim)
 		if na != ageMs {
-			a.d.Prefs.SetHoldPrevMaxAgeMs(na)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					HoldPrevMaxAgeMsVal =
+
+					na
+
+			})
+
 		}
 		y += 26
 		tint := a.d.Prefs.Load().HoldDebugTint
 		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostic: shows when a stand-in is bridging a load)", tint); next != tint {
-			a.d.Prefs.SetHoldDebugTint(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					HoldDebugTint =
+
+					next
+
+			})
+
 		}
 		y += 26
 	}
@@ -169,7 +189,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, cfLabel, ColTextDim)
 	if ncf != cfMs {
-		a.d.Prefs.SetCrossfadeMs(ncf)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CrossfadeMsVal =
+
+				ncf
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
@@ -233,7 +263,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+210+226, y+4, igLabel, ColTextDim)
 	if nig != ig {
-		a.d.Prefs.SetInputGraceFrames(nig)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				InputGraceFramesVal =
+
+				nig
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 0 turns the hold off entirely; 1 (the default) is nearly as snappy — the input still shows instantly either way, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
@@ -242,21 +282,51 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 10
 	edl := a.d.Prefs.Load().EventDrivenLoop
 	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {
-		a.d.Prefs.SetEventDrivenLoop(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EventDrivenLoop =
+
+				next
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
 	y += 10
 	mrp := a.d.Prefs.Load().MotionRedrawPerEvent
 	if next := c.Checkbox(pad, y, "Redraw once per mouse-move event (less power on cursor motion)", mrp); next != mrp {
-		a.d.Prefs.SetMotionRedrawPerEvent(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MotionRedrawPerEvent =
+
+				next
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Event-driven renderer only. On (default): each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames and power. Off: moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
 	y += 10
 	nolimit := a.d.Prefs.Load().DisableFrameLimiter
 	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {
-		a.d.Prefs.SetFrameLimiterDisabled(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DisableFrameLimiter =
+
+				next
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Off by default. On = no idle skipping and no pacing at all: the client redraws continuously, paced only by vsync (or a 60 fps floor with -vsync=false). The opposite of everything above — it trades GPU for the last drop of responsiveness. Leave it off unless you have a specific reason.", ColTextDim)
@@ -397,7 +467,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, qLabel, ColTextDim)
 	if nq != qcap {
-		a.d.Prefs.SetICQueueCap(nq)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ICQueueCapVal =
+
+				nq
+
+		})
+
 		a.applyTimingToRoom()
 	}
 	y += 26
@@ -412,7 +492,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, culLabel, ColTextDim)
 	if nc != cul {
-		a.d.Prefs.SetCatchUpLingerMs(nc)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CatchUpLingerMsVal =
+
+				nc
+
+		})
+
 		a.applyTimingToRoom()
 	}
 	y += 26
@@ -423,7 +513,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Viewport sprite mask")
 	clipS := a.d.Prefs.Load().ClipSpritesToStage
 	if next := c.Checkbox(pad, y, "Clip sprites to the stage (default ON)", clipS); next != clipS {
-		a.d.Prefs.SetClipSpritesToStage(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ClipSpritesToStage =
+
+				next
+
+		})
+
 	}
 	y += 24
 	y = a.settingsDesc(pad, y, "Masks character sprites to the stage so a large pair/reposition offset can't spill over the chatbox or log. Off = free placement past the stage edges.", ColTextDim)
@@ -475,7 +575,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+210+226, y+4, ttlLabel, ColTextDim)
 	if nttl != ttl {
-		a.d.Prefs.SetNotFoundTTLSec(nttl)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				NotFoundTTLSecVal =
+
+				nttl
+
+		})
+
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "How long a missing (404) asset is remembered before it may be probed again. Shorter picks up newly-uploaded art sooner; longer wastes fewer probes on sparse packs. Applies on restart.", ColTextDim)
@@ -494,7 +604,17 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+210+226, y+4, lmLabel, ColTextDim)
 	if nlm != lm {
-		a.d.Prefs.SetAdaptiveLatMultiple(nlm)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AdaptiveLatMultipleVal =
+
+				nlm
+
+		})
+
 		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.AdaptiveLatMultiple())
 	}
 	y += 26
@@ -512,13 +632,52 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.numSliderRow(y, "downscalepct", "Downscale target:", config.SpriteDownscaleMinPct, config.SpriteDownscaleMaxPct, 5, 100, func() int { return a.d.Prefs.Load().SpriteDownscalePctVal }, func(n int) { a.d.Prefs.SetSpriteDownscalePct(n); a.applySpriteCap() }, &settings.memBufs[0], "%", "The decode-time downscale shrinks huge art toward your display height; this scales that target (50-200%). Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, func() int { return a.d.Prefs.Load().AnimatedSpriteCapPxVal }, func(n int) { a.d.Prefs.SetAnimatedSpriteCap(n); a.applySpriteCap() }, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
+	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, func() int { return a.d.Prefs.Load().AnimatedSpriteCapPxVal }, func(n int) {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AnimatedSpriteCapPxVal =
+
+				n
+
+		})
+
+		a.applySpriteCap()
+	}, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Animations are no longer truncated to fit the texture budget, so one full high-res preanimation can hold a few hundred MB of GPU memory. This caps animated sprite HEIGHT (still art is untouched) to shrink that footprint; leave off for AO2-identical full quality.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, a.d.Prefs.AnimatedBudgetMiB, func(n int) { a.d.Prefs.SetAnimatedBudgetMiB(n); a.applySpriteCap() }, &settings.memBufs[2], " MiB", "How much decoded memory ONE animated sprite may use before its frames are downscaled to fit (64-512 MiB). 128 = the shipped default (very large clips downscale to fit); lower = softer sprites, far less RAM. Applies to NEWLY loaded art (LIVE).")
+	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, a.d.Prefs.AnimatedBudgetMiB, func(n int) {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AnimatedBudgetMiBVal =
+
+				n
+
+		})
+
+		a.applySpriteCap()
+	}, &settings.memBufs[2], " MiB", "How much decoded memory ONE animated sprite may use before its frames are downscaled to fit (64-512 MiB). 128 = the shipped default (very large clips downscale to fit); lower = softer sprites, far less RAM. Applies to NEWLY loaded art (LIVE).")
 	y = a.settingsDesc(pad, y, "Decoded memory allowed for ONE animated sprite before its frames are downscaled to fit. 500 MiB keeps full-size high-res clips native (sharpest, most RAM); lower shrinks them to fit (softer, a fraction of the RAM). The per-frame decoded pixels of several such clips are what spiked RAM, so this is the biggest lever. Applies to newly loaded art.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, a.d.Prefs.AnimDecodeConcurrency, func(n int) { a.d.Prefs.SetAnimDecodeConcurrency(n); a.applySpriteCap() }, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
+	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, a.d.Prefs.AnimDecodeConcurrency, func(n int) {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AnimDecodeConcurrencyVal =
+
+				n
+
+		})
+
+		a.applySpriteCap()
+	}, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
 	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
 	y += 8
 	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, a.d.Prefs.SetTexBudgetMiB, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
@@ -608,7 +767,17 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	// bindings stay editable either way.
 	hk := a.d.Prefs.Load().HotkeysEnabled
 	if next := c.Checkbox(pad, y, "Enable hotkeys (Ctrl+key shortcuts) — OFF by default", hk); next != hk {
-		a.d.Prefs.SetHotkeysEnabled(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HotkeysEnabled =
+
+				next
+
+		})
+
 	}
 	y += 28
 	// Conflict scan: two actions resolving to the same key clash — only the first

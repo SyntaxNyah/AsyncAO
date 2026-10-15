@@ -11,6 +11,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -259,7 +260,16 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	// the new pre-warm format-seed phase doesn't interpose (it's covered by
 	// TestExportSeedBeforeWarm). With autodetect off, startSceneExport skips seeding
 	// and the job enters warming directly, exactly as before this phase existed.
-	a.d.Prefs.SetFormatAutoDetect(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
 
 	// A one-message scene (no StartBg → no audio touched during the transition):
 	// SceneAssets yields this speaker's bg/desk/sprite refs.

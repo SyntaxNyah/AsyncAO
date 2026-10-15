@@ -98,7 +98,17 @@ func TestManifestSeedLearned(t *testing.T) {
 	// Opt out: pin desks to WebP; the manifest may no longer touch DeskOverlay.
 	// The clear mirrors what the Settings toggle does, so the pin is observable
 	// as an ABSENT entry rather than a stale seeded one.
-	prefs.SetDeskFollowManifest(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DeskFollowManifest =
+
+			false
+
+	})
+
 	prefs.ClearLearnedType(config.TypeDeskOverlay)
 	if n := m.SeedLearned(prefs, host); n != 4 {
 		t.Fatalf("seeded %d with the WebP pin on, want 4 (desk exempt)", n)

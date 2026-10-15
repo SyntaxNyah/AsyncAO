@@ -21,7 +21,15 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	if p.Load().FontEverywhere {
 		t.Fatal("FontEverywhere must default OFF")
 	}
-	p.SetFontEverywhere(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FontEverywhere =
+
+			true
+
+	})
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -220,7 +228,16 @@ func TestSpriteStylePref(t *testing.T) {
 	}
 	want := SpriteStylePref{Tint: true, R: 10, G: 20, B: 30, Opacity: 50, Glow: true, Wobble: true, Spin: true, HueCycle: true, FlipH: true, Brightness: 70, Scale: 130, Rotation: 200}
 	q.SetSpriteStyle(want)
-	q.SetHideSpriteStyles(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			HideSpriteStyles =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -283,7 +300,16 @@ func TestInstantDisconnectPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetInstantDisconnect(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantDisconnect =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -338,7 +364,16 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetAutoConnectOnLaunch(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoConnectOnLaunch =
+
+			true
+
+	})
+
 	q.SetLastServer("Skrapegropen", "wss://example.test/ws")
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -394,7 +429,16 @@ func TestEmoteFavsPref(t *testing.T) {
 	}
 	q.ToggleEmoteFav("Phoenix", 3)
 	q.ToggleEmoteFav("Phoenix", 7)
-	q.SetEmoteFavOnly(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteFavOnly =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -565,11 +609,31 @@ func TestInstantReplayPref(t *testing.T) {
 	if got := p.InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
 		t.Errorf("unset window = %d, want default %d", got, InstantReplayDefaultSeconds)
 	}
-	p.SetInstantReplaySeconds(2) // below the floor
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			2
+
+	})
+
+	// below the floor
 	if got := p.InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
 		t.Errorf("clamped-low window = %d, want %d", got, InstantReplayMinSeconds)
 	}
-	p.SetInstantReplaySeconds(100000) // past the 1-hour ceiling
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			100000
+
+	})
+
+	// past the 1-hour ceiling
 	if got := p.InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
 		t.Errorf("clamped-high window = %d, want %d", got, InstantReplayMaxSeconds)
 	}
@@ -579,8 +643,26 @@ func TestInstantReplayPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetInstantReplay(true)
-	q.SetInstantReplaySeconds(120)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplay =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			120
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -650,7 +732,16 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetNotifyOnOOC(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			NotifyOnOOC =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -683,7 +774,16 @@ func TestOOCBoxIsTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetOOCInLogTab(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCInLogTab =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -725,7 +825,16 @@ func TestEmoteGridGapPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetEmoteGridGap(0)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			0
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -752,11 +861,31 @@ func TestEmoteGridGapPref(t *testing.T) {
 
 	// Out-of-range values clamp on the way in and on the way out.
 	s, _ := newTestPrefs(t)
-	s.SetEmoteGridGap(MaxEmoteGridGapPx + 500)
+	s.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			MaxEmoteGridGapPx +
+
+				500
+
+	})
+
 	if got := s.EmoteGridGap(); got != MaxEmoteGridGapPx {
 		t.Errorf("over-max EmoteGridGap = %d, want %d", got, MaxEmoteGridGapPx)
 	}
-	s.SetEmoteGridGap(-42)
+	s.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			-42
+
+	})
+
 	if got := s.EmoteGridGap(); got != MinEmoteGridGapPx {
 		t.Errorf("under-min EmoteGridGap = %d, want %d", got, MinEmoteGridGapPx)
 	}
@@ -776,7 +905,16 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetMusicAcrossTabs(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -822,7 +960,16 @@ func TestChatboxOpacityPref(t *testing.T) {
 	if p.Load().ChatboxOpacity != DefaultChatboxOpacity {
 		t.Fatalf("ChatboxOpacity default = %d, want %d", p.Load().ChatboxOpacity, DefaultChatboxOpacity)
 	}
-	p.SetChatboxOpacity(999)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ChatboxOpacity =
+
+			999
+
+	})
+
 	if p.Load().ChatboxOpacity != MaxChatboxOpacity {
 		t.Errorf("over-max = %d, want %d", p.Load().ChatboxOpacity, MaxChatboxOpacity)
 	}
@@ -831,7 +978,16 @@ func TestChatboxOpacityPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetChatboxOpacity(30)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ChatboxOpacity =
+
+			30
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -859,9 +1015,36 @@ func TestModSFXPrefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetModBanSFX(true)
-	q.SetModKickSFX(true)
-	q.SetModMuteSFX(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModBanSFX =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModKickSFX =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModMuteSFX =
+
+			true
+
+	})
+
 	q.SetModBanSoundPath("ban.opus")
 	q.SetModKickSoundPath("kick.wav")
 	q.SetModMuteSoundPath("mute.ogg")
@@ -892,7 +1075,16 @@ func TestFollowEnabledPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetFollowEnabled(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			FollowEnabled =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -930,19 +1122,57 @@ func TestICLogDepthRoundTrip(t *testing.T) {
 	if p.Load().ICLogDepthVal != 0 {
 		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.Load().ICLogDepthVal)
 	}
-	p.SetICLogDepth(5000)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			5000
+
+	})
+
 	if got := p.Load().ICLogDepthVal; got != 5000 {
 		t.Fatalf("ICLogDepth = %d, want 5000", got)
 	}
-	p.SetICLogDepth(1 << 30)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			1 <<
+
+				30
+
+	})
+
 	if got := p.Load().ICLogDepthVal; got != ICLogDepthMax {
 		t.Fatalf("ICLogDepth clamp hi = %d, want %d", got, ICLogDepthMax)
 	}
-	p.SetICLogDepth(0)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			0
+
+	})
+
 	if got := p.Load().ICLogDepthVal; got != 0 {
 		t.Fatalf("ICLogDepth back to default = %d, want 0", got)
 	}
-	p.SetICLogDepth(ICLogDepthUnlimited)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			ICLogDepthUnlimited
+
+	})
+
 	if got := p.Load().ICLogDepthVal; got != ICLogDepthUnlimited {
 		t.Fatalf("ICLogDepth unlimited = %d, want %d", got, ICLogDepthUnlimited)
 	}
@@ -971,27 +1201,176 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetPreviewHoverMs(8000)
 	p.SetPreviewHeightPx(512)            // default-when-0 int — must survive
 	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
-	p.SetAssetWarnings(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ShowAssetWarnings =
+
+			true
+
+	})
+
 	p.SetSpriteMove(true)
-	p.SetDeskFollowManifest(false)   // explicit non-default false must survive the absent-default-ON pointer (default flipped OFF→ON 2026-08-08 — true would now be a no-op set)
-	p.SetAutoLoginToast(false)       // explicit false must survive the absent-default-ON pointer
-	p.SetCallwordToast(false)        // same absent-default-ON pointer
-	p.SetMessageCounter(false)       // same absent-default-ON pointer
-	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetAutoReconnect(true)         // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
-	p.SetWordDelete(false)           // default-ON *bool — explicit false must survive
-	p.SetMusicHistory(false)         // same absent-default-ON pointer
-	p.SetMusicStreaming(false)       // same absent-default-ON pointer — explicit OFF must survive
-	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
-	p.SetLoopPreanim(true)           // default-OFF plain bool — must survive as true
-	p.SetShowRecordButton(true)      // default-OFF plain bool
-	p.SetShowFriendButton(false)     // default-ON *bool — explicit false must survive
-	p.SetDragLayout(false)           // default-ON *bool — explicit false must survive
-	p.SetEventDrivenLoop(false)      // default-ON *bool — the experimental-loop kill switch must stick
-	p.SetFrameLimiterDisabled(true)  // #5 bypass — default-OFF plain bool must survive as true
-	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — default-ON *bool, so an explicit OFF must survive
-	p.SetIdleFPS(FPSUnlimited)       // the ∞ sentinel must survive save→load un-clamped
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DeskFollowManifest =
+
+			false
+
+	})
+
+	// explicit non-default false must survive the absent-default-ON pointer (default flipped OFF→ON 2026-08-08 — true would now be a no-op set)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoLoginToast =
+
+			false
+
+	})
+
+	// explicit false must survive the absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CallwordToast =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MessageCounter =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICTimestamps =
+
+			true
+
+	})
+
+	// explicit non-default true must survive the absent-default-OFF pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	// explicit non-default true must survive the absent-default-OFF pointer
+	p.SetScreenEffects(false) // default-ON *bool — explicit false must survive
+	p.SetWordDelete(false)    // default-ON *bool — explicit false must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicHistory =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicStreaming =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer — explicit OFF must survive
+	p.SetRainbowSprites(true) // default-OFF plain bool — must survive as true
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			LoopPreanim =
+
+			true
+
+	})
+
+	// default-OFF plain bool — must survive as true
+	p.SetShowRecordButton(true)  // default-OFF plain bool
+	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DragLayout =
+
+			false
+
+	})
+
+	// default-ON *bool — explicit false must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			EventDrivenLoop =
+
+			false
+
+	})
+
+	// default-ON *bool — the experimental-loop kill switch must stick
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DisableFrameLimiter =
+
+			true
+
+	})
+
+	// #5 bypass — default-OFF plain bool must survive as true
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
+	// per-event motion redraw — default-ON *bool, so an explicit OFF must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			FPSUnlimited
+
+	})
+
+	// the ∞ sentinel must survive save→load un-clamped
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -1312,31 +1691,168 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetSpriteWaitPair(true)
 	p.SetSpriteWaitPreanim(true)
 	p.SetShoutBypassQueue(false) // off the default (ON) — the nuke must restore it
-	p.SetHoldPrevMaxAgeMs(9000)
-	p.SetHoldDebugTint(true)
-	p.SetHotkeysEnabled(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldPrevMaxAgeMsVal =
+
+			9000
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldDebugTint =
+
+			true
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HotkeysEnabled =
+
+			true
+
+	})
+
 	p.SetShoutDurationMs(1000)
 	p.SetPreanimTimeoutMs(5000)
-	p.SetICQueueCap(128)
-	p.SetCatchUpLingerMs(250)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICQueueCapVal =
+
+			128
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CatchUpLingerMsVal =
+
+			250
+
+	})
+
 	p.SetThumbCache(true)
 	p.SetThumbHeightPx(120)
 	p.SetThumbQuality(40)
 	p.SetThumbBudgetMiB(256)
-	p.SetNotFoundTTLSec(60)
-	p.SetAdaptiveLatMultiple(4)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			NotFoundTTLSecVal =
+
+			60
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AdaptiveLatMultipleVal =
+
+			4
+
+	})
+
 	p.SetSpriteDownscaleOff(true)
 	p.SetSpriteDownscalePct(150)
-	p.SetAnimatedSpriteCap(480)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AnimatedSpriteCapPxVal =
+
+			480
+
+	})
+
 	p.SetTexBudgetMiB(96)
-	p.SetCrossfadeMs(300)
-	p.SetFPSCap(144)
-	p.SetIdleFPS(60)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CrossfadeMsVal =
+
+			300
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			144
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			60
+
+	})
+
 	p.SetUnfocusedFPS(30)
-	p.SetEventDrivenLoop(false)
-	p.SetFrameLimiterDisabled(true)  // #5 bypass — must revert to OFF on nuke
-	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — must revert to its default (ON) on nuke
-	p.SetClipSpritesToStage(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			EventDrivenLoop =
+
+			false
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DisableFrameLimiter =
+
+			true
+
+	})
+
+	// #5 bypass — must revert to OFF on nuke
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
+	// per-event motion redraw — must revert to its default (ON) on nuke
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ClipSpritesToStage =
+
+			false
+
+	})
+
 	p.SetProxyMode(ProxyModeManual)
 	p.SetProxyURL("http://proxy.example:8080")
 	p.SetAssetCharCasing(2)
@@ -1637,11 +2153,32 @@ func TestHoldClearDefaults(t *testing.T) {
 	if ms != DefaultHoldClearMs {
 		t.Errorf("default ms = %d, want %d", ms, DefaultHoldClearMs)
 	}
-	p.SetHoldClearMs(1 << 20) // over-large clamps to max
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldClearMs =
+
+			1 <<
+
+				20
+
+	})
+
+	// over-large clamps to max
 	if _, _, got := p.HoldClear(); got != MaxHoldClearMs {
 		t.Errorf("ms clamp = %d, want %d", got, MaxHoldClearMs)
 	}
-	p.SetHoldClearOn(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldClearOn =
+
+			false
+
+	})
+
 	p.SetHoldClearKey("Delete")
 	if gotOn, gotKey, _ := p.HoldClear(); gotOn || gotKey != "Delete" {
 		t.Errorf("after edits: on=%v key=%q, want false, Delete", gotOn, gotKey)
@@ -1750,23 +2287,68 @@ func TestFPSKnobDomain(t *testing.T) {
 			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
 	}
 	// Below the old floors is now allowed, not clamped up.
-	p.SetFPSCap(5)
-	p.SetIdleFPS(2)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			5
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			2
+
+	})
+
 	p.SetUnfocusedFPS(1)
 	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
 		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
 			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
 	}
 	// Out-of-range positives still clamp to the max.
-	p.SetIdleFPS(99999)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			99999
+
+	})
+
 	if got := p.IdleFPS(); got != IdleFPSMax {
 		t.Errorf("idle over-max = %d, want clamp to %d", got, IdleFPSMax)
 	}
 	// The Settings "0"/off maps to FPSOff; ∞ to FPSUnlimited. Both are held live
 	// and must survive the disk round-trip un-normalized.
-	p.SetIdleFPS(FPSOff)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			FPSOff
+
+	})
+
 	p.SetUnfocusedFPS(FPSOff)
-	p.SetFPSCap(FPSUnlimited)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			FPSUnlimited
+
+	})
+
 	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
 		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
 	}
@@ -1774,11 +2356,30 @@ func TestFPSKnobDomain(t *testing.T) {
 	if got := p.InputGraceFrames(); got != InputGraceFramesDefault {
 		t.Errorf("input-grace default = %d, want %d", got, InputGraceFramesDefault)
 	}
-	p.SetInputGraceFrames(99999)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InputGraceFramesVal =
+
+			99999
+
+	})
+
 	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
 		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
 	}
-	p.SetInputGraceFrames(0) // 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InputGraceFramesVal =
+
+			0
+
+	})
+
+	// 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
 	if got := p.InputGraceFrames(); got != 0 {
 		t.Errorf("input-grace off = %d, want 0", got)
 	}

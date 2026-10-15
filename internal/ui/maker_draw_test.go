@@ -52,12 +52,32 @@ func TestHideSpriteSuppression(t *testing.T) {
 	}
 
 	// Hide-desk option suppresses ShowDesk; turning it off restores it.
-	prefs.SetHideDesk(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HideDesk =
+
+			true
+
+	})
+
 	a.applySpriteOverrides()
 	if a.room.Scene.ShowDesk {
 		t.Error("hide-desk did not suppress ShowDesk")
 	}
-	prefs.SetHideDesk(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HideDesk =
+
+			false
+
+	})
+
 	a.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
 	a.applySpriteOverrides()
 	if !a.room.Scene.ShowDesk {
@@ -184,7 +204,16 @@ func TestMakerDrawNoPanic(t *testing.T) {
 // hidden with Missingno reappeared there.
 func TestSpriteOverridesReachEveryLiveRoom(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetHideDesk(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HideDesk =
+
+			true
+
+	})
 
 	rooms := map[string]*courtroom.Courtroom{
 		"active": newRoomForTest(t),

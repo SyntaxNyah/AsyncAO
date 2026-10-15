@@ -17,7 +17,15 @@ func TestCallwordOSToastPref(t *testing.T) {
 	if p.Load().CallwordOSToast {
 		t.Error("callword OS toast should default OFF")
 	}
-	p.SetCallwordOSToast(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CallwordOSToast =
+
+			true
+
+	})
 	if !p.Load().CallwordOSToast {
 		t.Error("SetCallwordOSToast(true) didn't take")
 	}
@@ -35,7 +43,16 @@ func TestMentionSelfPref(t *testing.T) {
 	if p.Load().MentionSelf {
 		t.Error("self-mention should default OFF")
 	}
-	p.SetMentionSelf(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MentionSelf =
+
+			true
+
+	})
+
 	if !p.Load().MentionSelf {
 		t.Error("SetMentionSelf(true) didn't take")
 	}

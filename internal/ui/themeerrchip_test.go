@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -168,7 +169,17 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	// The missing-asset chip now sits INSIDE that, not on top of it.
 	a.assetMissCount = 3
 	a.assetMissAt = a.now()
-	a.d.Prefs.SetAssetWarnings(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			ShowAssetWarnings =
+
+			true
+
+	})
+
 	if missRect, missOK := a.assetMissChipRect(w); missOK {
 		if missRect.X+missRect.W > errRect.X {
 			t.Errorf("the missing-asset chip %+v overlaps the refusal chip %+v — two right-anchored "+

@@ -18,7 +18,7 @@ const (
 	loadGoldenSHA256   = "2f52b461d8280db12f391575f1a00d5a2243cf26edf1b4640fe355e78ff75b5d"
 	defaultPrefsSHA    = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
 	prefsGoldenSHA256  = "64f4503932cbd365f97b016a6a6c8c968a7a5d890242e808335f881c97730c50"
-	settersGoldenSHA   = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
+	settersGoldenSHA   = "3108161190fa510ce0a9554a8c62b23ee5f105608947fe66e9fd570e240bb2f5"
 )
 
 // TestGoldenFilesFrozen pins the four data files the persistence-swap oracle depends on

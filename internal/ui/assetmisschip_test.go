@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"testing"
 	"time"
 )
@@ -115,7 +116,17 @@ func TestInvisibleAssetMissChipReportsNoRect(t *testing.T) {
 	}
 	// Armed and inside its window: a real rect, so the gate filters rather than
 	// standing the helper down.
-	a.d.Prefs.SetAssetWarnings(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			ShowAssetWarnings =
+
+			true
+
+	})
+
 	a.assetMissCount, a.assetMissAt = 3, a.now()
 	if !a.assetMissChipActive() {
 		t.Fatal("the fixture did not arm the chip — the positive half would be vacuous")
@@ -126,12 +137,32 @@ func TestInvisibleAssetMissChipReportsNoRect(t *testing.T) {
 	}
 	// The preference is the user's own silence switch, and it must reach the GEOMETRY
 	// as well as the paint.
-	a.d.Prefs.SetAssetWarnings(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			ShowAssetWarnings =
+
+			false
+
+	})
+
 	if r, ok := a.assetMissChipRect(w); ok {
 		t.Errorf("with missing-asset reporting turned OFF the chip still reported %+v", r)
 	}
 	// And so must the 30 s expiry.
-	a.d.Prefs.SetAssetWarnings(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			ShowAssetWarnings =
+
+			true
+
+	})
+
 	a.assetMissAt = a.now().Add(-assetMissChipShowDuration - time.Second)
 	if r, ok := a.assetMissChipRect(w); ok {
 		t.Errorf("an EXPIRED chip still reported %+v", r)
