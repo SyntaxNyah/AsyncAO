@@ -53,7 +53,17 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	y += 24
 	ir := a.d.Prefs.Load().InstantReplay
 	if next := c.Checkbox(pad, y, "Pre-record recent conversation (Instant Replay)", ir); next != ir {
-		a.d.Prefs.SetInstantReplay(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				InstantReplay =
+
+				next
+
+		})
+
 	}
 	y += 30
 	if ir {
@@ -62,7 +72,17 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 		track := sdl.Rect{X: pad + 140, Y: y + 5, W: 240, H: 16}
 		lo, hi := config.InstantReplayMinSeconds, config.InstantReplayMaxSeconds
 		if nv := int(c.Slider("ir_window", track, int32(secs-lo), int32(hi-lo))) + lo; nv != secs {
-			a.d.Prefs.SetInstantReplaySeconds(nv)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					InstantReplaySeconds =
+
+					nv
+
+			})
+
 			secs = nv
 		}
 		c.Label(track.X+track.W+10, y+4, formatReplayWindow(time.Duration(secs)*time.Second)+"  (10s … 1 hour)", ColAccent)
@@ -292,7 +312,17 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// all, which made it effectively unreachable.
 	gap := a.d.Prefs.EmoteGridGap()
 	if next := a.emoteGridGapRow(y, gap); next != gap {
-		a.d.Prefs.SetEmoteGridGap(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteGridGapPx =
+
+				next
+
+		})
+
 	}
 	c.Label(pad+340, y+4, "gap between emote icons (default 6 px; 0 butts them together). AO2 themes keep their own spacing.", ColTextDim)
 	y += 30
@@ -300,7 +330,17 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// "Legacy Developer" reverts to the old developer layout exactly (OOC back in a tab).
 	legacy := a.d.Prefs.Load().LegacyDevTheme
 	if next := c.Checkbox(pad, y, "Legacy Developer theme (revert to the old built-in look — OOC back in a tab; off = the new optimal layout)", legacy); next != legacy {
-		a.d.Prefs.SetLegacyDevTheme(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				LegacyDevTheme =
+
+				next
+
+		})
+
 	}
 	y += 28
 	// Theme-driven courtroom geometry (courtroom_design.ini).
@@ -495,7 +535,17 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// muted while it's on, which is what tells them what it's actually suppressing.
 	noFX := a.d.Prefs.Load().DisableEffects
 	if next := c.Checkbox(pad, y, "Disable all visual effects (OFF by default): one switch for a calm screen — stops other players' spinning / glowing / moving sprite styles, screen shake and flash, animated text, entrance slides, sprite washes and the post-processing overlays. Your settings below are remembered, just overruled while this is ticked.", noFX); next != noFX {
-		a.d.Prefs.SetDisableEffects(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DisableEffects =
+
+				next
+
+		})
+
 		noFX = next
 		if a.room != nil { // apply to the live room immediately, like the rows below do
 			a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
@@ -627,7 +677,17 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// behaviour, default ON; off also stops the misc art fetches.
 	ccb := a.d.Prefs.Load().CharChatbox
 	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
-		a.d.Prefs.SetCharChatbox(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CharChatbox =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// #56 stage frame: a decorative border around the viewport (Off by default).
@@ -641,12 +701,32 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	defer c.popMuted(c.pushMuted(noFX)) // back under the master for the rest of the section
 	ent := a.d.Prefs.Load().AnimateEntrances
 	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
-		a.d.Prefs.SetAnimateEntrances(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AnimateEntrances =
+
+				next
+
+		})
+
 	}
 	y += 26
 	dof := a.d.Prefs.Load().DepthOfField
 	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
-		a.d.Prefs.SetDepthOfField(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DepthOfField =
+
+				next
+
+		})
+
 	}
 	y += 26
 	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
@@ -672,7 +752,17 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
 	brth := a.d.Prefs.Load().IdleBreath
 	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
-		a.d.Prefs.SetIdleBreath(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				IdleBreath =
+
+				next
+
+		})
+
 		brth = next
 	}
 	y += 26
@@ -680,7 +770,17 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		amp := a.d.Prefs.BreathAmp()
 		c.Label(pad+16, y+4, "Amount:", ColTextDim)
 		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
-			a.d.Prefs.SetBreathAmp(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BreathAmount =
+
+					next
+
+			})
+
 			amp = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
@@ -688,18 +788,48 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		spd := a.d.Prefs.BreathSpeed()
 		c.Label(pad+16, y+4, "Speed:", ColTextDim)
 		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
-			a.d.Prefs.SetBreathSpeed(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BreathRate =
+
+					next
+
+			})
+
 			spd = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
 		y += 26
 		bob := a.d.Prefs.BreathBobOn()
 		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
-			a.d.Prefs.SetBreathBob(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BreathNoBob =
+
+					next
+
+			})
+
 		}
 		scl := a.d.Prefs.BreathScaleOn()
 		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
-			a.d.Prefs.SetBreathScale(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BreathNoScale =
+
+					next
+
+			})
+
 		}
 		y += 26
 	}
@@ -858,7 +988,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// under load and never blocks live fetches (it uses more bandwidth + cache up front).
 	bundle := a.d.Prefs.Load().CharBundlePrefetch
 	if next := c.Checkbox(pad, y, "Preload a character's whole sprite set (OFF by default): grabs every emote up front so switching is instant — speculative, low-priority, more bandwidth", bundle); next != bundle {
-		a.d.Prefs.SetCharBundlePrefetch(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CharBundlePrefetch =
+
+				next
+
+		})
+
 	}
 	y += 28
 
@@ -866,7 +1006,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// round-trip time, with the exact ms on hover. Off by default → no ping loop runs.
 	pingChip := a.d.Prefs.Load().PingChip
 	if next := c.Checkbox(pad, y, "Connection ping chip (OFF by default): a tiny signal-bar icon (bottom-left); hover it for the exact ms", pingChip); next != pingChip {
-		a.d.Prefs.SetPingChip(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				PingChip =
+
+				next
+
+		})
+
 	}
 	y += 28
 
@@ -875,7 +1025,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// the old red banner it replaced is gone, so the label must not promise one).
 	showWarn := a.d.Prefs.Load().ShowAssetWarnings
 	if next := c.Checkbox(pad, y, "Show missing-asset warnings (OFF by default): a count chip in the menu bar — click it for Debug ▸ Log", showWarn); next != showWarn {
-		a.d.Prefs.SetAssetWarnings(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ShowAssetWarnings =
+
+				next
+
+		})
+
 	}
 	y += 28
 
@@ -883,7 +1043,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	// and settles into talk/idle; ON keeps it wrapping while it's on stage.
 	loopPre := a.d.Prefs.Load().LoopPreanim
 	if next := c.Checkbox(pad, y, "Loop preanimations (OFF by default): keep a preanim wrapping while it's on stage — AO2 plays them once", loopPre); next != loopPre {
-		a.d.Prefs.SetLoopPreanim(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				LoopPreanim =
+
+				next
+
+		})
+
 	}
 	y += 28
 
@@ -951,7 +1121,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y += 24
 	zstdOn := a.d.Prefs.Load().DiskZstd
 	if next := c.Checkbox(pad, y, "Compress disk cache with zstd (new writes only; smaller T3, tiny CPU on hits — old blobs always read fine)", zstdOn); next != zstdOn {
-		a.d.Prefs.SetDiskZstd(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DiskZstd =
+
+				next
+
+		})
+
 		a.d.Manager.SetDiskCompression(next)
 	}
 	y += 26
@@ -976,7 +1156,17 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, dcbLabel, ColTextDim)
 	if ndcb != dcb {
-		a.d.Prefs.SetDiskCacheBudgetMiB(ndcb)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DiskCacheBudgetMiBVal =
+
+				ndcb
+
+		})
+
 		a.d.Manager.SetDiskBudget(int64(a.d.Prefs.Load().DiskCacheBudgetMiBVal) << 20) // live; writer prunes on next sweep
 	}
 	y += 28
@@ -1178,14 +1368,34 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// SFX mix or the SFX mute never silences your name-pings) and global (alerts
 	// should reach you the same on every server).
 	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.Load().AlertVol); av != a.d.Prefs.Load().AlertVol {
-		a.d.Prefs.SetAlertVolume(av)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AlertVol =
+
+				av
+
+		})
+
 		a.applyAudioVolumes()
 	}
 	y += 32
 	// Music ducking (off by default): dip the music while a message plays.
 	duck := a.d.Prefs.Load().MusicDuckingOn
 	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {
-		a.d.Prefs.SetMusicDucking(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MusicDuckingOn =
+
+				next
+
+		})
+
 	}
 	y += 28
 	// Custom /play music streaming (ON by default): fetch and play /play tracks.

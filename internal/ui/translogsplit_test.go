@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 )
@@ -50,7 +51,17 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 	a.serverName = server
 
 	// Both sessions log; each must get its OWN writer.
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	w1, w2 := a.transcriptFor(server, first), a.transcriptFor(server, second)
 	if w1 == nil || w2 == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")

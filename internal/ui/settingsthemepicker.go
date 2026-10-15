@@ -27,7 +27,16 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	w := a.formW2()
 	on := a.d.Prefs.Load().CharDownloaderOn
 	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
-		a.d.Prefs.SetCharDownloader(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				CharDownloaderOn =
+
+				next
+
+		})
 	}
 	y += 24
 	c.Label(pad+20, y, "Tired of a multi-GB pack download for one file? Turn this on and a Download button appears on each", ColTextDim)
@@ -44,7 +53,17 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 		// speed unless you throttle them). Average-rate, applied per grab.
 		capKBps := a.d.Prefs.DownloadCapKBps()
 		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
-			a.d.Prefs.SetDownloadCapKBps(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DownloadKBps =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+270, y+4, "KiB/s — 0 = unlimited (full speed)", ColTextDim)
 		y += 30

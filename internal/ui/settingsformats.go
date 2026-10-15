@@ -389,7 +389,17 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	y = a.settingsSection(y, w, "Automatic detection")
 	auto := a.d.Prefs.Load().AutoDetectFormats
 	if next := c.Checkbox(pad, y, "Read the server's format list (extensions.json) when connecting (recommended, on by default)", auto); next != auto {
-		a.d.Prefs.SetFormatAutoDetect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoDetectFormats =
+
+				next
+
+		})
+
 		if next {
 			a.manifestFor = "" // re-check the current server right away
 			a.fetchManifestAsync()
@@ -401,7 +411,17 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 
 	deskWebP := !a.d.Prefs.Load().DeskFollowManifest
 	if next := c.Checkbox(pad, y, "Always use WebP for desks, even when the server's list says otherwise", deskWebP); next != deskWebP {
-		a.d.Prefs.SetDeskFollowManifest(!next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DeskFollowManifest =
+
+				!next
+
+		})
+
 		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
 		a.d.Resolver.InvalidateAll()
 		a.d.Resolver.WarmFromPrefs()

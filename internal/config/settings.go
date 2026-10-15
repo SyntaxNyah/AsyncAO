@@ -437,13 +437,20 @@ func copyByName(src, dst reflect.Value) {
 // fields stay the single source of truth until the final flip. Save keeps marshalling the
 // inline fields for now.
 func (p *AssetPreferences) Update(f func(*Settings)) {
-	cur := p.Load()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// rebuild the snapshot under the lock so the clone never races a concurrent write
+	// (the snapshot's map/slice fields are shallow-shared with the inline fields).
+	if p.settings.Load() == nil || p.stale.Load() {
+		p.syncSnapshot()
+		p.stale.Store(false)
+	}
+	cur := p.settings.Load()
 	s := cloneSettings(cur)
 	f(s)
 	changed := changedFieldNames(cur, s)
 	normalizeSettings(s)
 
-	p.mu.Lock()
 	sv, dv := reflect.ValueOf(s).Elem(), reflect.ValueOf(p).Elem()
 	for _, name := range changed {
 		sf, df := sv.FieldByName(name), dv.FieldByName(name)
@@ -453,7 +460,6 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	}
 	p.stale.Store(true)
 	p.markDirty()
-	p.mu.Unlock()
 }
 
 // changedFieldNames returns the Settings fields f mutated (before normalization), so only

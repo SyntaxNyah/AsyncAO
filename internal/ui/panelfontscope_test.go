@@ -41,7 +41,16 @@ func TestChromeFaceIsTheClientFontWhenUnset(t *testing.T) {
 // font and half in the chrome one.
 func TestPanelScopeArmsUnderTheDyslexiaSwitch(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetDyslexiaFont(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DyslexiaFont =
+
+			true
+
+	})
 	res := &themeApply{}
 	res.panelFace[elemPlayerList] = 1 // a FAMILY only, no size
 	res.faceData = [][]byte{{0x00}}

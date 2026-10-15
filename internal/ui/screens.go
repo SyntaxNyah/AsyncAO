@@ -906,7 +906,17 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	// routed through requestDisconnect — skip straight through. Untickable here too.
 	inst := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (disconnect instantly from now on)", inst); next != inst {
-		a.d.Prefs.SetInstantDisconnect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				InstantDisconnect =
+
+				next
+
+		})
+
 	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, disconnect") {
 		a.confirmDisconnect = false
@@ -952,7 +962,17 @@ func (a *App) drawCloseTabConfirm(w, h int32) {
 	// Esc) skip straight through. Untickable here too.
 	inst := a.d.Prefs.Load().InstantDisconnect
 	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (close/disconnect instantly from now on)", inst); next != inst {
-		a.d.Prefs.SetInstantDisconnect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				InstantDisconnect =
+
+				next
+
+		})
+
 	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, close tab") {
 		a.confirmPendingCloseTab() // revalidates the pointer's current index, then closeParkedTab

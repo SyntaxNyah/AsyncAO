@@ -20,6 +20,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -475,7 +476,17 @@ func (a *App) handleHotkeys() {
 		a.cycleEmote(1)
 	case a.hotkeyFor(hotkeyFriendHi):
 		on := !a.d.Prefs.Load().FriendHighlight
-		a.d.Prefs.SetFriendHighlight(on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FriendHighlight =
+
+				on
+
+		})
+
 		a.warnLine = "Friend highlights off"
 		if on {
 			a.warnLine = "Friend highlights on"
@@ -561,7 +572,17 @@ func (a *App) handleHotkeys() {
 // + the Settings tick). A short toast confirms, and points at how to fill it.
 func (a *App) toggleFavEmoteBox() {
 	on := !a.d.Prefs.Load().FavEmoteBox
-	a.d.Prefs.SetFavEmoteBox(on)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			FavEmoteBox =
+
+			on
+
+	})
+
 	if on {
 		a.warnLine = "Favourite-emotes box shown — ★ emotes in the grid to fill it"
 	} else {
@@ -886,7 +907,17 @@ func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 	if a.serverKey != "" {
 		a.d.Prefs.SetServerAudioVolumes(a.serverKey, master, music, sfx, blip)
 	} else {
-		a.d.Prefs.SetMasterVolume(master)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MasterVol =
+
+				master
+
+		})
+
 		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
 	}
 	a.applyAudioVolumes()
@@ -897,7 +928,17 @@ func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 // so this is the quick "turn it down/up" without reaching for a slider.
 func (a *App) nudgeMasterVolume(delta int) {
 	v := clampInt(a.d.Prefs.Load().MasterVol+delta, 0, 100)
-	a.d.Prefs.SetMasterVolume(v)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MasterVol =
+
+			v
+
+	})
+
 	a.applyAudioVolumes()
 	a.warnLine = "Master volume: " + strconv.Itoa(v) + "%"
 	a.warnAt = a.now()

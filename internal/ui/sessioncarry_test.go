@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/coder/websocket"
 )
 
@@ -186,7 +187,16 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Test Server", goodURL
 	seedCarryableLog(a, "before")
 	a.room = nil // roomless drop: takes handleInvoluntaryDrop's plain-teardown branch
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 
 	a.handleInvoluntaryDrop("connection closed")
 	if a.screen != ScreenLobby {
@@ -250,7 +260,16 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
 	a.room = nil // roomless drop: takes the plain-teardown+carry branch
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 
 	a.handleInvoluntaryDrop("connection closed")
 	if a.pendingSessionCarry == nil {

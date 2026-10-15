@@ -66,7 +66,17 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 
 	// Kill switch: classic mode never skips outside the courtroom.
 	a.screen = ScreenLobby
-	a.d.Prefs.SetEventDrivenLoop(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			EventDrivenLoop =
+
+			false
+
+	})
+
 	if a.SkipFrame(true, false) {
 		t.Error("classic: the lobby must keep its idle render")
 	}
@@ -97,7 +107,17 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 	}
 
 	a.ctx.caretOn = true // matches drawn again
-	a.d.Prefs.SetEventDrivenLoop(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			EventDrivenLoop =
+
+			false
+
+	})
+
 	a.room = &courtroom.Courtroom{}
 	a.sess = &courtroom.Session{}
 	if !a.SkipFrame(true, false) {
@@ -132,7 +152,17 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 func TestSkipFrameSharedRefusals(t *testing.T) {
 	for _, exp := range []bool{true, false} {
 		a := expApp(t)
-		a.d.Prefs.SetEventDrivenLoop(exp)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EventDrivenLoop =
+
+				exp
+
+		})
+
 		a.room = &courtroom.Courtroom{}
 		a.sess = &courtroom.Session{}
 
@@ -180,8 +210,29 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 	}
 
 	// Classic, idle rate on: past one idle budget it re-renders.
-	a.d.Prefs.SetEventDrivenLoop(false)
-	a.d.Prefs.SetIdleFPS(4) // 250 ms budget
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			EventDrivenLoop =
+
+			false
+
+	})
+
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			4
+
+	})
+
+	// 250 ms budget
 	a.lastFrameDrawn = time.Now()
 	if !a.SkipFrame(true, false) {
 		t.Error("classic: a just-drawn static courtroom skips within the idle budget")
@@ -192,7 +243,18 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 	}
 
 	// Classic, idle=off: it skips indefinitely (leans on caret/timer/input).
-	a.d.Prefs.SetIdleFPS(config.FPSOff)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			config.
+				FPSOff
+
+	})
+
 	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if !a.SkipFrame(true, false) {
 		t.Error("classic idle=off: no heartbeat — a static courtroom skips indefinitely")
@@ -235,13 +297,34 @@ func TestNextWakeDelay(t *testing.T) {
 	a := expApp(t)
 
 	// Idle-rate tick bounds an empty schedule and marks render.
-	a.d.Prefs.SetIdleFPS(4) // 250 ms idle budget
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			4
+
+	})
+
+	// 250 ms idle budget
 	if d, render := a.NextWakeDelay(true); d > 250*time.Millisecond || d < 150*time.Millisecond || !render {
 		t.Errorf("idle schedule: wake = %v render=%v, want ≈ 250ms + render", d, render)
 	}
 
 	// Isolate each scheduled deadline with the idle tick OFF.
-	a.d.Prefs.SetIdleFPS(config.FPSOff)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			config.
+				FPSOff
+
+	})
 
 	// A focused caret mid-blink: the flip pulls the wake in (render).
 	a.ctx.focusID = "field"
@@ -277,7 +360,17 @@ func TestNextWakeDelay(t *testing.T) {
 	}
 
 	// Overdue idle tick: floored, never zero/negative (busy-spin guard), render.
-	a.d.Prefs.SetIdleFPS(4)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			4
+
+	})
+
 	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if d, render := a.NextWakeDelay(true); d != minWakeDelay || !render {
 		t.Errorf("overdue: wake = %v render=%v, want the %v floor + render", d, minWakeDelay, render)

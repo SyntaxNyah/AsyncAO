@@ -39,8 +39,29 @@ func TestUpdateMatchesSetterAdapter(t *testing.T) {
 		set  func(*AssetPreferences)
 		upd  func(*Settings)
 	}{
-		{"SetMasterVolume", func(p *AssetPreferences) { p.SetMasterVolume(150) }, func(s *Settings) { s.MasterVol = 150 }},
-		{"SetAlertVolume", func(p *AssetPreferences) { p.SetAlertVolume(80) }, func(s *Settings) { s.AlertVol = 80 }},
+		{"SetMasterVolume", func(p *AssetPreferences) {
+			p.Update(func(
+				sn *Settings) {
+
+				sn.
+					MasterVol =
+
+					150
+
+			})
+		}, func(s *Settings) { s.MasterVol = 150 }},
+		{"SetAlertVolume", func(p *AssetPreferences) {
+			p.Update(func(
+				sn *Settings) {
+
+				sn.
+					AlertVol =
+
+					80
+
+			})
+
+		}, func(s *Settings) { s.AlertVol = 80 }},
 		{"SetSmoothScaling", func(p *AssetPreferences) { p.SetSmoothScaling(true) }, func(s *Settings) { s.SmoothScaling = true }},
 		{"SetUIScale", func(p *AssetPreferences) { p.SetUIScale(130) }, func(s *Settings) { s.UIScalePct = 130 }},
 		{"SetTexBudgetMiB", func(p *AssetPreferences) { p.SetTexBudgetMiB(999) }, func(s *Settings) { s.TexBudgetMiBVal = 999 }},

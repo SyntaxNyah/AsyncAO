@@ -27,7 +27,16 @@ func TestDisableAltEmoteRowGatesNumberRow(t *testing.T) {
 	a.emoteVisible = []int{0}
 	a.ctx.keyPressed, a.ctx.altHeld = sdl.K_1, true
 
-	prefs.SetDisableAltEmoteRow(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableAltEmoteRow =
+
+			true
+
+	})
 	a.handleEmoteKeys()
 
 	if a.ctx.focusNext != "" {

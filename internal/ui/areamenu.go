@@ -20,7 +20,10 @@ package ui
 // CM panel, so the menu ROUTES to that panel instead of growing its own copies —
 // the same rule the themed chip strip follows when a theme places AO2's own switch.
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 // areaMenuKindBase offsets the area rows well clear of the music/roster block's
 // iota run. Deliberate: the two blocks are declared in DIFFERENT files, and
@@ -135,7 +138,21 @@ func (a *App) areaMenuAct(k musicMenuKind) {
 		a.warnLine = clampLine("Re-asking the server for the area list (" + areaRefreshCommand + ")…")
 		a.warnAt = a.now()
 	case areaMenuPerAreaLog:
-		a.d.Prefs.SetPerAreaScrollback(!a.d.Prefs.Load().PerAreaScroll)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				PerAreaScroll =
+
+				!a.
+					d.
+					Prefs.
+					Load().
+					PerAreaScroll
+
+		})
+
 	case areaMenuCMPanel:
 		a.toggleCMPanel()
 	}

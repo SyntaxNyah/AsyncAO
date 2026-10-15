@@ -13,7 +13,10 @@ package ui
 // buttons" ask. Log and OOC are deliberately NOT tear-offable: Log is the home /
 // fallback tab, and OOC is already its own box in the new default.
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 const (
 	// tornTabHeaderH is a floating panel's title strip (drag handle in the editor).
@@ -389,7 +392,17 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		c.LabelClipped(ooChip.X+6, ooChip.Y+3, ooChip.W-12, label, ColText)
 		c.Tooltip(ooChip, "OOC chat: its own box (new) or back as a tab in the log panel (the old way)")
 		if c.clicked && pointIn(c.mouseX, c.mouseY, ooChip) {
-			a.d.Prefs.SetOOCInLogTab(!inTab)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					OOCInLogTab =
+
+					!inTab
+
+			})
+
 		}
 		tx += ow // advance past the OOC chip so the next chip doesn't overlap it
 	}

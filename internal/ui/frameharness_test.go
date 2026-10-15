@@ -54,6 +54,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -133,7 +134,18 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// call is guarded, but latching it keeps the frame free of first-frame-only work
 	// so frame 1 and frame 2 are comparable.
 	a.presenceInit = true
-	a.d.Prefs.SetFormatAutoDetect(false) // no extensions.json probe interposes
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// no extensions.json probe interposes
 	// macroBind is the one App field whose ZERO VALUE means "armed" — slot 0 of the
 	// macro key-capture — which is why the real constructor spells it out
 	// (app.go:3322). A hand-built fixture that leaves it at 0 reports

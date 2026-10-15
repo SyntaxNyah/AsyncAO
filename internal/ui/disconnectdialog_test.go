@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -86,7 +87,17 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 		{"ban", "Banned: cheating"},
 	} {
 		a := froomApp(t)
-		a.d.Prefs.SetAutoReconnect(true)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoReconnect =
+
+				true
+
+		})
+
 		a.handleInvoluntaryDrop(tc.reason)
 
 		if !a.disconnectDlg.open {
@@ -131,7 +142,17 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 	}
 	for _, tc := range cases {
 		a := froomApp(t)
-		a.d.Prefs.SetAutoReconnect(true)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoReconnect =
+
+				true
+
+		})
+
 		a.deliberateClose = tc.deliberate
 		if tc.roomless {
 			a.room = nil // char-select, or a session that never reached a courtroom
@@ -177,7 +198,17 @@ func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 // staying armed the whole way through.
 func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 	a := froomApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	a.screen = ScreenLobby // a drop already tore down to the lobby
 	a.connErr = "connection closed"
 	a.autoReconnectTries = 0

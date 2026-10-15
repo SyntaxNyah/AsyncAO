@@ -30,7 +30,16 @@ func testTabApp(t testing.TB) *App {
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
 	// dispatcher directly — enable them so those tests keep their old, on-by-default
 	// behaviour without each one having to opt in.
-	a.d.Prefs.SetHotkeysEnabled(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HotkeysEnabled =
+
+			true
+
+	})
 	a.resetSessionState()
 	// Detailed transcript logging is ON by default, so any test that writes an IC
 	// message opens a transcript writer goroutine (transcriptFor). Join it here so
@@ -78,7 +87,17 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	if a.masterMuted || a.musicMuted || a.sfxMuted || a.blipMuted {
 		t.Fatal("a fresh session must default unmuted")
 	}
-	a.d.Prefs.SetMasterVolMuted(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MasterVolMuted =
+
+			true
+
+	})
+
 	a.d.Prefs.SetSFXVolMuted(true)
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
@@ -304,7 +323,17 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	}
 
 	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
-	a.d.Prefs.SetMusicAcrossTabs(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	a.parkActive()
 	if a.musicTabDucked {
 		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
@@ -1101,7 +1130,17 @@ func TestTabBackgroundRouting(t *testing.T) {
 		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.icLog))
 	}
 	// With the opt-in pref ON, OOC counts toward the badge too.
-	a.d.Prefs.SetNotifyOnOOC(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			NotifyOnOOC =
+
+			true
+
+	})
+
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "yo"})
 	if tab.unread != 2 {
 		t.Fatalf("with NotifyOnOOC on, OOC must badge: unread=%d", tab.unread)
@@ -1158,7 +1197,17 @@ func TestCollectOpenTabs(t *testing.T) {
 // With the toggle OFF (default) switching areas never touches the log.
 func TestPerAreaScrollback(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPerAreaScrollback(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			PerAreaScroll =
+
+			true
+
+	})
+
 	a.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
 
 	a.switchAreaScrollback("C1")
@@ -1252,7 +1301,17 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	b := testTabApp(t)
 	b.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}}}
 	b.activeTab = 0
-	b.d.Prefs.SetInstantDisconnect(true)
+	b.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			InstantDisconnect =
+
+			true
+
+	})
+
 	b.requestCloseTab(1)
 	if b.pendingCloseTab != nil {
 		t.Error("Instant ON must not open a confirm")
@@ -1509,7 +1568,18 @@ func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
 // only in Frame, so a minimized tab stayed ducked until restore.
 func TestRederiveMessageDuckClearsStale(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetMusicDucking(true) // ducking enabled, so the phase is what decides
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicDuckingOn =
+
+			true
+
+	})
+
+	// ducking enabled, so the phase is what decides
 	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
 	// A message finished (phase is Idle) but the duck flag is stale-true.
 	a.musicDucked = true
@@ -1546,7 +1616,18 @@ func TestEventMusicStopClearsAwait(t *testing.T) {
 // whether a message was mid-flight when the switch happened.
 func TestParkClearsMessageDuckBeforeVolumes(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetMusicAcrossTabs(true) // the precondition: cross-tab stream stays audible
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
+	// the precondition: cross-tab stream stays audible
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}

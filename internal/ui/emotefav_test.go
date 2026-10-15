@@ -60,7 +60,17 @@ func TestRefreshEmoteView(t *testing.T) {
 	// Favourite emotes 1 and 3 and switch on favs-only: only those two show.
 	prefs.ToggleEmoteFav("Apollo", 1)
 	prefs.ToggleEmoteFav("Apollo", 3)
-	prefs.SetEmoteFavOnly(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			EmoteFavOnly =
+
+			true
+
+	})
+
 	a.emoteFavRev++ // mirror the UI's invalidation when a favourite/filter changes
 	a.refreshEmoteView()
 	if got := a.emoteVisible; len(got) != 2 || got[0] != 1 || got[1] != 3 {
@@ -83,7 +93,17 @@ func TestRefreshEmoteView(t *testing.T) {
 
 	// favBoxList holds the favourites regardless of the grid filter: with
 	// favs-only OFF the grid shows everything but the box still shows just [1 3].
-	prefs.SetEmoteFavOnly(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			EmoteFavOnly =
+
+			false
+
+	})
+
 	a.emoteFavRev++
 	a.refreshEmoteView()
 	if len(a.emoteVisible) != 5 {

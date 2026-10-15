@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -281,7 +282,17 @@ func TestJumpToAreaSelectsAndSends(t *testing.T) {
 // old log would be lost.
 func TestJumpToAreaDrivesScrollback(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPerAreaScrollback(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			PerAreaScroll =
+
+			true
+
+	})
+
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.curArea = "C1"
 	a.icLog = []icEntry{{text: "c1 line"}}
@@ -305,7 +316,17 @@ func TestJumpToAreaDrivesScrollback(t *testing.T) {
 func TestJumpToAreaGuards(t *testing.T) {
 	// nil session: nothing to transfer to.
 	a := testTabApp(t)
-	a.d.Prefs.SetPerAreaScrollback(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			PerAreaScroll =
+
+			true
+
+	})
+
 	a.curArea = "orig"
 	a.icLog = []icEntry{{text: "keep me"}}
 	a.jumpToArea("Elsewhere")

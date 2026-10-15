@@ -1165,7 +1165,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if r, ok := themedToggleRect(lay, "showname_enable", "", ""); ok {
 		show := !a.d.Prefs.Load().ForceCharNames
 		if next := c.CheckboxIn(r, lay.themedToggleLabel("showname_enable", "Shownames"), show); next != show {
-			a.d.Prefs.SetForceCharNames(!next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					ForceCharNames =
+
+					!next
+
+			})
+
 			// Push the LIVE room too, as the Settings surface does. Without this the
 			// pref lands but nothing re-reads it until an unrelated applyPrefsToRoom,
 			// so the toggle appears to do nothing for the rest of the session.

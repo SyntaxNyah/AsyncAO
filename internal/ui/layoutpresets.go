@@ -130,7 +130,18 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
 	a.seedHiddenFromPrefs()
 	// Editor snap grid.
-	a.d.Prefs.SetLayoutGridSize(p.GridPx)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			LayoutGridPx =
+
+			p.
+				GridPx
+
+	})
+
 	// THE CATCH (architect ruling 6): reset .placed on every persistable floatWin
 	// so an already-OPEN panel re-seeds from the applied profile's slots next frame
 	// (classic slots update immediately; floatWins otherwise cache x/y/placed). The

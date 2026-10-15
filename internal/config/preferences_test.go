@@ -49,9 +49,36 @@ func TestSetFormatOrderCompletes(t *testing.T) {
 		p.SetGlobalFallbacks(true)
 		p.SetTypeFallbacks(TypeSFX, true)
 		p.RecordLearned("example.com", TypeCharSprite, ExtWebP)
-		p.SetMasterVolume(80)
-		p.SetMusicVolMode(true)
-		p.SetAnimationsEnabled(false)
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MasterVol =
+
+				80
+
+		})
+
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MusicVolMode =
+
+				true
+
+		})
+
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				PreferAnimated =
+
+				false
+
+		})
+
 		close(finished)
 	}()
 
@@ -91,7 +118,18 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 
 	const burst = 50
 	for i := 0; i < burst; i++ {
-		p.SetMasterVolume(i % 100)
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MasterVol =
+
+				i %
+
+					100
+
+		})
+
 	}
 	waitForFile(t, path)
 	// Allow any straggler flush to settle, then verify final state on disk.
@@ -307,7 +345,16 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 	}
 
 	// 3) An explicit OFF must persist across a save/reload (omitempty removed).
-	fresh.SetMotionRedrawPerEvent(false)
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
 	if err := fresh.SaveNow(); err != nil {
 		t.Fatalf("save explicit OFF: %v", err)
 	}
@@ -352,8 +399,26 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	_ = lp.Close()
 
 	// 3) An explicit OFF + a custom delay must persist across save/reload.
-	fresh.SetEmoteHoverNames(false)
-	fresh.SetEmoteHoverNamesMs(2000)
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesOn =
+
+			false
+
+	})
+
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesMs =
+
+			2000
+
+	})
+
 	if err := fresh.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -371,7 +436,16 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	}
 
 	// 4) An out-of-range delay is clamped by the setter, not stored raw.
-	re.SetEmoteHoverNamesMs(999999)
+	re.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesMs =
+
+			999999
+
+	})
+
 	if got := re.EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
 		t.Errorf("oversize dwell = %d, want clamp to %d", got, maxEmoteHoverNamesMs)
 	}
@@ -385,14 +459,50 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	}
 
 	p.SetGlobalFallbacks(true)
-	p.SetAnimationsEnabled(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			PreferAnimated =
+
+			false
+
+	})
+
 	p.SetFormatOrder(TypeCharIcon, []string{ExtWebP, ExtPNG})
 	p.SetTypeFallbacks(TypeBlip, true)
 	p.RecordLearned("assets.example.com", TypeCharSprite, ExtWebP)
-	p.SetMasterVolume(37)
-	p.SetMusicVolMode(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			37
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicVolMode =
+
+			true
+
+	})
+
 	p.SetShowname("Nyah")
-	p.SetDebugOverlay(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DebugOverlay =
+
+			true
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -443,7 +553,16 @@ func TestLearnedExportImport(t *testing.T) {
 	if !p.Load().AutoDetectFormats {
 		t.Error("FormatAutoDetect should default ON")
 	}
-	p.SetFormatAutoDetect(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
 	p.RecordLearned("miku.pizza", TypeCharSprite, ExtWebP)
 	p.RecordLearned("other.example", TypeCharIcon, ExtPNG)
 
@@ -731,7 +850,16 @@ func TestLoadCorruptFileFallsBackToDefaults(t *testing.T) {
 
 func TestSaveNowLeavesNoTempFiles(t *testing.T) {
 	p, path := newTestPrefs(t)
-	p.SetMasterVolume(5)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			5
+
+	})
+
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("SaveNow: %v", err)
 	}
@@ -763,7 +891,15 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.SetMusicVolMode(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicVolMode =
+
+			true
+
+	})
 
 	start := time.Now()
 	if err := p.Close(); err != nil {
@@ -867,11 +1003,29 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 
 func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.SetMasterVolume(500)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			500
+
+	})
+
 	if got := p.Load().MasterVol; got != 100 {
 		t.Errorf("MasterVolume = %d, want clamped 100", got)
 	}
-	p.SetMasterVolume(-3)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			-3
+
+	})
+
 	if got := p.Load().MasterVol; got != 0 {
 		t.Errorf("MasterVolume = %d, want clamped 0", got)
 	}
@@ -902,7 +1056,18 @@ func TestConcurrentAccess(t *testing.T) {
 				case 3:
 					_ = p.LearnedSnapshot()
 				case 4:
-					p.SetMasterVolume(i % 100)
+					p.Update(func(
+						sn *Settings) {
+
+						sn.
+							MasterVol =
+
+							i %
+
+								100
+
+					})
+
 				case 5:
 					p.SetGlobalFallbacks(i%2 == 0)
 				}
@@ -1056,18 +1221,46 @@ func TestOOCScaleIndependent(t *testing.T) {
 
 	// Set the IC log to a non-default size and the OOC independently.
 	p.SetLayoutScales(DefaultViewportPercent, DefaultScalePercent, DefaultScalePercent, 180, DefaultScalePercent)
-	p.SetOOCScale(130)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			130
+
+	})
+
 	if got := p.Load().OOCScalePct; got != 130 {
 		t.Fatalf("OOC scale = %d, want 130 (independent of the 180 log size)", got)
 	}
 	if _, _, _, logT, _ := p.LayoutScales(); logT != 180 {
 		t.Fatalf("log scale = %d, want 180 (OOC change must not touch it)", logT)
 	}
-	p.SetOOCScale(9999) // clamps to the log-scale ceiling
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			9999
+
+	})
+
+	// clamps to the log-scale ceiling
 	if got := p.Load().OOCScalePct; got != MaxLogScalePercent {
 		t.Fatalf("OOC clamp = %d, want %d", got, MaxLogScalePercent)
 	}
-	p.SetOOCScale(125)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			125
+
+	})
+
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -1160,7 +1353,16 @@ func TestResetSettings(t *testing.T) {
 	defer p.Close()
 
 	p.SetAudioVolumes(0, 10, 20)
-	p.SetForceCharNames(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ForceCharNames =
+
+			true
+
+	})
+
 	p.SetTabCap(20)
 	p.SetCallWords([]string{"myname"})
 	p.AddFavorite("Home", "wss://home:2096", "")
@@ -1259,8 +1461,26 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	if p.Load().DNDPersist || p.Load().DNDSaved {
 		t.Fatal("DND persistence + state must default OFF (session-only)")
 	}
-	p.SetDNDPersist(true)
-	p.SetDNDSaved(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DNDPersist =
+
+			true
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DNDSaved =
+
+			true
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1293,7 +1513,16 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if p.Load().MasterVolMuted || p.Load().MusicVolMuted || p.Load().SFXVolMuted || p.Load().BlipVolMuted {
 		t.Fatal("all four channel mutes must default unmuted")
 	}
-	p.SetMasterVolMuted(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVolMuted =
+
+			true
+
+	})
+
 	p.SetSFXVolMuted(true)
 	// Music and blip are left OFF deliberately, so the reload assertion also
 	// catches a bug that sets every channel muted regardless of which one changed.
@@ -1326,11 +1555,30 @@ func TestAlertVolumeRoundTrip(t *testing.T) {
 	if p.Load().AlertVol != defaultAudioVolume {
 		t.Fatalf("AlertVolume default = %d, want %d", p.Load().AlertVol, defaultAudioVolume)
 	}
-	p.SetAlertVolume(150) // over-max clamps to 100
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AlertVol =
+
+			150
+
+	})
+
+	// over-max clamps to 100
 	if p.Load().AlertVol != 100 {
 		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.Load().AlertVol)
 	}
-	p.SetAlertVolume(40)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AlertVol =
+
+			40
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1351,7 +1599,16 @@ func TestResetAll(t *testing.T) {
 	}
 	defer p.Close()
 
-	p.SetForceCharNames(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ForceCharNames =
+
+			true
+
+	})
+
 	p.SetCallWords([]string{"myname"})
 	p.AddFavorite("Home", "wss://home:2096", "")
 
@@ -1769,7 +2026,17 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if !p.Load().DeskFollowManifest {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
-		p.SetDeskFollowManifest(false) // the user re-pins WebP after updating
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				DeskFollowManifest =
+
+				false
+
+		})
+
+		// the user re-pins WebP after updating
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
@@ -1865,7 +2132,17 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if !p.Load().DetailedLog {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
-		p.SetDetailedLog(false) // the user turns the transcript back off after updating
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				DetailedLog =
+
+				false
+
+		})
+
+		// the user turns the transcript back off after updating
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
@@ -1943,7 +2220,16 @@ func TestSendOptionDefaults(t *testing.T) {
 	p.SetStickyEffects(false)
 	p.SetStickyPreanims(false)
 	p.SetSFXOnIdle(true)
-	p.SetGhostCrawlText(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			GhostCrawlText =
+
+			false
+
+	})
+
 	p.SetUnfocusedFullRate(true)
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)

@@ -40,8 +40,26 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 	prefs.SetSpriteWobble(true)
 	prefs.SetSpriteSpin(true)
 	prefs.SetShoutPunch(true)
-	prefs.SetAnimateEntrances(true)
-	prefs.SetDepthOfField(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AnimateEntrances =
+
+			true
+
+	})
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DepthOfField =
+
+			true
+
+	})
 	prefs.SetSpotlight(true)
 	prefs.SetReflection(true)
 	prefs.SetPostCRT(true)
@@ -58,7 +76,16 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 		t.Fatalf("rig failed to enable the post FX: %+v", got)
 	}
 
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
 
 	wantScaling := courtroom.ScalingMode(prefs.SpriteScalingMode())
 	if got, want := a.spriteFX(), (render.SpriteFX{UserScaling: wantScaling}); got != want {
@@ -70,7 +97,17 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 
 	// Turning it back off restores the player's own choices untouched — the master
 	// overrules, it must never rewrite the individual preferences.
-	prefs.SetDisableEffects(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			false
+
+	})
+
 	if got := a.spriteFX(); !got.Rainbow || !got.Spin || !got.Entrance {
 		t.Errorf("unticking the master didn't restore the user's FX: %+v", got)
 	}
@@ -92,7 +129,17 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	}
 
 	a.reactionFloats = a.reactionFloats[:0]
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
+
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
 	if len(a.reactionFloats) != 0 {
 		t.Error("the master off-switch didn't suppress an incoming reaction float")
@@ -113,7 +160,17 @@ func TestDisableEffectsRoundTrips(t *testing.T) {
 	if prefs.Load().DisableEffects {
 		t.Error("the master off-switch must default to OFF (effects render)")
 	}
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
+
 	if err := prefs.SaveNow(); err != nil {
 		t.Fatal(err)
 	}

@@ -583,11 +583,41 @@ const volStripRowsH = int32(44)
 func (a *App) persistChannelMute(id string, on bool) {
 	switch id {
 	case "master":
-		a.d.Prefs.SetMasterVolMuted(on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MasterVolMuted =
+
+				on
+
+		})
+
 	case "music":
-		a.d.Prefs.SetMusicVolMuted(on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MusicVolMuted =
+
+				on
+
+		})
+
 	case "blip":
-		a.d.Prefs.SetBlipVolMuted(on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				BlipVolMuted =
+
+				on
+
+		})
+
 	}
 }
 

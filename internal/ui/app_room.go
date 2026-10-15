@@ -1616,7 +1616,17 @@ func (a *App) applyTimingToRoom() {
 // currently-streaming track (and cancels a pending fetch) so it goes silent at
 // once instead of on the next song change.
 func (a *App) applyMusicStreaming(on bool) {
-	a.d.Prefs.SetMusicStreaming(on)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicStreaming =
+
+			on
+
+	})
+
 	if a.room != nil {
 		a.room.StreamMusic = on
 	}
@@ -1650,7 +1660,17 @@ func (a *App) applyMusicStreaming(on bool) {
 // user flipping the box IS the yank request. The stream keeps playing (position
 // advances); only its volume drops, so flipping back ON restores it in place.
 func (a *App) applyMusicAcrossTabs(on bool) {
-	a.d.Prefs.SetMusicAcrossTabs(on)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			on
+
+	})
+
 	if on {
 		a.musicTabDucked = false
 		a.musicAwaitURL = ""

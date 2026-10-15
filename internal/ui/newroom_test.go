@@ -31,6 +31,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -87,7 +88,18 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 		Pool:      pool,
 		Decoder:   decoder,
 	})
-	a.d.Prefs.SetFormatAutoDetect(false) // no manifest fetch interposes on the export path
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// no manifest fetch interposes on the export path
 	return a, mount, cleanup
 }
 
@@ -264,11 +276,42 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				// dark while an authoring one stays lit, and at want=true a
 				// pref-driven room must drop received sprite styles while an
 				// authoring one keeps them.
-				a.d.Prefs.SetHideSpriteStyles(want)
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						HideSpriteStyles =
+
+						want
+
+				})
+
 				// Driven too, so the "not exempt" half of the exemption is not a
 				// vacuous false==false: the naming pref must reach all six rooms.
-				a.d.Prefs.SetForceCharNames(want)
-				a.d.Prefs.SetDisableEffects(false) // the master off-switch is not what is under test here
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						ForceCharNames =
+
+						want
+
+				})
+
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						DisableEffects =
+
+						false
+
+				})
+
+				// the master off-switch is not what is under test here
 
 				room := p.drive(t, a)
 				if p.stop != nil {
@@ -393,8 +436,27 @@ func TestAuthoringRoomsSurviveTheMasterEffectsOffSwitch(t *testing.T) {
 		t.Run(p.name, func(t *testing.T) {
 			a, cleanup := roomFactoryApp(t)
 			defer cleanup()
-			a.d.Prefs.SetDisableEffects(true)
-			defer a.d.Prefs.SetDisableEffects(false)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DisableEffects =
+
+					true
+
+			})
+
+			defer a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DisableEffects =
+
+					false
+
+			})
 
 			room := p.drive(t, a)
 			if p.stop != nil {

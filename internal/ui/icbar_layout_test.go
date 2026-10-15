@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -229,7 +230,17 @@ func TestICBarPreFXSurvive720p(t *testing.T) {
 		haveLast bool
 	}
 	for _, counterOn := range []bool{true, false} {
-		a.d.Prefs.SetMessageCounter(counterOn)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MessageCounter =
+
+				counterOn
+
+		})
+
 		if got := a.d.Prefs.Load().MessageCounter; got != counterOn {
 			t.Fatalf("SetMessageCounter(%v) didn't stick (got %v)", counterOn, got)
 		}

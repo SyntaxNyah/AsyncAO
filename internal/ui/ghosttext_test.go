@@ -25,7 +25,16 @@ func TestGhostCrawlTextShipsOn(t *testing.T) {
 	if !p.Load().GhostCrawlText {
 		t.Fatal("GhostCrawlText must ship ON")
 	}
-	p.SetGhostCrawlText(false)
+	p.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			GhostCrawlText =
+
+			false
+
+	})
 	if p.Load().GhostCrawlText {
 		t.Fatal("turning ghost text off must stick")
 	}

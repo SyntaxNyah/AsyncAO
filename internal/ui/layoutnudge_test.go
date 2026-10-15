@@ -13,6 +13,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -434,7 +435,17 @@ func TestClassicNudgeWalksOnePixelAtATime(t *testing.T) {
 func TestClassicCoarseNudgeLandsOnTheGrid(t *testing.T) {
 	for _, grid := range []int{4, 8, 16, 32} {
 		a := stageClassicNudge(t)
-		a.d.Prefs.SetLayoutGridSize(grid)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				LayoutGridPx =
+
+				grid
+
+		})
+
 		before := classicNudgeRect(a)
 		if before.X%int32(grid) == 0 {
 			t.Fatalf("fixture: X=%d already sits on the %d px grid", before.X, grid)

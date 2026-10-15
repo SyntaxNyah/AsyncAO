@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -113,7 +114,17 @@ func (a *App) drawEmoteFavToggle(btn sdl.Rect) {
 		c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColStar)
 	}
 	if c.Button(btn, "★ Favs") {
-		a.d.Prefs.SetEmoteFavOnly(!on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteFavOnly =
+
+				!on
+
+		})
+
 		a.emoteFavRev++ // force the visible list to rebuild for the new filter state
 	}
 	c.Tooltip(btn, "Show only your favourite emotes — click the ★ on an emote to add it")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -22,7 +23,16 @@ import (
 // advance tries twice here.
 func TestAutoReconnectIdempotentInDueWindow(t *testing.T) {
 	a := froomApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 	a.screen = ScreenLobby // the retry fires only from the lobby (v1.70.0 behaviour)
 	a.connErr = "connection closed"
 	a.autoReconnectTries = 0

@@ -695,7 +695,22 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Grid chip: cycles the snap step (4 → 8 → 16 → 32, persisted) — playtest
 	// request (Tifera): a user-editable snap grid.
 	if c.clicked && pointIn(c.mouseX, c.mouseY, gridBtn) {
-		a.d.Prefs.SetLayoutGridSize(nextLayoutGridSize(a.d.Prefs.LayoutGridSize()))
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				LayoutGridPx =
+
+				nextLayoutGridSize(
+					a.
+						d.
+						Prefs.
+						LayoutGridSize(),
+				)
+
+		})
+
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, aspectBtn) {
 		a.layoutAspect = !a.layoutAspect // lock/unlock the stage's 4:3 while resizing it

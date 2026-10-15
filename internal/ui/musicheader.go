@@ -571,7 +571,18 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	switch k {
 	case musicMenuVolumeView:
 		a.musicVolMode = !a.musicVolMode
-		a.d.Prefs.SetMusicVolMode(a.musicVolMode)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MusicVolMode =
+
+				a.
+					musicVolMode
+
+		})
+
 	case musicMenuFadeIn:
 		a.toggleMusicFlag(config.MusicFlagFadeIn)
 	case musicMenuFadeOut:
@@ -610,7 +621,17 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 		a.pairStatusShow = next
 	case musicMenuFollow:
 		next := !a.d.Prefs.Load().FollowEnabled
-		a.d.Prefs.SetFollowEnabled(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FollowEnabled =
+
+				next
+
+		})
+
 		a.followShow = next
 		if !next {
 			a.followUID = "" // turning it off stops any active trailing
@@ -620,5 +641,20 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 
 // toggleMusicFlag flips one MUSIC_EFFECT bit in the persisted mask.
 func (a *App) toggleMusicFlag(bit int) {
-	a.d.Prefs.SetMusicFlags(a.d.Prefs.MusicFlags() ^ bit)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicFlagsVal =
+
+			a.
+				d.
+				Prefs.
+				MusicFlags() ^
+
+				bit
+
+	})
+
 }

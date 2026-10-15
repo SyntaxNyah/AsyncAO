@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 // The floating Favourite-Emotes box (#85): a small, movable, on-top panel showing
 // just the current character's STARRED emotes as clickable sprite buttons — a
@@ -81,7 +84,17 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
 	c.Label(r.X+8, r.Y+6, "★ Favourite Emotes", ColStar)
 	if c.Button(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x") {
-		a.d.Prefs.SetFavEmoteBox(false)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FavEmoteBox =
+
+				false
+
+		})
+
 		return
 	}
 	a.handleFavBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, w, h, pressed)

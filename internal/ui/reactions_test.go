@@ -86,7 +86,17 @@ func TestOnIncomingReactionGate(t *testing.T) {
 	}
 	// Viewer opted out → suppressed.
 	a.reactionFloats = a.reactionFloats[:0]
-	prefs.SetHideReactions(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HideReactions =
+
+			true
+
+	})
+
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
 	if len(a.reactionFloats) != 0 {
 		t.Error("HideReactions didn't suppress an incoming float")

@@ -1315,7 +1315,17 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	anims := a.d.Prefs.Load().PreferAnimated
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
-		a.d.Prefs.SetAnimationsEnabled(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				PreferAnimated =
+
+				next
+
+		})
+
 	}
 	y += 26
 	reduce := a.d.Prefs.Load().ReduceMotionOn
@@ -1329,7 +1339,17 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// received style's wobble/spin; this hides the whole thing.
 	hideStyles := a.d.Prefs.Load().HideSpriteStyles
 	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour, glow, spinning, wobble, motion paths and glitch)", hideStyles); next != hideStyles {
-		a.d.Prefs.SetHideSpriteStyles(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideSpriteStyles =
+
+				next
+
+		})
+
 		if a.room != nil {
 			a.room.HideSpriteStyles = next
 		}
@@ -1339,49 +1359,139 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// stage). Sending your own reactions is unaffected — this only hides incoming floats.
 	hideReact := a.d.Prefs.Load().HideReactions
 	if next := c.Checkbox(pad, y, "Hide other players' emoji reactions: don't float their reaction emoji over the stage (#2)", hideReact); next != hideReact {
-		a.d.Prefs.SetHideReactions(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideReactions =
+
+				next
+
+		})
+
 	}
 	y += 26
 	emoteImgs := a.d.Prefs.Load().EmoteButtonImages
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats in Assets)", emoteImgs); next != emoteImgs {
-		a.d.Prefs.SetEmoteButtonImages(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteButtonImages =
+
+				next
+
+		})
+
 	}
 	y += 26
 	emoteCaps := a.d.Prefs.Load().EmoteCaptions
 	if next := c.Checkbox(pad, y, "Emote-name captions (OFF by default): when a character has no button art, overlay the emote name on the fallback icon. Off keeps the buttons clean (just icons); on helps tell identical fallback icons apart.", emoteCaps); next != emoteCaps {
-		a.d.Prefs.SetEmoteCaptions(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteCaptions =
+
+				next
+
+		})
+
 	}
 	y += 26
 	favStars := a.d.Prefs.Load().EmoteFavStars
 	if next := c.Checkbox(pad, y, "Emote favourites (OFF by default): show a ★ on every emote button so you can star the ones you use, plus the ★ Favs filter. Off keeps the grid clean if you don't use it.", favStars); next != favStars {
-		a.d.Prefs.SetEmoteFavStars(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteFavStars =
+
+				next
+
+		})
+
 		a.emoteFavRev++ // rebuild the view for the new state
 	}
 	y += 26
 	favOnly := a.d.Prefs.Load().EmoteFavOnly
 	if next := c.Checkbox(pad, y, "Show favourite emotes only (OFF by default): hides everything but the emotes you've starred. Click the ★ on an emote button to favourite it (per character). The classic grid also has a ★ Favs button.", favOnly); next != favOnly {
-		a.d.Prefs.SetEmoteFavOnly(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteFavOnly =
+
+				next
+
+		})
+
 		a.emoteFavRev++ // rebuild the visible list for the new filter state
 	}
 	y += 26
 	favBox := a.d.Prefs.Load().FavEmoteBox
 	if next := c.Checkbox(pad, y, "Favourite-emotes box (OFF by default): a small movable box of just your starred emotes as clickable buttons — press one to use that emote. Also opens with Ctrl+A (rebindable in the Controls tab).", favBox); next != favBox {
-		a.d.Prefs.SetFavEmoteBox(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FavEmoteBox =
+
+				next
+
+		})
+
 	}
 	y += 30
 	dbg := a.d.Prefs.Load().DebugOverlay
 	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {
-		a.d.Prefs.SetDebugOverlay(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DebugOverlay =
+
+				next
+
+		})
+
 	}
 	y += 26
 	notifOOC := a.d.Prefs.Load().NotifyOnOOC
 	if next := c.Checkbox(pad, y, "Count OOC in the unread tab badge (OFF by default): otherwise only IC chat lights up a background tab's \"(N)\" — so server auto-messages (hourly reminders, etc.) don't ping you", notifOOC); next != notifOOC {
-		a.d.Prefs.SetNotifyOnOOC(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				NotifyOnOOC =
+
+				next
+
+		})
+
 	}
 	y += 26
 	fcn := a.d.Prefs.Load().ForceCharNames
 	if next := c.Checkbox(pad, y, "Force character names (OFF by default): show everyone's CHARACTER name, not custom shownames — true-roleplay / anti-impersonation (casing)", fcn); next != fcn {
-		a.d.Prefs.SetForceCharNames(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ForceCharNames =
+
+				next
+
+		})
+
 		if a.room != nil {
 			a.room.ForceCharNames = next // apply to the running session immediately
 		}
@@ -1449,18 +1559,48 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// tunable. Lightweight — a name-only tooltip, not the full-size art.
 	names := a.d.Prefs.Load().EmoteHoverNamesOn
 	if next := c.Checkbox(pad, y, "Emote name tooltips (ON by default): hovering an emote button shows its name after a short delay", names); next != names {
-		a.d.Prefs.SetEmoteHoverNames(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteHoverNamesOn =
+
+				next
+
+		})
+
 	}
 	y += 26
 	altRow := a.d.Prefs.Load().DisableAltEmoteRow
 	if next := c.Checkbox(pad, y, "Disable the Alt+1..9 emote number row (OFF by default): the digits pick the emote shown on the current page. Disable to make Alt+1..9 type digits instead.", altRow); next != altRow {
-		a.d.Prefs.SetDisableAltEmoteRow(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DisableAltEmoteRow =
+
+				next
+
+		})
+
 	}
 	y += 26
 	if names {
 		ems := a.d.Prefs.EmoteHoverNamesMillis()
 		if next := a.emoteNameDelayRow(y, ems); next != ems {
-			a.d.Prefs.SetEmoteHoverNamesMs(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					EmoteHoverNamesMs =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
@@ -1500,7 +1640,17 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Hide the desk (the foreground table the character stands behind).
 	hideDesk := a.d.Prefs.Load().HideDesk
 	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows.", hideDesk); next != hideDesk {
-		a.d.Prefs.SetHideDesk(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideDesk =
+
+				next
+
+		})
+
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Application")
@@ -1511,7 +1661,17 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	alt := a.d.Prefs.Load().AutoLoginToast
 	if next := c.Checkbox(pad, y, "Notify me when auto-login signs me in (toast + desktop notification — ON by default, so a mod knows they're logged in)", alt); next != alt {
-		a.d.Prefs.SetAutoLoginToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoLoginToast =
+
+				next
+
+		})
+
 	}
 	y += 26
 	tabCap := a.d.Prefs.TabCap()
@@ -1541,21 +1701,51 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Stage")
 	slideOn := a.d.Prefs.Load().BgSlideshow
 	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
-		a.d.Prefs.SetBgSlideshow(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				BgSlideshow =
+
+				next
+
+		})
+
 	}
 	y += 26
 	if slideOn {
 		secs := a.d.Prefs.BgSlideshowSeconds()
 		// Bounds match the config clamp (3..600s); SetBgSlideshowSeconds is authoritative.
 		if next := a.numberRow(y, "  Seconds per background", secs, 1, 3, 600); next != secs {
-			a.d.Prefs.SetBgSlideshowSeconds(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BgSlideshowSecs =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+270, y+4, "only while idle — a message instantly shows the real area background again", ColTextDim)
 		y += 30
 	}
 	dragLay := a.d.Prefs.Load().DragLayout
 	if next := c.Checkbox(pad, y, "Drag panel edges to resize the courtroom (ON by default): grab the viewport's right edge to make it bigger / the log smaller — uncheck for the +/− View/Text/MsgBox/Log/Input knob buttons instead", dragLay); next != dragLay {
-		a.d.Prefs.SetDragLayout(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DragLayout =
+
+				next
+
+		})
+
 	}
 	y += 26
 	smooth := a.d.Prefs.Load().SmoothScaling
@@ -1647,12 +1837,32 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	op := a.d.Prefs.Load().ChatboxOpacity
 	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity,
 		"How see-through the chatbox panel is: 0 = text only, 100 = solid. Only the flat fallback panel — a theme's own skin keeps its art."); v != op {
-		a.d.Prefs.SetChatboxOpacity(v)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ChatboxOpacity =
+
+				v
+
+		})
+
 	}
 	y += 34
 	tint := a.d.Prefs.Load().ChatboxTint
 	if next := c.Checkbox(pad, y, "Per-character chatbox tint (OFF by default): the chatbox takes a hint of each speaker's colour", tint); next != tint {
-		a.d.Prefs.SetChatboxTint(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ChatboxTint =
+
+				next
+
+		})
+
 	}
 	y += 26
 
@@ -1789,12 +1999,32 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// instead of waiting for a build.
 	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
-		a.d.Prefs.SetFontCensus(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FontCensus =
+
+				next
+
+		})
+
 	}
 	y += 26
 	dys := a.d.Prefs.Load().DyslexiaFont
 	if next := c.Checkbox(pad, y, "Dyslexia-friendly font (bundled OpenDyslexic) — applies to the chat & log text", dys); next != dys {
-		a.d.Prefs.SetDyslexiaFont(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DyslexiaFont =
+
+				next
+
+		})
+
 		a.applyFontConfig()
 		if next {
 			settings.statusLine = "Dyslexia-friendly font on (OpenDyslexic)."
@@ -1842,7 +2072,17 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// in buttons; chat/log stay the reading-optimized surface either way.
 	few := a.d.Prefs.Load().FontEverywhere
 	if next := c.Checkbox(pad, y, "Use the font everywhere — menus, buttons, lists & tabs too (not just chat)", few); next != few {
-		a.d.Prefs.SetFontEverywhere(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FontEverywhere =
+
+				next
+
+		})
+
 		a.applyFontConfig()
 		switch {
 		case !next:

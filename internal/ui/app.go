@@ -543,7 +543,7 @@ type App struct {
 	// families. Kept after the toast has faded so the Settings screen can still
 	// explain it — the toast is gone by the time anyone goes looking for why the
 	// font is wrong.
-	themeFontWarn     string
+	themeFontWarn string
 	// fontWarnDlg is the missing-fonts modal. On App and NOT on sessionState,
 	// unlike disconnectDlg: that dialog belongs to one tab's frozen session, while
 	// a theme is global to the client — one theme, one warning, whichever tab
@@ -1785,14 +1785,14 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}()
 	a.armBootThemeResize(a.applyThemeAsync())                                   // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
-	a.oocPct = d.Prefs.Load().OOCScalePct                                               // OOC log text size, independent of the IC log
+	a.oocPct = d.Prefs.Load().OOCScalePct                                       // OOC log text size, independent of the IC log
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.areaPct = a.logPct                                                        // same for the Areas list (all three hosts: docked tab, torn, themed)
 	a.modDashPct = a.logPct                                                     // same for the Mod/CM dashboard lists
 	a.uiScalePct = d.Prefs.Load().UIScalePct
 	ctx.SetUIScale(a.uiScalePct)
-	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
+	a.applyFontConfig()                                            // dyslexia toggle or manual font path, resolved once
 	a.dndOn = d.Prefs.Load().DNDPersist && d.Prefs.Load().DNDSaved // else session-only: clears each launch
 	a.RefreshServers()
 	// Restore-on-launch (opt-in, OFF by default): queue the remembered tabs;
@@ -2055,14 +2055,36 @@ func (a *App) setTheater(on bool) {
 func (a *App) setDND(on bool) {
 	a.dndOn = on
 	if a.d.Prefs.Load().DNDPersist {
-		a.d.Prefs.SetDNDSaved(on)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DNDSaved =
+
+				on
+
+		})
+
 	}
 }
 
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
 	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct)
-	a.d.Prefs.SetOOCScale(a.oocPct) // independent OOC log text size
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			OOCScalePct =
+
+			a.
+				oocPct
+
+	})
+
+	// independent OOC log text size
 }
 
 // inputFieldH is the scaled IC/OOC input height.

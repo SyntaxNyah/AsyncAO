@@ -19,7 +19,15 @@ func TestDisableAltEmoteRowPref(t *testing.T) {
 	if p.Load().DisableAltEmoteRow {
 		t.Error("the Alt+1..9 number row should default to WORKING (disable flag OFF)")
 	}
-	p.SetDisableAltEmoteRow(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DisableAltEmoteRow =
+
+			true
+
+	})
 	if !p.Load().DisableAltEmoteRow {
 		t.Error("SetDisableAltEmoteRow(true) didn't take")
 	}

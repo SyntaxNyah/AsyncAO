@@ -214,7 +214,18 @@ func TestAutoLoginFiresOnce(t *testing.T) {
 		a.frameNow = time.Now()
 		a.serverKey = "ws://login.test"
 		a.d.Prefs.SetServerLogin(a.serverKey, "admin", "hunter2", true) // AutoLogin ON
-		a.d.Prefs.SetAutoLoginToast(false)                              // no OS toast side effect in the test
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoLoginToast =
+
+				false
+
+		})
+
+		// no OS toast side effect in the test
 		return a
 	}
 

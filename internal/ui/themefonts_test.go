@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -293,7 +294,19 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 		apply func(a *App)
 	}{
 		{"manual font paths", func(a *App) { a.d.Prefs.SetFontPaths(`C:\some\font.ttf`) }},
-		{"dyslexia toggle", func(a *App) { a.d.Prefs.SetDyslexiaFont(true) }},
+		{"dyslexia toggle", func(a *App) {
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DyslexiaFont =
+
+					true
+
+			})
+
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := testTabApp(t)

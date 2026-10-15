@@ -14,6 +14,7 @@ package ui
 // question rather than trusting a list of teardown sites to stay complete.
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"testing"
 )
 
@@ -23,7 +24,16 @@ import (
 func transcriptTestApp(t *testing.T, server string) *App {
 	t.Helper()
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
 	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 	if a.transcriptFor(server, a.logSession) == nil {

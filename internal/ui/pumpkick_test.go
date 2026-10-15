@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -53,7 +54,18 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true) // on, to prove a kick STILL doesn't rearm (asserted below)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	// on, to prove a kick STILL doesn't rearm (asserted below)
 	// Neutralize the async theme reload Disconnect()→ensureThemeForSession would
 	// otherwise kick off: with the applied name already matching the pref, it's a
 	// no-op (themeAppliedName lives on App, so resetSessionState won't clear it).

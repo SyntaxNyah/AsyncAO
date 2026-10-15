@@ -46,7 +46,16 @@ func TestUpdatePingLoopOff(t *testing.T) {
 		t.Fatal("chip off started a ping loop")
 	}
 	// Even with the chip ON, no connection means no loop.
-	prefs.SetPingChip(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			PingChip =
+
+			true
+
+	})
 	a.updatePingLoop()
 	if a.pingConn != nil {
 		t.Error("chip on with no connection started a ping loop")
