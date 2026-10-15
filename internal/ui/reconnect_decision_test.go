@@ -233,7 +233,7 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		<-ws.CloseRead(context.Background()).Done()
 	}))
 	defer srv.Close()
 	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
@@ -291,7 +291,7 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		<-ws.CloseRead(context.Background()).Done()
 	}))
 	defer srv.Close()
 	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
