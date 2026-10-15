@@ -419,3 +419,94 @@ func copyByName(src, dst reflect.Value) {
 		}
 	}
 }
+
+// Update applies f to a clone of the current snapshot, clamps the result to the same
+// ranges the setters enforce, and writes only the changed fields back into the inline data
+// fields by reflection under the write lock, then marks the snapshot stale. This is the B2
+// writer: setters migrate to `p.Update(func(s *Settings){ s.Field = v })` so the inline
+// fields stay the single source of truth until the final flip. Save keeps marshalling the
+// inline fields for now.
+func (p *AssetPreferences) Update(f func(*Settings)) {
+	cur := p.Load()
+	s := cloneSettings(cur)
+	f(s)
+	clampSettings(s)
+
+	p.mu.Lock()
+	writeChangedByName(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem(), reflect.ValueOf(cur).Elem())
+	p.stale.Store(true)
+	p.markDirty()
+	p.mu.Unlock()
+}
+
+// writeChangedByName copies the Settings fields that differ from cur back into the inline
+// data fields (matched by field name), leaving untouched fields alone.
+func writeChangedByName(dst, s, cur reflect.Value) {
+	for i := 0; i < s.NumField(); i++ {
+		name := s.Type().Field(i).Name
+		sf, df, cf := s.Field(i), dst.FieldByName(name), cur.FieldByName(name)
+		if !df.IsValid() || !df.CanSet() || !cf.IsValid() || sf.Type() != df.Type() {
+			continue
+		}
+		if !reflect.DeepEqual(sf.Interface(), cf.Interface()) {
+			df.Set(sf)
+		}
+	}
+}
+
+// clampSettings reproduces the write-path range clamps the setters enforce, so an
+// out-of-range assignment through Update normalizes exactly like the setter it replaces.
+// The one-shot migration stamps live in normalize() (load path) and are not re-applied here.
+func clampSettings(s *Settings) {
+	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
+	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	s.CatchUpThreshold = clampPercent(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	s.MultiTabCap = clampPercent(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	s.PreviewHoverMs = clampPercent(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	s.EmoteHoverNamesMs = clampPercent(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	s.MusicVol = clampPercent(s.MusicVol, 0, defaultAudioVolume)
+	s.SFXVol = clampPercent(s.SFXVol, 0, defaultAudioVolume)
+	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
+	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
+	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
+	s.HighlightColor &= 0xFFFFFF
+	s.ICCustomColor &= 0xFFFFFF
+	s.SpriteTintColor &= 0xFFFFFF
+	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
+	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	s.NameSat = clampPercent(s.NameSat, 0, 100)
+	s.MusicFlagsVal &= MusicFlagsMask
+	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
+	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	if s.TexBudgetMiBVal != 0 {
+		s.TexBudgetMiBVal = clampPercent(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
+	}
+	if s.AnimatedBudgetMiBVal != 0 {
+		s.AnimatedBudgetMiBVal = clampPercent(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
+	}
+	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
+	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
+	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	if s.ViewportPct != 0 {
+		s.ViewportPct = clampPercent(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
+	}
+	if s.ChatScalePct != 0 {
+		s.ChatScalePct = clampPercent(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+	}
+	if s.ChatBoxPct != 0 {
+		s.ChatBoxPct = clampPercent(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+	}
+	if s.LogScalePct != 0 {
+		s.LogScalePct = clampPercent(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	if s.InputHeightPct != 0 {
+		s.InputHeightPct = clampPercent(s.InputHeightPct, MinInputPercent, MaxInputPercent)
+	}
+	if s.UIScalePct != 0 {
+		s.UIScalePct = clampPercent(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+	}
+	if s.ThemeFitZoom != 0 {
+		s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	}
+}
