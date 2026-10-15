@@ -430,34 +430,47 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	cur := p.Load()
 	s := cloneSettings(cur)
 	f(s)
-	clampSettings(s)
+	changed := changedFieldNames(cur, s)
+	normalizeSettings(s)
 
 	p.mu.Lock()
-	writeChangedByName(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem(), reflect.ValueOf(cur).Elem())
+	sv, dv := reflect.ValueOf(s).Elem(), reflect.ValueOf(p).Elem()
+	for _, name := range changed {
+		sf, df := sv.FieldByName(name), dv.FieldByName(name)
+		if df.IsValid() && df.CanSet() && sf.IsValid() && sf.Type() == df.Type() {
+			df.Set(sf)
+		}
+	}
 	p.stale.Store(true)
 	p.markDirty()
 	p.mu.Unlock()
 }
 
-// writeChangedByName copies the Settings fields that differ from cur back into the inline
-// data fields (matched by field name), leaving untouched fields alone.
-func writeChangedByName(dst, s, cur reflect.Value) {
-	for i := 0; i < s.NumField(); i++ {
-		name := s.Type().Field(i).Name
-		sf, df, cf := s.Field(i), dst.FieldByName(name), cur.FieldByName(name)
-		if !df.IsValid() || !df.CanSet() || !cf.IsValid() || sf.Type() != df.Type() {
-			continue
-		}
-		if !reflect.DeepEqual(sf.Interface(), cf.Interface()) {
-			df.Set(sf)
+// changedFieldNames returns the Settings fields f mutated (before normalization), so only
+// those are clamped and written back — untouched sentinel defaults stay put.
+func changedFieldNames(cur, s *Settings) []string {
+	var out []string
+	cv, sv := reflect.ValueOf(cur).Elem(), reflect.ValueOf(s).Elem()
+	for i := 0; i < sv.NumField(); i++ {
+		if !reflect.DeepEqual(sv.Field(i).Interface(), cv.Field(i).Interface()) {
+			out = append(out, sv.Type().Field(i).Name)
 		}
 	}
+	return out
 }
 
-// clampSettings reproduces the write-path range clamps the setters enforce, so an
-// out-of-range assignment through Update normalizes exactly like the setter it replaces.
-// The one-shot migration stamps live in normalize() (load path) and are not re-applied here.
-func clampSettings(s *Settings) {
+// normalizeSettings is the SINGLE write-path clamp implementation: it reproduces every
+// range clamp the setters enforce, using the same package clamp helpers, so an assignment
+// through Update normalizes exactly like the setter it will replace. normalize (load) and
+// Update both reach these clamps; the one-shot migration stamps live in normalize only.
+func normalizeSettings(s *Settings) {
+	// masks
+	s.HighlightColor &= 0xFFFFFF
+	s.ICCustomColor &= 0xFFFFFF
+	s.SpriteTintColor &= 0xFFFFFF
+	s.MusicFlagsVal &= MusicFlagsMask
+
+	// unconditional range clamps
 	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
 	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
@@ -470,24 +483,78 @@ func clampSettings(s *Settings) {
 	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
 	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
 	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
-	s.HighlightColor &= 0xFFFFFF
-	s.ICCustomColor &= 0xFFFFFF
-	s.SpriteTintColor &= 0xFFFFFF
 	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
 	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
 	s.NameSat = clampPercent(s.NameSat, 0, 100)
-	s.MusicFlagsVal &= MusicFlagsMask
 	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
 	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	s.BreathAmount = clampPercent(s.BreathAmount, 1, 100)
+	s.BreathRate = clampPercent(s.BreathRate, 1, 100)
+	s.CatchUpLingerMsVal = clampPercent(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
+	s.SpotlightStrength = clampPercent(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
+	s.SpriteWaitMsVal = clampPercent(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
+	s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	s.OOCScalePct = clampPercent(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	s.PreviewHeightPxVal = clampPercent(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+	s.VoiceOutVolume = clampPercent(s.VoiceOutVolume, 0, 100)
+	s.WeatherDensity = clampPercent(s.WeatherDensity, 1, 100)
+	s.BgSlideshowSecs = clampPercent(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+	s.PrefetchAggro = clampPercent(s.PrefetchAggro, 1, 4)
+	s.StageFrameKind = clampPercent(s.StageFrameKind, 0, stageFrameKindMax)
+	if s.DownloadKBps < 0 {
+		s.DownloadKBps = 0
+	} else if s.DownloadKBps > maxDownloadKBps {
+		s.DownloadKBps = maxDownloadKBps
+	}
+
+	// sentinel clamps (0 = unset, kept as-is)
 	if s.TexBudgetMiBVal != 0 {
 		s.TexBudgetMiBVal = clampPercent(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
 	}
 	if s.AnimatedBudgetMiBVal != 0 {
 		s.AnimatedBudgetMiBVal = clampPercent(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
 	}
-	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
-	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
-	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	if s.AdaptiveLatMultipleVal != 0 {
+		s.AdaptiveLatMultipleVal = clampPercent(s.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
+	}
+	if s.AnimDecodeConcurrencyVal != 0 {
+		s.AnimDecodeConcurrencyVal = clampPercent(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
+	}
+	if s.CrossfadeMsVal != 0 {
+		s.CrossfadeMsVal = clampPercent(s.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
+	}
+	if s.DiskCacheBudgetMiBVal != 0 {
+		s.DiskCacheBudgetMiBVal = clampPercent(s.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
+	}
+	if s.HoldPrevMaxAgeMsVal != 0 {
+		s.HoldPrevMaxAgeMsVal = clampPercent(s.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
+	}
+	if s.ICQueueCapVal != 0 {
+		s.ICQueueCapVal = clampPercent(s.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
+	}
+	if s.NotFoundTTLSecVal != 0 {
+		s.NotFoundTTLSecVal = clampPercent(s.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
+	}
+	if s.PreanimTimeoutMsVal != 0 {
+		s.PreanimTimeoutMsVal = clampPercent(s.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
+	}
+	if s.ShoutDurationMsVal != 0 {
+		s.ShoutDurationMsVal = clampPercent(s.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
+	}
+	if s.SpriteDownscalePctVal != 0 {
+		s.SpriteDownscalePctVal = clampPercent(s.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
+	}
+	if s.ThumbBudgetMiBVal != 0 {
+		s.ThumbBudgetMiBVal = clampPercent(s.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+	}
+	if s.ThumbHeightPxVal != 0 {
+		s.ThumbHeightPxVal = clampPercent(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
+	}
+	if s.ThumbQualityVal != 0 {
+		s.ThumbQualityVal = clampPercent(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
+	}
+
+	// explicit-zero keeps the default (the getter resolves 0)
 	if s.ViewportPct != 0 {
 		s.ViewportPct = clampPercent(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
 	}
@@ -506,7 +573,38 @@ func clampSettings(s *Settings) {
 	if s.UIScalePct != 0 {
 		s.UIScalePct = clampPercent(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
 	}
-	if s.ThemeFitZoom != 0 {
-		s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	if s.HoldClearMs != 0 {
+		s.HoldClearMs = clampPercent(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+	}
+	if s.TextCrawlMs != 0 {
+		s.TextCrawlMs = clampPercent(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	}
+	if s.BlipRate != 0 {
+		s.BlipRate = clampPercent(s.BlipRate, MinBlipRate, MaxBlipRate)
+	}
+
+	// custom clamp helpers (the setters call these same functions)
+	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
+	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
+	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	s.TimerSeconds = clampTimerSeconds(s.TimerSeconds)
+	s.InstantReplaySeconds = clampInstantReplaySeconds(s.InstantReplaySeconds)
+	s.LayoutGridPx = clampLayoutGridPx(s.LayoutGridPx)
+	s.ViewportExactW = clampViewportExactPx(s.ViewportExactW)
+	s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
+
+	// enums with a valid range (invalid keeps the shipped default)
+	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
+		s.ProxyModeVal = defaultPrefs("").ProxyModeVal
+	}
+	if s.ICLogDepthVal < 0 {
+		s.ICLogDepthVal = ICLogDepthUnlimited
+	} else if s.ICLogDepthVal != 0 {
+		s.ICLogDepthVal = clampPercent(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
+	}
+	if s.InputGraceFramesVal <= 0 {
+		s.InputGraceFramesVal = InputGraceOff
+	} else {
+		s.InputGraceFramesVal = clampPercent(s.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
 	}
 }
