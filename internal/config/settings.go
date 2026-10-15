@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -404,7 +405,16 @@ func (p *AssetPreferences) Load() *Settings {
 
 // syncSnapshot seeds the snapshot from the inline data fields — the B0 bridge: the
 // fields and the snapshot coexist until the last method moves off the fields.
+// markDirtyCalls and snapshotRebuilds are the race-hammer v3 counters: they count the
+// write-path dirty signals and the snapshot rebuilds so a hammer can assert both actually ran
+// (not just that the setter calls returned).
+var (
+	markDirtyCalls   atomic.Int64
+	snapshotRebuilds atomic.Int64
+)
+
 func (p *AssetPreferences) syncSnapshot() {
+	snapshotRebuilds.Add(1)
 	s := &Settings{}
 	copyByName(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem())
 	p.settings.Store(s)
