@@ -2036,6 +2036,7 @@ func (p *AssetPreferences) reportSaveError(err error) {
 // stale so Load() republishes lazily on the first read after the write; callers
 // hold the write lock.
 func (p *AssetPreferences) markDirty() {
+	markDirtyCalls.Add(1)
 	p.stale.Store(true)
 	p.pending.Store(true)
 	select {
