@@ -2804,10 +2804,8 @@ func clampTimerSeconds(s int) int {
 // TimerSecondsValue returns the clamped remembered countdown duration (#97); the
 // running state itself lives in the UI (session-only). 0/unset reads as default.
 func (p *AssetPreferences) TimerSecondsValue() int {
-	p.mu.RLock()
-	s := p.TimerSeconds
-	p.mu.RUnlock()
-	return clampTimerSeconds(s)
+	snap := p.Load()
+	return clampTimerSeconds(snap.TimerSeconds)
 }
 
 // SetTimerSeconds stores the countdown duration, clamped to [min,max].
@@ -2863,10 +2861,8 @@ func clampInstantReplaySeconds(s int) int {
 // InstantReplaySecondsValue returns the clamped capture-window length in seconds
 // (the value the slider shows); 0/unset reads as the default.
 func (p *AssetPreferences) InstantReplaySecondsValue() int {
-	p.mu.RLock()
-	s := p.InstantReplaySeconds
-	p.mu.RUnlock()
-	return clampInstantReplaySeconds(s)
+	snap := p.Load()
+	return clampInstantReplaySeconds(snap.InstantReplaySeconds)
 }
 
 // LastServer returns the last server connected to (name, ws URL) — the
