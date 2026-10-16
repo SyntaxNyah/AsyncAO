@@ -57,10 +57,13 @@ func TestLayeredAndLocalOnlyAreMutuallyExclusive(t *testing.T) {
 	}
 
 	// And if both somehow end up set (a hand-edited prefs.json), Local-only wins
-	// and layering reports inert — one defined meaning, no crash.
-	p.mu.Lock()
-	p.LocalAssetsEnabled, p.LocalAssetsLayered = true, true
-	p.mu.Unlock()
+	// and layering reports inert — one defined meaning, no crash. Write through Update so
+	// the snapshot the getters now read stays in sync (the setter's mutual-exclusion is
+	// bypassed on purpose, like a hand-edited file).
+	p.Update(func(s *Settings) {
+		s.LocalAssetsEnabled = true
+		s.LocalAssetsLayered = true
+	})
 	if on, _ := p.LayeredAssets(); on {
 		t.Error("both bools set: layering must be inert, Local-only wins")
 	}

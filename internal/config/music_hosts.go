@@ -191,13 +191,13 @@ func isDiscordHost(host string) bool {
 // MusicHostList returns a copy of the editable allowlist (insertion order) for
 // the settings UI.
 func (p *AssetPreferences) MusicHostList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.MusicHosts) == 0 {
+	snap := p.Load()
+
+	if len(snap.MusicHosts) == 0 {
 		return nil
 	}
-	out := make([]string, len(p.MusicHosts))
-	copy(out, p.MusicHosts)
+	out := make([]string, len(snap.MusicHosts))
+	copy(out, snap.MusicHosts)
 	return out
 }
 
@@ -249,13 +249,13 @@ func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 // returns false — it still plays, it just isn't recorded. Once per song, never per
 // frame.
 func (p *AssetPreferences) MusicURLAllowed(rawURL string) bool {
+	snap := p.Load()
 	host, path := urlHostPath(rawURL)
 	if host == "" {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, s := range p.MusicHosts {
+
+	for _, s := range snap.MusicHosts {
 		e := musicEntryFromStored(s)
 		if !e.matches(host, path) {
 			continue
@@ -273,13 +273,13 @@ func (p *AssetPreferences) MusicURLAllowed(rawURL string) bool {
 // so those rips group apart from the rest of the host), else the bare host. "" when
 // it isn't a URL.
 func (p *AssetPreferences) MusicURLDomain(rawURL string) string {
+	snap := p.Load()
 	host, path := urlHostPath(rawURL)
 	if host == "" {
 		return ""
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, s := range p.MusicHosts {
+
+	for _, s := range snap.MusicHosts {
 		e := musicEntryFromStored(s)
 		if e.matches(host, path) {
 			return e.label()
