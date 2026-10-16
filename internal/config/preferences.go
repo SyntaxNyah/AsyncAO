@@ -2220,16 +2220,15 @@ func (p *AssetPreferences) FormatGeneration() uint64 {
 // this type) it returns the configured list plus the type's legacy chain,
 // deduplicated, order preserved. The result is a fresh slice.
 func (p *AssetPreferences) FormatList(typeName string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	snap := p.Load()
 
-	tp, ok := p.AssetTypes[typeName]
+	tp, ok := snap.AssetTypes[typeName]
 	order := tp.FormatOrder
 	if !ok || len(order) == 0 {
 		order = defaultFormatOrders[typeName]
 	}
 
-	withFallbacks := p.GlobalFallbacksEnabled || tp.FallbacksEnabled
+	withFallbacks := snap.GlobalFallbacksEnabled || tp.FallbacksEnabled
 	capacity := len(order)
 	if withFallbacks {
 		capacity += len(legacyFallbackChains[typeName])
@@ -2252,9 +2251,9 @@ func (p *AssetPreferences) FormatList(typeName string) []string {
 
 // FormatOrder returns the configured (pre-fallback) probe order for a type.
 func (p *AssetPreferences) FormatOrder(typeName string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if tp, ok := p.AssetTypes[typeName]; ok && len(tp.FormatOrder) > 0 {
+	snap := p.Load()
+
+	if tp, ok := snap.AssetTypes[typeName]; ok && len(tp.FormatOrder) > 0 {
 		return cloneStrings(tp.FormatOrder)
 	}
 	return DefaultFormatOrder(typeName)
@@ -2290,9 +2289,9 @@ func (p *AssetPreferences) ResetFormatOrder(typeName string) {
 // TypeFallbacksEnabled reports whether the legacy chain is enabled for the
 // type specifically (the global toggle is separate).
 func (p *AssetPreferences) TypeFallbacksEnabled(typeName string) bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AssetTypes[typeName].FallbacksEnabled
+	snap := p.Load()
+
+	return snap.AssetTypes[typeName].FallbacksEnabled
 }
 
 // SetTypeFallbacks toggles the legacy chain for one type and invalidates
@@ -2343,9 +2342,9 @@ func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
 // Smooth / Pixel). Clamped on read as well as on load, so a value written by a
 // newer build can never index past this build's options.
 func (p *AssetPreferences) SpriteScalingMode() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return ClampSpriteScaling(p.SpriteScaling)
+	snap := p.Load()
+
+	return ClampSpriteScaling(snap.SpriteScaling)
 }
 
 // SetSpriteScalingMode picks the per-sprite texture filter. Applies live: the
@@ -2451,12 +2450,12 @@ func (p *AssetPreferences) SetPreviewPinned(on bool) {
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
 // (clamped), for the Settings readout.
 func (p *AssetPreferences) PreviewHoverMillis() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.PreviewHoverMs <= 0 {
+	snap := p.Load()
+
+	if snap.PreviewHoverMs <= 0 {
 		return DefaultPreviewHoverMs
 	}
-	return clampPercent(p.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	return clampPercent(snap.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
 }
 
 // PreviewHoverDelay returns the hover dwell as a duration for the UI.
@@ -2467,12 +2466,12 @@ func (p *AssetPreferences) PreviewHoverDelay() time.Duration {
 // PreviewHeightPx returns the preview box's default height in px (the
 // shipped default when unset; clamped to the grip's own bounds).
 func (p *AssetPreferences) PreviewHeightPx() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.PreviewHeightPxVal <= 0 {
+	snap := p.Load()
+
+	if snap.PreviewHeightPxVal <= 0 {
 		return DefaultPreviewHeightPx
 	}
-	return clampPercent(p.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+	return clampPercent(snap.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
 }
 
 // SetPreviewHeightPx clamps and persists the preview box's default height.
@@ -2493,12 +2492,12 @@ func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 // (see PreviewWinRectValid's doc for why a bare zero-value rect can't double
 // as "never popped out" here the way PreviewHeightPx's sentinel can).
 func (p *AssetPreferences) PreviewWindowRect() (x, y, w, h int, ok bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if !p.PreviewWinRectValid {
+	snap := p.Load()
+
+	if !snap.PreviewWinRectValid {
 		return 0, 0, 0, 0, false
 	}
-	return p.PreviewWinRectX, p.PreviewWinRectY, p.PreviewWinRectW, p.PreviewWinRectH, true
+	return snap.PreviewWinRectX, snap.PreviewWinRectY, snap.PreviewWinRectW, snap.PreviewWinRectH, true
 }
 
 // SetPreviewWindowRect persists the detached preview window's position and
@@ -2535,12 +2534,12 @@ func (p *AssetPreferences) SetPreviewHoverMs(n int) {
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
 // milliseconds (clamped), for the Settings readout.
 func (p *AssetPreferences) EmoteHoverNamesMillis() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.EmoteHoverNamesMs <= 0 {
+	snap := p.Load()
+
+	if snap.EmoteHoverNamesMs <= 0 {
 		return DefaultEmoteHoverNamesMs
 	}
-	return clampPercent(p.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	return clampPercent(snap.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
 }
 
 // EmoteHoverNamesDelay returns the emote-name hover dwell as a duration.
@@ -2556,9 +2555,9 @@ func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
 // default back is the slider. defaultPrefs seeds it and the load overlay only
 // overwrites a value the file actually carried, so it can never arrive unset.
 func (p *AssetPreferences) EmoteGridGap() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return clampPercent(p.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	snap := p.Load()
+
+	return clampPercent(snap.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 }
 
 // SetSmoothLogScroll toggles the eased follow jump.
@@ -2638,17 +2637,17 @@ func (p *AssetPreferences) ClearLearnedHost(host string) int {
 
 // HighlightColorRGB returns the packed 0xRRGGBB log-selection highlight colour.
 func (p *AssetPreferences) HighlightColorRGB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HighlightColor & 0xFFFFFF
+	snap := p.Load()
+
+	return snap.HighlightColor & 0xFFFFFF
 }
 
 // ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
 // (seeds the colour wheel; defaultICCustomColor until first use).
 func (p *AssetPreferences) ICCustomColorRGB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ICCustomColor & 0xFFFFFF
+	snap := p.Load()
+
+	return snap.ICCustomColor & 0xFFFFFF
 }
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
@@ -2668,25 +2667,25 @@ func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 // BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
 // (an unset/zero value falls back to the default).
 func (p *AssetPreferences) BgSlideshowSeconds() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.BgSlideshowSecs <= 0 {
+	snap := p.Load()
+
+	if snap.BgSlideshowSecs <= 0 {
 		return defaultBgSlideshowSecs
 	}
-	return clampPercent(p.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+	return clampPercent(snap.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
 }
 
 // DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
 func (p *AssetPreferences) DownloadCapKBps() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.DownloadKBps < 0 {
+	snap := p.Load()
+
+	if snap.DownloadKBps < 0 {
 		return 0
 	}
-	if p.DownloadKBps > maxDownloadKBps {
+	if snap.DownloadKBps > maxDownloadKBps {
 		return maxDownloadKBps
 	}
-	return p.DownloadKBps
+	return snap.DownloadKBps
 }
 
 // SetRandomEmote toggles auto-random emote selection on send.
@@ -2873,9 +2872,9 @@ func (p *AssetPreferences) InstantReplaySecondsValue() int {
 // LastServer returns the last server connected to (name, ws URL) — the
 // auto-connect / quick-connect target. Empty url means none yet.
 func (p *AssetPreferences) LastServer() (name, url string) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.LastServerName, p.LastServerURL
+	snap := p.Load()
+
+	return snap.LastServerName, snap.LastServerURL
 }
 
 // SetLastServer records the last server connected to (persisted for auto-connect
@@ -2960,19 +2959,19 @@ func sanitizeStylePresets(in []StylePreset) []StylePreset {
 // StylePresetCount returns how many presets are saved (no allocation — for the Style box's
 // per-frame height calc).
 func (p *AssetPreferences) StylePresetCount() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return len(p.SavedStyles)
+	snap := p.Load()
+
+	return len(snap.SavedStyles)
 }
 
 // StylePresets returns a copy of the saved presets (so a caller can't mutate the live slice).
 func (p *AssetPreferences) StylePresets() []StylePreset {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.SavedStyles) == 0 {
+	snap := p.Load()
+
+	if len(snap.SavedStyles) == 0 {
 		return nil
 	}
-	return append([]StylePreset(nil), p.SavedStyles...)
+	return append([]StylePreset(nil), snap.SavedStyles...)
 }
 
 // AddStylePreset appends a preset (its opacity clamped), ignoring a blank name or a list at
@@ -3035,10 +3034,10 @@ func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
 
 // StylePresetForKey returns the preset bound to a bare key (ok=false when none).
 func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
+	snap := p.Load()
 	key = strings.ToLower(strings.TrimSpace(key))
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, pr := range p.SavedStyles {
+
+	for _, pr := range snap.SavedStyles {
 		if pr.Key != "" && pr.Key == key {
 			return pr, true
 		}
@@ -3178,13 +3177,13 @@ func clampStrings(in []string, n int) []string {
 // FontWarnShownFor reports whether the missing-font warning has already been
 // shown for this theme.
 func (p *AssetPreferences) FontWarnShownFor(theme string) bool {
+	snap := p.Load()
 	theme = strings.TrimSpace(theme)
 	if theme == "" {
 		return true // nothing to key on: never warn rather than warn every apply
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, t := range p.FontWarnThemes {
+
+	for _, t := range snap.FontWarnThemes {
 		if strings.EqualFold(t, theme) {
 			return true
 		}
@@ -3230,13 +3229,13 @@ func (p *AssetPreferences) ClearFontWarnThemes() {
 // under its own lock — handing out the live map would be a data race the
 // -race build would only catch on an unlucky interleaving.
 func (p *AssetPreferences) PanelFonts() map[string]PanelFont {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.PanelFontsVal) == 0 {
+	snap := p.Load()
+
+	if len(snap.PanelFontsVal) == 0 {
 		return nil
 	}
-	out := make(map[string]PanelFont, len(p.PanelFontsVal))
-	for k, v := range p.PanelFontsVal {
+	out := make(map[string]PanelFont, len(snap.PanelFontsVal))
+	for k, v := range snap.PanelFontsVal {
 		out[k] = v
 	}
 	return out
@@ -3244,9 +3243,9 @@ func (p *AssetPreferences) PanelFonts() map[string]PanelFont {
 
 // PanelFontFor returns one element's override (the zero value = none).
 func (p *AssetPreferences) PanelFontFor(id string) PanelFont {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PanelFontsVal[strings.ToLower(id)]
+	snap := p.Load()
+
+	return snap.PanelFontsVal[strings.ToLower(id)]
 }
 
 // SetPanelFont stores (or, for an empty override, REMOVES) one element's
@@ -3391,15 +3390,15 @@ func (p *AssetPreferences) SetVoiceInput(s string) {
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
 func (p *AssetPreferences) VoiceOutVol() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.VoiceOutVolume <= 0 {
+	snap := p.Load()
+
+	if snap.VoiceOutVolume <= 0 {
 		return 100
 	}
-	if p.VoiceOutVolume > 100 {
+	if snap.VoiceOutVolume > 100 {
 		return 100
 	}
-	return p.VoiceOutVolume
+	return snap.VoiceOutVolume
 }
 
 // SetVoiceOutVol clamps and persists the voice output volume.
@@ -3422,15 +3421,15 @@ func (p *AssetPreferences) SetVoiceOutVol(v int) {
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
 // Markov prefetcher warms per message, 1..4 (default 1 = conservative). #100.
 func (p *AssetPreferences) PrefetchAggressiveness() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.PrefetchAggro < 1 {
+	snap := p.Load()
+
+	if snap.PrefetchAggro < 1 {
 		return 1
 	}
-	if p.PrefetchAggro > 4 {
+	if snap.PrefetchAggro > 4 {
 		return 4
 	}
-	return p.PrefetchAggro
+	return snap.PrefetchAggro
 }
 
 // SetPrefetchAggressiveness clamps (1..4) and persists the prefetch aggressiveness.
@@ -3617,12 +3616,12 @@ func (p *AssetPreferences) SetSpotlight(on bool) { p.setBoolPref(&p.Spotlight, o
 // SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
 // resolves to the default so enabling the toggle always shows a visible effect.
 func (p *AssetPreferences) SpotlightLevel() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.SpotlightStrength == 0 {
+	snap := p.Load()
+
+	if snap.SpotlightStrength == 0 {
 		return defaultSpotlightStrength
 	}
-	return p.SpotlightStrength
+	return snap.SpotlightStrength
 }
 
 // SetSpotlightLevel stores the dim intensity (clamped to [10,90]).
@@ -3651,33 +3650,33 @@ func (p *AssetPreferences) SetIdleBreath(on bool) { p.setBoolPref(&p.IdleBreath,
 // BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
 // pref stores the inverted "disabled" flag so the zero value means on).
 func (p *AssetPreferences) BreathBobOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return !p.BreathNoBob
+	snap := p.Load()
+
+	return !snap.BreathNoBob
 }
 func (p *AssetPreferences) BreathScaleOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return !p.BreathNoScale
+	snap := p.Load()
+
+	return !snap.BreathNoScale
 }
 
 // BreathAmp / BreathSpeed report the sliders [1,100]; 0 (unset) resolves to the default.
 func (p *AssetPreferences) BreathAmp() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.BreathAmount == 0 {
+	snap := p.Load()
+
+	if snap.BreathAmount == 0 {
 		return defaultBreathAmp
 	}
-	return p.BreathAmount
+	return snap.BreathAmount
 }
 
 func (p *AssetPreferences) BreathSpeed() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.BreathRate == 0 {
+	snap := p.Load()
+
+	if snap.BreathRate == 0 {
 		return defaultBreathSpeed
 	}
-	return p.BreathRate
+	return snap.BreathRate
 }
 
 // defaultReflectStrength is the #123 reflection opacity when unset (so the slider shows a
@@ -3689,12 +3688,12 @@ func (p *AssetPreferences) SetReflection(on bool) { p.setBoolPref(&p.Reflection,
 
 // ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
 func (p *AssetPreferences) ReflectStrength() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ReflectOpacity == 0 {
+	snap := p.Load()
+
+	if snap.ReflectOpacity == 0 {
 		return defaultReflectStrength
 	}
-	return p.ReflectOpacity
+	return snap.ReflectOpacity
 }
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
@@ -3710,12 +3709,12 @@ const (
 // WeatherType reports the ambient-weather index (#124); 0 = None (off). Clamped to the valid
 // range so a hand-edited pref can't select a non-existent weather.
 func (p *AssetPreferences) WeatherType() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.WeatherKind < 0 || p.WeatherKind > weatherKindMax {
+	snap := p.Load()
+
+	if snap.WeatherKind < 0 || snap.WeatherKind > weatherKindMax {
 		return 0
 	}
-	return p.WeatherKind
+	return snap.WeatherKind
 }
 
 // SetWeatherType stores the weather index (clamped to [0,weatherKindMax]).
@@ -3729,12 +3728,12 @@ const stageFrameKindMax = 7
 // StageFrame reports the decorative viewport-frame style (#56); 0 = Off (the
 // default). Clamped so a hand-edited pref can't select a non-existent style.
 func (p *AssetPreferences) StageFrame() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.StageFrameKind < 0 || p.StageFrameKind > stageFrameKindMax {
+	snap := p.Load()
+
+	if snap.StageFrameKind < 0 || snap.StageFrameKind > stageFrameKindMax {
 		return 0
 	}
-	return p.StageFrameKind
+	return snap.StageFrameKind
 }
 
 // SetStageFrame stores the stage-frame style (clamped to [0,stageFrameKindMax]).
@@ -3744,12 +3743,12 @@ func (p *AssetPreferences) SetStageFrame(v int) {
 
 // WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
 func (p *AssetPreferences) WeatherIntensity() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.WeatherDensity == 0 {
+	snap := p.Load()
+
+	if snap.WeatherDensity == 0 {
 		return defaultWeatherDensity
 	}
-	return p.WeatherDensity
+	return snap.WeatherDensity
 }
 
 // SetWeatherIntensity stores the density (clamped to [1,100]).
@@ -3783,9 +3782,9 @@ func (p *AssetPreferences) setIntPref(field *int, v, lo, hi int) {
 
 // SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
 func (p *AssetPreferences) SpriteTintColorRGB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SpriteTintColor & 0xFFFFFF
+	snap := p.Load()
+
+	return snap.SpriteTintColor & 0xFFFFFF
 }
 
 // SetSpriteTintColor stores a packed 0xRRGGBB solid-tint colour.
@@ -3915,9 +3914,9 @@ func (p *AssetPreferences) SetCallwordSoundPath(path string) {
 // Theme reports the selected theme name ("" = default) and the custom theme
 // root directory ("" = no custom root configured).
 func (p *AssetPreferences) Theme() (name, dir string) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThemeName, p.ThemeDir
+	snap := p.Load()
+
+	return snap.ThemeName, snap.ThemeDir
 }
 
 // SetTheme stores the selected theme name and custom theme root.
@@ -3977,9 +3976,9 @@ func (p *AssetPreferences) SetToolboxSeen(seen bool) {
 // Casing reports the CASEA subscription: enabled + a CaseRole* bitmask
 // (the bit layout is internal/courtroom's; config just persists it).
 func (p *AssetPreferences) Casing() (enabled bool, roles int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CasingEnabled, p.CasingRoles
+	snap := p.Load()
+
+	return snap.CasingEnabled, snap.CasingRoles
 }
 
 // SetCasing stores the CASEA subscription.
@@ -4024,12 +4023,12 @@ func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 
 // ChromeTheme reports the AsyncAO chrome theme preset key (#M3; "dark" default).
 func (p *AssetPreferences) ChromeTheme() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ChromeThemeKey == "" {
+	snap := p.Load()
+
+	if snap.ChromeThemeKey == "" {
 		return "dark"
 	}
-	return p.ChromeThemeKey
+	return snap.ChromeThemeKey
 }
 
 // SetChromeTheme stores the chrome theme preset key.
@@ -4090,9 +4089,9 @@ func clampChromeShapeTier(tier int) int {
 // ChromeShape reports the AsyncAO chrome SHAPE preset key (A5; "sharp" default).
 // Always returns a sanitised, drawable key.
 func (p *AssetPreferences) ChromeShape() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return sanitizeChromeShape(p.ChromeShapeKey)
+	snap := p.Load()
+
+	return sanitizeChromeShape(snap.ChromeShapeKey)
 }
 
 // SetChromeShape stores the chrome shape preset key (sanitised: an unknown key
@@ -4112,9 +4111,9 @@ func (p *AssetPreferences) SetChromeShape(key string) {
 // ChromeShapeTier reports the corner-radius size class for the "rounded" preset
 // (0..shapeRadiusTiers-1), always clamped in range.
 func (p *AssetPreferences) ChromeShapeTier() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return clampChromeShapeTier(p.ChromeShapeTierIdx)
+	snap := p.Load()
+
+	return clampChromeShapeTier(snap.ChromeShapeTierIdx)
 }
 
 // SetChromeShapeTier stores the corner-radius size class (clamped in range).
@@ -4137,9 +4136,9 @@ const callWordCap = 32
 
 // CallWords reports the highlight words (lowercased on save).
 func (p *AssetPreferences) CallWords() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.CallWordList)
+	snap := p.Load()
+
+	return cloneStrings(snap.CallWordList)
 }
 
 // SetCallWords replaces the highlight list (entries lowercased, capped).
@@ -4214,9 +4213,9 @@ func (p *AssetPreferences) RemoveCallWord(word string) bool {
 // Hotkey reports the configured key name for an action ("" = unset; the
 // UI layer owns defaults — config just persists overrides).
 func (p *AssetPreferences) Hotkey(action string) string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HotkeyMap[action]
+	snap := p.Load()
+
+	return snap.HotkeyMap[action]
 }
 
 // SetHotkey stores one action's key name.
@@ -4239,9 +4238,9 @@ func (p *AssetPreferences) SetHotkey(action, key string) {
 
 // ServerWarmInfoFor reports the remembered state for a server key.
 func (p *AssetPreferences) ServerWarmInfoFor(key string) ServerWarmInfo {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ServerWarm[key]
+	snap := p.Load()
+
+	return snap.ServerWarm[key]
 }
 
 // RememberServerChar records the character last used on a server.
@@ -4252,9 +4251,9 @@ func (p *AssetPreferences) RememberServerChar(key, char string) {
 // ServerFriends returns a server's highlighted shownames (a clone — the
 // settings editor mutates it; callers must not alias the stored slice).
 func (p *AssetPreferences) ServerFriends(key string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.ServerWarm[key].Friends)
+	snap := p.Load()
+
+	return cloneStrings(snap.ServerWarm[key].Friends)
 }
 
 // friendParts splits a friend entry "name[=RRGGBB[=nick]]" into its three fields
@@ -4278,12 +4277,12 @@ func friendParts(entry string) (name, hex, nick string) {
 // under the lock with no allocation, so the player list (per row) and friend
 // matching (per message) read all three from a single call.
 func (p *AssetPreferences) ServerFriendInfo(key, name string) (friend bool, color int, nick string) {
+	snap := p.Load()
 	if name == "" {
 		return false, -1, ""
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, f := range p.ServerWarm[key].Friends {
+
+	for _, f := range snap.ServerWarm[key].Friends {
 		fname, hex, nk := friendParts(f)
 		if !strings.EqualFold(fname, name) {
 			continue
@@ -4345,9 +4344,9 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 // ServerIgnored returns a server's blocked shownames (a clone — the settings
 // editor mutates it; callers must not alias the stored slice).
 func (p *AssetPreferences) ServerIgnored(key string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.ServerWarm[key].Ignored)
+	snap := p.Load()
+
+	return cloneStrings(snap.ServerWarm[key].Ignored)
 }
 
 // ServerIgnoreMatch reports whether name (case-insensitive) is on the server's
@@ -4355,12 +4354,12 @@ func (p *AssetPreferences) ServerIgnored(key string) []string {
 // incoming IC/OOC message (an empty list, the default, costs one RLock + zero
 // iterations).
 func (p *AssetPreferences) ServerIgnoreMatch(key, name string) bool {
+	snap := p.Load()
 	if name == "" {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, n := range p.ServerWarm[key].Ignored {
+
+	for _, n := range snap.ServerWarm[key].Ignored {
 		if strings.EqualFold(strings.TrimSpace(n), name) {
 			return true
 		}
@@ -4424,16 +4423,16 @@ func (p *AssetPreferences) SetServerTheme(key, themeName string) {
 // global mixer volumes apply; the four levels are 0–100 (master scales the rest).
 // The "sandbox each tab's sound" feature — applied while this server's tab is active.
 func (p *AssetPreferences) ServerAudio(key string) (on bool, master, music, sfx, blip int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	w := p.ServerWarm[key]
+	snap := p.Load()
+
+	w := snap.ServerWarm[key]
 	// Each channel: this server's explicit level if it set one, else the global default
 	// (so an unset channel — e.g. SFX a prior build never wrote — is never silently 0).
 	return w.AudioOn,
-		ptrOr(w.AudioMaster, p.MasterVol),
-		ptrOr(w.AudioMusic, p.MusicVol),
-		ptrOr(w.AudioSFX, p.SFXVol),
-		ptrOr(w.AudioBlip, p.BlipVol)
+		ptrOr(w.AudioMaster, snap.MasterVol),
+		ptrOr(w.AudioMusic, snap.MusicVol),
+		ptrOr(w.AudioSFX, snap.SFXVol),
+		ptrOr(w.AudioBlip, snap.BlipVol)
 }
 
 // ptrOr returns *v when set, else the fallback — the per-channel "unset → global default".
@@ -4514,10 +4513,10 @@ func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo))
 
 // HiddenPanels reports the courtroom chrome regions the user hid.
 func (p *AssetPreferences) HiddenPanels() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]string, len(p.HiddenPanelIDs))
-	copy(out, p.HiddenPanelIDs)
+	snap := p.Load()
+
+	out := make([]string, len(snap.HiddenPanelIDs))
+	copy(out, snap.HiddenPanelIDs)
 	return out
 }
 
@@ -4551,9 +4550,9 @@ func (p *AssetPreferences) SetOOCName(name string) {
 // chat TEXT percent, chat BOX height percent, log/OOC list text percent,
 // input field height percent. All clamped at load and set time.
 func (p *AssetPreferences) LayoutScales() (viewport, chatText, chatBox, logText, input int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct
+	snap := p.Load()
+
+	return snap.ViewportPct, snap.ChatScalePct, snap.ChatBoxPct, snap.LogScalePct, snap.InputHeightPct
 }
 
 // SetLayoutScales clamps and persists the layout knobs.
@@ -4613,9 +4612,9 @@ func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
 // Default ON — the pref is stored inverted (BoldNamesOff) so an absent value
 // means bold, matching the on-by-default behaviour.
 func (p *AssetPreferences) BoldNamesOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return !p.BoldNamesOff
+	snap := p.Load()
+
+	return !snap.BoldNamesOff
 }
 
 // SetBoldNames toggles bold speaker names.
@@ -4729,9 +4728,9 @@ func (p *AssetPreferences) SetUIScale(pct int) {
 // WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
 // the display at apply (ClampWindowSize) — a raw saved value may be stale.
 func (p *AssetPreferences) WindowSize() (int, int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.WindowW, p.WindowH
+	snap := p.Load()
+
+	return snap.WindowW, snap.WindowH
 }
 
 // SetWindowSize persists the windowed size (floored at the minimum; the display
@@ -4769,9 +4768,9 @@ func (p *AssetPreferences) SetWindowFullscreen(on bool) {
 
 // AudioVolumes reports the music/SFX/blip volumes (0–100).
 func (p *AssetPreferences) AudioVolumes() (music, sfx, blip int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicVol, p.SFXVol, p.BlipVol
+	snap := p.Load()
+
+	return snap.MusicVol, snap.SFXVol, snap.BlipVol
 }
 
 // SetAudioVolumes clamps and persists the mixer volumes.
@@ -4817,9 +4816,9 @@ func (p *AssetPreferences) SetSFXVolMuted(on bool) {
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
 // (SDL key name, e.g. "Backspace"), and the hold duration in ms.
 func (p *AssetPreferences) HoldClear() (on bool, key string, ms int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.HoldClearOn, p.HoldClearKey, p.HoldClearMs
+	snap := p.Load()
+
+	return snap.HoldClearOn, snap.HoldClearKey, snap.HoldClearMs
 }
 
 // SetHoldClearKey rebinds the hold-to-clear key (an SDL key name; "" ignored).
@@ -4841,9 +4840,9 @@ func (p *AssetPreferences) SetHoldClearKey(key string) {
 // border / title / text colours (hex, "" = stock) and whether the background is
 // a gradient.
 func (p *AssetPreferences) ExtrasBoxStyle() (bg, bg2, border, title, text string, gradient bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient
+	snap := p.Load()
+
+	return snap.ExtrasBg, snap.ExtrasBg2, snap.ExtrasBorder, snap.ExtrasTitle, snap.ExtrasText, snap.ExtrasGradient
 }
 
 // SetExtrasBoxStyle persists the Extras-box theme.
@@ -4874,9 +4873,9 @@ func (p *AssetPreferences) SetAreaHighlightColorHex(hex string) {
 // crawl per character, post-message stay, and the minimum gap between
 // outgoing chats (0 = no limit).
 func (p *AssetPreferences) Timing() (crawlMs, stayMs, rateLimitMs int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs
+	snap := p.Load()
+
+	return snap.TextCrawlMs, snap.TextStayMs, snap.ChatRateLimitMs
 }
 
 // SetTiming clamps and persists the timing knobs.
@@ -4898,9 +4897,9 @@ func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 // threshold (fast-forward the IC stage once more than threshold messages are
 // queued).
 func (p *AssetPreferences) CatchUp() (on bool, threshold int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.CatchUpOn, p.CatchUpThreshold
+	snap := p.Load()
+
+	return snap.CatchUpOn, snap.CatchUpThreshold
 }
 
 // SetCatchUp clamps and persists the catch-up toggle + threshold.
@@ -4920,12 +4919,12 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 // [minMultiTabCap, maxMultiTabCap]; an unset/zero value falls back to the
 // default, so older prefs files and tests behave as before).
 func (p *AssetPreferences) TabCap() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.MultiTabCap <= 0 {
+	snap := p.Load()
+
+	if snap.MultiTabCap <= 0 {
 		return DefaultMultiTabCap
 	}
-	return clampPercent(p.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	return clampPercent(snap.MultiTabCap, minMultiTabCap, maxMultiTabCap)
 }
 
 // SetTabCap clamps and persists the multi-server tab cap.
@@ -5013,12 +5012,12 @@ func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
 // when unset): how long SpriteLoadWait may hold one message for its sprite before
 // playing anyway.
 func (p *AssetPreferences) SpriteWaitMs() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.SpriteWaitMsVal == 0 {
+	snap := p.Load()
+
+	if snap.SpriteWaitMsVal == 0 {
 		return SpriteWaitDefaultMs
 	}
-	return p.SpriteWaitMsVal
+	return snap.SpriteWaitMsVal
 }
 
 // SetSpriteWaitMs persists the wait-mode hold cap (clamped to the tunable range).
@@ -5259,12 +5258,12 @@ func (p *AssetPreferences) SetThumbCache(on bool) { p.setBoolPref(&p.ThumbCache,
 
 // ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
 func (p *AssetPreferences) ThumbHeightPx() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ThumbHeightPxVal == 0 {
+	snap := p.Load()
+
+	if snap.ThumbHeightPxVal == 0 {
 		return ThumbHeightDefaultPx
 	}
-	return p.ThumbHeightPxVal
+	return snap.ThumbHeightPxVal
 }
 
 // SetThumbHeightPx persists the thumbnail height (0 = default; else clamped).
@@ -5284,12 +5283,12 @@ func (p *AssetPreferences) SetThumbHeightPx(px int) {
 
 // ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
 func (p *AssetPreferences) ThumbQuality() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ThumbQualityVal == 0 {
+	snap := p.Load()
+
+	if snap.ThumbQualityVal == 0 {
 		return ThumbQualityDefault
 	}
-	return p.ThumbQualityVal
+	return snap.ThumbQualityVal
 }
 
 // SetThumbQuality persists the thumbnail quality (0 = default; else clamped).
@@ -5310,12 +5309,12 @@ func (p *AssetPreferences) SetThumbQuality(q int) {
 // ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
 // (ThumbBudgetDefaultMiB when unset); the store auto-prunes oldest past it.
 func (p *AssetPreferences) ThumbBudgetMiB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ThumbBudgetMiBVal == 0 {
+	snap := p.Load()
+
+	if snap.ThumbBudgetMiBVal == 0 {
 		return ThumbBudgetDefaultMiB
 	}
-	return p.ThumbBudgetMiBVal
+	return snap.ThumbBudgetMiBVal
 }
 
 // SetThumbBudgetMiB persists the thumb-store budget (0 = default; else clamped).
@@ -5336,9 +5335,9 @@ func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
 // AdaptiveLatMultiple reports the per-host deadline multiple (0 = the network
 // default, ×8). Live-applied.
 func (p *AssetPreferences) AdaptiveLatMultiple() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.AdaptiveLatMultipleVal
+	snap := p.Load()
+
+	return snap.AdaptiveLatMultipleVal
 }
 
 // SetSpriteDownscaleOff persists the downscale-disable knob.
@@ -5364,12 +5363,12 @@ func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
 // when unset; applies on restart).
 func (p *AssetPreferences) TexBudgetMiB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.TexBudgetMiBVal == 0 {
+	snap := p.Load()
+
+	if snap.TexBudgetMiBVal == 0 {
 		return TexBudgetDefaultMiB
 	}
-	return p.TexBudgetMiBVal
+	return snap.TexBudgetMiBVal
 }
 
 // SetTexBudgetMiB persists the T1 budget (0 = default; else clamped).
@@ -5390,34 +5389,34 @@ func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
 // AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
 // (AnimatedBudgetDefaultMiB when unset; LIVE-applied - new decodes pick it up).
 func (p *AssetPreferences) AnimatedBudgetMiB() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.AnimatedBudgetMiBVal == 0 {
+	snap := p.Load()
+
+	if snap.AnimatedBudgetMiBVal == 0 {
 		return AnimatedBudgetDefaultMiB
 	}
-	return p.AnimatedBudgetMiBVal
+	return snap.AnimatedBudgetMiBVal
 }
 
 // AnimDecodeConcurrency reports the concurrent animated-decode bound
 // (AnimDecodeConcurrencyDefault when unset; LIVE-applied).
 func (p *AssetPreferences) AnimDecodeConcurrency() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.AnimDecodeConcurrencyVal == 0 {
+	snap := p.Load()
+
+	if snap.AnimDecodeConcurrencyVal == 0 {
 		return AnimDecodeConcurrencyDefault
 	}
-	return p.AnimDecodeConcurrencyVal
+	return snap.AnimDecodeConcurrencyVal
 }
 
 // TexCompression reports the texture-compression mode (TexCompressOff /
 // TexCompressDXT5 / TexCompressDXT1; restart-applied).
 func (p *AssetPreferences) TexCompression() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.TexCompressionVal < TexCompressOff || p.TexCompressionVal > TexCompressDXT1 {
+	snap := p.Load()
+
+	if snap.TexCompressionVal < TexCompressOff || snap.TexCompressionVal > TexCompressDXT1 {
 		return TexCompressDXT5 // 0/absent -> the shipped default
 	}
-	return p.TexCompressionVal
+	return snap.TexCompressionVal
 }
 
 // SetTexCompression persists the texture-compression mode (clamped to 0/1/2).
@@ -5441,12 +5440,12 @@ func (p *AssetPreferences) SetTexCompression(mode int) {
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
 func (p *AssetPreferences) FPSCap() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.FPSCapVal == 0 {
+	snap := p.Load()
+
+	if snap.FPSCapVal == 0 {
 		return FPSCapDefault
 	}
-	return p.FPSCapVal
+	return snap.FPSCapVal
 }
 
 // SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
@@ -5465,12 +5464,12 @@ func (p *AssetPreferences) SetFPSCap(fps int) {
 
 // IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
 func (p *AssetPreferences) IdleFPS() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.IdleFPSVal == 0 {
+	snap := p.Load()
+
+	if snap.IdleFPSVal == 0 {
 		return IdleFPSDefault
 	}
-	return p.IdleFPSVal
+	return snap.IdleFPSVal
 }
 
 // SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
@@ -5489,12 +5488,12 @@ func (p *AssetPreferences) SetIdleFPS(fps int) {
 
 // UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
 func (p *AssetPreferences) UnfocusedFPS() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.UnfocusedFPSVal == 0 {
+	snap := p.Load()
+
+	if snap.UnfocusedFPSVal == 0 {
 		return UnfocusedFPSDefault
 	}
-	return p.UnfocusedFPSVal
+	return snap.UnfocusedFPSVal
 }
 
 // SetUnfocusedFPS persists the unfocused frame rate (0 = default,
@@ -5514,15 +5513,15 @@ func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
 // InputGraceFrames reports the post-input full-rate hold in frames
 // (InputGraceFramesDefault when unset).
 func (p *AssetPreferences) InputGraceFrames() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.InputGraceFramesVal == 0 {
+	snap := p.Load()
+
+	if snap.InputGraceFramesVal == 0 {
 		return InputGraceFramesDefault // absent = the default hold
 	}
-	if p.InputGraceFramesVal < 0 {
+	if snap.InputGraceFramesVal < 0 {
 		return 0 // InputGraceOff → no hold
 	}
-	return p.InputGraceFramesVal
+	return snap.InputGraceFramesVal
 }
 
 // EffectiveSpriteCap derives the decode-downscale height cap from the
@@ -5619,9 +5618,9 @@ const (
 
 // MusicFlags reports the MUSIC_EFFECT bitmask a track play carries.
 func (p *AssetPreferences) MusicFlags() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.MusicFlagsVal & MusicFlagsMask
+	snap := p.Load()
+
+	return snap.MusicFlagsVal & MusicFlagsMask
 }
 
 // SetChangelogSeen records that the user opened the changelog for build version v,
@@ -5639,13 +5638,13 @@ func (p *AssetPreferences) SetChangelogSeen(v string) {
 
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
 func (p *AssetPreferences) OpenTabList() []OpenTab {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.OpenTabs) == 0 {
+	snap := p.Load()
+
+	if len(snap.OpenTabs) == 0 {
 		return nil
 	}
-	out := make([]OpenTab, len(p.OpenTabs))
-	copy(out, p.OpenTabs)
+	out := make([]OpenTab, len(snap.OpenTabs))
+	copy(out, snap.OpenTabs)
 	return out
 }
 
@@ -5795,9 +5794,9 @@ func (p *AssetPreferences) SetMasterList(url string) {
 
 // WardrobeList returns a copy of one server's custom character list.
 func (p *AssetPreferences) WardrobeList(serverKey string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.ServerWarm[serverKey].Wardrobe)
+	snap := p.Load()
+
+	return cloneStrings(snap.ServerWarm[serverKey].Wardrobe)
 }
 
 // ClaimLegacyWardrobe performs the one-time migration from the flat
@@ -5879,9 +5878,9 @@ func (p *AssetPreferences) WardrobeGeneration() uint64 {
 // WardrobeFolderMap returns a copy of one server's lowercased char → folder
 // map (wardrobe organization). nil when nothing is filed.
 func (p *AssetPreferences) WardrobeFolderMap(serverKey string) map[string]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.ServerWarm[serverKey].WardrobeFolder
+	snap := p.Load()
+
+	src := snap.ServerWarm[serverKey].WardrobeFolder
 	if len(src) == 0 {
 		return nil
 	}
@@ -5973,9 +5972,9 @@ func (p *AssetPreferences) DeleteWardrobeFolder(serverKey, folder string, keepMe
 
 // FavBackgroundList returns a copy of one server's starred-background list.
 func (p *AssetPreferences) FavBackgroundList(serverKey string) []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.ServerWarm[serverKey].FavBackgrounds)
+	snap := p.Load()
+
+	return cloneStrings(snap.ServerWarm[serverKey].FavBackgrounds)
 }
 
 // AddFavBackground stars a background on one server (case-insensitive dedupe,
@@ -6021,9 +6020,9 @@ func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
 // FavBackgroundFolderMap returns a copy of one server's lowercased background →
 // folder map (Backgrounds-section organization). nil when nothing is filed.
 func (p *AssetPreferences) FavBackgroundFolderMap(serverKey string) map[string]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.ServerWarm[serverKey].FavBackgroundFolder
+	snap := p.Load()
+
+	src := snap.ServerWarm[serverKey].FavBackgroundFolder
 	if len(src) == 0 {
 		return nil
 	}
@@ -6057,9 +6056,9 @@ func (p *AssetPreferences) DeleteFavBackgroundFolder(serverKey, folder string, k
 
 // CharKeyBinds returns a copy of one server's key → character map.
 func (p *AssetPreferences) CharKeyBinds(serverKey string) map[string]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.ServerWarm[serverKey].CharKeys
+	snap := p.Load()
+
+	src := snap.ServerWarm[serverKey].CharKeys
 	if len(src) == 0 {
 		return nil
 	}
@@ -6374,9 +6373,9 @@ func equalStrings(a, b []string) bool {
 // "" if none. A profile is seeded synchronously on connect and overrides both the
 // fetched server manifest and the global default — for that host only.
 func (p *AssetPreferences) ExtProfile(host string) string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ExtProfiles[host]
+	snap := p.Load()
+
+	return snap.ExtProfiles[host]
 }
 
 // SetExtProfile sets (or clears, with "") a host's format profile.
@@ -6400,13 +6399,13 @@ func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
 // BlipTyping reports the chat-blip cadence: one blip per `rate` revealed letters
 // (default 2), and whether spaces also blip (default false = skip whitespace).
 func (p *AssetPreferences) BlipTyping() (rate int, onSpaces bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	r := p.BlipRate
+	snap := p.Load()
+
+	r := snap.BlipRate
 	if r < MinBlipRate {
 		r = defaultBlipRate
 	}
-	return r, p.BlipOnSpaces
+	return r, snap.BlipOnSpaces
 }
 
 // SetBlipTyping clamps and persists the blip cadence + whitespace toggle.
@@ -6517,9 +6516,9 @@ func NextCoarseRotation(cur uint8) uint8 {
 // ThemeRectOverrides returns a copy of one theme's user-dragged widget
 // geometry (design-space [x,y,w,h], from the live layout editor).
 func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.ThemeRectOv[theme]
+	snap := p.Load()
+
+	src := snap.ThemeRectOv[theme]
 	if len(src) == 0 {
 		return nil
 	}
@@ -6540,12 +6539,12 @@ func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
 // exactly on the pristine seed position). The strip's placement is therefore read
 // back from the same record that persists it, once per frame.
 func (p *AssetPreferences) HasThemeRectOverride(theme, key string) bool {
+	snap := p.Load()
 	if theme == "" || key == "" {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	_, ok := p.ThemeRectOv[theme][key]
+
+	_, ok := snap.ThemeRectOv[theme][key]
 	return ok
 }
 
@@ -6611,9 +6610,9 @@ func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 // rebuild time so the draw path resolves angles lock-free (a plain map probe on
 // the pre-baked cache, never a prefs read per frame).
 func (p *AssetPreferences) ThemeRectRotationSnapshot(theme string) map[string]uint8 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.ThemeRectRotations[theme]
+	snap := p.Load()
+
+	src := snap.ThemeRectRotations[theme]
 	if len(src) == 0 {
 		return nil
 	}
@@ -6862,13 +6861,13 @@ func sanitizeLayoutProfiles(in map[string]LayoutProfile) map[string]LayoutProfil
 // LayoutProfileNames returns the saved full-state profile names (A6). Order is
 // unspecified — the UI sorts for display.
 func (p *AssetPreferences) LayoutProfileNames() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.LayoutProfiles) == 0 {
+	snap := p.Load()
+
+	if len(snap.LayoutProfiles) == 0 {
 		return nil
 	}
-	names := make([]string, 0, len(p.LayoutProfiles))
-	for k := range p.LayoutProfiles {
+	names := make([]string, 0, len(snap.LayoutProfiles))
+	for k := range snap.LayoutProfiles {
 		names = append(names, k)
 	}
 	return names
@@ -6877,9 +6876,9 @@ func (p *AssetPreferences) LayoutProfileNames() []string {
 // LayoutProfile returns a deep copy of one saved profile (zero value if the name
 // is unknown) (A6). Every axis is copied so the caller can't alias the live map.
 func (p *AssetPreferences) LayoutProfile(name string) LayoutProfile {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	prof, ok := p.LayoutProfiles[name]
+	snap := p.Load()
+
+	prof, ok := snap.LayoutProfiles[name]
 	if !ok {
 		return LayoutProfile{}
 	}
@@ -6957,13 +6956,13 @@ func (p *AssetPreferences) DeleteLayoutProfile(name string) {
 // overrides (window fractions). The classic-layout editor snapshots this once
 // into an App-local map so the render path reads it lock-free.
 func (p *AssetPreferences) ClassicLayoutOverrides() map[string][4]float64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ClassicLayout) == 0 {
+	snap := p.Load()
+
+	if len(snap.ClassicLayout) == 0 {
 		return nil
 	}
-	out := make(map[string][4]float64, len(p.ClassicLayout))
-	for k, v := range p.ClassicLayout {
+	out := make(map[string][4]float64, len(snap.ClassicLayout))
+	for k, v := range snap.ClassicLayout {
 		out[k] = v
 	}
 	return out
@@ -7075,13 +7074,13 @@ func sanitizeClassicAnchors(in map[string]ClassicAnchor) map[string]ClassicAncho
 // classic editor snapshots it once alongside ClassicLayoutOverrides so the
 // render path resolves anchors lock-free.
 func (p *AssetPreferences) ClassicAnchorSnapshot() map[string]ClassicAnchor {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ClassicAnchors) == 0 {
+	snap := p.Load()
+
+	if len(snap.ClassicAnchors) == 0 {
 		return nil
 	}
-	out := make(map[string]ClassicAnchor, len(p.ClassicAnchors))
-	for k, v := range p.ClassicAnchors {
+	out := make(map[string]ClassicAnchor, len(snap.ClassicAnchors))
+	for k, v := range snap.ClassicAnchors {
 		out[k] = v
 	}
 	return out
@@ -7143,12 +7142,12 @@ func clampLayoutGridPx(v int) int {
 // LayoutGridSize reports the layout editor's snap-grid step in logical px
 // (DefaultLayoutGridPx when unset).
 func (p *AssetPreferences) LayoutGridSize() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.LayoutGridPx == 0 {
+	snap := p.Load()
+
+	if snap.LayoutGridPx == 0 {
 		return DefaultLayoutGridPx
 	}
-	return p.LayoutGridPx
+	return snap.LayoutGridPx
 }
 
 // SetClassicLayout REPLACES every default-courtroom slot override at once — the
@@ -7191,13 +7190,13 @@ func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 // the classic editor snapshots it once into an App-local map (beside the anchor
 // snapshot) so the render path resolves angles lock-free.
 func (p *AssetPreferences) ClassicRotationSnapshot() map[string]uint8 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ClassicRotations) == 0 {
+	snap := p.Load()
+
+	if len(snap.ClassicRotations) == 0 {
 		return nil
 	}
-	out := make(map[string]uint8, len(p.ClassicRotations))
-	for k, v := range p.ClassicRotations {
+	out := make(map[string]uint8, len(snap.ClassicRotations))
+	for k, v := range snap.ClassicRotations {
 		out[k] = v
 	}
 	return out
@@ -7247,10 +7246,10 @@ func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
 
 // Macros returns a copy of the user macro list.
 func (p *AssetPreferences) Macros() []MacroSpec {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]MacroSpec, len(p.UserMacros))
-	copy(out, p.UserMacros)
+	snap := p.Load()
+
+	out := make([]MacroSpec, len(snap.UserMacros))
+	copy(out, snap.UserMacros)
 	return out
 }
 
@@ -7318,8 +7317,7 @@ func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 // the "act on it once" decision. A file that kept a deliberate Letterbox/Crop/
 // Custom pick reports FALSE — its look did not change, so nothing should move.
 func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+
 	return p.themeFitMovedToNative
 }
 
@@ -7339,19 +7337,19 @@ func (p *AssetPreferences) SetThemeFit(mode int) {
 // ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
 // 100 = exactly fits), clamped.
 func (p *AssetPreferences) ThemeZoom() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.ThemeFitZoom <= 0 {
+	snap := p.Load()
+
+	if snap.ThemeFitZoom <= 0 {
 		return DefaultThemeZoom
 	}
-	return clampPercent(p.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	return clampPercent(snap.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 }
 
 // ThemePan reports the Custom-mode pan (percent of the window, ±).
 func (p *AssetPreferences) ThemePan() (x, y int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.ThemeFitPanX, p.ThemeFitPanY
+	snap := p.Load()
+
+	return snap.ThemeFitPanX, snap.ThemeFitPanY
 }
 
 // SetThemeFitZoom clamps and stores the Custom-mode zoom.
@@ -7440,10 +7438,10 @@ func (p *AssetPreferences) ImportLearnedJSON(data []byte) (int, error) {
 // LearnedSnapshot returns a deep copy of the learned-format table, used to
 // warm the resolver's atomic snapshot at startup and on server connect.
 func (p *AssetPreferences) LearnedSnapshot() map[string][]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make(map[string][]string, len(p.LearnedFormats))
-	for k, v := range p.LearnedFormats {
+	snap := p.Load()
+
+	out := make(map[string][]string, len(snap.LearnedFormats))
+	for k, v := range snap.LearnedFormats {
 		out[k] = cloneStrings(v)
 	}
 	return out
@@ -7480,11 +7478,11 @@ func (p *AssetPreferences) dropLearnedTypeLocked(typeName string) {
 // wins — mirroring AO2-Client mount paths, so any folder layout works, not
 // just a default /base.
 func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]string, len(p.LocalAssetsPaths))
-	copy(out, p.LocalAssetsPaths)
-	return p.LocalAssetsEnabled, out
+	snap := p.Load()
+
+	out := make([]string, len(snap.LocalAssetsPaths))
+	copy(out, snap.LocalAssetsPaths)
+	return snap.LocalAssetsEnabled, out
 }
 
 // SetLocalAssets toggles no-streaming mode and stores the ordered mount
@@ -7523,11 +7521,11 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 // double-serve. Everything that gates on layering must call THIS, never the raw
 // field.
 func (p *AssetPreferences) LayeredAssets() (layered bool, mounts []string) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]string, len(p.LocalAssetsPaths))
-	copy(out, p.LocalAssetsPaths)
-	return p.LocalAssetsLayered && !p.LocalAssetsEnabled && len(out) > 0, out
+	snap := p.Load()
+
+	out := make([]string, len(snap.LocalAssetsPaths))
+	copy(out, snap.LocalAssetsPaths)
+	return snap.LocalAssetsLayered && !snap.LocalAssetsEnabled && len(out) > 0, out
 }
 
 // SetLayeredAssets turns layering on or off. Selecting it clears the exclusive
@@ -7566,22 +7564,22 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 // no mounts at all — offering folders the pipeline is not reading would list
 // characters that then fail to load.
 func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if !p.LocalAssetsEnabled && !(p.LocalAssetsLayered && len(p.LocalAssetsPaths) > 0) {
+	snap := p.Load()
+
+	if !snap.LocalAssetsEnabled && !(snap.LocalAssetsLayered && len(snap.LocalAssetsPaths) > 0) {
 		return len(want) == 0
 	}
-	return slices.Equal(p.LocalAssetsPaths, want)
+	return slices.Equal(snap.LocalAssetsPaths, want)
 }
 
 // --- Favorites -----------------------------------------------------------------
 
 // FavoriteServers returns the starred server list, in pin order.
 func (p *AssetPreferences) FavoriteServers() []FavoriteServer {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]FavoriteServer, len(p.Favorites))
-	copy(out, p.Favorites)
+	snap := p.Load()
+
+	out := make([]FavoriteServer, len(snap.Favorites))
+	copy(out, snap.Favorites)
 	return out
 }
 
@@ -7700,9 +7698,9 @@ func (p *AssetPreferences) MergeFavoritesJSON(data []byte) (int, error) {
 
 // IsFavorite reports whether the URL is starred.
 func (p *AssetPreferences) IsFavorite(url string) bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, f := range p.Favorites {
+	snap := p.Load()
+
+	for _, f := range snap.Favorites {
 		if f.URL == url {
 			return true
 		}
@@ -7731,13 +7729,13 @@ const ShownameCap = 64
 // ShownameList returns a copy of the saved showname presets (global, persisted —
 // cleared only by a full factory reset).
 func (p *AssetPreferences) ShownameList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ShownamePresets) == 0 {
+	snap := p.Load()
+
+	if len(snap.ShownamePresets) == 0 {
 		return nil
 	}
-	out := make([]string, len(p.ShownamePresets))
-	copy(out, p.ShownamePresets)
+	out := make([]string, len(snap.ShownamePresets))
+	copy(out, snap.ShownamePresets)
 	return out
 }
 
@@ -7745,9 +7743,9 @@ func (p *AssetPreferences) ShownameList() []string {
 // so the courtroom name picker caches its option list and rebuilds only when the
 // set changes (vs calling ShownameList, which copies, every frame).
 func (p *AssetPreferences) ShownameCount() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return len(p.ShownamePresets)
+	snap := p.Load()
+
+	return len(snap.ShownamePresets)
 }
 
 // AddShownamePreset appends a showname to the saved presets (trimmed, deduped
@@ -7801,13 +7799,13 @@ const shownameKeyCap = 64
 // ShownameKeyBinds returns a copy of the global key → showname bind map (M6:
 // press a bound key in the courtroom to swap to that showname). Nil = none.
 func (p *AssetPreferences) ShownameKeyBinds() map[string]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ShownameKeys) == 0 {
+	snap := p.Load()
+
+	if len(snap.ShownameKeys) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(p.ShownameKeys))
-	for k, v := range p.ShownameKeys {
+	out := make(map[string]string, len(snap.ShownameKeys))
+	for k, v := range snap.ShownameKeys {
 		out[k] = v
 	}
 	return out
@@ -7845,13 +7843,13 @@ const icPhraseKeyCap = 64
 // ICPhraseBinds returns a copy of the key → IC-phrase map: press a bound key in
 // the courtroom to send that line as your character in IC. Nil = none.
 func (p *AssetPreferences) ICPhraseBinds() map[string]string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ICPhraseKeys) == 0 {
+	snap := p.Load()
+
+	if len(snap.ICPhraseKeys) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(p.ICPhraseKeys))
-	for k, v := range p.ICPhraseKeys {
+	out := make(map[string]string, len(snap.ICPhraseKeys))
+	for k, v := range snap.ICPhraseKeys {
 		out[k] = v
 	}
 	return out
@@ -7890,13 +7888,13 @@ const mutedSFXCap = 128
 // IsSFXMuted reports whether an emote SFX name is muted (M11, case-insensitive).
 // Called from the courtroom audio path once per played SFX (not per frame).
 func (p *AssetPreferences) IsSFXMuted(name string) bool {
+	snap := p.Load()
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, m := range p.MutedSFX {
+
+	for _, m := range snap.MutedSFX {
 		if m == name {
 			return true
 		}
@@ -7906,13 +7904,13 @@ func (p *AssetPreferences) IsSFXMuted(name string) bool {
 
 // MutedSFXList returns a copy of the muted SFX names (global, persisted).
 func (p *AssetPreferences) MutedSFXList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.MutedSFX) == 0 {
+	snap := p.Load()
+
+	if len(snap.MutedSFX) == 0 {
 		return nil
 	}
-	out := make([]string, len(p.MutedSFX))
-	copy(out, p.MutedSFX)
+	out := make([]string, len(snap.MutedSFX))
+	copy(out, snap.MutedSFX)
 	return out
 }
 
@@ -7963,25 +7961,25 @@ const sfxFavoritesCap = 128
 // SfxFavoritesList returns a copy of the starred SFX names (#12, global, persisted,
 // lowercased bare names resolved per-server by urls.SFX).
 func (p *AssetPreferences) SfxFavoritesList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.SfxFavorites) == 0 {
+	snap := p.Load()
+
+	if len(snap.SfxFavorites) == 0 {
 		return nil
 	}
-	out := make([]string, len(p.SfxFavorites))
-	copy(out, p.SfxFavorites)
+	out := make([]string, len(snap.SfxFavorites))
+	copy(out, snap.SfxFavorites)
 	return out
 }
 
 // IsSfxFavorite reports whether a sound name is starred (case-insensitive).
 func (p *AssetPreferences) IsSfxFavorite(name string) bool {
+	snap := p.Load()
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, s := range p.SfxFavorites {
+
+	for _, s := range snap.SfxFavorites {
 		if s == name {
 			return true
 		}
@@ -8028,12 +8026,12 @@ const modReasonTemplatesCap = 32
 // is empty it returns the built-in defaults — so a brand-new config (and a fully-cleared one) always
 // has something. Deleting every entry therefore re-seeds the defaults on next read, by design.
 func (p *AssetPreferences) ModReasonTemplatesList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.ModReasonTemplates) == 0 {
+	snap := p.Load()
+
+	if len(snap.ModReasonTemplates) == 0 {
 		return cloneStrings(defaultModReasonTemplates)
 	}
-	return cloneStrings(p.ModReasonTemplates)
+	return cloneStrings(snap.ModReasonTemplates)
 }
 
 // seedModTemplatesLocked populates the stored list with the defaults if it's empty, so a mutation
@@ -8077,9 +8075,9 @@ const modDurationsCap = 16
 // short tokens ("45m", "2d"). Empty by default: the BanDuration enum presets are the
 // built-ins, customs only add to them.
 func (p *AssetPreferences) ModDurationsList() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return cloneStrings(p.ModDurations)
+	snap := p.Load()
+
+	return cloneStrings(snap.ModDurations)
 }
 
 // AddModDuration appends a custom duration chip (deduped, bounded). The caller
@@ -8153,13 +8151,13 @@ const blipVolumeDefault = 100
 // 100 = no attenuation; M11). Called from the courtroom once per message (not
 // per frame). Unknown characters get the full default.
 func (p *AssetPreferences) BlipVolumeFor(char string) int {
+	snap := p.Load()
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" {
 		return blipVolumeDefault
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if v, ok := p.BlipVols[char]; ok {
+
+	if v, ok := snap.BlipVols[char]; ok {
 		return v
 	}
 	return blipVolumeDefault
@@ -8168,13 +8166,13 @@ func (p *AssetPreferences) BlipVolumeFor(char string) int {
 // BlipVolumes returns a copy of the per-character blip-volume overrides
 // (lowercased char → scale), for the settings UI. Nil when none are set.
 func (p *AssetPreferences) BlipVolumes() map[string]int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.BlipVols) == 0 {
+	snap := p.Load()
+
+	if len(snap.BlipVols) == 0 {
 		return nil
 	}
-	out := make(map[string]int, len(p.BlipVols))
-	for k, v := range p.BlipVols {
+	out := make(map[string]int, len(snap.BlipVols))
+	for k, v := range snap.BlipVols {
 		out[k] = v
 	}
 	return out
@@ -8235,13 +8233,13 @@ const (
 // rebuild, which runs only on a character/filter change — never per frame. Nil
 // when none are set.
 func (p *AssetPreferences) EmoteFavsFor(char string) []int {
+	snap := p.Load()
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" {
 		return nil
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	src := p.EmoteFavs[char]
+
+	src := snap.EmoteFavs[char]
 	if len(src) == 0 {
 		return nil
 	}
@@ -8252,13 +8250,13 @@ func (p *AssetPreferences) EmoteFavsFor(char string) []int {
 
 // IsEmoteFav reports whether emote index idx is favourited for char.
 func (p *AssetPreferences) IsEmoteFav(char string, idx int) bool {
+	snap := p.Load()
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" || idx < 0 {
 		return false
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for _, v := range p.EmoteFavs[char] {
+
+	for _, v := range snap.EmoteFavs[char] {
 		if v == idx {
 			return true
 		}
