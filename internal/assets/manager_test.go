@@ -383,15 +383,18 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 		t.Errorf("learned = %q,%v, want .webp recorded from the bare hit", ext, ok)
 	}
 
-	// Resident under the primary key: the next pass is a T1 no-op.
+	// Resident under the primary key: the next pass is a T1 no-op. Re-issue
+	// inside the wait loop (same as TestManagerT1ShortCircuitUsesBaseKey): a pass
+	// submitted during the first pass's deliver->deferred-inflight-Delete window
+	// dedupes away without consulting T1, and slow CI runners hit that window.
 	resident[primary] = true
-	rig.manager.PrefetchWithFallback(primary, bare, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
 	deadline := time.Now().Add(managerWait)
 	for rig.manager.Stats().T1Hits == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for the resident primary base")
 		}
-		time.Sleep(time.Millisecond)
+		rig.manager.PrefetchWithFallback(primary, bare, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != 2 {
 		t.Errorf("probes after residency = %d, want still 2", got)
