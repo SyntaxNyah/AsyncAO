@@ -541,16 +541,9 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		})
 
 		if next {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					DNDSaved =
-
-					a.
-						dndOn
-
+			dndOn := a.dndOn
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.DNDSaved = dndOn
 			})
 
 			// snapshot the current state so it restores correctly

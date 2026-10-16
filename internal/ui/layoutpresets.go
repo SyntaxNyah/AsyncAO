@@ -130,16 +130,9 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
 	a.seedHiddenFromPrefs()
 	// Editor snap grid.
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			LayoutGridPx =
-
-			p.
-				GridPx
-
+	gridPx := p.GridPx
+	a.d.Prefs.Update(func(sn *config.Settings) {
+		sn.LayoutGridPx = gridPx
 	})
 
 	// THE CATCH (architect ruling 6): reset .placed on every persistable floatWin
