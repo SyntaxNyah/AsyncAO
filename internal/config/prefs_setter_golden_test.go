@@ -250,7 +250,7 @@ func TestSetterGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != filterGoldenToCurrentSetters(string(want)) {
-		t.Errorf("setter characterization drifted — regenerate the golden.\n--- want ---\n%s\n--- got ---\n%s", want, got)
+		t.Errorf("setter characterization drifted — regenerate the golden.\n--- want (filtered to current setters) ---\n%s\n--- got ---\n%s", filterGoldenToCurrentSetters(string(want)), got)
 	}
 }
 
