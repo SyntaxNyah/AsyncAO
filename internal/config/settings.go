@@ -413,21 +413,25 @@ var (
 	snapshotRebuilds atomic.Int64
 )
 
-func (p *AssetPreferences) syncSnapshot() {
-	snapshotRebuilds.Add(1)
-	s := &Settings{}
-	copyByName(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem())
-	p.settings.Store(s)
-}
-
-func copyByName(src, dst reflect.Value) {
+// copyByNameDeep deep-copies the same-named fields from src into dst (the Settings fields
+// from the inline AssetPreferences). The maps/slices are deep-copied so the snapshot never
+// shares a map/slice with the inline fields — a concurrent map setter and a snapshot-reading
+// getter must not race.
+func copyByNameDeep(src, dst reflect.Value) {
 	for i := 0; i < dst.NumField(); i++ {
 		df := dst.Field(i)
 		sf := src.FieldByName(dst.Type().Field(i).Name)
 		if sf.IsValid() && sf.Type() == df.Type() && df.CanSet() {
-			df.Set(sf)
+			cloneValue(sf, df)
 		}
 	}
+}
+
+func (p *AssetPreferences) syncSnapshot() {
+	snapshotRebuilds.Add(1)
+	s := &Settings{}
+	copyByNameDeep(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem())
+	p.settings.Store(s)
 }
 
 // Update applies f to a clone of the current snapshot, clamps the result to the same
