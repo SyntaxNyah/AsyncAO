@@ -236,7 +236,10 @@ func setterGolden() (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-// TestSetterGolden verifies the current code still matches the committed golden.
+// TestSetterGolden verifies the current code still matches the committed golden. The
+// golden is the FROZEN oracle over every setter; setters migrated off AssetPreferences
+// (deleted) are covered by TestSetterGoldenViaUpdate via the setterFieldMap, so here we
+// only compare the setters that still exist as methods.
 func TestSetterGolden(t *testing.T) {
 	want, err := os.ReadFile(setterGoldenPath)
 	if err != nil {
@@ -246,9 +249,32 @@ func TestSetterGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != string(want) {
+	if got != filterGoldenToCurrentSetters(string(want)) {
 		t.Errorf("setter characterization drifted — regenerate the golden.\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
+}
+
+// filterGoldenToCurrentSetters keeps only the golden lines whose setter still exists as
+// a method on AssetPreferences, so the frozen golden can hold the deleted setters'
+// cases (checked by TestSetterGoldenViaUpdate) without failing here.
+func filterGoldenToCurrentSetters(golden string) string {
+	pt := reflect.TypeOf(&AssetPreferences{})
+	live := map[string]bool{}
+	for i := 0; i < pt.NumMethod(); i++ {
+		if name := pt.Method(i).Name; strings.HasPrefix(name, "Set") {
+			live[name] = true
+		}
+	}
+	var out []string
+	for _, line := range strings.Split(golden, "\n") {
+		if line == "" {
+			continue
+		}
+		if i := strings.Index(line, "|"); i >= 0 && live[line[:i]] {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
 }
 
 // TestSetterGoldenRegenerate rewrites the golden from the current code.

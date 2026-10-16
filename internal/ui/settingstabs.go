@@ -72,17 +72,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 		track := sdl.Rect{X: pad + 140, Y: y + 5, W: 240, H: 16}
 		lo, hi := config.InstantReplayMinSeconds, config.InstantReplayMaxSeconds
 		if nv := int(c.Slider("ir_window", track, int32(secs-lo), int32(hi-lo))) + lo; nv != secs {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					InstantReplaySeconds =
-
-					nv
-
-			})
-
+			a.d.Prefs.SetInstantReplaySeconds(nv)
 			secs = nv
 		}
 		c.Label(track.X+track.W+10, y+4, formatReplayWindow(time.Duration(secs)*time.Second)+"  (10s … 1 hour)", ColAccent)
@@ -770,17 +760,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		amp := a.d.Prefs.BreathAmp()
 		c.Label(pad+16, y+4, "Amount:", ColTextDim)
 		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					BreathAmount =
-
-					next
-
-			})
-
+			a.d.Prefs.SetBreathAmp(next)
 			amp = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
@@ -788,48 +768,18 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		spd := a.d.Prefs.BreathSpeed()
 		c.Label(pad+16, y+4, "Speed:", ColTextDim)
 		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					BreathRate =
-
-					next
-
-			})
-
+			a.d.Prefs.SetBreathSpeed(next)
 			spd = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
 		y += 26
 		bob := a.d.Prefs.BreathBobOn()
 		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					BreathNoBob =
-
-					next
-
-			})
-
+			a.d.Prefs.SetBreathBob(next)
 		}
 		scl := a.d.Prefs.BreathScaleOn()
 		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					BreathNoScale =
-
-					next
-
-			})
-
+			a.d.Prefs.SetBreathScale(next)
 		}
 		y += 26
 	}

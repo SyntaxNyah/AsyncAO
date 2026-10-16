@@ -72,17 +72,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 		y += btnH + 6
 		if next := a.sliderRow(y, "  Hold time (ms)", hcMs, 100, config.MinHoldClearMs, config.MaxHoldClearMs); next != hcMs {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					HoldClearMs =
-
-					next
-
-			})
-
+			a.d.Prefs.SetHoldClearMs(next)
 		}
 		c.Label(pad+270, y+4, "how long to hold before it clears (default 1.5 s)", ColTextDim)
 		y += 30

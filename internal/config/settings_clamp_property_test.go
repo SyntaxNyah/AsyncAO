@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -56,72 +57,45 @@ var staysExplicit = map[string]bool{
 	"SetSpriteScalingMode": true, // enum whitelist
 }
 
-// TestSetterGoldenViaUpdate runs every EXPRESSIBLE setter golden case through Update: the
-// setter is applied normally (the golden), and the same scenario's args are assigned to the
-// setter's field through Update; the whole-struct diff must match. Single-field numeric
-// setters only; the sentinel "zero"/slice/string/enum cases stay explicit (listed by the
-// skip). Multi-field and no-field setters stay explicit too.
+// TestSetterGoldenViaUpdate runs every single-field golden case through Update via the
+// setter-name -> field map (prefs_setter_map_test.go), including the migrated setters
+// whose methods are deleted. The invert entries give the adapter teeth: a naive
+// field=arg mapping writes BoldNamesOff/BreathNoBob/BreathNoScale the wrong way round
+// and fails here — the exact migration bug this guards against.
 func TestSetterGoldenViaUpdate(t *testing.T) {
-	pt := reflect.TypeOf(&AssetPreferences{})
-	checked := 0
-	for i := 0; i < pt.NumMethod(); i++ {
-		m := pt.Method(i)
-		if !strings.HasPrefix(m.Name, "Set") || m.Type.NumIn() != 2 {
-			continue
+	raw, err := os.ReadFile(setterGoldenPath)
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	st := reflect.TypeOf(Settings{})
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 {
+			t.Fatalf("bad golden line %q", line)
 		}
-		fields := setterFields(m)
-		if len(fields) != 1 {
-			continue
+		name, label, expected := parts[0], parts[1], parts[2]
+		sf, ok := setterFieldMap[name]
+		if !ok {
+			continue // multi-field / no-field / string / enum — the live setter covers those
 		}
-		// only bool/numeric field assignments are expressible through Update; string setters
-		// may sanitize or default (SetSubtheme/SetHoldClearKey) and stay explicit.
-		switch m.Type.In(1).Kind() {
-		case reflect.Bool,
-			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-			reflect.Float32, reflect.Float64:
-		default:
-			continue // string/slice/map/struct/ptr stay explicit
+		f, ok := st.FieldByName(sf.field)
+		if !ok {
+			t.Fatalf("%s: field %q not in Settings", name, sf.field)
 		}
-		if staysExplicit[m.Name] {
-			continue
+		arg := scenarioArg(f.Type, label)
+		if sf.invert && f.Type.Kind() == reflect.Bool {
+			arg = reflect.ValueOf(!arg.Bool())
 		}
-		for _, sc := range setterScenarios(m) {
-			switch sc.label {
-			case "zero", "nil", "empty":
-				continue // sentinel/collection cases stay explicit
-			}
-			base := defaultPrefs("")
-			after := defaultPrefs("")
-			call := append([]reflect.Value{reflect.ValueOf(after)}, sc.args...)
-			var panicked string
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						panicked = r.(string)
-					}
-				}()
-				m.Func.Call(call)
-			}()
-			if panicked != "" {
-				continue
-			}
-			want := fieldDiff(base, after)
-
-			upd := defaultPrefs("")
-			upd.Update(func(s *Settings) {
-				for j, arg := range sc.args {
-					setSettingsField(s, fields[j], arg)
-				}
-			})
-			have := fieldDiff(base, upd)
-			checked++
-			if !reflect.DeepEqual(have, want) {
-				t.Errorf("%s/%s: Update diff=%v, setter diff=%v", m.Name, sc.label, have, want)
-			}
+		base := defaultPrefs("")
+		base.Update(func(s *Settings) {
+			setSettingsField(s, sf.field, arg)
+		})
+		got := strings.Join(fieldDiff(defaultPrefs(""), base), ";")
+		if got != expected {
+			t.Errorf("%s|%s: Update diff = %q, golden = %q", name, label, got, expected)
 		}
 	}
-	t.Logf("checked %d setter scenarios via Update", checked)
 }
 
 // setIntVal sets v to i for int and uint kinds alike.

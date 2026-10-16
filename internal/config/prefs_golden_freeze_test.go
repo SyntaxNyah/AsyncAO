@@ -18,7 +18,7 @@ const (
 	loadGoldenSHA256   = "2f52b461d8280db12f391575f1a00d5a2243cf26edf1b4640fe355e78ff75b5d"
 	defaultPrefsSHA    = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
 	prefsGoldenSHA256  = "64f4503932cbd365f97b016a6a6c8c968a7a5d890242e808335f881c97730c50"
-	settersGoldenSHA   = "3108161190fa510ce0a9554a8c62b23ee5f105608947fe66e9fd570e240bb2f5"
+	settersGoldenSHA   = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
 )
 
 // TestGoldenFilesFrozen pins the four data files the persistence-swap oracle depends on
@@ -27,10 +27,7 @@ const (
 // constants are then updated by hand, surfacing in review).
 func TestGoldenFilesFrozen(t *testing.T) {
 	if os.Getenv("GOLDEN_REGEN") == "1" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("GOLDEN_REGEN=1 refused under CI — regenerate locally, then hand-edit the frozen constants")
-		}
-		t.Skip("regenerating golden locally; update the frozen constants by hand afterward")
+		t.Fatal("GOLDEN_REGEN=1 refuses the freeze check — regenerate by name only (go test ./internal/config -run <RegenerateTest>), hand-edit the frozen constants, then re-run without GOLDEN_REGEN")
 	}
 	for _, c := range []struct {
 		name, path, want string

@@ -263,17 +263,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+210+226, y+4, igLabel, ColTextDim)
 	if nig != ig {
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				InputGraceFramesVal =
-
-				nig
-
-		})
-
+		a.d.Prefs.SetInputGraceFrames(nig)
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 0 turns the hold off entirely; 1 (the default) is nearly as snappy — the input still shows instantly either way, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
@@ -633,17 +623,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
 	y += 8
 	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, func() int { return a.d.Prefs.Load().AnimatedSpriteCapPxVal }, func(n int) {
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				AnimatedSpriteCapPxVal =
-
-				n
-
-		})
-
+		a.d.Prefs.SetAnimatedSpriteCap(n)
 		a.applySpriteCap()
 	}, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Animations are no longer truncated to fit the texture budget, so one full high-res preanimation can hold a few hundred MB of GPU memory. This caps animated sprite HEIGHT (still art is untouched) to shrink that footprint; leave off for AO2-identical full quality.", ColTextDim)
