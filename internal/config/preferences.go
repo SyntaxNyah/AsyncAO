@@ -2366,40 +2366,25 @@ func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
 // resident textures so it applies live (the SDL hint only affects
 // textures created after it changes).
 func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
-	p.mu.Lock()
-	if p.SmoothScaling == enabled {
-		p.mu.Unlock()
-		return
-	}
-	p.SmoothScaling = enabled
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SmoothScaling = enabled
+	})
 }
 
 // --- Update check ------------------------------------------------------------
 
 // SetUpdateCheck toggles the launch update check.
 func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
-	p.mu.Lock()
-	if p.UpdateCheck == enabled {
-		p.mu.Unlock()
-		return
-	}
-	p.UpdateCheck = enabled
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UpdateCheck = enabled
+	})
 }
 
 // SetUpdateChannelExperimental swaps the update channel (true = experimental).
 func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
-	p.mu.Lock()
-	if p.UpdateExperimental == on {
-		p.mu.Unlock()
-		return
-	}
-	p.UpdateExperimental = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UpdateExperimental = on
+	})
 }
 
 // --- Missing-asset report ----------------------------------------------------
@@ -2408,14 +2393,9 @@ func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
 
 // SetSpriteMove toggles click-drag sprite repositioning.
 func (p *AssetPreferences) SetSpriteMove(on bool) {
-	p.mu.Lock()
-	if p.SpriteMoveOn == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteMoveOn = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteMoveOn = on
+	})
 }
 
 // --- Desk format policy -----------------------------------------------------
@@ -2424,27 +2404,17 @@ func (p *AssetPreferences) SetSpriteMove(on bool) {
 
 // SetSpritePreviews toggles the hover-preview pop-up.
 func (p *AssetPreferences) SetSpritePreviews(on bool) {
-	p.mu.Lock()
-	if p.SpritePreviewOn == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SpritePreviewOn = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpritePreviewOn = on
+	})
 }
 
 // SetPreviewPinned persists the sticky pin. Written by the box's own pin button
 // as well as by the Settings row, so the two can never disagree.
 func (p *AssetPreferences) SetPreviewPinned(on bool) {
-	p.mu.Lock()
-	if p.PreviewPinned == on {
-		p.mu.Unlock()
-		return
-	}
-	p.PreviewPinned = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PreviewPinned = on
+	})
 }
 
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
@@ -2562,39 +2532,24 @@ func (p *AssetPreferences) EmoteGridGap() int {
 
 // SetSmoothLogScroll toggles the eased follow jump.
 func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
-	p.mu.Lock()
-	if p.SmoothLogScroll == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SmoothLogScroll = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SmoothLogScroll = on
+	})
 }
 
 // SetShowMissingPlaceholder toggles the missing-sprite placeholder.
 func (p *AssetPreferences) SetShowMissingPlaceholder(on bool) {
-	p.mu.Lock()
-	if p.ShowMissingPlaceholder == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShowMissingPlaceholder = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShowMissingPlaceholder = on
+	})
 }
 
 // SetErrorSpritePath persists a custom placeholder image path ("" clears it back
 // to the embedded default). The App reloads the art off-thread on change.
 func (p *AssetPreferences) SetErrorSpritePath(path string) {
-	p.mu.Lock()
-	if p.ErrorSpriteFile == path {
-		p.mu.Unlock()
-		return
-	}
-	p.ErrorSpriteFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ErrorSpriteFile = path
+	})
 }
 
 // ClearLearnedType drops every host's learned format for one asset type (e.g.
@@ -2690,86 +2645,51 @@ func (p *AssetPreferences) DownloadCapKBps() int {
 
 // SetRandomEmote toggles auto-random emote selection on send.
 func (p *AssetPreferences) SetRandomEmote(on bool) {
-	p.mu.Lock()
-	if p.RandomEmote == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RandomEmote = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RandomEmote = on
+	})
 }
 
 // SetShowFriendButton toggles the player-list friend button.
 func (p *AssetPreferences) SetShowFriendButton(on bool) {
-	p.mu.Lock()
-	if p.ShowFriendButton == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShowFriendButton = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShowFriendButton = on
+	})
 }
 
 // SetRightClickHideSprite toggles right-click-to-hide-sprite.
 func (p *AssetPreferences) SetRightClickHideSprite(on bool) {
-	p.mu.Lock()
-	if p.RightClickHideSprite == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RightClickHideSprite = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RightClickHideSprite = on
+	})
 }
 
 // SetRainbowMessages toggles rainbow IC messages.
 func (p *AssetPreferences) SetRainbowMessages(on bool) {
-	p.mu.Lock()
-	if p.RainbowMessages == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowMessages = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowMessages = on
+	})
 }
 
 // SetRandomMessageColor toggles random per-message colour.
 func (p *AssetPreferences) SetRandomMessageColor(on bool) {
-	p.mu.Lock()
-	if p.RandomMessageColor == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RandomMessageColor = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RandomMessageColor = on
+	})
 }
 
 // SetRainbowSprites toggles the rainbow character-sprite wash.
 func (p *AssetPreferences) SetRainbowSprites(on bool) {
-	p.mu.Lock()
-	if p.RainbowSprites == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowSprites = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowSprites = on
+	})
 }
 
 // SetShowRecordButton toggles the on-courtroom Record button.
 func (p *AssetPreferences) SetShowRecordButton(on bool) {
-	p.mu.Lock()
-	if p.ShowRecordButton == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShowRecordButton = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShowRecordButton = on
+	})
 }
 
 // Instant-replay capture-window bounds: a sane floor so a clip has context, and
@@ -2823,26 +2743,16 @@ func (p *AssetPreferences) SetTimerSeconds(s int) {
 
 // SetShowSongURL toggles showing the full song URL in the music log line.
 func (p *AssetPreferences) SetShowSongURL(on bool) {
-	p.mu.Lock()
-	if p.ShowSongURL == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShowSongURL = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShowSongURL = on
+	})
 }
 
 // SetTimerRepeat stores the timer's repeat toggle.
 func (p *AssetPreferences) SetTimerRepeat(on bool) {
-	p.mu.Lock()
-	if p.TimerRepeat == on {
-		p.mu.Unlock()
-		return
-	}
-	p.TimerRepeat = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.TimerRepeat = on
+	})
 }
 
 func clampInstantReplaySeconds(s int) int {
@@ -3374,14 +3284,9 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 
 // SetVoiceInput sets (or clears, for system default) the voice mic device.
 func (p *AssetPreferences) SetVoiceInput(s string) {
-	p.mu.Lock()
-	if p.VoiceInputDevice == s {
-		p.mu.Unlock()
-		return
-	}
-	p.VoiceInputDevice = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.VoiceInputDevice = s
+	})
 }
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
@@ -3447,26 +3352,16 @@ func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
 
 // SetVoicePTT sets (or clears) the push-to-talk toggle key.
 func (p *AssetPreferences) SetVoicePTT(k string) {
-	p.mu.Lock()
-	if p.VoicePTTKey == k {
-		p.mu.Unlock()
-		return
-	}
-	p.VoicePTTKey = k
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.VoicePTTKey = k
+	})
 }
 
 // SetQuitConfirmSkip persists the quit-confirm "don't ask again" choice.
 func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
-	p.mu.Lock()
-	if p.QuitConfirmSkip == on {
-		p.mu.Unlock()
-		return
-	}
-	p.QuitConfirmSkip = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.QuitConfirmSkip = on
+	})
 }
 
 // SetProfile stores the user's character profile (every field length-clamped).
@@ -3510,86 +3405,51 @@ func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
 
 // SetRainbowSpriteGlow toggles the additive neon-glow blend.
 func (p *AssetPreferences) SetRainbowSpriteGlow(on bool) {
-	p.mu.Lock()
-	if p.RainbowSpriteGlow == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowSpriteGlow = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowSpriteGlow = on
+	})
 }
 
 // SetRainbowPairDesync toggles the pair hue offset.
 func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
-	p.mu.Lock()
-	if p.RainbowPairDesync == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowPairDesync = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowPairDesync = on
+	})
 }
 
 // SetRainbowPerChar toggles the per-character hue offset.
 func (p *AssetPreferences) SetRainbowPerChar(on bool) {
-	p.mu.Lock()
-	if p.RainbowPerChar == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowPerChar = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowPerChar = on
+	})
 }
 
 // SetSpriteWobble toggles the sprite wobble.
 func (p *AssetPreferences) SetSpriteWobble(on bool) {
-	p.mu.Lock()
-	if p.SpriteWobble == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteWobble = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteWobble = on
+	})
 }
 
 // SetSpriteSpin toggles the sprite spin.
 func (p *AssetPreferences) SetSpriteSpin(on bool) {
-	p.mu.Lock()
-	if p.SpriteSpin == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteSpin = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteSpin = on
+	})
 }
 
 // SetSpriteSolidTint toggles the fixed-colour sprite wash.
 func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
-	p.mu.Lock()
-	if p.SpriteSolidTint == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteSolidTint = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteSolidTint = on
+	})
 }
 
 // SetShoutPunch toggles the shout screen-punch.
 func (p *AssetPreferences) SetShoutPunch(on bool) {
-	p.mu.Lock()
-	if p.ShoutPunch == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShoutPunch = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShoutPunch = on
+	})
 }
 
 // SetPostVignette / SetPostScanlines / SetPostGrain / SetPostCRT toggle the overlays.
@@ -3798,38 +3658,23 @@ func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
 
 // SetPlayerListSort remembers the Players-tab player sort.
 func (p *AssetPreferences) SetPlayerListSort(v int) {
-	p.mu.Lock()
-	if p.PlayerListSort == v {
-		p.mu.Unlock()
-		return
-	}
-	p.PlayerListSort = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PlayerListSort = v
+	})
 }
 
 // SetPlayerListAreaSort remembers the Players-tab area-group order.
 func (p *AssetPreferences) SetPlayerListAreaSort(v int) {
-	p.mu.Lock()
-	if p.PlayerListAreaSort == v {
-		p.mu.Unlock()
-		return
-	}
-	p.PlayerListAreaSort = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PlayerListAreaSort = v
+	})
 }
 
 // SetShowPairStatus toggles the opt-in pair-status chip in the player list.
 func (p *AssetPreferences) SetShowPairStatus(on bool) {
-	p.mu.Lock()
-	if p.ShowPairStatus == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ShowPairStatus = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShowPairStatus = on
+	})
 }
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
@@ -3841,36 +3686,21 @@ func (p *AssetPreferences) SetFriendSoundPath(path string) {
 }
 
 func (p *AssetPreferences) SetModBanSFX(on bool) {
-	p.mu.Lock()
-	if p.ModBanSFX != on {
-		p.ModBanSFX = on
-		p.markDirty()
-		p.mu.Unlock()
-		return
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ModBanSFX = on
+	})
 }
 
 func (p *AssetPreferences) SetModKickSFX(on bool) {
-	p.mu.Lock()
-	if p.ModKickSFX != on {
-		p.ModKickSFX = on
-		p.markDirty()
-		p.mu.Unlock()
-		return
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ModKickSFX = on
+	})
 }
 
 func (p *AssetPreferences) SetModMuteSFX(on bool) {
-	p.mu.Lock()
-	if p.ModMuteSFX != on {
-		p.ModMuteSFX = on
-		p.markDirty()
-		p.mu.Unlock()
-		return
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ModMuteSFX = on
+	})
 }
 
 func (p *AssetPreferences) SetModBanSoundPath(path string) {
@@ -3957,14 +3787,9 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 // no-op write skips markDirty so a settled draw that re-asserts "seen" never
 // spins the debounced saver.
 func (p *AssetPreferences) SetToolboxSeen(seen bool) {
-	p.mu.Lock()
-	if p.ToolboxSeen == seen {
-		p.mu.Unlock()
-		return
-	}
-	p.ToolboxSeen = seen
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ToolboxSeen = seen
+	})
 }
 
 // --- Casing alerts ---------------------------------------------------------------
@@ -3994,14 +3819,9 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 
 // SetDiscord stores the Rich Presence configuration.
 func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
-	p.mu.Lock()
-	if p.DiscordRPC == dp {
-		p.mu.Unlock()
-		return
-	}
-	p.DiscordRPC = dp
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.DiscordRPC = dp
+	})
 }
 
 // SetAutoStatus stores the auto-status configuration (word fields bounded).
@@ -4029,14 +3849,9 @@ func (p *AssetPreferences) ChromeTheme() string {
 
 // SetChromeTheme stores the chrome theme preset key.
 func (p *AssetPreferences) SetChromeTheme(key string) {
-	p.mu.Lock()
-	if p.ChromeThemeKey == key {
-		p.mu.Unlock()
-		return
-	}
-	p.ChromeThemeKey = key
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ChromeThemeKey = key
+	})
 }
 
 // Chrome SHAPE presets (A5): the valid keys for ChromeShapeKey. "sharp" is the
@@ -4530,14 +4345,9 @@ func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 
 // SetOOCName persists the OOC chat name (debounced saver flushes).
 func (p *AssetPreferences) SetOOCName(name string) {
-	p.mu.Lock()
-	if p.OOCName == name {
-		p.mu.Unlock()
-		return
-	}
-	p.OOCName = name
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.OOCName = name
+	})
 }
 
 // --- Layout scales --------------------------------------------------------------
@@ -4572,14 +4382,9 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 
 // SetCustomChrome stores the 7-colour custom chrome scheme (hex strings).
 func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
-	p.mu.Lock()
-	if p.CustomChromeHex == hex {
-		p.mu.Unlock()
-		return
-	}
-	p.CustomChromeHex = hex
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.CustomChromeHex = hex
+	})
 }
 
 // LayoutPartColorCount is the number of individually-tintable layout parts
@@ -4750,14 +4555,9 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 
 // SetWindowFullscreen persists the fullscreen choice.
 func (p *AssetPreferences) SetWindowFullscreen(on bool) {
-	p.mu.Lock()
-	if p.WindowFull == on {
-		p.mu.Unlock()
-		return
-	}
-	p.WindowFull = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.WindowFull = on
+	})
 }
 
 // --- Audio volumes ----------------------------------------------------------------
@@ -4799,14 +4599,9 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 // compatibility only: the SFX mute is now session-only and the app never writes
 // this (see ui.toggleSFXMute / ui.persistChannelMute).
 func (p *AssetPreferences) SetSFXVolMuted(on bool) {
-	p.mu.Lock()
-	if p.SFXVolMuted == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SFXVolMuted = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SFXVolMuted = on
+	})
 }
 
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
@@ -4853,14 +4648,9 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 // SetAreaHighlightColorHex persists the current-area highlight colour ("" =
 // back to the stock green).
 func (p *AssetPreferences) SetAreaHighlightColorHex(hex string) {
-	p.mu.Lock()
-	if p.AreaHighlightHex == hex {
-		p.mu.Unlock()
-		return
-	}
-	p.AreaHighlightHex = hex
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.AreaHighlightHex = hex
+	})
 }
 
 // --- Message timing & master list ----------------------------------------------
@@ -4938,26 +4728,16 @@ func (p *AssetPreferences) SetTabCap(n int) {
 
 // SetRestoreTabs toggles restore-on-launch.
 func (p *AssetPreferences) SetRestoreTabs(on bool) {
-	p.mu.Lock()
-	if p.RestoreTabs == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RestoreTabs = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RestoreTabs = on
+	})
 }
 
 // SetVolStripShown persists the on-screen volume-strip toggle.
 func (p *AssetPreferences) SetVolStripShown(on bool) {
-	p.mu.Lock()
-	if p.VolStripOn == on {
-		p.mu.Unlock()
-		return
-	}
-	p.VolStripOn = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.VolStripOn = on
+	})
 }
 
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
@@ -5622,14 +5402,9 @@ func (p *AssetPreferences) MusicFlags() int {
 // SetChangelogSeen records that the user opened the changelog for build version v,
 // clearing the unread dot until the next update changes the version.
 func (p *AssetPreferences) SetChangelogSeen(v string) {
-	p.mu.Lock()
-	if p.ChangelogSeen == v {
-		p.mu.Unlock()
-		return
-	}
-	p.ChangelogSeen = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ChangelogSeen = v
+	})
 }
 
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
@@ -5660,50 +5435,30 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 
 // SetReduceMotion toggles reduce-motion.
 func (p *AssetPreferences) SetReduceMotion(on bool) {
-	p.mu.Lock()
-	if p.ReduceMotionOn == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ReduceMotionOn = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ReduceMotionOn = on
+	})
 }
 
 // SetScreenEffects toggles the AO2 screen effects.
 func (p *AssetPreferences) SetScreenEffects(on bool) {
-	p.mu.Lock()
-	if p.ScreenEffects == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ScreenEffects = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ScreenEffects = on
+	})
 }
 
 // SetWordDelete toggles Ctrl+Backspace word deletion.
 func (p *AssetPreferences) SetWordDelete(on bool) {
-	p.mu.Lock()
-	if p.WordDelete == on {
-		p.mu.Unlock()
-		return
-	}
-	p.WordDelete = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.WordDelete = on
+	})
 }
 
 // SetRecordingsKeepAssets toggles the auto-bundle-on-stop-recording behavior.
 func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
-	p.mu.Lock()
-	if p.RecordingsKeepAssets == on {
-		p.mu.Unlock()
-		return
-	}
-	p.RecordingsKeepAssets = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RecordingsKeepAssets = on
+	})
 }
 
 // --- AO2 post-send "sticky" options + sfx_on_idle ------------------------------
@@ -5715,62 +5470,37 @@ func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
 
 // SetStickySounds toggles whether the IC SFX pick survives a send.
 func (p *AssetPreferences) SetStickySounds(on bool) {
-	p.mu.Lock()
-	if p.StickySounds == on {
-		p.mu.Unlock()
-		return
-	}
-	p.StickySounds = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.StickySounds = on
+	})
 }
 
 // SetStickyEffects toggles whether the effects pick survives a send.
 func (p *AssetPreferences) SetStickyEffects(on bool) {
-	p.mu.Lock()
-	if p.StickyEffects == on {
-		p.mu.Unlock()
-		return
-	}
-	p.StickyEffects = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.StickyEffects = on
+	})
 }
 
 // SetStickyPreanims toggles whether the Pre checkbox survives a send.
 func (p *AssetPreferences) SetStickyPreanims(on bool) {
-	p.mu.Lock()
-	if p.StickyPreanims == on {
-		p.mu.Unlock()
-		return
-	}
-	p.StickyPreanims = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.StickyPreanims = on
+	})
 }
 
 // SetSFXOnIdle toggles sending a picked SFX on a non-preanim message.
 func (p *AssetPreferences) SetSFXOnIdle(on bool) {
-	p.mu.Lock()
-	if p.SFXOnIdle == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SFXOnIdle = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SFXOnIdle = on
+	})
 }
 
 // SetUnfocusedFullRate toggles full-speed rendering while unfocused.
 func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
-	p.mu.Lock()
-	if p.UnfocusedFullRate == on {
-		p.mu.Unlock()
-		return
-	}
-	p.UnfocusedFullRate = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UnfocusedFullRate = on
+	})
 }
 
 // SetMasterList persists the master-list override.
@@ -6419,14 +6149,9 @@ func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 
 // SetStreamerMode toggles the on-stream privacy mode.
 func (p *AssetPreferences) SetStreamerMode(enabled bool) {
-	p.mu.Lock()
-	if p.StreamerModeOn == enabled {
-		p.mu.Unlock()
-		return
-	}
-	p.StreamerModeOn = enabled
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.StreamerModeOn = enabled
+	})
 }
 
 // Layout-editor bounds (rule §17.4).
@@ -7260,38 +6985,23 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 
 // SetFontPaths persists the font override list.
 func (p *AssetPreferences) SetFontPaths(raw string) {
-	p.mu.Lock()
-	if p.FontOverridePaths == raw {
-		p.mu.Unlock()
-		return
-	}
-	p.FontOverridePaths = raw
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.FontOverridePaths = raw
+	})
 }
 
 // SetUIScaleAuto toggles DPI-driven UI scaling.
 func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
-	p.mu.Lock()
-	if p.UIScaleAutoOn == enabled {
-		p.mu.Unlock()
-		return
-	}
-	p.UIScaleAutoOn = enabled
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UIScaleAutoOn = enabled
+	})
 }
 
 // SetThemeLayout toggles theme-driven courtroom geometry.
 func (p *AssetPreferences) SetThemeLayout(enabled bool) {
-	p.mu.Lock()
-	if p.ThemeLayoutOn == enabled {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeLayoutOn = enabled
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeLayoutOn = enabled
+	})
 }
 
 // ThemeFitDefaultJustMoved reports whether THIS load performed the one-shot
@@ -7377,26 +7087,16 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 
 // SetPlainLobby toggles the plain lobby backdrop.
 func (p *AssetPreferences) SetPlainLobby(on bool) {
-	p.mu.Lock()
-	if p.PlainLobby == on {
-		p.mu.Unlock()
-		return
-	}
-	p.PlainLobby = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PlainLobby = on
+	})
 }
 
 // SetThemeFonts toggles per-element theme fonts.
 func (p *AssetPreferences) SetThemeFonts(on bool) {
-	p.mu.Lock()
-	if p.ThemeFonts == on {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeFonts = on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeFonts = on
+	})
 }
 
 // ExportLearnedJSON snapshots the learned-format table as indented JSON —
@@ -7709,14 +7409,9 @@ func (p *AssetPreferences) IsFavorite(url string) bool {
 // SetShowname persists the in-character showname so it survives restarts and
 // is prefilled on the next session.
 func (p *AssetPreferences) SetShowname(name string) {
-	p.mu.Lock()
-	if p.Showname == name {
-		p.mu.Unlock()
-		return
-	}
-	p.Showname = name
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.Showname = name
+	})
 }
 
 // ShownameCap bounds the saved showname presets (M6).
