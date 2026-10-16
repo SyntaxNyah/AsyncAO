@@ -258,16 +258,9 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 // default a fresh tab seeds from.
 func (a *App) setICCustomRGB(rgb int) {
 	a.icCustomRGB = rgb & 0xFFFFFF
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			ICCustomColor =
-
-			a.
-				icCustomRGB
-
+	icRGB := a.icCustomRGB
+	a.d.Prefs.Update(func(sn *config.Settings) {
+		sn.ICCustomColor = icRGB
 	})
 
 }

@@ -5,13 +5,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestRaceHammerV2 is the §17.8 v3 race gate: four writers cycle through every single-scalar
-// Set* method chosen by reflection, alternating a zero and a valid non-zero argument so the
-// writes actually change state, while eight readers reflect over every Settings field through
-// Load(). It asserts the markDirty and snapshot-rebuild counters advanced (the hammer really
-// hammered), then runs under `-race -count=20 -cpu 1,2,4,8`.
+// Set* method chosen by reflection (alternating zero and valid), four MORE writers drive the
+// same setters through Update (the migrated path), and eight readers reflect over every
+// Settings field through Load(). A watchdog fails the test if the hammer deadlocks (e.g. a
+// prefs call inside an Update closure would). It asserts the markDirty and snapshot-rebuild
+// counters advanced, then runs under `-race -count=20 -cpu 1,2,4,8`.
 func TestRaceHammerV2(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	defer p.Close()
@@ -36,14 +38,15 @@ func TestRaceHammerV2(t *testing.T) {
 	t.Logf("cycling %d setters", len(setters))
 
 	const (
-		writers    = 4
-		readers    = 8
-		iterations = 300
+		setterWriters = 4
+		updateWriters = 4
+		readers       = 8
+		iterations    = 300
 	)
 	startDirty, startRebuild := markDirtyCalls.Load(), snapshotRebuilds.Load()
 	var wg sync.WaitGroup
 
-	for w := 0; w < writers; w++ {
+	for w := 0; w < setterWriters; w++ {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
@@ -54,6 +57,27 @@ func TestRaceHammerV2(t *testing.T) {
 					arg = validOf(m.Type.In(1))
 				}
 				m.Func.Call([]reflect.Value{reflect.ValueOf(p), arg})
+			}
+		}(w)
+	}
+
+	// Writers through Update: the migrated setters' path. They assign the same scalar into
+	// the field the setter writes (via setterFields), so Update's clone/apply/normalize/write-back
+	// runs concurrently with the direct setters and the Load readers.
+	for w := 0; w < updateWriters; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				m := setters[(w*31+i)%len(setters)]
+				fields := setterFields(m)
+				if len(fields) != 1 {
+					continue
+				}
+				arg := validOf(m.Type.In(1))
+				p.Update(func(s *Settings) {
+					setSettingsField(s, fields[0], arg)
+				})
 			}
 		}(w)
 	}
@@ -72,7 +96,19 @@ func TestRaceHammerV2(t *testing.T) {
 		}()
 	}
 
-	wg.Wait()
+	// Watchdog: a deadlock here (e.g. a Load inside an Update closure) would hang wg.Wait
+	// forever; fail the test instead of hanging the run.
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(90 * time.Second):
+		t.Fatal("race hammer deadlocked: goroutines did not finish within 90s")
+	}
+
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("SaveNow after hammer: %v", err)
 	}

@@ -571,16 +571,9 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	switch k {
 	case musicMenuVolumeView:
 		a.musicVolMode = !a.musicVolMode
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				MusicVolMode =
-
-				a.
-					musicVolMode
-
+		mode := a.musicVolMode
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.MusicVolMode = mode
 		})
 
 	case musicMenuFadeIn:
@@ -641,20 +634,9 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 
 // toggleMusicFlag flips one MUSIC_EFFECT bit in the persisted mask.
 func (a *App) toggleMusicFlag(bit int) {
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			MusicFlagsVal =
-
-			a.
-				d.
-				Prefs.
-				MusicFlags() ^
-
-				bit
-
+	flags := a.d.Prefs.MusicFlags() ^ bit
+	a.d.Prefs.Update(func(sn *config.Settings) {
+		sn.MusicFlagsVal = flags
 	})
 
 }

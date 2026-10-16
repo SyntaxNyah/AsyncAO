@@ -2072,16 +2072,9 @@ func (a *App) setDND(on bool) {
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
 	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			OOCScalePct =
-
-			a.
-				oocPct
-
+	oocPct := a.oocPct
+	a.d.Prefs.Update(func(sn *config.Settings) {
+		sn.OOCScalePct = oocPct
 	})
 
 	// independent OOC log text size

@@ -138,19 +138,9 @@ func (a *App) areaMenuAct(k musicMenuKind) {
 		a.warnLine = clampLine("Re-asking the server for the area list (" + areaRefreshCommand + ")…")
 		a.warnAt = a.now()
 	case areaMenuPerAreaLog:
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				PerAreaScroll =
-
-				!a.
-					d.
-					Prefs.
-					Load().
-					PerAreaScroll
-
+		perAreaScroll := !a.d.Prefs.Load().PerAreaScroll
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.PerAreaScroll = perAreaScroll
 		})
 
 	case areaMenuCMPanel:
