@@ -4630,6 +4630,89 @@ func (p *AssetPreferences) SetBoldNames(on bool) {
 	p.mu.Unlock()
 }
 
+// SetBreathBob toggles the idle-breath vertical bob. The stored field is the
+// inverted BreathNoBob, so this stays explicit (the inverse can't be expressed as
+// a plain Update assignment — the adapter's setterFieldMap records the invert).
+func (p *AssetPreferences) SetBreathBob(on bool) { p.setBoolPref(&p.BreathNoBob, !on) }
+
+// SetBreathScale toggles the idle-breath scale pulse (inverted BreathNoScale).
+func (p *AssetPreferences) SetBreathScale(on bool) { p.setBoolPref(&p.BreathNoScale, !on) }
+
+// The following six setters stay explicit because their clamp is not a plain range the
+// normalize can reproduce through a single field assignment: zero resolves to a default
+// or "off" sentinel, or below-floor collapses to off instead of the floor value.
+// The setter golden adapter (TestSetterGoldenViaUpdate) would flag them otherwise.
+
+// SetBreathAmp clamps the idle-breath amplitude slider to [1,100] (0 -> 1).
+func (p *AssetPreferences) SetBreathAmp(v int) { p.setIntPref(&p.BreathAmount, v, 1, 100) }
+
+// SetBreathSpeed clamps the idle-breath speed slider to [1,100] (0 -> 1).
+func (p *AssetPreferences) SetBreathSpeed(v int) { p.setIntPref(&p.BreathRate, v, 1, 100) }
+
+// SetHoldClearMs clamps the hold-to-clear hold time (0 -> MinHoldClearMs).
+func (p *AssetPreferences) SetHoldClearMs(ms int) {
+	ms = clampPercent(ms, MinHoldClearMs, MaxHoldClearMs)
+	p.mu.Lock()
+	if p.HoldClearMs == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.HoldClearMs = ms
+	p.markDirty()
+	p.mu.Unlock()
+}
+
+// SetInputGraceFrames maps non-positive n to InputGraceOff (the one-shot "off" stamp)
+// and clamps positive n into the valid range.
+func (p *AssetPreferences) SetInputGraceFrames(n int) {
+	if n <= 0 {
+		n = InputGraceOff
+	} else {
+		n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+	}
+	p.mu.Lock()
+	if p.InputGraceFramesVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.InputGraceFramesVal = n
+	p.markDirty()
+	p.mu.Unlock()
+}
+
+// SetInstantReplaySeconds clamps the replay window, resolving 0 to the default.
+func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
+	s = clampInstantReplaySeconds(s)
+	p.mu.Lock()
+	if p.InstantReplaySeconds == s {
+		p.mu.Unlock()
+		return
+	}
+	p.InstantReplaySeconds = s
+	p.markDirty()
+	p.mu.Unlock()
+}
+
+// SetAnimatedSpriteCap sets the animated-sprite height cap; a value below the floor
+// disables the cap (0), and 0 itself is the unset sentinel.
+func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
+	if px != 0 {
+		if px < AnimatedSpriteCapMinPx {
+			px = 0 // below the floor = off, not a forced floor value
+		} else {
+			px = clampPercent(px, AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx)
+		}
+	}
+	p.mu.Lock()
+	if p.AnimatedSpriteCapPxVal == px {
+		p.mu.Unlock()
+		return
+	}
+	p.AnimatedSpriteCapPxVal = px
+	p.markDirty()
+	p.mu.Unlock()
+}
+
 // SetUIScale clamps and persists the global UI scale.
 func (p *AssetPreferences) SetUIScale(pct int) {
 	pct = clampPercent(pct, MinUIScalePercent, MaxUIScalePercent)
