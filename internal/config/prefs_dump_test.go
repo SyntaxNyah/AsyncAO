@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -46,9 +47,12 @@ func TestPrefsDump(t *testing.T) {
 
 	var names []string
 	dumps := map[string]string{}
-	dump := func(name string, raw []byte) {
+	addLine := func(name, line string) {
 		names = append(names, name)
-		dumps[name] = prefsDumpLine(raw)
+		dumps[name] = line
+	}
+	dump := func(name string, raw []byte) {
+		addLine(name, prefsDumpLine(raw))
 	}
 	for _, c := range loadGolden {
 		raw, err := json.Marshal(c.Input)
@@ -68,6 +72,51 @@ func TestPrefsDump(t *testing.T) {
 		dump(name, raw)
 	}
 	dump("empty_object", []byte("{}"))
+
+	// Setter section: for every setter golden scenario, apply the setter and hash the
+	// dirty flag plus the bytes Save would write. The baseline (old inline-field bodies)
+	// and the tip (Update over the snapshot) must hash identically — this is the proof the
+	// new write path marks dirty and marshals exactly like the old setters.
+	shaHex := func(b []byte) string {
+		s := sha256.Sum256(b)
+		return hex.EncodeToString(s[:])
+	}
+	setterApply := func(name, label string, call func(p *AssetPreferences)) {
+		base := defaultPrefs("")
+		call(base)
+		sp := filepath.Join(t.TempDir(), "s.json")
+		base.path = sp
+		var sb []byte
+		if serr := base.SaveNow(); serr != nil {
+			sb = []byte("err:" + serr.Error())
+		} else {
+			sb, _ = os.ReadFile(sp)
+		}
+		addLine("setter_"+name+"_"+label, fmt.Sprintf("dirty=%v save=%s", base.pending.Load(), shaHex(sb)))
+	}
+	pt := reflect.TypeOf(&AssetPreferences{})
+	var setterNames []string
+	for i := 0; i < pt.NumMethod(); i++ {
+		if name := pt.Method(i).Name; strings.HasPrefix(name, "Set") {
+			setterNames = append(setterNames, name)
+		}
+	}
+	sort.Strings(setterNames)
+	for _, name := range setterNames {
+		m, _ := pt.MethodByName(name)
+		for _, sc := range setterScenarios(m) {
+			args := sc.args
+			setterApply(name, sc.label, func(p *AssetPreferences) {
+				callArgs := append([]reflect.Value{reflect.ValueOf(p)}, args...)
+				func() {
+					defer func() { _ = recover() }()
+					m.Func.Call(callArgs)
+				}()
+			})
+		}
+	}
+	// Explicit no-op: a setter that changes nothing must not mark dirty.
+	setterApply("noop", "unchanged", func(p *AssetPreferences) { p.SetBoldNames(true) })
 
 	sort.Strings(names)
 	var sb strings.Builder
