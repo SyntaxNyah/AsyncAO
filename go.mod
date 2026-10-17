@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/kettek/apng v0.0.0-20250827064933-2bb5f5fcf253
 	golang.org/x/image v0.41.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.21.0
 )
 
 require github.com/coder/websocket v1.8.12
@@ -16,9 +16,11 @@ require (
 	github.com/AO-Underground/aolib/go/v2 v2.6.1
 	github.com/klauspost/compress v1.18.6
 	github.com/veandco/go-sdl2 v0.4.40
+	golang.org/x/tools v0.47.0
 )
 
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
+	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 )
