@@ -1,4 +1,4 @@
-﻿// genclone emits internal/config/settings_clone.go: a generated deep copy of Settings
+// genclone emits internal/config/settings_clone.go: a generated deep copy of Settings
 // that does `c := *s` then explicit deep copies of every map, slice, pointer and nested
 // value that holds references. The reflection clone (settings.go cloneSettings) stays ONLY
 // in the test as the oracle. Stdlib-only (go/parser + go/ast, no go/types, no x/tools).
@@ -279,6 +279,8 @@ func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst st
 				fmt.Fprintf(buf, "%sif %s != nil {\n", indent, src)
 				fmt.Fprintf(buf, "%s\t%s = make(%s, len(%s))\n", indent, dst, typeString(t), src)
 				fmt.Fprintf(buf, "%s\tcopy(%s, %s)\n", indent, dst, src)
+				fmt.Fprintf(buf, "%s} else {\n", indent)
+				fmt.Fprintf(buf, "%s\t%s = nil\n", indent, dst)
 				fmt.Fprintf(buf, "%s}\n", indent)
 			} else {
 				i := g.loopVar("i")
@@ -287,6 +289,8 @@ func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst st
 				fmt.Fprintf(buf, "%s\tfor %s := range %s {\n", indent, i, src)
 				g.emitCopy(buf, indent+"\t\t", elem, src+"["+i+"]", dst+"["+i+"]")
 				fmt.Fprintf(buf, "%s\t}\n", indent)
+				fmt.Fprintf(buf, "%s} else {\n", indent)
+				fmt.Fprintf(buf, "%s\t%s = nil\n", indent, dst)
 				fmt.Fprintf(buf, "%s}\n", indent)
 			}
 		} else if g.holdsRefs(u.Elt) {
@@ -313,6 +317,8 @@ func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst st
 			g.emitCopy(buf, indent+"\t\t", val, v, dst+"["+k+"]")
 		}
 		fmt.Fprintf(buf, "%s\t}\n", indent)
+		fmt.Fprintf(buf, "%s} else {\n", indent)
+		fmt.Fprintf(buf, "%s\t%s = nil\n", indent, dst)
 		fmt.Fprintf(buf, "%s}\n", indent)
 	case *ast.StarExpr:
 		elem := u.X
@@ -324,6 +330,8 @@ func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst st
 			g.emitCopy(buf, indent+"\t", elem, "*"+src, "v")
 			fmt.Fprintf(buf, "%s\t%s = &v\n", indent, dst)
 		}
+		fmt.Fprintf(buf, "%s} else {\n", indent)
+		fmt.Fprintf(buf, "%s\t%s = nil\n", indent, dst)
 		fmt.Fprintf(buf, "%s}\n", indent)
 	default:
 		panic(fmt.Sprintf("unhandled kind %T for %s", u, typeString(t)))
@@ -339,6 +347,7 @@ func (g *gen) emitEqual(buf *bytes.Buffer, indent string, t ast.Expr, a, b strin
 	case *ast.ArrayType:
 		if u.Len == nil {
 			i := g.loopVar("i")
+			fmt.Fprintf(buf, "%sif (%s == nil) != (%s == nil) { return false }\n", indent, a, b)
 			fmt.Fprintf(buf, "%sif len(%s) != len(%s) { return false }\n", indent, a, b)
 			fmt.Fprintf(buf, "%sfor %s := range %s {\n", indent, i, a)
 			g.emitEqual(buf, indent+"\t", u.Elt, a+"["+i+"]", b+"["+i+"]")
@@ -367,6 +376,7 @@ func (g *gen) emitEqual(buf *bytes.Buffer, indent string, t ast.Expr, a, b strin
 	case *ast.MapType:
 		val := u.Value
 		k, v := g.loopVar("k"), g.loopVar("v")
+		fmt.Fprintf(buf, "%sif (%s == nil) != (%s == nil) { return false }\n", indent, a, b)
 		fmt.Fprintf(buf, "%sif len(%s) != len(%s) { return false }\n", indent, a, b)
 		fmt.Fprintf(buf, "%sfor %s, %s := range %s {\n", indent, k, v, a)
 		if !g.holdsRefs(val) {
