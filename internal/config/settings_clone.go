@@ -654,6 +654,1619 @@ func syncFromInline(p *AssetPreferences) *Settings {
 	return s
 }
 
+// writeBackInline copies a normalized Settings snapshot back into the inline
+// AssetPreferences data fields (the reverse of syncFromInline) so Save keeps
+// marshalling the inline fields until the final flip.
+func writeBackInline(s *Settings, p *AssetPreferences) {
+	p.GlobalFallbacksEnabled = s.GlobalFallbacksEnabled
+	p.PreferAnimated = s.PreferAnimated
+	p.EmoteButtonImages = s.EmoteButtonImages
+	p.SmoothScaling = s.SmoothScaling
+	p.SpriteScaling = s.SpriteScaling
+	p.SpriteScalingMigrated = s.SpriteScalingMigrated
+	p.UpdateCheck = s.UpdateCheck
+	p.UpdateExperimental = s.UpdateExperimental
+	p.HighlightColor = s.HighlightColor
+	p.ICCustomColor = s.ICCustomColor
+	p.NameColors = s.NameColors
+	p.NameSat = s.NameSat
+	p.NameVal = s.NameVal
+	p.BgSlideshow = s.BgSlideshow
+	p.BgSlideshowSecs = s.BgSlideshowSecs
+	p.DownloadKBps = s.DownloadKBps
+	p.ForceCharNames = s.ForceCharNames
+	p.RandomEmote = s.RandomEmote
+	p.FriendHighlight = s.FriendHighlight
+	p.ShowFriendButton = s.ShowFriendButton
+	p.ClipSpritesToStage = s.ClipSpritesToStage
+	p.RightClickHideSprite = s.RightClickHideSprite
+	p.DragLayout = s.DragLayout
+	p.FollowEnabled = s.FollowEnabled
+	p.ShowPairStatus = s.ShowPairStatus
+	p.PlayerListSort = s.PlayerListSort
+	p.PlayerListAreaSort = s.PlayerListAreaSort
+	p.DyslexiaFont = s.DyslexiaFont
+	p.FontEverywhere = s.FontEverywhere
+	p.DNDPersist = s.DNDPersist
+	p.DNDSaved = s.DNDSaved
+	p.RainbowMessages = s.RainbowMessages
+	p.RandomMessageColor = s.RandomMessageColor
+	p.RainbowSprites = s.RainbowSprites
+	p.ShowRecordButton = s.ShowRecordButton
+	p.InstantDisconnect = s.InstantDisconnect
+	p.HideDesk = s.HideDesk
+	p.FavEmoteBox = s.FavEmoteBox
+	p.InstantReplay = s.InstantReplay
+	p.InstantReplaySeconds = s.InstantReplaySeconds
+	p.TimerSeconds = s.TimerSeconds
+	p.TimerRepeat = s.TimerRepeat
+	p.NotifyOnOOC = s.NotifyOnOOC
+	p.ShowSongURL = s.ShowSongURL
+	p.AutoConnectOnLaunch = s.AutoConnectOnLaunch
+	p.LastServerName = s.LastServerName
+	p.LastServerURL = s.LastServerURL
+	p.RainbowSpriteSpeed = s.RainbowSpriteSpeed
+	p.ReplayPlaybackSpeed = s.ReplayPlaybackSpeed
+	p.Export = s.Export
+	p.MySpriteStyle = s.MySpriteStyle
+	p.HideSpriteStyles = s.HideSpriteStyles
+	p.HideReactions = s.HideReactions
+	p.CharBundlePrefetch = s.CharBundlePrefetch
+	p.PingChip = s.PingChip
+	p.ValidateTLSCerts = s.ValidateTLSCerts
+	p.AssetOrigin = s.AssetOrigin
+	p.WSOrigin = s.WSOrigin
+	p.AssetCharCase = s.AssetCharCase
+	p.ProxyModeVal = s.ProxyModeVal
+	p.ProxyURL = s.ProxyURL
+	p.VoiceInputDevice = s.VoiceInputDevice
+	p.VoiceOutVolume = s.VoiceOutVolume
+	p.PrefetchAggro = s.PrefetchAggro
+	p.VoicePTTKey = s.VoicePTTKey
+	p.QuitConfirmSkip = s.QuitConfirmSkip
+	p.LegacyDevTheme = s.LegacyDevTheme
+	p.OOCInLogTab = s.OOCInLogTab
+	p.MyProfile = s.MyProfile
+	p.ChatboxOpacity = s.ChatboxOpacity
+	p.RainbowSpriteVividness = s.RainbowSpriteVividness
+	p.RainbowSpriteGlow = s.RainbowSpriteGlow
+	p.RainbowPairDesync = s.RainbowPairDesync
+	p.RainbowPerChar = s.RainbowPerChar
+	p.SpriteWobble = s.SpriteWobble
+	p.SpriteSpin = s.SpriteSpin
+	p.SpriteSolidTint = s.SpriteSolidTint
+	p.SpriteTintColor = s.SpriteTintColor
+	p.ShoutPunch = s.ShoutPunch
+	p.ChatboxTint = s.ChatboxTint
+	p.PostVignette = s.PostVignette
+	p.PostScanlines = s.PostScanlines
+	p.PostGrain = s.PostGrain
+	p.PostCRT = s.PostCRT
+	p.AnimateEntrances = s.AnimateEntrances
+	p.DepthOfField = s.DepthOfField
+	p.Spotlight = s.Spotlight
+	p.SpotlightStrength = s.SpotlightStrength
+	p.IdleBreath = s.IdleBreath
+	p.BreathNoBob = s.BreathNoBob
+	p.BreathNoScale = s.BreathNoScale
+	p.BreathAmount = s.BreathAmount
+	p.BreathRate = s.BreathRate
+	p.Reflection = s.Reflection
+	p.ReflectOpacity = s.ReflectOpacity
+	p.WeatherKind = s.WeatherKind
+	p.WeatherDensity = s.WeatherDensity
+	p.StageFrameKind = s.StageFrameKind
+	p.FriendNotify = s.FriendNotify
+	p.FriendOSToast = s.FriendOSToast
+	p.CallwordOSToast = s.CallwordOSToast
+	p.FriendGlowPulse = s.FriendGlowPulse
+	p.FriendSound = s.FriendSound
+	p.FriendSoundFile = s.FriendSoundFile
+	p.ModBanSFX = s.ModBanSFX
+	p.ModKickSFX = s.ModKickSFX
+	p.ModMuteSFX = s.ModMuteSFX
+	p.ModBanSoundFile = s.ModBanSoundFile
+	p.ModKickSoundFile = s.ModKickSoundFile
+	p.ModMuteSoundFile = s.ModMuteSoundFile
+	p.ModcallToast = s.ModcallToast
+	p.CallwordSoundFile = s.CallwordSoundFile
+	p.DebugOverlay = s.DebugOverlay
+	p.AutoDetectFormats = s.AutoDetectFormats
+	p.ThemeLayoutOn = s.ThemeLayoutOn
+	p.ThemeFit = s.ThemeFit
+	p.ThemeFitZoom = s.ThemeFitZoom
+	p.ThemeFitPanX = s.ThemeFitPanX
+	p.ThemeFitPanY = s.ThemeFitPanY
+	p.PlainLobby = s.PlainLobby
+	p.ThemeFonts = s.ThemeFonts
+	p.UIScaleAutoOn = s.UIScaleAutoOn
+	p.CatchUpOn = s.CatchUpOn
+	p.CatchUpThreshold = s.CatchUpThreshold
+	p.MultiTabCap = s.MultiTabCap
+	p.RestoreTabs = s.RestoreTabs
+	p.VolStripOn = s.VolStripOn
+	p.ChangelogSeen = s.ChangelogSeen
+	p.SpriteLoadModeVal = s.SpriteLoadModeVal
+	p.SpriteWaitMsVal = s.SpriteWaitMsVal
+	p.SpriteWaitPair = s.SpriteWaitPair
+	p.SpriteWaitPreanim = s.SpriteWaitPreanim
+	p.ShoutBypassQueue = s.ShoutBypassQueue
+	p.HoldPrevMaxAgeMsVal = s.HoldPrevMaxAgeMsVal
+	p.HoldDebugTint = s.HoldDebugTint
+	p.HotkeysEnabled = s.HotkeysEnabled
+	p.ShoutDurationMsVal = s.ShoutDurationMsVal
+	p.PreanimTimeoutMsVal = s.PreanimTimeoutMsVal
+	p.ICQueueCapVal = s.ICQueueCapVal
+	p.ICLogDepthVal = s.ICLogDepthVal
+	p.CatchUpLingerMsVal = s.CatchUpLingerMsVal
+	p.ThumbCache = s.ThumbCache
+	p.ThumbHeightPxVal = s.ThumbHeightPxVal
+	p.ThumbQualityVal = s.ThumbQualityVal
+	p.ThumbBudgetMiBVal = s.ThumbBudgetMiBVal
+	p.DiskCacheBudgetMiBVal = s.DiskCacheBudgetMiBVal
+	p.NotFoundTTLSecVal = s.NotFoundTTLSecVal
+	p.AdaptiveLatMultipleVal = s.AdaptiveLatMultipleVal
+	p.SpriteDownscaleOff = s.SpriteDownscaleOff
+	p.FPSCapVal = s.FPSCapVal
+	p.IdleFPSVal = s.IdleFPSVal
+	p.UnfocusedFPSVal = s.UnfocusedFPSVal
+	p.InputGraceFramesVal = s.InputGraceFramesVal
+	p.EventDrivenLoop = s.EventDrivenLoop
+	p.DisableFrameLimiter = s.DisableFrameLimiter
+	p.MotionRedrawPerEvent = s.MotionRedrawPerEvent
+	p.SpriteDownscalePctVal = s.SpriteDownscalePctVal
+	p.AnimatedSpriteCapPxVal = s.AnimatedSpriteCapPxVal
+	p.TexBudgetMiBVal = s.TexBudgetMiBVal
+	p.AnimatedBudgetMiBVal = s.AnimatedBudgetMiBVal
+	p.AnimDecodeConcurrencyVal = s.AnimDecodeConcurrencyVal
+	p.TexCompressionVal = s.TexCompressionVal
+	p.CrossfadeMsVal = s.CrossfadeMsVal
+	p.MusicVolMode = s.MusicVolMode
+	p.MusicFlagsVal = s.MusicFlagsVal
+	p.ReduceMotionOn = s.ReduceMotionOn
+	p.DisableEffects = s.DisableEffects
+	p.FontCensus = s.FontCensus
+	p.ScreenEffects = s.ScreenEffects
+	p.WordDelete = s.WordDelete
+	p.RecordingsKeepAssets = s.RecordingsKeepAssets
+	p.AdditiveText = s.AdditiveText
+	p.MusicDuckingOn = s.MusicDuckingOn
+	p.PerAreaScroll = s.PerAreaScroll
+	p.DetailedLog = s.DetailedLog
+	p.AutoClipModcall = s.AutoClipModcall
+	p.GroupChatButton = s.GroupChatButton
+	p.CharChatbox = s.CharChatbox
+	p.FontOverridePaths = s.FontOverridePaths
+	p.LayoutGridPx = s.LayoutGridPx
+	p.DiskZstd = s.DiskZstd
+	p.StreamerModeOn = s.StreamerModeOn
+	p.ThemeName = s.ThemeName
+	p.ThemeDir = s.ThemeDir
+	p.SubthemeName = s.SubthemeName
+	p.OOCName = s.OOCName
+	p.ViewportPct = s.ViewportPct
+	p.ChatScalePct = s.ChatScalePct
+	p.ChatBoxPct = s.ChatBoxPct
+	p.LogScalePct = s.LogScalePct
+	p.InputHeightPct = s.InputHeightPct
+	p.UIScalePct = s.UIScalePct
+	p.WindowW = s.WindowW
+	p.WindowH = s.WindowH
+	p.WindowFull = s.WindowFull
+	p.MusicVol = s.MusicVol
+	p.SFXVol = s.SFXVol
+	p.BlipVol = s.BlipVol
+	p.AlertVol = s.AlertVol
+	p.MasterVol = s.MasterVol
+	p.MasterVolMuted = s.MasterVolMuted
+	p.MusicVolMuted = s.MusicVolMuted
+	p.SFXVolMuted = s.SFXVolMuted
+	p.BlipVolMuted = s.BlipVolMuted
+	p.HoldClearOn = s.HoldClearOn
+	p.HoldClearKey = s.HoldClearKey
+	p.HoldClearMs = s.HoldClearMs
+	p.ExtrasBg = s.ExtrasBg
+	p.ExtrasBg2 = s.ExtrasBg2
+	p.ExtrasBorder = s.ExtrasBorder
+	p.ExtrasTitle = s.ExtrasTitle
+	p.ExtrasText = s.ExtrasText
+	p.ExtrasGradient = s.ExtrasGradient
+	p.AreaHighlightHex = s.AreaHighlightHex
+	p.TextCrawlMs = s.TextCrawlMs
+	p.TextStayMs = s.TextStayMs
+	p.ChatRateLimitMs = s.ChatRateLimitMs
+	p.MasterListURL = s.MasterListURL
+	p.Showname = s.Showname
+	p.EmoteFavOnly = s.EmoteFavOnly
+	p.EmoteFavStars = s.EmoteFavStars
+	p.LocalAssetsEnabled = s.LocalAssetsEnabled
+	p.LocalAssetsLayered = s.LocalAssetsLayered
+	p.EmoteCaptions = s.EmoteCaptions
+	p.ViewportExactW = s.ViewportExactW
+	p.OOCScalePct = s.OOCScalePct
+	p.CustomChromeHex = s.CustomChromeHex
+	p.LayoutPartHex = s.LayoutPartHex
+	p.BoldNamesOff = s.BoldNamesOff
+	p.BlipRate = s.BlipRate
+	p.BlipOnSpaces = s.BlipOnSpaces
+	p.CallwordsOOC = s.CallwordsOOC
+	p.CasingEnabled = s.CasingEnabled
+	p.CasingRoles = s.CasingRoles
+	p.DiscordRPC = s.DiscordRPC
+	p.MyAutoStatus = s.MyAutoStatus
+	p.ChromeThemeKey = s.ChromeThemeKey
+	p.ChromeShapeKey = s.ChromeShapeKey
+	p.ChromeShapeTierIdx = s.ChromeShapeTierIdx
+	p.CharDownloaderOn = s.CharDownloaderOn
+	p.ToolboxSeen = s.ToolboxSeen
+	p.ShowAssetWarnings = s.ShowAssetWarnings
+	p.SpriteMoveOn = s.SpriteMoveOn
+	p.DeskFollowManifest = s.DeskFollowManifest
+	p.SpritePreviewOn = s.SpritePreviewOn
+	p.PreviewHoverMs = s.PreviewHoverMs
+	p.PreviewHeightPxVal = s.PreviewHeightPxVal
+	p.PreviewPinned = s.PreviewPinned
+	p.PreviewWinRectValid = s.PreviewWinRectValid
+	p.PreviewWinRectX = s.PreviewWinRectX
+	p.PreviewWinRectY = s.PreviewWinRectY
+	p.PreviewWinRectW = s.PreviewWinRectW
+	p.PreviewWinRectH = s.PreviewWinRectH
+	p.EmoteHoverNamesOn = s.EmoteHoverNamesOn
+	p.EmoteHoverNamesMs = s.EmoteHoverNamesMs
+	p.EmoteGridGapPx = s.EmoteGridGapPx
+	p.AutoLoginToast = s.AutoLoginToast
+	p.CallwordToast = s.CallwordToast
+	p.MessageCounter = s.MessageCounter
+	p.StickySounds = s.StickySounds
+	p.StickyEffects = s.StickyEffects
+	p.StickyPreanims = s.StickyPreanims
+	p.SFXOnIdle = s.SFXOnIdle
+	p.UnfocusedFullRate = s.UnfocusedFullRate
+	p.GhostCrawlText = s.GhostCrawlText
+	p.MentionSelf = s.MentionSelf
+	p.LoopPreanim = s.LoopPreanim
+	p.DisableAltEmoteRow = s.DisableAltEmoteRow
+	p.ICTimestamps = s.ICTimestamps
+	p.AutoReconnect = s.AutoReconnect
+	p.AutoReconnectDefaultMigrated = s.AutoReconnectDefaultMigrated
+	p.ThemeFitDefaultMigrated = s.ThemeFitDefaultMigrated
+	p.BlipSpeedDefaultMigrated = s.BlipSpeedDefaultMigrated
+	p.DeskManifestDefaultMigrated = s.DeskManifestDefaultMigrated
+	p.DetailedLogDefaultMigrated = s.DetailedLogDefaultMigrated
+	p.SmoothLogScroll = s.SmoothLogScroll
+	p.MusicHistory = s.MusicHistory
+	p.MusicStreaming = s.MusicStreaming
+	p.MusicAcrossTabs = s.MusicAcrossTabs
+	p.ShowMissingPlaceholder = s.ShowMissingPlaceholder
+	p.ErrorSpriteFile = s.ErrorSpriteFile
+	if s.SavedStyles != nil {
+		p.SavedStyles = make([]StylePreset, len(s.SavedStyles))
+		copy(p.SavedStyles, s.SavedStyles)
+	}
+	if s.PanelFontsVal != nil {
+		p.PanelFontsVal = make(map[string]PanelFont, len(s.PanelFontsVal))
+		for k75, v76 := range s.PanelFontsVal {
+			p.PanelFontsVal[k75] = v76
+		}
+	}
+	if s.FontWarnThemes != nil {
+		p.FontWarnThemes = make([]string, len(s.FontWarnThemes))
+		copy(p.FontWarnThemes, s.FontWarnThemes)
+	}
+	if s.OpenTabs != nil {
+		p.OpenTabs = make([]OpenTab, len(s.OpenTabs))
+		copy(p.OpenTabs, s.OpenTabs)
+	}
+	if s.UserMacros != nil {
+		p.UserMacros = make([]MacroSpec, len(s.UserMacros))
+		for i77 := range s.UserMacros {
+			p.UserMacros[i77] = snapCloneMacroSpec(s.UserMacros[i77])
+		}
+	}
+	if s.ThemeRectOv != nil {
+		p.ThemeRectOv = make(map[string]map[string][4]int, len(s.ThemeRectOv))
+		for k78, v79 := range s.ThemeRectOv {
+			if v79 != nil {
+				p.ThemeRectOv[k78] = make(map[string][4]int, len(v79))
+				for k80, v81 := range v79 {
+					p.ThemeRectOv[k78][k80] = v81
+				}
+			}
+		}
+	}
+	if s.ThemeRectRotations != nil {
+		p.ThemeRectRotations = make(map[string]map[string]uint8, len(s.ThemeRectRotations))
+		for k82, v83 := range s.ThemeRectRotations {
+			if v83 != nil {
+				p.ThemeRectRotations[k82] = make(map[string]uint8, len(v83))
+				for k84, v85 := range v83 {
+					p.ThemeRectRotations[k82][k84] = v85
+				}
+			}
+		}
+	}
+	if s.ClassicLayout != nil {
+		p.ClassicLayout = make(map[string][4]float64, len(s.ClassicLayout))
+		for k86, v87 := range s.ClassicLayout {
+			p.ClassicLayout[k86] = v87
+		}
+	}
+	if s.LayoutProfiles != nil {
+		p.LayoutProfiles = make(map[string]LayoutProfile, len(s.LayoutProfiles))
+		for k88, v89 := range s.LayoutProfiles {
+			p.LayoutProfiles[k88] = snapCloneLayoutProfile(v89)
+		}
+	}
+	if s.ClassicAnchors != nil {
+		p.ClassicAnchors = make(map[string]ClassicAnchor, len(s.ClassicAnchors))
+		for k90, v91 := range s.ClassicAnchors {
+			p.ClassicAnchors[k90] = v91
+		}
+	}
+	if s.ClassicRotations != nil {
+		p.ClassicRotations = make(map[string]uint8, len(s.ClassicRotations))
+		for k92, v93 := range s.ClassicRotations {
+			p.ClassicRotations[k92] = v93
+		}
+	}
+	if s.AssetTypes != nil {
+		p.AssetTypes = make(map[string]AssetTypePrefs, len(s.AssetTypes))
+		for k94, v95 := range s.AssetTypes {
+			p.AssetTypes[k94] = snapCloneAssetTypePrefs(v95)
+		}
+	}
+	if s.LearnedFormats != nil {
+		p.LearnedFormats = make(map[string][]string, len(s.LearnedFormats))
+		for k96, v97 := range s.LearnedFormats {
+			if v97 != nil {
+				p.LearnedFormats[k96] = make([]string, len(v97))
+				copy(p.LearnedFormats[k96], v97)
+			}
+		}
+	}
+	if s.ShownamePresets != nil {
+		p.ShownamePresets = make([]string, len(s.ShownamePresets))
+		copy(p.ShownamePresets, s.ShownamePresets)
+	}
+	if s.ShownameKeys != nil {
+		p.ShownameKeys = make(map[string]string, len(s.ShownameKeys))
+		for k98, v99 := range s.ShownameKeys {
+			p.ShownameKeys[k98] = v99
+		}
+	}
+	if s.ICPhraseKeys != nil {
+		p.ICPhraseKeys = make(map[string]string, len(s.ICPhraseKeys))
+		for k100, v101 := range s.ICPhraseKeys {
+			p.ICPhraseKeys[k100] = v101
+		}
+	}
+	if s.MutedSFX != nil {
+		p.MutedSFX = make([]string, len(s.MutedSFX))
+		copy(p.MutedSFX, s.MutedSFX)
+	}
+	if s.SfxFavorites != nil {
+		p.SfxFavorites = make([]string, len(s.SfxFavorites))
+		copy(p.SfxFavorites, s.SfxFavorites)
+	}
+	if s.ModReasonTemplates != nil {
+		p.ModReasonTemplates = make([]string, len(s.ModReasonTemplates))
+		copy(p.ModReasonTemplates, s.ModReasonTemplates)
+	}
+	if s.ModDurations != nil {
+		p.ModDurations = make([]string, len(s.ModDurations))
+		copy(p.ModDurations, s.ModDurations)
+	}
+	if s.BlipVols != nil {
+		p.BlipVols = make(map[string]int, len(s.BlipVols))
+		for k102, v103 := range s.BlipVols {
+			p.BlipVols[k102] = v103
+		}
+	}
+	if s.EmoteFavs != nil {
+		p.EmoteFavs = make(map[string][]int, len(s.EmoteFavs))
+		for k104, v105 := range s.EmoteFavs {
+			if v105 != nil {
+				p.EmoteFavs[k104] = make([]int, len(v105))
+				copy(p.EmoteFavs[k104], v105)
+			}
+		}
+	}
+	if s.ExtProfiles != nil {
+		p.ExtProfiles = make(map[string]string, len(s.ExtProfiles))
+		for k106, v107 := range s.ExtProfiles {
+			p.ExtProfiles[k106] = v107
+		}
+	}
+	if s.LocalAssetsPaths != nil {
+		p.LocalAssetsPaths = make([]string, len(s.LocalAssetsPaths))
+		copy(p.LocalAssetsPaths, s.LocalAssetsPaths)
+	}
+	if s.Favorites != nil {
+		p.Favorites = make([]FavoriteServer, len(s.Favorites))
+		copy(p.Favorites, s.Favorites)
+	}
+	if s.Wardrobe != nil {
+		p.Wardrobe = make([]string, len(s.Wardrobe))
+		copy(p.Wardrobe, s.Wardrobe)
+	}
+	if s.HiddenPanelIDs != nil {
+		p.HiddenPanelIDs = make([]string, len(s.HiddenPanelIDs))
+		copy(p.HiddenPanelIDs, s.HiddenPanelIDs)
+	}
+	if s.ServerWarm != nil {
+		p.ServerWarm = make(map[string]ServerWarmInfo, len(s.ServerWarm))
+		for k108, v109 := range s.ServerWarm {
+			p.ServerWarm[k108] = snapCloneServerWarmInfo(v109)
+		}
+	}
+	if s.CallWordList != nil {
+		p.CallWordList = make([]string, len(s.CallWordList))
+		copy(p.CallWordList, s.CallWordList)
+	}
+	if s.HotkeyMap != nil {
+		p.HotkeyMap = make(map[string]string, len(s.HotkeyMap))
+		for k110, v111 := range s.HotkeyMap {
+			p.HotkeyMap[k110] = v111
+		}
+	}
+	if s.MusicHosts != nil {
+		p.MusicHosts = make([]string, len(s.MusicHosts))
+		copy(p.MusicHosts, s.MusicHosts)
+	}
+}
+
+// equal reports whether s and o hold identical values (deep, all fields, including
+// every map, slice, pointer and nested value). It replaces the reflection
+// changedFieldNames/valueChanged diff in Update.
+func (s *Settings) equal(o *Settings) bool {
+	if s == o {
+		return true
+	}
+	if s == nil || o == nil {
+		return false
+	}
+	if s.GlobalFallbacksEnabled != o.GlobalFallbacksEnabled {
+		return false
+	}
+	if s.PreferAnimated != o.PreferAnimated {
+		return false
+	}
+	if s.EmoteButtonImages != o.EmoteButtonImages {
+		return false
+	}
+	if s.SmoothScaling != o.SmoothScaling {
+		return false
+	}
+	if s.SpriteScaling != o.SpriteScaling {
+		return false
+	}
+	if s.SpriteScalingMigrated != o.SpriteScalingMigrated {
+		return false
+	}
+	if s.UpdateCheck != o.UpdateCheck {
+		return false
+	}
+	if s.UpdateExperimental != o.UpdateExperimental {
+		return false
+	}
+	if s.HighlightColor != o.HighlightColor {
+		return false
+	}
+	if s.ICCustomColor != o.ICCustomColor {
+		return false
+	}
+	if s.NameColors != o.NameColors {
+		return false
+	}
+	if s.NameSat != o.NameSat {
+		return false
+	}
+	if s.NameVal != o.NameVal {
+		return false
+	}
+	if s.BgSlideshow != o.BgSlideshow {
+		return false
+	}
+	if s.BgSlideshowSecs != o.BgSlideshowSecs {
+		return false
+	}
+	if s.DownloadKBps != o.DownloadKBps {
+		return false
+	}
+	if s.ForceCharNames != o.ForceCharNames {
+		return false
+	}
+	if s.RandomEmote != o.RandomEmote {
+		return false
+	}
+	if s.FriendHighlight != o.FriendHighlight {
+		return false
+	}
+	if s.ShowFriendButton != o.ShowFriendButton {
+		return false
+	}
+	if s.ClipSpritesToStage != o.ClipSpritesToStage {
+		return false
+	}
+	if s.RightClickHideSprite != o.RightClickHideSprite {
+		return false
+	}
+	if s.DragLayout != o.DragLayout {
+		return false
+	}
+	if s.FollowEnabled != o.FollowEnabled {
+		return false
+	}
+	if s.ShowPairStatus != o.ShowPairStatus {
+		return false
+	}
+	if s.PlayerListSort != o.PlayerListSort {
+		return false
+	}
+	if s.PlayerListAreaSort != o.PlayerListAreaSort {
+		return false
+	}
+	if s.DyslexiaFont != o.DyslexiaFont {
+		return false
+	}
+	if s.FontEverywhere != o.FontEverywhere {
+		return false
+	}
+	if s.DNDPersist != o.DNDPersist {
+		return false
+	}
+	if s.DNDSaved != o.DNDSaved {
+		return false
+	}
+	if s.RainbowMessages != o.RainbowMessages {
+		return false
+	}
+	if s.RandomMessageColor != o.RandomMessageColor {
+		return false
+	}
+	if s.RainbowSprites != o.RainbowSprites {
+		return false
+	}
+	if s.ShowRecordButton != o.ShowRecordButton {
+		return false
+	}
+	if s.InstantDisconnect != o.InstantDisconnect {
+		return false
+	}
+	if s.HideDesk != o.HideDesk {
+		return false
+	}
+	if s.FavEmoteBox != o.FavEmoteBox {
+		return false
+	}
+	if s.InstantReplay != o.InstantReplay {
+		return false
+	}
+	if s.InstantReplaySeconds != o.InstantReplaySeconds {
+		return false
+	}
+	if s.TimerSeconds != o.TimerSeconds {
+		return false
+	}
+	if s.TimerRepeat != o.TimerRepeat {
+		return false
+	}
+	if s.NotifyOnOOC != o.NotifyOnOOC {
+		return false
+	}
+	if s.ShowSongURL != o.ShowSongURL {
+		return false
+	}
+	if s.AutoConnectOnLaunch != o.AutoConnectOnLaunch {
+		return false
+	}
+	if s.LastServerName != o.LastServerName {
+		return false
+	}
+	if s.LastServerURL != o.LastServerURL {
+		return false
+	}
+	if s.RainbowSpriteSpeed != o.RainbowSpriteSpeed {
+		return false
+	}
+	if s.ReplayPlaybackSpeed != o.ReplayPlaybackSpeed {
+		return false
+	}
+	if s.Export != o.Export {
+		return false
+	}
+	if s.MySpriteStyle != o.MySpriteStyle {
+		return false
+	}
+	if len(s.SavedStyles) != len(o.SavedStyles) {
+		return false
+	}
+	for i112 := range s.SavedStyles {
+		if s.SavedStyles[i112] != o.SavedStyles[i112] {
+			return false
+		}
+	}
+	if s.HideSpriteStyles != o.HideSpriteStyles {
+		return false
+	}
+	if s.HideReactions != o.HideReactions {
+		return false
+	}
+	if s.CharBundlePrefetch != o.CharBundlePrefetch {
+		return false
+	}
+	if s.PingChip != o.PingChip {
+		return false
+	}
+	if s.ValidateTLSCerts != o.ValidateTLSCerts {
+		return false
+	}
+	if s.AssetOrigin != o.AssetOrigin {
+		return false
+	}
+	if s.WSOrigin != o.WSOrigin {
+		return false
+	}
+	if s.AssetCharCase != o.AssetCharCase {
+		return false
+	}
+	if s.ProxyModeVal != o.ProxyModeVal {
+		return false
+	}
+	if s.ProxyURL != o.ProxyURL {
+		return false
+	}
+	if len(s.PanelFontsVal) != len(o.PanelFontsVal) {
+		return false
+	}
+	for k113, v114 := range s.PanelFontsVal {
+		if o.PanelFontsVal[k113] != v114 {
+			return false
+		}
+	}
+	if len(s.FontWarnThemes) != len(o.FontWarnThemes) {
+		return false
+	}
+	for i115 := range s.FontWarnThemes {
+		if s.FontWarnThemes[i115] != o.FontWarnThemes[i115] {
+			return false
+		}
+	}
+	if s.VoiceInputDevice != o.VoiceInputDevice {
+		return false
+	}
+	if s.VoiceOutVolume != o.VoiceOutVolume {
+		return false
+	}
+	if s.PrefetchAggro != o.PrefetchAggro {
+		return false
+	}
+	if s.VoicePTTKey != o.VoicePTTKey {
+		return false
+	}
+	if s.QuitConfirmSkip != o.QuitConfirmSkip {
+		return false
+	}
+	if s.LegacyDevTheme != o.LegacyDevTheme {
+		return false
+	}
+	if s.OOCInLogTab != o.OOCInLogTab {
+		return false
+	}
+	if s.MyProfile != o.MyProfile {
+		return false
+	}
+	if s.ChatboxOpacity != o.ChatboxOpacity {
+		return false
+	}
+	if s.RainbowSpriteVividness != o.RainbowSpriteVividness {
+		return false
+	}
+	if s.RainbowSpriteGlow != o.RainbowSpriteGlow {
+		return false
+	}
+	if s.RainbowPairDesync != o.RainbowPairDesync {
+		return false
+	}
+	if s.RainbowPerChar != o.RainbowPerChar {
+		return false
+	}
+	if s.SpriteWobble != o.SpriteWobble {
+		return false
+	}
+	if s.SpriteSpin != o.SpriteSpin {
+		return false
+	}
+	if s.SpriteSolidTint != o.SpriteSolidTint {
+		return false
+	}
+	if s.SpriteTintColor != o.SpriteTintColor {
+		return false
+	}
+	if s.ShoutPunch != o.ShoutPunch {
+		return false
+	}
+	if s.ChatboxTint != o.ChatboxTint {
+		return false
+	}
+	if s.PostVignette != o.PostVignette {
+		return false
+	}
+	if s.PostScanlines != o.PostScanlines {
+		return false
+	}
+	if s.PostGrain != o.PostGrain {
+		return false
+	}
+	if s.PostCRT != o.PostCRT {
+		return false
+	}
+	if s.AnimateEntrances != o.AnimateEntrances {
+		return false
+	}
+	if s.DepthOfField != o.DepthOfField {
+		return false
+	}
+	if s.Spotlight != o.Spotlight {
+		return false
+	}
+	if s.SpotlightStrength != o.SpotlightStrength {
+		return false
+	}
+	if s.IdleBreath != o.IdleBreath {
+		return false
+	}
+	if s.BreathNoBob != o.BreathNoBob {
+		return false
+	}
+	if s.BreathNoScale != o.BreathNoScale {
+		return false
+	}
+	if s.BreathAmount != o.BreathAmount {
+		return false
+	}
+	if s.BreathRate != o.BreathRate {
+		return false
+	}
+	if s.Reflection != o.Reflection {
+		return false
+	}
+	if s.ReflectOpacity != o.ReflectOpacity {
+		return false
+	}
+	if s.WeatherKind != o.WeatherKind {
+		return false
+	}
+	if s.WeatherDensity != o.WeatherDensity {
+		return false
+	}
+	if s.StageFrameKind != o.StageFrameKind {
+		return false
+	}
+	if s.FriendNotify != o.FriendNotify {
+		return false
+	}
+	if s.FriendOSToast != o.FriendOSToast {
+		return false
+	}
+	if s.CallwordOSToast != o.CallwordOSToast {
+		return false
+	}
+	if s.FriendGlowPulse != o.FriendGlowPulse {
+		return false
+	}
+	if s.FriendSound != o.FriendSound {
+		return false
+	}
+	if s.FriendSoundFile != o.FriendSoundFile {
+		return false
+	}
+	if s.ModBanSFX != o.ModBanSFX {
+		return false
+	}
+	if s.ModKickSFX != o.ModKickSFX {
+		return false
+	}
+	if s.ModMuteSFX != o.ModMuteSFX {
+		return false
+	}
+	if s.ModBanSoundFile != o.ModBanSoundFile {
+		return false
+	}
+	if s.ModKickSoundFile != o.ModKickSoundFile {
+		return false
+	}
+	if s.ModMuteSoundFile != o.ModMuteSoundFile {
+		return false
+	}
+	if s.ModcallToast != o.ModcallToast {
+		return false
+	}
+	if s.CallwordSoundFile != o.CallwordSoundFile {
+		return false
+	}
+	if s.DebugOverlay != o.DebugOverlay {
+		return false
+	}
+	if s.AutoDetectFormats != o.AutoDetectFormats {
+		return false
+	}
+	if s.ThemeLayoutOn != o.ThemeLayoutOn {
+		return false
+	}
+	if s.ThemeFit != o.ThemeFit {
+		return false
+	}
+	if s.ThemeFitZoom != o.ThemeFitZoom {
+		return false
+	}
+	if s.ThemeFitPanX != o.ThemeFitPanX {
+		return false
+	}
+	if s.ThemeFitPanY != o.ThemeFitPanY {
+		return false
+	}
+	if s.PlainLobby != o.PlainLobby {
+		return false
+	}
+	if s.ThemeFonts != o.ThemeFonts {
+		return false
+	}
+	if s.UIScaleAutoOn != o.UIScaleAutoOn {
+		return false
+	}
+	if s.CatchUpOn != o.CatchUpOn {
+		return false
+	}
+	if s.CatchUpThreshold != o.CatchUpThreshold {
+		return false
+	}
+	if s.MultiTabCap != o.MultiTabCap {
+		return false
+	}
+	if s.RestoreTabs != o.RestoreTabs {
+		return false
+	}
+	if s.VolStripOn != o.VolStripOn {
+		return false
+	}
+	if s.ChangelogSeen != o.ChangelogSeen {
+		return false
+	}
+	if s.SpriteLoadModeVal != o.SpriteLoadModeVal {
+		return false
+	}
+	if s.SpriteWaitMsVal != o.SpriteWaitMsVal {
+		return false
+	}
+	if s.SpriteWaitPair != o.SpriteWaitPair {
+		return false
+	}
+	if s.SpriteWaitPreanim != o.SpriteWaitPreanim {
+		return false
+	}
+	if s.ShoutBypassQueue != o.ShoutBypassQueue {
+		return false
+	}
+	if s.HoldPrevMaxAgeMsVal != o.HoldPrevMaxAgeMsVal {
+		return false
+	}
+	if s.HoldDebugTint != o.HoldDebugTint {
+		return false
+	}
+	if s.HotkeysEnabled != o.HotkeysEnabled {
+		return false
+	}
+	if s.ShoutDurationMsVal != o.ShoutDurationMsVal {
+		return false
+	}
+	if s.PreanimTimeoutMsVal != o.PreanimTimeoutMsVal {
+		return false
+	}
+	if s.ICQueueCapVal != o.ICQueueCapVal {
+		return false
+	}
+	if s.ICLogDepthVal != o.ICLogDepthVal {
+		return false
+	}
+	if s.CatchUpLingerMsVal != o.CatchUpLingerMsVal {
+		return false
+	}
+	if s.ThumbCache != o.ThumbCache {
+		return false
+	}
+	if s.ThumbHeightPxVal != o.ThumbHeightPxVal {
+		return false
+	}
+	if s.ThumbQualityVal != o.ThumbQualityVal {
+		return false
+	}
+	if s.ThumbBudgetMiBVal != o.ThumbBudgetMiBVal {
+		return false
+	}
+	if s.DiskCacheBudgetMiBVal != o.DiskCacheBudgetMiBVal {
+		return false
+	}
+	if s.NotFoundTTLSecVal != o.NotFoundTTLSecVal {
+		return false
+	}
+	if s.AdaptiveLatMultipleVal != o.AdaptiveLatMultipleVal {
+		return false
+	}
+	if s.SpriteDownscaleOff != o.SpriteDownscaleOff {
+		return false
+	}
+	if s.FPSCapVal != o.FPSCapVal {
+		return false
+	}
+	if s.IdleFPSVal != o.IdleFPSVal {
+		return false
+	}
+	if s.UnfocusedFPSVal != o.UnfocusedFPSVal {
+		return false
+	}
+	if s.InputGraceFramesVal != o.InputGraceFramesVal {
+		return false
+	}
+	if s.EventDrivenLoop != o.EventDrivenLoop {
+		return false
+	}
+	if s.DisableFrameLimiter != o.DisableFrameLimiter {
+		return false
+	}
+	if s.MotionRedrawPerEvent != o.MotionRedrawPerEvent {
+		return false
+	}
+	if s.SpriteDownscalePctVal != o.SpriteDownscalePctVal {
+		return false
+	}
+	if s.AnimatedSpriteCapPxVal != o.AnimatedSpriteCapPxVal {
+		return false
+	}
+	if s.TexBudgetMiBVal != o.TexBudgetMiBVal {
+		return false
+	}
+	if s.AnimatedBudgetMiBVal != o.AnimatedBudgetMiBVal {
+		return false
+	}
+	if s.AnimDecodeConcurrencyVal != o.AnimDecodeConcurrencyVal {
+		return false
+	}
+	if s.TexCompressionVal != o.TexCompressionVal {
+		return false
+	}
+	if s.CrossfadeMsVal != o.CrossfadeMsVal {
+		return false
+	}
+	if s.MusicVolMode != o.MusicVolMode {
+		return false
+	}
+	if s.MusicFlagsVal != o.MusicFlagsVal {
+		return false
+	}
+	if len(s.OpenTabs) != len(o.OpenTabs) {
+		return false
+	}
+	for i116 := range s.OpenTabs {
+		if s.OpenTabs[i116] != o.OpenTabs[i116] {
+			return false
+		}
+	}
+	if s.ReduceMotionOn != o.ReduceMotionOn {
+		return false
+	}
+	if s.DisableEffects != o.DisableEffects {
+		return false
+	}
+	if s.FontCensus != o.FontCensus {
+		return false
+	}
+	if s.ScreenEffects != o.ScreenEffects {
+		return false
+	}
+	if s.WordDelete != o.WordDelete {
+		return false
+	}
+	if s.RecordingsKeepAssets != o.RecordingsKeepAssets {
+		return false
+	}
+	if s.AdditiveText != o.AdditiveText {
+		return false
+	}
+	if s.MusicDuckingOn != o.MusicDuckingOn {
+		return false
+	}
+	if s.PerAreaScroll != o.PerAreaScroll {
+		return false
+	}
+	if s.DetailedLog != o.DetailedLog {
+		return false
+	}
+	if s.AutoClipModcall != o.AutoClipModcall {
+		return false
+	}
+	if s.GroupChatButton != o.GroupChatButton {
+		return false
+	}
+	if s.CharChatbox != o.CharChatbox {
+		return false
+	}
+	if s.FontOverridePaths != o.FontOverridePaths {
+		return false
+	}
+	if len(s.UserMacros) != len(o.UserMacros) {
+		return false
+	}
+	for i117 := range s.UserMacros {
+		if !snapEqualMacroSpec(s.UserMacros[i117], o.UserMacros[i117]) {
+			return false
+		}
+	}
+	if len(s.ThemeRectOv) != len(o.ThemeRectOv) {
+		return false
+	}
+	for k118, v119 := range s.ThemeRectOv {
+		ov120, ok121 := o.ThemeRectOv[k118]
+		if !ok121 {
+			return false
+		}
+		if len(v119) != len(ov120) {
+			return false
+		}
+		for k122, v123 := range v119 {
+			if ov120[k122] != v123 {
+				return false
+			}
+		}
+	}
+	if len(s.ThemeRectRotations) != len(o.ThemeRectRotations) {
+		return false
+	}
+	for k124, v125 := range s.ThemeRectRotations {
+		ov126, ok127 := o.ThemeRectRotations[k124]
+		if !ok127 {
+			return false
+		}
+		if len(v125) != len(ov126) {
+			return false
+		}
+		for k128, v129 := range v125 {
+			if ov126[k128] != v129 {
+				return false
+			}
+		}
+	}
+	if len(s.ClassicLayout) != len(o.ClassicLayout) {
+		return false
+	}
+	for k130, v131 := range s.ClassicLayout {
+		if o.ClassicLayout[k130] != v131 {
+			return false
+		}
+	}
+	if len(s.LayoutProfiles) != len(o.LayoutProfiles) {
+		return false
+	}
+	for k132, v133 := range s.LayoutProfiles {
+		ov134, ok135 := o.LayoutProfiles[k132]
+		if !ok135 {
+			return false
+		}
+		if !snapEqualLayoutProfile(v133, ov134) {
+			return false
+		}
+	}
+	if s.LayoutGridPx != o.LayoutGridPx {
+		return false
+	}
+	if len(s.ClassicAnchors) != len(o.ClassicAnchors) {
+		return false
+	}
+	for k136, v137 := range s.ClassicAnchors {
+		if o.ClassicAnchors[k136] != v137 {
+			return false
+		}
+	}
+	if len(s.ClassicRotations) != len(o.ClassicRotations) {
+		return false
+	}
+	for k138, v139 := range s.ClassicRotations {
+		if o.ClassicRotations[k138] != v139 {
+			return false
+		}
+	}
+	if s.DiskZstd != o.DiskZstd {
+		return false
+	}
+	if s.StreamerModeOn != o.StreamerModeOn {
+		return false
+	}
+	if s.ThemeName != o.ThemeName {
+		return false
+	}
+	if s.ThemeDir != o.ThemeDir {
+		return false
+	}
+	if s.SubthemeName != o.SubthemeName {
+		return false
+	}
+	if s.OOCName != o.OOCName {
+		return false
+	}
+	if s.ViewportPct != o.ViewportPct {
+		return false
+	}
+	if s.ChatScalePct != o.ChatScalePct {
+		return false
+	}
+	if s.ChatBoxPct != o.ChatBoxPct {
+		return false
+	}
+	if s.LogScalePct != o.LogScalePct {
+		return false
+	}
+	if s.InputHeightPct != o.InputHeightPct {
+		return false
+	}
+	if s.UIScalePct != o.UIScalePct {
+		return false
+	}
+	if s.WindowW != o.WindowW {
+		return false
+	}
+	if s.WindowH != o.WindowH {
+		return false
+	}
+	if s.WindowFull != o.WindowFull {
+		return false
+	}
+	if s.MusicVol != o.MusicVol {
+		return false
+	}
+	if s.SFXVol != o.SFXVol {
+		return false
+	}
+	if s.BlipVol != o.BlipVol {
+		return false
+	}
+	if s.AlertVol != o.AlertVol {
+		return false
+	}
+	if s.MasterVol != o.MasterVol {
+		return false
+	}
+	if s.MasterVolMuted != o.MasterVolMuted {
+		return false
+	}
+	if s.MusicVolMuted != o.MusicVolMuted {
+		return false
+	}
+	if s.SFXVolMuted != o.SFXVolMuted {
+		return false
+	}
+	if s.BlipVolMuted != o.BlipVolMuted {
+		return false
+	}
+	if s.HoldClearOn != o.HoldClearOn {
+		return false
+	}
+	if s.HoldClearKey != o.HoldClearKey {
+		return false
+	}
+	if s.HoldClearMs != o.HoldClearMs {
+		return false
+	}
+	if s.ExtrasBg != o.ExtrasBg {
+		return false
+	}
+	if s.ExtrasBg2 != o.ExtrasBg2 {
+		return false
+	}
+	if s.ExtrasBorder != o.ExtrasBorder {
+		return false
+	}
+	if s.ExtrasTitle != o.ExtrasTitle {
+		return false
+	}
+	if s.ExtrasText != o.ExtrasText {
+		return false
+	}
+	if s.ExtrasGradient != o.ExtrasGradient {
+		return false
+	}
+	if s.AreaHighlightHex != o.AreaHighlightHex {
+		return false
+	}
+	if s.TextCrawlMs != o.TextCrawlMs {
+		return false
+	}
+	if s.TextStayMs != o.TextStayMs {
+		return false
+	}
+	if s.ChatRateLimitMs != o.ChatRateLimitMs {
+		return false
+	}
+	if s.MasterListURL != o.MasterListURL {
+		return false
+	}
+	if len(s.AssetTypes) != len(o.AssetTypes) {
+		return false
+	}
+	for k140, v141 := range s.AssetTypes {
+		ov142, ok143 := o.AssetTypes[k140]
+		if !ok143 {
+			return false
+		}
+		if !snapEqualAssetTypePrefs(v141, ov142) {
+			return false
+		}
+	}
+	if len(s.LearnedFormats) != len(o.LearnedFormats) {
+		return false
+	}
+	for k144, v145 := range s.LearnedFormats {
+		ov146, ok147 := o.LearnedFormats[k144]
+		if !ok147 {
+			return false
+		}
+		if len(v145) != len(ov146) {
+			return false
+		}
+		for i148 := range v145 {
+			if v145[i148] != ov146[i148] {
+				return false
+			}
+		}
+	}
+	if s.Showname != o.Showname {
+		return false
+	}
+	if len(s.ShownamePresets) != len(o.ShownamePresets) {
+		return false
+	}
+	for i149 := range s.ShownamePresets {
+		if s.ShownamePresets[i149] != o.ShownamePresets[i149] {
+			return false
+		}
+	}
+	if len(s.ShownameKeys) != len(o.ShownameKeys) {
+		return false
+	}
+	for k150, v151 := range s.ShownameKeys {
+		if o.ShownameKeys[k150] != v151 {
+			return false
+		}
+	}
+	if len(s.ICPhraseKeys) != len(o.ICPhraseKeys) {
+		return false
+	}
+	for k152, v153 := range s.ICPhraseKeys {
+		if o.ICPhraseKeys[k152] != v153 {
+			return false
+		}
+	}
+	if len(s.MutedSFX) != len(o.MutedSFX) {
+		return false
+	}
+	for i154 := range s.MutedSFX {
+		if s.MutedSFX[i154] != o.MutedSFX[i154] {
+			return false
+		}
+	}
+	if len(s.SfxFavorites) != len(o.SfxFavorites) {
+		return false
+	}
+	for i155 := range s.SfxFavorites {
+		if s.SfxFavorites[i155] != o.SfxFavorites[i155] {
+			return false
+		}
+	}
+	if len(s.ModReasonTemplates) != len(o.ModReasonTemplates) {
+		return false
+	}
+	for i156 := range s.ModReasonTemplates {
+		if s.ModReasonTemplates[i156] != o.ModReasonTemplates[i156] {
+			return false
+		}
+	}
+	if len(s.ModDurations) != len(o.ModDurations) {
+		return false
+	}
+	for i157 := range s.ModDurations {
+		if s.ModDurations[i157] != o.ModDurations[i157] {
+			return false
+		}
+	}
+	if len(s.BlipVols) != len(o.BlipVols) {
+		return false
+	}
+	for k158, v159 := range s.BlipVols {
+		if o.BlipVols[k158] != v159 {
+			return false
+		}
+	}
+	if len(s.EmoteFavs) != len(o.EmoteFavs) {
+		return false
+	}
+	for k160, v161 := range s.EmoteFavs {
+		ov162, ok163 := o.EmoteFavs[k160]
+		if !ok163 {
+			return false
+		}
+		if len(v161) != len(ov162) {
+			return false
+		}
+		for i164 := range v161 {
+			if v161[i164] != ov162[i164] {
+				return false
+			}
+		}
+	}
+	if s.EmoteFavOnly != o.EmoteFavOnly {
+		return false
+	}
+	if s.EmoteFavStars != o.EmoteFavStars {
+		return false
+	}
+	if s.LocalAssetsEnabled != o.LocalAssetsEnabled {
+		return false
+	}
+	if s.LocalAssetsLayered != o.LocalAssetsLayered {
+		return false
+	}
+	if s.EmoteCaptions != o.EmoteCaptions {
+		return false
+	}
+	if s.ViewportExactW != o.ViewportExactW {
+		return false
+	}
+	if s.OOCScalePct != o.OOCScalePct {
+		return false
+	}
+	if s.CustomChromeHex != o.CustomChromeHex {
+		return false
+	}
+	if s.LayoutPartHex != o.LayoutPartHex {
+		return false
+	}
+	if s.BoldNamesOff != o.BoldNamesOff {
+		return false
+	}
+	if s.BlipRate != o.BlipRate {
+		return false
+	}
+	if s.BlipOnSpaces != o.BlipOnSpaces {
+		return false
+	}
+	if s.CallwordsOOC != o.CallwordsOOC {
+		return false
+	}
+	if len(s.ExtProfiles) != len(o.ExtProfiles) {
+		return false
+	}
+	for k165, v166 := range s.ExtProfiles {
+		if o.ExtProfiles[k165] != v166 {
+			return false
+		}
+	}
+	if len(s.LocalAssetsPaths) != len(o.LocalAssetsPaths) {
+		return false
+	}
+	for i167 := range s.LocalAssetsPaths {
+		if s.LocalAssetsPaths[i167] != o.LocalAssetsPaths[i167] {
+			return false
+		}
+	}
+	if len(s.Favorites) != len(o.Favorites) {
+		return false
+	}
+	for i168 := range s.Favorites {
+		if s.Favorites[i168] != o.Favorites[i168] {
+			return false
+		}
+	}
+	if len(s.Wardrobe) != len(o.Wardrobe) {
+		return false
+	}
+	for i169 := range s.Wardrobe {
+		if s.Wardrobe[i169] != o.Wardrobe[i169] {
+			return false
+		}
+	}
+	if s.CasingEnabled != o.CasingEnabled {
+		return false
+	}
+	if s.CasingRoles != o.CasingRoles {
+		return false
+	}
+	if len(s.HiddenPanelIDs) != len(o.HiddenPanelIDs) {
+		return false
+	}
+	for i170 := range s.HiddenPanelIDs {
+		if s.HiddenPanelIDs[i170] != o.HiddenPanelIDs[i170] {
+			return false
+		}
+	}
+	if len(s.ServerWarm) != len(o.ServerWarm) {
+		return false
+	}
+	for k171, v172 := range s.ServerWarm {
+		ov173, ok174 := o.ServerWarm[k171]
+		if !ok174 {
+			return false
+		}
+		if !snapEqualServerWarmInfo(v172, ov173) {
+			return false
+		}
+	}
+	if len(s.CallWordList) != len(o.CallWordList) {
+		return false
+	}
+	for i175 := range s.CallWordList {
+		if s.CallWordList[i175] != o.CallWordList[i175] {
+			return false
+		}
+	}
+	if len(s.HotkeyMap) != len(o.HotkeyMap) {
+		return false
+	}
+	for k176, v177 := range s.HotkeyMap {
+		if o.HotkeyMap[k176] != v177 {
+			return false
+		}
+	}
+	if s.DiscordRPC != o.DiscordRPC {
+		return false
+	}
+	if s.MyAutoStatus != o.MyAutoStatus {
+		return false
+	}
+	if s.ChromeThemeKey != o.ChromeThemeKey {
+		return false
+	}
+	if s.ChromeShapeKey != o.ChromeShapeKey {
+		return false
+	}
+	if s.ChromeShapeTierIdx != o.ChromeShapeTierIdx {
+		return false
+	}
+	if s.CharDownloaderOn != o.CharDownloaderOn {
+		return false
+	}
+	if s.ToolboxSeen != o.ToolboxSeen {
+		return false
+	}
+	if s.ShowAssetWarnings != o.ShowAssetWarnings {
+		return false
+	}
+	if s.SpriteMoveOn != o.SpriteMoveOn {
+		return false
+	}
+	if s.DeskFollowManifest != o.DeskFollowManifest {
+		return false
+	}
+	if s.SpritePreviewOn != o.SpritePreviewOn {
+		return false
+	}
+	if s.PreviewHoverMs != o.PreviewHoverMs {
+		return false
+	}
+	if s.PreviewHeightPxVal != o.PreviewHeightPxVal {
+		return false
+	}
+	if s.PreviewPinned != o.PreviewPinned {
+		return false
+	}
+	if s.PreviewWinRectValid != o.PreviewWinRectValid {
+		return false
+	}
+	if s.PreviewWinRectX != o.PreviewWinRectX {
+		return false
+	}
+	if s.PreviewWinRectY != o.PreviewWinRectY {
+		return false
+	}
+	if s.PreviewWinRectW != o.PreviewWinRectW {
+		return false
+	}
+	if s.PreviewWinRectH != o.PreviewWinRectH {
+		return false
+	}
+	if s.EmoteHoverNamesOn != o.EmoteHoverNamesOn {
+		return false
+	}
+	if s.EmoteHoverNamesMs != o.EmoteHoverNamesMs {
+		return false
+	}
+	if s.EmoteGridGapPx != o.EmoteGridGapPx {
+		return false
+	}
+	if s.AutoLoginToast != o.AutoLoginToast {
+		return false
+	}
+	if s.CallwordToast != o.CallwordToast {
+		return false
+	}
+	if s.MessageCounter != o.MessageCounter {
+		return false
+	}
+	if s.StickySounds != o.StickySounds {
+		return false
+	}
+	if s.StickyEffects != o.StickyEffects {
+		return false
+	}
+	if s.StickyPreanims != o.StickyPreanims {
+		return false
+	}
+	if s.SFXOnIdle != o.SFXOnIdle {
+		return false
+	}
+	if s.UnfocusedFullRate != o.UnfocusedFullRate {
+		return false
+	}
+	if s.GhostCrawlText != o.GhostCrawlText {
+		return false
+	}
+	if s.MentionSelf != o.MentionSelf {
+		return false
+	}
+	if s.LoopPreanim != o.LoopPreanim {
+		return false
+	}
+	if s.DisableAltEmoteRow != o.DisableAltEmoteRow {
+		return false
+	}
+	if s.ICTimestamps != o.ICTimestamps {
+		return false
+	}
+	if s.AutoReconnect != o.AutoReconnect {
+		return false
+	}
+	if s.AutoReconnectDefaultMigrated != o.AutoReconnectDefaultMigrated {
+		return false
+	}
+	if s.ThemeFitDefaultMigrated != o.ThemeFitDefaultMigrated {
+		return false
+	}
+	if s.BlipSpeedDefaultMigrated != o.BlipSpeedDefaultMigrated {
+		return false
+	}
+	if s.DeskManifestDefaultMigrated != o.DeskManifestDefaultMigrated {
+		return false
+	}
+	if s.DetailedLogDefaultMigrated != o.DetailedLogDefaultMigrated {
+		return false
+	}
+	if s.SmoothLogScroll != o.SmoothLogScroll {
+		return false
+	}
+	if s.MusicHistory != o.MusicHistory {
+		return false
+	}
+	if s.MusicStreaming != o.MusicStreaming {
+		return false
+	}
+	if s.MusicAcrossTabs != o.MusicAcrossTabs {
+		return false
+	}
+	if s.ShowMissingPlaceholder != o.ShowMissingPlaceholder {
+		return false
+	}
+	if s.ErrorSpriteFile != o.ErrorSpriteFile {
+		return false
+	}
+	if len(s.MusicHosts) != len(o.MusicHosts) {
+		return false
+	}
+	for i178 := range s.MusicHosts {
+		if s.MusicHosts[i178] != o.MusicHosts[i178] {
+			return false
+		}
+	}
+	return true
+}
+
 func snapCloneAssetTypePrefs(src AssetTypePrefs) AssetTypePrefs {
 	var dst AssetTypePrefs
 	dst = src
@@ -669,14 +2282,14 @@ func snapCloneLayoutProfile(src LayoutProfile) LayoutProfile {
 	dst = src
 	if src.Classic != nil {
 		dst.Classic = make(map[string][4]float64, len(src.Classic))
-		for k75, v76 := range src.Classic {
-			dst.Classic[k75] = v76
+		for k179, v180 := range src.Classic {
+			dst.Classic[k179] = v180
 		}
 	}
 	if src.Anchors != nil {
 		dst.Anchors = make(map[string]ClassicAnchor, len(src.Anchors))
-		for k77, v78 := range src.Anchors {
-			dst.Anchors[k77] = v78
+		for k181, v182 := range src.Anchors {
+			dst.Anchors[k181] = v182
 		}
 	}
 	if src.Hidden != nil {
@@ -685,8 +2298,8 @@ func snapCloneLayoutProfile(src LayoutProfile) LayoutProfile {
 	}
 	if src.Rotations != nil {
 		dst.Rotations = make(map[string]uint8, len(src.Rotations))
-		for k79, v80 := range src.Rotations {
-			dst.Rotations[k79] = v80
+		for k183, v184 := range src.Rotations {
+			dst.Rotations[k183] = v184
 		}
 	}
 	return dst
@@ -715,20 +2328,20 @@ func snapCloneServerWarmInfo(src ServerWarmInfo) ServerWarmInfo {
 	}
 	if src.FavBackgroundFolder != nil {
 		dst.FavBackgroundFolder = make(map[string]string, len(src.FavBackgroundFolder))
-		for k81, v82 := range src.FavBackgroundFolder {
-			dst.FavBackgroundFolder[k81] = v82
+		for k185, v186 := range src.FavBackgroundFolder {
+			dst.FavBackgroundFolder[k185] = v186
 		}
 	}
 	if src.CharKeys != nil {
 		dst.CharKeys = make(map[string]string, len(src.CharKeys))
-		for k83, v84 := range src.CharKeys {
-			dst.CharKeys[k83] = v84
+		for k187, v188 := range src.CharKeys {
+			dst.CharKeys[k187] = v188
 		}
 	}
 	if src.WardrobeFolder != nil {
 		dst.WardrobeFolder = make(map[string]string, len(src.WardrobeFolder))
-		for k85, v86 := range src.WardrobeFolder {
-			dst.WardrobeFolder[k85] = v86
+		for k189, v190 := range src.WardrobeFolder {
+			dst.WardrobeFolder[k189] = v190
 		}
 	}
 	if src.AudioMaster != nil {
@@ -764,4 +2377,208 @@ func snapCloneServerWarmInfo(src ServerWarmInfo) ServerWarmInfo {
 		copy(dst.Ignored, src.Ignored)
 	}
 	return dst
+}
+
+func snapEqualAssetTypePrefs(a, b AssetTypePrefs) bool {
+	if len(a.FormatOrder) != len(b.FormatOrder) {
+		return false
+	}
+	for i191 := range a.FormatOrder {
+		if a.FormatOrder[i191] != b.FormatOrder[i191] {
+			return false
+		}
+	}
+	if a.FallbacksEnabled != b.FallbacksEnabled {
+		return false
+	}
+	return true
+}
+
+func snapEqualLayoutProfile(a, b LayoutProfile) bool {
+	if len(a.Classic) != len(b.Classic) {
+		return false
+	}
+	for k192, v193 := range a.Classic {
+		if b.Classic[k192] != v193 {
+			return false
+		}
+	}
+	if len(a.Anchors) != len(b.Anchors) {
+		return false
+	}
+	for k194, v195 := range a.Anchors {
+		if b.Anchors[k194] != v195 {
+			return false
+		}
+	}
+	if len(a.Hidden) != len(b.Hidden) {
+		return false
+	}
+	for i196 := range a.Hidden {
+		if a.Hidden[i196] != b.Hidden[i196] {
+			return false
+		}
+	}
+	if a.GridPx != b.GridPx {
+		return false
+	}
+	if len(a.Rotations) != len(b.Rotations) {
+		return false
+	}
+	for k197, v198 := range a.Rotations {
+		if b.Rotations[k197] != v198 {
+			return false
+		}
+	}
+	return true
+}
+
+func snapEqualMacroSpec(a, b MacroSpec) bool {
+	if a.Name != b.Name {
+		return false
+	}
+	if a.Key != b.Key {
+		return false
+	}
+	if len(a.Lines) != len(b.Lines) {
+		return false
+	}
+	for i199 := range a.Lines {
+		if a.Lines[i199] != b.Lines[i199] {
+			return false
+		}
+	}
+	return true
+}
+
+func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
+	if a.Char != b.Char {
+		return false
+	}
+	if a.Background != b.Background {
+		return false
+	}
+	if len(a.Wardrobe) != len(b.Wardrobe) {
+		return false
+	}
+	for i200 := range a.Wardrobe {
+		if a.Wardrobe[i200] != b.Wardrobe[i200] {
+			return false
+		}
+	}
+	if len(a.FavBackgrounds) != len(b.FavBackgrounds) {
+		return false
+	}
+	for i201 := range a.FavBackgrounds {
+		if a.FavBackgrounds[i201] != b.FavBackgrounds[i201] {
+			return false
+		}
+	}
+	if len(a.FavBackgroundFolder) != len(b.FavBackgroundFolder) {
+		return false
+	}
+	for k202, v203 := range a.FavBackgroundFolder {
+		if b.FavBackgroundFolder[k202] != v203 {
+			return false
+		}
+	}
+	if len(a.CharKeys) != len(b.CharKeys) {
+		return false
+	}
+	for k204, v205 := range a.CharKeys {
+		if b.CharKeys[k204] != v205 {
+			return false
+		}
+	}
+	if len(a.WardrobeFolder) != len(b.WardrobeFolder) {
+		return false
+	}
+	for k206, v207 := range a.WardrobeFolder {
+		if b.WardrobeFolder[k206] != v207 {
+			return false
+		}
+	}
+	if a.Origin != b.Origin {
+		return false
+	}
+	if a.AudioOn != b.AudioOn {
+		return false
+	}
+	if (a.AudioMaster == nil) != (b.AudioMaster == nil) {
+		return false
+	}
+	if a.AudioMaster != nil {
+		if *a.AudioMaster != *b.AudioMaster {
+			return false
+		}
+	}
+	if (a.AudioMusic == nil) != (b.AudioMusic == nil) {
+		return false
+	}
+	if a.AudioMusic != nil {
+		if *a.AudioMusic != *b.AudioMusic {
+			return false
+		}
+	}
+	if (a.AudioSFX == nil) != (b.AudioSFX == nil) {
+		return false
+	}
+	if a.AudioSFX != nil {
+		if *a.AudioSFX != *b.AudioSFX {
+			return false
+		}
+	}
+	if (a.AudioBlip == nil) != (b.AudioBlip == nil) {
+		return false
+	}
+	if a.AudioBlip != nil {
+		if *a.AudioBlip != *b.AudioBlip {
+			return false
+		}
+	}
+	if len(a.Chars) != len(b.Chars) {
+		return false
+	}
+	for i208 := range a.Chars {
+		if a.Chars[i208] != b.Chars[i208] {
+			return false
+		}
+	}
+	if len(a.Backgrounds) != len(b.Backgrounds) {
+		return false
+	}
+	for i209 := range a.Backgrounds {
+		if a.Backgrounds[i209] != b.Backgrounds[i209] {
+			return false
+		}
+	}
+	if len(a.Friends) != len(b.Friends) {
+		return false
+	}
+	for i210 := range a.Friends {
+		if a.Friends[i210] != b.Friends[i210] {
+			return false
+		}
+	}
+	if len(a.Ignored) != len(b.Ignored) {
+		return false
+	}
+	for i211 := range a.Ignored {
+		if a.Ignored[i211] != b.Ignored[i211] {
+			return false
+		}
+	}
+	if a.LoginUser != b.LoginUser {
+		return false
+	}
+	if a.LoginPass != b.LoginPass {
+		return false
+	}
+	if a.AutoLogin != b.AutoLogin {
+		return false
+	}
+	if a.Theme != b.Theme {
+		return false
+	}
+	return true
 }

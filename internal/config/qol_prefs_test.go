@@ -2369,15 +2369,7 @@ func TestFPSKnobDomain(t *testing.T) {
 	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
 		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
 	}
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
-			InputGraceFramesVal =
-
-			0
-
-	})
+	p.SetInputGraceFrames(0)
 
 	// 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
 	if got := p.InputGraceFrames(); got != 0 {
