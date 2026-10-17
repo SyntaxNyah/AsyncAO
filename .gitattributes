@@ -19,3 +19,8 @@ internal/ui/testdata/** -text
 # checked in — TestASidecarWithWindowsLineEndingsRoundTrips builds it in Go, for
 # exactly that reason.)
 internal/theme/testdata/** -text
+
+# Generated files (settings_clone.go is emitted by genclone; the compacted golden
+# data files are emitted by the expansion test) are excluded from GitHub's
+# language stats and default diffs.
+internal/config/settings_clone.go linguist-generated=true

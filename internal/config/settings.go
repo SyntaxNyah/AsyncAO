@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 )
 
+//go:generate go run ./genclone
+
 // Settings is the plain data snapshot of AssetPreferences.
 type Settings struct {
 	GlobalFallbacksEnabled       bool                         `json:"globalFallbacksEnabled"`
