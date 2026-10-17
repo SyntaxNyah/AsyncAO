@@ -4,8 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +103,34 @@ func TestMalformedExpansion(t *testing.T) {
 	}
 	if got := sha256hex(b); got != malformedGoldenSHA {
 		t.Errorf("expanded malformed_golden.json SHA-256 changed: got %s, want %s — the delta no longer reconstructs the frozen bytes", got, malformedGoldenSHA)
+	}
+}
+
+// goldenRunRE matches the compacted single-character run token "<char>*<len>" that
+// encodeGoldenRun emits (the "huge" string scenarios' 4096-char values).
+var goldenRunRE = regexp.MustCompile(`(.)\*(\d+)`)
+
+// decodeGoldenRuns expands every "<char>*<len>" token back to the full run.
+func decodeGoldenRuns(s string) string {
+	return goldenRunRE.ReplaceAllStringFunc(s, func(m string) string {
+		sub := goldenRunRE.FindStringSubmatch(m)
+		n, err := strconv.Atoi(sub[2])
+		if err != nil {
+			return m
+		}
+		return strings.Repeat(sub[1], n)
+	})
+}
+
+// TestSetterGoldenExpansion reconstructs the OLD prefs_setters_golden.txt bytes from the
+// compact run-length form and asserts the frozen SHA-256.
+func TestSetterGoldenExpansion(t *testing.T) {
+	raw, err := os.ReadFile(setterGoldenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := decodeGoldenRuns(string(raw))
+	if got := sha256hex([]byte(full)); got != settersGoldenSHA {
+		t.Errorf("expanded prefs_setters_golden.txt SHA-256 changed: got %s, want %s — the run-length form no longer reconstructs the frozen bytes", got, settersGoldenSHA)
 	}
 }

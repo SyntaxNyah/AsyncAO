@@ -193,9 +193,30 @@ func stableString(v reflect.Value) string {
 			return "<nil>"
 		}
 		return "&" + stableString(v.Elem())
+	case reflect.String:
+		return encodeGoldenRun(v.String())
 	default:
 		return fmt.Sprint(v.Interface())
 	}
+}
+
+// goldenRunThreshold is the length above which a single-character string run (only the
+// "huge" string scenario, which stores 4096 'x's) is compacted to "<char>*<len>". The
+// expansion test decodes it back and pins the OLD SHA-256.
+const goldenRunThreshold = 16
+
+// encodeGoldenRun compacts a long single-character run to "<char>*<len>".
+func encodeGoldenRun(s string) string {
+	if len(s) <= goldenRunThreshold {
+		return s
+	}
+	r := s[0]
+	for i := 1; i < len(s); i++ {
+		if s[i] != r {
+			return s
+		}
+	}
+	return fmt.Sprintf("%c*%d", r, len(s))
 }
 
 // setterGolden generates the golden content from the current code.
