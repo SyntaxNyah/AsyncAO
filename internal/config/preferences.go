@@ -2924,15 +2924,33 @@ func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
 }
 
 // SetCharBundlePrefetch toggles full-character bundle prefetch.
-func (p *AssetPreferences) SetCharBundlePrefetch(b bool) { p.setBoolPref(&p.CharBundlePrefetch, b) }
+func (p *AssetPreferences) SetCharBundlePrefetch(b bool) {
+	p.Update(func(sn *Settings) {
+		sn.CharBundlePrefetch =
 
-// SetPingChip toggles the connection-quality chip.
-func (p *AssetPreferences) SetPingChip(b bool) { p.setBoolPref(&p.PingChip, b) }
+			// SetPingChip toggles the connection-quality chip.
+			b
+	})
+}
 
-// SetValidateTLSCerts toggles strict wss certificate verification.
-func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.ValidateTLSCerts, b) }
+func (p *AssetPreferences) SetPingChip(b bool) {
+	p.Update(func(sn *Settings) {
+		sn.PingChip =
 
-// SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
+			// SetValidateTLSCerts toggles strict wss certificate verification.
+			b
+	})
+}
+
+func (p *AssetPreferences) SetValidateTLSCerts(b bool) {
+	p.Update(func(sn *Settings) {
+		sn.ValidateTLSCerts =
+
+			// SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
+			b
+	})
+}
+
 func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 	s = strings.TrimSpace(s)
 	if p.Load().AssetOrigin == s {
@@ -3373,13 +3391,30 @@ func (p *AssetPreferences) SetShoutPunch(on bool) {
 }
 
 // SetPostVignette / SetPostScanlines / SetPostGrain / SetPostCRT toggle the overlays.
-func (p *AssetPreferences) SetPostVignette(on bool)  { p.setBoolPref(&p.PostVignette, on) }
-func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScanlines, on) }
-func (p *AssetPreferences) SetPostGrain(on bool)     { p.setBoolPref(&p.PostGrain, on) }
-func (p *AssetPreferences) SetPostCRT(on bool)       { p.setBoolPref(&p.PostCRT, on) }
+func (p *AssetPreferences) SetPostVignette(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.PostVignette = on
+	})
+}
+func (p *AssetPreferences) SetPostScanlines(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.PostScanlines = on
+	})
+}
+func (p *AssetPreferences) SetPostGrain(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.PostGrain = on
+	})
+}
+func (p *AssetPreferences) SetPostCRT(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.PostCRT = on
+	})
 
-// Spotlight dim-strength bounds + default. The slider range is kept off 0/100 so "on" always
-// reads as a spotlight (a usable shadow, never full black, never invisible).
+	// Spotlight dim-strength bounds + default. The slider range is kept off 0/100 so "on" always
+	// reads as a spotlight (a usable shadow, never full black, never invisible).
+}
+
 const (
 	minSpotlightStrength     = 10
 	maxSpotlightStrength     = 90
@@ -3387,10 +3422,16 @@ const (
 )
 
 // SetSpotlight toggles the speaker spotlight.
-func (p *AssetPreferences) SetSpotlight(on bool) { p.setBoolPref(&p.Spotlight, on) }
+func (p *AssetPreferences) SetSpotlight(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.Spotlight =
 
-// SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
-// resolves to the default so enabling the toggle always shows a visible effect.
+			// SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
+			// resolves to the default so enabling the toggle always shows a visible effect.
+			on
+	})
+}
+
 func (p *AssetPreferences) SpotlightLevel() int {
 	snap := p.Load()
 
@@ -3416,10 +3457,16 @@ const (
 )
 
 // SetIdleBreath toggles idle breathing.
-func (p *AssetPreferences) SetIdleBreath(on bool) { p.setBoolPref(&p.IdleBreath, on) }
+func (p *AssetPreferences) SetIdleBreath(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.IdleBreath =
 
-// BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
-// pref stores the inverted "disabled" flag so the zero value means on).
+			// BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
+			// pref stores the inverted "disabled" flag so the zero value means on).
+			on
+	})
+}
+
 func (p *AssetPreferences) BreathBobOn() bool {
 	snap := p.Load()
 
@@ -3455,9 +3502,15 @@ func (p *AssetPreferences) BreathSpeed() int {
 const defaultReflectStrength = 30
 
 // SetReflection toggles the glass-floor reflection.
-func (p *AssetPreferences) SetReflection(on bool) { p.setBoolPref(&p.Reflection, on) }
+func (p *AssetPreferences) SetReflection(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.Reflection =
 
-// ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
+			// ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
+			on
+	})
+}
+
 func (p *AssetPreferences) ReflectStrength() int {
 	snap := p.Load()
 
@@ -3519,7 +3572,9 @@ func (p *AssetPreferences) StageFrame() int {
 
 // SetStageFrame stores the stage-frame style (clamped to [0,stageFrameKindMax]).
 func (p *AssetPreferences) SetStageFrame(v int) {
-	p.setIntPref(&p.StageFrameKind, v, 0, stageFrameKindMax)
+	p.Update(func(sn *Settings) {
+		sn.StageFrameKind = v
+	})
 }
 
 // WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
@@ -3533,32 +3588,11 @@ func (p *AssetPreferences) WeatherIntensity() int {
 }
 
 // SetWeatherIntensity stores the density (clamped to [1,100]).
-func (p *AssetPreferences) SetWeatherIntensity(v int) { p.setIntPref(&p.WeatherDensity, v, 1, 100) }
-
-// setBoolPref sets *field to on under the lock, marking dirty only on a real change.
-func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
-	p.mu.Lock()
-	if *field == on {
-		p.mu.Unlock()
-		return
-	}
-	*field = on
-	p.markDirty()
-	p.mu.Unlock()
-}
-
-// setIntPref clamps v to [lo,hi] and stores it under the lock, marking dirty only on a real
-// change. Shared by the slider-backed prefs.
-func (p *AssetPreferences) setIntPref(field *int, v, lo, hi int) {
-	v = clampPercent(v, lo, hi)
-	p.mu.Lock()
-	if *field == v {
-		p.mu.Unlock()
-		return
-	}
-	*field = v
-	p.markDirty()
-	p.mu.Unlock()
+func (p *AssetPreferences) SetWeatherIntensity(v int) {
+	v = clampPercent(v, 1, 100)
+	p.Update(func(sn *Settings) {
+		sn.WeatherDensity = v
+	})
 }
 
 // SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
@@ -4855,15 +4889,33 @@ func normalizeFPSPref(fps, min, max int) int {
 }
 
 // SetSpriteWaitPair persists the wait-covers-pair knob.
-func (p *AssetPreferences) SetSpriteWaitPair(on bool) { p.setBoolPref(&p.SpriteWaitPair, on) }
+func (p *AssetPreferences) SetSpriteWaitPair(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.SpriteWaitPair =
 
-// SetSpriteWaitPreanim persists the wait-covers-preanim knob.
-func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
+			// SetSpriteWaitPreanim persists the wait-covers-preanim knob.
+			on
+	})
+}
 
-// SetShoutBypassQueue persists the shout-bypass toggle.
-func (p *AssetPreferences) SetShoutBypassQueue(on bool) { p.setBoolPref(&p.ShoutBypassQueue, on) }
+func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.SpriteWaitPreanim =
 
-// SetShoutDurationMs persists the shout hold (0 = default; else clamped).
+			// SetShoutBypassQueue persists the shout-bypass toggle.
+			on
+	})
+}
+
+func (p *AssetPreferences) SetShoutBypassQueue(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.ShoutBypassQueue =
+
+			// SetShoutDurationMs persists the shout hold (0 = default; else clamped).
+			on
+	})
+}
+
 func (p *AssetPreferences) SetShoutDurationMs(ms int) {
 	p.Update(func(sn *Settings) {
 		sn.ShoutDurationMsVal = ms
@@ -4878,9 +4930,15 @@ func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
 }
 
 // SetThumbCache persists the thumbnail-cache toggle.
-func (p *AssetPreferences) SetThumbCache(on bool) { p.setBoolPref(&p.ThumbCache, on) }
+func (p *AssetPreferences) SetThumbCache(on bool) {
+	p.Update(func(sn *Settings) {
+		sn.ThumbCache =
 
-// ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
+			// ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
+			on
+	})
+}
+
 func (p *AssetPreferences) ThumbHeightPx() int {
 	snap := p.Load()
 
@@ -4942,10 +5000,14 @@ func (p *AssetPreferences) AdaptiveLatMultiple() int {
 
 // SetSpriteDownscaleOff persists the downscale-disable knob.
 func (p *AssetPreferences) SetSpriteDownscaleOff(off bool) {
-	p.setBoolPref(&p.SpriteDownscaleOff, off)
+	p.Update(func(sn *Settings) {
+		sn.SpriteDownscaleOff =
+
+			// SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
+			off
+	})
 }
 
-// SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
 	p.Update(func(sn *Settings) {
 		sn.SpriteDownscalePctVal = pct
