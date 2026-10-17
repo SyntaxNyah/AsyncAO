@@ -82,3 +82,22 @@ func TestLoadGoldenExpansion(t *testing.T) {
 		t.Errorf("expanded load_golden.json SHA-256 changed: got %s, want %s — the delta no longer reconstructs the frozen bytes", got, loadGoldenSHA256)
 	}
 }
+
+// TestMalformedExpansion reconstructs the OLD malformed_golden.json bytes from the
+// compact delta form and asserts the frozen SHA-256.
+func TestMalformedExpansion(t *testing.T) {
+	defaults := prefsDefaults(t)
+	var compact []malformedCompactCase
+	prefsDumpReadJSON(t, filepath.Join("testdata", malformedGoldenName), &compact)
+	full := make([]malformedFullCase, 0, len(compact))
+	for _, c := range compact {
+		full = append(full, malformedFullCase{c.Name, c.Data, c.Error, c.Quarantined, applyPrefsDelta(defaults, c.OutputDelta)})
+	}
+	b, err := json.MarshalIndent(full, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sha256hex(b); got != malformedGoldenSHA {
+		t.Errorf("expanded malformed_golden.json SHA-256 changed: got %s, want %s — the delta no longer reconstructs the frozen bytes", got, malformedGoldenSHA)
+	}
+}
