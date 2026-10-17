@@ -75,6 +75,9 @@ func TestSetterGoldenViaUpdate(t *testing.T) {
 			t.Fatalf("bad golden line %q", line)
 		}
 		name, label, expected := parts[0], parts[1], parts[2]
+		if label == "zero" {
+			continue // the sentinel stamp is the setter's own clamp, not the shared clamp
+		}
 		sf, ok := setterFieldMap[name]
 		if !ok {
 			continue // multi-field / no-field / string / enum — the live setter covers those

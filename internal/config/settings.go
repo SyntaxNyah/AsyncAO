@@ -1,7 +1,6 @@
 package config
 
 import (
-	"reflect"
 	"sync/atomic"
 )
 
@@ -354,12 +353,14 @@ func (p *AssetPreferences) syncSnapshot() {
 	p.settings.Store(syncFromInline(p))
 }
 
-// Update applies f to a clone of the current snapshot, clamps the result to the same
-// ranges the setters enforce, writes the changed scalar fields back into the inline data
-// fields, then stores the clone as the fresh snapshot (copy-on-write) so the next Load is
-// free. This is the B2 writer: setters migrate to `p.Update(func(s *Settings){ s.Field = v })`
-// so the inline fields stay the single source of truth for Save until the final flip. The
-// explicit (non-Update) setters still mark the snapshot stale, and this path rebuilds it.
+// Update applies f to a clone of the current snapshot, clamps the result, and — when the
+// clone actually changed — writes every field back into the inline data fields and marks the
+// snapshot stale so Load republishes lazily. The generated equal() replaces the old reflection
+// changedFieldNames diff; the generated writeBackInline() replaces the reflection write-back,
+// so collections now reach Save. This is the B2 writer: setters migrate to
+// `p.Update(func(s *Settings){ s.Field = v })` so the inline fields stay the single source of
+// truth for Save until the final flip. The explicit (non-Update) setters still mark the
+// snapshot stale, and this path rebuilds it.
 func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -373,116 +374,58 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	}
 	s := cur.Clone()
 	f(s)
-	changed := changedFieldNames(cur, s)
 	normalizeSettings(s)
-
-	sv, dv := reflect.ValueOf(s).Elem(), reflect.ValueOf(p).Elem()
-	for _, name := range changed {
-		sf, df := sv.FieldByName(name), dv.FieldByName(name)
-		if df.IsValid() && df.CanSet() && sf.IsValid() && sf.Type() == df.Type() {
-			df.Set(sf)
-		}
+	clampSettingsStrict(s)
+	if s.equal(cur) {
+		return
 	}
-	// copy-on-write: the clone becomes the fresh snapshot (no stale rebuild on the hot path).
-	p.settings.Store(s)
+	// Write the whole clone back to the inline fields (collections included) so Save
+	// marshals the new values; markDirty marks the snapshot stale for the lazy republish.
+	writeBackInline(s, p)
 	p.markDirty()
 }
 
-// changedFieldNames returns the Settings fields f mutated (before normalization), so only
-// those are written back. Scalars, arrays and structs compare by value; maps, slices and
-// pointers are skipped — the clone deep-copies them, so a plain scalar setter leaves them
-// untouched, and collection-mutating closures (item 6) copy-on-write the section they touch.
-func changedFieldNames(cur, s *Settings) []string {
-	var out []string
-	cv, sv := reflect.ValueOf(cur).Elem(), reflect.ValueOf(s).Elem()
-	for i := 0; i < sv.NumField(); i++ {
-		if valueChanged(sv.Field(i), cv.Field(i)) {
-			out = append(out, sv.Type().Field(i).Name)
-		}
+// clampSettingsStrict applies the write-only clamps the setters enforce but the lenient file
+// load deliberately skips (the frozen load + malformed goldens). Every clamp is
+// sentinel-guarded (0 stays 0 so the getter resolves the default), so a setter that touches
+// one field never stomps the sentinels of the others.
+func clampSettingsStrict(s *Settings) {
+	if s.BreathAmount != 0 {
+		s.BreathAmount = clampPercent(s.BreathAmount, 1, 100)
 	}
-	return out
-}
-
-// valueChanged reports whether two reflect.Values differ, without boxing through
-// interface{} (the old reflect.DeepEqual path) and without walking collections.
-func valueChanged(a, b reflect.Value) bool {
-	switch a.Kind() {
-	case reflect.Bool:
-		return a.Bool() != b.Bool()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return a.Int() != b.Int()
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return a.Uint() != b.Uint()
-	case reflect.Float32, reflect.Float64:
-		return a.Float() != b.Float()
-	case reflect.Complex64, reflect.Complex128:
-		return a.Complex() != b.Complex()
-	case reflect.String:
-		return a.String() != b.String()
-	case reflect.Array:
-		for i := 0; i < a.Len(); i++ {
-			if valueChanged(a.Index(i), b.Index(i)) {
-				return true
-			}
-		}
-		return false
-	case reflect.Struct:
-		for i := 0; i < a.NumField(); i++ {
-			if valueChanged(a.Field(i), b.Field(i)) {
-				return true
-			}
-		}
-		return false
-	default:
-		// maps, slices, pointers, interfaces: the clone deep-copied them, so a differing
-		// identity is not a change signal. Collection writes are copy-on-write in the
-		// closure (item 6), not detected here.
-		return false
+	if s.BreathRate != 0 {
+		s.BreathRate = clampPercent(s.BreathRate, 1, 100)
 	}
-}
-
-// normalizeSettings is the SINGLE write-path clamp implementation: it reproduces every
-// range clamp the setters enforce, using the same package clamp helpers, so an assignment
-// through Update normalizes exactly like the setter it will replace. normalize (load) and
-// Update both reach these clamps; the one-shot migration stamps live in normalize only.
-func normalizeSettings(s *Settings) {
-	// masks
-	s.HighlightColor &= 0xFFFFFF
-	s.ICCustomColor &= 0xFFFFFF
-	s.SpriteTintColor &= 0xFFFFFF
-	s.MusicFlagsVal &= MusicFlagsMask
-
-	// unconditional range clamps
-	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
-	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
-	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
-	s.CatchUpThreshold = clampPercent(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
-	s.MultiTabCap = clampPercent(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
-	s.PreviewHoverMs = clampPercent(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
-	s.EmoteHoverNamesMs = clampPercent(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
-	s.MusicVol = clampPercent(s.MusicVol, 0, defaultAudioVolume)
-	s.SFXVol = clampPercent(s.SFXVol, 0, defaultAudioVolume)
-	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
-	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
-	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
-	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
-	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
-	s.NameSat = clampPercent(s.NameSat, 0, 100)
-	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
-	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
-	s.BreathAmount = clampPercent(s.BreathAmount, 1, 100)
-	s.BreathRate = clampPercent(s.BreathRate, 1, 100)
-	s.CatchUpLingerMsVal = clampPercent(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
-	s.SpotlightStrength = clampPercent(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
-	s.SpriteWaitMsVal = clampPercent(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
-	s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
-	s.OOCScalePct = clampPercent(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
-	s.PreviewHeightPxVal = clampPercent(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
-	s.VoiceOutVolume = clampPercent(s.VoiceOutVolume, 0, 100)
-	s.WeatherDensity = clampPercent(s.WeatherDensity, 1, 100)
-	s.BgSlideshowSecs = clampPercent(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
-	s.PrefetchAggro = clampPercent(s.PrefetchAggro, 1, 4)
-	s.StageFrameKind = clampPercent(s.StageFrameKind, 0, stageFrameKindMax)
+	if s.CatchUpLingerMsVal != 0 {
+		s.CatchUpLingerMsVal = clampPercent(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
+	}
+	if s.SpotlightStrength != 0 {
+		s.SpotlightStrength = clampPercent(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
+	}
+	if s.SpriteWaitMsVal != 0 {
+		s.SpriteWaitMsVal = clampPercent(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
+	}
+	if s.OOCScalePct != 0 {
+		s.OOCScalePct = clampPercent(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	if s.PreviewHeightPxVal != 0 {
+		s.PreviewHeightPxVal = clampPercent(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+	}
+	if s.VoiceOutVolume != 0 {
+		s.VoiceOutVolume = clampPercent(s.VoiceOutVolume, 0, 100)
+	}
+	if s.WeatherDensity != 0 {
+		s.WeatherDensity = clampPercent(s.WeatherDensity, 1, 100)
+	}
+	if s.BgSlideshowSecs != 0 {
+		s.BgSlideshowSecs = clampPercent(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+	}
+	if s.PrefetchAggro != 0 {
+		s.PrefetchAggro = clampPercent(s.PrefetchAggro, 1, 4)
+	}
+	if s.StageFrameKind != 0 {
+		s.StageFrameKind = clampPercent(s.StageFrameKind, 0, stageFrameKindMax)
+	}
 	if s.DownloadKBps < 0 {
 		s.DownloadKBps = 0
 	} else if s.DownloadKBps > maxDownloadKBps {
@@ -536,6 +479,56 @@ func normalizeSettings(s *Settings) {
 		s.ThumbQualityVal = clampPercent(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
 	}
 
+	// custom clamp helpers (the setters call these same functions); the sentinel-resolving
+	// ones are guarded so 0 stays 0 and the getter resolves the default.
+	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
+	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
+	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	if s.TimerSeconds != 0 {
+		s.TimerSeconds = clampTimerSeconds(s.TimerSeconds)
+	}
+	if s.InstantReplaySeconds != 0 {
+		s.InstantReplaySeconds = clampInstantReplaySeconds(s.InstantReplaySeconds)
+	}
+	s.LayoutGridPx = clampLayoutGridPx(s.LayoutGridPx)
+	s.ViewportExactW = clampViewportExactPx(s.ViewportExactW)
+	s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
+	if s.InputGraceFramesVal > 0 {
+		s.InputGraceFramesVal = clampPercent(s.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
+	}
+}
+
+// normalizeSettings is the SINGLE write-path clamp implementation: it reproduces every
+// range clamp the setters enforce, using the same package clamp helpers, so an assignment
+// through Update normalizes exactly like the setter it will replace. normalize (load) and
+// Update both reach these clamps; the one-shot migration stamps live in normalize only.
+func normalizeSettings(s *Settings) {
+	// masks
+	s.HighlightColor &= 0xFFFFFF
+	s.ICCustomColor &= 0xFFFFFF
+	s.SpriteTintColor &= 0xFFFFFF
+	s.MusicFlagsVal &= MusicFlagsMask
+
+	// unconditional range clamps
+	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
+	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	s.CatchUpThreshold = clampPercent(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	s.MultiTabCap = clampPercent(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	s.PreviewHoverMs = clampPercent(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	s.EmoteHoverNamesMs = clampPercent(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	s.MusicVol = clampPercent(s.MusicVol, 0, defaultAudioVolume)
+	s.SFXVol = clampPercent(s.SFXVol, 0, defaultAudioVolume)
+	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
+	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
+	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
+	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
+	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	s.NameSat = clampPercent(s.NameSat, 0, 100)
+	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
+	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+
 	// explicit-zero keeps the default (the getter resolves 0)
 	if s.ViewportPct != 0 {
 		s.ViewportPct = clampPercent(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
@@ -565,16 +558,6 @@ func normalizeSettings(s *Settings) {
 		s.BlipRate = clampPercent(s.BlipRate, MinBlipRate, MaxBlipRate)
 	}
 
-	// custom clamp helpers (the setters call these same functions)
-	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
-	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
-	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
-	s.TimerSeconds = clampTimerSeconds(s.TimerSeconds)
-	s.InstantReplaySeconds = clampInstantReplaySeconds(s.InstantReplaySeconds)
-	s.LayoutGridPx = clampLayoutGridPx(s.LayoutGridPx)
-	s.ViewportExactW = clampViewportExactPx(s.ViewportExactW)
-	s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
-
 	// enums with a valid range (invalid keeps the shipped default)
 	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
 		s.ProxyModeVal = defaultPrefs("").ProxyModeVal
@@ -583,10 +566,5 @@ func normalizeSettings(s *Settings) {
 		s.ICLogDepthVal = ICLogDepthUnlimited
 	} else if s.ICLogDepthVal != 0 {
 		s.ICLogDepthVal = clampPercent(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
-	}
-	if s.InputGraceFramesVal <= 0 {
-		s.InputGraceFramesVal = InputGraceOff
-	} else {
-		s.InputGraceFramesVal = clampPercent(s.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
 	}
 }
