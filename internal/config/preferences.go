@@ -2963,28 +2963,20 @@ func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.Valida
 // SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
 func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 	s = strings.TrimSpace(s)
-	p.mu.Lock()
-	if p.AssetOrigin == s {
-		p.mu.Unlock()
+	if p.Load().AssetOrigin == s {
 		return
 	}
-	p.AssetOrigin = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.AssetOrigin = s })
 }
 
 // SetWSOriginHeader sets (or clears, when blank) the WS-handshake Origin override.
 // Applies on the NEXT connect (an open socket keeps its handshake).
 func (p *AssetPreferences) SetWSOriginHeader(s string) {
 	s = strings.TrimSpace(s)
-	p.mu.Lock()
-	if p.WSOrigin == s {
-		p.mu.Unlock()
+	if p.Load().WSOrigin == s {
 		return
 	}
-	p.WSOrigin = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.WSOrigin = s })
 }
 
 // PanelFont is one panel's user-chosen font. Both fields are optional and
@@ -3248,14 +3240,10 @@ func (p *AssetPreferences) SetProxyMode(mode int) {
 // field silently refuses to hold what you typed.
 func (p *AssetPreferences) SetProxyURL(s string) {
 	s = strings.TrimSpace(s)
-	p.mu.Lock()
-	if p.ProxyURL == s {
-		p.mu.Unlock()
+	if p.Load().ProxyURL == s {
 		return
 	}
-	p.ProxyURL = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.ProxyURL = s })
 }
 
 // AssetCharCaseMax is the highest valid character-folder casing mode. It mirrors
@@ -3679,10 +3667,7 @@ func (p *AssetPreferences) SetShowPairStatus(on bool) {
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
 	path = strings.TrimSpace(path)
-	p.mu.Lock()
-	p.FriendSoundFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.FriendSoundFile = path })
 }
 
 func (p *AssetPreferences) SetModBanSFX(on bool) {
@@ -3705,34 +3690,22 @@ func (p *AssetPreferences) SetModMuteSFX(on bool) {
 
 func (p *AssetPreferences) SetModBanSoundPath(path string) {
 	path = strings.TrimSpace(path)
-	p.mu.Lock()
-	p.ModBanSoundFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.ModBanSoundFile = path })
 }
 
 func (p *AssetPreferences) SetModKickSoundPath(path string) {
 	path = strings.TrimSpace(path)
-	p.mu.Lock()
-	p.ModKickSoundFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.ModKickSoundFile = path })
 }
 
 func (p *AssetPreferences) SetModMuteSoundPath(path string) {
 	path = strings.TrimSpace(path)
-	p.mu.Lock()
-	p.ModMuteSoundFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.ModMuteSoundFile = path })
 }
 
 func (p *AssetPreferences) SetCallwordSoundPath(path string) {
 	path = strings.TrimSpace(path)
-	p.mu.Lock()
-	p.CallwordSoundFile = path
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.CallwordSoundFile = path })
 }
 
 // --- Theme -------------------------------------------------------------------
@@ -4617,14 +4590,10 @@ func (p *AssetPreferences) SetHoldClearKey(key string) {
 	if key == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.HoldClearKey == key {
-		p.mu.Unlock()
+	if p.Load().HoldClearKey == key {
 		return
 	}
-	p.HoldClearKey = key
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.HoldClearKey = key })
 }
 
 // ExtrasBoxStyle reports the Extras-box theme: background / gradient-bottom /
@@ -5506,14 +5475,10 @@ func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
 // SetMasterList persists the master-list override.
 func (p *AssetPreferences) SetMasterList(url string) {
 	url = strings.TrimSpace(url)
-	p.mu.Lock()
-	if p.MasterListURL == url {
-		p.mu.Unlock()
+	if p.Load().MasterListURL == url {
 		return
 	}
-	p.MasterListURL = url
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.MasterListURL = url })
 }
 
 // --- Wardrobe (per server) ----------------------------------------------------
