@@ -4051,7 +4051,7 @@ func (p *AssetPreferences) SetHotkey(action, key string) {
 func (p *AssetPreferences) ServerWarmInfoFor(key string) ServerWarmInfo {
 	snap := p.Load()
 
-	return snap.ServerWarm[key]
+	return snapCloneServerWarmInfo(snap.ServerWarm[key])
 }
 
 // RememberServerChar records the character last used on a server.
@@ -6970,7 +6970,9 @@ func (p *AssetPreferences) Macros() []MacroSpec {
 	snap := p.Load()
 
 	out := make([]MacroSpec, len(snap.UserMacros))
-	copy(out, snap.UserMacros)
+	for i := range snap.UserMacros {
+		out[i] = snapCloneMacroSpec(snap.UserMacros[i])
+	}
 	return out
 }
 
