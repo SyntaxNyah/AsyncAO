@@ -3,7 +3,6 @@ package config
 import (
 	"reflect"
 	"sync/atomic"
-	"unsafe"
 )
 
 // Settings is the plain data snapshot of AssetPreferences.
@@ -322,69 +321,6 @@ type Settings struct {
 	MusicHosts                   []string                     `json:"musicHosts,omitempty"`
 }
 
-// cloneSettings returns a deep copy of s: maps and slices are copied element-by-element
-// so mutating the clone never touches the original, and unexported fields are copied too.
-func cloneSettings(s *Settings) *Settings {
-	if s == nil {
-		return nil
-	}
-	out := &Settings{}
-	cloneValue(reflect.ValueOf(s).Elem(), reflect.ValueOf(out).Elem())
-	return out
-}
-
-func cloneValue(src, dst reflect.Value) {
-	switch src.Kind() {
-	case reflect.Map:
-		if src.IsNil() {
-			return
-		}
-		dst.Set(reflect.MakeMapWithSize(src.Type(), src.Len()))
-		for _, k := range src.MapKeys() {
-			dk := reflect.New(src.Type().Key()).Elem()
-			cloneValue(k, dk)
-			dv := reflect.New(src.Type().Elem()).Elem()
-			cloneValue(src.MapIndex(k), dv)
-			dst.SetMapIndex(dk, dv)
-		}
-	case reflect.Slice:
-		if src.IsNil() {
-			return
-		}
-		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Len()))
-		for i := 0; i < src.Len(); i++ {
-			cloneValue(src.Index(i), dst.Index(i))
-		}
-	case reflect.Ptr:
-		if src.IsNil() {
-			return
-		}
-		dst.Set(reflect.New(src.Type().Elem()))
-		cloneValue(src.Elem(), dst.Elem())
-	case reflect.Struct:
-		for i := 0; i < src.NumField(); i++ {
-			cloneStructField(src, dst, i)
-		}
-	default:
-		dst.Set(src)
-	}
-}
-
-func cloneStructField(src, dst reflect.Value, i int) {
-	sf, df := src.Field(i), dst.Field(i)
-	if df.CanSet() {
-		cloneValue(sf, df)
-		return
-	}
-	// unexported field: reconstruct non-flagRO views of both source and destination
-	// at their real addresses (UnsafeAddr panics on the unexported value itself).
-	sbase := unsafe.Add(unsafe.Pointer(src.UnsafeAddr()), src.Type().Field(i).Offset)
-	sf = reflect.NewAt(sf.Type(), sbase).Elem()
-	dbase := unsafe.Add(unsafe.Pointer(dst.UnsafeAddr()), dst.Type().Field(i).Offset)
-	df = reflect.NewAt(df.Type(), dbase).Elem()
-	cloneValue(sf, df)
-}
-
 // Load returns the current settings snapshot. Callers must not mutate the returned
 // value (it is shared) and must not retain it across time. It rebuilds from the
 // inline fields on the first call after a write, so a reader sees a consistent,
@@ -413,44 +349,29 @@ var (
 	snapshotRebuilds atomic.Int64
 )
 
-// copyByNameDeep deep-copies the same-named fields from src into dst (the Settings fields
-// from the inline AssetPreferences). The maps/slices are deep-copied so the snapshot never
-// shares a map/slice with the inline fields — a concurrent map setter and a snapshot-reading
-// getter must not race.
-func copyByNameDeep(src, dst reflect.Value) {
-	for i := 0; i < dst.NumField(); i++ {
-		df := dst.Field(i)
-		sf := src.FieldByName(dst.Type().Field(i).Name)
-		if sf.IsValid() && sf.Type() == df.Type() && df.CanSet() {
-			cloneValue(sf, df)
-		}
-	}
-}
-
 func (p *AssetPreferences) syncSnapshot() {
 	snapshotRebuilds.Add(1)
-	s := &Settings{}
-	copyByNameDeep(reflect.ValueOf(p).Elem(), reflect.ValueOf(s).Elem())
-	p.settings.Store(s)
+	p.settings.Store(syncFromInline(p))
 }
 
 // Update applies f to a clone of the current snapshot, clamps the result to the same
-// ranges the setters enforce, and writes only the changed fields back into the inline data
-// fields by reflection under the write lock, then marks the snapshot stale. This is the B2
-// writer: setters migrate to `p.Update(func(s *Settings){ s.Field = v })` so the inline
-// fields stay the single source of truth until the final flip. Save keeps marshalling the
-// inline fields for now.
+// ranges the setters enforce, writes the changed scalar fields back into the inline data
+// fields, then stores the clone as the fresh snapshot (copy-on-write) so the next Load is
+// free. This is the B2 writer: setters migrate to `p.Update(func(s *Settings){ s.Field = v })`
+// so the inline fields stay the single source of truth for Save until the final flip. The
+// explicit (non-Update) setters still mark the snapshot stale, and this path rebuilds it.
 func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// rebuild the snapshot under the lock so the clone never races a concurrent write
-	// (the snapshot's map/slice fields are shallow-shared with the inline fields).
-	if p.settings.Load() == nil || p.stale.Load() {
-		p.syncSnapshot()
-		p.stale.Store(false)
-	}
 	cur := p.settings.Load()
-	s := cloneSettings(cur)
+	if cur == nil || p.stale.Load() {
+		// an explicit setter wrote the inline fields directly and marked the snapshot
+		// stale; rebuild it under the lock before cloning.
+		cur = syncFromInline(p)
+		p.stale.Store(false)
+		p.settings.Store(cur)
+	}
+	s := cur.Clone()
 	f(s)
 	changed := changedFieldNames(cur, s)
 	normalizeSettings(s)
@@ -462,21 +383,62 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 			df.Set(sf)
 		}
 	}
-	p.stale.Store(true)
+	// copy-on-write: the clone becomes the fresh snapshot (no stale rebuild on the hot path).
+	p.settings.Store(s)
 	p.markDirty()
 }
 
 // changedFieldNames returns the Settings fields f mutated (before normalization), so only
-// those are clamped and written back — untouched sentinel defaults stay put.
+// those are written back. Scalars, arrays and structs compare by value; maps, slices and
+// pointers are skipped — the clone deep-copies them, so a plain scalar setter leaves them
+// untouched, and collection-mutating closures (item 6) copy-on-write the section they touch.
 func changedFieldNames(cur, s *Settings) []string {
 	var out []string
 	cv, sv := reflect.ValueOf(cur).Elem(), reflect.ValueOf(s).Elem()
 	for i := 0; i < sv.NumField(); i++ {
-		if !reflect.DeepEqual(sv.Field(i).Interface(), cv.Field(i).Interface()) {
+		if valueChanged(sv.Field(i), cv.Field(i)) {
 			out = append(out, sv.Type().Field(i).Name)
 		}
 	}
 	return out
+}
+
+// valueChanged reports whether two reflect.Values differ, without boxing through
+// interface{} (the old reflect.DeepEqual path) and without walking collections.
+func valueChanged(a, b reflect.Value) bool {
+	switch a.Kind() {
+	case reflect.Bool:
+		return a.Bool() != b.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return a.Int() != b.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return a.Uint() != b.Uint()
+	case reflect.Float32, reflect.Float64:
+		return a.Float() != b.Float()
+	case reflect.Complex64, reflect.Complex128:
+		return a.Complex() != b.Complex()
+	case reflect.String:
+		return a.String() != b.String()
+	case reflect.Array:
+		for i := 0; i < a.Len(); i++ {
+			if valueChanged(a.Index(i), b.Index(i)) {
+				return true
+			}
+		}
+		return false
+	case reflect.Struct:
+		for i := 0; i < a.NumField(); i++ {
+			if valueChanged(a.Field(i), b.Field(i)) {
+				return true
+			}
+		}
+		return false
+	default:
+		// maps, slices, pointers, interfaces: the clone deep-copied them, so a differing
+		// identity is not a change signal. Collection writes are copy-on-write in the
+		// closure (item 6), not detected here.
+		return false
+	}
 }
 
 // normalizeSettings is the SINGLE write-path clamp implementation: it reproduces every
