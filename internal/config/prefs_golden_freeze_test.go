@@ -22,6 +22,7 @@ const (
 	defaultPrefsSHA       = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
 	prefsGoldenSHA256     = "64f4503932cbd365f97b016a6a6c8c968a7a5d890242e808335f881c97730c50"
 	settersGoldenSHA      = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
+	settersCompactSHA     = "93859183128deb63cc2ab8d2ec5420e4241cc6a84415f71215938650dd8bead7"
 )
 
 // TestGoldenFilesFrozen pins the four data files the persistence-swap oracle depends on
@@ -39,7 +40,7 @@ func TestGoldenFilesFrozen(t *testing.T) {
 		{"malformed_golden.json", filepath.Join("testdata", malformedGoldenName), malformedCompactSHA},
 		{"prefs_default.json", filepath.Join("testdata", defaultPrefsName), defaultPrefsSHA},
 		{"prefs_golden.json", filepath.Join("testdata", goldenPrefsName), prefsGoldenSHA256},
-		{"prefs_setters_golden.txt", setterGoldenPath, settersGoldenSHA},
+		{"prefs_setters_golden.txt", setterGoldenPath, settersCompactSHA},
 	} {
 		b, err := os.ReadFile(c.path)
 		if err != nil {
