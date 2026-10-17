@@ -161,6 +161,25 @@ func TestMalformedQuarantine(t *testing.T) {
 // the old load() without deleting the oracle.
 const malformedGoldenName = "malformed_golden.json"
 
+// malformedCompactCase is the on-disk (compact) form: Output is stored as a delta
+// against the default prefs (prefs_default.json).
+type malformedCompactCase struct {
+	Name        string         `json:"name"`
+	Data        string         `json:"data"`
+	Error       string         `json:"error"`
+	Quarantined bool           `json:"quarantined"`
+	OutputDelta map[string]any `json:"output_delta"`
+}
+
+// malformedFullCase is the EXPANDED form the old malformed_golden.json stored.
+type malformedFullCase struct {
+	Name        string         `json:"name"`
+	Data        string         `json:"data"`
+	Error       string         `json:"error"`
+	Quarantined bool           `json:"quarantined"`
+	Output      map[string]any `json:"output"`
+}
+
 // TestMalformedGolden pins the OLD load()'s malformed-input behaviour as a frozen golden.
 // Regenerate with: GOLDEN_REGEN=1 go test ./internal/config -run TestMalformedGolden
 func TestMalformedGolden(t *testing.T) {
@@ -169,26 +188,15 @@ func TestMalformedGolden(t *testing.T) {
 	goldenPath := filepath.Join(dir, malformedGoldenName)
 
 	if os.Getenv("GOLDEN_REGEN") == "1" {
-		var out []struct {
-			Name        string         `json:"name"`
-			Data        string         `json:"data"`
-			Error       string         `json:"error"`
-			Quarantined bool           `json:"quarantined"`
-			Output      map[string]any `json:"output"`
-		}
+		defaults := prefsDefaults(t)
+		out := make([]malformedCompactCase, 0, len(cases))
 		for _, c := range cases {
 			p := filepath.Join(t.TempDir(), "p.json")
 			if err := os.WriteFile(p, []byte(c.data), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			lp, lerr := load(p)
-			out = append(out, struct {
-				Name        string         `json:"name"`
-				Data        string         `json:"data"`
-				Error       string         `json:"error"`
-				Quarantined bool           `json:"quarantined"`
-				Output      map[string]any `json:"output"`
-			}{c.name, c.data, malformedErrClass(lerr), lerr != nil, dumpPrefs(lp)})
+			out = append(out, malformedCompactCase{c.name, c.data, malformedErrClass(lerr), lerr != nil, prefsDelta(defaults, dumpPrefs(lp))})
 		}
 		b, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -203,13 +211,8 @@ func TestMalformedGolden(t *testing.T) {
 		return
 	}
 
-	var golden []struct {
-		Name        string         `json:"name"`
-		Data        string         `json:"data"`
-		Error       string         `json:"error"`
-		Quarantined bool           `json:"quarantined"`
-		Output      map[string]any `json:"output"`
-	}
+	defaults := prefsDefaults(t)
+	var golden []malformedCompactCase
 	raw, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("read golden: %v (regenerate with GOLDEN_REGEN=1)", err)
@@ -223,7 +226,8 @@ func TestMalformedGolden(t *testing.T) {
 			t.Errorf("%s: snapshotLoad error class = %q, want %q", g.Name, got, g.Error)
 		}
 		newp, _ := snapshotLoad([]byte(g.Data))
-		if diffs := diffJSON(dumpPrefs(newp), g.Output, ""); len(diffs) > 0 {
+		want := applyPrefsDelta(defaults, g.OutputDelta)
+		if diffs := diffJSON(dumpPrefs(newp), want, ""); len(diffs) > 0 {
 			t.Errorf("%s: snapshotLoad dump differs from golden: %v", g.Name, diffs)
 		}
 	}
