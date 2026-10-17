@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	loadGoldenSHA256   = "2f52b461d8280db12f391575f1a00d5a2243cf26edf1b4640fe355e78ff75b5d"
-	defaultPrefsSHA    = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
-	prefsGoldenSHA256  = "64f4503932cbd365f97b016a6a6c8c968a7a5d890242e808335f881c97730c50"
-	settersGoldenSHA   = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
+	loadGoldenSHA256      = "2f52b461d8280db12f391575f1a00d5a2243cf26edf1b4640fe355e78ff75b5d"
+	loadGoldenCompactSHA  = "68eef8c2df62d93fdb054d83f6365acf69475c0ce782123d83a3c05ba6fac5e2"
+	defaultPrefsSHA       = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
+	prefsGoldenSHA256     = "64f4503932cbd365f97b016a6a6c8c968a7a5d890242e808335f881c97730c50"
+	settersGoldenSHA      = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
 )
 
 // TestGoldenFilesFrozen pins the four data files the persistence-swap oracle depends on
@@ -32,7 +33,7 @@ func TestGoldenFilesFrozen(t *testing.T) {
 	for _, c := range []struct {
 		name, path, want string
 	}{
-		{"load_golden.json", filepath.Join("testdata", loadGoldenName), loadGoldenSHA256},
+		{"load_golden.json", filepath.Join("testdata", loadGoldenName), loadGoldenCompactSHA},
 		{"prefs_default.json", filepath.Join("testdata", defaultPrefsName), defaultPrefsSHA},
 		{"prefs_golden.json", filepath.Join("testdata", goldenPrefsName), prefsGoldenSHA256},
 		{"prefs_setters_golden.txt", setterGoldenPath, settersGoldenSHA},

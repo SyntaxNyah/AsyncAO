@@ -15,6 +15,21 @@ import (
 // Regenerate with: GOLDEN_REGEN=1 go test ./internal/config -run TestLoadGolden
 const loadGoldenName = "load_golden.json"
 
+// loadGoldenCompactCase is the on-disk (compact) form: Output is stored as a delta
+// against the default prefs (prefs_default.json) so the frozen corpus stays small.
+type loadGoldenCompactCase struct {
+	Name        string         `json:"name"`
+	Input       map[string]any `json:"input"`
+	OutputDelta map[string]any `json:"output_delta"`
+}
+
+// loadGoldenFullCase is the EXPANDED form the old load_golden.json stored on disk.
+type loadGoldenFullCase struct {
+	Name   string         `json:"name"`
+	Input  map[string]any `json:"input"`
+	Output map[string]any `json:"output"`
+}
+
 // loadGoldenCorpus is the corpus: the legacy/migration keys (each written alone so the
 // stamp side-effects fire), representative clamped fields at below-min/above-max, and
 // the full golden prefs fixture.
@@ -136,19 +151,12 @@ func TestLoadGolden(t *testing.T) {
 	dir := filepath.Join("testdata")
 	goldenPath := filepath.Join(dir, loadGoldenName)
 
-	// Regenerate under GOLDEN_REGEN=1.
+	// Regenerate under GOLDEN_REGEN=1 (compact delta form).
 	if os.Getenv("GOLDEN_REGEN") == "1" {
-		var out []struct {
-			Name   string         `json:"name"`
-			Input  map[string]any `json:"input"`
-			Output map[string]any `json:"output"`
-		}
+		defaults := prefsDefaults(t)
+		out := make([]loadGoldenCompactCase, 0, len(cases))
 		for _, c := range cases {
-			out = append(out, struct {
-				Name   string         `json:"name"`
-				Input  map[string]any `json:"input"`
-				Output map[string]any `json:"output"`
-			}{c.name, c.input, loadGoldenOutput(t, c.input)})
+			out = append(out, loadGoldenCompactCase{c.name, c.input, prefsDelta(defaults, loadGoldenOutput(t, c.input))})
 		}
 		b, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -163,11 +171,8 @@ func TestLoadGolden(t *testing.T) {
 		return
 	}
 
-	var golden []struct {
-		Name   string         `json:"name"`
-		Input  map[string]any `json:"input"`
-		Output map[string]any `json:"output"`
-	}
+	defaults := prefsDefaults(t)
+	var golden []loadGoldenCompactCase
 	raw, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("read golden: %v (regenerate with GOLDEN_REGEN=1)", err)
@@ -176,8 +181,9 @@ func TestLoadGolden(t *testing.T) {
 		t.Fatalf("decode golden: %v", err)
 	}
 	for _, g := range golden {
+		want := applyPrefsDelta(defaults, g.OutputDelta)
 		got := loadGoldenOutput(t, g.Input)
-		if !reflect.DeepEqual(got, g.Output) {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("load() output changed for %q — the snapshot must reproduce it exactly", g.Name)
 		}
 	}
