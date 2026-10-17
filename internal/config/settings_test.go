@@ -11,7 +11,7 @@ import (
 func TestCloneSettingsDeepCopies(t *testing.T) {
 	s := &Settings{}
 	fillValue(reflect.ValueOf(s).Elem())
-	c := cloneSettings(s)
+	c := s.Clone()
 	if !reflect.DeepEqual(s, c) {
 		t.Error("clone != original immediately after cloning")
 	}
@@ -19,7 +19,7 @@ func TestCloneSettingsDeepCopies(t *testing.T) {
 	if reflect.DeepEqual(s, c) {
 		t.Error("mutating the clone's maps/slices changed the original")
 	}
-	if !reflect.DeepEqual(s, cloneSettings(s)) {
+	if !reflect.DeepEqual(s, s.Clone()) {
 		t.Error("the original's containers were mutated in place")
 	}
 }
@@ -34,7 +34,7 @@ func TestCloneCopiesUnexportedFields(t *testing.T) {
 	}
 	src := probe{Exported: "x", hidden: 42, M: map[string]int{"a": 1}}
 	dst := &probe{}
-	cloneValue(reflect.ValueOf(&src).Elem(), reflect.ValueOf(dst).Elem())
+	reflectCloneValue(reflect.ValueOf(&src).Elem(), reflect.ValueOf(dst).Elem())
 	if dst.hidden != 42 || dst.Exported != "x" || dst.M["a"] != 1 {
 		t.Errorf("unexported field not copied: %+v", dst)
 	}
