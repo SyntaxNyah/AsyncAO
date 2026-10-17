@@ -2791,27 +2791,17 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	if runes := []rune(o.WatermarkText); len(runes) > maxWatermarkLen {
 		o.WatermarkText = string(runes[:maxWatermarkLen]) // rune-safe: never split a glyph
 	}
-	p.mu.Lock()
-	if p.Export == o {
-		p.mu.Unlock()
-		return
-	}
-	p.Export = o
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.Export = o
+	})
 }
 
 // SetSpriteStyle stores the user's sprite style (opacity clamped to [0,100]).
 func (p *AssetPreferences) SetSpriteStyle(s SpriteStylePref) {
 	s.Opacity = clampOpacity(s.Opacity)
-	p.mu.Lock()
-	if p.MySpriteStyle == s {
-		p.mu.Unlock()
-		return
-	}
-	p.MySpriteStyle = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.MySpriteStyle = s
+	})
 }
 
 // --- #126 style presets (saved style+colour+emote moods) -----------------------------------
@@ -3317,14 +3307,9 @@ func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
 // SetProfile stores the user's character profile (every field length-clamped).
 func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 	pr = clampProfile(pr)
-	p.mu.Lock()
-	if p.MyProfile == pr {
-		p.mu.Unlock()
-		return
-	}
-	p.MyProfile = pr
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.MyProfile = pr
+	})
 }
 
 // SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
@@ -3709,14 +3694,9 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 	if clean == "" && strings.TrimSpace(sub) != "" {
 		return
 	}
-	p.mu.Lock()
-	if p.SubthemeName == clean {
-		p.mu.Unlock()
-		return
-	}
-	p.SubthemeName = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SubthemeName = clean
+	})
 }
 
 // --- Debug overlay -------------------------------------------------------------
@@ -3765,14 +3745,9 @@ func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
 // SetAutoStatus stores the auto-status configuration (word fields bounded).
 func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 	a = sanitizeAutoStatus(a)
-	p.mu.Lock()
-	if p.MyAutoStatus == a {
-		p.mu.Unlock()
-		return
-	}
-	p.MyAutoStatus = a
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.MyAutoStatus = a
+	})
 }
 
 // ChromeTheme reports the AsyncAO chrome theme preset key (#M3; "dark" default).
@@ -3847,14 +3822,9 @@ func (p *AssetPreferences) ChromeShape() string {
 // is stored as "sharp"). Debounced saver; never writes synchronously.
 func (p *AssetPreferences) SetChromeShape(key string) {
 	key = sanitizeChromeShape(key)
-	p.mu.Lock()
-	if p.ChromeShapeKey == key {
-		p.mu.Unlock()
-		return
-	}
-	p.ChromeShapeKey = key
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ChromeShapeKey = key
+	})
 }
 
 // ChromeShapeTier reports the corner-radius size class for the "rounded" preset
@@ -3898,10 +3868,9 @@ func (p *AssetPreferences) SetCallWords(words []string) {
 			break
 		}
 	}
-	p.mu.Lock()
-	p.CallWordList = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.CallWordList = clean
+	})
 }
 
 // AddCallWord adds one or more highlight words from a single input, split on
@@ -4268,10 +4237,9 @@ func (p *AssetPreferences) HiddenPanels() []string {
 // bounds the slice at maxHiddenPanels (rule §17.4).
 func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 	clean := sanitizeHiddenPanels(ids)
-	p.mu.Lock()
-	p.HiddenPanelIDs = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.HiddenPanelIDs = clean
+	})
 }
 
 // --- OOC name -----------------------------------------------------------------
@@ -5276,10 +5244,9 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 	}
 	cp := make([]OpenTab, len(tabs))
 	copy(cp, tabs)
-	p.mu.Lock()
-	p.OpenTabs = cp
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.OpenTabs = cp
+	})
 }
 
 // SetReduceMotion toggles reduce-motion.
@@ -6721,9 +6688,9 @@ func (p *AssetPreferences) LayoutGridSize() int {
 // The map is copied (never aliased), empty keys skipped, and bounded by classicSlotCap;
 // a nil/empty map clears all overrides.
 func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
-	p.mu.Lock()
+	var clean map[string][4]float64
 	if len(m) == 0 {
-		p.ClassicLayout = nil
+		clean = nil
 	} else {
 		cp := make(map[string][4]float64, len(m))
 		for k, v := range m {
@@ -6732,10 +6699,11 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 			}
 			cp[k] = v
 		}
-		p.ClassicLayout = cp
+		clean = cp
 	}
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ClassicLayout = clean
+	})
 }
 
 // SetClassicAnchors REPLACES every slot's window pin at once (symmetric to
@@ -6746,10 +6714,9 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 // axes independently, and the caller sets them together.
 func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
-	p.mu.Lock()
-	p.ClassicAnchors = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ClassicAnchors = clean
+	})
 }
 
 // ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) —
@@ -6804,10 +6771,9 @@ func (p *AssetPreferences) ClearClassicRotation(name string) {
 // aliased); a nil/empty map clears all rotations.
 func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
 	clean := sanitizeClassicRotations(m) // drops blanks + bounds at classicSlotCap
-	p.mu.Lock()
-	p.ClassicRotations = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ClassicRotations = clean
+	})
 }
 
 // Macros returns a copy of the user macro list.
@@ -6824,10 +6790,9 @@ func (p *AssetPreferences) Macros() []MacroSpec {
 // SetMacros replaces the macro list (caps enforced).
 func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 	clean := sanitizeMacros(in)
-	p.mu.Lock()
-	p.UserMacros = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UserMacros = clean
+	})
 }
 
 // SetFontPaths persists the font override list.
