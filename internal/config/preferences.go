@@ -2351,15 +2351,9 @@ func (p *AssetPreferences) SpriteScalingMode() int {
 // mode is resolved at DRAW time from the page memo, so unlike SmoothScaling this
 // needs no texture purge and no re-stream.
 func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
-	mode = ClampSpriteScaling(mode)
-	p.mu.Lock()
-	if p.SpriteScaling == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteScaling = mode
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteScaling = mode
+	})
 }
 
 // SetSmoothScaling toggles linear texture filtering. The UI re-streams
@@ -2447,14 +2441,9 @@ func (p *AssetPreferences) PreviewHeightPx() int {
 // SetPreviewHeightPx clamps and persists the preview box's default height.
 func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 	n = clampPercent(n, MinPreviewHeightPx, MaxPreviewHeightPx)
-	p.mu.Lock()
-	if p.PreviewHeightPxVal == n {
-		p.mu.Unlock()
-		return
-	}
-	p.PreviewHeightPxVal = n
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PreviewHeightPxVal = n
+	})
 }
 
 // PreviewWindowRect returns the detached emote-preview window's last saved
@@ -2490,15 +2479,9 @@ func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
 
 // SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
 func (p *AssetPreferences) SetPreviewHoverMs(n int) {
-	n = clampPercent(n, minPreviewHoverMs, maxPreviewHoverMs)
-	p.mu.Lock()
-	if p.PreviewHoverMs == n {
-		p.mu.Unlock()
-		return
-	}
-	p.PreviewHoverMs = n
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PreviewHoverMs = n
+	})
 }
 
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
@@ -2731,14 +2714,9 @@ func (p *AssetPreferences) TimerSecondsValue() int {
 // SetTimerSeconds stores the countdown duration, clamped to [min,max].
 func (p *AssetPreferences) SetTimerSeconds(s int) {
 	s = clampTimerSeconds(s)
-	p.mu.Lock()
-	if p.TimerSeconds == s {
-		p.mu.Unlock()
-		return
-	}
-	p.TimerSeconds = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.TimerSeconds = s
+	})
 }
 
 // SetShowSongURL toggles showing the full song URL in the music log line.
@@ -2798,15 +2776,9 @@ func (p *AssetPreferences) SetLastServer(name, url string) {
 
 // SetReplaySpeed stores the replay playback speed (clamped to [25,200]).
 func (p *AssetPreferences) SetReplaySpeed(v int) {
-	v = clampPercent(v, minReplaySpeed, maxReplaySpeed)
-	p.mu.Lock()
-	if p.ReplayPlaybackSpeed == v {
-		p.mu.Unlock()
-		return
-	}
-	p.ReplayPlaybackSpeed = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ReplayPlaybackSpeed = v
+	})
 }
 
 // SetExportOpts stores the export options (each field clamped to its range).
@@ -3220,17 +3192,9 @@ const (
 // rather than to Direct: a mangled value must not silently switch the feature
 // off for someone who never asked it to.
 func (p *AssetPreferences) SetProxyMode(mode int) {
-	if mode < 0 || mode >= ProxyModeCount {
-		mode = ProxyModeSystem
-	}
-	p.mu.Lock()
-	if p.ProxyModeVal == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.ProxyModeVal = mode
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ProxyModeVal = mode
+	})
 }
 
 // SetProxyURL stores the operator's proxy address. Validation deliberately does
@@ -3260,14 +3224,9 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	if c > AssetCharCaseMax {
 		c = 0
 	}
-	p.mu.Lock()
-	if p.AssetCharCase == c {
-		p.mu.Unlock()
-		return
-	}
-	p.AssetCharCase = c
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.AssetCharCase = c
+	})
 }
 
 // SetVoiceInput sets (or clears, for system default) the voice mic device.
@@ -3292,19 +3251,9 @@ func (p *AssetPreferences) VoiceOutVol() int {
 
 // SetVoiceOutVol clamps and persists the voice output volume.
 func (p *AssetPreferences) SetVoiceOutVol(v int) {
-	if v < 0 {
-		v = 0
-	} else if v > 100 {
-		v = 100
-	}
-	p.mu.Lock()
-	if p.VoiceOutVolume == v {
-		p.mu.Unlock()
-		return
-	}
-	p.VoiceOutVolume = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.VoiceOutVolume = v
+	})
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
@@ -3328,14 +3277,9 @@ func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
 	} else if n > 4 {
 		n = 4
 	}
-	p.mu.Lock()
-	if p.PrefetchAggro == n {
-		p.mu.Unlock()
-		return
-	}
-	p.PrefetchAggro = n
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PrefetchAggro = n
+	})
 }
 
 // SetVoicePTT sets (or clears) the push-to-talk toggle key.
@@ -3367,28 +3311,16 @@ func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 
 // SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
 func (p *AssetPreferences) SetRainbowSpriteSpeed(v int) {
-	v = clampPercent(v, minRainbowSpeed, maxRainbowSpeed)
-	p.mu.Lock()
-	if p.RainbowSpriteSpeed == v {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowSpriteSpeed = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowSpriteSpeed = v
+	})
 }
 
 // SetRainbowSpriteVividness stores the saturation (clamped to [0,100]).
 func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
-	v = clampPercent(v, minRainbowVivid, maxRainbowVivid)
-	p.mu.Lock()
-	if p.RainbowSpriteVividness == v {
-		p.mu.Unlock()
-		return
-	}
-	p.RainbowSpriteVividness = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.RainbowSpriteVividness = v
+	})
 }
 
 // SetRainbowSpriteGlow toggles the additive neon-glow blend.
@@ -3471,14 +3403,9 @@ func (p *AssetPreferences) SpotlightLevel() int {
 // SetSpotlightLevel stores the dim intensity (clamped to [10,90]).
 func (p *AssetPreferences) SetSpotlightLevel(v int) {
 	v = clampPercent(v, minSpotlightStrength, maxSpotlightStrength)
-	p.mu.Lock()
-	if p.SpotlightStrength == v {
-		p.mu.Unlock()
-		return
-	}
-	p.SpotlightStrength = v
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpotlightStrength = v
+	})
 }
 
 // Idle-breathing (#122) defaults. The two components default ON (stored inverted so the
@@ -3541,7 +3468,12 @@ func (p *AssetPreferences) ReflectStrength() int {
 }
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
-func (p *AssetPreferences) SetReflectStrength(v int) { p.setIntPref(&p.ReflectOpacity, v, 0, 100) }
+func (p *AssetPreferences) SetReflectStrength(v int) {
+	v = clampPercent(v, 0, 100)
+	p.Update(func(sn *Settings) {
+		sn.ReflectOpacity = v
+	})
+}
 
 // weatherKindMax is the highest valid weather index (render.WeatherCount-1 = embers); the
 // config can't import render, so it's pinned here and a ui test keeps the two equal.
@@ -3562,7 +3494,12 @@ func (p *AssetPreferences) WeatherType() int {
 }
 
 // SetWeatherType stores the weather index (clamped to [0,weatherKindMax]).
-func (p *AssetPreferences) SetWeatherType(v int) { p.setIntPref(&p.WeatherKind, v, 0, weatherKindMax) }
+func (p *AssetPreferences) SetWeatherType(v int) {
+	v = clampPercent(v, 0, weatherKindMax)
+	p.Update(func(sn *Settings) {
+		sn.WeatherKind = v
+	})
+}
 
 // stageFrameKindMax is the highest valid stage-frame style index (#56). The style
 // list lives in ui (stageFrameNames); a ui contract test keeps the two equal, the
@@ -3633,15 +3570,9 @@ func (p *AssetPreferences) SpriteTintColorRGB() int {
 
 // SetSpriteTintColor stores a packed 0xRRGGBB solid-tint colour.
 func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
-	rgb &= 0xFFFFFF
-	p.mu.Lock()
-	if p.SpriteTintColor == rgb {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteTintColor = rgb
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteTintColor = rgb
+	})
 }
 
 // SetPlayerListSort remembers the Players-tab player sort.
@@ -3903,14 +3834,9 @@ func (p *AssetPreferences) ChromeShapeTier() int {
 // SetChromeShapeTier stores the corner-radius size class (clamped in range).
 func (p *AssetPreferences) SetChromeShapeTier(tier int) {
 	tier = clampChromeShapeTier(tier)
-	p.mu.Lock()
-	if p.ChromeShapeTierIdx == tier {
-		p.mu.Unlock()
-		return
-	}
-	p.ChromeShapeTierIdx = tier
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ChromeShapeTierIdx = tier
+	})
 }
 
 // --- Callwords + hotkeys -------------------------------------------------------------
@@ -4393,23 +4319,21 @@ func (p *AssetPreferences) BoldNamesOn() bool {
 
 // SetBoldNames toggles bold speaker names.
 func (p *AssetPreferences) SetBoldNames(on bool) {
-	p.mu.Lock()
-	if p.BoldNamesOff == !on {
-		p.mu.Unlock()
-		return
-	}
-	p.BoldNamesOff = !on
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.BoldNamesOff = !on
+	})
 }
 
 // SetBreathBob toggles the idle-breath vertical bob. The stored field is the
-// inverted BreathNoBob, so this stays explicit (the inverse can't be expressed as
-// a plain Update assignment — the adapter's setterFieldMap records the invert).
-func (p *AssetPreferences) SetBreathBob(on bool) { p.setBoolPref(&p.BreathNoBob, !on) }
+// inverted BreathNoBob, so the closure assigns the inverse.
+func (p *AssetPreferences) SetBreathBob(on bool) {
+	p.Update(func(sn *Settings) { sn.BreathNoBob = !on })
+}
 
 // SetBreathScale toggles the idle-breath scale pulse (inverted BreathNoScale).
-func (p *AssetPreferences) SetBreathScale(on bool) { p.setBoolPref(&p.BreathNoScale, !on) }
+func (p *AssetPreferences) SetBreathScale(on bool) {
+	p.Update(func(sn *Settings) { sn.BreathNoScale = !on })
+}
 
 // The following six setters stay explicit because their clamp is not a plain range the
 // normalize can reproduce through a single field assignment: zero resolves to a default
@@ -4417,22 +4341,27 @@ func (p *AssetPreferences) SetBreathScale(on bool) { p.setBoolPref(&p.BreathNoSc
 // The setter golden adapter (TestSetterGoldenViaUpdate) would flag them otherwise.
 
 // SetBreathAmp clamps the idle-breath amplitude slider to [1,100] (0 -> 1).
-func (p *AssetPreferences) SetBreathAmp(v int) { p.setIntPref(&p.BreathAmount, v, 1, 100) }
+func (p *AssetPreferences) SetBreathAmp(v int) {
+	v = clampPercent(v, 1, 100)
+	p.Update(func(sn *Settings) {
+		sn.BreathAmount = v
+	})
+}
 
 // SetBreathSpeed clamps the idle-breath speed slider to [1,100] (0 -> 1).
-func (p *AssetPreferences) SetBreathSpeed(v int) { p.setIntPref(&p.BreathRate, v, 1, 100) }
+func (p *AssetPreferences) SetBreathSpeed(v int) {
+	v = clampPercent(v, 1, 100)
+	p.Update(func(sn *Settings) {
+		sn.BreathRate = v
+	})
+}
 
 // SetHoldClearMs clamps the hold-to-clear hold time (0 -> MinHoldClearMs).
 func (p *AssetPreferences) SetHoldClearMs(ms int) {
 	ms = clampPercent(ms, MinHoldClearMs, MaxHoldClearMs)
-	p.mu.Lock()
-	if p.HoldClearMs == ms {
-		p.mu.Unlock()
-		return
-	}
-	p.HoldClearMs = ms
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.HoldClearMs = ms
+	})
 }
 
 // SetInputGraceFrames maps non-positive n to InputGraceOff (the one-shot "off" stamp)
@@ -4443,27 +4372,17 @@ func (p *AssetPreferences) SetInputGraceFrames(n int) {
 	} else {
 		n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
 	}
-	p.mu.Lock()
-	if p.InputGraceFramesVal == n {
-		p.mu.Unlock()
-		return
-	}
-	p.InputGraceFramesVal = n
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.InputGraceFramesVal = n
+	})
 }
 
 // SetInstantReplaySeconds clamps the replay window, resolving 0 to the default.
 func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
 	s = clampInstantReplaySeconds(s)
-	p.mu.Lock()
-	if p.InstantReplaySeconds == s {
-		p.mu.Unlock()
-		return
-	}
-	p.InstantReplaySeconds = s
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.InstantReplaySeconds = s
+	})
 }
 
 // SetAnimatedSpriteCap sets the animated-sprite height cap; a value below the floor
@@ -4471,32 +4390,24 @@ func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
 func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
 	if px != 0 {
 		if px < AnimatedSpriteCapMinPx {
-			px = 0 // below the floor = off, not a forced floor value
+			px = 0
 		} else {
 			px = clampPercent(px, AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx)
 		}
 	}
-	p.mu.Lock()
-	if p.AnimatedSpriteCapPxVal == px {
-		p.mu.Unlock()
-		return
-	}
-	p.AnimatedSpriteCapPxVal = px
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.AnimatedSpriteCapPxVal = px
+	})
 }
+
+// below the floor = off, not a forced floor value
 
 // SetUIScale clamps and persists the global UI scale.
 func (p *AssetPreferences) SetUIScale(pct int) {
 	pct = clampPercent(pct, MinUIScalePercent, MaxUIScalePercent)
-	p.mu.Lock()
-	if p.UIScalePct == pct {
-		p.mu.Unlock()
-		return
-	}
-	p.UIScalePct = pct
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UIScalePct = pct
+	})
 }
 
 // WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
@@ -4684,15 +4595,9 @@ func (p *AssetPreferences) TabCap() int {
 
 // SetTabCap clamps and persists the multi-server tab cap.
 func (p *AssetPreferences) SetTabCap(n int) {
-	n = clampPercent(n, minMultiTabCap, maxMultiTabCap)
-	p.mu.Lock()
-	if p.MultiTabCap == n {
-		p.mu.Unlock()
-		return
-	}
-	p.MultiTabCap = n
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.MultiTabCap = n
+	})
 }
 
 // SetRestoreTabs toggles restore-on-launch.
@@ -4743,14 +4648,9 @@ func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
 	if mode < SpriteLoadBlank || mode >= SpriteLoadModeCount {
 		mode = SpriteLoadBlank
 	}
-	p.mu.Lock()
-	if p.SpriteLoadModeVal == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteLoadModeVal = mode
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteLoadModeVal = mode
+	})
 }
 
 // SpriteWaitMs reports the wait-mode hold cap in milliseconds (SpriteWaitDefaultMs
@@ -4768,14 +4668,9 @@ func (p *AssetPreferences) SpriteWaitMs() int {
 // SetSpriteWaitMs persists the wait-mode hold cap (clamped to the tunable range).
 func (p *AssetPreferences) SetSpriteWaitMs(ms int) {
 	ms = clampPercent(ms, SpriteWaitMinMs, SpriteWaitMaxMs)
-	p.mu.Lock()
-	if p.SpriteWaitMsVal == ms {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteWaitMsVal = ms
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteWaitMsVal = ms
+	})
 }
 
 // Bounds for the remaining renderer / core-timing power knobs. Every "0 = default"
@@ -4970,32 +4865,16 @@ func (p *AssetPreferences) SetShoutBypassQueue(on bool) { p.setBoolPref(&p.Shout
 
 // SetShoutDurationMs persists the shout hold (0 = default; else clamped).
 func (p *AssetPreferences) SetShoutDurationMs(ms int) {
-	if ms != 0 {
-		ms = clampPercent(ms, ShoutDurationMinMs, ShoutDurationMaxMs)
-	}
-	p.mu.Lock()
-	if p.ShoutDurationMsVal == ms {
-		p.mu.Unlock()
-		return
-	}
-	p.ShoutDurationMsVal = ms
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ShoutDurationMsVal = ms
+	})
 }
 
 // SetPreanimTimeoutMs persists the preanim cap (0 = default; else clamped).
 func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
-	if ms != 0 {
-		ms = clampPercent(ms, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
-	}
-	p.mu.Lock()
-	if p.PreanimTimeoutMsVal == ms {
-		p.mu.Unlock()
-		return
-	}
-	p.PreanimTimeoutMsVal = ms
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PreanimTimeoutMsVal = ms
+	})
 }
 
 // SetThumbCache persists the thumbnail-cache toggle.
@@ -5013,17 +4892,9 @@ func (p *AssetPreferences) ThumbHeightPx() int {
 
 // SetThumbHeightPx persists the thumbnail height (0 = default; else clamped).
 func (p *AssetPreferences) SetThumbHeightPx(px int) {
-	if px != 0 {
-		px = clampPercent(px, ThumbHeightMinPx, ThumbHeightMaxPx)
-	}
-	p.mu.Lock()
-	if p.ThumbHeightPxVal == px {
-		p.mu.Unlock()
-		return
-	}
-	p.ThumbHeightPxVal = px
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThumbHeightPxVal = px
+	})
 }
 
 // ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
@@ -5038,17 +4909,9 @@ func (p *AssetPreferences) ThumbQuality() int {
 
 // SetThumbQuality persists the thumbnail quality (0 = default; else clamped).
 func (p *AssetPreferences) SetThumbQuality(q int) {
-	if q != 0 {
-		q = clampPercent(q, ThumbQualityMin, ThumbQualityMax)
-	}
-	p.mu.Lock()
-	if p.ThumbQualityVal == q {
-		p.mu.Unlock()
-		return
-	}
-	p.ThumbQualityVal = q
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThumbQualityVal = q
+	})
 }
 
 // ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
@@ -5064,17 +4927,9 @@ func (p *AssetPreferences) ThumbBudgetMiB() int {
 
 // SetThumbBudgetMiB persists the thumb-store budget (0 = default; else clamped).
 func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
-	if mib != 0 {
-		mib = clampPercent(mib, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
-	}
-	p.mu.Lock()
-	if p.ThumbBudgetMiBVal == mib {
-		p.mu.Unlock()
-		return
-	}
-	p.ThumbBudgetMiBVal = mib
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThumbBudgetMiBVal = mib
+	})
 }
 
 // AdaptiveLatMultiple reports the per-host deadline multiple (0 = the network
@@ -5092,17 +4947,9 @@ func (p *AssetPreferences) SetSpriteDownscaleOff(off bool) {
 
 // SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
-	if pct != 0 {
-		pct = clampPercent(pct, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
-	}
-	p.mu.Lock()
-	if p.SpriteDownscalePctVal == pct {
-		p.mu.Unlock()
-		return
-	}
-	p.SpriteDownscalePctVal = pct
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.SpriteDownscalePctVal = pct
+	})
 }
 
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
@@ -5118,17 +4965,9 @@ func (p *AssetPreferences) TexBudgetMiB() int {
 
 // SetTexBudgetMiB persists the T1 budget (0 = default; else clamped).
 func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
-	if mib != 0 {
-		mib = clampPercent(mib, TexBudgetMinMiB, TexBudgetMaxMiB)
-	}
-	p.mu.Lock()
-	if p.TexBudgetMiBVal == mib {
-		p.mu.Unlock()
-		return
-	}
-	p.TexBudgetMiBVal = mib
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.TexBudgetMiBVal = mib
+	})
 }
 
 // AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
@@ -5169,17 +5008,14 @@ func (p *AssetPreferences) SetTexCompression(mode int) {
 	switch mode {
 	case TexCompressOff, TexCompressDXT5, TexCompressDXT1:
 	default:
-		mode = TexCompressDXT5 // unknown -> the shipped default
+		mode = TexCompressDXT5
 	}
-	p.mu.Lock()
-	if p.TexCompressionVal == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.TexCompressionVal = mode
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.TexCompressionVal = mode
+	})
 }
+
+// unknown -> the shipped default
 
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
@@ -5196,15 +5032,9 @@ func (p *AssetPreferences) FPSCap() int {
 // SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
 // cap; else clamped).
 func (p *AssetPreferences) SetFPSCap(fps int) {
-	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax)
-	p.mu.Lock()
-	if p.FPSCapVal == fps {
-		p.mu.Unlock()
-		return
-	}
-	p.FPSCapVal = fps
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.FPSCapVal = fps
+	})
 }
 
 // IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
@@ -5220,15 +5050,9 @@ func (p *AssetPreferences) IdleFPS() int {
 // SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
 // throttle when idle; else clamped).
 func (p *AssetPreferences) SetIdleFPS(fps int) {
-	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax)
-	p.mu.Lock()
-	if p.IdleFPSVal == fps {
-		p.mu.Unlock()
-		return
-	}
-	p.IdleFPSVal = fps
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.IdleFPSVal = fps
+	})
 }
 
 // UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
@@ -5244,15 +5068,9 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 // SetUnfocusedFPS persists the unfocused frame rate (0 = default,
 // FPSUnlimited = never throttle when unfocused; else clamped).
 func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax)
-	p.mu.Lock()
-	if p.UnfocusedFPSVal == fps {
-		p.mu.Unlock()
-		return
-	}
-	p.UnfocusedFPSVal = fps
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.UnfocusedFPSVal = fps
+	})
 }
 
 // InputGraceFrames reports the post-input full-rate hold in frames
@@ -6997,14 +6815,9 @@ func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
 // SetThemeFit sets the theme-fit mode (clamped to a valid mode).
 func (p *AssetPreferences) SetThemeFit(mode int) {
 	mode = clampPercent(mode, ThemeFitStretch, themeFitModeMax)
-	p.mu.Lock()
-	if p.ThemeFit == mode {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeFit = mode
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeFit = mode
+	})
 }
 
 // ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
@@ -7027,15 +6840,9 @@ func (p *AssetPreferences) ThemePan() (x, y int) {
 
 // SetThemeFitZoom clamps and stores the Custom-mode zoom.
 func (p *AssetPreferences) SetThemeFitZoom(z int) {
-	z = clampPercent(z, MinThemeZoom, MaxThemeZoom)
-	p.mu.Lock()
-	if p.ThemeFitZoom == z {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeFitZoom = z
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeFitZoom = z
+	})
 }
 
 // SetThemeFitPan clamps and stores the Custom-mode pan.
@@ -7984,13 +7791,7 @@ func clampViewportExactPx(px int) int {
 // courtroom snaps an over-large value DOWN to the largest crisp multiple that
 // fits the window at draw time, so this only needs the coarse sanity clamp.
 func (p *AssetPreferences) SetViewportExactWidth(px int) {
-	px = clampViewportExactPx(px)
-	p.mu.Lock()
-	if p.ViewportExactW == px {
-		p.mu.Unlock()
-		return
-	}
-	p.ViewportExactW = px
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ViewportExactW = px
+	})
 }
