@@ -130,3 +130,20 @@ func TestSettingsCoversDataFields(t *testing.T) {
 		}
 	}
 }
+
+// TestSetThemeRepublishesSnapshot pins the field-access hazard fix: ThemeDir is written
+// through SetTheme (not a direct p.ThemeDir = x assignment, which would leave the snapshot
+// stale until the flip). Load() and Theme() must both reflect the setter immediately.
+func TestSetThemeRepublishesSnapshot(t *testing.T) {
+	p := defaultPrefs("")
+	p.SetTheme("custom", "/tmp/theme-root")
+	if got := p.Load().ThemeDir; got != "/tmp/theme-root" {
+		t.Errorf("Load().ThemeDir = %q, want %q after SetTheme", got, "/tmp/theme-root")
+	}
+	if got := p.Load().ThemeName; got != "custom" {
+		t.Errorf("Load().ThemeName = %q, want %q after SetTheme", got, "custom")
+	}
+	if name, dir := p.Theme(); name != "custom" || dir != "/tmp/theme-root" {
+		t.Errorf("Theme() = %q, %q; want custom, /tmp/theme-root", name, dir)
+	}
+}

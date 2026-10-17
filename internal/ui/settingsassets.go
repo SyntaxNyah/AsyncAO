@@ -36,7 +36,7 @@ func (a *App) assetSourceMode() int {
 	if enabled {
 		return assetSrcLocal
 	}
-	if a.d.Prefs.LocalAssetsLayered {
+	if a.d.Prefs.Load().LocalAssetsLayered {
 		return assetSrcLayered
 	}
 	return assetSrcStream
