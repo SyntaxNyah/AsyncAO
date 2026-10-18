@@ -2551,11 +2551,10 @@ func (p *AssetPreferences) SetErrorSpritePath(path string) {
 // ClearLearnedType drops every host's learned format for one asset type (e.g.
 // after changing the desk-format policy) so the next probe re-derives it.
 func (p *AssetPreferences) ClearLearnedType(typeName string) {
-	p.mu.Lock()
-	p.dropLearnedTypeLocked(typeName)
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		dropLearnedType(sn, typeName)
+	})
 	p.formatGen.Add(1)
-	p.markDirty()
 }
 
 // ClearLearnedHost drops every learned format belonging to ONE host and reports
@@ -2855,33 +2854,28 @@ func (p *AssetPreferences) AddStylePreset(pr StylePreset) {
 	}
 	pr.Style.Opacity = clampOpacity(pr.Style.Opacity)
 	pr.Key = strings.ToLower(strings.TrimSpace(pr.Key))
-	p.mu.Lock()
-	for i := range p.SavedStyles {
-		if p.SavedStyles[i].Name == pr.Name {
-			pr.Key = p.SavedStyles[i].Key // keep an existing key binding across an overwrite
-			p.SavedStyles[i] = pr
-			p.markDirty()
-			p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		for i := range sn.SavedStyles {
+			if sn.SavedStyles[i].Name == pr.Name {
+				pr.Key = sn.SavedStyles[i].Key // keep an existing key binding across an overwrite
+				sn.SavedStyles[i] = pr
+				return
+			}
+		}
+		if len(sn.SavedStyles) >= stylePresetCap {
 			return
 		}
-	}
-	if len(p.SavedStyles) >= stylePresetCap {
-		p.mu.Unlock()
-		return
-	}
-	p.SavedStyles = append(p.SavedStyles, pr)
-	p.markDirty()
-	p.mu.Unlock()
+		sn.SavedStyles = append(sn.SavedStyles, pr)
+	})
 }
 
 // DeleteStylePreset removes the preset at i (bounds-checked).
 func (p *AssetPreferences) DeleteStylePreset(i int) {
-	p.mu.Lock()
-	if i >= 0 && i < len(p.SavedStyles) {
-		p.SavedStyles = append(p.SavedStyles[:i], p.SavedStyles[i+1:]...)
-		p.markDirty()
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if i >= 0 && i < len(sn.SavedStyles) {
+			sn.SavedStyles = append(sn.SavedStyles[:i], sn.SavedStyles[i+1:]...)
+		}
+	})
 }
 
 // SetStylePresetKey binds (or clears, key=="") a bare key to preset i, removing that key from
@@ -3078,19 +3072,17 @@ func (p *AssetPreferences) MarkFontWarnShown(theme string) {
 	if theme == "" {
 		return
 	}
-	p.mu.Lock()
-	for _, t := range p.FontWarnThemes {
-		if strings.EqualFold(t, theme) {
-			p.mu.Unlock()
-			return
+	p.Update(func(sn *Settings) {
+		for _, t := range sn.FontWarnThemes {
+			if strings.EqualFold(t, theme) {
+				return
+			}
 		}
-	}
-	p.FontWarnThemes = append(p.FontWarnThemes, theme)
-	if len(p.FontWarnThemes) > FontWarnThemesCap {
-		p.FontWarnThemes = p.FontWarnThemes[len(p.FontWarnThemes)-FontWarnThemesCap:]
-	}
-	p.markDirty()
-	p.mu.Unlock()
+		sn.FontWarnThemes = append(sn.FontWarnThemes, theme)
+		if len(sn.FontWarnThemes) > FontWarnThemesCap {
+			sn.FontWarnThemes = sn.FontWarnThemes[len(sn.FontWarnThemes)-FontWarnThemesCap:]
+		}
+	})
 }
 
 // ClearFontWarnThemes forgets every warned theme, so the warnings come back. The
@@ -5305,19 +5297,28 @@ func (p *AssetPreferences) ClaimLegacyWardrobe(serverKey string) {
 	if serverKey == "" {
 		return
 	}
-	p.mu.RLock()
-	parked := len(p.Wardrobe) > 0
-	p.mu.RUnlock()
-	if !parked {
-		return
-	}
-	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		if len(w.Wardrobe) == 0 && len(p.Wardrobe) > 0 {
-			w.Wardrobe = p.Wardrobe
-			p.Wardrobe = nil
+	changed := false
+	p.Update(func(sn *Settings) {
+		if len(sn.Wardrobe) == 0 {
+			return
 		}
+		if sn.ServerWarm == nil {
+			sn.ServerWarm = map[string]ServerWarmInfo{}
+		}
+		w, exists := sn.ServerWarm[serverKey]
+		if !exists && len(sn.ServerWarm) >= serverWarmCap {
+			return
+		}
+		if len(w.Wardrobe) == 0 {
+			w.Wardrobe = sn.Wardrobe
+			sn.Wardrobe = nil
+			changed = true
+		}
+		sn.ServerWarm[serverKey] = w
 	})
-	p.wardrobeGen.Add(1) // the claiming server's wardrobe just gained the legacy list
+	if changed {
+		p.wardrobeGen.Add(1)
+	}
 }
 
 // AddWardrobe stores a character folder in one server's wardrobe
@@ -5804,26 +5805,24 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		return
 	}
 	key := LearnedKey(host, typeName)
-	p.mu.Lock()
-	existing := p.LearnedFormats[key]
-	if len(existing) > 0 && existing[0] == ext {
-		p.mu.Unlock()
-		return // already preferred; no write, no dirty
-	}
-	next := make([]string, 0, len(existing)+1)
-	next = append(next, ext)
-	for _, e := range existing {
-		if e == ext || len(next) == LearnedExtCap {
-			continue
+	p.Update(func(sn *Settings) {
+		existing := sn.LearnedFormats[key]
+		if len(existing) > 0 && existing[0] == ext {
+			return // already preferred; no write, no dirty
 		}
-		next = append(next, e)
-	}
-	if p.LearnedFormats == nil {
-		p.LearnedFormats = map[string][]string{}
-	}
-	p.LearnedFormats[key] = next
-	p.markDirty()
-	p.mu.Unlock()
+		next := make([]string, 0, len(existing)+1)
+		next = append(next, ext)
+		for _, e := range existing {
+			if e == ext || len(next) == LearnedExtCap {
+				continue
+			}
+			next = append(next, e)
+		}
+		if sn.LearnedFormats == nil {
+			sn.LearnedFormats = map[string][]string{}
+		}
+		sn.LearnedFormats[key] = next
+	})
 }
 
 // RecordLearnedList persists the full ordered format list for (host, type) —
@@ -5840,17 +5839,15 @@ func (p *AssetPreferences) RecordLearnedList(host, typeName string, exts []strin
 		exts = exts[:LearnedExtCap]
 	}
 	key := LearnedKey(host, typeName)
-	p.mu.Lock()
-	if equalStrings(p.LearnedFormats[key], exts) {
-		p.mu.Unlock()
-		return // unchanged; no write, no dirty
-	}
-	if p.LearnedFormats == nil {
-		p.LearnedFormats = map[string][]string{}
-	}
-	p.LearnedFormats[key] = cloneStrings(exts) // caller's slice must not alias the stored one
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if equalStrings(sn.LearnedFormats[key], exts) {
+			return // unchanged; no write, no dirty
+		}
+		if sn.LearnedFormats == nil {
+			sn.LearnedFormats = map[string][]string{}
+		}
+		sn.LearnedFormats[key] = cloneStrings(exts) // caller's slice must not alias the stored one
+	})
 }
 
 // equalStrings reports whether two string slices are element-wise equal.
@@ -6405,30 +6402,27 @@ func (p *AssetPreferences) SaveLayoutProfile(name string, prof LayoutProfile) {
 	if layoutProfileEmpty(clean) {
 		return
 	}
-	p.mu.Lock()
-	if p.LayoutProfiles == nil {
-		p.LayoutProfiles = map[string]LayoutProfile{}
-	}
-	if _, exists := p.LayoutProfiles[name]; !exists && len(p.LayoutProfiles) >= layoutProfileCap {
-		p.mu.Unlock()
-		return
-	}
-	p.LayoutProfiles[name] = clean
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.LayoutProfiles == nil {
+			sn.LayoutProfiles = map[string]LayoutProfile{}
+		}
+		if _, exists := sn.LayoutProfiles[name]; !exists && len(sn.LayoutProfiles) >= layoutProfileCap {
+			return
+		}
+		sn.LayoutProfiles[name] = clean
+	})
 }
 
 // DeleteLayoutProfile removes a saved profile by name (A6).
 func (p *AssetPreferences) DeleteLayoutProfile(name string) {
-	p.mu.Lock()
-	if p.LayoutProfiles != nil {
-		delete(p.LayoutProfiles, name)
-		if len(p.LayoutProfiles) == 0 {
-			p.LayoutProfiles = nil
+	p.Update(func(sn *Settings) {
+		if sn.LayoutProfiles != nil {
+			delete(sn.LayoutProfiles, name)
+			if len(sn.LayoutProfiles) == 0 {
+				sn.LayoutProfiles = nil
+			}
 		}
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	})
 }
 
 // ClassicLayoutOverrides returns a sanitized copy of the default-courtroom slot
@@ -6884,13 +6878,13 @@ func (p *AssetPreferences) ClearLearned() {
 	})
 }
 
-// dropLearnedTypeLocked removes learned entries for one type across all
-// hosts. Caller holds the write lock.
-func (p *AssetPreferences) dropLearnedTypeLocked(typeName string) {
+// dropLearnedType removes learned entries for one type across all hosts from a
+// snapshot — the shared path for SetFormatOrder/SetTypeFallbacks/ClearLearnedType.
+func dropLearnedType(sn *Settings, typeName string) {
 	suffix := LearnedKeySeparator + typeName
-	for key := range p.LearnedFormats {
+	for key := range sn.LearnedFormats {
 		if strings.HasSuffix(key, suffix) {
-			delete(p.LearnedFormats, key)
+			delete(sn.LearnedFormats, key)
 		}
 	}
 }
@@ -7014,23 +7008,19 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 	if url == "" {
 		return
 	}
-	p.mu.Lock()
-	for i, f := range p.Favorites {
-		if f.URL == url {
-			if f.Name == name && f.Description == description {
-				p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		for i, f := range sn.Favorites {
+			if f.URL == url {
+				if f.Name == name && f.Description == description {
+					return
+				}
+				sn.Favorites[i].Name = name
+				sn.Favorites[i].Description = description
 				return
 			}
-			p.Favorites[i].Name = name
-			p.Favorites[i].Description = description
-			p.markDirty()
-			p.mu.Unlock()
-			return
 		}
-	}
-	p.Favorites = append(p.Favorites, FavoriteServer{Name: name, URL: url, Description: description})
-	p.markDirty()
-	p.mu.Unlock()
+		sn.Favorites = append(sn.Favorites, FavoriteServer{Name: name, URL: url, Description: description})
+	})
 }
 
 // UpdateFavorite renames and/or re-addresses an existing phone-book entry,
@@ -7079,21 +7069,16 @@ func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description s
 
 // RemoveFavorite unstars the server with the given URL.
 func (p *AssetPreferences) RemoveFavorite(url string) {
-	p.mu.Lock()
-	kept := p.Favorites[:0]
-	removed := false
-	for _, f := range p.Favorites {
-		if f.URL == url {
-			removed = true
-			continue
+	p.Update(func(sn *Settings) {
+		kept := sn.Favorites[:0]
+		for _, f := range sn.Favorites {
+			if f.URL == url {
+				continue
+			}
+			kept = append(kept, f)
 		}
-		kept = append(kept, f)
-	}
-	p.Favorites = kept
-	p.mu.Unlock()
-	if removed {
-		p.markDirty()
-	}
+		sn.Favorites = kept
+	})
 }
 
 // ExportFavoritesJSON marshals the phone book (favorites) as shareable JSON.
@@ -7444,11 +7429,11 @@ func (p *AssetPreferences) ModReasonTemplatesList() []string {
 	return cloneStrings(snap.ModReasonTemplates)
 }
 
-// seedModTemplatesLocked populates the stored list with the defaults if it's empty, so a mutation
-// (add/remove) starts from what the user sees rather than from nothing. Caller holds the lock.
-func (p *AssetPreferences) seedModTemplatesLocked() {
-	if len(p.ModReasonTemplates) == 0 {
-		p.ModReasonTemplates = cloneStrings(defaultModReasonTemplates)
+// seedModTemplates populates the stored list with the defaults if it's empty, so a
+// mutation (add/remove) starts from what the user sees rather than from nothing.
+func seedModTemplates(sn *Settings) {
+	if len(sn.ModReasonTemplates) == 0 {
+		sn.ModReasonTemplates = cloneStrings(defaultModReasonTemplates)
 	}
 }
 
@@ -7459,22 +7444,21 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 	if s == "" {
 		return false
 	}
-	p.mu.Lock()
-	p.seedModTemplatesLocked()
-	if len(p.ModReasonTemplates) >= modReasonTemplatesCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, t := range p.ModReasonTemplates {
-		if strings.EqualFold(t, s) {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.Update(func(sn *Settings) {
+		seedModTemplates(sn)
+		if len(sn.ModReasonTemplates) >= modReasonTemplatesCap {
+			return
 		}
-	}
-	p.ModReasonTemplates = append(p.ModReasonTemplates, s)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		for _, t := range sn.ModReasonTemplates {
+			if strings.EqualFold(t, s) {
+				return
+			}
+		}
+		sn.ModReasonTemplates = append(sn.ModReasonTemplates, s)
+		changed = true
+	})
+	return changed
 }
 
 // modDurationsCap bounds the saved custom ban-duration chips (hard rule #4). The
@@ -7534,18 +7518,18 @@ func (p *AssetPreferences) RemoveModDuration(token string) bool {
 // RemoveModReasonTemplate drops a reason (case-insensitive). Reports whether it changed.
 func (p *AssetPreferences) RemoveModReasonTemplate(s string) bool {
 	s = strings.TrimSpace(s)
-	p.mu.Lock()
-	p.seedModTemplatesLocked()
-	for i, t := range p.ModReasonTemplates {
-		if strings.EqualFold(t, s) {
-			p.ModReasonTemplates = append(p.ModReasonTemplates[:i], p.ModReasonTemplates[i+1:]...)
-			p.markDirty()
-			p.mu.Unlock()
-			return true
+	changed := false
+	p.Update(func(sn *Settings) {
+		seedModTemplates(sn)
+		for i, t := range sn.ModReasonTemplates {
+			if strings.EqualFold(t, s) {
+				sn.ModReasonTemplates = append(sn.ModReasonTemplates[:i], sn.ModReasonTemplates[i+1:]...)
+				changed = true
+				return
+			}
 		}
-	}
-	p.mu.Unlock()
-	return false
+	})
+	return changed
 }
 
 // blipVolsCap bounds the per-character blip-volume map (hard rule #4: no
