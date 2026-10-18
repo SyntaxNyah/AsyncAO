@@ -268,8 +268,15 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 // a voice/mic session still renders (its audio engine is frame-driven).
 func TestSkipFrameBackgroundOff(t *testing.T) {
 	a := expApp(t)
-	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
-	a.NoteInput() // full-rate input grace active: would normally force a render
+	{
+		pv1 := config.FPSOff
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.UnfocusedFPSVal =
+				// full-rate input grace active: would normally force a render
+				pv1
+		})
+	}
+	a.NoteInput()
 
 	if !a.SkipFrame(false, false) {
 		t.Error("bg-off + unfocused must skip even during the input grace (0-fps ceiling)")
@@ -375,11 +382,17 @@ func TestNextWakeDelay(t *testing.T) {
 	if d, render := a.NextWakeDelay(true); d != minWakeDelay || !render {
 		t.Errorf("overdue: wake = %v render=%v, want the %v floor + render", d, minWakeDelay, render)
 	}
+	{
+		pv2 :=
 
-	// Background OFF + unfocused: NO render wakes at all — even with an idle rate
-	// set and a long-overdue idle tick, the window is asleep while tabbed out (a
-	// 0-fps background cap reaches a true 0 fps). A FOCUSED window ignores it.
-	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
+			// Background OFF + unfocused: NO render wakes at all — even with an idle rate
+			// set and a long-overdue idle tick, the window is asleep while tabbed out (a
+			// 0-fps background cap reaches a true 0 fps). A FOCUSED window ignores it.
+			config.FPSOff
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.UnfocusedFPSVal = pv2
+		})
+	}
 	if d, render := a.NextWakeDelay(false); d != maxHousekeepingGap || render {
 		t.Errorf("bg-off unfocused: wake = %v render=%v, want the %v floor + no render", d, render, maxHousekeepingGap)
 	}

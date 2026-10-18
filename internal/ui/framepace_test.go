@@ -45,7 +45,7 @@ func TestFramePace(t *testing.T) {
 			2
 
 	})
-	a.d.Prefs.SetUnfocusedFPS(10)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFPSVal = 10 })
 
 	// Event-driven idle (the default loop): the active cap, not the idle rate.
 	if got := a.FramePace(true); got != budget(60) {
@@ -225,7 +225,7 @@ func TestHardCapBudget(t *testing.T) {
 
 	})
 
-	a.d.Prefs.SetUnfocusedFPS(5)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFPSVal = 5 })
 	if got := a.HardCapBudget(true); got != budget(30) {
 		t.Errorf("focused hard cap = %v, want 30 fps", got)
 	}
@@ -245,8 +245,12 @@ func TestHardCapBudget(t *testing.T) {
 				FPSUnlimited
 
 	})
-
-	a.d.Prefs.SetUnfocusedFPS(config.FPSUnlimited)
+	{
+		pv1 := config.FPSUnlimited
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.UnfocusedFPSVal = pv1
+		})
+	}
 	if got := a.HardCapBudget(true); got != 0 {
 		t.Errorf("focused ∞ hard cap = %v, want 0 (uncapped)", got)
 	}
@@ -266,8 +270,12 @@ func TestHardCapBudget(t *testing.T) {
 			60
 
 	})
-
-	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
+	{
+		pv2 := config.FPSOff
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.UnfocusedFPSVal = pv2
+		})
+	}
 	if got := a.HardCapBudget(false); got != budget(60) {
 		t.Errorf("unfocused-off hard cap = %v, want the active-cap backstop %v", got, budget(60))
 	}
@@ -365,7 +373,7 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	a := testTabApp(t)
 	a.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetUnfocusedFPS(10) // pin the unfocused cap (shipped default is now 5)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFPSVal = 10 }) // pin the unfocused cap (shipped default is now 5)
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
 	// Nothing animating: the flat unfocused trickle (regression guard).
@@ -579,9 +587,15 @@ func TestFramePaceUnlimited(t *testing.T) {
 			true
 
 	})
+	{
+		pv3 :=
 
-	// ∞ background rate never throttles an unfocused window.
-	a.d.Prefs.SetUnfocusedFPS(config.FPSUnlimited)
+			// ∞ background rate never throttles an unfocused window.
+			config.FPSUnlimited
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.UnfocusedFPSVal = pv3
+		})
+	}
 	if got := a.FramePace(false); got != 0 {
 		t.Errorf("unlimited background rate = %v, want 0 (never throttle unfocused)", got)
 	}
@@ -727,8 +741,8 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 func TestWantsFullRateStateGated(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
-	a.d.Prefs.SetSpriteWobble(true)
-	a.d.Prefs.SetSpriteSpin(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteWobble = true })
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteSpin = true })
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {

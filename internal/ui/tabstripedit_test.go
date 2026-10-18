@@ -5,6 +5,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -546,7 +547,7 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 		{
 			name: "classic editor",
 			arm: func(a *App) {
-				a.d.Prefs.SetThemeLayout(false) // send drawCourtroom down the classic branch
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // send drawCourtroom down the classic branch
 				a.classicEdit = true
 			},
 			// Mirrors drawClassicEditor's own banner geometry.

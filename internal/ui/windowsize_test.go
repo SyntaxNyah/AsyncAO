@@ -324,7 +324,7 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 	}
 	t.Run("fullscreen", func(t *testing.T) {
 		a := testTabApp(t)
-		a.d.Prefs.SetWindowFullscreen(true)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.WindowFull = true })
 		armAndLand(a, designCanvas(714, 579))
 		if a.themeResizeArmGen != 0 {
 			t.Error("the one-shot survived the fullscreen guard")
@@ -338,7 +338,7 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 		// screen, so the theme's canvas is not what is being drawn and snapping the
 		// window to it would just make the classic layout cramped.
 		a := testTabApp(t)
-		a.d.Prefs.SetThemeLayout(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 		armAndLand(a, designCanvas(714, 579))
 		if a.themeResizeArmGen != 0 {
 			t.Error("the one-shot survived the themed-layout guard")
@@ -725,7 +725,7 @@ func TestThemeDesignSizeRowFollowsTheThemedLayout(t *testing.T) {
 		t.Fatalf("offer = (%d,%d,%v), want the theme's 714x579 while the themed layout is on", w, h, ok)
 	}
 
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if _, _, ok := a.themeDesignSizeOffer(); ok {
 		t.Error("the row is still offered with the themed courtroom layout off — its hint would be false")
 	}

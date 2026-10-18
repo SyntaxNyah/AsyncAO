@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -382,7 +383,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	if expanded && !a.d.Prefs.Load().ToolboxSeen {
 		// First expand (hover or pin) latches the discoverability flag off so the
 		// ring stops. Idempotent setter → no per-frame markDirty once seen.
-		a.d.Prefs.SetToolboxSeen(true)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ToolboxSeen = true })
 	}
 
 	if !expanded {

@@ -778,7 +778,7 @@ func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 		// back control from an exact-px pin (else the drag would silently no-op
 		// against the shadowing fixed size).
 		if a.d.Prefs.Load().ViewportExactW != 0 {
-			a.d.Prefs.SetViewportExactWidth(0)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.ViewportExactW = 0 })
 		}
 		pct := int(int64(c.mouseX-vp.X) * int64(DefaultScalePct) / int64(w))
 		if pct < config.MinViewportPercent {

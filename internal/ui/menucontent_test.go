@@ -235,7 +235,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if !a.menuItemEnabled(row) {
 		t.Error("a theme that declares a canvas (with the themed layout on) must enable the row")
 	}
@@ -245,7 +245,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 	}
 	// The themed courtroom layout being OFF means the canvas is not what is drawn,
 	// so the offer — and the row — must withdraw together.
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if a.menuItemEnabled(row) {
 		t.Error("with the themed layout off the canvas is not on screen: the row must dim")
 	}

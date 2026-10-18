@@ -10,6 +10,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // The Voice panel — a Nyathena-gated, non-blocking floating panel for the
@@ -271,7 +272,12 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		}
 		if nv := c.Slider("voiceOutVol", sdl.Rect{X: x + 140, Y: y, W: right - (x + 140), H: btnH}, vol, 100); nv != vol && a.voiceAudio != nil {
 			a.voiceAudio.setOutVol(int(nv))
-			a.d.Prefs.SetVoiceOutVol(int(nv)) // remember across sessions
+			{
+				pv1 := int(nv)
+				a.d.Prefs.Update(func(sn *config.Settings) { // remember across sessions
+					sn.VoiceOutVolume = pv1
+				})
+			}
 		}
 		y += btnH + 6
 	}

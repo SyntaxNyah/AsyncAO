@@ -69,7 +69,7 @@ func TestPanelScopeArmsUnderTheDyslexiaSwitch(t *testing.T) {
 // on a different screen.
 func TestPanelScopeSurvivesThemeFontsOff(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	res := &themeApply{}
 	res.panelPct[elemNotes] = 200
 	a.landThemeFonts(res)

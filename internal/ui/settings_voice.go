@@ -5,6 +5,7 @@ package ui
 import (
 	"strconv"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -34,7 +35,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 		a.cycleVoiceInput()
 	}
 	if c.Button(sdl.Rect{X: pad + 160, Y: y, W: 150, H: btnH}, "System default") {
-		a.d.Prefs.SetVoiceInput("")
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.VoiceInputDevice = "" })
 	}
 	y += 30
 	c.Label(pad, y, "Uses your system default mic unless you pick another. Takes effect next time you Join voice.", ColTextDim)
@@ -72,7 +73,12 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	c.Label(pad, y+4, "Volume:", ColText)
 	vol := int32(a.d.Prefs.VoiceOutVol())
 	if nv := c.Slider("voiceOutVolSet", sdl.Rect{X: pad + 80, Y: y, W: 220, H: btnH}, vol, 100); nv != vol {
-		a.d.Prefs.SetVoiceOutVol(int(nv))
+		{
+			pv1 := int(nv)
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.VoiceOutVolume = pv1
+			})
+		}
 		if a.voiceAudio != nil {
 			a.voiceAudio.setOutVol(int(nv)) // apply live if we're in voice
 		}
@@ -92,7 +98,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 		a.voicePTTBindArmed = !a.voicePTTBindArmed
 	}
 	if c.Button(sdl.Rect{X: pad + 140, Y: y, W: 90, H: btnH}, "Clear") {
-		a.d.Prefs.SetVoicePTT("")
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.VoicePTTKey = "" })
 		a.voicePTTBindArmed = false
 	}
 	y += 30
@@ -123,5 +129,10 @@ func (a *App) cycleVoiceInput() {
 			break
 		}
 	}
-	a.d.Prefs.SetVoiceInput(devs[(idx+1)%len(devs)])
+	{
+		pv2 := devs[(idx+1)%len(devs)]
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.VoiceInputDevice = pv2
+		})
+	}
 }

@@ -20,7 +20,7 @@ func TestManualUIScaleCommitOnRelease(t *testing.T) {
 	defer cleanup()
 	a := testTabApp(t)
 	a.ctx.Ren = ren
-	a.d.Prefs.SetUIScaleAuto(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = false })
 	a.uiScalePct = 100
 	a.ctx.SetUIScale(100)
 

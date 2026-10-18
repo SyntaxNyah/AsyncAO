@@ -293,7 +293,7 @@ func TestElemInkOnlyOnCanvas(t *testing.T) {
 // only reason this feature needs no preference of its own.
 func TestThemeFontsOffClearsInk(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	th := loadAceAttorney2x(t)
 	res := &themeApply{}
 	res.buildThemeFontTable(th, nil)

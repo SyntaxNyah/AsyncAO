@@ -80,7 +80,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Update channel")
 	expCh := a.d.Prefs.Load().UpdateExperimental
 	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
-		a.d.Prefs.SetUpdateChannelExperimental(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdateExperimental = next })
 		// Re-arm the one-shot launch check so the swap takes effect NOW (next
 		// frame), not on the next restart — and drop a stale offer from the
 		// other channel so its modal can't push the wrong build.
@@ -120,13 +120,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 26
 		wp := a.d.Prefs.Load().SpriteWaitPair
 		if next := c.Checkbox(pad, y, "Also wait for the pair partner's sprite", wp); next != wp {
-			a.d.Prefs.SetSpriteWaitPair(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteWaitPair = next })
 			a.applyTimingToRoom()
 		}
 		y += 24
 		wpre := a.d.Prefs.Load().SpriteWaitPreanim
 		if next := c.Checkbox(pad, y, "Also wait for the pre-animation", wpre); next != wpre {
-			a.d.Prefs.SetSpriteWaitPreanim(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteWaitPreanim = next })
 			a.applyTimingToRoom()
 		}
 		y += 26
@@ -242,7 +242,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		"The rate when nothing needs redrawing (1–120, 0 = never redraw when idle, or ∞ = uncapped). Any change returns to the active rate instantly.")
 	y = a.fpsSettingRow(y, "unfocusedfps", "Unfocused frame rate:",
 		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
-		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
+		a.d.Prefs.UnfocusedFPS, func(v int) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.UnfocusedFPSVal = v
+			})
+		}, &settings.fpsBufs[2],
 		"The rate while another window has focus (1–60, 0 = never redraw when unfocused, or ∞ = uncapped). Minimized draws nothing.")
 	// The "ignore the background rate entirely" escape hatch (pacingfocus.go). An
 	// OPTION, never a default change: it overrides the focus boolean the whole pacer
@@ -250,7 +254,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// schedule all stop applying at once.
 	ufr := a.d.Prefs.Load().UnfocusedFullRate
 	if next := c.Checkbox(pad, y, "Keep full speed when another window has focus (OFF by default)", ufr); next != ufr {
-		a.d.Prefs.SetUnfocusedFullRate(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFullRate = next })
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Unfocused frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
@@ -339,7 +343,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	} else {
 		tcOn := a.d.Prefs.Load().ThumbCache
 		if next := c.Checkbox(pad, y, "Keep tiny low-quality thumbnails of every sprite (default OFF)", tcOn); next != tcOn {
-			a.d.Prefs.SetThumbCache(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbCache = next })
 			th.SetEnabled(next)
 		}
 		y += 26
@@ -360,7 +364,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			}
 			c.Label(pad+200+236, y+4, thLabel, ColTextDim)
 			if nth != tHp {
-				a.d.Prefs.SetThumbHeightPx(nth)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbHeightPxVal = nth })
 				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
 			}
 			y += 26
@@ -378,7 +382,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			}
 			c.Label(pad+200+236, y+4, tqLabel, ColTextDim)
 			if ntq != tq {
-				a.d.Prefs.SetThumbQuality(ntq)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbQualityVal = ntq })
 				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
 			}
 			y += 26
@@ -396,7 +400,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			}
 			c.Label(pad+200+236, y+4, tbLabel, ColTextDim)
 			if ntb != tb {
-				a.d.Prefs.SetThumbBudgetMiB(ntb)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbBudgetMiBVal = ntb })
 				th.SetBudget(int64(a.d.Prefs.ThumbBudgetMiB()) << 20)
 			}
 			y += 26
@@ -531,7 +535,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "TLS certificate")
 	validate := a.d.Prefs.Load().ValidateTLSCerts
 	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
-		a.d.Prefs.SetValidateTLSCerts(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ValidateTLSCerts = next })
 	}
 	y += 24
 	y = a.settingsDesc(pad, y, "Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this ON can make them UNREACHABLE — it's only for confirming the encrypted connection is to the real server.", ColDanger)
@@ -589,7 +593,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "How long a missing (404) asset is remembered before it may be probed again. Shorter picks up newly-uploaded art sooner; longer wastes fewer probes on sparse packs. Applies on restart.", ColTextDim)
 	y += 8
 	c.Label(pad, y+4, "Slow-host patience:", ColText)
-	lm := a.d.Prefs.AdaptiveLatMultiple()
+	lm := a.d.Prefs.Load().AdaptiveLatMultipleVal
 	ltrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
 	nlm := int(clampI32(c.Slider("latmultiple", ltrack, int32(lm), config.AdaptiveLatMultipleMax), 0, config.AdaptiveLatMultipleMax))
 	if nlm != 0 && nlm < config.AdaptiveLatMultipleMin {
@@ -613,7 +617,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 		})
 
-		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.AdaptiveLatMultiple())
+		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.Load().AdaptiveLatMultipleVal)
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Each asset host's request deadline is N × its average response time, so one dying mirror can't stall the download lane. Lower gives up sooner (jittery links may see spurious timeouts); higher is more patient.", ColTextDim)
@@ -671,7 +675,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
 	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, a.d.Prefs.SetTexBudgetMiB, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
+	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, func(v int) {
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.TexBudgetMiBVal = v
+		})
+	}, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
 	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. The default (64) and anything up to 128 fit the 256 MiB memory budget — above 128 is EXPERIMENTAL and deliberately exceeds it, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
 	y += 10
 

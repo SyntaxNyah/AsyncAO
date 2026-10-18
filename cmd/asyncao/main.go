@@ -195,7 +195,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// the per-host deadline multiple is live but seeded here too.
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal) * time.Second)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
-	client.SetAdaptiveLatencyMultiple(prefs.AdaptiveLatMultiple())
+	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
 	pool := network.NewPool(network.DefaultWorkers)
 	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())

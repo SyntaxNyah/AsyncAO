@@ -35,7 +35,11 @@ func TestPrefIntBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	b := prefInt(p, func(s *config.Settings) int { return s.SpriteScaling }, p.SetSpriteScalingMode)
+	b := prefInt(p, func(s *config.Settings) int { return s.SpriteScaling }, func(v int) {
+		p.Update(func(sn *config.Settings) {
+			sn.SpriteScaling = v
+		})
+	})
 	b.Set(2)
 	if b.Get() != 2 {
 		t.Errorf("after Set, Get = %d, want 2", b.Get())

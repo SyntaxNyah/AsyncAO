@@ -218,8 +218,8 @@ func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	// editor's Reset writes themeRectsOrig back into themeRects, so aliasing one
 	// map would silently make Reset a no-op for anyone who extends this fixture.
 	a.themeRectsOrig = cloneRects(a.themeRects)
-	a.d.Prefs.SetThemeLayout(true) // default-ON today; pinned here so a default flip can't silently un-gate this
-	a.themeLay.valid = false       // force the first frame to build the cache from the rects above
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned here so a default flip can't silently un-gate this
+	a.themeLay.valid = false                                                // force the first frame to build the cache from the rects above
 	return a, cleanup
 }
 

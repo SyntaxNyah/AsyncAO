@@ -1310,7 +1310,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// find FAST, right before going live).
 	streamer := a.d.Prefs.Load().StreamerModeOn
 	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
-		a.d.Prefs.SetStreamerMode(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StreamerModeOn = next })
 	}
 	y += 26
 	anims := a.d.Prefs.Load().PreferAnimated
@@ -1502,7 +1502,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Gates ONLY the hover dwell — right-click previews always work.
 	prev := a.d.Prefs.Load().SpritePreviewOn
 	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
-		a.d.Prefs.SetSpritePreviews(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpritePreviewOn = next })
 	}
 	y += 26
 	if prev {
@@ -1612,7 +1612,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
 	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
-		a.d.Prefs.SetSpriteMove(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteMoveOn = next })
 	}
 	y += 26
 	if move {
@@ -1656,7 +1656,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Application")
 	upd := a.d.Prefs.Load().UpdateCheck
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
-		a.d.Prefs.SetUpdateCheck(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdateCheck = next })
 	}
 	y += 26
 	alt := a.d.Prefs.Load().AutoLoginToast
@@ -1677,7 +1677,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	tabCap := a.d.Prefs.TabCap()
 	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99,
 		"How many servers you can have open at once — each Join opens a tab (up to 99)."); next != tabCap {
-		a.d.Prefs.SetTabCap(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.MultiTabCap = next })
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
@@ -1783,7 +1783,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	if next, changed := c.Dropdown("spritescale",
 		sdl.Rect{X: pad + spriteScaleDDX, Y: y, W: spriteScaleDDW, H: fieldH},
 		spriteScalingLabels[:], spriteScale); changed {
-		a.d.Prefs.SetSpriteScalingMode(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteScaling = next })
 		spriteScale = config.ClampSpriteScaling(next)
 		settings.statusLine = "Sprite filtering: " + spriteScalingLabels[spriteScale]
 	}
@@ -1798,7 +1798,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		scaleAutoLabel = fmt.Sprintf("Auto UI scale — fits the window + display DPI (now: %d%%)", a.detectedScalePct)
 	}
 	if next := c.Checkbox(pad, y, scaleAutoLabel, scaleAuto); next != scaleAuto {
-		a.d.Prefs.SetUIScaleAuto(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = next })
 		a.ctx.SetUIScale(a.UIScale())
 	}
 	y += 26

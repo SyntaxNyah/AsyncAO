@@ -344,7 +344,12 @@ func (a *App) pollVoicePTT() {
 			return
 		}
 		if c.keyPressed != 0 {
-			a.d.Prefs.SetVoicePTT(sdl.GetKeyName(c.keyPressed))
+			{
+				pv1 := sdl.GetKeyName(c.keyPressed)
+				a.d.Prefs.Update(func(sn *config.Settings) {
+					sn.VoicePTTKey = pv1
+				})
+			}
 			a.voicePTTBindArmed = false
 			c.keyPressed = 0
 		}

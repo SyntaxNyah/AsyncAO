@@ -336,7 +336,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// Theme-driven courtroom geometry (courtroom_design.ini).
 	tlay := a.d.Prefs.Load().ThemeLayoutOn
 	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
-		a.d.Prefs.SetThemeLayout(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = next })
 		a.invalidateThemeCanvases()
 	}
 	y += 28
@@ -344,7 +344,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// table is rebuilt (and the faces read) off-thread, exactly like a theme swap.
 	tfonts := a.d.Prefs.Load().ThemeFonts
 	if next := c.Checkbox(pad, y, "Use the theme's fonts (courtroom_fonts.ini — per-element family, point size and bold)", tfonts); next != tfonts {
-		a.d.Prefs.SetThemeFonts(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = next })
 		a.applyThemeAsync()
 	}
 	y += 28
@@ -381,7 +381,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		y += boxH + 10
 		zoom := a.d.Prefs.ThemeZoom()
 		if next := a.sliderRow(y, "  Zoom %", zoom, 5, config.MinThemeZoom, config.MaxThemeZoom); next != zoom {
-			a.d.Prefs.SetThemeFitZoom(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = next })
 			a.invalidateThemeCanvases()
 		}
 		y += 28
@@ -597,7 +597,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	sst := a.d.Prefs.Load().SpriteSolidTint
 	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
-		a.d.Prefs.SetSpriteSolidTint(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteSolidTint = next })
 	}
 	y += 26
 	if sst {
@@ -612,7 +612,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
 			a.spriteTintHex = next
 			if rgb, ok := parseHex6(next); ok {
-				a.d.Prefs.SetSpriteTintColor(rgb)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteTintColor = rgb })
 			}
 		}
 		y += 28
@@ -627,12 +627,12 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// Motion FX (independent of the colour wash, OFF by default).
 	wob := a.d.Prefs.Load().SpriteWobble
 	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
-		a.d.Prefs.SetSpriteWobble(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteWobble = next })
 	}
 	y += 26
 	spn := a.d.Prefs.Load().SpriteSpin
 	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
-		a.d.Prefs.SetSpriteSpin(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteSpin = next })
 	}
 	y += 26
 	punch := a.d.Prefs.Load().ShoutPunch
@@ -684,7 +684,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	c.Label(pad, y+4, "Stage frame:", ColText)
 	sf := a.d.Prefs.StageFrame()
 	if next, changed := c.Dropdown("stageframe", sdl.Rect{X: pad + 130, Y: y, W: 170, H: fieldH}, stageFrameNames, sf); changed {
-		a.d.Prefs.SetStageFrame(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StageFrameKind = next })
 	}
 	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
 	y += 30
@@ -862,7 +862,12 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	// the live courtroom by invalidating the geometry cache.
 	if c.hovering(box) && c.wheelY != 0 {
 		c.wheelTaken = true
-		a.d.Prefs.SetThemeFitZoom(a.d.Prefs.ThemeZoom() + int(c.wheelY)*5)
+		{
+			pv1 := a.d.Prefs.ThemeZoom() + int(c.wheelY)*5
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.ThemeFitZoom = pv1
+			})
+		}
 		a.invalidateThemeCanvases()
 	}
 	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {

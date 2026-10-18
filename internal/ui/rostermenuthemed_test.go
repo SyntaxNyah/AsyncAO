@@ -54,7 +54,7 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	// dispatches on lay.valid AND the preference, and so must this.
 	a.themeLay.valid = true
 	a.themeLay.r = map[string]sdl.Rect{"music_list": themedMusicListRect}
-	prefs.SetThemeLayout(false)
+	prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if a.rosterMenuThemed() {
 		t.Error("theme-driven geometry is switched off, so the CLASSIC courtroom drew — " +
 			"reading the cache alone would hide a row that still works")
@@ -62,7 +62,7 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 
 	// Theme-driven geometry with the theme's own music_list rect: this roster IS being
 	// painted inside AO2's design canvas, where the volume view can never draw.
-	prefs.SetThemeLayout(true)
+	prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if !a.rosterMenuThemed() {
 		t.Error("the themed courtroom paints the roster inside its music_list rect, so the " +
 			"menu must be themed — else it offers a Volume row drawMusicList discards")
