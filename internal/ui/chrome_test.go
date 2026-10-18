@@ -78,9 +78,15 @@ func TestCustomChromeApplies(t *testing.T) {
 	if ColPanel != defaultKitColors[1] || ColAccent != defaultKitColors[3] {
 		t.Fatalf("blank custom should be stock dark: panel=%+v accent=%+v", ColPanel, ColAccent)
 	}
+	{
+		pv1 :=
 
-	// Filled panel + accent apply; the blank slots stay stock.
-	prefs.SetCustomChrome([7]string{"", "203040", "", "ff8800", "", "", ""})
+			// Filled panel + accent apply; the blank slots stay stock.
+			[7]string{"", "203040", "", "ff8800", "", "", ""}
+		prefs.Update(func(sn *config.Settings) {
+			sn.CustomChromeHex = pv1
+		})
+	}
 	a.applyChromePreset(chromeCustomKey)
 	if want := (sdl.Color{R: 0x20, G: 0x30, B: 0x40, A: 255}); ColPanel != want {
 		t.Errorf("custom panel = %+v, want %+v", ColPanel, want)
@@ -88,10 +94,16 @@ func TestCustomChromeApplies(t *testing.T) {
 	if want := (sdl.Color{R: 0xff, G: 0x88, B: 0x00, A: 255}); ColAccent != want {
 		t.Errorf("custom accent = %+v, want %+v", ColAccent, want)
 	}
+	{
+		pv2 :=
 
-	// Readability floor: a light panel with the (unset → stock light) text would be
-	// illegible, so Text is forced dark — the user can't get stuck on invisible text.
-	prefs.SetCustomChrome([7]string{"", "f0f0f0", "", "", "", "", ""})
+			// Readability floor: a light panel with the (unset → stock light) text would be
+			// illegible, so Text is forced dark — the user can't get stuck on invisible text.
+			[7]string{"", "f0f0f0", "", "", "", "", ""}
+		prefs.Update(func(sn *config.Settings) {
+			sn.CustomChromeHex = pv2
+		})
+	}
 	a.applyChromePreset(chromeCustomKey)
 	if colLuma(ColText) >= paletteLightPanelLuma {
 		t.Errorf("light custom panel should force dark text, got text luma %d", colLuma(ColText))

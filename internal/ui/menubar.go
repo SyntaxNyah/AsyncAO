@@ -491,7 +491,12 @@ func menuToggleAspect(a *App, _ int) {
 
 func menuPlainBackdropsOn(a *App, _ int) bool { return a.d.Prefs.Load().PlainLobby }
 func menuTogglePlainBackdrops(a *App, _ int) {
-	a.d.Prefs.SetPlainLobby(!a.d.Prefs.Load().PlainLobby)
+	{
+		pv1 := !a.d.Prefs.Load().PlainLobby
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.PlainLobby = pv1
+		})
+	}
 }
 
 func menuPerfHUDOn(a *App, _ int) bool { return a.perfHUD }

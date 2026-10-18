@@ -32,6 +32,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -387,8 +388,8 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	a.d.Prefs.SetReduceMotion(true)
-	defer a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	enterPreviewByButton(t, a)
 	sc := &a.te.preview.state.room.Scene
@@ -1029,8 +1030,8 @@ func TestEditorPreviewFrameStaysInsideItsChromeBudget(t *testing.T) {
 	// message every few frames by design, which is the courtroom's cost and not the
 	// preview's. Frozen, the demo is a settled courtroom frame plus this feature's
 	// own chrome — which is exactly what the budget is about.
-	a.d.Prefs.SetReduceMotion(true)
-	defer a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	driveFrames(a, 5)
 
 	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {

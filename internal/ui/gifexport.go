@@ -380,7 +380,7 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	if withSpeed {
 		spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 		if next := a.sliderRow(y, "  Playback speed %", spd, 5, 25, 200); next != spd {
-			a.d.Prefs.SetReplaySpeed(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.ReplayPlaybackSpeed = next })
 		}
 		y += 30
 	}

@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -59,7 +60,7 @@ func TestPreviewPinLatchAndPrefBothHoldTheBox(t *testing.T) {
 		t.Error("the session latch alone must pin")
 	}
 	a.previewPinned = false
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	if !a.previewIsPinned() {
 		t.Error("the preference alone must pin")
 	}
@@ -70,7 +71,7 @@ func TestPreviewPinLatchAndPrefBothHoldTheBox(t *testing.T) {
 // pin button would look broken.
 func TestTogglePreviewPinClearsBoth(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	a.previewPinned = false
 	a.togglePreviewPin()
 	if a.previewIsPinned() || a.previewPinned || a.d.Prefs.Load().PreviewPinned {
@@ -115,7 +116,7 @@ func TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell(t *testing.T) {
 // closeSpritePreview) must not silently wipe a setting the user chose.
 func TestClosePreviewClearsTheLatchNotThePreference(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	a.previewBase, a.previewPinned = "x", true
 	a.closeSpritePreview()
 	if a.previewPinned {

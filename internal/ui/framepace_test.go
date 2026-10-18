@@ -726,7 +726,7 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 // call (voiceJoined) does; a merely-open panel rides damage and input.
 func TestWantsFullRateStateGated(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetRainbowSprites(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
 	a.d.Prefs.SetSpriteWobble(true)
 	a.d.Prefs.SetSpriteSpin(true)
 	a.d.Prefs.Update(func(

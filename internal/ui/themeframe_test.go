@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -66,7 +67,7 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	// Motion ALLOWED: the page steps and the census fires. This half is the
 	// non-vacuity check — without it a themeFrame hardwired to frame 0 would pass
 	// the accessibility half perfectly.
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.themeFXFrozen = a.reduceMotionNow()
 	a.frameAnimChrome = false
 	moving := a.themeFrame(page)
@@ -78,8 +79,8 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	}
 
 	// Motion SUPPRESSED.
-	a.d.Prefs.SetReduceMotion(true)
-	defer a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.themeFXFrozen = a.reduceMotionNow()
 	a.frameAnimChrome = false
 	still := a.themeFrame(page)
@@ -104,7 +105,7 @@ func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
 	page := animatedThemePage(t, a, themeTexKey("gatebutton"))
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.themeFXFrozen = false
 
 	for _, el := range []time.Duration{0, 45 * time.Millisecond, 130 * time.Millisecond, time.Second} {

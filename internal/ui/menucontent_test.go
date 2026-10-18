@@ -477,7 +477,7 @@ func TestWhatsNewLeftTheHelpMenu(t *testing.T) {
 func TestMarkChangelogSeenStampsTheBuild(t *testing.T) {
 	a := stageMenuBarApp(t)
 	const stale = "0.0.0-not-this-build"
-	a.d.Prefs.SetChangelogSeen(stale)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ChangelogSeen = stale })
 
 	a.markChangelogSeen()
 	if got := a.d.Prefs.Load().ChangelogSeen; got == stale {

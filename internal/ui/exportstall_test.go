@@ -209,7 +209,7 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 
 	// Speed the export up so the tick budget is small: a modest fps and the smallest
 	// preset keep frameDt large and the frame cap low, and the replay timing is fast.
-	a.d.Prefs.SetReplaySpeed(200)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReplayPlaybackSpeed = 200 })
 	// Smallest legal frame + slowest legal fps (SetExportOpts clamps to the
 	// mins): each captured frame advances the sim by the LARGEST legal dt and
 	// quantizes the FEWEST pixels, so the whole script fits the tick budget.

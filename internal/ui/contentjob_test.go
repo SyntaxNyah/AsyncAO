@@ -15,6 +15,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -864,7 +865,7 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 	_, origin := autoBundleServer(t)
 
 	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
-	a.d.Prefs.SetRecordingsKeepAssets(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.RecordingsKeepAssets = false })
 
 	before := existingAorecs(t)
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})

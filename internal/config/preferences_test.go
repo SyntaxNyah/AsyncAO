@@ -494,7 +494,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 
 	})
 
-	p.SetShowname("Nyah")
+	p.Update(func(sn *Settings) { sn.Showname = "Nyah" })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1141,7 +1141,7 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 
 	p.SetAudioVolumes(0, 55, 200) // mute is a real value; 200 clamps
-	p.SetOOCName("testuser")
+	p.Update(func(sn *Settings) { sn.OOCName = "testuser" })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -1525,7 +1525,7 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 
 	})
 
-	p.SetSFXVolMuted(true)
+	p.Update(func(sn *Settings) { sn.SFXVolMuted = true })
 	// Music and blip are left OFF deliberately, so the reload assertion also
 	// catches a bug that sets every channel muted regardless of which one changed.
 	if err := p.Close(); err != nil {
@@ -1655,7 +1655,7 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 		t.Error("OpenTabs must default empty")
 	}
 
-	p.SetRestoreTabs(true)
+	p.Update(func(sn *Settings) { sn.RestoreTabs = true })
 	p.SetOpenTabs([]OpenTab{
 		{Name: "Alpha", URL: "wss://a.example:2096"},
 		{Name: "Beta", URL: "wss://b.example:2096"},
@@ -2221,7 +2221,7 @@ func TestSendOptionDefaults(t *testing.T) {
 	p.SetStickySounds(false)
 	p.SetStickyEffects(false)
 	p.SetStickyPreanims(false)
-	p.SetSFXOnIdle(true)
+	p.Update(func(sn *Settings) { sn.SFXOnIdle = true })
 	p.Update(func(
 		sn *Settings) {
 
@@ -2272,7 +2272,7 @@ func TestSmoothLogScrollPref(t *testing.T) {
 	if p.Load().SmoothLogScroll {
 		t.Error("smooth log scrolling must default OFF (the log follows instantly, like AO2)")
 	}
-	p.SetSmoothLogScroll(true)
+	p.Update(func(sn *Settings) { sn.SmoothLogScroll = true })
 	if !p.Load().SmoothLogScroll {
 		t.Fatal("SetSmoothLogScroll(true) did not stick")
 	}

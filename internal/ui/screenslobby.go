@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -1423,7 +1424,7 @@ func (a *App) previewIsPinned() bool {
 func (a *App) togglePreviewPin() {
 	on := !a.previewIsPinned()
 	a.previewPinned = on
-	a.d.Prefs.SetPreviewPinned(on)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = on })
 }
 
 // dismissPreviewOnClick is the click-dismiss shared by the preview surfaces that

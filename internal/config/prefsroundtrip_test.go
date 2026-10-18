@@ -128,7 +128,7 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	if p.Load().ProxyURL != "" {
 		t.Fatalf("default proxy URL = %q, want empty", p.Load().ProxyURL)
 	}
-	p.SetProxyMode(ProxyModeManual)
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	p.SetProxyURL("  socks5://box.example:1080  ") // trimmed on the way in
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	// The escape hatch specifically: mode 1 is not the zero value, but mode 0 is,
 	// and a user switching BACK to 0 must persist that rather than be
 	// indistinguishable from a file written before the setting existed.
-	back.SetProxyMode(ProxyModeDirect)
+	back.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeDirect })
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -312,13 +312,13 @@ func TestProxyModeClampsGarbage(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 	for _, bad := range []int{-1, ProxyModeCount, ProxyModeCount + 50} {
-		p.SetProxyMode(bad)
+		p.Update(func(sn *Settings) { sn.ProxyModeVal = bad })
 		if got := p.Load().ProxyModeVal; got != ProxyModeSystem {
 			t.Errorf("SetProxyMode(%d) landed on %d, want ProxyModeSystem", bad, got)
 		}
 	}
 	// ...and on the way in too, because a hand-edited file is the other door.
-	p.SetProxyMode(ProxyModeManual)
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestShoutBypassQueueRoundTrips(t *testing.T) {
 	}
 	// An explicit OFF must survive a restart despite the ON default — the *bool
 	// DTO distinguishes "absent → default" from a deliberately-written OFF.
-	p.SetShoutBypassQueue(false)
+	p.Update(func(sn *Settings) { sn.ShoutBypassQueue = false })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}

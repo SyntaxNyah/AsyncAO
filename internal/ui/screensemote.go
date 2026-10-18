@@ -12,6 +12,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -1934,26 +1935,26 @@ func (a *App) applyICColorChoice(next int) {
 		a.icCustomOn = true
 		a.icCustomRGB = a.d.Prefs.ICCustomColorRGB()
 		a.showICColorWheel = true
-		a.d.Prefs.SetRainbowMessages(false)
-		a.d.Prefs.SetRandomMessageColor(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 		a.icExtColor = 0
 	case next == icColorRainbowIdx:
-		a.d.Prefs.SetRainbowMessages(true)
-		a.d.Prefs.SetRandomMessageColor(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = true })
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 		a.icExtColor = 0
 	case next == icColorRandomIdx:
-		a.d.Prefs.SetRandomMessageColor(true)
-		a.d.Prefs.SetRainbowMessages(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = true })
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
 		a.icExtColor = 0
 	case next >= extColorFirst && next < extColorFirst+render.ExtColorCount():
 		a.icExtColor = next - extColorFirst + 1 // 1-based; 0 = none
-		a.d.Prefs.SetRainbowMessages(false)
-		a.d.Prefs.SetRandomMessageColor(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 	default: // standard palette 0..8
 		a.icColor = next
 		a.icExtColor = 0
-		a.d.Prefs.SetRainbowMessages(false)
-		a.d.Prefs.SetRandomMessageColor(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 	}
 }
 

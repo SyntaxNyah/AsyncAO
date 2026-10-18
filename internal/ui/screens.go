@@ -1013,7 +1013,7 @@ func (a *App) drawQuitConfirm(w, h int32) {
 	c.Label(m.X+pad, m.Y+50, "Close the AsyncAO window?", ColText)
 	skip := a.d.Prefs.Load().QuitConfirmSkip
 	if next := c.Checkbox(m.X+pad, m.Y+82, "Don't ask again", skip); next != skip {
-		a.d.Prefs.SetQuitConfirmSkip(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.QuitConfirmSkip = next })
 	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 120, H: btnH}, "Quit") {
 		a.showQuitConfirm = false

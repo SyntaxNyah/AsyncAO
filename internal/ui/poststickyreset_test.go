@@ -66,7 +66,12 @@ func TestClearSFXAfterSendReadsTheRealPreferences(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, prefs := newStickyPrefsApp(t)
 			prefs.SetStickySounds(tc.stickySounds)
-			prefs.SetSFXOnIdle(tc.sfxOnIdle)
+			{
+				pv1 := tc.sfxOnIdle
+				prefs.Update(func(sn *config.Settings) {
+					sn.SFXOnIdle = pv1
+				})
+			}
 			a.icPreanim = tc.pre
 			a.sfxChoiceIdx = stickySFXPickedRow
 			a.clearSFXAfterSend()
@@ -164,7 +169,7 @@ func TestStickyResetsSurviveAPreferenceRoundTrip(t *testing.T) {
 	prefs.SetStickySounds(false)
 	prefs.SetStickyEffects(false)
 	prefs.SetStickyPreanims(false)
-	prefs.SetSFXOnIdle(true)
+	prefs.Update(func(sn *config.Settings) { sn.SFXOnIdle = true })
 	if err := prefs.Close(); err != nil { // Close flushes the debounced saver
 		t.Fatal(err)
 	}

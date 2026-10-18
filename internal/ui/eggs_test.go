@@ -7,6 +7,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -96,7 +97,7 @@ func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect
 	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame never runs in this
 	// harness, so pin them or every ring is skipped as off-window.
 	a.winW, a.winH = eggOracleW, eggOracleH
-	a.d.Prefs.SetScreenEffects(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = true })
 	vp := sdl.Rect{X: 0, Y: 0, W: eggOracleW, H: eggOracleH}
 	box := sdl.Rect{X: eggOracleInset, Y: eggOracleInset, W: eggOracleW - 2*eggOracleInset, H: eggOracleH - 2*eggOracleInset}
 	return a, ct, vp, box, func() {
@@ -140,9 +141,16 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 				reduce bool
 				paints bool
 			}{{reduce: true, paints: false}, {reduce: false, paints: true}} {
-				a.d.Prefs.SetReduceMotion(arm.reduce)
-				// Clear the detection cache so each arm does its own scan through the
-				// real compare-and-store guard rather than inheriting the last one's.
+				{
+					pv1 := arm.reduce
+					a.d.Prefs.Update(func(sn *config.Settings) {
+						sn.
+							// Clear the detection cache so each arm does its own scan through the
+							// real compare-and-store guard rather than inheriting the last one's.
+							ReduceMotionOn = pv1
+					})
+				}
+
 				a.eggMsg, a.eggKind = "", eggNone
 				a.frameAnimChrome = false
 				painted := eggPaintedPixels(t, a.ctx.Ren, ct, half.draw)
@@ -179,7 +187,7 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 	a, _, vp, box, cleanup := eggOracleRig(t)
 	defer cleanup()
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	for kind := eggFanat; kind <= eggMint; kind++ {
 		text := eggTriggerFor(t, kind)
@@ -500,8 +508,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	defer cleanup()
 
 	// The accessibility gate must be OPEN for the egg to draw at all.
-	a.d.Prefs.SetScreenEffects(true)
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = true })
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	const w, h = 1280, 720
 	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame (which normally

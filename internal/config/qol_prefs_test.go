@@ -55,7 +55,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if !p.Load().RecordingsKeepAssets {
 		t.Fatal("RecordingsKeepAssetsOn must default true (in-app recordings keep their assets)")
 	}
-	p.SetRecordingsKeepAssets(false) // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.RecordingsKeepAssets = false }) // default-ON *bool — explicit false must survive
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if p2.Load().RecordingsKeepAssets {
 		t.Fatal("reopened file must still carry the explicit OFF")
 	}
-	p2.SetRecordingsKeepAssets(true)
+	p2.Update(func(sn *Settings) { sn.RecordingsKeepAssets = true })
 	if err := p2.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestChangelogSeenRoundTrip(t *testing.T) {
 	if p.Load().ChangelogSeen != "" {
 		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.Load().ChangelogSeen)
 	}
-	p.SetChangelogSeen("v1.30.0")
+	p.Update(func(sn *Settings) { sn.ChangelogSeen = "v1.30.0" })
 	if p.Load().ChangelogSeen != "v1.30.0" {
 		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.Load().ChangelogSeen)
 	}
@@ -335,7 +335,7 @@ func TestRightClickHideSpritePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetRightClickHideSprite(false)
+	q.Update(func(sn *Settings) { sn.RightClickHideSprite = false })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -939,8 +939,8 @@ func TestPlayerListSortPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetPlayerListSort(1)
-	q.SetPlayerListAreaSort(2)
+	q.Update(func(sn *Settings) { sn.PlayerListSort = 1 })
+	q.Update(func(sn *Settings) { sn.PlayerListAreaSort = 2 })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1100,11 +1100,16 @@ func TestFollowEnabledPref(t *testing.T) {
 // TestPreviewHoverClamp pins the dwell bounds (the setter is authoritative).
 func TestPreviewHoverClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.SetPreviewHoverMs(1 << 30)
+	{
+		pv1 := 1 << 30
+		p.Update(func(sn *Settings) {
+			sn.PreviewHoverMs = pv1
+		})
+	}
 	if got := p.PreviewHoverMillis(); got != maxPreviewHoverMs {
 		t.Errorf("clamp hi = %d, want %d", got, maxPreviewHoverMs)
 	}
-	p.SetPreviewHoverMs(1)
+	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 1 })
 	if got := p.PreviewHoverMillis(); got != minPreviewHoverMs {
 		t.Errorf("clamp lo = %d, want %d", got, minPreviewHoverMs)
 	}
@@ -1198,7 +1203,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	p.SetSpritePreviews(false)
-	p.SetPreviewHoverMs(8000)
+	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 8000 })
 	p.SetPreviewHeightPx(512)            // default-when-0 int — must survive
 	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
 	p.Update(func(
@@ -1278,8 +1283,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	})
 
 	// explicit non-default true must survive the absent-default-OFF pointer
-	p.SetScreenEffects(false) // default-ON *bool — explicit false must survive
-	p.SetWordDelete(false)    // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.ScreenEffects = false }) // default-ON *bool — explicit false must survive
+	p.SetWordDelete(false)                                    // default-ON *bool — explicit false must survive
 	p.Update(func(
 		sn *Settings) {
 
@@ -1302,7 +1307,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	})
 
 	// same absent-default-ON pointer — explicit OFF must survive
-	p.SetRainbowSprites(true) // default-OFF plain bool — must survive as true
+	p.Update(func(sn *Settings) { sn.RainbowSprites = true }) // default-OFF plain bool — must survive as true
 	p.Update(func(
 		sn *Settings) {
 
@@ -1314,8 +1319,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	})
 
 	// default-OFF plain bool — must survive as true
-	p.SetShowRecordButton(true)  // default-OFF plain bool
-	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.ShowRecordButton = true })  // default-OFF plain bool
+	p.Update(func(sn *Settings) { sn.ShowFriendButton = false }) // default-ON *bool — explicit false must survive
 	p.Update(func(
 		sn *Settings) {
 
@@ -1371,11 +1376,11 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	})
 
 	// the ∞ sentinel must survive save→load un-clamped
-	p.SetRainbowSpriteSpeed(30)
-	p.SetRainbowSpriteVividness(95)
-	p.SetRainbowSpriteGlow(true)
-	p.SetRainbowPairDesync(true)
-	p.SetRainbowPerChar(true)
+	p.Update(func(sn *Settings) { sn.RainbowSpriteSpeed = 30 })
+	p.Update(func(sn *Settings) { sn.RainbowSpriteVividness = 95 })
+	p.Update(func(sn *Settings) { sn.RainbowSpriteGlow = true })
+	p.Update(func(sn *Settings) { sn.RainbowPairDesync = true })
+	p.Update(func(sn *Settings) { sn.RainbowPerChar = true })
 	p.SetSpriteWobble(true)
 	p.SetSpriteSpin(true)
 	p.SetSpriteSolidTint(true)
@@ -1690,7 +1695,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetSpriteWaitMs(4000)
 	p.SetSpriteWaitPair(true)
 	p.SetSpriteWaitPreanim(true)
-	p.SetShoutBypassQueue(false) // off the default (ON) — the nuke must restore it
+	p.Update(func(sn *Settings) { sn.ShoutBypassQueue = false }) // off the default (ON) — the nuke must restore it
 	p.Update(func(
 		sn *Settings) {
 
@@ -1721,8 +1726,8 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetShoutDurationMs(1000)
-	p.SetPreanimTimeoutMs(5000)
+	p.Update(func(sn *Settings) { sn.ShoutDurationMsVal = 1000 })
+	p.Update(func(sn *Settings) { sn.PreanimTimeoutMsVal = 5000 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1767,8 +1772,8 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetSpriteDownscaleOff(true)
-	p.SetSpriteDownscalePct(150)
+	p.Update(func(sn *Settings) { sn.SpriteDownscaleOff = true })
+	p.Update(func(sn *Settings) { sn.SpriteDownscalePctVal = 150 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1853,7 +1858,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetProxyMode(ProxyModeManual)
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	p.SetProxyURL("http://proxy.example:8080")
 	p.SetAssetCharCasing(2)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
@@ -2006,7 +2011,7 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 	if p.Load().ShowPairStatus {
 		t.Error("ShowPairStatus must default OFF")
 	}
-	p.SetShowPairStatus(true)
+	p.Update(func(sn *Settings) { sn.ShowPairStatus = true })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}

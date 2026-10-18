@@ -81,21 +81,33 @@ func BenchmarkSetSmoothScaling(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p.SetSmoothScaling(i%2 == 0)
+		{
+			pv1 := i%2 == 0
+			p.Update(func(sn *Settings) {
+				sn.SmoothScaling =
+
+					// BenchmarkSetSmoothScalingDrag is the item-2b gate: a rewritten setter on a slider drag
+					// path (one call per mouse-move). The Update-based setter costs ~316us per call (the deep
+					// syncSnapshot + clone + normalize) vs ~32ns for an explicit direct-write setter, so it is
+					// over the 100us budget until the flip (item 3) deletes the bridge and the snapshot becomes
+					// the only source. The hot drag-path setters therefore stay explicit until the flip.
+					pv1
+			})
+		}
 	}
 }
 
-// BenchmarkSetSmoothScalingDrag is the item-2b gate: a rewritten setter on a slider drag
-// path (one call per mouse-move). The Update-based setter costs ~316us per call (the deep
-// syncSnapshot + clone + normalize) vs ~32ns for an explicit direct-write setter, so it is
-// over the 100us budget until the flip (item 3) deletes the bridge and the snapshot becomes
-// the only source. The hot drag-path setters therefore stay explicit until the flip.
 func BenchmarkSetSmoothScalingDrag(b *testing.B) {
 	p := defaultPrefs("")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p.SetSmoothScaling(i%2 == 0)
+		{
+			pv2 := i%2 == 0
+			p.Update(func(sn *Settings) {
+				sn.SmoothScaling = pv2
+			})
+		}
 	}
 }
 

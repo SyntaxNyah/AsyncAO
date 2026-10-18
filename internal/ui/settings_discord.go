@@ -2,6 +2,8 @@
 
 package ui
 
+import "github.com/SyntaxNyah/AsyncAO/internal/config"
+
 // Discord Rich Presence settings live in their own build-tagged file. A Discord-free
 // build (-tags nodiscord) compiles this file out entirely and the no-op
 // drawDiscordSection in settings_discord_nodiscord.go takes over, so that binary
@@ -60,7 +62,7 @@ func (a *App) drawDiscordRow(y, _ int32) int32 {
 		y += 28
 	}
 	if changed {
-		a.d.Prefs.SetDiscord(dp)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.DiscordRPC = dp })
 		a.updatePresence()
 	}
 	return y + 4

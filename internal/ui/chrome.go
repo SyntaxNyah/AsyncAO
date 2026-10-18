@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -124,7 +125,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	// scheme (the colour wheel below opens on the Accent slot), so "recolour the accent"
 	// doesn't need hunting through the full editor.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Customize accent…") {
-		a.d.Prefs.SetChromeTheme(chromeCustomKey)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ChromeThemeKey = chromeCustomKey })
 		a.applyChromePreset(chromeCustomKey)
 		a.chromeEditSlot = 3 // the Accent slot → the wheel below edits it directly
 	}
@@ -144,7 +145,12 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 			c.Border(btn, ColAccent) // ring the active preset
 		}
 		if clicked {
-			a.d.Prefs.SetChromeTheme(p.key)
+			{
+				pv1 := p.key
+				a.d.Prefs.Update(func(sn *config.Settings) {
+					sn.ChromeThemeKey = pv1
+				})
+			}
 			a.applyChromePreset(p.key)
 		}
 		x += 26 + bw + 14
@@ -163,7 +169,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	cbw := c.TextWidth("Custom") + 18
 	cbtn := sdl.Rect{X: x + 26, Y: y, W: cbw, H: btnH}
 	if c.Button(cbtn, "Custom") {
-		a.d.Prefs.SetChromeTheme(chromeCustomKey)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ChromeThemeKey = chromeCustomKey })
 		a.applyChromePreset(chromeCustomKey)
 	}
 	if cur == chromeCustomKey {
@@ -271,7 +277,7 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 	}
 	apply := func(i int, col sdl.Color) {
 		hex[i] = fmt.Sprintf("%02x%02x%02x", col.R, col.G, col.B)
-		a.d.Prefs.SetCustomChrome(hex)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.CustomChromeHex = hex })
 		a.applyChromePreset(chromeCustomKey) // live recolour
 	}
 	if a.chromeEditSlot < 0 || a.chromeEditSlot >= len(labels) {
@@ -305,7 +311,12 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 		apply(sel, col)
 	})
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Reset all to Dark") {
-		a.d.Prefs.SetCustomChrome([7]string{})
+		{
+			pv2 := [7]string{}
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.CustomChromeHex = pv2
+			})
+		}
 		a.applyChromePreset(chromeCustomKey)
 	}
 	return y + btnH + 10
