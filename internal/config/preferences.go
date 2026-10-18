@@ -2465,16 +2465,13 @@ func (p *AssetPreferences) PreviewWindowRect() (x, y, w, h int, ok bool) {
 // tick (CLAUDE.md hard rules 2/3: learning marks dirty, the debounced saver
 // flushes; there is no per-move disk write here at all).
 func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
-	p.mu.Lock()
-	if p.PreviewWinRectValid && p.PreviewWinRectX == x && p.PreviewWinRectY == y &&
-		p.PreviewWinRectW == w && p.PreviewWinRectH == h {
-		p.mu.Unlock()
-		return
-	}
-	p.PreviewWinRectValid = true
-	p.PreviewWinRectX, p.PreviewWinRectY, p.PreviewWinRectW, p.PreviewWinRectH = x, y, w, h
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PreviewWinRectValid = true
+		sn.PreviewWinRectX = x
+		sn.PreviewWinRectY = y
+		sn.PreviewWinRectW = w
+		sn.PreviewWinRectH = h
+	})
 }
 
 // SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
@@ -2592,14 +2589,10 @@ func (p *AssetPreferences) ICCustomColorRGB() int {
 func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 	sat = clampPercent(sat, 0, 100)
 	val = clampPercent(val, minNameColorVal, 100)
-	p.mu.Lock()
-	if p.NameSat == sat && p.NameVal == val {
-		p.mu.Unlock()
-		return
-	}
-	p.NameSat, p.NameVal = sat, val
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.NameSat = sat
+		sn.NameVal = val
+	})
 }
 
 // BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
@@ -2764,14 +2757,10 @@ func (p *AssetPreferences) LastServer() (name, url string) {
 // SetLastServer records the last server connected to (persisted for auto-connect
 // + quick-connect). Called on every connect.
 func (p *AssetPreferences) SetLastServer(name, url string) {
-	p.mu.Lock()
-	if p.LastServerName == name && p.LastServerURL == url {
-		p.mu.Unlock()
-		return
-	}
-	p.LastServerName, p.LastServerURL = name, url
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.LastServerName = name
+		sn.LastServerURL = url
+	})
 }
 
 // SetReplaySpeed stores the replay playback speed (clamped to [25,200]).
@@ -3670,15 +3659,10 @@ func (p *AssetPreferences) Theme() (name, dir string) {
 
 // SetTheme stores the selected theme name and custom theme root.
 func (p *AssetPreferences) SetTheme(name, dir string) {
-	p.mu.Lock()
-	if p.ThemeName == name && p.ThemeDir == dir {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeName = name
-	p.ThemeDir = dir
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeName = name
+		sn.ThemeDir = dir
+	})
 }
 
 // SetSubtheme stores the AO2 subtheme folder ("" = none). The value is
@@ -3722,15 +3706,10 @@ func (p *AssetPreferences) Casing() (enabled bool, roles int) {
 
 // SetCasing stores the CASEA subscription.
 func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
-	p.mu.Lock()
-	if p.CasingEnabled == enabled && p.CasingRoles == roles {
-		p.mu.Unlock()
-		return
-	}
-	p.CasingEnabled = enabled
-	p.CasingRoles = roles
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.CasingEnabled = enabled
+		sn.CasingRoles = roles
+	})
 }
 
 // --- Discord Rich Presence ------------------------------------------------------------
@@ -4269,16 +4248,13 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 	chatBox = clampPercent(chatBox, MinChatBoxPercent, MaxChatBoxPercent)
 	logText = clampPercent(logText, MinLogScalePercent, MaxLogScalePercent)
 	input = clampPercent(input, MinInputPercent, MaxInputPercent)
-	p.mu.Lock()
-	if p.ViewportPct == viewport && p.ChatScalePct == chatText && p.ChatBoxPct == chatBox &&
-		p.LogScalePct == logText && p.InputHeightPct == input {
-		p.mu.Unlock()
-		return
-	}
-	p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct =
-		viewport, chatText, chatBox, logText, input
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ViewportPct = viewport
+		sn.ChatScalePct = chatText
+		sn.ChatBoxPct = chatBox
+		sn.LogScalePct = logText
+		sn.InputHeightPct = input
+	})
 }
 
 // SetCustomChrome stores the 7-colour custom chrome scheme (hex strings).
@@ -4429,14 +4405,10 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 	if h < MinWindowH {
 		h = MinWindowH
 	}
-	p.mu.Lock()
-	if p.WindowW == w && p.WindowH == h {
-		p.mu.Unlock()
-		return
-	}
-	p.WindowW, p.WindowH = w, h
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.WindowW = w
+		sn.WindowH = h
+	})
 }
 
 // SetWindowFullscreen persists the fullscreen choice.
@@ -4460,14 +4432,11 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 	music = clampPercent(music, 0, defaultAudioVolume)
 	sfx = clampPercent(sfx, 0, defaultAudioVolume)
 	blip = clampPercent(blip, 0, defaultAudioVolume)
-	p.mu.Lock()
-	if p.MusicVol == music && p.SFXVol == sfx && p.BlipVol == blip {
-		p.mu.Unlock()
-		return
-	}
-	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.MusicVol = music
+		sn.SFXVol = sfx
+		sn.BlipVol = blip
+	})
 }
 
 // The master/music/blip channel-mute accessors below persist the volume
@@ -4520,11 +4489,14 @@ func (p *AssetPreferences) ExtrasBoxStyle() (bg, bg2, border, title, text string
 
 // SetExtrasBoxStyle persists the Extras-box theme.
 func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string, gradient bool) {
-	p.mu.Lock()
-	p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient =
-		bg, bg2, border, title, text, gradient
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ExtrasBg = bg
+		sn.ExtrasBg2 = bg2
+		sn.ExtrasBorder = border
+		sn.ExtrasTitle = title
+		sn.ExtrasText = text
+		sn.ExtrasGradient = gradient
+	})
 }
 
 // SetAreaHighlightColorHex persists the current-area highlight colour ("" =
@@ -4551,14 +4523,11 @@ func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 	crawlMs = clampPercent(crawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 	stayMs = clampPercent(stayMs, 0, MaxTextStayMs)
 	rateLimitMs = clampPercent(rateLimitMs, 0, MaxChatRateLimitMs)
-	p.mu.Lock()
-	if p.TextCrawlMs == crawlMs && p.TextStayMs == stayMs && p.ChatRateLimitMs == rateLimitMs {
-		p.mu.Unlock()
-		return
-	}
-	p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs = crawlMs, stayMs, rateLimitMs
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.TextCrawlMs = crawlMs
+		sn.TextStayMs = stayMs
+		sn.ChatRateLimitMs = rateLimitMs
+	})
 }
 
 // CatchUp reports the packed-room catch-up toggle and its queue-depth
@@ -4573,14 +4542,10 @@ func (p *AssetPreferences) CatchUp() (on bool, threshold int) {
 // SetCatchUp clamps and persists the catch-up toggle + threshold.
 func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 	threshold = clampPercent(threshold, catchUpThresholdMin, catchUpThresholdMax)
-	p.mu.Lock()
-	if p.CatchUpOn == on && p.CatchUpThreshold == threshold {
-		p.mu.Unlock()
-		return
-	}
-	p.CatchUpOn, p.CatchUpThreshold = on, threshold
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.CatchUpOn = on
+		sn.CatchUpThreshold = threshold
+	})
 }
 
 // TabCap is how many concurrent server tabs are allowed (clamped to
@@ -5949,14 +5914,10 @@ func (p *AssetPreferences) BlipTyping() (rate int, onSpaces bool) {
 // SetBlipTyping clamps and persists the blip cadence + whitespace toggle.
 func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 	rate = clampPercent(rate, MinBlipRate, MaxBlipRate)
-	p.mu.Lock()
-	if p.BlipRate == rate && p.BlipOnSpaces == onSpaces {
-		p.mu.Unlock()
-		return
-	}
-	p.BlipRate, p.BlipOnSpaces = rate, onSpaces
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.BlipRate = rate
+		sn.BlipOnSpaces = onSpaces
+	})
 }
 
 // SetStreamerMode toggles the on-stream privacy mode.
@@ -6876,14 +6837,10 @@ func (p *AssetPreferences) SetThemeFitZoom(z int) {
 func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	x = clampPercent(x, -MaxThemePan, MaxThemePan)
 	y = clampPercent(y, -MaxThemePan, MaxThemePan)
-	p.mu.Lock()
-	if p.ThemeFitPanX == x && p.ThemeFitPanY == y {
-		p.mu.Unlock()
-		return
-	}
-	p.ThemeFitPanX, p.ThemeFitPanY = x, y
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ThemeFitPanX = x
+		sn.ThemeFitPanY = y
+	})
 }
 
 // SetPlainLobby toggles the plain lobby backdrop.
