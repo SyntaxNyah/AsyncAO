@@ -2570,18 +2570,15 @@ func (p *AssetPreferences) ClearLearnedHost(host string) int {
 		return 0
 	}
 	prefix := host + LearnedKeySeparator
-	p.mu.Lock()
 	n := 0
-	for key := range p.LearnedFormats {
-		if strings.HasPrefix(key, prefix) {
-			delete(p.LearnedFormats, key)
-			n++
+	p.Update(func(sn *Settings) {
+		for key := range sn.LearnedFormats {
+			if strings.HasPrefix(key, prefix) {
+				delete(sn.LearnedFormats, key)
+				n++
+			}
 		}
-	}
-	p.mu.Unlock()
-	if n > 0 {
-		p.markDirty()
-	}
+	})
 	return n
 }
 
@@ -3856,47 +3853,41 @@ func (p *AssetPreferences) SetCallWords(words []string) {
 // callWordCap. Returns how many were newly added (0 = nothing new / at the cap),
 // mirroring AddMusicHost for the Settings list manager.
 func (p *AssetPreferences) AddCallWord(input string) int {
-	p.mu.Lock()
-	have := make(map[string]bool, len(p.CallWordList))
-	for _, w := range p.CallWordList {
-		have[w] = true
-	}
 	added := 0
-	for _, raw := range strings.Split(input, ",") {
-		w := strings.ToLower(strings.TrimSpace(raw))
-		if w == "" || have[w] {
-			continue
+	p.Update(func(sn *Settings) {
+		have := make(map[string]bool, len(sn.CallWordList))
+		for _, w := range sn.CallWordList {
+			have[w] = true
 		}
-		if len(p.CallWordList) >= callWordCap {
-			break
+		for _, raw := range strings.Split(input, ",") {
+			w := strings.ToLower(strings.TrimSpace(raw))
+			if w == "" || have[w] {
+				continue
+			}
+			if len(sn.CallWordList) >= callWordCap {
+				break
+			}
+			sn.CallWordList = append(sn.CallWordList, w)
+			have[w] = true
+			added++
 		}
-		p.CallWordList = append(p.CallWordList, w)
-		have[w] = true
-		added++
-	}
-	p.mu.Unlock()
-	if added > 0 {
-		p.markDirty()
-	}
+	})
 	return added
 }
 
 // RemoveCallWord drops a highlight word (case-insensitive). Reports a change.
 func (p *AssetPreferences) RemoveCallWord(word string) bool {
 	word = strings.ToLower(strings.TrimSpace(word))
-	p.mu.Lock()
 	changed := false
-	for i, w := range p.CallWordList {
-		if w == word {
-			p.CallWordList = append(p.CallWordList[:i], p.CallWordList[i+1:]...)
-			changed = true
-			break
+	p.Update(func(sn *Settings) {
+		for i, w := range sn.CallWordList {
+			if w == word {
+				sn.CallWordList = append(sn.CallWordList[:i], sn.CallWordList[i+1:]...)
+				changed = true
+				break
+			}
 		}
-	}
-	p.mu.Unlock()
-	if changed {
-		p.markDirty()
-	}
+	})
 	return changed
 }
 
@@ -6840,22 +6831,19 @@ func (p *AssetPreferences) ImportLearnedJSON(data []byte) (int, error) {
 	if err := json.Unmarshal(data, &in); err != nil {
 		return 0, fmt.Errorf("config: parsing learned-format import: %w", err)
 	}
-	p.mu.Lock()
-	if p.LearnedFormats == nil {
-		p.LearnedFormats = map[string][]string{}
-	}
 	n := 0
-	for k, v := range in {
-		if k == "" || len(v) == 0 {
-			continue
+	p.Update(func(sn *Settings) {
+		for k, v := range in {
+			if k == "" || len(v) == 0 {
+				continue
+			}
+			if sn.LearnedFormats == nil {
+				sn.LearnedFormats = map[string][]string{}
+			}
+			sn.LearnedFormats[k] = cloneStrings(v)
+			n++
 		}
-		p.LearnedFormats[k] = cloneStrings(v)
-		n++
-	}
-	p.mu.Unlock()
-	if n > 0 {
-		p.markDirty()
-	}
+	})
 	return n, nil
 }
 
@@ -7034,37 +7022,35 @@ func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description s
 	if oldURL == "" || newURL == "" {
 		return false
 	}
-	p.mu.Lock()
-	idx := -1
-	for i, f := range p.Favorites {
-		if f.URL == oldURL {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		p.mu.Unlock()
-		return false // oldURL not in the phone book
-	}
-	if newURL != oldURL {
-		for i, f := range p.Favorites {
-			if i != idx && f.URL == newURL {
-				p.mu.Unlock()
-				return false // the new address already belongs to another entry — reject
+	accepted := false
+	p.Update(func(sn *Settings) {
+		idx := -1
+		for i, f := range sn.Favorites {
+			if f.URL == oldURL {
+				idx = i
+				break
 			}
 		}
-	}
-	cur := p.Favorites[idx]
-	if cur.Name == newName && cur.URL == newURL && cur.Description == description {
-		p.mu.Unlock()
-		return true // no-op: accepted, nothing to persist
-	}
-	p.Favorites[idx].Name = newName
-	p.Favorites[idx].URL = newURL
-	p.Favorites[idx].Description = description
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		if idx < 0 {
+			return // oldURL not in the phone book
+		}
+		if newURL != oldURL {
+			for i, f := range sn.Favorites {
+				if i != idx && f.URL == newURL {
+					return // the new address already belongs to another entry — reject
+				}
+			}
+		}
+		accepted = true
+		cur := sn.Favorites[idx]
+		if cur.Name == newName && cur.URL == newURL && cur.Description == description {
+			return // no-op: accepted, nothing to persist
+		}
+		sn.Favorites[idx].Name = newName
+		sn.Favorites[idx].URL = newURL
+		sn.Favorites[idx].Description = description
+	})
+	return accepted
 }
 
 // RemoveFavorite unstars the server with the given URL.
@@ -7158,41 +7144,40 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 	if name == "" {
 		return false
 	}
-	p.mu.Lock()
-	if len(p.ShownamePresets) >= ShownameCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, have := range p.ShownamePresets {
-		if strings.EqualFold(have, name) {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.Update(func(sn *Settings) {
+		if len(sn.ShownamePresets) >= ShownameCap {
+			return
 		}
-	}
-	p.ShownamePresets = append(p.ShownamePresets, name)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		for _, have := range sn.ShownamePresets {
+			if strings.EqualFold(have, name) {
+				return
+			}
+		}
+		sn.ShownamePresets = append(sn.ShownamePresets, name)
+		changed = true
+	})
+	return changed
 }
 
 // RemoveShownamePreset drops a saved showname. Reports whether it changed.
 func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
-	p.mu.Lock()
-	for i, have := range p.ShownamePresets {
-		if strings.EqualFold(have, name) {
-			p.ShownamePresets = append(p.ShownamePresets[:i], p.ShownamePresets[i+1:]...)
-			for k, v := range p.ShownameKeys { // drop any key bound to the removed preset
-				if strings.EqualFold(v, name) {
-					delete(p.ShownameKeys, k)
+	changed := false
+	p.Update(func(sn *Settings) {
+		for i, have := range sn.ShownamePresets {
+			if strings.EqualFold(have, name) {
+				sn.ShownamePresets = append(sn.ShownamePresets[:i], sn.ShownamePresets[i+1:]...)
+				for k, v := range sn.ShownameKeys { // drop any key bound to the removed preset
+					if strings.EqualFold(v, name) {
+						delete(sn.ShownameKeys, k)
+					}
 				}
+				changed = true
+				return
 			}
-			p.markDirty()
-			p.mu.Unlock()
-			return true
 		}
-	}
-	p.mu.Unlock()
-	return false
+	})
+	return changed
 }
 
 // shownameKeyCap bounds the global per-key showname binds (hard rule #4: no
@@ -7316,37 +7301,36 @@ func (p *AssetPreferences) MuteSFX(name string) bool {
 	if name == "" {
 		return false
 	}
-	p.mu.Lock()
-	if len(p.MutedSFX) >= mutedSFXCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, m := range p.MutedSFX {
-		if m == name {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.Update(func(sn *Settings) {
+		if len(sn.MutedSFX) >= mutedSFXCap {
+			return
 		}
-	}
-	p.MutedSFX = append(p.MutedSFX, name)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		for _, m := range sn.MutedSFX {
+			if m == name {
+				return
+			}
+		}
+		sn.MutedSFX = append(sn.MutedSFX, name)
+		changed = true
+	})
+	return changed
 }
 
 // UnmuteSFX removes an SFX name from the mute list. Reports whether it changed.
 func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
-	p.mu.Lock()
-	for i, m := range p.MutedSFX {
-		if m == name {
-			p.MutedSFX = append(p.MutedSFX[:i], p.MutedSFX[i+1:]...)
-			p.markDirty()
-			p.mu.Unlock()
-			return true
+	changed := false
+	p.Update(func(sn *Settings) {
+		for i, m := range sn.MutedSFX {
+			if m == name {
+				sn.MutedSFX = append(sn.MutedSFX[:i], sn.MutedSFX[i+1:]...)
+				changed = true
+				return
+			}
 		}
-	}
-	p.mu.Unlock()
-	return false
+	})
+	return changed
 }
 
 // sfxFavoritesCap bounds the starred-SFX list (hard rule #4: no unbounded
@@ -7389,23 +7373,21 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 	if name == "" {
 		return false
 	}
-	p.mu.Lock()
-	for i, s := range p.SfxFavorites {
-		if s == name {
-			p.SfxFavorites = append(p.SfxFavorites[:i], p.SfxFavorites[i+1:]...)
-			p.markDirty()
-			p.mu.Unlock()
-			return false
+	nowFav := false
+	p.Update(func(sn *Settings) {
+		for i, s := range sn.SfxFavorites {
+			if s == name {
+				sn.SfxFavorites = append(sn.SfxFavorites[:i], sn.SfxFavorites[i+1:]...)
+				return
+			}
 		}
-	}
-	if len(p.SfxFavorites) >= sfxFavoritesCap {
-		p.mu.Unlock()
-		return false
-	}
-	p.SfxFavorites = append(p.SfxFavorites, name)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		if len(sn.SfxFavorites) >= sfxFavoritesCap {
+			return
+		}
+		sn.SfxFavorites = append(sn.SfxFavorites, name)
+		nowFav = true
+	})
+	return nowFav
 }
 
 // defaultModReasonTemplates are the built-in ban/kick reason chips shown until the user edits the
@@ -7482,37 +7464,36 @@ func (p *AssetPreferences) AddModDuration(token string) bool {
 	if token == "" {
 		return false
 	}
-	p.mu.Lock()
-	if len(p.ModDurations) >= modDurationsCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, t := range p.ModDurations {
-		if strings.EqualFold(t, token) {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.Update(func(sn *Settings) {
+		if len(sn.ModDurations) >= modDurationsCap {
+			return
 		}
-	}
-	p.ModDurations = append(p.ModDurations, token)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		for _, t := range sn.ModDurations {
+			if strings.EqualFold(t, token) {
+				return
+			}
+		}
+		sn.ModDurations = append(sn.ModDurations, token)
+		changed = true
+	})
+	return changed
 }
 
 // RemoveModDuration drops a custom duration chip. Reports whether it changed.
 func (p *AssetPreferences) RemoveModDuration(token string) bool {
 	token = strings.TrimSpace(token)
-	p.mu.Lock()
-	for i, t := range p.ModDurations {
-		if strings.EqualFold(t, token) {
-			p.ModDurations = append(p.ModDurations[:i], p.ModDurations[i+1:]...)
-			p.markDirty()
-			p.mu.Unlock()
-			return true
+	changed := false
+	p.Update(func(sn *Settings) {
+		for i, t := range sn.ModDurations {
+			if strings.EqualFold(t, token) {
+				sn.ModDurations = append(sn.ModDurations[:i], sn.ModDurations[i+1:]...)
+				changed = true
+				return
+			}
 		}
-	}
-	p.mu.Unlock()
-	return false
+	})
+	return changed
 }
 
 // RemoveModReasonTemplate drops a reason (case-insensitive). Reports whether it changed.
@@ -7665,36 +7646,33 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 	if char == "" || idx < 0 {
 		return false
 	}
-	p.mu.Lock()
-	list := p.EmoteFavs[char]
-	for i, v := range list {
-		if v == idx { // already favourited -> remove it
-			list = append(list[:i], list[i+1:]...)
-			if len(list) == 0 {
-				delete(p.EmoteFavs, char)
-			} else {
-				p.EmoteFavs[char] = list
+	nowFav := false
+	p.Update(func(sn *Settings) {
+		list := sn.EmoteFavs[char]
+		for i, v := range list {
+			if v == idx { // already favourited -> remove it
+				list = append(list[:i], list[i+1:]...)
+				if len(list) == 0 {
+					delete(sn.EmoteFavs, char)
+				} else {
+					sn.EmoteFavs[char] = list
+				}
+				return
 			}
-			p.markDirty()
-			p.mu.Unlock()
-			return false
 		}
-	}
-	if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
-		p.mu.Unlock()
-		return false
-	}
-	if _, had := p.EmoteFavs[char]; !had && len(p.EmoteFavs) >= emoteFavCharsCap {
-		p.mu.Unlock()
-		return false // bounded: too many characters tracked
-	}
-	if p.EmoteFavs == nil {
-		p.EmoteFavs = make(map[string][]int)
-	}
-	p.EmoteFavs[char] = append(p.EmoteFavs[char], idx)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
+			return
+		}
+		if _, had := sn.EmoteFavs[char]; !had && len(sn.EmoteFavs) >= emoteFavCharsCap {
+			return // bounded: too many characters tracked
+		}
+		if sn.EmoteFavs == nil {
+			sn.EmoteFavs = make(map[string][]int)
+		}
+		sn.EmoteFavs[char] = append(sn.EmoteFavs[char], idx)
+		nowFav = true
+	})
+	return nowFav
 }
 
 // clampViewportExactPx normalizes the exact-viewport-width pref: 0 (off) passes

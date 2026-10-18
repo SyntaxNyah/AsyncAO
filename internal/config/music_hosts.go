@@ -209,37 +209,36 @@ func (p *AssetPreferences) AddMusicHost(input string) bool {
 		return false
 	}
 	lbl := e.label()
-	p.mu.Lock()
-	if len(p.MusicHosts) >= musicHostsCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, h := range p.MusicHosts {
-		if h == lbl {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.Update(func(sn *Settings) {
+		if len(sn.MusicHosts) >= musicHostsCap {
+			return
 		}
-	}
-	p.MusicHosts = append(p.MusicHosts, lbl)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		for _, h := range sn.MusicHosts {
+			if h == lbl {
+				return
+			}
+		}
+		sn.MusicHosts = append(sn.MusicHosts, lbl)
+		changed = true
+	})
+	return changed
 }
 
 // RemoveMusicHost drops an entry from the allowlist by its stored label (what the
 // settings list shows). Reports whether it changed.
 func (p *AssetPreferences) RemoveMusicHost(label string) bool {
-	p.mu.Lock()
-	for i, h := range p.MusicHosts {
-		if h == label {
-			p.MusicHosts = append(p.MusicHosts[:i], p.MusicHosts[i+1:]...)
-			p.markDirty()
-			p.mu.Unlock()
-			return true
+	changed := false
+	p.Update(func(sn *Settings) {
+		for i, h := range sn.MusicHosts {
+			if h == label {
+				sn.MusicHosts = append(sn.MusicHosts[:i], sn.MusicHosts[i+1:]...)
+				changed = true
+				return
+			}
 		}
-	}
-	p.mu.Unlock()
-	return false
+	})
+	return changed
 }
 
 // MusicURLAllowed reports whether a /play link should be recorded into the music
