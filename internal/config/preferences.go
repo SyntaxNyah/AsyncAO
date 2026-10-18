@@ -1697,16 +1697,15 @@ func (p *AssetPreferences) FormatGeneration() uint64 {
 // the configured probe list for the type; with fallbacks ON (globally or for
 // this type) it returns the configured list plus the type's legacy chain,
 // deduplicated, order preserved. The result is a fresh slice.
-func (p *AssetPreferences) FormatList(typeName string) []string {
-	snap := p.Load()
+func (s *Settings) FormatList(typeName string) []string {
 
-	tp, ok := snap.AssetTypes[typeName]
+	tp, ok := s.AssetTypes[typeName]
 	order := tp.FormatOrder
 	if !ok || len(order) == 0 {
 		order = defaultFormatOrders[typeName]
 	}
 
-	withFallbacks := snap.GlobalFallbacksEnabled || tp.FallbacksEnabled
+	withFallbacks := s.GlobalFallbacksEnabled || tp.FallbacksEnabled
 	capacity := len(order)
 	if withFallbacks {
 		capacity += len(legacyFallbackChains[typeName])
@@ -1728,10 +1727,9 @@ func (p *AssetPreferences) FormatList(typeName string) []string {
 }
 
 // FormatOrder returns the configured (pre-fallback) probe order for a type.
-func (p *AssetPreferences) FormatOrder(typeName string) []string {
-	snap := p.Load()
+func (s *Settings) FormatOrder(typeName string) []string {
 
-	if tp, ok := snap.AssetTypes[typeName]; ok && len(tp.FormatOrder) > 0 {
+	if tp, ok := s.AssetTypes[typeName]; ok && len(tp.FormatOrder) > 0 {
 		return cloneStrings(tp.FormatOrder)
 	}
 	return DefaultFormatOrder(typeName)
@@ -1773,10 +1771,9 @@ func (p *AssetPreferences) ResetFormatOrder(typeName string) {
 
 // TypeFallbacksEnabled reports whether the legacy chain is enabled for the
 // type specifically (the global toggle is separate).
-func (p *AssetPreferences) TypeFallbacksEnabled(typeName string) bool {
-	snap := p.Load()
+func (s *Settings) TypeFallbacksEnabled(typeName string) bool {
 
-	return snap.AssetTypes[typeName].FallbacksEnabled
+	return s.AssetTypes[typeName].FallbacksEnabled
 }
 
 // SetTypeFallbacks toggles the legacy chain for one type and invalidates
@@ -2218,11 +2215,11 @@ func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
 }
 
 // StylePresetForKey returns the preset bound to a bare key (ok=false when none).
-func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
-	snap := p.Load()
+func (s *Settings) StylePresetForKey(key string) (StylePreset, bool) {
+
 	key = strings.ToLower(strings.TrimSpace(key))
 
-	for _, pr := range snap.SavedStyles {
+	for _, pr := range s.SavedStyles {
 		if pr.Key != "" && pr.Key == key {
 			return pr, true
 		}
@@ -2349,14 +2346,14 @@ func clampStrings(in []string, n int) []string {
 
 // FontWarnShownFor reports whether the missing-font warning has already been
 // shown for this theme.
-func (p *AssetPreferences) FontWarnShownFor(theme string) bool {
-	snap := p.Load()
+func (s *Settings) FontWarnShownFor(theme string) bool {
+
 	theme = strings.TrimSpace(theme)
 	if theme == "" {
 		return true // nothing to key on: never warn rather than warn every apply
 	}
 
-	for _, t := range snap.FontWarnThemes {
+	for _, t := range s.FontWarnThemes {
 		if strings.EqualFold(t, theme) {
 			return true
 		}
@@ -2408,10 +2405,9 @@ func (s *Settings) PanelFonts() map[string]PanelFont {
 }
 
 // PanelFontFor returns one element's override (the zero value = none).
-func (p *AssetPreferences) PanelFontFor(id string) PanelFont {
-	snap := p.Load()
+func (s *Settings) PanelFontFor(id string) PanelFont {
 
-	return snap.PanelFontsVal[strings.ToLower(id)]
+	return s.PanelFontsVal[strings.ToLower(id)]
 }
 
 // SetPanelFont stores (or, for an empty override, REMOVES) one element's
@@ -2970,10 +2966,9 @@ func (p *AssetPreferences) RemoveCallWord(word string) bool {
 
 // Hotkey reports the configured key name for an action ("" = unset; the
 // UI layer owns defaults â€” config just persists overrides).
-func (p *AssetPreferences) Hotkey(action string) string {
-	snap := p.Load()
+func (s *Settings) Hotkey(action string) string {
 
-	return snap.HotkeyMap[action]
+	return s.HotkeyMap[action]
 }
 
 // SetHotkey stores one action's key name.
@@ -2992,10 +2987,9 @@ func (p *AssetPreferences) SetHotkey(action, key string) {
 // --- Per-server warm state -----------------------------------------------------------
 
 // ServerWarmInfoFor reports the remembered state for a server key.
-func (p *AssetPreferences) ServerWarmInfoFor(key string) ServerWarmInfo {
-	snap := p.Load()
+func (s *Settings) ServerWarmInfoFor(key string) ServerWarmInfo {
 
-	return snapCloneServerWarmInfo(snap.ServerWarm[key])
+	return snapCloneServerWarmInfo(s.ServerWarm[key])
 }
 
 // RememberServerChar records the character last used on a server.
@@ -3005,10 +2999,9 @@ func (p *AssetPreferences) RememberServerChar(key, char string) {
 
 // ServerFriends returns a server's highlighted shownames (a clone â€” the
 // settings editor mutates it; callers must not alias the stored slice).
-func (p *AssetPreferences) ServerFriends(key string) []string {
-	snap := p.Load()
+func (s *Settings) ServerFriends(key string) []string {
 
-	return cloneStrings(snap.ServerWarm[key].Friends)
+	return cloneStrings(s.ServerWarm[key].Friends)
 }
 
 // friendParts splits a friend entry "name[=RRGGBB[=nick]]" into its three fields
@@ -3031,13 +3024,13 @@ func friendParts(entry string) (name, hex, nick string) {
 // or -1 for the default tint) and personal nickname ("" if none) â€” #82. ONE scan
 // under the lock with no allocation, so the player list (per row) and friend
 // matching (per message) read all three from a single call.
-func (p *AssetPreferences) ServerFriendInfo(key, name string) (friend bool, color int, nick string) {
-	snap := p.Load()
+func (s *Settings) ServerFriendInfo(key, name string) (friend bool, color int, nick string) {
+
 	if name == "" {
 		return false, -1, ""
 	}
 
-	for _, f := range snap.ServerWarm[key].Friends {
+	for _, f := range s.ServerWarm[key].Friends {
 		fname, hex, nk := friendParts(f)
 		if !strings.EqualFold(fname, name) {
 			continue
@@ -3056,8 +3049,8 @@ func (p *AssetPreferences) ServerFriendInfo(key, name string) (friend bool, colo
 // ServerFriendMatch reports whether name is a highlighted friend and its custom
 // glow colour â€” a thin wrapper over ServerFriendInfo (one scan, no nested lock)
 // kept for the per-message/glow callers that don't need the nickname.
-func (p *AssetPreferences) ServerFriendMatch(key, name string) (friend bool, color int) {
-	f, c, _ := p.ServerFriendInfo(key, name)
+func (s *Settings) ServerFriendMatch(key, name string) (friend bool, color int) {
+	f, c, _ := s.ServerFriendInfo(key, name)
 	return f, c
 }
 
@@ -3098,23 +3091,22 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 
 // ServerIgnored returns a server's blocked shownames (a clone â€” the settings
 // editor mutates it; callers must not alias the stored slice).
-func (p *AssetPreferences) ServerIgnored(key string) []string {
-	snap := p.Load()
+func (s *Settings) ServerIgnored(key string) []string {
 
-	return cloneStrings(snap.ServerWarm[key].Ignored)
+	return cloneStrings(s.ServerWarm[key].Ignored)
 }
 
 // ServerIgnoreMatch reports whether name (case-insensitive) is on the server's
 // ignore list. Scans under the lock with NO allocation â€” safe to call per
 // incoming IC/OOC message (an empty list, the default, costs one RLock + zero
 // iterations).
-func (p *AssetPreferences) ServerIgnoreMatch(key, name string) bool {
-	snap := p.Load()
+func (s *Settings) ServerIgnoreMatch(key, name string) bool {
+
 	if name == "" {
 		return false
 	}
 
-	for _, n := range snap.ServerWarm[key].Ignored {
+	for _, n := range s.ServerWarm[key].Ignored {
 		if strings.EqualFold(strings.TrimSpace(n), name) {
 			return true
 		}
@@ -4100,10 +4092,9 @@ func (p *AssetPreferences) SetMasterList(url string) {
 // --- Wardrobe (per server) ----------------------------------------------------
 
 // WardrobeList returns a copy of one server's custom character list.
-func (p *AssetPreferences) WardrobeList(serverKey string) []string {
-	snap := p.Load()
+func (s *Settings) WardrobeList(serverKey string) []string {
 
-	return cloneStrings(snap.ServerWarm[serverKey].Wardrobe)
+	return cloneStrings(s.ServerWarm[serverKey].Wardrobe)
 }
 
 // ClaimLegacyWardrobe performs the one-time migration from the flat
@@ -4193,10 +4184,9 @@ func (p *AssetPreferences) WardrobeGeneration() uint64 {
 
 // WardrobeFolderMap returns a copy of one server's lowercased char â†’ folder
 // map (wardrobe organization). nil when nothing is filed.
-func (p *AssetPreferences) WardrobeFolderMap(serverKey string) map[string]string {
-	snap := p.Load()
+func (s *Settings) WardrobeFolderMap(serverKey string) map[string]string {
 
-	src := snap.ServerWarm[serverKey].WardrobeFolder
+	src := s.ServerWarm[serverKey].WardrobeFolder
 	if len(src) == 0 {
 		return nil
 	}
@@ -4287,10 +4277,9 @@ func (p *AssetPreferences) DeleteWardrobeFolder(serverKey, folder string, keepMe
 // --- Favorite backgrounds (per server) ----------------------------------------
 
 // FavBackgroundList returns a copy of one server's starred-background list.
-func (p *AssetPreferences) FavBackgroundList(serverKey string) []string {
-	snap := p.Load()
+func (s *Settings) FavBackgroundList(serverKey string) []string {
 
-	return cloneStrings(snap.ServerWarm[serverKey].FavBackgrounds)
+	return cloneStrings(s.ServerWarm[serverKey].FavBackgrounds)
 }
 
 // AddFavBackground stars a background on one server (case-insensitive dedupe,
@@ -4335,10 +4324,9 @@ func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
 
 // FavBackgroundFolderMap returns a copy of one server's lowercased background â†’
 // folder map (Backgrounds-section organization). nil when nothing is filed.
-func (p *AssetPreferences) FavBackgroundFolderMap(serverKey string) map[string]string {
-	snap := p.Load()
+func (s *Settings) FavBackgroundFolderMap(serverKey string) map[string]string {
 
-	src := snap.ServerWarm[serverKey].FavBackgroundFolder
+	src := s.ServerWarm[serverKey].FavBackgroundFolder
 	if len(src) == 0 {
 		return nil
 	}
@@ -4371,10 +4359,9 @@ func (p *AssetPreferences) DeleteFavBackgroundFolder(serverKey, folder string, k
 // --- Character keybinds (per server) -------------------------------------------
 
 // CharKeyBinds returns a copy of one server's key â†’ character map.
-func (p *AssetPreferences) CharKeyBinds(serverKey string) map[string]string {
-	snap := p.Load()
+func (s *Settings) CharKeyBinds(serverKey string) map[string]string {
 
-	src := snap.ServerWarm[serverKey].CharKeys
+	src := s.ServerWarm[serverKey].CharKeys
 	if len(src) == 0 {
 		return nil
 	}
@@ -4684,10 +4671,9 @@ func equalStrings(a, b []string) bool {
 // ExtProfile returns the per-host extensions.json format profile (raw JSON), or
 // "" if none. A profile is seeded synchronously on connect and overrides both the
 // fetched server manifest and the global default â€” for that host only.
-func (p *AssetPreferences) ExtProfile(host string) string {
-	snap := p.Load()
+func (s *Settings) ExtProfile(host string) string {
 
-	return snap.ExtProfiles[host]
+	return s.ExtProfiles[host]
 }
 
 // SetExtProfile sets (or clears, with "") a host's format profile.
@@ -4810,10 +4796,9 @@ func NextCoarseRotation(cur uint8) uint8 {
 
 // ThemeRectOverrides returns a copy of one theme's user-dragged widget
 // geometry (design-space [x,y,w,h], from the live layout editor).
-func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
-	snap := p.Load()
+func (s *Settings) ThemeRectOverrides(theme string) map[string][4]int {
 
-	src := snap.ThemeRectOv[theme]
+	src := s.ThemeRectOv[theme]
 	if len(src) == 0 {
 		return nil
 	}
@@ -4833,13 +4818,13 @@ func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
 // canvas" flag cannot be recovered from its geometry (a legitimate drag can land
 // exactly on the pristine seed position). The strip's placement is therefore read
 // back from the same record that persists it, once per frame.
-func (p *AssetPreferences) HasThemeRectOverride(theme, key string) bool {
-	snap := p.Load()
+func (s *Settings) HasThemeRectOverride(theme, key string) bool {
+
 	if theme == "" || key == "" {
 		return false
 	}
 
-	_, ok := snap.ThemeRectOv[theme][key]
+	_, ok := s.ThemeRectOv[theme][key]
 	return ok
 }
 
@@ -4900,10 +4885,9 @@ func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 // angles (A4). The themed editor bakes this into themeLayoutCache.ang at cache
 // rebuild time so the draw path resolves angles lock-free (a plain map probe on
 // the pre-baked cache, never a prefs read per frame).
-func (p *AssetPreferences) ThemeRectRotationSnapshot(theme string) map[string]uint8 {
-	snap := p.Load()
+func (s *Settings) ThemeRectRotationSnapshot(theme string) map[string]uint8 {
 
-	src := snap.ThemeRectRotations[theme]
+	src := s.ThemeRectRotations[theme]
 	if len(src) == 0 {
 		return nil
 	}
@@ -5161,10 +5145,9 @@ func (s *Settings) LayoutProfileNames() []string {
 
 // LayoutProfile returns a deep copy of one saved profile (zero value if the name
 // is unknown) (A6). Every axis is copied so the caller can't alias the live map.
-func (p *AssetPreferences) LayoutProfile(name string) LayoutProfile {
-	snap := p.Load()
+func (s *Settings) LayoutProfile(name string) LayoutProfile {
 
-	prof, ok := snap.LayoutProfiles[name]
+	prof, ok := s.LayoutProfiles[name]
 	if !ok {
 		return LayoutProfile{}
 	}
@@ -5848,7 +5831,7 @@ func (p *AssetPreferences) MergeFavoritesJSON(data []byte) (int, error) {
 	}
 	added := 0
 	for _, f := range in {
-		if strings.TrimSpace(f.URL) == "" || p.IsFavorite(f.URL) {
+		if strings.TrimSpace(f.URL) == "" || p.Load().IsFavorite(f.URL) {
 			continue
 		}
 		p.AddFavorite(f.Name, f.URL, f.Description)
@@ -5858,10 +5841,9 @@ func (p *AssetPreferences) MergeFavoritesJSON(data []byte) (int, error) {
 }
 
 // IsFavorite reports whether the URL is starred.
-func (p *AssetPreferences) IsFavorite(url string) bool {
-	snap := p.Load()
+func (s *Settings) IsFavorite(url string) bool {
 
-	for _, f := range snap.Favorites {
+	for _, f := range s.Favorites {
 		if f.URL == url {
 			return true
 		}
@@ -6022,14 +6004,14 @@ const mutedSFXCap = 128
 
 // IsSFXMuted reports whether an emote SFX name is muted (M11, case-insensitive).
 // Called from the courtroom audio path once per played SFX (not per frame).
-func (p *AssetPreferences) IsSFXMuted(name string) bool {
-	snap := p.Load()
+func (s *Settings) IsSFXMuted(name string) bool {
+
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return false
 	}
 
-	for _, m := range snap.MutedSFX {
+	for _, m := range s.MutedSFX {
 		if m == name {
 			return true
 		}
@@ -6104,14 +6086,14 @@ func (s *Settings) SfxFavoritesList() []string {
 }
 
 // IsSfxFavorite reports whether a sound name is starred (case-insensitive).
-func (p *AssetPreferences) IsSfxFavorite(name string) bool {
-	snap := p.Load()
+func (s *Settings) IsSfxFavorite(name string) bool {
+
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return false
 	}
 
-	for _, s := range snap.SfxFavorites {
+	for _, s := range s.SfxFavorites {
 		if s == name {
 			return true
 		}
@@ -6276,14 +6258,14 @@ const blipVolumeDefault = 100
 // BlipVolumeFor returns a character's stored per-character blip scale (0â€“100,
 // 100 = no attenuation; M11). Called from the courtroom once per message (not
 // per frame). Unknown characters get the full default.
-func (p *AssetPreferences) BlipVolumeFor(char string) int {
-	snap := p.Load()
+func (s *Settings) BlipVolumeFor(char string) int {
+
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" {
 		return blipVolumeDefault
 	}
 
-	if v, ok := snap.BlipVols[char]; ok {
+	if v, ok := s.BlipVols[char]; ok {
 		return v
 	}
 	return blipVolumeDefault
@@ -6354,14 +6336,14 @@ const (
 // merge distinct emotes into one star. Called from the UI's per-character view
 // rebuild, which runs only on a character/filter change â€” never per frame. Nil
 // when none are set.
-func (p *AssetPreferences) EmoteFavsFor(char string) []int {
-	snap := p.Load()
+func (s *Settings) EmoteFavsFor(char string) []int {
+
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" {
 		return nil
 	}
 
-	src := snap.EmoteFavs[char]
+	src := s.EmoteFavs[char]
 	if len(src) == 0 {
 		return nil
 	}
@@ -6371,14 +6353,14 @@ func (p *AssetPreferences) EmoteFavsFor(char string) []int {
 }
 
 // IsEmoteFav reports whether emote index idx is favourited for char.
-func (p *AssetPreferences) IsEmoteFav(char string, idx int) bool {
-	snap := p.Load()
+func (s *Settings) IsEmoteFav(char string, idx int) bool {
+
 	char = strings.ToLower(strings.TrimSpace(char))
 	if char == "" || idx < 0 {
 		return false
 	}
 
-	for _, v := range snap.EmoteFavs[char] {
+	for _, v := range s.EmoteFavs[char] {
 		if v == idx {
 			return true
 		}

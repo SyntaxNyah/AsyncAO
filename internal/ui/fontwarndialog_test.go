@@ -42,16 +42,16 @@ func TestFontWarnDialogOpensOncePerTheme(t *testing.T) {
 func TestFontWarnDialogSurvivesARestart(t *testing.T) {
 	a := testTabApp(t)
 	a.maybeWarnMissingFonts("AceAttorney 2x", []string{"Ace Name"}, "body", "")
-	if !a.d.Prefs.FontWarnShownFor("AceAttorney 2x") {
+	if !a.d.Prefs.Load().FontWarnShownFor("AceAttorney 2x") {
 		t.Fatal("showing the dialog did not record the theme")
 	}
 	// Case-insensitively, because the same theme arrives spelled differently from
 	// a folder name and from a saved preference.
-	if !a.d.Prefs.FontWarnShownFor("aceattorney 2x") {
+	if !a.d.Prefs.Load().FontWarnShownFor("aceattorney 2x") {
 		t.Error("the remembered set is case-sensitive; the same theme would warn again")
 	}
 	a.d.Prefs.ClearFontWarnThemes()
-	if a.d.Prefs.FontWarnShownFor("AceAttorney 2x") {
+	if a.d.Prefs.Load().FontWarnShownFor("AceAttorney 2x") {
 		t.Error("clearing the set did not bring the warnings back")
 	}
 }

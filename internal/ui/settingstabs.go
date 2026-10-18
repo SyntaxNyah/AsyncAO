@@ -478,7 +478,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		sort.Strings(names)
 		for _, name := range names {
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
-				a.applyProfile(a.d.Prefs.LayoutProfile(name))
+				a.applyProfile(a.d.Prefs.Load().LayoutProfile(name))
 				a.pushDebug("layout: profile loaded")
 			}
 			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {

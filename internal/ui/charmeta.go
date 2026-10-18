@@ -271,9 +271,9 @@ func (a *App) remoteIniShownameFor(char string) (string, bool) {
 // speaker blips identically in every mode.
 type roomBlipResolver struct{ a *App }
 
-func (r roomBlipResolver) SFXMuted(name string) bool { return r.a.d.Prefs.IsSFXMuted(name) }
+func (r roomBlipResolver) SFXMuted(name string) bool { return r.a.d.Prefs.Load().IsSFXMuted(name) }
 func (r roomBlipResolver) BlipVolumeFor(char string) int {
-	return r.a.d.Prefs.BlipVolumeFor(char)
+	return r.a.d.Prefs.Load().BlipVolumeFor(char)
 }
 func (r roomBlipResolver) BlipNameFor(char string) (string, bool) {
 	return r.a.remoteBlipFor(char)

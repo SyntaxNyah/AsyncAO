@@ -25,7 +25,7 @@ func TestFavoritesExportImportRoundTrip(t *testing.T) {
 	if got := len(q.Load().FavoriteServers()); got != 2 {
 		t.Errorf("favorites after merge = %d, want 2", got)
 	}
-	if !q.IsFavorite("wss://cafe:2096") {
+	if !q.Load().IsFavorite("wss://cafe:2096") {
 		t.Error("imported Cafe should be a favorite")
 	}
 
@@ -60,10 +60,10 @@ func TestUpdateFavorite(t *testing.T) {
 	if !p.UpdateFavorite("wss://cafe:2096", "Café", "wss://bistro:2096", "coffee") {
 		t.Fatal("address change should succeed")
 	}
-	if p.IsFavorite("wss://cafe:2096") {
+	if p.Load().IsFavorite("wss://cafe:2096") {
 		t.Error("old address should no longer be a favorite after re-address")
 	}
-	if !p.IsFavorite("wss://bistro:2096") {
+	if !p.Load().IsFavorite("wss://bistro:2096") {
 		t.Error("new address should be a favorite after re-address")
 	}
 	if favs = p.Load().FavoriteServers(); favs[1].URL != "wss://bistro:2096" {

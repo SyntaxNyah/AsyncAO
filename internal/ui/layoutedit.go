@@ -944,7 +944,7 @@ func (a *App) rawChip(r sdl.Rect, label string) {
 // authoritative.
 func (a *App) applyRectOverrides(rects map[string]theme.Rect) map[string]theme.Rect {
 	themeName, _ := a.d.Prefs.Theme()
-	ov := a.d.Prefs.ThemeRectOverrides(themeName)
+	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)
 	if len(ov) == 0 {
 		return rects
 	}

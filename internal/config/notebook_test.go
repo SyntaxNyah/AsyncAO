@@ -61,14 +61,14 @@ func TestWardrobePerServer(t *testing.T) {
 	p.Update(func(sn *Settings) { sn.Wardrobe = []string{"Phoenix", "Edgeworth"} }) // legacy flat list
 
 	p.ClaimLegacyWardrobe("wss://main.example:2096")
-	if got := p.WardrobeList("wss://main.example:2096"); len(got) != 2 {
+	if got := p.Load().WardrobeList("wss://main.example:2096"); len(got) != 2 {
 		t.Fatalf("first server must inherit the legacy list, got %v", got)
 	}
-	if got := p.WardrobeList("wss://other.example:2096"); len(got) != 0 {
+	if got := p.Load().WardrobeList("wss://other.example:2096"); len(got) != 0 {
 		t.Fatalf("other servers start clean, got %v", got)
 	}
 	p.ClaimLegacyWardrobe("wss://other.example:2096") // no-op: already claimed
-	if got := p.WardrobeList("wss://other.example:2096"); len(got) != 0 {
+	if got := p.Load().WardrobeList("wss://other.example:2096"); len(got) != 0 {
 		t.Fatalf("legacy list must migrate exactly once, got %v", got)
 	}
 
@@ -78,7 +78,7 @@ func TestWardrobePerServer(t *testing.T) {
 	if !p.RemoveWardrobe("wss://main.example:2096", "phoenix") {
 		t.Fatal("remove is case-insensitive within one server")
 	}
-	if got := p.WardrobeList("wss://main.example:2096"); len(got) != 1 || got[0] != "Edgeworth" {
+	if got := p.Load().WardrobeList("wss://main.example:2096"); len(got) != 1 || got[0] != "Edgeworth" {
 		t.Fatalf("main wardrobe after remove = %v", got)
 	}
 }
@@ -93,17 +93,17 @@ func TestCharKeyBinds(t *testing.T) {
 	p.SetCharKeyBind(srv, "b", "Franziska") // overwrite
 	p.SetCharKeyBind(srv, "a", "")          // clear
 
-	binds := p.CharKeyBinds(srv)
+	binds := p.Load().CharKeyBinds(srv)
 	if len(binds) != 1 || binds["b"] != "Franziska" {
 		t.Fatalf("binds = %v, want only b→Franziska", binds)
 	}
-	if other := p.CharKeyBinds("wss://other.example:2096"); other != nil {
+	if other := p.Load().CharKeyBinds("wss://other.example:2096"); other != nil {
 		t.Fatalf("keybinds leaked across servers: %v", other)
 	}
 	for i := 0; i < charKeyCap+10; i++ {
 		p.SetCharKeyBind(srv, string(rune('a'))+string(rune('0'+i%10))+string(rune('a'+i%26)), "X")
 	}
-	if got := len(p.CharKeyBinds(srv)); got > charKeyCap {
+	if got := len(p.Load().CharKeyBinds(srv)); got > charKeyCap {
 		t.Fatalf("keybind table exceeded cap: %d > %d", got, charKeyCap)
 	}
 }

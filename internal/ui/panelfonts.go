@@ -117,7 +117,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 	for i := range panelFontRows {
 		row := &panelFontRows[i]
-		cur := a.d.Prefs.PanelFontFor(row.id)
+		cur := a.d.Prefs.Load().PanelFontFor(row.id)
 
 		c.Label(pad, y+4, row.label, ColText)
 		c.Tooltip(sdl.Rect{X: pad, Y: y, W: panelFontLabelW, H: fieldH}, row.hint)

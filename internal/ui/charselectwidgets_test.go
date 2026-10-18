@@ -747,7 +747,7 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	if a.iniFavPending != "" {
 		t.Error("a deferred ★ toggle survived the frame — on this screen the star does nothing")
 	}
-	if list := a.d.Prefs.WardrobeList(a.serverKey); len(list) != 1 || list[0] != "Phoenix" {
+	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 1 || list[0] != "Phoenix" {
 		t.Errorf("the wardrobe is %v, want the starred character to have been saved", list)
 	}
 
@@ -769,7 +769,7 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	if a.iniFavPending != "" {
 		t.Error("the empty-wardrobe arm skipped the host bookkeeping")
 	}
-	if list := a.d.Prefs.WardrobeList(a.serverKey); len(list) != 0 {
+	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 0 {
 		t.Errorf("the wardrobe is %v after an un-star, want it empty", list)
 	}
 }

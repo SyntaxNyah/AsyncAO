@@ -46,12 +46,12 @@ func TestStylePresetKeys(t *testing.T) {
 	p.AddStylePreset(StylePreset{Name: "A"})
 	p.AddStylePreset(StylePreset{Name: "B"})
 	p.SetStylePresetKey(0, "F1")
-	if pr, ok := p.StylePresetForKey("f1"); !ok || pr.Name != "A" { // case-insensitive
+	if pr, ok := p.Load().StylePresetForKey("f1"); !ok || pr.Name != "A" { // case-insensitive
 		t.Fatalf("key f1 → %+v ok=%v, want A", pr, ok)
 	}
 	// Binding the same key to B steals it from A.
 	p.SetStylePresetKey(1, "f1")
-	if pr, ok := p.StylePresetForKey("f1"); !ok || pr.Name != "B" {
+	if pr, ok := p.Load().StylePresetForKey("f1"); !ok || pr.Name != "B" {
 		t.Fatalf("after rebind, f1 → %+v, want B", pr)
 	}
 	if p.Load().StylePresets()[0].Key != "" {
@@ -59,7 +59,7 @@ func TestStylePresetKeys(t *testing.T) {
 	}
 	// Clearing a key.
 	p.SetStylePresetKey(1, "")
-	if _, ok := p.StylePresetForKey("f1"); ok {
+	if _, ok := p.Load().StylePresetForKey("f1"); ok {
 		t.Error("cleared key still resolves")
 	}
 }

@@ -148,13 +148,13 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 func TestFormatListZeroFallbackIsExactConfiguredList(t *testing.T) {
 	p, _ := newTestPrefs(t)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtWebP}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) fallbacks-off = %v, want %v (exactly one probe)", got, want)
 	}
 
-	if got := p.FormatList(TypeCharIcon); !slices.Equal(got, []string{ExtPNG}) {
+	if got := p.Load().FormatList(TypeCharIcon); !slices.Equal(got, []string{ExtPNG}) {
 		t.Errorf("FormatList(CharIcon) = %v, want [%s]", got, ExtPNG)
 	}
 }
@@ -163,13 +163,13 @@ func TestFormatListGlobalFallbacksAppendLegacyChain(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetGlobalFallbacks(true)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) global fallbacks = %v, want %v", got, want)
 	}
 
-	got = p.FormatList(TypeMusic)
+	got = p.Load().FormatList(TypeMusic)
 	want = []string{ExtOpus, ExtOgg, ExtMP3}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(Music) global fallbacks = %v, want %v", got, want)
@@ -180,10 +180,10 @@ func TestFormatListPerTypeFallbackOnlyAffectsThatType(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetTypeFallbacks(TypeBackground, true)
 
-	if got, want := p.FormatList(TypeBackground), []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}; !slices.Equal(got, want) {
+	if got, want := p.Load().FormatList(TypeBackground), []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}; !slices.Equal(got, want) {
 		t.Errorf("FormatList(Background) per-type fallback = %v, want %v", got, want)
 	}
-	if got, want := p.FormatList(TypeCharSprite), []string{ExtWebP}; !slices.Equal(got, want) {
+	if got, want := p.Load().FormatList(TypeCharSprite), []string{ExtWebP}; !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) must stay zero-fallback, got %v want %v", got, want)
 	}
 }
@@ -194,7 +194,7 @@ func TestFormatListDeduplicatesPreservingOrder(t *testing.T) {
 	p.SetFormatOrder(TypeCharSprite, []string{ExtPNG, ExtWebP, ExtPNG})
 	p.SetTypeFallbacks(TypeCharSprite, true)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtPNG, ExtWebP, ExtAPNG, ExtGIF}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList dedup = %v, want %v", got, want)
@@ -203,7 +203,7 @@ func TestFormatListDeduplicatesPreservingOrder(t *testing.T) {
 
 func TestFormatListUnknownTypeWithFallbacksIsEmpty(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if got := p.FormatList("NoSuchType"); len(got) != 0 {
+	if got := p.Load().FormatList("NoSuchType"); len(got) != 0 {
 		t.Errorf("FormatList(unknown) = %v, want empty", got)
 	}
 }
@@ -519,10 +519,10 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if q.Load().PreferAnimated {
 		t.Error("PreferAnimated=false lost (absent-field default must not clobber explicit false)")
 	}
-	if got, want := q.FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
+	if got, want := q.Load().FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
 		t.Errorf("FormatOrder(CharIcon) = %v, want %v", got, want)
 	}
-	if !q.TypeFallbacksEnabled(TypeBlip) {
+	if !q.Load().TypeFallbacksEnabled(TypeBlip) {
 		t.Error("TypeFallbacks(Blip) lost")
 	}
 	learned := q.Load().LearnedSnapshot()
@@ -674,15 +674,15 @@ func TestWardrobeFolders(t *testing.T) {
 	p.AddWardrobe(key, "Phoenix")
 	p.SetWardrobeFolder(key, "Maya", "Ace Attorney")
 	p.SetWardrobeFolder(key, "phoenix", "Ace Attorney") // case-insensitive key
-	if m := p.WardrobeFolderMap(key); m["maya"] != "Ace Attorney" || m["phoenix"] != "Ace Attorney" {
+	if m := p.Load().WardrobeFolderMap(key); m["maya"] != "Ace Attorney" || m["phoenix"] != "Ace Attorney" {
 		t.Fatalf("folders = %v, want both filed under Ace Attorney", m)
 	}
 	p.SetWardrobeFolder(key, "Maya", "") // clear
-	if p.WardrobeFolderMap(key)["maya"] != "" {
+	if p.Load().WardrobeFolderMap(key)["maya"] != "" {
 		t.Error("empty folder must clear the entry")
 	}
 	p.RemoveWardrobe(key, "Phoenix") // leaving the wardrobe drops the folder
-	if p.WardrobeFolderMap(key)["phoenix"] != "" {
+	if p.Load().WardrobeFolderMap(key)["phoenix"] != "" {
 		t.Error("removing a wardrobe character must drop its folder")
 	}
 	if err := p.Close(); err != nil {
@@ -703,16 +703,16 @@ func TestFavBackgrounds(t *testing.T) {
 	}
 	p.AddFavBackground(a, "lobby")
 	p.AddFavBackground(b, "gaming") // a different server keeps its own list
-	if got := p.FavBackgroundList(a); len(got) != 2 || got[0] != "courtroom" || got[1] != "lobby" {
+	if got := p.Load().FavBackgroundList(a); len(got) != 2 || got[0] != "courtroom" || got[1] != "lobby" {
 		t.Fatalf("server a favorites = %v, want [courtroom lobby]", got)
 	}
-	if got := p.FavBackgroundList(b); len(got) != 1 || got[0] != "gaming" {
+	if got := p.Load().FavBackgroundList(b); len(got) != 1 || got[0] != "gaming" {
 		t.Fatalf("server b favorites = %v, want [gaming] (per-server isolation)", got)
 	}
 	if !p.RemoveFavBackground(a, "COURTROOM") { // remove is case-insensitive
 		t.Error("RemoveFavBackground must report a change")
 	}
-	if got := p.FavBackgroundList(a); len(got) != 1 || got[0] != "lobby" {
+	if got := p.Load().FavBackgroundList(a); len(got) != 1 || got[0] != "lobby" {
 		t.Fatalf("after remove, server a = %v, want [lobby]", got)
 	}
 	if p.RemoveFavBackground(a, "not-there") {
@@ -729,15 +729,15 @@ func TestFavBackgroundFolders(t *testing.T) {
 	p.AddFavBackground(key, "lobby")
 	p.SetFavBackgroundFolder(key, "Courtroom", "Trials") // case-insensitive key
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
-	if m := p.FavBackgroundFolderMap(key); m["courtroom"] != "Trials" || m["lobby"] != "Trials" {
+	if m := p.Load().FavBackgroundFolderMap(key); m["courtroom"] != "Trials" || m["lobby"] != "Trials" {
 		t.Fatalf("folders = %v, want both filed under Trials", m)
 	}
 	p.SetFavBackgroundFolder(key, "courtroom", "") // clear
-	if p.FavBackgroundFolderMap(key)["courtroom"] != "" {
+	if p.Load().FavBackgroundFolderMap(key)["courtroom"] != "" {
 		t.Error("empty folder must clear the entry")
 	}
 	p.RemoveFavBackground(key, "Lobby") // unstarring drops the folder
-	if p.FavBackgroundFolderMap(key)["lobby"] != "" {
+	if p.Load().FavBackgroundFolderMap(key)["lobby"] != "" {
 		t.Error("removing a favourite background must drop its folder")
 	}
 }
@@ -754,20 +754,20 @@ func TestDeleteWardrobeFolder(t *testing.T) {
 	p.SetWardrobeFolder(key, "Phoenix", "AA")
 
 	p.DeleteWardrobeFolder(key, "AA", true) // ungroup
-	if m := p.WardrobeFolderMap(key); len(m) != 0 {
+	if m := p.Load().WardrobeFolderMap(key); len(m) != 0 {
 		t.Fatalf("keepMembers must clear the folder tags, got %v", m)
 	}
-	if got := p.WardrobeList(key); len(got) != 3 {
+	if got := p.Load().WardrobeList(key); len(got) != 3 {
 		t.Fatalf("keepMembers must keep the characters, got %v", got)
 	}
 
 	p.SetWardrobeFolder(key, "Maya", "AA")
 	p.SetWardrobeFolder(key, "Phoenix", "AA")
 	p.DeleteWardrobeFolder(key, "aa", false) // delete + items, case-insensitive folder match
-	if got := p.WardrobeList(key); len(got) != 1 || got[0] != "Edgeworth" {
+	if got := p.Load().WardrobeList(key); len(got) != 1 || got[0] != "Edgeworth" {
 		t.Fatalf("delete+items must remove the folder's members, got %v", got)
 	}
-	if len(p.WardrobeFolderMap(key)) != 0 {
+	if len(p.Load().WardrobeFolderMap(key)) != 0 {
 		t.Error("delete must drop the folder tags too")
 	}
 }
@@ -783,17 +783,17 @@ func TestDeleteFavBackgroundFolder(t *testing.T) {
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
 
 	p.DeleteFavBackgroundFolder(key, "Trials", true) // ungroup
-	if len(p.FavBackgroundFolderMap(key)) != 0 {
+	if len(p.Load().FavBackgroundFolderMap(key)) != 0 {
 		t.Fatal("keepMembers must clear the folder tags")
 	}
-	if len(p.FavBackgroundList(key)) != 3 {
+	if len(p.Load().FavBackgroundList(key)) != 3 {
 		t.Fatal("keepMembers must keep the favourites")
 	}
 
 	p.SetFavBackgroundFolder(key, "court", "Trials")
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
 	p.DeleteFavBackgroundFolder(key, "trials", false) // delete + items, case-insensitive
-	if got := p.FavBackgroundList(key); len(got) != 1 || got[0] != "gaming" {
+	if got := p.Load().FavBackgroundList(key); len(got) != 1 || got[0] != "gaming" {
 		t.Fatalf("delete+items must unstar the folder's members, got %v", got)
 	}
 }
@@ -1054,7 +1054,7 @@ func TestConcurrentAccess(t *testing.T) {
 				case 1:
 					p.RecordLearned("h.example.com", TypeNames[i%len(TypeNames)], ExtWebP)
 				case 2:
-					_ = p.FormatList(TypeNames[i%len(TypeNames)])
+					_ = p.Load().FormatList(TypeNames[i%len(TypeNames)])
 				case 3:
 					_ = p.Load().LearnedSnapshot()
 				case 4:

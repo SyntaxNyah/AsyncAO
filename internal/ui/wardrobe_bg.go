@@ -24,8 +24,8 @@ import (
 // NOT on folder navigation. Nulls the thumbnail cache because the set/order
 // changed (the cache is keyed by index without re-checking the URL).
 func (a *App) rebuildBgFav() {
-	favs := a.d.Prefs.FavBackgroundList(a.serverKey)
-	folders := a.d.Prefs.FavBackgroundFolderMap(a.serverKey)
+	favs := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
+	folders := a.d.Prefs.Load().FavBackgroundFolderMap(a.serverKey)
 	a.bgFavList = favs
 	a.bgFavLower = make([]string, len(favs))
 	a.bgFavFolders = make([]string, len(favs))

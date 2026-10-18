@@ -195,7 +195,7 @@ func (a *App) loginLines(user, pass string) []string {
 
 // loginNow queues the login flow from the saved credentials.
 func (a *App) loginNow() {
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if info.LoginUser == "" {
 		a.pushDebug("login: no saved credentials for this server (Login... dialog)")
 		return
@@ -239,7 +239,7 @@ func (a *App) autoLoginOnReady() {
 		return
 	}
 	a.autoLoginTried = true
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
@@ -354,7 +354,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 
 // openLoginDialog loads the saved credentials into the edit buffers.
 func (a *App) openLoginDialog() {
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 	a.showLogin = true
 }
@@ -469,7 +469,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 
 	// Load the picked server's saved slots once per pick.
 	if !settings.loginLoaded {
-		info := a.d.Prefs.ServerWarmInfoFor(settings.loginKey)
+		info := a.d.Prefs.Load().ServerWarmInfoFor(settings.loginKey)
 		settings.loginUser, settings.loginPass, settings.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 		settings.loginLoaded = true
 	}
@@ -542,7 +542,7 @@ func (a *App) loginTargets() ([]string, []string) {
 // syncLoginBuffers loads this server's saved credentials into the edit
 // buffers (connect time, so the settings boxes show the truth).
 func (a *App) syncLoginBuffers() {
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 }
 

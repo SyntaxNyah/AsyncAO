@@ -165,7 +165,7 @@ var hotkeyDefs = []struct {
 
 // hotkeyFor resolves an action's key name (pref override or default).
 func (a *App) hotkeyFor(action string) string {
-	if key := a.d.Prefs.Hotkey(action); key != "" {
+	if key := a.d.Prefs.Load().Hotkey(action); key != "" {
 		return strings.ToLower(key)
 	}
 	for _, def := range hotkeyDefs {
@@ -210,7 +210,7 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 // refreshCharKeys re-reads this server's character keybinds into the
 // per-frame lookup caches (connect + bind edits only — never per frame).
 func (a *App) refreshCharKeys() {
-	a.charKeys = a.d.Prefs.CharKeyBinds(a.serverKey)
+	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.serverKey)
 	if len(a.charKeys) == 0 {
 		a.charKeysRev = nil
 		return
@@ -617,7 +617,7 @@ func (a *App) toggleFavEmoteBox() {
 // a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
 // per server, so the ring is too.
 func (a *App) quickSwapNext() {
-	ring, _, _ := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), nil)
+	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), nil)
 	if len(ring) == 0 {
 		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
 		a.warnAt = time.Now()

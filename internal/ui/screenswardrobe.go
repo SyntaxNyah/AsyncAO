@@ -95,7 +95,7 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	c.Fill(rect, sdl.Color{R: 18, G: 18, B: 26, A: 245})
 	c.Border(rect, ColAccent)
-	cur := a.d.Prefs.WardrobeFolderMap(a.serverKey)[strings.ToLower(a.iniMenuChar)]
+	cur := a.d.Prefs.Load().WardrobeFolderMap(a.serverKey)[strings.ToLower(a.iniMenuChar)]
 	for i, opt := range opts {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {

@@ -162,7 +162,7 @@ func formatOrderText(p *config.AssetPreferences) []string {
 	}
 	settings.fmtOrderText = settings.fmtOrderText[:0]
 	for _, name := range config.TypeNames {
-		settings.fmtOrderText = append(settings.fmtOrderText, strings.Join(p.FormatList(name), " "))
+		settings.fmtOrderText = append(settings.fmtOrderText, strings.Join(p.Load().FormatList(name), " "))
 	}
 	settings.fmtOrderGen, settings.fmtOrderOK = gen, true
 	return settings.fmtOrderText
@@ -231,7 +231,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	// The "not checked yet" case is stated as such rather than folded into "no
 	// list" — claiming a server publishes nothing when we simply haven't asked
 	// would send a player straight to a fix they don't need.
-	hasCustom := a.d.Prefs.ExtProfile(host) != ""
+	hasCustom := a.d.Prefs.Load().ExtProfile(host) != ""
 	st, known := a.manifestStatus[host]
 	source, col := "", ColTextDim
 	switch {
@@ -477,7 +477,7 @@ func (a *App) drawFormatsPerType(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "Sound follows the same rule: AsyncAO asks for .opus first because it is what modern packs ship. Tick a class here to also try the older types when .opus isn't there.", ColTextDim)
 	y += 4
 	for i, typeName := range audioTypeNames {
-		enabled := a.d.Prefs.TypeFallbacksEnabled(typeName)
+		enabled := a.d.Prefs.Load().TypeFallbacksEnabled(typeName)
 		if next := c.Checkbox(pad, y, audioFallbackLabels[i], enabled); next != enabled {
 			a.d.Prefs.SetTypeFallbacks(typeName, next)
 			a.d.Resolver.InvalidateAll()
@@ -498,7 +498,7 @@ func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
 	c.Label(pad, y+2, typeRowLabels[typeName], ColText)
 	x := pad + 110
 
-	current := a.d.Prefs.FormatOrder(typeName)
+	current := a.d.Prefs.Load().FormatOrder(typeName)
 	enabled := map[string]bool{}
 	for _, ext := range current {
 		enabled[ext] = true

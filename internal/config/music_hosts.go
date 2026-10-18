@@ -246,14 +246,14 @@ func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 // actual audio file. A bare track name (no host) or a song on a non-listed domain
 // returns false — it still plays, it just isn't recorded. Once per song, never per
 // frame.
-func (p *AssetPreferences) MusicURLAllowed(rawURL string) bool {
-	snap := p.Load()
+func (s *Settings) MusicURLAllowed(rawURL string) bool {
+
 	host, path := urlHostPath(rawURL)
 	if host == "" {
 		return false
 	}
 
-	for _, s := range snap.MusicHosts {
+	for _, s := range s.MusicHosts {
 		e := musicEntryFromStored(s)
 		if !e.matches(host, path) {
 			continue
@@ -270,14 +270,14 @@ func (p *AssetPreferences) MusicURLAllowed(rawURL string) bool {
 // "files.catbox.moe" -> "catbox.moe", or a folder entry -> "miku.pizza/base/youtube"
 // so those rips group apart from the rest of the host), else the bare host. "" when
 // it isn't a URL.
-func (p *AssetPreferences) MusicURLDomain(rawURL string) string {
-	snap := p.Load()
+func (s *Settings) MusicURLDomain(rawURL string) string {
+
 	host, path := urlHostPath(rawURL)
 	if host == "" {
 		return ""
 	}
 
-	for _, s := range snap.MusicHosts {
+	for _, s := range s.MusicHosts {
 		e := musicEntryFromStored(s)
 		if e.matches(host, path) {
 			return e.label()

@@ -50,7 +50,7 @@ func (a *App) maybeWarnMissingFonts(themeName string, families []string, body, d
 	if len(families) == 0 || body == "" {
 		return false
 	}
-	if a.d.Prefs.FontWarnShownFor(themeName) {
+	if a.d.Prefs.Load().FontWarnShownFor(themeName) {
 		return false
 	}
 	// Marked as shown at OPEN, not at dismiss. A user who closes the client with

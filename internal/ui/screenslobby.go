@@ -411,7 +411,7 @@ func (a *App) drawLobby(w, h int32) {
 				e := &servers[i]
 				if e.Joinable() {
 					if c.Button(sdl.Rect{X: box.X + 6, Y: ly + 4, W: 320, H: btnH}, "Rehearse offline (browse cached characters)") {
-						if info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
+						if info := a.d.Prefs.Load().ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
 							a.startRehearsal(e.Name, e.WebSocketURL(), info)
 							return
 						}
@@ -585,7 +585,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		// a remembered roster (recorded on each join) it explains itself
 		// instead of silently not existing.
 		if idx == a.selServer {
-			info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL())
+			info := a.d.Prefs.Load().ServerWarmInfoFor(e.WebSocketURL())
 			rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
 			if c.hovering(rehBtn) {
 				joinHover = true // suppress the row's click-to-join

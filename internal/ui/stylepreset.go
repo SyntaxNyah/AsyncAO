@@ -129,7 +129,7 @@ func (a *App) handleStylePresetKeys() bool {
 	if k == 0 {
 		return false
 	}
-	if pr, ok := a.d.Prefs.StylePresetForKey(strings.ToLower(sdl.GetKeyName(k))); ok {
+	if pr, ok := a.d.Prefs.Load().StylePresetForKey(strings.ToLower(sdl.GetKeyName(k))); ok {
 		a.applyStylePreset(pr)
 		return true
 	}

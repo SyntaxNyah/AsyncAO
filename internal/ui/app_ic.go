@@ -535,7 +535,7 @@ func (a *App) pollThemeApply() {
 	// would silently place a box for a different widget. Self-limiting rather than
 	// stamped: the key is no longer editable, so it cannot come back, and the
 	// probe is one map read per theme apply.
-	if res.name != "" && a.d.Prefs.HasThemeRectOverride(res.name, "ms_chatlog") {
+	if res.name != "" && a.d.Prefs.Load().HasThemeRectOverride(res.name, "ms_chatlog") {
 		a.d.Prefs.ClearThemeRectOverride(res.name, "ms_chatlog")
 		a.pushDebug("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
 	}
@@ -1255,7 +1255,7 @@ func (a *App) ignoreSpeaker(m *protocol.ChatMessage) bool {
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
-	return a.d.Prefs.ServerIgnoreMatch(a.serverKey, name)
+	return a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, name)
 }
 
 func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, int32) {
@@ -1274,7 +1274,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 	if name == "" {
 		return false, -1
 	}
-	friend, color := a.d.Prefs.ServerFriendMatch(serverKey, name)
+	friend, color := a.d.Prefs.Load().ServerFriendMatch(serverKey, name)
 	return friend, int32(color)
 }
 

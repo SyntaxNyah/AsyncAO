@@ -228,7 +228,7 @@ func TestThemedNudgePersistsAndUndoes(t *testing.T) {
 	before := a.themeRects[nudgeWidgetKey]
 
 	pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH)
-	ov, ok := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]
+	ov, ok := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]
 	if !ok {
 		t.Fatal("a nudge must persist a rect override, exactly as a drag release does")
 	}
@@ -240,7 +240,7 @@ func TestThemedNudgePersistsAndUndoes(t *testing.T) {
 	if got := a.themeRects[nudgeWidgetKey]; got != before {
 		t.Fatalf("after undo the widget is at %+v, want its pre-nudge %+v", got, before)
 	}
-	if _, still := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]; still {
+	if _, still := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]; still {
 		t.Error("undo must clear the override too: a key back on the theme's own rect owns no override")
 	}
 }
@@ -267,7 +267,7 @@ func TestThemedNudgeRespectsTheCanvasClamp(t *testing.T) {
 	if len(a.editUndo) != 0 {
 		t.Errorf("a refused nudge pushed %d undo entries, want none", len(a.editUndo))
 	}
-	if _, ov := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]; ov {
+	if _, ov := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]; ov {
 		t.Error("a refused nudge persisted an override for a widget that never moved")
 	}
 }
@@ -621,7 +621,7 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 	if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
 		t.Fatal("the editor must still CONSUME the key it refuses to act on")
 	}
-	if _, ov := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; ov {
+	if _, ov := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; ov {
 		t.Error("a nudge against a box nothing painted persisted an override")
 	}
 	if a.tabStripThemeParked() {

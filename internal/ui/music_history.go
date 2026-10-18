@@ -49,7 +49,7 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 	if !ok || song == "" {
 		return // a ~stop sentinel or an area-name transfer — not a song
 	}
-	if !a.d.Prefs.MusicURLAllowed(ev.Text) {
+	if !a.d.Prefs.Load().MusicURLAllowed(ev.Text) {
 		return // server/non-allowlisted song: it still plays, it's just not recorded
 	}
 	by := ev.Name // the MC showname (field 2); may be empty
@@ -195,7 +195,7 @@ func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
 	}
 	pairs := make([]de, len(entries))
 	for i, e := range entries {
-		d := a.d.Prefs.MusicURLDomain(e.URL)
+		d := a.d.Prefs.Load().MusicURLDomain(e.URL)
 		if d == "" {
 			d = jukeHistoryDomainOther
 		}

@@ -220,7 +220,7 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	if next, changed := c.Dropdown("themebindsrv", sdl.Rect{X: pad + 170, Y: y, W: 260, H: btnH}, names, cur); changed {
 		settings.themeBindKey = keys[next]
 	}
-	bound := a.d.Prefs.ServerWarmInfoFor(settings.themeBindKey).Theme
+	bound := a.d.Prefs.Load().ServerWarmInfoFor(settings.themeBindKey).Theme
 	if c.Button(sdl.Rect{X: pad + 440, Y: y, W: 150, H: btnH}, "Bind "+clampLine(settings.themeName)) {
 		a.d.Prefs.SetServerTheme(settings.themeBindKey, settings.themeName)
 		if settings.themeBindKey == a.serverKey && a.sess != nil {

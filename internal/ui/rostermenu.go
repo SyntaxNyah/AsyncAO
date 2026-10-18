@@ -97,14 +97,14 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	}
 	if fk != "" && a.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
 		fl := "+ Friend"
-		if isF, _, _ := a.d.Prefs.ServerFriendInfo(a.serverKey, fk); isF {
+		if isF, _, _ := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, fk); isF {
 			fl = "Unfriend"
 		}
 		items = append(items, rosterMenuItem{rosterActFriend, fl})
 	}
 	if fk != "" && a.serverKey != "" && !a.panelHidden(rosterBtnIgnore) {
 		il := "Ignore"
-		if a.d.Prefs.ServerIgnoreMatch(a.serverKey, fk) {
+		if a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, fk) {
 			il = "Unignore"
 		}
 		items = append(items, rosterMenuItem{rosterActIgnore, il})

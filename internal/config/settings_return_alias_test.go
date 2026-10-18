@@ -44,7 +44,7 @@ func TestReturnedCollectionsNeverAlias(t *testing.T) {
 		if m := p.Load().Macros(); len(m) > 0 && len(m[0].Lines) > 0 {
 			m[0].Lines[0] = "mutated"
 		}
-		if s := p.ServerWarmInfoFor("s"); len(s.Chars) > 0 {
+		if s := p.Load().ServerWarmInfoFor("s"); len(s.Chars) > 0 {
 			s.Chars[0] = "mutated"
 		}
 	}
