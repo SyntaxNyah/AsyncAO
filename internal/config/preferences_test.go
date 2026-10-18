@@ -525,7 +525,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if !q.TypeFallbacksEnabled(TypeBlip) {
 		t.Error("TypeFallbacks(Blip) lost")
 	}
-	learned := q.LearnedSnapshot()
+	learned := q.Load().LearnedSnapshot()
 	if got := learned[LearnedKey("assets.example.com", TypeCharSprite)]; !slices.Equal(got, []string{ExtWebP}) {
 		t.Errorf("learned format lost, snapshot=%v", learned)
 	}
@@ -573,14 +573,14 @@ func TestLearnedExportImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.ClearLearned()
-	if len(p.LearnedSnapshot()) != 0 {
+	if len(p.Load().LearnedSnapshot()) != 0 {
 		t.Fatal("clear did not clear")
 	}
 	n, err := p.ImportLearnedJSON(data)
 	if err != nil || n != 2 {
 		t.Fatalf("import = %d, %v", n, err)
 	}
-	if got := p.LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
+	if got := p.Load().LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
 		t.Errorf("imported entry = %v", got)
 	}
 	if _, err := p.ImportLearnedJSON([]byte("junk")); err == nil {
@@ -932,7 +932,7 @@ func TestLearnedInvalidation(t *testing.T) {
 
 	seed()
 	p.SetFormatOrder(TypeCharSprite, []string{ExtAPNG})
-	learned := p.LearnedSnapshot()
+	learned := p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
 		t.Error("SetFormatOrder must invalidate learned formats for that type")
 	}
@@ -942,20 +942,20 @@ func TestLearnedInvalidation(t *testing.T) {
 
 	seed()
 	p.SetTypeFallbacks(TypeCharSprite, true)
-	learned = p.LearnedSnapshot()
+	learned = p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
 		t.Error("SetTypeFallbacks must invalidate learned formats for that type")
 	}
 
 	seed()
 	p.SetGlobalFallbacks(true)
-	if n := len(p.LearnedSnapshot()); n != 0 {
+	if n := len(p.Load().LearnedSnapshot()); n != 0 {
 		t.Errorf("SetGlobalFallbacks must invalidate all learned formats, %d left", n)
 	}
 
 	seed()
 	p.ClearLearned()
-	if n := len(p.LearnedSnapshot()); n != 0 {
+	if n := len(p.Load().LearnedSnapshot()); n != 0 {
 		t.Errorf("ClearLearned left %d entries", n)
 	}
 }
@@ -974,7 +974,7 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 	if n := p.ClearLearnedHost(bad); n != 2 {
 		t.Errorf("ClearLearnedHost dropped %d entries, want 2", n)
 	}
-	learned := p.LearnedSnapshot()
+	learned := p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(bad, TypeCharSprite)]; ok {
 		t.Error("the target host's sprite entry survived")
 	}
@@ -998,7 +998,7 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 	if n := p.ClearLearnedHost(bad); n != 1 {
 		t.Errorf("ClearLearnedHost dropped %d entries, want 1 (a longer host name is a different host)", n)
 	}
-	if _, ok := p.LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
+	if _, ok := p.Load().LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
 		t.Error("a host whose name starts with the target's was wrongly cleared")
 	}
 }
@@ -1056,7 +1056,7 @@ func TestConcurrentAccess(t *testing.T) {
 				case 2:
 					_ = p.FormatList(TypeNames[i%len(TypeNames)])
 				case 3:
-					_ = p.LearnedSnapshot()
+					_ = p.Load().LearnedSnapshot()
 				case 4:
 					p.Update(func(
 						sn *Settings) {
@@ -1380,10 +1380,10 @@ func TestResetSettings(t *testing.T) {
 	if p.TabCap() != DefaultMultiTabCap {
 		t.Errorf("TabCap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "myname" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "myname" {
 		t.Errorf("callwords (content) must be preserved, got %v", got)
 	}
-	if len(p.FavoriteServers()) != 1 {
+	if len(p.Load().FavoriteServers()) != 1 {
 		t.Error("favourites (content) must be preserved")
 	}
 }
@@ -1401,7 +1401,7 @@ func TestCallWordAddRemove(t *testing.T) {
 	if n := p.AddCallWord("Alice, bob , ALICE,  "); n != 2 {
 		t.Fatalf("AddCallWord bulk = %d, want 2 (alice, bob; dup + blanks skipped)", n)
 	}
-	if got := p.CallWords(); len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
+	if got := p.Load().CallWords(); len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
 		t.Fatalf("CallWords = %v, want [alice bob]", got)
 	}
 	if n := p.AddCallWord("bob"); n != 0 {
@@ -1410,7 +1410,7 @@ func TestCallWordAddRemove(t *testing.T) {
 	if !p.RemoveCallWord("ALICE") { // case-insensitive remove
 		t.Error("RemoveCallWord(ALICE) should drop the lowercased entry")
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "bob" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "bob" {
 		t.Errorf("after remove, CallWords = %v, want [bob]", got)
 	}
 }
@@ -1431,12 +1431,12 @@ func TestCallWordWildcardRoundTrip(t *testing.T) {
 	if n := p.AddCallWord("  Obj*  "); n != 1 {
 		t.Fatalf("AddCallWord = %d, want 1", n)
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "obj*" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "obj*" {
 		t.Fatalf("in-memory CallWords = %v, want [obj*] (lowercased, '*' kept)", got)
 	}
 	// SetCallWords (the bulk replace path) must keep it too.
 	p.SetCallWords([]string{"OBJ*", "tif"})
-	if got := p.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+	if got := p.Load().CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
 		t.Fatalf("SetCallWords result = %v, want [obj* tif]", got)
 	}
 	if err := p.Close(); err != nil {
@@ -1446,7 +1446,7 @@ func TestCallWordWildcardRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+	if got := q.Load().CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
 		t.Errorf("wildcard lost across reload: got %v, want [obj* tif]", got)
 	}
 }
@@ -1619,10 +1619,10 @@ func TestResetAll(t *testing.T) {
 	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
-	if got := p.CallWords(); len(got) != 0 {
+	if got := p.Load().CallWords(); len(got) != 0 {
 		t.Errorf("callwords must be wiped, got %v", got)
 	}
-	if got := p.FavoriteServers(); len(got) != 0 {
+	if got := p.Load().FavoriteServers(); len(got) != 0 {
 		t.Errorf("favourites must be wiped, got %d", len(got))
 	}
 }
@@ -1651,7 +1651,7 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	if p.Load().RestoreTabs {
 		t.Error("RestoreTabs must default OFF")
 	}
-	if len(p.OpenTabList()) != 0 {
+	if len(p.Load().OpenTabList()) != 0 {
 		t.Error("OpenTabs must default empty")
 	}
 
@@ -1671,7 +1671,7 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	if !q.Load().RestoreTabs {
 		t.Error("reloaded RestoreTabs must be ON")
 	}
-	got := q.OpenTabList()
+	got := q.Load().OpenTabList()
 	if len(got) != 2 || got[0].Name != "Alpha" || got[0].URL != "wss://a.example:2096" || got[1].URL != "wss://b.example:2096" {
 		t.Fatalf("reloaded OpenTabs = %v", got)
 	}

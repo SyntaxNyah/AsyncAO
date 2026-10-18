@@ -16,7 +16,7 @@ import (
 // refreshShownameKeys re-reads the global showname binds into the per-frame
 // lookup caches (startup + bind edits only — never per frame).
 func (a *App) refreshShownameKeys() {
-	a.shownameKeys = a.d.Prefs.ShownameKeyBinds()
+	a.shownameKeys = a.d.Prefs.Load().ShownameKeyBinds()
 	if len(a.shownameKeys) == 0 {
 		a.shownameKeysRev = nil
 		return

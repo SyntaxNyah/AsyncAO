@@ -459,11 +459,11 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if c.Button(sdl.Rect{X: nameX + fieldW + 8, Y: y, W: saveW, H: fieldH}, "Save") {
 		if name := strings.TrimSpace(a.layoutPresetName); name != "" {
 			a.d.Prefs.SaveLayoutProfile(name, config.LayoutProfile{
-				Classic:   a.d.Prefs.ClassicLayoutOverrides(),
-				Anchors:   a.d.Prefs.ClassicAnchorSnapshot(),
-				Hidden:    a.d.Prefs.HiddenPanels(),
+				Classic:   a.d.Prefs.Load().ClassicLayoutOverrides(),
+				Anchors:   a.d.Prefs.Load().ClassicAnchorSnapshot(),
+				Hidden:    a.d.Prefs.Load().HiddenPanels(),
 				GridPx:    a.d.Prefs.LayoutGridSize(),
-				Rotations: a.d.Prefs.ClassicRotationSnapshot(), // A4: classic rotations travel with the profile
+				Rotations: a.d.Prefs.Load().ClassicRotationSnapshot(), // A4: classic rotations travel with the profile
 			})
 			a.layoutPresetName = ""
 		}
@@ -471,7 +471,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y += fieldH + 10
 
 	// Saved profiles: load / delete each.
-	if names := a.d.Prefs.LayoutProfileNames(); len(names) == 0 {
+	if names := a.d.Prefs.Load().LayoutProfileNames(); len(names) == 0 {
 		c.Label(pad, y, "No saved profiles yet — arrange your layout, then Save it above.", ColTextDim)
 		y += 20
 	} else {

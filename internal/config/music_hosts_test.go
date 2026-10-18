@@ -9,12 +9,12 @@ import (
 func TestMusicHostDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	got := map[string]bool{}
-	for _, h := range p.MusicHostList() {
+	for _, h := range p.Load().MusicHostList() {
 		got[h] = true
 	}
 	for _, want := range []string{"catbox.moe", "file.garden", "youtube.com", "youtu.be", "discordapp.com", "cdn.discordapp.com"} {
 		if !got[want] {
-			t.Errorf("default allowlist missing %q (have %v)", want, p.MusicHostList())
+			t.Errorf("default allowlist missing %q (have %v)", want, p.Load().MusicHostList())
 		}
 	}
 }

@@ -257,7 +257,7 @@ func TestMacroSanitize(t *testing.T) {
 		{Name: "", Lines: []string{"dropped: no name"}},
 		{Name: "empty", Lines: nil},
 	})
-	got := p.Macros()
+	got := p.Load().Macros()
 	if len(got) != 1 {
 		t.Fatalf("sanitize kept %d macros, want 1", len(got))
 	}

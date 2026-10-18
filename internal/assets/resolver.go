@@ -127,7 +127,7 @@ func (r *Resolver) WarmFromPrefs() {
 	if r.prefs == nil {
 		return
 	}
-	snapshot := r.prefs.LearnedSnapshot()
+	snapshot := r.prefs.Load().LearnedSnapshot()
 	if len(snapshot) == 0 {
 		return
 	}

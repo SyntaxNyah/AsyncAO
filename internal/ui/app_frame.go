@@ -156,7 +156,7 @@ func (a *App) pruneStalePings() {
 func (a *App) mergedFavorites() []network.ServerEntry {
 	entries := make([]network.ServerEntry, len(a.masterEntries))
 	copy(entries, a.masterEntries)
-	entries = network.MergeFavorites(entries, a.d.Prefs.FavoriteServers())
+	entries = network.MergeFavorites(entries, a.d.Prefs.Load().FavoriteServers())
 	if a.pingMode {
 		sortByPing(entries, a.pings) // lobby "Ping" sort: connect-time ascending
 	} else {
@@ -550,16 +550,16 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
-		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                  // viewport sprite mask (default ON): offsets can't spill past the stage
-		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
-		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)                                     // amber-tint stand-ins (diagnostics)
-		a.d.Viewport.SetThumbSprites(a.d.Prefs.Load().ThumbCache)                                         // opt-in low-q thumbnail stand-ins on the cold miss path
-		a.d.Viewport.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)                                // AO2 placeholder for conclusively-missing sprites (default ON)
-		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
-		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
-		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
-		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
+		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                               // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
+		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                   // viewport sprite mask (default ON): offsets can't spill past the stage
+		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond) // hold-previous stand-in cap (0 = forever)
+		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)                                      // amber-tint stand-ins (diagnostics)
+		a.d.Viewport.SetThumbSprites(a.d.Prefs.Load().ThumbCache)                                          // opt-in low-q thumbnail stand-ins on the cold miss path
+		a.d.Viewport.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)                                 // AO2 placeholder for conclusively-missing sprites (default ON)
+		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                        // speaker-swap blend (0 = off; zeroed under Reduce motion)
+		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                          // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
+		a.d.Viewport.SetPostFX(a.postFX())                                                                 // #10 retro overlays
+		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity())     // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		a.logSpeakerAnimDiag() // #110: log the speaker sprite's frame/delay stats once per base change
 		// This frame IS the draw the doorbell exists to force, and the viewport is

@@ -54,7 +54,7 @@ func TestPinnedProfileSeedsEveryImageClass(t *testing.T) {
 			config.TypeBackground,
 			config.TypeDeskOverlay,
 		}
-		learned := p.LearnedSnapshot()
+		learned := p.Load().LearnedSnapshot()
 		for _, typeName := range want {
 			got, ok := learned[config.LearnedKey(host, typeName)]
 			if !ok {

@@ -6,22 +6,22 @@ import "testing"
 // the cap, delete, and the opacity clamp.
 func TestStylePresetCRUD(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if got := p.StylePresets(); got != nil {
+	if got := p.Load().StylePresets(); got != nil {
 		t.Fatalf("fresh prefs have presets: %v", got)
 	}
 	p.AddStylePreset(StylePreset{Name: "Angry", Style: SpriteStylePref{Tint: true, R: 255}, Color: 2})
 	p.AddStylePreset(StylePreset{Name: "Calm", Color: 0})
-	if got := p.StylePresets(); len(got) != 2 || got[0].Name != "Angry" || got[1].Name != "Calm" {
+	if got := p.Load().StylePresets(); len(got) != 2 || got[0].Name != "Angry" || got[1].Name != "Calm" {
 		t.Fatalf("presets = %v, want Angry+Calm", got)
 	}
 	// A blank name is ignored.
 	p.AddStylePreset(StylePreset{Name: "   "})
-	if len(p.StylePresets()) != 2 {
+	if len(p.Load().StylePresets()) != 2 {
 		t.Error("a blank-named preset was stored")
 	}
 	// Same name overwrites in place (a "save" updates the mood).
 	p.AddStylePreset(StylePreset{Name: "Angry", Color: 5, Style: SpriteStylePref{Opacity: 250}})
-	got := p.StylePresets()
+	got := p.Load().StylePresets()
 	if len(got) != 2 || got[0].Color != 5 {
 		t.Fatalf("overwrite didn't update Angry in place: %v", got)
 	}
@@ -30,11 +30,11 @@ func TestStylePresetCRUD(t *testing.T) {
 	}
 	// The returned slice is a copy — mutating it can't corrupt the store.
 	got[0].Name = "Hacked"
-	if p.StylePresets()[0].Name != "Angry" {
+	if p.Load().StylePresets()[0].Name != "Angry" {
 		t.Error("StylePresets() returned the live slice, not a copy")
 	}
 	p.DeleteStylePreset(0)
-	if g := p.StylePresets(); len(g) != 1 || g[0].Name != "Calm" {
+	if g := p.Load().StylePresets(); len(g) != 1 || g[0].Name != "Calm" {
 		t.Fatalf("delete left %v, want just Calm", g)
 	}
 }
@@ -54,7 +54,7 @@ func TestStylePresetKeys(t *testing.T) {
 	if pr, ok := p.StylePresetForKey("f1"); !ok || pr.Name != "B" {
 		t.Fatalf("after rebind, f1 → %+v, want B", pr)
 	}
-	if p.StylePresets()[0].Key != "" {
+	if p.Load().StylePresets()[0].Key != "" {
 		t.Error("rebinding f1 to B didn't clear it from A")
 	}
 	// Clearing a key.
@@ -70,7 +70,7 @@ func TestStylePresetCap(t *testing.T) {
 	for i := 0; i < stylePresetCap+10; i++ {
 		p.AddStylePreset(StylePreset{Name: string(rune('a'+i%26)) + string(rune('0'+i/26))})
 	}
-	if n := len(p.StylePresets()); n > stylePresetCap {
+	if n := len(p.Load().StylePresets()); n > stylePresetCap {
 		t.Errorf("stored %d presets, want capped at %d", n, stylePresetCap)
 	}
 }

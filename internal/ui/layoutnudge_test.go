@@ -472,7 +472,7 @@ func TestClassicNudgePersistsAndUndoes(t *testing.T) {
 	before := classicNudgeRect(a)
 
 	pressNudge(t, a, sdl.K_DOWN, false, classicNudgeW, classicNudgeH)
-	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[slotOOC]; !ok {
+	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[slotOOC]; !ok {
 		t.Fatal("a nudge must persist a slot override, exactly as a drag release does")
 	}
 	if got := classicNudgeRect(a); got.Y != before.Y+1 {
@@ -483,7 +483,7 @@ func TestClassicNudgePersistsAndUndoes(t *testing.T) {
 	if _, ok := a.classicOv[slotOOC]; ok {
 		t.Error("undo must drop the override the nudge minted")
 	}
-	if len(a.d.Prefs.ClassicLayoutOverrides()) != 0 {
+	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
 		t.Error("undo must re-sync the durable pref too, or the nudge outlives its undo")
 	}
 	if got := classicNudgeRect(a); got != before {
@@ -509,7 +509,7 @@ func TestClassicNudgeRespectsTheWindowClamp(t *testing.T) {
 	if len(a.classicUndo) != 0 {
 		t.Errorf("a refused nudge pushed %d undo entries, want none", len(a.classicUndo))
 	}
-	if len(a.d.Prefs.ClassicLayoutOverrides()) != 0 {
+	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
 		t.Error("a refused nudge persisted an override for a slot that never moved")
 	}
 }

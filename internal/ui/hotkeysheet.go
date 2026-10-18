@@ -96,7 +96,7 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	}
 
 	// Your macros (custom-made; a macro may be saved without a key bound).
-	if macros := a.d.Prefs.Macros(); len(macros) > 0 {
+	if macros := a.d.Prefs.Load().Macros(); len(macros) > 0 {
 		out = append(out, hkEntry{label: "Your macros", header: true})
 		for _, m := range macros {
 			// Alt+, not Ctrl+: this row has always LIED. handleMacroKeys reads

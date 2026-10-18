@@ -213,7 +213,7 @@ func TestClassicEditUndoReSyncsPref(t *testing.T) {
 	if got := a.classicOv[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
 		t.Fatalf("after undo, live OOC = %v, want the 0.1 spot", got)
 	}
-	if got := a.d.Prefs.ClassicLayoutOverrides()[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
+	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
 		t.Fatalf("after undo, durable OOC = %v, want the 0.1 spot (undo must re-sync the pref)", got)
 	}
 
@@ -221,7 +221,7 @@ func TestClassicEditUndoReSyncsPref(t *testing.T) {
 	if len(a.classicOv) != 0 {
 		t.Fatalf("after undoing the first edit, live overrides = %v, want none", a.classicOv)
 	}
-	if len(a.d.Prefs.ClassicLayoutOverrides()) != 0 {
+	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
 		t.Fatal("after undoing the first edit, the durable pref must be empty too")
 	}
 }

@@ -44,17 +44,17 @@ func TestClassicSlotRoundTrip(t *testing.T) {
 	p := &AssetPreferences{}
 	frac := [4]float64{0.25, 0.1, 0.5, 0.4}
 	p.SetClassicSlot("viewport", frac)
-	got := p.ClassicLayoutOverrides()
+	got := p.Load().ClassicLayoutOverrides()
 	if got["viewport"] != frac {
 		t.Fatalf("round-trip = %+v, want %+v", got["viewport"], frac)
 	}
 	// Returned map is a copy — mutating it must not touch the stored prefs.
 	got["viewport"] = [4]float64{}
-	if p.ClassicLayoutOverrides()["viewport"] != frac {
+	if p.Load().ClassicLayoutOverrides()["viewport"] != frac {
 		t.Fatalf("ClassicLayoutOverrides leaked the internal map")
 	}
 	p.ClearClassicSlot("viewport")
-	if len(p.ClassicLayoutOverrides()) != 0 {
+	if len(p.Load().ClassicLayoutOverrides()) != 0 {
 		t.Fatalf("ClearClassicSlot left entries")
 	}
 }
@@ -64,7 +64,7 @@ func TestClassicSlotCap(t *testing.T) {
 	for i := 0; i < classicSlotCap+10; i++ {
 		p.SetClassicSlot(string(rune('a'+i%26))+string(rune('0'+i/26)), [4]float64{0.1, 0.1, 0.2, 0.2})
 	}
-	if n := len(p.ClassicLayoutOverrides()); n > classicSlotCap {
+	if n := len(p.Load().ClassicLayoutOverrides()); n > classicSlotCap {
 		t.Fatalf("classic slots = %d, exceeds cap %d", n, classicSlotCap)
 	}
 }
@@ -86,7 +86,7 @@ func TestLayoutProfileRoundTrip(t *testing.T) {
 		GridPx:  16,
 	}
 	p.SaveLayoutProfile("  streamer ", prof) // name is trimmed
-	if names := p.LayoutProfileNames(); len(names) != 1 || names[0] != "streamer" {
+	if names := p.Load().LayoutProfileNames(); len(names) != 1 || names[0] != "streamer" {
 		t.Fatalf("profile names = %v, want [streamer]", names)
 	}
 	if err := p.Close(); err != nil {
@@ -128,7 +128,7 @@ func TestLayoutProfileSanitizeAndCap(t *testing.T) {
 	p.SaveLayoutProfile("", LayoutProfile{Classic: map[string][4]float64{"viewport": {0, 0, 0.5, 0.5}}}) // blank name
 	p.SaveLayoutProfile("empty", LayoutProfile{})                                                        // nothing in any axis
 	p.SaveLayoutProfile("garbage", LayoutProfile{Classic: map[string][4]float64{"v": {0, 0, -1, -1}}})   // only invalid slots → empty
-	if n := len(p.LayoutProfileNames()); n != 0 {
+	if n := len(p.Load().LayoutProfileNames()); n != 0 {
 		t.Fatalf("guards let through %d profile(s), want 0", n)
 	}
 	// A profile with a good slot but junk anchors + over-cap dup Hidden keeps only
@@ -157,7 +157,7 @@ func TestLayoutProfileSanitizeAndCap(t *testing.T) {
 	for i := 0; i < layoutProfileCap+5; i++ {
 		p.SaveLayoutProfile(string(rune('a'+i%26))+string(rune('0'+i/26)), LayoutProfile{GridPx: 8})
 	}
-	if n := len(p.LayoutProfileNames()); n > layoutProfileCap {
+	if n := len(p.Load().LayoutProfileNames()); n > layoutProfileCap {
 		t.Fatalf("profiles = %d, exceeds cap %d", n, layoutProfileCap)
 	}
 }
@@ -177,7 +177,7 @@ func TestLayoutProfileMigrationFromPresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	names := q.LayoutProfileNames()
+	names := q.Load().LayoutProfileNames()
 	if len(names) != 2 {
 		t.Fatalf("migrated profile count = %d (%v), want 2", len(names), names)
 	}
@@ -209,7 +209,7 @@ func TestLayoutProfileMigrationNoClobber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	names := q.LayoutProfileNames()
+	names := q.Load().LayoutProfileNames()
 	if len(names) != 1 || names[0] != "kept" {
 		t.Fatalf("no-clobber failed: profiles = %v, want [kept] only (preset ignored)", names)
 	}
@@ -241,7 +241,7 @@ func TestClassicAnchorsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ClassicAnchorSnapshot()["viewport"]; got != want {
+	if got := q.Load().ClassicAnchorSnapshot()["viewport"]; got != want {
 		t.Fatalf("anchor round-trip = %+v, want %+v", got, want)
 	}
 }
@@ -255,13 +255,13 @@ func TestSetClassicAnchorsWholesale(t *testing.T) {
 		"junk":     {Mode: "zz", WinW: 0, WinH: 0}, // invalid mode + window → dropped
 	}
 	p.SetClassicAnchors(in)
-	got := p.ClassicAnchorSnapshot()
+	got := p.Load().ClassicAnchorSnapshot()
 	if len(got) != 1 || got["viewport"] != in["viewport"] {
 		t.Fatalf("wholesale set = %+v, want only viewport", got)
 	}
 	// Mutating the caller's input must not touch storage (copy-never-alias).
 	in["viewport"] = ClassicAnchor{Mode: "cc", WinW: 1, WinH: 1}
-	if p.ClassicAnchorSnapshot()["viewport"] != (ClassicAnchor{Mode: "lt", WinW: 1280, WinH: 720}) {
+	if p.Load().ClassicAnchorSnapshot()["viewport"] != (ClassicAnchor{Mode: "lt", WinW: 1280, WinH: 720}) {
 		t.Fatalf("SetClassicAnchors aliased the caller's map")
 	}
 	// Cap.
@@ -270,12 +270,12 @@ func TestSetClassicAnchorsWholesale(t *testing.T) {
 		big[string(rune('a'+i%26))+string(rune('0'+i/26))] = ClassicAnchor{Mode: "lt", WinW: 800, WinH: 600}
 	}
 	p.SetClassicAnchors(big)
-	if n := len(p.ClassicAnchorSnapshot()); n > classicSlotCap {
+	if n := len(p.Load().ClassicAnchorSnapshot()); n > classicSlotCap {
 		t.Fatalf("anchors = %d, exceeds cap %d", n, classicSlotCap)
 	}
 	// A nil/empty map clears all pins.
 	p.SetClassicAnchors(nil)
-	if n := len(p.ClassicAnchorSnapshot()); n != 0 {
+	if n := len(p.Load().ClassicAnchorSnapshot()); n != 0 {
 		t.Fatalf("SetClassicAnchors(nil) left %d entries", n)
 	}
 }
@@ -292,24 +292,24 @@ func TestClassicRotationRoundTrip(t *testing.T) {
 	}
 	p.SetClassicRotation("viewport", 64) // 90°
 	p.SetClassicRotation("ooc", 128)     // 180°
-	if got := p.ClassicRotationSnapshot(); got["viewport"] != 64 || got["ooc"] != 128 {
+	if got := p.Load().ClassicRotationSnapshot(); got["viewport"] != 64 || got["ooc"] != 128 {
 		t.Fatalf("round-trip = %+v, want viewport=64 ooc=128", got)
 	}
 	// Snapshot is a copy — mutating it can't touch storage.
-	snap := p.ClassicRotationSnapshot()
+	snap := p.Load().ClassicRotationSnapshot()
 	snap["viewport"] = 0
-	if p.ClassicRotationSnapshot()["viewport"] != 64 {
+	if p.Load().ClassicRotationSnapshot()["viewport"] != 64 {
 		t.Fatalf("ClassicRotationSnapshot leaked the internal map")
 	}
 	// Named ClearClassicSlot drops the rotation with the override.
 	p.SetClassicSlot("viewport", [4]float64{0, 0, 0.5, 0.5})
 	p.ClearClassicSlot("viewport")
-	if _, ok := p.ClassicRotationSnapshot()["viewport"]; ok {
+	if _, ok := p.Load().ClassicRotationSnapshot()["viewport"]; ok {
 		t.Fatalf("named ClearClassicSlot left the rotation behind")
 	}
 	// Whole-reset '' branch drops every rotation.
 	p.ClearClassicSlot("")
-	if n := len(p.ClassicRotationSnapshot()); n != 0 {
+	if n := len(p.Load().ClassicRotationSnapshot()); n != 0 {
 		t.Fatalf("ClearClassicSlot('') left %d rotations", n)
 	}
 	// Reload from disk.
@@ -321,8 +321,8 @@ func TestClassicRotationRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.ClassicRotationSnapshot()["emotes"] != 192 {
-		t.Fatalf("rotation did not survive disk round-trip: %+v", q.ClassicRotationSnapshot())
+	if q.Load().ClassicRotationSnapshot()["emotes"] != 192 {
+		t.Fatalf("rotation did not survive disk round-trip: %+v", q.Load().ClassicRotationSnapshot())
 	}
 }
 
@@ -353,15 +353,15 @@ func TestSetClassicRotationsWholesale(t *testing.T) {
 	p := &AssetPreferences{}
 	in := map[string]uint8{"viewport": 64, "": 128} // blank dropped by sanitize
 	p.SetClassicRotations(in)
-	if got := p.ClassicRotationSnapshot(); len(got) != 1 || got["viewport"] != 64 {
+	if got := p.Load().ClassicRotationSnapshot(); len(got) != 1 || got["viewport"] != 64 {
 		t.Fatalf("wholesale set = %+v, want only viewport=64", got)
 	}
 	in["viewport"] = 0 // mutate caller's input
-	if p.ClassicRotationSnapshot()["viewport"] != 64 {
+	if p.Load().ClassicRotationSnapshot()["viewport"] != 64 {
 		t.Fatalf("SetClassicRotations aliased the caller's map")
 	}
 	p.SetClassicRotations(nil)
-	if n := len(p.ClassicRotationSnapshot()); n != 0 {
+	if n := len(p.Load().ClassicRotationSnapshot()); n != 0 {
 		t.Fatalf("SetClassicRotations(nil) left %d entries", n)
 	}
 }
@@ -527,7 +527,7 @@ func TestHiddenPanelsRoundTripDedupCap(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	p.SetHiddenPanels([]string{"emotes", "", "ooc", "emotes"}) // blank + dup dropped
-	got := p.HiddenPanels()
+	got := p.Load().HiddenPanels()
 	if len(got) != 2 || got[0] != "emotes" || got[1] != "ooc" {
 		t.Fatalf("dedup = %v, want [emotes ooc]", got)
 	}
@@ -537,7 +537,7 @@ func TestHiddenPanelsRoundTripDedupCap(t *testing.T) {
 		over = append(over, "p"+string(rune('a'+i%26))+string(rune('0'+i/26)))
 	}
 	p.SetHiddenPanels(over)
-	if n := len(p.HiddenPanels()); n > maxHiddenPanels {
+	if n := len(p.Load().HiddenPanels()); n > maxHiddenPanels {
 		t.Fatalf("hidden = %d, exceeds cap %d", n, maxHiddenPanels)
 	}
 	// Round-trip a modest set through disk.
@@ -549,7 +549,7 @@ func TestHiddenPanelsRoundTripDedupCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.HiddenPanels(); len(got) != 2 {
+	if got := q.Load().HiddenPanels(); len(got) != 2 {
 		t.Fatalf("hidden round-trip = %v, want 2 entries", got)
 	}
 }

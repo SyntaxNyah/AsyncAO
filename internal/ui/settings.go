@@ -1250,7 +1250,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	c.Label(pad+564, y+4, "global · Ctrl+H random · Ctrl+B cycle · bind a key per preset · resets on a factory wipe", ColTextDim)
 	y += 32
-	if presets := a.d.Prefs.ShownameList(); len(presets) == 0 {
+	if presets := a.d.Prefs.Load().ShownameList(); len(presets) == 0 {
 		c.Label(pad+12, y+2, "(none yet — Save a name above; bind keys to swap them)", ColTextDim)
 		y += 24
 	} else {

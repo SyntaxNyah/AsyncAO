@@ -1800,7 +1800,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// never queue a connect that allocateTab would reject. Off ⇒ nil queue ⇒
 	// pumpTabRestore is a single length check, so boot is byte-identical.
 	if d.Prefs.Load().RestoreTabs {
-		q := d.Prefs.OpenTabList()
+		q := d.Prefs.Load().OpenTabList()
 		if cap := d.Prefs.TabCap(); len(q) > cap {
 			q = q[:cap]
 		}

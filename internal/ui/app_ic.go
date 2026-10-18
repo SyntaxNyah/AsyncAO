@@ -37,7 +37,7 @@ func (a *App) applyThemeAsync() uint64 {
 	// goroutine: PanelFonts takes the preferences' read lock, and reading them
 	// off-thread while the debounced saver marshals under its own lock is exactly
 	// the interleaving -race exists to catch. The map returned is already a copy.
-	panelFonts := a.d.Prefs.PanelFonts()
+	panelFonts := a.d.Prefs.Load().PanelFonts()
 	// The T1 budget, read HERE with every other preference this apply needs: the
 	// theme-media allowance is a function of it (render.ThemeMediaByteCap) and the
 	// goroutine below must not take the preferences lock.

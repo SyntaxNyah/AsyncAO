@@ -90,7 +90,7 @@ func (a *App) sfxBrowserRows() []sfxBrowserRow {
 	q := strings.ToLower(strings.TrimSpace(a.sfxBrowserQuery))
 	match := func(name string) bool { return q == "" || strings.Contains(strings.ToLower(name), q) }
 
-	favs := a.d.Prefs.SfxFavoritesList() // lowercased bare names
+	favs := a.d.Prefs.Load().SfxFavoritesList() // lowercased bare names
 	seen := make(map[string]bool, len(favs)+len(a.sfxChoices))
 	rows := make([]sfxBrowserRow, 0, len(favs)+len(a.sfxChoices))
 	for _, f := range favs {

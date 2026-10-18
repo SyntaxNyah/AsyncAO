@@ -32,7 +32,7 @@ func TestStylePresetSaveApply(t *testing.T) {
 	a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{Tint: true, R: 200, Glow: true})
 
 	a.saveStylePreset("Rage")
-	ps := a.d.Prefs.StylePresets()
+	ps := a.d.Prefs.Load().StylePresets()
 	if len(ps) != 1 || ps[0].Name != "Rage" || ps[0].Color != 3 || ps[0].Emote != "angry" {
 		t.Fatalf("saved preset = %+v", ps)
 	}

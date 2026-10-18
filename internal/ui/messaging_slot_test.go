@@ -39,7 +39,7 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	if got := a.classicOv[slotMessages]; got != want {
 		t.Errorf("live override = %v, want %v", got, want)
 	}
-	if got := a.d.Prefs.ClassicLayoutOverrides()[slotMessages]; got != want {
+	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotMessages]; got != want {
 		t.Errorf("persisted override = %v, want %v", got, want)
 	}
 	if a.showMessages {

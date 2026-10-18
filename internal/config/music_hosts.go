@@ -190,14 +190,13 @@ func isDiscordHost(host string) bool {
 
 // MusicHostList returns a copy of the editable allowlist (insertion order) for
 // the settings UI.
-func (p *AssetPreferences) MusicHostList() []string {
-	snap := p.Load()
+func (s *Settings) MusicHostList() []string {
 
-	if len(snap.MusicHosts) == 0 {
+	if len(s.MusicHosts) == 0 {
 		return nil
 	}
-	out := make([]string, len(snap.MusicHosts))
-	copy(out, snap.MusicHosts)
+	out := make([]string, len(s.MusicHosts))
+	copy(out, s.MusicHosts)
 	return out
 }
 

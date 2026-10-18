@@ -1489,15 +1489,15 @@ func TestShownameKeyBinds(t *testing.T) {
 	p.SetShownameKeyBind("F1", "Nick") // key lowercased on store
 	p.SetShownameKeyBind("f2", "Edgey")
 
-	if b := p.ShownameKeyBinds(); b["f1"] != "Nick" || b["f2"] != "Edgey" {
+	if b := p.Load().ShownameKeyBinds(); b["f1"] != "Nick" || b["f2"] != "Edgey" {
 		t.Fatalf("binds = %v, want f1->Nick f2->Edgey", b)
 	}
 	p.SetShownameKeyBind("f1", "") // empty showname clears the bind
-	if p.ShownameKeyBinds()["f1"] != "" {
+	if p.Load().ShownameKeyBinds()["f1"] != "" {
 		t.Error("f1 bind should be cleared")
 	}
 	p.RemoveShownamePreset("Edgey") // removing a preset drops its bind
-	if p.ShownameKeyBinds()["f2"] != "" {
+	if p.Load().ShownameKeyBinds()["f2"] != "" {
 		t.Error("removing Edgey must drop its f2 keybind")
 	}
 }
@@ -1518,7 +1518,7 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ShownameKeyBinds()["f1"]; got != "Nick" {
+	if got := q.Load().ShownameKeyBinds()["f1"]; got != "Nick" {
 		t.Errorf("keybind lost across save/load: f1 = %q, want Nick", got)
 	}
 }
@@ -1527,16 +1527,16 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 // empty phrase clears, and a bind survives save→load.
 func TestICPhraseKeyBinds(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ICPhraseBinds() != nil {
+	if p.Load().ICPhraseBinds() != nil {
 		t.Error("no IC-phrase binds by default")
 	}
 	p.SetICPhraseKey("E", "Happy Pride Month") // key lowercased on store
 	p.SetICPhraseKey("q", "Objection!")
-	if b := p.ICPhraseBinds(); b["e"] != "Happy Pride Month" || b["q"] != "Objection!" {
+	if b := p.Load().ICPhraseBinds(); b["e"] != "Happy Pride Month" || b["q"] != "Objection!" {
 		t.Fatalf("binds = %v, want e->phrase q->Objection!", b)
 	}
 	p.SetICPhraseKey("e", "") // an empty phrase clears the bind
-	if p.ICPhraseBinds()["e"] != "" {
+	if p.Load().ICPhraseBinds()["e"] != "" {
 		t.Error("empty phrase should clear the e bind")
 	}
 
@@ -1553,7 +1553,7 @@ func TestICPhraseKeyBinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := r.ICPhraseBinds()["f1"]; got != "Take that!" {
+	if got := r.Load().ICPhraseBinds()["f1"]; got != "Take that!" {
 		t.Errorf("IC-phrase bind lost across save/load: f1 = %q, want Take that!", got)
 	}
 }
@@ -1574,7 +1574,7 @@ func TestMutedSFX(t *testing.T) {
 	if p.MuteSFX("sfx-stab") {
 		t.Error("re-muting the same SFX must be a no-op")
 	}
-	if l := p.MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
+	if l := p.Load().MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
 		t.Fatalf("list = %v, want [sfx-stab]", l)
 	}
 	if !p.UnmuteSFX("sfx-stab") || p.IsSFXMuted("sfx-stab") {
@@ -1615,7 +1615,7 @@ func TestSfxFavorites(t *testing.T) {
 	if !p.IsSfxFavorite("sfx-stab") || !p.IsSfxFavorite("SFX-STAB") {
 		t.Error("a starred SFX should match case-insensitively")
 	}
-	if l := p.SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
+	if l := p.Load().SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
 		t.Fatalf("list = %v, want [sfx-stab]", l)
 	}
 	if p.ToggleSfxFavorite("sfx-stab") { // toggling again unstars; reports false
@@ -1650,7 +1650,7 @@ func TestSfxFavoritesRoundTrip(t *testing.T) {
 // deduped case-insensitively), remove a seeded default, and the cap.
 func TestModReasonTemplates(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	def := p.ModReasonTemplatesList()
+	def := p.Load().ModReasonTemplatesList()
 	if len(def) == 0 {
 		t.Fatal("an unset list must return the built-in defaults")
 	}
@@ -1660,14 +1660,14 @@ func TestModReasonTemplates(t *testing.T) {
 	if p.AddModReasonTemplate("metagaming") { // case-insensitive duplicate
 		t.Error("dup add must be a no-op")
 	}
-	list := p.ModReasonTemplatesList()
+	list := p.Load().ModReasonTemplatesList()
 	if len(list) != len(def)+1 || list[len(list)-1] != "Metagaming" {
 		t.Errorf("after add = %v, want the defaults + Metagaming", list)
 	}
 	if !p.RemoveModReasonTemplate("spam") { // case-insensitive remove of the "Spam" default
 		t.Error("removing a seeded default should work")
 	}
-	for _, s := range p.ModReasonTemplatesList() {
+	for _, s := range p.Load().ModReasonTemplatesList() {
 		if s == "Spam" {
 			t.Error("Spam should be gone after removal")
 		}
@@ -1676,8 +1676,8 @@ func TestModReasonTemplates(t *testing.T) {
 	for i := 0; i < modReasonTemplatesCap+10; i++ {
 		p.AddModReasonTemplate("r" + strconv.Itoa(i))
 	}
-	if len(p.ModReasonTemplatesList()) > modReasonTemplatesCap {
-		t.Errorf("list grew to %d, want capped at %d", len(p.ModReasonTemplatesList()), modReasonTemplatesCap)
+	if len(p.Load().ModReasonTemplatesList()) > modReasonTemplatesCap {
+		t.Errorf("list grew to %d, want capped at %d", len(p.Load().ModReasonTemplatesList()), modReasonTemplatesCap)
 	}
 }
 
@@ -1920,7 +1920,7 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.Load().MotionRedrawPerEvent {
 		t.Error("nuke must restore per-event motion redraw to its default ON")
 	}
-	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
+	if got := p.Load().ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
 	}
 }
@@ -1934,7 +1934,7 @@ func TestModDurations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if got := p.ModDurationsList(); len(got) != 0 {
+	if got := p.Load().ModDurationsList(); len(got) != 0 {
 		t.Fatalf("a fresh config must have no custom durations, got %v", got)
 	}
 	if !p.AddModDuration("45m") {
@@ -1947,7 +1947,7 @@ func TestModDurations(t *testing.T) {
 		t.Error("blank add must be a no-op")
 	}
 	p.AddModDuration("2d")
-	if got := p.ModDurationsList(); len(got) != 2 || got[0] != "45m" || got[1] != "2d" {
+	if got := p.Load().ModDurationsList(); len(got) != 2 || got[0] != "45m" || got[1] != "2d" {
 		t.Errorf("after adds = %v, want [45m 2d]", got)
 	}
 	if !p.RemoveModDuration("45m") {
@@ -1959,7 +1959,7 @@ func TestModDurations(t *testing.T) {
 	for i := 0; i < modDurationsCap+10; i++ {
 		p.AddModDuration(strconv.Itoa(i+1) + "h")
 	}
-	if n := len(p.ModDurationsList()); n > modDurationsCap {
+	if n := len(p.Load().ModDurationsList()); n > modDurationsCap {
 		t.Errorf("list grew to %d, want capped at %d", n, modDurationsCap)
 	}
 	if err := p.Close(); err != nil {
@@ -1969,7 +1969,7 @@ func TestModDurations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ModDurationsList(); len(got) == 0 || got[0] != "2d" {
+	if got := q.Load().ModDurationsList(); len(got) == 0 || got[0] != "2d" {
 		t.Errorf("custom durations lost across save/load: %v", got)
 	}
 }
@@ -1990,7 +1990,7 @@ func TestModReasonTemplatesRoundTrip(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	found := false
-	for _, s := range q.ModReasonTemplatesList() {
+	for _, s := range q.Load().ModReasonTemplatesList() {
 		if s == "Metagaming" {
 			found = true
 		}
@@ -2047,7 +2047,7 @@ func TestBlipVolume(t *testing.T) {
 	if v := p.BlipVolumeFor("phoenix"); v != 100 {
 		t.Errorf("clamped-high = %d, want 100", v)
 	}
-	if vols := p.BlipVolumes(); len(vols) != 0 {
+	if vols := p.Load().BlipVolumes(); len(vols) != 0 {
 		t.Errorf("resetting to 100 should clear the entry, got %v", vols)
 	}
 	if !p.SetBlipVolume("edgeworth", -5) { // clamps to 0
@@ -2113,7 +2113,7 @@ func TestClearLearnedType(t *testing.T) {
 	p.RecordLearned("h.example", TypeDeskOverlay, ExtPNG)
 	p.RecordLearned("h.example", TypeBackground, ExtPNG)
 	p.ClearLearnedType(TypeDeskOverlay)
-	snap := p.LearnedSnapshot()
+	snap := p.Load().LearnedSnapshot()
 	if _, ok := snap[LearnedKey("h.example", TypeDeskOverlay)]; ok {
 		t.Error("ClearLearnedType(DeskOverlay) must drop desk learned entries")
 	}
@@ -2218,7 +2218,7 @@ func TestShownamePresets(t *testing.T) {
 	if p.AddShownamePreset("phoenix") { // case-insensitive duplicate
 		t.Error("duplicate AddShownamePreset must not change")
 	}
-	if got := p.ShownameList(); len(got) != 2 {
+	if got := p.Load().ShownameList(); len(got) != 2 {
 		t.Fatalf("ShownameList = %v, want 2", got)
 	}
 	if !p.RemoveShownamePreset("Phoenix") {
@@ -2231,7 +2231,7 @@ func TestShownamePresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ShownameList(); len(got) != 1 || got[0] != "Edgeworth" {
+	if got := q.Load().ShownameList(); len(got) != 1 || got[0] != "Edgeworth" {
 		t.Errorf("after reload: ShownameList = %v, want [Edgeworth]", got)
 	}
 }

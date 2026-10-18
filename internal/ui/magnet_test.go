@@ -79,7 +79,7 @@ func TestLivePanelDragPersistsSnappedRect(t *testing.T) {
 
 	// The persisted rect must reflect the SNAPPED X (siblingX / w), not the raw one.
 	wantFracX := float64(siblingX) / float64(w)
-	got := a.d.Prefs.ClassicLayoutOverrides()[slotMessages]
+	got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotMessages]
 	if got[0] != wantFracX {
 		t.Errorf("persisted frac X = %v, want the snapped %v (raw drop was %v)",
 			got[0], wantFracX, float64(siblingX+4)/float64(w))

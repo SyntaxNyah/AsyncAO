@@ -123,7 +123,7 @@ var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 // the block. Shared by the single and bulk boxes so the list and behaviour can't drift apart.
 func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 	c := a.ctx
-	tpls := a.d.Prefs.ModReasonTemplatesList()
+	tpls := a.d.Prefs.Load().ModReasonTemplatesList()
 	editing := manage && a.modTemplatesEdit
 	tx := x
 	for _, tpl := range tpls {
@@ -200,7 +200,7 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 		})
 	}
 	editing := manage && a.modDurEdit
-	for _, token := range a.d.Prefs.ModDurationsList() {
+	for _, token := range a.d.Prefs.Load().ModDurationsList() {
 		token := token
 		label := courtroom.BanDurationTokenLabel(token)
 		if editing {
