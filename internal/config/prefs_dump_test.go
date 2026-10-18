@@ -132,6 +132,25 @@ func TestPrefsDump(t *testing.T) {
 	t.Logf("wrote %d sections to %s", len(names), outPath)
 }
 
+// TestRealPrefsDump prints the same per-section SHA-256 (via prefsDumpLine) for ONE real
+// prefs file named by REAL_PREFS. Only hashes are written, never file contents, and the
+// file is never written back (prefsDumpLine loads a temp copy). Run it at the baseline and
+// at the tip and diff the two lines.
+//
+//	REAL_PREFS=/path/to/prefs.json go test ./internal/config -run TestRealPrefsDump -v
+func TestRealPrefsDump(t *testing.T) {
+	path := os.Getenv("REAL_PREFS")
+	if path == "" {
+		t.Skip("set REAL_PREFS=<file> to print the per-section SHA-256 for one real prefs file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	fmt.Printf("path=%s\n", path)
+	fmt.Println(prefsDumpLine(raw))
+}
+
 func prefsDumpReadJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
