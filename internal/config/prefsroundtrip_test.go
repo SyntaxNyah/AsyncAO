@@ -205,8 +205,8 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 func TestPanelFontsRoundTrip(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if len(p.PanelFonts()) != 0 {
-		t.Fatalf("a fresh install has overrides: %v", p.PanelFonts())
+	if len(p.Load().PanelFonts()) != 0 {
+		t.Fatalf("a fresh install has overrides: %v", p.Load().PanelFonts())
 	}
 	p.SetPanelFont("ic_chatlog", PanelFont{Family: "  Comic Sans MS  ", SizePx: 18})
 	p.SetPanelFont("music_list", PanelFont{SizePx: 22}) // size only
@@ -234,19 +234,19 @@ func TestPanelFontsClearRemovesTheKey(t *testing.T) {
 	p := loadPrefs(t, path)
 	p.SetPanelFont("ic_chatlog", PanelFont{Family: "Arial", SizePx: 14})
 	p.SetPanelFont("ic_chatlog", PanelFont{}) // the user emptied both boxes
-	if got := p.PanelFonts(); len(got) != 0 {
+	if got := p.Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("an emptied override was stored as a zero value: %v", got)
 	}
 	p.SetPanelFont("music_list", PanelFont{SizePx: 20})
 	p.SetPanelFont("area_list", PanelFont{SizePx: 20})
 	p.ClearPanelFonts()
-	if got := p.PanelFonts(); len(got) != 0 {
+	if got := p.Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("ClearPanelFonts left %v — it is the way out of a font you cannot read", got)
 	}
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).PanelFonts(); len(got) != 0 {
+	if got := loadPrefs(t, path).Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("cleared overrides came back after a reload: %v", got)
 	}
 }
@@ -294,13 +294,13 @@ func TestPanelFontsAreBounded(t *testing.T) {
 func TestPanelFontsHandsOutACopy(t *testing.T) {
 	p := loadPrefs(t, tempPrefsPath(t))
 	p.SetPanelFont("ic_chatlog", PanelFont{SizePx: 14})
-	got := p.PanelFonts()
+	got := p.Load().PanelFonts()
 	got["ic_chatlog"] = PanelFont{SizePx: 99}
 	got["injected"] = PanelFont{SizePx: 99}
 	if p.PanelFontFor("ic_chatlog").SizePx != 14 {
 		t.Error("mutating the returned map reached the live preferences")
 	}
-	if _, ok := p.PanelFonts()["injected"]; ok {
+	if _, ok := p.Load().PanelFonts()["injected"]; ok {
 		t.Error("a key added to the returned map reached the live preferences")
 	}
 }

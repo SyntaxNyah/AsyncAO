@@ -65,7 +65,7 @@ func TestManifestSeedLearned(t *testing.T) {
 	if n := m.SeedLearned(prefs, host); n != 5 {
 		t.Fatalf("seeded %d, want 5 (desks follow by default, misc never)", n)
 	}
-	snap := prefs.LearnedSnapshot()
+	snap := prefs.Load().LearnedSnapshot()
 	// The emote class declares TWO formats, so sprites and shout bubbles must
 	// carry both — .webp first (probed), .gif behind it (the recovery ladder).
 	checks := map[string][]string{
@@ -113,7 +113,7 @@ func TestManifestSeedLearned(t *testing.T) {
 	if n := m.SeedLearned(prefs, host); n != 4 {
 		t.Fatalf("seeded %d with the WebP pin on, want 4 (desk exempt)", n)
 	}
-	if got, ok := prefs.LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
+	if got, ok := prefs.Load().LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
 		t.Errorf("DeskOverlay seeded from the manifest despite the WebP pin: %v", got)
 	}
 }
@@ -145,7 +145,7 @@ func TestManifestSeedLearnedAudio(t *testing.T) {
 	if n := m.SeedLearned(prefs, host); n != 2 {
 		t.Fatalf("seeded %d, want 2 (sfx + blip only; image classes absent)", n)
 	}
-	snap := prefs.LearnedSnapshot()
+	snap := prefs.Load().LearnedSnapshot()
 	if got := snap[config.LearnedKey(host, config.TypeSFX)]; len(got) != 2 || got[0] != config.ExtOpus || got[1] != config.ExtOgg {
 		t.Errorf("learned[SFX] = %v, want [.opus .ogg]", got)
 	}

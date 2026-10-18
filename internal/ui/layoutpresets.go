@@ -21,7 +21,7 @@ const (
 // chip's cycle position is deterministic across draws. Off the hot frame (editor
 // banner only), so the allocation is fine.
 func (a *App) sortedLayoutProfileNames() []string {
-	names := a.d.Prefs.LayoutProfileNames()
+	names := a.d.Prefs.Load().LayoutProfileNames()
 	sort.Strings(names)
 	return names
 }
@@ -30,7 +30,7 @@ func (a *App) sortedLayoutProfileNames() []string {
 // banner Profile chip only draws (and only accepts a click) when true, so it's
 // never a dead control. Editor path only.
 func (a *App) hasLayoutProfiles() bool {
-	return len(a.d.Prefs.LayoutProfileNames()) > 0
+	return len(a.d.Prefs.Load().LayoutProfileNames()) > 0
 }
 
 // currentLayoutProfileLabel is the Profile chip's label: "Profile: <name>" once
@@ -120,7 +120,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// Rotations (A4, wholesale like the anchors). Seed the live App map from the
 	// durable snapshot so live and persisted read the same sanitized source.
 	a.d.Prefs.SetClassicRotations(p.Rotations)
-	a.classicRot = a.d.Prefs.ClassicRotationSnapshot()
+	a.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()
 	// Hidden-chrome set — durable + the live map (mirror applyPrefsToState). Rebuild
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and

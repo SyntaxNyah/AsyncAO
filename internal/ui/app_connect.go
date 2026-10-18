@@ -569,9 +569,9 @@ func (a *App) effectiveShowname() string {
 // rebuilt only when the preset count changes, so the per-frame chat row reads a
 // cached slice instead of copying the preset list every draw.
 func (a *App) ensureNameOpts() {
-	if n := a.d.Prefs.ShownameCount(); a.nameOpts == nil || n != a.nameOptsLen {
+	if n := a.d.Prefs.Load().ShownameCount(); a.nameOpts == nil || n != a.nameOptsLen {
 		a.nameOptsLen = n
-		a.nameOpts = append([]string{"▾"}, a.d.Prefs.ShownameList()...)
+		a.nameOpts = append([]string{"▾"}, a.d.Prefs.Load().ShownameList()...)
 	}
 }
 

@@ -342,7 +342,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; !ok {
 		t.Fatalf("persist did not write the torn slot into classicOv")
 	}
-	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
+	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
 		t.Fatalf("persist did not write the torn slot to prefs")
 	}
 
@@ -373,7 +373,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; ok {
 		t.Fatalf("reattach left the slot in classicOv")
 	}
-	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
+	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
 		t.Fatalf("reattach left the slot in prefs")
 	}
 	a.extrasTornRebuilt = false

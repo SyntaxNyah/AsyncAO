@@ -354,7 +354,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	}
 	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
-	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
+	bh += 22 + 28 + int32(a.d.Prefs.Load().StylePresetCount())*26
 	bh += styleBoxPad
 	bw := styleBoxW
 	if a.styleBoxUserW > 0 {

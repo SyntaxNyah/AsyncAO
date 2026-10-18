@@ -75,7 +75,7 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 	y += 28
 	const bindW, delW = int32(48), int32(22)
 	applyW := w - bindW - delW - 8
-	for i, pr := range a.d.Prefs.StylePresets() {
+	for i, pr := range a.d.Prefs.Load().StylePresets() {
 		if c.Button(sdl.Rect{X: x, Y: y, W: applyW, H: 22}, pr.Name) {
 			a.applyStylePreset(pr)
 		}
@@ -110,7 +110,7 @@ func (a *App) pollStylePresetBind() {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	for i, pr := range a.d.Prefs.StylePresets() {
+	for i, pr := range a.d.Prefs.Load().StylePresets() {
 		if pr.Name == a.stylePresetBindFor {
 			a.d.Prefs.SetStylePresetKey(i, key)
 			a.pushDebug(fmt.Sprintf("key %q now applies style %q", key, pr.Name))

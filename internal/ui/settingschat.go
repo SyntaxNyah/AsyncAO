@@ -440,7 +440,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// prefix shorthand. Kept to one dim line so the manager layout is unchanged.
 	c.Label(pad+130, y, "Matched as whole words — add a trailing * for a loose prefix (e.g. obj* catches \"objection\").", ColTextDim)
 	y += 22
-	if words := a.d.Prefs.CallWords(); len(words) > 0 {
+	if words := a.d.Prefs.Load().CallWords(); len(words) > 0 {
 		for _, w := range words {
 			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
 				a.d.Prefs.RemoveCallWord(w)
@@ -694,7 +694,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		c.Label(pad, y+2, "Per-SFX mute: the last emote sound effect you hear gets a one-click Mute button here.", ColTextDim)
 		y += 26
 	}
-	if list := a.d.Prefs.MutedSFXList(); len(list) > 0 {
+	if list := a.d.Prefs.Load().MutedSFXList(); len(list) > 0 {
 		c.Label(pad, y+2, "Muted sound effects (× to unmute):", ColTextDim)
 		y += 22
 		for _, name := range list {
@@ -723,7 +723,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		c.Label(pad+12, y+1, "The last character to speak gets a quick slider here.", ColTextDim)
 		y += 24
 	}
-	if vols := a.d.Prefs.BlipVolumes(); len(vols) > 0 {
+	if vols := a.d.Prefs.Load().BlipVolumes(); len(vols) > 0 {
 		names := make([]string, 0, len(vols))
 		for name := range vols {
 			names = append(names, name)
@@ -779,7 +779,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 			}
 		}
 		y += fieldH + 6
-		for _, h := range a.d.Prefs.MusicHostList() {
+		for _, h := range a.d.Prefs.Load().MusicHostList() {
 			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
 				a.d.Prefs.RemoveMusicHost(h)
 			}

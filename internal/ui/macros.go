@@ -161,7 +161,7 @@ func (a *App) handleMacroKeys() bool {
 		return false
 	}
 	key := strings.ToLower(sdl.GetKeyName(k))
-	for _, m := range a.d.Prefs.Macros() {
+	for _, m := range a.d.Prefs.Load().Macros() {
 		if m.Key != "" && m.Key == key {
 			a.runMacro(m)
 			return true
@@ -370,7 +370,7 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	_ = w // laid out by formX/formW; w param kept for the call signature
-	macros := a.d.Prefs.Macros()
+	macros := a.d.Prefs.Load().Macros()
 	c.Label(pad, y+4, fmt.Sprintf("Macros (%d/%d) — chain OOC commands with %q and fire the whole chain from one key:", len(macros), config.MacroCap, macroLineSeparator), ColText)
 	y += 26
 

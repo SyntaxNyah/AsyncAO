@@ -19,7 +19,7 @@ import (
 // refreshICPhraseKeys re-reads the global key→IC-phrase binds into the per-frame
 // lookup cache (connect + bind edits only, never per frame).
 func (a *App) refreshICPhraseKeys() {
-	a.icPhraseKeys = a.d.Prefs.ICPhraseBinds()
+	a.icPhraseKeys = a.d.Prefs.Load().ICPhraseBinds()
 }
 
 // handleICPhraseKeys sends a bound IC phrase on Alt+<bound key> in the courtroom
@@ -86,7 +86,7 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	_ = w // laid out by formX/formW; w param kept for the call signature
-	binds := a.d.Prefs.ICPhraseBinds()
+	binds := a.d.Prefs.Load().ICPhraseBinds()
 	c.Label(pad, y+4, fmt.Sprintf("IC quick-phrases (%d) — a bound key makes your CHARACTER say the line in IC:", len(binds)), ColText)
 	y += 26
 

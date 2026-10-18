@@ -549,7 +549,7 @@ func (a *App) icFieldTailReserve(counterOn bool) int32 {
 // Ctrl+H hotkey). It sets the in-courtroom override, which effectiveShowname
 // reads, so the next message carries it.
 func (a *App) randomShowname() {
-	presets := a.d.Prefs.ShownameList()
+	presets := a.d.Prefs.Load().ShownameList()
 	if len(presets) == 0 {
 		a.warnLine = "No showname presets saved — add some in Settings → General"
 		a.warnAt = a.now()
@@ -563,7 +563,7 @@ func (a *App) randomShowname() {
 // cycleShowname swaps the active showname to the NEXT saved preset (Ctrl+B),
 // wrapping around — a quick in-courtroom flip through your shownames.
 func (a *App) cycleShowname() {
-	presets := a.d.Prefs.ShownameList()
+	presets := a.d.Prefs.Load().ShownameList()
 	if len(presets) == 0 {
 		a.warnLine = "No showname presets saved — add some in Settings → General"
 		a.warnAt = a.now()

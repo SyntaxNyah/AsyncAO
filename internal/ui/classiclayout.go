@@ -150,9 +150,9 @@ func (a *App) ensureClassicOv() {
 	if a.classicOvLoaded {
 		return
 	}
-	a.classicOv = a.d.Prefs.ClassicLayoutOverrides()
-	a.classicAnchor = parseAnchors(a.d.Prefs.ClassicAnchorSnapshot()) // window pins ride alongside
-	a.classicRot = a.d.Prefs.ClassicRotationSnapshot()                // rotations ride alongside too (A4)
+	a.classicOv = a.d.Prefs.Load().ClassicLayoutOverrides()
+	a.classicAnchor = parseAnchors(a.d.Prefs.Load().ClassicAnchorSnapshot()) // window pins ride alongside
+	a.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()                // rotations ride alongside too (A4)
 	a.classicOvLoaded = true
 }
 

@@ -22,7 +22,7 @@ func TestFavoritesExportImportRoundTrip(t *testing.T) {
 	if n != 1 { // only Cafe is new; Home dedups by URL
 		t.Errorf("merged new count = %d, want 1 (Cafe; Home dedups by URL)", n)
 	}
-	if got := len(q.FavoriteServers()); got != 2 {
+	if got := len(q.Load().FavoriteServers()); got != 2 {
 		t.Errorf("favorites after merge = %d, want 2", got)
 	}
 	if !q.IsFavorite("wss://cafe:2096") {
@@ -47,7 +47,7 @@ func TestUpdateFavorite(t *testing.T) {
 	if !p.UpdateFavorite("wss://cafe:2096", "Café", "wss://cafe:2096", "coffee") {
 		t.Fatal("rename should succeed")
 	}
-	favs := p.FavoriteServers()
+	favs := p.Load().FavoriteServers()
 	if favs[1].Name != "Café" || favs[1].URL != "wss://cafe:2096" || favs[1].Description != "coffee" {
 		t.Errorf("after rename: %+v, want Name=Café URL=wss://cafe:2096 Description=coffee", favs[1])
 	}
@@ -66,7 +66,7 @@ func TestUpdateFavorite(t *testing.T) {
 	if !p.IsFavorite("wss://bistro:2096") {
 		t.Error("new address should be a favorite after re-address")
 	}
-	if favs = p.FavoriteServers(); favs[1].URL != "wss://bistro:2096" {
+	if favs = p.Load().FavoriteServers(); favs[1].URL != "wss://bistro:2096" {
 		t.Errorf("re-addressed entry should stay at index 1, got %+v", favs)
 	}
 
@@ -74,7 +74,7 @@ func TestUpdateFavorite(t *testing.T) {
 	if p.UpdateFavorite("wss://work:2096", "Work", "wss://home:2096", "office") {
 		t.Error("collision with another favorite's URL should be rejected")
 	}
-	favs = p.FavoriteServers()
+	favs = p.Load().FavoriteServers()
 	if favs[0].URL != "wss://home:2096" || favs[2].URL != "wss://work:2096" {
 		t.Errorf("rejected collision must not mutate any entry, got %+v", favs)
 	}

@@ -2152,20 +2152,18 @@ func sanitizeStylePresets(in []StylePreset) []StylePreset {
 
 // StylePresetCount returns how many presets are saved (no allocation â€” for the Style box's
 // per-frame height calc).
-func (p *AssetPreferences) StylePresetCount() int {
-	snap := p.Load()
+func (s *Settings) StylePresetCount() int {
 
-	return len(snap.SavedStyles)
+	return len(s.SavedStyles)
 }
 
 // StylePresets returns a copy of the saved presets (so a caller can't mutate the live slice).
-func (p *AssetPreferences) StylePresets() []StylePreset {
-	snap := p.Load()
+func (s *Settings) StylePresets() []StylePreset {
 
-	if len(snap.SavedStyles) == 0 {
+	if len(s.SavedStyles) == 0 {
 		return nil
 	}
-	return append([]StylePreset(nil), snap.SavedStyles...)
+	return append([]StylePreset(nil), s.SavedStyles...)
 }
 
 // AddStylePreset appends a preset (its opacity clamped), ignoring a blank name or a list at
@@ -2397,14 +2395,13 @@ func (p *AssetPreferences) ClearFontWarnThemes() {
 // caller reads it off the render thread and the saver marshals the original
 // under its own lock â€” handing out the live map would be a data race the
 // -race build would only catch on an unlucky interleaving.
-func (p *AssetPreferences) PanelFonts() map[string]PanelFont {
-	snap := p.Load()
+func (s *Settings) PanelFonts() map[string]PanelFont {
 
-	if len(snap.PanelFontsVal) == 0 {
+	if len(s.PanelFontsVal) == 0 {
 		return nil
 	}
-	out := make(map[string]PanelFont, len(snap.PanelFontsVal))
-	for k, v := range snap.PanelFontsVal {
+	out := make(map[string]PanelFont, len(s.PanelFontsVal))
+	for k, v := range s.PanelFontsVal {
 		out[k] = v
 	}
 	return out
@@ -2904,10 +2901,9 @@ func (p *AssetPreferences) SetChromeShapeTier(tier int) {
 const callWordCap = 32
 
 // CallWords reports the highlight words (lowercased on save).
-func (p *AssetPreferences) CallWords() []string {
-	snap := p.Load()
+func (s *Settings) CallWords() []string {
 
-	return cloneStrings(snap.CallWordList)
+	return cloneStrings(s.CallWordList)
 }
 
 // SetCallWords replaces the highlight list (entries lowercased, capped).
@@ -3267,11 +3263,10 @@ func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo))
 // --- Hidden UI panels ---------------------------------------------------------------
 
 // HiddenPanels reports the courtroom chrome regions the user hid.
-func (p *AssetPreferences) HiddenPanels() []string {
-	snap := p.Load()
+func (s *Settings) HiddenPanels() []string {
 
-	out := make([]string, len(snap.HiddenPanelIDs))
-	copy(out, snap.HiddenPanelIDs)
+	out := make([]string, len(s.HiddenPanelIDs))
+	copy(out, s.HiddenPanelIDs)
 	return out
 }
 
@@ -4063,14 +4058,13 @@ func (p *AssetPreferences) MusicFlags() int {
 }
 
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
-func (p *AssetPreferences) OpenTabList() []OpenTab {
-	snap := p.Load()
+func (s *Settings) OpenTabList() []OpenTab {
 
-	if len(snap.OpenTabs) == 0 {
+	if len(s.OpenTabs) == 0 {
 		return nil
 	}
-	out := make([]OpenTab, len(snap.OpenTabs))
-	copy(out, snap.OpenTabs)
+	out := make([]OpenTab, len(s.OpenTabs))
+	copy(out, s.OpenTabs)
 	return out
 }
 
@@ -5153,14 +5147,13 @@ func sanitizeLayoutProfiles(in map[string]LayoutProfile) map[string]LayoutProfil
 
 // LayoutProfileNames returns the saved full-state profile names (A6). Order is
 // unspecified â€” the UI sorts for display.
-func (p *AssetPreferences) LayoutProfileNames() []string {
-	snap := p.Load()
+func (s *Settings) LayoutProfileNames() []string {
 
-	if len(snap.LayoutProfiles) == 0 {
+	if len(s.LayoutProfiles) == 0 {
 		return nil
 	}
-	names := make([]string, 0, len(snap.LayoutProfiles))
-	for k := range snap.LayoutProfiles {
+	names := make([]string, 0, len(s.LayoutProfiles))
+	for k := range s.LayoutProfiles {
 		names = append(names, k)
 	}
 	return names
@@ -5245,14 +5238,13 @@ func (p *AssetPreferences) DeleteLayoutProfile(name string) {
 // ClassicLayoutOverrides returns a sanitized copy of the default-courtroom slot
 // overrides (window fractions). The classic-layout editor snapshots this once
 // into an App-local map so the render path reads it lock-free.
-func (p *AssetPreferences) ClassicLayoutOverrides() map[string][4]float64 {
-	snap := p.Load()
+func (s *Settings) ClassicLayoutOverrides() map[string][4]float64 {
 
-	if len(snap.ClassicLayout) == 0 {
+	if len(s.ClassicLayout) == 0 {
 		return nil
 	}
-	out := make(map[string][4]float64, len(snap.ClassicLayout))
-	for k, v := range snap.ClassicLayout {
+	out := make(map[string][4]float64, len(s.ClassicLayout))
+	for k, v := range s.ClassicLayout {
 		out[k] = v
 	}
 	return out
@@ -5360,14 +5352,13 @@ func sanitizeClassicAnchors(in map[string]ClassicAnchor) map[string]ClassicAncho
 // ClassicAnchorSnapshot returns a copy of the per-slot window pins â€” the
 // classic editor snapshots it once alongside ClassicLayoutOverrides so the
 // render path resolves anchors lock-free.
-func (p *AssetPreferences) ClassicAnchorSnapshot() map[string]ClassicAnchor {
-	snap := p.Load()
+func (s *Settings) ClassicAnchorSnapshot() map[string]ClassicAnchor {
 
-	if len(snap.ClassicAnchors) == 0 {
+	if len(s.ClassicAnchors) == 0 {
 		return nil
 	}
-	out := make(map[string]ClassicAnchor, len(snap.ClassicAnchors))
-	for k, v := range snap.ClassicAnchors {
+	out := make(map[string]ClassicAnchor, len(s.ClassicAnchors))
+	for k, v := range s.ClassicAnchors {
 		out[k] = v
 	}
 	return out
@@ -5473,14 +5464,13 @@ func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 // ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) â€”
 // the classic editor snapshots it once into an App-local map (beside the anchor
 // snapshot) so the render path resolves angles lock-free.
-func (p *AssetPreferences) ClassicRotationSnapshot() map[string]uint8 {
-	snap := p.Load()
+func (s *Settings) ClassicRotationSnapshot() map[string]uint8 {
 
-	if len(snap.ClassicRotations) == 0 {
+	if len(s.ClassicRotations) == 0 {
 		return nil
 	}
-	out := make(map[string]uint8, len(snap.ClassicRotations))
-	for k, v := range snap.ClassicRotations {
+	out := make(map[string]uint8, len(s.ClassicRotations))
+	for k, v := range s.ClassicRotations {
 		out[k] = v
 	}
 	return out
@@ -5525,12 +5515,11 @@ func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
 }
 
 // Macros returns a copy of the user macro list.
-func (p *AssetPreferences) Macros() []MacroSpec {
-	snap := p.Load()
+func (s *Settings) Macros() []MacroSpec {
 
-	out := make([]MacroSpec, len(snap.UserMacros))
-	for i := range snap.UserMacros {
-		out[i] = snapCloneMacroSpec(snap.UserMacros[i])
+	out := make([]MacroSpec, len(s.UserMacros))
+	for i := range s.UserMacros {
+		out[i] = snapCloneMacroSpec(s.UserMacros[i])
 	}
 	return out
 }
@@ -5605,7 +5594,7 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 // ExportLearnedJSON snapshots the learned-format table as indented JSON â€”
 // one player's warm state can seed another's (Settings â†’ Export).
 func (p *AssetPreferences) ExportLearnedJSON() ([]byte, error) {
-	return json.MarshalIndent(p.LearnedSnapshot(), "", jsonMarshalIndent)
+	return json.MarshalIndent(p.Load().LearnedSnapshot(), "", jsonMarshalIndent)
 }
 
 // ImportLearnedJSON merges a learned-format export into this table
@@ -5633,11 +5622,10 @@ func (p *AssetPreferences) ImportLearnedJSON(data []byte) (int, error) {
 
 // LearnedSnapshot returns a deep copy of the learned-format table, used to
 // warm the resolver's atomic snapshot at startup and on server connect.
-func (p *AssetPreferences) LearnedSnapshot() map[string][]string {
-	snap := p.Load()
+func (s *Settings) LearnedSnapshot() map[string][]string {
 
-	out := make(map[string][]string, len(snap.LearnedFormats))
-	for k, v := range snap.LearnedFormats {
+	out := make(map[string][]string, len(s.LearnedFormats))
+	for k, v := range s.LearnedFormats {
 		out[k] = cloneStrings(v)
 	}
 	return out
@@ -5760,11 +5748,10 @@ func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
 // --- Favorites -----------------------------------------------------------------
 
 // FavoriteServers returns the starred server list, in pin order.
-func (p *AssetPreferences) FavoriteServers() []FavoriteServer {
-	snap := p.Load()
+func (s *Settings) FavoriteServers() []FavoriteServer {
 
-	out := make([]FavoriteServer, len(snap.Favorites))
-	copy(out, snap.Favorites)
+	out := make([]FavoriteServer, len(s.Favorites))
+	copy(out, s.Favorites)
 	return out
 }
 
@@ -5849,7 +5836,7 @@ func (p *AssetPreferences) RemoveFavorite(url string) {
 
 // ExportFavoritesJSON marshals the phone book (favorites) as shareable JSON.
 func (p *AssetPreferences) ExportFavoritesJSON() ([]byte, error) {
-	return json.MarshalIndent(p.FavoriteServers(), jsonMarshalPrefix, jsonMarshalIndent)
+	return json.MarshalIndent(p.Load().FavoriteServers(), jsonMarshalPrefix, jsonMarshalIndent)
 }
 
 // MergeFavoritesJSON merges a shared phone book in (additive, dedup by URL) and
@@ -5889,24 +5876,22 @@ const ShownameCap = 64
 
 // ShownameList returns a copy of the saved showname presets (global, persisted â€”
 // cleared only by a full factory reset).
-func (p *AssetPreferences) ShownameList() []string {
-	snap := p.Load()
+func (s *Settings) ShownameList() []string {
 
-	if len(snap.ShownamePresets) == 0 {
+	if len(s.ShownamePresets) == 0 {
 		return nil
 	}
-	out := make([]string, len(snap.ShownamePresets))
-	copy(out, snap.ShownamePresets)
+	out := make([]string, len(s.ShownamePresets))
+	copy(out, s.ShownamePresets)
 	return out
 }
 
 // ShownameCount is the number of saved presets â€” a cheap, alloc-free length read
 // so the courtroom name picker caches its option list and rebuilds only when the
 // set changes (vs calling ShownameList, which copies, every frame).
-func (p *AssetPreferences) ShownameCount() int {
-	snap := p.Load()
+func (s *Settings) ShownameCount() int {
 
-	return len(snap.ShownamePresets)
+	return len(s.ShownamePresets)
 }
 
 // AddShownamePreset appends a showname to the saved presets (trimmed, deduped
@@ -5958,14 +5943,13 @@ const shownameKeyCap = 64
 
 // ShownameKeyBinds returns a copy of the global key â†’ showname bind map (M6:
 // press a bound key in the courtroom to swap to that showname). Nil = none.
-func (p *AssetPreferences) ShownameKeyBinds() map[string]string {
-	snap := p.Load()
+func (s *Settings) ShownameKeyBinds() map[string]string {
 
-	if len(snap.ShownameKeys) == 0 {
+	if len(s.ShownameKeys) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(snap.ShownameKeys))
-	for k, v := range snap.ShownameKeys {
+	out := make(map[string]string, len(s.ShownameKeys))
+	for k, v := range s.ShownameKeys {
 		out[k] = v
 	}
 	return out
@@ -5998,14 +5982,13 @@ const icPhraseKeyCap = 64
 
 // ICPhraseBinds returns a copy of the key â†’ IC-phrase map: press a bound key in
 // the courtroom to send that line as your character in IC. Nil = none.
-func (p *AssetPreferences) ICPhraseBinds() map[string]string {
-	snap := p.Load()
+func (s *Settings) ICPhraseBinds() map[string]string {
 
-	if len(snap.ICPhraseKeys) == 0 {
+	if len(s.ICPhraseKeys) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(snap.ICPhraseKeys))
-	for k, v := range snap.ICPhraseKeys {
+	out := make(map[string]string, len(s.ICPhraseKeys))
+	for k, v := range s.ICPhraseKeys {
 		out[k] = v
 	}
 	return out
@@ -6055,14 +6038,13 @@ func (p *AssetPreferences) IsSFXMuted(name string) bool {
 }
 
 // MutedSFXList returns a copy of the muted SFX names (global, persisted).
-func (p *AssetPreferences) MutedSFXList() []string {
-	snap := p.Load()
+func (s *Settings) MutedSFXList() []string {
 
-	if len(snap.MutedSFX) == 0 {
+	if len(s.MutedSFX) == 0 {
 		return nil
 	}
-	out := make([]string, len(snap.MutedSFX))
-	copy(out, snap.MutedSFX)
+	out := make([]string, len(s.MutedSFX))
+	copy(out, s.MutedSFX)
 	return out
 }
 
@@ -6111,14 +6093,13 @@ const sfxFavoritesCap = 128
 
 // SfxFavoritesList returns a copy of the starred SFX names (#12, global, persisted,
 // lowercased bare names resolved per-server by urls.SFX).
-func (p *AssetPreferences) SfxFavoritesList() []string {
-	snap := p.Load()
+func (s *Settings) SfxFavoritesList() []string {
 
-	if len(snap.SfxFavorites) == 0 {
+	if len(s.SfxFavorites) == 0 {
 		return nil
 	}
-	out := make([]string, len(snap.SfxFavorites))
-	copy(out, snap.SfxFavorites)
+	out := make([]string, len(s.SfxFavorites))
+	copy(out, s.SfxFavorites)
 	return out
 }
 
@@ -6174,13 +6155,12 @@ const modReasonTemplatesCap = 32
 // ModReasonTemplatesList returns the editable ban/kick reason chips (a clone). When the stored list
 // is empty it returns the built-in defaults â€” so a brand-new config (and a fully-cleared one) always
 // has something. Deleting every entry therefore re-seeds the defaults on next read, by design.
-func (p *AssetPreferences) ModReasonTemplatesList() []string {
-	snap := p.Load()
+func (s *Settings) ModReasonTemplatesList() []string {
 
-	if len(snap.ModReasonTemplates) == 0 {
+	if len(s.ModReasonTemplates) == 0 {
 		return cloneStrings(defaultModReasonTemplates)
 	}
-	return cloneStrings(snap.ModReasonTemplates)
+	return cloneStrings(s.ModReasonTemplates)
 }
 
 // seedModTemplates populates the stored list with the defaults if it's empty, so a
@@ -6222,10 +6202,9 @@ const modDurationsCap = 16
 // ModDurationsList returns the saved custom ban-duration chips (a clone) â€” canonical
 // short tokens ("45m", "2d"). Empty by default: the BanDuration enum presets are the
 // built-ins, customs only add to them.
-func (p *AssetPreferences) ModDurationsList() []string {
-	snap := p.Load()
+func (s *Settings) ModDurationsList() []string {
 
-	return cloneStrings(snap.ModDurations)
+	return cloneStrings(s.ModDurations)
 }
 
 // AddModDuration appends a custom duration chip (deduped, bounded). The caller
@@ -6312,14 +6291,13 @@ func (p *AssetPreferences) BlipVolumeFor(char string) int {
 
 // BlipVolumes returns a copy of the per-character blip-volume overrides
 // (lowercased char â†’ scale), for the settings UI. Nil when none are set.
-func (p *AssetPreferences) BlipVolumes() map[string]int {
-	snap := p.Load()
+func (s *Settings) BlipVolumes() map[string]int {
 
-	if len(snap.BlipVols) == 0 {
+	if len(s.BlipVols) == 0 {
 		return nil
 	}
-	out := make(map[string]int, len(snap.BlipVols))
-	for k, v := range snap.BlipVols {
+	out := make(map[string]int, len(s.BlipVols))
+	for k, v := range s.BlipVols {
 		out[k] = v
 	}
 	return out

@@ -210,7 +210,7 @@ func (a *App) setPanelHidden(id string, hide bool) {
 // predate the guard or carry a stranded pair.
 func (a *App) seedHiddenFromPrefs() {
 	a.hidden = map[string]bool{}
-	for _, id := range a.d.Prefs.HiddenPanels() {
+	for _, id := range a.d.Prefs.Load().HiddenPanels() {
 		a.hidden[id] = true
 	}
 	// Every mouse lifeline hidden at once — a saved set that predates the guard, a

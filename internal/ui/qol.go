@@ -1239,7 +1239,7 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	// "objection" / "objecting" (the deliberately-loose shorthand the raw match
 	// used to give for free) while "tif*" still won't hit "motif" — "tif" isn't a
 	// word start there. See callwordHit / containsWordPrefix below.
-	for _, w := range a.d.Prefs.CallWords() {
+	for _, w := range a.d.Prefs.Load().CallWords() {
 		if callwordHit(lower, w) {
 			a.callwordAlert("AsyncAO — callword", "Heard your callword: "+w)
 			return
