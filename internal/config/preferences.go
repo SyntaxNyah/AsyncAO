@@ -2263,21 +2263,28 @@ func (p *AssetPreferences) FormatOrder(typeName string) []string {
 // formats for that type on every host (the learned format may no longer be
 // first preference). No-op when the order is unchanged.
 func (p *AssetPreferences) SetFormatOrder(typeName string, order []string) {
-	p.mu.Lock()
-	tp := p.AssetTypes[typeName]
-	if slices.Equal(tp.FormatOrder, order) {
-		p.mu.Unlock()
-		return
+	changed := false
+	p.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[typeName]
+		if slices.Equal(tp.FormatOrder, order) {
+			return
+		}
+		tp.FormatOrder = cloneStrings(order)
+		if sn.AssetTypes == nil {
+			sn.AssetTypes = map[string]AssetTypePrefs{}
+		}
+		sn.AssetTypes[typeName] = tp
+		suffix := LearnedKeySeparator + typeName
+		for key := range sn.LearnedFormats {
+			if strings.HasSuffix(key, suffix) {
+				delete(sn.LearnedFormats, key)
+			}
+		}
+		changed = true
+	})
+	if changed {
+		p.formatGen.Add(1)
 	}
-	tp.FormatOrder = cloneStrings(order)
-	if p.AssetTypes == nil {
-		p.AssetTypes = map[string]AssetTypePrefs{}
-	}
-	p.AssetTypes[typeName] = tp
-	p.dropLearnedTypeLocked(typeName)
-	p.mu.Unlock()
-	p.formatGen.Add(1)
-	p.markDirty()
 }
 
 // ResetFormatOrder restores the built-in default order for a type and
@@ -2297,39 +2304,48 @@ func (p *AssetPreferences) TypeFallbacksEnabled(typeName string) bool {
 // SetTypeFallbacks toggles the legacy chain for one type and invalidates
 // learned formats for that type. No-op when unchanged.
 func (p *AssetPreferences) SetTypeFallbacks(typeName string, enabled bool) {
-	p.mu.Lock()
-	tp := p.AssetTypes[typeName]
-	if tp.FallbacksEnabled == enabled {
-		p.mu.Unlock()
-		return
+	changed := false
+	p.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[typeName]
+		if tp.FallbacksEnabled == enabled {
+			return
+		}
+		tp.FallbacksEnabled = enabled
+		if len(tp.FormatOrder) == 0 {
+			tp.FormatOrder = DefaultFormatOrder(typeName)
+		}
+		if sn.AssetTypes == nil {
+			sn.AssetTypes = map[string]AssetTypePrefs{}
+		}
+		sn.AssetTypes[typeName] = tp
+		suffix := LearnedKeySeparator + typeName
+		for key := range sn.LearnedFormats {
+			if strings.HasSuffix(key, suffix) {
+				delete(sn.LearnedFormats, key)
+			}
+		}
+		changed = true
+	})
+	if changed {
+		p.formatGen.Add(1)
 	}
-	tp.FallbacksEnabled = enabled
-	if len(tp.FormatOrder) == 0 {
-		tp.FormatOrder = DefaultFormatOrder(typeName)
-	}
-	if p.AssetTypes == nil {
-		p.AssetTypes = map[string]AssetTypePrefs{}
-	}
-	p.AssetTypes[typeName] = tp
-	p.dropLearnedTypeLocked(typeName)
-	p.mu.Unlock()
-	p.formatGen.Add(1)
-	p.markDirty()
 }
 
 // SetGlobalFallbacks toggles fallbacks for every type and invalidates all
 // learned formats (every type's effective probe list changed).
 func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
-	p.mu.Lock()
-	if p.GlobalFallbacksEnabled == enabled {
-		p.mu.Unlock()
-		return
+	changed := false
+	p.Update(func(sn *Settings) {
+		if sn.GlobalFallbacksEnabled == enabled {
+			return
+		}
+		sn.GlobalFallbacksEnabled = enabled
+		sn.LearnedFormats = map[string][]string{}
+		changed = true
+	})
+	if changed {
+		p.formatGen.Add(1)
 	}
-	p.GlobalFallbacksEnabled = enabled
-	p.LearnedFormats = map[string][]string{}
-	p.mu.Unlock()
-	p.formatGen.Add(1)
-	p.markDirty()
 }
 
 // --- Animation toggle -------------------------------------------------------
@@ -3129,24 +3145,24 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 	if pf.SizePx != 0 {
 		pf.SizePx = clampPercent(pf.SizePx, PanelFontMinPx, PanelFontMaxPx)
 	}
-	p.mu.Lock()
-	defer func() { p.markDirty(); p.mu.Unlock() }()
-	if pf.Family == "" && pf.SizePx == 0 {
-		delete(p.PanelFontsVal, id)
-		if len(p.PanelFontsVal) == 0 {
-			p.PanelFontsVal = nil
+	p.Update(func(sn *Settings) {
+		if pf.Family == "" && pf.SizePx == 0 {
+			delete(sn.PanelFontsVal, id)
+			if len(sn.PanelFontsVal) == 0 {
+				sn.PanelFontsVal = nil
+			}
+			return
 		}
-		return
-	}
-	if p.PanelFontsVal == nil {
-		p.PanelFontsVal = make(map[string]PanelFont, 4)
-	}
-	if len(p.PanelFontsVal) >= PanelFontMaxEntries {
-		if _, replacing := p.PanelFontsVal[id]; !replacing {
-			return // full, and this would be a new key
+		if sn.PanelFontsVal == nil {
+			sn.PanelFontsVal = make(map[string]PanelFont, 4)
 		}
-	}
-	p.PanelFontsVal[id] = pf
+		if len(sn.PanelFontsVal) >= PanelFontMaxEntries {
+			if _, replacing := sn.PanelFontsVal[id]; !replacing {
+				return // full, and this would be a new key
+			}
+		}
+		sn.PanelFontsVal[id] = pf
+	})
 }
 
 // ClearPanelFonts drops every per-panel override at once — the "put it all back"
@@ -4179,21 +4195,17 @@ func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo))
 	if key == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ServerWarm == nil {
-		p.ServerWarm = map[string]ServerWarmInfo{}
-	}
-	w, exists := p.ServerWarm[key]
-	if !exists && len(p.ServerWarm) >= serverWarmCap {
-		p.mu.Unlock()
-		return // table full; never unbounded
-	}
-	// ServerWarmInfo carries slices/maps now, so no cheap == skip: every
-	// remember marks dirty and the debounced saver coalesces the writes.
-	set(&w)
-	p.ServerWarm[key] = w
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ServerWarm == nil {
+			sn.ServerWarm = map[string]ServerWarmInfo{}
+		}
+		w, exists := sn.ServerWarm[key]
+		if !exists && len(sn.ServerWarm) >= serverWarmCap {
+			return // table full; never unbounded
+		}
+		set(&w)
+		sn.ServerWarm[key] = w
+	})
 }
 
 // --- Hidden UI panels ---------------------------------------------------------------
@@ -5876,17 +5888,16 @@ func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
 	if host == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ExtProfiles == nil {
-		p.ExtProfiles = map[string]string{}
-	}
-	if profileJSON == "" {
-		delete(p.ExtProfiles, host)
-	} else {
-		p.ExtProfiles[host] = profileJSON
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ExtProfiles == nil {
+			sn.ExtProfiles = map[string]string{}
+		}
+		if profileJSON == "" {
+			delete(sn.ExtProfiles, host)
+		} else {
+			sn.ExtProfiles[host] = profileJSON
+		}
+	})
 }
 
 // BlipTyping reports the chat-blip cadence: one blip per `rate` revealed letters
@@ -6037,26 +6048,23 @@ func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
 	if theme == "" || key == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ThemeRectOv == nil {
-		p.ThemeRectOv = map[string]map[string][4]int{}
-	}
-	m, ok := p.ThemeRectOv[theme]
-	if !ok {
-		if len(p.ThemeRectOv) >= themeOvThemesCap {
-			p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ThemeRectOv == nil {
+			sn.ThemeRectOv = map[string]map[string][4]int{}
+		}
+		m, ok := sn.ThemeRectOv[theme]
+		if !ok {
+			if len(sn.ThemeRectOv) >= themeOvThemesCap {
+				return
+			}
+			m = map[string][4]int{}
+			sn.ThemeRectOv[theme] = m
+		}
+		if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
 			return
 		}
-		m = map[string][4]int{}
-		p.ThemeRectOv[theme] = m
-	}
-	if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
-		p.mu.Unlock()
-		return
-	}
-	m[key] = r
-	p.markDirty()
-	p.mu.Unlock()
+		m[key] = r
+	})
 }
 
 // ClearThemeRectOverride drops one widget's edit (key "" = the whole
@@ -6116,26 +6124,23 @@ func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
 	if theme == "" || key == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ThemeRectRotations == nil {
-		p.ThemeRectRotations = map[string]map[string]uint8{}
-	}
-	m, ok := p.ThemeRectRotations[theme]
-	if !ok {
-		if len(p.ThemeRectRotations) >= themeOvThemesCap {
-			p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ThemeRectRotations == nil {
+			sn.ThemeRectRotations = map[string]map[string]uint8{}
+		}
+		m, ok := sn.ThemeRectRotations[theme]
+		if !ok {
+			if len(sn.ThemeRectRotations) >= themeOvThemesCap {
+				return
+			}
+			m = map[string]uint8{}
+			sn.ThemeRectRotations[theme] = m
+		}
+		if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
 			return
 		}
-		m = map[string]uint8{}
-		p.ThemeRectRotations[theme] = m
-	}
-	if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
-		p.mu.Unlock()
-		return
-	}
-	m[key] = deg
-	p.markDirty()
-	p.mu.Unlock()
+		m[key] = deg
+	})
 }
 
 // ClearThemeRectRotation drops one widget's rotation (key "" = the whole theme's
@@ -6971,17 +6976,15 @@ func (p *AssetPreferences) LayeredAssets() (layered bool, mounts []string) {
 // radio's three states map onto the two bools without ever persisting the
 // ambiguous both-set combination.
 func (p *AssetPreferences) SetLayeredAssets(layered bool) {
-	p.mu.Lock()
-	if p.LocalAssetsLayered == layered && !(layered && p.LocalAssetsEnabled) {
-		p.mu.Unlock()
-		return
-	}
-	p.LocalAssetsLayered = layered
-	if layered {
-		p.LocalAssetsEnabled = false // the radio is exclusive; keep the store unambiguous
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.LocalAssetsLayered == layered && !(layered && sn.LocalAssetsEnabled) {
+			return
+		}
+		sn.LocalAssetsLayered = layered
+		if layered {
+			sn.LocalAssetsEnabled = false // the radio is exclusive; keep the store unambiguous
+		}
+	})
 }
 
 // BaseMountsEqual reports whether want is exactly the mount list the asset
@@ -7251,23 +7254,19 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 	if key == "" {
 		return
 	}
-	p.mu.Lock()
-	if showname == "" {
-		delete(p.ShownameKeys, key)
-		p.markDirty()
-		p.mu.Unlock()
-		return
-	}
-	if p.ShownameKeys == nil {
-		p.ShownameKeys = map[string]string{}
-	}
-	if _, exists := p.ShownameKeys[key]; !exists && len(p.ShownameKeys) >= shownameKeyCap {
-		p.mu.Unlock()
-		return
-	}
-	p.ShownameKeys[key] = showname
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if showname == "" {
+			delete(sn.ShownameKeys, key)
+			return
+		}
+		if sn.ShownameKeys == nil {
+			sn.ShownameKeys = map[string]string{}
+		}
+		if _, exists := sn.ShownameKeys[key]; !exists && len(sn.ShownameKeys) >= shownameKeyCap {
+			return
+		}
+		sn.ShownameKeys[key] = showname
+	})
 }
 
 // icPhraseKeyCap bounds the hotkeyed IC quick-phrases (hard rule #4: no unbounded maps).
@@ -7296,23 +7295,19 @@ func (p *AssetPreferences) SetICPhraseKey(key, phrase string) {
 		return
 	}
 	phrase = strings.TrimSpace(phrase)
-	p.mu.Lock()
-	if phrase == "" {
-		delete(p.ICPhraseKeys, key)
-		p.markDirty()
-		p.mu.Unlock()
-		return
-	}
-	if p.ICPhraseKeys == nil {
-		p.ICPhraseKeys = map[string]string{}
-	}
-	if _, exists := p.ICPhraseKeys[key]; !exists && len(p.ICPhraseKeys) >= icPhraseKeyCap {
-		p.mu.Unlock()
-		return
-	}
-	p.ICPhraseKeys[key] = phrase
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if phrase == "" {
+			delete(sn.ICPhraseKeys, key)
+			return
+		}
+		if sn.ICPhraseKeys == nil {
+			sn.ICPhraseKeys = map[string]string{}
+		}
+		if _, exists := sn.ICPhraseKeys[key]; !exists && len(sn.ICPhraseKeys) >= icPhraseKeyCap {
+			return
+		}
+		sn.ICPhraseKeys[key] = phrase
+	})
 }
 
 // mutedSFXCap bounds the per-SFX mute list (hard rule #4: no unbounded slices).
@@ -7620,33 +7615,30 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 		return false
 	}
 	pct = clampPercent(pct, 0, blipVolumeDefault)
-	p.mu.Lock()
-	cur, had := p.BlipVols[char]
-	if pct == blipVolumeDefault {
-		if !had {
-			p.mu.Unlock()
-			return false // already default
+	changed := false
+	p.Update(func(sn *Settings) {
+		cur, had := sn.BlipVols[char]
+		if pct == blipVolumeDefault {
+			if !had {
+				return // already default
+			}
+			delete(sn.BlipVols, char)
+			changed = true
+			return
 		}
-		delete(p.BlipVols, char)
-		p.markDirty()
-		p.mu.Unlock()
-		return true
-	}
-	if had && cur == pct {
-		p.mu.Unlock()
-		return false // unchanged
-	}
-	if !had && len(p.BlipVols) >= blipVolsCap {
-		p.mu.Unlock()
-		return false // bounded
-	}
-	if p.BlipVols == nil {
-		p.BlipVols = make(map[string]int)
-	}
-	p.BlipVols[char] = pct
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+		if had && cur == pct {
+			return // unchanged
+		}
+		if !had && len(sn.BlipVols) >= blipVolsCap {
+			return // bounded
+		}
+		if sn.BlipVols == nil {
+			sn.BlipVols = make(map[string]int)
+		}
+		sn.BlipVols[char] = pct
+		changed = true
+	})
+	return changed
 }
 
 // emoteFavCharsCap / emoteFavPerCharCap bound the per-character emote-favourites
