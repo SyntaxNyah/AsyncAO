@@ -93,12 +93,13 @@ func itoa(n int) string {
 	return string(rune('0'+n%10)) + itoa(n/10)
 }
 
-// fillGoldenPrefs returns an AssetPreferences with every exported field populated
-// distinctly, ready to Save.
+// fillGoldenPrefs returns an AssetPreferences whose snapshot has every Settings field
+// populated distinctly, ready to Save.
 func fillGoldenPrefs() *AssetPreferences {
 	p := &AssetPreferences{}
+	s := &Settings{}
 	c := 0
-	v := reflect.ValueOf(p).Elem()
+	v := reflect.ValueOf(s).Elem()
 	for i := 0; i < v.NumField(); i++ {
 		f := v.Field(i)
 		if !f.CanSet() {
@@ -109,8 +110,9 @@ func fillGoldenPrefs() *AssetPreferences {
 	// Pin the two fields whose valid range the generic fill undershoots: the
 	// animated-sprite cap has a 240px floor (a value below it reads as "off"), and
 	// an anchor needs a two-letter mode code plus a positive window size.
-	p.AnimatedSpriteCapPxVal = AnimatedSpriteCapMinPx
-	p.ClassicAnchors = map[string]ClassicAnchor{"cc": {Mode: "cc", WinW: 800, WinH: 600}}
+	s.AnimatedSpriteCapPxVal = AnimatedSpriteCapMinPx
+	s.ClassicAnchors = map[string]ClassicAnchor{"cc": {Mode: "cc", WinW: 800, WinH: 600}}
+	p.settings.Store(s)
 	return p
 }
 
@@ -120,7 +122,7 @@ func fillGoldenPrefs() *AssetPreferences {
 // field would ship untested. saveOnlyPrefTags are the deliberate exceptions.
 func TestGoldenFixtureCoversEveryField(t *testing.T) {
 	full := fillGoldenPrefs()
-	data, err := json.Marshal(full)
+	data, err := json.Marshal(full.Load())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +130,7 @@ func TestGoldenFixtureCoversEveryField(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	tags := prefJSONTags(reflect.TypeOf(AssetPreferences{}))
+	tags := prefJSONTags(reflect.TypeOf(Settings{}))
 	for tag := range tags {
 		if _, ok := saveOnlyPrefTags[tag]; ok {
 			continue
@@ -281,7 +283,7 @@ func TestGoldenLegacyLayoutPresetsMigrate(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer p.Close()
-	prof, ok := p.LayoutProfiles["Mine"]
+	prof, ok := p.Load().LayoutProfiles["Mine"]
 	if !ok {
 		t.Fatalf("legacy preset did not migrate into LayoutProfiles")
 	}

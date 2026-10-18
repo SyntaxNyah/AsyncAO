@@ -528,9 +528,9 @@ func TestServerAudioPref(t *testing.T) {
 	// takes p.mu.RLock(): the debounced saver goroutine may be flushing the
 	// SetAudioVolumes dirty-mark concurrently, and an unlocked map write here
 	// races that marshal (a -race flake, pre-existing).
-	p.mu.Lock()
-	p.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv} // music/sfx/blip unset
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv}
+	}) // music/sfx/blip unset
 	if on, m, mu, s, b := p.ServerAudio("wss://partial/ws"); !on || m != 50 || mu != 90 || s != 85 || b != 80 {
 		t.Errorf("unset channels must fall back to global: got %v/%d/%d/%d/%d, want true/50/90/85/80", on, m, mu, s, b)
 	}

@@ -237,10 +237,11 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	// Simulate a pre-flip prefs file: Misc stored as the old [.webp] default.
-	tp := p.AssetTypes[TypeMisc]
-	tp.FormatOrder = []string{ExtWebP}
-	p.AssetTypes[TypeMisc] = tp
-	p.markDirty()
+	p.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[TypeMisc]
+		tp.FormatOrder = []string{ExtWebP}
+		sn.AssetTypes[TypeMisc] = tp
+	})
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -251,15 +252,16 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if got := re.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
+	if got := re.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
 		t.Errorf("old-default Misc order = %v after reload, want the new [%s %s]", got, ExtPNG, ExtWebP)
 	}
 
 	// A customized order (user picked gif-first) must NOT migrate.
-	tp = re.AssetTypes[TypeMisc]
-	tp.FormatOrder = []string{ExtGIF, ExtWebP}
-	re.AssetTypes[TypeMisc] = tp
-	re.markDirty()
+	re.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[TypeMisc]
+		tp.FormatOrder = []string{ExtGIF, ExtWebP}
+		sn.AssetTypes[TypeMisc] = tp
+	})
 	if err := re.SaveNow(); err != nil {
 		t.Fatalf("save custom: %v", err)
 	}
@@ -269,7 +271,7 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("reload custom: %v", err)
 	}
 	defer re2.Close()
-	if got := re2.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
+	if got := re2.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
 		t.Errorf("customized Misc order = %v after reload, want [gif webp] untouched", got)
 	}
 }
@@ -511,10 +513,10 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.GlobalFallbacksEnabled {
+	if !q.Load().GlobalFallbacksEnabled {
 		t.Error("GlobalFallbacksEnabled lost")
 	}
-	if q.PreferAnimated {
+	if q.Load().PreferAnimated {
 		t.Error("PreferAnimated=false lost (absent-field default must not clobber explicit false)")
 	}
 	if got, want := q.FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
@@ -629,7 +631,7 @@ func TestExportSettingsRedactsPassword(t *testing.T) {
 	if strings.Contains(string(raw), pass) {
 		t.Fatal("exported bundle still contains the plaintext password")
 	}
-	var snap AssetPreferences
+	var snap Settings
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		t.Fatal(err)
 	}
@@ -821,14 +823,14 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load(absent) returned error: %v", err)
 	}
-	if p.GlobalFallbacksEnabled {
+	if p.Load().GlobalFallbacksEnabled {
 		t.Error("GlobalFallbacksEnabled default must be false (zero fallbacks by default)")
 	}
-	if !p.PreferAnimated {
+	if !p.Load().PreferAnimated {
 		t.Error("PreferAnimated default must be true")
 	}
 	for _, name := range TypeNames {
-		if _, ok := p.AssetTypes[name]; !ok {
+		if _, ok := p.Load().AssetTypes[name]; !ok {
 			t.Errorf("default AssetTypes missing %s", name)
 		}
 	}
@@ -843,7 +845,7 @@ func TestLoadCorruptFileFallsBackToDefaults(t *testing.T) {
 	if err == nil {
 		t.Error("load(corrupt) must report the parse error")
 	}
-	if p == nil || !p.PreferAnimated || len(p.AssetTypes) != len(TypeNames) {
+	if p == nil || !p.Load().PreferAnimated || len(p.Load().AssetTypes) != len(TypeNames) {
 		t.Error("load(corrupt) must still return usable defaults")
 	}
 }
@@ -1626,12 +1628,12 @@ func TestResetAll(t *testing.T) {
 }
 
 // TestResetContentFieldsExist guards resetContentFields against a struct rename:
-// every preserved name must be a real exported field of AssetPreferences.
+// every preserved name must be a real exported field of Settings.
 func TestResetContentFieldsExist(t *testing.T) {
-	tp := reflect.TypeOf(AssetPreferences{})
+	tp := reflect.TypeOf(Settings{})
 	for name := range resetContentFields {
 		if f, ok := tp.FieldByName(name); !ok || f.PkgPath != "" {
-			t.Errorf("resetContentFields[%q] is not an exported field of AssetPreferences", name)
+			t.Errorf("resetContentFields[%q] is not an exported field of Settings", name)
 		}
 	}
 }
@@ -1722,8 +1724,8 @@ func TestCorruptConfigQuarantined(t *testing.T) {
 	}
 	// Defaults are in effect (PreferAnimated is a default-true field, so it is
 	// a good sentinel that the fresh defaults were applied).
-	if p.PreferAnimated != defaultPreferAnimated {
-		t.Errorf("corrupt load must fall back to defaults; PreferAnimated=%v want %v", p.PreferAnimated, defaultPreferAnimated)
+	if p.Load().PreferAnimated != defaultPreferAnimated {
+		t.Errorf("corrupt load must fall back to defaults; PreferAnimated=%v want %v", p.Load().PreferAnimated, defaultPreferAnimated)
 	}
 	// Quarantine info is surfaced.
 	q := p.Quarantine()
@@ -1995,7 +1997,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if !p.Load().DeskFollowManifest {
 			t.Error("an older file's WebP pin must be flipped to follow-the-manifest on update")
 		}
-		if !p.DeskManifestDefaultMigrated {
+		if !p.Load().DeskManifestDefaultMigrated {
 			t.Error("the flip must stamp the file so it never runs twice")
 		}
 	})
@@ -2101,7 +2103,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if !p.Load().DetailedLog {
 			t.Error("an older file's OFF must be flipped ON once on update")
 		}
-		if !p.DetailedLogDefaultMigrated {
+		if !p.Load().DetailedLogDefaultMigrated {
 			t.Error("the flip must stamp the file so it never runs twice")
 		}
 	})
@@ -2404,7 +2406,7 @@ func TestThemeFitDefaultMove(t *testing.T) {
 			if got := r.Load().ThemeFit; got != tc.want {
 				t.Errorf("a deliberate pick was overwritten: ThemeFitMode = %d, want %d", got, tc.want)
 			}
-			if !r.ThemeFitDefaultMigrated {
+			if !r.Load().ThemeFitDefaultMigrated {
 				t.Error("the stamp must be written even when the value is preserved, or the move runs again next launch")
 			}
 			if r.ThemeFitDefaultJustMoved() {
@@ -2437,7 +2439,7 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if fresh.Load().ThemeFit != ThemeFitNative {
 		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.Load().ThemeFit)
 	}
-	if !fresh.ThemeFitDefaultMigrated {
+	if !fresh.Load().ThemeFitDefaultMigrated {
 		t.Error("a fresh install must be stamped as already-migrated, or the move re-fires over a later deliberate Stretch")
 	}
 	if fresh.ThemeFitDefaultJustMoved() {
@@ -2475,7 +2477,7 @@ func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-read the file: %v", err)
 	}
-	var onDisk AssetPreferences
+	var onDisk Settings
 	if err := json.Unmarshal(data, &onDisk); err != nil {
 		t.Fatalf("parse the file: %v", err)
 	}
@@ -2564,7 +2566,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if got := p.SpriteScalingMode(); got != SpriteScalingAuto {
 		t.Errorf("an existing user must land on Auto, got %d", got)
 	}
-	if !p.SpriteScalingMigrated {
+	if !p.Load().SpriteScalingMigrated {
 		t.Error("the move must stamp itself, or it re-fires and overwrites the user's later choice")
 	}
 

@@ -168,7 +168,7 @@ func prefsDumpLine(raw []byte) string {
 	if p == nil {
 		return strings.Join(out, "\t")
 	}
-	ej, _ := json.Marshal(p)
+	ej, _ := json.Marshal(p.Load())
 	out = append(out, "exported="+sha(ej))
 	out = append(out, "unexported="+sha([]byte(fmt.Sprintf("moved=%v stamp=%v", p.themeFitMovedToNative, p.themeFitStampPending))))
 	out = append(out, "dirty="+sha([]byte(fmt.Sprintf("pending=%v", p.pending.Load()))))

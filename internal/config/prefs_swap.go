@@ -8,7 +8,7 @@ import (
 )
 
 // presencePrepass decodes data into the set of PRESENT (non-null) JSON key paths,
-// recursing into nested objects. A JSON null counts as absent, matching the old
+// recursing into nested objectp. A JSON null counts as absent, matching the old
 // pointer-field load(): a nil *T meant "key not written", so explicit null and an
 // absent key were the same thing.
 func presencePrepass(data []byte) map[string]bool {
@@ -41,21 +41,23 @@ func collectPresence(raw map[string]json.RawMessage, prefix string, out map[stri
 // the unmarshal error so load() can wrap it and quarantine the file exactly as today.
 func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	p := defaultPrefs("")
-	if err := json.Unmarshal(data, p); err != nil {
+	s := p.settings.Load()
+	if err := json.Unmarshal(data, s); err != nil {
 		return p, err
 	}
 	presence := presencePrepass(data)
-	migrateLegacyKeys(p, data, presence)
-	p.normalize(presence)
-	p.syncSnapshot()
+	migrateLegacyKeys(s, data, presence)
+	if p.normalizeSnapshot(s, presence) {
+		p.pending.Store(true) // the one-shot stamps changed state; persist it
+	}
 	return p, nil
 }
 
-// legacyKey is one legacy → current JSON key migration. The migrate func receives the
+// legacyKey is one legacy â†’ current JSON key migration. The migrate func receives the
 // raw file bytes (to decode legacy keys AssetPreferences no longer carries), plus the
 // presence set so it can honour "only when the new key is absent".
 type legacyKey struct {
-	migrate func(p *AssetPreferences, data []byte, presence map[string]bool)
+	migrate func(s *Settings, data []byte, presence map[string]bool)
 }
 
 // legacyKeys lists the on-disk key migrations in the order they must apply. Order
@@ -64,10 +66,10 @@ type legacyKey struct {
 // own entry (Order 1A-b) and removes the matching allowlist entry.
 var legacyKeys = []legacyKey{
 	{
-		// Mutation (layoutPresets → layoutProfiles): one-way, no clobber. A legacy
+		// Mutation (layoutPresets â†’ layoutProfiles): one-way, no clobber. A legacy
 		// layoutPresets file (classic slots only) wraps each sanitized preset into a
-		// Classic-only profile; skipped once any profile exists.
-		migrate: func(p *AssetPreferences, data []byte, presence map[string]bool) {
+		// Classic-only profile; skipped once any profile existp.
+		migrate: func(s *Settings, data []byte, presence map[string]bool) {
 			if presence["layoutProfiles"] || !presence["layoutPresets"] {
 				return
 			}
@@ -81,22 +83,22 @@ var legacyKeys = []legacyKey{
 			if len(legacy) == 0 {
 				return
 			}
-			p.LayoutProfiles = make(map[string]LayoutProfile, len(legacy))
+			s.LayoutProfiles = make(map[string]LayoutProfile, len(legacy))
 			for name, m := range legacy {
 				name = strings.TrimSpace(name)
 				if name == "" {
 					continue
 				}
-				p.LayoutProfiles[name] = LayoutProfile{Classic: m}
+				s.LayoutProfiles[name] = LayoutProfile{Classic: m}
 			}
 		},
 	},
 }
 
 // migrateLegacyKeys applies every legacyKey in order.
-func migrateLegacyKeys(p *AssetPreferences, data []byte, presence map[string]bool) {
+func migrateLegacyKeys(s *Settings, data []byte, presence map[string]bool) {
 	for _, lk := range legacyKeys {
-		lk.migrate(p, data, presence)
+		lk.migrate(s, data, presence)
 	}
 }
 
@@ -104,265 +106,266 @@ func migrateLegacyKeys(p *AssetPreferences, data []byte, presence map[string]boo
 // snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
 // load() for every field and case. The clamps are the same functions/constants load()
 // uses; the resets use the defaultPrefs reference so a default change keeps them in step.
-func (p *AssetPreferences) normalize(presence map[string]bool) {
-	def := defaultPrefs("")
+func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bool) (changed bool) {
+	def := defaultSettings()
 
-	// (i) clamp/normalise — unconditional (pointer fields load() clamped regardless).
-	p.NameVal = clampPercent(p.NameVal, minNameColorVal, 100)
-	p.RainbowSpriteSpeed = clampPercent(p.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
-	p.ReplayPlaybackSpeed = clampPercent(p.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
-	p.CatchUpThreshold = clampPercent(p.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
-	p.MultiTabCap = clampPercent(p.MultiTabCap, minMultiTabCap, maxMultiTabCap)
-	p.PreviewHoverMs = clampPercent(p.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
-	p.EmoteHoverNamesMs = clampPercent(p.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
-	p.MusicVol = clampPercent(p.MusicVol, 0, defaultAudioVolume)
-	p.SFXVol = clampPercent(p.SFXVol, 0, defaultAudioVolume)
-	p.BlipVol = clampPercent(p.BlipVol, 0, defaultAudioVolume)
-	p.AlertVol = clampPercent(p.AlertVol, 0, defaultAudioVolume)
-	p.MasterVol = clampPercent(p.MasterVol, 0, defaultAudioVolume)
-	p.HighlightColor &= 0xFFFFFF
-	p.ICCustomColor &= 0xFFFFFF
-	p.SpriteTintColor &= 0xFFFFFF
-	p.ChatboxOpacity = clampPercent(p.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
-	p.RainbowSpriteVividness = clampPercent(p.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
-	p.NameSat = clampPercent(p.NameSat, 0, 100)
-	p.MusicFlagsVal &= MusicFlagsMask
-	p.TextStayMs = clampPercent(p.TextStayMs, 0, MaxTextStayMs)
-	p.EmoteGridGapPx = clampPercent(p.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	// (i) clamp/normalise â€” unconditional (pointer fields load() clamped regardless).
+	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
+	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	s.CatchUpThreshold = clampPercent(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	s.MultiTabCap = clampPercent(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	s.PreviewHoverMs = clampPercent(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	s.EmoteHoverNamesMs = clampPercent(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	s.MusicVol = clampPercent(s.MusicVol, 0, defaultAudioVolume)
+	s.SFXVol = clampPercent(s.SFXVol, 0, defaultAudioVolume)
+	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
+	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
+	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
+	s.HighlightColor &= 0xFFFFFF
+	s.ICCustomColor &= 0xFFFFFF
+	s.SpriteTintColor &= 0xFFFFFF
+	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
+	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	s.NameSat = clampPercent(s.NameSat, 0, 100)
+	s.MusicFlagsVal &= MusicFlagsMask
+	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
+	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 
-	// (i) clamp/normalise — explicit zero keeps the default (load() used `!= 0`).
-	if p.ViewportPct == 0 {
-		p.ViewportPct = def.ViewportPct
+	// (i) clamp/normalise â€” explicit zero keeps the default (load() used `!= 0`).
+	if s.ViewportPct == 0 {
+		s.ViewportPct = def.ViewportPct
 	} else {
-		p.ViewportPct = clampPercent(p.ViewportPct, MinViewportPercent, MaxViewportPercent)
+		s.ViewportPct = clampPercent(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
 	}
-	if p.ChatScalePct == 0 {
-		p.ChatScalePct = def.ChatScalePct
+	if s.ChatScalePct == 0 {
+		s.ChatScalePct = def.ChatScalePct
 	} else {
-		p.ChatScalePct = clampPercent(p.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+		s.ChatScalePct = clampPercent(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
 	}
-	if p.ChatBoxPct == 0 {
-		p.ChatBoxPct = def.ChatBoxPct
+	if s.ChatBoxPct == 0 {
+		s.ChatBoxPct = def.ChatBoxPct
 	} else {
-		p.ChatBoxPct = clampPercent(p.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+		s.ChatBoxPct = clampPercent(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
 	}
-	if p.LogScalePct == 0 {
-		p.LogScalePct = def.LogScalePct
+	if s.LogScalePct == 0 {
+		s.LogScalePct = def.LogScalePct
 	} else {
-		p.LogScalePct = clampPercent(p.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+		s.LogScalePct = clampPercent(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
-	if presence["oocScalePercent"] && p.OOCScalePct != 0 {
-		p.OOCScalePct = clampPercent(p.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	if presence["oocScalePercent"] && s.OOCScalePct != 0 {
+		s.OOCScalePct = clampPercent(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
 	} else {
 		// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade
 		// (absent or explicit zero, matching load()'s `onDisk.OOCScalePct != 0`).
-		p.OOCScalePct = p.LogScalePct
+		s.OOCScalePct = s.LogScalePct
 	}
-	if p.InputHeightPct == 0 {
-		p.InputHeightPct = def.InputHeightPct
+	if s.InputHeightPct == 0 {
+		s.InputHeightPct = def.InputHeightPct
 	} else {
-		p.InputHeightPct = clampPercent(p.InputHeightPct, MinInputPercent, MaxInputPercent)
+		s.InputHeightPct = clampPercent(s.InputHeightPct, MinInputPercent, MaxInputPercent)
 	}
-	if p.UIScalePct == 0 {
-		p.UIScalePct = def.UIScalePct
+	if s.UIScalePct == 0 {
+		s.UIScalePct = def.UIScalePct
 	} else {
-		p.UIScalePct = clampPercent(p.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+		s.UIScalePct = clampPercent(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
 	}
-	if p.HoldClearMs == 0 {
-		p.HoldClearMs = def.HoldClearMs
+	if s.HoldClearMs == 0 {
+		s.HoldClearMs = def.HoldClearMs
 	} else {
-		p.HoldClearMs = clampPercent(p.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+		s.HoldClearMs = clampPercent(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
 	}
-	if p.TextCrawlMs == 0 {
-		p.TextCrawlMs = def.TextCrawlMs
+	if s.TextCrawlMs == 0 {
+		s.TextCrawlMs = def.TextCrawlMs
 	} else {
-		p.TextCrawlMs = clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		s.TextCrawlMs = clampPercent(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 	}
-	if p.BlipRate == 0 {
-		p.BlipRate = def.BlipRate
+	if s.BlipRate == 0 {
+		s.BlipRate = def.BlipRate
 	} else {
-		p.BlipRate = clampPercent(p.BlipRate, MinBlipRate, MaxBlipRate)
+		s.BlipRate = clampPercent(s.BlipRate, MinBlipRate, MaxBlipRate)
 	}
-	if p.ThemeFitZoom == 0 {
-		p.ThemeFitZoom = def.ThemeFitZoom
+	if s.ThemeFitZoom == 0 {
+		s.ThemeFitZoom = def.ThemeFitZoom
 	} else {
-		p.ThemeFitZoom = clampPercent(p.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+		s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 	}
 
 	// (i)/(iii) enums and string defaults: invalid or empty keeps the default.
-	if p.ChromeShapeKey != chromeShapeRounded && p.ChromeShapeKey != chromeShapePill {
-		p.ChromeShapeKey = def.ChromeShapeKey
+	if s.ChromeShapeKey != chromeShapeRounded && s.ChromeShapeKey != chromeShapePill {
+		s.ChromeShapeKey = def.ChromeShapeKey
 	}
-	if p.HoldClearKey == "" {
-		p.HoldClearKey = def.HoldClearKey
+	if s.HoldClearKey == "" {
+		s.HoldClearKey = def.HoldClearKey
 	}
 	// Mutation (subtheme): sanitize the subtheme folder on the way in (traversal is
 	// stripped), matching load()'s theme.SanitizeSubtheme call.
-	p.SubthemeName = theme.SanitizeSubtheme(p.SubthemeName)
+	s.SubthemeName = theme.SanitizeSubtheme(s.SubthemeName)
 	// Mutation (proxyMode): clamp on the way in exactly as SetProxyMode clamps on the way
 	// out; an out-of-range value keeps the shipped default (ProxyModeSystem).
-	if p.ProxyModeVal < 0 || p.ProxyModeVal >= ProxyModeCount {
-		p.ProxyModeVal = def.ProxyModeVal
+	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
+		s.ProxyModeVal = def.ProxyModeVal
 	}
 
 	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
-	if p.BgSlideshowSecs <= 0 {
-		p.BgSlideshowSecs = def.BgSlideshowSecs
+	if s.BgSlideshowSecs <= 0 {
+		s.BgSlideshowSecs = def.BgSlideshowSecs
 	}
 
-	// (ii) one-shot migration stamps — re-apply load()'s stamp decision.
-	if presence["spriteScalingMigrated"] && p.SpriteScalingMigrated {
-		p.SpriteScaling = ClampSpriteScaling(p.SpriteScaling)
+	// (ii) one-shot migration stamps â€” re-apply load()'s stamp decision.
+	if presence["spriteScalingMigrated"] && s.SpriteScalingMigrated {
+		s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
 	} else {
-		p.SpriteScaling = defaultSpriteScaling
-		p.SpriteScalingMigrated = true
-		p.markDirty() // persist the stamp promptly so the move never re-fires
+		s.SpriteScaling = defaultSpriteScaling
+		s.SpriteScalingMigrated = true
+		changed = true // persist the stamp promptly so the move never re-fires
 	}
-	if presence["autoReconnectDefaultMigrated"] && p.AutoReconnectDefaultMigrated {
+	if presence["autoReconnectDefaultMigrated"] && s.AutoReconnectDefaultMigrated {
 		// already migrated: the on-disk value is honoured as-is
 	} else {
-		p.AutoReconnect = false
-		p.AutoReconnectDefaultMigrated = true
-		p.markDirty()
+		s.AutoReconnect = false
+		s.AutoReconnectDefaultMigrated = true
+		changed = true
 	}
 	// Mutation (themeFit flags): the migration reads the ON-DISK themeFit (zero when the
 	// key is absent), not the default-prefs value the unmarshal-over-defaults left there.
-	effectiveThemeFit := p.ThemeFit
+	effectiveThemeFit := s.ThemeFit
 	if !presence["themeFit"] {
 		effectiveThemeFit = 0
 	}
-	if presence["themeFitDefaultMigrated"] && p.ThemeFitDefaultMigrated {
-		p.ThemeFit = clampPercent(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
+	if presence["themeFitDefaultMigrated"] && s.ThemeFitDefaultMigrated {
+		s.ThemeFit = clampPercent(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
 	} else {
 		saved := clampPercent(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
 		if saved == ThemeFitStretch {
 			// Mutation (themeFit flags): only a file still on the legacy Stretch default
 			// arms the one-shot move-to-native; every un-migrated file stamps.
-			p.ThemeFit = defaultThemeFit
+			s.ThemeFit = defaultThemeFit
 			p.themeFitMovedToNative = true
 		} else {
-			p.ThemeFit = saved
+			s.ThemeFit = saved
 		}
-		p.ThemeFitDefaultMigrated = true
+		s.ThemeFitDefaultMigrated = true
 		p.themeFitStampPending = true
-		p.markDirty()
+		changed = true
 	}
-	if presence["blipSpeedDefaultMigrated"] && p.BlipSpeedDefaultMigrated {
-		if p.TextCrawlMs != 0 {
-			p.TextCrawlMs = clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	if presence["blipSpeedDefaultMigrated"] && s.BlipSpeedDefaultMigrated {
+		if s.TextCrawlMs != 0 {
+			s.TextCrawlMs = clampPercent(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 		}
 	} else {
-		saved := clampPercent(p.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
-		if p.TextCrawlMs == 0 || saved == preMoveTextCrawlMs {
-			p.TextCrawlMs = DefaultTextCrawlMs
+		saved := clampPercent(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		if s.TextCrawlMs == 0 || saved == preMoveTextCrawlMs {
+			s.TextCrawlMs = DefaultTextCrawlMs
 		} else {
-			p.TextCrawlMs = saved
+			s.TextCrawlMs = saved
 		}
-		p.BlipSpeedDefaultMigrated = true
-		p.markDirty()
+		s.BlipSpeedDefaultMigrated = true
+		changed = true
 	}
-	if presence["deskManifestDefaultMigrated"] && p.DeskManifestDefaultMigrated {
+	if presence["deskManifestDefaultMigrated"] && s.DeskManifestDefaultMigrated {
 		// honoured as-is
 	} else {
-		p.DeskFollowManifest = true
-		p.DeskManifestDefaultMigrated = true
-		p.markDirty()
+		s.DeskFollowManifest = true
+		s.DeskManifestDefaultMigrated = true
+		changed = true
 	}
-	if presence["detailedLogDefaultMigrated"] && p.DetailedLogDefaultMigrated {
+	if presence["detailedLogDefaultMigrated"] && s.DetailedLogDefaultMigrated {
 		// honoured as-is
 	} else {
-		p.DetailedLog = true
-		p.DetailedLogDefaultMigrated = true
-		p.markDirty()
+		s.DetailedLog = true
+		s.DetailedLogDefaultMigrated = true
+		changed = true
 	}
 
 	// (i) enum clamp: a garbage / newer sprite-load mode falls back to the default.
-	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
-		p.SpriteLoadModeVal = defaultSpriteLoadMode
+	if s.SpriteLoadModeVal < SpriteLoadBlank || s.SpriteLoadModeVal >= SpriteLoadModeCount {
+		s.SpriteLoadModeVal = defaultSpriteLoadMode
 	}
 
 	// (iii) non-zero nested defaults the unmarshal-over-defaults zeroed.
-	if len(p.AssetTypes) == 0 {
-		p.AssetTypes = def.AssetTypes
+	if len(s.AssetTypes) == 0 {
+		s.AssetTypes = def.AssetTypes
 	} else {
-		for name, tp := range p.AssetTypes {
+		for name, tp := range s.AssetTypes {
 			if len(tp.FormatOrder) == 0 {
 				tp.FormatOrder = DefaultFormatOrder(name)
 			}
 			if name == TypeMisc && len(tp.FormatOrder) == 1 && tp.FormatOrder[0] == ExtWebP {
 				tp.FormatOrder = DefaultFormatOrder(name)
 			}
-			p.AssetTypes[name] = tp
+			s.AssetTypes[name] = tp
 		}
 	}
-	if p.MusicHosts == nil {
-		p.MusicHosts = def.MusicHosts
+	if s.MusicHosts == nil {
+		s.MusicHosts = def.MusicHosts
 	} else {
-		p.MusicHosts = sanitizeMusicHosts(p.MusicHosts)
+		s.MusicHosts = sanitizeMusicHosts(s.MusicHosts)
 	}
-	if p.LearnedFormats == nil {
-		p.LearnedFormats = def.LearnedFormats
+	if s.LearnedFormats == nil {
+		s.LearnedFormats = def.LearnedFormats
 	}
-	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups — bounds, blank
-	// name/id drops, and dedupe — so a hand-edited file cannot grow or corrupt the maps.
-	p.SavedStyles = sanitizeStylePresets(p.SavedStyles)
-	p.PanelFontsVal = sanitizePanelFonts(p.PanelFontsVal)
-	p.UserMacros = sanitizeMacros(p.UserMacros)
-	p.HiddenPanelIDs = sanitizeHiddenPanels(p.HiddenPanelIDs)
-	p.ClassicLayout = sanitizeClassicLayout(p.ClassicLayout)
-	p.ClassicAnchors = sanitizeClassicAnchors(p.ClassicAnchors)
-	p.ClassicRotations = sanitizeClassicRotations(p.ClassicRotations)
-	p.ThemeRectRotations = sanitizeThemeRectRotations(p.ThemeRectRotations)
-	p.LayoutProfiles = sanitizeLayoutProfiles(p.LayoutProfiles)
-	p.LayoutGridPx = clampLayoutGridPx(p.LayoutGridPx)
-	p.FontWarnThemes = clampStrings(p.FontWarnThemes, FontWarnThemesCap)
+	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups â€” bounds, blank
+	// name/id drops, and dedupe â€” so a hand-edited file cannot grow or corrupt the maps.
+	s.SavedStyles = sanitizeStylePresets(s.SavedStyles)
+	s.PanelFontsVal = sanitizePanelFonts(s.PanelFontsVal)
+	s.UserMacros = sanitizeMacros(s.UserMacros)
+	s.HiddenPanelIDs = sanitizeHiddenPanels(s.HiddenPanelIDs)
+	s.ClassicLayout = sanitizeClassicLayout(s.ClassicLayout)
+	s.ClassicAnchors = sanitizeClassicAnchors(s.ClassicAnchors)
+	s.ClassicRotations = sanitizeClassicRotations(s.ClassicRotations)
+	s.ThemeRectRotations = sanitizeThemeRectRotations(s.ThemeRectRotations)
+	s.LayoutProfiles = sanitizeLayoutProfiles(s.LayoutProfiles)
+	s.LayoutGridPx = clampLayoutGridPx(s.LayoutGridPx)
+	s.FontWarnThemes = clampStrings(s.FontWarnThemes, FontWarnThemesCap)
 	{
 		e := defaultExportOptions()
-		if p.Export.HeightPx > 0 {
-			e.HeightPx = clampPercent(p.Export.HeightPx, minExportHeight, maxExportHeight)
+		if s.Export.HeightPx > 0 {
+			e.HeightPx = clampPercent(s.Export.HeightPx, minExportHeight, maxExportHeight)
 		}
-		if p.Export.FPS > 0 {
-			e.FPS = clampPercent(p.Export.FPS, minExportFPS, maxExportFPS)
+		if s.Export.FPS > 0 {
+			e.FPS = clampPercent(s.Export.FPS, minExportFPS, maxExportFPS)
 		}
-		if p.Export.Quality > 0 {
-			e.Quality = clampPercent(p.Export.Quality, minExportQuality, maxExportQuality)
+		if s.Export.Quality > 0 {
+			e.Quality = clampPercent(s.Export.Quality, minExportQuality, maxExportQuality)
 		}
-		if p.Export.TextScale > 0 {
-			e.TextScale = clampPercent(p.Export.TextScale, minExportText, maxExportText)
+		if s.Export.TextScale > 0 {
+			e.TextScale = clampPercent(s.Export.TextScale, minExportText, maxExportText)
 		}
-		if p.Export.VideoFormat != "" {
-			e.VideoFormat = normalizeVideoFormat(p.Export.VideoFormat)
+		if s.Export.VideoFormat != "" {
+			e.VideoFormat = normalizeVideoFormat(s.Export.VideoFormat)
 		}
-		e.Loop = p.Export.Loop
+		e.Loop = s.Export.Loop
 		if presence["export"] && !presence["export.loop"] {
-			// Mutation (export): the old load read onDisk.Export.Loop — a present export
+			// Mutation (export): the old load read onDisk.Export.Loop â€” a present export
 			// object without a loop key reads false, not the default.
 			e.Loop = false
 		}
-		p.Export = e
+		s.Export = e
 	}
 	// discord + autoStatus: load() copied the whole on-disk struct when the key was
 	// PRESENT, so a present-but-omitempty field reads as ZERO, not the defaultPrefs
 	// value (which the unmarshal-over-defaults keeps). An ABSENT key keeps the default.
 	if presence["discord"] && !presence["discord.appId"] {
-		p.DiscordRPC.AppID = ""
+		s.DiscordRPC.AppID = ""
 	}
 	if presence["autoStatus"] {
 		if !presence["autoStatus.clearWords"] {
-			p.MyAutoStatus.ClearWords = ""
+			s.MyAutoStatus.ClearWords = ""
 		}
 		if !presence["autoStatus.afkWords"] {
-			p.MyAutoStatus.AFKWords = ""
+			s.MyAutoStatus.AFKWords = ""
 		}
 		if !presence["autoStatus.busyWords"] {
-			p.MyAutoStatus.BusyWords = ""
+			s.MyAutoStatus.BusyWords = ""
 		}
 		if !presence["autoStatus.writingWords"] {
-			p.MyAutoStatus.WritingWords = ""
+			s.MyAutoStatus.WritingWords = ""
 		}
 		if !presence["autoStatus.lfrpWords"] {
-			p.MyAutoStatus.LFRPWords = ""
+			s.MyAutoStatus.LFRPWords = ""
 		}
 	}
-	p.MyAutoStatus = sanitizeAutoStatus(p.MyAutoStatus)
+	s.MyAutoStatus = sanitizeAutoStatus(s.MyAutoStatus)
+	return changed
 }

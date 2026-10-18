@@ -8,7 +8,7 @@ import "encoding/json"
 // runtime state, not persisted data, so they are deliberately excluded. The malformed
 // golden tests use it so the one-shot stamp side-effects are part of the comparison.
 func dumpPrefs(p *AssetPreferences) map[string]any {
-	b, err := json.Marshal(p)
+	b, err := json.Marshal(p.Load())
 	if err != nil {
 		panic(err)
 	}

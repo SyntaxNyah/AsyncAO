@@ -38,7 +38,7 @@ func TestRealPrefsIdentical(t *testing.T) {
 	if p == nil {
 		return
 	}
-	ej, _ := json.Marshal(p)
+	ej, _ := json.Marshal(p.Load())
 	t.Logf("exported=%s", sha(ej))
 	t.Logf("unexported=%s", sha([]byte(fmt.Sprintf("moved=%v stamp=%v", p.themeFitMovedToNative, p.themeFitStampPending))))
 	t.Logf("dirty=%s", sha([]byte(fmt.Sprintf("pending=%v", p.pending.Load()))))

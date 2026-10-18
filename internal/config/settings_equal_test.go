@@ -91,35 +91,13 @@ func TestCollectionSettersReachSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if !reflect.DeepEqual(q.HiddenPanelIDs, []string{"a", "b"}) {
-		t.Errorf("slice setter lost: HiddenPanelIDs = %v", q.HiddenPanelIDs)
+	if !reflect.DeepEqual(q.Load().HiddenPanelIDs, []string{"a", "b"}) {
+		t.Errorf("slice setter lost: HiddenPanelIDs = %v", q.Load().HiddenPanelIDs)
 	}
-	if q.HotkeyMap["F1"] != "chat" {
-		t.Errorf("map-element setter lost: HotkeyMap[F1] = %q", q.HotkeyMap["F1"])
+	if q.Load().HotkeyMap["F1"] != "chat" {
+		t.Errorf("map-element setter lost: HotkeyMap[F1] = %q", q.Load().HotkeyMap["F1"])
 	}
-	if !q.SmoothScaling || q.MasterVol != 80 {
-		t.Errorf("multi-field setter lost: SmoothScaling=%v MasterVol=%d", q.SmoothScaling, q.MasterVol)
-	}
-
-	// the inline fields and the snapshot agree after the round-trip
-	if !snapshotMatchesInline(q) {
-		t.Error("snapshot != inline after reload")
-	}
-}
-
-// writeBackInline must be kept in sync with the generated Clone/syncFromInline: every
-// Settings field is written back. TestWriteBackInlineDropsNothing regenerates nothing; it
-// guards by asserting that after a collection setter the inline field equals the snapshot.
-func TestWriteBackInlineCollection(t *testing.T) {
-	p := defaultPrefs("")
-	p.Update(func(s *Settings) { s.Wardrobe = []string{"w1", "w2"} })
-	if !snapshotMatchesInline(p) {
-		t.Error("writeBackInline missed a collection: snapshot != inline after a slice setter")
-	}
-	if !reflect.DeepEqual(p.Load().Wardrobe, []string{"w1", "w2"}) {
-		t.Errorf("snapshot Wardrobe = %v, want [w1 w2]", p.Load().Wardrobe)
-	}
-	if !reflect.DeepEqual(p.Wardrobe, []string{"w1", "w2"}) {
-		t.Errorf("inline Wardrobe = %v, want [w1 w2]", p.Wardrobe)
+	if !q.Load().SmoothScaling || q.Load().MasterVol != 80 {
+		t.Errorf("multi-field setter lost: SmoothScaling=%v MasterVol=%d", q.Load().SmoothScaling, q.Load().MasterVol)
 	}
 }
