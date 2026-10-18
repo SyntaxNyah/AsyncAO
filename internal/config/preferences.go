@@ -2349,12 +2349,7 @@ func (s *Settings) FontWarnShownFor(theme string) bool {
 		return true // nothing to key on: never warn rather than warn every apply
 	}
 
-	for _, t := range s.FontWarnThemes {
-		if strings.EqualFold(t, theme) {
-			return true
-		}
-	}
-	return false
+	return containsFold(s.FontWarnThemes, theme)
 }
 
 // MarkFontWarnShown records that this theme has been warned about. Idempotent.
@@ -2919,21 +2914,16 @@ func (p *AssetPreferences) SetCallWords(words []string) {
 func (p *AssetPreferences) AddCallWord(input string) int {
 	added := 0
 	p.Update(func(sn *Settings) {
-		have := make(map[string]bool, len(sn.CallWordList))
-		for _, w := range sn.CallWordList {
-			have[w] = true
-		}
 		for _, raw := range strings.Split(input, ",") {
 			w := strings.ToLower(strings.TrimSpace(raw))
-			if w == "" || have[w] {
+			if w == "" {
 				continue
 			}
-			if len(sn.CallWordList) >= callWordCap {
-				break
+			var ok bool
+			sn.CallWordList, ok = addExactUnique(sn.CallWordList, w, callWordCap)
+			if ok {
+				added++
 			}
-			sn.CallWordList = append(sn.CallWordList, w)
-			have[w] = true
-			added++
 		}
 	})
 	return added
@@ -2944,13 +2934,7 @@ func (p *AssetPreferences) RemoveCallWord(word string) bool {
 	word = strings.ToLower(strings.TrimSpace(word))
 	changed := false
 	p.Update(func(sn *Settings) {
-		for i, w := range sn.CallWordList {
-			if w == word {
-				sn.CallWordList = append(sn.CallWordList[:i], sn.CallWordList[i+1:]...)
-				changed = true
-				break
-			}
-		}
+		sn.CallWordList, changed = removeExact(sn.CallWordList, word)
 	})
 	return changed
 }
@@ -4121,16 +4105,7 @@ func (p *AssetPreferences) AddWardrobe(serverKey, name string) bool {
 	}
 	changed := false
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		if len(w.Wardrobe) >= WardrobeCap {
-			return
-		}
-		for _, have := range w.Wardrobe {
-			if strings.EqualFold(have, name) {
-				return
-			}
-		}
-		w.Wardrobe = append(w.Wardrobe, name)
-		changed = true
+		w.Wardrobe, changed = addFoldUnique(w.Wardrobe, name, WardrobeCap)
 	})
 	if changed {
 		p.wardrobeGen.Add(1)
@@ -4142,13 +4117,9 @@ func (p *AssetPreferences) AddWardrobe(serverKey, name string) bool {
 func (p *AssetPreferences) RemoveWardrobe(serverKey, name string) bool {
 	changed := false
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		for i, have := range w.Wardrobe {
-			if strings.EqualFold(have, name) {
-				w.Wardrobe = append(w.Wardrobe[:i], w.Wardrobe[i+1:]...)
-				delete(w.WardrobeFolder, strings.ToLower(name)) // drop its folder too
-				changed = true
-				return
-			}
+		w.Wardrobe, changed = removeFold(w.Wardrobe, name)
+		if changed {
+			delete(w.WardrobeFolder, strings.ToLower(name)) // drop its folder too
 		}
 	})
 	if changed {
@@ -4273,16 +4244,7 @@ func (p *AssetPreferences) AddFavBackground(serverKey, name string) bool {
 	}
 	changed := false
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		if len(w.FavBackgrounds) >= FavBackgroundCap {
-			return
-		}
-		for _, have := range w.FavBackgrounds {
-			if strings.EqualFold(have, name) {
-				return
-			}
-		}
-		w.FavBackgrounds = append(w.FavBackgrounds, name)
-		changed = true
+		w.FavBackgrounds, changed = addFoldUnique(w.FavBackgrounds, name, FavBackgroundCap)
 	})
 	return changed
 }
@@ -4292,13 +4254,9 @@ func (p *AssetPreferences) AddFavBackground(serverKey, name string) bool {
 func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
 	changed := false
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
-		for i, have := range w.FavBackgrounds {
-			if strings.EqualFold(have, name) {
-				w.FavBackgrounds = append(w.FavBackgrounds[:i], w.FavBackgrounds[i+1:]...)
-				delete(w.FavBackgroundFolder, strings.ToLower(name)) // leaving favourites drops the folder too
-				changed = true
-				return
-			}
+		w.FavBackgrounds, changed = removeFold(w.FavBackgrounds, name)
+		if changed {
+			delete(w.FavBackgroundFolder, strings.ToLower(name)) // leaving favourites drops the folder too
 		}
 	})
 	return changed
@@ -4597,18 +4555,10 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		if len(existing) > 0 && existing[0] == ext {
 			return // already preferred; no write, no dirty
 		}
-		next := make([]string, 0, len(existing)+1)
-		next = append(next, ext)
-		for _, e := range existing {
-			if e == ext || len(next) == LearnedExtCap {
-				continue
-			}
-			next = append(next, e)
-		}
 		if sn.LearnedFormats == nil {
 			sn.LearnedFormats = map[string][]string{}
 		}
-		sn.LearnedFormats[key] = next
+		sn.LearnedFormats[key] = promoteFront(existing, ext, LearnedExtCap)
 	})
 }
 
@@ -5865,16 +5815,7 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		if len(sn.ShownamePresets) >= ShownameCap {
-			return
-		}
-		for _, have := range sn.ShownamePresets {
-			if strings.EqualFold(have, name) {
-				return
-			}
-		}
-		sn.ShownamePresets = append(sn.ShownamePresets, name)
-		changed = true
+		sn.ShownamePresets, changed = addFoldUnique(sn.ShownamePresets, name, ShownameCap)
 	})
 	return changed
 }
@@ -5883,16 +5824,12 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
-		for i, have := range sn.ShownamePresets {
-			if strings.EqualFold(have, name) {
-				sn.ShownamePresets = append(sn.ShownamePresets[:i], sn.ShownamePresets[i+1:]...)
-				for k, v := range sn.ShownameKeys { // drop any key bound to the removed preset
-					if strings.EqualFold(v, name) {
-						delete(sn.ShownameKeys, k)
-					}
+		sn.ShownamePresets, changed = removeFold(sn.ShownamePresets, name)
+		if changed {
+			for k, v := range sn.ShownameKeys { // drop any key bound to the removed preset
+				if strings.EqualFold(v, name) {
+					delete(sn.ShownameKeys, k)
 				}
-				changed = true
-				return
 			}
 		}
 	})
@@ -6019,16 +5956,7 @@ func (p *AssetPreferences) MuteSFX(name string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		if len(sn.MutedSFX) >= mutedSFXCap {
-			return
-		}
-		for _, m := range sn.MutedSFX {
-			if m == name {
-				return
-			}
-		}
-		sn.MutedSFX = append(sn.MutedSFX, name)
-		changed = true
+		sn.MutedSFX, changed = addExactUnique(sn.MutedSFX, name, mutedSFXCap)
 	})
 	return changed
 }
@@ -6038,13 +5966,7 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	changed := false
 	p.Update(func(sn *Settings) {
-		for i, m := range sn.MutedSFX {
-			if m == name {
-				sn.MutedSFX = append(sn.MutedSFX[:i], sn.MutedSFX[i+1:]...)
-				changed = true
-				return
-			}
-		}
+		sn.MutedSFX, changed = removeExact(sn.MutedSFX, name)
 	})
 	return changed
 }
@@ -6090,17 +6012,12 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 	}
 	nowFav := false
 	p.Update(func(sn *Settings) {
-		for i, s := range sn.SfxFavorites {
-			if s == name {
-				sn.SfxFavorites = append(sn.SfxFavorites[:i], sn.SfxFavorites[i+1:]...)
-				return
-			}
-		}
-		if len(sn.SfxFavorites) >= sfxFavoritesCap {
+		var removed bool
+		sn.SfxFavorites, removed = removeExact(sn.SfxFavorites, name)
+		if removed {
 			return
 		}
-		sn.SfxFavorites = append(sn.SfxFavorites, name)
-		nowFav = true
+		sn.SfxFavorites, nowFav = addExactUnique(sn.SfxFavorites, name, sfxFavoritesCap)
 	})
 	return nowFav
 }
@@ -6143,16 +6060,7 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
 		seedModTemplates(sn)
-		if len(sn.ModReasonTemplates) >= modReasonTemplatesCap {
-			return
-		}
-		for _, t := range sn.ModReasonTemplates {
-			if strings.EqualFold(t, s) {
-				return
-			}
-		}
-		sn.ModReasonTemplates = append(sn.ModReasonTemplates, s)
-		changed = true
+		sn.ModReasonTemplates, changed = addFoldUnique(sn.ModReasonTemplates, s, modReasonTemplatesCap)
 	})
 	return changed
 }
@@ -6179,16 +6087,7 @@ func (p *AssetPreferences) AddModDuration(token string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		if len(sn.ModDurations) >= modDurationsCap {
-			return
-		}
-		for _, t := range sn.ModDurations {
-			if strings.EqualFold(t, token) {
-				return
-			}
-		}
-		sn.ModDurations = append(sn.ModDurations, token)
-		changed = true
+		sn.ModDurations, changed = addFoldUnique(sn.ModDurations, token, modDurationsCap)
 	})
 	return changed
 }
@@ -6198,13 +6097,7 @@ func (p *AssetPreferences) RemoveModDuration(token string) bool {
 	token = strings.TrimSpace(token)
 	changed := false
 	p.Update(func(sn *Settings) {
-		for i, t := range sn.ModDurations {
-			if strings.EqualFold(t, token) {
-				sn.ModDurations = append(sn.ModDurations[:i], sn.ModDurations[i+1:]...)
-				changed = true
-				return
-			}
-		}
+		sn.ModDurations, changed = removeFold(sn.ModDurations, token)
 	})
 	return changed
 }
@@ -6215,13 +6108,7 @@ func (p *AssetPreferences) RemoveModReasonTemplate(s string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
 		seedModTemplates(sn)
-		for i, t := range sn.ModReasonTemplates {
-			if strings.EqualFold(t, s) {
-				sn.ModReasonTemplates = append(sn.ModReasonTemplates[:i], sn.ModReasonTemplates[i+1:]...)
-				changed = true
-				return
-			}
-		}
+		sn.ModReasonTemplates, changed = removeFold(sn.ModReasonTemplates, s)
 	})
 	return changed
 }
@@ -6340,12 +6227,7 @@ func (s *Settings) IsEmoteFav(char string, idx int) bool {
 		return false
 	}
 
-	for _, v := range s.EmoteFavs[char] {
-		if v == idx {
-			return true
-		}
-	}
-	return false
+	return containsInt(s.EmoteFavs[char], idx)
 }
 
 // ToggleEmoteFav flips emote index idx's favourite state for char and returns
@@ -6361,27 +6243,27 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 	nowFav := false
 	p.Update(func(sn *Settings) {
 		list := sn.EmoteFavs[char]
-		for i, v := range list {
-			if v == idx { // already favourited -> remove it
-				list = append(list[:i], list[i+1:]...)
-				if len(list) == 0 {
-					delete(sn.EmoteFavs, char)
-				} else {
-					sn.EmoteFavs[char] = list
-				}
+		if !containsInt(list, idx) {
+			if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
 				return
 			}
+			if _, had := sn.EmoteFavs[char]; !had && len(sn.EmoteFavs) >= emoteFavCharsCap {
+				return // bounded: too many characters tracked
+			}
 		}
-		if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
+		list, nowIn := toggleInt(list, idx)
+		if !nowIn { // removed
+			if len(list) == 0 {
+				delete(sn.EmoteFavs, char)
+			} else {
+				sn.EmoteFavs[char] = list
+			}
 			return
-		}
-		if _, had := sn.EmoteFavs[char]; !had && len(sn.EmoteFavs) >= emoteFavCharsCap {
-			return // bounded: too many characters tracked
 		}
 		if sn.EmoteFavs == nil {
 			sn.EmoteFavs = make(map[string][]int)
 		}
-		sn.EmoteFavs[char] = append(sn.EmoteFavs[char], idx)
+		sn.EmoteFavs[char] = list
 		nowFav = true
 	})
 	return nowFav
