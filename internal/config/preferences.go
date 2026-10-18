@@ -2872,21 +2872,19 @@ func (p *AssetPreferences) DeleteStylePreset(i int) {
 // any other preset first so a key maps to exactly one mood.
 func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
 	key = strings.ToLower(strings.TrimSpace(key))
-	p.mu.Lock()
-	if i < 0 || i >= len(p.SavedStyles) {
-		p.mu.Unlock()
-		return
-	}
-	if key != "" {
-		for j := range p.SavedStyles {
-			if j != i && p.SavedStyles[j].Key == key {
-				p.SavedStyles[j].Key = ""
+	p.Update(func(sn *Settings) {
+		if i < 0 || i >= len(sn.SavedStyles) {
+			return
+		}
+		if key != "" {
+			for j := range sn.SavedStyles {
+				if j != i && sn.SavedStyles[j].Key == key {
+					sn.SavedStyles[j].Key = ""
+				}
 			}
 		}
-	}
-	p.SavedStyles[i].Key = key
-	p.markDirty()
-	p.mu.Unlock()
+		sn.SavedStyles[i].Key = key
+	})
 }
 
 // StylePresetForKey returns the preset bound to a bare key (ok=false when none).
@@ -3912,18 +3910,15 @@ func (p *AssetPreferences) Hotkey(action string) string {
 
 // SetHotkey stores one action's key name.
 func (p *AssetPreferences) SetHotkey(action, key string) {
-	p.mu.Lock()
-	if p.HotkeyMap == nil {
-		p.HotkeyMap = map[string]string{}
-		p.stale.Store(true) // republish the nil -> empty lazy init before the early return
-	}
-	if p.HotkeyMap[action] == key {
-		p.mu.Unlock()
-		return
-	}
-	p.HotkeyMap[action] = key
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.HotkeyMap == nil {
+			sn.HotkeyMap = map[string]string{}
+		}
+		if sn.HotkeyMap[action] == key {
+			return
+		}
+		sn.HotkeyMap[action] = key
+	})
 }
 
 // --- Per-server warm state -----------------------------------------------------------
@@ -4276,14 +4271,9 @@ func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
 	if i < 0 || i >= LayoutPartColorCount {
 		return
 	}
-	p.mu.Lock()
-	if p.LayoutPartHex[i] == hex {
-		p.mu.Unlock()
-		return
-	}
-	p.LayoutPartHex[i] = hex
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.LayoutPartHex[i] = hex
+	})
 }
 
 // BoldNamesOn reports whether speaker names render bold (IC/OOC log + chatbox).
@@ -6468,17 +6458,15 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 	if name == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ClassicLayout == nil {
-		p.ClassicLayout = map[string][4]float64{}
-	}
-	if _, exists := p.ClassicLayout[name]; !exists && len(p.ClassicLayout) >= classicSlotCap {
-		p.mu.Unlock()
-		return
-	}
-	p.ClassicLayout[name] = frac
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ClassicLayout == nil {
+			sn.ClassicLayout = map[string][4]float64{}
+		}
+		if _, exists := sn.ClassicLayout[name]; !exists && len(sn.ClassicLayout) >= classicSlotCap {
+			return
+		}
+		sn.ClassicLayout[name] = frac
+	})
 }
 
 // ClearClassicSlot drops one slot's override (name "" clears every slot, the
@@ -6586,17 +6574,15 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 	if name == "" || !validAnchorMode(a.Mode) || a.WinW <= 0 || a.WinH <= 0 {
 		return
 	}
-	p.mu.Lock()
-	if p.ClassicAnchors == nil {
-		p.ClassicAnchors = map[string]ClassicAnchor{}
-	}
-	if _, exists := p.ClassicAnchors[name]; !exists && len(p.ClassicAnchors) >= classicSlotCap {
-		p.mu.Unlock()
-		return
-	}
-	p.ClassicAnchors[name] = a
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ClassicAnchors == nil {
+			sn.ClassicAnchors = map[string]ClassicAnchor{}
+		}
+		if _, exists := sn.ClassicAnchors[name]; !exists && len(sn.ClassicAnchors) >= classicSlotCap {
+			return
+		}
+		sn.ClassicAnchors[name] = a
+	})
 }
 
 // ClearClassicAnchor drops one slot's window pin (the override stays; the
@@ -6704,17 +6690,15 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 	if name == "" {
 		return
 	}
-	p.mu.Lock()
-	if p.ClassicRotations == nil {
-		p.ClassicRotations = map[string]uint8{}
-	}
-	if _, exists := p.ClassicRotations[name]; !exists && len(p.ClassicRotations) >= classicSlotCap {
-		p.mu.Unlock()
-		return
-	}
-	p.ClassicRotations[name] = deg
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if sn.ClassicRotations == nil {
+			sn.ClassicRotations = map[string]uint8{}
+		}
+		if _, exists := sn.ClassicRotations[name]; !exists && len(sn.ClassicRotations) >= classicSlotCap {
+			return
+		}
+		sn.ClassicRotations[name] = deg
+	})
 }
 
 // ClearClassicRotation drops one slot's rotation (the override stays; the slot
