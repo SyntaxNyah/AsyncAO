@@ -280,6 +280,6 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	// row it collided with the resize grip the moment the panel was dragged narrow.
 	if rep := c.Checkbox(panel.X+pad, by-24, "Repeat", a.timerRepeat); rep != a.timerRepeat {
 		a.timerRepeat = rep
-		a.d.Prefs.SetTimerRepeat(rep)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.TimerRepeat = rep })
 	}
 }

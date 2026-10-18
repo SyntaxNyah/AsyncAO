@@ -251,11 +251,11 @@ func TestCharSelectStaysClassicWithoutATheme(t *testing.T) {
 	if !a.charSelectLayout(1152, 864).valid {
 		t.Fatal("fixture did not build a canvas to begin with")
 	}
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if lay := a.charSelectLayout(1152, 864); lay.valid {
 		t.Error("char select kept the theme canvas after the theme layout was switched off")
 	}
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if lay := a.charSelectLayout(1152, 864); !lay.valid {
 		t.Error("switching the theme layout back on did not restore the canvas")
 	}
@@ -344,7 +344,7 @@ func TestCharSelectCanvasNeverPaintsIntoTheChromeBand(t *testing.T) {
 			a.activeTab = 0
 			a.d.Prefs.SetThemeFit(m.mode)
 			if m.mode == config.ThemeFitCustom {
-				a.d.Prefs.SetThemeFitZoom(160) // zoom past the window, then pan up
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 160 }) // zoom past the window, then pan up
 				a.d.Prefs.SetThemeFitPan(-20, -30)
 			}
 			a.charSelLay.valid = false
@@ -560,7 +560,7 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	const w, h int32 = 1152, 864
 	a := stageCharSelect(t, stockCharSelectDesign())
 	a.d.Prefs.SetThemeFit(config.ThemeFitCustom)
-	a.d.Prefs.SetThemeFitZoom(100)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 100 })
 	a.d.Prefs.SetThemeFitPan(0, 0)
 	a.invalidateThemeCanvases()
 	base := *a.charSelectLayout(w, h)
@@ -600,7 +600,7 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	}
 
 	// The zoom, same route.
-	a.d.Prefs.SetThemeFitZoom(160)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 160 })
 	a.invalidateThemeCanvases()
 	zoomed := *a.charSelectLayout(w, h)
 	if zoomed.area.W <= panned.area.W || zoomed.area.H <= panned.area.H {

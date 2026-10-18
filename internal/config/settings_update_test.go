@@ -64,7 +64,7 @@ func TestUpdateMatchesSetterAdapter(t *testing.T) {
 		}, func(s *Settings) { s.AlertVol = 80 }},
 		{"SetSmoothScaling", func(p *AssetPreferences) { p.Update(func(sn *Settings) { sn.SmoothScaling = true }) }, func(s *Settings) { s.SmoothScaling = true }},
 		{"SetUIScale", func(p *AssetPreferences) { p.SetUIScale(130) }, func(s *Settings) { s.UIScalePct = 130 }},
-		{"SetTexBudgetMiB", func(p *AssetPreferences) { p.SetTexBudgetMiB(999) }, func(s *Settings) { s.TexBudgetMiBVal = 999 }},
+		{"SetTexBudgetMiB", func(p *AssetPreferences) { p.Update(func(sn *Settings) { sn.TexBudgetMiBVal = 999 }) }, func(s *Settings) { s.TexBudgetMiBVal = 999 }},
 	}
 	for _, c := range cases {
 		base := defaultPrefs("")

@@ -83,7 +83,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// plain-key behavior (Ctrl+Backspace does nothing inside a field).
 	wdOn := a.d.Prefs.Load().WordDelete
 	if next := c.Checkbox(pad, y, "Ctrl+Backspace deletes a word", wdOn); next != wdOn {
-		a.d.Prefs.SetWordDelete(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.WordDelete = next })
 	}
 	y += 24
 	c.Label(pad+16, y, "In any text box. Off restores plain-key behavior.", ColTextDim)
@@ -566,17 +566,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 6
 	ssnd := a.d.Prefs.Load().StickySounds
 	if next := c.Checkbox(pad, y, "Sticky sounds (OFF by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
-		a.d.Prefs.SetStickySounds(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StickySounds = next })
 	}
 	y += 26
 	sfxx := a.d.Prefs.Load().StickyEffects
 	if next := c.Checkbox(pad, y, "Sticky effects (OFF by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
-		a.d.Prefs.SetStickyEffects(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StickyEffects = next })
 	}
 	y += 26
 	spre := a.d.Prefs.Load().StickyPreanims
 	if next := c.Checkbox(pad, y, "Sticky preanims (OFF by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
-		a.d.Prefs.SetStickyPreanims(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StickyPreanims = next })
 	}
 	y += 26
 	soi := a.d.Prefs.Load().SFXOnIdle

@@ -82,7 +82,7 @@ func scaleTestApp(t *testing.T) *App {
 func TestAutoScaleStepRerastersTextAtDeviceScale(t *testing.T) {
 	a := scaleTestApp(t)
 	c := a.ctx
-	a.d.Prefs.SetUIScaleAuto(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = true })
 
 	// One pixel UNDER the step on both axes: still 100%, still 1:1, nothing stretched.
 	a.SetAutoScaleFromWindow(autoScaleStepW-1, autoScaleStepH-1)

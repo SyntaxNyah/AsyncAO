@@ -315,7 +315,7 @@ func (a *App) Disconnect() {
 func (a *App) applyWindowSize(w, h int) {
 	if a.d.Prefs.Load().WindowFull {
 		a.ctx.SetWindowFullscreen(false)
-		a.d.Prefs.SetWindowFullscreen(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.WindowFull = false })
 	}
 	// A MAXIMIZED window swallows the resize whole (#35): SDL_SetWindowSize has no
 	// maximized guard, and on Windows the backend's SetWindowPos runs against an
@@ -539,7 +539,7 @@ func (a *App) fitWindowToScreen() {
 // fullscreen snaps back to a clamped windowed size so a stranded one can't return.
 func (a *App) applyFullscreen(on bool) {
 	a.ctx.SetWindowFullscreen(on)
-	a.d.Prefs.SetWindowFullscreen(on)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.WindowFull = on })
 	if !on {
 		w, h := a.d.Prefs.WindowSize()
 		if w <= 0 || h <= 0 {

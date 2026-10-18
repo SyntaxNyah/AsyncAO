@@ -115,6 +115,11 @@ func BenchmarkSetTexBudgetMiB(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p.SetTexBudgetMiB(64 + i%256)
+		{
+			pv1 := 64 + i%256
+			p.Update(func(sn *Settings) {
+				sn.TexBudgetMiBVal = pv1
+			})
+		}
 	}
 }

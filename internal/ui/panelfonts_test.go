@@ -334,7 +334,7 @@ func landWithPanel(t *testing.T, tune func(a *App)) *App {
 // client's" would silently disable a setting the user made somewhere else
 // entirely, and they would have no way to tell which control had done it.
 func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetThemeFonts(false) })
+	a := landWithPanel(t, func(a *App) { a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false }) })
 	if got := a.themeFonts.e[elemICChatlog]; got.pct != 250 || got.face != 2 {
 		t.Errorf("ic_chatlog = %+v, want the USER's pct 250 and face 2 to survive the theme-fonts opt-out", got)
 	}

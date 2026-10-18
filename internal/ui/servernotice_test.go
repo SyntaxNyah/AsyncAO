@@ -728,7 +728,12 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, cleanup := stageFrameDrivenApp(t)
 			defer cleanup()
-			a.d.Prefs.SetThemeLayout(tc.themed) // which of the two IC fields draws
+			{
+				pv1 := tc.themed
+				a.d.Prefs.Update(func(sn *config.Settings) { // which of the two IC fields draws
+					sn.ThemeLayoutOn = pv1
+				})
+			}
 			driveFrame(a)
 
 			const draft = "/unpair"

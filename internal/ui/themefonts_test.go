@@ -338,7 +338,7 @@ func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("theme fonts must ship ON (an AO2 theme's fonts are part of the theme)")
 	}
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	res := &themeApply{faceData: [][]byte{{0x00}}}
 	for i := range res.fontTable.e {
 		res.fontTable.e[i] = themeElemFont{pct: 200, face: 1, bold: true}
@@ -411,11 +411,11 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("default must be ON")
 	}
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	if a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(false) did not stick")
 	}
-	a.d.Prefs.SetThemeFonts(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = true })
 	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(true) did not stick")
 	}

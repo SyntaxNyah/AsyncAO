@@ -65,7 +65,12 @@ func TestClearSFXAfterSendReadsTheRealPreferences(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, prefs := newStickyPrefsApp(t)
-			prefs.SetStickySounds(tc.stickySounds)
+			{
+				pv1 := tc.stickySounds
+				prefs.Update(func(sn *config.Settings) {
+					sn.StickySounds = pv1
+				})
+			}
 			{
 				pv1 := tc.sfxOnIdle
 				prefs.Update(func(sn *config.Settings) {
@@ -99,7 +104,12 @@ func TestClearPreAfterSendReadsTheRealPreferences(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, prefs := newStickyPrefsApp(t)
-			prefs.SetStickyPreanims(tc.sticky)
+			{
+				pv2 := tc.sticky
+				prefs.Update(func(sn *config.Settings) {
+					sn.StickyPreanims = pv2
+				})
+			}
 			a.icPreanim = tc.startPre
 			a.clearPreAfterSend()
 			if a.icPreanim != tc.wantPre {
@@ -144,7 +154,12 @@ func TestClearEffectsAfterSendReadsTheRealPreference(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, prefs := newStickyPrefsApp(t)
-			prefs.SetStickyEffects(tc.sticky)
+			{
+				pv3 := tc.sticky
+				prefs.Update(func(sn *config.Settings) {
+					sn.StickyEffects = pv3
+				})
+			}
 			stickyFXFixture(a)
 			a.overlayChoiceIdx = tc.row
 			a.clearEffectsAfterSend()
@@ -166,9 +181,9 @@ func TestStickyResetsSurviveAPreferenceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prefs.SetStickySounds(false)
-	prefs.SetStickyEffects(false)
-	prefs.SetStickyPreanims(false)
+	prefs.Update(func(sn *config.Settings) { sn.StickySounds = false })
+	prefs.Update(func(sn *config.Settings) { sn.StickyEffects = false })
+	prefs.Update(func(sn *config.Settings) { sn.StickyPreanims = false })
 	prefs.Update(func(sn *config.Settings) { sn.SFXOnIdle = true })
 	if err := prefs.Close(); err != nil { // Close flushes the debounced saver
 		t.Fatal(err)

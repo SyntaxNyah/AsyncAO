@@ -43,7 +43,7 @@ func TestPacingFocusedOverridesOnlyWhenAsked(t *testing.T) {
 	if a.pacingFocused(false) {
 		t.Error("with the option off an unfocused window must stay unfocused")
 	}
-	a.d.Prefs.SetUnfocusedFullRate(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFullRate = true })
 	if !a.pacingFocused(false) {
 		t.Error("with the option on an unfocused window must pace as focused")
 	}
@@ -62,7 +62,12 @@ func TestPacingFocusedOverridesOnlyWhenAsked(t *testing.T) {
 // the static park, the ceiling and the wake schedule.
 func TestUnfocusedFullRateLiftsEveryPacerTier(t *testing.T) {
 	prefs := pacerPrefs(t)
-	prefs.SetUnfocusedFPS(config.FPSOff) // the hardest background setting there is
+	{
+		pv1 := config.FPSOff
+		prefs.Update(func(sn *config.Settings) { // the hardest background setting there is
+			sn.UnfocusedFPSVal = pv1
+		})
+	}
 	a := &App{d: Deps{Prefs: prefs}}
 
 	if !a.SkipFrame(false, false) {
@@ -75,7 +80,7 @@ func TestUnfocusedFullRateLiftsEveryPacerTier(t *testing.T) {
 		t.Fatal("baseline: a parked window must schedule no redraw wakes")
 	}
 
-	prefs.SetUnfocusedFullRate(true)
+	prefs.Update(func(sn *config.Settings) { sn.UnfocusedFullRate = true })
 	if a.SkipFrame(false, false) != a.SkipFrame(true, false) {
 		t.Error("SkipFrame must answer the focused way once the option is on")
 	}

@@ -272,7 +272,7 @@ func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
 			name: "dismiss frame (the theme went away mid-pass)",
 			beforePass: func(a *App) {
 				a.layoutEdit = true
-				a.d.Prefs.SetThemeLayout(false) // drawCourtroom force-stops the themed editor
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // drawCourtroom force-stops the themed editor
 			},
 			wantInPass: true,
 		},
@@ -571,7 +571,7 @@ var themeFitDragCases = []struct {
 	{"Stretch 1000x900", 1000, 900, func(a *App) { a.d.Prefs.SetThemeFit(config.ThemeFitStretch) }},
 	{"Custom zoom+pan 1000x800", 1000, 800, func(a *App) {
 		a.d.Prefs.SetThemeFit(config.ThemeFitCustom)
-		a.d.Prefs.SetThemeFitZoom(120)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 120 })
 		a.d.Prefs.SetThemeFitPan(7, -5)
 	}},
 }

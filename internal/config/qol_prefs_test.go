@@ -704,7 +704,7 @@ func TestTimerPref(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	q.SetTimerSeconds(90)
-	q.SetTimerRepeat(true)
+	q.Update(func(sn *Settings) { sn.TimerRepeat = true })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1202,10 +1202,10 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	p.SetSpritePreviews(false)
+	p.Update(func(sn *Settings) { sn.SpritePreviewOn = false })
 	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 8000 })
-	p.SetPreviewHeightPx(512)            // default-when-0 int — must survive
-	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
+	p.SetPreviewHeightPx(512)                                     // default-when-0 int — must survive
+	p.Update(func(sn *Settings) { sn.UpdateExperimental = true }) // default-OFF plain bool — must survive (the test-branch channel)
 	p.Update(func(
 		sn *Settings) {
 
@@ -1216,7 +1216,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 
 	})
 
-	p.SetSpriteMove(true)
+	p.Update(func(sn *Settings) { sn.SpriteMoveOn = true })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1284,7 +1284,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 
 	// explicit non-default true must survive the absent-default-OFF pointer
 	p.Update(func(sn *Settings) { sn.ScreenEffects = false }) // default-ON *bool — explicit false must survive
-	p.SetWordDelete(false)                                    // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.WordDelete = false })    // default-ON *bool — explicit false must survive
 	p.Update(func(
 		sn *Settings) {
 
@@ -1381,10 +1381,10 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.Update(func(sn *Settings) { sn.RainbowSpriteGlow = true })
 	p.Update(func(sn *Settings) { sn.RainbowPairDesync = true })
 	p.Update(func(sn *Settings) { sn.RainbowPerChar = true })
-	p.SetSpriteWobble(true)
-	p.SetSpriteSpin(true)
-	p.SetSpriteSolidTint(true)
-	p.SetSpriteTintColor(0x112233)
+	p.Update(func(sn *Settings) { sn.SpriteWobble = true })
+	p.Update(func(sn *Settings) { sn.SpriteSpin = true })
+	p.Update(func(sn *Settings) { sn.SpriteSolidTint = true })
+	p.Update(func(sn *Settings) { sn.SpriteTintColor = 0x112233 })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1688,13 +1688,13 @@ func TestModReasonTemplates(t *testing.T) {
 func TestResetPowerUser(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	// Scramble every knob off its default.
-	p.SetValidateTLSCerts(true)
+	p.Update(func(sn *Settings) { sn.ValidateTLSCerts = true })
 	p.SetAssetOriginHeader("https://a.example")
 	p.SetWSOriginHeader("https://b.example")
 	p.SetSpriteLoadMode(SpriteLoadWait)
 	p.SetSpriteWaitMs(4000)
-	p.SetSpriteWaitPair(true)
-	p.SetSpriteWaitPreanim(true)
+	p.Update(func(sn *Settings) { sn.SpriteWaitPair = true })
+	p.Update(func(sn *Settings) { sn.SpriteWaitPreanim = true })
 	p.Update(func(sn *Settings) { sn.ShoutBypassQueue = false }) // off the default (ON) — the nuke must restore it
 	p.Update(func(
 		sn *Settings) {
@@ -1748,10 +1748,10 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetThumbCache(true)
-	p.SetThumbHeightPx(120)
-	p.SetThumbQuality(40)
-	p.SetThumbBudgetMiB(256)
+	p.Update(func(sn *Settings) { sn.ThumbCache = true })
+	p.Update(func(sn *Settings) { sn.ThumbHeightPxVal = 120 })
+	p.Update(func(sn *Settings) { sn.ThumbQualityVal = 40 })
+	p.Update(func(sn *Settings) { sn.ThumbBudgetMiBVal = 256 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1784,7 +1784,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetTexBudgetMiB(96)
+	p.Update(func(sn *Settings) { sn.TexBudgetMiBVal = 96 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1815,7 +1815,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.SetUnfocusedFPS(30)
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = 30 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1899,7 +1899,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().ThumbCache || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
 		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
-	if p.Load().NotFoundTTLSecVal != 0 || p.AdaptiveLatMultiple() != 0 {
+	if p.Load().NotFoundTTLSecVal != 0 || p.Load().AdaptiveLatMultipleVal != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
 	if p.Load().SpriteDownscaleOff || p.Load().SpriteDownscalePctVal != 0 || p.Load().AnimatedSpriteCapPxVal != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
@@ -2263,8 +2263,14 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	if p.Load().ThemeFit != ThemeFitStretch {
 		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.Load().ThemeFit, ThemeFitStretch)
 	}
-	p.SetThemeFit(ThemeFitCustom) // restore a mid mode so the zoom/pan checks below are meaningful
-	p.SetThemeFitZoom(1 << 20)
+	p.SetThemeFit(ThemeFitCustom)
+	{
+		pv1 := // restore a mid mode so the zoom/pan checks below are meaningful
+			1 << 20
+		p.Update(func(sn *Settings) {
+			sn.ThemeFitZoom = pv1
+		})
+	}
 	if p.ThemeZoom() != MaxThemeZoom {
 		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)
 	}
@@ -2312,7 +2318,7 @@ func TestFPSKnobDomain(t *testing.T) {
 
 	})
 
-	p.SetUnfocusedFPS(1)
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = 1 })
 	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
 		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
 			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
@@ -2343,7 +2349,7 @@ func TestFPSKnobDomain(t *testing.T) {
 
 	})
 
-	p.SetUnfocusedFPS(FPSOff)
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = FPSOff })
 	p.Update(func(
 		sn *Settings) {
 

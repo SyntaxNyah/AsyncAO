@@ -713,7 +713,12 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
 		a.volStripOn = !a.volStripOn
-		a.d.Prefs.SetVolStripShown(a.volStripOn) // persist so it survives a restart
+		{
+			pv1 := a.volStripOn
+			a.d.Prefs.Update(func(sn *config.Settings) { // persist so it survives a restart
+				sn.VolStripOn = pv1
+			})
+		}
 	}
 	if a.volStripOn {
 		c.Border(volBtn, ColAccent) // active cue

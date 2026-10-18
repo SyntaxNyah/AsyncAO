@@ -804,15 +804,15 @@ func TestMultiTabCap(t *testing.T) {
 	if p.TabCap() != DefaultMultiTabCap {
 		t.Fatalf("default tab cap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
 	}
-	p.SetTabCap(5)
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 5 })
 	if p.TabCap() != 5 {
 		t.Errorf("after SetTabCap(5), TabCap = %d", p.TabCap())
 	}
-	p.SetTabCap(99) // above the hard max
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 99 }) // above the hard max
 	if p.TabCap() != maxMultiTabCap {
 		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.TabCap(), maxMultiTabCap)
 	}
-	p.SetTabCap(0) // below the min
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 0 }) // below the min
 	if p.TabCap() != minMultiTabCap {
 		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.TabCap(), minMultiTabCap)
 	}
@@ -1181,15 +1181,15 @@ func TestViewportExactWidth(t *testing.T) {
 	if got := p.Load().ViewportExactW; got != 0 {
 		t.Fatalf("default exact width = %d, want 0 (off)", got)
 	}
-	p.SetViewportExactWidth(100) // below Min → clamps up
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 100 }) // below Min → clamps up
 	if got := p.Load().ViewportExactW; got != MinViewportExactPx {
 		t.Fatalf("clamp-up = %d, want %d", got, MinViewportExactPx)
 	}
-	p.SetViewportExactWidth(99999) // above Max → clamps down
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 99999 }) // above Max → clamps down
 	if got := p.Load().ViewportExactW; got != MaxViewportExactPx {
 		t.Fatalf("clamp-down = %d, want %d", got, MaxViewportExactPx)
 	}
-	p.SetViewportExactWidth(512) // a clean 2× multiple passes through
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 512 }) // a clean 2× multiple passes through
 	if got := p.Load().ViewportExactW; got != 512 {
 		t.Fatalf("exact = %d, want 512", got)
 	}
@@ -1203,7 +1203,7 @@ func TestViewportExactWidth(t *testing.T) {
 	if got := q.Load().ViewportExactW; got != 512 {
 		t.Fatalf("reloaded exact width = %d, want 512", got)
 	}
-	q.SetViewportExactWidth(0) // 0 turns it back off (must round-trip, not re-clamp to Min)
+	q.Update(func(sn *Settings) { sn.ViewportExactW = 0 }) // 0 turns it back off (must round-trip, not re-clamp to Min)
 	if got := q.Load().ViewportExactW; got != 0 {
 		t.Fatalf("clear = %d, want 0", got)
 	}
@@ -1365,7 +1365,7 @@ func TestResetSettings(t *testing.T) {
 
 	})
 
-	p.SetTabCap(20)
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 20 })
 	p.SetCallWords([]string{"myname"})
 	p.AddFavorite("Home", "wss://home:2096", "")
 
@@ -1690,7 +1690,7 @@ func TestToolboxSeenRoundTrip(t *testing.T) {
 	if p.Load().ToolboxSeen {
 		t.Fatal("a fresh config must report ToolboxSeen=false (show the ring)")
 	}
-	p.SetToolboxSeen(true)
+	p.Update(func(sn *Settings) { sn.ToolboxSeen = true })
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -2218,9 +2218,9 @@ func TestSendOptionDefaults(t *testing.T) {
 	// Every one of them must round-trip: the save-but-never-load class this codebase
 	// has shipped more than once (TestEverySavedPreferenceIsAlsoLoaded catches the
 	// reflection half; this pins the behaviour those fields actually promise).
-	p.SetStickySounds(false)
-	p.SetStickyEffects(false)
-	p.SetStickyPreanims(false)
+	p.Update(func(sn *Settings) { sn.StickySounds = false })
+	p.Update(func(sn *Settings) { sn.StickyEffects = false })
+	p.Update(func(sn *Settings) { sn.StickyPreanims = false })
 	p.Update(func(sn *Settings) { sn.SFXOnIdle = true })
 	p.Update(func(
 		sn *Settings) {
@@ -2232,7 +2232,7 @@ func TestSendOptionDefaults(t *testing.T) {
 
 	})
 
-	p.SetUnfocusedFullRate(true)
+	p.Update(func(sn *Settings) { sn.UnfocusedFullRate = true })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -2608,7 +2608,7 @@ func TestSpriteScalingRoundTrips(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		p.SetSpriteScalingMode(mode)
+		p.Update(func(sn *Settings) { sn.SpriteScaling = mode })
 		if err := p.Close(); err != nil {
 			t.Fatalf("close: %v", err)
 		}

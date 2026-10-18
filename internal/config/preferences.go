@@ -1841,52 +1841,15 @@ func (p *AssetPreferences) SpriteScalingMode() int {
 	return ClampSpriteScaling(snap.SpriteScaling)
 }
 
-// SetSpriteScalingMode picks the per-sprite texture filter. Applies live: the
-// mode is resolved at DRAW time from the page memo, so unlike SmoothScaling this
-// needs no texture purge and no re-stream.
-func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteScaling = mode
-	})
-}
-
 // --- Update check ------------------------------------------------------------
-
-// SetUpdateCheck toggles the launch update check.
-func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
-	p.Update(func(sn *Settings) {
-		sn.UpdateCheck = enabled
-	})
-}
-
-// SetUpdateChannelExperimental swaps the update channel (true = experimental).
-func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.UpdateExperimental = on
-	})
-}
 
 // --- Missing-asset report ----------------------------------------------------
 
 // --- Sprite repositioning ---------------------------------------------------
 
-// SetSpriteMove toggles click-drag sprite repositioning.
-func (p *AssetPreferences) SetSpriteMove(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteMoveOn = on
-	})
-}
-
 // --- Desk format policy -----------------------------------------------------
 
 // --- Sprite hover preview ---------------------------------------------------
-
-// SetSpritePreviews toggles the hover-preview pop-up.
-func (p *AssetPreferences) SetSpritePreviews(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpritePreviewOn = on
-	})
-}
 
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
 // (clamped), for the Settings readout.
@@ -2107,13 +2070,6 @@ func (p *AssetPreferences) SetTimerSeconds(s int) {
 	})
 }
 
-// SetTimerRepeat stores the timer's repeat toggle.
-func (p *AssetPreferences) SetTimerRepeat(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.TimerRepeat = on
-	})
-}
-
 func clampInstantReplaySeconds(s int) int {
 	switch {
 	case s <= 0:
@@ -2280,14 +2236,7 @@ func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
 
 // SetValidateTLSCerts toggles strict wss certificate verification.
 
-func (p *AssetPreferences) SetValidateTLSCerts(b bool) {
-	p.Update(func(sn *Settings) {
-		sn.ValidateTLSCerts =
-
-			// SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
-			b
-	})
-}
+// SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
 
 func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 	s = strings.TrimSpace(s)
@@ -2566,13 +2515,6 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	})
 }
 
-// SetVoiceInput sets (or clears, for system default) the voice mic device.
-func (p *AssetPreferences) SetVoiceInput(s string) {
-	p.Update(func(sn *Settings) {
-		sn.VoiceInputDevice = s
-	})
-}
-
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
 func (p *AssetPreferences) VoiceOutVol() int {
 	snap := p.Load()
@@ -2584,13 +2526,6 @@ func (p *AssetPreferences) VoiceOutVol() int {
 		return 100
 	}
 	return snap.VoiceOutVolume
-}
-
-// SetVoiceOutVol clamps and persists the voice output volume.
-func (p *AssetPreferences) SetVoiceOutVol(v int) {
-	p.Update(func(sn *Settings) {
-		sn.VoiceOutVolume = v
-	})
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
@@ -2619,39 +2554,11 @@ func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
 	})
 }
 
-// SetVoicePTT sets (or clears) the push-to-talk toggle key.
-func (p *AssetPreferences) SetVoicePTT(k string) {
-	p.Update(func(sn *Settings) {
-		sn.VoicePTTKey = k
-	})
-}
-
 // SetProfile stores the user's character profile (every field length-clamped).
 func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 	pr = clampProfile(pr)
 	p.Update(func(sn *Settings) {
 		sn.MyProfile = pr
-	})
-}
-
-// SetSpriteWobble toggles the sprite wobble.
-func (p *AssetPreferences) SetSpriteWobble(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteWobble = on
-	})
-}
-
-// SetSpriteSpin toggles the sprite spin.
-func (p *AssetPreferences) SetSpriteSpin(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteSpin = on
-	})
-}
-
-// SetSpriteSolidTint toggles the fixed-colour sprite wash.
-func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteSolidTint = on
 	})
 }
 
@@ -2789,13 +2696,6 @@ func (p *AssetPreferences) StageFrame() int {
 	return snap.StageFrameKind
 }
 
-// SetStageFrame stores the stage-frame style (clamped to [0,stageFrameKindMax]).
-func (p *AssetPreferences) SetStageFrame(v int) {
-	p.Update(func(sn *Settings) {
-		sn.StageFrameKind = v
-	})
-}
-
 // WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
 func (p *AssetPreferences) WeatherIntensity() int {
 	snap := p.Load()
@@ -2819,13 +2719,6 @@ func (p *AssetPreferences) SpriteTintColorRGB() int {
 	snap := p.Load()
 
 	return snap.SpriteTintColor & 0xFFFFFF
-}
-
-// SetSpriteTintColor stores a packed 0xRRGGBB solid-tint colour.
-func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteTintColor = rgb
-	})
 }
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
@@ -2890,15 +2783,6 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 }
 
 // --- Debug overlay -------------------------------------------------------------
-
-// SetToolboxSeen latches the toolbox-discoverability flag (A1). Idempotent: a
-// no-op write skips markDirty so a settled draw that re-asserts "seen" never
-// spins the debounced saver.
-func (p *AssetPreferences) SetToolboxSeen(seen bool) {
-	p.Update(func(sn *Settings) {
-		sn.ToolboxSeen = seen
-	})
-}
 
 // --- Casing alerts ---------------------------------------------------------------
 
@@ -3571,13 +3455,6 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 	})
 }
 
-// SetWindowFullscreen persists the fullscreen choice.
-func (p *AssetPreferences) SetWindowFullscreen(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.WindowFull = on
-	})
-}
-
 // --- Audio volumes ----------------------------------------------------------------
 
 // AudioVolumes reports the music/SFX/blip volumes (0â€“100).
@@ -3701,20 +3578,6 @@ func (p *AssetPreferences) TabCap() int {
 		return DefaultMultiTabCap
 	}
 	return clampPercent(snap.MultiTabCap, minMultiTabCap, maxMultiTabCap)
-}
-
-// SetTabCap clamps and persists the multi-server tab cap.
-func (p *AssetPreferences) SetTabCap(n int) {
-	p.Update(func(sn *Settings) {
-		sn.MultiTabCap = n
-	})
-}
-
-// SetVolStripShown persists the on-screen volume-strip toggle.
-func (p *AssetPreferences) SetVolStripShown(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.VolStripOn = on
-	})
 }
 
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
@@ -3957,36 +3820,13 @@ func normalizeFPSPref(fps, min, max int) int {
 	return clampPercent(fps, min, max)
 }
 
-// SetSpriteWaitPair persists the wait-covers-pair knob.
-func (p *AssetPreferences) SetSpriteWaitPair(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteWaitPair =
+// SetSpriteWaitPreanim persists the wait-covers-preanim knob.
 
-			// SetSpriteWaitPreanim persists the wait-covers-preanim knob.
-			on
-	})
-}
-
-func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteWaitPreanim =
-
-			// SetShoutBypassQueue persists the shout-bypass toggle.
-			on
-	})
-}
+// SetShoutBypassQueue persists the shout-bypass toggle.
 
 // SetShoutDurationMs persists the shout hold (0 = default; else clamped).
 
-// SetThumbCache persists the thumbnail-cache toggle.
-func (p *AssetPreferences) SetThumbCache(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ThumbCache =
-
-			// ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
-			on
-	})
-}
+// ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
 
 func (p *AssetPreferences) ThumbHeightPx() int {
 	snap := p.Load()
@@ -3997,13 +3837,6 @@ func (p *AssetPreferences) ThumbHeightPx() int {
 	return snap.ThumbHeightPxVal
 }
 
-// SetThumbHeightPx persists the thumbnail height (0 = default; else clamped).
-func (p *AssetPreferences) SetThumbHeightPx(px int) {
-	p.Update(func(sn *Settings) {
-		sn.ThumbHeightPxVal = px
-	})
-}
-
 // ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
 func (p *AssetPreferences) ThumbQuality() int {
 	snap := p.Load()
@@ -4012,13 +3845,6 @@ func (p *AssetPreferences) ThumbQuality() int {
 		return ThumbQualityDefault
 	}
 	return snap.ThumbQualityVal
-}
-
-// SetThumbQuality persists the thumbnail quality (0 = default; else clamped).
-func (p *AssetPreferences) SetThumbQuality(q int) {
-	p.Update(func(sn *Settings) {
-		sn.ThumbQualityVal = q
-	})
 }
 
 // ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
@@ -4032,21 +3858,6 @@ func (p *AssetPreferences) ThumbBudgetMiB() int {
 	return snap.ThumbBudgetMiBVal
 }
 
-// SetThumbBudgetMiB persists the thumb-store budget (0 = default; else clamped).
-func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
-	p.Update(func(sn *Settings) {
-		sn.ThumbBudgetMiBVal = mib
-	})
-}
-
-// AdaptiveLatMultiple reports the per-host deadline multiple (0 = the network
-// default, Ã—8). Live-applied.
-func (p *AssetPreferences) AdaptiveLatMultiple() int {
-	snap := p.Load()
-
-	return snap.AdaptiveLatMultipleVal
-}
-
 // SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
@@ -4058,13 +3869,6 @@ func (p *AssetPreferences) TexBudgetMiB() int {
 		return TexBudgetDefaultMiB
 	}
 	return snap.TexBudgetMiBVal
-}
-
-// SetTexBudgetMiB persists the T1 budget (0 = default; else clamped).
-func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
-	p.Update(func(sn *Settings) {
-		sn.TexBudgetMiBVal = mib
-	})
 }
 
 // AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
@@ -4144,14 +3948,6 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 		return UnfocusedFPSDefault
 	}
 	return snap.UnfocusedFPSVal
-}
-
-// SetUnfocusedFPS persists the unfocused frame rate (0 = default,
-// FPSUnlimited = never throttle when unfocused; else clamped).
-func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	p.Update(func(sn *Settings) {
-		sn.UnfocusedFPSVal = fps
-	})
 }
 
 // InputGraceFrames reports the post-input full-rate hold in frames
@@ -4291,47 +4087,12 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 	})
 }
 
-// SetWordDelete toggles Ctrl+Backspace word deletion.
-func (p *AssetPreferences) SetWordDelete(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.WordDelete = on
-	})
-}
-
 // --- AO2 post-send "sticky" options + sfx_on_idle ------------------------------
 //
 // All four are transcriptions of AO2 options with AO2's own shipped defaults; see
 // the defaultSticky* / defaultSFXOnIdle constants for the canon citations. The
 // getters read "does the pick SURVIVE the send", which is the config key's own
 // sense â€” NOT the upstream accessor's backwards name.
-
-// SetStickySounds toggles whether the IC SFX pick survives a send.
-func (p *AssetPreferences) SetStickySounds(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.StickySounds = on
-	})
-}
-
-// SetStickyEffects toggles whether the effects pick survives a send.
-func (p *AssetPreferences) SetStickyEffects(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.StickyEffects = on
-	})
-}
-
-// SetStickyPreanims toggles whether the Pre checkbox survives a send.
-func (p *AssetPreferences) SetStickyPreanims(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.StickyPreanims = on
-	})
-}
-
-// SetUnfocusedFullRate toggles full-speed rendering while unfocused.
-func (p *AssetPreferences) SetUnfocusedFullRate(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.UnfocusedFullRate = on
-	})
-}
 
 // SetMasterList persists the master-list override.
 func (p *AssetPreferences) SetMasterList(url string) {
@@ -4970,13 +4731,6 @@ func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 	p.Update(func(sn *Settings) {
 		sn.BlipRate = rate
 		sn.BlipOnSpaces = onSpaces
-	})
-}
-
-// SetStreamerMode toggles the on-stream privacy mode.
-func (p *AssetPreferences) SetStreamerMode(enabled bool) {
-	p.Update(func(sn *Settings) {
-		sn.StreamerModeOn = enabled
 	})
 }
 
@@ -5789,20 +5543,6 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 	})
 }
 
-// SetUIScaleAuto toggles DPI-driven UI scaling.
-func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
-	p.Update(func(sn *Settings) {
-		sn.UIScaleAutoOn = enabled
-	})
-}
-
-// SetThemeLayout toggles theme-driven courtroom geometry.
-func (p *AssetPreferences) SetThemeLayout(enabled bool) {
-	p.Update(func(sn *Settings) {
-		sn.ThemeLayoutOn = enabled
-	})
-}
-
 // ThemeFitDefaultJustMoved reports whether THIS load performed the one-shot
 // Stretchâ†’Native theme-fit move: the stamp was absent (so this is the first run
 // after updating for this file) AND the file was still on the old Stretch
@@ -5852,13 +5592,6 @@ func (p *AssetPreferences) ThemePan() (x, y int) {
 	return snap.ThemeFitPanX, snap.ThemeFitPanY
 }
 
-// SetThemeFitZoom clamps and stores the Custom-mode zoom.
-func (p *AssetPreferences) SetThemeFitZoom(z int) {
-	p.Update(func(sn *Settings) {
-		sn.ThemeFitZoom = z
-	})
-}
-
 // SetThemeFitPan clamps and stores the Custom-mode pan.
 func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	x = clampPercent(x, -MaxThemePan, MaxThemePan)
@@ -5866,13 +5599,6 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	p.Update(func(sn *Settings) {
 		sn.ThemeFitPanX = x
 		sn.ThemeFitPanY = y
-	})
-}
-
-// SetThemeFonts toggles per-element theme fonts.
-func (p *AssetPreferences) SetThemeFonts(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ThemeFonts = on
 	})
 }
 
@@ -6735,13 +6461,4 @@ func clampViewportExactPx(px int) int {
 		return MaxViewportExactPx
 	}
 	return px
-}
-
-// SetViewportExactWidth pins (or clears, with 0) the exact stage width. The
-// courtroom snaps an over-large value DOWN to the largest crisp multiple that
-// fits the window at draw time, so this only needs the coarse sanity clamp.
-func (p *AssetPreferences) SetViewportExactWidth(px int) {
-	p.Update(func(sn *Settings) {
-		sn.ViewportExactW = px
-	})
 }

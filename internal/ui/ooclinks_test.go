@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -184,7 +185,7 @@ func TestOOCLinkSpansStreamerMasked(t *testing.T) {
 	a := testTabApp(t)
 	a.oocPct = DefaultScalePct
 	const url = "https://example.com/x"
-	a.d.Prefs.SetStreamerMode(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.StreamerModeOn = true })
 	a.pushOOC("Nyah: grab "+url+" now", "Nyah")
 
 	rows := a.oocWrapped(2000)

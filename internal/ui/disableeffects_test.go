@@ -35,10 +35,10 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 
 	prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
-	prefs.SetSpriteSolidTint(true)
+	prefs.Update(func(sn *config.Settings) { sn.SpriteSolidTint = true })
 	prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteGlow = true })
-	prefs.SetSpriteWobble(true)
-	prefs.SetSpriteSpin(true)
+	prefs.Update(func(sn *config.Settings) { sn.SpriteWobble = true })
+	prefs.Update(func(sn *config.Settings) { sn.SpriteSpin = true })
 	prefs.Update(func(sn *config.Settings) { sn.ShoutPunch = true })
 	prefs.Update(func(
 		sn *config.

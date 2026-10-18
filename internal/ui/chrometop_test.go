@@ -419,7 +419,7 @@ func TestThemedWidgetsStayClearOfTheBandInEveryFitMode(t *testing.T) {
 			}
 			a.d.Prefs.SetThemeFit(tc.mode)
 			if tc.mode == config.ThemeFitCustom {
-				a.d.Prefs.SetThemeFitZoom(200) // zoom past the window …
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 200 }) // zoom past the window …
 				a.d.Prefs.SetThemeFitPan(0, -40)
 			}
 			const w, h = 1152, 864
@@ -523,7 +523,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	const themeName = "authored-tabbar"
 	a := testTabApp(t)
 	a.d.Prefs.SetTheme(themeName, "")
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.room = newRoomForTest(t)
@@ -555,7 +555,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	// client seed, still reports it, and still docks.
 	b := testTabApp(t)
 	b.d.Prefs.SetTheme(themeName+"-bare", "")
-	b.d.Prefs.SetThemeLayout(true)
+	b.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	b.tabs = []*courtTab{{}}
 	b.activeTab = 0
 	b.room = newRoomForTest(t)
@@ -574,7 +574,7 @@ func stageTabbarlessCourtroom(t *testing.T, themeName string) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.d.Prefs.SetTheme(themeName, "")
-	a.d.Prefs.SetThemeLayout(true) // default-ON today; pinned so a default flip can't silently un-gate these
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned so a default flip can't silently un-gate these
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.room = newRoomForTest(t)
