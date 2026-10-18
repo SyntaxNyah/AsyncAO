@@ -58,7 +58,7 @@ func TestNotebookClear(t *testing.T) {
 // first server that claims it.
 func TestWardrobePerServer(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.Wardrobe = []string{"Phoenix", "Edgeworth"} // legacy flat list
+	p.Update(func(sn *Settings) { sn.Wardrobe = []string{"Phoenix", "Edgeworth"} }) // legacy flat list
 
 	p.ClaimLegacyWardrobe("wss://main.example:2096")
 	if got := p.WardrobeList("wss://main.example:2096"); len(got) != 2 {
