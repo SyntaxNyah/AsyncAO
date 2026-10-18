@@ -567,7 +567,7 @@ func TestDraggingAWidgetWritesAnOverrideRowNotAPreference(t *testing.T) {
 		t.Errorf("the resolved geometry is %+v while the row says %+v — an edit that writes only the "+
 			"row does not move a pixel until the theme is switched and back", live, row)
 	}
-	if ov := a.d.Prefs.ThemeRectOverrides(name); len(ov) != 0 {
+	if ov := a.d.Prefs.Load().ThemeRectOverrides(name); len(ov) != 0 {
 		t.Errorf("the editor wrote %d preference override(s) — authoring a theme must not change how "+
 			"that theme behaves for somebody who only uses it", len(ov))
 	}

@@ -737,7 +737,7 @@ func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	}
 
 	want := a.themeRects[themeTabBarKey]
-	ov := a.d.Prefs.ThemeRectOverrides(themeName)
+	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)
 	if got, ok := ov[themeTabBarKey]; !ok || got != [4]int{want.X, want.Y, want.W, want.H} {
 		t.Fatalf("the release must persist the override, got %v (present=%v)", got, ok)
 	}

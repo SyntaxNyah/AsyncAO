@@ -663,7 +663,7 @@ func (a *App) drawJudgeRow(x, y int32) int32 {
 // last-seen background's standard position parts — all LOW priority
 // through the normal pool, shed freely under real load.
 func (a *App) prewarmServer() {
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if info.Char != "" {
 		a.d.Manager.Prefetch(a.urls.CharIcon(info.Char), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon (pre-warm)
 		idle := a.urls.Emote(info.Char, "normal", courtroom.EmoteIdle)

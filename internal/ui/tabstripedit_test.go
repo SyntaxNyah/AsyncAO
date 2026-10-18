@@ -233,7 +233,7 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 	if want := (sdl.Rect{X: box.X + 40, Y: box.Y + 300, W: box.W, H: box.H}); after != want {
 		t.Fatalf("the strip is at %+v, want %+v — landing on the seed must not snap it back into the chrome band", after, want)
 	}
-	if _, ok := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; !ok {
+	if _, ok := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; !ok {
 		t.Fatal("the placement was not persisted, so it would be lost on the next theme load")
 	}
 }

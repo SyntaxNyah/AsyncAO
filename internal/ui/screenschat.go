@@ -1409,7 +1409,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
 	// in / switch / re-login). Account name is per-server (a.serverKey), so it's
 	// correct across multi-server tabs.
-	acct := strings.TrimSpace(a.d.Prefs.ServerWarmInfoFor(a.serverKey).LoginUser)
+	acct := strings.TrimSpace(a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).LoginUser)
 	loginLabel, loginW := "Login...", int32(70)
 	if acct != "" {
 		loginLabel, loginW = acct, c.TextWidth(acct)+18

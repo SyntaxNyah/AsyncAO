@@ -73,9 +73,9 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 	a.ctx.focusID = fieldID // the box has focus for the whole run, as when typing
 	var shown []string
 	for i := 1; i <= len(typed); i++ {
-		cur := a.d.Prefs.PanelFontFor(rowID)
+		cur := a.d.Prefs.Load().PanelFontFor(rowID)
 		a.commitPanelSize(fieldID, rowID, cur, typed[:i])
-		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.PanelFontFor(rowID).SizePx))
+		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.Load().PanelFontFor(rowID).SizePx))
 	}
 	return shown
 }
@@ -170,7 +170,7 @@ func TestPanelSizeAcceptsATwoDigitNumber(t *testing.T) {
 	if shown[1] != "18" {
 		t.Errorf("after typing \"18\" the box shows %q, want \"18\"", shown[1])
 	}
-	if got := a.d.Prefs.PanelFontFor("ic_chatlog").SizePx; got != 18 {
+	if got := a.d.Prefs.Load().PanelFontFor("ic_chatlog").SizePx; got != 18 {
 		t.Errorf("saved size = %d, want 18", got)
 	}
 	// A one-character size below the minimum must not have been saved on the way
@@ -188,8 +188,8 @@ func TestPanelSizeHoldsIncompleteInput(t *testing.T) {
 
 	fieldID := "panelsize-music_list"
 	a.ctx.focusID = fieldID
-	a.commitPanelSize(fieldID, "music_list", a.d.Prefs.PanelFontFor("music_list"), "1")
-	if got := a.d.Prefs.PanelFontFor("music_list").SizePx; got != 20 {
+	a.commitPanelSize(fieldID, "music_list", a.d.Prefs.Load().PanelFontFor("music_list"), "1")
+	if got := a.d.Prefs.Load().PanelFontFor("music_list").SizePx; got != 20 {
 		t.Errorf("a half-typed \"1\" overwrote the saved size with %d", got)
 	}
 	if got := a.panelSizeText(fieldID, "music_list", 20); got != "1" {
@@ -211,20 +211,20 @@ func TestPanelSizeClearsAndClamps(t *testing.T) {
 	fieldID := "panelsize-area_list"
 	a.ctx.focusID = fieldID
 
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 0 {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != 0 {
 		t.Errorf("emptying the box left %d, want the override cleared", got)
 	}
 
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "500")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != config.PanelFontMaxPx {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "500")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != config.PanelFontMaxPx {
 		t.Errorf("an over-large size saved as %d, want the %d ceiling", got, config.PanelFontMaxPx)
 	}
 
 	// Non-numeric text is not a size and must not be saved as one.
 	a.d.Prefs.SetPanelFont("area_list", config.PanelFont{SizePx: 20})
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "abc")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 20 {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "abc")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != 20 {
 		t.Errorf("garbage text changed the saved size to %d", got)
 	}
 }

@@ -357,7 +357,7 @@ func (a *App) carryThemeRectOverrides(from, to string) {
 	if a.d.Prefs == nil || from == "" || to == "" {
 		return
 	}
-	for key, r := range a.d.Prefs.ThemeRectOverrides(from) {
+	for key, r := range a.d.Prefs.Load().ThemeRectOverrides(from) {
 		a.d.Prefs.SetThemeRectOverride(to, key, r)
 	}
 }

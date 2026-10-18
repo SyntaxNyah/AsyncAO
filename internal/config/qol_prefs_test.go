@@ -399,7 +399,7 @@ func TestEmoteFavsPref(t *testing.T) {
 	if p.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly must default OFF")
 	}
-	if got := p.EmoteFavsFor("Apollo"); got != nil {
+	if got := p.Load().EmoteFavsFor("Apollo"); got != nil {
 		t.Errorf("fresh EmoteFavsFor = %v, want nil", got)
 	}
 	// Toggle two emotes on; toggling one again removes it (its own inverse).
@@ -407,18 +407,18 @@ func TestEmoteFavsPref(t *testing.T) {
 		t.Error("ToggleEmoteFav(0) should report now-favourited")
 	}
 	p.ToggleEmoteFav("Apollo", 10)
-	if !p.IsEmoteFav("Apollo", 0) || !p.IsEmoteFav("Apollo", 10) {
+	if !p.Load().IsEmoteFav("Apollo", 0) || !p.Load().IsEmoteFav("Apollo", 10) {
 		t.Fatal("both 0 and 10 should be favourited")
 	}
 	if now := p.ToggleEmoteFav("apollo", 0); now { // case-insensitive char key
 		t.Error("re-toggling 0 should report now-unfavourited")
 	}
-	if p.IsEmoteFav("Apollo", 0) {
+	if p.Load().IsEmoteFav("Apollo", 0) {
 		t.Error("0 should be removed after the second toggle")
 	}
 	// Removing the last favourite drops the map entry entirely.
 	p.ToggleEmoteFav("Apollo", 10)
-	if got := p.EmoteFavsFor("Apollo"); got != nil {
+	if got := p.Load().EmoteFavsFor("Apollo"); got != nil {
 		t.Errorf("after clearing, EmoteFavsFor = %v, want nil", got)
 	}
 
@@ -449,8 +449,8 @@ func TestEmoteFavsPref(t *testing.T) {
 	if !r.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly=true lost on reload")
 	}
-	if !r.IsEmoteFav("Phoenix", 3) || !r.IsEmoteFav("Phoenix", 7) {
-		t.Errorf("reloaded favourites = %v, want [3 7]", r.EmoteFavsFor("Phoenix"))
+	if !r.Load().IsEmoteFav("Phoenix", 3) || !r.Load().IsEmoteFav("Phoenix", 7) {
+		t.Errorf("reloaded favourites = %v, want [3 7]", r.Load().EmoteFavsFor("Phoenix"))
 	}
 }
 
@@ -460,20 +460,20 @@ func TestEmoteFavsPref(t *testing.T) {
 func TestServerIgnorePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	const key = "wss://example.test/ws"
-	if p.ServerIgnoreMatch(key, "Bob") {
+	if p.Load().ServerIgnoreMatch(key, "Bob") {
 		t.Error("nothing should be ignored by default")
 	}
 	p.SetServerIgnored(key, []string{"Bob", "  Alice  ", "bob", ""}) // dup (ci) + pad + blank
-	if got := p.ServerIgnored(key); len(got) != 2 {
+	if got := p.Load().ServerIgnored(key); len(got) != 2 {
 		t.Fatalf("ignored = %v, want 2 (Bob, Alice — deduped/trimmed)", got)
 	}
-	if !p.ServerIgnoreMatch(key, "BOB") || !p.ServerIgnoreMatch(key, "alice") {
+	if !p.Load().ServerIgnoreMatch(key, "BOB") || !p.Load().ServerIgnoreMatch(key, "alice") {
 		t.Error("match must be case-insensitive")
 	}
-	if p.ServerIgnoreMatch(key, "Carol") {
+	if p.Load().ServerIgnoreMatch(key, "Carol") {
 		t.Error("Carol isn't ignored")
 	}
-	if p.ServerIgnoreMatch("wss://other/ws", "Bob") {
+	if p.Load().ServerIgnoreMatch("wss://other/ws", "Bob") {
 		t.Error("ignore list must be per-server")
 	}
 
@@ -490,7 +490,7 @@ func TestServerIgnorePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.ServerIgnoreMatch(key, "Mallory") {
+	if !r.Load().ServerIgnoreMatch(key, "Mallory") {
 		t.Error("ignore list lost on reload")
 	}
 }
@@ -565,18 +565,18 @@ func TestServerFriendNickColor(t *testing.T) {
 	// nick-only entry (name==nick, default colour) + a plain colour entry.
 	p.SetServerFriends(key, []string{"Phoenix=ff4488=Wright, buddy", "Alice==Allie", "Bob=00ff00"})
 
-	friend, color, nick := p.ServerFriendInfo(key, "phoenix") // case-insensitive
+	friend, color, nick := p.Load().ServerFriendInfo(key, "phoenix") // case-insensitive
 	if !friend || color != 0xff4488 || nick != "Wright buddy" {
 		t.Fatalf("Phoenix info = %v/%06x/%q, want true/ff4488/\"Wright buddy\" (comma stripped)", friend, color, nick)
 	}
-	if _, c, nk := p.ServerFriendInfo(key, "Alice"); c != -1 || nk != "Allie" {
+	if _, c, nk := p.Load().ServerFriendInfo(key, "Alice"); c != -1 || nk != "Allie" {
 		t.Fatalf("Alice info color/nick = %d/%q, want -1/\"Allie\"", c, nk)
 	}
-	if _, c, nk := p.ServerFriendInfo(key, "Bob"); c != 0x00ff00 || nk != "" {
+	if _, c, nk := p.Load().ServerFriendInfo(key, "Bob"); c != 0x00ff00 || nk != "" {
 		t.Fatalf("Bob info color/nick = %06x/%q, want 00ff00/\"\"", c, nk)
 	}
 	// ServerFriendMatch (the 2-return wrapper) still works for colour-only callers.
-	if f, c := p.ServerFriendMatch(key, "Phoenix"); !f || c != 0xff4488 {
+	if f, c := p.Load().ServerFriendMatch(key, "Phoenix"); !f || c != 0xff4488 {
 		t.Fatalf("ServerFriendMatch = %v/%06x, want true/ff4488", f, c)
 	}
 
@@ -593,7 +593,7 @@ func TestServerFriendNickColor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if f, c, nk := r.ServerFriendInfo(key, "Mallory"); !f || c != 0x123456 || nk != "Mal" {
+	if f, c, nk := r.Load().ServerFriendInfo(key, "Mallory"); !f || c != 0x123456 || nk != "Mal" {
 		t.Errorf("reloaded = %v/%06x/%q, want true/123456/\"Mal\"", f, c, nk)
 	}
 }
@@ -1562,13 +1562,13 @@ func TestICPhraseKeyBinds(t *testing.T) {
 // dedup, unmute, and survival across save → load.
 func TestMutedSFX(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.IsSFXMuted("sfx-stab") {
+	if p.Load().IsSFXMuted("sfx-stab") {
 		t.Error("nothing should be muted initially")
 	}
 	if !p.MuteSFX("SFX-Stab") { // stored lowercase
 		t.Error("MuteSFX should report a change")
 	}
-	if !p.IsSFXMuted("sfx-stab") || !p.IsSFXMuted("SFX-STAB") {
+	if !p.Load().IsSFXMuted("sfx-stab") || !p.Load().IsSFXMuted("SFX-STAB") {
 		t.Error("a muted SFX should match case-insensitively")
 	}
 	if p.MuteSFX("sfx-stab") {
@@ -1577,7 +1577,7 @@ func TestMutedSFX(t *testing.T) {
 	if l := p.Load().MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
 		t.Fatalf("list = %v, want [sfx-stab]", l)
 	}
-	if !p.UnmuteSFX("sfx-stab") || p.IsSFXMuted("sfx-stab") {
+	if !p.UnmuteSFX("sfx-stab") || p.Load().IsSFXMuted("sfx-stab") {
 		t.Error("UnmuteSFX should clear it")
 	}
 }
@@ -1597,7 +1597,7 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.IsSFXMuted("sfx-stab") {
+	if !q.Load().IsSFXMuted("sfx-stab") {
 		t.Error("muted SFX lost across save/load")
 	}
 }
@@ -1606,13 +1606,13 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 // dedup, and survival across save → load.
 func TestSfxFavorites(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.IsSfxFavorite("sfx-stab") {
+	if p.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("nothing should be starred initially")
 	}
 	if !p.ToggleSfxFavorite("SFX-Stab") { // stored lowercase; reports now-starred
 		t.Error("first toggle should report starred (true)")
 	}
-	if !p.IsSfxFavorite("sfx-stab") || !p.IsSfxFavorite("SFX-STAB") {
+	if !p.Load().IsSfxFavorite("sfx-stab") || !p.Load().IsSfxFavorite("SFX-STAB") {
 		t.Error("a starred SFX should match case-insensitively")
 	}
 	if l := p.Load().SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
@@ -1621,7 +1621,7 @@ func TestSfxFavorites(t *testing.T) {
 	if p.ToggleSfxFavorite("sfx-stab") { // toggling again unstars; reports false
 		t.Error("second toggle should report unstarred (false)")
 	}
-	if p.IsSfxFavorite("sfx-stab") {
+	if p.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("toggle should have unstarred it")
 	}
 }
@@ -1641,7 +1641,7 @@ func TestSfxFavoritesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.IsSfxFavorite("sfx-stab") {
+	if !q.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("starred SFX lost across save/load")
 	}
 }
@@ -2029,13 +2029,13 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 // entry (so the map only holds real adjustments).
 func TestBlipVolume(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 100 {
 		t.Errorf("unset char = %d, want default 100", v)
 	}
 	if !p.SetBlipVolume("Phoenix", 40) { // stored lowercase
 		t.Error("SetBlipVolume should report a change")
 	}
-	if v := p.BlipVolumeFor("phoenix"); v != 40 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 40 {
 		t.Errorf("after set = %d, want 40", v)
 	}
 	if p.SetBlipVolume("phoenix", 40) {
@@ -2044,7 +2044,7 @@ func TestBlipVolume(t *testing.T) {
 	if !p.SetBlipVolume("phoenix", 999) { // clamps to 100 → also resets the entry
 		t.Error("clamped change should report a change")
 	}
-	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 100 {
 		t.Errorf("clamped-high = %d, want 100", v)
 	}
 	if vols := p.Load().BlipVolumes(); len(vols) != 0 {
@@ -2053,7 +2053,7 @@ func TestBlipVolume(t *testing.T) {
 	if !p.SetBlipVolume("edgeworth", -5) { // clamps to 0
 		t.Error("clamp-low should report a change")
 	}
-	if v := p.BlipVolumeFor("edgeworth"); v != 0 {
+	if v := p.Load().BlipVolumeFor("edgeworth"); v != 0 {
 		t.Errorf("clamped-low = %d, want 0", v)
 	}
 	if p.SetBlipVolume("", 50) {
@@ -2076,7 +2076,7 @@ func TestBlipVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if v := q.BlipVolumeFor("phoenix"); v != 25 {
+	if v := q.Load().BlipVolumeFor("phoenix"); v != 25 {
 		t.Errorf("per-char blip scale lost across save/load: %d", v)
 	}
 }

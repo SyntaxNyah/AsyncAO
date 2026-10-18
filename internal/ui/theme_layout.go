@@ -375,7 +375,7 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// a.themeLay.valid=false so a fresh rotation reaches the draw path via this
 	// rebuild, never a per-frame prefs read. nil when the theme carries none.
 	if themeName, _ := a.d.Prefs.Theme(); themeName != "" {
-		lay.ang = a.d.Prefs.ThemeRectRotationSnapshot(themeName)
+		lay.ang = a.d.Prefs.Load().ThemeRectRotationSnapshot(themeName)
 	}
 	a.bakeToggleLabels(lay)
 	// The free-element bake (v1.90.0 W3), LAST in the rebuild: it reads the finished

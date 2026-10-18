@@ -150,7 +150,7 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	typed := strings.TrimSpace(a.sfxBrowserQuery)
 	if typed != "" && !a.sfxBrowserHasExact(typed) {
 		rowR := sdl.Rect{X: x, Y: y, W: innerW, H: sfxBrowserRowH}
-		a.drawSfxRow(rowR, typed, a.d.Prefs.IsSfxFavorite(typed), "Use “"+typed+"”")
+		a.drawSfxRow(rowR, typed, a.d.Prefs.Load().IsSfxFavorite(typed), "Use “"+typed+"”")
 		y += sfxBrowserRowH + 4
 	}
 

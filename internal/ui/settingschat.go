@@ -677,7 +677,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
 	// last one you heard gets a one-click toggle; the muted list is below.
 	if a.lastSFXName != "" {
-		on := a.d.Prefs.IsSFXMuted(a.lastSFXName)
+		on := a.d.Prefs.Load().IsSFXMuted(a.lastSFXName)
 		lbl := "Mute last SFX: " + a.lastSFXName
 		if on {
 			lbl = "Unmute last SFX: " + a.lastSFXName
@@ -714,7 +714,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
 	y += 22
 	if a.lastBlipChar != "" {
-		cur := a.d.Prefs.BlipVolumeFor(a.lastBlipChar)
+		cur := a.d.Prefs.Load().BlipVolumeFor(a.lastBlipChar)
 		if nv := a.volumeRow(y, "Last speaker — "+a.lastBlipChar, cur); nv != cur {
 			a.d.Prefs.SetBlipVolume(a.lastBlipChar, nv)
 		}
@@ -884,7 +884,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	} else {
 		c.Label(pad, y+4, "Friends:", ColText)
 		if settings.friendKey != a.serverKey { // reload buffer per server
-			settings.friendInput = strings.Join(a.d.Prefs.ServerFriends(a.serverKey), ", ")
+			settings.friendInput = strings.Join(a.d.Prefs.Load().ServerFriends(a.serverKey), ", ")
 			settings.friendKey = a.serverKey
 		}
 		var friendCommit bool
@@ -905,7 +905,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	} else {
 		c.Label(pad, y+4, "Ignored:", ColText)
 		if settings.ignoreKey != a.serverKey { // reload buffer per server
-			settings.ignoreInput = strings.Join(a.d.Prefs.ServerIgnored(a.serverKey), ", ")
+			settings.ignoreInput = strings.Join(a.d.Prefs.Load().ServerIgnored(a.serverKey), ", ")
 			settings.ignoreKey = a.serverKey
 		}
 		var ignoreCommit bool

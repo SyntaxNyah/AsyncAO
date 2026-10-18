@@ -59,7 +59,7 @@ func (a *App) cycleLayoutProfile() {
 		return
 	}
 	a.layoutProfileCursor = (a.layoutProfileCursor + 1) % len(names)
-	a.applyProfile(a.d.Prefs.LayoutProfile(names[a.layoutProfileCursor]))
+	a.applyProfile(a.d.Prefs.Load().LayoutProfile(names[a.layoutProfileCursor]))
 	a.pushDebug("layout: profile applied from editor banner")
 }
 

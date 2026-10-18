@@ -2044,7 +2044,7 @@ func (a *App) pollIniswap() {
 			a.iniServer = nil
 		} else {
 			a.iniServer = filterServerIniswaps(res.names, res.bgs,
-				a.d.Prefs.ServerWarmInfoFor(a.serverKey).Backgrounds)
+				a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds)
 		}
 		a.rebuildIniMenu()
 	default:
@@ -2055,12 +2055,12 @@ func (a *App) pollIniswap() {
 // favourites — instant swaps, persisted across sessions and servers),
 // then server-list entries not already in the wardrobe.
 func (a *App) rebuildIniMenu() {
-	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), a.iniServer)
+	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), a.iniServer)
 	a.iniList = names
 	a.iniWardrobe = fromWardrobe
 	a.iniServerMem = inServer
 	a.iniLower = make([]string, len(names))
-	folders := a.d.Prefs.WardrobeFolderMap(a.serverKey)
+	folders := a.d.Prefs.Load().WardrobeFolderMap(a.serverKey)
 	a.iniFolders = make([]string, len(names))
 	a.iniHoverIDs = make([]string, len(names))
 	for i, n := range names {
@@ -2130,7 +2130,7 @@ func (a *App) ensureWardrobeMembers() {
 	} else {
 		clear(a.wardrobeMembers)
 	}
-	for _, name := range a.d.Prefs.WardrobeList(a.serverKey) {
+	for _, name := range a.d.Prefs.Load().WardrobeList(a.serverKey) {
 		a.wardrobeMembers[strings.ToLower(name)] = true
 	}
 	a.wardrobeMembersFor = a.serverKey

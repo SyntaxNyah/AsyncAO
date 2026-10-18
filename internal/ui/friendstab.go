@@ -25,7 +25,7 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 		c.Label(r.X+4, r.Y+6, "Connect to a server to see its friends.", ColTextDim)
 		return
 	}
-	names := a.d.Prefs.ServerFriends(a.serverKey)
+	names := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
 	// Start a group chat right from the friends list — the natural place to gather
 	// friends. Opens the Group Chat panel on a fresh group's invite view.
@@ -82,7 +82,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		if c.hovering(row) {
 			c.Fill(row, ColPanel)
 		}
-		_, fcol, nick := a.d.Prefs.ServerFriendInfo(a.serverKey, name)
+		_, fcol, nick := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, name)
 		nameCol := ColText
 		if fcol >= 0 {
 			nameCol = readableOnPanel(fcol)
@@ -228,7 +228,7 @@ func (a *App) pmThreadKey(name string) string {
 	if want == "" {
 		return ""
 	}
-	friends := a.d.Prefs.ServerFriends(a.serverKey)
+	friends := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	for _, f := range friends {
 		if strings.ToLower(f) == want {
 			return want

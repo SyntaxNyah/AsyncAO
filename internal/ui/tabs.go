@@ -976,7 +976,7 @@ func (a *App) tabStripPlacementRecorded() bool {
 		return true // the theme author placed it
 	}
 	name, _ := a.d.Prefs.Theme()
-	return a.d.Prefs.HasThemeRectOverride(name, themeTabBarKey)
+	return a.d.Prefs.Load().HasThemeRectOverride(name, themeTabBarKey)
 }
 
 // tabStripIntrinsicW is the strip's chip-driven width for the layout cache: the same

@@ -111,7 +111,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.refreshICPhraseKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
 	// Per-server theme binding: this server always uses that theme.
-	a.themeBound = a.d.Prefs.ServerWarmInfoFor(wsURL).Theme
+	a.themeBound = a.d.Prefs.Load().ServerWarmInfoFor(wsURL).Theme
 	a.ensureThemeForSession()
 	// Case notebook: per-server pins load off-thread, land via the poll
 	// (the payload carries the key so it routes even after a tab switch).
@@ -816,7 +816,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 			a.enterCourtroom()
 		case courtroom.EventOOC:
-			if a.serverKey != "" && a.d.Prefs.ServerIgnoreMatch(a.serverKey, ev.Name) {
+			if a.serverKey != "" && a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, ev.Name) {
 				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
 			}
 			// Received private message (Nyathena / Athena attribute the sender in the
@@ -1139,7 +1139,7 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
-	_, _, nick := a.d.Prefs.ServerFriendInfo(a.serverKey, name)
+	_, _, nick := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, name)
 	return nick
 }
 
@@ -1298,7 +1298,7 @@ func (a *App) pickCharacter(idx int) {
 // server's own extensions.json is fetched (and the global default still covers a
 // server that ships none).
 func (a *App) extProfileFor(host string) string {
-	if p := a.d.Prefs.ExtProfile(host); p != "" {
+	if p := a.d.Prefs.Load().ExtProfile(host); p != "" {
 		return p
 	}
 	if a.isOfficialVanilla(host) {

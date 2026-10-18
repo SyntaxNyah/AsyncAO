@@ -40,7 +40,7 @@ func (a *App) refreshEmoteView() {
 	} else {
 		clear(a.emoteFavSet)
 	}
-	for _, idx := range a.d.Prefs.EmoteFavsFor(char) {
+	for _, idx := range a.d.Prefs.Load().EmoteFavsFor(char) {
 		a.emoteFavSet[idx] = struct{}{}
 	}
 

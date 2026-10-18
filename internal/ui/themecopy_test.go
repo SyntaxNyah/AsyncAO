@@ -210,7 +210,7 @@ func TestCopyingAnAO2ThemeMakesItEditableAndLeavesTheOriginalAlone(t *testing.T)
 			"not apply cannot be edited")
 	}
 	// THE TWEAKS CAME ALONG.
-	if got := a.d.Prefs.ThemeRectOverrides("paper (edited)"); got["ic_chat_message"] != [4]int{1, 2, 3, 4} {
+	if got := a.d.Prefs.Load().ThemeRectOverrides("paper (edited)"); got["ic_chat_message"] != [4]int{1, 2, 3, 4} {
 		t.Errorf("the layout override did not follow the copy: %v", got)
 	}
 	// AND THE EDITOR IS ARMED to open over it once that apply lands.

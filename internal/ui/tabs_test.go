@@ -144,11 +144,11 @@ func TestToggleServerFriend(t *testing.T) {
 	a := testTabApp(t)
 	a.serverKey = "wss://srv:2096"
 	a.toggleServerFriend("Alice")
-	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "alice"); !ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "alice"); !ok {
 		t.Fatal("first toggle should add Alice as a friend")
 	}
 	a.toggleServerFriend("ALICE") // case-insensitive remove
-	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "Alice"); ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "Alice"); ok {
 		t.Error("second toggle should remove Alice")
 	}
 }

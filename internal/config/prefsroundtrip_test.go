@@ -214,14 +214,14 @@ func TestPanelFontsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := loadPrefs(t, path)
-	if got := back.PanelFontFor("ic_chatlog"); got.Family != "Comic Sans MS" || got.SizePx != 18 {
+	if got := back.Load().PanelFontFor("ic_chatlog"); got.Family != "Comic Sans MS" || got.SizePx != 18 {
 		t.Errorf("ic_chatlog = %+v, want the trimmed family and 18 px", got)
 	}
-	if got := back.PanelFontFor("music_list"); got.Family != "" || got.SizePx != 22 {
+	if got := back.Load().PanelFontFor("music_list"); got.Family != "" || got.SizePx != 22 {
 		t.Errorf("music_list = %+v, want a size-only override", got)
 	}
 	// Keyed case-insensitively, since the identifier is also a theme INI key.
-	if got := back.PanelFontFor("IC_CHATLOG"); got.SizePx != 18 {
+	if got := back.Load().PanelFontFor("IC_CHATLOG"); got.SizePx != 18 {
 		t.Errorf("lookup is case-sensitive: %+v", got)
 	}
 }
@@ -297,7 +297,7 @@ func TestPanelFontsHandsOutACopy(t *testing.T) {
 	got := p.Load().PanelFonts()
 	got["ic_chatlog"] = PanelFont{SizePx: 99}
 	got["injected"] = PanelFont{SizePx: 99}
-	if p.PanelFontFor("ic_chatlog").SizePx != 14 {
+	if p.Load().PanelFontFor("ic_chatlog").SizePx != 14 {
 		t.Error("mutating the returned map reached the live preferences")
 	}
 	if _, ok := p.Load().PanelFonts()["injected"]; ok {

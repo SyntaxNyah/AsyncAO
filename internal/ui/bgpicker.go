@@ -106,7 +106,7 @@ func (a *App) ensureBgList() {
 		// New server: seed the list INSTANTLY from last session's cached
 		// discovery (snappy, like the char list), then refresh below. Cloned so
 		// the picker can't mutate the prefs' backing slice.
-		a.bgPick.server = append([]string(nil), a.d.Prefs.ServerWarmInfoFor(a.serverKey).Backgrounds...)
+		a.bgPick.server = append([]string(nil), a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds...)
 		a.bgPick.fetched = false
 		a.bgPick.listErr = ""
 		a.bgPick.forKey = a.serverKey
@@ -179,7 +179,7 @@ func (a *App) pollBgList() {
 // background on screen and the starred ones are always reachable even on a host
 // with no listing. fav is built parallel to the list for the per-cell star.
 func (a *App) rebuildBgList() {
-	favList := a.d.Prefs.FavBackgroundList(a.serverKey)
+	favList := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
 	favSet := make(map[string]struct{}, len(favList))
 	for _, n := range favList {
 		favSet[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
@@ -201,7 +201,7 @@ func (a *App) rebuildBgList() {
 	if a.sess != nil { // nil when the Scene Maker is opened offline (Settings → Studio → Edit)
 		add(a.sess.Background)
 	}
-	add(a.d.Prefs.ServerWarmInfoFor(a.serverKey).Background)
+	add(a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Background)
 	for _, n := range favList {
 		add(n)
 	}

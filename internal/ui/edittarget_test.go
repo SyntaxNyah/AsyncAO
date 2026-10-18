@@ -388,7 +388,7 @@ func TestThemedEditorResizesFromTheTopLeftHandle(t *testing.T) {
 		t.Fatalf("a (+%d,+%d) drag on the top-left handle gave %+v, want %+v (the far corner stays at 300,520)",
 			dx, dy, got, want)
 	}
-	if _, ov := a.d.Prefs.ThemeRectOverrides(stripEditTheme)["emotes"]; !ov {
+	if _, ov := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)["emotes"]; !ov {
 		t.Error("the release persisted nothing — a resize must survive like a move does")
 	}
 }

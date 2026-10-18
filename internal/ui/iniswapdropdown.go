@@ -105,7 +105,7 @@ func (a *App) ensureIniswapChoices() {
 	a.iniswapChoicesForChar, a.iniswapChoicesGen, a.iniswapChoicesWorn = own, gen, worn
 	var wardrobe []string
 	if own != "" {
-		wardrobe = a.d.Prefs.WardrobeList(a.serverKey)
+		wardrobe = a.d.Prefs.Load().WardrobeList(a.serverKey)
 	}
 	a.iniswapChoices = buildIniswapChoices(a.iniswapChoices, own, wardrobe, worn)
 }

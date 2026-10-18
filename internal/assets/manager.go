@@ -1076,7 +1076,7 @@ func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
 	name := t.Name()
 	var order []string
 	if prefs != nil {
-		order = prefs.FormatOrder(name) // configured order (defaults to the zero-fallback list)
+		order = prefs.Load().FormatOrder(name) // configured order (defaults to the zero-fallback list)
 	}
 	if len(order) == 0 {
 		order = config.DefaultFormatOrder(name)

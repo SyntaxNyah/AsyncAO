@@ -75,14 +75,14 @@ func TestPinnedProfileIsScopedToOneHost(t *testing.T) {
 	p := newFormatsTestPrefs(t)
 	const fixed, other = "needs-png.example.com", "fine.example.com"
 	p.SetExtProfile(fixed, pinnedProfileJSON(config.ExtPNG))
-	if got := p.ExtProfile(fixed); got == "" {
+	if got := p.Load().ExtProfile(fixed); got == "" {
 		t.Fatal("the pinned host has no profile")
 	}
-	if got := p.ExtProfile(other); got != "" {
+	if got := p.Load().ExtProfile(other); got != "" {
 		t.Errorf("an unrelated host picked up a profile: %q", got)
 	}
 	p.SetExtProfile(fixed, "")
-	if got := p.ExtProfile(fixed); got != "" {
+	if got := p.Load().ExtProfile(fixed); got != "" {
 		t.Errorf("unpinning left %q behind", got)
 	}
 }

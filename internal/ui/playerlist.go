@@ -492,7 +492,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	}
 	isFriend, fColor, fNick := false, -1, ""
 	if a.serverKey != "" && fk != "" {
-		isFriend, fColor, fNick = a.d.Prefs.ServerFriendInfo(a.serverKey, fk)
+		isFriend, fColor, fNick = a.d.Prefs.Load().ServerFriendInfo(a.serverKey, fk)
 	}
 	friend := isFriend && a.d.Prefs.Load().FriendHighlight // row tint gate (unchanged)
 	display := rosterName(p)                               // showname → OOC → character
@@ -1061,7 +1061,7 @@ func (a *App) toggleServerFriend(name string) {
 	if a.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
 	}
-	friends := a.d.Prefs.ServerFriends(a.serverKey)
+	friends := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	out := friends[:0]
 	removed := false
 	for _, f := range friends {
@@ -1096,7 +1096,7 @@ func (a *App) toggleServerIgnore(name string) {
 	if a.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
 	}
-	ignored := a.d.Prefs.ServerIgnored(a.serverKey)
+	ignored := a.d.Prefs.Load().ServerIgnored(a.serverKey)
 	out := ignored[:0]
 	removed := false
 	for _, n := range ignored {

@@ -289,7 +289,7 @@ func (r *Resolver) formatList(t AssetType) []string {
 	}
 	fresh := &formatListCache{gen: gen}
 	for tt := AssetType(0); tt < AssetTypeCount; tt++ {
-		fresh.lists[tt] = r.prefs.FormatList(tt.Name())
+		fresh.lists[tt] = r.prefs.Load().FormatList(tt.Name())
 	}
 	r.formats.Store(fresh)
 	return fresh.lists[t]
