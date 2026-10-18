@@ -541,7 +541,7 @@ func (a *App) applyFullscreen(on bool) {
 	a.ctx.SetWindowFullscreen(on)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.WindowFull = on })
 	if !on {
-		w, h := a.d.Prefs.WindowSize()
+		w, h := a.d.Prefs.Load().WindowSize()
 		if w <= 0 || h <= 0 {
 			w, h = config.DefaultWindowW, config.DefaultWindowH
 		}
@@ -945,7 +945,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.sidePref = ev.Text // SP: the server moved us
 		case courtroom.EventCase:
 			a.pushOOC("[CASE] "+ev.Text, "")
-			if enabled, roles := a.d.Prefs.Casing(); enabled && ev.Int&roles != 0 {
+			if enabled, roles := a.d.Prefs.Load().Casing(); enabled && ev.Int&roles != 0 {
 				a.playThemeSFX("case_call")
 				a.ctx.FlashWindow()
 			}

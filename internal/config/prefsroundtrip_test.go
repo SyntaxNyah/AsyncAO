@@ -164,7 +164,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 
-	if _, _, _, _, ok := p.PreviewWindowRect(); ok {
+	if _, _, _, _, ok := p.Load().PreviewWindowRect(); ok {
 		t.Fatal("a fresh install must report no saved preview window rect")
 	}
 
@@ -174,7 +174,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	}
 
 	back := loadPrefs(t, path)
-	x, y, w, h, ok := back.PreviewWindowRect()
+	x, y, w, h, ok := back.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("the saved rect did not load back (ok=false)")
 	}
@@ -190,7 +190,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	x, y, w, h, ok = loadPrefs(t, path).PreviewWindowRect()
+	x, y, w, h, ok = loadPrefs(t, path).Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("an explicit (0,0,0,0) save must still load back as valid")
 	}

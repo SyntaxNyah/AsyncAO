@@ -389,7 +389,7 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	case musicMenuFollow:
 		return a.d.Prefs.Load().FollowEnabled
 	}
-	flags := a.d.Prefs.MusicFlags()
+	flags := a.d.Prefs.Load().MusicFlags()
 	switch k {
 	case musicMenuFadeIn:
 		return flags&config.MusicFlagFadeIn != 0
@@ -634,7 +634,7 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 
 // toggleMusicFlag flips one MUSIC_EFFECT bit in the persisted mask.
 func (a *App) toggleMusicFlag(bit int) {
-	flags := a.d.Prefs.MusicFlags() ^ bit
+	flags := a.d.Prefs.Load().MusicFlags() ^ bit
 	a.d.Prefs.Update(func(sn *config.Settings) {
 		sn.MusicFlagsVal = flags
 	})

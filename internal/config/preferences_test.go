@@ -1110,29 +1110,29 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 	defer p.Close()
 
-	vp, chat, box, logT, in := p.LayoutScales()
+	vp, chat, box, logT, in := p.Load().LayoutScales()
 	if vp != DefaultViewportPercent || chat != DefaultScalePercent || box != DefaultScalePercent ||
 		logT != DefaultScalePercent || in != DefaultScalePercent {
 		t.Fatalf("defaults = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
-	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
+	if m, s, b := p.Load().AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Fatalf("default channel volumes = %d/%d/%d, want %d (start a bit under full, #9)", m, s, b, defaultStartVolume)
 	}
 	if p.Load().MasterVol != defaultAudioVolume {
 		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.Load().MasterVol, defaultAudioVolume)
 	}
-	if crawl, stay, rate := p.Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
+	if crawl, stay, rate := p.Load().Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
 		t.Fatalf("default timing = %d/%d/%d", crawl, stay, rate)
 	}
 
 	p.SetLayoutScales(10, 999, 10, 10, 999) // wildly out of range → clamped
-	vp, chat, box, logT, in = p.LayoutScales()
+	vp, chat, box, logT, in = p.Load().LayoutScales()
 	if vp != MinViewportPercent || chat != MaxChatScalePercent || box != MinChatBoxPercent ||
 		logT != MinLogScalePercent || in != MaxInputPercent {
 		t.Fatalf("clamped = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
 	p.SetTiming(1, 99999, 99999) // crawl floors, stay/rate ceil
-	if crawl, stay, rate := p.Timing(); crawl != MinTextCrawlMs || stay != MaxTextStayMs || rate != MaxChatRateLimitMs {
+	if crawl, stay, rate := p.Load().Timing(); crawl != MinTextCrawlMs || stay != MaxTextStayMs || rate != MaxChatRateLimitMs {
 		t.Fatalf("clamped timing = %d/%d/%d", crawl, stay, rate)
 	}
 	p.SetMasterList("  https://alt.example/servers  ")
@@ -1150,16 +1150,16 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m, s, b := q.AudioVolumes(); m != 0 || s != 55 || b != 100 {
+	if m, s, b := q.Load().AudioVolumes(); m != 0 || s != 55 || b != 100 {
 		t.Fatalf("reloaded volumes = %d/%d/%d, want 0/55/100 (0 must survive)", m, s, b)
 	}
 	if q.Load().OOCName != "testuser" {
 		t.Fatalf("reloaded OOC name = %q", q.Load().OOCName)
 	}
-	if v, _, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
+	if v, _, _, _, _ := q.Load().LayoutScales(); v != MinViewportPercent {
 		t.Fatalf("reloaded viewport = %d", v)
 	}
-	if _, stay, _ := q.Timing(); stay != MaxTextStayMs {
+	if _, stay, _ := q.Load().Timing(); stay != MaxTextStayMs {
 		t.Fatalf("reloaded stay = %d", stay)
 	}
 	if got := q.Load().MasterListURL; got != "https://alt.example/servers" {
@@ -1236,7 +1236,7 @@ func TestOOCScaleIndependent(t *testing.T) {
 	if got := p.Load().OOCScalePct; got != 130 {
 		t.Fatalf("OOC scale = %d, want 130 (independent of the 180 log size)", got)
 	}
-	if _, _, _, logT, _ := p.LayoutScales(); logT != 180 {
+	if _, _, _, logT, _ := p.Load().LayoutScales(); logT != 180 {
 		t.Fatalf("log scale = %d, want 180 (OOC change must not touch it)", logT)
 	}
 	p.Update(func(
@@ -1371,7 +1371,7 @@ func TestResetSettings(t *testing.T) {
 
 	p.ResetSettings()
 
-	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
+	if m, s, b := p.Load().AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Errorf("volumes not reset: %d/%d/%d", m, s, b)
 	}
 	if p.Load().ForceCharNames {
@@ -1875,7 +1875,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if crawl, _, _ := p.Timing(); crawl != DefaultTextCrawlMs {
+		if crawl, _, _ := p.Load().Timing(); crawl != DefaultTextCrawlMs {
 			t.Errorf("an older file's %d ms crawl must move to %d ms once, got %d", oldDefaultCrawlMs, DefaultTextCrawlMs, crawl)
 		}
 		if !p.Load().BlipSpeedDefaultMigrated {
@@ -1902,7 +1902,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load un-stamped %d ms file: %v", deliberate, err)
 			}
-			if crawl, _, _ := p.Timing(); crawl != deliberate {
+			if crawl, _, _ := p.Load().Timing(); crawl != deliberate {
 				t.Errorf("a deliberate pre-move %d ms pick was clobbered: got %d", deliberate, crawl)
 			}
 			// The stamp is written EITHER WAY, so the move can never fire again and
@@ -1921,7 +1921,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		}
 		// Deliberately back to the OLD default: the value the move forces away from
 		// is exactly the one a stamped file must be allowed to keep.
-		_, stay, rate := p.Timing()
+		_, stay, rate := p.Load().Timing()
 		p.SetTiming(oldDefaultCrawlMs, stay, rate)
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
@@ -1930,7 +1930,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := q.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("a deliberate %d ms pick after the move was overwritten: got %d", oldDefaultCrawlMs, crawl)
 		}
 	})
@@ -1945,7 +1945,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if crawl, _, _ := p.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := p.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("a stamped file's explicit %d ms must be respected, got %d", oldDefaultCrawlMs, crawl)
 		}
 		if !p.Load().BlipSpeedDefaultMigrated {
@@ -1961,7 +1961,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if !q.Load().BlipSpeedDefaultMigrated {
 			t.Error("the stamp did not survive save → load — the move would re-fire on every launch")
 		}
-		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := q.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("after save→load the crawl is %d, want the stored %d", crawl, oldDefaultCrawlMs)
 		}
 	})
@@ -2426,7 +2426,7 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if c.ThemeZoom() != 150 {
 		t.Errorf("Custom zoom = %d, want the saved 150", c.ThemeZoom())
 	}
-	if px, _ := c.ThemePan(); px != 10 {
+	if px, _ := c.Load().ThemePan(); px != 10 {
 		t.Errorf("Custom pan X = %d, want the saved 10", px)
 	}
 

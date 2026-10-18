@@ -411,7 +411,7 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase into the settings content card
 	_ = w
-	cur := a.d.Prefs.HighlightColorRGB()
+	cur := a.d.Prefs.Load().HighlightColorRGB()
 
 	c.Label(pad, y, "Log selection highlight colour (drag the wheel, slide brightness, or type a hex code):", ColText)
 	wy := y + 22

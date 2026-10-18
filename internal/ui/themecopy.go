@@ -148,7 +148,7 @@ func themeEditReasonFor(hasNativeTier bool, entry themeCatalogEntry, known bool)
 func (a *App) appliedThemeEditReason() themeEditReason {
 	name := ""
 	if a.d.Prefs != nil {
-		name, _ = a.d.Prefs.Theme()
+		name, _ = a.d.Prefs.Load().Theme()
 	}
 	entry, known := a.themeCatalogSnapshot().Entry(name)
 	return themeEditReasonFor(a.themeSidecar != nil, entry, known)
@@ -298,7 +298,7 @@ func (a *App) landThemeCopy(res themeCopyResult) {
 	// themeLoadRoots already walks, so repointing anything here would be the W2 bug
 	// arriving by the front door.
 	if a.d.Prefs != nil {
-		_, customRoot := a.d.Prefs.Theme()
+		_, customRoot := a.d.Prefs.Load().Theme()
 		a.d.Prefs.SetTheme(m.Root, customRoot)
 	}
 	settings.themeName = m.Root
@@ -510,7 +510,7 @@ func (a *App) themeEditorRow() themeEditorRowText {
 func (a *App) copyAppliedThemeForEditing(intent themeCopyIntent) {
 	name := ""
 	if a.d.Prefs != nil {
-		name, _ = a.d.Prefs.Theme()
+		name, _ = a.d.Prefs.Load().Theme()
 	}
 	a.copyThemeForEditing(name, intent)
 }

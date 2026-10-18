@@ -259,7 +259,7 @@ func (a *App) openThemeEditor(from Screen) bool {
 // headless gate that had to re-implement this half would be a second construction
 // path — the exact drift the encapsulation rule forbids.
 func (a *App) armThemeEditor(from Screen) bool {
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	doc := newThemeDoc(name, a.themeSidecar)
 	if doc == nil {
 		return false
@@ -1756,7 +1756,7 @@ func (a *App) reclaimThemeDoc() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil {
 		return
 	}
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	if name != a.te.doc.name {
 		return // a different theme is applied now; the document is not about it
 	}

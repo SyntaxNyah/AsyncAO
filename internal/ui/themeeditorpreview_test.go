@@ -536,7 +536,7 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 func seedWritableThemeRootForTest(t *testing.T, a *App) string {
 	t.Helper()
 	root := t.TempDir()
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(name, root)
 	deadline := time.Now().Add(editorGateSaveWait)
 	for a.themeCatBusy.Load() && time.Now().Before(deadline) {

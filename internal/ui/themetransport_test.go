@@ -158,7 +158,7 @@ func TestTheSecondDropImports(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, theme.SidecarFileName)); err != nil {
 		t.Fatalf("the theme did not land at %s: %v", dir, err)
 	}
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	if name != "paper" {
 		t.Errorf("the imported theme was not selected: pref says %q", name)
 	}
@@ -274,7 +274,7 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 	awaitBundle(t, a)
 	a.bundleDrop(pack, root)
 	awaitBundle(t, a)
-	if _, customRoot := a.d.Prefs.Theme(); customRoot != `C:\somewhere\the\user\chose` {
+	if _, customRoot := a.d.Prefs.Load().Theme(); customRoot != `C:\somewhere\the\user\chose` {
 		t.Errorf("the import repointed the theme root to %q — that is the W2 bug arriving by the front door", customRoot)
 	}
 	drainThemeApply(t, a, a.themeGen.Load())

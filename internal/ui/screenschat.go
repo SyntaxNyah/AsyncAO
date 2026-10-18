@@ -144,7 +144,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// The weight is rasterized into the glyphs — ONE device-exact draw — not a second
 	// pass a logical pixel to the right: that offset multiplied by the UI scale and
 	// read as a doubled, smeared name at 105%+ (F1b).
-	snBold := a.d.Prefs.BoldNamesOn() || a.elemBold(elemShowname)
+	snBold := a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemShowname)
 	a.labelEmojiWeight(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol, snBold)
 
 	wrapW := box.W - 2*chatOverlayPadX
@@ -631,7 +631,7 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 	// anywhere else (Settings/Extras both write per-server), these sidebar sliders moved
 	// nothing audible. Plus a "Rate" column for the blip cadence (the user's ask).
 	master, music, sfx, blip := a.effectiveVolumes()
-	rate, onSpaces := a.d.Prefs.BlipTyping()
+	rate, onSpaces := a.d.Prefs.Load().BlipTyping()
 	const cols = 5
 	colW := r.W / cols
 	// Playtest ("kinda bare bones"): two rows per column — "label NN%" (the

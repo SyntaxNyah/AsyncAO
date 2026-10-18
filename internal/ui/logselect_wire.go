@@ -135,7 +135,7 @@ const logSelAlpha = 96
 // the fixed translucent alpha. Read once per frame into a.logSelFill while a
 // selection is active, so the per-line draw never locks prefs.
 func (a *App) highlightFill() sdl.Color {
-	rgb := a.d.Prefs.HighlightColorRGB()
+	rgb := a.d.Prefs.Load().HighlightColorRGB()
 	return sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: logSelAlpha}
 }
 
@@ -250,9 +250,9 @@ func (a *App) logRowEmojiFont(which int) *ttf.Font {
 // change to the rule can't update one and silently leave the other behind.
 func (a *App) logRowBoldPref(which int) bool {
 	if which == logSelIC {
-		return a.d.Prefs.BoldNamesOn() || a.elemBold(elemICChatlog)
+		return a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemICChatlog)
 	}
-	return a.d.Prefs.BoldNamesOn() || a.elemBold(elemServerChatlog)
+	return a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemServerChatlog)
 }
 
 // logRowNameStyle resolves the (speaker, nameOn, bold) triple drawLogLineNamed

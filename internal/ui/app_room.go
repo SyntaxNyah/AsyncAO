@@ -1576,11 +1576,11 @@ func (a *App) applyTimingToRoom() {
 	if a.room == nil {
 		return
 	}
-	crawlMs, stayMs, _ := a.d.Prefs.Timing()
+	crawlMs, stayMs, _ := a.d.Prefs.Load().Timing()
 	a.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
-	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.BlipTyping() // #7: blip cadence + skip-whitespace
-	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
+	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.Load().BlipTyping() // #7: blip cadence + skip-whitespace
+	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.Load().CatchUp()
 	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait        // "Hold the message": hold until its speaker sprite decodes
 	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond  // its user-tunable hold cap
 	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                // strictness: gate on the pair partner too

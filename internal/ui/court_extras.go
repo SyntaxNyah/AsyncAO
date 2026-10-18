@@ -869,7 +869,7 @@ func (a *App) sendCasingPrefs() {
 	if a.sess == nil {
 		return
 	}
-	enabled, roles := a.d.Prefs.Casing()
+	enabled, roles := a.d.Prefs.Load().Casing()
 	if !enabled || !a.sess.Features.Has(protocol.FeatureCasingAlerts) {
 		return
 	}

@@ -234,7 +234,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 	// Start at the saved windowed size if any, else the default.
 	winW, winH := int32(windowWidth), int32(windowHeight)
-	if sw, sh := prefs.WindowSize(); sw > 0 && sh > 0 {
+	if sw, sh := prefs.Load().WindowSize(); sw > 0 && sh > 0 {
 		winW, winH = int32(sw), int32(sh)
 	}
 	// sdl.WINDOWPOS_CENTERED is literally SDL_WINDOWPOS_CENTERED_DISPLAY(0), i.e.
@@ -419,7 +419,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)
 	defer audio.Close()
-	audio.SetVolumes(prefs.AudioVolumes())
+	audio.SetVolumes(prefs.Load().AudioVolumes())
 
 	// 1 Hz sampler: heap, GC pause p99, cache hit rate, probe counts.
 	profiler := metrics.NewProfiler(metrics.StatsSource{

@@ -391,7 +391,7 @@ func (a *App) requestMusicTrack(entry string) {
 	if a.sess == nil {
 		return
 	}
-	a.sess.RequestMusicWithFlags(entry, a.effectiveShowname(), a.d.Prefs.MusicFlags())
+	a.sess.RequestMusicWithFlags(entry, a.effectiveShowname(), a.d.Prefs.Load().MusicFlags())
 }
 
 // nextRandomEmote picks a random emote index for auto-random mode. With more
@@ -1269,7 +1269,7 @@ func (a *App) sendIC() {
 		return
 	}
 	// AO2-Client chat_ratelimit parity: drop sends inside the window.
-	if _, _, rateMs := a.d.Prefs.Timing(); rateMs > 0 &&
+	if _, _, rateMs := a.d.Prefs.Load().Timing(); rateMs > 0 &&
 		time.Since(a.lastICSend) < time.Duration(rateMs)*time.Millisecond {
 		return
 	}
@@ -1933,7 +1933,7 @@ func (a *App) applyICColorChoice(next int) {
 		// Free hex pick (Tifera): seed from the last persisted custom
 		// colour and open the wheel. Selecting Custom… again just reopens it.
 		a.icCustomOn = true
-		a.icCustomRGB = a.d.Prefs.ICCustomColorRGB()
+		a.icCustomRGB = a.d.Prefs.Load().ICCustomColorRGB()
 		a.showICColorWheel = true
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })

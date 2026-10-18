@@ -74,7 +74,7 @@ func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTar
 	if a.themeSidecar == nil {
 		a.themeSidecar = theme.NewSidecar()
 	}
-	_, root := a.d.Prefs.Theme()
+	_, root := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(editorGateThemeName, root) // the save path is derived from the name
 	var targets []editTarget
 	for i, off := range offsets {
@@ -547,7 +547,7 @@ func TestArrowNudgeMovesTheSelectionOnTheEditorScreen(t *testing.T) {
 func TestDraggingAWidgetWritesAnOverrideRowNotAPreference(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t)
 	defer cleanup()
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	widget := editorWidgetTarget(t, a)
 	key := widget.designKey()
 	before := editorAuthored(t, a, widget)

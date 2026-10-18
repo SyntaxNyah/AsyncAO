@@ -232,7 +232,7 @@ type extrasPalette struct {
 // kit palette. Blank/invalid entries keep the stock colour — so an untouched box
 // is byte-identical to before.
 func (a *App) extrasPalette() extrasPalette {
-	bgH, bg2H, brH, tiH, txH, grad := a.d.Prefs.ExtrasBoxStyle()
+	bgH, bg2H, brH, tiH, txH, grad := a.d.Prefs.Load().ExtrasBoxStyle()
 	p := extrasPalette{bg: ColPanel, bg2: ColPanel, border: ColAccent, title: ColPanelHi, text: ColText, gradient: grad}
 	if col, ok := parseHexColor(bgH); ok {
 		p.bg, p.bg2 = col, col // gradient bottom defaults to the top until set

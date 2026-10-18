@@ -374,7 +374,7 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// on the cold rebuild path (win/theme/fit change) — the R-key sets
 	// a.themeLay.valid=false so a fresh rotation reaches the draw path via this
 	// rebuild, never a per-frame prefs read. nil when the theme carries none.
-	if themeName, _ := a.d.Prefs.Theme(); themeName != "" {
+	if themeName, _ := a.d.Prefs.Load().Theme(); themeName != "" {
 		lay.ang = a.d.Prefs.Load().ThemeRectRotationSnapshot(themeName)
 	}
 	a.bakeToggleLabels(lay)
@@ -538,7 +538,7 @@ func (a *App) fitDesignCanvas(designW, designH, w, h, top int32, fit int) themeC
 	// each caller's own clamp/clip is what keeps their widgets out of the band.
 	f.area.Y = top + (availH-f.area.H)/2
 	if fit == config.ThemeFitCustom { // pan to crop where you like
-		px, py := a.d.Prefs.ThemePan()
+		px, py := a.d.Prefs.Load().ThemePan()
 		f.area.X += int32(px) * w / 100
 		f.area.Y += int32(py) * availH / 100
 	}

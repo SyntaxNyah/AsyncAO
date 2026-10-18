@@ -322,7 +322,7 @@ func (a *App) landThemeCreate(res themeCreateResult) {
 	// root themeLoadRoots already walks, so repointing anything would be the W2 bug
 	// arriving by the front door.
 	if a.d.Prefs != nil {
-		_, customRoot := a.d.Prefs.Theme()
+		_, customRoot := a.d.Prefs.Load().Theme()
 		a.d.Prefs.SetTheme(m.Root, customRoot)
 	}
 	settings.themeName = m.Root

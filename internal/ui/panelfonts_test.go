@@ -95,7 +95,7 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
 	a := testTabApp(t)
 	// Point the client at a theme that cannot possibly load.
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(name, filepath.Join(t.TempDir(), "no-such-theme-root"))
 	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{SizePx: 40})
 	a.d.Prefs.SetPanelFont("ic_chatlog", config.PanelFont{SizePx: 30})
@@ -120,7 +120,7 @@ func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
 // against a row being added to the table and nowhere else.
 func TestPanelFontsCoverEveryPanelRow(t *testing.T) {
 	a := testTabApp(t)
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(name, filepath.Join(t.TempDir(), "no-such-theme-root"))
 	for i := range panelFontRows {
 		a.d.Prefs.SetPanelFont(panelFontRows[i].id, config.PanelFont{SizePx: 40})

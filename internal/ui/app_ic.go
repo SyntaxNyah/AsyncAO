@@ -20,7 +20,7 @@ import (
 )
 
 func (a *App) applyThemeAsync() uint64 {
-	name, dir := a.d.Prefs.Theme()
+	name, dir := a.d.Prefs.Load().Theme()
 	// Per-server theme binding: while this session declares one, it wins
 	// over the global pick (set on connect from ServerWarmInfo.Theme;
 	// Disconnect/resetSessionState clears it and re-applies the global).
@@ -566,7 +566,7 @@ func (a *App) pollThemeApply() {
 func (a *App) ensureThemeForSession() {
 	want := a.themeBound
 	if want == "" {
-		want, _ = a.d.Prefs.Theme()
+		want, _ = a.d.Prefs.Load().Theme()
 	}
 	if want != "" && want != a.themeAppliedName {
 		a.applyThemeAsync()
@@ -1051,8 +1051,8 @@ func (a *App) spriteFX() render.SpriteFX {
 		DoF:             a.d.Prefs.Load().DepthOfField,
 		Spotlight:       a.d.Prefs.Load().Spotlight,
 		IdleBreath:      a.d.Prefs.Load().IdleBreath && !a.d.Prefs.Load().ReduceMotionOn, // #122; ReduceMotion suppresses (accessibility)
-		BreathBob:       a.d.Prefs.BreathBobOn(),
-		BreathScale:     a.d.Prefs.BreathScaleOn(),
+		BreathBob:       a.d.Prefs.Load().BreathBobOn(),
+		BreathScale:     a.d.Prefs.Load().BreathScaleOn(),
 		Reflection:      a.d.Prefs.Load().Reflection,
 		Speed:           a.d.Prefs.Load().RainbowSpriteSpeed,
 		Vividness:       a.d.Prefs.Load().RainbowSpriteVividness,
@@ -1063,7 +1063,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		UserScaling:     courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode()), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
 	}
 	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
-		rgb := a.d.Prefs.SpriteTintColorRGB()
+		rgb := a.d.Prefs.Load().SpriteTintColorRGB()
 		fx.SolidR = uint8(rgb >> 16 & 0xFF)
 		fx.SolidG = uint8(rgb >> 8 & 0xFF)
 		fx.SolidB = uint8(rgb & 0xFF)

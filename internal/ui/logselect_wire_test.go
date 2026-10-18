@@ -60,7 +60,7 @@ func TestLogPrefixWidthUsesBoldWeightForNamedOOCRow(t *testing.T) {
 	const line = "Wright: hold it, that's not how it happened"
 	a, _ := oocRowSelectionFixture(t, line, speaker)
 	c := a.ctx
-	if !a.d.Prefs.BoldNamesOn() {
+	if !a.d.Prefs.Load().BoldNamesOn() {
 		t.Fatal("fixture assumes the real BoldNamesOn default (ON) — this report reproduces on a stock install")
 	}
 

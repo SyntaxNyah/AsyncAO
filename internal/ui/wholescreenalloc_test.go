@@ -57,7 +57,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// the gate of the log raster (empty list, no rows drawn). With the real
 	// default scales (viewport 66%) a 1280×720 frame gives the log list a
 	// realistic positive height, so drawICLogList actually rasters its lines.
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	// The FIVE remaining panel zooms, seeded EXACTLY the way loadPrefs does (app.go)
 	// and with no normalization on top: the fixture must reproduce a real install,
 	// not a tidied-up one. (This used to carry an `if a.oocPct == 0 { = logPct }`

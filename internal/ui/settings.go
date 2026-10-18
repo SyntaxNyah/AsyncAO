@@ -556,7 +556,7 @@ func (a *App) drawSettings(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
 	if !settings.loaded {
-		settings.themeName, settings.themeDir = a.d.Prefs.Theme()
+		settings.themeName, settings.themeDir = a.d.Prefs.Load().Theme()
 		if settings.themeName == "" {
 			settings.themeName = theme.DefaultThemeName
 		}
@@ -1693,7 +1693,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Per-speaker name colours: tint each speaker's name by a stable hash, with
 	// saturation/brightness sliders + a live preview. OFF by default.
 	y = a.drawNameColorPicker(y, w)
-	boldNames := a.d.Prefs.BoldNamesOn()
+	boldNames := a.d.Prefs.Load().BoldNamesOn()
 	if next := c.Checkbox(pad, y, "Bold speaker names + timestamps (ON by default): renders the name prefix (and the IC-log time stamp) in the log and chatbox in bold for readability.", boldNames); next != boldNames {
 		a.d.Prefs.SetBoldNames(next)
 	}
@@ -1965,7 +1965,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c.Label(pad, y+4, "Colours:", ColTextDim)
 	c.LabelClipped(pad+150, y+4, w-pad-150-scrollBarW, "hex like 78aaff — blank = default · live on the open box", ColTextDim)
 	y += 24
-	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.ExtrasBoxStyle()
+	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.Load().ExtrasBoxStyle()
 	cur := [5]string{exBg, exBg2, exBorder, exTitle, exText}
 	next := cur
 	for i, label := range [5]string{"Background", "Gradient ↓", "Border", "Title bar", "Text"} {

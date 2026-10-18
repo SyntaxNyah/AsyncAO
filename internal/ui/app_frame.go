@@ -230,7 +230,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.ctx.SetHoverPreview(a.d.Prefs.Load().SpritePreviewOn, a.d.Prefs.PreviewHoverDelay())
 	// Hold-to-clear: stamp the bound key + threshold so the kit's text fields can
 	// wipe on a long hold (the timer runs in BeginFrame).
-	if on, keyName, ms := a.d.Prefs.HoldClear(); on {
+	if on, keyName, ms := a.d.Prefs.Load().HoldClear(); on {
 		a.ctx.SetHoldClear(true, sdl.GetKeyFromName(keyName), time.Duration(ms)*time.Millisecond)
 	} else {
 		a.ctx.SetHoldClear(false, sdl.K_UNKNOWN, 0)
