@@ -156,8 +156,8 @@ func TestQoLPrefDefaults(t *testing.T) {
 		t.Errorf("rainbow speed/vividness defaults = %d/%d, want %d/%d",
 			p.Load().RainbowSpriteSpeed, p.Load().RainbowSpriteVividness, defaultRainbowSpeed, defaultRainbowVivid)
 	}
-	if p.SpriteTintColorRGB() != defaultSpriteTintColor {
-		t.Errorf("SpriteTintColor default = %06x, want %06x", p.SpriteTintColorRGB(), defaultSpriteTintColor)
+	if p.Load().SpriteTintColorRGB() != defaultSpriteTintColor {
+		t.Errorf("SpriteTintColor default = %06x, want %06x", p.Load().SpriteTintColorRGB(), defaultSpriteTintColor)
 	}
 	if p.Load().RainbowSpriteGlow || p.Load().RainbowPairDesync || p.Load().SpriteSolidTint {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
@@ -356,7 +356,7 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if p.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch must default OFF (auto-connect is opt-in)")
 	}
-	if name, url := p.LastServer(); name != "" || url != "" {
+	if name, url := p.Load().LastServer(); name != "" || url != "" {
 		t.Errorf("LastServer default = %q/%q, want empty", name, url)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -385,7 +385,7 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if !r.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch=true lost on reload")
 	}
-	if name, url := r.LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
+	if name, url := r.Load().LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
 		t.Errorf("reloaded LastServer = %q/%q, want Skrapegropen/wss://example.test/ws", name, url)
 	}
 }
@@ -1474,8 +1474,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.Load().RainbowPerChar || !q.Load().SpriteWobble || !q.Load().SpriteSpin {
 		t.Error("a wacky-FX toggle (per-char/wobble/spin) lost across reload")
 	}
-	if q.SpriteTintColorRGB() != 0x112233 {
-		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.SpriteTintColorRGB())
+	if q.Load().SpriteTintColorRGB() != 0x112233 {
+		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.Load().SpriteTintColorRGB())
 	}
 }
 
@@ -2148,7 +2148,7 @@ func TestClampWindowSize(t *testing.T) {
 // clamping included).
 func TestHoldClearDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	on, key, ms := p.HoldClear()
+	on, key, ms := p.Load().HoldClear()
 	if !on {
 		t.Error("hold-to-clear must default ON")
 	}
@@ -2171,7 +2171,7 @@ func TestHoldClearDefaults(t *testing.T) {
 	})
 
 	// over-large clamps to max
-	if _, _, got := p.HoldClear(); got != MaxHoldClearMs {
+	if _, _, got := p.Load().HoldClear(); got != MaxHoldClearMs {
 		t.Errorf("ms clamp = %d, want %d", got, MaxHoldClearMs)
 	}
 	p.Update(func(
@@ -2185,7 +2185,7 @@ func TestHoldClearDefaults(t *testing.T) {
 	})
 
 	p.SetHoldClearKey("Delete")
-	if gotOn, gotKey, _ := p.HoldClear(); gotOn || gotKey != "Delete" {
+	if gotOn, gotKey, _ := p.Load().HoldClear(); gotOn || gotKey != "Delete" {
 		t.Errorf("after edits: on=%v key=%q, want false, Delete", gotOn, gotKey)
 	}
 }
@@ -2194,11 +2194,11 @@ func TestHoldClearDefaults(t *testing.T) {
 // (stock look), and a full round-trip of the five colours + gradient flag.
 func TestExtrasBoxStyle(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if bg, _, _, _, _, grad := p.ExtrasBoxStyle(); bg != "" || grad {
+	if bg, _, _, _, _, grad := p.Load().ExtrasBoxStyle(); bg != "" || grad {
 		t.Errorf("default ExtrasBoxStyle = bg %q grad %v, want blank/false", bg, grad)
 	}
 	p.SetExtrasBoxStyle("101018", "000000", "78aaff", "202030", "ffffff", true)
-	bg, bg2, border, title, text, grad := p.ExtrasBoxStyle()
+	bg, bg2, border, title, text, grad := p.Load().ExtrasBoxStyle()
 	if bg != "101018" || bg2 != "000000" || border != "78aaff" || title != "202030" || text != "ffffff" || !grad {
 		t.Errorf("round-trip = %q %q %q %q %q %v", bg, bg2, border, title, text, grad)
 	}
@@ -2275,7 +2275,7 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)
 	}
 	p.SetThemeFitPan(999, -999)
-	if x, y := p.ThemePan(); x != MaxThemePan || y != -MaxThemePan {
+	if x, y := p.Load().ThemePan(); x != MaxThemePan || y != -MaxThemePan {
 		t.Errorf("pan clamp = (%d,%d), want (%d,%d)", x, y, MaxThemePan, -MaxThemePan)
 	}
 }

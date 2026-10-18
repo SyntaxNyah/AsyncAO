@@ -19,7 +19,7 @@ func (a *App) fireAutoConnect() {
 	if a.sess != nil || a.lastConnURL != "" {
 		return // a tab restore (or anything) already started connecting
 	}
-	if name, url := a.d.Prefs.LastServer(); url != "" {
+	if name, url := a.d.Prefs.Load().LastServer(); url != "" {
 		a.Connect(name, url)
 	}
 }
@@ -32,7 +32,7 @@ func (a *App) quickConnect() {
 		a.warnAt = time.Now()
 		return
 	}
-	name, url := a.d.Prefs.LastServer()
+	name, url := a.d.Prefs.Load().LastServer()
 	if url == "" {
 		a.warnLine = "No saved server yet — connect to one first."
 		a.warnAt = time.Now()

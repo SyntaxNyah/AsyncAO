@@ -1783,13 +1783,13 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			a.jukeRes <- j
 		}
 	}()
-	a.armBootThemeResize(a.applyThemeAsync())                                   // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
-	a.oocPct = d.Prefs.Load().OOCScalePct                                       // OOC log text size, independent of the IC log
-	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
-	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
-	a.areaPct = a.logPct                                                        // same for the Areas list (all three hosts: docked tab, torn, themed)
-	a.modDashPct = a.logPct                                                     // same for the Mod/CM dashboard lists
+	a.armBootThemeResize(a.applyThemeAsync())                                          // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.Load().LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
+	a.oocPct = d.Prefs.Load().OOCScalePct                                              // OOC log text size, independent of the IC log
+	a.musicPct = a.logPct                                                              // starts matching the log; ctrl+wheel over the Music tab tunes it apart
+	a.playerPct = a.logPct                                                             // same for the Players tab + pair popup
+	a.areaPct = a.logPct                                                               // same for the Areas list (all three hosts: docked tab, torn, themed)
+	a.modDashPct = a.logPct                                                            // same for the Mod/CM dashboard lists
 	a.uiScalePct = d.Prefs.Load().UIScalePct
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                            // dyslexia toggle or manual font path, resolved once
@@ -1811,7 +1811,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// your chosen server — even when no tab was open at shutdown. Tab-restore wins
 	// if both are on (it reopens exactly what you had).
 	if d.Prefs.Load().AutoConnectOnLaunch && len(a.restoreQueue) == 0 {
-		if _, url := d.Prefs.LastServer(); url != "" {
+		if _, url := d.Prefs.Load().LastServer(); url != "" {
 			a.autoConnectPending = true
 		}
 	}

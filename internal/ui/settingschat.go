@@ -40,7 +40,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Text & typing")
 	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
 	// box at once instead of deleting char-by-char.
-	hcOn, hcKey, hcMs := a.d.Prefs.HoldClear()
+	hcOn, hcKey, hcMs := a.d.Prefs.Load().HoldClear()
 	if next := c.Checkbox(pad, y, "Hold a key to clear a text box (a fast wipe — no holding backspace char-by-char)", hcOn); next != hcOn {
 		a.d.Prefs.Update(func(
 			sn *config.
@@ -93,7 +93,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// descriptions beside each knob so they're self-explanatory.
 	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)
 	y += 20
-	crawl, stay, rate := a.d.Prefs.Timing()
+	crawl, stay, rate := a.d.Prefs.Load().Timing()
 	crawl = a.sliderRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
 	c.Label(pad+270, y+4, "delay between letters (higher = slower, easier to read)", ColTextDim)
 	y += 26
@@ -103,7 +103,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	rate = a.sliderRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
 	c.Label(pad+270, y+4, "smallest gap between YOUR sent messages (anti-spam)", ColTextDim)
 	y += 30
-	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
+	if c0, s0, r0 := a.d.Prefs.Load().Timing(); c0 != crawl || s0 != stay || r0 != rate {
 		a.d.Prefs.SetTiming(crawl, stay, rate)
 		a.applyTimingToRoom()
 	}
@@ -114,7 +114,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// plays in full and in order, nothing cut off, but a room full of webAO users
 	// (who skip the queue) can leave you behind. The log keeps every line either
 	// way. (This is the "message queue" toggle — it was a setting, not removed.)
-	cuOn, cuThresh := a.d.Prefs.CatchUp()
+	cuOn, cuThresh := a.d.Prefs.Load().CatchUp()
 	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
 	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
 		a.d.Prefs.SetCatchUp(next, cuThresh)
@@ -653,7 +653,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	acl := a.d.Prefs.Load().AutoConnectOnLaunch
-	lastName, lastURL := a.d.Prefs.LastServer()
+	lastName, lastURL := a.d.Prefs.Load().LastServer()
 	label := "Auto-connect to my last server on launch (OFF by default): opens straight onto the server you last used, even after a disconnect. Also bound to a Connect-to-last-server key (Controls tab)."
 	if lastURL != "" {
 		label = "Auto-connect on launch to \"" + lastName + "\" (OFF by default): your last server. Reconnect there with the Connect-to-last-server key (Controls tab) too."

@@ -202,7 +202,7 @@ func TestCopyingAnAO2ThemeMakesItEditableAndLeavesTheOriginalAlone(t *testing.T)
 		}
 	}
 	// THE COPY IS APPLIED: you can only edit what is on screen.
-	if name, _ := a.d.Prefs.Theme(); name != "paper (edited)" {
+	if name, _ := a.d.Prefs.Load().Theme(); name != "paper (edited)" {
 		t.Errorf("the copy was not selected: pref says %q", name)
 	}
 	if a.themeGen.Load() == 0 {

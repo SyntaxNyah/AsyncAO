@@ -214,7 +214,7 @@ func (a *App) requestThemeCatalog(reason themeScanReason) {
 	}
 	// Everything the scan needs, snapshotted on this thread: the custom root is
 	// a preference and the goroutine must not take the preferences lock.
-	_, customRoot := a.d.Prefs.Theme()
+	_, customRoot := a.d.Prefs.Load().Theme()
 	statOnly := reason == themeScanOnFocus
 	go func() {
 		defer a.themeCatBusy.Store(false)

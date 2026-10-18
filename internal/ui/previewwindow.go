@@ -65,7 +65,7 @@ func (a *App) toggleDetachPreview() {
 // or otherwise unsupported platform must not leave the feature half-open.
 func (a *App) openDetachedPreview() {
 	var err error
-	if x, y, w, h, ok := a.d.Prefs.PreviewWindowRect(); ok && w > 0 && h > 0 {
+	if x, y, w, h, ok := a.d.Prefs.Load().PreviewWindowRect(); ok && w > 0 && h > 0 {
 		err = a.d.Preview.OpenAtClamped(previewWindowTitle, int32(x), int32(y), int32(w), int32(h))
 	} else {
 		err = a.d.Preview.Open(previewWindowTitle, previewWinDefaultW, previewWinDefaultH)

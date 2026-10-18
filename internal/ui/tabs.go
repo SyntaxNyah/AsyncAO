@@ -975,7 +975,7 @@ func (a *App) tabStripPlacementRecorded() bool {
 	if !a.tabBarSeeded {
 		return true // the theme author placed it
 	}
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	return a.d.Prefs.Load().HasThemeRectOverride(name, themeTabBarKey)
 }
 

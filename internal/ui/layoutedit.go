@@ -213,7 +213,7 @@ func (a *App) pushLayoutUndo() {
 // editorUndoChord — Ctrl chords arrive on the hotkey channel, never on
 // keyPressed, so the draw loop can't see them.
 func (a *App) layoutEditUndo() {
-	themeName, _ := a.d.Prefs.Theme()
+	themeName, _ := a.d.Prefs.Load().Theme()
 	if len(a.editUndo) == 0 || themeName == "" {
 		return
 	}
@@ -224,7 +224,7 @@ func (a *App) layoutEditUndo() {
 }
 
 func (a *App) layoutEditRedo() {
-	themeName, _ := a.d.Prefs.Theme()
+	themeName, _ := a.d.Prefs.Load().Theme()
 	if len(a.editRedo) == 0 || themeName == "" {
 		return
 	}
@@ -369,7 +369,7 @@ func pointIn(x, y int32, r sdl.Rect) bool {
 // LAST from the themed courtroom draw, with its layout cache.
 func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	c := a.ctx
-	themeName, _ := a.d.Prefs.Theme()
+	themeName, _ := a.d.Prefs.Load().Theme()
 	if themeName == "" || lay.scaleX <= 0 || lay.scaleY <= 0 {
 		a.stopLayoutEdit()
 		return
@@ -943,7 +943,7 @@ func (a *App) rawChip(r sdl.Rect, label string) {
 // through unchanged keeps the record descriptive without letting it become
 // authoritative.
 func (a *App) applyRectOverrides(rects map[string]theme.Rect) map[string]theme.Rect {
-	themeName, _ := a.d.Prefs.Theme()
+	themeName, _ := a.d.Prefs.Load().Theme()
 	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)
 	if len(ov) == 0 {
 		return rects

@@ -17,7 +17,7 @@ import (
 func froomApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	a.d.Viewport = render.NewViewport(nil)
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"

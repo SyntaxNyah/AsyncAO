@@ -1887,13 +1887,12 @@ func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 // desktop position + client size, and ok=true only if one was ever saved
 // (see PreviewWinRectValid's doc for why a bare zero-value rect can't double
 // as "never popped out" here the way PreviewHeightPx's sentinel can).
-func (p *AssetPreferences) PreviewWindowRect() (x, y, w, h int, ok bool) {
-	snap := p.Load()
+func (s *Settings) PreviewWindowRect() (x, y, w, h int, ok bool) {
 
-	if !snap.PreviewWinRectValid {
+	if !s.PreviewWinRectValid {
 		return 0, 0, 0, 0, false
 	}
-	return snap.PreviewWinRectX, snap.PreviewWinRectY, snap.PreviewWinRectW, snap.PreviewWinRectH, true
+	return s.PreviewWinRectX, s.PreviewWinRectY, s.PreviewWinRectW, s.PreviewWinRectH, true
 }
 
 // SetPreviewWindowRect persists the detached preview window's position and
@@ -1975,18 +1974,16 @@ func (p *AssetPreferences) ClearLearnedHost(host string) int {
 }
 
 // HighlightColorRGB returns the packed 0xRRGGBB log-selection highlight colour.
-func (p *AssetPreferences) HighlightColorRGB() int {
-	snap := p.Load()
+func (s *Settings) HighlightColorRGB() int {
 
-	return snap.HighlightColor & 0xFFFFFF
+	return s.HighlightColor & 0xFFFFFF
 }
 
 // ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
 // (seeds the colour wheel; defaultICCustomColor until first use).
-func (p *AssetPreferences) ICCustomColorRGB() int {
-	snap := p.Load()
+func (s *Settings) ICCustomColorRGB() int {
 
-	return snap.ICCustomColor & 0xFFFFFF
+	return s.ICCustomColor & 0xFFFFFF
 }
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
@@ -2089,10 +2086,9 @@ func (p *AssetPreferences) InstantReplaySecondsValue() int {
 
 // LastServer returns the last server connected to (name, ws URL) â€” the
 // auto-connect / quick-connect target. Empty url means none yet.
-func (p *AssetPreferences) LastServer() (name, url string) {
-	snap := p.Load()
+func (s *Settings) LastServer() (name, url string) {
 
-	return snap.LastServerName, snap.LastServerURL
+	return s.LastServerName, s.LastServerURL
 }
 
 // SetLastServer records the last server connected to (persisted for auto-connect
@@ -2594,15 +2590,13 @@ const (
 // BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
 // pref stores the inverted "disabled" flag so the zero value means on).
 
-func (p *AssetPreferences) BreathBobOn() bool {
-	snap := p.Load()
+func (s *Settings) BreathBobOn() bool {
 
-	return !snap.BreathNoBob
+	return !s.BreathNoBob
 }
-func (p *AssetPreferences) BreathScaleOn() bool {
-	snap := p.Load()
+func (s *Settings) BreathScaleOn() bool {
 
-	return !snap.BreathNoScale
+	return !s.BreathNoScale
 }
 
 // BreathAmp / BreathSpeed report the sliders [1,100]; 0 (unset) resolves to the default.
@@ -2708,10 +2702,9 @@ func (p *AssetPreferences) SetWeatherIntensity(v int) {
 }
 
 // SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
-func (p *AssetPreferences) SpriteTintColorRGB() int {
-	snap := p.Load()
+func (s *Settings) SpriteTintColorRGB() int {
 
-	return snap.SpriteTintColor & 0xFFFFFF
+	return s.SpriteTintColor & 0xFFFFFF
 }
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
@@ -2743,10 +2736,9 @@ func (p *AssetPreferences) SetCallwordSoundPath(path string) {
 
 // Theme reports the selected theme name ("" = default) and the custom theme
 // root directory ("" = no custom root configured).
-func (p *AssetPreferences) Theme() (name, dir string) {
-	snap := p.Load()
+func (s *Settings) Theme() (name, dir string) {
 
-	return snap.ThemeName, snap.ThemeDir
+	return s.ThemeName, s.ThemeDir
 }
 
 // SetTheme stores the selected theme name and custom theme root.
@@ -2781,10 +2773,9 @@ func (p *AssetPreferences) SetSubtheme(sub string) {
 
 // Casing reports the CASEA subscription: enabled + a CaseRole* bitmask
 // (the bit layout is internal/courtroom's; config just persists it).
-func (p *AssetPreferences) Casing() (enabled bool, roles int) {
-	snap := p.Load()
+func (s *Settings) Casing() (enabled bool, roles int) {
 
-	return snap.CasingEnabled, snap.CasingRoles
+	return s.CasingEnabled, s.CasingRoles
 }
 
 // SetCasing stores the CASEA subscription.
@@ -3278,10 +3269,9 @@ func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 // LayoutScales reports the courtroom layout knobs: viewport width percent,
 // chat TEXT percent, chat BOX height percent, log/OOC list text percent,
 // input field height percent. All clamped at load and set time.
-func (p *AssetPreferences) LayoutScales() (viewport, chatText, chatBox, logText, input int) {
-	snap := p.Load()
+func (s *Settings) LayoutScales() (viewport, chatText, chatBox, logText, input int) {
 
-	return snap.ViewportPct, snap.ChatScalePct, snap.ChatBoxPct, snap.LogScalePct, snap.InputHeightPct
+	return s.ViewportPct, s.ChatScalePct, s.ChatBoxPct, s.LogScalePct, s.InputHeightPct
 }
 
 // SetLayoutScales clamps and persists the layout knobs.
@@ -3320,10 +3310,9 @@ func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
 // BoldNamesOn reports whether speaker names render bold (IC/OOC log + chatbox).
 // Default ON â€” the pref is stored inverted (BoldNamesOff) so an absent value
 // means bold, matching the on-by-default behaviour.
-func (p *AssetPreferences) BoldNamesOn() bool {
-	snap := p.Load()
+func (s *Settings) BoldNamesOn() bool {
 
-	return !snap.BoldNamesOff
+	return !s.BoldNamesOff
 }
 
 // SetBoldNames toggles bold speaker names.
@@ -3421,10 +3410,9 @@ func (p *AssetPreferences) SetUIScale(pct int) {
 
 // WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
 // the display at apply (ClampWindowSize) â€” a raw saved value may be stale.
-func (p *AssetPreferences) WindowSize() (int, int) {
-	snap := p.Load()
+func (s *Settings) WindowSize() (int, int) {
 
-	return snap.WindowW, snap.WindowH
+	return s.WindowW, s.WindowH
 }
 
 // SetWindowSize persists the windowed size (floored at the minimum; the display
@@ -3445,10 +3433,9 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 // --- Audio volumes ----------------------------------------------------------------
 
 // AudioVolumes reports the music/SFX/blip volumes (0â€“100).
-func (p *AssetPreferences) AudioVolumes() (music, sfx, blip int) {
-	snap := p.Load()
+func (s *Settings) AudioVolumes() (music, sfx, blip int) {
 
-	return snap.MusicVol, snap.SFXVol, snap.BlipVol
+	return s.MusicVol, s.SFXVol, s.BlipVol
 }
 
 // SetAudioVolumes clamps and persists the mixer volumes.
@@ -3476,10 +3463,9 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
 // (SDL key name, e.g. "Backspace"), and the hold duration in ms.
-func (p *AssetPreferences) HoldClear() (on bool, key string, ms int) {
-	snap := p.Load()
+func (s *Settings) HoldClear() (on bool, key string, ms int) {
 
-	return snap.HoldClearOn, snap.HoldClearKey, snap.HoldClearMs
+	return s.HoldClearOn, s.HoldClearKey, s.HoldClearMs
 }
 
 // SetHoldClearKey rebinds the hold-to-clear key (an SDL key name; "" ignored).
@@ -3496,10 +3482,9 @@ func (p *AssetPreferences) SetHoldClearKey(key string) {
 // ExtrasBoxStyle reports the Extras-box theme: background / gradient-bottom /
 // border / title / text colours (hex, "" = stock) and whether the background is
 // a gradient.
-func (p *AssetPreferences) ExtrasBoxStyle() (bg, bg2, border, title, text string, gradient bool) {
-	snap := p.Load()
+func (s *Settings) ExtrasBoxStyle() (bg, bg2, border, title, text string, gradient bool) {
 
-	return snap.ExtrasBg, snap.ExtrasBg2, snap.ExtrasBorder, snap.ExtrasTitle, snap.ExtrasText, snap.ExtrasGradient
+	return s.ExtrasBg, s.ExtrasBg2, s.ExtrasBorder, s.ExtrasTitle, s.ExtrasText, s.ExtrasGradient
 }
 
 // SetExtrasBoxStyle persists the Extras-box theme.
@@ -3519,10 +3504,9 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 // Timing reports the message timing knobs in milliseconds: typewriter
 // crawl per character, post-message stay, and the minimum gap between
 // outgoing chats (0 = no limit).
-func (p *AssetPreferences) Timing() (crawlMs, stayMs, rateLimitMs int) {
-	snap := p.Load()
+func (s *Settings) Timing() (crawlMs, stayMs, rateLimitMs int) {
 
-	return snap.TextCrawlMs, snap.TextStayMs, snap.ChatRateLimitMs
+	return s.TextCrawlMs, s.TextStayMs, s.ChatRateLimitMs
 }
 
 // SetTiming clamps and persists the timing knobs.
@@ -3540,10 +3524,9 @@ func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 // CatchUp reports the packed-room catch-up toggle and its queue-depth
 // threshold (fast-forward the IC stage once more than threshold messages are
 // queued).
-func (p *AssetPreferences) CatchUp() (on bool, threshold int) {
-	snap := p.Load()
+func (s *Settings) CatchUp() (on bool, threshold int) {
 
-	return snap.CatchUpOn, snap.CatchUpThreshold
+	return s.CatchUpOn, s.CatchUpThreshold
 }
 
 // SetCatchUp clamps and persists the catch-up toggle + threshold.
@@ -4043,10 +4026,9 @@ const (
 )
 
 // MusicFlags reports the MUSIC_EFFECT bitmask a track play carries.
-func (p *AssetPreferences) MusicFlags() int {
-	snap := p.Load()
+func (s *Settings) MusicFlags() int {
 
-	return snap.MusicFlagsVal & MusicFlagsMask
+	return s.MusicFlagsVal & MusicFlagsMask
 }
 
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
@@ -4695,14 +4677,13 @@ func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
 
 // BlipTyping reports the chat-blip cadence: one blip per `rate` revealed letters
 // (default 2), and whether spaces also blip (default false = skip whitespace).
-func (p *AssetPreferences) BlipTyping() (rate int, onSpaces bool) {
-	snap := p.Load()
+func (s *Settings) BlipTyping() (rate int, onSpaces bool) {
 
-	r := snap.BlipRate
+	r := s.BlipRate
 	if r < MinBlipRate {
 		r = defaultBlipRate
 	}
-	return r, snap.BlipOnSpaces
+	return r, s.BlipOnSpaces
 }
 
 // SetBlipTyping clamps and persists the blip cadence + whitespace toggle.
@@ -5558,10 +5539,9 @@ func (p *AssetPreferences) ThemeZoom() int {
 }
 
 // ThemePan reports the Custom-mode pan (percent of the window, Â±).
-func (p *AssetPreferences) ThemePan() (x, y int) {
-	snap := p.Load()
+func (s *Settings) ThemePan() (x, y int) {
 
-	return snap.ThemeFitPanX, snap.ThemeFitPanY
+	return s.ThemeFitPanX, s.ThemeFitPanY
 }
 
 // SetThemeFitPan clamps and stores the Custom-mode pan.

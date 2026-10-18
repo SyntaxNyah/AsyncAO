@@ -69,7 +69,7 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	// Neutralize the async theme reload Disconnect()→ensureThemeForSession would
 	// otherwise kick off: with the applied name already matching the pref, it's a
 	// no-op (themeAppliedName lives on App, so resetSessionState won't clear it).
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	// Simulate a live connection to a named server, as connectWith would leave it,
 	// so Disconnect captures the reconnect target.

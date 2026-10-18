@@ -130,7 +130,7 @@ var casingRoles = []struct {
 func (a *App) drawCasingRow(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	enabled, roles := a.d.Prefs.Casing()
+	enabled, roles := a.d.Prefs.Load().Casing()
 	changed := false
 	if next := c.Checkbox(pad, y, "Case announcements (get notified when someone needs your role)", enabled); next != enabled {
 		enabled = next

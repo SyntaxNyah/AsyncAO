@@ -690,7 +690,7 @@ func (a *App) applyAudioVolumes() {
 	if a.d.Audio == nil {
 		return
 	}
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	music, sfx, blip := a.d.Prefs.Load().AudioVolumes()
 	master := a.d.Prefs.Load().MasterVol
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
 	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
@@ -911,7 +911,7 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 // per-server profile if it has one, else the global defaults.
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	master = a.d.Prefs.Load().MasterVol
-	music, sfx, blip = a.d.Prefs.AudioVolumes()
+	music, sfx, blip = a.d.Prefs.Load().AudioVolumes()
 	if a.serverKey != "" {
 		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 			master, music, sfx, blip = m, mu, s, b // each falls back to global if this server never set it

@@ -86,7 +86,7 @@ func (a *App) editorSyncArt() {
 	// applied theme's tiles on the way. reclaimThemeDoc guards its own re-install on the
 	// same comparison and for the same reason. (A cold path either way: the sigs differ
 	// every frame in that state, and this returns before it allocates anything.)
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	if name != a.te.doc.name {
 		return
 	}

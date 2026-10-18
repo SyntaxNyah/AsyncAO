@@ -61,7 +61,7 @@ func TestSendBareInlineEffectReachesWire(t *testing.T) {
 // free screenshake channel.
 func TestSendBareInlineEffectObeysRateLimit(t *testing.T) {
 	a := testTabApp(t)
-	crawl, stay, _ := a.d.Prefs.Timing()
+	crawl, stay, _ := a.d.Prefs.Load().Timing()
 	const rateLimitMs = 3000 // comfortably longer than this test takes to run
 	a.d.Prefs.SetTiming(crawl, stay, rateLimitMs)
 

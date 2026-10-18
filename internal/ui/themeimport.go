@@ -333,7 +333,7 @@ func (a *App) applyImportedTheme(m *themepack.Manifest) {
 	// The CUSTOM root is left exactly as it was. An import lands under
 	// config.UserThemesDir(), which themeLoadRoots already walks, so repointing
 	// anything here would be the W2 bug arriving by the front door.
-	_, customRoot := a.d.Prefs.Theme()
+	_, customRoot := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(m.Root, customRoot)
 	settings.themeName = m.Root
 	// The gen is armed for the #35 window snap, exactly as a deliberate pick from

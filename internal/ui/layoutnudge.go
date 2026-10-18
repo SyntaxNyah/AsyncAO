@@ -242,7 +242,7 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 	if key == "" || !themeKeyEditable(key) || a.editDrag != 0 {
 		return
 	}
-	themeName, _ := a.d.Prefs.Theme()
+	themeName, _ := a.d.Prefs.Load().Theme()
 	if themeName == "" {
 		return // the editor disarms itself with no theme; nothing to persist against
 	}

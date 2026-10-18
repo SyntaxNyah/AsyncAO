@@ -479,7 +479,7 @@ func TestSyncPreviewWindowPersistsOnReattach(t *testing.T) {
 	}
 	a.syncPreviewWindow() // the real per-frame call site notices the falling edge
 
-	x, y, w, h, ok := a.d.Prefs.PreviewWindowRect()
+	x, y, w, h, ok := a.d.Prefs.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("no preview window rect was persisted after re-attaching")
 	}
@@ -515,7 +515,7 @@ func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	}
 	a.syncPreviewWindow() // the real per-frame poll that notices the edge
 
-	x, y, w, h, ok := a.d.Prefs.PreviewWindowRect()
+	x, y, w, h, ok := a.d.Prefs.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("a self-close (titlebar X) did not persist the window's final rect")
 	}

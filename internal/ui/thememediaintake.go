@@ -444,7 +444,7 @@ func (a *App) noteIntakenMedia(row theme.MediaEntry, path string) {
 func (a *App) themeMediaKeyFor(id string) string {
 	name := ""
 	if a.d.Prefs != nil {
-		name, _ = a.d.Prefs.Theme()
+		name, _ = a.d.Prefs.Load().Theme()
 	}
 	return render.ThemeMediaKey(themeSanitizeID(name), id)
 }

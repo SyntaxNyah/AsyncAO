@@ -385,7 +385,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 			a.invalidateThemeCanvases()
 		}
 		y += 28
-		px, py := a.d.Prefs.ThemePan()
+		px, py := a.d.Prefs.Load().ThemePan()
 		if next := a.sliderRow(y, "  Pan X %", px, 1, -config.MaxThemePan, config.MaxThemePan); next != px {
 			a.d.Prefs.SetThemeFitPan(next, py)
 			a.invalidateThemeCanvases()
@@ -602,7 +602,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	y += 26
 	if sst {
 		c.Label(pad+16, y+4, "Tint colour:", ColTextDim)
-		cur := a.d.Prefs.SpriteTintColorRGB()
+		cur := a.d.Prefs.Load().SpriteTintColorRGB()
 		sw := sdl.Rect{X: pad + 130, Y: y, W: 28, H: fieldH}
 		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
 		c.Border(sw, ColPanelHi)
@@ -773,11 +773,11 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
 		y += 26
-		bob := a.d.Prefs.BreathBobOn()
+		bob := a.d.Prefs.Load().BreathBobOn()
 		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
 			a.d.Prefs.SetBreathBob(next)
 		}
-		scl := a.d.Prefs.BreathScaleOn()
+		scl := a.d.Prefs.Load().BreathScaleOn()
 		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
 			a.d.Prefs.SetBreathScale(next)
 		}
@@ -837,7 +837,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		}
 		s := base * float64(a.d.Prefs.ThemeZoom()) / 100
 		artW, artH := int32(float64(court.W)*s), int32(float64(court.H)*s)
-		px, py := a.d.Prefs.ThemePan()
+		px, py := a.d.Prefs.Load().ThemePan()
 		art := sdl.Rect{
 			X: box.X + (box.W-artW)/2 + int32(px)*box.W/100,
 			Y: box.Y + (box.H-artH)/2 + int32(py)*box.H/100,
@@ -873,7 +873,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {
 		a.themeFitDrag = true
 		a.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
-		px, py := a.d.Prefs.ThemePan()
+		px, py := a.d.Prefs.Load().ThemePan()
 		a.themeFitDragBase = [2]int{px, py}
 	}
 	if a.themeFitDrag {
@@ -1276,7 +1276,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 // restart. Not a hot path.
 func (a *App) applyPrefsToState() {
 	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.uiScalePct = a.d.Prefs.Load().UIScalePct
 	a.ctx.SetUIScale(a.UIScale())
@@ -1379,7 +1379,7 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	y += 28
 
 	y = a.settingsSection(y, w, "Blips")
-	rate, onSpaces := a.d.Prefs.BlipTyping()
+	rate, onSpaces := a.d.Prefs.Load().BlipTyping()
 	if v := a.sliderRow(y, "Blip rate (1 blip / N letters)", rate, 1, config.MinBlipRate, config.MaxBlipRate); v != rate {
 		a.d.Prefs.SetBlipTyping(v, onSpaces)
 		a.applyTimingToRoom() // applies from the next message
