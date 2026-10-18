@@ -100,9 +100,7 @@ func TestSetLocalAssetsRefusesGrowthButAllowsShrink(t *testing.T) {
 	// An over-cap list already on disk (or from an older build) must stay
 	// editable: same-length calls and shrinks always succeed.
 	over := append(append([]string{}, full...), "/mnt/legacy-extra")
-	p.mu.Lock()
-	p.LocalAssetsPaths = over
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) { sn.LocalAssetsPaths = over })
 	if !p.SetLocalAssets(true, over) {
 		t.Error("toggling the mode on an over-cap saved list was refused — the user is locked out")
 	}
