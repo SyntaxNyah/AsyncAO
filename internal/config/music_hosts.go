@@ -210,16 +210,7 @@ func (p *AssetPreferences) AddMusicHost(input string) bool {
 	lbl := e.label()
 	changed := false
 	p.Update(func(sn *Settings) {
-		if len(sn.MusicHosts) >= musicHostsCap {
-			return
-		}
-		for _, h := range sn.MusicHosts {
-			if h == lbl {
-				return
-			}
-		}
-		sn.MusicHosts = append(sn.MusicHosts, lbl)
-		changed = true
+		sn.MusicHosts, changed = addExactUnique(sn.MusicHosts, lbl, musicHostsCap)
 	})
 	return changed
 }
@@ -229,13 +220,7 @@ func (p *AssetPreferences) AddMusicHost(input string) bool {
 func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
-		for i, h := range sn.MusicHosts {
-			if h == label {
-				sn.MusicHosts = append(sn.MusicHosts[:i], sn.MusicHosts[i+1:]...)
-				changed = true
-				return
-			}
-		}
+		sn.MusicHosts, changed = removeExact(sn.MusicHosts, label)
 	})
 	return changed
 }
