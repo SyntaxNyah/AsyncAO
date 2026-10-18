@@ -323,55 +323,40 @@ type Settings struct {
 }
 
 // Load returns the current settings snapshot. Callers must not mutate the returned
-// value (it is shared) and must not retain it across time. It rebuilds from the
-// inline fields on the first call after a write, so a reader sees a consistent,
-// never-torn snapshot.
+// value (it is shared) and must not retain it across time. The snapshot is published
+// by load(), Update, ImportSettings and the resets, so Load is a plain atomic read
+// that lazily seeds the built-in defaults on the very first call.
 func (p *AssetPreferences) Load() *Settings {
-	if s := p.settings.Load(); s != nil && !p.stale.Load() {
+	if s := p.settings.Load(); s != nil {
 		return s
 	}
 	p.mu.Lock()
-	if p.settings.Load() == nil || p.stale.Load() {
-		p.syncSnapshot()
-		p.stale.Store(false)
+	if p.settings.Load() == nil {
+		p.settings.Store(defaultSettings())
 	}
 	s := p.settings.Load()
 	p.mu.Unlock()
 	return s
 }
 
-// syncSnapshot seeds the snapshot from the inline data fields — the B0 bridge: the
-// fields and the snapshot coexist until the last method moves off the fields.
 // markDirtyCalls and snapshotRebuilds are the race-hammer v3 counters: they count the
-// write-path dirty signals and the snapshot rebuilds so a hammer can assert both actually ran
-// (not just that the setter calls returned).
+// write-path dirty signals and the snapshot publishes so a hammer can assert both
+// actually ran (not just that the setter calls returned).
 var (
 	markDirtyCalls   atomic.Int64
 	snapshotRebuilds atomic.Int64
 )
 
-func (p *AssetPreferences) syncSnapshot() {
-	snapshotRebuilds.Add(1)
-	p.settings.Store(syncFromInline(p))
-}
-
-// Update applies f to a clone of the current snapshot, clamps the result, and — when the
-// clone actually changed — writes every field back into the inline data fields and marks the
-// snapshot stale so Load republishes lazily. The generated equal() replaces the old reflection
-// changedFieldNames diff; the generated writeBackInline() replaces the reflection write-back,
-// so collections now reach Save. This is the B2 writer: setters migrate to
-// `p.Update(func(s *Settings){ s.Field = v })` so the inline fields stay the single source of
-// truth for Save until the final flip. The explicit (non-Update) setters still mark the
-// snapshot stale, and this path rebuilds it.
+// Update applies f to a clone of the current snapshot, clamps the result, and — when
+// the clone actually changed — publishes the new snapshot and marks dirty. The
+// generated equal() replaces the old reflection diff; the snapshot is the single
+// source of truth for Save.
 func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	cur := p.settings.Load()
-	if cur == nil || p.stale.Load() {
-		// an explicit setter wrote the inline fields directly and marked the snapshot
-		// stale; rebuild it under the lock before cloning.
-		cur = syncFromInline(p)
-		p.stale.Store(false)
+	if cur == nil {
+		cur = defaultSettings()
 		p.settings.Store(cur)
 	}
 	s := cur.Clone()
@@ -381,9 +366,8 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	if s.equal(cur) {
 		return
 	}
-	// Write the whole clone back to the inline fields (collections included) so Save
-	// marshals the new values; markDirty marks the snapshot stale for the lazy republish.
-	writeBackInline(s, p)
+	snapshotRebuilds.Add(1)
+	p.settings.Store(s)
 	p.markDirty()
 }
 
@@ -562,7 +546,7 @@ func normalizeSettings(s *Settings) {
 
 	// enums with a valid range (invalid keeps the shipped default)
 	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
-		s.ProxyModeVal = defaultPrefs("").ProxyModeVal
+		s.ProxyModeVal = defaultSettings().ProxyModeVal
 	}
 	if s.ICLogDepthVal < 0 {
 		s.ICLogDepthVal = ICLogDepthUnlimited

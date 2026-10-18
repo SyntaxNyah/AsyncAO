@@ -104,7 +104,7 @@ func setterScenarios(m reflect.Method) []namedArgs {
 // identity or contents changed.
 func fieldDiff(before, after *AssetPreferences) []string {
 	var out []string
-	diffValue(reflect.ValueOf(before).Elem(), reflect.ValueOf(after).Elem(), "", &out)
+	diffValue(reflect.ValueOf(before.Load()).Elem(), reflect.ValueOf(after.Load()).Elem(), "", &out)
 	sort.Strings(out)
 	return out
 }

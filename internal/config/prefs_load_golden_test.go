@@ -135,7 +135,7 @@ func loadGoldenOutput(t *testing.T, input map[string]any) map[string]any {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	out, err := json.Marshal(p)
+	out, err := json.Marshal(p.Load())
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

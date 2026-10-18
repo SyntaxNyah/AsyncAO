@@ -76,14 +76,6 @@ func BenchmarkTexBudgetMiBBefore(b *testing.B) {
 	}
 }
 
-func BenchmarkSyncSnapshot(b *testing.B) {
-	p := defaultPrefs("")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p.syncSnapshot()
-	}
-}
-
 func BenchmarkSetSmoothScaling(b *testing.B) {
 	p := defaultPrefs("")
 	b.ReportAllocs()
