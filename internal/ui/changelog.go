@@ -6,6 +6,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
@@ -122,7 +123,12 @@ func changelogHeaderMatches(title, cur string) bool {
 // the only record of which release notes a user has actually seen, and a future
 // notification would need it; it costs one preference write per changelog open.
 func (a *App) markChangelogSeen() {
-	a.d.Prefs.SetChangelogSeen(strings.TrimSpace(update.Version))
+	{
+		pv1 := strings.TrimSpace(update.Version)
+		a.d.Prefs.Update(func(sn *config.Settings) {
+			sn.ChangelogSeen = pv1
+		})
+	}
 }
 
 func (a *App) drawChangelog(w, h int32) {

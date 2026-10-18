@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"testing"
 )
 
@@ -13,15 +14,15 @@ func TestAreaHighlightColor(t *testing.T) {
 	if got := a.areaHighlightCol(); got != areaCurrentDefault {
 		t.Errorf("unset highlight = %+v, want the stock green %+v", got, areaCurrentDefault)
 	}
-	a.d.Prefs.SetAreaHighlightColorHex("ff0080")
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = "ff0080" })
 	if got := a.areaHighlightCol(); got.R != 0xff || got.G != 0 || got.B != 0x80 {
 		t.Errorf("custom highlight = %+v, want ff0080", got)
 	}
-	a.d.Prefs.SetAreaHighlightColorHex("not-a-colour")
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = "not-a-colour" })
 	if got := a.areaHighlightCol(); got != areaCurrentDefault {
 		t.Errorf("malformed hex = %+v, want the green fallback", got)
 	}
-	a.d.Prefs.SetAreaHighlightColorHex("")
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = "" })
 	if got := a.areaHighlightCol(); got != areaCurrentDefault {
 		t.Errorf("cleared hex = %+v, want the stock green", got)
 	}
@@ -34,7 +35,12 @@ func TestAreaHighlightColor(t *testing.T) {
 func TestAreaWheelHexRoundTrip(t *testing.T) {
 	a := testTabApp(t)
 	for _, rgb := range []int{0x00ff40, 0xff0080, 0x000001, 0xffffff} {
-		a.d.Prefs.SetAreaHighlightColorHex(fmt.Sprintf("%06x", rgb))
+		{
+			pv1 := fmt.Sprintf("%06x", rgb)
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.AreaHighlightHex = pv1
+			})
+		}
 		got := a.areaHighlightCol()
 		if int(got.R)<<16|int(got.G)<<8|int(got.B) != rgb {
 			t.Errorf("wheel write %06x resolved to %+v", rgb, got)

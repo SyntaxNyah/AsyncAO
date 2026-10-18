@@ -380,7 +380,9 @@ func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
 // pick are both ordinary preferences, so the more specific one wins. Only the
 // accessibility switch above outranks it.
 func TestPerPanelPickBeatsAGlobalFontPath(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetFontPaths(`C:\some\font.ttf`) })
+	a := landWithPanel(t, func(a *App) {
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = `C:\some\font.ttf` })
+	})
 	if got := a.themeFonts.e[elemICChatlog].face; got != 2 {
 		t.Errorf("ic_chatlog face = %d, want the user's per-panel face 2 to beat their global font path", got)
 	}

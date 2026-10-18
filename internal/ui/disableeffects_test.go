@@ -34,12 +34,12 @@ func newEffectsRig(t *testing.T) (*App, *config.AssetPreferences) {
 func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 
-	prefs.SetRainbowSprites(true)
+	prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
 	prefs.SetSpriteSolidTint(true)
-	prefs.SetRainbowSpriteGlow(true)
+	prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteGlow = true })
 	prefs.SetSpriteWobble(true)
 	prefs.SetSpriteSpin(true)
-	prefs.SetShoutPunch(true)
+	prefs.Update(func(sn *config.Settings) { sn.ShoutPunch = true })
 	prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -60,12 +60,12 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 			true
 
 	})
-	prefs.SetSpotlight(true)
-	prefs.SetReflection(true)
-	prefs.SetPostCRT(true)
-	prefs.SetPostVignette(true)
-	prefs.SetPostScanlines(true)
-	prefs.SetPostGrain(true)
+	prefs.Update(func(sn *config.Settings) { sn.Spotlight = true })
+	prefs.Update(func(sn *config.Settings) { sn.Reflection = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostCRT = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostVignette = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostScanlines = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostGrain = true })
 
 	// Sanity: without the master these really are on, so the assertions below
 	// prove suppression rather than an accidentally-empty struct.

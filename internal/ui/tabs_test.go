@@ -98,7 +98,7 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 
 	})
 
-	a.d.Prefs.SetSFXVolMuted(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.SFXVolMuted = true })
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
 	if !a.masterMuted {
@@ -1041,7 +1041,7 @@ func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 // typed name never rewrites that default, and the parked tab keeps its own.
 func TestOOCNamePerTab(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetOOCName("DefaultName")
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.OOCName = "DefaultName" })
 	// The connect flow: park → allocate → fresh session (connectWith order).
 	a.parkActive()
 	if !a.allocateTab() {
@@ -1072,13 +1072,13 @@ func TestOOCNamePerTab(t *testing.T) {
 // Players-tab sorts from prefs, clamped to the valid mode range.
 func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPlayerListSort(playerSortName)
-	a.d.Prefs.SetPlayerListAreaSort(areaSortPop)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = playerSortName })
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListAreaSort = areaSortPop })
 	a.resetSessionState()
 	if a.playerSort != playerSortName || a.playerAreaSort != areaSortPop {
 		t.Errorf("seed = %d/%d, want %d/%d", a.playerSort, a.playerAreaSort, playerSortName, areaSortPop)
 	}
-	a.d.Prefs.SetPlayerListSort(99) // a stale/out-of-range value clamps to 0
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = 99 }) // a stale/out-of-range value clamps to 0
 	a.resetSessionState()
 	if a.playerSort != 0 {
 		t.Errorf("out-of-range sort must clamp to 0, got %d", a.playerSort)

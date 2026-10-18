@@ -140,17 +140,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// with text & typing.
 	re := a.d.Prefs.Load().RandomEmote
 	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
-		a.d.Prefs.SetRandomEmote(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomEmote = next })
 	}
 	y += 26
 	rmc := a.d.Prefs.Load().RandomMessageColor
 	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
-		a.d.Prefs.SetRandomMessageColor(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = next })
 	}
 	y += 26
 	rbw := a.d.Prefs.Load().RainbowMessages
 	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
-		a.d.Prefs.SetRainbowMessages(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = next })
 	}
 	y += 26
 	// #14 2.8 additive text (ON by default): honor an incoming ADDITIVE=1 line
@@ -341,7 +341,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// the name (a song's link, on request).
 	songURL := a.d.Prefs.Load().ShowSongURL
 	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
-		a.d.Prefs.SetShowSongURL(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowSongURL = next })
 	}
 	y += 26
 	// Smooth log scrolling (OFF by default = AO2 parity). The default snaps the log
@@ -351,7 +351,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	const smoothLogLabel = "Smooth log scrolling (OFF by default): when a new IC message arrives the log jumps straight to it, like AO2. Turn on to glide instead."
 	smoothLog := a.d.Prefs.Load().SmoothLogScroll
 	if next := c.Checkbox(pad, y, smoothLogLabel, smoothLog); next != smoothLog {
-		a.d.Prefs.SetSmoothLogScroll(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SmoothLogScroll = next })
 	}
 	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(smoothLogLabel), H: 16},
 		"Only the automatic follow — the jump that keeps the newest message in view — is affected. Scrolling with the wheel or the scrollbar is unchanged.")
@@ -367,7 +367,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	c.Fill(sw, a.areaHighlightCol())
 	c.Border(sw, ColTextDim)
 	if next, _ := c.TextField("areahicol", sdl.Rect{X: pad + 186, Y: y, W: 110, H: fieldH}, areaHex, "rrggbb"); next != areaHex {
-		a.d.Prefs.SetAreaHighlightColorHex(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = next })
 	}
 	wheelLbl := "Wheel…"
 	if a.showAreaWheel {
@@ -385,10 +385,15 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		hi := a.areaHighlightCol()
 		wheelY := y
 		ny, hx := a.drawWheelPicker(pad, wheelY, int(hi.R)<<16|int(hi.G)<<8|int(hi.B), func(rgb int) {
-			a.d.Prefs.SetAreaHighlightColorHex(fmt.Sprintf("%06x", rgb))
+			{
+				pv1 := fmt.Sprintf("%06x", rgb)
+				a.d.Prefs.Update(func(sn *config.Settings) {
+					sn.AreaHighlightHex = pv1
+				})
+			}
 		})
 		if c.Button(sdl.Rect{X: hx, Y: wheelY + 42, W: 100, H: btnH}, "Stock green") {
-			a.d.Prefs.SetAreaHighlightColorHex("")
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = "" })
 		}
 		y = ny
 	}
@@ -576,7 +581,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 	soi := a.d.Prefs.Load().SFXOnIdle
 	if next := c.Checkbox(pad, y, "Always send SFX (OFF by default): play a hand-picked sound even with Pre unticked", soi); next != soi {
-		a.d.Prefs.SetSFXOnIdle(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SFXOnIdle = next })
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "AO plays a message's sound off its pre-animation stage, so a line sent with Pre unticked is silent at everyone else's client no matter which SFX you picked. On, the message is marked as having a pre-animation with an empty animation name and no delay, which is how the sound gets heard without anything actually playing. This is Attorney Online's own \"Always Send SFX\"; it ships off there too.", ColTextDim)
@@ -789,7 +794,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// "Unfriend" button. Hide it if it clutters the panel.
 	sfb := a.d.Prefs.Load().ShowFriendButton
 	if next := c.Checkbox(pad, y, "Show the \"+ Friend\" / \"Unfriend\" button on player-list rows (ON by default): one click adds or removes a friend.", sfb); next != sfb {
-		a.d.Prefs.SetShowFriendButton(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowFriendButton = next })
 	}
 	y += 26
 	// Highlighted friends (per server): shownames whose IC messages glow.
@@ -948,9 +953,21 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		setPth func(string)
 	}
 	for _, r := range []modSFXRow{
-		{"Ban", a.d.Prefs.Load().ModBanSFX, a.d.Prefs.Load().ModBanSoundFile, render.ModBan, a.d.Prefs.SetModBanSFX, a.d.Prefs.SetModBanSoundPath},
-		{"Kick", a.d.Prefs.Load().ModKickSFX, a.d.Prefs.Load().ModKickSoundFile, render.ModKick, a.d.Prefs.SetModKickSFX, a.d.Prefs.SetModKickSoundPath},
-		{"Mute", a.d.Prefs.Load().ModMuteSFX, a.d.Prefs.Load().ModMuteSoundFile, render.ModMute, a.d.Prefs.SetModMuteSFX, a.d.Prefs.SetModMuteSoundPath},
+		{"Ban", a.d.Prefs.Load().ModBanSFX, a.d.Prefs.Load().ModBanSoundFile, render.ModBan, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.ModBanSFX = v
+			})
+		}, a.d.Prefs.SetModBanSoundPath},
+		{"Kick", a.d.Prefs.Load().ModKickSFX, a.d.Prefs.Load().ModKickSoundFile, render.ModKick, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.ModKickSFX = v
+			})
+		}, a.d.Prefs.SetModKickSoundPath},
+		{"Mute", a.d.Prefs.Load().ModMuteSFX, a.d.Prefs.Load().ModMuteSoundFile, render.ModMute, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.ModMuteSFX = v
+			})
+		}, a.d.Prefs.SetModMuteSoundPath},
 	} {
 		if next := c.Checkbox(pad+16, y, r.label, r.on); next != r.on {
 			r.setOn(next)

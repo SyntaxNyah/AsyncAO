@@ -548,17 +548,37 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeySpotlight):
-		a.toggleFXPref(a.d.Prefs.Load().Spotlight, a.d.Prefs.SetSpotlight, "Speaker spotlight")
+		a.toggleFXPref(a.d.Prefs.Load().Spotlight, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.Spotlight = v
+			})
+		}, "Speaker spotlight")
 	case a.hotkeyFor(hotkeyIdleBreath):
-		a.toggleFXPref(a.d.Prefs.Load().IdleBreath, a.d.Prefs.SetIdleBreath, "Idle breathing")
+		a.toggleFXPref(a.d.Prefs.Load().IdleBreath, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.IdleBreath = v
+			})
+		}, "Idle breathing")
 	case a.hotkeyFor(hotkeyReflection):
-		a.toggleFXPref(a.d.Prefs.Load().Reflection, a.d.Prefs.SetReflection, "Glass-floor reflection")
+		a.toggleFXPref(a.d.Prefs.Load().Reflection, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.Reflection = v
+			})
+		}, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
 		a.cycleWeather()
 	case a.hotkeyFor(hotkeyCharBundle):
-		a.toggleFXPref(a.d.Prefs.Load().CharBundlePrefetch, a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
+		a.toggleFXPref(a.d.Prefs.Load().CharBundlePrefetch, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.CharBundlePrefetch = v
+			})
+		}, "Full-character preload")
 	case a.hotkeyFor(hotkeyPingChip):
-		a.toggleFXPref(a.d.Prefs.Load().PingChip, a.d.Prefs.SetPingChip, "Ping chip")
+		a.toggleFXPref(a.d.Prefs.Load().PingChip, func(v bool) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.PingChip = v
+			})
+		}, "Ping chip")
 	case a.hotkeyFor(hotkeyModDash):
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):

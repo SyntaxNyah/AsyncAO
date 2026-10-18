@@ -269,7 +269,7 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 			t.Run(p.name+"/effects="+boolWord(want), func(t *testing.T) {
 				a, cleanup := roomFactoryApp(t)
 				defer cleanup()
-				a.d.Prefs.SetScreenEffects(want)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = want })
 				// Driven together with ScreenEffects, and read INVERTED (the pref
 				// says "hide"), so each value of want exercises one side of the
 				// authoring exemption: at want=false a pref-driven room must go
@@ -387,8 +387,8 @@ func boolWord(b bool) string {
 func TestExportKeepsItsDeliberateReduceMotionOverride(t *testing.T) {
 	a, cleanup := roomFactoryApp(t)
 	defer cleanup()
-	a.d.Prefs.SetReduceMotion(true)
-	defer a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	a.startSceneExport(gateScene(), "gate", exportComic)
 	if a.gif == nil || a.gif.room == nil {

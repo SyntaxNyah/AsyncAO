@@ -1097,7 +1097,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	restore := captureElementPaints(t, &seen)
 	defer restore()
 
-	prefs.SetReduceMotion(true)
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 	if !a.themeFXFrozen {
@@ -1144,7 +1144,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	// the courtroom, put there by the accessibility option. Freezing resolves amp 0,
 	// and amp 0 on a wash is nothing at all.
 	seen = seen[:0]
-	prefs.SetReduceMotion(true) // already on; restated so the block reads on its own
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true }) // already on; restated so the block reads on its own
 	a.beginThemeFXPass()
 	plate := fxTestElement(theme.FXFade)
 	plate.wash = true
@@ -1160,7 +1160,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 
 	// And turning it back off restores the motion: the branch overrules, it must never
 	// rewrite anything.
-	prefs.SetReduceMotion(false)
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.beginThemeFXPass()
 	el := fxTestElement(theme.FXPulse)
 	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
@@ -1297,8 +1297,8 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 		if prefs == nil {
 			t.Skip("the fixture has no preferences — the accessibility branch cannot be measured")
 		}
-		prefs.SetReduceMotion(true)
-		defer prefs.SetReduceMotion(false)
+		prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+		defer prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 		// The BASELINE first, with the elements switched off: anything still noting
 		// then is the client's own chrome, and the element model cannot be isolated
 		// over it. Measured rather than assumed, because the census is a whole-frame

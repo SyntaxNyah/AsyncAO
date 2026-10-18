@@ -22,6 +22,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -126,7 +127,7 @@ func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 // pins the pref-only branch specifically.
 func TestSelectEmoteNeverOpensAClosedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
-	a.d.Prefs.SetPreviewPinned(true) // sticky "always pinned" — nothing hovered yet
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true }) // sticky "always pinned" — nothing hovered yet
 	if a.previewBase != "" {
 		t.Fatal("fixture must start with the box closed")
 	}

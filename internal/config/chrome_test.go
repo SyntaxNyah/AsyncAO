@@ -16,7 +16,7 @@ func TestChromeThemePref(t *testing.T) {
 	if got := p.ChromeTheme(); got != "dark" {
 		t.Errorf("default chrome theme = %q, want dark", got)
 	}
-	p.SetChromeTheme("midnight")
+	p.Update(func(sn *Settings) { sn.ChromeThemeKey = "midnight" })
 	if got := p.ChromeTheme(); got != "midnight" {
 		t.Errorf("after set = %q, want midnight", got)
 	}

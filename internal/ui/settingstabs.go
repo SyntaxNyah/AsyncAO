@@ -33,7 +33,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	y += 26
 	srb := a.d.Prefs.Load().ShowRecordButton
 	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
-		a.d.Prefs.SetShowRecordButton(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowRecordButton = next })
 	}
 	y += 28
 	// Recordings keep their assets (ON by default): on stop, auto-package the just-
@@ -42,7 +42,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	// .aorec still saves either way.
 	rka := a.d.Prefs.Load().RecordingsKeepAssets
 	if next := c.Checkbox(pad, y, "Recordings keep their assets (ON): on stop, also save a self-contained bundle so the replay survives its server", rka); next != rka {
-		a.d.Prefs.SetRecordingsKeepAssets(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RecordingsKeepAssets = next })
 	}
 	y += 32
 
@@ -156,7 +156,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	)
 	rspd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if next := a.sliderRow(y, "  Playback speed %", rspd, replayPctStep, minReplayPct, maxReplayPct); next != rspd {
-		a.d.Prefs.SetReplaySpeed(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ReplayPlaybackSpeed = next })
 	}
 	y += 32
 
@@ -496,7 +496,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// makes ours unreadable). The courtroom still uses the theme either way.
 	plain := a.d.Prefs.Load().PlainLobby
 	if next := c.Checkbox(pad, y, "Plain lobby — keep my readable server-list backdrop, ignore the theme's lobby image (ON by default; the courtroom still uses the theme)", plain); next != plain {
-		a.d.Prefs.SetPlainLobby(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PlainLobby = next })
 	}
 	y += 28
 
@@ -553,7 +553,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// Off keeps your screen still; "Reduce motion" (accessibility) also suppresses.
 	seff := a.d.Prefs.Load().ScreenEffects
 	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
-		a.d.Prefs.SetScreenEffects(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = next })
 		if a.room != nil {
 			a.room.ScreenEffects = next // apply to the live room immediately
 		}
@@ -564,14 +564,14 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// else sees it, and zero render cost when everything's off.
 	rbs := a.d.Prefs.Load().RainbowSprites
 	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
-		a.d.Prefs.SetRainbowSprites(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = next })
 	}
 	y += 26
 	if rbs {
 		sp := a.d.Prefs.Load().RainbowSpriteSpeed
 		c.Label(pad+16, y+4, "Speed:", ColTextDim)
 		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
-			a.d.Prefs.SetRainbowSpriteSpeed(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteSpeed = next })
 			sp = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
@@ -579,19 +579,19 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		vv := a.d.Prefs.Load().RainbowSpriteVividness
 		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
 		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
-			a.d.Prefs.SetRainbowSpriteVividness(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteVividness = next })
 			vv = next
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
 		y += 26
 		dsy := a.d.Prefs.Load().RainbowPairDesync
 		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
-			a.d.Prefs.SetRainbowPairDesync(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowPairDesync = next })
 		}
 		y += 26
 		pch := a.d.Prefs.Load().RainbowPerChar
 		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
-			a.d.Prefs.SetRainbowPerChar(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowPerChar = next })
 		}
 		y += 26
 	}
@@ -620,7 +620,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	if rbs || sst { // glow applies to whichever wash is on
 		glw := a.d.Prefs.Load().RainbowSpriteGlow
 		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
-			a.d.Prefs.SetRainbowSpriteGlow(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteGlow = next })
 		}
 		y += 26
 	}
@@ -637,29 +637,29 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	y += 26
 	punch := a.d.Prefs.Load().ShoutPunch
 	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
-		a.d.Prefs.SetShoutPunch(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShoutPunch = next })
 	}
 	y += 26
 	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
 	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
 	crt := a.d.Prefs.Load().PostCRT
 	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
-		a.d.Prefs.SetPostCRT(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PostCRT = next })
 	}
 	y += 26
 	vig := a.d.Prefs.Load().PostVignette
 	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
-		a.d.Prefs.SetPostVignette(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PostVignette = next })
 	}
 	y += 26
 	scan := a.d.Prefs.Load().PostScanlines
 	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
-		a.d.Prefs.SetPostScanlines(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PostScanlines = next })
 	}
 	y += 26
 	grain := a.d.Prefs.Load().PostGrain
 	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
-		a.d.Prefs.SetPostGrain(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PostGrain = next })
 	}
 	y += 26
 	c.popMuted(unmute) // the next two rows are parity/decor, not effects — keep them live
@@ -723,7 +723,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// shows while it's on (like the rainbow knobs above).
 	spot := a.d.Prefs.Load().Spotlight
 	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
-		a.d.Prefs.SetSpotlight(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.Spotlight = next })
 		spot = next
 	}
 	y += 26
@@ -786,7 +786,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
 	refl := a.d.Prefs.Load().Reflection
 	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
-		a.d.Prefs.SetReflection(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.Reflection = next })
 		refl = next
 	}
 	y += 26
@@ -1015,7 +1015,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Missing sprites (missingno)")
 	mno := a.d.Prefs.Load().ShowMissingPlaceholder
 	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
-		a.d.Prefs.SetShowMissingPlaceholder(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowMissingPlaceholder = next })
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "On (default): when a character's idle/talk sprite can't be found at all (every spelling and format 404'd), the stage shows a distinct placeholder image instead of holding the previous character. Off: the previous sprite stays (or the stage goes blank), exactly as before. Only fires once nothing is left to fetch — a still-downloading sprite never shows it.", ColTextDim)
@@ -1032,7 +1032,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 		settings.errorSpriteInput, "path to a PNG/WebP/GIF/APNG/JPG (blank = built-in missingno)")
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
 		raw := strings.TrimSpace(settings.errorSpriteInput)
-		a.d.Prefs.SetErrorSpritePath(raw)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ErrorSpriteFile = raw })
 		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
 		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
 		if raw == "" {

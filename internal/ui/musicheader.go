@@ -610,7 +610,7 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 		a.setRosterLegacy(!a.rosterLegacy) // drops the index-keyed icon cache, rebuilds live
 	case musicMenuPairStatus:
 		next := !a.d.Prefs.Load().ShowPairStatus
-		a.d.Prefs.SetShowPairStatus(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowPairStatus = next })
 		a.pairStatusShow = next
 	case musicMenuFollow:
 		next := !a.d.Prefs.Load().FollowEnabled

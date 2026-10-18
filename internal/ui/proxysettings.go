@@ -45,7 +45,12 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	y = a.settingsSection(y, w, "Proxy")
 	mode := a.d.Prefs.Load().ProxyModeVal
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, proxyModeLabel(mode)) {
-		a.d.Prefs.SetProxyMode((mode + 1) % config.ProxyModeCount)
+		{
+			pv1 := (mode + 1) % config.ProxyModeCount
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.ProxyModeVal = pv1
+			})
+		}
 		a.applyProxyPrefs()
 	}
 	// Re-check sits beside the mode rather than under it: the case it exists for

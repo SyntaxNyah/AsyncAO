@@ -1220,7 +1220,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// (a saved Japanese showname); plain ASCII keeps the single-font fast path.
 	snPrimary, snEmoji := a.icFieldFonts(shown)
 	if next, _ := c.TextFieldEmoji("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname", snPrimary, snEmoji); next != shown {
-		a.d.Prefs.SetShowname(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.Showname = next })
 	}
 	// Default OOC name: write-through to prefs like the showname; it seeds
 	// every NEW tab (blank sends a sticky AsyncAO<n>). The courtroom OOC-name
@@ -1229,7 +1229,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	savedOOC := a.d.Prefs.Load().OOCName
 	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
 	if next, _ := c.TextFieldEmoji("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>", onPrimary, onEmoji); next != savedOOC {
-		a.d.Prefs.SetOOCName(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.OOCName = next })
 		a.oocName = next // the ACTIVE tab adopts the new default right away
 	}
 	y += 38
@@ -1330,7 +1330,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	reduce := a.d.Prefs.Load().ReduceMotionOn
 	if next := c.Checkbox(pad, y, "Reduce motion (accessibility): stop the screen shake / realization flash (effect sounds still play)", reduce); next != reduce {
-		a.d.Prefs.SetReduceMotion(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = next })
 		a.applyTimingToRoom() // push the flag to the live room
 	}
 	y += 26
@@ -1508,7 +1508,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	if prev {
 		ms := a.d.Prefs.PreviewHoverMillis()
 		if next := a.previewDelayRow(y, ms); next != ms {
-			a.d.Prefs.SetPreviewHoverMs(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewHoverMs = next })
 		}
 		c.Label(pad+340, y+4, "how long to hover before the preview pops (default 5 s)", ColTextDim)
 		y += 30
@@ -1551,7 +1551,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
 	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
-		a.d.Prefs.SetPreviewPinned(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = next })
 	}
 	y += 26
 	// Emote-name hover tooltips: rest the cursor on an emote button to see its
@@ -1627,7 +1627,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// session (for players who'd rather not see certain art). ON by default.
 	hideRC := a.d.Prefs.Load().RightClickHideSprite
 	if next := c.Checkbox(pad, y, "Right-click a sprite to hide it from the viewport (ON by default): confirms, then hides it for the session. Reshow all with the Reshow-hidden-sprites key (Controls tab).", hideRC); next != hideRC {
-		a.d.Prefs.SetRightClickHideSprite(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RightClickHideSprite = next })
 	}
 	y += 26
 	if len(a.hiddenSprites) > 0 {
@@ -1683,7 +1683,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 30
 	restoreTabs := a.d.Prefs.Load().RestoreTabs
 	if next := c.Checkbox(pad, y, "Reopen my server tabs on launch (OFF by default): remembers open servers on exit and reconnects them next time", restoreTabs); next != restoreTabs {
-		a.d.Prefs.SetRestoreTabs(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RestoreTabs = next })
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Log colours")
@@ -1750,7 +1750,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	smooth := a.d.Prefs.Load().SmoothScaling
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
-		a.d.Prefs.SetSmoothScaling(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SmoothScaling = next })
 		hint := "1"
 		if !next {
 			hint = "0"
@@ -2050,7 +2050,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		settings.fontInput, `C:\Windows\Fonts\meiryo.ttc; more fallbacks... (blank = built-in)`)
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || fontCommit {
 		raw := strings.TrimSpace(settings.fontInput)
-		a.d.Prefs.SetFontPaths(raw)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = raw })
 		a.applyFontConfig()
 		switch {
 		case dys:

@@ -100,11 +100,22 @@ func TestSnapshotMirror(t *testing.T) {
 		t.Fatal("Load() returned nil snapshot")
 	}
 	before := p.Load().SmoothScaling
-	p.SetSmoothScaling(!before)
+	{
+		pv1 := !before
+		p.Update(func(sn *Settings) {
+			sn.SmoothScaling = pv1
+		})
+	}
 	if p.Load().SmoothScaling != !before {
 		t.Error("snapshot did not reflect the setter (republish)")
 	}
-	p.SetSmoothScaling(!before) // same value: early-return, no republish
+	{
+		pv2 := !before
+		p.Update(func(sn *Settings) {
+			sn. // same value: early-return, no republish
+				SmoothScaling = pv2
+		})
+	}
 	if p.Load().SmoothScaling != !before {
 		t.Error("snapshot changed unexpectedly after a no-op setter")
 	}
@@ -132,7 +143,12 @@ func TestSnapshotRaceHammer(t *testing.T) {
 		}()
 	}
 	for i := 0; i < 200; i++ {
-		p.SetSmoothScaling(i%2 == 0)
+		{
+			pv3 := i%2 == 0
+			p.Update(func(sn *Settings) {
+				sn.SmoothScaling = pv3
+			})
+		}
 	}
 	close(stop)
 	wg.Wait()

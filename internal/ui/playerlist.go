@@ -265,12 +265,24 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		case plItemSort:
 			if c.Button(it.r, it.label) {
 				a.playerSort = (a.playerSort + 1) % playerSortModes
-				a.d.Prefs.SetPlayerListSort(a.playerSort) // remember it across sessions
+				{
+					pv1 := a.playerSort
+					a.d.Prefs.Update(func(sn *config.Settings) {
+						sn. // remember it across sessions
+							PlayerListSort = pv1
+					})
+				}
 			}
 		case plItemRooms:
 			if c.Button(it.r, it.label) {
 				a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
-				a.d.Prefs.SetPlayerListAreaSort(a.playerAreaSort) // remember it across sessions
+				{
+					pv2 := a.playerAreaSort
+					a.d.Prefs.Update(func(sn *config.Settings) {
+						sn.PlayerListAreaSort = // remember it across sessions
+							pv2
+					})
+				}
 			}
 			c.Tooltip(it.r, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
 		case plItemStatus:
@@ -483,7 +495,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		isFriend, fColor, fNick = a.d.Prefs.ServerFriendInfo(a.serverKey, fk)
 	}
 	friend := isFriend && a.d.Prefs.Load().FriendHighlight // row tint gate (unchanged)
-	display := rosterName(p)                            // showname → OOC → character
+	display := rosterName(p)                               // showname → OOC → character
 	if isFriend && fNick != "" {
 		display = fNick // your personal label for them (the character still shows after "·")
 	}

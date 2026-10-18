@@ -1850,15 +1850,6 @@ func (p *AssetPreferences) SetSpriteScalingMode(mode int) {
 	})
 }
 
-// SetSmoothScaling toggles linear texture filtering. The UI re-streams
-// resident textures so it applies live (the SDL hint only affects
-// textures created after it changes).
-func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
-	p.Update(func(sn *Settings) {
-		sn.SmoothScaling = enabled
-	})
-}
-
 // --- Update check ------------------------------------------------------------
 
 // SetUpdateCheck toggles the launch update check.
@@ -1894,14 +1885,6 @@ func (p *AssetPreferences) SetSpriteMove(on bool) {
 func (p *AssetPreferences) SetSpritePreviews(on bool) {
 	p.Update(func(sn *Settings) {
 		sn.SpritePreviewOn = on
-	})
-}
-
-// SetPreviewPinned persists the sticky pin. Written by the box's own pin button
-// as well as by the Settings row, so the two can never disagree.
-func (p *AssetPreferences) SetPreviewPinned(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PreviewPinned = on
 	})
 }
 
@@ -1968,13 +1951,6 @@ func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
 	})
 }
 
-// SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
-func (p *AssetPreferences) SetPreviewHoverMs(n int) {
-	p.Update(func(sn *Settings) {
-		sn.PreviewHoverMs = n
-	})
-}
-
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
 // milliseconds (clamped), for the Settings readout.
 func (p *AssetPreferences) EmoteHoverNamesMillis() int {
@@ -2002,28 +1978,6 @@ func (p *AssetPreferences) EmoteGridGap() int {
 	snap := p.Load()
 
 	return clampPercent(snap.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
-}
-
-// SetSmoothLogScroll toggles the eased follow jump.
-func (p *AssetPreferences) SetSmoothLogScroll(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SmoothLogScroll = on
-	})
-}
-
-// SetShowMissingPlaceholder toggles the missing-sprite placeholder.
-func (p *AssetPreferences) SetShowMissingPlaceholder(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShowMissingPlaceholder = on
-	})
-}
-
-// SetErrorSpritePath persists a custom placeholder image path ("" clears it back
-// to the embedded default). The App reloads the art off-thread on change.
-func (p *AssetPreferences) SetErrorSpritePath(path string) {
-	p.Update(func(sn *Settings) {
-		sn.ErrorSpriteFile = path
-	})
 }
 
 // ClearLearnedType drops every host's learned format for one asset type (e.g.
@@ -2109,55 +2063,6 @@ func (p *AssetPreferences) DownloadCapKBps() int {
 	return snap.DownloadKBps
 }
 
-// SetRandomEmote toggles auto-random emote selection on send.
-func (p *AssetPreferences) SetRandomEmote(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RandomEmote = on
-	})
-}
-
-// SetShowFriendButton toggles the player-list friend button.
-func (p *AssetPreferences) SetShowFriendButton(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShowFriendButton = on
-	})
-}
-
-// SetRightClickHideSprite toggles right-click-to-hide-sprite.
-func (p *AssetPreferences) SetRightClickHideSprite(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RightClickHideSprite = on
-	})
-}
-
-// SetRainbowMessages toggles rainbow IC messages.
-func (p *AssetPreferences) SetRainbowMessages(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowMessages = on
-	})
-}
-
-// SetRandomMessageColor toggles random per-message colour.
-func (p *AssetPreferences) SetRandomMessageColor(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RandomMessageColor = on
-	})
-}
-
-// SetRainbowSprites toggles the rainbow character-sprite wash.
-func (p *AssetPreferences) SetRainbowSprites(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowSprites = on
-	})
-}
-
-// SetShowRecordButton toggles the on-courtroom Record button.
-func (p *AssetPreferences) SetShowRecordButton(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShowRecordButton = on
-	})
-}
-
 // Instant-replay capture-window bounds: a sane floor so a clip has context, and
 // a 1-hour ceiling (the requested "up to one hour"). 0/unset reads as default.
 const (
@@ -2202,13 +2107,6 @@ func (p *AssetPreferences) SetTimerSeconds(s int) {
 	})
 }
 
-// SetShowSongURL toggles showing the full song URL in the music log line.
-func (p *AssetPreferences) SetShowSongURL(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShowSongURL = on
-	})
-}
-
 // SetTimerRepeat stores the timer's repeat toggle.
 func (p *AssetPreferences) SetTimerRepeat(on bool) {
 	p.Update(func(sn *Settings) {
@@ -2250,13 +2148,6 @@ func (p *AssetPreferences) SetLastServer(name, url string) {
 	p.Update(func(sn *Settings) {
 		sn.LastServerName = name
 		sn.LastServerURL = url
-	})
-}
-
-// SetReplaySpeed stores the replay playback speed (clamped to [25,200]).
-func (p *AssetPreferences) SetReplaySpeed(v int) {
-	p.Update(func(sn *Settings) {
-		sn.ReplayPlaybackSpeed = v
 	})
 }
 
@@ -2385,24 +2276,9 @@ func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
 	return StylePreset{}, false
 }
 
-// SetCharBundlePrefetch toggles full-character bundle prefetch.
-func (p *AssetPreferences) SetCharBundlePrefetch(b bool) {
-	p.Update(func(sn *Settings) {
-		sn.CharBundlePrefetch =
+// SetPingChip toggles the connection-quality chip.
 
-			// SetPingChip toggles the connection-quality chip.
-			b
-	})
-}
-
-func (p *AssetPreferences) SetPingChip(b bool) {
-	p.Update(func(sn *Settings) {
-		sn.PingChip =
-
-			// SetValidateTLSCerts toggles strict wss certificate verification.
-			b
-	})
-}
+// SetValidateTLSCerts toggles strict wss certificate verification.
 
 func (p *AssetPreferences) SetValidateTLSCerts(b bool) {
 	p.Update(func(sn *Settings) {
@@ -2658,15 +2534,6 @@ const (
 	ProxyModeCount = 3
 )
 
-// SetProxyMode picks the proxy source. An unknown mode falls back to System
-// rather than to Direct: a mangled value must not silently switch the feature
-// off for someone who never asked it to.
-func (p *AssetPreferences) SetProxyMode(mode int) {
-	p.Update(func(sn *Settings) {
-		sn.ProxyModeVal = mode
-	})
-}
-
 // SetProxyURL stores the operator's proxy address. Validation deliberately does
 // NOT happen here: an address that cannot be parsed has to reach netproxy, which
 // fails closed and says so in the readout. Rejecting it at the setter would put
@@ -2759,53 +2626,11 @@ func (p *AssetPreferences) SetVoicePTT(k string) {
 	})
 }
 
-// SetQuitConfirmSkip persists the quit-confirm "don't ask again" choice.
-func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.QuitConfirmSkip = on
-	})
-}
-
 // SetProfile stores the user's character profile (every field length-clamped).
 func (p *AssetPreferences) SetProfile(pr ProfilePref) {
 	pr = clampProfile(pr)
 	p.Update(func(sn *Settings) {
 		sn.MyProfile = pr
-	})
-}
-
-// SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
-func (p *AssetPreferences) SetRainbowSpriteSpeed(v int) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowSpriteSpeed = v
-	})
-}
-
-// SetRainbowSpriteVividness stores the saturation (clamped to [0,100]).
-func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowSpriteVividness = v
-	})
-}
-
-// SetRainbowSpriteGlow toggles the additive neon-glow blend.
-func (p *AssetPreferences) SetRainbowSpriteGlow(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowSpriteGlow = on
-	})
-}
-
-// SetRainbowPairDesync toggles the pair hue offset.
-func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowPairDesync = on
-	})
-}
-
-// SetRainbowPerChar toggles the per-character hue offset.
-func (p *AssetPreferences) SetRainbowPerChar(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RainbowPerChar = on
 	})
 }
 
@@ -2830,37 +2655,8 @@ func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
 	})
 }
 
-// SetShoutPunch toggles the shout screen-punch.
-func (p *AssetPreferences) SetShoutPunch(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShoutPunch = on
-	})
-}
-
-// SetPostVignette / SetPostScanlines / SetPostGrain / SetPostCRT toggle the overlays.
-func (p *AssetPreferences) SetPostVignette(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PostVignette = on
-	})
-}
-func (p *AssetPreferences) SetPostScanlines(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PostScanlines = on
-	})
-}
-func (p *AssetPreferences) SetPostGrain(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PostGrain = on
-	})
-}
-func (p *AssetPreferences) SetPostCRT(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PostCRT = on
-	})
-
-	// Spotlight dim-strength bounds + default. The slider range is kept off 0/100 so "on" always
-	// reads as a spotlight (a usable shadow, never full black, never invisible).
-}
+// Spotlight dim-strength bounds + default. The slider range is kept off 0/100 so "on" always
+// reads as a spotlight (a usable shadow, never full black, never invisible).
 
 const (
 	minSpotlightStrength     = 10
@@ -2868,16 +2664,8 @@ const (
 	defaultSpotlightStrength = 55
 )
 
-// SetSpotlight toggles the speaker spotlight.
-func (p *AssetPreferences) SetSpotlight(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.Spotlight =
-
-			// SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
-			// resolves to the default so enabling the toggle always shows a visible effect.
-			on
-	})
-}
+// SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
+// resolves to the default so enabling the toggle always shows a visible effect.
 
 func (p *AssetPreferences) SpotlightLevel() int {
 	snap := p.Load()
@@ -2903,16 +2691,8 @@ const (
 	defaultBreathSpeed = 50
 )
 
-// SetIdleBreath toggles idle breathing.
-func (p *AssetPreferences) SetIdleBreath(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.IdleBreath =
-
-			// BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
-			// pref stores the inverted "disabled" flag so the zero value means on).
-			on
-	})
-}
+// BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
+// pref stores the inverted "disabled" flag so the zero value means on).
 
 func (p *AssetPreferences) BreathBobOn() bool {
 	snap := p.Load()
@@ -2948,15 +2728,7 @@ func (p *AssetPreferences) BreathSpeed() int {
 // sensible value and enabling the toggle is visible at once).
 const defaultReflectStrength = 30
 
-// SetReflection toggles the glass-floor reflection.
-func (p *AssetPreferences) SetReflection(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.Reflection =
-
-			// ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
-			on
-	})
-}
+// ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
 
 func (p *AssetPreferences) ReflectStrength() int {
 	snap := p.Load()
@@ -3056,48 +2828,9 @@ func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
 	})
 }
 
-// SetPlayerListSort remembers the Players-tab player sort.
-func (p *AssetPreferences) SetPlayerListSort(v int) {
-	p.Update(func(sn *Settings) {
-		sn.PlayerListSort = v
-	})
-}
-
-// SetPlayerListAreaSort remembers the Players-tab area-group order.
-func (p *AssetPreferences) SetPlayerListAreaSort(v int) {
-	p.Update(func(sn *Settings) {
-		sn.PlayerListAreaSort = v
-	})
-}
-
-// SetShowPairStatus toggles the opt-in pair-status chip in the player list.
-func (p *AssetPreferences) SetShowPairStatus(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShowPairStatus = on
-	})
-}
-
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.Update(func(sn *Settings) { sn.FriendSoundFile = path })
-}
-
-func (p *AssetPreferences) SetModBanSFX(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ModBanSFX = on
-	})
-}
-
-func (p *AssetPreferences) SetModKickSFX(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ModKickSFX = on
-	})
-}
-
-func (p *AssetPreferences) SetModMuteSFX(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ModMuteSFX = on
-	})
 }
 
 func (p *AssetPreferences) SetModBanSoundPath(path string) {
@@ -3187,13 +2920,6 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 
 // --- Discord Rich Presence ------------------------------------------------------------
 
-// SetDiscord stores the Rich Presence configuration.
-func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
-	p.Update(func(sn *Settings) {
-		sn.DiscordRPC = dp
-	})
-}
-
 // SetAutoStatus stores the auto-status configuration (word fields bounded).
 func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 	a = sanitizeAutoStatus(a)
@@ -3210,13 +2936,6 @@ func (p *AssetPreferences) ChromeTheme() string {
 		return "dark"
 	}
 	return snap.ChromeThemeKey
-}
-
-// SetChromeTheme stores the chrome theme preset key.
-func (p *AssetPreferences) SetChromeTheme(key string) {
-	p.Update(func(sn *Settings) {
-		sn.ChromeThemeKey = key
-	})
 }
 
 // Chrome SHAPE presets (A5): the valid keys for ChromeShapeKey. "sharp" is the
@@ -3683,13 +3402,6 @@ func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 
 // --- OOC name -----------------------------------------------------------------
 
-// SetOOCName persists the OOC chat name (debounced saver flushes).
-func (p *AssetPreferences) SetOOCName(name string) {
-	p.Update(func(sn *Settings) {
-		sn.OOCName = name
-	})
-}
-
 // --- Layout scales --------------------------------------------------------------
 
 // LayoutScales reports the courtroom layout knobs: viewport width percent,
@@ -3714,13 +3426,6 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 		sn.ChatBoxPct = chatBox
 		sn.LogScalePct = logText
 		sn.InputHeightPct = input
-	})
-}
-
-// SetCustomChrome stores the 7-colour custom chrome scheme (hex strings).
-func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
-	p.Update(func(sn *Settings) {
-		sn.CustomChromeHex = hex
 	})
 }
 
@@ -3905,15 +3610,6 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 // names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
 // and AssetPreferences.MutedSFX (the M11 per-name mute list).
 
-// SetSFXVolMuted persists the SFX-channel mute toggle. Retained for schema
-// compatibility only: the SFX mute is now session-only and the app never writes
-// this (see ui.toggleSFXMute / ui.persistChannelMute).
-func (p *AssetPreferences) SetSFXVolMuted(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SFXVolMuted = on
-	})
-}
-
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
 // (SDL key name, e.g. "Backspace"), and the hold duration in ms.
 func (p *AssetPreferences) HoldClear() (on bool, key string, ms int) {
@@ -3951,14 +3647,6 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 		sn.ExtrasTitle = title
 		sn.ExtrasText = text
 		sn.ExtrasGradient = gradient
-	})
-}
-
-// SetAreaHighlightColorHex persists the current-area highlight colour ("" =
-// back to the stock green).
-func (p *AssetPreferences) SetAreaHighlightColorHex(hex string) {
-	p.Update(func(sn *Settings) {
-		sn.AreaHighlightHex = hex
 	})
 }
 
@@ -4019,13 +3707,6 @@ func (p *AssetPreferences) TabCap() int {
 func (p *AssetPreferences) SetTabCap(n int) {
 	p.Update(func(sn *Settings) {
 		sn.MultiTabCap = n
-	})
-}
-
-// SetRestoreTabs toggles restore-on-launch.
-func (p *AssetPreferences) SetRestoreTabs(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RestoreTabs = on
 	})
 }
 
@@ -4295,27 +3976,7 @@ func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) {
 	})
 }
 
-func (p *AssetPreferences) SetShoutBypassQueue(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ShoutBypassQueue =
-
-			// SetShoutDurationMs persists the shout hold (0 = default; else clamped).
-			on
-	})
-}
-
-func (p *AssetPreferences) SetShoutDurationMs(ms int) {
-	p.Update(func(sn *Settings) {
-		sn.ShoutDurationMsVal = ms
-	})
-}
-
-// SetPreanimTimeoutMs persists the preanim cap (0 = default; else clamped).
-func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
-	p.Update(func(sn *Settings) {
-		sn.PreanimTimeoutMsVal = ms
-	})
-}
+// SetShoutDurationMs persists the shout hold (0 = default; else clamped).
 
 // SetThumbCache persists the thumbnail-cache toggle.
 func (p *AssetPreferences) SetThumbCache(on bool) {
@@ -4386,21 +4047,7 @@ func (p *AssetPreferences) AdaptiveLatMultiple() int {
 	return snap.AdaptiveLatMultipleVal
 }
 
-// SetSpriteDownscaleOff persists the downscale-disable knob.
-func (p *AssetPreferences) SetSpriteDownscaleOff(off bool) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteDownscaleOff =
-
-			// SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
-			off
-	})
-}
-
-func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
-	p.Update(func(sn *Settings) {
-		sn.SpriteDownscalePctVal = pct
-	})
-}
+// SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
 // when unset; applies on restart).
@@ -4479,14 +4126,6 @@ func (p *AssetPreferences) FPSCap() int {
 	return snap.FPSCapVal
 }
 
-// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
-// cap; else clamped).
-func (p *AssetPreferences) SetFPSCap(fps int) {
-	p.Update(func(sn *Settings) {
-		sn.FPSCapVal = fps
-	})
-}
-
 // IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
 func (p *AssetPreferences) IdleFPS() int {
 	snap := p.Load()
@@ -4495,14 +4134,6 @@ func (p *AssetPreferences) IdleFPS() int {
 		return IdleFPSDefault
 	}
 	return snap.IdleFPSVal
-}
-
-// SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
-// throttle when idle; else clamped).
-func (p *AssetPreferences) SetIdleFPS(fps int) {
-	p.Update(func(sn *Settings) {
-		sn.IdleFPSVal = fps
-	})
 }
 
 // UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
@@ -4635,14 +4266,6 @@ func (p *AssetPreferences) MusicFlags() int {
 	return snap.MusicFlagsVal & MusicFlagsMask
 }
 
-// SetChangelogSeen records that the user opened the changelog for build version v,
-// clearing the unread dot until the next update changes the version.
-func (p *AssetPreferences) SetChangelogSeen(v string) {
-	p.Update(func(sn *Settings) {
-		sn.ChangelogSeen = v
-	})
-}
-
 // OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
 func (p *AssetPreferences) OpenTabList() []OpenTab {
 	snap := p.Load()
@@ -4668,31 +4291,10 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 	})
 }
 
-// SetReduceMotion toggles reduce-motion.
-func (p *AssetPreferences) SetReduceMotion(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ReduceMotionOn = on
-	})
-}
-
-// SetScreenEffects toggles the AO2 screen effects.
-func (p *AssetPreferences) SetScreenEffects(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.ScreenEffects = on
-	})
-}
-
 // SetWordDelete toggles Ctrl+Backspace word deletion.
 func (p *AssetPreferences) SetWordDelete(on bool) {
 	p.Update(func(sn *Settings) {
 		sn.WordDelete = on
-	})
-}
-
-// SetRecordingsKeepAssets toggles the auto-bundle-on-stop-recording behavior.
-func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.RecordingsKeepAssets = on
 	})
 }
 
@@ -4721,13 +4323,6 @@ func (p *AssetPreferences) SetStickyEffects(on bool) {
 func (p *AssetPreferences) SetStickyPreanims(on bool) {
 	p.Update(func(sn *Settings) {
 		sn.StickyPreanims = on
-	})
-}
-
-// SetSFXOnIdle toggles sending a picked SFX on a non-preanim message.
-func (p *AssetPreferences) SetSFXOnIdle(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.SFXOnIdle = on
 	})
 }
 
@@ -6194,13 +5789,6 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 	})
 }
 
-// SetFontPaths persists the font override list.
-func (p *AssetPreferences) SetFontPaths(raw string) {
-	p.Update(func(sn *Settings) {
-		sn.FontOverridePaths = raw
-	})
-}
-
 // SetUIScaleAuto toggles DPI-driven UI scaling.
 func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
 	p.Update(func(sn *Settings) {
@@ -6278,13 +5866,6 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	p.Update(func(sn *Settings) {
 		sn.ThemeFitPanX = x
 		sn.ThemeFitPanY = y
-	})
-}
-
-// SetPlainLobby toggles the plain lobby backdrop.
-func (p *AssetPreferences) SetPlainLobby(on bool) {
-	p.Update(func(sn *Settings) {
-		sn.PlainLobby = on
 	})
 }
 
@@ -6576,14 +6157,6 @@ func (p *AssetPreferences) IsFavorite(url string) bool {
 }
 
 // --- Showname ----------------------------------------------------------------
-
-// SetShowname persists the in-character showname so it survives restarts and
-// is prefilled on the next session.
-func (p *AssetPreferences) SetShowname(name string) {
-	p.Update(func(sn *Settings) {
-		sn.Showname = name
-	})
-}
 
 // ShownameCap bounds the saved showname presets (M6).
 const ShownameCap = 64

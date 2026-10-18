@@ -293,7 +293,9 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 		name  string
 		apply func(a *App)
 	}{
-		{"manual font paths", func(a *App) { a.d.Prefs.SetFontPaths(`C:\some\font.ttf`) }},
+		{"manual font paths", func(a *App) {
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = `C:\some\font.ttf` })
+		}},
 		{"dyslexia toggle", func(a *App) {
 			a.d.Prefs.Update(func(
 				sn *config.

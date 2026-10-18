@@ -211,7 +211,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Shouts")
 	shoutBypass := a.d.Prefs.Load().ShoutBypassQueue
 	if next := c.Checkbox(pad, y, "Shouts skip the queue and play immediately (AO2 default)", shoutBypass); next != shoutBypass {
-		a.d.Prefs.SetShoutBypassQueue(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShoutBypassQueue = next })
 		a.applyTimingToRoom()
 	}
 	y += 26
@@ -226,11 +226,19 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
 		config.FPSCapMin, config.FPSCapMax, config.FPSCapUnlimitedOff, config.FPSCapMin,
-		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
+		a.d.Prefs.FPSCap, func(v int) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.FPSCapVal = v
+			})
+		}, &settings.fpsBufs[0],
 		"The ceiling while interacting or animating (1–240, type an exact number, or ∞ = uncapped/vsync). Default is ∞ (vsync); turning ∞ off drops to 60, plenty for AO.")
 	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
 		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, config.FPSOff,
-		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
+		a.d.Prefs.IdleFPS, func(v int) {
+			a.d.Prefs.Update(func(sn *config.Settings) {
+				sn.IdleFPSVal = v
+			})
+		}, &settings.fpsBufs[1],
 		"The rate when nothing needs redrawing (1–120, 0 = never redraw when idle, or ∞ = uncapped). Any change returns to the active rate instantly.")
 	y = a.fpsSettingRow(y, "unfocusedfps", "Unfocused frame rate:",
 		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
@@ -421,7 +429,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, shoutLabel, ColTextDim)
 	if ns != shoutMs {
-		a.d.Prefs.SetShoutDurationMs(ns)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShoutDurationMsVal = ns })
 		a.applyTimingToRoom()
 	}
 	y += 26
@@ -439,7 +447,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	c.Label(pad+200+236, y+4, preLabel, ColTextDim)
 	if np != preMs {
-		a.d.Prefs.SetPreanimTimeoutMs(np)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreanimTimeoutMsVal = np })
 		a.applyTimingToRoom()
 	}
 	y += 26
@@ -615,11 +623,14 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Decode downscale & texture memory")
 	dsOff := a.d.Prefs.Load().SpriteDownscaleOff
 	if next := c.Checkbox(pad, y, "Disable the automatic sprite downscale entirely (keep EXACT source art)", dsOff); next != dsOff {
-		a.d.Prefs.SetSpriteDownscaleOff(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteDownscaleOff = next })
 		a.applySpriteCap()
 	}
 	y += 24
-	y = a.numSliderRow(y, "downscalepct", "Downscale target:", config.SpriteDownscaleMinPct, config.SpriteDownscaleMaxPct, 5, 100, func() int { return a.d.Prefs.Load().SpriteDownscalePctVal }, func(n int) { a.d.Prefs.SetSpriteDownscalePct(n); a.applySpriteCap() }, &settings.memBufs[0], "%", "The decode-time downscale shrinks huge art toward your display height; this scales that target (50-200%). Applies to NEWLY loaded art.")
+	y = a.numSliderRow(y, "downscalepct", "Downscale target:", config.SpriteDownscaleMinPct, config.SpriteDownscaleMaxPct, 5, 100, func() int { return a.d.Prefs.Load().SpriteDownscalePctVal }, func(n int) {
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteDownscalePctVal = n })
+		a.applySpriteCap()
+	}, &settings.memBufs[0], "%", "The decode-time downscale shrinks huge art toward your display height; this scales that target (50-200%). Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
 	y += 8
 	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, func() int { return a.d.Prefs.Load().AnimatedSpriteCapPxVal }, func(n int) {

@@ -15,7 +15,11 @@ func TestPrefBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	b := prefBool(p, func(s *config.Settings) bool { return s.SmoothScaling }, p.SetSmoothScaling)
+	b := prefBool(p, func(s *config.Settings) bool { return s.SmoothScaling }, func(v bool) {
+		p.Update(func(sn *config.Settings) {
+			sn.SmoothScaling = v
+		})
+	})
 	before := b.Get()
 	b.Set(!before)
 	if b.Get() != !before {
