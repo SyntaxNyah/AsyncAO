@@ -6901,20 +6901,16 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 // every caller (the mode toggle, the Remove button, the downloader's add button)
 // routes the WHOLE list through here, so they could never prune back under it.
 func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
-	p.mu.Lock()
-	if len(mounts) > LocalMountCap && len(mounts) > len(p.LocalAssetsPaths) {
-		p.mu.Unlock()
-		return false
-	}
-	if p.LocalAssetsEnabled == enabled && slices.Equal(p.LocalAssetsPaths, mounts) {
-		p.mu.Unlock()
-		return true
-	}
-	p.LocalAssetsEnabled = enabled
-	p.LocalAssetsPaths = slices.Clone(mounts)
-	p.markDirty()
-	p.mu.Unlock()
-	return true
+	accepted := true
+	p.Update(func(sn *Settings) {
+		if len(mounts) > LocalMountCap && len(mounts) > len(sn.LocalAssetsPaths) {
+			accepted = false
+			return
+		}
+		sn.LocalAssetsEnabled = enabled
+		sn.LocalAssetsPaths = slices.Clone(mounts)
+	})
+	return accepted
 }
 
 // LayeredAssets reports the mode where local mounts are read ALONGSIDE

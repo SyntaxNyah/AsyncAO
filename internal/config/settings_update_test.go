@@ -16,14 +16,14 @@ func TestUpdateWriter(t *testing.T) {
 	if got := p.Load().MasterVol; got != defaultAudioVolume {
 		t.Errorf("Update clamp: MasterVol = %d, want %d", got, defaultAudioVolume)
 	}
-	if got := p.MasterVol; got != defaultAudioVolume {
+	if got := p.Load().MasterVol; got != defaultAudioVolume {
 		t.Errorf("inline field after Update: MasterVol = %d, want %d", got, defaultAudioVolume)
 	}
 
 	// a bool field flips through Update and the snapshot observes it.
-	before := p.SmoothScaling
+	before := p.Load().SmoothScaling
 	p.Update(func(s *Settings) { s.SmoothScaling = !s.SmoothScaling })
-	if got := p.SmoothScaling; got != !before {
+	if got := p.Load().SmoothScaling; got != !before {
 		t.Errorf("inline SmoothScaling = %v, want %v", got, !before)
 	}
 	if got := p.Load().SmoothScaling; got != !before {
