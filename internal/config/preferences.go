@@ -3096,13 +3096,9 @@ func (p *AssetPreferences) MarkFontWarnShown(theme string) {
 // ClearFontWarnThemes forgets every warned theme, so the warnings come back. The
 // way out for someone who dismissed one by reflex and wants it again.
 func (p *AssetPreferences) ClearFontWarnThemes() {
-	p.mu.Lock()
-	had := len(p.FontWarnThemes) > 0
-	p.FontWarnThemes = nil
-	if had {
-		p.markDirty()
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.FontWarnThemes = nil
+	})
 }
 
 // PanelFonts returns a COPY of the per-panel overrides. A copy because the
@@ -3169,13 +3165,9 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 // button, which matters because these are eight separate settings and undoing
 // them one at a time is how a user ends up stuck with a font they cannot read.
 func (p *AssetPreferences) ClearPanelFonts() {
-	p.mu.Lock()
-	had := len(p.PanelFontsVal) > 0
-	p.PanelFontsVal = nil
-	if had {
-		p.markDirty()
-	}
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.PanelFontsVal = nil
+	})
 }
 
 // Proxy modes. The values are persisted, so their ORDER is load-bearing and new
@@ -6070,31 +6062,30 @@ func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
 // ClearThemeRectOverride drops one widget's edit (key "" = the whole
 // theme's edits).
 func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
-	p.mu.Lock()
-	if m, ok := p.ThemeRectOv[theme]; ok {
-		if key == "" {
-			delete(p.ThemeRectOv, theme)
-		} else {
-			delete(m, key)
-			if len(m) == 0 {
-				delete(p.ThemeRectOv, theme)
+	p.Update(func(sn *Settings) {
+		if m, ok := sn.ThemeRectOv[theme]; ok {
+			if key == "" {
+				delete(sn.ThemeRectOv, theme)
+			} else {
+				delete(m, key)
+				if len(m) == 0 {
+					delete(sn.ThemeRectOv, theme)
+				}
 			}
 		}
-	}
-	// The rotation dies with its override (A4), mirroring the anchor coupling on
-	// the classic side.
-	if rm, ok := p.ThemeRectRotations[theme]; ok {
-		if key == "" {
-			delete(p.ThemeRectRotations, theme)
-		} else {
-			delete(rm, key)
-			if len(rm) == 0 {
-				delete(p.ThemeRectRotations, theme)
+		// The rotation dies with its override (A4), mirroring the anchor coupling on
+		// the classic side.
+		if rm, ok := sn.ThemeRectRotations[theme]; ok {
+			if key == "" {
+				delete(sn.ThemeRectRotations, theme)
+			} else {
+				delete(rm, key)
+				if len(rm) == 0 {
+					delete(sn.ThemeRectRotations, theme)
+				}
 			}
 		}
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	})
 }
 
 // ThemeRectRotationSnapshot returns a copy of one theme's per-widget rotation
@@ -6146,19 +6137,18 @@ func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
 // ClearThemeRectRotation drops one widget's rotation (key "" = the whole theme's
 // rotations).
 func (p *AssetPreferences) ClearThemeRectRotation(theme, key string) {
-	p.mu.Lock()
-	if m, ok := p.ThemeRectRotations[theme]; ok {
-		if key == "" {
-			delete(p.ThemeRectRotations, theme)
-		} else {
-			delete(m, key)
-			if len(m) == 0 {
-				delete(p.ThemeRectRotations, theme)
+	p.Update(func(sn *Settings) {
+		if m, ok := sn.ThemeRectRotations[theme]; ok {
+			if key == "" {
+				delete(sn.ThemeRectRotations, theme)
+			} else {
+				delete(m, key)
+				if len(m) == 0 {
+					delete(sn.ThemeRectRotations, theme)
+				}
 			}
 		}
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	})
 }
 
 // sanitizeClassicLayout validates persisted default-courtroom slot overrides on
@@ -6478,18 +6468,17 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 // editor's "Reset all"). The slot's window anchor goes with it — an anchor
 // without an override is meaningless (it only re-bases the override).
 func (p *AssetPreferences) ClearClassicSlot(name string) {
-	p.mu.Lock()
-	if name == "" {
-		p.ClassicLayout = nil
-		p.ClassicAnchors = nil
-		p.ClassicRotations = nil // rotation is meaningless without an override (like the anchor)
-	} else {
-		delete(p.ClassicLayout, name)
-		delete(p.ClassicAnchors, name)
-		delete(p.ClassicRotations, name)
-	}
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		if name == "" {
+			sn.ClassicLayout = nil
+			sn.ClassicAnchors = nil
+			sn.ClassicRotations = nil
+		} else {
+			delete(sn.ClassicLayout, name)
+			delete(sn.ClassicAnchors, name)
+			delete(sn.ClassicRotations, name)
+		}
+	})
 }
 
 // ClassicAnchor pins one classic-layout slot to a window reference: Mode is
@@ -6593,10 +6582,9 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 // ClearClassicAnchor drops one slot's window pin (the override stays; the
 // slot goes back to plain fraction scaling).
 func (p *AssetPreferences) ClearClassicAnchor(name string) {
-	p.mu.Lock()
-	delete(p.ClassicAnchors, name)
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		delete(sn.ClassicAnchors, name)
+	})
 }
 
 // Layout-editor snap grid (playtest request, Tifera: a user-editable snap
@@ -6709,10 +6697,9 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 // ClearClassicRotation drops one slot's rotation (the override stays; the slot
 // draws unrotated).
 func (p *AssetPreferences) ClearClassicRotation(name string) {
-	p.mu.Lock()
-	delete(p.ClassicRotations, name)
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		delete(sn.ClassicRotations, name)
+	})
 }
 
 // SetClassicRotations REPLACES every slot's rotation at once (symmetric to
@@ -6892,14 +6879,9 @@ func (p *AssetPreferences) LearnedSnapshot() map[string][]string {
 
 // ClearLearned wipes every learned format ("Clear Learned Formats" button).
 func (p *AssetPreferences) ClearLearned() {
-	p.mu.Lock()
-	if len(p.LearnedFormats) == 0 {
-		p.mu.Unlock()
-		return
-	}
-	p.LearnedFormats = map[string][]string{}
-	p.markDirty()
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.LearnedFormats = map[string][]string{}
+	})
 }
 
 // dropLearnedTypeLocked removes learned entries for one type across all
