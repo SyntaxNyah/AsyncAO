@@ -1221,7 +1221,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// resolution. The caption strip below reports source resolution + scale.
 	boxH := a.previewUserH
 	if boxH == 0 {
-		boxH = int32(a.d.Prefs.PreviewHeightPx())
+		boxH = int32(a.d.Prefs.Load().PreviewHeightPx())
 	}
 	pw, ph := boxH, boxH // placeholder box while the next sprite streams in
 	if ready {

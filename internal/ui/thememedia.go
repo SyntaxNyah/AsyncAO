@@ -571,7 +571,7 @@ func (res *themeApply) releaseDecoded() {
 // one. Both halves happen inside one pollThemeApply, before the frame paints, so
 // pruning first costs nothing visible.
 func (a *App) landThemeMedia(res *themeApply) {
-	budgetMiB := a.d.Prefs.TexBudgetMiB()
+	budgetMiB := a.d.Prefs.Load().TexBudgetMiB()
 	if a.themeMediaKeys == nil {
 		// NewApp seeds it; a hand-built App (a test fixture, or a future caller) does
 		// not, and a nil map is a panic on the WRITE below rather than on the reads
@@ -623,7 +623,7 @@ func (a *App) landThemeMediaPage(key string, d *assets.Decoded) error {
 	if d == nil {
 		return fmt.Errorf("theme media %s: nothing to land", key)
 	}
-	if err := a.d.Store.UploadThemeMedia(key, d, a.d.Prefs.TexBudgetMiB()); err != nil {
+	if err := a.d.Store.UploadThemeMedia(key, d, a.d.Prefs.Load().TexBudgetMiB()); err != nil {
 		return err
 	}
 	if a.themeMediaKeys == nil {
@@ -671,7 +671,7 @@ func (a *App) themeMediaPage(key string) (*render.TexturePage, bool) {
 // themeMediaDebugLine is the F8 panel's `theme media` row, beside heldSteals /
 // heldReleases. One line, built only while the panel is open.
 func (a *App) themeMediaDebugLine() string {
-	budget := render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())
+	budget := render.ThemeMediaByteCap(a.d.Prefs.Load().TexBudgetMiB())
 	return fmt.Sprintf("theme media %s / %s · %d images · %d tiles · %d over budget",
 		themeMediaMiB(a.d.Store.ThemeMediaBytes()), themeMediaMiB(budget),
 		a.d.Store.ThemeMediaCount(), a.d.Store.ThemeGenCount(), a.themeMediaOverBudget())

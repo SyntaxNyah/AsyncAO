@@ -382,7 +382,7 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	if !fresh.Load().EmoteHoverNamesOn {
 		t.Error("fresh default EmoteHoverNames = OFF, want ON")
 	}
-	if got := fresh.EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
+	if got := fresh.Load().EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
 		t.Errorf("fresh default dwell = %d, want %d", got, DefaultEmoteHoverNamesMs)
 	}
 
@@ -433,7 +433,7 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	if re.Load().EmoteHoverNamesOn {
 		t.Error("explicit OFF did not persist: reloaded EmoteHoverNames = ON")
 	}
-	if got := re.EmoteHoverNamesMillis(); got != 2000 {
+	if got := re.Load().EmoteHoverNamesMillis(); got != 2000 {
 		t.Errorf("custom dwell did not persist: got %d, want 2000", got)
 	}
 
@@ -448,7 +448,7 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 
 	})
 
-	if got := re.EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
+	if got := re.Load().EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
 		t.Errorf("oversize dwell = %d, want clamp to %d", got, maxEmoteHoverNamesMs)
 	}
 }
@@ -801,20 +801,20 @@ func TestDeleteFavBackgroundFolder(t *testing.T) {
 // TestMultiTabCap pins the configurable tab cap: default, set, and clamp.
 func TestMultiTabCap(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.TabCap() != DefaultMultiTabCap {
-		t.Fatalf("default tab cap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	if p.Load().TabCap() != DefaultMultiTabCap {
+		t.Fatalf("default tab cap = %d, want %d", p.Load().TabCap(), DefaultMultiTabCap)
 	}
 	p.Update(func(sn *Settings) { sn.MultiTabCap = 5 })
-	if p.TabCap() != 5 {
-		t.Errorf("after SetTabCap(5), TabCap = %d", p.TabCap())
+	if p.Load().TabCap() != 5 {
+		t.Errorf("after SetTabCap(5), TabCap = %d", p.Load().TabCap())
 	}
 	p.Update(func(sn *Settings) { sn.MultiTabCap = 99 }) // above the hard max
-	if p.TabCap() != maxMultiTabCap {
-		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.TabCap(), maxMultiTabCap)
+	if p.Load().TabCap() != maxMultiTabCap {
+		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.Load().TabCap(), maxMultiTabCap)
 	}
 	p.Update(func(sn *Settings) { sn.MultiTabCap = 0 }) // below the min
-	if p.TabCap() != minMultiTabCap {
-		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.TabCap(), minMultiTabCap)
+	if p.Load().TabCap() != minMultiTabCap {
+		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.Load().TabCap(), minMultiTabCap)
 	}
 }
 
@@ -1377,8 +1377,8 @@ func TestResetSettings(t *testing.T) {
 	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
-	if p.TabCap() != DefaultMultiTabCap {
-		t.Errorf("TabCap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	if p.Load().TabCap() != DefaultMultiTabCap {
+		t.Errorf("TabCap = %d, want %d", p.Load().TabCap(), DefaultMultiTabCap)
 	}
 	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "myname" {
 		t.Errorf("callwords (content) must be preserved, got %v", got)
@@ -2423,8 +2423,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load Custom file: %v", err)
 	}
-	if c.ThemeZoom() != 150 {
-		t.Errorf("Custom zoom = %d, want the saved 150", c.ThemeZoom())
+	if c.Load().ThemeZoom() != 150 {
+		t.Errorf("Custom zoom = %d, want the saved 150", c.Load().ThemeZoom())
 	}
 	if px, _ := c.Load().ThemePan(); px != 10 {
 		t.Errorf("Custom pan X = %d, want the saved 10", px)
@@ -2563,7 +2563,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if got := p.SpriteScalingMode(); got != SpriteScalingAuto {
+	if got := p.Load().SpriteScaling; got != SpriteScalingAuto {
 		t.Errorf("an existing user must land on Auto, got %d", got)
 	}
 	if !p.Load().SpriteScalingMigrated {
@@ -2579,7 +2579,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if got := q.SpriteScalingMode(); got != SpriteScalingPixel {
+	if got := q.Load().SpriteScaling; got != SpriteScalingPixel {
 		t.Errorf("a stamped file's explicit choice must be respected, got %d", got)
 	}
 
@@ -2593,7 +2593,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load future file: %v", err)
 	}
-	if got := r.SpriteScalingMode(); got != SpriteScalingAuto {
+	if got := r.Load().SpriteScaling; got != SpriteScalingAuto {
 		t.Errorf("an out-of-range mode must clamp to Auto, got %d", got)
 	}
 }
@@ -2616,7 +2616,7 @@ func TestSpriteScalingRoundTrips(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		if got := q.SpriteScalingMode(); got != mode {
+		if got := q.Load().SpriteScaling; got != mode {
 			t.Errorf("mode %d did not survive save→load, got %d", mode, got)
 		}
 	}

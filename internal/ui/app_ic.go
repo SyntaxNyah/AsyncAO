@@ -41,7 +41,7 @@ func (a *App) applyThemeAsync() uint64 {
 	// The T1 budget, read HERE with every other preference this apply needs: the
 	// theme-media allowance is a function of it (render.ThemeMediaByteCap) and the
 	// goroutine below must not take the preferences lock.
-	texBudgetMiB := a.d.Prefs.TexBudgetMiB()
+	texBudgetMiB := a.d.Prefs.Load().TexBudgetMiB()
 	gen := a.themeGen.Add(1)
 	themeRes := &a.themeRes
 	go func() {
@@ -1036,7 +1036,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		// UserScaling STAYS — it is how big a sprite is drawn (char.ini / the
 		// enlarging rule), not eye-candy, and zeroing it would silently resize
 		// every character the moment a player asked for a calmer screen.
-		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())}
+		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.Load().SpriteScaling)}
 	}
 	fx := render.SpriteFX{
 		Rainbow:         a.d.Prefs.Load().RainbowSprites,
@@ -1056,11 +1056,11 @@ func (a *App) spriteFX() render.SpriteFX {
 		Reflection:      a.d.Prefs.Load().Reflection,
 		Speed:           a.d.Prefs.Load().RainbowSpriteSpeed,
 		Vividness:       a.d.Prefs.Load().RainbowSpriteVividness,
-		SpotlightLevel:  a.d.Prefs.SpotlightLevel(),
-		BreathAmp:       a.d.Prefs.BreathAmp(),
-		BreathSpeed:     a.d.Prefs.BreathSpeed(),
-		ReflectStrength: a.d.Prefs.ReflectStrength(),
-		UserScaling:     courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode()), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
+		SpotlightLevel:  a.d.Prefs.Load().SpotlightLevel(),
+		BreathAmp:       a.d.Prefs.Load().BreathAmp(),
+		BreathSpeed:     a.d.Prefs.Load().BreathSpeed(),
+		ReflectStrength: a.d.Prefs.Load().ReflectStrength(),
+		UserScaling:     courtroom.ScalingMode(a.d.Prefs.Load().SpriteScaling), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
 	}
 	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
 		rgb := a.d.Prefs.Load().SpriteTintColorRGB()

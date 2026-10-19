@@ -87,7 +87,7 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 
 	})
 
-	wantScaling := courtroom.ScalingMode(prefs.SpriteScalingMode())
+	wantScaling := courtroom.ScalingMode(prefs.Load().SpriteScaling)
 	if got, want := a.spriteFX(), (render.SpriteFX{UserScaling: wantScaling}); got != want {
 		t.Errorf("spriteFX under the master off-switch = %+v, want everything but UserScaling zeroed (%+v)", got, want)
 	}

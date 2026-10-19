@@ -1506,7 +1506,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 26
 	if prev {
-		ms := a.d.Prefs.PreviewHoverMillis()
+		ms := a.d.Prefs.Load().PreviewHoverMillis()
 		if next := a.previewDelayRow(y, ms); next != ms {
 			a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewHoverMs = next })
 		}
@@ -1517,7 +1517,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// (playtest: the old 192 px default read tiny and re-dragging it every
 	// session got old). Applies to hover AND right-click previews, so it
 	// shows regardless of the toggle above.
-	ph := a.d.Prefs.PreviewHeightPx()
+	ph := a.d.Prefs.Load().PreviewHeightPx()
 	c.Label(pad, y+4, "Preview box height:", ColText)
 	phTrack := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
 	nph := config.MinPreviewHeightPx + int(c.Slider("previewheight", phTrack,
@@ -1588,7 +1588,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 26
 	if names {
-		ems := a.d.Prefs.EmoteHoverNamesMillis()
+		ems := a.d.Prefs.Load().EmoteHoverNamesMillis()
 		if next := a.emoteNameDelayRow(y, ems); next != ems {
 			a.d.Prefs.Update(func(
 				sn *config.
@@ -1674,7 +1674,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 	}
 	y += 26
-	tabCap := a.d.Prefs.TabCap()
+	tabCap := a.d.Prefs.Load().TabCap()
 	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99,
 		"How many servers you can have open at once — each Join opens a tab (up to 99)."); next != tabCap {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.MultiTabCap = next })
@@ -1715,7 +1715,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 26
 	if slideOn {
-		secs := a.d.Prefs.BgSlideshowSeconds()
+		secs := a.d.Prefs.Load().BgSlideshowSeconds()
 		// Bounds match the config clamp (3..600s); SetBgSlideshowSeconds is authoritative.
 		if next := a.numberRow(y, "  Seconds per background", secs, 1, 3, 600); next != secs {
 			a.d.Prefs.Update(func(
@@ -1778,7 +1778,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// above, which still governs backgrounds, desks and chrome. This one applies
 	// live — the filter is resolved at draw time from the page memo — so unlike
 	// the hint it needs no purge and no re-stream.
-	spriteScale := config.ClampSpriteScaling(a.d.Prefs.SpriteScalingMode())
+	spriteScale := config.ClampSpriteScaling(a.d.Prefs.Load().SpriteScaling)
 	c.Label(pad, y+4, "Sprite filtering:", ColText)
 	if next, changed := c.Dropdown("spritescale",
 		sdl.Rect{X: pad + spriteScaleDDX, Y: y, W: spriteScaleDDW, H: fieldH},

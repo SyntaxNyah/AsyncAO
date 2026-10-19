@@ -28,7 +28,7 @@ func (a *App) updateSlideshow(phase courtroom.MessagePhase) {
 		a.slideBG = ""
 		return
 	}
-	interval := time.Duration(a.d.Prefs.BgSlideshowSeconds()) * time.Second
+	interval := time.Duration(a.d.Prefs.Load().BgSlideshowSeconds()) * time.Second
 	if a.slideBG != "" && a.now().Sub(a.slideAt) < interval {
 		return // current background still has its time on screen
 	}

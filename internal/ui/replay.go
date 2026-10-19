@@ -291,7 +291,7 @@ func (a *App) clipInstantReplay() {
 		a.warnAt = time.Now()
 		return
 	}
-	window := time.Duration(a.d.Prefs.InstantReplaySecondsValue()) * time.Second
+	window := time.Duration(a.d.Prefs.Load().InstantReplaySecondsValue()) * time.Second
 	bg := ""
 	if a.sess != nil {
 		bg = a.sess.Background
@@ -873,7 +873,7 @@ func (a *App) drawInstantReplayDot(vp sdl.Rect) {
 	}
 	c.Fill(sdl.Rect{X: r.X + sz/2 - 3, Y: r.Y + sz/2 - 3, W: 6, H: 6}, col)
 	if hot {
-		win := formatReplayWindow(time.Duration(a.d.Prefs.InstantReplaySecondsValue()) * time.Second)
+		win := formatReplayWindow(time.Duration(a.d.Prefs.Load().InstantReplaySecondsValue()) * time.Second)
 		c.Tooltip(r, "Instant Replay armed — click or press Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyClipReplay))+" to clip the last "+win)
 		if c.clicked {
 			a.clipInstantReplay()

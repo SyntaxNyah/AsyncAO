@@ -71,7 +71,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "Output")
 	c.Label(pad, y+4, "Volume:", ColText)
-	vol := int32(a.d.Prefs.VoiceOutVol())
+	vol := int32(a.d.Prefs.Load().VoiceOutVol())
 	if nv := c.Slider("voiceOutVolSet", sdl.Rect{X: pad + 80, Y: y, W: 220, H: btnH}, vol, 100); nv != vol {
 		{
 			pv1 := int(nv)
@@ -83,7 +83,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 			a.voiceAudio.setOutVol(int(nv)) // apply live if we're in voice
 		}
 	}
-	c.Label(pad+310, y+4, strconv.Itoa(a.d.Prefs.VoiceOutVol())+"%", ColTextDim)
+	c.Label(pad+310, y+4, strconv.Itoa(a.d.Prefs.Load().VoiceOutVol())+"%", ColTextDim)
 	y += 30
 
 	y = a.settingsSection(y, w, "Push-to-talk")

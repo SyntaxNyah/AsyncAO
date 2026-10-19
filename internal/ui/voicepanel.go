@@ -110,7 +110,7 @@ func (a *App) voiceJoinChannel() {
 			if a.sess != nil {
 				a.sess.VoiceFrame(b64) // single send path: main loop only
 			}
-		}, a.d.Prefs.Load().VoiceInputDevice, a.d.Prefs.VoiceOutVol())
+		}, a.d.Prefs.Load().VoiceInputDevice, a.d.Prefs.Load().VoiceOutVol())
 		if err == nil {
 			a.voiceAudio = eng
 		}

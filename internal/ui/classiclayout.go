@@ -296,7 +296,7 @@ func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect
 }
 
 // classicSnapTo rounds a screen coordinate to the editor's grid step g
-// (user-tunable — the banner's Grid chip; config.LayoutGridSize).
+// (user-tunable — the banner's Grid chip; config.Settings.LayoutGridSize).
 func classicSnapTo(v, g int32) int32 {
 	if v < 0 {
 		return 0
@@ -695,7 +695,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Grid chip: cycles the snap step (4 → 8 → 16 → 32, persisted) — playtest
 	// request (Tifera): a user-editable snap grid.
 	if c.clicked && pointIn(c.mouseX, c.mouseY, gridBtn) {
-		gridPx := nextLayoutGridSize(a.d.Prefs.LayoutGridSize())
+		gridPx := nextLayoutGridSize(a.d.Prefs.Load().LayoutGridSize())
 		a.d.Prefs.Update(func(sn *config.Settings) {
 			sn.LayoutGridPx = gridPx
 		})
@@ -891,7 +891,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		// snap path stays allocation-free.
 		a.alignGuides = a.alignGuides[:0]
 		if a.layoutSnap && sdl.GetModState()&sdl.KMOD_SHIFT == 0 {
-			g := int32(a.d.Prefs.LayoutGridSize())
+			g := int32(a.d.Prefs.Load().LayoutGridSize())
 			r.X, r.Y, r.W, r.H = classicSnapTo(r.X, g), classicSnapTo(r.Y, g), classicSnapTo(r.W, g), classicSnapTo(r.H, g)
 			if r.W < classicMinPx {
 				r.W = classicMinPx
@@ -1040,7 +1040,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	if name := a.currentLayoutProfileLabel(); name != "" {
 		a.rawChip(profileBtn, name)
 	}
-	a.rawChip(gridBtn, fmt.Sprintf("Grid: %d", a.d.Prefs.LayoutGridSize()))
+	a.rawChip(gridBtn, fmt.Sprintf("Grid: %d", a.d.Prefs.Load().LayoutGridSize()))
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")

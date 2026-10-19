@@ -168,8 +168,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	} else {
 		defer thumbs.Close()
 		thumbs.SetEnabled(prefs.Load().ThumbCache)
-		thumbs.SetParams(prefs.ThumbHeightPx(), prefs.ThumbQuality())
-		thumbs.SetBudget(int64(prefs.ThumbBudgetMiB()) << 20)
+		thumbs.SetParams(prefs.Load().ThumbHeightPx(), prefs.Load().ThumbQuality())
+		thumbs.SetBudget(int64(prefs.Load().ThumbBudgetMiB()) << 20)
 	}
 
 	// Proxy: resolve where traffic goes BEFORE anything can dial. Every outbound
@@ -200,8 +200,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
 	defer decoder.Close()
-	decoder.SetAnimatedBudgetMiB(prefs.AnimatedBudgetMiB())
-	decoder.SetAnimatedDecodeConcurrency(prefs.AnimDecodeConcurrency())
+	decoder.SetAnimatedBudgetMiB(prefs.Load().AnimatedBudgetMiB())
+	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 
 	// --- SDL (render thread = this thread, forever) ---
 	// Texture scale quality must be hinted before textures exist: "1" =
@@ -365,7 +365,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 	// Power-user T1 budget (restart-applied; the default 64 MiB fits the 256 MiB
 	// memory budget alongside T2's 128 MiB).
-	store, err := render.NewTextureStoreBudget(ren, int64(prefs.TexBudgetMiB())<<20)
+	store, err := render.NewTextureStoreBudget(ren, int64(prefs.Load().TexBudgetMiB())<<20)
 	if err != nil {
 		return err
 	}

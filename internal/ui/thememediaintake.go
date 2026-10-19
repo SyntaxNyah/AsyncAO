@@ -404,7 +404,7 @@ func (a *App) applyImageIntakeOps(row theme.MediaEntry, el theme.Element) string
 // arithmetic is the planner's too — per-item first, then the running total — so an
 // image accepted here cannot be refused by the plan on the next apply.
 func (a *App) editImageBudgetRefusal(want int64) string {
-	mib := a.d.Prefs.TexBudgetMiB()
+	mib := a.d.Prefs.Load().TexBudgetMiB()
 	item := render.ThemeMediaItemByteCap(mib)
 	if want > item {
 		return "decodes to " + themeMediaMiB(want) + ", over the " + themeMediaMiB(item) +

@@ -21,7 +21,7 @@ const (
 	// previewZoomMax caps the preview magnifier (× the fit scale).
 	previewZoomMax = 8
 	// Playtest sizing (consistent previews): every character previews at the
-	// SAME height — the Settings default (config.PreviewHeightPx; shipped at
+	// SAME height — the Settings default (config.Settings.PreviewHeightPx; shipped at
 	// 384 px, double AO's native 192 stage: "it's really tiny" + re-dragging
 	// it each session "is stinky") — regardless of source resolution. The
 	// corner grip still resizes per session within [previewMinH, previewMaxH]
@@ -226,7 +226,7 @@ func (a *App) handlePreviewInput() {
 		a.previewResizeFrom = c.mouseY
 		a.previewResizeBase = a.previewUserH
 		if a.previewResizeBase == 0 {
-			a.previewResizeBase = int32(a.d.Prefs.PreviewHeightPx()) // grip starts from the Settings default
+			a.previewResizeBase = int32(a.d.Prefs.Load().PreviewHeightPx()) // grip starts from the Settings default
 		}
 	}
 	if a.previewResize {

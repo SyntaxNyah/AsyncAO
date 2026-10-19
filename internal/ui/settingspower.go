@@ -108,7 +108,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 6
 	if slm == config.SpriteLoadWait {
 		c.Label(pad, y+4, "Max hold per message:", ColText)
-		waitMs := a.d.Prefs.SpriteWaitMs()
+		waitMs := a.d.Prefs.Load().SpriteWaitMs()
 		wtrack := sdl.Rect{X: pad + 170, Y: y + 2, W: 260, H: 16}
 		nw := int(clampI32(c.Slider("spritewaitms", wtrack, int32(waitMs), config.SpriteWaitMaxMs), config.SpriteWaitMinMs, config.SpriteWaitMaxMs))
 		c.Tooltip(wtrack, "How long one message may wait for its sprite before playing anyway (50 ms – 30 s).")
@@ -226,7 +226,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
 		config.FPSCapMin, config.FPSCapMax, config.FPSCapUnlimitedOff, config.FPSCapMin,
-		a.d.Prefs.FPSCap, func(v int) {
+		func() int { return a.d.Prefs.Load().FPSCap() }, func(v int) {
 			a.d.Prefs.Update(func(sn *config.Settings) {
 				sn.FPSCapVal = v
 			})
@@ -234,7 +234,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		"The ceiling while interacting or animating (1–240, type an exact number, or ∞ = uncapped/vsync). Default is ∞ (vsync); turning ∞ off drops to 60, plenty for AO.")
 	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
 		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, config.FPSOff,
-		a.d.Prefs.IdleFPS, func(v int) {
+		func() int { return a.d.Prefs.Load().IdleFPS() }, func(v int) {
 			a.d.Prefs.Update(func(sn *config.Settings) {
 				sn.IdleFPSVal = v
 			})
@@ -242,7 +242,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		"The rate when nothing needs redrawing (1–120, 0 = never redraw when idle, or ∞ = uncapped). Any change returns to the active rate instantly.")
 	y = a.fpsSettingRow(y, "unfocusedfps", "Unfocused frame rate:",
 		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
-		a.d.Prefs.UnfocusedFPS, func(v int) {
+		func() int { return a.d.Prefs.Load().UnfocusedFPS() }, func(v int) {
 			a.d.Prefs.Update(func(sn *config.Settings) {
 				sn.UnfocusedFPSVal = v
 			})
@@ -262,7 +262,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// Post-input full-rate hold, in frames — a slider (the playtest ask). Default
 	// 1 frame: the input's own frame shows, then the rate drops straight to idle.
 	c.Label(pad, y+4, "Input responsiveness:", ColText)
-	ig := a.d.Prefs.InputGraceFrames()
+	ig := a.d.Prefs.Load().InputGraceFrames()
 	igtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
 	nig := int(clampI32(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), 0, config.InputGraceFramesMax))
 	c.Tooltip(igtrack, "How long the frame rate stays at the active cap after a click or keypress, in frames (0–60). 0 = off (just the input's own frame), 1 = snappiest, higher = a smoother tail. Mouse movement isn't affected.")
@@ -351,7 +351,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 6
 		if a.d.Prefs.Load().ThumbCache {
 			c.Label(pad, y+4, "Thumbnail height:", ColText)
-			tHp := a.d.Prefs.ThumbHeightPx()
+			tHp := a.d.Prefs.Load().ThumbHeightPx()
 			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 			nth := int(clampI32(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
 			if nth != 0 && nth < config.ThumbHeightMinPx {
@@ -365,11 +365,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad+200+236, y+4, thLabel, ColTextDim)
 			if nth != tHp {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbHeightPxVal = nth })
-				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
+				th.SetParams(a.d.Prefs.Load().ThumbHeightPx(), a.d.Prefs.Load().ThumbQuality())
 			}
 			y += 26
 			c.Label(pad, y+4, "Thumbnail quality:", ColText)
-			tq := a.d.Prefs.ThumbQuality()
+			tq := a.d.Prefs.Load().ThumbQuality()
 			qtrack2 := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 			ntq := int(clampI32(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
 			if ntq != 0 && ntq < config.ThumbQualityMin {
@@ -383,11 +383,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad+200+236, y+4, tqLabel, ColTextDim)
 			if ntq != tq {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbQualityVal = ntq })
-				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
+				th.SetParams(a.d.Prefs.Load().ThumbHeightPx(), a.d.Prefs.Load().ThumbQuality())
 			}
 			y += 26
 			c.Label(pad, y+4, "Thumbnail store budget:", ColText)
-			tb := a.d.Prefs.ThumbBudgetMiB()
+			tb := a.d.Prefs.Load().ThumbBudgetMiB()
 			btrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
 			ntb := int(clampI32(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
 			if ntb != 0 && ntb < config.ThumbBudgetMinMiB {
@@ -401,7 +401,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad+200+236, y+4, tbLabel, ColTextDim)
 			if ntb != tb {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbBudgetMiBVal = ntb })
-				th.SetBudget(int64(a.d.Prefs.ThumbBudgetMiB()) << 20)
+				th.SetBudget(int64(a.d.Prefs.Load().ThumbBudgetMiB()) << 20)
 			}
 			y += 26
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Clear stored thumbnails") {
@@ -643,7 +643,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
 	y = a.settingsDesc(pad, y, "Animations are no longer truncated to fit the texture budget, so one full high-res preanimation can hold a few hundred MB of GPU memory. This caps animated sprite HEIGHT (still art is untouched) to shrink that footprint; leave off for AO2-identical full quality.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, a.d.Prefs.AnimatedBudgetMiB, func(n int) {
+	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, func() int { return a.d.Prefs.Load().AnimatedBudgetMiB() }, func(n int) {
 		a.d.Prefs.Update(func(
 			sn *config.
 				Settings) {
@@ -659,7 +659,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}, &settings.memBufs[2], " MiB", "How much decoded memory ONE animated sprite may use before its frames are downscaled to fit (64-512 MiB). 128 = the shipped default (very large clips downscale to fit); lower = softer sprites, far less RAM. Applies to NEWLY loaded art (LIVE).")
 	y = a.settingsDesc(pad, y, "Decoded memory allowed for ONE animated sprite before its frames are downscaled to fit. 500 MiB keeps full-size high-res clips native (sharpest, most RAM); lower shrinks them to fit (softer, a fraction of the RAM). The per-frame decoded pixels of several such clips are what spiked RAM, so this is the biggest lever. Applies to newly loaded art.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, a.d.Prefs.AnimDecodeConcurrency, func(n int) {
+	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, func() int { return a.d.Prefs.Load().AnimDecodeConcurrency() }, func(n int) {
 		a.d.Prefs.Update(func(
 			sn *config.
 				Settings) {
@@ -675,7 +675,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
 	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, func(v int) {
+	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, func() int { return a.d.Prefs.Load().TexBudgetMiB() }, func(v int) {
 		a.d.Prefs.Update(func(sn *config.Settings) {
 			sn.TexBudgetMiBVal = v
 		})
