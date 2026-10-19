@@ -367,5 +367,9 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		}
 	}
 	s.MyAutoStatus = sanitizeAutoStatus(s.MyAutoStatus)
+	// Strict load: clamp out-of-range file values exactly as the setters do, so the
+	// clamp-on-read getters can collapse to plain field reads. A clamp never sets
+	// `changed` (no dirty, no rewrite until the next real Save).
+	clampSettingsStrict(s)
 	return changed
 }
