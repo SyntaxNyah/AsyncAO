@@ -118,7 +118,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
-	cur := a.d.Prefs.ChromeTheme()
+	cur := a.d.Prefs.Load().ChromeTheme()
 	c.Label(pad, y, "Client UI colours — AsyncAO's own panels, separate from AO2 courtroom themes.", ColTextDim)
 	y += 24
 	// Quick accent picker (#41): one click to edit JUST the UI accent on the Custom

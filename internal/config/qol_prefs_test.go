@@ -111,7 +111,7 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.Load().SpritePreviewOn {
 		t.Error("SpritePreviewsOn default must be true")
 	}
-	if got := p.PreviewHoverMillis(); got != DefaultPreviewHoverMs {
+	if got := p.Load().PreviewHoverMillis(); got != DefaultPreviewHoverMs {
 		t.Errorf("PreviewHoverMillis default = %d, want %d", got, DefaultPreviewHoverMs)
 	}
 	if p.Load().ShowAssetWarnings {
@@ -606,7 +606,7 @@ func TestInstantReplayPref(t *testing.T) {
 	if p.Load().InstantReplay {
 		t.Error("InstantReplay must default OFF (opt-in)")
 	}
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
 		t.Errorf("unset window = %d, want default %d", got, InstantReplayDefaultSeconds)
 	}
 	p.Update(func(
@@ -620,7 +620,7 @@ func TestInstantReplayPref(t *testing.T) {
 	})
 
 	// below the floor
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
 		t.Errorf("clamped-low window = %d, want %d", got, InstantReplayMinSeconds)
 	}
 	p.Update(func(
@@ -634,7 +634,7 @@ func TestInstantReplayPref(t *testing.T) {
 	})
 
 	// past the 1-hour ceiling
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
 		t.Errorf("clamped-high window = %d, want %d", got, InstantReplayMaxSeconds)
 	}
 
@@ -673,7 +673,7 @@ func TestInstantReplayPref(t *testing.T) {
 	if !r.Load().InstantReplay {
 		t.Error("InstantReplay=true lost on reload")
 	}
-	if got := r.InstantReplaySecondsValue(); got != 120 {
+	if got := r.Load().InstantReplaySecondsValue(); got != 120 {
 		t.Errorf("reloaded window = %d, want 120", got)
 	}
 }
@@ -686,15 +686,15 @@ func TestTimerPref(t *testing.T) {
 	if p.Load().TimerRepeat {
 		t.Error("TimerRepeat must default OFF")
 	}
-	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerDefaultSeconds {
 		t.Errorf("unset duration = %d, want default %d", got, TimerDefaultSeconds)
 	}
 	p.SetTimerSeconds(0) // 0/unset → default, not the floor
-	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerDefaultSeconds {
 		t.Errorf("zero duration = %d, want default %d", got, TimerDefaultSeconds)
 	}
 	p.SetTimerSeconds(1000000) // past the 99-minute ceiling
-	if got := p.TimerSecondsValue(); got != TimerMaxSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerMaxSeconds {
 		t.Errorf("clamped-high duration = %d, want %d", got, TimerMaxSeconds)
 	}
 
@@ -712,7 +712,7 @@ func TestTimerPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := r.TimerSecondsValue(); got != 90 {
+	if got := r.Load().TimerSecondsValue(); got != 90 {
 		t.Errorf("reloaded duration = %d, want 90", got)
 	}
 	if !r.Load().TimerRepeat {
@@ -1106,11 +1106,11 @@ func TestPreviewHoverClamp(t *testing.T) {
 			sn.PreviewHoverMs = pv1
 		})
 	}
-	if got := p.PreviewHoverMillis(); got != maxPreviewHoverMs {
+	if got := p.Load().PreviewHoverMillis(); got != maxPreviewHoverMs {
 		t.Errorf("clamp hi = %d, want %d", got, maxPreviewHoverMs)
 	}
 	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 1 })
-	if got := p.PreviewHoverMillis(); got != minPreviewHoverMs {
+	if got := p.Load().PreviewHoverMillis(); got != minPreviewHoverMs {
 		t.Errorf("clamp lo = %d, want %d", got, minPreviewHoverMs)
 	}
 }
@@ -1396,7 +1396,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().SpritePreviewOn {
 		t.Error("SpritePreview=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if got := q.PreviewHoverMillis(); got != 8000 {
+	if got := q.Load().PreviewHoverMillis(); got != 8000 {
 		t.Errorf("PreviewHoverMillis = %d, want 8000", got)
 	}
 	if !q.Load().ShowAssetWarnings {
@@ -1456,10 +1456,10 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.Load().MotionRedrawPerEvent {
 		t.Error("MotionRedrawPerEvent=false lost across reload (default-ON *bool must persist an explicit OFF)")
 	}
-	if got := q.IdleFPS(); got != FPSUnlimited {
+	if got := q.Load().IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
 	}
-	if got := q.PreviewHeightPx(); got != 512 {
+	if got := q.Load().PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
 	}
 	if !q.Load().UpdateExperimental {
@@ -1877,7 +1877,7 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().AssetCharCase != 0 {
 		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.Load().AssetCharCase)
 	}
-	if p.Load().SpriteLoadModeVal != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+	if p.Load().SpriteLoadModeVal != SpriteLoadDefault || p.Load().SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.Load().SpriteWaitPair || p.Load().SpriteWaitPreanim {
 		t.Error("nuke must reset the loading mode to its default (Default) + the wait knobs")
 	}
@@ -1896,19 +1896,19 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.Load().ClipSpritesToStage {
 		t.Error("nuke must restore the sprite mask to its default ON")
 	}
-	if p.Load().ThumbCache || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
+	if p.Load().ThumbCache || p.Load().ThumbHeightPx() != ThumbHeightDefaultPx || p.Load().ThumbQuality() != ThumbQualityDefault || p.Load().ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
 		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
 	if p.Load().NotFoundTTLSecVal != 0 || p.Load().AdaptiveLatMultipleVal != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
-	if p.Load().SpriteDownscaleOff || p.Load().SpriteDownscalePctVal != 0 || p.Load().AnimatedSpriteCapPxVal != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
+	if p.Load().SpriteDownscaleOff || p.Load().SpriteDownscalePctVal != 0 || p.Load().AnimatedSpriteCapPxVal != 0 || p.Load().TexBudgetMiB() != TexBudgetDefaultMiB {
 		t.Error("nuke must reset the downscale + texture-budget knobs")
 	}
 	if p.Load().CrossfadeMsVal != 0 {
 		t.Error("nuke must reset the crossfade to off")
 	}
-	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+	if p.Load().FPSCap() != FPSCapDefault || p.Load().IdleFPS() != IdleFPSDefault || p.Load().UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
 	}
 	if !p.Load().EventDrivenLoop {
@@ -2249,8 +2249,8 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	if p.Load().ThemeFit != ThemeFitNative {
 		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.Load().ThemeFit, ThemeFitNative)
 	}
-	if p.ThemeZoom() != DefaultThemeZoom {
-		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
+	if p.Load().ThemeZoom() != DefaultThemeZoom {
+		t.Errorf("ThemeZoom default = %d, want %d", p.Load().ThemeZoom(), DefaultThemeZoom)
 	}
 	if !p.Load().PlainLobby {
 		t.Error("PlainLobbyOn default must be true (readable server list)")
@@ -2271,8 +2271,8 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 			sn.ThemeFitZoom = pv1
 		})
 	}
-	if p.ThemeZoom() != MaxThemeZoom {
-		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)
+	if p.Load().ThemeZoom() != MaxThemeZoom {
+		t.Errorf("zoom clamp = %d, want %d", p.Load().ThemeZoom(), MaxThemeZoom)
 	}
 	p.SetThemeFitPan(999, -999)
 	if x, y := p.Load().ThemePan(); x != MaxThemePan || y != -MaxThemePan {
@@ -2293,9 +2293,9 @@ func TestFPSKnobDomain(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	// A fresh (absent-key) prefs resolves to the defaults, never 0/off.
-	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+	if p.Load().FPSCap() != FPSCapDefault || p.Load().IdleFPS() != IdleFPSDefault || p.Load().UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Fatalf("fresh defaults = %d/%d/%d, want %d/%d/%d",
-			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
+			p.Load().FPSCap(), p.Load().IdleFPS(), p.Load().UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
 	}
 	// Below the old floors is now allowed, not clamped up.
 	p.Update(func(
@@ -2319,9 +2319,9 @@ func TestFPSKnobDomain(t *testing.T) {
 	})
 
 	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = 1 })
-	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
+	if p.Load().FPSCap() != 5 || p.Load().IdleFPS() != 2 || p.Load().UnfocusedFPS() != 1 {
 		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
-			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
+			p.Load().FPSCap(), p.Load().IdleFPS(), p.Load().UnfocusedFPS())
 	}
 	// Out-of-range positives still clamp to the max.
 	p.Update(func(
@@ -2334,7 +2334,7 @@ func TestFPSKnobDomain(t *testing.T) {
 
 	})
 
-	if got := p.IdleFPS(); got != IdleFPSMax {
+	if got := p.Load().IdleFPS(); got != IdleFPSMax {
 		t.Errorf("idle over-max = %d, want clamp to %d", got, IdleFPSMax)
 	}
 	// The Settings "0"/off maps to FPSOff; ∞ to FPSUnlimited. Both are held live
@@ -2360,11 +2360,11 @@ func TestFPSKnobDomain(t *testing.T) {
 
 	})
 
-	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
-		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
+	if p.Load().IdleFPS() != FPSOff || p.Load().UnfocusedFPS() != FPSOff || p.Load().FPSCap() != FPSUnlimited {
+		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.Load().IdleFPS(), p.Load().UnfocusedFPS(), p.Load().FPSCap())
 	}
 	// Input-grace frames: default 1, clamps into range, survives the round-trip.
-	if got := p.InputGraceFrames(); got != InputGraceFramesDefault {
+	if got := p.Load().InputGraceFrames(); got != InputGraceFramesDefault {
 		t.Errorf("input-grace default = %d, want %d", got, InputGraceFramesDefault)
 	}
 	p.Update(func(
@@ -2377,13 +2377,13 @@ func TestFPSKnobDomain(t *testing.T) {
 
 	})
 
-	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
+	if got := p.Load().InputGraceFrames(); got != InputGraceFramesMax {
 		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
 	}
 	p.SetInputGraceFrames(0)
 
 	// 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
-	if got := p.InputGraceFrames(); got != 0 {
+	if got := p.Load().InputGraceFrames(); got != 0 {
 		t.Errorf("input-grace off = %d, want 0", got)
 	}
 	if err := p.Close(); err != nil { // flush + release before reload
@@ -2393,16 +2393,16 @@ func TestFPSKnobDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.IdleFPS() != FPSOff {
-		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.IdleFPS(), FPSOff)
+	if q.Load().IdleFPS() != FPSOff {
+		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.Load().IdleFPS(), FPSOff)
 	}
-	if q.UnfocusedFPS() != FPSOff {
-		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.UnfocusedFPS(), FPSOff)
+	if q.Load().UnfocusedFPS() != FPSOff {
+		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.Load().UnfocusedFPS(), FPSOff)
 	}
-	if q.FPSCap() != FPSUnlimited {
-		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
+	if q.Load().FPSCap() != FPSUnlimited {
+		t.Errorf("active ∞ lost across reload: %d, want %d", q.Load().FPSCap(), FPSUnlimited)
 	}
-	if q.InputGraceFrames() != 0 {
-		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.InputGraceFrames())
+	if q.Load().InputGraceFrames() != 0 {
+		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.Load().InputGraceFrames())
 	}
 }

@@ -232,7 +232,7 @@ func (a *App) allocateTab() bool {
 	if reaped {
 		a.reapTranscripts() // a reaped dead tab's transcript writer goes with it (F4)
 	}
-	if lim := a.d.Prefs.TabCap(); len(a.tabs) >= lim {
+	if lim := a.d.Prefs.Load().TabCap(); len(a.tabs) >= lim {
 		a.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", lim)
 		return false
 	}
@@ -751,7 +751,7 @@ func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 		rects[i].W = a.tabChipW(i)
 		total += rects[i].W + tabChipGapX
 	}
-	showAdd := len(a.tabs) < a.d.Prefs.TabCap() // no "+" once every slot is full
+	showAdd := len(a.tabs) < a.d.Prefs.Load().TabCap() // no "+" once every slot is full
 	if showAdd {
 		total += addTabChipW + tabChipGapX
 	}
@@ -811,7 +811,7 @@ func (a *App) tabStripTotalW() int32 {
 	for i := range a.tabs {
 		total += a.tabChipW(i) + tabChipGapX
 	}
-	if len(a.tabs) < a.d.Prefs.TabCap() {
+	if len(a.tabs) < a.d.Prefs.Load().TabCap() {
 		total += addTabChipW + tabChipGapX
 	}
 	return total

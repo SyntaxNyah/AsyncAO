@@ -51,7 +51,7 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	if on {
 		// Bandwidth cap (KiB/s; 0 = unlimited — the default, so grabs run full
 		// speed unless you throttle them). Average-rate, applied per grab.
-		capKBps := a.d.Prefs.DownloadCapKBps()
+		capKBps := a.d.Prefs.Load().DownloadKBps
 		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
 			a.d.Prefs.Update(func(
 				sn *config.
@@ -674,7 +674,7 @@ func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
 	if c.onRow != nil {
 		c.onRow("Theme art budget", y)
 	}
-	budget := render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())
+	budget := render.ThemeMediaByteCap(a.d.Prefs.Load().TexBudgetMiB())
 	// The store is nil in a headless App (and would be during the search index's
 	// harvest pass on one), and the row's HEIGHT must not depend on that: a settings
 	// row that sometimes advances y and sometimes does not is a scroll bug, and this

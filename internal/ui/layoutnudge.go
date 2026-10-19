@@ -398,10 +398,10 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 		return
 	}
 	// The classic editor's grid step is user-tunable (the banner's Grid chip,
-	// config.LayoutGridSize), so the coarse nudge reads it rather than the themed
+	// config.Settings.LayoutGridSize), so the coarse nudge reads it rather than the themed
 	// editor's fixed one — otherwise Ctrl+arrow would land off the lattice the Snap
 	// chip is drawing the widget onto.
-	grid := int(a.d.Prefs.LayoutGridSize())
+	grid := int(a.d.Prefs.Load().LayoutGridSize())
 	r := base
 	r.X = int32(nudgeCoord(int(r.X), dx, coarse, 0, grid))
 	r.Y = int32(nudgeCoord(int(r.Y), dy, coarse, 0, grid))

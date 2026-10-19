@@ -1829,14 +1829,8 @@ func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
 
 // --- Smooth scaling -----------------------------------------------------------
 
-// SpriteScalingMode reports the per-sprite texture filter (SpriteScalingAuto /
-// Smooth / Pixel). Clamped on read as well as on load, so a value written by a
-// newer build can never index past this build's options.
-func (p *AssetPreferences) SpriteScalingMode() int {
-	snap := p.Load()
-
-	return ClampSpriteScaling(snap.SpriteScaling)
-}
+// SpriteScalingMode was folded into the snapshot: strict load clamps SpriteScaling,
+// so call sites read Load().SpriteScaling directly.
 
 // --- Update check ------------------------------------------------------------
 
@@ -1850,29 +1844,19 @@ func (p *AssetPreferences) SpriteScalingMode() int {
 
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
 // (clamped), for the Settings readout.
-func (p *AssetPreferences) PreviewHoverMillis() int {
-	snap := p.Load()
-
-	if snap.PreviewHoverMs <= 0 {
-		return DefaultPreviewHoverMs
-	}
-	return clampPercent(snap.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+func (s *Settings) PreviewHoverMillis() int {
+	return clampPercent(orDefault(s.PreviewHoverMs, DefaultPreviewHoverMs), minPreviewHoverMs, maxPreviewHoverMs)
 }
 
 // PreviewHoverDelay returns the hover dwell as a duration for the UI.
 func (p *AssetPreferences) PreviewHoverDelay() time.Duration {
-	return time.Duration(p.PreviewHoverMillis()) * time.Millisecond
+	return time.Duration(p.Load().PreviewHoverMillis()) * time.Millisecond
 }
 
 // PreviewHeightPx returns the preview box's default height in px (the
 // shipped default when unset; clamped to the grip's own bounds).
-func (p *AssetPreferences) PreviewHeightPx() int {
-	snap := p.Load()
-
-	if snap.PreviewHeightPxVal <= 0 {
-		return DefaultPreviewHeightPx
-	}
-	return clampPercent(snap.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+func (s *Settings) PreviewHeightPx() int {
+	return clampPercent(orDefault(s.PreviewHeightPxVal, DefaultPreviewHeightPx), MinPreviewHeightPx, MaxPreviewHeightPx)
 }
 
 // SetPreviewHeightPx clamps and persists the preview box's default height.
@@ -1912,18 +1896,13 @@ func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
 
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
 // milliseconds (clamped), for the Settings readout.
-func (p *AssetPreferences) EmoteHoverNamesMillis() int {
-	snap := p.Load()
-
-	if snap.EmoteHoverNamesMs <= 0 {
-		return DefaultEmoteHoverNamesMs
-	}
-	return clampPercent(snap.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+func (s *Settings) EmoteHoverNamesMillis() int {
+	return clampPercent(orDefault(s.EmoteHoverNamesMs, DefaultEmoteHoverNamesMs), minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
 }
 
 // EmoteHoverNamesDelay returns the emote-name hover dwell as a duration.
 func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
-	return time.Duration(p.EmoteHoverNamesMillis()) * time.Millisecond
+	return time.Duration(p.Load().EmoteHoverNamesMillis()) * time.Millisecond
 }
 
 // EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
@@ -1998,27 +1977,12 @@ func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 
 // BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
 // (an unset/zero value falls back to the default).
-func (p *AssetPreferences) BgSlideshowSeconds() int {
-	snap := p.Load()
-
-	if snap.BgSlideshowSecs <= 0 {
-		return defaultBgSlideshowSecs
-	}
-	return clampPercent(snap.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+func (s *Settings) BgSlideshowSeconds() int {
+	return clampPercent(orDefault(s.BgSlideshowSecs, defaultBgSlideshowSecs), minBgSlideshowSecs, maxBgSlideshowSecs)
 }
 
-// DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
-func (p *AssetPreferences) DownloadCapKBps() int {
-	snap := p.Load()
-
-	if snap.DownloadKBps < 0 {
-		return 0
-	}
-	if snap.DownloadKBps > maxDownloadKBps {
-		return maxDownloadKBps
-	}
-	return snap.DownloadKBps
-}
+// DownloadCapKBps was folded into the snapshot: strict load clamps DownloadKBps to
+// [0, maxDownloadKBps], so call sites read Load().DownloadKBps directly.
 
 // Instant-replay capture-window bounds: a sane floor so a clip has context, and
 // a 1-hour ceiling (the requested "up to one hour"). 0/unset reads as default.
@@ -2051,9 +2015,8 @@ func clampTimerSeconds(s int) int {
 
 // TimerSecondsValue returns the clamped remembered countdown duration (#97); the
 // running state itself lives in the UI (session-only). 0/unset reads as default.
-func (p *AssetPreferences) TimerSecondsValue() int {
-	snap := p.Load()
-	return clampTimerSeconds(snap.TimerSeconds)
+func (s *Settings) TimerSecondsValue() int {
+	return clampTimerSeconds(s.TimerSeconds)
 }
 
 // SetTimerSeconds stores the countdown duration, clamped to [min,max].
@@ -2079,9 +2042,8 @@ func clampInstantReplaySeconds(s int) int {
 
 // InstantReplaySecondsValue returns the clamped capture-window length in seconds
 // (the value the slider shows); 0/unset reads as the default.
-func (p *AssetPreferences) InstantReplaySecondsValue() int {
-	snap := p.Load()
-	return clampInstantReplaySeconds(snap.InstantReplaySeconds)
+func (s *Settings) InstantReplaySecondsValue() int {
+	return clampInstantReplaySeconds(s.InstantReplaySeconds)
 }
 
 // LastServer returns the last server connected to (name, ws URL) â€” the
@@ -2500,30 +2462,14 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 }
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
-func (p *AssetPreferences) VoiceOutVol() int {
-	snap := p.Load()
-
-	if snap.VoiceOutVolume <= 0 {
-		return 100
-	}
-	if snap.VoiceOutVolume > 100 {
-		return 100
-	}
-	return snap.VoiceOutVolume
+func (s *Settings) VoiceOutVol() int {
+	return clampPercent(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, 100)
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
 // Markov prefetcher warms per message, 1..4 (default 1 = conservative). #100.
-func (p *AssetPreferences) PrefetchAggressiveness() int {
-	snap := p.Load()
-
-	if snap.PrefetchAggro < 1 {
-		return 1
-	}
-	if snap.PrefetchAggro > 4 {
-		return 4
-	}
-	return snap.PrefetchAggro
+func (s *Settings) PrefetchAggressiveness() int {
+	return clampPercent(s.PrefetchAggro, 1, 4)
 }
 
 // SetPrefetchAggressiveness clamps (1..4) and persists the prefetch aggressiveness.
@@ -2558,13 +2504,8 @@ const (
 // SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
 // resolves to the default so enabling the toggle always shows a visible effect.
 
-func (p *AssetPreferences) SpotlightLevel() int {
-	snap := p.Load()
-
-	if snap.SpotlightStrength == 0 {
-		return defaultSpotlightStrength
-	}
-	return snap.SpotlightStrength
+func (s *Settings) SpotlightLevel() int {
+	return orDefault(s.SpotlightStrength, defaultSpotlightStrength)
 }
 
 // SetSpotlightLevel stores the dim intensity (clamped to [10,90]).
@@ -2595,22 +2536,12 @@ func (s *Settings) BreathScaleOn() bool {
 }
 
 // BreathAmp / BreathSpeed report the sliders [1,100]; 0 (unset) resolves to the default.
-func (p *AssetPreferences) BreathAmp() int {
-	snap := p.Load()
-
-	if snap.BreathAmount == 0 {
-		return defaultBreathAmp
-	}
-	return snap.BreathAmount
+func (s *Settings) BreathAmp() int {
+	return orDefault(s.BreathAmount, defaultBreathAmp)
 }
 
-func (p *AssetPreferences) BreathSpeed() int {
-	snap := p.Load()
-
-	if snap.BreathRate == 0 {
-		return defaultBreathSpeed
-	}
-	return snap.BreathRate
+func (s *Settings) BreathSpeed() int {
+	return orDefault(s.BreathRate, defaultBreathSpeed)
 }
 
 // defaultReflectStrength is the #123 reflection opacity when unset (so the slider shows a
@@ -2619,13 +2550,8 @@ const defaultReflectStrength = 30
 
 // ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
 
-func (p *AssetPreferences) ReflectStrength() int {
-	snap := p.Load()
-
-	if snap.ReflectOpacity == 0 {
-		return defaultReflectStrength
-	}
-	return snap.ReflectOpacity
+func (s *Settings) ReflectStrength() int {
+	return orDefault(s.ReflectOpacity, defaultReflectStrength)
 }
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
@@ -2679,13 +2605,8 @@ func (p *AssetPreferences) StageFrame() int {
 }
 
 // WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
-func (p *AssetPreferences) WeatherIntensity() int {
-	snap := p.Load()
-
-	if snap.WeatherDensity == 0 {
-		return defaultWeatherDensity
-	}
-	return snap.WeatherDensity
+func (s *Settings) WeatherIntensity() int {
+	return orDefault(s.WeatherDensity, defaultWeatherDensity)
 }
 
 // SetWeatherIntensity stores the density (clamped to [1,100]).
@@ -2792,13 +2713,8 @@ func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 }
 
 // ChromeTheme reports the AsyncAO chrome theme preset key (#M3; "dark" default).
-func (p *AssetPreferences) ChromeTheme() string {
-	snap := p.Load()
-
-	if snap.ChromeThemeKey == "" {
-		return "dark"
-	}
-	return snap.ChromeThemeKey
+func (s *Settings) ChromeTheme() string {
+	return orDefault(s.ChromeThemeKey, defaultChromeTheme)
 }
 
 // Chrome SHAPE presets (A5): the valid keys for ChromeShapeKey. "sharp" is the
@@ -3525,13 +3441,8 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 // TabCap is how many concurrent server tabs are allowed (clamped to
 // [minMultiTabCap, maxMultiTabCap]; an unset/zero value falls back to the
 // default, so older prefs files and tests behave as before).
-func (p *AssetPreferences) TabCap() int {
-	snap := p.Load()
-
-	if snap.MultiTabCap <= 0 {
-		return DefaultMultiTabCap
-	}
-	return clampPercent(snap.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+func (s *Settings) TabCap() int {
+	return clampPercent(orDefault(s.MultiTabCap, DefaultMultiTabCap), minMultiTabCap, maxMultiTabCap)
 }
 
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
@@ -3576,13 +3487,8 @@ func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
 // SpriteWaitMs reports the wait-mode hold cap in milliseconds (SpriteWaitDefaultMs
 // when unset): how long SpriteLoadWait may hold one message for its sprite before
 // playing anyway.
-func (p *AssetPreferences) SpriteWaitMs() int {
-	snap := p.Load()
-
-	if snap.SpriteWaitMsVal == 0 {
-		return SpriteWaitDefaultMs
-	}
-	return snap.SpriteWaitMsVal
+func (s *Settings) SpriteWaitMs() int {
+	return orDefault(s.SpriteWaitMsVal, SpriteWaitDefaultMs)
 }
 
 // SetSpriteWaitMs persists the wait-mode hold cap (clamped to the tunable range).
@@ -3782,69 +3688,39 @@ func normalizeFPSPref(fps, min, max int) int {
 
 // ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
 
-func (p *AssetPreferences) ThumbHeightPx() int {
-	snap := p.Load()
-
-	if snap.ThumbHeightPxVal == 0 {
-		return ThumbHeightDefaultPx
-	}
-	return snap.ThumbHeightPxVal
+func (s *Settings) ThumbHeightPx() int {
+	return orDefault(s.ThumbHeightPxVal, ThumbHeightDefaultPx)
 }
 
 // ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
-func (p *AssetPreferences) ThumbQuality() int {
-	snap := p.Load()
-
-	if snap.ThumbQualityVal == 0 {
-		return ThumbQualityDefault
-	}
-	return snap.ThumbQualityVal
+func (s *Settings) ThumbQuality() int {
+	return orDefault(s.ThumbQualityVal, ThumbQualityDefault)
 }
 
 // ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
 // (ThumbBudgetDefaultMiB when unset); the store auto-prunes oldest past it.
-func (p *AssetPreferences) ThumbBudgetMiB() int {
-	snap := p.Load()
-
-	if snap.ThumbBudgetMiBVal == 0 {
-		return ThumbBudgetDefaultMiB
-	}
-	return snap.ThumbBudgetMiBVal
+func (s *Settings) ThumbBudgetMiB() int {
+	return orDefault(s.ThumbBudgetMiBVal, ThumbBudgetDefaultMiB)
 }
 
 // SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
 
 // TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
 // when unset; applies on restart).
-func (p *AssetPreferences) TexBudgetMiB() int {
-	snap := p.Load()
-
-	if snap.TexBudgetMiBVal == 0 {
-		return TexBudgetDefaultMiB
-	}
-	return snap.TexBudgetMiBVal
+func (s *Settings) TexBudgetMiB() int {
+	return orDefault(s.TexBudgetMiBVal, TexBudgetDefaultMiB)
 }
 
 // AnimatedBudgetMiB reports the per-animated-asset decode budget in MiB
 // (AnimatedBudgetDefaultMiB when unset; LIVE-applied - new decodes pick it up).
-func (p *AssetPreferences) AnimatedBudgetMiB() int {
-	snap := p.Load()
-
-	if snap.AnimatedBudgetMiBVal == 0 {
-		return AnimatedBudgetDefaultMiB
-	}
-	return snap.AnimatedBudgetMiBVal
+func (s *Settings) AnimatedBudgetMiB() int {
+	return orDefault(s.AnimatedBudgetMiBVal, AnimatedBudgetDefaultMiB)
 }
 
 // AnimDecodeConcurrency reports the concurrent animated-decode bound
 // (AnimDecodeConcurrencyDefault when unset; LIVE-applied).
-func (p *AssetPreferences) AnimDecodeConcurrency() int {
-	snap := p.Load()
-
-	if snap.AnimDecodeConcurrencyVal == 0 {
-		return AnimDecodeConcurrencyDefault
-	}
-	return snap.AnimDecodeConcurrencyVal
+func (s *Settings) AnimDecodeConcurrency() int {
+	return orDefault(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyDefault)
 }
 
 // TexCompression reports the texture-compression mode (TexCompressOff /
@@ -3875,47 +3751,27 @@ func (p *AssetPreferences) SetTexCompression(mode int) {
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
-func (p *AssetPreferences) FPSCap() int {
-	snap := p.Load()
-
-	if snap.FPSCapVal == 0 {
-		return FPSCapDefault
-	}
-	return snap.FPSCapVal
+func (s *Settings) FPSCap() int {
+	return orDefault(s.FPSCapVal, FPSCapDefault)
 }
 
 // IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
-func (p *AssetPreferences) IdleFPS() int {
-	snap := p.Load()
-
-	if snap.IdleFPSVal == 0 {
-		return IdleFPSDefault
-	}
-	return snap.IdleFPSVal
+func (s *Settings) IdleFPS() int {
+	return orDefault(s.IdleFPSVal, IdleFPSDefault)
 }
 
 // UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
-func (p *AssetPreferences) UnfocusedFPS() int {
-	snap := p.Load()
-
-	if snap.UnfocusedFPSVal == 0 {
-		return UnfocusedFPSDefault
-	}
-	return snap.UnfocusedFPSVal
+func (s *Settings) UnfocusedFPS() int {
+	return orDefault(s.UnfocusedFPSVal, UnfocusedFPSDefault)
 }
 
 // InputGraceFrames reports the post-input full-rate hold in frames
 // (InputGraceFramesDefault when unset).
-func (p *AssetPreferences) InputGraceFrames() int {
-	snap := p.Load()
-
-	if snap.InputGraceFramesVal == 0 {
-		return InputGraceFramesDefault // absent = the default hold
+func (s *Settings) InputGraceFrames() int {
+	if s.InputGraceFramesVal < 0 {
+		return 0 // InputGraceOff: no hold
 	}
-	if snap.InputGraceFramesVal < 0 {
-		return 0 // InputGraceOff â†’ no hold
-	}
-	return snap.InputGraceFramesVal
+	return orDefault(s.InputGraceFramesVal, InputGraceFramesDefault)
 }
 
 // EffectiveSpriteCap derives the decode-downscale height cap from the
@@ -5330,13 +5186,8 @@ func clampLayoutGridPx(v int) int {
 
 // LayoutGridSize reports the layout editor's snap-grid step in logical px
 // (DefaultLayoutGridPx when unset).
-func (p *AssetPreferences) LayoutGridSize() int {
-	snap := p.Load()
-
-	if snap.LayoutGridPx == 0 {
-		return DefaultLayoutGridPx
-	}
-	return snap.LayoutGridPx
+func (s *Settings) LayoutGridSize() int {
+	return orDefault(s.LayoutGridPx, DefaultLayoutGridPx)
 }
 
 // SetClassicLayout REPLACES every default-courtroom slot override at once â€” the
@@ -5479,13 +5330,8 @@ func (p *AssetPreferences) SetThemeFit(mode int) {
 
 // ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
 // 100 = exactly fits), clamped.
-func (p *AssetPreferences) ThemeZoom() int {
-	snap := p.Load()
-
-	if snap.ThemeFitZoom <= 0 {
-		return DefaultThemeZoom
-	}
-	return clampPercent(snap.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+func (s *Settings) ThemeZoom() int {
+	return clampPercent(orDefault(s.ThemeFitZoom, DefaultThemeZoom), MinThemeZoom, MaxThemeZoom)
 }
 
 // ThemePan reports the Custom-mode pan (percent of the window, Â±).

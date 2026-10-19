@@ -67,7 +67,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	}
 	y += 30
 	if ir {
-		secs := a.d.Prefs.InstantReplaySecondsValue()
+		secs := a.d.Prefs.Load().InstantReplaySecondsValue()
 		c.Label(pad+16, y+4, "Capture window:", ColTextDim)
 		track := sdl.Rect{X: pad + 140, Y: y + 5, W: 240, H: 16}
 		lo, hi := config.InstantReplayMinSeconds, config.InstantReplayMaxSeconds
@@ -379,7 +379,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		}
 		a.drawThemeFitPreview(sdl.Rect{X: pad, Y: y, W: boxW, H: boxH})
 		y += boxH + 10
-		zoom := a.d.Prefs.ThemeZoom()
+		zoom := a.d.Prefs.Load().ThemeZoom()
 		if next := a.sliderRow(y, "  Zoom %", zoom, 5, config.MinThemeZoom, config.MaxThemeZoom); next != zoom {
 			a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = next })
 			a.invalidateThemeCanvases()
@@ -462,7 +462,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 				Classic:   a.d.Prefs.Load().ClassicLayoutOverrides(),
 				Anchors:   a.d.Prefs.Load().ClassicAnchorSnapshot(),
 				Hidden:    a.d.Prefs.Load().HiddenPanels(),
-				GridPx:    a.d.Prefs.LayoutGridSize(),
+				GridPx:    a.d.Prefs.Load().LayoutGridSize(),
 				Rotations: a.d.Prefs.Load().ClassicRotationSnapshot(), // A4: classic rotations travel with the profile
 			})
 			a.layoutPresetName = ""
@@ -728,7 +728,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	y += 26
 	if spot {
-		lv := a.d.Prefs.SpotlightLevel()
+		lv := a.d.Prefs.Load().SpotlightLevel()
 		c.Label(pad+16, y+4, "Dim:", ColTextDim)
 		if next := int(c.Slider("spotdim", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(lv), 100)); next != lv {
 			a.d.Prefs.SetSpotlightLevel(next)
@@ -757,7 +757,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	y += 26
 	if brth {
-		amp := a.d.Prefs.BreathAmp()
+		amp := a.d.Prefs.Load().BreathAmp()
 		c.Label(pad+16, y+4, "Amount:", ColTextDim)
 		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
 			a.d.Prefs.SetBreathAmp(next)
@@ -765,7 +765,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		}
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
 		y += 26
-		spd := a.d.Prefs.BreathSpeed()
+		spd := a.d.Prefs.Load().BreathSpeed()
 		c.Label(pad+16, y+4, "Speed:", ColTextDim)
 		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
 			a.d.Prefs.SetBreathSpeed(next)
@@ -791,7 +791,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	y += 26
 	if refl {
-		op := a.d.Prefs.ReflectStrength()
+		op := a.d.Prefs.Load().ReflectStrength()
 		c.Label(pad+16, y+4, "Opacity:", ColTextDim)
 		if next := int(c.Slider("reflop", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(op), 100)); next != op {
 			a.d.Prefs.SetReflectStrength(next)
@@ -809,7 +809,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	}
 	y += 26
 	if wk != 0 {
-		wi := a.d.Prefs.WeatherIntensity()
+		wi := a.d.Prefs.Load().WeatherIntensity()
 		c.Label(pad+16, y+4, "Intensity:", ColTextDim)
 		if next := int(c.Slider("wxint", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(wi), 100)); next != wi {
 			a.d.Prefs.SetWeatherIntensity(next)
@@ -835,7 +835,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		if by := float64(box.H) / float64(court.H); by < base {
 			base = by
 		}
-		s := base * float64(a.d.Prefs.ThemeZoom()) / 100
+		s := base * float64(a.d.Prefs.Load().ThemeZoom()) / 100
 		artW, artH := int32(float64(court.W)*s), int32(float64(court.H)*s)
 		px, py := a.d.Prefs.Load().ThemePan()
 		art := sdl.Rect{
@@ -863,7 +863,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	if c.hovering(box) && c.wheelY != 0 {
 		c.wheelTaken = true
 		{
-			pv1 := a.d.Prefs.ThemeZoom() + int(c.wheelY)*5
+			pv1 := a.d.Prefs.Load().ThemeZoom() + int(c.wheelY)*5
 			a.d.Prefs.Update(func(sn *config.Settings) {
 				sn.ThemeFitZoom = pv1
 			})
@@ -922,7 +922,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Predictive prefetch")
 	c.LabelClipped(pad, y, w-pad-scrollBarW, "How many of the next sprites AsyncAO guesses ahead and warms while you chat — higher means snappier sprite swaps but more speculative downloading.", ColTextDim)
 	y += 22
-	aggro := int32(a.d.Prefs.PrefetchAggressiveness())
+	aggro := int32(a.d.Prefs.Load().PrefetchAggressiveness())
 	c.Label(pad, y+4, "Level:", ColText)
 	if nv := c.Slider("prefetchaggro", sdl.Rect{X: pad + 70, Y: y, W: 200, H: btnH}, aggro, 4); nv != aggro {
 		if nv < 1 {
@@ -933,7 +933,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 			a.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
 		}
 	}
-	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.PrefetchAggressiveness()), ColAccent)
+	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.Load().PrefetchAggressiveness()), ColAccent)
 	y += 30
 
 	// (Image formats are on the Formats tab; desk-format policy is on Power user.)

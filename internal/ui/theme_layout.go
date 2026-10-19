@@ -523,7 +523,7 @@ func (a *App) fitDesignCanvas(designW, designH, w, h, top int32, fit int) themeC
 		s := math.Max(sx, sy)
 		f.scaleX, f.scaleY = s, s
 	case config.ThemeFitCustom:
-		s := math.Min(sx, sy) * float64(a.d.Prefs.ThemeZoom()) / 100 // manual zoom over the fit
+		s := math.Min(sx, sy) * float64(a.d.Prefs.Load().ThemeZoom()) / 100 // manual zoom over the fit
 		f.scaleX, f.scaleY = s, s
 	default: // ThemeFitLetterbox
 		s := math.Min(sx, sy)

@@ -43,7 +43,7 @@ func (a *App) timerRemaining() time.Duration {
 // openTimer seeds the configured duration from prefs once, then shows the panel.
 func (a *App) openTimer() {
 	if !a.timerSeeded {
-		a.timerSetSec = a.d.Prefs.TimerSecondsValue()
+		a.timerSetSec = a.d.Prefs.Load().TimerSecondsValue()
 		a.timerRepeat = a.d.Prefs.Load().TimerRepeat
 		a.timerSeeded = true
 	}

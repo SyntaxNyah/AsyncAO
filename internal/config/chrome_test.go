@@ -13,11 +13,11 @@ func TestChromeThemePref(t *testing.T) {
 	}
 	defer p.Close()
 
-	if got := p.ChromeTheme(); got != "dark" {
+	if got := p.Load().ChromeTheme(); got != "dark" {
 		t.Errorf("default chrome theme = %q, want dark", got)
 	}
 	p.Update(func(sn *Settings) { sn.ChromeThemeKey = "midnight" })
-	if got := p.ChromeTheme(); got != "midnight" {
+	if got := p.Load().ChromeTheme(); got != "midnight" {
 		t.Errorf("after set = %q, want midnight", got)
 	}
 }

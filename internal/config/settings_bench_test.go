@@ -24,7 +24,7 @@ func BenchmarkSpriteScalingBefore(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.SpriteScalingMode()
+		_ = p.Load().SpriteScaling
 	}
 }
 
@@ -72,7 +72,7 @@ func BenchmarkTexBudgetMiBBefore(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.TexBudgetMiB()
+		_ = p.Load().TexBudgetMiB()
 	}
 }
 

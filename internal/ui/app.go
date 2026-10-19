@@ -1801,7 +1801,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// pumpTabRestore is a single length check, so boot is byte-identical.
 	if d.Prefs.Load().RestoreTabs {
 		q := d.Prefs.Load().OpenTabList()
-		if cap := d.Prefs.TabCap(); len(q) > cap {
+		if cap := d.Prefs.Load().TabCap(); len(q) > cap {
 			q = q[:cap]
 		}
 		a.restoreQueue = q
@@ -1815,8 +1815,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			a.autoConnectPending = true
 		}
 	}
-	a.applyChromePreset(d.Prefs.ChromeTheme()) // #M3: apply the saved client chrome theme at launch
-	a.refreshPartColors()                      // per-part layout tints: parse the saved hexes once
+	a.applyChromePreset(d.Prefs.Load().ChromeTheme()) // #M3: apply the saved client chrome theme at launch
+	a.refreshPartColors()                             // per-part layout tints: parse the saved hexes once
 	// Corrupt-prefs notice (#3): if the settings file failed to parse at
 	// startup, config quarantined it (renamed aside) so the saver couldn't
 	// overwrite the only copy with defaults. Surface a one-time banner via the

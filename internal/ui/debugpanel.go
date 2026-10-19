@@ -297,7 +297,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		// pinned pages are eviction-exempt, so an accounting bug shows up as a client
 		// that is quietly heavier after every theme, with nothing on screen to blame.
 		col := ColTextDim
-		if themeArtOverWarnPct(a.d.Store.ThemeMediaBytes(), render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())) {
+		if themeArtOverWarnPct(a.d.Store.ThemeMediaBytes(), render.ThemeMediaByteCap(a.d.Prefs.Load().TexBudgetMiB())) {
 			col = ColTierYellow
 		}
 		c.LabelClipped(r.X, y, r.W, a.themeMediaDebugLine(), col)

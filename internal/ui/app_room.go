@@ -44,7 +44,7 @@ func (a *App) buildRoom() {
 		mgr.PrefetchChainSpeculative(idle, urls.EmoteAlts(character, emote, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, idle)
 		mgr.PrefetchChainSpeculative(talk, urls.EmoteAlts(character, emote, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, talk)
 	})
-	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
+	a.room.Predictor.SetAggressiveness(a.d.Prefs.Load().PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
 	// #17 frame-synced effects: OnFrameShown reports the CURRENTLY-PLAYING sprite's
@@ -946,15 +946,15 @@ func (a *App) HardCapBudget(focused bool) time.Duration {
 	if focused {
 		// The active cap has no "off" (0 fps while interacting is meaningless);
 		// ∞ → 0 (uncapped), N → 1s/N.
-		return paceBudget(a.d.Prefs.FPSCap())
+		return paceBudget(a.d.Prefs.Load().FPSCap())
 	}
-	unf, off := rateBudget(a.d.Prefs.UnfocusedFPS())
+	unf, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
 	if off {
 		// Unfocused "off" means "don't redraw while tabbed out" — the static skip
 		// handles the idle case. A frame that renders anyway (an audible ceremony)
 		// still obeys SOMETHING: fall back to the active cap as the backstop
 		// ceiling, mirroring FramePace's unfocused-off branch (unf = full).
-		return paceBudget(a.d.Prefs.FPSCap())
+		return paceBudget(a.d.Prefs.Load().FPSCap())
 	}
 	return unf // ∞ → 0 (uncapped); N → 1s/N
 }
@@ -1076,8 +1076,8 @@ func pacerTierLabel(t pacerTier) string {
 // (FPSOff) → the active cap in THIS render path (the "no idle render" behaviour
 // lives in the skip/park path, not here), N → 1s/N.
 func (a *App) FramePace(focused bool) time.Duration {
-	focused = a.pacingFocused(focused)     // the "full speed while unfocused" option (pacingfocus.go)
-	full := paceBudget(a.d.Prefs.FPSCap()) // active cap: ∞/off → 0 (uncapped); N → 1s/N
+	focused = a.pacingFocused(focused)            // the "full speed while unfocused" option (pacingfocus.go)
+	full := paceBudget(a.d.Prefs.Load().FPSCap()) // active cap: ∞/off → 0 (uncapped); N → 1s/N
 	// nextAnimDue is the stage's earliest scheduled frame flip (ok=false on a
 	// static stage / no room) — consulted by both focus branches.
 	nextAnimDue := func() (time.Duration, bool) {
@@ -1088,7 +1088,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 	}
 	if !focused {
 		a.lastPacerTier = pacerUnfocused
-		unf, unfOff := rateBudget(a.d.Prefs.UnfocusedFPS())
+		unf, unfOff := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
 		if unf == 0 && !unfOff {
 			return 0 // ∞ unfocused: never throttle
 		}
@@ -1132,7 +1132,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		a.lastPacerTier = pacerAnimChrome
 		return backstopBudget(full)
 	}
-	idle, idleOff := rateBudget(a.d.Prefs.IdleFPS())
+	idle, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS())
 	idleUnlimited := !idleOff && idle == 0 // ∞ idle
 	if a.roomBusy() {
 		// The talk tier paces the ceremony; the earliest OTHER deadline may only
@@ -1217,7 +1217,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	// engine is frame-driven — and a focus-regain event (sawEvent above) resumes
 	// normal rendering; the park keeps the session pumping meanwhile.
 	if !focused && !a.voiceJoined && a.micTest == nil {
-		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
 			return true
 		}
 	}
@@ -1237,7 +1237,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		// surface async changes it doesn't otherwise track. The idle rate is the
 		// single cadence now (no separate fixed 500 ms); idle=off opts out and
 		// leans on caret/timer/input, exactly like the event-driven loop's 0.
-		if idleB, idleOff := rateBudget(a.d.Prefs.IdleFPS()); !idleOff && idleB > 0 {
+		if idleB, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS()); !idleOff && idleB > 0 {
 			if time.Since(a.lastFrameDrawn) >= idleB {
 				return false
 			}
@@ -1367,7 +1367,7 @@ func (a *App) RenderSuppressed(focused bool) bool {
 	if focused || a.voiceJoined || a.micTest != nil {
 		return false
 	}
-	_, off := rateBudget(a.d.Prefs.UnfocusedFPS())
+	_, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
 	return off
 }
 
@@ -1417,7 +1417,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	// caret/clock deadlines stay silent until focus returns. This is what makes a
 	// 0-fps background cap actually reach 0 fps instead of the idle rate.
 	if !focused {
-		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
 			return wait, false
 		}
 	}
@@ -1430,7 +1430,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	// Idle redraw cadence: the missed-damage backstop and the "redraw at the idle
 	// fps when nothing's happening" rate. off → no periodic idle render (0 GPU on
 	// a static screen); ∞ → due immediately (render as fast as the loop allows).
-	switch idleB, idleOff := rateBudget(a.d.Prefs.IdleFPS()); {
+	switch idleB, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS()); {
 	case idleOff:
 		// no periodic idle render — only the real deadlines below wake a frame
 	case idleB == 0:
@@ -1520,7 +1520,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 // on every screen — lobby and Settings included — and were the "redraws for no
 // reason" playtest report, back for a second round as the idle-CPU-burn one.
 func (a *App) wantsFullRate() bool {
-	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.InputGraceFrames())*inputGraceFrameDuration {
+	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.Load().InputGraceFrames())*inputGraceFrameDuration {
 		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
 	}
 	if time.Since(a.lastMotionAt) < motionInputGrace {
@@ -1553,8 +1553,8 @@ func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
 func (a *App) applySpriteCap() {
 	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.Load().SpriteDownscalePctVal))
 	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.Load().AnimatedSpriteCapPxVal)
-	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.AnimatedBudgetMiB())
-	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.AnimDecodeConcurrency())
+	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.Load().AnimatedBudgetMiB())
+	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.Load().AnimDecodeConcurrency())
 }
 
 // vpSpriteLoadMode maps the 4-way loading-mode pref onto the renderer's 2-way switch:
@@ -1581,13 +1581,13 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.Load().BlipTyping() // #7: blip cadence + skip-whitespace
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.Load().CatchUp()
-	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait        // "Hold the message": hold until its speaker sprite decodes
-	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond  // its user-tunable hold cap
-	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                // strictness: gate on the pair partner too
-	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                          // strictness: gate on the preanim too
-	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault // "Default": wait for every asset a message presents
-	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                            // AO2 parity: shouts skip the queue (toggleable)
-	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                  // core-timing knobs: 0 = the canonical defaults
+	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait              // "Hold the message": hold until its speaker sprite decodes
+	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.Load().SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
+	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                      // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                                // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault       // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                                  // AO2 parity: shouts skip the queue (toggleable)
+	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                        // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.Load().ShoutDurationMsVal; ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}
