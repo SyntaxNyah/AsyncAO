@@ -2130,26 +2130,14 @@ func (p *AssetPreferences) AddStylePreset(pr StylePreset) {
 	pr.Style.Opacity = clampOpacity(pr.Style.Opacity)
 	pr.Key = strings.ToLower(strings.TrimSpace(pr.Key))
 	p.Update(func(sn *Settings) {
-		for i := range sn.SavedStyles {
-			if sn.SavedStyles[i].Name == pr.Name {
-				pr.Key = sn.SavedStyles[i].Key // keep an existing key binding across an overwrite
-				sn.SavedStyles[i] = pr
-				return
-			}
-		}
-		if len(sn.SavedStyles) >= stylePresetCap {
-			return
-		}
-		sn.SavedStyles = append(sn.SavedStyles, pr)
+		sn.AddStylePreset(pr)
 	})
 }
 
 // DeleteStylePreset removes the preset at i (bounds-checked).
 func (p *AssetPreferences) DeleteStylePreset(i int) {
 	p.Update(func(sn *Settings) {
-		if i >= 0 && i < len(sn.SavedStyles) {
-			sn.SavedStyles = append(sn.SavedStyles[:i], sn.SavedStyles[i+1:]...)
-		}
+		sn.DeleteStylePreset(i)
 	})
 }
 
@@ -2158,17 +2146,7 @@ func (p *AssetPreferences) DeleteStylePreset(i int) {
 func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
 	key = strings.ToLower(strings.TrimSpace(key))
 	p.Update(func(sn *Settings) {
-		if i < 0 || i >= len(sn.SavedStyles) {
-			return
-		}
-		if key != "" {
-			for j := range sn.SavedStyles {
-				if j != i && sn.SavedStyles[j].Key == key {
-					sn.SavedStyles[j].Key = ""
-				}
-			}
-		}
-		sn.SavedStyles[i].Key = key
+		sn.SetStylePresetKey(i, key)
 	})
 }
 
@@ -2321,15 +2299,7 @@ func (p *AssetPreferences) MarkFontWarnShown(theme string) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		for _, t := range sn.FontWarnThemes {
-			if strings.EqualFold(t, theme) {
-				return
-			}
-		}
-		sn.FontWarnThemes = append(sn.FontWarnThemes, theme)
-		if len(sn.FontWarnThemes) > FontWarnThemesCap {
-			sn.FontWarnThemes = sn.FontWarnThemes[len(sn.FontWarnThemes)-FontWarnThemesCap:]
-		}
+		sn.MarkFontWarnShown(theme)
 	})
 }
 
@@ -2337,7 +2307,7 @@ func (p *AssetPreferences) MarkFontWarnShown(theme string) {
 // way out for someone who dismissed one by reflex and wants it again.
 func (p *AssetPreferences) ClearFontWarnThemes() {
 	p.Update(func(sn *Settings) {
-		sn.FontWarnThemes = nil
+		sn.ClearFontWarnThemes()
 	})
 }
 
@@ -2380,22 +2350,7 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 		pf.SizePx = clampPercent(pf.SizePx, PanelFontMinPx, PanelFontMaxPx)
 	}
 	p.Update(func(sn *Settings) {
-		if pf.Family == "" && pf.SizePx == 0 {
-			delete(sn.PanelFontsVal, id)
-			if len(sn.PanelFontsVal) == 0 {
-				sn.PanelFontsVal = nil
-			}
-			return
-		}
-		if sn.PanelFontsVal == nil {
-			sn.PanelFontsVal = make(map[string]PanelFont, 4)
-		}
-		if len(sn.PanelFontsVal) >= PanelFontMaxEntries {
-			if _, replacing := sn.PanelFontsVal[id]; !replacing {
-				return // full, and this would be a new key
-			}
-		}
-		sn.PanelFontsVal[id] = pf
+		sn.SetPanelFont(id, pf)
 	})
 }
 
@@ -2404,7 +2359,7 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 // them one at a time is how a user ends up stuck with a font they cannot read.
 func (p *AssetPreferences) ClearPanelFonts() {
 	p.Update(func(sn *Settings) {
-		sn.PanelFontsVal = nil
+		sn.ClearPanelFonts()
 	})
 }
 
@@ -2863,13 +2818,7 @@ func (s *Settings) Hotkey(action string) string {
 // SetHotkey stores one action's key name.
 func (p *AssetPreferences) SetHotkey(action, key string) {
 	p.Update(func(sn *Settings) {
-		if sn.HotkeyMap == nil {
-			sn.HotkeyMap = map[string]string{}
-		}
-		if sn.HotkeyMap[action] == key {
-			return
-		}
-		sn.HotkeyMap[action] = key
+		sn.SetHotkey(action, key)
 	})
 }
 
@@ -4619,21 +4568,7 @@ func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.ThemeRectOv == nil {
-			sn.ThemeRectOv = map[string]map[string][4]int{}
-		}
-		m, ok := sn.ThemeRectOv[theme]
-		if !ok {
-			if len(sn.ThemeRectOv) >= themeOvThemesCap {
-				return
-			}
-			m = map[string][4]int{}
-			sn.ThemeRectOv[theme] = m
-		}
-		if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
-			return
-		}
-		m[key] = r
+		sn.SetThemeRectOverride(theme, key, r)
 	})
 }
 
@@ -4641,28 +4576,7 @@ func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
 // theme's edits).
 func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 	p.Update(func(sn *Settings) {
-		if m, ok := sn.ThemeRectOv[theme]; ok {
-			if key == "" {
-				delete(sn.ThemeRectOv, theme)
-			} else {
-				delete(m, key)
-				if len(m) == 0 {
-					delete(sn.ThemeRectOv, theme)
-				}
-			}
-		}
-		// The rotation dies with its override (A4), mirroring the anchor coupling on
-		// the classic side.
-		if rm, ok := sn.ThemeRectRotations[theme]; ok {
-			if key == "" {
-				delete(sn.ThemeRectRotations, theme)
-			} else {
-				delete(rm, key)
-				if len(rm) == 0 {
-					delete(sn.ThemeRectRotations, theme)
-				}
-			}
-		}
+		sn.ClearThemeRectOverride(theme, key)
 	})
 }
 
@@ -4693,21 +4607,7 @@ func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.ThemeRectRotations == nil {
-			sn.ThemeRectRotations = map[string]map[string]uint8{}
-		}
-		m, ok := sn.ThemeRectRotations[theme]
-		if !ok {
-			if len(sn.ThemeRectRotations) >= themeOvThemesCap {
-				return
-			}
-			m = map[string]uint8{}
-			sn.ThemeRectRotations[theme] = m
-		}
-		if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
-			return
-		}
-		m[key] = deg
+		sn.SetThemeRectRotation(theme, key, deg)
 	})
 }
 
@@ -4715,16 +4615,7 @@ func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
 // rotations).
 func (p *AssetPreferences) ClearThemeRectRotation(theme, key string) {
 	p.Update(func(sn *Settings) {
-		if m, ok := sn.ThemeRectRotations[theme]; ok {
-			if key == "" {
-				delete(sn.ThemeRectRotations, theme)
-			} else {
-				delete(m, key)
-				if len(m) == 0 {
-					delete(sn.ThemeRectRotations, theme)
-				}
-			}
-		}
+		sn.ClearThemeRectRotation(theme, key)
 	})
 }
 
@@ -4981,25 +4872,14 @@ func (p *AssetPreferences) SaveLayoutProfile(name string, prof LayoutProfile) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.LayoutProfiles == nil {
-			sn.LayoutProfiles = map[string]LayoutProfile{}
-		}
-		if _, exists := sn.LayoutProfiles[name]; !exists && len(sn.LayoutProfiles) >= layoutProfileCap {
-			return
-		}
-		sn.LayoutProfiles[name] = clean
+		sn.SaveLayoutProfile(name, clean)
 	})
 }
 
 // DeleteLayoutProfile removes a saved profile by name (A6).
 func (p *AssetPreferences) DeleteLayoutProfile(name string) {
 	p.Update(func(sn *Settings) {
-		if sn.LayoutProfiles != nil {
-			delete(sn.LayoutProfiles, name)
-			if len(sn.LayoutProfiles) == 0 {
-				sn.LayoutProfiles = nil
-			}
-		}
+		sn.DeleteLayoutProfile(name)
 	})
 }
 
@@ -5025,13 +4905,7 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.ClassicLayout == nil {
-			sn.ClassicLayout = map[string][4]float64{}
-		}
-		if _, exists := sn.ClassicLayout[name]; !exists && len(sn.ClassicLayout) >= classicSlotCap {
-			return
-		}
-		sn.ClassicLayout[name] = frac
+		sn.SetClassicSlot(name, frac)
 	})
 }
 
@@ -5040,15 +4914,7 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 // without an override is meaningless (it only re-bases the override).
 func (p *AssetPreferences) ClearClassicSlot(name string) {
 	p.Update(func(sn *Settings) {
-		if name == "" {
-			sn.ClassicLayout = nil
-			sn.ClassicAnchors = nil
-			sn.ClassicRotations = nil
-		} else {
-			delete(sn.ClassicLayout, name)
-			delete(sn.ClassicAnchors, name)
-			delete(sn.ClassicRotations, name)
-		}
+		sn.ClearClassicSlot(name)
 	})
 }
 
@@ -5139,13 +5005,7 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.ClassicAnchors == nil {
-			sn.ClassicAnchors = map[string]ClassicAnchor{}
-		}
-		if _, exists := sn.ClassicAnchors[name]; !exists && len(sn.ClassicAnchors) >= classicSlotCap {
-			return
-		}
-		sn.ClassicAnchors[name] = a
+		sn.SetClassicAnchor(name, a)
 	})
 }
 
@@ -5153,7 +5013,7 @@ func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
 // slot goes back to plain fraction scaling).
 func (p *AssetPreferences) ClearClassicAnchor(name string) {
 	p.Update(func(sn *Settings) {
-		delete(sn.ClassicAnchors, name)
+		sn.ClearClassicAnchor(name)
 	})
 }
 
@@ -5248,13 +5108,7 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if sn.ClassicRotations == nil {
-			sn.ClassicRotations = map[string]uint8{}
-		}
-		if _, exists := sn.ClassicRotations[name]; !exists && len(sn.ClassicRotations) >= classicSlotCap {
-			return
-		}
-		sn.ClassicRotations[name] = deg
+		sn.SetClassicRotation(name, deg)
 	})
 }
 
@@ -5262,7 +5116,7 @@ func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
 // draws unrotated).
 func (p *AssetPreferences) ClearClassicRotation(name string) {
 	p.Update(func(sn *Settings) {
-		delete(sn.ClassicRotations, name)
+		sn.ClearClassicRotation(name)
 	})
 }
 
@@ -5521,17 +5375,7 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		for i, f := range sn.Favorites {
-			if f.URL == url {
-				if f.Name == name && f.Description == description {
-					return
-				}
-				sn.Favorites[i].Name = name
-				sn.Favorites[i].Description = description
-				return
-			}
-		}
-		sn.Favorites = append(sn.Favorites, FavoriteServer{Name: name, URL: url, Description: description})
+		sn.AddFavorite(name, url, description)
 	})
 }
 
@@ -5548,31 +5392,7 @@ func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description s
 	}
 	accepted := false
 	p.Update(func(sn *Settings) {
-		idx := -1
-		for i, f := range sn.Favorites {
-			if f.URL == oldURL {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			return // oldURL not in the phone book
-		}
-		if newURL != oldURL {
-			for i, f := range sn.Favorites {
-				if i != idx && f.URL == newURL {
-					return // the new address already belongs to another entry â€” reject
-				}
-			}
-		}
-		accepted = true
-		cur := sn.Favorites[idx]
-		if cur.Name == newName && cur.URL == newURL && cur.Description == description {
-			return // no-op: accepted, nothing to persist
-		}
-		sn.Favorites[idx].Name = newName
-		sn.Favorites[idx].URL = newURL
-		sn.Favorites[idx].Description = description
+		accepted = sn.UpdateFavorite(oldURL, newName, newURL, description)
 	})
 	return accepted
 }
@@ -5580,14 +5400,7 @@ func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description s
 // RemoveFavorite unstars the server with the given URL.
 func (p *AssetPreferences) RemoveFavorite(url string) {
 	p.Update(func(sn *Settings) {
-		kept := sn.Favorites[:0]
-		for _, f := range sn.Favorites {
-			if f.URL == url {
-				continue
-			}
-			kept = append(kept, f)
-		}
-		sn.Favorites = kept
+		sn.RemoveFavorite(url)
 	})
 }
 
@@ -5699,17 +5512,7 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 		return
 	}
 	p.Update(func(sn *Settings) {
-		if showname == "" {
-			delete(sn.ShownameKeys, key)
-			return
-		}
-		if sn.ShownameKeys == nil {
-			sn.ShownameKeys = map[string]string{}
-		}
-		if _, exists := sn.ShownameKeys[key]; !exists && len(sn.ShownameKeys) >= shownameKeyCap {
-			return
-		}
-		sn.ShownameKeys[key] = showname
+		sn.SetShownameKeyBind(key, showname)
 	})
 }
 
@@ -5739,17 +5542,7 @@ func (p *AssetPreferences) SetICPhraseKey(key, phrase string) {
 	}
 	phrase = strings.TrimSpace(phrase)
 	p.Update(func(sn *Settings) {
-		if phrase == "" {
-			delete(sn.ICPhraseKeys, key)
-			return
-		}
-		if sn.ICPhraseKeys == nil {
-			sn.ICPhraseKeys = map[string]string{}
-		}
-		if _, exists := sn.ICPhraseKeys[key]; !exists && len(sn.ICPhraseKeys) >= icPhraseKeyCap {
-			return
-		}
-		sn.ICPhraseKeys[key] = phrase
+		sn.SetICPhraseKey(key, phrase)
 	})
 }
 
@@ -5993,26 +5786,7 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 	pct = clampPercent(pct, 0, blipVolumeDefault)
 	changed := false
 	p.Update(func(sn *Settings) {
-		cur, had := sn.BlipVols[char]
-		if pct == blipVolumeDefault {
-			if !had {
-				return // already default
-			}
-			delete(sn.BlipVols, char)
-			changed = true
-			return
-		}
-		if had && cur == pct {
-			return // unchanged
-		}
-		if !had && len(sn.BlipVols) >= blipVolsCap {
-			return // bounded
-		}
-		if sn.BlipVols == nil {
-			sn.BlipVols = make(map[string]int)
-		}
-		sn.BlipVols[char] = pct
-		changed = true
+		changed = sn.SetBlipVolume(char, pct)
 	})
 	return changed
 }
@@ -6072,29 +5846,7 @@ func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
 	}
 	nowFav := false
 	p.Update(func(sn *Settings) {
-		list := sn.EmoteFavs[char]
-		if !containsInt(list, idx) {
-			if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
-				return
-			}
-			if _, had := sn.EmoteFavs[char]; !had && len(sn.EmoteFavs) >= emoteFavCharsCap {
-				return // bounded: too many characters tracked
-			}
-		}
-		list, nowIn := toggleInt(list, idx)
-		if !nowIn { // removed
-			if len(list) == 0 {
-				delete(sn.EmoteFavs, char)
-			} else {
-				sn.EmoteFavs[char] = list
-			}
-			return
-		}
-		if sn.EmoteFavs == nil {
-			sn.EmoteFavs = make(map[string][]int)
-		}
-		sn.EmoteFavs[char] = list
-		nowFav = true
+		nowFav = sn.ToggleEmoteFav(char, idx)
 	})
 	return nowFav
 }
