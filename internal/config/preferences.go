@@ -2835,9 +2835,7 @@ func (p *AssetPreferences) AddCallWord(input string) int {
 			if w == "" {
 				continue
 			}
-			var ok bool
-			sn.CallWordList, ok = addExactUnique(sn.CallWordList, w, callWordCap)
-			if ok {
+			if sn.AddCallWord(w) {
 				added++
 			}
 		}
@@ -2850,7 +2848,7 @@ func (p *AssetPreferences) RemoveCallWord(word string) bool {
 	word = strings.ToLower(strings.TrimSpace(word))
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.CallWordList, changed = removeExact(sn.CallWordList, word)
+		changed = sn.RemoveCallWord(word)
 	})
 	return changed
 }
@@ -5661,7 +5659,7 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.ShownamePresets, changed = addFoldUnique(sn.ShownamePresets, name, ShownameCap)
+		changed = sn.AddShownamePreset(name)
 	})
 	return changed
 }
@@ -5670,14 +5668,7 @@ func (p *AssetPreferences) AddShownamePreset(name string) bool {
 func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.ShownamePresets, changed = removeFold(sn.ShownamePresets, name)
-		if changed {
-			for k, v := range sn.ShownameKeys { // drop any key bound to the removed preset
-				if strings.EqualFold(v, name) {
-					delete(sn.ShownameKeys, k)
-				}
-			}
-		}
+		changed = sn.RemoveShownamePreset(name)
 	})
 	return changed
 }
@@ -5802,7 +5793,7 @@ func (p *AssetPreferences) MuteSFX(name string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.MutedSFX, changed = addExactUnique(sn.MutedSFX, name, mutedSFXCap)
+		changed = sn.MuteSFX(name)
 	})
 	return changed
 }
@@ -5812,7 +5803,7 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.MutedSFX, changed = removeExact(sn.MutedSFX, name)
+		changed = sn.UnmuteSFX(name)
 	})
 	return changed
 }
@@ -5858,12 +5849,7 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 	}
 	nowFav := false
 	p.Update(func(sn *Settings) {
-		var removed bool
-		sn.SfxFavorites, removed = removeExact(sn.SfxFavorites, name)
-		if removed {
-			return
-		}
-		sn.SfxFavorites, nowFav = addExactUnique(sn.SfxFavorites, name, sfxFavoritesCap)
+		nowFav = sn.ToggleSfxFavorite(name)
 	})
 	return nowFav
 }
@@ -5905,8 +5891,7 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		seedModTemplates(sn)
-		sn.ModReasonTemplates, changed = addFoldUnique(sn.ModReasonTemplates, s, modReasonTemplatesCap)
+		changed = sn.AddModReasonTemplate(s)
 	})
 	return changed
 }
@@ -5933,7 +5918,7 @@ func (p *AssetPreferences) AddModDuration(token string) bool {
 	}
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.ModDurations, changed = addFoldUnique(sn.ModDurations, token, modDurationsCap)
+		changed = sn.AddModDuration(token)
 	})
 	return changed
 }
@@ -5943,7 +5928,7 @@ func (p *AssetPreferences) RemoveModDuration(token string) bool {
 	token = strings.TrimSpace(token)
 	changed := false
 	p.Update(func(sn *Settings) {
-		sn.ModDurations, changed = removeFold(sn.ModDurations, token)
+		changed = sn.RemoveModDuration(token)
 	})
 	return changed
 }
@@ -5953,8 +5938,7 @@ func (p *AssetPreferences) RemoveModReasonTemplate(s string) bool {
 	s = strings.TrimSpace(s)
 	changed := false
 	p.Update(func(sn *Settings) {
-		seedModTemplates(sn)
-		sn.ModReasonTemplates, changed = removeFold(sn.ModReasonTemplates, s)
+		changed = sn.RemoveModReasonTemplate(s)
 	})
 	return changed
 }
