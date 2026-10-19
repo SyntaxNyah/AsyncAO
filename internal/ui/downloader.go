@@ -292,7 +292,7 @@ func (a *App) launchDownload(req dlReq) {
 	// the next grab, which with a queue is soon enough).
 	job := &dlJob{
 		label: req.label, base: downloadsRoot(), progress: a.dl.progress,
-		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.Load().DownloadKBps) * 1024, start: time.Now(),
+		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),
 	}
 	client := a.d.Client
 	urls := a.urls

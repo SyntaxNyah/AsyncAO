@@ -1829,8 +1829,14 @@ func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
 
 // --- Smooth scaling -----------------------------------------------------------
 
-// SpriteScalingMode was folded into the snapshot: strict load clamps SpriteScaling,
-// so call sites read Load().SpriteScaling directly.
+// SpriteScalingMode reports the per-sprite texture filter (SpriteScalingAuto /
+// Smooth / Pixel). Clamped on read as well as on load, so a value written by a
+// newer build can never index past this build's options.
+func (p *AssetPreferences) SpriteScalingMode() int {
+	snap := p.Load()
+
+	return ClampSpriteScaling(snap.SpriteScaling)
+}
 
 // --- Update check ------------------------------------------------------------
 
@@ -1981,8 +1987,18 @@ func (s *Settings) BgSlideshowSeconds() int {
 	return clampPercent(orDefault(s.BgSlideshowSecs, defaultBgSlideshowSecs), minBgSlideshowSecs, maxBgSlideshowSecs)
 }
 
-// DownloadCapKBps was folded into the snapshot: strict load clamps DownloadKBps to
-// [0, maxDownloadKBps], so call sites read Load().DownloadKBps directly.
+// DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
+func (p *AssetPreferences) DownloadCapKBps() int {
+	snap := p.Load()
+
+	if snap.DownloadKBps < 0 {
+		return 0
+	}
+	if snap.DownloadKBps > maxDownloadKBps {
+		return maxDownloadKBps
+	}
+	return snap.DownloadKBps
+}
 
 // Instant-replay capture-window bounds: a sane floor so a clip has context, and
 // a 1-hour ceiling (the requested "up to one hour"). 0/unset reads as default.

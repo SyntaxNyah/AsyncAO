@@ -1778,7 +1778,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// above, which still governs backgrounds, desks and chrome. This one applies
 	// live — the filter is resolved at draw time from the page memo — so unlike
 	// the hint it needs no purge and no re-stream.
-	spriteScale := config.ClampSpriteScaling(a.d.Prefs.Load().SpriteScaling)
+	spriteScale := a.d.Prefs.SpriteScalingMode()
 	c.Label(pad, y+4, "Sprite filtering:", ColText)
 	if next, changed := c.Dropdown("spritescale",
 		sdl.Rect{X: pad + spriteScaleDDX, Y: y, W: spriteScaleDDW, H: fieldH},

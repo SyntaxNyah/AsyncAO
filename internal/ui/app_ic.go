@@ -1036,7 +1036,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		// UserScaling STAYS — it is how big a sprite is drawn (char.ini / the
 		// enlarging rule), not eye-candy, and zeroing it would silently resize
 		// every character the moment a player asked for a calmer screen.
-		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.Load().SpriteScaling)}
+		return render.SpriteFX{UserScaling: courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())}
 	}
 	fx := render.SpriteFX{
 		Rainbow:         a.d.Prefs.Load().RainbowSprites,
@@ -1060,7 +1060,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		BreathAmp:       a.d.Prefs.Load().BreathAmp(),
 		BreathSpeed:     a.d.Prefs.Load().BreathSpeed(),
 		ReflectStrength: a.d.Prefs.Load().ReflectStrength(),
-		UserScaling:     courtroom.ScalingMode(a.d.Prefs.Load().SpriteScaling), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
+		UserScaling:     courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode()), // #21 label 15: Auto defers to char.ini, then to the enlarging rule
 	}
 	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
 		rgb := a.d.Prefs.Load().SpriteTintColorRGB()
