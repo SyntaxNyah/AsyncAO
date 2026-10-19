@@ -24,7 +24,7 @@ func BenchmarkSpriteScalingBefore(b *testing.B) {
 	p := defaultPrefs("")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.Load().SpriteScaling
+		_ = p.SpriteScalingMode()
 	}
 }
 

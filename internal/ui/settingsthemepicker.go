@@ -51,7 +51,7 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	if on {
 		// Bandwidth cap (KiB/s; 0 = unlimited — the default, so grabs run full
 		// speed unless you throttle them). Average-rate, applied per grab.
-		capKBps := a.d.Prefs.Load().DownloadKBps
+		capKBps := a.d.Prefs.DownloadCapKBps()
 		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
 			a.d.Prefs.Update(func(
 				sn *config.
