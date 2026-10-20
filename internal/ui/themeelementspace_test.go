@@ -126,7 +126,7 @@ func TestUnanchoredElementResolvesAgainstItsSpaceOrigin(t *testing.T) {
 	// And the space's origin really is the chatbox, not the canvas — otherwise the
 	// assertion above would hold for a fixture whose chatbox happens to sit at the
 	// canvas origin.
-	if origin, ok2 := (&App{}).elementSpaceRect(lay, theme.SpaceChatbox); !ok2 || origin != chat {
+	if origin, ok2 := (&App{env: env{}}).elementSpaceRect(lay, theme.SpaceChatbox); !ok2 || origin != chat {
 		t.Errorf("elementSpaceRect(chatbox) = %+v (ok=%v), want the chatbox's own box %+v",
 			origin, ok2, chat)
 	}

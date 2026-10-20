@@ -87,7 +87,7 @@ func TestSendBareInlineEffectObeysRateLimit(t *testing.T) {
 // is the case a stock AO2 peer produces — AO2 keeps the escape codes in the
 // transmitted text, so its bare-effect line arrives here as a literal "\f".
 func TestBareInlineEffectFromAnotherClient(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.room = newRoomForTest(t)
 	a.room.ScreenEffects, a.room.ReduceMotion = true, false
 

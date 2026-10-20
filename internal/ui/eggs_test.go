@@ -312,7 +312,7 @@ func TestCreatorEgg(t *testing.T) {
 // changed text rescans anew. This is the once-per-message contract that keeps a
 // settled frame at one string compare — tested via the pure guard, no SDL.
 func TestRefreshEggKindCachesScan(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 
 	if scanned := a.refreshEggKind("hello fanatsors"); !scanned {
 		t.Fatal("first sight of a message must rescan")

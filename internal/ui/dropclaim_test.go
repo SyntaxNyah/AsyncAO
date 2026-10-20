@@ -210,7 +210,7 @@ func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 // indistinguishable from a broken client, which is how the .aotheme routing
 // would be read if it only stopped doing the wrong thing.
 func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	before := a.warnAt
 	a.handleThemeBundleDrop(filepath.FromSlash("C:/Users/x/Downloads/umineko-meta-world.aotheme"))
 	if a.warnLine == "" {
@@ -243,7 +243,7 @@ func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 // nothing — a family with no `[fontbind]` row binds to no element — and that pair
 // is the single most common way this feature is got wrong.
 func TestThemeFontDropSaysWhereToPutIt(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.handleThemeFontDrop(filepath.FromSlash("C:/Users/x/Downloads/CourtSerif.ttf"))
 	if a.warnLine == "" {
 		t.Fatal("a dropped font produced no message at all")

@@ -17,7 +17,7 @@ func TestRouteIncomingPM(t *testing.T) {
 		t.Fatalf("config.New: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.serverKey = "s"
 
 	body := "hey there" + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()

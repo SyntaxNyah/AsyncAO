@@ -28,7 +28,7 @@ func newStickyPrefsApp(t *testing.T) (*App, *config.AssetPreferences) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{d: Deps{Prefs: prefs}}, prefs
+	return &App{env: env{d: Deps{Prefs: prefs}}}, prefs
 }
 
 // stickySFXPickedRow is any non-zero IC SFX dropdown row: row 0 is the "Default"
@@ -194,7 +194,7 @@ func TestStickyResetsSurviveAPreferenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reloaded.Close() })
-	a := &App{d: Deps{Prefs: reloaded}}
+	a := &App{env: env{d: Deps{Prefs: reloaded}}}
 	stickyFXFixture(a)
 
 	a.sfxChoiceIdx, a.icPreanim = stickySFXPickedRow, false

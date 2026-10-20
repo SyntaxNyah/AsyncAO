@@ -21,7 +21,7 @@ func TestDisableAltEmoteRowGatesNumberRow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{d: Deps{Prefs: prefs}, ctx: &Ctx{}}
+	a := &App{env: env{d: Deps{Prefs: prefs}, ctx: &Ctx{}}}
 	a.emotePerPage = 9
 	a.emotes = []courtroom.Emote{{Comment: "normal"}}
 	a.emoteVisible = []int{0}

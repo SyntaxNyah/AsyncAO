@@ -56,7 +56,7 @@ func msgFor(charID int, name, text string) *protocol.ChatMessage {
 // recorder therefore re-injects the speaker's remembered style into a COPY of a
 // no-marker line (never the live msg), keeping recordings self-contained.
 func TestRecEventSelfContainsStyle(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.room = newRoomForTest(t)
 	style := courtroom.SpriteStyle{Tint: true, R: 200, G: 40, B: 40, Glow: true}
 

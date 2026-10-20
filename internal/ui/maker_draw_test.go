@@ -22,7 +22,7 @@ func TestRebuildBgListOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}} // a.sess == nil (offline)
+	a := &App{env: env{d: Deps{Prefs: prefs}}} // a.sess == nil (offline)
 	a.bgPick.server = []string{"court", "gs4", "lobby"}
 	a.rebuildBgList() // would nil-deref a.sess.Background before the guard
 	if len(a.bgPick.list) == 0 {
@@ -39,7 +39,7 @@ func TestHideSpriteSuppression(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
+	a := &App{env: env{}} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
 	a.d.Prefs = prefs
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
@@ -112,7 +112,7 @@ func TestRequestDisconnectConfirms(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.requestDisconnect()
 	if !a.confirmDisconnect {
 		t.Error("with instant-disconnect off, requestDisconnect must open the confirm modal, not disconnect")
@@ -138,7 +138,7 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{ctx: ctx, d: Deps{Prefs: prefs}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
+	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
 	// A real session + bg list enables the char/background autocompletes — the
 	// draw paths a nil-session test would skip.
 	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}

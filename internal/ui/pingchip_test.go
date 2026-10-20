@@ -39,7 +39,7 @@ func TestUpdatePingLoopOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}} // chip off (default), no conn
+	a := &App{env: env{d: Deps{Prefs: prefs}}} // chip off (default), no conn
 
 	a.updatePingLoop()
 	if a.pingConn != nil || a.pingCancel != nil {

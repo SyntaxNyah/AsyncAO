@@ -176,7 +176,7 @@ func TestAceAttorney2xUsesTheAltImmediateSpelling(t *testing.T) {
 // three otherwise (courtroom.cpp:747-759). Offering the toggle on a server that
 // drops the field is a control that silently does nothing.
 func TestImmediateIsGatedOnCCCC(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	if a.sessHasCCCC() {
 		t.Error("a nil session must not report CCCC support")
 	}

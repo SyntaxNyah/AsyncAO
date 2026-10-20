@@ -6,7 +6,7 @@ import "testing"
 // isn't on screen counts as unread; one landing while it's selected AND the
 // panel is open doesn't; opening the group clears the count (drawGroupView).
 func TestGroupUnreadFlow(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	g := a.ensureGroup(7)
 	g.name = "case prep"
 	g.ownerUID = 1

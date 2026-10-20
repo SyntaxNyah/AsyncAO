@@ -11,8 +11,9 @@ import (
 // width, hit-testing maps an x to the right segment, and a scene with no recorded
 // pacing falls back to equal widths instead of a degenerate bar.
 func TestMakerTimelineLayout(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	// A 3s message, a 0.2s one, then a scene change (last → tail).
+
 	evs := []recEvent{
 		{OffsetMs: 0, Kind: int(courtroom.EventMessage)},
 		{OffsetMs: 3000, Kind: int(courtroom.EventMessage)},
@@ -77,7 +78,7 @@ func TestReindexAfterMove(t *testing.T) {
 // TestMakerMoveEvent pins the end-to-end reorder: the slice is reordered and the
 // selection + crop In/Out follow their events (not their old slots).
 func TestMakerMoveEvent(t *testing.T) {
-	a := &App{makerScene: &sceneRecording{Events: []recEvent{
+	a := &App{env: env{}, makerScene: &sceneRecording{Events: []recEvent{
 		{Text: "0"}, {Text: "1"}, {Text: "2"}, {Text: "3"},
 	}}}
 	a.makerSel = 0
@@ -110,7 +111,7 @@ func TestMakerMoveEvent(t *testing.T) {
 
 // TestMakerTLGapAt pins the drop-gap hit-test: cursor x → insertion gap 0..n.
 func TestMakerTLGapAt(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.makerTLLayout([]recEvent{{}, {}, {}, {}}, 400) // 4 equal segments, no scroll
 	n := len(a.makerSegW)
 

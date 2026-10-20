@@ -9,7 +9,7 @@ import (
 // TestDashDetection pins the #130 wire-signal detection: software (ID packet, with override),
 // mod status (AUTH), and CM status (ARUP CM column names us).
 func TestDashDetection(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = courtroom.NewRehearsalSession("", nil)
 
 	// Software: auto-detect from the ID-packet string, then the override wins.

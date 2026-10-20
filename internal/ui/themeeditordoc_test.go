@@ -99,7 +99,7 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 	if doc == nil {
 		t.Fatal("newThemeDoc returned nil for a non-nil sidecar")
 	}
-	a := &App{te: &themeEditor{doc: doc}}
+	a := &App{env: env{}, te: &themeEditor{doc: doc}}
 	// The document must serialise cleanly BEFORE anything is edited, or every hash
 	// comparison below is comparing two error returns.
 	if _, err := doc.bytes(); err != nil {
@@ -794,7 +794,7 @@ func (a *App) openThemeEditorForTest(from Screen) bool {
 // this wave: with the editor shut, the client carries ONE nil pointer and nothing
 // else — no allocation, no goroutine, no per-frame work. Benchmarked, not asserted.
 func TestClosedThemeEditorCostsNothing(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	probe := func() {
 		_ = a.themeEditorOpen()
 		a.reclaimThemeDoc()

@@ -19,7 +19,7 @@ func TestSnapViewportTo43(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	const w, h = 1000, 800
 
 	// A stretched stage: 400×150 at (100,100) → snapping makes it 400×300.

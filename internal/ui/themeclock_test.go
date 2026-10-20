@@ -461,7 +461,7 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 // one frame gated at exactly zero allocations. An allocation here is 96 of them a
 // frame, on every themed install that uses the feature at all.
 func TestElapsedForIsAllocFree(t *testing.T) {
-	a := &App{themeAt: time.Now().Add(-time.Second)}
+	a := &App{env: env{}, themeAt: time.Now().Add(-time.Second)}
 	a.themeClocks[1] = themeClock{speedPct: 250}
 	a.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
 	// Every arm of clockElapsed in one fixture: the shared anchor, a scaled group, a
@@ -891,7 +891,7 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 // that falls back to the shared anchor rather than panicking on the render thread,
 // and a speed clamped into the format's own range.
 func TestClockPoolIsFixed(t *testing.T) {
-	a := &App{themeAt: time.Now().Add(-2 * time.Second)}
+	a := &App{env: env{}, themeAt: time.Now().Add(-2 * time.Second)}
 	if len(a.themeClocks) != theme.ClockCap {
 		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.themeClocks), theme.ClockCap)
 	}

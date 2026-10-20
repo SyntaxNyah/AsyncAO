@@ -39,9 +39,8 @@ func TestBuildModcallClip(t *testing.T) {
 // scope-load funnel: an off-thread result whose generation was superseded by a
 // newer kick must be dropped, never overwriting the newer scope's state.
 func TestPollLogBrowserDropsStaleGeneration(t *testing.T) {
-	a := &App{
-		logBrowserRes: make(chan logbrowser.Result, 1),
-		logBrowser:    logBrowserState{gen: 5, loading: true},
+	a := &App{env: env{}, logBrowserRes: make(chan logbrowser.Result, 1),
+		logBrowser: logBrowserState{gen: 5, loading: true},
 	}
 	a.logBrowserRes <- logbrowser.Result{Gen: 3, Servers: []string{"stale"}}
 	a.pollLogBrowser()

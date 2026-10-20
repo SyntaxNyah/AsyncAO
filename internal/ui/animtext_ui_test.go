@@ -37,7 +37,7 @@ func TestEffectIDsMatchRender(t *testing.T) {
 // message lands its spans on the Scene (indexed into the clean text), while a plain message
 // leaves the Scene effect-free so it keeps the untouched MessageRaster fast path.
 func TestRemoteEffectsThroughRoom(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.room = newRoomForTest(t)
 	spans := []courtroom.TextEffectSpan{{Start: 0, Len: 2, Effect: courtroom.TextEffectShake}, {Start: 3, Len: 5, Effect: courtroom.TextEffectRainbow}}
 	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hi there"+courtroom.EncodeEffectsMarker(spans))})
@@ -110,7 +110,7 @@ func TestIsASCII(t *testing.T) {
 // IC/OOC input boxes keep the exact single-font path (no per-frame font work) — the
 // performance guarantee for the common case.
 func TestICFieldFontsASCIIFastPath(t *testing.T) {
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 	if p, e := a.icFieldFonts("plain ascii message"); p != nil || e != nil {
 		t.Errorf("ASCII field got fallback fonts, want nil,nil (fast path)")
 	}
@@ -146,7 +146,7 @@ func TestFxEffectCoverage(t *testing.T) {
 // message, but is a no-op when off, on a blankpost, or when the user already typed inline
 // markup (inline wins). The wrap round-trips through ParseTextEffects to a whole-message span.
 func TestApplyStickyEffect(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.icEffect = courtroom.TextEffectRainbow
 	if got := a.applyStickyEffect("hello world"); got != "[rainbow]hello world[/rainbow]" {
 		t.Fatalf("wrap = %q", got)
@@ -188,7 +188,7 @@ func TestAnimFontResolverEmoji(t *testing.T) {
 	// A single-font chat set (len==1) → pickSet/covers take the fast path and report covered,
 	// so the resolver gate is decided purely by the emoji signal — which is what we're testing.
 	c.chatSet.fonts = []*ttf.Font{base}
-	a := &App{ctx: c}
+	a := &App{env: env{ctx: c}}
 	c.SetEmojiFont(twemojiTTF) // real embedded colour-emoji face, headless-safe
 	emojiFace := c.EmojiFont(DefaultScalePct)
 	if emojiFace == nil {
@@ -223,7 +223,7 @@ func TestSendParsesEffectMarkup(t *testing.T) {
 	wire, spans := courtroom.ParseTextEffects("ab[shake]cd[/shake] [rainbow]ef[/rainbow]")
 	msg := wire + courtroom.EncodeEffectsMarker(spans)
 
-	a := &App{}
+	a := &App{env: env{}}
 	a.room = newRoomForTest(t)
 	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(7, "Apollo", msg)})
 	a.room.SkipToIdle()

@@ -25,7 +25,7 @@ func TestJukeBindCaptureConsumesKey(t *testing.T) {
 
 	// macroBind:-1 mirrors NewApp so the macro guard doesn't mask the keypress
 	// guard we're actually testing.
-	a := &App{ctx: &Ctx{}, juke: j, macroBind: -1}
+	a := &App{env: env{ctx: &Ctx{}}, juke: j, macroBind: -1}
 	a.jukeBindFor = "e:0:0"
 	a.ctx.keyPressed = sdl.K_a
 	a.pollJukeBind()

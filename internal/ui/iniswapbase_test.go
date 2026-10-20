@@ -123,7 +123,7 @@ func TestBaseMountsEqualMatchesBaseMounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 
 	paths := []string{"C:\\packs\\one", "C:\\packs\\two"}
 	for _, tc := range []struct {
@@ -186,7 +186,7 @@ func TestEnsureLocalCharFoldersIsAllocationFreeWhenUnchanged(t *testing.T) {
 	if !prefs.SetLocalAssets(true, mounts) {
 		t.Fatal("SetLocalAssets refused")
 	}
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.iniBase.scanned = mounts // the state after a completed scan: nothing has changed
 
 	if n := testing.AllocsPerRun(200, a.ensureLocalCharFolders); n != 0 {

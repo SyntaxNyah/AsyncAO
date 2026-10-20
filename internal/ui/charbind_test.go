@@ -10,7 +10,7 @@ import "testing"
 // field but keyed App literals hit the known phantom "unknown field" glitch.
 func TestPollCharBindCancel(t *testing.T) {
 	// Esc cancels.
-	a := &App{ctx: &Ctx{escPressed: true}}
+	a := &App{env: env{ctx: &Ctx{escPressed: true}}}
 	a.bindingFor = "Apollo"
 	a.pollCharBind()
 	if a.bindingFor != "" {
@@ -18,7 +18,7 @@ func TestPollCharBindCancel(t *testing.T) {
 	}
 
 	// A click cancels (the "oops, didn't mean to" gesture).
-	a = &App{ctx: &Ctx{clicked: true}}
+	a = &App{env: env{ctx: &Ctx{clicked: true}}}
 	a.bindingFor = "Apollo"
 	a.pollCharBind()
 	if a.bindingFor != "" {
@@ -26,7 +26,7 @@ func TestPollCharBindCancel(t *testing.T) {
 	}
 
 	// No key, no click, no Esc: the capture stays armed (waiting for a key).
-	a = &App{ctx: &Ctx{}}
+	a = &App{env: env{ctx: &Ctx{}}}
 	a.bindingFor = "Apollo"
 	a.pollCharBind()
 	if a.bindingFor != "Apollo" {
@@ -34,7 +34,7 @@ func TestPollCharBindCancel(t *testing.T) {
 	}
 
 	// Idle (nothing armed): a no-op even with a click queued.
-	a = &App{ctx: &Ctx{clicked: true}}
+	a = &App{env: env{ctx: &Ctx{clicked: true}}}
 	a.pollCharBind() // must not panic / touch state
 	if a.bindingFor != "" {
 		t.Error("idle pollCharBind must stay idle")

@@ -287,7 +287,7 @@ func TestHardCapBudget(t *testing.T) {
 // (the "the chat log jumps then stops" report). A settled offset or a 1:1
 // scrollbar-drag snap marks nothing.
 func TestEaseICScrollAnimates(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
 
 	// Target far from the visual offset → still easing → animates, advancing partway.
@@ -320,7 +320,7 @@ func TestEaseICScrollAnimates(t *testing.T) {
 // per frame keeps every blip boundary on its own frame — and never faster than
 // the user's cap.
 func TestTalkBudget(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	full := paceBudget(60)
 
 	// No room: the flat staticTalkFPS cadence.

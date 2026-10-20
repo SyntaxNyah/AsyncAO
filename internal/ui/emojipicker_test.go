@@ -11,7 +11,7 @@ import (
 // un-released fence freezes the whole UI). It also force-closes off the courtroom so the
 // fence can never be stranded on another screen.
 func TestEmojiPickerFenceReleases(t *testing.T) {
-	a := &App{ctx: &Ctx{}, screen: ScreenCourtroom}
+	a := &App{env: env{ctx: &Ctx{}, screen: ScreenCourtroom}}
 	c := a.ctx
 
 	a.showEmojiPicker = true
@@ -49,7 +49,7 @@ func TestEmojiPickerFenceReleases(t *testing.T) {
 // every torn-off tab panel (Areas!) — keeps drawing while it's open. Truly
 // blocking popups still hide them.
 func TestEmojiPickerKeepsPanels(t *testing.T) {
-	a := &App{ctx: &Ctx{}, screen: ScreenCourtroom}
+	a := &App{env: env{ctx: &Ctx{}, screen: ScreenCourtroom}}
 	a.room = &courtroom.Courtroom{}
 	a.sess = &courtroom.Session{}
 

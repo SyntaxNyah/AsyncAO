@@ -10,7 +10,7 @@ import (
 // local (default) reads the cached local:// origin, stream reads the server URL,
 // and a local request with no mounts falls back to streaming.
 func TestEvidURL(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.urls = courtroom.NewURLBuilder("https://server/base")
 
 	// Default (local) with a cached local:// origin.

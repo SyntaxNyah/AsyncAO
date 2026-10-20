@@ -56,7 +56,7 @@ func sliderThumbFixture(t *testing.T) (*App, *render.CaptureTarget, func()) {
 		cleanup()
 		t.Skipf("capture target unavailable: %v", err)
 	}
-	a := &App{ctx: ctx}
+	a := &App{env: env{ctx: ctx}}
 	return a, ct, func() {
 		ct.Close()
 		activeKitColors = defaultKitColors

@@ -25,7 +25,7 @@ func TestIsLiveStageBase(t *testing.T) {
 		other   = "live://characters/edgeworth/(a)thinking" // a base NOT on stage
 	)
 
-	a := &App{}
+	a := &App{env: env{}}
 	a.room = &courtroom.Courtroom{}
 	sc := &a.room.Scene
 	sc.BackgroundBase = bg

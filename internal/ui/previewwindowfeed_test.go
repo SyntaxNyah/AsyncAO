@@ -56,7 +56,7 @@ func newPreviewFeedApp(t testing.TB) *App {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{ctx: ctx, activeTab: -1}
+	a := &App{env: env{ctx: ctx}, activeTab: -1}
 	a.d.Prefs = prefs
 	a.d.Store = store
 	a.d.Preview = render.NewPreviewWindow()
@@ -398,7 +398,7 @@ func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
 // (minimized and SkipFrame branches), so its closed-path cost must stay a
 // no-alloc nil check, the same as every other preview touch point.
 func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
-	a := &App{ctx: &Ctx{}, activeTab: -1}
+	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -420,7 +420,7 @@ func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
 //
 //	go test ./internal/ui/... -run NONE -bench AdvanceDetachedPreview -benchmem
 func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
-	a := &App{ctx: &Ctx{}, activeTab: -1}
+	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))
 	if err != nil {
 		b.Fatal(err)
@@ -596,7 +596,7 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 // (never-opened) PreviewWindow, needing no SDL init at all: a closed preview
 // never touches SDL, on either side of this seam.
 func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
-	a := &App{ctx: &Ctx{}, activeTab: -1}
+	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -620,7 +620,7 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 //
 //	go test ./internal/ui/... -run NONE -bench SyncPreviewWindow -benchmem
 func BenchmarkSyncPreviewWindowClosed(b *testing.B) {
-	a := &App{ctx: &Ctx{}, activeTab: -1}
+	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))
 	if err != nil {
 		b.Fatal(err)

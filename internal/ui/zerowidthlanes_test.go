@@ -287,7 +287,7 @@ func TestStoredLinkComesFromTheStoredText(t *testing.T) {
 	marker := courtroom.SpriteStyle{Tint: true, R: 9, G: 9, B: 9}.EncodeMarker()
 	const url = "https://example.test/x"
 
-	a := &App{}
+	a := &App{env: env{}}
 	a.pushIC("Nick: see "+url+marker, 0, false, -1, "Nick")
 	if len(a.icLog) != 1 {
 		t.Fatalf("pushIC stored %d entries, want 1", len(a.icLog))

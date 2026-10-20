@@ -388,7 +388,7 @@ func TestRosterDetailCmdIsNeverInert(t *testing.T) {
 		{"", rosterCmdGetarea},
 		{"some-fork-nobody-has-heard-of", rosterCmdGetarea},
 	} {
-		a := &App{}
+		a := &App{env: env{}}
 		a.sess = &courtroom.Session{Software: tc.software}
 		if got := a.rosterDetailCmd(); got != tc.want {
 			t.Errorf("software %q → %q, want %q", tc.software, got, tc.want)
@@ -401,7 +401,7 @@ func TestRosterDetailCmdIsNeverInert(t *testing.T) {
 	}
 	// And no session at all must not send anything odd — the row is disabled there
 	// (musicMenuRowEnabled), but the accessor still has to answer.
-	if got := (&App{}).rosterDetailCmd(); got != rosterCmdGetarea {
+	if got := (&App{env: env{}}).rosterDetailCmd(); got != rosterCmdGetarea {
 		t.Errorf("with no session rosterDetailCmd = %q, want %q", got, rosterCmdGetarea)
 	}
 }
