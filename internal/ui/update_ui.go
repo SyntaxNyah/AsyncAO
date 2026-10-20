@@ -43,6 +43,34 @@ const (
 	updateNotesMaxLines = 400
 )
 
+// selfUpdate is the M13 self-update component: the one-shot launch check, the
+// persistent "update available" chip, and the What's New patch-notes modal.
+// Its env pointer is wired to &App.env once in NewApp, so the component reaches
+// the shared deps/ctx/notice/navigation through one pointer.
+type selfUpdate struct {
+	env *env
+
+	updateRes       chan *update.Release
+	updateChecked   bool
+	updateRel       *update.Release
+	updateShow      bool
+	updateFenceOn   bool // WE hold the modal fence for the open What's New modal (released on close — see updateModalFence)
+	updateScroll    int32
+	updateChipLabel string
+	updateApplyRes  chan error
+	updateBusy      bool
+	updateStaged    bool
+	updateErr       string
+	relaunchOnExit  bool // "Restart to apply": relaunch the new binary after a clean shutdown
+}
+
+// wireComponents points every embedded component's env at App's own env, so a
+// component reaches the shared deps/ctx/notice/navigation through one pointer.
+// NewApp calls it once; a component's env is never reassigned afterwards.
+func (a *App) wireComponents() {
+	a.selfUpdate.env = &a.env
+}
+
 // maybeKickUpdateCheck fires the update probe EXACTLY ONCE, on the first frame
 // (the window is already up), so the check never touches the boot path. A
 // disabled pref short-circuits it, and Check itself skips an unstamped dev

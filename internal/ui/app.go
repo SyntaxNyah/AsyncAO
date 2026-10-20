@@ -195,6 +195,7 @@ type env struct {
 // App is the whole client UI state machine. Render thread only.
 type App struct {
 	env
+	selfUpdate
 
 	// --- the theme editor (themeeditor.go) --------------------------
 	//
@@ -663,28 +664,6 @@ type App struct {
 	// id is never reused even after a tab closes — a reused id would let a new tab
 	// adopt a dead tab's still-open writer and start appending to its file.
 	nextLogSession int
-
-	// --- M13 self-update (one-shot launch check; see internal/update) ---
-	// updateRes carries a newer release found by the off-thread probe; the
-	// drain stores it in updateRel and auto-opens the What's New modal once.
-	// updateChecked fires the probe EXACTLY ONCE on the first frame (after the
-	// window is up) so the check never touches the boot critical path.
-	updateRes       chan *update.Release
-	updateChecked   bool
-	updateRel       *update.Release
-	updateShow      bool
-	updateFenceOn   bool // WE hold the modal fence for the open What's New modal (released on close — see updateModalFence)
-	updateScroll    int32
-	updateChipLabel string
-	// Self-update apply flow (the "Get the update" button → async download,
-	// verify, staged swap): updateBusy while it runs, updateStaged once the new
-	// binary is in place (restart pending), updateErr on failure. The goroutine
-	// reports on updateApplyRes. Inert unless a stamped build found a release.
-	updateApplyRes chan error
-	updateBusy     bool
-	updateStaged   bool
-	updateErr      string
-	relaunchOnExit bool // "Restart to apply": relaunch the new binary after a clean shutdown
 
 	// --- IC/OOC log text selection (drag to highlight, Ctrl+C to copy) ---
 	// Anchored to (wrapped-line index, rune offset in that line); see
@@ -1724,13 +1703,15 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			ctx:    ctx,
 			screen: ScreenLobby,
 		},
+		selfUpdate: selfUpdate{
+			updateRes:      make(chan *update.Release, 1),
+			updateApplyRes: make(chan error, 1),
+		},
 		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
 		lobbyResult:         make(chan lobbyFetch, 1),
 		pingRes:             make(chan pingResult, pingResBuf),
 		charINIres:          make(chan charINIFetch, 1),
 		previewEmoteRes:     make(chan previewEmoteFetch, 1),
-		updateRes:           make(chan *update.Release, 1),
-		updateApplyRes:      make(chan error, 1),
 		iniRes:              make(chan iniswapFetch, 1),
 		manifestRes:         make(chan manifestFetch, 1),
 		casingRes:           make(chan casingProbeResult, 1),
@@ -1755,6 +1736,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		themePages:          map[string]*render.TexturePage{},
 		hidden:              map[string]bool{},
 	}
+	a.wireComponents()
 	a.resetSessionState()
 	// Let the widget kit kick the colour-emoji face read. A dropdown row or a
 	// lobby label can be the first emoji on screen, and a widget with no way to
