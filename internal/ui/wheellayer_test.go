@@ -50,9 +50,9 @@ func TestUpdateModalFence(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
 
-	a.selfUpdate.rel = &update.Release{Version: "9.9.9"}
-	a.selfUpdate.show = true
-	a.updateModalFence(c)
+	a.updates.rel = &update.Release{Version: "9.9.9"}
+	a.updates.show = true
+	a.updates.updateModalFence(c)
 	if !c.modalOn {
 		t.Fatal("open modal must hold the modal fence")
 	}
@@ -60,13 +60,13 @@ func TestUpdateModalFence(t *testing.T) {
 		t.Fatal("hovering() must be false everywhere under the modal fence")
 	}
 
-	a.selfUpdate.show = false // Close / click-away / Esc
-	a.updateModalFence(c)
+	a.updates.show = false // Close / click-away / Esc
+	a.updates.updateModalFence(c)
 	if c.modalOn {
 		t.Fatal("closing the modal must release the fence")
 	}
 	// And a second pass stays released (no flip-flop).
-	a.updateModalFence(c)
+	a.updates.updateModalFence(c)
 	if c.modalOn {
 		t.Fatal("fence must stay released while the modal is closed")
 	}

@@ -238,7 +238,13 @@ func (a *App) chromeBandH() int32 { return a.topChromeH() }
 // App is the whole client UI state machine. Render thread only.
 type App struct {
 	env
-	selfUpdate
+
+	// updates is the M13 self-update component (update_ui.go): the one-shot
+	// check, the update chip and the What's New modal. A NAMED field, not an
+	// embed, so its state is never promoted into App's namespace and every
+	// access reads a.updates.<name> — component state is visible from the call
+	// site (the pilot for the decomposition; more components follow).
+	updates selfUpdate
 
 	// --- the theme editor (themeeditor.go) --------------------------
 	//
@@ -1746,7 +1752,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			ctx:    ctx,
 			screen: ScreenLobby,
 		},
-		selfUpdate: selfUpdate{
+		updates: selfUpdate{
 			res:      make(chan *update.Release, 1),
 			applyRes: make(chan error, 1),
 		},
@@ -2205,9 +2211,9 @@ func (a *App) Background(dt time.Duration) {
 	// waits at the lobby until the user returns — instead of the behaviour of
 	// silently reconnecting in the background and stranding them at char-select on a
 	// churn of retries before they even restore the window.
-	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
-	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
-	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
+	a.pollCharINI()        // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
+	a.pollLogBrowser()     // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
+	a.updates.pollUpdate() // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
 		// Re-derive the message duck here too. Frame does this inside its own

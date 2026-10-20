@@ -5,14 +5,18 @@ import (
 	"testing"
 )
 
-// TestComponentEnvWiring pins that every component embedded in App has its env
+// TestComponentEnvWiring pins that every component App carries has its env
 // pointer wired to App's own env (non-nil, identical pointer), so a component
 // always reaches the shared deps/ctx/notice/navigation through &a.env. It is
-// reflection-driven so a new embedded component is covered the moment it gains
-// an env field.
+// reflection-driven over App's fields, so a new component is covered the moment
+// it gains an env field — whether it is embedded or (as the end state requires)
+// a named field like App.updates.
 func TestComponentEnvWiring(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.wireComponents()
+	if got, ok := a.env.h.(*App); !ok || got != a {
+		t.Fatalf("env.h = %T, want the App itself (redraw + chrome capabilities)", a.env.h)
+	}
 
 	want := reflect.ValueOf(&a.env).Pointer()
 	av := reflect.ValueOf(a).Elem()
@@ -20,23 +24,31 @@ func TestComponentEnvWiring(t *testing.T) {
 	found := 0
 	for i := 0; i < at.NumField(); i++ {
 		f := at.Field(i)
-		if !f.Anonymous {
+		fv := av.Field(i)
+		for fv.Kind() == reflect.Ptr {
+			if fv.IsNil() {
+				fv = reflect.Value{}
+				break
+			}
+			fv = fv.Elem()
+		}
+		if !fv.IsValid() || fv.Kind() != reflect.Struct {
 			continue
 		}
-		ef := av.Field(i).FieldByName("env")
+		ef := fv.FieldByName("env")
 		if !ef.IsValid() || ef.Type() != reflect.TypeOf((*env)(nil)) {
-			continue // the env embed itself has no env field
+			continue // the env field itself has no env field
 		}
 		found++
 		if ef.IsNil() {
-			t.Errorf("embedded component %s has a nil env", f.Name)
+			t.Errorf("component field %s has a nil env", f.Name)
 			continue
 		}
 		if got := ef.Pointer(); got != want {
-			t.Errorf("embedded component %s: env = %#x, want &a.env = %#x", f.Name, got, want)
+			t.Errorf("component field %s: env = %#x, want &a.env = %#x", f.Name, got, want)
 		}
 	}
 	if found == 0 {
-		t.Fatal("no embedded component with an env field found — the wiring test is vacuous")
+		t.Fatal("no component with an env field found — the wiring test is vacuous")
 	}
 }

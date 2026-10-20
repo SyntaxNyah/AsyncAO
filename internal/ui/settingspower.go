@@ -84,9 +84,9 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		// Re-arm the one-shot launch check so the swap takes effect NOW (next
 		// frame), not on the next restart — and drop a stale offer from the
 		// other channel so its modal can't push the wrong build.
-		a.selfUpdate.checked = false
-		a.selfUpdate.rel = nil
-		a.selfUpdate.show = false
+		a.updates.checked = false
+		a.updates.rel = nil
+		a.updates.show = false
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)

@@ -50,7 +50,7 @@ const (
 //
 // Field names are deliberately short and unprefixed: INSIDE the component the
 // receiver already says whose state it is (s.rel, s.busy). From App the access
-// is spelled a.selfUpdate.rel — one hop, no promotion, so a reader can tell
+// is spelled a.updates.rel — one hop, no promotion, so a reader can tell
 // component state from App state at the call site.
 type selfUpdate struct {
 	env *env
@@ -75,7 +75,7 @@ type selfUpdate struct {
 // accepting writes. NewApp calls it once; nothing is reassigned afterwards.
 func (a *App) wireComponents() {
 	a.env.h = a
-	a.selfUpdate.env = &a.env
+	a.updates.env = &a.env
 }
 
 // maybeKickUpdateCheck fires the update probe EXACTLY ONCE, on the first frame
@@ -311,6 +311,11 @@ func (s *selfUpdate) MaybeRelaunch() {
 	winexec.Hide(cmd) // dev builds are console-subsystem; no console flash on relaunch
 	_ = cmd.Start()
 }
+
+// MaybeRelaunch is the exported entry point cmd/asyncao calls AFTER the run
+// loop exits and state is saved: a one-line delegation so the self-update
+// component stays unexported while App keeps the public surface main needs.
+func (a *App) MaybeRelaunch() { a.updates.MaybeRelaunch() }
 
 // updateChipRect is the persistent reopen chip, top-right and just under the
 // app-chrome band (#14, chrometop.go) — it used to be a bare tabBarH+4, which the
