@@ -52,3 +52,31 @@ func TestComponentEnvWiring(t *testing.T) {
 		t.Fatal("no component with an env field found — the wiring test is vacuous")
 	}
 }
+
+// TestOnlyEnvIsEmbeddedInApp pins the end state of the decomposition: App embeds
+// its state blobs and nothing else — env (cross-cutting) and sessionState (the
+// per-session blob that parks/restores as one value, see app.go). Every
+// COMPONENT is a NAMED field reached as a.<name>.<field>; embedding one would
+// silently re-promote its whole namespace — re-creating exactly the flat App
+// this work is deleting — so it is a test failure, not a style nit.
+func TestOnlyEnvIsEmbeddedInApp(t *testing.T) {
+	stateBlobs := map[reflect.Type]bool{
+		reflect.TypeOf(env{}):          true,
+		reflect.TypeOf(sessionState{}): true,
+	}
+	at := reflect.TypeOf(App{})
+	embeds := 0
+	for i := 0; i < at.NumField(); i++ {
+		f := at.Field(i)
+		if !f.Anonymous {
+			continue
+		}
+		embeds++
+		if !stateBlobs[f.Type] {
+			t.Errorf("App embeds %s; only the state blobs (env, sessionState) may be embedded — components are NAMED fields (a.<name>.<field>)", f.Type)
+		}
+	}
+	if embeds != len(stateBlobs) {
+		t.Fatalf("App embeds %d types, want %d (env + sessionState)", embeds, len(stateBlobs))
+	}
+}
