@@ -9,7 +9,7 @@ package ui
 // changes — nobody has to "send" an egg, mentioning the name is enough.
 //
 // The scan is once per message (creatorEgg, a pure function, table-tested) and
-// cached on the App via refreshEggKind's compare-and-store, so a settled frame
+// cached on the eggs component via refresh's compare-and-store, so a settled frame
 // costs one string compare — not a rescan and not an allocation. The per-frame
 // DRAW (drawCreatorEgg) is math + SetDrawColor + scratch-rect fills only, so it
 // stays inside the whole-screen 0-alloc gate (TestDrawCourtroomZeroAlloc).
@@ -81,7 +81,7 @@ const (
 // person who keeps AO2 → AsyncAO) then scatter, so a message naming two people
 // lights the earliest in that lineage and an inspiration never outranks a
 // creator. Callers cache the result — this allocates one ToLower string, which is
-// fine ONCE per message but must never run per frame (see refreshEggKind's
+// fine ONCE per message but must never run per frame (see eggs.refresh's
 // compare guard).
 func creatorEgg(text string) uint8 {
 	if text == "" {
@@ -175,27 +175,11 @@ func eggSceneText(sc *courtroom.Scene) string {
 	return sc.MessageText
 }
 
-// refreshEggKind is the compare-and-store cache guard: if text differs from the
-// last-scanned message it rescans (creatorEgg) and stores both, returning true;
-// otherwise it does nothing and returns false. drawChatOverlay calls it once per
-// frame with the displayed text, so a settled frame (same text) is one string
-// compare with no allocation and no rescan. Returning whether it rescanned makes
-// the "same text twice ⇒ one scan" behaviour testable without SDL (the
-// mixChannels / applyResumeDuck pure-split precedent).
-func (a *App) refreshEggKind(text string) (scanned bool) {
-	if text == a.eggMsg {
-		return false
-	}
-	a.eggMsg = text
-	a.eggKind = creatorEgg(text)
-	return true
-}
-
 // drawChatEgg is the shared egg entry point for BOTH chatbox draw paths — the
 // classic overlay (drawChatOverlay) and the themed design-rect box
 // (drawThemedChatBox). Call it AFTER the skin/panel/border have drawn: the glow
 // rings sit AROUND the box on top of any skin (theme or char.ini) and, being
-// OUTSET, never cover the art. Detection is once per message: refreshEggKind
+// OUTSET, never cover the art. Detection is once per message: eggs.refresh
 // rescans only when the displayed text changed, so a settled frame is one string
 // compare. Gated on the SAME accessibility convention as the AO2 screen effects
 // (ScreenEffectsOn && !ReduceMotion). While an egg draws, NoteAnimating keeps the
@@ -208,9 +192,9 @@ func (a *App) refreshEggKind(text string) (scanned bool) {
 // themes (which define ao2_chatbox and take the themed path). box + text are
 // value params, no closure, so a settled frame stays inside the 0-alloc gate.
 func (a *App) drawChatEgg(box sdl.Rect, text string) {
-	a.refreshEggKind(text)
-	if a.eggKind != eggNone && a.d.Prefs.Load().ScreenEffects && !a.d.Prefs.Load().ReduceMotionOn {
-		a.drawCreatorEgg(box, a.eggKind)
+	a.eggs.refresh(text)
+	if a.eggs.kindOf() != eggNone && a.d.Prefs.Load().ScreenEffects && !a.d.Prefs.Load().ReduceMotionOn {
+		a.drawCreatorEgg(box, a.eggs.kindOf())
 		a.NoteAnimating()
 	}
 }
@@ -385,12 +369,12 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 // same text ⇒ one string compare, no rescan, no allocation. Gated on the SAME
 // accessibility pair as the ring eggs and the AO2 screen effects.
 func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
-	a.refreshEggKind(eggSceneText(sc))
-	if !eggDrawsOnStage(a.eggKind) || !a.d.Prefs.Load().ScreenEffects || a.d.Prefs.Load().ReduceMotionOn {
+	a.eggs.refresh(eggSceneText(sc))
+	if !eggDrawsOnStage(a.eggs.kindOf()) || !a.d.Prefs.Load().ScreenEffects || a.d.Prefs.Load().ReduceMotionOn {
 		return
 	}
 	t := a.d.Viewport.AnimClock().Seconds()
-	switch a.eggKind {
+	switch a.eggs.kindOf() {
 	case eggScatter:
 		a.drawEggPetals(vp, t)
 	case eggCrystal:
