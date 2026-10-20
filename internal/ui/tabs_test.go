@@ -26,6 +26,7 @@ func testTabApp(t testing.TB) *App {
 		t.Fatalf("prefs: %v", err)
 	}
 	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
+	a.wireComponents() // components + host capabilities, as NewApp does
 	a.d.Prefs = prefs
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
 	// dispatcher directly — enable them so those tests keep their old, on-by-default
