@@ -19,37 +19,93 @@ func TestComponentEnvWiring(t *testing.T) {
 	}
 
 	want := reflect.ValueOf(&a.env).Pointer()
-	av := reflect.ValueOf(a).Elem()
-	at := av.Type()
 	found := 0
-	for i := 0; i < at.NumField(); i++ {
-		f := at.Field(i)
-		fv := av.Field(i)
-		for fv.Kind() == reflect.Ptr {
-			if fv.IsNil() {
-				fv = reflect.Value{}
-				break
+	envPtr := reflect.TypeOf((*env)(nil))
+
+	// checkComponent pins one component's env: non-nil and identical to &a.env.
+	checkComponent := func(v reflect.Value, path string) {
+		for v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return
 			}
-			fv = fv.Elem()
+			v = v.Elem()
 		}
-		if !fv.IsValid() || fv.Kind() != reflect.Struct {
-			continue
+		if v.Kind() != reflect.Struct {
+			return
 		}
-		ef := fv.FieldByName("env")
-		if !ef.IsValid() || ef.Type() != reflect.TypeOf((*env)(nil)) {
-			continue // the env field itself has no env field
+		ef := v.FieldByName("env")
+		if !ef.IsValid() || ef.Type() != envPtr {
+			return // not a component (no env), or the env field itself
 		}
 		found++
-		if ef.IsNil() {
-			t.Errorf("component field %s has a nil env", f.Name)
-			continue
-		}
-		if got := ef.Pointer(); got != want {
-			t.Errorf("component field %s: env = %#x, want &a.env = %#x", f.Name, got, want)
+		switch {
+		case ef.IsNil():
+			t.Errorf("component %s has a nil env", path)
+		case ef.Pointer() != want:
+			t.Errorf("component %s: env = %#x, want &a.env = %#x", path, ef.Pointer(), want)
 		}
 	}
+
+	// walkBlob visits a state blob (App, or an embedded blob such as sessionState):
+	// its EMBEDDED fields are blobs to descend into, its NAMED struct fields are
+	// components to check. That is what covers a component parked inside
+	// sessionState without re-promoting anything.
+	var walkBlob func(v reflect.Value, path string)
+	walkBlob = func(v reflect.Value, path string) {
+		for v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return
+			}
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return
+		}
+		st := v.Type()
+		for i := 0; i < st.NumField(); i++ {
+			f := st.Field(i)
+			child := v.Field(i)
+			if f.Anonymous {
+				walkBlob(child, path+"."+f.Name)
+				continue
+			}
+			checkComponent(child, path+"."+f.Name)
+		}
+	}
+	walkBlob(reflect.ValueOf(a), "App")
 	if found == 0 {
 		t.Fatal("no component with an env field found — the wiring test is vacuous")
+	}
+}
+
+// TestEggsOwnsItsState pins the component contract for the first sessionState
+// component: its state lives on eggs (not on App or sessionState), it owns the
+// compare-and-store method, and App no longer owns that method.
+func TestEggsOwnsItsState(t *testing.T) {
+	eggsType := reflect.TypeOf(eggs{})
+	for _, f := range []string{"msg", "kind"} {
+		if _, ok := eggsType.FieldByName(f); !ok {
+			t.Errorf("eggs has no %s field — the component must own its state", f)
+		}
+	}
+	for _, owner := range []reflect.Type{reflect.TypeOf(App{}), reflect.TypeOf(sessionState{})} {
+		for _, f := range []string{"eggMsg", "eggKind"} {
+			if _, ok := owner.FieldByName(f); ok {
+				t.Errorf("%s still declares %s — it must live on eggs", owner, f)
+			}
+		}
+	}
+	// The component owns the compare-and-store: drive it directly. reflect cannot
+	// see unexported methods, so behaviour is the only honest ownership pin.
+	var e eggs
+	if !e.refresh("hello fanatsors") {
+		t.Error("eggs.refresh did not scan a new text")
+	}
+	if e.refresh("hello fanatsors") {
+		t.Error("eggs.refresh rescanned the same text — the compare-and-store is gone")
+	}
+	if got := e.kindOf(); got != eggFanat {
+		t.Errorf("eggs.kindOf() = %d, want eggFanat", got)
 	}
 }
 
