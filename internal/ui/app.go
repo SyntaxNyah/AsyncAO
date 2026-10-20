@@ -1747,8 +1747,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			screen: ScreenLobby,
 		},
 		selfUpdate: selfUpdate{
-			updateRes:      make(chan *update.Release, 1),
-			updateApplyRes: make(chan error, 1),
+			res:      make(chan *update.Release, 1),
+			applyRes: make(chan error, 1),
 		},
 		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
 		lobbyResult:         make(chan lobbyFetch, 1),

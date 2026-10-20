@@ -129,7 +129,7 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// maybeKickUpdateCheck spawns two goroutines on frame 1 (a .old cleanup and the
 	// release check). Both are one-shot behind this flag, so setting it is exactly
 	// what a second frame would have done, minus the network.
-	a.updateChecked = true
+	a.selfUpdate.checked = true
 	// updatePresence is the other frame-1 one-shot. Presence is nil in tests and the
 	// call is guarded, but latching it keeps the frame free of first-frame-only work
 	// so frame 1 and frame 2 are comparable.

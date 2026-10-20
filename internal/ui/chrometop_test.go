@@ -229,7 +229,7 @@ func TestFloatingChipsClearTheChromeBand(t *testing.T) {
 	a := testTabApp(t)
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.updateChipLabel = "Update available"
+	a.selfUpdate.chipLabel = "Update available"
 	if got := a.updateChipRect(1280).Y; got < a.topChromeH() {
 		t.Errorf("update chip Y = %d, want it at or below the chrome band %d", got, a.topChromeH())
 	}
