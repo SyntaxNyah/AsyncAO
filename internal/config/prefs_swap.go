@@ -53,7 +53,7 @@ func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	return p, nil
 }
 
-// legacyKey is one legacy â†’ current JSON key migration. The migrate func receives the
+// legacyKey is one legacy → current JSON key migration. The migrate func receives the
 // raw file bytes (to decode legacy keys AssetPreferences no longer carries), plus the
 // presence set so it can honour "only when the new key is absent".
 type legacyKey struct {
@@ -66,7 +66,7 @@ type legacyKey struct {
 // own entry (Order 1A-b) and removes the matching allowlist entry.
 var legacyKeys = []legacyKey{
 	{
-		// Mutation (layoutPresets â†’ layoutProfiles): one-way, no clobber. A legacy
+		// Mutation (layoutPresets → layoutProfiles): one-way, no clobber. A legacy
 		// layoutPresets file (classic slots only) wraps each sanitized preset into a
 		// Classic-only profile; skipped once any profile existp.
 		migrate: func(s *Settings, data []byte, presence map[string]bool) {
@@ -109,7 +109,7 @@ func migrateLegacyKeys(s *Settings, data []byte, presence map[string]bool) {
 func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bool) (changed bool) {
 	def := defaultSettings()
 
-	// (i) clamp/normalise â€” unconditional (pointer fields load() clamped regardless).
+	// (i) clamp/normalise — unconditional (pointer fields load() clamped regardless).
 	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
 	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
@@ -132,7 +132,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
 	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 
-	// (i) clamp/normalise â€” explicit zero keeps the default (load() used `!= 0`).
+	// (i) clamp/normalise — explicit zero keeps the default (load() used `!= 0`).
 	if s.ViewportPct == 0 {
 		s.ViewportPct = def.ViewportPct
 	} else {
@@ -212,7 +212,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.BgSlideshowSecs = def.BgSlideshowSecs
 	}
 
-	// (ii) one-shot migration stamps â€” re-apply load()'s stamp decision.
+	// (ii) one-shot migration stamps — re-apply load()'s stamp decision.
 	if presence["spriteScalingMigrated"] && s.SpriteScalingMigrated {
 		s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
 	} else {
@@ -305,8 +305,8 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	if s.LearnedFormats == nil {
 		s.LearnedFormats = def.LearnedFormats
 	}
-	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups â€” bounds, blank
-	// name/id drops, and dedupe â€” so a hand-edited file cannot grow or corrupt the maps.
+	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups — bounds, blank
+	// name/id drops, and dedupe — so a hand-edited file cannot grow or corrupt the maps.
 	s.SavedStyles = sanitizeStylePresets(s.SavedStyles)
 	s.PanelFontsVal = sanitizePanelFonts(s.PanelFontsVal)
 	s.UserMacros = sanitizeMacros(s.UserMacros)
@@ -337,7 +337,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		}
 		e.Loop = s.Export.Loop
 		if presence["export"] && !presence["export.loop"] {
-			// Mutation (export): the old load read onDisk.Export.Loop â€” a present export
+			// Mutation (export): the old load read onDisk.Export.Loop — a present export
 			// object without a loop key reads false, not the default.
 			e.Loop = false
 		}

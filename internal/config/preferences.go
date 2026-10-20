@@ -1,7 +1,7 @@
 // Package config persists user-tunable asset preferences.
 //
-// Concurrency model (spec Â§5): mutators take the write lock, mutate in
-// memory, and non-blockingly signal a single saver goroutine â€” they never
+// Concurrency model (spec §5): mutators take the write lock, mutate in
+// memory, and non-blockingly signal a single saver goroutine — they never
 // touch the disk. The saver debounces (DefaultSaveDebounce after the last
 // signal), marshals under the read lock, writes a temp file, and renames it
 // over the real file so a crash never corrupts preferences. SaveNow is the
@@ -55,7 +55,7 @@ const (
 	// corruptStampLayout timestamps the quarantine backup name. It is
 	// deliberately colon-free: ':' is illegal in Windows file names, so an
 	// RFC3339-style stamp would make os.Rename fail on this platform. Second
-	// precision suffices â€” there is exactly one load per launch and the
+	// precision suffices — there is exactly one load per launch and the
 	// rename removes the original, so a relaunch never re-collides.
 	corruptStampLayout = "20060102-150405"
 
@@ -65,7 +65,7 @@ const (
 
 // defaultPreferAnimated is the out-of-the-box value for PreferAnimated.
 // PreferAnimated is a decode/render toggle (play animation frames vs. first
-// frame only) â€” never an extra network probe (spec Â§4).
+// frame only) — never an extra network probe (spec §4).
 const defaultPreferAnimated = true
 
 // defaultFormatAutoDetect ships ON: servers publish their own format mix
@@ -75,7 +75,7 @@ const defaultPreferAnimated = true
 const defaultFormatAutoDetect = true
 
 // Blip cadence: one chat blip per N revealed letters. defaultBlipRate ships at 2
-// (Ace Attorney style â€” the cadence most players expect); 1 = a blip every
+// (Ace Attorney style — the cadence most players expect); 1 = a blip every
 // letter. MaxBlipRate caps the slider. Mirrors courtroom.DefaultBlipRate (config
 // can't import courtroom).
 const (
@@ -90,26 +90,26 @@ const (
 const defaultUIScaleAuto = true
 
 // defaultThemeLayout ships ON: when the active theme defines the AO2
-// courtroom_design.ini geometry, the courtroom adopts it wholesale â€”
+// courtroom_design.ini geometry, the courtroom adopts it wholesale —
 // that IS what picking a theme means to AO players.
 const defaultThemeLayout = true
 
 // Theme-fit modes: how an AO2 theme's FIXED design size fills a differently
 // shaped window.
 //
-// Native is the shipped default because stock AO2 never scales a theme at all â€”
+// Native is the shipped default because stock AO2 never scales a theme at all —
 // setFixedSize makes the window BE the canvas (AO2-Client charselect.cpp:83, and
 // set_courtroom_size() for the courtroom), so a theme's pixels land on screen
 // pixels untouched. Our window is resizable, so Native reproduces that by drawing
 // the design canvas at scale exactly 1.0, centred, with bars, and scaling DOWN
 // uniformly only when the window is smaller than the canvas so nothing is ever
-// clipped. Stretch (the old default â€” webAO-style) fills edge-to-edge with a
+// clipped. Stretch (the old default — webAO-style) fills edge-to-edge with a
 // slight aspect distortion; Letterbox keeps the exact proportions with bars;
 // Crop scales up to fill and lets the overflow run off-screen.
 //
 // These values are PERSISTED, so the list is APPEND-ONLY: renumbering would
 // silently reinterpret every saved choice. Native therefore sits at 4, which
-// means the zero value is no longer the default â€” a file written before Native
+// means the zero value is no longer the default — a file written before Native
 // existed carries a baked themeFit:0 (Stretch) that is indistinguishable from a
 // deliberate Stretch, so only the one-shot ThemeFitDefaultMigrated stamp (see
 // load) can move an existing user onto the new default.
@@ -121,12 +121,12 @@ const (
 	ThemeFitNative    = 4 // 1:1, downscale-only: stock-AO2 pixels, never upscaled
 	// themeFitModeMax is the highest valid mode. Every clamp goes through it so a
 	// future mode can never be silently clamped away by a bound still pinned to the
-	// previous last value â€” which is exactly how the load overlay would have eaten
+	// previous last value — which is exactly how the load overlay would have eaten
 	// Native had it kept clamping to ThemeFitCustom.
 	themeFitModeMax = ThemeFitNative
 	defaultThemeFit = ThemeFitNative
 	// DefaultThemeFit exports that default for the UI surfaces that have to RETURN
-	// to it rather than to a remembered previous choice â€” the menu bar's "Keep
+	// to it rather than to a remembered previous choice — the menu bar's "Keep
 	// aspect ratio" tick, which un-ticks to Stretch and re-ticks to whichever mode
 	// currently holds the default job. An alias, so there is still exactly ONE
 	// definition: hard-coding ThemeFitNative at a call site would quietly stop
@@ -135,7 +135,7 @@ const (
 )
 
 // Custom theme-fit knobs: a manual zoom (percent of the letterbox-fit scale,
-// so 100 = exactly fits) and a pan (percent of the window, Â±), for cropping a
+// so 100 = exactly fits) and a pan (percent of the window, ±), for cropping a
 // theme to taste. Bounded so it can't be scaled or panned into nothing.
 const (
 	DefaultThemeZoom = 100
@@ -145,7 +145,7 @@ const (
 )
 
 // defaultPlainLobby ships ON: the lobby/server list uses the plain client
-// backdrop, not the theme's lobbybackground â€” a busy AO2 lobby image (made for
+// backdrop, not the theme's lobbybackground — a busy AO2 lobby image (made for
 // AO2's own list) often renders our server list unreadable. Untick it to get
 // the theme's lobby; the courtroom always uses the theme regardless.
 const defaultPlainLobby = true
@@ -153,7 +153,7 @@ const defaultPlainLobby = true
 // defaultThemeFonts ships ON: an AO2 theme's courtroom_fonts.ini names a font
 // family, point size and weight PER courtroom element (showname, message,
 // ic_chatlog, server_chatlog, music_list, music_name, area_list) and AO2-Client
-// applies all of it (Courtroom::set_fonts, courtroom.cpp:1188) â€” a theme simply
+// applies all of it (Courtroom::set_fonts, courtroom.cpp:1188) — a theme simply
 // does not look like itself without them (#39). Untick it to keep the client's
 // own font and per-panel zoom everywhere, whatever the theme asks for. A manual
 // font override / the dyslexia toggle already outranks the theme's families.
@@ -170,7 +170,7 @@ const defaultShoutBypassQueue = true
 
 // Catch-up queue-depth threshold: engage once this many messages (or more) are
 // waiting behind the one starting. The default is the floor (1) so the IC stage
-// stays real-time â€” in a busy room the newest message types out in full (with
+// stays real-time — in a busy room the newest message types out in full (with
 // its sprite, name and effects) while any backlog behind it flashes past, so
 // the textbox always tracks the latest line instead of crawling seconds behind.
 // At the default of 1, a message plays in full only when nothing is queued
@@ -185,7 +185,7 @@ const (
 
 // Multi-server tab cap: how many servers you can keep open at once. Default 6;
 // raise it to lurk as many as you like. Each tab costs a websocket + reducer +
-// two bounded logs, so it stays bounded (rule Â§17.4) â€” the ceiling is a high,
+// two bounded logs, so it stays bounded (rule §17.4) — the ceiling is a high,
 // effectively-unlimited 99 rather than truly unbounded (hundreds of live
 // connections would exhaust the budget; nobody runs that many AO tabs anyway).
 const (
@@ -210,18 +210,18 @@ const defaultShowFriendButton = true
 
 // defaultAutoClipModcall saves a small text clip of the recent IC log whenever a
 // modcall fires (sent or received), so there's always a frozen record of what was
-// happening â€” useful evidence for mods/CMs. Default-ON (it only writes on the rare
+// happening — useful evidence for mods/CMs. Default-ON (it only writes on the rare
 // modcall event); a Settings toggle disables it.
 const defaultAutoClipModcall = true
 
 // defaultGroupChatButton shows the Group Chat / DMs launcher as a main on-screen
 // button in the courtroom control row (not just Extras). Default-ON for
-// discoverability; a Settings â†’ Chat toggle hides it.
+// discoverability; a Settings → Chat toggle hides it.
 const defaultGroupChatButton = true
 
 // defaultCharChatbox draws a speaking character's own chatbox skin (char.ini
-// chat=<misc>) like AO2/webAO â€” canonical behaviour, so default-ON; a
-// Settings â†’ Chat toggle disables it (which also stops the misc fetches).
+// chat=<misc>) like AO2/webAO — canonical behaviour, so default-ON; a
+// Settings → Chat toggle disables it (which also stops the misc fetches).
 const defaultCharChatbox = true
 
 // defaultRightClickHideSprite makes right-clicking a character sprite offer to
@@ -229,7 +229,7 @@ const defaultCharChatbox = true
 const defaultRightClickHideSprite = true
 
 // defaultDragLayout makes the courtroom resize by dragging panel edges (the
-// viewportâ†”log divider) the default; unchecking it brings back the +/âˆ’ knob
+// viewport↔log divider) the default; unchecking it brings back the +/− knob
 // buttons. Default-ON per the request: dragging works without opting in.
 const defaultDragLayout = true
 
@@ -271,8 +271,8 @@ const defaultUpdateCheck = true
 
 // defaultShowAssetWarnings ships OFF: surfacing every 404 is constant noise on
 // servers with sparse packs. The failures still reach the debug overlay (the
-// dedicated failure log); this flag only governs the on-screen report â€” the
-// menu-bar count chip. Settings â†’ Assets turns it back on.
+// dedicated failure log); this flag only governs the on-screen report — the
+// menu-bar count chip. Settings → Assets turns it back on.
 const defaultShowAssetWarnings = false
 
 // defaultSpriteMove ships OFF: click-drag sprite repositioning is a power
@@ -282,10 +282,10 @@ const defaultSpriteMove = false
 
 // defaultDeskFollowManifest ships ON: desks follow the server's
 // extensions.json like every other class (auto-detect). It originally shipped
-// OFF â€” pinning desks to WebP â€” because desks share the manifest's background
+// OFF — pinning desks to WebP — because desks share the manifest's background
 // class and a PNG-background declaration dragged desks with it; the pin is now
 // the opt-OUT for servers whose manifests are wrong. Existing installs are
-// moved once by DeskManifestDefaultMigrated â€” see load().
+// moved once by DeskManifestDefaultMigrated — see load().
 const defaultDeskFollowManifest = true
 
 // defaultSpritePreview ships ON: hovering a character/emote button pops a
@@ -303,7 +303,7 @@ const (
 
 // Sprite-preview box height (px). The old fixed default was AO's native
 // 192 px stage height, which read "really tiny" and made people corner-drag
-// it every time (playtest) â€” the default is now double that, and Settings
+// it every time (playtest) — the default is now double that, and Settings
 // exposes it so the per-session grip resize is a tweak, not a ritual. Bounds
 // match the grip clamp in the UI.
 const (
@@ -320,11 +320,11 @@ const (
 // so one setting holds the same visual gap at 100% and at 200% UI scale. Device px
 // would make the icons drift closer together as the UI scaled up.
 //
-// Min is 0 ON PURPOSE (butt the icons together â€” AO2 themes ship "0, 0" spacings
+// Min is 0 ON PURPOSE (butt the icons together — AO2 themes ship "0, 0" spacings
 // for exactly that look), which is why the on-disk DTO carries this as a *int: with
 // a plain int, "0" and "this config predates the setting" are the same bytes, and
 // every existing user's grid would silently collapse to a zero gap on upgrade. Max
-// is bounded so a slider can never starve the grid down to one column â€” the column
+// is bounded so a slider can never starve the grid down to one column — the column
 // arithmetic in drawEmoteRow floors at 1 either way.
 const (
 	DefaultEmoteGridGapPx = 6
@@ -357,7 +357,7 @@ const defaultAutoLoginToast = true
 // a font already installed on the machine instead of rendering as empty boxes.
 //
 // It is a preference at all because it is the one font path whose INPUT is the
-// user's operating system rather than anything AsyncAO ships â€” it indexes the
+// user's operating system rather than anything AsyncAO ships — it indexes the
 // system font directories and installs what it finds into the live chat chain.
 // That makes it the first suspect whenever text misbehaves on a platform the
 // developers can't reproduce on, and being able to switch it off settles in one
@@ -367,8 +367,8 @@ const defaultAutoLoginToast = true
 const defaultFontCensus = true
 
 // defaultScreenEffects ships ON: the AO2 screenshake (\s) and realization flash
-// (\f) â€” both the codes typed into a message and the field-based shake/realization
-// â€” render by default like the AO2 client. A dedicated Settings toggle turns them
+// (\f) — both the codes typed into a message and the field-based shake/realization
+// — render by default like the AO2 client. A dedicated Settings toggle turns them
 // off (separate from the accessibility "Reduce motion", which also suppresses them).
 const defaultScreenEffects = true
 
@@ -376,19 +376,19 @@ const defaultScreenEffects = true
 // the preceding word (trailing whitespace + the run before it) instead of one
 // rune, matching the near-universal editor convention. A dedicated Settings toggle
 // restores plain-key behavior (with the pref off, a focused Ctrl+Backspace is a
-// consumed no-op â€” it never falls through to a Ctrl+Backspace hotkey mid-typing).
+// consumed no-op — it never falls through to a Ctrl+Backspace hotkey mid-typing).
 const defaultWordDelete = true
 
 // defaultRecordingsKeepAssets ships ON: when an in-app scene recording (.aorec)
 // stops, its assets are ALREADY warm in the cache (the user was just connected,
 // rendering them live), so packaging them into a self-contained bundle folder is
-// a near-free cache drain that costs the user nothing â€” and the recording then
+// a near-free cache drain that costs the user nothing — and the recording then
 // survives its CDN going dark, exactly like a hand-triggered "Package this RP"
 // bundle. A dedicated Settings toggle turns the auto-bundle off (the flat .aorec
 // still lands either way; the bundle is purely additive).
 const defaultRecordingsKeepAssets = true
 
-// defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored â€” an ADDITIVE=1
+// defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored — an ADDITIVE=1
 // line appends to the previous one (narration-style RP; AO2 appends on any additive
 // line with no char-id gate), and the outgoing Additive checkbox shows when the
 // server advertises the feature. OFF falls back to the pre-2.8 replace behavior (no
@@ -406,13 +406,13 @@ const defaultMessageCounter = true
 
 // The three AO2 "sticky" post-send options, shipped with AsyncAO's defaults
 // (FALSE: every pick resets after a send). AO2's own options.cpp implements all
-// three as config.value("stickyâ€¦", true) â€” :420-423, :430-433, :440-443 â€” so
+// three as config.value("sticky…", true) — :420-423, :430-433, :440-443 — so
 // stock AO2 keeps the picks. AsyncAO ships them OFF instead so the SFX pick, the
 // effects pick and the Pre checkbox clear after every send, matching the one-shot
 // Screenshake/Realization arms. Courtroom::reset_ui
 // (../AO2-Client/src/courtroom.cpp:2340, :2348, :2356) clears each only when its
-// option is FALSE. (The accessor names upstream read backwards â€”
-// clearXOnPlayEnabled() returns the stickiness â€” which is why the constants here
+// option is FALSE. (The accessor names upstream read backwards —
+// clearXOnPlayEnabled() returns the stickiness — which is why the constants here
 // are named for the config KEY, not for the function.)
 const (
 	defaultStickySounds   = false // AO2 "stickysounds"  (aooptionsdialog.cpp:416, "Sticky Sounds")
@@ -423,21 +423,21 @@ const (
 // defaultSFXOnIdle ships OFF, matching AO2's own sfx_on_idle
 // (options.cpp:569-572, `config.value("sfx_on_idle", false)`; the options dialog
 // calls it "Always Send SFX", aooptionsdialog.cpp:423). With it ON a hand-picked
-// SFX is promoted onto an IDLE/ZOOM message â€” AO2 rewrites the emote mod to
+// SFX is promoted onto an IDLE/ZOOM message — AO2 rewrites the emote mod to
 // PREANIM/PREANIM_ZOOM with an empty pre and zero delay so the sound plays
 // anyway (courtroom.cpp:2107-2115).
 const defaultSFXOnIdle = false
 
 // defaultUnfocusedFullRate ships OFF: an unfocused window throttles to the
 // background cap, which is the whole point of that cap. ON makes the pacer treat
-// an unfocused window exactly like a focused one â€” for a second monitor, or for
+// an unfocused window exactly like a focused one — for a second monitor, or for
 // capture software that records the client while you work in another app.
 const defaultUnfocusedFullRate = false
 
 // defaultDetailedLog ships ON as of the 2026-08-09 batch (user order: every other
 // AO client writes its chat log to disk by default, and the transcript is the
 // thing people wish they had AFTER the session). Existing configs are moved once
-// by DetailedLogDefaultMigrated â€” see load(). Turning it back off sticks.
+// by DetailedLogDefaultMigrated — see load(). Turning it back off sticks.
 const defaultDetailedLog = true
 
 // defaultGhostCrawlText ships ON: while the typewriter is still revealing a line,
@@ -449,11 +449,11 @@ const defaultGhostCrawlText = true
 
 // defaultICTimestamps ships OFF (playtest): when ON, each IC log line is prefixed
 // with the local time it arrived, so you can see when people spoke. Toggleable in
-// Settings â†’ Chat.
+// Settings → Chat.
 const defaultICTimestamps = false
 
 // defaultAutoReconnect ships OFF (user request): after an unexpected drop, AsyncAO
-// returns to the lobby with the reason shown and leaves you there â€” the manual
+// returns to the lobby with the reason shown and leaves you there — the manual
 // Reconnect button re-dials the last server when you're ready. Auto-retry is
 // opt-in because reconnecting always re-runs the AO handshake, which drops you at
 // character select (the server re-picks your character on any fresh connection);
@@ -468,7 +468,7 @@ const defaultClipSpritesToStage = true
 
 // defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
 // (test-branch trial): static screens stop rendering entirely between real
-// signals â€” input wakes the loop instantly (an OS-level event wait instead of
+// signals — input wakes the loop instantly (an OS-level event wait instead of
 // a blind sleep), network packets / finished decodes push a wake event, and
 // blinking carets / ticking clocks redraw on their own schedule instead of
 // holding the idle frame rate. Default ON so testers exercise it; the Settings
@@ -477,7 +477,7 @@ const defaultEventDrivenLoop = true
 
 // defaultMotionRedrawPerEvent makes bare pointer motion render one frame per motion
 // event (then re-park) instead of holding the full frame rate through the motion
-// grace â€” less GPU/power on a moving cursor over static UI. Default ON; the
+// grace — less GPU/power on a moving cursor over static UI. Default ON; the
 // Settings toggle turns it off for the old hold-full-rate behaviour.
 const defaultMotionRedrawPerEvent = true
 
@@ -488,8 +488,8 @@ const defaultMusicHistory = true
 
 // defaultMusicStreaming ships ON: AsyncAO fetches and plays custom /play tracks
 // (Discord/catbox links etc.) like any other AO2 client. Turning it off in
-// Settings â†’ Audio (or the quick volume popover) stops AsyncAO from downloading
-// any /play music at all â€” including the user's own plays, which round-trip
+// Settings → Audio (or the quick volume popover) stops AsyncAO from downloading
+// any /play music at all — including the user's own plays, which round-trip
 // through the server, so they go silent locally too. Now-Playing still tracks
 // what the room intends to play; it just isn't audible on this client.
 const defaultMusicStreaming = true
@@ -499,7 +499,7 @@ const defaultMusicStreaming = true
 // whole fallback chain 404'd, instead of holding the previous (different)
 // character on stage. AO2 shows it unconditionally; we make it opt-OUT for players
 // who prefer a blank stage or the last-sprite hold. NOT omitempty (see the *bool
-// load DTO): an explicit OFF must persist, not read back as "absent â†’ default ON".
+// load DTO): an explicit OFF must persist, not read back as "absent → default ON".
 const defaultShowMissingPlaceholder = true
 
 // defaultICCustomColor seeds the free IC hex colour picker before
@@ -508,7 +508,7 @@ const defaultShowMissingPlaceholder = true
 const defaultICCustomColor = 0x7ADCF0
 
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
-// 0xRRGGBB â€” defaults to the accent (120,170,255) so the look is unchanged
+// 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
 const defaultHighlightColor = 0x78AAFF
 
@@ -523,7 +523,7 @@ const (
 	minRainbowVivid        = 0   // subtlest tint
 	maxRainbowVivid        = 100 // most saturated / neon
 	defaultRainbowVivid    = 65
-	defaultSpriteTintColor = 0xFF44CC // hot pink â€” only used once Solid tint is enabled
+	defaultSpriteTintColor = 0xFF44CC // hot pink — only used once Solid tint is enabled
 )
 
 // Scene-replay playback speed (M16): a percent where 100 = the comfortable
@@ -536,7 +536,7 @@ const (
 	defaultReplaySpeed = 100
 )
 
-// Scene GIF/WebP export options (the studio) â€” sticky so a chosen look persists.
+// Scene GIF/WebP export options (the studio) — sticky so a chosen look persists.
 const (
 	minExportHeight      = 240
 	maxExportHeight      = 720
@@ -550,7 +550,7 @@ const (
 	minExportText        = 50 // chat-text size in the export, percent of the fitted base
 	maxExportText        = 200
 	defaultExportText    = 100
-	// Video export container/codec (the ðŸŽ¥ Video button). Only "mp4" (H.264) and
+	// Video export container/codec (the 🎥 Video button). Only "mp4" (H.264) and
 	// "webm" (VP9) are valid; anything else normalizes to the MP4 default.
 	defaultVideoFormat = "mp4"
 )
@@ -566,14 +566,14 @@ type ExportOptions struct {
 	Quality   int  `json:"quality"`
 	Loop      bool `json:"loop"`
 	TextScale int  `json:"textScale"`
-	// VideoFormat picks the ðŸŽ¥ Video container/codec ("mp4" H.264 or "webm" VP9);
+	// VideoFormat picks the 🎥 Video container/codec ("mp4" H.264 or "webm" VP9);
 	// it has no effect on the GIF/WebP buttons. Empty = the MP4 default.
 	VideoFormat string `json:"videoFormat,omitempty"`
-	// Watermark (#74) stamps the export's top-right corner with WatermarkText, or â€”
-	// when that's blank â€” the recording's server + date. Off by default.
+	// Watermark (#74) stamps the export's top-right corner with WatermarkText, or —
+	// when that's blank — the recording's server + date. Off by default.
 	Watermark     bool   `json:"watermark,omitempty"`
 	WatermarkText string `json:"watermarkText,omitempty"`
-	// Subtitles (#69) writes .srt + .vtt sidecars beside a ðŸŽ¥ Video export,
+	// Subtitles (#69) writes .srt + .vtt sidecars beside a 🎥 Video export,
 	// cue-timed to the exported frames. Off by default.
 	Subtitles bool `json:"subtitles,omitempty"`
 	// CopyToClipboard (#71) puts the finished export FILE on the OS clipboard
@@ -581,7 +581,7 @@ type ExportOptions struct {
 	CopyToClipboard bool `json:"copyToClipboard,omitempty"`
 }
 
-// maxWatermarkLen bounds the custom watermark stamp â€” it's a corner credit, not a
+// maxWatermarkLen bounds the custom watermark stamp — it's a corner credit, not a
 // caption (and the label raster keys a texture per distinct string).
 const maxWatermarkLen = 64
 
@@ -591,7 +591,7 @@ func defaultExportOptions() ExportOptions {
 }
 
 // normalizeVideoFormat maps any stored/edited value to a supported one ("mp4" or
-// "webm"), defaulting to MP4 â€” kept here (not in videoenc) so config has no UI
+// "webm"), defaulting to MP4 — kept here (not in videoenc) so config has no UI
 // dependency.
 func normalizeVideoFormat(s string) string {
 	if strings.EqualFold(s, "webm") {
@@ -624,7 +624,7 @@ type SpriteStylePref struct {
 	Grayscale bool      `json:"grayscale,omitempty"`
 	Sepia     bool      `json:"sepia,omitempty"`         // #34 warm brown-tone per-pixel variant
 	Posterize bool      `json:"posterize,omitempty"`     // #34 channel-quantise (poster look)
-	Restyle   uint8     `json:"restyle,omitempty"`       // extra per-pixel look picker (0 none, else a courtroom.Variant* redscale/solarize/neonâ€¦)
+	Restyle   uint8     `json:"restyle,omitempty"`       // extra per-pixel look picker (0 none, else a courtroom.Variant* redscale/solarize/neon…)
 	Motion    uint8     `json:"motion,omitempty"`        // #34 transmitted movement path (0 none / orbit / bounce / sway / drift)
 	Path      [16]uint8 `json:"motionPath,omitempty"`    // #34 custom drawn path waypoints (packed 4-bit X/Y); a fixed array so SpriteStylePref stays == comparable (size MUST match courtroom maxPathPoints)
 	PathLen   uint8     `json:"motionPathLen,omitempty"` // # active waypoints (0 = none, else 2..16)
@@ -642,7 +642,7 @@ type SpriteStylePref struct {
 	Rotation   uint8 `json:"rotation,omitempty"`
 	// Two-tone hue paint: split row (percent of sprite height from the top; 0 = one
 	// colour) + the lower band's colour ("head red, rest blue"). Only meaningful while
-	// hue paint (Tint+Grayscale) is on â€” styleFromPref (ui) keeps it off the wire
+	// hue paint (Tint+Grayscale) is on — styleFromPref (ui) keeps it off the wire
 	// otherwise, so a stale value can't fatten the frame.
 	PaintSplit uint8 `json:"paintSplit,omitempty"`
 	Paint2R    uint8 `json:"paint2R,omitempty"`
@@ -650,7 +650,7 @@ type SpriteStylePref struct {
 	Paint2B    uint8 `json:"paint2B,omitempty"`
 	// Glitch options: the look (a courtroom.Glitch* mode byte) and the two fringe
 	// ghost colours (all-zero = the classic red/blue). Only meaningful while Glitch
-	// is on â€” styleFromPref (ui) keeps them off the wire otherwise.
+	// is on — styleFromPref (ui) keeps them off the wire otherwise.
 	GlitchMode uint8 `json:"glitchMode,omitempty"`
 	GlitchAR   uint8 `json:"glitchAR,omitempty"`
 	GlitchAG   uint8 `json:"glitchAG,omitempty"`
@@ -668,11 +668,11 @@ func clampOpacity(v uint8) uint8 {
 	return v
 }
 
-// StylePreset (#126) is a named, saved bundle of the user's own visual identity â€” sprite
+// StylePreset (#126) is a named, saved bundle of the user's own visual identity — sprite
 // style + text colour, plus an optional emote applied by NAME when the current character has
 // one by that name (so a preset stays useful across characters). Applied in one click, or
 // bound to a bare key for hands-free swapping (Key; the bind-capture flow mirrors the M6
-// showname keybinds). All local â€” applying a preset just sets your existing style/colour/emote.
+// showname keybinds). All local — applying a preset just sets your existing style/colour/emote.
 type StylePreset struct {
 	Name  string          `json:"name"`
 	Style SpriteStylePref `json:"style"`
@@ -681,11 +681,11 @@ type StylePreset struct {
 	Key   string          `json:"key,omitempty"`   // bound bare key ("" = none)
 }
 
-// stylePresetCap bounds the saved presets (hard rule Â§17.4 â€” a pref list can't grow without
+// stylePresetCap bounds the saved presets (hard rule §17.4 — a pref list can't grow without
 // bound); a real user keeps a handful of moods.
 const stylePresetCap = 48
 
-// Character profile (#101) field length caps â€” bounded so the pref file (and, in
+// Character profile (#101) field length caps — bounded so the pref file (and, in
 // a later slice, anything transmitted) can't balloon. The wire slice will send a
 // tiny fingerprint, not these bytes, so art/song are URLs, never data.
 const (
@@ -696,8 +696,8 @@ const (
 	profileURLMax      = 300
 )
 
-// ProfilePref is the user's character profile (#101): a small card â€” pronouns, a
-// one-line tag, a short bio, and URLs for art / theme-song â€” shown on the player
+// ProfilePref is the user's character profile (#101): a small card — pronouns, a
+// one-line tag, a short bio, and URLs for art / theme-song — shown on the player
 // list to other AsyncAO clients (a later slice transmits it; standard clients are
 // unaffected). Configurable: Enabled is the master switch, ShowOnList controls
 // whether it appears on the list.
@@ -727,7 +727,7 @@ func clampProfile(p ProfilePref) ProfilePref {
 // clampLen truncates s to at most n runes (rune-safe so a multibyte tail can't be
 // split mid-character).
 func clampLen(s string, n int) string {
-	if len(s) <= n { // fast path: byte length â‰¤ n â‡’ rune count â‰¤ n
+	if len(s) <= n { // fast path: byte length ≤ n ⇒ rune count ≤ n
 		return s
 	}
 	r := []rune(s)
@@ -739,13 +739,13 @@ func clampLen(s string, n int) string {
 
 // AutoStatusPref (#M1) auto-sets your presence status from words you type in IC. Each
 // field is a comma-separated list of trigger words; when an outgoing message contains
-// one (whole-word, case-insensitive), your status flips â€” so announcing "brb" can flip
+// one (whole-word, case-insensitive), your status flips — so announcing "brb" can flip
 // you to AFK on that very message. OFF by default; ClearWords (e.g. "back") returns you
 // to no status. The status indices map to courtroom.Status (None/AFK/Busy/Writing/LFRP);
 // config stays courtroom-free by using one field per status.
 type AutoStatusPref struct {
 	Enabled      bool   `json:"enabled,omitempty"`
-	ClearWords   string `json:"clearWords,omitempty"` // â†’ no status (e.g. "back")
+	ClearWords   string `json:"clearWords,omitempty"` // → no status (e.g. "back")
 	AFKWords     string `json:"afkWords,omitempty"`
 	BusyWords    string `json:"busyWords,omitempty"`
 	WritingWords string `json:"writingWords,omitempty"`
@@ -795,26 +795,26 @@ const (
 )
 
 // maxDownloadKBps bounds the optional downloader bandwidth cap (KiB/s). 0 =
-// unlimited (the DEFAULT â€” a throttle on by default would slow grabs out of the
+// unlimited (the DEFAULT — a throttle on by default would slow grabs out of the
 // box, a perf regression). The 1 GiB/s ceiling is effectively unlimited but
-// keeps the value finite (rule Â§17.4).
+// keeps the value finite (rule §17.4).
 const maxDownloadKBps = 1 << 20
 
 // Layout scale bounds (percent). Defaults preserve the original layout:
-// viewport 66 â‰ˆ the old fixed 2/3 width; the text/height scales at 100.
+// viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
 	DefaultViewportPercent = 66
 	MinViewportPercent     = 40
 	MaxViewportPercent     = 85
 
 	// Exact viewport sizing (the "precise size" control): the stage's native art
-	// is 256Ã—192, so width is measured in px and crisp at integer multiples of
+	// is 256×192, so width is measured in px and crisp at integer multiples of
 	// ViewportArtW. Min = one full multiple; max caps it at 4K-ish so a typo can't
-	// produce an off-screen stage. 0 (not in [Min,Max]) means "off â€” size by %".
-	ViewportArtW        = 256  // native AO stage width (height = Ã—3/4 = 192)
+	// produce an off-screen stage. 0 (not in [Min,Max]) means "off — size by %".
+	ViewportArtW        = 256  // native AO stage width (height = ×3/4 = 192)
 	ViewportArtH        = 192  // native AO stage height
-	MinViewportExactPx  = 256  // 1Ã— â€” anything smaller isn't worth a fixed size
-	MaxViewportExactPx  = 4096 // 16Ã— â€” sanity cap (no off-screen typos)
+	MinViewportExactPx  = 256  // 1× — anything smaller isn't worth a fixed size
+	MaxViewportExactPx  = 4096 // 16× — sanity cap (no off-screen typos)
 	ViewportExactStepPx = 256  // wheel / slider step = one crisp art-multiple
 
 	// Chat = the IC message TEXT size (independent of its box); ChatBox =
@@ -831,15 +831,15 @@ const (
 	MaxInputPercent     = 200
 
 	// Chatbox panel opacity (flat fallback skin only): percent, 0 = fully
-	// see-through (text only), 100 = solid. Default â‰ˆ the previous hardcoded
+	// see-through (text only), 100 = solid. Default ≈ the previous hardcoded
 	// 215/255 panel alpha.
 	MinChatboxOpacity     = 0
 	MaxChatboxOpacity     = 100
 	DefaultChatboxOpacity = 84
 
-	// ScaleStepPercent is the âˆ’/+ button increment shared by the UI.
+	// ScaleStepPercent is the −/+ button increment shared by the UI.
 	ScaleStepPercent = 25
-	// ViewportStepPercent is the viewport âˆ’/+ increment.
+	// ViewportStepPercent is the viewport −/+ increment.
 	ViewportStepPercent = 5
 
 	// Global UI scale (renderer-level: every element, font, and grid
@@ -850,16 +850,16 @@ const (
 
 	// DPI seeding (#77 Part B). BaselineDPI is the "100%" logical DPI Windows
 	// and SDL report at standard (unscaled) desktop scaling; the queried DPI
-	// divided by it gives the OS scale factor (144 dpi â†’ 150%). The auto UI
+	// divided by it gives the OS scale factor (144 dpi → 150%). The auto UI
 	// scale is floored at MinAutoUIScalePercent so an unreliable / low DPI
-	// reading can never auto-SHRINK the UI below native â€” the never-below-100
+	// reading can never auto-SHRINK the UI below native — the never-below-100
 	// floor from #6 (kept in force for Part B). This is DELIBERATELY above
 	// MinUIScalePercent (75, the MANUAL slider floor): a user may pick 75%
 	// explicitly, but auto-detection never shrinks.
 	BaselineDPI           = 96.0
 	MinAutoUIScalePercent = 100
 
-	// Window sizing (Settings â†’ Window): the default windowed size, and the
+	// Window sizing (Settings → Window): the default windowed size, and the
 	// floor a request can't go below. A saved size of 0 means "use the default".
 	DefaultWindowW = 1152
 	DefaultWindowH = 864
@@ -868,9 +868,9 @@ const (
 )
 
 // ClampWindowSize fits a requested window size into [min, display-usable].
-// usableW/H â‰¤ 0 means the display size is unknown (skip the ceiling). Pure, so
+// usableW/H ≤ 0 means the display size is unknown (skip the ceiling). Pure, so
 // the live SDL resize AND the startup clamp share it (a saved oversize on a
-// smaller monitor can't re-strand the window off-screen) â€” and it's testable
+// smaller monitor can't re-strand the window off-screen) — and it's testable
 // without SDL.
 func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 	w, h := reqW, reqH
@@ -893,7 +893,7 @@ func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 // ceiling (the load-clamp max), so it must stay 100.
 const defaultAudioVolume = 100
 
-// defaultStartVolume is the INITIAL per-channel level on a fresh install â€” a little
+// defaultStartVolume is the INITIAL per-channel level on a fresh install — a little
 // under full so a first launch isn't a blast (#9, ZeitHeld). Master stays at 100 so
 // the effective level is ~70% (master scales the channels) and the ceiling is intact;
 // existing users keep their saved levels.
@@ -915,37 +915,37 @@ const (
 // migration on the first post-update connect.
 const WardrobeCap = 1024
 
-// LocalMountCap bounds the ordered local mount list (rule Â§17.4). Every mount is
+// LocalMountCap bounds the ordered local mount list (rule §17.4). Every mount is
 // walked and indexed on a rescan and searched on a miss, so the cost of the list
 // is linear in its length; sixteen folders/zips is far past any real content
 // pack layout and keeps a fat-fingered "add" loop from unbounded work.
 const LocalMountCap = 16
 
-// FavBackgroundCap bounds one SERVER's starred-background list (rule Â§17.4).
+// FavBackgroundCap bounds one SERVER's starred-background list (rule §17.4).
 // Favorites are a curated subset the user pins in the background picker; a
 // few hundred is already generous, so this is well under WardrobeCap.
 const FavBackgroundCap = 512
 
 // Message timing knobs (milliseconds), AO2-Client options.ini parity.
 const (
-	// DefaultTextCrawlMs is AO2-Client's own `text_crawl` default â€” 40 ms per
+	// DefaultTextCrawlMs is AO2-Client's own `text_crawl` default — 40 ms per
 	// revealed letter (options.cpp:182 `config.value("text_crawl", 40)`, mirrored by
 	// courtroom.h:333 `int text_crawl = 40`). It is ALSO the blip clock: chat_tick
 	// fires one blip every BlipRate letters, so the crawl interval is the "blip
 	// speed" a user actually hears.
 	//
-	// It used to be 18 (courtroom.DefaultCharInterval, spec Â§1), which crawled well
+	// It used to be 18 (courtroom.DefaultCharInterval, spec §1), which crawled well
 	// over twice as fast as every other AO client and machine-gunned the blips.
 	// courtroom.DefaultCharInterval stays at 18 as the LIBRARY's own zero-config
 	// default (its tests are written against it); the shipped client always pushes
 	// this preference into the room (applyTimingToRoom), so this is the value that
 	// reaches a player. Existing installs are moved once by
-	// BlipSpeedDefaultMigrated â€” see load().
+	// BlipSpeedDefaultMigrated — see load().
 	DefaultTextCrawlMs = 40
 	MinTextCrawlMs     = 5
 	MaxTextCrawlMs     = 100
 	// preMoveTextCrawlMs is the default this preference shipped with BEFORE the
-	// move to DefaultTextCrawlMs â€” i.e. the exact value every pre-move file has
+	// move to DefaultTextCrawlMs — i.e. the exact value every pre-move file has
 	// baked in, because the saver always wrote textCrawlMs. It is the ONLY saved
 	// value the one-shot in load() is allowed to overwrite: any other value in
 	// [MinTextCrawlMs, MaxTextCrawlMs] is provably a deliberate pick and survives.
@@ -954,7 +954,7 @@ const (
 	DefaultTextStayMs = 200
 	MaxTextStayMs     = 3000
 	// Chat rate limit: 0 = off (our historical behavior; AO2-Client
-	// defaults to 300 ms â€” users opt in).
+	// defaults to 300 ms — users opt in).
 	DefaultChatRateLimitMs = 0
 	MaxChatRateLimitMs     = 5000
 )
@@ -971,12 +971,12 @@ func clampPercent(v, min, max int) int {
 
 // DPIScalePercent maps a display DPI to the auto UI-scale percent (#77 Part B):
 // dpi / BaselineDPI, as a percent, rounded half-up, floored at
-// MinAutoUIScalePercent. 96 dpi â†’ 100%, 144 dpi â†’ 150%, 168 dpi â†’ 175%. It is
+// MinAutoUIScalePercent. 96 dpi → 100%, 144 dpi → 150%, 168 dpi → 175%. It is
 // the pure seam the DPI-seeding path funnels through so a HiDPI monitor's
 // DEFAULT size is correct without the user finding the slider; the floor keeps
 // the never-auto-shrink rule (#6). A non-positive or sub-baseline dpi returns
 // the floor (an unreliable reading must not shrink us). It does NOT snap to the
-// UI-scale step â€” SetAutoScaleFromWindow does that once after combining this
+// UI-scale step — SetAutoScaleFromWindow does that once after combining this
 // with the window-size factor, so snapping here would double-round.
 func DPIScalePercent(dpi float64) int {
 	if dpi <= 0 {
@@ -1011,7 +1011,7 @@ type AssetPreferences struct {
 	closeOnce sync.Once
 	onSaveErr atomic.Pointer[func(error)]
 	// frozen blocks every further write after ImportSettings replaced the
-	// file on disk â€” the live session's saves would clobber the import.
+	// file on disk — the live session's saves would clobber the import.
 	frozen atomic.Bool
 
 	// quarantine, when non-nil, records that an EXISTING preferences file
@@ -1022,14 +1022,14 @@ type AssetPreferences struct {
 	quarantine *Quarantine
 
 	// themeFitMovedToNative records that THIS load performed the one-shot
-	// Stretchâ†’Native theme-fit move â€” i.e. that the stamp was absent AND the file
+	// Stretch→Native theme-fit move — i.e. that the stamp was absent AND the file
 	// was still sitting on the old Stretch default, so the move actually changed
 	// what the user sees. Never serialized (unexported): it describes this
 	// process's load, not the file, and the persisted record is the stamp itself.
 	//
 	// It exists because the mode flip alone leaves an upgrading user staring at a
 	// small centred canvas ringed by bars where an edge-to-edge Stretch courtroom
-	// used to be â€” an outcome that can only be undone by hunting through Settings.
+	// used to be — an outcome that can only be undone by hunting through Settings.
 	// The UI reads it
 	// once at startup (ThemeFitDefaultJustMoved) to arm the same one-shot window
 	// snap a deliberate theme pick arms, so the first launch after updating lands
@@ -1044,7 +1044,7 @@ type AssetPreferences struct {
 	//
 	// The debounced saver is not enough for a stamp. markDirty only queues, and
 	// during load() the dirty channel does not even exist yet, so the stamp reaches
-	// disk on the next unrelated mutation â€” or, failing that, only on Close. A
+	// disk on the next unrelated mutation — or, failing that, only on Close. A
 	// launch that ends before either (a crash, a kill, a fast quit) leaves the file
 	// unstamped, and the migration AND the one-time window snap it arms both run
 	// again next launch. Writing once here is what makes "once, ever" true rather
@@ -1055,7 +1055,7 @@ type AssetPreferences struct {
 
 	// formatGen increments on every mutation that changes any effective
 	// probe list (format orders, fallback toggles). Consumers cache derived
-	// format tables keyed by this generation â€” see Resolver's miss path.
+	// format tables keyed by this generation — see Resolver's miss path.
 	formatGen atomic.Uint64
 
 	// wardrobeGen increments on every change to any server's wardrobe
@@ -1071,7 +1071,7 @@ type AssetPreferences struct {
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
 // Disabled by default; when first enabled, showname + character + server
 // display and the area stays hidden (some players don't want their
-// location broadcast â€” every field is the user's choice).
+// location broadcast — every field is the user's choice).
 type DiscordPrefs struct {
 	Enabled    bool `json:"enabled"`
 	ShowServer bool `json:"showServer"`
@@ -1086,7 +1086,7 @@ type DiscordPrefs struct {
 
 // DefaultDiscordAppID is the official AsyncAO Discord application (registered
 // under the maintainer's account; icon asset "appicon"). It is baked in so Rich
-// Presence works out of the box â€” users toggle presence on/off in Settings but
+// Presence works out of the box — users toggle presence on/off in Settings but
 // never the app identity. Dialed directly (see cmd/asyncao), so it applies even
 // to existing saved prefs whose AppID predates the bake.
 const DefaultDiscordAppID = "1519625107188744222"
@@ -1103,15 +1103,15 @@ func defaultDiscordPrefs() DiscordPrefs {
 // ServerWarmInfo remembers what a server looked like last visit, so a
 // reconnect can pre-warm it (last character used, last background seen).
 // It also owns the server-scoped player state: the wardrobe (custom
-// character list â€” per server since wardrobes carrying between servers
+// character list — per server since wardrobes carrying between servers
 // was a playtest bug) and the character keybinds.
 type ServerWarmInfo struct {
 	Char       string `json:"char,omitempty"`
 	Background string `json:"background,omitempty"`
-	// Wardrobe is this server's custom character list (â‰¤ WardrobeCap).
+	// Wardrobe is this server's custom character list (≤ WardrobeCap).
 	Wardrobe []string `json:"wardrobe,omitempty"`
-	// FavBackgrounds are this server's starred backgrounds (â‰¤ FavBackgroundCap)
-	// â€” pinned in the background picker so they float to the top and can be
+	// FavBackgrounds are this server's starred backgrounds (≤ FavBackgroundCap)
+	// — pinned in the background picker so they float to the top and can be
 	// filtered to on their own, even on hosts with no directory listing.
 	FavBackgrounds []string `json:"favBackgrounds,omitempty"`
 	// FavBackgroundFolder maps a lowercased favourite background to its folder
@@ -1124,16 +1124,16 @@ type ServerWarmInfo struct {
 	// WardrobeFolder maps a lowercased wardrobe character to its folder
 	// (category) for organizing the wardrobe; absent = unsorted.
 	WardrobeFolder map[string]string `json:"wardrobeFolder,omitempty"`
-	// Origin is the server's asset URL from the last visit â€” rehearsal
+	// Origin is the server's asset URL from the last visit — rehearsal
 	// mode rebuilds asset paths from it without connecting.
 	Origin string `json:"origin,omitempty"`
-	// Per-server audio override â€” the "sandbox each tab's sound" option. When AudioOn,
-	// these 0â€“100 levels replace the global mixer volumes while this server's tab is
+	// Per-server audio override — the "sandbox each tab's sound" option. When AudioOn,
+	// these 0–100 levels replace the global mixer volumes while this server's tab is
 	// active (so you can mute blips on one server and keep them on another); off = the
 	// shared global volumes. AudioMaster scales the rest. The channels are POINTERS so
 	// "never set on this server" (nil) is distinct from "muted" (explicit 0): a nil
 	// channel falls back to the global default (so a channel like SFX can't be silently
-	// muted just because a profile exists â€” only an explicit 0 mutes). omitempty omits a
+	// muted just because a profile exists — only an explicit 0 mutes). omitempty omits a
 	// nil pointer; a non-nil &0 (a deliberate mute) is kept.
 	AudioOn     bool `json:"audioOn,omitempty"`
 	AudioMaster *int `json:"audioMaster,omitempty"`
@@ -1141,26 +1141,26 @@ type ServerWarmInfo struct {
 	AudioSFX    *int `json:"audioSFX,omitempty"`
 	AudioBlip   *int `json:"audioBlip,omitempty"`
 	// Chars is the server's character list from the last visit
-	// (â‰¤ WarmCharsCap) â€” the rehearsal char select.
+	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
 	// Backgrounds is the server's discovered background list from the last
-	// visit (â‰¤ WarmBgsCap) â€” seeds the picker/slideshow INSTANTLY on the next
+	// visit (≤ WarmBgsCap) — seeds the picker/slideshow INSTANTLY on the next
 	// connect (like the cached char list), then a fresh autoindex fetch
 	// refreshes it in the background.
 	Backgrounds []string `json:"backgrounds,omitempty"`
-	// Friends are this server's highlighted shownames (â‰¤ WarmFriendsCap):
+	// Friends are this server's highlighted shownames (≤ WarmFriendsCap):
 	// their IC messages glow, and (later slices) can ping/notify. Per server,
 	// so your friend list on one server doesn't bleed into another.
 	Friends []string `json:"friends,omitempty"`
-	// Ignored is this server's blocked shownames (â‰¤ WarmIgnoredCap): their IC
-	// AND OOC messages are dropped at ingest â€” no log line, no sprite, no blip
+	// Ignored is this server's blocked shownames (≤ WarmIgnoredCap): their IC
+	// AND OOC messages are dropped at ingest — no log line, no sprite, no blip
 	// (#81). Matched by showname-else-character, the only identity the MS wire
 	// carries (UID isn't in the packet). Per server, like Friends.
 	Ignored []string `json:"ignored,omitempty"`
-	// Account login for this server â€” NOT mod-only: servers with user
+	// Account login for this server — NOT mod-only: servers with user
 	// account systems (Akashi and tsuserver-family forks) hang member
 	// perks off /login too, and the same flow signs either in. PLAINTEXT
-	// in the prefs file â€” the same trust level as a saved browser
+	// in the prefs file — the same trust level as a saved browser
 	// password without an OS keychain; the settings UI says so out loud.
 	// AutoLogin sends the flow on every join.
 	LoginUser string `json:"loginUser,omitempty"`
@@ -1183,7 +1183,7 @@ type MacroSpec struct {
 	Lines []string `json:"lines"`
 }
 
-// Macro bounds (rule Â§17.4): as many as wanted, within named caps.
+// Macro bounds (rule §17.4): as many as wanted, within named caps.
 const (
 	MacroCap      = 64  // macros per user
 	MacroLinesCap = 8   // lines per macro
@@ -1223,12 +1223,12 @@ func sanitizeMacros(in []MacroSpec) []MacroSpec {
 }
 
 // WarmCharsCap bounds one server's remembered character list. 4096 names
-// â‰ˆ 60 KiB of JSON â€” covers the 4000-char megaservers rehearsal exists
+// ≈ 60 KiB of JSON — covers the 4000-char megaservers rehearsal exists
 // for, while the serverWarmCap (64) keeps the whole table bounded.
 const WarmCharsCap = 4096
 
 // WarmBgsCap bounds one server's remembered background list (same budget as
-// the char list â€” the megaservers have comparable background counts).
+// the char list — the megaservers have comparable background counts).
 const WarmBgsCap = 4096
 
 // WarmFriendsCap bounds one server's highlighted-showname (friend) list.
@@ -1237,7 +1237,7 @@ const WarmFriendsCap = 256
 // WarmIgnoredCap bounds one server's ignored-showname (block) list.
 const WarmIgnoredCap = 256
 
-// serverWarmCap bounds the per-server warm table (rule Â§17.4); when full,
+// serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
 const serverWarmCap = 64
 
@@ -1261,7 +1261,7 @@ type OpenTab struct {
 
 // DefaultPath returns the preferences file location. It is portable-first: a
 // config set beside the executable (<exeDir>/config/) wins, otherwise the
-// classic OS config dir (<os.UserConfigDir>/AsyncAO/) â€” see ConfigBaseDir.
+// classic OS config dir (<os.UserConfigDir>/AsyncAO/) — see ConfigBaseDir.
 func DefaultPath() (string, error) {
 	dir, err := ConfigBaseDir()
 	if err != nil {
@@ -1290,7 +1290,7 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 	// there would persist defaults for every field it has not reached yet; and
 	// bare load() is the white-box test entry point, while this is the one the app
 	// actually boots through. Boot path, one small file, and only on the single
-	// launch that migrates â€” see themeFitStampPending.
+	// launch that migrates — see themeFitStampPending.
 	if p.themeFitStampPending {
 		p.themeFitStampPending = false
 		if serr := p.SaveNow(); serr != nil {
@@ -1364,12 +1364,12 @@ func defaultSettings() *Settings {
 		UnfocusedFullRate:      defaultUnfocusedFullRate,
 		GhostCrawlText:         defaultGhostCrawlText,
 		DetailedLog:            defaultDetailedLog,
-		// All FIVE one-shot default stamps. A fresh install has nothing to move â€” it
+		// All FIVE one-shot default stamps. A fresh install has nothing to move — it
 		// already defaults to auto-reconnect OFF, theme fit Native, a 40 ms message
-		// crawl, manifest-following desks and transcript logging ON â€” so it counts as
+		// crawl, manifest-following desks and transcript logging ON — so it counts as
 		// already-migrated. Only a file written by an OLDER build lacks these stamps
-		// (absent â†’ nil on load) and triggers the one-shot force-OFF / Stretchâ†’Native /
-		// 18â†’40 ms / desks-follow-ON / transcript-ON move in the load overlay.
+		// (absent → nil on load) and triggers the one-shot force-OFF / Stretch→Native /
+		// 18→40 ms / desks-follow-ON / transcript-ON move in the load overlay.
 		AutoReconnectDefaultMigrated: true,
 		ThemeFitDefaultMigrated:      true,
 		BlipSpeedDefaultMigrated:     true,
@@ -1402,7 +1402,7 @@ func defaultSettings() *Settings {
 		DiscordRPC:                   defaultDiscordPrefs(),
 		MyAutoStatus:                 defaultAutoStatusPref(),
 		ChromeThemeKey:               "dark",
-		ChromeShapeKey:               defaultChromeShape, // A5: "sharp" â€” byte-identical to today's flat chrome
+		ChromeShapeKey:               defaultChromeShape, // A5: "sharp" — byte-identical to today's flat chrome
 		ViewportPct:                  DefaultViewportPercent,
 		ChatScalePct:                 DefaultScalePercent,
 		ChatBoxPct:                   DefaultScalePercent,
@@ -1410,26 +1410,26 @@ func defaultSettings() *Settings {
 		// The OOC log's own zoom. It MUST be seeded here and not left to the load
 		// overlay's legacy-inherit rule: load() returns these defaults verbatim when
 		// the file does not exist (first run) or was quarantined as corrupt, so the
-		// overlay never runs on those paths and OOCScalePct would stay 0 â€” which is
+		// overlay never runs on those paths and OOCScalePct would stay 0 — which is
 		// not "absent" once it leaves config, it is a 0% scale that buildSet floors
 		// at a 1 px font, i.e. an unreadable OOC log on a brand-new install.
 		OOCScalePct:    DefaultScalePercent,
 		InputHeightPct: DefaultScalePercent,
 		UIScalePct:     DefaultScalePercent,
 		// OOC gets its OWN BOX on a fresh install. Every call site already
-		// documents the box as "the new default" â€” only this seed still said otherwise,
+		// documents the box as "the new default" — only this seed still said otherwise,
 		// so a first-run user got the Legacy-style hybrid (a log tab PLUS a second
 		// always-visible OOC bar at the bottom) the rest of the UI treats as opt-in.
 		// EXISTING configs are untouched: prefsJSON.OOCInLogTab carries no omitempty, so
 		// every file ever saved holds an explicit value that the unconditional load
-		// overlay copies back â€” no migration stamp needed (unlike ThemeFitDefaultMigrated,
+		// overlay copies back — no migration stamp needed (unlike ThemeFitDefaultMigrated,
 		// where the sibling field's zero value was ambiguous with "never written").
 		OOCInLogTab: false,
 
 		MusicVol:        defaultStartVolume,
 		SFXVol:          defaultStartVolume,
 		BlipVol:         defaultStartVolume,
-		AlertVol:        defaultAudioVolume, // alerts/pings stay loud â€” they should reach you
+		AlertVol:        defaultAudioVolume, // alerts/pings stay loud — they should reach you
 		MasterVol:       defaultAudioVolume, // master at 100 (scales the channels; ceiling intact)
 		HoldClearOn:     defaultHoldClearOn,
 		HoldClearKey:    defaultHoldClearKey,
@@ -1477,7 +1477,7 @@ func load(path string) (*AssetPreferences, error) {
 		// returning defaults, so the debounced saver can never clobber the
 		// only copy of the user's favourites/logins/macros/learned formats.
 		// The rename runs on the startup load path (no saver exists yet, no
-		// render/decode path) â€” cheap synchronous I/O is fine here (spec Â§2
+		// render/decode path) — cheap synchronous I/O is fine here (spec §2
 		// bars sync I/O on hot paths only). See item #3.
 		perr = fmt.Errorf("config: parsing %s (using defaults): %w", path, perr)
 		backup := path + corruptSuffixPrefix + time.Now().Format(corruptStampLayout)
@@ -1551,7 +1551,7 @@ func (p *AssetPreferences) saverLoop() {
 }
 
 // resetContentFields names the user-CONTENT fields ResetSettings PRESERVES
-// (everything else â€” the tunable settings â€” reverts to default). ResetAll
+// (everything else — the tunable settings — reverts to default). ResetAll
 // preserves nothing. Keyed by Go field name so a rename can't silently break it.
 var resetContentFields = map[string]bool{
 	"Favorites":          true, // saved servers (phone book)
@@ -1562,8 +1562,8 @@ var resetContentFields = map[string]bool{
 	"CallWordList":       true,
 	"LearnedFormats":     true, // learned per-host formats (cache-adjacent)
 	"ThemeRectOv":        true, // layout-editor overrides
-	"ThemeRectRotations": true, // layout-editor rotation overrides (A4) â€” user content, survives a settings reset like ThemeRectOv (ClassicRotations is NOT preserved, mirroring ClassicLayout/ClassicAnchors)
-	"LayoutProfiles":     true, // saved full-state layout profiles (A6) â€” user content, survives a settings reset like ThemeRectOv
+	"ThemeRectRotations": true, // layout-editor rotation overrides (A4) — user content, survives a settings reset like ThemeRectOv (ClassicRotations is NOT preserved, mirroring ClassicLayout/ClassicAnchors)
+	"LayoutProfiles":     true, // saved full-state layout profiles (A6) — user content, survives a settings reset like ThemeRectOv
 	"OpenTabs":           true,
 	"LocalAssetsPaths":   true, // local mount config
 	"LocalAssetsEnabled": true,
@@ -1573,7 +1573,7 @@ var resetContentFields = map[string]bool{
 }
 
 // resetLocked overwrites every exported field with a fresh-defaults value,
-// skipping unexported machinery (mu/saver/path â€” PkgPath != "") and any name in
+// skipping unexported machinery (mu/saver/path — PkgPath != "") and any name in
 // keep. Caller holds the write lock. Reflection (a rare, cold user action) keeps
 // this robust: a newly-added setting resets automatically, no enumeration to
 // forget.
@@ -1607,7 +1607,7 @@ func (p *AssetPreferences) ResetSettings() {
 	_ = p.SaveNow()
 }
 
-// ResetAll wipes EVERYTHING to a fresh-install state â€” settings AND content
+// ResetAll wipes EVERYTHING to a fresh-install state — settings AND content
 // (favourites, wardrobes, servers, logins/passwords, macros, callwords, learned
 // formats, ...). The disk cache is the caller's to clear. Persisted now.
 func (p *AssetPreferences) ResetAll() {
@@ -1693,7 +1693,7 @@ func (p *AssetPreferences) FormatGeneration() uint64 {
 	return p.formatGen.Load()
 }
 
-// FormatList implements spec Â§4: with fallbacks OFF it returns exactly
+// FormatList implements spec §4: with fallbacks OFF it returns exactly
 // the configured probe list for the type; with fallbacks ON (globally or for
 // this type) it returns the configured list plus the type's legacy chain,
 // deduplicated, order preserved. The result is a fresh slice.
@@ -1886,8 +1886,8 @@ func (s *Settings) PreviewWindowRect() (x, y, w, h int, ok bool) {
 }
 
 // SetPreviewWindowRect persists the detached preview window's position and
-// size. Called ONLY at a natural boundary â€” the window closing (its own X,
-// or the pop-out toggle re-attaching) â€” never per-frame or per-drag/-resize
+// size. Called ONLY at a natural boundary — the window closing (its own X,
+// or the pop-out toggle re-attaching) — never per-frame or per-drag/-resize
 // tick (CLAUDE.md hard rules 2/3: learning marks dirty, the debounced saver
 // flushes; there is no per-move disk write here at all).
 func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
@@ -1912,7 +1912,7 @@ func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
 }
 
 // EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
-// LOGICAL px. Read once per grid draw (never per cell) â€” it takes the pref lock.
+// LOGICAL px. Read once per grid draw (never per cell) — it takes the pref lock.
 //
 // No "<= 0 means default" rescue here, unlike PreviewHeightPx: zero is a value the
 // user can pick (icons flush against each other), so the only way to get the
@@ -1938,7 +1938,7 @@ func (p *AssetPreferences) ClearLearnedType(typeName string) {
 // re-derives from the configured order. It is the scoped counterpart to
 // ClearLearned: a server that repacked its art is one server's problem, and
 // wiping the whole table to fix it throws away every OTHER server's warm state
-// â€” each of which then pays a full cold re-probe on the next visit. The learned
+// — each of which then pays a full cold re-probe on the next visit. The learned
 // key is "<host><LearnedKeySeparator><type name>" and the separator cannot occur
 // in a host, so matching the prefix is exact.
 func (p *AssetPreferences) ClearLearnedHost(host string) int {
@@ -2008,7 +2008,7 @@ const (
 	InstantReplayDefaultSeconds = 60
 )
 
-// Local alarm/timer (#97) duration bounds: 1 second â€¦ 99 minutes, default 5 min.
+// Local alarm/timer (#97) duration bounds: 1 second … 99 minutes, default 5 min.
 // Only the remembered duration persists; running state is session-only.
 const (
 	TimerMinSeconds     = 1
@@ -2062,7 +2062,7 @@ func (s *Settings) InstantReplaySecondsValue() int {
 	return clampInstantReplaySeconds(s.InstantReplaySeconds)
 }
 
-// LastServer returns the last server connected to (name, ws URL) â€” the
+// LastServer returns the last server connected to (name, ws URL) — the
 // auto-connect / quick-connect target. Empty url means none yet.
 func (s *Settings) LastServer() (name, url string) {
 
@@ -2104,7 +2104,7 @@ func (p *AssetPreferences) SetSpriteStyle(s SpriteStylePref) {
 // --- #126 style presets (saved style+colour+emote moods) -----------------------------------
 
 // sanitizeStylePresets bounds the list, drops nameless entries, and clamps each style's
-// opacity â€” applied on load so a hand-edited pref file can't grow or corrupt the list.
+// opacity — applied on load so a hand-edited pref file can't grow or corrupt the list.
 func sanitizeStylePresets(in []StylePreset) []StylePreset {
 	if len(in) == 0 {
 		return nil
@@ -2121,7 +2121,7 @@ func sanitizeStylePresets(in []StylePreset) []StylePreset {
 	return out
 }
 
-// StylePresetCount returns how many presets are saved (no allocation â€” for the Style box's
+// StylePresetCount returns how many presets are saved (no allocation — for the Style box's
 // per-frame height calc).
 func (s *Settings) StylePresetCount() int {
 
@@ -2213,7 +2213,7 @@ type PanelFont struct {
 	Family string `json:"family,omitempty"`
 	// SizePx is the size in PIXELS, 0 = keep whatever the theme or the client
 	// would have used. Pixels rather than points because it is what the user is
-	// actually looking at â€” a theme declares points because Qt does, and the
+	// actually looking at — a theme declares points because Qt does, and the
 	// point-to-pixel conversion is an implementation detail nobody should have to
 	// do in their head to pick a readable size.
 	SizePx int `json:"px,omitempty"`
@@ -2272,7 +2272,7 @@ func sanitizePanelFonts(in map[string]PanelFont) map[string]PanelFont {
 }
 
 // FontWarnThemesCap bounds the remembered "already warned" set. It grows by one
-// per THEME with missing fonts â€” a handful in practice â€” and the cap keeps the
+// per THEME with missing fonts — a handful in practice — and the cap keeps the
 // preferences file from growing without limit (hard rule 4). Oldest first out, so
 // someone who cycles through many themes is eventually re-warned about one they
 // saw long ago, which is the right way round.
@@ -2329,7 +2329,7 @@ func (p *AssetPreferences) ClearFontWarnThemes() {
 
 // PanelFonts returns a COPY of the per-panel overrides. A copy because the
 // caller reads it off the render thread and the saver marshals the original
-// under its own lock â€” handing out the live map would be a data race the
+// under its own lock — handing out the live map would be a data race the
 // -race build would only catch on an unlucky interleaving.
 func (s *Settings) PanelFonts() map[string]PanelFont {
 
@@ -2370,7 +2370,7 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 	})
 }
 
-// ClearPanelFonts drops every per-panel override at once â€” the "put it all back"
+// ClearPanelFonts drops every per-panel override at once — the "put it all back"
 // button, which matters because these are eight separate settings and undoing
 // them one at a time is how a user ends up stuck with a font they cannot read.
 func (p *AssetPreferences) ClearPanelFonts() {
@@ -2387,7 +2387,7 @@ func (p *AssetPreferences) ClearPanelFonts() {
 // depends on a network package would invert the layering. A test in internal/ui,
 // which imports both, pins the two together.
 const (
-	// ProxyModeSystem takes the machine's own configuration â€” the default,
+	// ProxyModeSystem takes the machine's own configuration — the default,
 	// because a client that ignores it is the defect this exists to fix.
 	ProxyModeSystem = 0
 	// ProxyModeDirect never proxies, whatever the machine says. This is the
@@ -2416,12 +2416,12 @@ func (p *AssetPreferences) SetProxyURL(s string) {
 // AssetCharCaseMax is the highest valid character-folder casing mode. It mirrors
 // courtroom.CharCaseCount-1 (lowercase / first-cap / title / auto) and is spelled
 // out here rather than imported, because internal/config sits BELOW
-// internal/courtroom and must not depend on it. A test in internal/ui â€” which
-// imports both â€” pins the two together.
+// internal/courtroom and must not depend on it. A test in internal/ui — which
+// imports both — pins the two together.
 const AssetCharCaseMax uint8 = 3
 
 // SetAssetCharCasing sets the character-folder casing mode. Out-of-range falls
-// back to lowercase, which is the safe answer for almost every server â€” the same
+// back to lowercase, which is the safe answer for almost every server — the same
 // thing URLBuilder.WithCharCase does with a value it does not recognise.
 func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	if c > AssetCharCaseMax {
@@ -2692,17 +2692,17 @@ func (s *Settings) ChromeTheme() string {
 // default and renders byte-identical to today's flat Fill+Border chrome; the
 // others reshape kit chrome silhouettes via procedural 9-sliced alpha masks in
 // the UI layer. Kept as named constants (not magic strings) and mirrored by the
-// UI package's shape* keys â€” this is the persisted vocabulary, so sanitisation
+// UI package's shape* keys — this is the persisted vocabulary, so sanitisation
 // happens here and the UI trusts the value it reads back.
 const (
-	defaultChromeShape = "sharp"   // flat rectangle â€” the byte-identical default
+	defaultChromeShape = "sharp"   // flat rectangle — the byte-identical default
 	chromeShapeRounded = "rounded" // rounded-rectangle corners (radius by tier)
 	chromeShapePill    = "pill"    // full-radius pill (corner = min(w,h)/2)
 )
 
 // shapeRadiusTiers bounds the corner-radius size classes for the "rounded"
-// preset (0..shapeRadiusTiers-1) â€” a named cap so the derived-mask cache in the
-// UI stays bounded (hard rule Â§17.4) and so ChromeShapeTier can be clamped on
+// preset (0..shapeRadiusTiers-1) — a named cap so the derived-mask cache in the
+// UI stays bounded (hard rule §17.4) and so ChromeShapeTier can be clamped on
 // load. Must equal the UI's shapeRadiusTiers; a mismatch would only ever clamp
 // tighter here, never smuggle an out-of-range tier through.
 const shapeRadiusTiers = 4
@@ -2766,7 +2766,7 @@ func (p *AssetPreferences) SetChromeShapeTier(tier int) {
 
 // --- Callwords + hotkeys -------------------------------------------------------------
 
-// callWordCap bounds the highlight list (rule Â§17.4).
+// callWordCap bounds the highlight list (rule §17.4).
 const callWordCap = 32
 
 // CallWords reports the highlight words (lowercased on save).
@@ -2825,7 +2825,7 @@ func (p *AssetPreferences) RemoveCallWord(word string) bool {
 }
 
 // Hotkey reports the configured key name for an action ("" = unset; the
-// UI layer owns defaults â€” config just persists overrides).
+// UI layer owns defaults — config just persists overrides).
 func (s *Settings) Hotkey(action string) string {
 
 	return s.HotkeyMap[action]
@@ -2851,7 +2851,7 @@ func (p *AssetPreferences) RememberServerChar(key, char string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Char = char })
 }
 
-// ServerFriends returns a server's highlighted shownames (a clone â€” the
+// ServerFriends returns a server's highlighted shownames (a clone — the
 // settings editor mutates it; callers must not alias the stored slice).
 func (s *Settings) ServerFriends(key string) []string {
 
@@ -2875,7 +2875,7 @@ func friendParts(entry string) (name, hex, nick string) {
 
 // ServerFriendInfo reports whether name (case-insensitive) is a highlighted
 // friend on the server, plus that friend's custom glow colour (packed 0xRRGGBB,
-// or -1 for the default tint) and personal nickname ("" if none) â€” #82. ONE scan
+// or -1 for the default tint) and personal nickname ("" if none) — #82. ONE scan
 // under the lock with no allocation, so the player list (per row) and friend
 // matching (per message) read all three from a single call.
 func (s *Settings) ServerFriendInfo(key, name string) (friend bool, color int, nick string) {
@@ -2901,18 +2901,18 @@ func (s *Settings) ServerFriendInfo(key, name string) (friend bool, color int, n
 }
 
 // ServerFriendMatch reports whether name is a highlighted friend and its custom
-// glow colour â€” a thin wrapper over ServerFriendInfo (one scan, no nested lock)
+// glow colour — a thin wrapper over ServerFriendInfo (one scan, no nested lock)
 // kept for the per-message/glow callers that don't need the nickname.
 func (s *Settings) ServerFriendMatch(key, name string) (friend bool, color int) {
 	f, c, _ := s.ServerFriendInfo(key, name)
 	return f, c
 }
 
-// SetServerFriends replaces a server's highlighted-showname list â€” entries are
+// SetServerFriends replaces a server's highlighted-showname list — entries are
 // "name", "name=RRGGBB" (per-friend glow colour), or "name=RRGGBB=nick" (#82, a
 // personal nickname). Each is re-canonicalised: trimmed, blanks dropped, deduped
 // by NAME (case-insensitive), capped at WarmFriendsCap. Commas are STRIPPED from
-// the nickname â€” the editor stores the list comma-separated, so a comma in a
+// the nickname — the editor stores the list comma-separated, so a comma in a
 // nick would split into two broken entries on the next round-trip.
 func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 	seen := make(map[string]struct{}, len(names))
@@ -2943,7 +2943,7 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Friends = clean })
 }
 
-// ServerIgnored returns a server's blocked shownames (a clone â€” the settings
+// ServerIgnored returns a server's blocked shownames (a clone — the settings
 // editor mutates it; callers must not alias the stored slice).
 func (s *Settings) ServerIgnored(key string) []string {
 
@@ -2951,7 +2951,7 @@ func (s *Settings) ServerIgnored(key string) []string {
 }
 
 // ServerIgnoreMatch reports whether name (case-insensitive) is on the server's
-// ignore list. Scans under the lock with NO allocation â€” safe to call per
+// ignore list. Scans under the lock with NO allocation — safe to call per
 // incoming IC/OOC message (an empty list, the default, costs one RLock + zero
 // iterations).
 func (s *Settings) ServerIgnoreMatch(key, name string) bool {
@@ -2968,7 +2968,7 @@ func (s *Settings) ServerIgnoreMatch(key, name string) bool {
 	return false
 }
 
-// SetServerIgnored replaces a server's ignore list â€” trimmed, blanks dropped,
+// SetServerIgnored replaces a server's ignore list — trimmed, blanks dropped,
 // deduped case-insensitively, capped at WarmIgnoredCap.
 func (p *AssetPreferences) SetServerIgnored(key string, names []string) {
 	seen := make(map[string]struct{}, len(names))
@@ -3004,7 +3004,7 @@ func (p *AssetPreferences) RememberServerOrigin(key, origin string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Origin = origin })
 }
 
-// SetServerLogin stores a server's mod credentials (plaintext â€” see
+// SetServerLogin stores a server's mod credentials (plaintext — see
 // ServerWarmInfo) and the auto-login-on-join choice. Empty user+pass
 // clears them.
 func (p *AssetPreferences) SetServerLogin(key, user, pass string, auto bool) {
@@ -3021,14 +3021,14 @@ func (p *AssetPreferences) SetServerTheme(key, themeName string) {
 }
 
 // ServerAudio returns a server's per-server audio override. on=false means the
-// global mixer volumes apply; the four levels are 0â€“100 (master scales the rest).
-// The "sandbox each tab's sound" feature â€” applied while this server's tab is active.
+// global mixer volumes apply; the four levels are 0–100 (master scales the rest).
+// The "sandbox each tab's sound" feature — applied while this server's tab is active.
 func (p *AssetPreferences) ServerAudio(key string) (on bool, master, music, sfx, blip int) {
 	snap := p.Load()
 
 	w := snap.ServerWarm[key]
 	// Each channel: this server's explicit level if it set one, else the global default
-	// (so an unset channel â€” e.g. SFX a prior build never wrote â€” is never silently 0).
+	// (so an unset channel — e.g. SFX a prior build never wrote — is never silently 0).
 	return w.AudioOn,
 		ptrOr(w.AudioMaster, snap.MasterVol),
 		ptrOr(w.AudioMusic, snap.MusicVol),
@@ -3036,7 +3036,7 @@ func (p *AssetPreferences) ServerAudio(key string) (on bool, master, music, sfx,
 		ptrOr(w.AudioBlip, snap.BlipVol)
 }
 
-// ptrOr returns *v when set, else the fallback â€” the per-channel "unset â†’ global default".
+// ptrOr returns *v when set, else the fallback — the per-channel "unset → global default".
 func ptrOr(v *int, def int) int {
 	if v != nil {
 		return *v
@@ -3049,9 +3049,9 @@ func (p *AssetPreferences) SetServerAudioOn(key string, on bool) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.AudioOn = on })
 }
 
-// SetServerAudioVolumes records a server's per-server mixer volumes (0â€“100 each). All
+// SetServerAudioVolumes records a server's per-server mixer volumes (0–100 each). All
 // four channels are written explicitly (as pointers), so once a server has a profile
-// every channel is a real chosen value â€” none silently defaults to a muted 0.
+// every channel is a real chosen value — none silently defaults to a muted 0.
 func (p *AssetPreferences) SetServerAudioVolumes(key string, master, music, sfx, blip int) {
 	m := clampPercent(master, 0, defaultAudioVolume)
 	mu := clampPercent(music, 0, defaultAudioVolume)
@@ -3117,7 +3117,7 @@ func (s *Settings) HiddenPanels() []string {
 }
 
 // SetHiddenPanels replaces the hidden-chrome set. Dedups blank/duplicate ids and
-// bounds the slice at maxHiddenPanels (rule Â§17.4).
+// bounds the slice at maxHiddenPanels (rule §17.4).
 func (p *AssetPreferences) SetHiddenPanels(ids []string) {
 	clean := sanitizeHiddenPanels(ids)
 	p.Update(func(sn *Settings) {
@@ -3171,7 +3171,7 @@ func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
 }
 
 // BoldNamesOn reports whether speaker names render bold (IC/OOC log + chatbox).
-// Default ON â€” the pref is stored inverted (BoldNamesOff) so an absent value
+// Default ON — the pref is stored inverted (BoldNamesOff) so an absent value
 // means bold, matching the on-by-default behaviour.
 func (s *Settings) BoldNamesOn() bool {
 
@@ -3272,7 +3272,7 @@ func (p *AssetPreferences) SetUIScale(pct int) {
 }
 
 // WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
-// the display at apply (ClampWindowSize) â€” a raw saved value may be stale.
+// the display at apply (ClampWindowSize) — a raw saved value may be stale.
 func (s *Settings) WindowSize() (int, int) {
 
 	return s.WindowW, s.WindowH
@@ -3295,7 +3295,7 @@ func (p *AssetPreferences) SetWindowSize(w, h int) {
 
 // --- Audio volumes ----------------------------------------------------------------
 
-// AudioVolumes reports the music/SFX/blip volumes (0â€“100).
+// AudioVolumes reports the music/SFX/blip volumes (0–100).
 func (s *Settings) AudioVolumes() (music, sfx, blip int) {
 
 	return s.MusicVol, s.SFXVol, s.BlipVol
@@ -3315,11 +3315,11 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 
 // The master/music/blip channel-mute accessors below persist the volume
 // strip's (#10) click-to-mute state, so quitting muted stays muted on the next
-// launch â€” they default OFF (unmuted), same as the zero value. SFXVolMuted is
+// launch — they default OFF (unmuted), same as the zero value. SFXVolMuted is
 // the deliberate exception: the SFX mute (the Mute-SFX hotkey AND the volume
 // strip's SFX cell) is session-only (see ui.toggleSFXMute / ui.resetSessionState),
 // so its field and accessors are retained only for schema compatibility and are
-// never read by the app â€” an accidental Mute-SFX press must not survive a restart.
+// never read by the app — an accidental Mute-SFX press must not survive a restart.
 // Named *VolMuted (not SFXMuted) to stay clear of two unrelated existing
 // names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
 // and AssetPreferences.MutedSFX (the M11 per-name mute list).
@@ -3411,25 +3411,25 @@ func (s *Settings) TabCap() int {
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
 // an uncached sprite is still streaming + decoding. The values MUST equal
 // render.SpriteLoad* (the UI mirrors the pref straight into the viewport); kept as
-// plain ints here to avoid a configâ†’render import.
+// plain ints here to avoid a config→render import.
 const (
-	SpriteLoadBlank     = 0 // Show nothing â€” draw nothing until the sprite lands (the original behaviour; the cold-load flash)
-	SpriteLoadHoldPrev  = 1 // webAO â€” keep the previous sprite until the new one lands (webAO-style; the old default)
-	SpriteLoadWait      = 2 // Hold the message â€” hold the MESSAGE off-stage until its speaker sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
-	SpriteLoadDefault   = 3 // Default â€” strict sequencing: wait for EVERY asset a message presents before it plays (the courtroom SequentialWait gate)
+	SpriteLoadBlank     = 0 // Show nothing — draw nothing until the sprite lands (the original behaviour; the cold-load flash)
+	SpriteLoadHoldPrev  = 1 // webAO — keep the previous sprite until the new one lands (webAO-style; the old default)
+	SpriteLoadWait      = 2 // Hold the message — hold the MESSAGE off-stage until its speaker sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
+	SpriteLoadDefault   = 3 // Default — strict sequencing: wait for EVERY asset a message presents before it plays (the courtroom SequentialWait gate)
 	SpriteLoadModeCount = 4 // number of valid modes (for the Settings mode picker + load clamp)
 
 	// defaultSpriteLoadMode is what a fresh install (and a power-user reset) uses:
-	// Default (strict sequencing) â€” wait for every sprite, the background, desk,
+	// Default (strict sequencing) — wait for every sprite, the background, desk,
 	// chatbox, speedlines, SFX and blip before a message plays, so nothing ever
 	// pops in mid-ceremony.
 	defaultSpriteLoadMode = SpriteLoadDefault
 )
 
 // Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
-// its sprite before playing anyway. User-tunable within [min,max] â€” deliberately a
+// its sprite before playing anyway. User-tunable within [min,max] — deliberately a
 // WIDE range (power user: from a near-instant 50 ms nudge to a patient 30 s on a
-// dial-up-grade link); the default is 0.5 s â€” a fast desktop client shouldn't
+// dial-up-grade link); the default is 0.5 s — a fast desktop client shouldn't
 // stall a busy room for longer than that waiting on a first-load sprite.
 const (
 	SpriteWaitDefaultMs = 500
@@ -3471,18 +3471,18 @@ const (
 	ShoutDurationMaxMs  = 3000  // a leisurely bubble
 	PreanimTimeoutMinMs = 200   // barely wait for a preanim
 	PreanimTimeoutMaxMs = 10000 // very patient preanim cap
-	ICQueueCapMin       = 8     // shallowest useful backlog (still bounded â€” courtroom floors â‰¥ 1 regardless)
+	ICQueueCapMin       = 8     // shallowest useful backlog (still bounded — courtroom floors ≥ 1 regardless)
 	ICQueueCapMax       = 256   // deepest backlog before "just read the log"
 	CatchUpLingerMaxMs  = 1000  // longest per-message flash while catching up (default 0 = one per frame)
 
 	// IC scrollback depth (the on-screen IC chat log). 0 = the shipped default
 	// (the client's own icLogCap, 1024); ICLogDepthUnlimited = never cap it.
-	ICLogDepthUnlimited = -1    // "don't cap at all" â€” the log grows for the whole session
+	ICLogDepthUnlimited = -1    // "don't cap at all" — the log grows for the whole session
 	ICLogDepthMin       = 1     // shallowest log worth keeping
-	ICLogDepthMax       = 65536 // deepest a typed number may set (still bounded; âˆž is the true uncap)
+	ICLogDepthMax       = 65536 // deepest a typed number may set (still bounded; ∞ is the true uncap)
 
 	// Thumbnail-cache knobs (opt-in low-q sprite stand-ins). The defaults land
-	// ~1 KB per sprite: visibly low-quality by design â€” instantly recognisable,
+	// ~1 KB per sprite: visibly low-quality by design — instantly recognisable,
 	// never mistaken for the real art.
 	ThumbHeightDefaultPx = 64  // matches assets.ThumbHeightDefault (pinned by test)
 	ThumbHeightMinPx     = 32  // barely a silhouette
@@ -3492,18 +3492,18 @@ const (
 	ThumbQualityMax      = 60  // still clearly a placeholder
 
 	// Thumb-store byte budget (auto-prunes oldest past it). At ~1 KB each the
-	// 64 MiB default is ~60k thumbnails â€” effectively "everything you've seen".
+	// 64 MiB default is ~60k thumbnails — effectively "everything you've seen".
 	ThumbBudgetDefaultMiB = 64
 	ThumbBudgetMinMiB     = 8
 	ThumbBudgetMaxMiB     = 512
 
-	// T3 disk-cache auto-prune cap (#34). 0 = UNLIMITED, the DEFAULT â€” T3's
+	// T3 disk-cache auto-prune cap (#34). 0 = UNLIMITED, the DEFAULT — T3's
 	// unboundedness is a deliberate spec exception, so an update never silently
 	// deletes a user's cache. A positive cap makes the writer goroutine sweep
 	// the oldest blobs past it. A single character on a 4000-char server runs
 	// tens of MiB, so the floor is generous; the ceiling covers a whole disk.
 	DiskCacheBudgetMinMiB = 128   // smallest meaningful cap
-	DiskCacheBudgetMaxMiB = 65536 // 64 GiB â€” a very large asset library
+	DiskCacheBudgetMaxMiB = 65536 // 64 GiB — a very large asset library
 
 	// Negative-cache (404) TTL knob: how long a missing asset stays "missing"
 	// before a re-probe is allowed. RESTART-applied (the LRU takes its TTL at
@@ -3512,7 +3512,7 @@ const (
 	NotFoundTTLMinSec = 30
 	NotFoundTTLMaxSec = 3600
 
-	// Per-host adaptive-deadline multiple: request deadline = N Ã— the host's
+	// Per-host adaptive-deadline multiple: request deadline = N × the host's
 	// TTFB EWMA, clamped. Lower sheds a degrading mirror sooner (risking
 	// spurious timeouts on jittery links); higher is more patient.
 	AdaptiveLatMultipleMin = 2
@@ -3532,11 +3532,11 @@ const (
 	AnimatedSpriteCapMinPx = 240
 	AnimatedSpriteCapMaxPx = 2160
 
-	// T1 texture byte budget, MiB. RESTART-applied. âš  T1 + T2 (128 MiB) live
+	// T1 texture byte budget, MiB. RESTART-applied. ⚠ T1 + T2 (128 MiB) live
 	// inside the 256 MiB memory budget. The default (64) and everything up to
 	// TexBudgetSafeMaxMiB keep the WHOLE client under budget; the max is raised
 	// to 256 only as an EXPERIMENTAL, default-off, warned opt-in so a long
-	// animation can decode past the ~5 s truncation â€” above the safe max it
+	// animation can decode past the ~5 s truncation — above the safe max it
 	// deliberately exceeds the budget (trades peak memory, may stutter/crash on
 	// low-RAM machines). The default is unchanged: normal users never leave 64.
 	TexBudgetDefaultMiB = 64
@@ -3579,16 +3579,16 @@ const (
 	CrossfadeMaxMs = 1000
 
 	// Frame pacing (the GPU-burn fix): the loop used to re-render the whole UI
-	// every monitor refresh â€” on a 144/165 Hz laptop panel that's a full-screen
-	// GPU composite 165Ã—/sec while IDLE (fans, +10 Â°C â€” the playtest report).
+	// every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen
+	// GPU composite 165×/sec while IDLE (fans, +10 °C — the playtest report).
 	// Three caps, all sleep-based (vsync stays on for tear-free presents):
 	// foreground (the ceiling), idle (nothing animating), unfocused (another
 	// window has focus; minimized already naps).
-	FPSCapDefault = FPSUnlimited // Active default = âˆž / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off âˆž)
+	FPSCapDefault = FPSUnlimited // Active default = ∞ / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off ∞)
 	FPSCapMin     = 1
 	FPSCapMax     = 240
-	// FPSCapUnlimitedOff is the concrete Active cap the Settings "âˆž" toggle drops
-	// to â€” now that the default IS âˆž, using the default there would just re-pick
+	// FPSCapUnlimitedOff is the concrete Active cap the Settings "∞" toggle drops
+	// to — now that the default IS ∞, using the default there would just re-pick
 	// unlimited and the toggle would do nothing.
 	FPSCapUnlimitedOff  = 60
 	IdleFPSDefault      = FPSOff // idle rendering OFF by default: a static screen redraws zero times (0 GPU) and leans on real events + scheduled deadlines
@@ -3599,19 +3599,19 @@ const (
 	UnfocusedFPSMax     = 60
 
 	// InputGraceFrames: how long full rate is held after a click / keypress, in
-	// frames (at a 60 fps reference). 1 (the default) = snappiest â€” the input's
+	// frames (at a 60 fps reference). 1 (the default) = snappiest — the input's
 	// own frame shows, then the rate falls straight back to idle; the max restores
 	// the old ~1 s hold; 0 (InputGraceOff) turns the hold OFF entirely (just the
 	// input's own frame). Mouse MOTION is unaffected (its own short grace).
 	InputGraceFramesDefault = 1
 	InputGraceFramesMin     = 1
 	InputGraceFramesMax     = 60
-	// InputGraceOff is the STORED sentinel for a 0-frame hold â€” kept distinct from
-	// 0, which stays "absent â†’ the default" so an unset pref loads as 1, not off.
+	// InputGraceOff is the STORED sentinel for a 0-frame hold — kept distinct from
+	// 0, which stays "absent → the default" so an unset pref loads as 1, not off.
 	InputGraceOff = -1
 
 	// FPSUnlimited is the "no limit" sentinel any of the three rate knobs may
-	// hold (the Settings âˆž toggle): the active cap stops capping (vsync paces
+	// hold (the Settings ∞ toggle): the active cap stops capping (vsync paces
 	// the presents), and an unlimited idle/unfocused rate means that state is
 	// never throttled below the active pacing. Distinct from 0 = "the default".
 	FPSUnlimited = -1
@@ -3621,16 +3621,16 @@ const (
 	// stops issuing periodic idle redraws in that state and waits purely on real
 	// damage + scheduled deadlines (caret flip, clock tick, animation frame).
 	// Distinct from FPSUnlimited (uncapped) and from 0, which stays "the shipped
-	// default" on the wire â€” so an ABSENT key loads as the default, not off, and
+	// default" on the wire — so an ABSENT key loads as the default, not off, and
 	// only an explicit choice writes FPSOff. The Active cap has no "off" (0 fps
 	// while interacting is meaningless), so the Active row never emits it.
 	FPSOff = -2
 )
 
 // normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
-// default (the getter resolves it), FPSUnlimited (âˆž) and FPSOff (never redraw)
+// default (the getter resolves it), FPSUnlimited (∞) and FPSOff (never redraw)
 // pass through as-is, anything else clamps to [min, max]. Any other negative is
-// treated as âˆž defensively. Shared by the setters and the disk-load overlay so
+// treated as ∞ defensively. Shared by the setters and the disk-load overlay so
 // a hand-edited file obeys the same rules as the sliders.
 func normalizeFPSPref(fps, min, max int) int {
 	switch fps {
@@ -3738,8 +3738,8 @@ func (s *Settings) InputGraceFrames() int {
 }
 
 // EffectiveSpriteCap derives the decode-downscale height cap from the
-// display-derived base and the two power-user knobs: off â†’ 0 (no cap, exact
-// source art), else base Ã— pct/100 (pct 0 = the default 100 %). Pure â€” shared
+// display-derived base and the two power-user knobs: off → 0 (no cap, exact
+// source art), else base × pct/100 (pct 0 = the default 100 %). Pure — shared
 // by the boot path (cmd/asyncao) and the live Settings re-derive so the two
 // can never disagree.
 func EffectiveSpriteCap(base int, off bool, pct int) int {
@@ -3752,7 +3752,7 @@ func EffectiveSpriteCap(base int, off bool, pct int) int {
 	return base * pct / 100
 }
 
-// ResetPowerUser reverts EVERY power-user option to its shipped default â€” the
+// ResetPowerUser reverts EVERY power-user option to its shipped default — the
 // "nuke" button on the Power user tab. Scoped strictly to that tab's knobs: TLS
 // validation, both Origin overrides, character-folder casing, the whole renderer
 // block (cold-load mode + wait/hold knobs + tint), the sprite mask, and the core
@@ -3808,7 +3808,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 }
 
 // AO2 MUSIC_EFFECT bits, appended to an outgoing MC when the server advertises
-// `effects` â€” LAST field, whose index depends on whether the conditional showname
+// `effects` — LAST field, whose index depends on whether the conditional showname
 // preceded it (courtroom.Session.RequestMusicWithFlags); the server's echo carries
 // them at field 5. AO2-Client src/datatypes.h:95-101.
 //
@@ -3823,7 +3823,7 @@ const (
 	// MusicFlagsMask is every bit AO2 defines; anything else in a stored value is
 	// dropped on load so a hand-edited or future file can't put junk on the wire.
 	MusicFlagsMask = MusicFlagFadeIn | MusicFlagFadeOut | MusicFlagSyncPos | MusicFlagNoRepeat
-	// DefaultMusicFlags matches AO2-Client's own initial value â€”
+	// DefaultMusicFlags matches AO2-Client's own initial value —
 	// `int music_flags = MUSIC_EFFECT::FADE_OUT;` (src/courtroom.h:551).
 	DefaultMusicFlags = MusicFlagFadeOut
 )
@@ -3863,7 +3863,7 @@ func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
 // All four are transcriptions of AO2 options with AO2's own shipped defaults; see
 // the defaultSticky* / defaultSFXOnIdle constants for the canon citations. The
 // getters read "does the pick SURVIVE the send", which is the config key's own
-// sense â€” NOT the upstream accessor's backwards name.
+// sense — NOT the upstream accessor's backwards name.
 
 // SetMasterList persists the master-list override.
 func (p *AssetPreferences) SetMasterList(url string) {
@@ -3954,7 +3954,7 @@ func (p *AssetPreferences) WardrobeGeneration() uint64 {
 	return p.wardrobeGen.Load()
 }
 
-// WardrobeFolderMap returns a copy of one server's lowercased char â†’ folder
+// WardrobeFolderMap returns a copy of one server's lowercased char → folder
 // map (wardrobe organization). nil when nothing is filed.
 func (s *Settings) WardrobeFolderMap(serverKey string) map[string]string {
 
@@ -4037,7 +4037,7 @@ func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
 // DeleteWardrobeFolder removes a whole wardrobe folder on one server in a single
 // op. keepMembers true just ungroups (clears the folder tag, the characters
 // stay in the wardrobe, unfiled); false removes those characters from the
-// wardrobe entirely. Either way the folder â€” being membership-derived â€” ceases
+// wardrobe entirely. Either way the folder — being membership-derived — ceases
 // to exist once nothing is filed under it.
 func (p *AssetPreferences) DeleteWardrobeFolder(serverKey, folder string, keepMembers bool) {
 	p.deleteFolder(serverKey, folder, keepMembers,
@@ -4081,7 +4081,7 @@ func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
 	return changed
 }
 
-// FavBackgroundFolderMap returns a copy of one server's lowercased background â†’
+// FavBackgroundFolderMap returns a copy of one server's lowercased background →
 // folder map (Backgrounds-section organization). nil when nothing is filed.
 func (s *Settings) FavBackgroundFolderMap(serverKey string) map[string]string {
 
@@ -4117,7 +4117,7 @@ func (p *AssetPreferences) DeleteFavBackgroundFolder(serverKey, folder string, k
 
 // --- Character keybinds (per server) -------------------------------------------
 
-// CharKeyBinds returns a copy of one server's key â†’ character map.
+// CharKeyBinds returns a copy of one server's key → character map.
 func (s *Settings) CharKeyBinds(serverKey string) map[string]string {
 
 	src := s.ServerWarm[serverKey].CharKeys
@@ -4156,8 +4156,8 @@ func (p *AssetPreferences) SetCharKeyBind(serverKey, key, char string) {
 // --- Settings export / import ---------------------------------------------------
 
 // ExportSettings flushes pending mutations and copies the preferences file
-// â€” every knob, favorites, per-server wardrobes and keybinds, learned
-// formats â€” to destPath: the move-to-a-new-PC bundle. Saved passwords are
+// — every knob, favorites, per-server wardrobes and keybinds, learned
+// formats — to destPath: the move-to-a-new-PC bundle. Saved passwords are
 // the ONE thing stripped on the way out (see stripExportPasswords).
 func (p *AssetPreferences) ExportSettings(destPath string) error {
 	if err := p.SaveNow(); err != nil {
@@ -4180,7 +4180,7 @@ func (p *AssetPreferences) ExportSettings(destPath string) error {
 // A preset IS a settings export (passwords stripped, same loadable shape) saved
 // under presets/<name>.json beside the live file; applying one IS an import
 // (validated, atomic replace, applied on the next start). The full file stays
-// the single source of truth â€” presets are an opt-in convenience layer, exactly
+// the single source of truth — presets are an opt-in convenience layer, exactly
 // as scoped on the roadmap.
 
 const (
@@ -4232,7 +4232,7 @@ func (p *AssetPreferences) SavePreset(name string) error {
 		}
 	}
 	if !replacing && len(existing) >= presetsCap {
-		return fmt.Errorf("config: preset cap reached (%d) â€” delete one first", presetsCap)
+		return fmt.Errorf("config: preset cap reached (%d) — delete one first", presetsCap)
 	}
 	return p.ExportSettings(filepath.Join(p.PresetsDir(), stem+".json"))
 }
@@ -4257,7 +4257,7 @@ func (p *AssetPreferences) ListPresets() []string {
 	return names
 }
 
-// ApplyPreset stages a saved preset as the live preferences file â€” the import
+// ApplyPreset stages a saved preset as the live preferences file — the import
 // path: validated, atomically replaced, applied on the NEXT start (the live
 // state has too many mirrors to hot-swap; the caller shows the restart note).
 func (p *AssetPreferences) ApplyPreset(name string) error {
@@ -4279,7 +4279,7 @@ func (p *AssetPreferences) DeletePreset(name string) error {
 
 // stripExportPasswords blanks every serverWarm[].loginPass in a marshaled
 // preferences blob. The bundle is meant to travel to another machine, and
-// plaintext credentials shouldn't ride along â€” the user re-enters the
+// plaintext credentials shouldn't ride along — the user re-enters the
 // password there (the username and the auto-login choice survive, so a
 // single retype restores the saved flow). loginPass is omitempty, so a
 // blanked value drops out of the JSON entirely. Everything else round-trips
@@ -4350,7 +4350,7 @@ func LearnedKey(host, typeName string) string {
 	return host + LearnedKeySeparator + typeName
 }
 
-// LearnedExtCap bounds one (host, type) persisted learned list (rule Â§17.4).
+// LearnedExtCap bounds one (host, type) persisted learned list (rule §17.4).
 // It mirrors the resolver's in-memory cap; the two must agree or a reload would
 // silently drop formats the running session had learned.
 const LearnedExtCap = 4
@@ -4362,7 +4362,7 @@ const LearnedExtCap = 4
 //
 // Promote, not overwrite: a host can serve more than one format for the same
 // class, and dropping the others is what stranded ~560 PNG-button characters on
-// umineko.online behind a lone .webp candidate. Mirrors assets.promoteExt â€” the
+// umineko.online behind a lone .webp candidate. Mirrors assets.promoteExt — the
 // two must stay in step or a restart would resurrect the truncated list.
 func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 	if ext == "" {
@@ -4381,7 +4381,7 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 	})
 }
 
-// RecordLearnedList persists the full ordered format list for (host, type) â€”
+// RecordLearnedList persists the full ordered format list for (host, type) —
 // the extensions.json seed path, where the SERVER is the authority on what it
 // serves and in what preference order. Unlike RecordLearned this replaces the
 // list rather than promoting into it, because a re-read manifest supersedes
@@ -4421,7 +4421,7 @@ func equalStrings(a, b []string) bool {
 
 // ExtProfile returns the per-host extensions.json format profile (raw JSON), or
 // "" if none. A profile is seeded synchronously on connect and overrides both the
-// fetched server manifest and the global default â€” for that host only.
+// fetched server manifest and the global default — for that host only.
 func (s *Settings) ExtProfile(host string) string {
 
 	return s.ExtProfiles[host]
@@ -4464,7 +4464,7 @@ func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
 	})
 }
 
-// Layout-editor bounds (rule Â§17.4).
+// Layout-editor bounds (rule §17.4).
 const (
 	// themeOvThemesCap bounds how many themes carry edited layouts.
 	themeOvThemesCap = 32
@@ -4472,11 +4472,11 @@ const (
 	// layout engine even defines).
 	themeOvRectsCap = 64
 	// classicSlotCap bounds named slots in the default-courtroom layout
-	// (rule Â§17.4). Raised 48â†’128 for full-state LayoutProfiles: a profile's
+	// (rule §17.4). Raised 48→128 for full-state LayoutProfiles: a profile's
 	// Classic map now carries not just the 18 classic slots but every
-	// persistable floating surface routed through the classic-slot mechanism â€”
+	// persistable floating surface routed through the classic-slot mechanism —
 	// budget: 18 classic + 11 floatWin panels + 1 extras box + ~26 torn Extras
-	// widgets + ~24 ctrl.* control-button slots + torn-tab headroom â‰ˆ 90; 128
+	// widgets + ~24 ctrl.* control-button slots + torn-tab headroom ≈ 90; 128
 	// rounds up with comfortable margin.
 	classicSlotCap = 128
 	// layoutPresetCap bounds how many named layout snapshots a user can save (#34).
@@ -4486,7 +4486,7 @@ const (
 	// can save (mirrors the retired layoutPresetCap). A profile snapshots the
 	// classic slots, anchors, hidden set, and grid step together.
 	layoutProfileCap = 24
-	// maxHiddenPanels bounds the hidden-chrome slice (rule Â§17.4). Comfortably
+	// maxHiddenPanels bounds the hidden-chrome slice (rule §17.4). Comfortably
 	// above the ~45 registry ids (hideablePanels + hideableButtons +
 	// hideableRosterButtons) so a legitimate all-hidden set is never truncated,
 	// while a stale/hand-edited pref can't grow it unboundedly. Enforced in
@@ -4495,33 +4495,33 @@ const (
 )
 
 // Layout-element rotation (A4). Angles are stored as a single byte in the
-// 360/256 encoding shared with courtroom.SpriteStyle.Rotation â€” any of the 256
+// 360/256 encoding shared with courtroom.SpriteStyle.Rotation — any of the 256
 // values is valid, so there is nothing to clamp per value, only the map size to
 // bound.
 const (
 	// RotStepFineDeg is the Shift+R fine-tilt step in degrees. The byte encoding
-	// quantizes to 360/256 â‰ˆ 1.406Â°/step, so a 15Â° request rounds to the nearest
-	// byte; the visible step is ~15Â° Â± 1Â° and a full 24-press circle doesn't land
-	// exactly back on 0 (accepted â€” matches SpriteStyle's own tilt slider).
+	// quantizes to 360/256 ≈ 1.406°/step, so a 15° request rounds to the nearest
+	// byte; the visible step is ~15° ± 1° and a full 24-press circle doesn't land
+	// exactly back on 0 (accepted — matches SpriteStyle's own tilt slider).
 	RotStepFineDeg = 15
 )
 
 // RotCoarseCycle is the R-key coarse cycle: 0 / 90 / 180 / 270 degrees in the
-// 360/256 byte encoding (90*256/360=64, 180â†’128, 270â†’192). Exact â€” these four
+// 360/256 byte encoding (90*256/360=64, 180→128, 270→192). Exact — these four
 // angles land on whole bytes with no rounding.
 var RotCoarseCycle = [4]uint8{0, 64, 128, 192}
 
 // RotationByteToDeg converts a stored rotation byte to degrees (the same map
-// courtroom.SpriteStyle.RotationDeg uses). Pure â€” the draw-path resolver and
+// courtroom.SpriteStyle.RotationDeg uses). Pure — the draw-path resolver and
 // the editors share it, and the angle==0 fast path in the draw sites compares
-// the byte directly (0 â†’ the plain Copy path) so this is only called when a
+// the byte directly (0 → the plain Copy path) so this is only called when a
 // rotation is actually set.
 func RotationByteToDeg(b uint8) float64 {
 	return float64(int(b)) * 360.0 / 256.0
 }
 
 // RotationDegToByte is the inverse (rounded to the nearest byte, wrapping at
-// 360Â°) â€” used when the Shift+R fine step advances by RotStepFineDeg.
+// 360°) — used when the Shift+R fine step advances by RotStepFineDeg.
 func RotationDegToByte(deg int) uint8 {
 	deg %= 360
 	if deg < 0 {
@@ -4560,7 +4560,7 @@ func (s *Settings) ThemeRectOverrides(theme string) map[string][4]int {
 }
 
 // HasThemeRectOverride reports whether one widget carries a persisted layout-editor
-// override under a theme â€” the allocation-free probe ThemeRectOverrides cannot be
+// override under a theme — the allocation-free probe ThemeRectOverrides cannot be
 // (it copies the whole map, so a per-frame caller would allocate every frame).
 //
 // It exists because for one key the override's PRESENCE is itself the state: the
@@ -4637,8 +4637,8 @@ func (p *AssetPreferences) ClearThemeRectRotation(theme, key string) {
 
 // sanitizeClassicLayout validates persisted default-courtroom slot overrides on
 // load: it drops NaN/inf, clamps fractions into a sane on-screen range, and
-// bounds the map (rule Â§17.4). Unknown slot names are harmless â€” slotRect only
-// ever reads names it queries â€” so they're kept (forward/back compatibility).
+// bounds the map (rule §17.4). Unknown slot names are harmless — slotRect only
+// ever reads names it queries — so they're kept (forward/back compatibility).
 func sanitizeClassicLayout(in map[string][4]float64) map[string][4]float64 {
 	if len(in) == 0 {
 		return nil
@@ -4697,8 +4697,8 @@ func sanitizeLayoutPresets(in map[string]map[string][4]float64) map[string]map[s
 }
 
 // sanitizeHiddenPanels dedups and bounds a hidden-chrome id slice on load (rule
-// Â§17.4). Blank ids and duplicates are dropped; the result is capped at
-// maxHiddenPanels. Order is preserved for the survivors. Nil-safe (empty â†’ nil).
+// §17.4). Blank ids and duplicates are dropped; the result is capped at
+// maxHiddenPanels. Order is preserved for the survivors. Nil-safe (empty → nil).
 func sanitizeHiddenPanels(in []string) []string {
 	if len(in) == 0 {
 		return nil
@@ -4822,7 +4822,7 @@ func sanitizeLayoutProfiles(in map[string]LayoutProfile) map[string]LayoutProfil
 }
 
 // LayoutProfileNames returns the saved full-state profile names (A6). Order is
-// unspecified â€” the UI sorts for display.
+// unspecified — the UI sorts for display.
 func (s *Settings) LayoutProfileNames() []string {
 
 	if len(s.LayoutProfiles) == 0 {
@@ -4926,7 +4926,7 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 }
 
 // ClearClassicSlot drops one slot's override (name "" clears every slot, the
-// editor's "Reset all"). The slot's window anchor goes with it â€” an anchor
+// editor's "Reset all"). The slot's window anchor goes with it — an anchor
 // without an override is meaningless (it only re-bases the override).
 func (p *AssetPreferences) ClearClassicSlot(name string) {
 	p.Update(func(sn *Settings) {
@@ -4935,7 +4935,7 @@ func (p *AssetPreferences) ClearClassicSlot(name string) {
 }
 
 // ClassicAnchor pins one classic-layout slot to a window reference: Mode is
-// two letters â€” horizontal âˆˆ {f,l,r,c} then vertical âˆˆ {f,t,b,c} (f = follow
+// two letters — horizontal ∈ {f,l,r,c} then vertical ∈ {f,t,b,c} (f = follow
 // the fraction, i.e. unpinned on that axis; l/r/t/b = pixel-glued to that
 // window edge; c = pixel-glued to the window centre). WinW/WinH record the
 // window size the slot's fraction override was last written at, so the
@@ -4950,7 +4950,7 @@ type ClassicAnchor struct {
 // the classic slot overrides (window fractions), their window anchors, the
 // hidden-chrome set, and the editor snap-grid step. Applying a profile restores
 // all four axes at once. It is a strict superset of the retired LayoutPresets
-// (which carried only Classic) â€” legacy presets migrate in as Classic-only
+// (which carried only Classic) — legacy presets migrate in as Classic-only
 // profiles. Each axis is sanitized on load through the same helpers the live
 // axes use, so a profile can never smuggle in geometry the resolver would have
 // to defend against.
@@ -4961,7 +4961,7 @@ type LayoutProfile struct {
 	GridPx  int                      `json:"gridPx,omitempty"`
 	// Rotations carries the classic slots' rotation angles (A4). Additive: a
 	// profile saved by an older build has this nil and loads fine. Theme rotations
-	// stay OUT of profiles (like the theme rects â€” a theme-X angle applied on
+	// stay OUT of profiles (like the theme rects — a theme-X angle applied on
 	// theme-Y would be incoherent).
 	Rotations map[string]uint8 `json:"rotations,omitempty"`
 }
@@ -4977,7 +4977,7 @@ func validAnchorMode(m string) bool {
 }
 
 // sanitizeClassicAnchors keeps only well-formed entries (valid mode, positive
-// saved window) within the classicSlotCap bound â€” a hand-edited or stale pref
+// saved window) within the classicSlotCap bound — a hand-edited or stale pref
 // can't smuggle in junk the resolver would have to defend against per frame.
 func sanitizeClassicAnchors(in map[string]ClassicAnchor) map[string]ClassicAnchor {
 	if len(in) == 0 {
@@ -4999,7 +4999,7 @@ func sanitizeClassicAnchors(in map[string]ClassicAnchor) map[string]ClassicAncho
 	return out
 }
 
-// ClassicAnchorSnapshot returns a copy of the per-slot window pins â€” the
+// ClassicAnchorSnapshot returns a copy of the per-slot window pins — the
 // classic editor snapshots it once alongside ClassicLayoutOverrides so the
 // render path resolves anchors lock-free.
 func (s *Settings) ClassicAnchorSnapshot() map[string]ClassicAnchor {
@@ -5064,7 +5064,7 @@ func (s *Settings) LayoutGridSize() int {
 	return orDefault(s.LayoutGridPx, DefaultLayoutGridPx)
 }
 
-// SetClassicLayout REPLACES every default-courtroom slot override at once â€” the
+// SetClassicLayout REPLACES every default-courtroom slot override at once — the
 // classic editor's undo/redo restores a whole snapshot, so it can't go slot-by-slot.
 // The map is copied (never aliased), empty keys skipped, and bounded by classicSlotCap;
 // a nil/empty map clears all overrides.
@@ -5088,10 +5088,10 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 }
 
 // SetClassicAnchors REPLACES every slot's window pin at once (symmetric to
-// SetClassicLayout) â€” applyProfile restores a whole anchor snapshot, so it can't
+// SetClassicLayout) — applyProfile restores a whole anchor snapshot, so it can't
 // go slot-by-slot. The map is sanitized (bad mode / non-positive window dropped)
 // and copied (never aliased); a nil/empty map clears all pins. Unlike
-// ClearClassicSlot this does NOT touch ClassicLayout â€” a profile carries both
+// ClearClassicSlot this does NOT touch ClassicLayout — a profile carries both
 // axes independently, and the caller sets them together.
 func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
@@ -5100,7 +5100,7 @@ func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	})
 }
 
-// ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) â€”
+// ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) —
 // the classic editor snapshots it once into an App-local map (beside the anchor
 // snapshot) so the render path resolves angles lock-free.
 func (s *Settings) ClassicRotationSnapshot() map[string]uint8 {
@@ -5137,7 +5137,7 @@ func (p *AssetPreferences) ClearClassicRotation(name string) {
 }
 
 // SetClassicRotations REPLACES every slot's rotation at once (symmetric to
-// SetClassicAnchors) â€” applyProfile restores a whole rotation snapshot. The map
+// SetClassicAnchors) — applyProfile restores a whole rotation snapshot. The map
 // is sanitized (blank keys dropped, bounded by classicSlotCap) and copied (never
 // aliased); a nil/empty map clears all rotations.
 func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
@@ -5166,23 +5166,23 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 }
 
 // ThemeFitDefaultJustMoved reports whether THIS load performed the one-shot
-// Stretchâ†’Native theme-fit move: the stamp was absent (so this is the first run
+// Stretch→Native theme-fit move: the stamp was absent (so this is the first run
 // after updating for this file) AND the file was still on the old Stretch
 // default, so the mode actually changed under the user.
 //
-// It is the upgrade signal for the #35 window snap â€” the caller uses it to arm
+// It is the upgrade signal for the #35 window snap — the caller uses it to arm
 // exactly one automatic resize to the theme's design size, so an existing user
 // does not go from an edge-to-edge courtroom to a small canvas ringed by bars
 // with no way back except the settings screen. Persisting the stamp is what
 // makes it fire once and only once: the next launch finds the stamp and this
 // reports false forever after. That is why the stamp is flushed SYNCHRONOUSLY on
 // the migrating launch (newWithDebounce) rather than left to the debounced saver
-// â€” a stamp that can be lost to a crash inside the debounce window would only
+// — a stamp that can be lost to a crash inside the debounce window would only
 // buy "once per persisted stamp", and the move would re-run and re-snap.
 //
 // Pure read (no consume), so it is safe to call from anywhere; the caller owns
 // the "act on it once" decision. A file that kept a deliberate Letterbox/Crop/
-// Custom pick reports FALSE â€” its look did not change, so nothing should move.
+// Custom pick reports FALSE — its look did not change, so nothing should move.
 func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
 
 	return p.themeFitMovedToNative
@@ -5202,7 +5202,7 @@ func (s *Settings) ThemeZoom() int {
 	return clampPercent(orDefault(s.ThemeFitZoom, DefaultThemeZoom), MinThemeZoom, MaxThemeZoom)
 }
 
-// ThemePan reports the Custom-mode pan (percent of the window, Â±).
+// ThemePan reports the Custom-mode pan (percent of the window, ±).
 func (s *Settings) ThemePan() (x, y int) {
 
 	return s.ThemeFitPanX, s.ThemeFitPanY
@@ -5218,8 +5218,8 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 	})
 }
 
-// ExportLearnedJSON snapshots the learned-format table as indented JSON â€”
-// one player's warm state can seed another's (Settings â†’ Export).
+// ExportLearnedJSON snapshots the learned-format table as indented JSON —
+// one player's warm state can seed another's (Settings → Export).
 func (p *AssetPreferences) ExportLearnedJSON() ([]byte, error) {
 	return json.MarshalIndent(p.Load().LearnedSnapshot(), "", jsonMarshalIndent)
 }
@@ -5266,7 +5266,7 @@ func (p *AssetPreferences) ClearLearned() {
 }
 
 // dropLearnedType removes learned entries for one type across all hosts from a
-// snapshot â€” the shared path for SetFormatOrder/SetTypeFallbacks/ClearLearnedType.
+// snapshot — the shared path for SetFormatOrder/SetTypeFallbacks/ClearLearnedType.
 func dropLearnedType(sn *Settings, typeName string) {
 	suffix := LearnedKeySeparator + typeName
 	for key := range sn.LearnedFormats {
@@ -5281,7 +5281,7 @@ func dropLearnedType(sn *Settings, typeName string) {
 // LocalAssets reports the no-streaming mode: read assets from user-chosen
 // local mount folders instead of the server's asset URL (legacy support for
 // servers without an asset server). Mounts are searched in order, first hit
-// wins â€” mirroring AO2-Client mount paths, so any folder layout works, not
+// wins — mirroring AO2-Client mount paths, so any folder layout works, not
 // just a default /base.
 func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 	snap := p.Load()
@@ -5292,7 +5292,7 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 }
 
 // SetLocalAssets toggles no-streaming mode and stores the ordered mount
-// folder list. It returns false â€” changing nothing â€” when the call would GROW
+// folder list. It returns false — changing nothing — when the call would GROW
 // the list past LocalMountCap.
 //
 // Refusing only GROWTH is deliberate. A flat `len(mounts) > LocalMountCap`
@@ -5318,7 +5318,7 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 // It is the ONE place the two stored bools are normalized, so the reachable
 // fourth state (both set) has exactly one defined meaning: Local-only WINS, and
 // layering is inert. That matters because the two modes are structurally
-// incompatible â€” Local-only builds a local-mode Manager whose URLs already carry
+// incompatible — Local-only builds a local-mode Manager whose URLs already carry
 // the local:// origin, and layering a mount origin over a mount origin would
 // double-serve. Everything that gates on layering must call THIS, never the raw
 // field.
@@ -5347,8 +5347,8 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 }
 
 // BaseMountsEqual reports whether want is exactly the mount list the asset
-// pipeline is reading right now â€” the SAME list LocalAssets/LayeredAssets would
-// hand back, in the same order â€” without copying it out.
+// pipeline is reading right now — the SAME list LocalAssets/LayeredAssets would
+// hand back, in the same order — without copying it out.
 //
 // It exists because both accessors allocate: each takes `make([]string, n)` +
 // copy under the lock, which is correct for a caller that keeps the slice but is
@@ -5361,7 +5361,7 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 // The mode logic mirrors ui's baseMounts and is pinned by a parity test there:
 // Local-only wins, layering applies only when it is on with mounts and the
 // exclusive flag is off (LayeredAssets' normalization), and neither mode means
-// no mounts at all â€” offering folders the pipeline is not reading would list
+// no mounts at all — offering folders the pipeline is not reading would list
 // characters that then fail to load.
 func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
 	snap := p.Load()
@@ -5399,7 +5399,7 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 // preserving its position in the list. Returns false if oldURL isn't found, or
 // if newURL differs from oldURL and already belongs to ANOTHER favorite
 // (rejected to avoid a silent, surprising merge onto that target). A no-op edit
-// (nothing actually changed) returns true â€” the caller treats false purely as
+// (nothing actually changed) returns true — the caller treats false purely as
 // an error signal, so an unchanged Save must not report failure. markDirty()
 // fires only on a real change.
 func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description string) bool {
@@ -5459,7 +5459,7 @@ func (s *Settings) IsFavorite(url string) bool {
 // ShownameCap bounds the saved showname presets (M6).
 const ShownameCap = 64
 
-// ShownameList returns a copy of the saved showname presets (global, persisted â€”
+// ShownameList returns a copy of the saved showname presets (global, persisted —
 // cleared only by a full factory reset).
 func (s *Settings) ShownameList() []string {
 
@@ -5471,7 +5471,7 @@ func (s *Settings) ShownameList() []string {
 	return out
 }
 
-// ShownameCount is the number of saved presets â€” a cheap, alloc-free length read
+// ShownameCount is the number of saved presets — a cheap, alloc-free length read
 // so the courtroom name picker caches its option list and rebuilds only when the
 // set changes (vs calling ShownameList, which copies, every frame).
 func (s *Settings) ShownameCount() int {
@@ -5506,7 +5506,7 @@ func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 // unbounded maps).
 const shownameKeyCap = 64
 
-// ShownameKeyBinds returns a copy of the global key â†’ showname bind map (M6:
+// ShownameKeyBinds returns a copy of the global key → showname bind map (M6:
 // press a bound key in the courtroom to swap to that showname). Nil = none.
 func (s *Settings) ShownameKeyBinds() map[string]string {
 
@@ -5535,7 +5535,7 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 // icPhraseKeyCap bounds the hotkeyed IC quick-phrases (hard rule #4: no unbounded maps).
 const icPhraseKeyCap = 64
 
-// ICPhraseBinds returns a copy of the key â†’ IC-phrase map: press a bound key in
+// ICPhraseBinds returns a copy of the key → IC-phrase map: press a bound key in
 // the courtroom to send that line as your character in IC. Nil = none.
 func (s *Settings) ICPhraseBinds() map[string]string {
 
@@ -5618,7 +5618,7 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 }
 
 // sfxFavoritesCap bounds the starred-SFX list (hard rule #4: no unbounded
-// lists). A generous ceiling â€” nobody favourites hundreds of sounds.
+// lists). A generous ceiling — nobody favourites hundreds of sounds.
 const sfxFavoritesCap = 128
 
 // SfxFavoritesList returns a copy of the starred SFX names (#12, global, persisted,
@@ -5673,7 +5673,7 @@ var defaultModReasonTemplates = []string{
 const modReasonTemplatesCap = 32
 
 // ModReasonTemplatesList returns the editable ban/kick reason chips (a clone). When the stored list
-// is empty it returns the built-in defaults â€” so a brand-new config (and a fully-cleared one) always
+// is empty it returns the built-in defaults — so a brand-new config (and a fully-cleared one) always
 // has something. Deleting every entry therefore re-seeds the defaults on next read, by design.
 func (s *Settings) ModReasonTemplatesList() []string {
 
@@ -5692,7 +5692,7 @@ func seedModTemplates(sn *Settings) {
 }
 
 // AddModReasonTemplate appends a reason (trimmed, deduped case-insensitively, bounded). Reports
-// whether it changed. Case is preserved â€” these are display labels, not match keys.
+// whether it changed. Case is preserved — these are display labels, not match keys.
 func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -5709,7 +5709,7 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 // enum presets already cover the common spans, so 16 customs is plenty.
 const modDurationsCap = 16
 
-// ModDurationsList returns the saved custom ban-duration chips (a clone) â€” canonical
+// ModDurationsList returns the saved custom ban-duration chips (a clone) — canonical
 // short tokens ("45m", "2d"). Empty by default: the BanDuration enum presets are the
 // built-ins, customs only add to them.
 func (s *Settings) ModDurationsList() []string {
@@ -5718,7 +5718,7 @@ func (s *Settings) ModDurationsList() []string {
 }
 
 // AddModDuration appends a custom duration chip (deduped, bounded). The caller
-// canonicalizes first (courtroom.CanonicalBanDuration) â€” config stays courtroom-free,
+// canonicalizes first (courtroom.CanonicalBanDuration) — config stays courtroom-free,
 // so it stores what it's given, trimmed. Reports whether it changed.
 func (p *AssetPreferences) AddModDuration(token string) bool {
 	token = strings.TrimSpace(token)
@@ -5761,7 +5761,7 @@ const blipVolsCap = 256
 // (100%), i.e. no extra attenuation beyond the global blip volume (M11).
 const blipVolumeDefault = 100
 
-// BlipVolumeFor returns a character's stored per-character blip scale (0â€“100,
+// BlipVolumeFor returns a character's stored per-character blip scale (0–100,
 // 100 = no attenuation; M11). Called from the courtroom once per message (not
 // per frame). Unknown characters get the full default.
 func (s *Settings) BlipVolumeFor(char string) int {
@@ -5778,7 +5778,7 @@ func (s *Settings) BlipVolumeFor(char string) int {
 }
 
 // BlipVolumes returns a copy of the per-character blip-volume overrides
-// (lowercased char â†’ scale), for the settings UI. Nil when none are set.
+// (lowercased char → scale), for the settings UI. Nil when none are set.
 func (s *Settings) BlipVolumes() map[string]int {
 
 	if len(s.BlipVols) == 0 {
@@ -5791,7 +5791,7 @@ func (s *Settings) BlipVolumes() map[string]int {
 	return out
 }
 
-// SetBlipVolume stores a character's per-character blip scale (clamped 0â€“100).
+// SetBlipVolume stores a character's per-character blip scale (clamped 0–100).
 // Setting the default (100) clears the override so the map only holds genuine
 // adjustments (and stays well under blipVolsCap). Reports whether it changed.
 func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
@@ -5816,12 +5816,12 @@ const (
 	emoteFavPerCharCap = 256
 )
 
-// EmoteFavsFor returns a COPY of a character's favourited emote indices â€” the
+// EmoteFavsFor returns a COPY of a character's favourited emote indices — the
 // slice positions in its emote list. Indices are the key (not the emote
 // name/anim) because those DUPLICATE within a character (e.g. Apollo's three
 // "normal" emotes share both label and talking sprite), so a name key would
 // merge distinct emotes into one star. Called from the UI's per-character view
-// rebuild, which runs only on a character/filter change â€” never per frame. Nil
+// rebuild, which runs only on a character/filter change — never per frame. Nil
 // when none are set.
 func (s *Settings) EmoteFavsFor(char string) []int {
 

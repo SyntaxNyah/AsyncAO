@@ -1,7 +1,7 @@
 package ui
 
-// FINDABILITY (v1.90.0 W7a, retargeted in W10) â€”
-// docs/wip/THEME-EDITOR-DESIGN.md Â§Q7's "Entry points + settings findability".
+// FINDABILITY (v1.90.0 W7a, retargeted in W10) —
+// docs/wip/THEME-EDITOR-DESIGN.md §Q7's "Entry points + settings findability".
 //
 // This closes a CLASS, not an instance. The recon found that no findability census
 // existed at all, and v1.89.1 duly shipped a settings row nobody could search for.
@@ -47,7 +47,7 @@ var themeEditorQueries = []string{
 //     every phrase above to the Theme editor tab;
 //   - the ROW must register with the gather-search at all, i.e. it must call
 //     c.onRow. A row that draws without that is invisible to the search box even
-//     though its label is right there on screen â€” which is exactly how v1.89.1's
+//     though its label is right there on screen — which is exactly how v1.89.1's
 //     row went missing.
 func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 	for _, q := range themeEditorQueries {
@@ -56,7 +56,7 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 			continue
 		}
 		if got < 0 {
-			t.Errorf("searching %q resolves to NOTHING â€” the flagship feature of the release would be "+
+			t.Errorf("searching %q resolves to NOTHING — the flagship feature of the release would be "+
 				"reachable only by scrolling to it", q)
 			continue
 		}
@@ -92,7 +92,7 @@ func TestThemeEditorKeywordsDoNotShadowLaterTabs(t *testing.T) {
 // comments have been describing it in prose since W2:
 // TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE keywords, so a long
 // term here whose SUBSTRING is a later tab's query passes that gate while stealing
-// the query for real â€” "customize layout" would silently take "custom" from
+// the query for real — "customize layout" would silently take "custom" from
 // tabAssets' "custom error sprite" and tabAudio's "custom music".
 //
 // This tab sits at index 2, ahead of every tab from Assets on, so it is the one that
@@ -114,7 +114,7 @@ func TestThemeEditorKeywordsDoNotStealShorterQueries(t *testing.T) {
 			if owner <= tabThemeEditor {
 				continue
 			}
-			t.Errorf("Theme editor keyword %q contains %q, which %s answers â€” the whole-keyword shadow "+
+			t.Errorf("Theme editor keyword %q contains %q, which %s answers — the whole-keyword shadow "+
 				"gate cannot see this, and the search matches forward, so this tab would silently steal "+
 				"that query", kw, word, tabNameOrNone(owner))
 		}
