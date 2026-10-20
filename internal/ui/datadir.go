@@ -3,25 +3,40 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"sync"
 )
 
-// exeDataRoot overrides the directory exe-adjacent data lives in: recordings/,
-// logs/, screenshots/, downloads/ and the two export files. Empty in
-// production, where that directory is the running binary's own. Tests set it
-// through withExeDataRoot because `go test` hands every run of a package the
-// SAME cached test binary — two concurrent `go test ./internal/ui` processes
-// therefore share one os.Executable() directory and race on the same files.
-var exeDataRoot string
+// exeDataMu guards exeDataRoot and downloadsRootMemo. Tests set the root while
+// goroutines spawned by the code under test (the async .aorec write, for one)
+// are still reading it, so a plain package var raced under -race: the CI race
+// job caught TestStopRecordingPrefOffNoBundle on exactly that overlap.
+var (
+	exeDataMu         sync.RWMutex
+	exeDataRoot       string
+	downloadsRootMemo string
+)
 
 // exeDataDir is the base directory for exe-adjacent data: the injected test
 // root when one is set, else the running binary's directory.
 func exeDataDir() (string, error) {
-	if exeDataRoot != "" {
-		return exeDataRoot, nil
+	exeDataMu.RLock()
+	root := exeDataRoot
+	exeDataMu.RUnlock()
+	if root != "" {
+		return root, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Dir(exe), nil
+}
+
+// setExeDataRoot points every exe-adjacent path at root and drops the downloads
+// memo built from the previous root. Tests use it through withExeDataRoot.
+func setExeDataRoot(root string) {
+	exeDataMu.Lock()
+	exeDataRoot = root
+	downloadsRootMemo = ""
+	exeDataMu.Unlock()
 }

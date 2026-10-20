@@ -13,10 +13,10 @@ import "testing"
 func withExeDataRoot(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	oldRoot, oldDownloads := exeDataRoot, downloadsRootMemo
-	exeDataRoot, downloadsRootMemo = dir, ""
-	t.Cleanup(func() {
-		exeDataRoot, downloadsRootMemo = oldRoot, oldDownloads
-	})
+	exeDataMu.RLock()
+	old := exeDataRoot
+	exeDataMu.RUnlock()
+	setExeDataRoot(dir)
+	t.Cleanup(func() { setExeDataRoot(old) })
 	return dir
 }
