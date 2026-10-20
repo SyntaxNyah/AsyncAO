@@ -444,9 +444,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
-	a.updates.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
-	a.updates.pollUpdate()                  // drain a found release
-	a.updates.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
+	a.updates.pumpInput(winW, winH) // self-update: one-shot check, drain, chip/modal click before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)

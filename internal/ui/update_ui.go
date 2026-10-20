@@ -69,10 +69,10 @@ type selfUpdate struct {
 	relaunchOnExit bool                 // "Restart to apply": relaunch the new binary after a clean shutdown
 }
 
-// wireComponents points every embedded component's env at App's own env, and
-// gives that env its host capabilities (a redraw request and the chrome band),
-// so a component reaches shared state through one pointer and App starts
-// accepting writes. NewApp calls it once; nothing is reassigned afterwards.
+// wireComponents points every component's env at App's own env, and gives that
+// env its host capabilities (a redraw request and the chrome band), so a
+// component reaches shared state through one pointer. NewApp calls it once
+// (and headless rigs call it directly); nothing is reassigned afterwards.
 func (a *App) wireComponents() {
 	a.env.h = a
 	a.updates.env = &a.env
@@ -334,6 +334,17 @@ func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 	getBtn = sdl.Rect{X: panel.X + pad, Y: btnY, W: 220, H: btnH}
 	laterBtn = sdl.Rect{X: panel.X + panel.W - pad - 100, Y: btnY, W: 100, H: btnH}
 	return panel, notes, getBtn, laterBtn
+}
+
+// pumpInput is the component's per-frame front half, in the ONE order that is
+// correct: kick the one-shot check (frame 1 only), drain a result, then let the
+// chip/modal consume this frame's click BEFORE the screens see it. App calls
+// this once per frame instead of knowing each phase — the order is the
+// component's business, not the frame loop's.
+func (s *selfUpdate) pumpInput(w, h int32) {
+	s.maybeKickUpdateCheck() // one-shot, off the boot path (fires on frame 1)
+	s.pollUpdate()           // drain a found release
+	s.handleUpdateInput(w, h)
 }
 
 // handleUpdateInput consumes the chip / modal interaction before the screens
