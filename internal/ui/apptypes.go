@@ -93,11 +93,6 @@ type sessionState struct {
 	// courtroom once per idle-budget, and the event-driven loop schedules its
 	// idle-rate wake from it (NextWakeDelay). idle=off → neither fires.
 	lastFrameDrawn time.Time
-	// uiDirty marks work that changed UI-visible state since the last drawn
-	// frame — the connection pumps set it per drained packet — so the
-	// experimental event-driven loop renders exactly one frame in response
-	// instead of waiting out its idle tick. Render thread only; Frame clears it.
-	uiDirty bool
 	// drawnGen is the texture-store generation as of the last drawn frame: a
 	// mismatch means textures uploaded/evicted since the screen was painted
 	// (streamed-in icons, healed pages), which is redraw-worthy damage under
