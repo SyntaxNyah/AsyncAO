@@ -1441,11 +1441,11 @@ func (a *App) captureScreenshot() {
 		// the SDL surface's lifetime (ABGR8888 == image.RGBA byte order).
 		pix := make([]byte, len(surf.Pixels()))
 		copy(pix, surf.Pixels())
-		exe, err := os.Executable()
+		root, err := exeDataDir()
 		if err != nil {
 			return
 		}
-		dir := filepath.Join(filepath.Dir(exe), "screenshots")
+		dir := filepath.Join(root, "screenshots")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}
@@ -2308,11 +2308,11 @@ func (a *App) exportICLog(asHTML bool) {
 	}, a.serverName)
 	stamp := time.Now().Format("20060102-150405")
 	go func() {
-		exe, err := os.Executable()
+		root, err := exeDataDir()
 		if err != nil {
 			return
 		}
-		dir := filepath.Join(filepath.Dir(exe), "logs")
+		dir := filepath.Join(root, "logs")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}

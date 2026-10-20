@@ -441,13 +441,13 @@ func loadRecording(path string) (*sceneRecording, error) {
 	return &rec, nil
 }
 
-// recordingsDir is recordings\ next to the exe (created on demand).
+// recordingsDir is recordings\ in the exe data dir (created on demand).
 func recordingsDir() string {
-	exe, err := os.Executable()
+	root, err := exeDataDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(exe), "recordings")
+	return filepath.Join(root, "recordings")
 }
 
 // recordingFile is one saved replay in the picker.

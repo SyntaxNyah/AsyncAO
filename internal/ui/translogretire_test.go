@@ -23,6 +23,7 @@ import (
 // test binary), exactly as the split test does.
 func transcriptTestApp(t *testing.T, server string) *App {
 	t.Helper()
+	withExeDataRoot(t)
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(
 		sn *config.
