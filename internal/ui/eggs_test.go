@@ -151,7 +151,7 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 					})
 				}
 
-				a.eggMsg, a.eggKind = "", eggNone
+				a.eggs.msg, a.eggs.kind = "", eggNone
 				a.frameAnimChrome = false
 				painted := eggPaintedPixels(t, a.ctx.Ren, ct, half.draw)
 				switch {
@@ -193,18 +193,18 @@ func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 		text := eggTriggerFor(t, kind)
 		sc := courtroom.Scene{MessageText: text}
 
-		a.eggMsg, a.eggKind = "", eggNone
+		a.eggs.msg, a.eggs.kind = "", eggNone
 		a.frameAnimChrome = false
 		a.drawStageEgg(vp, &sc)
-		if a.eggKind != kind {
-			t.Fatalf("drawStageEgg resolved egg %d for %q, want %d", a.eggKind, text, kind)
+		if a.eggs.kind != kind {
+			t.Fatalf("drawStageEgg resolved egg %d for %q, want %d", a.eggs.kind, text, kind)
 		}
 		if got, want := a.frameAnimChrome, eggDrawsOnStage(kind); got != want {
 			t.Errorf("egg %d: drawStageEgg noted the pacing census = %v, want %v — a stage field that "+
 				"animates without noting leaves the frame limiter at the idle cap", kind, got, want)
 		}
 
-		a.eggMsg, a.eggKind = "", eggNone
+		a.eggs.msg, a.eggs.kind = "", eggNone
 		a.frameAnimChrome = false
 		a.drawChatEgg(box, text)
 		if !a.frameAnimChrome {
@@ -220,7 +220,7 @@ func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 		t.Fatalf("the control message %q lights egg %d — this arm would assert nothing", inert, got)
 	}
 	sc := courtroom.Scene{MessageText: inert}
-	a.eggMsg, a.eggKind = "", eggNone
+	a.eggs.msg, a.eggs.kind = "", eggNone
 	a.frameAnimChrome = false
 	a.drawStageEgg(vp, &sc)
 	a.drawChatEgg(box, inert)
@@ -307,38 +307,38 @@ func TestCreatorEgg(t *testing.T) {
 	}
 }
 
-// TestRefreshEggKindCachesScan pins the compare-and-store guard: a new message
+// TestEggsRefreshCachesScan pins the compare-and-store guard: a new message
 // rescans and stores; the SAME text again does NOT rescan (returns false); a
 // changed text rescans anew. This is the once-per-message contract that keeps a
 // settled frame at one string compare — tested via the pure guard, no SDL.
-func TestRefreshEggKindCachesScan(t *testing.T) {
+func TestEggsRefreshCachesScan(t *testing.T) {
 	a := &App{env: env{}}
 
-	if scanned := a.refreshEggKind("hello fanatsors"); !scanned {
+	if scanned := a.eggs.refresh("hello fanatsors"); !scanned {
 		t.Fatal("first sight of a message must rescan")
 	}
-	if a.eggKind != eggFanat {
-		t.Fatalf("stored egg = %d, want eggFanat", a.eggKind)
+	if a.eggs.kind != eggFanat {
+		t.Fatalf("stored egg = %d, want eggFanat", a.eggs.kind)
 	}
-	if scanned := a.refreshEggKind("hello fanatsors"); scanned {
+	if scanned := a.eggs.refresh("hello fanatsors"); scanned {
 		t.Error("the same text must NOT rescan (one scan per message)")
 	}
-	if a.eggKind != eggFanat {
-		t.Errorf("cached egg changed on a no-op refresh: %d", a.eggKind)
+	if a.eggs.kind != eggFanat {
+		t.Errorf("cached egg changed on a no-op refresh: %d", a.eggs.kind)
 	}
 	// A changed message rescans and updates the kind.
-	if scanned := a.refreshEggKind("now with syntaxnyah"); !scanned {
+	if scanned := a.eggs.refresh("now with syntaxnyah"); !scanned {
 		t.Error("a changed message must rescan")
 	}
-	if a.eggKind != eggNyah {
-		t.Errorf("stored egg = %d, want eggNyah after text change", a.eggKind)
+	if a.eggs.kind != eggNyah {
+		t.Errorf("stored egg = %d, want eggNyah after text change", a.eggs.kind)
 	}
 	// A plain message clears the egg (self-clearing when the trigger leaves the box).
-	if scanned := a.refreshEggKind("plain line"); !scanned {
+	if scanned := a.eggs.refresh("plain line"); !scanned {
 		t.Error("clearing text must rescan")
 	}
-	if a.eggKind != eggNone {
-		t.Errorf("egg not cleared: %d", a.eggKind)
+	if a.eggs.kind != eggNone {
+		t.Errorf("egg not cleared: %d", a.eggs.kind)
 	}
 }
 
@@ -547,8 +547,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		a.room.SkipToIdle()
 		// Sanity: the egg must actually resolve, or this gate would pass vacuously.
 		draw()
-		if a.eggKind != tc.want {
-			t.Fatalf("egg for %q = %d, want %d — the zero-alloc gate would measure the wrong (or no) path", tc.text, a.eggKind, tc.want)
+		if a.eggs.kind != tc.want {
+			t.Fatalf("egg for %q = %d, want %d — the zero-alloc gate would measure the wrong (or no) path", tc.text, a.eggs.kind, tc.want)
 		}
 		if n := gateZeroAlloc(draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
