@@ -218,11 +218,11 @@ func sanitizeLogFolder(server string) string {
 // joining one server in the same second would otherwise be handed the identical path and append
 // into each other, defeating the split. See transcriptFilename for the name rule (pure, tested).
 func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
-	exe, err := os.Executable()
+	root, err := exeDataDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(filepath.Dir(exe), "logs", sanitizeLogFolder(server))
+	dir := filepath.Join(root, "logs", sanitizeLogFolder(server))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

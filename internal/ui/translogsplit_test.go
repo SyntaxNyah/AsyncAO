@@ -23,6 +23,7 @@ import (
 // rather than re-minting it (a backgrounded tab that came back must keep appending
 // to its own file, not start a third).
 func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
+	withExeDataRoot(t)
 	a := testTabApp(t)
 	const server = "Skrapegropen"
 

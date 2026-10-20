@@ -58,11 +58,11 @@ func (a *App) pollJukebox() {
 const jukeboxExportFileName = "jukebox-playlists.json"
 
 func jukeboxExportPath() (string, error) {
-	exe, err := os.Executable()
+	dir, err := exeDataDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(exe), jukeboxExportFileName), nil
+	return filepath.Join(dir, jukeboxExportFileName), nil
 }
 
 // exportJukeboxAsync writes the whole playlist library beside the exe off-thread
