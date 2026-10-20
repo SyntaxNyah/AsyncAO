@@ -430,16 +430,16 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 // idle=0 instead of waiting for cursor motion.
 func TestPollUpdateForcesRedraw(t *testing.T) {
 	a := testTabApp(t)
-	if a.selfUpdate.applyRes == nil {
-		a.selfUpdate.applyRes = make(chan error, 1)
+	if a.updates.applyRes == nil {
+		a.updates.applyRes = make(chan error, 1)
 	}
-	a.selfUpdate.busy = true
-	a.selfUpdate.staged = false
+	a.updates.busy = true
+	a.updates.staged = false
 	a.uiDirty = false
-	a.selfUpdate.applyRes <- nil // download + stage succeeded
-	a.pollUpdate()
-	if a.selfUpdate.busy || !a.selfUpdate.staged {
-		t.Errorf("pollUpdate must clear busy and stage on success: busy=%v staged=%v", a.selfUpdate.busy, a.selfUpdate.staged)
+	a.updates.applyRes <- nil // download + stage succeeded
+	a.updates.pollUpdate()
+	if a.updates.busy || !a.updates.staged {
+		t.Errorf("pollUpdate must clear busy and stage on success: busy=%v staged=%v", a.updates.busy, a.updates.staged)
 	}
 	if !a.uiDirty {
 		t.Error("pollUpdate must mark uiDirty so the modal flips to Restart-to-apply at idle=0")

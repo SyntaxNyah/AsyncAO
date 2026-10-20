@@ -444,9 +444,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
-	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
-	a.pollUpdate()                  // drain a found release
-	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
+	a.updates.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
+	a.updates.pollUpdate()                  // drain a found release
+	a.updates.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
@@ -640,10 +640,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// persists across frames, so an un-released fence freezes the whole UI (the reported
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
-	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
-	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
-	a.musicMenuFence(a.ctx)   // music panel ⋮ menu: same discipline (musicheader.go)
-	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
+	a.reactPickerFence(a.ctx)         // #2: same modal-fence discipline as the emoji picker
+	a.rosterMenuFence(a.ctx)          // player-row … menu: same discipline (rostermenu.go)
+	a.musicMenuFence(a.ctx)           // music panel ⋮ menu: same discipline (musicheader.go)
+	a.updates.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	// The band's two right-anchored chips: claimed just BEFORE the bar publishes its
 	// strip fence, because that fence covers their rects (they share the band) and
@@ -839,7 +839,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// M13: a found update shows a persistent chip (reopen) and, the first time,
 	// the What's New patch-notes modal. Both no-op when no update was found.
-	a.drawUpdateAvailable(winW, winH)
+	a.updates.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
 	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm || a.evidServerPickerOpen {
