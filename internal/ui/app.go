@@ -191,6 +191,14 @@ type env struct {
 	warnLine string    // notice: one-line banner text ("" = none)
 	warnAt   time.Time // notice: banner expiry (zero = hidden)
 
+	// uiDirty marks work that changed UI-visible state since the last drawn
+	// frame — the connection pumps set it per drained packet — so the
+	// experimental event-driven loop renders exactly one frame in response
+	// instead of waiting out its idle tick. App-level, NOT sessionState: the
+	// flag is about the window, so it must survive a tab park/restore. Frame
+	// clears it.
+	uiDirty bool
+
 	// h is the narrow set of App capabilities a component needs beyond env's
 	// own shared state. Set once in wireComponents; nil in a bare or
 	// literal-built rig, which is why every accessor below is nil-safe.
@@ -198,23 +206,19 @@ type env struct {
 }
 
 // host is the deliberately tiny capability surface *App hands to components:
-// asking for a redraw (so a state change lands at idle=0 instead of waiting
-// out the idle tick) and reading the top chrome band (which positions
-// top-of-window affordances such as the update chip). Anything bigger belongs
-// in env as shared state, not in a component reaching back into App — that
-// reach-around is exactly what the decomposition exists to delete.
+// reading the top chrome band (which positions top-of-window affordances such
+// as the update chip). Anything bigger belongs in env as shared state, not in a
+// component reaching back into App — the dirty flag already moved into env
+// (uiDirty above, set by env.dirty), which is why this is one method, not two.
 type host interface {
-	markUIDirty()       // UI-visible state changed since the last drawn frame
 	chromeBandH() int32 // height of the menu bar + tab strip
 }
 
-// dirty marks UI-visible state changed since the last drawn frame. Nil-safe: a
-// rig with no host wired simply has no event-driven loop to nudge, so there is
-// nothing to mark.
+// dirty marks UI-visible state changed since the last drawn frame. It is env
+// state rather than a host call, so it works in a bare &App{} rig too and does
+// not depend on the host being wired.
 func (e *env) dirty() {
-	if e.h != nil {
-		e.h.markUIDirty()
-	}
+	e.uiDirty = true
 }
 
 // chromeTop is the top chrome band height. Nil-safe: 0 when no host is wired
@@ -226,10 +230,6 @@ func (e *env) chromeTop() int32 {
 	}
 	return e.h.chromeBandH()
 }
-
-// markUIDirty is App's half of host: the render-thread dirty bit the
-// event-driven loop reads to draw exactly one frame in response.
-func (a *App) markUIDirty() { a.uiDirty = true }
 
 // chromeBandH is App's half of host: the real chrome height, so a component
 // lays its top-of-window rect against the same band every screen uses.
