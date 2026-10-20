@@ -1,12 +1,12 @@
 package ui
 
-// F2 â€” settings help text running past the card's right border.
+// F2 — settings help text running past the card's right border.
 //
 // The report named the FONTS section (the system-fonts line and the font-chain
 // line). The census below shows it was never two rows: Ctx.Checkbox drew its label
 // at whatever the string measured, with nothing bounding it, and the settings form
 // carries dozens of sentence-long help labels. On any window narrower than the
-// sentence they all ran off the card â€” the two the tester happened to be looking at
+// sentence they all ran off the card — the two the tester happened to be looking at
 // were simply the ones on screen.
 //
 // The corpus is the PRODUCTION source: every label literal handed to a chrome draw
@@ -17,7 +17,7 @@ package ui
 // the card and out of the window; the bare help lines under them (c.Label, and the
 // FONTS chain line's c.LabelClipped, whose own maxW is the window) stayed inside the
 // window but were cut dead at the card's clip edge with no ellipsis. A census that
-// harvested only the checkboxes could not see the second class at all â€” which is
+// harvested only the checkboxes could not see the second class at all — which is
 // how a hundred-odd 100-to-190-character help lines went on hard-clipping after the
 // first fix.
 
@@ -56,8 +56,8 @@ func settingsHelpLabels(*testing.T) []string     { return settingsHelpCorpus }
 // ordinary editing cannot trip it, but far above any checkbox label.
 const settingsHelpLineRunes = 150
 
-// TestNoSettingsRowLabelEscapesTheCard is the overflow census. At a NARROW card â€”
-// the settings minimum, which is what a small window resolves to â€” every label the
+// TestNoSettingsRowLabelEscapesTheCard is the overflow census. At a NARROW card —
+// the settings minimum, which is what a small window resolves to — every label the
 // settings form draws must fit inside the card once the row-label limit is armed.
 //
 // It also asserts the bug was real and broad: with the limit disarmed (the pre-fix
@@ -77,12 +77,12 @@ func TestNoSettingsRowLabelEscapesTheCard(t *testing.T) {
 	// The class the checkbox-only census could not see must actually be in here: the
 	// sentence-length help lines drawn as BARE labels. Asserted on that class DIRECTLY
 	// (its own harvest, and a sentence-length line inside it) rather than by comparing
-	// the two corpora's extremes â€” the longest string in the whole form happens to be a
+	// the two corpora's extremes — the longest string in the whole form happens to be a
 	// Checkbox label, so "the row corpus's longest must beat the checkbox corpus's"
 	// was false even with the help lines present.
 	checks := settingsCheckboxLabels(t)
 	if len(checks) >= len(labels) {
-		t.Fatalf("the row corpus holds %d labels and the checkbox corpus %d â€” the bare help lines are not being harvested, "+
+		t.Fatalf("the row corpus holds %d labels and the checkbox corpus %d — the bare help lines are not being harvested, "+
 			"so this census is blind to the class that hard-clipped at the card edge (F2)", len(labels), len(checks))
 	}
 	help := settingsHelpLabels(t)
@@ -93,7 +93,7 @@ func TestNoSettingsRowLabelEscapesTheCard(t *testing.T) {
 		}
 	}
 	if longestHelp < settingsHelpLineRunes {
-		t.Fatalf("longest harvested BARE help line is %d runes, want at least %d â€” the sentence-length c.Label / c.LabelClipped "+
+		t.Fatalf("longest harvested BARE help line is %d runes, want at least %d — the sentence-length c.Label / c.LabelClipped "+
 			"lines are not in the corpus, which is the class the first fix left hard-clipping at the card edge (F2)", longestHelp, settingsHelpLineRunes)
 	}
 
@@ -112,7 +112,7 @@ func TestNoSettingsRowLabelEscapesTheCard(t *testing.T) {
 		}
 	}
 	if overflowed == 0 {
-		t.Fatalf("no settings label overflows a %d px card even unbounded â€” the fixture is too wide to prove anything", formW)
+		t.Fatalf("no settings label overflows a %d px card even unbounded — the fixture is too wide to prove anything", formW)
 	}
 	t.Logf("settings rows that overrun a %d px card unbounded: %d of %d", formW, overflowed, len(labels))
 
@@ -123,20 +123,20 @@ func TestNoSettingsRowLabelEscapesTheCard(t *testing.T) {
 		shown, fit := c.fitRowLabel(labelX, s)
 		w := c.TextWidth(shown)
 		if labelX+w > right {
-			t.Errorf("row label still escapes the card by %d px: %.60qâ€¦", labelX+w-right, s)
+			t.Errorf("row label still escapes the card by %d px: %.60q…", labelX+w-right, s)
 		}
 		if fit && shown != s {
 			t.Errorf("fitRowLabel reported a fit but changed the text: %.40q", s)
 		}
 		// (The converse is deliberately not asserted: truncateLabelTo keeps AO2's rule
-		// that a label which would collapse to a lone "â€¦" is returned WHOLE, so
-		// fit=false with the text unchanged is a legal â€” if never reached at this
-		// width â€” outcome. The overflow check above is the invariant that matters.)
+		// that a label which would collapse to a lone "…" is returned WHOLE, so
+		// fit=false with the text unchanged is a legal — if never reached at this
+		// width — outcome. The overflow check above is the invariant that matters.)
 	}
 }
 
-// TestRowLabelLimitIsInertWhenUnarmed is the openâ€“closed evidence: every checkbox
-// outside the settings card â€” the courtroom's, the mod dashboard's, the pickers' â€”
+// TestRowLabelLimitIsInertWhenUnarmed is the open–closed evidence: every checkbox
+// outside the settings card — the courtroom's, the mod dashboard's, the pickers' —
 // must keep drawing its label exactly as before. Unarmed, fitRowLabel is the
 // identity for every label in the corpus, however long.
 func TestRowLabelLimitIsInertWhenUnarmed(t *testing.T) {
@@ -157,14 +157,14 @@ func TestRowLabelLimitIsInertWhenUnarmed(t *testing.T) {
 	}
 	// Same evidence one layer up: the two general label primitives now consult the
 	// bound, so their INERTNESS unarmed is what keeps every non-settings screen
-	// byte-identical. Zero allocations is the sharp end of that claim â€” Label runs
+	// byte-identical. Zero allocations is the sharp end of that claim — Label runs
 	// inside frame draws gated at zero allocs.
 	if n := testing.AllocsPerRun(200, func() {
 		for _, s := range labels {
 			_, _ = c.fitRowLabel(0, s)
 		}
 	}); n != 0 {
-		t.Errorf("unarmed fitRowLabel allocates %.1f/op â€” it is on every Label draw now, and the frame is gated at zero", n)
+		t.Errorf("unarmed fitRowLabel allocates %.1f/op — it is on every Label draw now, and the frame is gated at zero", n)
 	}
 }
 

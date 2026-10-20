@@ -17,34 +17,34 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 			continue
 		}
 		if !isAreaMenuKind(row.kind) {
-			t.Errorf("row %q is not in the AREA kind range â€” musicheader.go would dispatch it to the music block", row.label)
+			t.Errorf("row %q is not in the AREA kind range — musicheader.go would dispatch it to the music block", row.label)
 		}
 		if row.label == "" {
 			t.Errorf("an area row has no label; Ctx.Tooltip no-ops under the menu's modal fence, so the label IS the explanation")
 		}
 	}
 	if a.areaMenuRowEnabled(areaMenuBackground) || a.areaMenuRowEnabled(areaMenuRefresh) {
-		t.Error("the two server rows must grey out with no session â€” both send an OOC command")
+		t.Error("the two server rows must grey out with no session — both send an OOC command")
 	}
 	if !areaMenuRowIsToggle(areaMenuPerAreaLog) {
 		t.Error("the per-area-log row is a switch: the menu must stay open for it")
 	}
 	for _, k := range []musicMenuKind{areaMenuBackground, areaMenuRefresh, areaMenuCMPanel} {
 		if areaMenuRowIsToggle(k) {
-			t.Errorf("row %d DOES something â€” the menu must close behind it", k)
+			t.Errorf("row %d DOES something — the menu must close behind it", k)
 		}
 	}
 	// The CM row is a ROUTE, and the panel it routes to returns on its first line
-	// without CM (cmpanel.go) â€” nothing draws and nothing is said. So the row must grey
+	// without CM (cmpanel.go) — nothing draws and nothing is said. So the row must grey
 	// out on the same gate the menu bar's copy of this action uses, or the click is
 	// dead: drawMusicMenu dispatches only rows it drew enabled, which is why this has to
 	// be asserted here and not inferred from areaMenuAct working.
 	if a.areaMenuRowEnabled(areaMenuCMPanel) {
-		t.Error("the CM row is offered without CM â€” the panel it opens self-closes, so the click does nothing and explains nothing")
+		t.Error("the CM row is offered without CM — the panel it opens self-closes, so the click does nothing and explains nothing")
 	}
 	a.amICMNow = true
 	if !a.areaMenuRowEnabled(areaMenuCMPanel) {
-		t.Error("the CM row stays grey while we DO hold CM â€” greyed rather than hidden means it must come back when the server grants it")
+		t.Error("the CM row stays grey while we DO hold CM — greyed rather than hidden means it must come back when the server grants it")
 	}
 	// The CM route is not a duplicate control: it opens the panel that already owns
 	// lock / unlock / area-kick.
@@ -56,13 +56,13 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 
 // TestAreaMenuButtonTakesRoomFromItsOwnRow pins the layout rule the roster toolbar
 // was rebuilt to enforce: a control added to a header row must SHRINK its neighbours,
-// not draw over them â€” a theme's music_list panel is 212 px wide and has no slack.
+// not draw over them — a theme's music_list panel is 212 px wide and has no slack.
 //
 // It DRIVES splitAreaHeaderRow, which is the row's entire arithmetic, and asserts
 // only RELATIONSHIPS between the rects that come back. The first cut of this gate
 // recomputed the split from the same constants the drawer used and compared the answer
 // with itself: a tautology that could not fail, and did not, when the count label was
-// pointed back at the full panel width and drew under the â‹®.
+// pointed back at the full panel width and drew under the ⋮.
 func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 	// 212 px is the theme music_list with no slack; the others are a classic docked tab
 	// and a torn-off panel dragged wider.
@@ -73,30 +73,30 @@ func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 		got := splitAreaHeaderRow(row)
 
 		if got.button.W <= 0 || got.button.X+got.button.W != row.X+row.W {
-			t.Errorf("w=%d: the â‹® (%d..%d) is not flush with the row's right edge %d",
+			t.Errorf("w=%d: the ⋮ (%d..%d) is not flush with the row's right edge %d",
 				w, got.button.X, got.button.X+got.button.W, row.X+row.W)
 		}
 		if got.button.Y != row.Y || got.button.H != row.H {
-			t.Errorf("w=%d: the â‹® does not fill the row's height (%d+%d vs %d+%d)",
+			t.Errorf("w=%d: the ⋮ does not fill the row's height (%d+%d vs %d+%d)",
 				w, got.button.Y, got.button.H, row.Y, row.H)
 		}
 		// The two things that used to be laid out against the full panel width. Strictly
 		// LESS than the button's left edge, not merely non-overlapping: the row is
 		// supposed to leave visible clearance, and touching edges read as a collision.
 		if right := got.count.X + got.count.W; right >= got.button.X {
-			t.Errorf("w=%d: the counter (right edge %d) reaches under the â‹® (left edge %d)",
+			t.Errorf("w=%d: the counter (right edge %d) reaches under the ⋮ (left edge %d)",
 				w, right, got.button.X)
 		}
 		if right := got.field.X + got.field.W; right >= got.count.X {
 			t.Errorf("w=%d: the search field (right edge %d) runs into the counter (left edge %d)",
 				w, right, got.count.X)
 		}
-		// â€¦and nothing escapes the row it was split out of.
+		// …and nothing escapes the row it was split out of.
 		if got.field.X < row.X || got.field.Y != row.Y || got.field.H != row.H {
 			t.Errorf("w=%d: the search field %+v is not inside its row %+v", w, got.field, row)
 		}
 		if got.field.W <= 0 {
-			t.Errorf("w=%d: the search field has no width left (%d) â€” the header cannot be typed in",
+			t.Errorf("w=%d: the search field has no width left (%d) — the header cannot be typed in",
 				w, got.field.W)
 		}
 		if got.count.Y < row.Y || got.count.Y+got.count.H > row.Y+row.H {
@@ -105,36 +105,36 @@ func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 		}
 	}
 
-	// The â‹® takes a FIXED bite and the field absorbs every pixel of a width change â€”
+	// The ⋮ takes a FIXED bite and the field absorbs every pixel of a width change —
 	// which is what "shrink its neighbours" means, stated as a relationship rather than
 	// as a second copy of the numbers.
 	const widen = int32(40)
 	narrow := splitAreaHeaderRow(sdl.Rect{X: 0, Y: 0, W: 212, H: fieldH})
 	wide := splitAreaHeaderRow(sdl.Rect{X: 0, Y: 0, W: 212 + widen, H: fieldH})
 	if narrow.button.W != wide.button.W {
-		t.Errorf("the â‹® scaled with the panel (%d â†’ %d) â€” it is a fixed square control",
+		t.Errorf("the ⋮ scaled with the panel (%d → %d) — it is a fixed square control",
 			narrow.button.W, wide.button.W)
 	}
 	if got := wide.field.W - narrow.field.W; got != widen {
-		t.Errorf("widening the row by %d px gave the search field %d px â€” the field is what absorbs it",
+		t.Errorf("widening the row by %d px gave the search field %d px — the field is what absorbs it",
 			widen, got)
 	}
 	if narrow.count.W != wide.count.W {
-		t.Errorf("the counter's room scaled with the panel (%d â†’ %d) â€” it holds one short \"n / m\"",
+		t.Errorf("the counter's room scaled with the panel (%d → %d) — it holds one short \"n / m\"",
 			narrow.count.W, wide.count.W)
 	}
 }
 
 // TestMusicViewMenuCarriesNoAreaRow is the gate the shared pane demands back in
-// exchange for hosting the block. Three triggers open ONE popup â€” the Music
-// header's â‹®, the roster toolbar's â‹® and now the Areas view's â€” so a block that
+// exchange for hosting the block. Three triggers open ONE popup — the Music
+// header's ⋮, the roster toolbar's ⋮ and now the Areas view's — so a block that
 // forgets to gate itself is not a dead row, it is five rows appearing in a menu
 // about a list the user is not looking at. That is exactly how the first cut of
 // this kit shipped.
 //
 // It drives musicMenuRowDrawn (the pane's own row filter) rather than re-deciding
 // liveness, and asserts BOTH directions: nothing of the block on the Music view,
-// all of it â€” divider included â€” on the Areas view. The divider matters on its own,
+// all of it — divider included — on the Areas view. The divider matters on its own,
 // because it carries the shared musicMenuSeparator kind and so is invisible to
 // every per-kind predicate: gate the four rows and forget the fifth and the music
 // menu ends in a rule under its last row with nothing beneath it.
@@ -154,7 +154,7 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	}
 
 	// logTab lives on the EMBEDDED sessionState (app.go), so it cannot be set by name
-	// in an App literal â€” onView builds the whole view state one way for all five
+	// in an App literal — onView builds the whole view state one way for all five
 	// cases below.
 	onView := func(tab int) *App {
 		a := &App{}
@@ -164,10 +164,10 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 
 	music := onView(logTabMusic)
 	if n, _ := drawn(music); n != 0 {
-		t.Errorf("the Music view's â‹® offers %d area row(s) â€” they act on a list it is not showing", n)
+		t.Errorf("the Music view's ⋮ offers %d area row(s) — they act on a list it is not showing", n)
 	}
 	if n, _ := drawn(onView(logTabPlayers)); n != 0 {
-		t.Errorf("the roster toolbar's â‹® offers %d area row(s)", n)
+		t.Errorf("the roster toolbar's ⋮ offers %d area row(s)", n)
 	}
 
 	areas := onView(logTabAreas)
@@ -179,25 +179,25 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	}
 	gotRows, areasH := drawn(areas)
 	if gotRows != wantRows {
-		t.Fatalf("the Areas view's own â‹® offers %d of its %d rows â€” the gate is too tight to be useful", gotRows, wantRows)
+		t.Fatalf("the Areas view's own ⋮ offers %d of its %d rows — the gate is too tight to be useful", gotRows, wantRows)
 	}
 	// The block's divider must go dark WITH the block: the height difference is the
 	// four rows AND one separator, never the rows alone.
 	_, musicH := drawn(music)
 	if want := int32(wantRows)*musicMenuItemH + musicMenuSepH; areasH-musicH != want {
 		t.Errorf("the AREA block costs %d px on the Areas view and 0 on the Music view, want %d px "+
-			"(%d rows + its divider) â€” a divider left behind draws a rule under the last roster row",
+			"(%d rows + its divider) — a divider left behind draws a rule under the last roster row",
 			areasH-musicH, want, wantRows)
 	}
 
-	// A TORN Areas panel draws whatever logTab says and carries its own â‹®
+	// A TORN Areas panel draws whatever logTab says and carries its own ⋮
 	// (torntabs.go), so the rows have to be live there too or that button is inert.
 	torn := onView(logTabMusic)
 	torn.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
 	if n, _ := drawn(torn); n != wantRows {
-		t.Errorf("a torn-off Areas panel offers %d of its %d rows â€” its â‹® opens a menu with nothing in it", n, wantRows)
+		t.Errorf("a torn-off Areas panel offers %d of its %d rows — its ⋮ opens a menu with nothing in it", n, wantRows)
 	}
-	// â€¦and a fully hidden Areas tab draws in none of the three places, torn or not.
+	// …and a fully hidden Areas tab draws in none of the three places, torn or not.
 	hidden := onView(logTabAreas)
 	hidden.hidden = map[string]bool{panelTabAreas: true}
 	if n, _ := drawn(hidden); n != 0 {
