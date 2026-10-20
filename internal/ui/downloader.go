@@ -96,8 +96,8 @@ func downloadsRoot() string {
 	if downloadsRootMemo != "" {
 		return downloadsRootMemo
 	}
-	if exe, err := os.Executable(); err == nil {
-		downloadsRootMemo = filepath.Join(filepath.Dir(exe), "downloads")
+	if root, err := exeDataDir(); err == nil {
+		downloadsRootMemo = filepath.Join(root, "downloads")
 	} else {
 		downloadsRootMemo = "downloads"
 	}

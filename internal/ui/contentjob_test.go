@@ -405,6 +405,7 @@ func TestContentProbeFoundMissing(t *testing.T) {
 // It also round-trips the sprite bytes to prove packaging reuses the probed
 // bytes verbatim.
 func TestPackageBundleLayout(t *testing.T) {
+	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Serve the sprite as .webp — the FIRST candidate in the diagnostic full
@@ -639,6 +640,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 // TestCancelMidPackageLeakFree pins that cancelling during packaging is safe:
 // the goroutine's result lands in the 1-slot buffer nobody polls and it dies.
 func TestCancelMidPackageLeakFree(t *testing.T) {
+	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".png") {
@@ -789,6 +791,7 @@ func driveAutoBundleToDone(t *testing.T, a *App) {
 // the flat .aorec AND, beside it, a self-contained <stem>-bundle\ folder with the
 // found asset at its origin-relative path + the bundled .aorec + the gap list.
 func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -858,6 +861,7 @@ func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
 // still lands EXACTLY as before and NO bundle folder is created, and no content
 // job is started (zero behavior change for anyone who turns it off).
 func TestStopRecordingPrefOffNoBundle(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -894,6 +898,7 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 // origin — nothing to package) auto-builds nothing and errors nothing: the flat
 // .aorec lands, no job starts, no toast is stomped.
 func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -924,6 +929,7 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 // already running when a recording stops, the auto-build is skipped cleanly (no
 // second job, no queue) and the busy job is untouched.
 func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")

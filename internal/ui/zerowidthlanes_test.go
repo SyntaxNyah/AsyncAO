@@ -468,11 +468,17 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	// BOTH exits are measured. The early return (a face covers the visible runes) and
 	// the fall-through (nothing does, so the last entry is handed back) walk different
 	// amounts of the chain, and only the fall-through scans every cover in the set.
+	//
+	// Measured through allocsPerFrame, not a bare AllocsPerRun window: that window
+	// counts the WHOLE process, so a background burst under two concurrent
+	// `go test ./internal/ui` runs read 92/op here (2026-10-20) with no per-call
+	// allocation present. A real per-call allocation is in every window, so the
+	// retry cannot hide one.
 	marked := "abc" + marker // concatenated OUTSIDE the measured closure
-	if n := testing.AllocsPerRun(50, func() { pickFont(fonts, cover, &buf, marked) }); n != 0 {
+	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, marked) }); n != 0 {
 		t.Errorf("pickFont allocated %v times per call on the early-return path", n)
 	}
-	if n := testing.AllocsPerRun(50, func() { pickFont(fonts, cover, &buf, tifinaghYath) }); n != 0 {
+	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, tifinaghYath) }); n != 0 {
 		t.Errorf("pickFont allocated %v times per call on the fall-through path", n)
 	}
 }
