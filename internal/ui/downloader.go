@@ -85,23 +85,29 @@ type dlProgress struct {
 	done  bool
 }
 
-// downloadsRootMemo caches downloadsRoot's result: the settings screen calls
-// it every frame, and os.Executable is a syscall + allocation. Only ever
-// touched on the render thread (settings draw, startDownload) — no lock.
-var downloadsRootMemo string
+// downloadsRootMemo caches downloadsRoot's result (declared with its mutex in
+// datadir.go): the settings screen calls it every frame, and os.Executable is a
+// syscall + allocation. Guarded by exeDataMu because tests reset the root while
+// a render-thread call may be in flight.
 
 // downloadsRoot is the structured local base downloads write into. Point the
 // "Read assets from local folders" mounts at it to use the files offline.
 func downloadsRoot() string {
-	if downloadsRootMemo != "" {
-		return downloadsRootMemo
+	exeDataMu.RLock()
+	memo := downloadsRootMemo
+	exeDataMu.RUnlock()
+	if memo != "" {
+		return memo
 	}
-	if root, err := exeDataDir(); err == nil {
-		downloadsRootMemo = filepath.Join(root, "downloads")
-	} else {
-		downloadsRootMemo = "downloads"
+	root, err := exeDataDir()
+	out := "downloads"
+	if err == nil {
+		out = filepath.Join(root, "downloads")
 	}
-	return downloadsRootMemo
+	exeDataMu.Lock()
+	downloadsRootMemo = out
+	exeDataMu.Unlock()
+	return out
 }
 
 // pollDownload drains the latest progress snapshot into the status line, flips
