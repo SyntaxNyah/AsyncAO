@@ -64,10 +64,12 @@ type selfUpdate struct {
 	relaunchOnExit  bool // "Restart to apply": relaunch the new binary after a clean shutdown
 }
 
-// wireComponents points every embedded component's env at App's own env, so a
-// component reaches the shared deps/ctx/notice/navigation through one pointer.
-// NewApp calls it once; a component's env is never reassigned afterwards.
+// wireComponents points every embedded component's env at App's own env, and
+// gives that env its host capabilities (a redraw request and the chrome band),
+// so a component reaches shared state through one pointer and App starts
+// accepting writes. NewApp calls it once; nothing is reassigned afterwards.
 func (a *App) wireComponents() {
+	a.env.h = a
 	a.selfUpdate.env = &a.env
 }
 
@@ -75,11 +77,11 @@ func (a *App) wireComponents() {
 // (the window is already up), so the check never touches the boot path. A
 // disabled pref short-circuits it, and Check itself skips an unstamped dev
 // build, so neither hits the network.
-func (a *App) maybeKickUpdateCheck() {
-	if a.updateChecked {
+func (s *selfUpdate) maybeKickUpdateCheck() {
+	if s.updateChecked {
 		return
 	}
-	a.updateChecked = true
+	s.updateChecked = true
 	// Clear a leftover .old backup from a previous self-update — off the render
 	// thread (disk I/O) and off the boot path (frame 1), regardless of the
 	// check pref (you want the stale binary gone even with checks disabled).
@@ -88,11 +90,11 @@ func (a *App) maybeKickUpdateCheck() {
 			update.CleanupOldBundle(exe)
 		}
 	}()
-	if !a.d.Prefs.Load().UpdateCheck {
+	if !s.env.d.Prefs.Load().UpdateCheck {
 		return
 	}
-	res := a.updateRes
-	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
+	res := s.updateRes
+	experimental := s.env.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
 	go func() {
 		// assetMatch identifies THIS platform's ONE swappable default binary
 		// (see update.SelfUpdateAssetMatch — a bare GOOS match could grab a
@@ -118,29 +120,29 @@ func (a *App) maybeKickUpdateCheck() {
 // pollUpdate drains a found release: it stores it, builds the chip label once
 // (so the per-frame draw never allocates), and auto-opens the modal the first
 // time so the patch notes are surfaced without the user hunting for them.
-func (a *App) pollUpdate() {
+func (s *selfUpdate) pollUpdate() {
 	select {
-	case rel := <-a.updateRes:
+	case rel := <-s.updateRes:
 		if rel == nil {
 			return
 		}
-		a.updateRel = rel
-		a.updateChipLabel = "Update " + rel.Version + " available"
+		s.updateRel = rel
+		s.updateChipLabel = "Update " + rel.Version + " available"
 		if rel.Prerelease {
-			a.updateChipLabel = "Test build " + rel.Version + " available" // experimental channel: say what it is
+			s.updateChipLabel = "Test build " + rel.Version + " available" // experimental channel: say what it is
 		}
-		a.updateShow = true
-		a.uiDirty = true // the update chip/modal just appeared: force a redraw at idle=0
+		s.updateShow = true
+		s.env.dirty() // the update chip/modal just appeared: force a redraw at idle=0
 	default:
 	}
 	select {
-	case err := <-a.updateApplyRes:
-		a.updateBusy = false
-		a.uiDirty = true // download/stage finished ("Restart to apply" or an error): force a redraw so the button updates at idle=0 instead of staying "Downloading…"
+	case err := <-s.updateApplyRes:
+		s.updateBusy = false
+		s.env.dirty() // download/stage finished ("Restart to apply" or an error): force a redraw so the button updates at idle=0 instead of staying "Downloading…"
 		if err != nil {
-			a.updateErr = "Update failed: " + err.Error()
+			s.updateErr = "Update failed: " + err.Error()
 		} else {
-			a.updateStaged = true // new binary in place; restart to apply
+			s.updateStaged = true // new binary in place; restart to apply
 		}
 	default:
 	}
@@ -155,31 +157,31 @@ func (a *App) pollUpdate() {
 // installing an unverified binary. It degrades to the release page when there's
 // no downloadable asset or the install dir is read-only (Program Files without
 // elevation). No-op while a previous run is in flight or already staged.
-func (a *App) startSelfUpdate() {
-	if a.updateBusy || a.updateStaged || a.updateRel == nil {
+func (s *selfUpdate) startSelfUpdate() {
+	if s.updateBusy || s.updateStaged || s.updateRel == nil {
 		return
 	}
-	if a.updateRel.AssetURL == "" {
-		if a.updateRel.PageURL != "" {
-			openBrowser(a.updateRel.PageURL)
+	if s.updateRel.AssetURL == "" {
+		if s.updateRel.PageURL != "" {
+			openBrowser(s.updateRel.PageURL)
 		}
-		a.updateErr = "This release has no downloadable build for your platform — opened the release page."
+		s.updateErr = "This release has no downloadable build for your platform — opened the release page."
 		return
 	}
 	exe, err := os.Executable()
 	if err != nil || !update.TargetWritable(exe) {
-		if a.updateRel.PageURL != "" {
-			openBrowser(a.updateRel.PageURL)
+		if s.updateRel.PageURL != "" {
+			openBrowser(s.updateRel.PageURL)
 		}
-		a.updateErr = "Can't self-update here (read-only install) — opened the release page."
+		s.updateErr = "Can't self-update here (read-only install) — opened the release page."
 		return
 	}
-	a.updateBusy = true
-	a.updateErr = ""
-	url := a.updateRel.AssetURL
-	sumsURL := a.updateRel.SumsURL
-	assetName := a.updateRel.AssetName
-	res := a.updateApplyRes
+	s.updateBusy = true
+	s.updateErr = ""
+	url := s.updateRel.AssetURL
+	sumsURL := s.updateRel.SumsURL
+	assetName := s.updateRel.AssetName
+	res := s.updateApplyRes
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
 		var err error
@@ -285,15 +287,15 @@ func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
 // cleanly via SDL_QUIT. The new binary starts AFTER the main loop exits and
 // prefs/tabs are flushed (see MaybeRelaunch), so the two instances never fight
 // over the prefs file or the window.
-func (a *App) requestRelaunch() {
-	a.relaunchOnExit = true
+func (s *selfUpdate) requestRelaunch() {
+	s.relaunchOnExit = true
 	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
 }
 
 // MaybeRelaunch starts the freshly-installed binary if "Restart to apply" was
 // clicked. Called by main AFTER the run loop exits and state is saved.
-func (a *App) MaybeRelaunch() {
-	if !a.relaunchOnExit {
+func (s *selfUpdate) MaybeRelaunch() {
+	if !s.relaunchOnExit {
 		return
 	}
 	exe, err := os.Executable()
@@ -308,9 +310,9 @@ func (a *App) MaybeRelaunch() {
 // updateChipRect is the persistent reopen chip, top-right and just under the
 // app-chrome band (#14, chrometop.go) — it used to be a bare tabBarH+4, which the
 // docked server-tab strip now sits on top of.
-func (a *App) updateChipRect(w int32) sdl.Rect {
-	cw := a.ctx.TextWidth(a.updateChipLabel) + 18
-	return sdl.Rect{X: w - cw - pad, Y: a.topChromeH() + 4, W: cw, H: updateChipH}
+func (s *selfUpdate) updateChipRect(w int32) sdl.Rect {
+	cw := s.env.ctx.TextWidth(s.updateChipLabel) + 18
+	return sdl.Rect{X: w - cw - pad, Y: s.env.chromeTop() + 4, W: cw, H: updateChipH}
 }
 
 // updateModalRects lays out the What's New panel and its hit targets (shared by
@@ -330,14 +332,14 @@ func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 // updateModalFence holds the kit's modal fence (modalOn) so everything
 // underneath is pointer-blind on every screen — hovering() is false for the
 // modal itself too, by design (the same discipline as the emoji picker).
-func (a *App) handleUpdateInput(w, h int32) {
-	if a.updateRel == nil {
+func (s *selfUpdate) handleUpdateInput(w, h int32) {
+	if s.updateRel == nil {
 		return
 	}
-	c := a.ctx
-	if !a.updateShow {
-		if chip := a.updateChipRect(w); c.hovering(chip) && c.clicked {
-			a.updateShow = true
+	c := s.env.ctx
+	if !s.updateShow {
+		if chip := s.updateChipRect(w); c.hovering(chip) && c.clicked {
+			s.updateShow = true
 			c.clicked = false
 		}
 		return
@@ -347,9 +349,9 @@ func (a *App) handleUpdateInput(w, h int32) {
 	// list behind the scrim can't also scroll ("scrolling the changelog
 	// scrolled the server list") — WheelIn is hovering()-based and modal-fenced.
 	if c.wheelY != 0 && pointIn(c.mouseX, c.mouseY, notes) {
-		a.updateScroll -= c.wheelY * scrollStepPx
-		if a.updateScroll < 0 {
-			a.updateScroll = 0
+		s.updateScroll -= c.wheelY * scrollStepPx
+		if s.updateScroll < 0 {
+			s.updateScroll = 0
 		}
 		c.wheelY = 0
 		c.wheelTaken = true
@@ -360,15 +362,15 @@ func (a *App) handleUpdateInput(w, h int32) {
 	}
 	switch {
 	case pointIn(c.mouseX, c.mouseY, getBtn):
-		if a.updateStaged {
-			a.requestRelaunch() // "Restart to apply": relaunch into the new binary
-		} else if !a.updateBusy {
-			a.startSelfUpdate() // download, verify, staged swap (or degrade)
+		if s.updateStaged {
+			s.requestRelaunch() // "Restart to apply": relaunch into the new binary
+		} else if !s.updateBusy {
+			s.startSelfUpdate() // download, verify, staged swap (or degrade)
 		}
 	case pointIn(c.mouseX, c.mouseY, laterBtn):
-		a.updateShow = false
+		s.updateShow = false
 	case !pointIn(c.mouseX, c.mouseY, panel):
-		a.updateShow = false // click off the panel dismisses
+		s.updateShow = false // click off the panel dismisses
 	}
 	c.clicked = false // the modal owns this frame's click
 }
@@ -380,27 +382,27 @@ func (a *App) handleUpdateInput(w, h int32) {
 // like emojiPickerFence (an un-released modalOn would freeze the whole UI).
 // The modal's own interaction runs on raw pointIn (handleUpdateInput /
 // drawUpdateButton), so the fence never blinds it.
-func (a *App) updateModalFence(c *Ctx) {
-	if a.updateRel != nil && a.updateShow {
+func (s *selfUpdate) updateModalFence(c *Ctx) {
+	if s.updateRel != nil && s.updateShow {
 		c.modalOn = true
-		a.updateFenceOn = true
-	} else if a.updateFenceOn {
+		s.updateFenceOn = true
+	} else if s.updateFenceOn {
 		c.modalOn = false // modal just closed → release the persistent fence
-		a.updateFenceOn = false
+		s.updateFenceOn = false
 	}
 }
 
 // drawUpdateAvailable paints the M13 affordances over every screen: the
 // persistent reopen chip when the modal is closed, else the modal itself.
-func (a *App) drawUpdateAvailable(w, h int32) {
-	if a.updateRel == nil {
+func (s *selfUpdate) drawUpdateAvailable(w, h int32) {
+	if s.updateRel == nil {
 		return
 	}
-	c := a.ctx
-	if !a.updateShow {
-		chip := a.updateChipRect(w)
+	c := s.env.ctx
+	if !s.updateShow {
+		chip := s.updateChipRect(w)
 		c.Fill(chip, ColAccent)
-		c.Label(chip.X+9, chip.Y+4, a.updateChipLabel, ColBackground)
+		c.Label(chip.X+9, chip.Y+4, s.updateChipLabel, ColBackground)
 		return
 	}
 
@@ -409,25 +411,25 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 245})
 	c.Border(panel, ColAccent)
 	kind := "Update "
-	if a.updateRel.Prerelease {
+	if s.updateRel.Prerelease {
 		kind = "Test build " // experimental channel — never dress a prerelease up as a stable update
 	}
-	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
+	c.Heading(panel.X+pad, panel.Y+10, kind+s.updateRel.Version+" available", ColText)
 	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
 
 	// Patch notes: split on newlines FIRST (WrapText collapses whitespace and
 	// would flatten the bullet structure), then wrap each line to the panel.
-	lines := a.updateNotesLines(notes.W)
+	lines := s.updateNotesLines(notes.W)
 	contentH := int32(len(lines)) * updateNotesLineH
 	maxScroll := contentH - notes.H
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if a.updateScroll > maxScroll {
-		a.updateScroll = maxScroll
+	if s.updateScroll > maxScroll {
+		s.updateScroll = maxScroll
 	}
 	clipPrev, clipHad := c.pushClip(notes)
-	y := notes.Y - a.updateScroll
+	y := notes.Y - s.updateScroll
 	for _, ln := range lines {
 		if y > notes.Y+notes.H {
 			break
@@ -442,30 +444,30 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	// Status line above the buttons reflects the apply flow.
 	statusY := getBtn.Y - 20
 	switch {
-	case a.updateErr != "":
-		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, a.updateErr, ColDanger)
-	case a.updateStaged:
+	case s.updateErr != "":
+		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, s.updateErr, ColDanger)
+	case s.updateStaged:
 		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, "Installed - restart AsyncAO to finish updating.", ColAccent)
-	case a.updateBusy:
+	case s.updateBusy:
 		c.Label(panel.X+pad, statusY, "Downloading and installing...", ColTextDim)
 	}
 	getLabel := "Get the update"
 	switch {
-	case a.updateBusy:
+	case s.updateBusy:
 		getLabel = "Downloading..."
-	case a.updateStaged:
+	case s.updateStaged:
 		getLabel = "Restart to apply"
 	}
-	a.drawUpdateButton(getBtn, getLabel)
-	a.drawUpdateButton(laterBtn, "Close")
+	s.drawUpdateButton(getBtn, getLabel)
+	s.drawUpdateButton(laterBtn, "Close")
 }
 
 // updateNotesLines wraps the release body for the modal, preserving its line
 // breaks and bounding the total (rule §17.4).
-func (a *App) updateNotesLines(wrapW int32) []string {
-	c := a.ctx
+func (s *selfUpdate) updateNotesLines(wrapW int32) []string {
+	c := s.env.ctx
 	lines := make([]string, 0, 32)
-	for _, raw := range strings.Split(a.updateRel.Notes, "\n") {
+	for _, raw := range strings.Split(s.updateRel.Notes, "\n") {
 		raw = strings.TrimRight(raw, "\r")
 		if strings.TrimSpace(raw) == "" {
 			lines = append(lines, "") // preserve blank spacers between sections
@@ -482,8 +484,8 @@ func (a *App) updateNotesLines(wrapW int32) []string {
 // drawUpdateButton paints one modal button (visual only — the click is handled
 // pre-screen in handleUpdateInput). Raw pointIn for the hover tint: the modal
 // holds the modalOn fence, under which hovering() is false everywhere.
-func (a *App) drawUpdateButton(r sdl.Rect, label string) {
-	c := a.ctx
+func (s *selfUpdate) drawUpdateButton(r sdl.Rect, label string) {
+	c := s.env.ctx
 	bg := ColPanelHi
 	if pointIn(c.mouseX, c.mouseY, r) {
 		bg = ColAccent
