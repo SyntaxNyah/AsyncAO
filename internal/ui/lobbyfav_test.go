@@ -38,7 +38,7 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{ctx: ctx, d: Deps{Prefs: prefs}}
+	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}}
 	// Favorites-only list: neither URL is in the (empty) master list, so removing
 	// one genuinely SHRINKS mergedFavorites() — the length-preserving master-list
 	// case is exactly why only the saved-only removal used to crash. ws:// keeps

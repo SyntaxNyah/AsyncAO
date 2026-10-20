@@ -40,7 +40,7 @@ func TestPaletteCommandForm(t *testing.T) {
 // TestPaletteMatches pins the row builder: offline (sess nil) lists actions
 // only, the query filters, and the result is bounded by paletteMaxN.
 func TestPaletteMatches(t *testing.T) {
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 	all := a.paletteMatches("")
 	if len(all) == 0 || len(all) > paletteMaxN {
 		t.Fatalf("unfiltered matches = %d, want (0, %d]", len(all), paletteMaxN)
@@ -60,7 +60,7 @@ func TestPaletteMatches(t *testing.T) {
 // must appear as a runnable row (widget < 0, a non-nil run method value) when
 // searched for by name.
 func TestPaletteExtraActions(t *testing.T) {
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 	for _, want := range []string{"Edit Layout", "Theater", "Hide UI pieces"} {
 		matches := a.paletteMatches(want)
 		var found *paletteMatch

@@ -10,7 +10,7 @@ import "testing"
 
 // gridApp is a grid of `total` cells laid out cols × rowsPerPage.
 func gridApp(cols, rowsPerPage, total int) *App {
-	a := &App{}
+	a := &App{env: env{}}
 	a.setEmoteGridMetrics(cols, rowsPerPage, total)
 	return a
 }

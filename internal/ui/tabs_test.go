@@ -25,7 +25,7 @@ func testTabApp(t testing.TB) *App {
 	if err != nil {
 		t.Fatalf("prefs: %v", err)
 	}
-	a := &App{ctx: &Ctx{}, activeTab: -1}
+	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	a.d.Prefs = prefs
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
 	// dispatcher directly — enable them so those tests keep their old, on-by-default
@@ -877,7 +877,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 // we add no per-frame GARBAGE on top of it (the avoidable sin). The default/compact
 // path never runs any of this (gated on clientFull && splitActive).
 func BenchmarkClientInputSnapshot(b *testing.B) {
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		in := a.snapshotInput()
@@ -1166,7 +1166,7 @@ func TestTabBackgroundRouting(t *testing.T) {
 // tab comes from the session fields, parked tabs from their stored state, in
 // order, and dead / rehearsal / blank-URL / duplicate-URL slots are skipped.
 func TestCollectOpenTabs(t *testing.T) {
-	a := &App{activeTab: 1}
+	a := &App{env: env{}, activeTab: 1}
 	a.serverName = "Active"
 	a.serverKey = "wss://active:2096"
 	a.tabs = []*courtTab{
@@ -1443,7 +1443,7 @@ func TestMoveTab(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			orig := []*courtTab{{}, {}, {}, {}}
-			a := &App{tabs: append([]*courtTab(nil), orig...), activeTab: tc.active}
+			a := &App{env: env{}, tabs: append([]*courtTab(nil), orig...), activeTab: tc.active}
 			a.moveTab(tc.from, tc.to)
 			if a.activeTab != tc.wantActive {
 				t.Errorf("activeTab = %d, want %d", a.activeTab, tc.wantActive)

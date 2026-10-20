@@ -10,7 +10,7 @@ import (
 // on Anim and Comment, carrying the emote's preanim and per-emote sound, with the
 // AO silence sentinels ("", "0", "1") reading as "no sound".
 func TestMidEmoteResolver(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.emotes = []courtroom.Emote{
 		{Comment: "normal", Preanim: "-", Anim: "normal", SFXName: ""},
 		{Comment: "Angry", Preanim: "flourish", Anim: "angry", SFXName: "whip"},

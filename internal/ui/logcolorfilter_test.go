@@ -48,7 +48,7 @@ func TestICEntryUsesColor(t *testing.T) {
 // it narrows to the entries that use the selected colour and invalidates the
 // cache on every colour change (back to "Any color" restores the full set).
 func TestICLogFilterColor(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")   // white, no inline
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth") // red message colour
 	a.pushIC("Maya: green fact", 0, false, -1, "Maya")

@@ -11,7 +11,7 @@ import (
 // keeps the menu open, and the two server rows grey out with no session rather than
 // vanishing.
 func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 	for _, row := range areaMenuRows {
 		if row.kind == musicMenuSeparator {
 			continue
@@ -157,7 +157,7 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	// in an App literal — onView builds the whole view state one way for all five
 	// cases below.
 	onView := func(tab int) *App {
-		a := &App{}
+		a := &App{env: env{}}
 		a.logTab = tab
 		return a
 	}

@@ -44,7 +44,7 @@ func TestPMThreadBounds(t *testing.T) {
 		t.Fatalf("config.New: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.serverKey = "s"
 
 	// Per-thread line cap keeps only the newest pmThreadLineCap lines.
@@ -64,7 +64,7 @@ func TestPMThreadBounds(t *testing.T) {
 	}
 
 	// detectIncomingPM: outgoing echo creates nothing; a real "PM from" records once.
-	a2 := &App{d: Deps{Prefs: prefs}}
+	a2 := &App{env: env{d: Deps{Prefs: prefs}}}
 	a2.serverKey = "s"
 	a2.detectIncomingPM("PM sent to Phoenix: hi")
 	if len(a2.pmThreads) != 0 {

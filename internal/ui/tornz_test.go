@@ -17,7 +17,7 @@ func TestBringTornToFront(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{d: Deps{Prefs: prefs}, ctx: &Ctx{}}
+	a := &App{env: env{d: Deps{Prefs: prefs}, ctx: &Ctx{}}}
 	a.classicOv = map[string][4]float64{
 		"tab:music":   {0.1, 0.1, 0.2, 0.2},
 		"tab:players": {0.3, 0.1, 0.2, 0.2},

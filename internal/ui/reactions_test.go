@@ -16,7 +16,7 @@ import (
 // ref (system line), resolves a same-ref collision to the NEWEST message (newest-first
 // scan), and won't match beyond the recent-window bound.
 func TestReactionTargetMatch(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.icLog = []icEntry{
 		{speaker: "Phoenix", ref: 111},
 		{speaker: "", ref: 0}, // a system line
@@ -48,7 +48,7 @@ func TestReactionTargetMatch(t *testing.T) {
 // TestReactionRingBounded pins §17.4: a burst of reactions can't grow the float ring past
 // the cap, and the oldest is evicted (FIFO) so the newest always survives.
 func TestReactionRingBounded(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	for i := 0; i < reactionFloatsMax+8; i++ {
 		a.spawnReactionFloat(uint8(i % courtroom.ReactionCount()))
 	}
@@ -71,7 +71,7 @@ func TestOnIncomingReactionGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
 
 	// Unknown ref → no float.
@@ -107,7 +107,7 @@ func TestOnIncomingReactionGate(t *testing.T) {
 // captured when the palette opens, so a message arriving while it's open doesn't shift what
 // the queued emoji reacts to; the click consumes the snapshot.
 func TestQueueReactionSnapshot(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.lastReactRef, a.lastReactName = 777, "Phoenix"
 	a.toggleReactPicker() // opens + snapshots 777
 	if !a.showReactPicker || a.reactTargetRef != 777 {
@@ -143,7 +143,7 @@ func TestDrawReactionFloatsZeroAlloc(t *testing.T) {
 	}
 	defer font.Close()
 
-	a := &App{ctx: &Ctx{Ren: ren}}
+	a := &App{env: env{ctx: &Ctx{Ren: ren}}}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	// Pre-warm the badge cache directly (bypasses the system emoji face, which a headless
 	// test can't rely on) so ensureReactBadge is a pure map hit in the measured loop.

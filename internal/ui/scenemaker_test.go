@@ -85,7 +85,7 @@ func TestSceneRoundTrip(t *testing.T) {
 
 // TestMakerInsertDeleteMove exercises the event-list CRUD on a bare App (no SDL).
 func TestMakerInsertDeleteMove(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "1")}}
 	a.makerSel = 0
 
@@ -130,7 +130,7 @@ func TestBundledSceneRoundTrip(t *testing.T) {
 }
 
 func TestMakerDuplicateSel(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "orig")}}
 	a.makerSel = 0
 	a.makerDuplicateSel()
@@ -154,8 +154,7 @@ func TestMakerCropRange(t *testing.T) {
 		return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{Message: text}}
 	}
 	newApp := func() *App {
-		return &App{
-			makerScene:     &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}},
+		return &App{env: env{}, makerScene: &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}},
 			makerTrimStart: -1,
 			makerTrimEnd:   -1,
 		}
@@ -217,7 +216,7 @@ func TestMakerCropRange(t *testing.T) {
 // and replays the effect instead of showing a stale frame.
 func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
 	base := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: "wit"}
-	a := &App{makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}
+	a := &App{env: env{}, makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}
 	k0 := a.makerPreviewKeyFor(0)
 
 	for _, mut := range []func(m *protocol.ChatMessage){
@@ -237,7 +236,7 @@ func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
 }
 
 func TestMakerNewLineSeedInherits(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.makerScene = &sceneRecording{Events: []recEvent{{
 		Kind:    int(courtroom.EventMessage),
 		Message: &protocol.ChatMessage{CharName: "Edgeworth", Emote: "deskslam", Side: "pro", TextColor: 3, Flip: true, DeskMod: protocol.DeskShow},
@@ -274,7 +273,7 @@ func TestSanitizeStem(t *testing.T) {
 }
 
 func TestMakerPreviewKeyForBackgroundContext(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.makerScene = &sceneRecording{
 		StartBg: "courtroom",
 		Events: []recEvent{

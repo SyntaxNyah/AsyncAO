@@ -17,7 +17,7 @@ func TestChromePresetApplies(t *testing.T) {
 		activeKitColors = defaultKitColors
 		applyThemePalette(theme.Palette{})
 	}()
-	a := &App{ctx: &Ctx{}}
+	a := &App{env: env{ctx: &Ctx{}}}
 
 	a.applyChromePreset("light")
 	if colLuma(ColPanel) < paletteLightPanelLuma {
@@ -71,7 +71,7 @@ func TestCustomChromeApplies(t *testing.T) {
 		t.Fatalf("config.New: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{ctx: &Ctx{}, d: Deps{Prefs: prefs}}
+	a := &App{env: env{ctx: &Ctx{}, d: Deps{Prefs: prefs}}}
 
 	// All-blank custom = stock dark in every slot.
 	a.applyChromePreset(chromeCustomKey)

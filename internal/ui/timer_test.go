@@ -15,7 +15,7 @@ func newTimerApp(t *testing.T) *App {
 		t.Fatalf("config.New: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{d: Deps{Prefs: prefs}} // ctx + Audio nil: fireTimer is nil-guarded
+	return &App{env: env{d: Deps{Prefs: prefs}}} // ctx + Audio nil: fireTimer is nil-guarded
 }
 
 // TestTimerLifecycle pins the local-timer state machine (#97): start → running,

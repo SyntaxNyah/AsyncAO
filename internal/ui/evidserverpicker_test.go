@@ -27,7 +27,7 @@ func TestServerEvidenceEmptyLabel(t *testing.T) {
 // index fetch's result is consumed, evidServerBusy clears so a later open (after
 // a timeout or error) re-runs the fetch instead of dead-ending empty forever.
 func TestPollServerEvidencePickerResetsBusy(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.evidServerRes = make(chan []string, 4)
 	a.evidServerBusy = true
 	a.evidServerRes <- []string{"Knife.png", "Gun.png"}

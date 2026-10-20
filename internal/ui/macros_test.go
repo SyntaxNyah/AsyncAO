@@ -155,7 +155,7 @@ func TestOOCNameFallback(t *testing.T) {
 // on inside the window (so the server's name-echoing login replies don't
 // self-ping), and off again once it expires.
 func TestInLoginGrace(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	base := time.Now()
 	a.frameNow = base
 	if a.inLoginGrace() {

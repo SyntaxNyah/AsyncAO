@@ -7,7 +7,7 @@ import "testing"
 // is stripped, non-numeric/garbage rows are rejected, and pairAreaReset starts
 // a fresh roster (the Refresh button) instead of accumulating stale players.
 func TestParseAreaBlock(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.parseAreaBlock("=== Area 0 ===\n[0] Phoenix Wright\n[2] Miles Edgeworth (Edgey)\njust chatter\n[abc] bad uid")
 
 	if got := a.areaUIDs["phoenix wright"]; got != "0" {
@@ -45,7 +45,7 @@ func TestParseAreaBlock(t *testing.T) {
 // the preceding [uid], so a double-clicked IC line (which displays the SHOWNAME)
 // auto-fills the UID. Shownames are aliases, not extra roster rows.
 func TestParseAreaShowname(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.parseAreaBlock("[21] dante pxz\nShowname:\niumiro\n[22] Klavier\nShowname: Gavin")
 	if got := a.areaUIDs["iumiro"]; got != "21" {
 		t.Errorf("next-line showname iumiro -> uid = %q, want 21", got)
@@ -65,10 +65,11 @@ func TestParseAreaShowname(t *testing.T) {
 // the UID bracket, a "(pos)" tag after the char name, a Showname line per player,
 // and a unicode showname. (The "speaker:" prefix is stripped upstream in pushOOC.)
 func TestParseAreaRealFormat(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	// A verbatim slice of the user's live /ga output: header lines, "[Title]" tags
 	// before the UID, "(pos)" suffixes, per-player "Showname:"/"OOC:" lines, and a
 	// unicode showname.
+
 	block := "Players\n" +
 		"----------\n" +
 		"Lobby:\n" +
@@ -127,7 +128,7 @@ func TestParseAreaRealFormat(t *testing.T) {
 // UID (same-named players don't collapse), a header REPLACES the snapshot (no
 // stale/recycled-UID accumulation), and OOC/IPID attach to their player.
 func TestParseAreaRosterIdentity(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.parseAreaBlock("----------\n" +
 		"3 players online.\n" +
 		"[10] Spectator\n" +
@@ -159,7 +160,7 @@ func TestParseAreaRosterIdentity(t *testing.T) {
 // the "N players online." counts + trailing "N empty area(s) hidden." footer add
 // nobody.
 func TestParseAreaGasGroups(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.areaPlayers = []areaPlayer{{uid: "99", name: "stale ghost"}} // a prior snapshot the /gas must replace
 	a.pairAreaReset = true
 	block := "Players\n" +
@@ -215,7 +216,7 @@ func TestParseAreaGasGroups(t *testing.T) {
 // TestParseAreaGaSingle pins that a single-area /ga (one "----" block) is NOT
 // multi-area, so the player list stays flat (no group headers).
 func TestParseAreaGaSingle(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.parseAreaBlock("Players\n----------\nLobby:\n2 players online.\n[0] phoenix\n[1] edgeworth\n")
 	if len(a.areaPlayers) != 2 {
 		t.Fatalf("roster = %d, want 2", len(a.areaPlayers))

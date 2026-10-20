@@ -52,7 +52,7 @@ func TestThemeFaceRowPitchReadsTheInstalledFace(t *testing.T) {
 func TestThemeRowPitchNeedsTheElementToBeDressed(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a := &App{ctx: c}
+	a := &App{env: env{ctx: c}}
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != 0 {
 		t.Errorf("an undressed message element = %d, want 0", got)
 	}
@@ -78,7 +78,7 @@ func TestThemeRowPitchNeedsTheElementToBeDressed(t *testing.T) {
 func TestThemeRowPitchDeviceFollowsTheDeviceScale(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a := &App{ctx: c}
+	a := &App{env: env{ctx: c}}
 	a.themeFonts.e[elemMessage].face = 1
 
 	c.textDevPct = DefaultScalePct
@@ -135,7 +135,7 @@ func TestFaceEmPxMatchesCanonFontPct(t *testing.T) {
 func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 	c := newFaceCtx(t) // skips without SDL_ttf
 	defer c.Destroy()
-	a := &App{ctx: c}
+	a := &App{env: env{ctx: c}}
 	face := render.FontLineSpacing(c.font)
 	if face <= 0 {
 		t.Skip("the embedded face reported no line spacing")

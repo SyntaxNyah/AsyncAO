@@ -120,7 +120,7 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 	// alone", and a baseline taken before the publish tests exactly that
 	// without going red the day someone uses the folder this wave ships.
 	cat2Len := len(cat2.Entries)
-	a := &App{}
+	a := &App{env: env{}}
 	a.themeCat.Store(cat2)
 	if got := a.themeCatalogSnapshot(); got != cat2 {
 		t.Errorf("snapshot read back a different pointer")
@@ -308,7 +308,7 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.themeCat.Store(&themeCatalog{ScannedAt: time.Now()}) // "just scanned"
 
 	// On-open is floored: it must bail without starting anything.

@@ -18,7 +18,7 @@ import (
 // claim runs. Seeding the wrong one is how this file used to pass against a claim
 // that could not fire — see the frame-driven gate below.
 func focusTestApp() *App {
-	a := &App{ctx: &Ctx{}, macroBind: -1}
+	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
 	a.screen = ScreenCourtroom
 	a.ctx.drawnFieldSeq = []string{icFieldID}
 	return a
@@ -292,7 +292,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 		{"a capture owns the key", true, false, true, sdl.K_m, 0},
 		{"no key this frame", true, false, false, 0, 0},
 	} {
-		a := &App{ctx: &Ctx{}, macroBind: -1}
+		a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
 		a.ctx.keyPressed, a.ctx.altHeld, a.ctx.ctrlHeld = tc.key, tc.alt, tc.ctrl
 		if tc.arm {
 			a.bindingFor = "Judge"
@@ -303,7 +303,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 	}
 	// Focus is deliberately NOT a fence any more: an Alt chord is never text, so a
 	// bind must still fire while the user is in the chat box.
-	a := &App{ctx: &Ctx{}, macroBind: -1}
+	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
 	a.ctx.keyPressed, a.ctx.altHeld, a.ctx.focusID = sdl.K_m, true, icFieldID
 	if a.bareBindKey() != sdl.K_m {
 		t.Error("an Alt chord must fire even with the IC box focused — it can never be mistaken for typing")

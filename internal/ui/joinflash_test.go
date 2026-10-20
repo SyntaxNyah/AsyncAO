@@ -9,7 +9,7 @@ import (
 // isn't flashed, a genuine new joiner is stamped, a player who leaves is dropped, and
 // a rejoin flashes again.
 func TestJoinFlash(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	now := time.Now()
 
 	a.liveRoster = []areaPlayer{{uid: "1"}, {uid: "2"}}

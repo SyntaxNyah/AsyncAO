@@ -26,7 +26,7 @@ func TestUIDLess(t *testing.T) {
 // TestPlayerRosterOrder pins the three roster sorts: UID (numeric), Name
 // (case-insensitive IC name), and Speaking (the current speaker floats up).
 func TestPlayerRosterOrder(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "10", name: "zeta", showname: "Zed"},
@@ -60,7 +60,7 @@ func TestPlayerRosterOrder(t *testing.T) {
 // in parse order, that area's players under it (sorted by the active mode), and
 // the player rows still index into areaPlayers (the icon-cache key).
 func TestPlayerRosterRowsGrouped(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
@@ -93,7 +93,7 @@ func TestPlayerRosterRowsGrouped(t *testing.T) {
 // "Most" puts the fullest room first. Flipping the mode between calls also proves
 // the grouped-rows memo invalidates on playerAreaSort (else the cached order leaks).
 func TestPlayerRosterRowsAreaSort(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	// /gas parse order: Courtroom 2 (3 players), Basement (1), Courtroom 1 (2).
 	a.areaPlayers = []areaPlayer{
@@ -137,7 +137,7 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 // order (from the areaPlayers snapshot). Reproduces the report: UID 0 (Marty) in
 // "Pizza Room 1" must not sit above the "Lobby" we're standing in.
 func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.livePlayersOn = true // rosterView() == liveRoster (UID order)
 	a.liveRoster = []areaPlayer{
 		{uid: "0", name: "marty", area: "Pizza Room 1"}, // lowest UID, different area
@@ -170,7 +170,7 @@ func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
 // TestPlayerRosterRowsFlat pins that a single-area roster (/ga) yields no
 // headers — just the flat sorted player rows.
 func TestPlayerRosterRowsFlat(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "5", name: "maya", area: "Lobby"},
@@ -213,7 +213,7 @@ func TestRosterNameOOCFallback(t *testing.T) {
 // TestCMNameSet pins that the CM marker source excludes ""/FREE and splits a
 // multi-CM list into individual names.
 func TestCMNameSet(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = &courtroom.Session{AreaInfo: []courtroom.AreaInfo{
 		{CM: "FREE"},
 		{CM: "Phoenix, Edgeworth"},
@@ -232,7 +232,7 @@ func TestCMNameSet(t *testing.T) {
 // area-0 fallback on a fresh join, and ok=false when the server hasn't reported
 // the count (-1).
 func TestCurAreaPlayers(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = &courtroom.Session{
 		Areas:    []string{"Lobby", "Courtroom"},
 		AreaInfo: []courtroom.AreaInfo{{Players: 5}, {Players: 2}},
@@ -355,7 +355,7 @@ func TestJumpToAreaGuards(t *testing.T) {
 // so "Lobby" is the above-the-viewport header (top 0) and "Pizza Room 3" the
 // below-it header (top 114) — the two nudge directions.
 func scrollFollowTestApp() *App {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.playerPct = 100     // zero value would make player rows 0-high and collapse the geometry
 	a.areaPlayers = []areaPlayer{
@@ -433,7 +433,7 @@ func TestScrollAreaIntoView(t *testing.T) {
 // TestScrollAreaIntoViewFlatRoster pins that a flat /ga roster (no area headers)
 // is a no-op: there's no header to scroll to, so the follow leaves the scroll put.
 func TestScrollAreaIntoViewFlatRoster(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.rosterLegacy = true
 	a.playerPct = 100
 	a.areaPlayers = []areaPlayer{ // single area → flat rows, no headers

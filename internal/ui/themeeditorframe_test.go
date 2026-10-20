@@ -263,7 +263,7 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 // tempting join (onto the courtroom pair) would make the editor non-skippable in
 // exactly the Settings-with-no-server case it is most often opened in.
 func TestEditorScreenIsFrameRateSkippable(t *testing.T) {
-	a := &App{screen: ScreenThemeEditor}
+	a := &App{env: env{screen: ScreenThemeEditor}}
 	if !a.expScreenSkippable() {
 		t.Fatal("ScreenThemeEditor is not frame-rate skippable — it would render at full rate forever, " +
 			"with a still theme on screen and nothing to explain why the fans are on")

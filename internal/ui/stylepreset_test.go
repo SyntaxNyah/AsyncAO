@@ -18,7 +18,7 @@ func presetTestApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{d: Deps{Prefs: prefs}, ctx: &Ctx{}, macroBind: -1} // -1 = no macro bind armed (real App default)
+	return &App{env: env{d: Deps{Prefs: prefs}, ctx: &Ctx{}}, macroBind: -1} // -1 = no macro bind armed (real App default)
 }
 
 // TestStylePresetSaveApply pins #126's round-trip: saving captures the current style + colour +

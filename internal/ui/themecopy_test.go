@@ -48,7 +48,7 @@ func copyRig(t *testing.T, origin themeOrigin) (*App, string, string) {
 	if err := os.WriteFile(filepath.Join(src, theme.DesignFileName), []byte(design), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", theme.DesignFileName, err)
 	}
-	a := &App{}
+	a := &App{env: env{}}
 	a.d.Prefs = newTestPrefs(t)
 	a.d.Prefs.SetTheme("paper", "")
 	a.themeCat.Store(&themeCatalog{
@@ -326,7 +326,7 @@ func TestARefusedCopySaysWhyAndWritesNothing(t *testing.T) {
 // generation, exactly as the #35 window snap does, so it cannot leak onto
 // healTheme's eviction re-kick, the texture-filter apply or a boot apply.
 func TestTheEditorOnlyOpensItselfForTheApplyThatArmedIt(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.themeEditArmGen, a.themeEditArmFrom = 7, ScreenSettings
 	a.screen = ScreenSettings
 

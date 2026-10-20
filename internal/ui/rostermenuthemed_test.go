@@ -30,7 +30,7 @@ func newRosterMenuRig(t *testing.T) (*App, *config.AssetPreferences) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{d: Deps{Prefs: prefs}}, prefs
+	return &App{env: env{d: Deps{Prefs: prefs}}}, prefs
 }
 
 // themedMusicListRect is aceattorney2x's own music_list declaration — the rect the

@@ -176,13 +176,25 @@ type Deps struct {
 	AutoMounts []string
 }
 
-// App is the whole client UI state machine. Render thread only.
-type App struct {
+// env is the minimal cross-cutting state every App component shares: engine
+// deps (d), the per-frame render context (ctx), the one-line notice banner
+// (warnLine/warnAt), and screen navigation (screen/prevScreen). One instance,
+// created once in NewApp; App embeds env (a value, so a zero-value App stays
+// nil-safe) and components share it via &a.env.
+type env struct {
 	d   Deps
 	ctx *Ctx
 
-	screen     Screen
-	prevScreen Screen // for settings/about back navigation
+	screen     Screen // navigation: current screen
+	prevScreen Screen // navigation: back target (settings/about)
+
+	warnLine string    // notice: one-line banner text ("" = none)
+	warnAt   time.Time // notice: banner expiry (zero = hidden)
+}
+
+// App is the whole client UI state machine. Render thread only.
+type App struct {
+	env
 
 	// --- the theme editor (themeeditor.go) --------------------------
 	//
@@ -469,11 +481,6 @@ type App struct {
 	oocWrapPct    int
 	oocWrapMask   bool // streamer-mode masking baked into the cache
 	oocWrapGen    int  // font chain generation baked into the wrap
-
-	// last transient toast surfaced to the user. Missing-asset reports left this
-	// shared channel in #27 — they own the menu-bar chip below (spec §4).
-	warnLine string
-	warnAt   time.Time
 
 	// --- GH #27: missing assets get their own chrome chip, not the shared toast
 	// channel above (assetmisschip.go). The count is what the chip shows; the ring
@@ -1712,9 +1719,11 @@ type App struct {
 // NewApp builds the UI over deps.
 func NewApp(ctx *Ctx, d Deps) *App {
 	a := &App{
-		ctx:                 ctx,
-		d:                   d,
-		screen:              ScreenLobby,
+		env: env{
+			d:      d,
+			ctx:    ctx,
+			screen: ScreenLobby,
+		},
 		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
 		lobbyResult:         make(chan lobbyFetch, 1),
 		pingRes:             make(chan pingResult, pingResBuf),

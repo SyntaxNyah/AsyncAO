@@ -10,7 +10,7 @@ import (
 // members, a group message implicitly adds its sender, only the OWNER can kick, and
 // being kicked drops the group locally.
 func TestGroupStateMachine(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = &courtroom.Session{PlayerID: 7} // me = uid 7
 
 	a.applyGroupInvite(100, "Squad", 3, "Owner")
@@ -43,7 +43,7 @@ func TestGroupStateMachine(t *testing.T) {
 // TestGroupTextUnknownIgnored: a group message for a group we never got an invite to
 // is ignored (no phantom group created).
 func TestGroupTextUnknownIgnored(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = &courtroom.Session{PlayerID: 7}
 	a.applyGroupText(999, 3, "X", "ghost")
 	if len(a.msgGroups) != 0 {

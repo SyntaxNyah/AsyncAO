@@ -19,7 +19,7 @@ func newEffectsRig(t *testing.T) (*App, *config.AssetPreferences) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{d: Deps{Prefs: prefs}}, prefs
+	return &App{env: env{d: Deps{Prefs: prefs}}}, prefs
 }
 
 // TestDisableEffectsSuppressesEveryLocalFX pins the master off-switch at the two

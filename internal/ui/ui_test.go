@@ -786,7 +786,7 @@ func TestCapLogLine(t *testing.T) {
 // TestICLogStoresLongLine pins that pushIC keeps a long message intact (it now
 // wraps at draw time) instead of truncating at 120 chars.
 func TestICLogStoresLongLine(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	msg := "Phoenix: " + strings.Repeat("b", 200) // 209 chars, over the old cap
 	a.pushIC(msg, 0, false, -1, "Phoenix")
 	if a.icLog[0].text != msg {
@@ -828,7 +828,7 @@ func TestParseHexColor(t *testing.T) {
 // TestICLogFilterCache pins the per-frame filter cache: stable while
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
 
@@ -853,7 +853,7 @@ func TestICLogFilterCache(t *testing.T) {
 // a showname filter keeps only that speaker and a pos filter keeps only that
 // position, both inclusive and stackable on top of the text search.
 func TestICLogFilterShownamePos(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
 	a.pushIC("Judge: order in the court", 3, false, -1, "Judge")

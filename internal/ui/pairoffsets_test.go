@@ -27,7 +27,7 @@ func testOffsetApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{ctx: ctx}
+	a := &App{env: env{ctx: ctx}}
 	a.d.Prefs = prefs
 	a.resetSessionState()
 	return a

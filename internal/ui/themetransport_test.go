@@ -34,7 +34,7 @@ const bundleGateWait = 10 * time.Second
 // portability policy it is not testing.
 func dropRig(t *testing.T) (*App, string) {
 	t.Helper()
-	return &App{}, filepath.Join(t.TempDir(), "themes")
+	return &App{env: env{}}, filepath.Join(t.TempDir(), "themes")
 }
 
 // newTestPrefs is a preferences value the gates may write to. A bare struct, as
@@ -323,7 +323,7 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 		t.Errorf("an input this report claims to carry is missing: %v", report)
 	}
 
-	a := &App{}
+	a := &App{env: env{}}
 	a.noteThemeReport("paper", report)
 	if a.warnLine == "" {
 		t.Fatal("the report reached no surface — this is the defect the file exists to close")
@@ -346,7 +346,7 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 
 	// A CLEAN THEME SAYS NOTHING. A report that fires on every install is one
 	// everybody learns to ignore, which is the same as not having one.
-	b := &App{}
+	b := &App{env: env{}}
 	b.noteThemeReport("clean", nil)
 	if b.warnLine != "" {
 		t.Errorf("a theme with nothing to report still posted %q", b.warnLine)
@@ -704,7 +704,7 @@ func TestTheImportRowSaysWhatWillHappenNext(t *testing.T) {
 // stored path would leave an Import button offering something the funnel would
 // refuse.
 func TestAnExpiredConsentTakesTheImportButtonAway(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	pack := fixtureBundle(t, "paper")
 	a.themeImp.armedPath, a.themeImp.armedAt = pack, time.Now()
 	if got := a.themeImportRow(); got.button != "Import" {

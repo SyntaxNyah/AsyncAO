@@ -14,7 +14,7 @@ import (
 func TestApplySide(t *testing.T) {
 	var sent []protocol.Packet
 	s := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a := &App{}
+	a := &App{env: env{}}
 	a.sess = s
 
 	// A real change lowercases, stores, and fires exactly one /pos over OOC (CT).
@@ -48,7 +48,7 @@ func TestApplySide(t *testing.T) {
 // TestApplySideNilSession ensures a pos change with no live session just sets the
 // local side (and never panics) — the offline / lobby path.
 func TestApplySideNilSession(t *testing.T) {
-	a := &App{}
+	a := &App{env: env{}}
 	a.applySide("wit")
 	if a.sidePref != "wit" {
 		t.Fatalf("sidePref = %q, want wit", a.sidePref)

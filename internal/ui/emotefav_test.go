@@ -42,7 +42,7 @@ func TestRefreshEmoteView(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{d: Deps{Prefs: prefs}}
+	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.iniChar = "Apollo" // activeCharName() returns this with no session
 	a.emotes = make([]courtroom.Emote, 5)
 
