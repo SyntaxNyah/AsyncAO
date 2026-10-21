@@ -921,7 +921,7 @@ func TestTabTearOffToSplit(t *testing.T) {
 	if a.splitTab != a.tabs[1] || !a.splitActive() {
 		t.Fatalf("tear-off release must pop the background tab out as a floating client")
 	}
-	if !a.clientWin.placed {
+	if !a.wins.clientWin.placed {
 		t.Error("tear-off drop must place the floating client window at the cursor")
 	}
 

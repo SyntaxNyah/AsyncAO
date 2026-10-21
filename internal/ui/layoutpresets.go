@@ -145,7 +145,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	for i := range panelSlotTable {
 		panelSlotTable[i].fw(a).placed = false // cold-path table use (never a draw path)
 	}
-	a.msgWin.placed = false
+	a.wins.msgWin.placed = false
 	a.extrasPlaced = false
 	// Torn-off Extras widgets: a profile may carry its own torn:widget:* slots, so
 	// rebuild the set from the newly-applied classicOv. SetClassicLayout above already

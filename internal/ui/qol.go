@@ -991,10 +991,10 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	if defH > 540 {
 		defH = 540
 	}
-	if r, ok := a.seedPanelFromSlot(&a.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
 		return r
 	}
-	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
+	return a.wins.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
 // hkSheetFencesPointer reports whether the SCREEN pass should run pointer-blind
@@ -1008,7 +1008,7 @@ func (a *App) hkSheetFencesPointer(w, h int32) bool {
 	if !a.showHotkeys {
 		return false
 	}
-	return a.hkWin.dragging || a.hkWin.resizing ||
+	return a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
 		pointIn(a.ctx.mouseX, a.ctx.mouseY, a.hkSheetRect(w, h))
 }
 
@@ -1036,12 +1036,12 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	// The sheet does its own capture, so a rebind started HERE completes here —
 	// without this the row would sit on "press a key…" until Settings was opened.
 	a.consumeHotkeyCapture()
-	wasManip := a.hkWin.dragging || a.hkWin.resizing
-	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
+	wasManip := a.wins.hkWin.dragging || a.wins.hkWin.resizing
+	a.floatWinDrag(&a.wins.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
 	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
+	a.floatWinResize(&a.wins.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
 	a.drawResizeGrip(hgrip)
-	if wasManip && !a.hkWin.dragging && !a.hkWin.resizing { // drag/resize just ended → remember where
+	if wasManip && !a.wins.hkWin.dragging && !a.wins.hkWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelHK, r, w, h)
 	}
 	if !c.mouseDown && wasManip {

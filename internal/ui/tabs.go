@@ -1345,7 +1345,7 @@ func (a *App) drawTabBar(w, h int32) {
 	// where it will pop out (Chrome-style), at the size it will appear. Drawn over
 	// everything (the strip paints after the screens) so it reads as a drag preview.
 	if a.tabTearingOff() {
-		pw, ph := a.clientWin.w, a.clientWin.h
+		pw, ph := a.wins.clientWin.w, a.wins.clientWin.h
 		if pw <= 0 {
 			pw = clientWinDefW
 		}

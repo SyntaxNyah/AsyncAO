@@ -285,21 +285,21 @@ func (a *App) pinToSplit(t *courtTab) {
 // by the drag-tab tear-off so the window lands where you drop it (Chrome-style).
 // Uses the window's current width if it was resized, else the default.
 func (a *App) placeClientAt(mx, my int32) {
-	w := a.clientWin.w
+	w := a.wins.clientWin.w
 	if w <= 0 {
 		w = clientWinDefW
 	}
-	a.clientWin.x = mx - w/2
-	a.clientWin.y = my - floatTitleH/2
-	a.clientWin.placed = true
+	a.wins.clientWin.x = mx - w/2
+	a.wins.clientWin.y = my - floatTitleH/2
+	a.wins.clientWin.placed = true
 }
 
 // clientWinRect is the floating client window's clamped screen rect.
 func (a *App) clientWinRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
 		return r
 	}
-	return a.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
+	return a.wins.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
 }
 
 // drawFloatClient draws the pinned server as a movable + resizable floating
@@ -313,7 +313,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 		return
 	}
 	c := a.ctx
-	wasActive := a.clientWin.dragging || a.clientWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.clientWin.dragging || a.wins.clientWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.clientWinRect(w, h)
 	c.Fill(r, ColBackground)
 	c.Border(r, ColAccent)
@@ -338,12 +338,12 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 		a.clearSplit()
 		return
 	}
-	a.floatWinDrag(&a.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 98, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 98, H: floatTitleH}, pressed)
 	// Bottom-right resize grip — handled before the body so a corner press resizes
 	// rather than landing in the log / input beneath it.
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
-	if wasActive && !a.clientWin.dragging && !a.clientWin.resizing { // drag/resize just ended → remember where
+	a.floatWinResize(&a.wins.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
+	if wasActive && !a.wins.clientWin.dragging && !a.wins.clientWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelClient, r, w, h)
 	}
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}

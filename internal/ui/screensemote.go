@@ -692,7 +692,7 @@ func (a *App) sendPairOrder(uid int, op string) {
 
 func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.pairWin.dragging || a.pairWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.pairWin.dragging || a.wins.pairWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.pairPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -705,11 +705,11 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		a.showPair = false
 		return
 	}
-	a.floatWinDrag(&a.pairWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 94 - pad, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.pairWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 94 - pad, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.pairWin, grip, r, pairPanelMinW, pairPanelMinH, pressed)
+	a.floatWinResize(&a.wins.pairWin, grip, r, pairPanelMinW, pairPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.pairWin.dragging && !a.pairWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.pairWin.dragging && !a.wins.pairWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelPair, r, w, h)
 	}
 
@@ -892,10 +892,10 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 // resizable, clamped on-screen, with a window-height-responsive default size.
 func (a *App) pairPanelRect(w, h int32) sdl.Rect {
 	defH := clampI32(h-120, pairPanelMinH, 560)
-	if r, ok := a.seedPanelFromSlot(&a.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
 		return r
 	}
-	return a.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
+	return a.wins.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
 }
 
 const (
@@ -1013,7 +1013,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		a.ghostStart = [2]int32{c.mouseX, c.mouseY}
 		a.ghostBase = [2]int{a.pairOffX, a.pairOffY}
 	}
-	if a.pairWin.resizing { // a resize that started outside pv must not capture it mid-gesture either
+	if a.wins.pairWin.resizing { // a resize that started outside pv must not capture it mid-gesture either
 		a.ghostDrag = false
 	}
 	if !c.mouseDown {

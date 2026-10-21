@@ -199,6 +199,10 @@ type env struct {
 	// clears it.
 	uiDirty bool
 
+	// wins holds the floating-window geometry (a leaf service). Window state is
+	// global, so it lives in env and survives a tab park/restore.
+	wins wins
+
 	// h is the narrow set of App capabilities a component needs beyond env's
 	// own shared state. Set once in wireComponents; nil in a bare or
 	// literal-built rig, which is why every accessor below is nil-safe.
@@ -1372,17 +1376,6 @@ type App struct {
 	// scroll container now — the 23 widgets no longer fit any sane box height, and
 	// without one the cells drew straight out through the bottom edge.
 	extrasScroll int32
-	// pairWin / modWin / cmWin / hkWin / evidWin are floating-window geometries
-	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
-	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
-	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin, debugWin floatWin
-	// timerWin / loginWin / pairPopWin are the three that used to be return-to-top
-	// modals (#31: "bringing up the Extras → Timer hides all the other UI"). They took
-	// the whole courtroom pass for a countdown, a two-field credential form and a UID
-	// box, which is exactly the wrong trade — you want to watch the scene while the
-	// timer runs. Same floatWin treatment as the panels above.
-	timerWin, loginWin, pairPopWin floatWin
 	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
 	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
 	showVoice bool
@@ -1495,11 +1488,8 @@ type App struct {
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
 	hkScroll   int32 // hotkey cheat-sheet scroll offset (it's a scrollable list now)
-	// piecesWin / piecesPrevDown are the Hide-UI-pieces panel's floating window and
-	// its own press edge. It used to be nailed to the bottom-right corner with no
-	// way to move it — dragging did nothing and the layout editor did not offer it
-	// — so a panel that landed awkwardly could not be shifted at all.
-	piecesWin      floatWin
+	// piecesPrevDown is the Hide-UI-pieces panel's press edge (its geometry moved to
+	// env.wins).
 	piecesPrevDown bool
 	// Multi-server split (pass 2a): splitTab pins a BACKGROUND tab whose live stage
 	// renders in the RIGHT pane (splitRoom over that tab's own session + URL builder
@@ -1527,10 +1517,9 @@ type App struct {
 	splitWrapPct int
 	splitWrapGen int
 	// The pinned server draws in a free-floating, movable/resizable "second client"
-	// window (clientWin geometry; the floatWin pattern) overlaying the primary —
-	// drag it anywhere, not a fixed split. clientHdr caches the title by server name
-	// so the per-frame draw never re-concats (0-alloc, like the single-pane path).
-	clientWin     floatWin
+	// window (geometry in env.wins) overlaying the primary — drag it anywhere, not a
+	// fixed split. clientHdr caches the title by server name so the per-frame draw
+	// never re-concats (0-alloc, like the single-pane path).
 	clientHdr     string
 	clientHdrName string
 	// clientFull toggles the full-theme view (the WHOLE pinned client UI, view-only)

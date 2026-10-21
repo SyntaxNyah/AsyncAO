@@ -96,7 +96,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		add(fw.rect(row.defW, row.defH, row.minW, row.minH, w, h))
 	}
 	// msgWin keeps its historical slot + wrappers, so it isn't in the table.
-	if a.showMessages && !a.msgWin.dragging {
+	if a.showMessages && !a.wins.msgWin.dragging {
 		add(a.msgPanelRect(w, h))
 	}
 	// The bespoke (non-floatWin) boxes share the same shared helper.
@@ -257,14 +257,14 @@ func (a *App) panelDeOverlapCensus(exclude sdl.Rect, w, h int32) []sdl.Rect {
 func (a *App) anyPanelDragging() bool {
 	return a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
 		a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
-		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing ||
-		a.cmWin.dragging || a.cmWin.resizing || a.evidWin.dragging || a.evidWin.resizing ||
-		a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
-		a.debugWin.dragging || a.debugWin.resizing || a.hkWin.dragging || a.hkWin.resizing ||
-		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
-		a.pairPopWin.dragging || a.pairPopWin.resizing ||
-		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning
+		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing ||
+		a.wins.cmWin.dragging || a.wins.cmWin.resizing || a.wins.evidWin.dragging || a.wins.evidWin.resizing ||
+		a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
+		a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing ||
+		a.wins.debugWin.dragging || a.wins.debugWin.resizing || a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
+		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
+		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
+		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning
 }
 
 // magnetBypassed reports whether the live piece-to-piece magnet is suppressed

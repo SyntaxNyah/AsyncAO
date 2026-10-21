@@ -129,31 +129,31 @@ const (
 )
 
 var panelSlotTable = []panelSlot{
-	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
+	{slotPanelPair, func(a *App) *floatWin { return &a.wins.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
 	// The mod dashboard hides while its own ban box is open (they share the modWin
 	// draw slot in drawFloatingPanels) — match that so the census never carries a
 	// panel that isn't on screen.
-	{slotPanelMod, func(a *App) *floatWin { return &a.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBoxKind == 0 }},
-	{slotPanelCM, func(a *App) *floatWin { return &a.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
-	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
-	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
-	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
-	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
-	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
-	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
-	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
+	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBoxKind == 0 }},
+	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
+	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
+	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
+	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
+	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
+	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
+	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
+	{slotPanelClient, func(a *App) *floatWin { return &a.wins.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
 	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
 	// it — not by dragging, and not in the layout editor either — so a panel that
 	// landed somewhere awkward, or under something else, could not be shifted.
 	// Joining this table gives it the drag, the position persistence and the
 	// de-overlap cascade every other floating panel already has.
-	{slotPanelPieces, func(a *App) *floatWin { return &a.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
+	{slotPanelPieces, func(a *App) *floatWin { return &a.wins.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
 	// The three ex-modals (#31). They were centred blocks that took the screen; as
 	// floatWins they get the same drag, position persistence and de-overlap cascade
 	// every sibling panel has.
-	{slotPanelTimer, func(a *App) *floatWin { return &a.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
-	{slotPanelLogin, func(a *App) *floatWin { return &a.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
-	{slotPanelPairPop, func(a *App) *floatWin { return &a.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairPopupOpen }},
+	{slotPanelTimer, func(a *App) *floatWin { return &a.wins.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
+	{slotPanelLogin, func(a *App) *floatWin { return &a.wins.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
+	{slotPanelPairPop, func(a *App) *floatWin { return &a.wins.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairPopupOpen }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -682,13 +682,13 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
-		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
-		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
-		a.hkWin.dragging || a.hkWin.resizing ||
-		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
-		a.pairPopWin.dragging || a.pairPopWin.resizing ||
-		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
+		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
+		a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
+		a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
+		a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
+		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
+		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
+		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -1015,12 +1015,12 @@ func (a *App) drawFloatingPanels(w, h int32) {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
-			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
-			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
-			a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
-			a.pairPopWin.dragging || a.pairPopWin.resizing ||
-			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
+			a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
+			a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
+			a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
+			a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
+			a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
+			a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}

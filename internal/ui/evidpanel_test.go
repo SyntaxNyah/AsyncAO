@@ -44,7 +44,7 @@ func TestEvidencePanelDefaultClearsInput(t *testing.T) {
 	if r := a.evidPanelRect(w, h); r.X != floatWinMargin || r.Y != floatTitleH {
 		t.Errorf("first-open evidence rect = %+v, want top-left (X=%d, Y=%d) so the IC input/log stay clear", r, floatWinMargin, floatTitleH)
 	}
-	a.evidWin = floatWin{x: 300, y: 250, w: 500, h: 400, placed: true}
+	a.wins.evidWin = floatWin{x: 300, y: 250, w: 500, h: 400, placed: true}
 	if got := a.evidPanelRect(w, h); got.X != 300 || got.Y != 250 {
 		t.Errorf("placed evidence rect = %+v, want the dragged spot (300,250)", got)
 	}

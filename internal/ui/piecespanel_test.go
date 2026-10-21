@@ -47,8 +47,8 @@ func TestPiecesPanelFollowsWhereItWasDragged(t *testing.T) {
 	before := a.toolboxPiecesRect(piecesTestW, piecesTestH)
 
 	// Simulate a completed drag to the top-left.
-	a.piecesWin.x, a.piecesWin.y = 40, 60
-	a.piecesWin.placed = true
+	a.wins.piecesWin.x, a.wins.piecesWin.y = 40, 60
+	a.wins.piecesWin.placed = true
 
 	got := a.toolboxPiecesRect(piecesTestW, piecesTestH)
 	if got.X == before.X && got.Y == before.Y {
@@ -70,8 +70,8 @@ func TestPiecesPanelStaysOnScreen(t *testing.T) {
 		{9000, 9000},
 		{0, -400},
 	} {
-		a.piecesWin.x, a.piecesWin.y = pos.x, pos.y
-		a.piecesWin.placed = true
+		a.wins.piecesWin.x, a.wins.piecesWin.y = pos.x, pos.y
+		a.wins.piecesWin.placed = true
 		got := a.toolboxPiecesRect(piecesTestW, piecesTestH)
 		if got.X+got.W <= 0 || got.X >= piecesTestW || got.Y+got.H <= 0 || got.Y >= piecesTestH {
 			t.Errorf("dropped at %d,%d the panel resolved fully off-screen: %+v", pos.x, pos.y, got)
@@ -95,7 +95,7 @@ func TestPiecesPanelIsInTheFloatingRegistry(t *testing.T) {
 	if found == nil {
 		t.Fatal("the pieces panel is not in panelSlotTable — no saved position, no de-overlap")
 	}
-	if found.fw(a) != &a.piecesWin {
+	if found.fw(a) != &a.wins.piecesWin {
 		t.Error("the registry row points at the wrong floatWin")
 	}
 	// Its visibility predicate must agree with the draw's own early return, or the

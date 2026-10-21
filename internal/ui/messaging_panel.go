@@ -76,15 +76,15 @@ func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 // persisted layout slot (if you positioned it in Edit Layout), else tucks it
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
 		return r
 	}
-	if !a.msgWin.placed { // historical default: tuck top-left (not centred)
+	if !a.wins.msgWin.placed { // historical default: tuck top-left (not centred)
 		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
+	return a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 }
 
 // msgSlotDefaultRect is where the Group Chat slot lands when first added from the
@@ -99,7 +99,7 @@ func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 // drag/resize-END frame (never per-frame). Thin wrapper over the generic
 // persistPanelSlot now that every panel shares that path.
 func (a *App) persistMsgSlot(w, h int32) {
-	a.persistPanelSlot(slotMessages, a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
+	a.persistPanelSlot(slotMessages, a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
@@ -172,7 +172,7 @@ func (a *App) msgEntries() []msgEntry {
 // floatWin press edge from drawFloatingPanels.
 func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.msgWin.dragging || a.msgWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.msgWin.dragging || a.wins.msgWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.msgPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -183,11 +183,11 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 		a.showMessages = false
 		return
 	}
-	a.floatWinDrag(&a.msgWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.msgWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
+	a.floatWinResize(&a.wins.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.msgWin.dragging && !a.msgWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.msgWin.dragging && !a.wins.msgWin.resizing { // drag/resize just ended → remember where
 		a.persistMsgSlot(w, h)
 	}
 

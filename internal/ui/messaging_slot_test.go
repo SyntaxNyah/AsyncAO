@@ -20,7 +20,7 @@ func TestMessagesSlotSeedsPanel(t *testing.T) {
 	if got != want {
 		t.Errorf("seeded rect = %+v, want %+v", got, want)
 	}
-	if !a.msgWin.placed {
+	if !a.wins.msgWin.placed {
 		t.Error("seeding from the slot must mark the floatWin placed so the panel stays put")
 	}
 }
@@ -31,7 +31,7 @@ func TestMessagesSlotSeedsPanel(t *testing.T) {
 func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1000), int32(800)
-	a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = 200, 100, 480, 360, true
+	a.wins.msgWin.x, a.wins.msgWin.y, a.wins.msgWin.w, a.wins.msgWin.h, a.wins.msgWin.placed = 200, 100, 480, 360, true
 
 	a.persistMsgSlot(w, h)
 
