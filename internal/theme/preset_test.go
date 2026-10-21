@@ -126,12 +126,9 @@ func TestEveryLayoutPresetDeclaresItsDesignCanvas(t *testing.T) {
 // the load-bearing gate of the entire wave: "apply a layout" and "apply a style"
 // are only well-defined acts because the sections they own do not overlap, and
 // the 294-cell gallery is only orthogonal for the same reason.
-//
 // It runs in BOTH directions on purpose. Over the TABLE, because the rule lives
 // there and a future section added to both partitions must fail here rather than
 // in a bug report. Over the DATA, because the table only governs fragments that
-// go through the parser, and a gate that trusted the parser to have run would
-// pass on an empty directory.
 func TestLayoutAndStylePresetKeySetsAreDisjoint(t *testing.T) {
 	// --- the table ---------------------------------------------------------
 	// [element.*] is the ONE deliberate overlap: both axes declare elements, and
@@ -367,19 +364,7 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 	// THE EXEMPTION IS SMALL AND IT HAS TO STAY SMALL. It is the one way a style
 	// element escapes the orthogonality rule, and W9 moved elements in BOTH
 	// directions across it, for opposite reasons:
-	//
-	//   * 40 canvas-wide overlays went the other way, from an absolute
-	//     `0, 0, 714, 668` to `anchor = courtroom` with a `0, 0, 0, 0` delta,
-	//     because the absolute rect covers only 47% of a 1512-wide layout
-	//     (README F2) and the >= 90% snap cannot reach it from there;
-	//   * 13 fixed-size ORNAMENTS came in, because their w/h had been written as
-	//     "canvas minus a constant" and ruling R1 turned that into a delta that
-	//     inverts on every canvas but the one they were drawn on.
-	//
 	// Anchor first, always; declare only what genuinely references no widget.
-	// PresetFullCanvasCap is the format's bound and is far above this; the number
-	// here is a REVIEW threshold, so a wave that doubles the exemptions has to
-	// change a line that says out loud what it is doing.
 	const shippedFullCanvasReviewCap = 24
 	if full > shippedFullCanvasReviewCap {
 		t.Errorf("%d shipped style elements take the full_canvas exemption (review threshold %d) — "+
@@ -457,12 +442,9 @@ func fontFileExt(file string) bool {
 // budget is the recipient's, not the author's". Every cap a preset can spend is
 // counted here, against the constant rather than against a number typed into the
 // assertion.
-//
 // The generator TILE count is the interesting one, and it is counted the way the
 // texture cache counts it — by DEDUPLICATING (name, params) pairs, because the
 // param hash is the cache key, so twenty elements sharing one recipe cost one
-// tile. Counting elements instead would fail a preset that is doing exactly the
-// right thing.
 func TestNoShippedPresetExceedsTheRecipientsBudget(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap, which internal/theme may not
 	// import (it is an SDL package). NAMED and asserted against the one live
@@ -789,18 +771,9 @@ func TestApplyPresetTierIsAllOrNothing(t *testing.T) {
 // catches the failures that are not about geometry at all: an id collision
 // between the axes, a cap the two tiers only breach together, and a merged model
 // the writer would refuse to save.
-//
-// THE CAPS ARE ASSERTED EXPLICITLY, not merely by Bytes() refusing. Bytes()
-// enforces them, so a breach fails either way — but "combination does not
-// serialise: element cap" and "cyberpunk x split_triptych needs 97 elements, cap
-// is 96" are not the same message to the person who has to fix it, and the
-// generator TILE budget is not the writer's business at all: it belongs to the
-// texture store, so nothing in the serialise path would ever have looked at it.
-//
 // PER COMBINATION, which is the whole point. TestNoShippedPresetExceedsThe-
 // RecipientsBudget measures one FRAGMENT; a cap the two axes only breach
 // TOGETHER — 52 style elements over 48 layout panes — is invisible there and is
-// exactly what a two-axis gallery makes possible.
 func TestEveryCombinationMergesAndValidates(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap; see the fragment-level gate's
 	// note on why the number is spelled here rather than imported.
@@ -906,13 +879,6 @@ func TestAMergedThemeReadsBackAsItself(t *testing.T) {
 
 // TestACreatedThemeCarriesItsStylesAttribution is the licensing contract's last
 // leg, and it is the one that leaves the process.
-//
-// §6.5 clause 7 says every preset states that it ships no art. The gallery shows
-// that line before you build, but the artefact the user then hands to someone
-// else is a FOLDER — and if the attribution stops at our panel, the theme that
-// gets redistributed under AGPLv3 says nothing about where its art came from.
-// So the style's credit becomes the created theme's `[theme] credit`, and this
-// asserts it survives the whole way: merge, serialise, and read back off a file.
 func TestACreatedThemeCarriesItsStylesAttribution(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	layout := lib.Layouts()[0]

@@ -147,21 +147,9 @@ func TestThemeMediaKeysAreThemeNamespaced(t *testing.T) {
 	}
 	// Generator tiles are content-addressed, so the namespace question does not
 	// arise: the same params ARE the same tile, whoever declared them.
-	//
-	// TWO SEPARATE CALLS, one per notional theme, captured before they are compared:
-	// an assertion that spells the same expression on both sides can only ever agree
-	// with itself. And the tail is read BACK to the hash, which is the half that
-	// makes this a statement about the key being a function OF ITS HASH rather than
-	// merely a deterministic string — a builder that dropped the value entirely
-	// (every tile under one key, the second upload replacing the first) would pass
-	// the equality on its own.
-	//
 	// SAID PLAINLY, so nobody reads the equality as the evidence: on its own it is
 	// nearly vacuous. ThemeGenKey is a pure Sprintf, so only a stateful or
 	// counter-based builder could ever fail it — a key mangled but still injective
-	// (hash^0xff, say) walks straight through. The parse-back below is the
-	// assertion that does the work; the equality is kept because the pair of calls
-	// is what states the "same params ARE the same tile" claim in the first place.
 	const tileHash = uint64(0x0123456789abcdef)
 	byUmineko, byTrial := ThemeGenKey(tileHash), ThemeGenKey(tileHash)
 	if byUmineko != byTrial {
@@ -358,16 +346,8 @@ func TestThemeMediaOneItemCannotEatTheBudget(t *testing.T) {
 // TestThemeMediaAdmissionByteTotalIsOrderIndependent pins design §Q2's "silent
 // eviction is forbidden", and it is named for the property FCFS admission can
 // actually have.
-//
 // FCFS is order-DEPENDENT by construction: whichever pages arrive first are the ones
 // that stay, so the resident SET follows the declaration order and always will. The
-// two invariants that do hold are the ones asserted below — the committed BYTE TOTAL
-// is the same whichever order the same declaration set arrives in (the allowance is
-// spent, not raced), and within each order admission is strictly first-come-first-
-// served: whatever was admitted STAYED admitted, and no latecomer ever evicted an
-// earlier page to make room for itself. That second half is the one an author can
-// reason about and a bug report can describe; a refusal is explicit, and internal/ui
-// turns it into a self-describing placeholder.
 func TestThemeMediaAdmissionByteTotalIsOrderIndependent(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -423,13 +403,9 @@ func TestThemeMediaAdmissionByteTotalIsOrderIndependent(t *testing.T) {
 
 // TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies is the leak gate, and it
 // takes three applies on purpose.
-//
 // A single-apply test cannot catch the failure mode this is written against: the
 // swap that does not PRUNE. Pinned pages are eviction-exempt, so a theme whose art
 // is not dropped when the next theme lands stays resident forever — and the symptom
-// is not a crash but a client that is 24 MiB heavier after every theme the user
-// tries, which nobody attributes to themes. Three heavy applies is the shortest
-// sequence in which "apply → swap → apply again" is distinguishable from "apply".
 func TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -448,16 +424,7 @@ func TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies(t *testing.T) {
 
 	// One heavy apply, in the order App.pollThemeApply performs it: PRUNE FIRST,
 	// then admit.
-	//
 	// The order is load-bearing and it is the opposite of the chrome loop's. Chrome
-	// uploads then prunes, because chrome has no budget and replacing a skin in
-	// place avoids a one-frame gap. Theme media has a budget, and the previous
-	// theme's art is not part of the new theme's allowance — admit-then-prune means
-	// a swap between two heavy themes measures the incoming pages against an
-	// allowance the OUTGOING theme is still holding, so the new theme admits nothing
-	// and then the prune leaves the user with a blank one. Pruning first costs
-	// nothing (both happen inside one pollThemeApply, before the frame paints) and
-	// makes the allowance mean "this theme's art", which is what it says.
 	apply := func(themeID string) {
 		declared := map[string]bool{}
 		for i := 0; i < ThemeMediaCap; i++ {

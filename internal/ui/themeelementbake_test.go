@@ -61,15 +61,6 @@ func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache,
 
 // applyFixtureSidecar lands a sidecar the way pollThemeApply does, in the SAME
 // order, and bakes one frame.
-//
-// The [overrides] fold is not decoration here. In the live client the author's
-// rows are laid over the resolved design map BEFORE the layout cache is built
-// (app.go, foldSidecarOverrides), so by the time anything bakes, a.themeRects
-// already carries the tier's answer — refusals, AO2's second spelling and all.
-// A fixture that skipped the fold left every consumer downstream of it reading a
-// map the client never has, which is how the pane bake came to ask the sidecar a
-// second time and get a different answer.
-//
 // Both maps take it, because both do in the client: the pristine one is what
 // reset/undo restore from, the live one is what the editor's own rung is applied
 // over.
@@ -126,15 +117,6 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 // TestSidecarSwapClearsThePreviousThemesElements pins the theme-swap prune for this
 // tier: applying a theme with no sidecar after one with elements must leave nothing
 // behind.
-//
-// themeLayoutIn's cold path DOES zero the baked array — `*lay = themeLayoutCache{…}`
-// (theme_layout.go:274) replaces the whole struct, fixed array included — so the
-// stale rows cannot survive a rebuild. The gate is still exactly as load-bearing:
-// what it pins is that the SWAP reaches that rebuild at all and that elN and the
-// three band ranges come back zero, which is the state the draw loop reads. Nothing
-// here relies on the array's contents, so a future cache that recycled its rows
-// (to skip re-baking unchanged elements, say) would keep passing for the right
-// reason rather than by accident.
 func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_order.ini")
 	defer cleanup()
@@ -157,14 +139,6 @@ func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 
 // TestElementsAreNotInThemeLayoutKeys is the AO2-parity gate stated as a namespace
 // rule: an element id is NEVER a design key.
-//
-// That is what makes parity structural rather than careful. The census oracle over
-// courtroom_design.ini's root keys (themecensus_test.go) walks themeSlots,
-// themeSlotDeferred and charSelectDefaultRects; applyRectOverrides and
-// themeKeyEditable walk a.themeRects. If an element id could reach any of them it
-// would become a draggable, persistable, override-able box — and the whole "free
-// elements cannot move an AO2 widget" contract would be a convention instead of a
-// consequence.
 func TestElementsAreNotInThemeLayoutKeys(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
@@ -459,15 +433,6 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 		}
 	}
 	// Bands are contiguous and cover exactly [0, elN).
-	//
-	// EMPTY BANDS ARE SKIPPED, and that is not a loosening. bakeThemeElements leaves
-	// a band nothing sorted into at its zero value {0, 0} (it only ever writes lo/hi
-	// for a band it actually saw), which is correct — the draw loop runs `for i := 0;
-	// i < 0` and paints nothing. Compared against `next` it would read as a band
-	// starting back at 0, so a fixture whose middle band happened to be empty would
-	// fail this assertion for a theme that renders perfectly. The property that
-	// actually matters is that the NON-EMPTY bands tile [0, elN) in band order, and
-	// that is what this now says.
 	next := int16(0)
 	for b, rg := range lay.band {
 		if rg.lo == 0 && rg.hi == 0 {
@@ -608,10 +573,8 @@ func TestUnknownConditionAxisLeavesTheElementVisible(t *testing.T) {
 // arrays and copies strings the sidecar already owns, so its allocation count must
 // not be a function of how many elements a theme declares. A preset swap re-bakes,
 // and a swap that allocated per element would hitch the frame it landed on.
-//
 // The headroom that is here covers label truncation (truncateLabelTo allocates when
 // it actually shortens a string, which is the one legitimate allocator on this path)
-// and the font-width memo behind it.
 const elemBakeAllocCeil = 8
 
 // TestElementBandBakeAllocationCeiling is BenchmarkElementBandBake's assertion half:

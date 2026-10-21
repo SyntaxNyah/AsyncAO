@@ -16,11 +16,6 @@ import (
 
 // stockChatboxRects is AO2's shipped `default` theme, the same source
 // ao2DefaultDesignRects (ao2defaultrects.go) is transcribed from:
-//
-//	ao2_chatbox = 0, 114, 256, 78
-//	showname    = 1, 0, 46, 15
-//	message     = 10, 13, 242, 57
-//
 // The two children are CHATBOX-RELATIVE, which is why theme_layout.go leaves
 // them un-offset (AO2 parents both widgets to ui_vp_chatbox, courtroom.cpp:91).
 var stockChatboxRects = map[string]sdl.Rect{
@@ -49,7 +44,6 @@ func layWith(rects map[string]sdl.Rect) *themeLayoutCache {
 // is QTextDocument::documentMargin — default 4. A Qt 6.5.3 probe of that exact
 // widget at this exact size reports documentMargin 4.0, a position-0 text cursor
 // at (4, 4) and a first-block bounding rect 234 px wide inside a 242 px viewport.
-//
 // SYMMETRIC on purpose: the chatlog's inset deliberately spares the right edge
 // because a scrollbar track lives there, and reusing it here would leave the
 // message text hard against the theme's right margin.
@@ -130,13 +124,6 @@ func TestChatboxTextRectsHonourExportFallbackRow(t *testing.T) {
 }
 
 // TestChatboxTextRectsDoNotClampToTheBox is the guard for the clip caution.
-//
-// AO2 does not clip ui_vp_message to the chatbox: the widget is re-parented to
-// the Courtroom and only offset by the chatbox origin (courtroom.cpp:3310), so a
-// theme may legitimately declare a message wider than the box it sits in. Eight
-// design files in the reference corpus do, three of them badly enough to lose a
-// column if we ever "tidied" the rect: CCSmol (message right edge 259 in a
-// 256-wide chatbox), Mobile (393 in 392) and HDF-Fullscreen 1080p (770 in 765).
 // Resolution must pass the overhang through untouched.
 func TestChatboxTextRectsDoNotClampToTheBox(t *testing.T) {
 	// CCSmol, verbatim: ao2_chatbox = 0,114,256,78 / message = 3,18,256,59.
@@ -469,14 +456,6 @@ func TestCanonFontPctOpensTheSameFaceSize(t *testing.T) {
 }
 
 // TestCanvasFontFoldDoesNotThrashOnDragResize is the performance contract.
-//
-// Every fontSet keys on the percent, and a rebuild there closes and re-opens the
-// whole chain and then calls purgeTextCache — which destroys every cached label
-// texture and the entire text atlas. That is priced as a settings action. Folding
-// the canvas scale in means the percent now moves with the WINDOW, and a live
-// drag-resize delivers a new size every frame, so the fold must not ask for a new
-// percent unless the font size on screen genuinely changed.
-//
 // The drag simulated here is a 4:3 window dragged from 400 to 1600 px wide over
 // the stock 714x579 canvas — 1201 distinct sizes, all of which the layout cache
 // rebuilds for.
@@ -522,16 +501,9 @@ func TestCanvasFontFoldDoesNotThrashOnDragResize(t *testing.T) {
 
 // TestThemedChatboxScaleParityAcrossTheCorpus is the measurement this work was
 // justified by, frozen as a test.
-//
-// AO2 multiplies design rects AND courtroom_fonts.ini point sizes by the one
-// Options::themeScalingFactor(), so how much text fits a theme's message rect —
-// rect width divided by font size — is fixed by the theme author. AsyncAO scaled
-// the rect and not the font, so the ratio moved by exactly the canvas scale.
-//
 // The rows are real numbers read out of the reference corpus (design canvas from
 // `courtroom`, message width from `message`, point size from courtroom_fonts.ini
 // `message`) and span the whole measured range. The window is 1152x864 on
-// Letterbox, the shipped default window on the mode that keeps a theme's aspect.
 func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 	const winW, winH = 1152.0, 864.0
 	for _, tc := range []struct {
@@ -556,13 +528,6 @@ func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 			declared := clampInt(themeFontPct(tc.points), themeFontMinPct, themeFontMaxPct)
 			// AO2 draws the theme's rect and the theme's point size, both times the
 			// same factor, so its capacity is the authored one at any scale.
-			//
-			// In PIXELS. This divided the rect's pixel width by a POINT size, which
-			// overstated AO2's capacity by 96/72 — and the 15% tolerance below was
-			// widened to absorb exactly that, its comment naming "themeFontPct's
-			// point-size-to-pixel truncation" as known residue. It was not residue,
-			// it was the bug: a declared 8 pt opened a 7 px face where Qt gives 11.
-			// With the reference corrected, AceAttorney2x also stops reading as
 			// "already at parity" — it is divergent, which is what issue #21 says.
 			capAO2 := tc.msgW / float64(themeFontPx(tc.points))
 			capBefore := tc.msgW * scale / float64(faceSizeFor(declared, DefaultScalePct))

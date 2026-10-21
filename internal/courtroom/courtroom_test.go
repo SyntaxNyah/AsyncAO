@@ -271,11 +271,6 @@ func TestDeskVisiblePhaseMatrix(t *testing.T) {
 // TestDeskModExHidesPairPerPhase pins the #16 mods 4/5 behaviour against AO2's two
 // switch statements (play_preanim courtroom.cpp:4076-4082 / start_chat_ticking
 // :4135-4146). Pair-hide and offset-zero are DECOUPLED and asymmetric.
-//
-// Mod 4 (EMOTE_ONLY_EX): preanim hides the sideplayer + move(0,0); talk restores ONLY
-// the offset (set_self_offset) and never re-shows the sideplayer — so the pair stays
-// HIDDEN through both phases, offset zeroed in preanim, restored in talk.
-//
 // Mod 5 (PRE_ONLY_EX): the inverse for the offset — pair+offset shown in the preanim,
 // both hidden/zeroed in talk.
 func TestDeskModExHidesPairPerPhase(t *testing.T) {
@@ -522,10 +517,6 @@ func TestAdditiveOutgoingLeadingSpace(t *testing.T) {
 // spans over the space-LESS visible text, then prepends a space and shifts each
 // span's Start by +1 before encoding the invisible frame; this test simulates that
 // sender output (space-prefixed fragment + already-+1'd spans) and asserts begin()
-// lands the effect over the intended visible runes on an AsyncAO receiver — both for
-// a first fragment (empty accumulator) and a continuation (non-empty prefix, where
-// the receiver's own prefix shift composes on top). The ui send lines themselves are
-// out of this package's compile fence; they're verified by inspection.
 func TestAdditiveOutgoingSpanShift(t *testing.T) {
 	// The sender emits this for a `[shake]Wow[/shake]!` typed with the additive box
 	// on: visible "Wow!" → space-prefixed " Wow!"; the [shake] span over runes 0..3
@@ -1876,11 +1867,9 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 // async re-probe's Warning drains. The fix skips the preanim SYNCHRONOUSLY at
 // entry: PhasePreanim is never entered, Active is never the missing preanim base
 // at ANY observable point, and the message goes straight to talking.
-//
 // AO2-Client parity: it stats the preanim locally and skips a missing one before
 // it draws (courtroom.cpp play_preanim) — a base we already know is absent is the
 // same certainty. This is distinct from TestMissingPreanimSkipsInsteadOfTimeout,
-// which covers the 404 landing DURING the wait; here it is known BEFORE entry.
 func TestKnownMissingPreanimNeverStagesPlaceholder(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -2072,24 +2061,7 @@ func immediatePreanimMsg(text string) *protocol.ChatMessage {
 // freeze on the last preanim frame); when the TEXT finishes first the message
 // SETTLES on schedule while the animation plays on, and the speaker drops to
 // idle only when the animation itself ends.
-//
-// DELIBERATE BEHAVIOR CHANGE, authored by this lane (field report: immediate
-// still holds the queue for the preanim's length). The second half of this test
-// used to assert the opposite — that text completion kept PhaseTalking until the
-// preanim finished. Under hard rule 11 a rewritten assertion is a behavior
-// change until proven otherwise, so here is the proof: three spots in
 // ../AO2-Client/src/courtroom.cpp.
-//
-//	:4273-4275  chat_tick sets text_state = 2 the moment tick_pos reaches the
-//	            end of the message. anim_state is neither consulted nor touched,
-//	            and an immediate preanim is anim_state 4 throughout
-//	            (play_preanim, :4093-4095).
-//	:2442       the gate for taking the stage is `text_state >= 2 &&
-//	            !text_queue_timer->isActive()` — TEXT state, never anim_state.
-//	:4332-4338  chat_tick arms text_queue_timer (the queue advance) right there
-//	            at text completion; the blank-post arm at :4208-4213 is the same
-//	            code again.
-//
 // So in canon occupancy ends at text completion with the animation still
 // running. Holding the queue for the animation is exactly what ticking
 // "immediate" asks the client not to do.
@@ -2173,14 +2145,10 @@ func TestImmediateDoesNotHoldTheQueueForThePreanim(t *testing.T) {
 // settle site — the one a message reaches when its text is already complete the
 // instant it takes the stage, so PhaseTalking never runs a tick. A blank post
 // with an immediate preanim is exactly that message.
-//
 // It is pinned separately because a mutant that makes THIS site wait on the
 // animation survives the two tests above: they all call Update at least once,
 // and the PhaseTalking arm would then settle the message one tick later, hiding
-// the difference. The difference is real all the same — canon settles a blank
-// post synchronously inside start_chat_ticking, arming the queue timer in the
 // empty-message arm at ../AO2-Client/src/courtroom.cpp:4183-4213 with the
-// preanim still playing (anim_state 4).
 func TestBlankImmediatePostSettlesWithoutWaitingForThePreanim(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("")})
@@ -2203,14 +2171,6 @@ func TestBlankImmediatePostSettlesWithoutWaitingForThePreanim(t *testing.T) {
 // base forever — PreanimTimeout releases it to idle — while a decoded long
 // preanim that DOES report its duration (NotifyPreanimStarted) still plays in
 // full.
-//
-// Its assertions were rewritten by this lane too, from Phase() to PlayOnce, and
-// they ride the same proof: the bound now guards the SPRITE, because the phase
-// it used to guard no longer waits on the animation at all. Same three citations
-// as TestImmediatePreanimTransitions. Note what did NOT change — both halves
-// still assert exactly what they did before (unbounded preanim is released;
-// a decoded 5 s preanim survives the plain timeout and ends on its own report),
-// only on the field that still carries the animation's state.
 func TestImmediatePreanimBounded(t *testing.T) {
 	// Never reports done: bounded release, no permanently frozen sprite.
 	room, _, _, _ := newCourtroomRig(t)

@@ -1,40 +1,6 @@
 package theme
 
 // EVERY CAPPED COLLECTION, PUT TO BOTH DIRECTIONS (ledger L3, round-4 gap).
-//
-// THE GAP THIS CLOSES. The write guard's cap rows are what stand between an
-// editor session and a theme that refuses to LOAD: one collection over its named
-// cap and ParseSidecar answers ErrSidecarCap for the WHOLE file, which is the
-// precise data loss the caps block exists to prevent. Seven of validateCaps' ten
-// collection rows shipped DELETABLE with this package green — [rotations],
-// [fonts], [fontbind], [sounds], [pane.*], [effect.*] and [import] subthemes had
-// no gate at all. Proven by deleting them and watching the suite pass, not by
-// reading. They are also exactly the collections a theme editor authors most: 25
-// fonts, 33 sounds, 9 panes, 17 effect binds or 5 subthemes saved cleanly and the
-// theme then never opened again.
-//
-// THE SHAPE, and why it is a derived table rather than eleven hand-written rows.
-// One row per capped collection, and the row is the ONE place that collection's
-// cap constant is named. Each row is put to BOTH directions of the production
-// code:
-//
-//   - the MODEL at exactly the cap must SAVE, and one entry past it must be
-//     refused before a byte is written;
-//   - the equivalent FILE at exactly the cap must LOAD, and one entry past it
-//     must be refused.
-//
-// Those four are what make the (collection -> cap constant) mapping inside
-// validateCaps ENFORCED rather than merely written down a second time beside the
-// reader's inline caps: a row carrying a cap the reader does not use fails one of
-// the four, whichever side moved. Neither side restates a limit — both are
-// called.
-//
-// And the table itself cannot quietly lose a row, which is how seven went missing
-// the first time: TestEveryModelCollectionHasACapGate derives the REQUIRED set
-// from the Sidecar type by reflection, so a collection added to the model with no
-// cap gate is a red test the day the field lands rather than the day somebody's
-// theme grows past 24 sounds.
-//
 // COLD PATH, like everything else on the sidecar: these gates build models and
 // format strings, and none of it runs on a frame.
 
@@ -221,11 +187,9 @@ func capEntryID(prefix string, i int) string { return prefix + formatInt(i) }
 // missing validateCaps rows died on. For every capped collection: the model at
 // the cap saves, the file at the cap loads, and one past it is refused by BOTH,
 // with the same sentinel.
-//
 // Deleting any row from validateCaps turns this red on that collection's
 // over-cap half; changing one to a different cap constant turns it red on the
 // at-cap half. That is the whole point — the mapping is enforced by execution
-// instead of by sitting next to the reader's copy of it.
 func TestEveryCappedCollectionIsGuardedInBothDirections(t *testing.T) {
 	// Every fixture file states its own format, as a real theme does.
 	const header = "[" + secTheme + "]\nformat = 1\n\n"
