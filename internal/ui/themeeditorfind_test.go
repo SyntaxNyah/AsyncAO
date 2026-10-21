@@ -2,19 +2,6 @@ package ui
 
 // FINDABILITY (v1.90.0 W7a, retargeted in W10) —
 // docs/wip/THEME-EDITOR-DESIGN.md §Q7's "Entry points + settings findability".
-//
-// This closes a CLASS, not an instance. The recon found that no findability census
-// existed at all, and v1.89.1 duly shipped a settings row nobody could search for.
-// The flagship feature of the release cannot be the second one.
-//
-// W10 MOVED THE DESTINATION AND KEPT EVERY CLAIM. The editor row was findable by
-// SEARCH from W7a onwards and still invisible to anyone who scrolled: it was one row
-// two thirds of the way down the Theme tab. It now has a tab of its own, so the
-// assertions below say tabThemeEditor where they used to say tabTheme, and the
-// structural half reads the file that now draws the row. Those are the only two
-// changes; the queries, the shadow rule and the "it must actually open the editor"
-// clause are untouched, which is the evidence that the MOVE is the change and the
-// behaviour is not.
 
 import (
 	"strings"
@@ -39,16 +26,8 @@ var themeEditorQueries = []string{
 }
 
 // TestEveryThemeEditorSettingIsFindable is the findability census.
-//
 // TWO HALVES, because there are two ways to be unfindable and they fail
 // independently:
-//
-//   - the CONCEPT search (settingsSearchMatch over the keyword table) must send
-//     every phrase above to the Theme editor tab;
-//   - the ROW must register with the gather-search at all, i.e. it must call
-//     c.onRow. A row that draws without that is invisible to the search box even
-//     though its label is right there on screen — which is exactly how v1.89.1's
-//     row went missing.
 func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 	for _, q := range themeEditorQueries {
 		got := settingsSearchMatch(q)
@@ -87,14 +66,6 @@ func TestThemeEditorKeywordsDoNotShadowLaterTabs(t *testing.T) {
 
 // themeEditorReservedWords are short queries a LATER tab owns outright. A term on
 // the Theme editor tab may not contain any of them.
-//
-// THIS IS THE TRAP THE WHOLE-KEYWORD GATE CANNOT SEE, and the keyword table's own
-// comments have been describing it in prose since W2:
-// TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE keywords, so a long
-// term here whose SUBSTRING is a later tab's query passes that gate while stealing
-// the query for real — "customize layout" would silently take "custom" from
-// tabAssets' "custom error sprite" and tabAudio's "custom music".
-//
 // This tab sits at index 2, ahead of every tab from Assets on, so it is the one that
 // can do the stealing. The list is the prose made executable.
 var themeEditorReservedWords = []string{

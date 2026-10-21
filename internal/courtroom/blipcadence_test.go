@@ -7,23 +7,10 @@ import (
 )
 
 // The blip cadence, and the line between the two halves of a reveal.
-//
-// AO2's chat_tick is a one-shot QTimer re-armed from the HANDLING instant
 // (../AO2-Client/src/courtroom.cpp:4271 stop, :4586 `chat_tick_timer->start(msg_delay)`),
-// so one delivery emits one grapheme and sounds at most one blip
-// (`blip_player->playBlip()`, :4545) — its blips are physically spaced in real time.
-//
-// AsyncAO reveals from a dt-driven accumulator, and one Update is one delivery — but its
-// dt is the CALLER's step, which is not the crawl. The frame loop passes real elapsed
-// time (clamped to cmd/asyncao/main.go's maxFrameDelta, 100 ms); the scene/GIF/WebP/video
-// exporters step the room at 1s/fps with presets of 8/12/15/24 (internal/ui/gifexport.go).
-// So a coarse step legitimately carries several runes.
-//
 // The split these tests pin: the REVEAL is proportional to dt (anything else is a hidden
 // second speed knob keyed to the caller's frame rate — it slowed the exporters to a third
 // of the requested crawl and truncated their lines), while the BLIPS carry a per-delivery
-// budget (blipsPerUpdate), because N blips submitted in one instant are one louder blip,
-// not a faster rhythm.
 
 // crawl40 is AO2's own text_crawl default (options.cpp:180-183, `config.value("text_crawl", 40)`)
 // and AsyncAO's shipped default (config.DefaultTextCrawlMs) — the speed the field report was
@@ -172,14 +159,6 @@ func TestTheCatchUpCapDoesNotSlowTheOrdinaryCrawl(t *testing.T) {
 // TestTheSpeedPrefStillDrivesTheCrawl pins that the user-facing ms knob keeps working
 // across its whole range (config.MinTextCrawlMs..MaxTextCrawlMs) — the other half of the
 // reported defect being that moving that knob changed nothing.
-//
-// The frame step is a FIXED 60 Hz for every crawl — deliberately not min(1s/30, crawl),
-// which is what the first version of this test computed. Deriving the step from the crawl
-// assumes exactly the property under test (that frames arrive at least as often as runes
-// are due) and so cannot fail; and it is not what ships, because with idle rendering off
-// FramePace's talk tier returns the active cap (see frame60). At a 5 ms crawl 200 runes
-// are due per second and no display refreshes that often, so this is also the case a
-// per-Update rune budget silently capped at the refresh rate.
 func TestTheSpeedPrefStillDrivesTheCrawl(t *testing.T) {
 	for _, crawl := range []time.Duration{
 		5 * time.Millisecond,   // config.MinTextCrawlMs
@@ -208,15 +187,6 @@ func TestTheSpeedPrefStillDrivesTheCrawl(t *testing.T) {
 
 // TestBlipsRideTheRevealedCharactersLikeAO2 pins AO2's counting rules themselves —
 // Courtroom::chat_tick, ../AO2-Client/src/courtroom.cpp:4540-4555:
-//
-//	if ((blip_rate <= 0 && blip_ticker < 1) || (b_rate > 0 && blip_ticker % b_rate == 0)) {
-//	  if (!formatting_char && (f_character != ' ' || blank_blip)) { playBlip(); ++blip_ticker; }
-//	} else { ++blip_ticker; }
-//
-// with blip_ticker reset to 0 at the start of every message (:4233). The ticker is tested
-// BEFORE it advances, so the FIRST printed character blips; a whitespace on a due tick is
-// silent AND holds the tick (:4550-4553); a whitespace on a non-due tick still advances it.
-// Every expectation below was traced against those lines, not against our implementation.
 func TestBlipsRideTheRevealedCharactersLikeAO2(t *testing.T) {
 	// One rune per call, so the per-delivery blip budget cannot mask a counting bug.
 	for _, tc := range []struct {
