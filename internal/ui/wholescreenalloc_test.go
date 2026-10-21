@@ -16,22 +16,6 @@ import (
 // added AFTER a per-frame allocation shipped; these two gates instead catch a
 // whole class up front by asserting a SETTLED drawCourtroom / drawLobby frame
 // allocates nothing.
-//
-// SCOPE (stated honestly, not "whole screen"): the courtroom gate stages a
-// settled &courtroom.Session{} at the app's real default layout scales, so it
-// exercises the ALWAYS-DRAWN composite — the viewport/scene at real size, the IC
-// input row / drawICControls decomposition, the log-panel chrome and its pushClip
-// conversions — AND the IC-log raster: 2–3 settled lines are appended through the
-// live pushIC path so drawICLogList's per-line loop (drawLogLineNamed → labelEmoji
-// → the text-texture cache), the most alloc-prone whole-screen path, is measured
-// rather than skipped on an empty log. It does NOT cover the data-dependent
-// branches that only render with populated live state: the areas filter, the
-// players/mute chip, the additive checkbox, or the name-colour/bold name-split
-// branch of drawLogLineNamed (off by default). Those are left out because their
-// setup would inject per-frame-varying text (clocks, timers, live rosters) that
-// isn't a settled frame; gating them needs its own fixture. The lobby gate
-// covers the phone-book screen. A genuine leak in what IS covered surfaces as a
-// non-zero count to FIX, not to loosen.
 
 // stageSettledCourtroom builds a headless App whose courtroom is fully settled:
 // a real font-loaded Ctx over a software renderer, a session + room with an
@@ -191,11 +175,6 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 // The classic gates never reach that function: their fixture leaves themeRects
 // empty, so themeLayout() returns lay.valid=false and drawCourtroom takes the
 // classic branch — which is exactly how the themed composite shipped ungated.
-//
-// asyncao_toolbox is added on TOP of the stock table (AsyncAO's own optional key,
-// consumed in drawCourtroomThemed) so the compact-toolbox region is anchored at a
-// theme rect rather than the classic slot default — that arm is only reachable
-// under a theme, so the classic gates cannot cover it either.
 func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
@@ -256,13 +235,9 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 // panel zooms DIVERGED — one Ctrl+wheel over the OOC log and one over the music
 // list, both landing inside [MinLogScalePercent, MaxLogScalePercent], i.e. a
 // perfectly ordinary saved state.
-//
 // It exists because equal zooms hid a whole class of bug. The themed frame draws
 // the IC log, the OOC log AND the music list at once; while all three asked for the
 // same percent, one shared fontSet answered all three and never rebuilt. Diverge
-// any of them and that set was rebuilt — with a full purgeTextCache and text-atlas
-// teardown — on EVERY FRAME. The zoom knobs are per panel by design, so "they
-// happen to match" is not an invariant anything may rely on.
 func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -293,13 +268,9 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 // TestDrawCourtroomThemedCentredShownameZeroAlloc is the themed gate with the
 // showname CENTRED — the state 50 of the 97 design files in the reference corpus
 // ask for, and the one that costs something.
-//
 // Left alignment short-circuits before measuring anything (shownameSpanFor), so
 // the gates above never touch the measuring path at all. Centre and right have to
 // know how wide the name is, and the only honest way to get that is through the
-// same caches the draw uses — labelEmojiWidth re-probes textCache / emojiCache
-// rather than re-rendering or measuring the wrong face. A rendered measure, or a
-// c.TextWidth call on the chrome face, would show up here immediately.
 func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

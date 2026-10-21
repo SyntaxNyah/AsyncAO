@@ -171,16 +171,6 @@ func TestNewInspectorFieldsAreAddressableAndNamed(t *testing.T) {
 
 // TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt is the W7b negative gate
 // turned into its post-condition (v1.90.0 W8).
-//
-// THE PRECONDITION IT GUARDED IS GONE, and the property it protected is not. Through
-// W7b the gate said "there must be no Id row", because an element's id is its SECTION
-// SUFFIX — the writer emits `[element.<id>]` and no key carries it (sidecar_write.go's
-// elementFieldKeys names ID as "never a key") — and INIDoc had no way to move a
-// section, so a rename would have APPENDED a second one and left the first: a saved
-// theme carrying the element twice. W8 landed theme.INIDoc.RenameSection and the one
-// funnel that drives it, so the row exists — and the duplication this test was written
-// about is now checked DIRECTLY, by saving and re-reading, which is a stronger claim
-// than the absence of a row ever was.
 func TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt(t *testing.T) {
 	// The row exists and is reachable for every element kind: an id you cannot see is
 	// an id you cannot fix when two themes' elements collide.
@@ -406,12 +396,9 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 // TestOnlyPickerRowsNameAPickSource pins pickRow's own claim: the ~30 rows that are
 // not pickers carry pickNone because they never write one, and every row that IS a
 // picker names a live list.
-//
 // Both halves are silent failures. An fkPick row left at pickNone draws a picker with
 // nothing to pick — two step buttons the author can press forever — and a non-picker
 // row that acquired a source would be asking the cache to build a list nothing draws.
-// The zero value is the one the table relies on and the one nobody writes down, which
-// is exactly the kind that drifts.
 func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 	a, _ := editDocRig(t, 1)
 	// THE NO-SOURCE ANSWER IS PINNED BY THE CACHE SLOT, NOT BY THE RETURN VALUE. A nil
@@ -574,11 +561,9 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 // the wave. restoreBaseline is "all or nothing"; a snapshot that covered elements and
 // overrides but not the type tables would let "Back, Back" discard a session's
 // geometry and silently KEEP its font bindings.
-//
 // UNCHANGED BY W8's re-baselining, deliberately: this session never saves, so the
 // baseline never moves and "discard" still means "back to when I opened it". That it
 // still passes verbatim is the open–closed evidence for rebaseline — the semantics
-// change only where a SAVE happened, which is TestDiscardAfterASaveGoesBackToTheSave.
 func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	a, doc := editDocRig(t, 1)
 	doc.side.Fonts = []theme.FontFamily{{Family: "Original", File: "o.otf"}}
@@ -625,13 +610,6 @@ func drainThemeApply(t *testing.T, a *App, gen uint64) {
 // TestSavingGeometryDoesNotRestartTheTheme is design §"Live preview, no Apply button"
 // made mechanical: applyThemeAsync runs for media/font import and theme switch, and for
 // nothing else.
-//
-// THE DEFECT IT CLOSES. landEditorSave kicked an apply on EVERY successful save. An
-// apply re-anchors a.themeAt and re-runs applyThemeClocks, so every clock group in the
-// theme restarts from zero, and it calls purgeTextCache() — meaning saving a one-pixel
-// rect nudge visibly restarted all motion and hitched the text cache. With the design's
-// 2 s debounced autosave that is a motion restart every two seconds while authoring.
-//
 // The evidence is a.themeGen, which applyThemeAsync bumps SYNCHRONOUSLY before it starts
 // its goroutine — so the gate cannot pass by racing it.
 func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
@@ -705,17 +683,9 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 
 // TestDiscardAfterASaveGoesBackToTheSave is the W8 exit-contract change, stated as
 // the thing that used to be wrong.
-//
-// THE DEFECT. The baseline was taken once, at open, and nothing moved it. So
-// edit → Save → edit → Back → Back left the MODEL at the pre-save document while
-// DISK held the save — and closeThemeEditor drops the document, not the model, so
-// the courtroom went on drawing a theme that no longer existed anywhere. The two
-// states only reconciled the next time something happened to re-read the file.
-//
 // A DELIBERATE SEMANTICS CHANGE, and this is its evidence: "discard" now means
 // "back to my last save". The gate that pins the OTHER meaning
 // (TestExitWithoutSavingThrowsAwayTypeEditsToo) is unchanged and still passes,
-// because a session with no save has no second meaning to choose between.
 func TestDiscardAfterASaveGoesBackToTheSave(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

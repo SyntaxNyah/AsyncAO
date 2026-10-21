@@ -1500,12 +1500,6 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 // SFXVolMuted): all four default OFF (unmuted, matching today's actual
 // behavior — no migration stamp needed), and the saved state survives a real
 // save→load round trip through disk, exactly like TestDNDPersistRoundTrip.
-// This is the "the value actually round-trips" half of the guard;
-// TestEverySavedPreferenceIsAlsoLoaded (prefsroundtrip_test.go) is the "the
-// shape exists" half — deleting either the prefsJSON field or its load-overlay
-// line for any one of the four fails THIS test's reload assertion, even
-// though the shape-only guard could theoretically still pass if the omission
-// were paired with an accidental removal elsewhere.
 func TestChannelMuteRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)
@@ -1854,12 +1848,9 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 // so a file from an older build carries a baked textCrawlMs:18 that a bare default
 // change would never reach — only the absent stamp can tell "written before the
 // move" from "deliberately 18". Four properties, one per sub-test:
-//
 //  1. it fires exactly once — an un-stamped file lands on the new default;
 //  2. it is VALUE-AWARE — an un-stamped file holding any OTHER value keeps it,
 //     because the saver always wrote the field, so that value is a deliberate pick;
-//  3. a post-move user edit survives the NEXT load (the whole point of the stamp);
-//  4. the stamp itself round-trips, so the move can never fire a second time.
 func TestBlipSpeedDefaultMove(t *testing.T) {
 	// Pinned to the package constant, not a loose literal: if the pre-move default
 	// is ever restated, this test must move with the migration it guards.
@@ -1975,15 +1966,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 // having no state distinguishable from its default — the flip cannot be
 // value-aware: it is the AutoReconnect pull-back's shape, mirrored. Four
 // properties, one per sub-test:
-//
 //  1. the flip fires on an un-stamped file — its explicit false is forced ON;
-//  2. a stamped file's explicit pin is respected as-is;
-//  3. a user who re-pins WebP AFTER the flip stays pinned across load/save —
-//     which also proves the stamp persists to disk and the flip fires exactly
-//     once, because a lost stamp would re-force ON on the very next load;
-//  4. a stamped file with the key ABSENT reads as the new ON default, which is
-//     what makes prefsJSON.DeskFollowManifest a *bool: as a plain bool, absent
-//     would decode to false and silently re-pin the user to WebP.
 func TestDeskManifestDefaultFlip(t *testing.T) {
 	t.Run("an un-stamped file is flipped to follow the manifest", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -2086,7 +2069,6 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 // always written, so a file from an older build carries an explicit false that a
 // bare default change could never reach, and a bool has no state distinguishable
 // from its default, so the flip cannot be value-aware.
-//
 // Four properties, one per sub-test — the fourth is why prefsJSON.DetailedLog
 // became a *bool: as a plain bool, absent would decode to false and silently turn
 // logging back OFF for a stamped file whose key had been hand-trimmed.
@@ -2190,10 +2172,6 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 // AO2's own options.cpp:420-423, :430-433, :440-443, which default true) so the
 // SFX/effects picks and the Pre checkbox reset after every send, matching the
 // one-shot Screenshake/Realization arms.
-//
-//	stickysounds / stickyeffects / stickypres → false (AsyncAO default; AO2 ships true)
-//	sfx_on_idle                               → false (options.cpp:569-572)
-//
 // The two AsyncAO options added beside them ride along, because their defaults
 // were user decisions and a silent flip would be a behaviour change nobody asked
 // for: ghost text ON, the unfocused-throttle override OFF.
@@ -2343,13 +2321,9 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 // only the absent stamp can tell them apart, and a bare default flip would
 // therefore reach nobody who has ever saved preferences. A stamped file is
 // respected as-is, so a user who deliberately picks Stretch afterwards keeps it.
-//
 // The move is VALUE-AWARE, unlike its auto-reconnect sibling: it only touches a
 // file still sitting on the OLD default. Since Stretch WAS that default and the
 // saver always wrote the field, any other stored mode is provably a deliberate
-// pick — and overwriting a Custom pick in particular would strand that user's
-// zoom and pan on a mode that no longer reads them. The STAMP is written either
-// way, so neither branch can run twice.
 func TestThemeFitDefaultMove(t *testing.T) {
 	old := filepath.Join(t.TempDir(), PrefsFileName)
 	if err := os.WriteFile(old, []byte(`{"themeFit": 0}`), 0o600); err != nil {

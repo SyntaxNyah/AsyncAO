@@ -8,27 +8,10 @@ import (
 )
 
 // The three-client TI survey these tests pin (citations in latency.go):
-//
-//	                    AO2-Client        KFO-Client        DRO-Client
-//	anchor              now + ms          now + ms          step accumulator
-//	resync (type 0)     re-anchors        re-anchors        n/a (TST/TR/TP)
-//	pause  (type 1)     freeze at ms      freeze at ms      firing timer stops
-//	ms <= 0             stop, show zero   stop, show zero   n/a
-//	flight correction   -latency/2        -latency/2        none
-//	render rounding     truncate          truncate          truncate
-//
-// AsyncAO already matched every row but the flight correction, so that row is
-// the whole of what this file adds — for CANON PARITY, not as the explanation of
-// any field report. The server floors the value it sends
 // (../KFO-Server/server/area.py:797 `int(current_time.total_seconds()) * 1000`),
-// so two clients differ by at most half an RTT (~0.1 s at the fleet's worst)
-// inside a value already coarse to the second. That cannot be a visible desync,
-// and the diff found nothing else that could be.
-//
 // The correction is also INERT in production: nothing measures a round trip
 // today. Every test below except TestTimerFlightCorrectionIsInertInProduction
 // reaches the reducer through Session.Ping, a door production does not use.
-// latency.go, "the missing call site", has the hand-over.
 
 // newTimerSession returns a Session with nothing but the wire attached: these
 // tests drive TI/CHECK packets only.
@@ -74,13 +57,9 @@ func TestTimerStartSubtractsHalfTheMeasuredRoundTrip(t *testing.T) {
 	// cold exchange, unbounded under load). Anchoring want to the NOMINAL rtt made
 	// the lower bound demand a deadline half that overhead later than the reducer
 	// can possibly mint, and the suite failed by exactly that half.
-	//
 	// Half of the value the reducer itself used makes the window exact by
 	// construction — no tolerance to guess, and none that could ever be right,
 	// since the overhead is a scheduling delay with no bound. It keeps every tooth:
-	// dropping the correction lands the deadline rtt/2 (200 ms) late and applying
-	// the whole latency lands it rtt/2 early, both hundreds of milliseconds outside
-	// a window this narrow.
 	want := serverMs*time.Millisecond - s.latency/2
 	got := s.Timers[0].Deadline
 	if got.Before(before.Add(want)) || got.After(after.Add(want)) {
@@ -176,11 +155,9 @@ func TestCheckWithoutAnOutstandingPingIsIgnored(t *testing.T) {
 // target_time, rather than accumulating a per-tick decrement the way DRO's step
 // timer does, so a jittery, irregular, hours-long frame cadence must not move the
 // reading by even a nanosecond.
-//
 // It also pins the render rounding both AO2 clients use: truncation toward zero
 // (QTime::addMSecs on the whole remainder), which is what the courtroom overlay's
 // int(seconds) does — never rounding, which would show one second too many for
-// half of every second.
 func TestServerClockDoesNotDrift(t *testing.T) {
 	s := newTimerSession(t)
 	const total = 2 * time.Hour
@@ -286,12 +263,9 @@ func TestTimerIDsPastTheClockCapAreIgnored(t *testing.T) {
 // (Session.KeepalivePacket → Conn.SetKeepalive), so nothing stamps a send time,
 // and the server's CHECK replies (../KFO-Server/server/network/aoprotocol.py:248
 // net_cmd_ch answers every CH) arrive with no round trip outstanding.
-//
 // It is a TRIPWIRE, not a wish. The day internal/protocol or internal/ui calls
 // Session.NoteLatency (latency.go, "the missing call site"), this test fails,
 // and whoever lands that wiring deletes it and re-labels the item CLOSED.
-// Deleting it WITHOUT landing the wiring puts back the claim that this client
-// corrects for flight time when it does not.
 func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 	s := newTimerSession(t)
 	s.MyCharID = 7

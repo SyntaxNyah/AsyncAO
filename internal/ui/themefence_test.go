@@ -12,25 +12,6 @@ import (
 )
 
 // The #21 theme-parity arc's two oracles.
-//
-// Almost every commit in that arc claims "the classic layout is untouched". The
-// tree could not prove it: the themed alloc gate (wholescreenalloc_test.go
-// TestDrawCourtroomThemedZeroAlloc) proves the THEMED branch ran, and nothing
-// proved the CLASSIC branch did not move.
-//
-// (a) TestClassicDispatchFence is ALWAYS ON. It pins the structural claim the
-//     whole arc leans on: with no theme rects staged, drawCourtroom must take
-//     the classic branch (screens.go:1700-1706) and must not arm any themed-only
-//     latch. Without it a commit that accidentally validated a themeless layout
-//     cache would reroute every un-themed player through the themed path and no
-//     test would notice.
-//
-// (b) TestClassicFrameDigest is opt-in (ASYNCAO_GOLDEN=<path>). It hashes the
-//     pixels of a settled classic courtroom frame so a "themed-only" commit can
-//     be PROVEN not to have moved a classic pixel rather than asserted to. It is
-//     deliberately NOT a checked-in golden: the digest folds in the host's
-//     freetype build, so the only meaningful comparison is same-machine,
-//     before-versus-after.
 
 // classicDigestW / classicDigestH size the digest frame. 1280x720 is the same
 // geometry every whole-screen alloc gate measures, so both oracles describe the
@@ -94,15 +75,6 @@ func captureClassicDigest(t *testing.T, a *App) string {
 }
 
 // TestClassicFrameDigest records or verifies the settled classic frame.
-//
-// Usage, from the repo root, BEFORE and AFTER a commit that claims classic
-// parity:
-//
-//	$env:ASYNCAO_GOLDEN = "$env:TEMP\asyncao-classic.golden"
-//	go test -run TestClassicFrameDigest -count=1 ./internal/ui   # records
-//	<make the change>
-//	go test -run TestClassicFrameDigest -count=1 ./internal/ui   # verifies
-//
 // Unset, it skips — CI never runs it, because the digest folds in the host's
 // font rasteriser.
 func TestClassicFrameDigest(t *testing.T) {

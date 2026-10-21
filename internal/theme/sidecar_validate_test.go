@@ -30,18 +30,10 @@ type sidecarRefusalCase struct {
 // TestBytesRefusesAModelTheReaderWouldRefuse is the W7 prerequisite stated as a
 // test: for every class of file ParseSidecar refuses or silently drops, the
 // WRITER refuses the equivalent MODEL before it touches a byte.
-//
 // Without it the editor bricks a theme at save time, silently: an over-cap
 // collection or one over-long watermark makes the whole theme refuse to load
 // the next time it is opened, and a duplicate id makes the editor edit one
-// element and save another.
-//
 // The table below carries the id, uniqueness and per-STRING cap classes by hand.
-// The COLLECTION-cap classes are appended from sidecarCapRows() instead of being
-// written out, because writing them out is what failed: four of the eleven were
-// listed, the other seven were not, and validateCaps' seven matching rules were
-// therefore deletable with this package green. Deriving them makes an omission
-// impossible on either side — see sidecar_caps_test.go.
 func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 	cases := []sidecarRefusalCase{
 		{
@@ -125,11 +117,9 @@ func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 			// is gone deliberately — and the property the row was really guarding, "a
 			// [theme] string past the cap does not silently become a broken save", moves
 			// to the key in that section that is still structural.
-			//
 			// `base` names the terminal AO2 fallback FOLDER: a truncated one resolves a
 			// different theme, or none, so shortening it is not a degrade of the same
 			// value but a silent substitution of another. TestMetadataCapsDegradeAndStructuralCapsRefuse
-			// drives the degrading half from both directions.
 			name:  "theme base past NameRuneCap",
 			want:  ErrSidecarCap,
 			build: func(s *Sidecar) { s.Meta.Base = strings.Repeat("n", NameRuneCap+1) },
@@ -208,13 +198,9 @@ func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 // rawDocBytes serialises the lossless document WITHOUT the model, so the gate
 // above can ask "did the refused save leave the file alone?" without going
 // through the guard it is testing.
-//
 // TEST-ONLY, and on a _test.go file rather than on the type: the whole point of
 // the guard is that there is no unvalidated way out, and this method is the
 // shape that breaks it. When this comment was first written the claim was
-// FALSE — Sidecar.Doc() handed the same document to anybody — so it is now
-// carried by TestNoExportedPathWritesASidecarWithoutTheGuard (below) rather than
-// by a promise in a comment.
 func (s *Sidecar) rawDocBytes() []byte {
 	if s == nil || s.doc == nil {
 		return nil
@@ -277,14 +263,6 @@ func TestTheWriterRefusesExactlyWhatTheReaderRefuses(t *testing.T) {
 // TestTheEffectTargetRuleHasOneSpelling is the ONE-SOURCE evidence for the
 // [effect.<target>] family, whose section suffix is a WIDGET KEY rather than an
 // id and so is the one family checkSectionID cannot speak for.
-//
-// The same three targets are put to BOTH directions of the production code — a
-// FILE through ParseSidecar, the equivalent MODEL through Bytes() — and the two
-// must agree on every one of them. Neither side restates the rule: they call
-// validEffectTarget, once each, so forking it (or deleting either call) turns
-// this red. Deleting the reader's call makes it accept a bind it can never
-// resolve; deleting the writer's puts the editor back to saving effects that
-// vanish on the next load.
 func TestTheEffectTargetRuleHasOneSpelling(t *testing.T) {
 	const legalTarget = "viewport"
 	atTheBound := strings.Repeat("w", AnchorRuneCap) // the last target both sides must keep
@@ -330,13 +308,9 @@ func TestTheEffectTargetRuleHasOneSpelling(t *testing.T) {
 
 // TestTheGuardIsNeverStricterThanTheReader is the open–closed half stated
 // directly: ANYTHING ParseSidecar accepts, Bytes() must still write.
-//
 // It walks the whole shipped fixture corpus rather than a hand-built model,
 // because those files are what the reader was built against — the alien
 // spellings, the alias keys, the future-format file and the vendor sections all
-// live there. TestHandAuthoredFixturesRoundTripByteIdentical is the other half
-// and is UNCHANGED by this wave, which is the evidence that the guard added a
-// refusal and moved nothing else.
 func TestTheGuardIsNeverStricterThanTheReader(t *testing.T) {
 	dirs, err := os.ReadDir(themesFixtureDir)
 	if err != nil {

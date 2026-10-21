@@ -1,16 +1,9 @@
 package themepack
 
 // THE TRANSPORT'S GATES.
-//
-// Every one of them drives the SHIPPED entry point — Inspect, Extract, Write,
-// CopyForEditing — against a real archive on a real temp directory. Nothing here
-// re-implements a guard in order to check it: a mirror of the zip-slip rule would
-// stay green with safepath ripped out, which is the exact shape rule 11 forbids.
-//
 // The hostile corpus is built in-process rather than checked in, because a zip
 // carrying `../../evil.dll` is a file that some scanner somewhere will one day
 // delete out of the repository, and a security gate that can silently stop
-// existing is not one.
 
 import (
 	"archive/zip"
@@ -412,13 +405,6 @@ func TestInspectReadsOnlyTheCentralDirectory(t *testing.T) {
 }
 
 // TestTheConsentSheetDescribesTheFileThatLands is the anti-spoof gate.
-//
-// The two-drop line IS the whole consent surface of an import: it names the
-// theme, its author and its licence, and the user's second drop is consent to
-// exactly that. So the sheet and the disk must be the same sidecar — not the same
-// FOLDER, the same FILE — and this drives both halves against the shipped API to
-// prove it, rather than reasoning about entry names.
-//
 // It also pins Files against reality: a census that counts entries which collapse
 // into each other on the recipient's filesystem promises a file that is not there.
 func TestTheConsentSheetDescribesTheFileThatLands(t *testing.T) {
@@ -839,24 +825,9 @@ func (b *packBuilder) addUnderDeclared(name string, declared uint64, body []byte
 
 // TestTheDeclaredSizeIsAHardCeilingOnWhatAnEntryCanDeliver pins the STDLIB
 // invariant the whole extraction budget rests on.
-//
-// WHY THIS GATE EXISTS. Every cap Inspect applies is decided from the CENTRAL
-// DIRECTORY, which is attacker-controlled metadata — that is the point of Inspect
-// and it is right, because refusing a bomb before decompressing a byte is only
-// possible from metadata. It is only a bound on what reaches the DISK, though,
-// because archive/zip refuses on the read that would take an entry past its own
-// declared UncompressedSize64 (reader.go, `if r.nread > r.f.UncompressedSize64`).
-// Take that away and an archive declaring a few kilobytes could deliver 64 MiB per
-// entry — every entry individually legal against PackEntryBytesCap, the aggregate
-// 512 × 64 MiB = 32 GiB, and Extract's only defence a total it checked against the
-// attacker's own arithmetic.
-//
 // So the invariant is DRIVEN, not assumed: a forged under-declaring archive goes
 // through the real reader, and the read must be refused. A future Go that relaxed
 // the check would fail here — in the package that depends on it, with this comment
-// attached — rather than silently un-bounding the extractor. That is exactly why
-// it asserts on the reader rather than on Extract: Extract merely inherits the
-// property, and a gate on the inheritor cannot say which ancestor stopped holding.
 func TestTheDeclaredSizeIsAHardCeilingOnWhatAnEntryCanDeliver(t *testing.T) {
 	const realBytes = 64 << 10
 	body := bytes.Repeat([]byte("A"), realBytes)

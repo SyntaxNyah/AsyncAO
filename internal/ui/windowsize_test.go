@@ -13,23 +13,9 @@ import (
 )
 
 // #35 — window restore + auto-resize to the theme's design size.
-//
-// Two independent halves are pinned here:
-//
-//  1. CenteredWindowPos, the multi-monitor recentring fix. The bare
-//     sdl.WINDOWPOS_CENTERED is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so every
-//     recenter used to teleport the window onto the primary display.
-//  2. The one-shot that arms the automatic snap-to-canvas. The same theme-apply
-//     pipeline is re-entered at boot, by healTheme's eviction repair, by the
-//     texture-filter Purge recovery and whenever a server binds a theme; none of
-//     those may move the window, so an explicit arming — not a name comparison —
-//     is the contract, it NAMES the generation of the apply it belongs to, and it
-//     must be consumed exactly once.
-//
 // The un-maximize half of the fix is NOT covered here: SDL's dummy video driver
 // implements no MaximizeWindow, so SDL_WINDOW_MAXIMIZED can never be raised
 // headlessly. It rests on the SDL sources quoted at Ctx.UnmaximizeWindow and
-// needs a human at a real display.
 
 // designCanvas is one theme's declared courtroom_design.ini geometry, in the
 // shape pollThemeApply receives it. viewport is a quarter-size stage purely so
@@ -146,15 +132,7 @@ func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 // TestThemeDesignResizeDeliversOneToOne is the product-level assertion behind
 // the whole feature: after the snap the layout engine draws the theme at scale
 // exactly 1.0 with no leftover bars — pixel-for-pixel stock AO2, no settings touched.
-//
 // CHANGED BY #14. The snap target is now the canvas PLUS themeDesignWindowInset (the
-// menu bar + docked server-tab strip band that sits above it), and the canvas is
-// centred in the room under that band. The old expectations — persisted window ==
-// 714x579 and offY == 0 — would now mean the courtroom got only 579-band px for a
-// 579px canvas and had to scale DOWN, i.e. the affordance would no longer deliver
-// the 1:1 it promises. The assertion below is the same promise re-stated against the
-// band: scale exactly 1, no horizontal bars, and the vertical origin sitting exactly
-// on the band with nothing left over.
 func TestThemeDesignResizeDeliversOneToOne(t *testing.T) {
 	a := testTabApp(t)
 	// One session, strip undragged: the live band then equals themeDesignWindowInset,
@@ -233,15 +211,6 @@ func TestThemeResizeOneShotFiresOnceThenClears(t *testing.T) {
 
 // TestThemeResizeArmingIsNotSpentByAnOlderApply is the race the generation
 // exists for, and the reason the arming cannot be a bare bool.
-//
-// themePage heals the theme from ANY theme-art draw — including the Settings
-// screen's own live preview — so a heal apply carrying the PREVIOUS theme can be
-// in flight at the exact moment the user opens the theme dropdown. With a bare
-// flag whichever apply landed first spent it: the stale one won, the window
-// snapped to the old theme's canvas, and the theme the user actually picked
-// landed already-consumed and never snapped at all. The same window let an
-// ensureThemeForSession server bind spend it, which is the one thing the feature
-// promises never to do.
 func TestThemeResizeArmingIsNotSpentByAnOlderApply(t *testing.T) {
 	a := testTabApp(t)
 	// A heal (or a server bind) starts first, carrying the OLD theme's canvas.
