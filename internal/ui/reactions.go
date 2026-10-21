@@ -230,24 +230,10 @@ func (a *App) reactionTargetKnown(ref uint32) bool {
 }
 
 // --- react trigger: palette ------------------------------------------------------------
-// The IC-bar React BUTTON was removed by request (playtest: unused). The rest of
-// the reaction machinery stays: INCOMING floats from other AsyncAO clients still
-// render (Hide-reactions still hides them), and the wire codec is untouched.
-
-// toggleReactPicker opens or closes the palette. Opening SNAPSHOTS the current "last
-// message" as the reaction target, so a message arriving while the palette is open doesn't
-// shift what you react to (the click consumes the snapshot). Opening the react palette
-// closes the emoji picker (one modal-fenced popup at a time).
-func (a *App) toggleReactPicker() {
-	if a.showReactPicker {
-		a.showReactPicker = false
-		return
-	}
-	a.showReactPicker = true
-	a.showEmojiPicker = false
-	a.reactTargetRef = a.lastReactRef
-	a.reactTargetName = a.lastReactName
-}
+// The IC-bar React BUTTON was removed by request (playtest: unused), which removed the
+// palette's only opener; the rest of the reaction machinery stays: INCOMING floats from
+// other AsyncAO clients still render (Hide-reactions still hides them), and the wire
+// codec is untouched.
 
 // drawReactPalette draws the open reaction palette (a small grid anchored above the React
 // button) and queues the clicked emoji against the snapshotted target. No-op when closed;
