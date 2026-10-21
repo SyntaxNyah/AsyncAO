@@ -202,6 +202,8 @@ type env struct {
 	// wins holds the floating-window geometry (a leaf service). Window state is
 	// global, so it lives in env and survives a tab park/restore.
 	wins wins
+	// keys is the key registry (a leaf service): one method, no state of its own.
+	keys keys
 
 	// h is the narrow set of App capabilities a component needs beyond env's
 	// own shared state. Set once in wireComponents; nil in a bare or
