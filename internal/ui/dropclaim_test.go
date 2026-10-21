@@ -118,45 +118,16 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 //     an enum shrunk to a claim or two would satisfy both of the above and prove nothing.
 const dropClaimCensusMin = 3
 
-// TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction TOTAL over
-// dropClaim, so a claim added later cannot fall through to the theme-folder arm
-// by omission — which is precisely how a dropped file came to repoint the user's
-// theme root in the first place.
+// TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction total over
+// dropClaim, walking the enum by VALUE so a claim appended to the iota block
+// joins this gate the moment it exists. The bound is the SENTINEL
+// (c < dropClaimCount), not the last named member: the walk once ended at
+// dropClaimThemeFont and W10's dropClaimThemeImage slipped past it.
 //
-// It walks the enum by VALUE rather than listing the constants: a new claim
-// appended to the iota block joins this gate the moment it exists.
-//
-// THE BOUND IS THE SENTINEL, not the last named member, and that correction is the
-// whole reason this comment can be believed. The walk used to end at
-// `c <= dropClaimThemeFont`, so W10's dropClaimThemeImage was appended to the block
-// and landed OUTSIDE the census that promised to catch it — the gate went one short
-// in exactly the wave that added the member. `c < dropClaimCount` cannot go short:
-// the sentinel moves with the enum.
-//
-// WHAT GUARDS THE SENTINEL ITSELF, since the walk trusts it completely. Three
-// mechanisms, and this comment names the one that actually fires in each case,
-// because an earlier draft credited THIS TEST with all three and was wrong about two:
-//
-//   - Sentinel too SMALL — restated as a low literal, or moved above a live member:
-//     the COMPILER, via dropClaimNames. That table is [dropClaimCount]string with one
-//     entry per claim, so shrinking the bound overflows the literal; moving
-//     dropClaimCount above dropClaimThemeImage yields `index 5 is out of bounds (>= 5)`.
-//     NOTHING IN THIS TEST CATCHES THAT CASE and nothing here should claim to — a
-//     census whose bound went short is exactly as quiet as the unguarded claim it
-//     hides. Verified by mutation: with dropClaimNames decoupled to a slice so the
-//     compile error could not mask the runtime question, that reorder leaves
-//     dropClaimThemeImage unwalked and this test still PASSES.
-//   - Sentinel too LARGE: the empty-name loop at the foot of this test. A short
-//     fixed-size array literal is legal Go and leaves the extra slots "", so the
-//     compiler is silent here and the loop is the entire guarantee.
-//   - A claim added with no name: the same empty-name loop, for the same reason. It
-//     is one deletion away from silence. Do not remove it.
-//
-// TWO MORE CLAUSES GUARD THE WALK, and they are not the same check twice:
-// `seen != int(dropClaimCount)` asks whether the loop is still bounded by the sentinel
-// (it fires the moment the bound reverts to a named member — the W10 shape), and
-// dropClaimCensusMin asks whether the roster is big enough to be worth walking at all.
-// Neither audits the sentinel; see dropClaimCensusMin's declaration for the split.
+// The sentinel itself is guarded by the compiler (dropClaimNames' fixed array),
+// by the empty-name loop at the foot of this test (sentinel too large, or a
+// claim added with no name) and by dropClaimCensusMin. Do not remove the loop:
+// it is one deletion away from silence.
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".

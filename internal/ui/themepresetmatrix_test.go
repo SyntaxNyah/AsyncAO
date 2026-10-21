@@ -324,36 +324,13 @@ func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 		"%d inert (anchor absent from the layout)", combos, resolved, ornaments, invariants, inert)
 }
 
-// TestPresetMatrixWouldCatchADriftedElement is the matrix's own gate: it proves
-// the assertion has teeth, by driving the same arithmetic with elements the
-// shipped set does not contain.
-//
-// IT MEASURES anchorHalo(anchor), WHICH IS WHAT THE MATRIX MEASURES. It used to
-// measure the raw anchor, and the difference is the whole value of the test: with
-// `anchorHaloPct` mutated from 100 to 2000 — a 41x41 halo, 1681 times the
-// anchor's area, which is not a gate at all — the matrix's 588 runs and this
-// test both stayed green, because a badge shoved 4000 design px off its anchor
-// has 0% raw overlap whatever the halo is. The arm proved a metric nothing uses.
-//
-// The three arms are the three failures the matrix claims to detect, and the
-// first two are sized in units of the ANCHOR'S OWN extent so that they pin the
-// halo constant rather than moving with it:
-//
-//   - DRIFT. The halo reaches anchorHaloPct% of the anchor's width past each
-//     edge, so a zero-delta element (a box exactly the anchor's size) loses half
-//     of itself at 1 + (1 - anchorMinOverlapPct/100) = 1.5 anchor-widths of
-//     shove. anchorDriftProofTenths is 1.6 of them: it must FAIL now, and it
-//     starts passing the moment the halo grows past about 110.
-//   - GROWTH. A decoration grown to anchorGrowthProofTimes the anchor from its
-//     own origin covers 3/N of the 3x halo per axis. At N = 4 that is 56% of
-//     the halo per axis, 32% of its area — a failure now, and a pass once the
-//     halo reaches about 5x, i.e. anchorHaloPct 200.
-//   - INVERSION. A delta that subtracts more width than its anchor has, which
-//     SDL declines to draw: the one failure that looks exactly like success.
-//
-// A fourth arm runs the metric the other way, on a correctly placed element, so
-// a threshold that had been dialled the OTHER way — into a gate nothing can pass
-// — is a failure here rather than 294 silent skips.
+// TestPresetMatrixWouldCatchADriftedElement is the matrix's own gate: the same
+// arithmetic driven with elements the shipped set does not contain. It measures
+// anchorHalo(anchor) — what the matrix measures — because an earlier arm
+// measured the raw anchor and stayed green with anchorHaloPct mutated to 2000.
+// The arms are the three failures the matrix claims to detect (drift, growth,
+// inversion), sized in units of the anchor's own extent so they pin the halo
+// constant, plus the metric run the other way on a correctly placed element.
 func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {

@@ -319,48 +319,15 @@ func TestReactionBadgeCachePurgesOnDeviceScaleChange(t *testing.T) {
 // carries the same device-exact bracket (blitLabelExact), gated the same way
 // MessageRaster/Badge already are (uiDeviceExactAt).
 
-// TestLabelDeviceExactAtFractionalScale is the Ctx.Label counterpart to
-// TestLabelCoveringCenteredDeviceExactAtFractionalScale (labelCoveringCentered)
-// and TestBadgeDeviceExactDiffersFromResampleAtFractionalScale
-// (internal/render/badge_test.go) for the surface neither of those closes: the
-// plain, non-emoji, non-focused-field label path.
-//
-// It drives the REAL production entry point (Ctx.Label) twice against the SAME
-// cached glyph texture: once with blitLabel's device-exact gate telling the
-// truth, once with it LIED to via beginRenderScaleOverride — the exact
-// production knob an offscreen export bracket already uses to decouple
-// Ctx.RenderScalePct from the live ambient ren.SetScale — forcing blitLabel down
-// the pre-generalization blitLabelScaled branch while the renderer's ACTUAL
-// scale (ren.SetScale, set once before either call, exactly as main.go sets it
-// per frame) never changes. This is not a reimplementation of blitLabel's gate:
-// it is the same knob RenderScalePct-based export brackets use for real.
-//
-//   - At 100% uiDeviceExactAt excludes the identity scale unconditionally for
-//     BOTH calls (same exclusion MessageRaster.deviceExact/Badge.Draw use), so
-//     the two paints must be byte-identical — a difference here would be a
-//     DIFFERENT bug than the one this test targets.
-//   - At 115%, "M" is a minimal reproducer of blitLabelScaled's src/dst
-//     rounding mismatch (blitLabel's own doc): the OLD path's independently
-//     re-derived width/height land the SAME device-sized glyph texture at a
-//     measurably different device row than its own device-exact 1:1 copy. The
-//     margin strip strictly ABOVE the glyph's own first ink row — found
-//     dynamically from the device-exact (correct) render, not a hardcoded row,
-//     so this does not silently stop testing anything if the embedded font
-//     ever changes — is pure background by construction in a correct render;
-//     the OLD path bleeds real (non-pure-white) pixels into it.
-//
-// Pure black-on-white text makes "not background" unambiguous, and the margin
-// sits entirely outside the glyph's own ink (not "inside a glyph"), so the
-// font's own antialiasing at the glyph's real edges cannot contaminate the
-// signal — the strip is either untouched background or it is evidence of the
-// mismatch, nothing else.
-//
-// DELETION CATCHER: reverting blitLabel to call blitLabelScaled unconditionally
-// (deleting the uiDeviceExactAt branch, or blitLabelExact itself) collapses the
-// "truth" and "lied" calls onto the identical code path — production and
-// reference become the same function call on the same inputs — and the 115%
-// subtest's "old path bleeds into the margin, the fixed path does not" assertion
-// goes back to failing exactly where it must.
+// TestLabelDeviceExactAtFractionalScale is the Ctx.Label counterpart to the
+// labelCoveringCentered and badge device-exact tests: it drives the real
+// Ctx.Label twice against one cached glyph texture, then lies to blitLabel's
+// device-exact gate through beginRenderScaleOverride — the same knob an export
+// bracket uses — to force the old blitLabelScaled path at 115%. That path bleeds
+// real pixels into the margin above the glyph's first ink row; the margin is
+// found from the correct render, never hardcoded. Deletion catcher: removing the
+// uiDeviceExactAt branch collapses both calls onto one path and the assertion
+// fails where it must.
 func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 60, 40
 	const text = "M"
