@@ -136,23 +136,7 @@ func (a *animState) restart() {
 
 // spriteNativeH is the "native art height" the per-sprite filter rule decides on
 // (spriteScaleMode, scalemode_cgo.go): the character's IDLE page height.
-//
 // AO2 settles one filter per SPRITE (issue #21 label 15) from m_frame_size.height()
-// against the widget height, and recomputes it only when the animation FILE
-// changes (AnimationLayer::resetData -> calculateFrameGeometry). Taking the height
-// from whichever page happens to be drawing is not equivalent here, because
-// AsyncAO decodes an ANIMATION down to fit a byte budget scaled by its FRAME COUNT
-// (budgetFitHeight, assets/decoder.go) while a static page is not scaled at all —
-// so a character's talk/preanim page can decode at a different height than its
-// idle and the rule re-decided the filter mid-animation. That is the reported
-// "swaps to smooth scaling for animations": one character flipping filter as its
-// bases swapped underneath it.
-//
-// So latch the height from the IDLE page and keep it while that character's other
-// bases swap; only a different character re-arms the latch. Re-arming on the idle
-// itself (rather than on any page) means the very first drawn page of a message
-// that opens on a preanim still decides for itself, exactly as before.
-//
 // No store probe, no allocation: two string compares per draw.
 func (a *animState) spriteNativeH(layer *courtroom.SpriteLayer, page *TexturePage) int32 {
 	if a.scaleName != layer.Name {
@@ -272,30 +256,6 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 // advanceSpeaker steps the SPEAKER layer's frame timing for this Update and
 // reports whether the courtroom's OnPreanimDone should fire (a one-shot preanim
 // just completed). It wraps the raw advance() with two coordinated behaviours:
-//
-//	(1) Told-to-loop restart guard (the preanim-loop BUG fix). A finished one-shot
-//	    (a preanim, finished latched on its last frame) that is now told to LOOP
-//	    (playOnce=false) restarts as a clean loop instead of freezing on that held
-//	    frame. This only ever triggers on a base COLLISION: the courtroom cleared
-//	    PlayOnce but left Active on the SAME string (PreanimBase == TalkBase/
-//	    IdleBase, reachable per courtroom/frametriggers.go:167-172), so syncAnim
-//	    never reset() and finished still held — the resident preanim page would
-//	    otherwise loop (advance :155 wraps) or stay frozen. On a NON-collided base
-//	    the courtroom changes Active, syncAnim resets finished BEFORE this runs, so
-//	    the guard is a no-op. INVARIANT it relies on: finished is set ONLY under
-//	    playOnce (advance :133-135 and :150-153; see the cross-reference comment at
-//	    each setter) — a genuine idle/talk layer never reaches finished, so it is
-//	    never restarted here and keeps looping normally.
-//
-//	(2) preanimLoop (opt-in "loop preanimations", default OFF, non-canonical). When
-//	    ON and a preanim is playing, phase 1 advances as a one-shot (playOnce=true)
-//	    so it completes ONCE — firing OnPreanimDone exactly once (loopReported
-//	    latches it) so the message lifecycle is byte-identical to loop-off — then
-//	    phase 2 advances as a genuine LOOP (playOnce=false) so the SAME clip keeps
-//	    wrapping (finished stays cleared, so NextAnimDue keeps scheduling the wraps
-//	    and OnPreanimDone can never re-fire) for as long as the courtroom keeps the
-//	    preanim active. With preanimLoop OFF this whole branch is skipped and the
-//	    call is byte-identical to the original advance(page, dt, PlayOnce).
 func (v *Viewport) advanceSpeaker(page *TexturePage, dt time.Duration, playOnce bool) (firePreanimDone bool) {
 	a := &v.speakerAnim
 	if !playOnce && a.finished {
@@ -856,9 +816,6 @@ func (v *Viewport) overlayAnimating(scene *courtroom.Scene) bool {
 // static — nothing on it is scheduled to change. The frame pacer uses this to
 // redraw exactly when the content needs it (a 100 ms-per-frame idle loop gets
 // ~10 fps redraws; a static stage gets none), fixing both playtest reports:
-// choppy idle animations AND wasted full-rate redraws. Reads only the states
-// Update just advanced (cached page pointers — no store queries, no allocs);
-// render thread only, call after Update with the same scene.
 func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	// Continuous ramps: sub-frame-smooth motion → full rate while they run.
 	// Each is gated on its enabling knob, so an armed-but-invisible countdown
@@ -921,11 +878,6 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	// <=0 is replaced), so a wild asset authored at 1-10 ms/frame would schedule
 	// redraws faster than a frame costs — with the ∞ default cap the pacing
 	// sleep then never fires and the loop free-runs (the idle-CPU-burn class).
-	// Flooring the SCHEDULE (not the playback: advance() folds every elapsed
-	// frame per step, so speed is unchanged — the viewer sees every Nth frame,
-	// exactly what a 60 Hz panel shows anyway) bounds any asset to ~60 redraws/s.
-	// Normal ≥60 ms assets pace byte-identically; a mid-cycle wake's remainder
-	// lands at most one floor late, sub-frame and self-correcting.
 	if due < minAnimFrameDelay {
 		due = minAnimFrameDelay
 	}
@@ -957,9 +909,6 @@ func fadeRunning(a *animState) bool {
 // them — so the courtroom stage draw site feeds this into the NoteAnimating
 // census instead. State-gated by construction: it is consulted only where the
 // stage actually draws, and reports true only while a sprite layer (or weather)
-// is genuinely on screen — replacing wantsFullRate's old pref-knob checks,
-// which held full rate forever on every screen, lobby and Settings included
-// (the "knob not state" anti-pattern its own doc comment condemns).
 func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
 	if scene == nil {
 		return false
@@ -1038,7 +987,6 @@ func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
 // An empty base still clears immediately, and the courtroom's HIGH-priority
 // prefetch makes the swap a frame after the texture lands. Contains is a plain
 // map probe — no I/O, no allocation.
-//
 // The BACKGROUND layer is its only caller; the desk adds two release conditions
 // on top of this gate and goes through syncAnimDesk (see there for why).
 func (v *Viewport) syncAnimSticky(a *animState, base string) {
@@ -1054,25 +1002,9 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 // stickiness (a real desk that is still streaming must not blink off — that is
 // the whole point of the sticky gate) and adds the two release conditions the
 // desk needs and the background does not:
-//
-//   - the incoming desk is CONCLUSIVELY MISSING (store.IsMissing, fed by the App's
-//     warning drain). AO2's set_scene hides the desk layer outright when the file
-//     does not exist, with no fallback of any kind
-//     (../AO2-Client/src/courtroom.cpp:4628-4634, :4656-4663). Holding the old desk
-//     for a base that can never arrive is not a cold-load bridge, it is a permanent
-//     wrong picture — the reported "default/witness desk on a deskless background"
-//     (#44).
-//   - the BACKGROUND has already swapped to this scene's bg while the desk has not.
-//     The desk is an OVERLAY on one specific background: AO2 loads the pair in a
-//     single set_scene call, so a held desk is only coherent while the background it
-//     belongs to is also still on screen. Releasing here closes the one-probe-RTT
-//     window before the miss is known, and stops two rooms compositing.
-//
 // Scoped to the desk on purpose: a CHARACTER sprite has no such pairing invariant,
 // and hold-previous there is a deliberate webAO-compatible default
 // (SpriteLoadHoldPrev, with its own thumb/held/missingno ladder and max-age knob).
-// Nothing about sprites changes. Contains/IsMissing are plain map probes — no I/O,
-// no allocation, so the render loop's alloc gate is untouched.
 func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
 	if v.deskAnim.base == deskBase {
 		return
@@ -1093,10 +1025,6 @@ func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
 // bug). buildRoom calls this on a room rebuild so the swap shows the CORRECT new
 // scenery at once — a brief blank of the right base (the held:// bridge / the
 // HIGH-priority prefetch fill it a frame later) beats the WRONG base persisting.
-// Character layers already reset unconditionally (syncAnim, not sticky), which is
-// why speakers restored correctly while scenery did not. Cheap, allocation-free
-// (reset only precomputes the thumb/held keys); a no-op when the bases already
-// match, so re-entering the same room never thrashes.
 func (v *Viewport) RebindScenery(bgBase, deskBase string) {
 	if v.bgAnim.base != bgBase {
 		v.bgAnim.reset(bgBase)
@@ -1302,12 +1230,9 @@ func SpeedlineFallbackKey(side string) string {
 // the speaker's char-folder chain that is resident, else the bundled stock burst
 // for their side. Mirrors effectiveShoutBase's resident-check fallback.
 // "" = no zoom emote.
-//
 // The chain is ordered most-specific-first by courtroom.SpeedlinesCandidates —
 // the position's own <pos>_speedlines before the AO2 side stem — and every
 // candidate is a full URL, so this is a first-resident-wins walk over at most two
-// entries. That walk is also where the chain's last tier meets the bundled art:
-// a character shipping neither file still draws, because AO's own last resort
 // (a missing-asset alert) is replaced by the stock burst issue #126 added.
 func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string {
 	if scene.SpeedlinesSide == "" {
@@ -1367,13 +1292,6 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 // surface, so it calls this immediately after the chatbox/message draw with the
 // stage rect (the layer is never resized on reparent: it always covers the
 // viewport rect, only its parent changes).
-//
-// The "under the shout bubble" half of the canon ordering is UNREACHABLE for us:
-// AsyncAO blits the shout inside Viewport.Render, and canon fires the effect at
-// start_chat_ticking — i.e. after the shout splash has already finished — so no
-// real message can put a chat-layer overlay and a live shout on screen together.
-// Documented rather than contorted around.
-//
 // Render thread only.
 func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
 	if scene == nil {
@@ -1386,17 +1304,9 @@ func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp
 // the RAW blit: containment is the caller's — the three in-viewport rungs go
 // through drawOverlayInStage, the `chat` rung (DrawOverlayChat) is uncontained
 // because canon reparents it out of the viewport.
-//
-// Geometry (AnimationLayer::calculateFrameGeometry, animationlayer.cpp:16,
-// 229-273): stretch=true fills the viewport; otherwise the art is scaled to the
-// viewport HEIGHT with its aspect preserved and CENTRED horizontally.
-// respect_offset then shifts it by the speaker's own self-offset, which is
-// already stored as percent of the viewport (courtroom.cpp:3264-3266).
-//
 // Zero-alloc: pointer math on a Scene.Overlay the courtroom precomputed, the
 // persistent v.ovRect scratch for the cgo destination (taking &localRect would
 // heap-escape on EVERY call), and an early return before anything else when no
-// overlay is on stage — so a normal frame is byte-identical to before.
 func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect, layer uint8) {
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer {
@@ -1427,25 +1337,6 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 // (courtroom.cpp:3218-3232) and Qt clips a child widget to its parent's rect, so
 // none of those three can paint a pixel outside the stage. Ours can —
 // overlayDstRect is free to leave the viewport, and does so by DEFAULT:
-//
-//   - the classic stage is 4:3 (config.ViewportArtW/H) while modern effect packs
-//     ship ~16:9 art, so a fit-to-height layer is ~32% wider than the stage and
-//     hangs over the IC log / side panels; and
-//   - respect_offset shifts the whole layer by the speaker's own self-offset
-//     (courtroom.cpp:3264-3266), which can move it off-stage in either axis.
-//
-// Unclipped, that spilled over the chatbox and the log. This is the SAME idiom,
-// and the same restore discipline, as the viewport sprite mask in Render — which
-// exists for exactly this hazard on exactly this offset. Clip to the ORIGINAL
-// stage rect, never the punched/shaken vp (which is itself allowed to leave the
-// stage), and only when nothing else already owns a clip, so the camera-zoom clip
-// (internal/ui/vpzoom.go, itself the stage) is never stomped. v.ovClip is a
-// persistent scratch because &localRect into cgo heap-escapes on every call.
-//
-// The `chat` rung is deliberately NOT routed here: canon reparents it onto the
-// Courtroom widget instead (courtroom.cpp:3234-3237), so the stage is not its
-// clip — DrawOverlayChat blits it uncontained, over the chatbox it now belongs to.
-//
 // Not this rung (or nothing to blit) returns before touching the clip state, so a
 // no-overlay frame still issues no SDL call at all and never dereferences ren.
 func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene, vp, stage sdl.Rect, layer uint8) {
@@ -1475,19 +1366,9 @@ func (v *Viewport) overlayHidden(o *courtroom.SceneOverlay) bool {
 
 // overlayDstRect computes the overlay's destination rect. Pure (no SDL calls, no
 // receiver state) so the geometry is unit-testable headlessly:
-//
-//   - stretch=true fills the viewport (AnimationLayer::setStretchToFit);
-//   - otherwise the art is scaled to the viewport HEIGHT with its aspect kept and
-//     CENTRED horizontally (animationlayer.cpp:16, 246-256);
-//   - respect_offset then shifts by the speaker's own offset, which is already
-//     percent-of-viewport (courtroom.cpp:3264-3266 does the same arithmetic).
-//
-// The layer is NEVER resized on reparent — every rung covers the viewport rect.
-//
 // The result may legitimately EXTEND PAST the viewport (fit-to-height art wider
 // than the stage; any respect_offset shift) — that is canon geometry, and canon
 // then relies on the parent widget to clip it. drawOverlayInStage is that clip
-// for the three in-viewport rungs, so this stays pure and unclamped.
 func overlayDstRect(o *courtroom.SceneOverlay, vp sdl.Rect, pageW, pageH int32) sdl.Rect {
 	dst := vp
 	if !o.Stretch && pageW > 0 && pageH > 0 {
@@ -1508,16 +1389,6 @@ func overlayDstRect(o *courtroom.SceneOverlay, vp sdl.Rect, pageW, pageH int32) 
 // AO2 uses for sprites (internal/courtroom/scaling.go): the user's explicit mode
 // wins, then the effect's own `scaling` key, then the geometry rule (art being
 // ENLARGED is point-sampled so its pixels stay square).
-//
-// The geometry rule is scoped to the NON-STRETCH branch, exactly where canon has
-// it: AnimationLayer::calculateFrameGeometry sets FastTransformation on
-// `m_frame_size.height() < widget_size.height()` INSIDE the else of
-// `if (m_stretch_to_fit)` (animationlayer.cpp:236-262). A stretched layer keeps
-// SmoothTransformation however small its art is — a full-viewport `stretch=true`
-// wash (fire, filmgrain, a 64 px gradient blown up to 1080p) is authored to be
-// smooth, and point-sampling it is the visible defect this scoping avoids. An
-// explicit `scaling` key still overrides, in both branches, as it does in canon
-// (the m_resize_mode block runs after).
 func (v *Viewport) overlayScaleMode(o *courtroom.SceneOverlay, nativeH, targetH int32) sdl.ScaleMode {
 	switch courtroom.ResolveScalingMode(v.fx.UserScaling, o.Scaling) {
 	case courtroom.ScalingPixel:
@@ -1817,21 +1688,6 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		// sprites (not in the missing set) keep the full chain below; still-loading
 		// and confirmed-missing are disjoint. Structurally unreachable on the found
 		// path (resolved sprites exit via the ok-path).
-		//
-		// EXCEPTION: a PLAY-ONCE layer (layer.PlayOnce) is a preanimation, and a
-		// missing preanim must NEVER paint the placeholder. AO2-Client stats the
-		// preanim file locally and skips a missing one outright — it never draws a
-		// placeholder for it (courtroom.cpp play_preanim). The courtroom skips a
-		// known-missing preanim at entry and swaps Active off it synchronously when
-		// the 404 lands (Courtroom.enterAfterShout / NotifyAssetMissing), so the
-		// phase machine is ALWAYS about to leave this base — a placeholder here would
-		// be a single-frame flash on the residual window before the courtroom's next
-		// Update reaches a draw driver that skipped it (audio-paced present, restore,
-		// split/replay/maker room). Fall through to hold-previous instead: the idle/
-		// talk sprite (or the prior frame) is the correct "no preanim" picture, and
-		// missingno on a preanim is never useful. IDLE/TALK layers (PlayOnce false)
-		// keep their WANTED placeholder — the disjoint idle/talk missingno contract
-		// (missingno_test.go, missingno_noblip_test.go) is untouched.
 		if v.missingnoEnabled && !layer.PlayOnce && v.store.IsMissing(anim.base) {
 			if mp, ok2 := v.store.Get(MissingKey); ok2 && len(mp.Frames) > 0 {
 				v.drawHeldSprite(ren, layer, mp, vp)
@@ -1912,10 +1768,6 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// darkened every saturated hue (playtest: turning hue paint on still looked
 	// like the plain dark recolour). The tint colormod is SKIPPED for this layer
 	// (huePainted below) — the colour is baked into the variant's pixels.
-	// Conditions mirror what the old path composed: HueCycle keeps the rainbow-
-	// over-grayscale look (rebuilding a paint page per rainbow step would churn
-	// readback+upload every frame), and Variant() == Grayscale means no Invert /
-	// Restyle override is active (those still win, exactly as before).
 	huePainted := false
 	if st := layer.Style; st.Tint && st.Grayscale && !st.HueCycle &&
 		st.Variant() == courtroom.VariantGrayscale {
@@ -2075,12 +1927,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
 	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
 	// cutout stays cut out; AlphaMod handles opacity; ADD blend makes a glow.
-	//
 	// INVARIANT: drawSprite is the *only* place the renderer MOD-brackets a texture
 	// for drawing — SetColorMod / SetBlendMode / SetAlphaMod (besides the upload
 	// default BLENDMODE_BLEND at textures.go, the variant readback in variant.go,
-	// which flips a frame to BLENDMODE_NONE for an exact copy and restores BLEND,
-	// and drawHeldSprite's debug-tint bracket, which restores neutral the same way).
 	// Any future effect that mods a texture elsewhere MUST restore it too, or art bleeds.
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)

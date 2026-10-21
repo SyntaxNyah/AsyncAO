@@ -440,11 +440,6 @@ type Courtroom struct {
 	// background + desk, the custom chatbox skin, zoom speedlines, the emote
 	// SFX + blip, screen-effect art + realization/effect sounds, and (for a
 	// queued shout) its bubble + cry — to settle before each message begins.
-	// It forces the wait gate on regardless of SpriteWait and drops the hold
-	// timeout, so release is settled-only (resident in T1 / decoded, or
-	// conclusively 404'd — the per-host fetch deadline guarantees every asset
-	// eventually settles, so the room can't hang). It does NOT touch catch-up:
-	// AO2's skip-to-newest is a SEPARATE knob (CatchUp, ON by default).
 	SequentialWait bool
 	// ShoutBypassQueue is AO2's default: a shout nukes the queue and plays NOW
 	// (no wait). When the user turns it OFF, shouts enqueue and wait like any
@@ -677,14 +672,6 @@ func (c *Courtroom) QueueLen() int { return len(c.queue) }
 // "holdit", "objection", "takethat", "custom" — or "" when the stage is idle or
 // the message carried no shout. It is ShoutName over the live message's
 // objection modifier, i.e. exactly the stem the bubble and the cry resolve from.
-//
-// The whole MESSAGE, not just the bubble's ~800 ms: c.phase leaves PhaseShout
-// long before the line finishes, and a theme element gated on "an objection is
-// happening" means the turn, not the frame the bubble is on screen. Idle is the
-// boundary because c.current deliberately outlives its message (a settled stage
-// still needs the last speaker), so gating on it alone would leave the last
-// shout latched forever.
-//
 // Read-only, allocation-free (ShoutName returns constants) and called at most
 // once per frame — it is the source for a free element's `visible_when =
 // shout:<name>` condition (docs/THEME-FORMAT.md §3).
@@ -728,31 +715,7 @@ func (c *Courtroom) HandleEvent(ev Event) {
 
 // prefetchScenery warms the position background for bg, walking AO2's
 // witness-view fallback ladder when the position ships no art of its own.
-//
-// It is the one place THIS package demands a background — begin (a message's
-// position) and setBackground (a BN / area change) both come through here. It is
-// the area-change case that motivated it: a custom position that exists in one
-// room and not the next used to leave the PREVIOUS room's background on screen
-// indefinitely, because the sticky scenery gate holds until the new base becomes
-// resident and a 404'd base never does. AO2 never reaches that state:
-// get_pos_path has already fallen back to the witness view before set_scene
 // draws anything (../AO2-Client/src/path_functions.cpp:108-159).
-//
-// The chain's identity stays the position's own base, so Scene.BackgroundBase —
-// the T1 key the viewport draws and the desk logic compares against — is
-// unchanged whichever stem answers. // AssetType: Background
-//
-// KNOWN GAP, do not read this as "the ladder cannot be half applied": the APP
-// has two further demand sites for the same live base, both outside this
-// package and both still single-stem. internal/ui healScenery and the
-// scene-warm helper re-demand Scene.BackgroundBase with a plain
-// Manager.Prefetch and no alts, so after a T1 eviction a position that only
-// ever resolved through the witness fallback is re-probed under its PRIMARY
-// stem alone — which is 404-cached — the pass reports a total miss, and the
-// stage goes black. The failure this ladder exists to prevent is therefore
-// deferred to the first eviction rather than fixed. Both sites want
-// PrefetchChain(base, <these alts>, …); BackgroundFallbacks and PositionScene
-// are exported for exactly that, and internal/ui already holds a URLBuilder.
 func (c *Courtroom) prefetchScenery(bg, bgPart string) {
 	c.mgr.PrefetchChain(c.Scene.BackgroundBase, backgroundAltURLs(c.urls, bg, bgPart), assets.AssetTypeBackground, network.PriorityHigh)
 }
@@ -804,32 +767,7 @@ const pathSeparators = `/\`
 // show (issue #43: a nested entry like "999/songs/that/slap/[999] Tranquility.ogg"
 // used to be printed whole). The WIRE name is never touched: callers keep the raw
 // string for the MC packet (Session.RequestMusic) and for URLBuilder.MusicURL.
-//
 // Two shapes, in this precedence order:
-//
-//  1. A direct http(s):// track — isMusicURL (urlbuilder.go): such a link is
-//     ALWAYS real music and its audio extension can sit BEFORE a signed query
-//     (a Discord CDN /play link ends in ?ex=&is=&hm=&). AO2-Client shows those
-//     through QUrl(f_song).fileName() (courtroom.cpp handle_song), so the
-//     query/fragment goes FIRST, then the directory, then the extension —
-//     the other order would cut the name at a '.' inside the query string.
-//  2. A server music-list name — exactly AO2-Client Courtroom::list_music()
-//     (courtroom.cpp:1738-1782):
-//     listname = i_song.left(i_song.lastIndexOf("."));
-//     listname = listname.right(listname.length() - (listname.lastIndexOf("/") + 1));
-//     i.e. cut at the LAST '.', THEN take everything after the LAST '/'. That
-//     ORDER is the canonical one and differs from basename-first for oddities
-//     like "vol.2/name" (AO2 → "vol"); for any name that actually ends in an
-//     extension the two agree. QString::left(-1) returns the whole string, so an
-//     entry with NO '.' comes back unchanged — which is how AO2 recognises a
-//     CATEGORY header (listname == i_song ⇒ top-level tree item). This client
-//     classifies headers with HasAudioExt instead (the same rule the SM split
-//     uses, and it can't mis-cut a header that happens to contain a dot).
-//
-// The result is always a SUBSTRING of track — pure slicing, zero allocations,
-// because this runs per visible row on the music-list draw. That also means a
-// search over the RAW name matches everything the display shows.
-//
 // One deliberate divergence: Qt's left(0) yields "" for a name that is nothing
 // but an extension (".mp3"), which would draw a blank, unclickable row. An empty
 // result falls back to the raw name so every row always shows something.
@@ -902,7 +840,6 @@ func (c *Courtroom) audioSettled(base string) bool {
 // so the wait gate cannot drift from the play path. AO2's handle_emote_mod
 // reaches play_preanim only for PREANIM / PREANIM_ZOOM, or for IDLE / ZOOM with
 // immediate ticked (../AO2-Client/src/courtroom.cpp:2889-2910).
-//
 // It says nothing about whether the ART exists — the callers own that (the play
 // path checks spriteConfirmedMissing before parking Active on it; the gate
 // treats a confirmed miss as settled).
@@ -917,10 +854,6 @@ func preanimWillPlay(msg *protocol.ChatMessage) bool {
 // many messages are queued BEHIND msg (matching begin()'s post-pop catch-up
 // check, so the two triggers can never disagree); dt advances the countdown
 // (pass 0 at an arm-only site). Arming fires the SAME idle/talk prefetch begin()
-// would — at HIGH, with the bare-spelling fallback — so the wait can actually
-// end (singleflight makes begin()'s repeat a no-op). The readiness key is the
-// PREFIXED base: PrefetchWithFallback keeps it the asset's identity whichever
-// spelling the server ships (CLAUDE.md).
 func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
 	if c.Assets == nil || msg == nil {
 		return false
@@ -943,12 +876,9 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// is only what the message SETTLES onto, a second or more later. Waiting for
 	// idle alone therefore opened the gate onto a cold talk sprite and flashed the
 	// placeholder for exactly the pre-message-stall window this audit is about.
-	//
 	// It is not a widening in cost: the arm below already warms talk beside idle
 	// (it always has), so this waits for a fetch that was already in flight, and a
 	// conclusively-404'd talk sprite counts as settled like every other — the gate
-	// still never waits past the missing rules. The (a)/(b) spellings are often the
-	// SAME file on legacy packs, in which case this is one extra map probe.
 	if ready {
 		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
@@ -964,8 +894,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// asked to close. It is deliberately preanimWillPlay, not hasPreanim: live
 	// packs fill the char.ini preanim field with a dummy on EVERY emote, and a
 	// declared-but-never-played preanim is not something the first frame uses.
-	// SpriteWaitPreanim keeps widening the gate to any declared preanim for the
-	// power user who wants that.
 	if ready && hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
 		// A preanim that has CONCLUSIVELY 404'd is nothing to wait for — release on
@@ -1198,17 +1126,6 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 // setBackground prefetches the new room's scenery for the current position, and
 // on a WIPING BN (one that carried a pos field — see Event.Wipe) also tears the
 // viewport down the way AO2's set_background(bg, display=true) does.
-//
-// pos is the BN's pos field ("" when it carried none, or on any client-side
-// background change). It is honoured only on a wipe, because that is the only
-// path AO2 re-scenes on: `set_scene(true, current_or_default_side())` at the end
-// of the display block. When the server sends a wiping BN with an EMPTY pos —
-// the DEFAULT on akashi (its area side is unset until someone runs /side) and on
-// KFO's remote-listen form — AO2 still re-scenes at the LOCAL user's own side, so
-// we fall back to LocalSide rather than to Scene.Position: Scene.Position holds
-// the last SPEAKER's side, and using it would re-stage the freshly-wiped stage at
-// whoever happened to talk last in the room we just left.
-// AssetType: Background
 func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	if wipe {
 		if pos == "" && c.Env != nil {
@@ -1229,12 +1146,9 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	// but the default desk appears anyway": a room whose desk 404s kept drawing the
 	// PREVIOUS room's desk until the next phase edge, and a settled message has no
 	// further edge.
-	//
 	// Passing the CURRENT phase is what makes this safe. applyDeskMods also
 	// recomputes PairActive and the speaker offsets from c.current, so a wrong
 	// phase argument would flip pair state mid-preanim; at the current phase it
-	// recomputes exactly what is already there. Same call, and the same "no further
-	// edge" reasoning, as NotifyDeskMissing.
 	if wipe {
 		c.wipeStage()
 		return
@@ -1250,15 +1164,9 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 // (#23). It runs ONLY from a server BN that carried a pos field; every
 // client-side background change (buildRoom's re-seed, the bg picker, replay, the
 // scene maker) goes through the wipe=false path, which is unchanged.
-//
 // Deliberately NOT cleared, because AO2's block does not touch them and the
 // server re-sends them itself: the IC log, music/ambience, the evidence LIST, HP,
 // missingSprites/missingDesks, and the send-on-change memories. Stopping the
-// music here would fight the music-resume that buildRoom depends on.
-// WipeStage tears the viewport down without a background change, for the ONE
-// client-initiated case the BN arity cannot cover: our own area jump against a
-// server family that sends a one-field BN (Athena/Nyathena). Render-thread only,
-// like every other exported Courtroom mutator.
 func (c *Courtroom) WipeStage() { c.wipeStage() }
 
 func (c *Courtroom) wipeStage() {
@@ -1341,8 +1249,6 @@ func (c *Courtroom) wipeStage() {
 // starts with "~~" is centred in the chatbox. Strip the 2-rune marker from the display
 // text, raise Scene.Centered, and shift any transmitted effect spans left by 2 so they
 // stay aligned (the sender computed them over the text that still carried the "~~").
-// Operates on c.currentText (already sprite-style-stripped); a no-prefix message just
-// clears Centered, so the common path is one HasPrefix check.
 func (c *Courtroom) applyCenterPrefix() {
 	if !strings.HasPrefix(c.currentText, "~~") {
 		c.Scene.Centered = false
@@ -1368,17 +1274,9 @@ func (c *Courtroom) applyCenterPrefix() {
 // leading space in the IC input so each appended fragment lands after a separator
 // (courtroom.cpp:2320-2326 re-inserts " " into ui_ic_chat_message after every
 // send; on_additive_clicked at :6563-6573 prefaces the message with whitespace).
-// We diverge on WHERE: AO2 mutates the visible input field, which is intrusive;
-// we prepend at packet build so the user's typed line stays clean (recordSentIC /
-// icPendingSent still read the untouched a.icInput). The result on the wire is
-// identical, so other clients (and AO2) see the space and don't glue sentences.
-//
 // The check runs on the STRIPPED text because funColor may have prepended colour
 // markup (\cr, \c#RRGGBB) — the raw first byte would then be '\', not the visible
 // rune. A blankpost (" ", or a colourised "\cr ") strips to a leading space and is
-// left untouched. AsyncAO receivers additionally de-glue on display (the joiner in
-// begin()), and that dedup skips a fragment that already starts with a space, so
-// AsyncAO->AsyncAO never double-spaces.
 func AdditiveOutgoingLeadingSpace(text string) string {
 	if !AdditiveWantsLeadingSpace(text) {
 		return text // already separated (real leading space, or a blankpost)
@@ -1397,13 +1295,9 @@ func AdditiveOutgoingLeadingSpace(text string) string {
 // it out (rather than duplicating the test at the call site) keeps that one source
 // of truth. Stripping first matters: funColor may have prepended \cr/\c# markup, so
 // the raw first byte would be '\', not the visible rune.
-//
 // The no-space suppression mirrors additiveNeedsJoiner's CJK decision on the one
 // boundary rune the sender can see (its own fragment's first rune; the previous
 // message's ending is only known to receivers): a half-width space glued to a
-// fullwidth glyph reads wrong in JP/CJK RP on EVERY client, including the AO2
-// ones this space exists to serve — so a CJK-leading fragment ships unspaced,
-// and receivers with mixed boundaries decide with the full two-sided rule.
 func AdditiveWantsLeadingSpace(text string) bool {
 	stripped := StripChatMarkup(text)
 	if stripped == "" {
@@ -1419,13 +1313,9 @@ func AdditiveWantsLeadingSpace(text string) bool {
 // visible rune). A joiner is wanted iff the prefix is non-empty, the prefix ends
 // with a non-space rune, and the fragment starts with a non-space rune — i.e.
 // neither side already supplies the separator (so an AO2 sender who DID insert
-// the leading space never gets a doubled one).
-//
 // CJK/no-space scripts are suppressed: a space after "。" or "、" is
 // typographically wrong in Japanese/Chinese RP (this client has JP-heavy users),
 // and CJK scripts don't word-separate with spaces at all. If EITHER boundary rune
-// is a no-space rune the joiner is dropped — a single half-width space glued to a
-// fullwidth glyph on either side reads worse than the glue it would fix.
 func additiveNeedsJoiner(prev, frag string) bool {
 	if prev == "" || frag == "" {
 		return false
@@ -1481,9 +1371,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// plays in full only when nothing is queued behind it (so calm back-and-forth
 	// still plays every line; only a genuine pile-up flashes past). The IC log
 	// already holds every message's full text.
-	// Catch-up (AO2's optional skip-to-newest) fast-forwards a backlog behind
-	// this message — independent of strict sequencing, exactly as AO2 keeps the
-	// two knobs separate.
 	if c.CatchUp && len(c.queue) >= c.CatchUpThreshold {
 		c.beginCaughtUp(msg)
 		return
@@ -1566,11 +1453,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		// additive box is on (courtroom.cpp:2320-2326, 6563-6573); clients that
 		// don't (older AO2, webAO, ours before this fix) produce the glued form.
 		// Fix it on the DISPLAY side too, for ANY sender: when the boundary visually
-		// lacks a space, insert exactly one. Appending to additivePrefix HERE — before
-		// the shift below — makes the joiner ride into the span shift, additivePrevText
-		// accumulation, IsBlankPost, StartAppend pre-reveal, and MessageRaw with no
-		// further edits. Guard on the STRIPPED text so markup at the boundary
-		// (e.g. a "\c0" colour code) doesn't hide the real last/first visible rune.
 		if additiveNeedsJoiner(StripChatMarkup(c.additivePrefix), StripChatMarkup(c.currentText)) {
 			c.additivePrefix += " "
 		}
@@ -1696,7 +1578,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// start_chat_ticking. Pair/offset are set below from the message. A zoom
 	// emote's TALK side hides the desk outright (zoomEmote), and its preanim side
 	// re-shows it through applyDeskMods(true).
-	// DeskDrawn (not bare deskVisible) so a background known to ship no desk for
 	// this position stays hidden — AO2's set_scene existence check (#44).
 	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution()) && !zoomEmote(msg.EmoteMod)
 
@@ -1729,13 +1610,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// magnification: AO2's zoom only hides the desk + pair and plays these
 	// speedlines (courtroom.cpp:3456-3477) — it never rescales the character
 	// layer — so the punch-in is the character's own zoom preanimation art.
-	// Magnifying here stacked a second zoom on top of that art.
 	// The chain is what replaced v1.98.0's single <side>_speedlines base: every
-	// position (judge, jury and seance included) now resolves through
-	// SpeedlinesCandidates, so a zoom emote ALWAYS stages a burst — ZoomSide never
-	// returns "", and the chain's last arm is the side stem. Prefetched as one
-	// chain: the <pos> stem is a 404-cached miss for most packs, so the side stem
-	// is already in flight when it lands.
 	c.Scene.SpeedlinesChain = nil
 	c.Scene.SpeedlinesSide = ""
 	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
@@ -1762,8 +1637,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// A group roster supersedes the 2-person pair: the pair layer would re-draw
 	// the first partner the group already renders. The roster comes from the
 	// per-message additional_chars (present only when a group member speaks), so
-	// a non-member speaking renders nothing extra and a new entrant still sees
-	// the group.
 	hasGroup := len(msg.Additional) >= 2
 	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod) && !hasGroup
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
@@ -1850,12 +1723,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // while the char.ini fetch is still in flight — so a female character's first
 // message never sounds the male default before her set loads. Re-run from the
 // talk ticks until the meta lands (pollCharMeta flips it to known=true).
-//
 // ONE mint for every blip URL in the client (blipurl.go): the guard that
 // rejects sentinels, and AO2's get_blips ladder — the modern sounds/blips/
 // set, AO1's sounds/general/sfx-blip<name>, and the plain general sound —
-// each in the lowercase identity casing then the authored one.
-// AssetType: Blip
 func (c *Courtroom) resolveBlip() {
 	c.blipPending = false
 	ref, pending := c.blipRefFor(c.blipWire, c.blipSpeaker)
@@ -1999,18 +1869,6 @@ func (c *Courtroom) enterAfterShout() {
 	// preanim conclusively 404'd and hijacking Active with it would draw a
 	// blank speaker. Skip straight to the talk loop, exactly where a played
 	// preanim would have ended up.
-	//
-	// !spriteConfirmedMissing: preanimDone is per-message (begin() clears it), so
-	// it does NOT catch a preanim that 404'd on an EARLIER play of the same emote —
-	// its base is in the session negative cache, so re-selecting it here would park
-	// Active on a base the render side has already marked missing (store.IsMissing),
-	// and the viewport would FLASH the missingno placeholder for the frames before
-	// the async re-probe's Warning drains and Update advances the phase. AO2-Client
-	// stats the preanim locally and skips a missing one before it ever draws
-	// (courtroom.cpp play_preanim); a streaming client can't stat, but a base we
-	// ALREADY know is absent is the same certainty — skip it synchronously here so
-	// the placeholder never paints for a preanim we're about to skip anyway. IDLE/
-	// TALK bases keep their (wanted) missingno; only the preanim selection is gated.
 	playPre := preanimWillPlay(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
@@ -2034,30 +1892,9 @@ func (c *Courtroom) enterAfterShout() {
 
 // preanimSFXPlays reports whether this message's emote SFX may play at all — the
 // gate on the whole sfx_delay_timer, not on the sound itself.
-//
-// CANON. play_sfx (courtroom.cpp:4590-4607) is wired to exactly one trigger,
-// sfx_delay_timer (:432), and that timer is started in exactly one place:
-// play_preanim (:4054). handle_emote_mod reaches play_preanim only for
-//
-//	PREANIM / PREANIM_ZOOM              → play_preanim(false)   (:2892-2896)
-//	IDLE / ZOOM *with* immediate ticked → play_preanim(true)    (:2897-2910)
-//
-// so a plain IDLE/ZOOM message with an AUTO SFX never plays its SFX_NAME in AO2,
-// whatever the field carries. That is the receive half of the field report: AsyncAO
-// armed the delay for every message, so a "SFX: auto" line sent with Pre unchecked
-// still fired the emote's char.ini sound.
-//
-// A hand-PICKED sound is different: outgoingSFXName ships it whenever the dropdown
-// row is > 0, REGARDLESS of Pre (courtroom.cpp:2102-2104), so an IDLE/ZOOM line
-// carrying a real name is a sender that explicitly asked for a sound — it must play
-// even though the mod is Idle, or the pick is silent at every receiver. The silent
-// sentinels ("", "0", "1") stay silent: auto + Pre off transmits "1".
-//
 // Note where the preanim start sits: :4054 is BEFORE the `file_exists(anim_to_find)`
 // check at :4056, so a preanim whose ART is missing still plays the sound. The gate
 // is never whether the sprite resolved — which is why this deliberately does not
-// reuse enterAfterShout's `playPre` (that one also consults hasPreanim / the
-// missing-sprite cache, both of which are about what to DRAW).
 func preanimSFXPlays(msg *protocol.ChatMessage) bool {
 	if msg.EmoteMod == protocol.EmoteModPreanim ||
 		msg.EmoteMod == protocol.EmoteModPreanimZoom ||
@@ -2080,8 +1917,6 @@ func preanimSFXPlays(msg *protocol.ChatMessage) bool {
 // when there is neither an SFX to play nor a preanim shake to fire — a zero-
 // delay SFX still routes through the deadline (fires on the first Update tick).
 // sfxBaseFor resolves the message's emote SFX base ("" = no audible sound: a
-// silent sentinel, or muted per-SFX, M11). Shared by armSFXDelay and the strict-
-// sequencing gate so the two can never disagree about which sound will play.
 func (c *Courtroom) sfxBaseFor(msg *protocol.ChatMessage) string {
 	if msg.SFXName == "" || msg.SFXName == "0" || msg.SFXName == "1" {
 		return ""
@@ -2131,13 +1966,9 @@ func (c *Courtroom) fireSFXDelay() {
 // realization path entirely (it is an `else if`, :4173-4177); plain
 // REALIZATION=1 is that fallback flash; SCREENSHAKE=1 shakes for IDLE/ZOOM
 // emote mods.
-//
 // The named effect now drives a real OVERLAY (do_effect). The flash/shake
 // name mapping below survives as the fallback for when the overlay does NOT
 // resolve — no theme effects.ini on disk, no origin pack, no engine wired — so a
-// bare install still reacts to "realization"/"screenshake" the way it always
-// has. When the overlay DOES resolve it owns the visual, and the white flash is
-// not fired on top of the theme's own realization art.
 func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 	// Reduce-motion gates the VISUAL effects only — the feedback sounds still
 	// play (accessibility: kill the shake/flash, keep the audio cue).
@@ -2249,16 +2080,8 @@ func (c *Courtroom) startTalking() {
 	// no such hole because its emptiness test reads the RAW wire text
 	// (start_chat_ticking, ../AO2-Client/src/courtroom.cpp:4183) and a raw "\f"
 	// is not empty, so chat_tick walks the escape and calls do_flash (:4442-4448).
-	// One extra Update tick is all this costs: that tick drains every mark at
-	// position 0 and then falls through to enterLinger below, so the message
-	// still settles immediately. Purely a lifecycle decision — the visual is
-	// still gated by effectsVisible inside fireInlineEffect, and Scene.IsBlankPost
-	// is untouched, so an effect-only message keeps hiding the chatbox exactly
-	// like any other markup-only message (see begin).
-	//
 	// An immediate-mode preanim does NOT keep this open: AO2's blank-post arm of
 	// start_chat_ticking starts the queue timer right there (courtroom.cpp:
-	// 4208-4213) with the preanim still playing behind it.
 	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() {
 		c.enterLinger()
 		return
@@ -2268,13 +2091,9 @@ func (c *Courtroom) startTalking() {
 
 // enterLinger settles the message: text done, TextStay counting down to the
 // queue advance.
-//
 // It leaves an IMMEDIATE-mode preanim alone (imPreLeft > 0). That animation is
 // decoration AO2 plays over an already-ticking message — anim_state 4 — and its
 // lifetime is owned by tickImmediatePreanim, which parks the speaker on the idle
-// sprite when it ends. Clearing PlayOnce here instead would cut the animation
-// off at text completion, which is neither AO2's behavior nor the point of
-// ticking "immediate".
 func (c *Courtroom) enterLinger() {
 	if c.imPreLeft <= 0 {
 		c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
@@ -2289,7 +2108,6 @@ func (c *Courtroom) enterLinger() {
 // expires. It runs OUTSIDE the phase switch because the animation deliberately
 // outlives its phase: AO2 leaves anim_state at 4 and lets the layer play on
 // while text_state reaches 2 and the queue timer runs.
-//
 // The speaker lands wherever the message currently is: still crawling → the talk
 // loop; settled → idle. Both are what the next Update of that phase would have
 // drawn anyway.
@@ -2325,25 +2143,9 @@ func (c *Courtroom) tickImmediatePreanim(dt time.Duration) {
 // NotifyPreanimDone is called by the render side when a one-shot animation
 // finishes (or by tests). The next Update releases the one-shot and flips the
 // speaker to the talk loop.
-//
-// GUARDED, exactly like its sibling NotifyPreanimStarted below, and for the same
-// reason: `a.d.Viewport.OnPreanimDone` is ONE callback slot on a SHARED viewport
-// that internal/ui re-points at whichever room currently drives it — the live
-// room, the split room, the replay room, the scene-maker preview (ui/replay.go,
-// ui/scenemaker.go, ui/gifexport.go each swap it and swap it back). A completion
-// fired across one of those swaps used to land on a room that had no one-shot on
-// stage at all and set the flag anyway; because preanimDone is sticky until the
-// next begin(), the CURRENT message then inherited it — enterAfterShout reads it
-// and skips the preanim outright (its `!c.preanimDone` term), PhasePreanim exits
-// on the first Update, and tickImmediatePreanim ends the decoration on tick one.
-// That is a "the preanimation is randomly interrupted" with no local cause, which
-// is why it never reproduced on demand.
-//
 // PlayOnce is the precise test: it is set synchronously by enterAfterShout the
 // moment this room selects a preanim to play and cleared by endPreanim the moment
 // the animation is over, so "PlayOnce is up" is exactly "this room has a one-shot
-// on stage that a done-report can be about". Every in-tree caller reports while it
-// is up, so no existing expectation moves.
 func (c *Courtroom) NotifyPreanimDone() {
 	if !c.Scene.Speaker.PlayOnce {
 		return // no one-shot on stage here — a stale report from a shared viewport
@@ -2387,15 +2189,6 @@ func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
 // resolve base: every spelling and format 404'd (the §4 warning lane — the
 // App relays char-sprite warnings here; wrong-room and wrong-message bases
 // simply don't match). Only the CURRENT message's preanimation reacts.
-//
-// AO2-Client skips a preanim it cannot find the moment it looks it up
-// (courtroom.cpp play_preanim: a missing file emits done immediately); a
-// streaming client can only learn absence asynchronously, and this is that
-// moment. Without it, a char.ini that fills the preanim field with a dummy
-// name on every emote (live packs ship "-<n>") froze EVERY message from that
-// character for the full PreanimTimeout with a blank speaker — the negative
-// cache made the re-probes free, but nothing told the phase machine, so the
-// stall survived caching entirely.
 func (c *Courtroom) NotifyAssetMissing(base string) {
 	if base == "" {
 		return
@@ -2502,11 +2295,6 @@ func (c *Courtroom) SkipToIdle() {
 // fresh room means no speaker at all), and the message's one-shot screen
 // effects (flash/shake) are cleared rather than re-fired. Prefetches for the
 // art the settled scene DOES show (idle/talk/pair sprites, scenery, chat skin)
-// still fan out at HIGH — they're on screen NOW — while the never-drawn shout
-// bubble and preanimation probes are skipped (c.restoring). Callers push the
-// viewer knobs (ForceCharNames / HideSpriteStyles / ReduceMotion) BEFORE
-// calling: begin() bakes them into the scene. Intended for a freshly built
-// room; on a mid-message room it replaces the current message like any begin.
 func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 	if msg == nil {
 		return
@@ -2663,15 +2451,6 @@ func (c *Courtroom) spriteAlts(character, emote string, kind EmoteKind) []string
 // AO2 flips the EX/pre/emote modes between the preanim and the talk/idle phase
 // (courtroom.cpp:4075-4091 preanim vs :4134-4152 talk); this table is exactly
 // those two switch statements:
-//
-//	mod                         preanim   talk/idle
-//	0 DESK_HIDE                 hidden    hidden
-//	1 DESK_SHOW                 shown     shown
-//	2 DESK_EMOTE_ONLY           hidden    shown    (desk only while talking)
-//	3 DESK_PRE_ONLY             shown     hidden   (desk only during the preanim)
-//	4 DESK_EMOTE_ONLY_EX        hidden    shown
-//	5 DESK_PRE_ONLY_EX          shown     hidden
-//
 // The old collapse (one static bool per message) wrongly showed the desk during a
 // mod-2 preanim and hid it during a mod-3 preanim.
 func deskVisible(deskMod int, preanim bool) bool {
@@ -2709,14 +2488,6 @@ const (
 
 // DeskDrawn is the whole desk-visibility decision: the char.ini desk_mod phase
 // table AND the streamed availability of the desk image.
-//
-// AO2-Client's set_scene computes show_desk from desk_mod (courtroom.cpp:4075-4091
-// preanim / :4134-4152 talk) and then CLEARS it outright when the position's desk
-// file does not exist (:4628-4634), hiding the layer (:4656-4663). Note the
-// asymmetry with the background arm immediately above it (:4613-4626), which DOES
-// fall back to "wit": the desk deliberately has no fallback, because an author
-// suppresses a desk by simply not shipping the file. So a background that ships no
-// desk for a position must draw NO desk — never a substitute, never the previous
 // room's (#44).
 func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 	if res == DeskAbsent {
@@ -2729,15 +2500,6 @@ func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 // DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
 // about is simply DeskUnresolved. Game-thread only: a map read plus, where the
 // room was wired one, the same T1 residency probe the sprite wait-gate uses.
-//
-// RESIDENT beats a remembered miss, and clears it. missingDesks used to be
-// insert-only, so a desk that 404'd once stayed absent for the life of the
-// Courtroom even after it actually arrived — a server repack, a local mount
-// added, or a format learned. The render side already self-heals
-// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
-// there and ShowDesk still said no. This is also what makes DeskResolved a
-// real state rather than a declared-but-unreachable one.
-//
 // SpriteReady is the same same-thread T1 map probe the sprite wait-gate uses,
 // and it is nil in rigs that never wired it — an unwired room simply keeps the
 // old two-state answer.
@@ -2801,16 +2563,6 @@ func (c *Courtroom) recordMissingDesk(base string) {
 // zoomEmote reports whether an emote mod takes the stage over the way AO2's zoom
 // does. Two separate AO2 behaviours key off it, and both are about a zoom being a
 // SOLO shot rather than a courtroom scene:
-//
-//   - the DESK is hidden outright in handle_ic_speaking (courtroom.cpp:3459),
-//     which sits on the TALK side of the phase machine. play_preanim re-runs
-//     set_scene first (:4055-4073), so a PREANIM_ZOOM still shows its desk
-//     THROUGH the preanimation and loses it when the talking starts — the same
-//     talk-only asymmetry applyDeskMods already models for the mod 4/5 EX pair;
-//   - the PAIR is never displayed at all: handle_ic_message only calls
-//     display_pair_character when the mod is not one of these (:3160), and that
-//     runs BEFORE the phase machine, so it is hidden in BOTH phases.
-//
 // Reported on the #126 zoom playtest (Crystalwarrior quoted handle_ic_speaking).
 func zoomEmote(mod int) bool {
 	return mod == protocol.EmoteModZoom || mod == protocol.EmoteModPreanimZoom
@@ -2820,16 +2572,8 @@ func zoomEmote(mod int) bool {
 // message for the given phase (preanim vs talk/idle). It always recomputes from
 // c.current — never cumulatively mutating Scene — so a phase that shows the pair
 // or restores an offset does so from the message, not from prior Scene state.
-//
 // Pair-hide and offset-zero are DECOUPLED because AO2 handles them independently
 // (they are NOT symmetric across the two EX modes).
-//
-// Mod 4 (DESK_EMOTE_ONLY_EX): play_preanim hides the sideplayer + move(0,0)
-// (courtroom.cpp:4076-4082); start_chat_ticking then calls set_self_offset ONLY —
-// it restores the speaker offset but never re-shows ui_vp_sideplayer_char
-// (courtroom.cpp:4135-4139). So the pair is hidden through BOTH phases and only the
-// offset comes back in talk.
-//
 // Mod 5 (DESK_PRE_ONLY_EX): the sideplayer/offset stay put through the preanim
 // (set_scene(true) fall-through, courtroom.cpp:4085-4089), and only talk hides the
 // sideplayer + move(0,0) (courtroom.cpp:4145-4146). So the pair is hidden and the

@@ -2,45 +2,6 @@ package ui
 
 // Element clocks and element effects (v1.90.0 W5) — docs/wip/THEME-EDITOR-DESIGN.md
 // §Q3 and §6.6 R2, docs/THEME-FORMAT.md §3.
-//
-// This file is the whole of "pick an element, pick an effect". Three layers, in
-// increasing cost, and MOST MOTION COSTS NOTHING:
-//
-//  1. Per-element `phase_ms` and a clock group's `speed_pct` are PURE ARITHMETIC on
-//     the one themeAt anchor the client already keeps. Six butterflies out of phase
-//     consume zero slots and zero state.
-//  2. A fixed [theme.ClockCap]themeClock pool carries authoring GROUPS: a speed, plus
-//     the paused/frozen pair the editor's scrub needs. Clock 0 is the shared anchor
-//     and is byte-identical to themeFrame at speed 100 — every existing animated
-//     chrome page is unchanged.
-//  3. A fixed [themeFXCap]fxState pool for STATEFUL effects only: the three decaying
-//     one-shots need an origin ("when did this start?"), and the other five are pure
-//     functions of elapsed and take no slot at all.
-//
-// NO GOROUTINE, NO UPDATE TICK, NO PER-ELEMENT TIMER. Frame advance is owned by the
-// DRAW SITE, exactly as themeFrame (app.go) has always done it — so there is nothing
-// new to race and nothing new for -race to find.
-//
-// WHY PHASE ARITHMETIC AND NOT INDEPENDENT WALL CLOCKS. The argument is a product
-// property, not purity: the offscreen export path (themeLayout(w,h), used by
-// gifexport.go) and the editor's preset miniatures must reproduce ANY FRAME FROM
-// `elapsed` ALONE. Independent wall clocks make an exported GIF non-reproducible and
-// a preset thumbnail non-deterministic. Gate: TestElementFrameIsAFunctionOfElapsed.
-//
-// THE PACING DOCTRINE, WHICH THIS FILE IS THE NEWEST CITIZEN OF:
-//
-//	NoteAnimating() is called ONLY from a draw site that produced a different pixel
-//	this frame — NEVER from state.
-//
-// This is the v1.55/v1.56 census arc generalized. An idle static element that pins
-// the frame rate is the idle-CPU-burn defect; a live element that fails to pin it is
-// the worse one (frozen mid-animation). There are exactly three ways an element stops
-// moving, and each one has its own self-clear here:
-//
-//	1. a one-shot page finishes    → elementFrameIndex reports live=false
-//	2. an effect's ENVELOPE decays → resolveElementEffect reports static
-//	3. it is not visible at all    → drawElement returns before touching the page
-//
 // It is also on THIS file that TestElementDrawUsesNoStringBuilding runs (it is listed
 // in elementDrawFiles beside themeelements.go): everything here is frame path.
 
@@ -146,23 +107,6 @@ type themeClock struct {
 }
 
 // applyThemeClocks loads a theme's [clock.N] groups into the pool.
-//
-// Called from pollThemeApply beside `a.themeAt = time.Now()` (app.go), so a theme
-// reload restarts every phase together — the design's own placement, and the reason
-// a swap between two animated themes does not leave the incoming one mid-cycle.
-//
-// A nil sidecar (every stock AO2 theme) ZEROES the pool rather than leaving it: the
-// outgoing theme's speeds are its own, and a stock theme must run at the shared
-// anchor exactly as it did before this feature existed.
-//
-// The STATEFUL-effect pool is dropped here too, and for a stronger reason than
-// tidiness. Every fxState is stamped with the bake generation of the theme that
-// claimed it, and a theme apply invalidates every one of those at once — so without
-// this the incoming theme's first two seconds run against a pool the outgoing theme
-// still nominally holds, and its own one-shots are refused (freezing at frame 0)
-// until themeFXIdleFrames expires. The sweep would get there; a swap should not have
-// to wait for it. Correct rather than merely tidy: no live slot can be lost, because
-// every owner's generation is already stale by the time this line runs.
 func (a *App) applyThemeClocks(sc *theme.Sidecar) {
 	for i := range a.themeClocks {
 		a.themeClocks[i] = themeClock{speedPct: clampClockSpeed(sc.ClockSpeedPct(i))}
@@ -246,29 +190,6 @@ func (a *App) clockPaused(i uint8) bool {
 // noteElementAnimating is the ONE census call on the element path — the funnel
 // that makes "a paused clock never pins the frame rate" one line instead of a
 // rule every future draw site has to remember.
-//
-// THE DEFECT IT CLOSES (W5 left it recorded at drawElement's census line, as a
-// TODO, because W5 had no writer for `paused`; W7's scrub is the first). A paused
-// clock returns themeClock.frozen from clockElapsed, so `el` stops advancing while
-// the frame keeps drawing. Everything downstream then reports motion forever with
-// nothing moving:
-//
-//   - a CONDITIONAL one-shot acquires its slot at the frozen elapsed, so
-//     startedAt == el permanently: local 0, t 0, env 1, static = false;
-//   - the five PERIODIC kinds return static=false unconditionally, by design;
-//   - a LOOPING page's elementFrameIndex returns live=true unconditionally, by the
-//     same design.
-//
-// Each of those is correct in isolation and each of them is the idle-CPU-burn
-// defect (the v1.55/v1.56 arc) once the clock stops. Scrubbing to a frame would
-// pin the client at the animation cadence, on a still picture, until the user
-// resumed — and there would be nothing on screen to explain it.
-//
-// GATE THE CENSUS, NOT THE TERMS. The resolver is untouched and the terms are
-// still applied: holding the frame is the entire point of a scrub, and a wash's
-// envelope still has to paint its held state. Clamping elapsed, or making a paused
-// clock resolve neutral, would blank the very frame the scrub exists to inspect.
-//
 // One bounds-checked array read, no allocation, no prefs probe: it is inside both
 // AllocsPerRun gates over the element path.
 func (a *App) noteElementAnimating(clock uint8) {
@@ -315,12 +236,6 @@ func (a *App) elementFrame(e *bakedElement) *sdl.Texture {
 
 // elementFrameIndex is elementFrame's PURE core: elapsed in, (frame, still-moving)
 // out, with no App and no clock behind it.
-//
-// Pure on purpose. It is what makes TestElementFrameIsAFunctionOfElapsed a real test
-// rather than a tautology, and it is the contract the offscreen export and the preset
-// thumbnails rest on — the same elapsed must always produce the same frame, on any
-// machine, at any frame rate, months apart.
-//
 // `live` means "this page will look different next frame", which is exactly the
 // question NoteAnimating answers. A finished one-shot is NOT live even though it is
 // still showing its last frame.
@@ -336,7 +251,6 @@ func elementFrameIndex(page *render.TexturePage, el time.Duration, loop bool) (i
 		// pageFrameLoop's negative remainder holds frame 0 just as motionlessly. A page
 		// whose clock has not reached it is a STILL PICTURE, and a still picture that
 		// pins the frame rate is the defect this file's doctrine exists to prevent.
-		//
 		// It self-starts: the client keeps drawing at the idle cadence, so elapsed goes
 		// on advancing and the page notes again on the first frame it crosses zero.
 		return 0, false
@@ -385,17 +299,6 @@ type fxState struct {
 
 // beginThemeFXPass advances the pool's frame stamp, sweeps the slots nobody asked
 // for, and latches this pass's ReduceMotion answer.
-//
-// ONCE PER THEMED PASS, at the top, from refreshElementConditionsFrom — the one hook
-// both the live courtroom and the offscreen export already share.
-//
-// SWEEPING AT THE TOP OF THE NEXT PASS rather than at the bottom of this one is a
-// deliberate deviation from the design's wording, and the reason is the themed pass's
-// MID-SEQUENCE ABORT: drawCourtroomThemed returns early when a modal owns the screen
-// (theme_layout.go), so code at the bottom of that function does not run on every
-// frame. A sweep that skipped the frames a popup was open would leak slots for
-// exactly as long as the popup stayed open. Same set, one frame later, and it cannot
-// be skipped.
 func (a *App) beginThemeFXPass() {
 	a.themeFXFrame++
 	a.themeFXOver = false
@@ -474,16 +377,10 @@ func (a *App) themeFXInUse() int {
 
 // elemFX is one effect resolved for one frame: design §6.6 R2's
 // (offset, scale, alpha, rot, static), as a value.
-//
-// EVERY TERM IS DIMENSIONLESS, which is what lets one epsilon govern all of them.
 // The offsets are fractions of the element's SHORT side and the rotation is in
-// angle-byte units (theme.AngleCount = one turn); applyElementFX is the only place
-// they meet a pixel.
-//
 // R2 IN ONE SENTENCE: the rot term exists because the brief NAMES spinning objection
 // graphics, CopyEx + ThemeRectRotations already prove rotated draws, and one term at
 // design time is free where deleting a brief-named signature is not. It has been
-// carried, unread, in bakedEffect since W3 for exactly this wave.
 type elemFX struct {
 	dx, dy float64 // offset, as a fraction of the element's short side
 	scale  float64 // 1 = neutral
@@ -492,13 +389,9 @@ type elemFX struct {
 	// env is the effect's STRENGTH this frame, in [0, 1]: the scalar every arm above
 	// computes on its way to its own terms (a decay for the one-shots, the wave for
 	// the periodic ones, a constant for the two that only move geometry).
-	//
 	// A SIXTH TERM BESIDE R2's FIVE, and it earns its place: an [effect.<widget key>]
 	// bind paints a plate that EXISTS ONLY BECAUSE OF THE EFFECT, so its alpha is the
 	// effect's strength itself rather than a modulation of an alpha it was authored
-	// with. Without it, `[effect.viewport] effect = fade` — a shipped theme's
-	// scene-transition curtain — would settle at fully opaque over the whole stage
-	// instead of clearing. See bakedElement.wash and applyElementFX.
 	env float64
 	// static reports that this effect produced no visible change this frame AND will
 	// not produce one later without something else happening. It is the pacing
@@ -514,12 +407,9 @@ var elemFXNeutral = elemFX{scale: 1, alpha: 1, static: true}
 // fxAlwaysOrigin is the slot-free origin for a one-shot on an element that is ALWAYS
 // visible: its effect began when the theme applied, so its origin is elapsed zero and
 // there is nothing to remember.
-//
 // It is what keeps the pool for the case it was designed for — a CONDITIONAL element
 // whose one-shot has to replay each time its condition opens (a stamp that lands with
 // a shout). Every [effect.*] bind and every unconditional element resolves through
-// this shared, never-written value instead, so a theme cannot exhaust the pool with
-// decoration that had no state to keep in the first place.
 var fxAlwaysOrigin = &fxState{}
 
 // effectIsStateful reports whether a kind needs a pool slot: the three DECAYING
@@ -535,27 +425,6 @@ var effectIsStateful = [theme.EffectKindCount]bool{
 }
 
 // resolveElementEffect turns a baked effect into this frame's five terms.
-//
-// PURE. No App, no prefs, no clock — elapsed and (for a stateful kind) the slot's
-// origin are the entire input, which is what TestElementFrameIsAFunctionOfElapsed's
-// sibling determinism check rests on and what makes an exported GIF reproducible.
-//
-// st == nil means NO POOL SLOT: a stateful kind then resolves at local elapsed 0 and
-// reports static, which is the named, graceful exhaustion path. A periodic kind
-// ignores st entirely and never asks for one.
-//
-// A NEGATIVE ELAPSED IS "NOT YET STARTED", and a one-shot resolves NEUTRAL for it —
-// still, and painting nothing. (A periodic kind needs no such arm: a cosine of a
-// negative phase is an ordinary point on the cycle, and it really is moving.) See the
-// branch below for the three ways a live client reaches one.
-//
-// STATIC IS DECIDED ON THE ENVELOPE, NOT ON THE INSTANTANEOUS VALUE — and this is the
-// single most load-bearing line in the file. A sine crosses zero twice a cycle, so a
-// static test on the current offset would report "nothing moved" at the crossing,
-// drop the frame rate to idle, and stutter a running animation twice per period. The
-// periodic kinds are therefore NEVER idle above the epsilon (design §Q3 says so in as
-// many words: "they note forever, which is correct and is what the author asked
-// for"), and the decaying kinds test their DECAY, which is monotonic.
 func resolveElementEffect(fx bakedEffect, el time.Duration, st *fxState) elemFX {
 	if fx.kind == theme.FXNone || fx.kind >= theme.EffectKindCount {
 		return elemFXNeutral
@@ -583,21 +452,9 @@ func resolveElementEffect(fx bakedEffect, el time.Duration, st *fxState) elemFX 
 			// into that range, it does not refuse the sign), any backwards wall-clock
 			// step (an NTP correction, DST, resume-from-sleep) makes themeElapsed negative
 			// for every element at once, and W7's scrub writes themeClock.frozen directly.
-			//
 			// It must resolve NEUTRAL — which is to say STATIC, and env 0. Clamping local
 			// to 0 instead (i.e. "replay rather than run in reverse") is right about the
 			// TERMS and wrong about the CENSUS: it pins t at 0, so the envelope sits at
-			// full amplitude and static is false on EVERY frame while elapsed stays
-			// negative. The one-shot never advances, holds its peak, and holds the pacer
-			// at the animation cadence with nothing moving on screen — for ten minutes
-			// after a theme apply with `phase_ms = -600000`, or forever on a scrubbed
-			// clock. That is the idle-CPU-burn defect (the v1.56.0 arc), and replay that
-			// cannot end is not replay.
-			//
-			// env 0 is the other half: a WASH bound to a not-yet-started one-shot must
-			// paint nothing, exactly as a finished one does, rather than its full authored
-			// peak over the widget it decorates. The effect starts on its own the moment
-			// elapsed reaches its origin — nothing has to remember to restart it.
 			return elemFXNeutral
 		}
 	}
@@ -727,15 +584,6 @@ func elapsedMs(d time.Duration) float64 { return float64(d) / float64(time.Milli
 
 // elemFXSave holds the baked fields applyElementFX overwrites, so drawElement can put
 // them back.
-//
-// MUTATE-AND-RESTORE, NOT A SCRATCH COPY, and the reason is the painter contract: the
-// two AllocsPerRun gates assert that every painter is handed a POINTER INTO the baked
-// array (&lay.el[i]) rather than a copy, and drawing an effect through a scratch
-// element would quietly break that for exactly the elements that move. It is also the
-// idiom this file's neighbour already uses for the same shape of problem —
-// paintElementArt sets a texture's colour mod and restores it inline, because the page
-// is shared. This struct is a local that does not escape, so it costs a stack slot and
-// nothing else.
 type elemFXSave struct {
 	col, col2, stroke, tint sdl.Color
 	r                       sdl.Rect
@@ -774,12 +622,9 @@ func applyElementFX(e *bakedElement, fx elemFX) elemFXSave {
 		// procedural painters read col / col2 / stroke and the art painter reads only
 		// tint.A (SetAlphaMod). An effect that dimmed three of the four would be an
 		// effect that works on some kinds and not others.
-		//
 		// TEXT IS THE ONE EXCEPTION, and it is a frame-cost exception rather than a
 		// design one: the label cache keys on the ink COLOUR (ui.go textKey), so
 		// darkening it would rasterise a fresh texture on every frame a fade moved.
-		// The alpha goes to fxDim instead and paintElementText spends it as a texture
-		// alpha mod over the same cached glyphs — same pixels, no raster.
 		if e.kind == theme.ElemText {
 			e.fxDim = 255 - uint8(math.Round(255*fx.alpha))
 		} else {

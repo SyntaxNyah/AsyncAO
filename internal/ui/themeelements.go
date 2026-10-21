@@ -2,41 +2,9 @@ package ui
 
 // The free-element render model (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
 // docs/THEME-FORMAT.md §4.
-//
-// An AsyncAO theme may declare up to theme.ElementCap FREE ELEMENTS: boxes the AO2
-// courtroom_design.ini registry has no row for. They are structurally disjoint from
-// themeSlots — different file, different identity (an INDEX, never a design key),
-// different geometry cache, different persistence — which is why AO2 parity here is
-// by CONSTRUCTION rather than by discipline: the totality census over
-// courtroom_design.ini's root keys structurally cannot see an element, and
-// applyRectOverrides / themeKeyEditable never meet one.
-//
-// THIS FILE IS THE DRAW PATH. The bake that fills the array lives beside it in
-// themeelementbake.go, and the split is load-bearing: TestElementDrawUsesNoStringBuilding
-// scans THIS file for string work, so the cold path has somewhere to be without
-// weakening the scan.
-//
-// THREE THINGS MAKE THIS SAFE INSIDE A ZERO-ALLOCATION FRAME:
-//
-//  1. BAKE, DON'T SORT. Everything an element needs to paint — its absolute rect
-//     after the anchor delta and the canvas fit, its resolved page pointer, its
-//     colours, its already-truncated label — is resolved ONCE on themeLayoutIn's
-//     cold rebuild into a FIXED ARRAY beside the slot rects. The draw loop reads
-//     values: never the map, never a slice header, never a sort, never a string op.
-//  2. THREE BANDS, NOT A GLOBAL Z-SORT. The themed pass is hand-ordered across
-//     phaseStage/phasePanels (themeslots.go) and carries a mid-sequence abort
-//     (drawCourtroomModals' early return). A flat sortable list cannot reproduce
-//     that, so elements paint at three fixed insertion points and sort only WITHIN
-//     a band, at bake time.
-//  3. A TOP-LEVEL PAINTER TABLE. elemPainters is indexed by kind, and every entry
-//     is a top-level func — never a method value, which would allocate a closure the
-//     first time the table were read (themeslots.go's `draw` field carries the same
-//     rule for the same reason).
-//
 // Zero base cost: a stock AO2 theme declares no elements, so lay.band is all-zero
 // and the three loops are three `for i := 0; i < 0`. That is BENCHMARKED
 // (BenchmarkThemedFrameNoElements), not asserted — the v1.89.0 "0 base = 0 cost"
-// rule.
 
 import (
 	"math"
@@ -116,24 +84,17 @@ type bakedElement struct {
 	// applyElementFX and put straight back after the painter. 0 is neutral, which is
 	// what makes the zero value — and therefore every baked row — correct without the
 	// bake ever touching it.
-	//
 	// It is a separate field from the folded colours because the LABEL CACHE KEYS ON
 	// COLOUR (ui.go textKey): folding a per-frame alpha into the ink would rasterise a
 	// new texture every frame a fade moved. paintElementText spends it through
-	// LabelClippedFontAlpha instead, which is a texture alpha mod over the same
-	// cached glyphs. The other five kinds have no such cache and take the fold.
 	fxDim  uint8
 	radial bool // gradient: radial instead of linear
 	loop   bool
 	// wash marks an [effect.<widget key>] BIND: a plate over an AO2 widget's own box
 	// that exists ONLY because of its effect (themeelementbake.go bakeEffectBind).
-	//
 	// It changes exactly one rule, and the rule is not a detail: a wash's fill alpha
 	// is the effect's ENVELOPE (elemFX.env × the authored peak), not a modulation of
 	// an alpha it was authored with. A free element is there whether or not its effect
-	// runs; a wash is the effect. `[effect.viewport] effect = fade` is a shipped
-	// theme's scene-transition curtain, and under the modulation rule it would settle
-	// fully opaque over the entire stage rather than clearing.
 	wash bool
 }
 
@@ -173,24 +134,10 @@ var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
 func paintElementStub(*App, *bakedElement) {}
 
 // drawElementBands paints one band of free elements.
-//
 // The design doc sketches this as `drawElementBand`; the shipped name is plural
-// because it is the whole of the element draw surface and its gates are named for
-// it (TestDrawElementBandsZeroAllocWithNoElements / …With96Elements).
-//
-// Called at THREE fixed points in drawCourtroomThemed (theme_layout.go), which is
-// the entire contract with the hand-ordered themed pass:
-//
-//	backdrop art          → BandBackdrop → stage widgets
-//	                      → BandMid      → the modal early-return
-//	                      → panel widgets → BandOverlay → client chrome
-//
 // ZERO ALLOCATIONS, ALWAYS. `&lay.el[i]` is a pointer INTO the cache (which lives on
 // App and is therefore already off the stack), so handing it to an opaque function
 // pointer cannot heap-allocate — passing the 100-odd-byte value instead would copy
-// it 96 times a frame. Nothing here builds a string, probes a map, reads prefs or
-// touches the disk. Gated by the two AllocsPerRun tests named above; every painter
-// added to the table inherits both.
 func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 	if lay == nil || int(b) >= len(lay.band) {
 		return
@@ -208,19 +155,9 @@ func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 }
 
 // drawElement paints ONE element: the visibility gate, the motion, the painter.
-//
-// It is the single funnel every element goes through, which is what lets the three
-// self-clear paths of the pacing doctrine be checked in one place (themeclock.go
-// carries the doctrine in full):
-//
-//  1. not visible          → return before touching the page or the FX pool
-//  2. ReduceMotion         → every effect neutral, every page frame 0, nothing noted
-//  3. the effect is static → nothing noted; the element draws its authored form
-//
 // Nothing here allocates. The FX terms are a value, the save is a local that does not
 // escape, and the painter is still handed the SAME &lay.el[i] the two AllocsPerRun
 // gates assert it gets — which is why the motion is applied in place and put back
-// rather than drawn through a scratch copy.
 func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// Defence in depth: kind ultimately comes from a file a stranger wrote. The
 	// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
@@ -282,14 +219,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// decayed one-shot and an amplitude-zero effect are both a still picture, and a
 	// still picture that pinned the frame rate is the idle-CPU-burn defect this
 	// doctrine exists to prevent.
-	//
-	// A PAUSED CLOCK IS THE SECOND WAY TO BE STILL, and it is the one the resolver
-	// cannot see: it is handed `el` and has no idea the clock stopped producing new
-	// ones. W5 recorded the whole failure here as a TODO because nothing wrote
-	// themeClock.paused yet; W7's scrub is the first writer, so the guard lands with
-	// it — via noteElementAnimating (themeclock.go), which carries the argument and
-	// covers the looping-page site too. The TERMS still apply while paused, which is
-	// the entire point of a scrub.
 	if !fx.static {
 		a.noteElementAnimating(e.clock)
 	}
@@ -333,14 +262,9 @@ func (a *App) elementVisible(e *bakedElement) bool {
 
 // elemCondSource is the live value of every condition axis for ONE pass, gathered
 // before any of it is interned.
-//
 // It exists because there are TWO passes with different truths. The live courtroom
 // reads the session; the GIF/video export (gifexport.go) drives its own
 // courtroom.Room off a recording and must resolve `side` / `shout` / `speaking`
-// against THAT room — an exported frame whose objection glow lit up because the
-// live stage happened to be mid-shout would be showing the viewer a thing that
-// never happened.
-//
 // A plain value struct, four string headers and a bool: it is an argument, it does
 // not escape, and it allocates nothing (the two AllocsPerRun gates over
 // drawElementBands' callers cover it).
@@ -372,13 +296,6 @@ func (a *App) refreshElementConditions(lay *themeLayoutCache) {
 }
 
 // refreshElementConditionsFrom is the shared body: intern one pass's axis values.
-//
-// ONCE PER PASS, NOT PER ELEMENT, and memoised on the live string: the scan below
-// only re-runs when the session actually changed pos / character / side / shout, so
-// a settled frame costs one string compare per axis and nothing else. That is what
-// lets the per-element gate be an integer compare (elementVisible) — the design's
-// whole reason for interning at bake.
-//
 // Zero allocations: every source is a field read or a switch over constants, and
 // the scan walks strings already resident in the layout cache.
 func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSource) {
@@ -466,17 +383,12 @@ func (a *App) stageShout() string {
 
 // elemShape ids. The wire names live in the bake (elemShapeNames); the draw path
 // only ever sees these integers.
-//
 // APPEND-ONLY: the id is baked, and a theme reloaded mid-session must resolve to
 // the same silhouette it did a frame ago. elemShapePill is appended rather than
 // slotted beside elemShapeRounded for exactly that reason.
-//
 // THE VOCABULARY IS shapemask.go's, EXTENDED (design §2): sharp / rounded / pill
 // are the three names this client already persists (shapemask.go:38-40, and the
 // same three in internal/config), and the 14 shipped themes were authored against
-// them. hex / ribbon / tape are W3's additions. "rect" is an accepted ALIAS of
-// sharp (elemShapeAliases) — it was this id's original spelling in W3 and a name
-// that once resolved has to keep resolving.
 const (
 	elemShapeSharp   uint8 = iota // a plain box — also what an unknown name degrades to
 	elemShapeRounded              // rounded rectangle
@@ -488,14 +400,8 @@ const (
 )
 
 // elemShapeBands bounds the horizontal strips ONE silhouette draws.
-//
 // A silhouette is painted as a stack of axis-aligned band fills, because the frame
 // this runs inside is gated at zero allocations and SDL's primitive API is rects.
-// 24 is smooth enough for a badge or a frame at any realistic element height and
-// small enough that the pathological theme — theme.ElementCap shapes, all visible,
-// every frame — is a bounded number of draw calls rather than a function of the
-// window height. (The mask-backed, anti-aliased path is W4's, where the theme-media
-// budget brings a texture tier with it.)
 const elemShapeBands = int32(24)
 
 // elemShapeChamferDiv is how deep a hex/ribbon/tape cut goes: one quarter of the
@@ -676,13 +582,9 @@ const elemGradientDirStep = theme.AngleCount / elemGradientDirCount
 
 // paintElementGradient draws a two-stop plate: linear along a cardinal axis, or a
 // concentric ring ramp when the element asked for radial.
-//
 // LINEAR GRADIENTS QUANTISE TO THE NEAREST CARDINAL DIRECTION in W3, and that is a
 // deliberate deviation rather than an oversight: an arbitrary angle needs rotated
 // geometry (SDL_RenderGeometry), which would be a brand-new cgo surface inside the
-// one frame gated at exactly zero allocations. The format's own answer for a true
-// diagonal is the `gradient` GENERATOR (docs/THEME-FORMAT.md §5), which rasterises a
-// tile in W4 and costs nothing per frame.
 func paintElementGradient(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -758,11 +660,9 @@ func paintElementRadial(c *Ctx, e *bakedElement) {
 // is not the kit's own lerpColor (eggs.go), whose alpha stays at a.A. A two-stop
 // plate ramping from opaque to transparent is the vignette idiom, and it is the
 // whole reason theme.RGBA carries alpha at all.
-//
 // Integer arithmetic, and no closure. Both are deliberate: a ramp that wobbled with
 // float rounding would shimmer between two frames of an unchanged window, and a
 // per-channel closure is exactly the allocation lerpColor's own comment warns about
-// on a per-frame draw.
 func elemStopColor(a, b sdl.Color, i, n int32) sdl.Color {
 	if n <= 0 {
 		return a
@@ -787,34 +687,6 @@ func elemStopByte(x, y uint8, i, n int32) uint8 {
 const elemFontChrome = uint8(255)
 
 // paintElementText draws a baked, already-truncated string.
-//
-// FORMAT 1 DRAWS EVERY ELEMENT STRING IN THE CLIENT CHROME FACE. An element's own
-// `font`/`size` are parsed, bounds-checked and preserved on save, and they are not
-// read by this painter. W3 deferred them to W4 as "the wave that owns font intake";
-// W4 shipped the intake the design actually names — `[fonts]`/`[fontbind]`, the
-// theme-carries-its-own-file binding (themefonts.go applySidecarFonts) — and ruled
-// the per-element pair out on the measurement below. Both halves are stated in
-// docs/THEME-FORMAT.md §3 so an author is never guessing.
-//
-// THE COST. Every other face in this client lives in a fontSet that holds exactly
-// ONE point size (ui.go buildSet), so an element asking a panel's set for a
-// different size rebuilds that set — and purges the text cache with it — on every
-// frame the panel and the element are both on screen. That is precisely the
-// divergent-zoom defect TestDrawCourtroomThemedDivergentZoomZeroAlloc exists to
-// catch, and the shipped themes reach for it constantly: `font = music_name` beside
-// a music plate that is drawing at the user's own Ctrl+wheel zoom is a rebuild per
-// frame, forever. Giving elements their own pool instead costs a slot out of
-// themeFaceCap (4 for a whole theme) and a second face lifetime to keep straight —
-// the two threats §6.6 R3 names by name for the sibling escalation.
-//
-// THE PRIZE, measured rather than assumed: all fourteen shipped native themes write
-// `font =`, and not one of them ships a face FILE (their own headers say "CLASSES
-// AND METRICS, never files"). A family that names no file resolves to the client's
-// chain either way, so honouring `font` would change nothing visible on any theme
-// that exists — only `size` would, and `size` is the half that costs the fontSet.
-// A pool built for that trade is machinery bought with the frame gate's budget for
-// no shipped pixel.
-//
 // The chrome face has no such set: one face, one scale, memoised width, nothing to
 // thrash.
 func paintElementText(a *App, e *bakedElement) {
@@ -863,11 +735,9 @@ const elemTileCap = 4096
 // ONE painter for both kinds, because after the bake they are the same thing: a
 // resolved *render.TexturePage plus a fit mode, a tint and a rotation. The only
 // difference is where the page came from, and that question was settled at bake.
-//
 // ZERO ALLOCATIONS, like every other painter here. Every *sdl.Rect handed across cgo
 // is one of the two persistent scratch fields (the ui.go cgoRect contract) — passing
 // &local would heap-allocate on every blit, which at 96 elements is the classic
-// themed-frame leak the whole-screen gate exists to catch.
 func paintElementArt(a *App, e *bakedElement) {
 	if e.page == nil || e.r.W <= 0 || e.r.H <= 0 || len(e.page.Frames) == 0 {
 		return
@@ -884,13 +754,9 @@ func paintElementArt(a *App, e *bakedElement) {
 	// into its alpha at bake (fadeColor). Both are restored afterwards, because the
 	// page is SHARED — two elements tinting one generator tile must not see each
 	// other's colour, and the theme's chrome draws from the same store.
-	//
 	// RESTORED INLINE, NOT WITH defer — and the reason is style, not allocation. Go
 	// open-codes a single non-escaping defer, so the closure form measures 0 allocs
 	// here and both AllocsPerRun gates stay green either way; what the inline form
-	// buys is the marginally cheaper call and consistency with every other painter in
-	// this file, none of which defers anything. Written down because the opposite
-	// claim ("defer allocates") was here first and is simply false.
 	_ = tex.SetColorMod(e.tint.R, e.tint.G, e.tint.B)
 	_ = tex.SetAlphaMod(e.tint.A)
 	switch e.fit {
@@ -914,22 +780,7 @@ func paintElementArt(a *App, e *bakedElement) {
 // place art reaches the renderer, so `rot` genuinely does reach some fit modes and
 // not others. Scoped here rather than left as the older, flatly false claim that no
 // fit mode could drop it:
-//
-//   - HONOURED: `stretch` (and any fit a future file names that this build does not
-//     know, which degrades to it), `contain`, `cover`, and `tile`'s over-cap
-//     fallback — all four arrive through this function.
-//   - DROPPED: `tile` and `nine` on their normal paths. Both issue their own
-//     Ren.Copy (paintElementTiled, paintElementNineSlice) because both draw MANY
-//     rects from one page, and CopyEx spins each rect about its own centre: a
-//     rotated 9-slice would skew its nine pieces apart instead of turning the frame,
-//     and a rotated tile field would turn every tile individually and leave gaps at
-//     the seams. Rotating either as a whole means rendering to an intermediate
-//     target first, which is a painter-contract change (and an allocation on the
-//     frame path), not a comment fix.
-//
 // So a theme that wants a spinning frame authors it at `fit = stretch|contain|cover`.
-// Pinned by the R2 rot gate in themeclock_test.go, which covers the angle arithmetic;
-// the fit-mode split above is documentation of the draw path, not of the resolver.
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {
@@ -1005,13 +856,6 @@ func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 // paintElementNineSlice draws the source as a 9-slice: corners at SOURCE size, edges
 // keeping their source thickness and stretching only along the edge axis, centre
 // stretched both ways.
-//
-// INSETS ARE (LEFT, TOP, RIGHT, BOTTOM) — design §6.6 R9, ratified from the six
-// preset fragments that independently assumed it. The edge rule is the other half of
-// that ruling (escalation N3): eleven of one preset's elements are hairlines that
-// depend on an edge region keeping its source height, and a 9-slice that stretched
-// edges on both axes would turn every one of them into a smear.
-//
 // Nine blits, two persistent scratch rects, no allocation. The rects are set and
 // consumed one at a time, which is what makes ONE src scratch and ONE dst scratch
 // enough for all nine.

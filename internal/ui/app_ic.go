@@ -151,25 +151,9 @@ func (a *App) applyThemeAsync() uint64 {
 			// (courtroom.cpp:3358/:3362), so they are looked up here — after the base
 			// has resolved and in the base's own directory — rather than from the
 			// static candidate table above.
-			//
-			// This is where the ladder's cost lives, and it is the reason it can exist
-			// at all in a zero-fallback streaming client: two os.Stat calls per THEME
-			// APPLY, on this goroutine, beside the two dozen the theme already pays.
-			// Not one per message, and not one on the network — theme chrome is local
-			// content, unlike the character / background / evidence art the one-probe
-			// rule governs. A theme that ships neither variant simply leaves both stems
-			// out of res.images, pollThemeApply drops them from themeTex, and every
-			// draw-time probe for the rest of that theme's life is a map read that
-			// answers false. The negative is cached by construction; nothing re-probes
-			// it until the user picks another theme.
-			//
 			// MEMORY, because pinned theme pages sit on top of the T1 budget rather
 			// than inside it (render.TextureStore.UploadPinned): this is bounded by
 			// construction at exactly two files, and they are the same class and — on
-			// every theme measured — the same dimensions as the base chatbox skin
-			// already pinned. The reference corpus's largest is the AOHDUltra family's
-			// 1024x187, i.e. 748 KiB decoded apiece, so the worst case in 74 real
-			// themes is ~1.5 MiB more pinned art for as long as that theme is applied.
 			if res.chatboxStem != "" {
 				for _, rung := range chatboxLadderRungs {
 					if path, ok := theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), themeImageExts); ok {
@@ -218,12 +202,9 @@ func (a *App) applyThemeAsync() uint64 {
 			// to bind to. See foldSidecarOverrides (themeoverrides.go) for why this
 			// tier existed unapplied until now, and what it was doing to the elements
 			// anchored on top of it.
-			//
 			// The server-tab strip's synthesized key rides WITH the fold, in the one
 			// order that answers an `asyncao_tabbar` row exactly once — see
 			// seedTabBarThroughOverrides (tabs.go). This used to be two statements
-			// with a goroutine boundary between them, seed LAST, and a theme author's
-			// row got four different answers on its way through.
 			res.tabBarSeeded = seedTabBarThroughOverrides(res.layout, res.sidecar)
 			// #21 label 16: measure the theme's own art behind each font element, so
 			// the render thread can guard the per-element ink without touching a
@@ -292,14 +273,6 @@ func (a *App) applyThemeAsync() uint64 {
 		}
 		// The USER's own per-panel fonts, OUTSIDE the theme-loaded branch — which is
 		// the whole point of it living here.
-		//
-		// These belong to the user, not to the theme, and until now they were
-		// resolved inside `if err == nil` alongside the theme's own table. Anyone
-		// whose theme failed to load — no theme configured, a moved folder, the
-		// stock default with no tree on disk — therefore had the setting save
-		// perfectly and do absolutely nothing, with no way to tell why. Reported as
-		// the font simply not changing.
-		//
 		// The theme's directories are used when there IS one, so a font it ships can
 		// still be picked; with no theme, the user's own font folder and the system
 		// folders are the search path, and both work on their own.
@@ -328,21 +301,6 @@ func (a *App) applyThemeAsync() uint64 {
 		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
-		//
-		// BOTH ARMS DROP AN APPLY, and both hand its pixel buffers back to the
-		// decoder's pool for the same reason pollThemeApply's consume-side arm does
-		// (see releaseDecoded): an apply that never lands is holding the chrome
-		// stems PLUS up to render.ThemeMediaCap media pages and render.ThemeGenCap
-		// generator tiles, each a full-size RGBA frame set, and without this they
-		// reach the GC as ordinary garbage instead of the pool they came from.
-		//
-		// OWNERSHIP IS EXCLUSIVE ON BOTH PATHS, which is what makes the release
-		// safe rather than a use-after-free: `res` was never published, so nobody
-		// else can have seen it; and a SUCCESSFUL CAS proves `old` was still in the
-		// slot at the moment of the swap, so the render thread's Swap did not take
-		// it (a Swap would have made the CAS fail). Still on the load goroutine —
-		// this is memory bookkeeping, not I/O, and the render thread never touches
-		// either value again.
 		for {
 			old := themeRes.Load()
 			if old != nil && old.gen > gen {
@@ -447,16 +405,6 @@ func (a *App) pollThemeApply() {
 	a.landThemeMedia(res)
 	// The refusal surface lands with it, and the acknowledgement is keyed on the
 	// REASON rather than re-armed unconditionally.
-	//
-	// Unconditional re-arming was the obvious spelling and it is wrong: applies are
-	// not user-initiated events. healTheme re-kicks one on any T1 eviction of a theme
-	// texture (paced, but ongoing), the texture-filter change kicks one, and boot
-	// kicks two — so a chip re-armed per apply would come back minutes after the user
-	// dismissed it, for a fact they had already read. Keyed on the string, a dismissal
-	// silences exactly the refusal it acknowledged: a DIFFERENT failure re-arms
-	// (fixing one cap and tripping another is new information), and a successful load
-	// clears the fields outright, which is what makes fixing the file visibly fix the
-	// chip. The debug log gets the line on every apply regardless.
 	if a.themeSidecarErr != res.sidecarErr {
 		a.themeSidecarErrAck = false
 	}
@@ -699,17 +647,6 @@ func (a *App) themeElapsed() time.Duration {
 // themeFrame picks the current animation frame for a theme page — static pages
 // cost one len check, animated ones loop on the theme clock (and mark the
 // frame's animated-chrome census so the static skip keeps stepping them).
-//
-// ONE BODY WITH elementFrame, not a twin. The two were documented as honouring
-// the same contract and had already stopped: elementFrame respects the
-// ReduceMotion latch and this one did not, so a themed install with the
-// accessibility option ON showed STILL elements over ANIMATING chrome — and,
-// because the census here kept holding the pacer at the animation cadence, the
-// person who turned it on got neither the stillness nor the idle frame rate.
-// Both now share elementFrameIndex (themeclock.go) and both read
-// themeFXFrozen; the only remaining difference is whose clock they read, which
-// is the difference that was always meant to be there.
-//
 // `loop` is true because theme chrome loops by definition — a chatbox skin has
 // no "finished" state. That is what themeFrame always did (pageFrameLoop); it
 // is now said in the shared function's own vocabulary.
@@ -760,18 +697,6 @@ const debugStampLayout = "15:04:05 "
 // debugFoldWindow is how long a message stays foldable: seen again within this
 // of its last sighting, it collapses into the existing row's ×N counter instead
 // of appending another.
-//
-// The collapse used to be CONSECUTIVE-ONLY, which any real flood defeats: the
-// field report's panel interleaved two chatty sources — the KFO packet family
-// this client deliberately does not implement (TT/TIN/TF/CHECK) and one absent
-// desk overlay re-reported per IC message — so neither was ever the immediately
-// previous line, and 25 of the ring's 120 rows said the same two things while
-// genuine one-off failures aged out. Folding by TIME instead means one row per
-// distinct message for as long as it keeps repeating. 90 s is comfortably wider
-// than the gap between IC messages (the cadence that produced the flood) and
-// still narrow enough that the same failure recurring much later reads as a new
-// event rather than silently bumping a stale counter.
-//
 // This is presentation ONLY. Nothing here changes which packets are handled or
 // which assets are probed; the deferred-packet decision stands.
 const debugFoldWindow = 90 * time.Second
@@ -874,8 +799,6 @@ func (a *App) drainWarnings() {
 				// every spelling 404'd), and speculative Markov prefetches suppress it,
 				// so a predicted-but-absent base is never marked. Both this and the
 				// viewport read run on the render thread — the set carries no mutex.
-				// nil-guarded like the room relays above (Store is always set with
-				// Manager in production; the guard just keeps a Manager-only test safe).
 				if a.d.Store != nil {
 					a.d.Store.MarkMissing(w.Base)
 				}
@@ -918,9 +841,6 @@ func (a *App) drainWarnings() {
 			// (missingno) or a desk (hide the layer), a missing background / chatbox
 			// / sound has no render-side placeholder to swap in — the renderer's own
 			// fallback (black bg / normal chatbox / silent) already covers it.
-			// Each room string-compares against its own scene, so wrong-room bases
-			// are a no-op; the preanim side effect in NotifyAssetMissing is guarded
-			// by base == Scene.Speaker.PreanimBase, which these types never equal.
 			switch w.Type {
 			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip, assets.AssetTypeShoutBubble:
 				if a.room != nil {
@@ -1124,12 +1044,6 @@ func (a *App) healScenery() {
 	// conclusively can never become Contains: without this the desk arm re-demanded
 	// a known-absent desk every charIconRetryInterval for the whole heal budget,
 	// which is what produced the ×5..×9 runs of the same missing-asset line (#27).
-	// drainWarnings MarkMissing'd that exact base, and the set self-heals
-	// (clearMissing on upload), so a desk that later appears still recovers — the
-	// per-message Prefetch in the courtroom is the re-try, not this loop.
-	// The background arm above deliberately does NOT get the same gate: Background
-	// is never MarkMissing'd (that would change the viewport's hold-previous
-	// semantics), so IsMissing is always false for it anyway.
 	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
@@ -1206,9 +1120,6 @@ func (a *App) icStamp() string { return a.now().Format(icStampLayout) }
 // no-op when the feature is off (the default) — and the membership scan
 // allocates nothing, so it's safe per message even in a catch-up burst.
 // ignoreSpeaker reports whether an IC message is from an ignored player (#81),
-// matched by showname-else-character — the only identity the MS wire carries (no
-// UID). Called once per incoming IC message (not per frame); the empty-list
-// default is one RLock and zero iterations, so an un-used ignore list is free.
 func (a *App) ignoreSpeaker(m *protocol.ChatMessage) bool {
 	if m == nil || a.serverKey == "" {
 		return false
@@ -1346,11 +1257,6 @@ func (a *App) switchAreaScrollback(toArea string) {
 // goroutine, so the message seam never blocks. A no-op (one pref read) when off,
 // so the default path is unaffected. Called at both message seams (active +
 // background tab), so the transcript captures every server you're connected to.
-//
-// session is the CALLING TAB's sessionState.logSession. It is a parameter rather
-// than read off a.sessionState here because the background seam (tabs.go) routes a
-// parked tab's message while a DIFFERENT tab is live: reading the live session
-// would have filed every backgrounded tab's lines under the foreground tab's log.
 func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
 	if m == nil || !a.d.Prefs.Load().DetailedLog {
 		return
@@ -1410,20 +1316,6 @@ func (a *App) transcriptFor(server string, session int) *transcriptWriter {
 // disambiguates the file NAME, which is a timestamp to the second: two tabs joining
 // one server in the same second would otherwise resolve to the same path and both
 // append to it, which is the very interleaving the per-tab key exists to end.
-//
-// Deliberately NOT sessionState.logSession: that id is process-global, so using it
-// in the name would produce logs/x/…-7.log for a server's first file merely because
-// six other tabs opened first. The ordinal is per server and starts at 1, so the
-// common single-tab case keeps the historical bare-timestamp name.
-//
-// It counts LIVE writers, which is exactly what the collision it guards against
-// needs: two tabs joining one server in the same second are both live, so the second
-// gets ordinal 2. SEQUENTIAL sessions are a different case — a reconnect inside the
-// same second as the session it replaced resolves to that session's name again and
-// APPENDS. That is deliberate and harmless (the first session is over, so the lines
-// are consecutive rather than interleaved) and it is the price of retiring writers
-// at all: a per-run high-water mark per server would be an unbounded map, which
-// hard rule §4 does not allow for a cosmetic file name.
 func (a *App) transcriptSeqFor(server string) int {
 	n := 1
 	for k := range a.translogs {
@@ -1438,11 +1330,9 @@ func (a *App) transcriptSeqFor(server string) int {
 // exists: the live one, or a parked tab's. It is the single definition of "this
 // writer still has an owner", so the reap below and any future caller cannot form
 // two different opinions about which files are alive.
-//
 // The live session is checked off App (a.serverName / a.logSession) and the parked
 // ones off their own tab state, which is exactly how the two message seams file
 // their lines (see logDetailed) — so a writer is owned precisely when some seam
-// could still write to it.
 func (a *App) transcriptOwned(k translogKey) bool {
 	if k.server == a.serverName && k.session == a.logSession {
 		return true
@@ -1457,16 +1347,6 @@ func (a *App) transcriptOwned(k translogKey) bool {
 
 // reapTranscripts retires and forgets every transcript writer no session owns any
 // more — one open file and one goroutine released per ended session.
-//
-// BY LIVENESS, not by call site. resetSessionState mints a fresh session on every
-// park, Disconnect and reconnect, and three separate places drop a tab slot; a
-// "close it here" call in each is a list that goes stale the first time a fourth
-// appears, and the failure mode is silent (the log just stops after 64 cycles).
-// Asking "does anything still own this key?" cannot go stale: a session that is
-// neither live nor parked is over by definition. Cheap enough to call from every
-// lifecycle edge — the map is capped at transcriptWriterCap and the tab list at
-// the tab cap, and these are user-scale events, not frame work.
-//
 // Retire, never close: the goroutine drains and closes the file on its own so the
 // render thread never waits on a disk flush (hard rule §2).
 func (a *App) reapTranscripts() {
@@ -1555,7 +1435,6 @@ func (a *App) pushOOC(line, speaker string) {
 	// and the caller composes us ev.Name + ": " + a RAW ev.Text, so this is the lane
 	// where a marker actually arrives; the control frame itself was already decoded
 	// upstream (routeIncomingPM runs before this call), so by here it is display text.
-	//
 	// The head is preserved, which is what keeps the "speaker: " trim below working and
 	// keeps oocSpeakers a substring of oocLog — see stripDisplayTail for why stripping
 	// the whole composed line was wrong. Zero-alloc when absent.
@@ -1590,9 +1469,6 @@ func (a *App) pushOOC(line, speaker string) {
 	// screen: "Invalid command." or an old KFO hub's "You cannot see players in all
 	// areas in this hub!" is the reason the press did nothing, and hiding it is worse
 	// than printing it once. It cannot spam: nothing sends the command on its own.
-	// Best-effort: mirror a received PM into the Friends-tab DM thread too (it also
-	// stays in the OOC log). On the real-OOC path only — AFTER the /gas suppression
-	// returns above — so a suppressed area burst can't double-fire it.
 	a.detectIncomingPM(text)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
@@ -1639,34 +1515,6 @@ func speakerHeadLen(line, speaker string) int {
 
 // stripDisplayTail drops the zero-width sidechannel from a composed log line's BODY
 // and leaves the speaker head byte-identical.
-//
-// NOT the whole line, and that is the entire point. StripSpriteStyle is GATED on the
-// U+2060 sentinel but then deletes the whole nine-rune alphabet, and three of those —
-// U+200B/200C/200D — are ordinary text: a ZWJ is what holds an emoji cluster together
-// and a ZWNJ is mandatory in Persian orthography. The gate and the deletion therefore
-// do not distribute over concatenation:
-//
-//	StripSpriteStyle(name + ": " + body) != name + ": " + StripSpriteStyle(body)
-//
-// whenever the sentinel is in the BODY and alphabet runes are in the NAME. Every
-// marker is appended to the end of an outgoing body (the IC send, messaging_panel's
-// DM), while the name is its own wire field — so stripping the composed line let one
-// speaker's body marker authorise deleting runes out of another player's name. On the
-// OOC lane that is not theoretical: pushOOC composes ev.Name + ": " + a RAW ev.Text,
-// so every AsyncAO DM sets the gate for the whole line, and a rainbow-flag showname
-// came apart into two glyphs on every row that player sent.
-//
-// It also kept icEntry.speaker / oocSpeakers from being a substring of the line they
-// are stored parallel to, so Ctx.logRowSplit's strings.Index missed and the bold +
-// tinted name span silently vanished, draw and selection alike.
-//
-// "Strip the speaker the same way" does NOT repair either: the sentinel gate is a
-// whole-string test, so StripSpriteStyle(speaker) is a no-op on exactly the names that
-// break. A speaker cleaned some other way then stops matching the roster —
-// currentSpeakerName is EqualFold'd against the RAW p.showname (playerlist.go), so the
-// speaking-row highlight and the speakers-first sort would go dead for that player.
-// Leaving the head alone is what keeps both contracts at once, and it is the same rule
-// subtitleLine already follows (subtitles.go: strip Message, keep Showname).
 func stripDisplayTail(line, speaker string) string {
 	head := speakerHeadLen(line, speaker)
 	if head == 0 {
@@ -1679,21 +1527,9 @@ func stripDisplayTail(line, speaker string) string {
 // sidechannel comes off the BODY (stripDisplayTail), then the result is bounded
 // (hostile-server guard) WITHOUT the old 120-char "…" truncation — the IC log
 // word-wraps long lines at draw time (icWrapped). Real IC messages (≤256 on the wire)
-// are never cut. Byte-length fast path; the rune conversion only runs on a genuinely
-// huge line.
-//
 // The two steps live together because their ORDER is the point: the cap has to be
 // measured on the text a human sees, so an invisible marker can neither eat the
 // budget nor be cut in half and left as a partial run.
-//
-// Stripping HERE and not only at the formatters is what makes the guarantee
-// structural. Every icEntry the client stores gets its text through this one
-// function — pushIC for the active tab, routeBackgroundEvent for a parked one — so a
-// future log write site is covered by using the same chokepoint rather than by
-// remembering a rule. speaker is a parameter and not an afterthought for the same
-// reason: a caller cannot store an entry without telling this function which part of
-// the line is a name, so it cannot accidentally get the whole-line strip.
-// Zero-alloc when absent (one ContainsRune).
 func capLogLine(s, speaker string) string {
 	s = stripDisplayTail(s, speaker)
 	if len(s) <= icLineCap {

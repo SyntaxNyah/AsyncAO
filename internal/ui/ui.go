@@ -183,15 +183,6 @@ type Ctx struct {
 	// pushPanelFont/popPanelFont, and every chrome-faced widget inside it — labels,
 	// buttons, checkboxes, dropdowns, text fields — follows, because they all read
 	// chromeFace() rather than c.font directly.
-	//
-	// AN OVERRIDE, NEVER A SWAP OF c.font, and that distinction is load-bearing
-	// rather than stylistic: c.font is the IDENTITY every font-lifetime guard
-	// compares against. buildSet passes it as the chromeShare that decides whether
-	// a set adopts it as an embedded last resort, and dropThemeElemSets, Destroy
-	// and SetChromeFont each refuse to Close a face while `f == c.font`. Assigning
-	// a panel's face over c.font would point those guards at the wrong pointer and
-	// Close a face still in use — a use-after-free, not a cosmetic bug.
-	//
 	// Zeroed by BeginFrame as well as by the panels' own defers, for the same
 	// reason the overlay fence documents: a panic unwinding a bracket must not
 	// leave the whole client dressed in one panel's font.
@@ -454,11 +445,6 @@ type Ctx struct {
 	// store lookup (which would clear every streaming generation bump) and no
 	// alloc. activeShape=="" or shapeSharp means the shaped path is disabled and
 	// every draw site falls through to the byte-identical Fill+Border body.
-	// shapeMaskReady gates on both a non-sharp preset AND resident masks, so a
-	// not-yet-built frame also renders sharp (no first-frame flash). The masks
-	// are WHITE-RGB straight-alpha silhouettes tinted per draw via SetColorMod +
-	// SetAlphaMod (the glyphcache idiom); the two scratch rects are the cgoRect
-	// twins for the 9-slice src/dst Copies (a &local would escape through cgo).
 	activeShape     string
 	shapeMaskReady  bool
 	shapeFillTex    *sdl.Texture // fill silhouette mask (nil ⇒ sharp fall-through)
@@ -585,12 +571,6 @@ type Ctx struct {
 	// and overlayOwnerMark bounds that suspend to the owner's own publication
 	// onwards — fences published EARLIER (an app-wide menu bar's open dropdown)
 	// still occlude the owner, because registry order is paint order.
-	// Zeroed every BeginFrame, so an un-released fence can't freeze the UI the
-	// way a stranded modalOn would.
-	// overlayFenceDrops counts publications refused this frame because the registry
-	// was full. Dropping is silent by construction (the occluder still paints; only
-	// the input protection is missing), so the counter is the only way the condition
-	// can ever be detected — the tests assert it stays zero across a real frame.
 	overlayFences     [overlayFenceCap]sdl.Rect
 	overlayFenceN     int
 	overlayFenceDrops int
@@ -642,13 +622,6 @@ type Ctx struct {
 	// instead land on the DEVICE glyph seam of its device-rasterized texture, and
 	// SDL_ttf quantizes per-glyph advances independently per point size, so the two
 	// faces diverge over a long prefix (the length-growing caret drift, #77 S1b).
-	// Stores DEVICE px (fold to logical on read via uiLogicalFromDevice); the raw
-	// device value feeds the device-exact caret draw with no round-trip loss.
-	// Only populated at a fractional scale (deviceExactText); at 100% the field
-	// uses widthCache unchanged (the device face is the identity). Purged wherever
-	// widthCache is (SetTextDevScale, SetChromeFont) so a stale-size entry after a
-	// scale change is impossible. Lazily created (like emojiCache) so test-built
-	// Ctx literals without this field stay valid — nil READ / clear(nil) are safe.
 	devWidthCache map[string]int32
 	// emojiCache holds multi-font rasters for the rare labels (shownames, IC/OOC
 	// log lines) that mix text with colour emoji the chat font can't draw. Keyed
@@ -708,16 +681,6 @@ func (c *Ctx) chromeFace() *ttf.Font {
 
 // chromeFaceFor is chromeFace for a KNOWN string: the same face when it can draw
 // the text, otherwise the first face in the fallback chain that can.
-//
-// Plain chrome labels used to render straight from one face with no chain at all,
-// so every non-Latin string outside the chat/log paths — character names in the
-// picker, area names, tab titles, menu entries, tooltips, player names — drew as
-// .notdef boxes no matter how many fallback faces were loaded. This is a
-// single-face pick rather than the per-glyph raster the message paths use: a
-// chrome label is nearly always one script, the pick is memoized, and it keeps
-// the label on the shared texture atlas instead of giving every name its own
-// textures.
-//
 // Pure ASCII short-circuits before anything is built, so the common case is a
 // one-pass byte scan and nothing else. A panel-dressed face is left alone: its
 // whole point is that the user chose that family for that panel.
@@ -748,14 +711,6 @@ func hasNonASCII(s string) bool {
 
 // pushPanelFont arms f as the chrome face and RETURNS THE PREVIOUS ONE, which
 // the caller hands straight back to popPanelFont:
-//
-//	defer c.popPanelFont(c.pushPanelFont(face))
-//
-// By value rather than returning a restore closure, and that is measured rather
-// than assumed: the closure form costs 1 allocation per call, and these brackets
-// sit on the per-frame panel draws that the whole-screen allocation gates cover.
-// Same idiom, and the same reason, as pushClip.
-//
 // A nil face (the overwhelmingly common case — no override set) writes nothing.
 // So is a face that IS the chrome face: arming it would only add a pointless
 // non-nil panelFont for every later branch to test.
@@ -941,14 +896,6 @@ func (c *Ctx) TakeWantsCJK() bool {
 
 // pickResult is one cached line pick: the face chosen for the line's VISIBLE runes,
 // and whether that face covers EVERY rune, invisible ones included.
-//
-// The two questions have different answers and both matter. The pick may not be held
-// hostage by a formatting rune — that is what threw whole log rows onto a stray family
-// (see pickFont) — but the flag has to stay honest, because SDL_ttf draws .notdef for
-// any rune the face lacks, invisible or not. So covered==false has two causes now: a
-// mixed-SCRIPT line no single face can draw, or a line whose face merely lacks one
-// formatting rune. Both want the same thing from the reader (coversFace): take the
-// per-glyph raster path rather than blitting the line through one face.
 type pickResult struct {
 	font    *ttf.Font
 	covered bool
@@ -987,25 +934,9 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	if !covered {
 		// The picked face can't draw the whole string, so some of it may be about to
 		// come out as .notdef — offer those runes to the census.
-		//
-		// "May", not "is": covered==false no longer implies nothing in the set covers
-		// the line, since the pick is now made on the VISIBLE runes alone and a face
-		// that merely lacks a formatting rune still wins it. noteUncoveredIn re-checks
-		// every cover in the set and skips invisible runes outright, so an
-		// invisible-only gap queues nothing — it just costs one scan of a string this
-		// client had not drawn before.
-		//
-		// This sits in the memo-MISS branch on purpose. Every single-face pick lands
-		// here (chat, log, the per-element theme sets, and now chrome labels), and a
-		// chrome label is re-picked for every frame it is on screen — but only the
-		// first of those frames reaches this line, because the memo returns above.
-		// That keeps noteUncovered's contract intact: raster/pick BUILD path only,
-		// never per frame.
-		//
 		// Without it the chrome path could never feed the census at all, so a Thai or
 		// Cherokee character name in the picker drew boxes forever and only ever came
 		// right by accident — if some MESSAGE elsewhere in the session happened to
-		// contain the same script and pulled the face in through coverRunes.
 		c.noteUncoveredIn(s, text)
 	}
 	if c.pickMemo == nil {
@@ -1141,11 +1072,9 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 // supplementary-plane emoji and carries no VS16, so render.NeedsEmojiFallback says
 // there is nothing to route and the colour-emoji face is never even loaded, while
 // the text chain has no glyph either: the character draws as a box forever.
-//
 // Cost: one BMPPictograph compare per rune, and a cmap walk only for the runes that
 // pass it — so an ASCII or CJK line pays a byte-cheap scan and no font work. It is
 // called only from the paths that have ALREADY decided the whole-line pick failed
-// (labelEmoji's raster branch), never per frame on the fast path.
 func (c *Ctx) uncoveredPictograph(primary *ttf.Font, text string) bool {
 	s := c.setOf(primary)
 	if s == nil {
@@ -1450,14 +1379,7 @@ func (c *Ctx) fontsForDev(logical, dev *fontSet, pct int) []*ttf.Font {
 // sharing chromeShare (c.font at 1:1, c.fontDev for a device set) as the embedded
 // last resort at 1:1. The close-guard and the last-resort share both key off
 // chromeShare so a device set never double-closes/leaks the device chrome face.
-// isDevice=true builds a device sibling set, whose faces the label/pick caches
-// DON'T reference (those key on the LOGICAL font) — so a device rebuild must NOT
-// purge them (doing so mid-frame could nil the pickMemo a logical pick just
-// populated, one-frame-mis-routing a mixed-script message).
-// chain/chainCover are the override faces this set is built FROM: the user's own
-// chain for the global chat/log sets, one theme-declared face for a per-element
 // set (#39). They are recorded on the set so its device sibling can be rebuilt
-// from the same source.
 func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct, devPct int, chromeShare *ttf.Font, isDevice bool) []*ttf.Font {
 	if devPct <= 0 {
 		devPct = DefaultScalePct
@@ -1718,20 +1640,9 @@ func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
 // a Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
 // with fonts; the last entry is the unconditional fallback (used when nothing
 // covers, so the result is at worst the same .notdef box as before).
-//
-// VISIBLE is the whole rule. An invisible formatting rune — a joiner, a directional
-// mark, the zero-width sidechannel courtroom/spritestyle.go rides on IC text — draws
-// as nothing when it works, so it must never VETO a face for the words around it. It
-// used to: the embedded face has a glyph for none of the nine codec runes, so one of
-// them anywhere in a message walked the pick off the primary face and onto whichever
-// fallback happened to carry zero-width glyphs, and the whole ASCII line then rendered
-// in that stray family. noteUncoveredIn has applied exactly this skip to the CENSUS
-// since it was written; the pick, which is what the reader actually sees, never got it.
-//
 // The second result stays HONEST — true only when the face covers every rune, the
 // invisible ones included. That bool is the raster gate (coversFace), and a face with
 // no glyph for a formatting rune must still let the per-glyph raster hand that one rune
-// to a face that has it, instead of blitting the whole line through a .notdef box.
 func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
 		return fonts[0], true
@@ -1761,14 +1672,6 @@ func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
 }
 
 // coverScan answers the pick's two different questions in ONE pass over text:
-//
-//	visible — does f have a glyph for every rune that is SUPPOSED to draw something?
-//	          This is the PICK rule (see pickFont): an isInvisibleRune formatting
-//	          character cannot disqualify a face for the visible text around it.
-//	all     — does f have a glyph for every rune, invisible ones included? This is
-//	          the raster gate, and it must stay honest so a formatting rune the face
-//	          lacks still routes through coverRunes instead of drawing .notdef.
-//
 // The two answers differ only for the runes isInvisibleRune names, which is exactly
 // the point. A nil face covers nothing. Allocation-free: the reused sfnt buffer, and
 // an early return the moment a VISIBLE rune is missing (the common rejection).
@@ -1917,13 +1820,9 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 // draws): the visible-field order rebuilds from scratch as this frame's
 // TextFields register. Split from BeginFrame so input-only skipped passes
 // keep the last drawn frame's field order for Tab cycling (see BeginFrame).
-//
 // The truncate is a SWAP, not a clear: the outgoing list becomes drawnFieldSeq
 // (what is on screen right now) and this frame builds into the buffer that held
 // the frame-before-last's, so both answers exist for the whole pass and neither
-// costs an allocation. Without it every pre-screen reader of "did this field
-// draw?" — App.Frame runs ~280 lines of them before the first TextField
-// registers — was reading an empty list.
 func (c *Ctx) BeginDraw() {
 	c.drawnFieldSeq, c.fieldSeq = c.fieldSeq, c.drawnFieldSeq[:0]
 }
@@ -2283,9 +2182,6 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	// hovering()-based hit tests only. Raw pointIn() sites (editOverToolbox, the
 	// dropdown's own list rows, the editors' drag tests) still see through a fence
 	// unless they call c.overlayFenced themselves. Checked AFTER modalOn and clipOn:
-	// a modal outranks every rect-scoped rule, and a clipped widget doesn't exist
-	// outside its clip at all. The occluder itself hit-tests from inside
-	// pushOverlayOwner, so its own chips stay live.
 	if c.overlayFenced(c.mouseX, c.mouseY) {
 		return false
 	}
@@ -2411,16 +2307,6 @@ func clipIntersect(r, prev sdl.Rect, had bool) sdl.Rect {
 // scrolled top/bottom row is cut at the rect edge instead of spilling over
 // neighbouring widgets — that overspill is what struck the tab strip through the
 // first OOC line.
-//
-// The intersection is load-bearing, not tidiness. A nested push USED to replace
-// the outer clip outright, so any inner push that deliberately reaches outside
-// the panel — labelEmoji's raster band is exactly the row height at the row's y,
-// which for the partially scrolled top row starts ABOVE the list — punched a
-// hole in the panel's own scissor for the duration of the blit and then restored
-// it, letting that one row paint over the widget's border and the art behind it.
-// Only rows that took the raster path (colour emoji / mixed script) escaped,
-// which is why it looked like a font bug rather than a clip bug.
-//
 // Returns by value (no closure) so the per-frame log/list draws stay
 // allocation-free — the render loop must not heap-allocate. sdl.Rect.Intersect
 // is pure Go in go-sdl2 (no cgo, nothing escapes).
@@ -2477,15 +2363,8 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 // SAME face through SDL_ttf's STYLE_BOLD (the emboldening render/text.go's
 // buildSpan already uses for styled message spans) instead of drawing the plain
 // glyphs twice a pixel apart.
-//
 // WHY THE DOUBLE DRAW HAD TO GO (F1b). A 1 px offset is a LOGICAL offset, and at a
-// fractional UI scale the renderer multiplies it: at 105% the two passes land 1.05
-// device px apart, each on its own sub-pixel phase, and the result reads as two
-// smeared copies of the name rather than one bold one — beside message text on the
-// same row that draws once and stays crisp. Rendering the weight into the glyphs
-// makes the label ONE device-exact texture at any scale, which is the same rule the
 // #77 field/message work applies everywhere else.
-//
 // The style is set on the DEVICE face for exactly the RenderUTF8Blended call and
 // restored by defer, so the shared cached face never leaks a weight into the plain
 // text drawn next (buildSpan's idiom, same reason).
@@ -2657,8 +2536,6 @@ func uiLogicalFromDevice(device, devPct int32) int32 {
 // lets SetScale resample them; the focused text field instead projects its own
 // moving parts here and draws them under SetScale(1,1) so a fractional scale can
 // never phase-shift or stretch them (strategy B — see textField's device path).
-// At devPct==100 (or unset) it is the identity, matching uiLogicalFromDevice's
-// twin at ui.go's documented rule. Pinned by TestUIDeviceFromLogical.
 func uiDeviceFromLogical(logical, devPct int32) int32 {
 	if devPct <= 0 || devPct == DefaultScalePct {
 		return logical
@@ -2698,20 +2575,6 @@ func uiDeviceExactAt(renderPct, devPct int32) bool {
 // rects — zero heap escapes on the per-frame draw path. wLog is the LOGICAL
 // destination width (a full label passes t.logicalW(); a clipped one a smaller
 // logical maxW).
-//
-// F1 (blur still there after v1.93.0): at a fractional UI scale the SCALED path
-// below computes its source crop and destination width through two
-// INDEPENDENTLY-rounding formulas (a truncating multiply here, a separate
-// round-half-up divide in whichever caller measured wLog, then the ambient
-// SetScale re-multiplies the destination) — the two rects can end up describing
-// different physical device spans, and HINT_RENDER_SCALE_QUALITY=1 (main.go)
-// turns that mismatch into a real bilinear blend at the label's edge, on every
-// plain Label/Button/Checkbox/Heading/Tooltip in the client, not just the
-// emoji/mixed-script surfaces v1.93.0 (12d1965) fixed. Gated on the SAME
-// equality MessageRaster.deviceExact/Badge.Draw already use (uiDeviceExactAt),
-// blitLabelExact draws src.W==dst.W under SetScale(1,1) instead — no resample is
-// even possible when the two rects are the same value. devPct==100 (or an
-// export bracket that disagrees with the renderer's own scale) keeps this exact
 // pre-#77 1:1-at-scale-1 / scaled-at-scale-N behavior, byte-identical.
 func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 	if uiDeviceExactAt(c.RenderScalePct(), t.devPct) {
@@ -2747,29 +2610,9 @@ func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
 // label instead of only the focused field's moving parts. Only reached when
 // uiDeviceExactAt has already confirmed the texture's own device scale matches
 // the renderer's current one.
-//
-// THE FIX, restated: src.W and dst.W are the SAME computed value (devW below),
-// so SDL is never asked to resample — the two rects can no longer describe
-// different physical spans, which is the whole mismatch blitLabelScaled can hit.
-//
-// THE METAL CLIP TRAP (documented at length in text.go's DrawScaled and
-// badge.go's Draw): macOS's Metal backend evaluates a clip rect against the
-// scale in force when it's USED, not when it was SET, so flipping to
-// SetScale(1,1) underneath an already-set logical clip silently shrinks it to
-// 1/scale of its intended size for the duration of this blit. c.clipOn/
-// c.clipRect (the pushClip mirror) is re-projected to device pixels and
-// re-asserted INSIDE the bracket, in the same order those three call sites use,
-// so every backend reads the same rows. c.cgoRect is blitLabel's own scratch
-// mirror for this (same reuse discipline devFieldValue's clip handling already
-// uses on this field — nothing else touches it mid-bracket, this function calls
-// no pushClip/popClip/Fill/Border of its own).
-//
 // Allocation-free: c.drawSrc/c.drawDst (already-reused scratch rects) and
 // c.cgoRect carry every rect: no &local ever crosses into cgo. The scale is
 // restored by RECOMPUTING it from c.RenderScalePct(), never by Ren.GetScale(),
-// which takes the address of named returns for cgo and heap-allocates two
-// float32s per call — a per-widget-per-frame allocation this draw path (called
-// for every Label/Button/Checkbox on screen) cannot have.
 func (c *Ctx) blitLabelExact(t cachedText, x, y, wLog int32) {
 	dev := t.devPct
 
@@ -2807,15 +2650,6 @@ func (c *Ctx) blitLabelExact(t cachedText, x, y, wLog int32) {
 }
 
 // Label draws text at (x, y) and returns its LOGICAL pixel width.
-//
-// F2: under an armed row-label limit the text is ellipsised at the container's
-// right edge instead of running past it. Checkbox is not the only row that carries
-// a sentence — the settings form draws roughly a hundred help lines as bare labels,
-// and the card's clip turned each of them into a HARD cut at the border, which is
-// indistinguishable from a rendering fault and is exactly how the overflow was
-// reported. Unarmed (every caller outside a push/popRowLabelLimit bracket — the
-// courtroom, the lobby, every themed screen) fitRowLabel is the identity on one
-// integer compare, so those draws are byte-for-byte what they were.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
 	if shown, fit := c.fitRowLabel(x, text); !fit {
 		text = shown

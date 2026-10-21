@@ -1,30 +1,6 @@
 package ui
 
 // Multi-server tabs (bounded maxTabs). Design:
-//
-//   - The ACTIVE session's state is App.sessionState (embedded; promoted
-//     names — the rest of the package reads `a.icInput` exactly as it did
-//     before tabs existed). A parked tab holds its sessionState by value:
-//     switching is two struct moves (slice headers + pointers), no deep
-//     copies, no per-field plumbing.
-//   - Background tabs stay CONNECTED: each frame their packets drain on a
-//     budget into their OWN session reducer and logs (IC/OOC + unread
-//     counter + callword flash). The room (scene, typewriter, raster) is
-//     deliberately NOT kept for background tabs — nothing animates off
-//     screen; activation rebuilds it via buildRoom, which re-seeds the
-//     background, song, and last IC message (settled — Session.LastIC) from
-//     the reducer, so tabbing back shows the stage a live watcher would have
-//     ended on even when messages landed off screen.
-//   - The log caches (IC filter/wrap, OOC wrap, split wrap) stay App-global,
-//     keyed by the per-session log seq PLUS a per-view epoch (logViewEpoch /
-//     splitPinEpoch, bumped on every session swap). The seq alone was NOT
-//     enough: it starts at 0 in every tab, so two tabs at the same seq
-//     collided on the shared cache and a switch served one tab's wrapped/
-//     coloured lines under another (the log-crossover bug). The epoch makes a
-//     switch a guaranteed miss; the chat-message raster instead parks in
-//     sessionState (msRaster), so it rides the tab move directly.
-//   - Per-server caches (T1/T2/T3) need nothing: keys are full URLs, so
-//     three servers' assets already live in disjoint key space.
 
 import (
 	"fmt"
@@ -68,37 +44,9 @@ const (
 	// themeTabBarKey is the courtroom_design.ini rect that parks the server-tab strip
 	// inside a theme's design canvas — the twin of "asyncao_toolbox" for the toolbox,
 	// registered in themeLayoutKeys (app.go).
-	//
-	// UNITS. Unlike every other key in the map, this rect's X/Y are CANVAS-RELATIVE
-	// CLIENT px — an offset from the canvas origin in the pixels the strip is drawn
-	// in, NOT design px scaled by the layout. tabStripCacheRect carries the full
-	// argument; the short version is that the strip is intrinsically sized client
-	// chrome (its W/H are already unscaled) and that an unscaled origin is the only
-	// map an integer preimage can invert exactly, which is what a hand-placed widget
-	// needs. At the shipped default fit — Native, scale 1 — the two readings coincide.
-	//
-	// It is an AsyncAO invention, so NO shipped theme declares it (the 74-theme
-	// reference corpus has zero). Registering the key therefore bought nothing on its
-	// own: the apply path only copies keys the theme actually declares, the layout
-	// cache is built by ranging that map, and the THEMED editor's editable set is
-	// built from the layout cache — so under every real theme the strip still had no
 	// drag box, which is issue #14's literal complaint. seedTabBarDesignRect closes
-	// that by SYNTHESIZING the key whenever the theme is silent (see it for the
-	// default's geometry and for why the strip nevertheless stays in the chrome band
-	// until it is moved).
 	themeTabBarKey = "asyncao_tabbar"
 	// tabBarDesignSeedW is the width the synthesized entry is BORN with, in design px.
-	//
-	// It is deliberately inert: the strip is INTRINSICALLY SIZED (its width comes from
-	// the chips — tab count, names — and changes as tabs open, close and get renamed),
-	// so nothing ever paints or hit-tests at this number. Every consumer re-derives the
-	// size live: tabStripCacheRect builds the editor's box and the layout cache entry
-	// from tabStripTotalW, and tabStripOrigin keeps only X/Y from the stored rect. The
-	// value survives purely so the seeded rect is a plausible-looking record (and so
-	// the magnet's sibling list and the editor's readout have a sane number), sized for
-	// a couple of server chips on the 714 px stock AO2 canvas and clamped to a smaller
-	// one.
-	//
 	// It used to be the width the editor's drag box was drawn at, which is what made
 	// the box disagree with the strip the moment either changed.
 	tabBarDesignSeedW = 240
@@ -271,9 +219,6 @@ func (a *App) parkActive() {
 	// picks up right where it was, in sync. If the INCOMING tab has its own song,
 	// buildRoom swaps the stream (audible) and clears the duck there; the parked
 	// tab's musicStartedAt lets a later return seek back near where it would be.
-	// The MusicAcrossTabs pref (default OFF) instead keeps the backgrounded stream
-	// AUDIBLE (no duck). We never StopMusic here anymore — tab CLOSE / disconnect
-	// still do (closeParkedTab / Disconnect), so an orphaned stream can't leak.
 	a.musicTabDucked = !a.d.Prefs.Load().MusicAcrossTabs
 	// The outgoing tab's stream (whatever it is) is now the backgrounded one, freshly
 	// (re-)ducked; any await the just-parked tab held is void — the INCOMING tab's
@@ -290,9 +235,6 @@ func (a *App) parkActive() {
 	// stream to 35% and, because resetSessionState clears the flag WITHOUT re-applying
 	// volumes and a char-select/lobby activate never re-composes them, the mixer would
 	// stay stuck at 35% with nothing on stage until the next volume-affecting action.
-	// On return, buildRoom's rederiveMessageDuck recomputes the flag from the live
-	// phase, so clearing it here loses nothing (the parked slot's value is overwritten
-	// on activate anyway).
 	a.musicDucked = false
 	a.applyAudioVolumes() // push the duck (or its absence) to the mixer (no-op if no Audio)
 	if a.d.Viewport != nil {
@@ -448,18 +390,6 @@ func (a *App) closeParkedTab(i int) {
 	// tab (cross-tab continuity kept it rolling silently — see parkActive). Closing
 	// a background tab could be closing that owner, and we can't cheaply tell which
 	// tab owns the stream, so stop it to avoid an orphaned stream leaking (rule §4).
-	// It's inaudible anyway, so this is acoustically invisible; returning to the
-	// real owner re-fetches and resumes it (buildRoom → resumeActiveTabMusic).
-	//
-	// EXCEPTION: an armed await (musicAwaitURL != "") means the ACTIVE tab is mid-
-	// cross-tab-resume and OWNS the in-flight fetch — parkActive ducked, then
-	// resumeActiveTabMusic armed the await and issued PlayMusicAt for THIS tab's own
-	// track, which hasn't landed yet. StopMusic here would purgePendingMusic("") and
-	// cancel the active tab's own pending fetch, leaving it permanently silent (no
-	// re-fetch follows a background-chip close). The ducked-but-awaited stream isn't
-	// an orphan — it belongs to the visible tab — so skip the stop and let the fetch
-	// settle. A genuinely orphaned background stream never has an await armed against
-	// it (parkActive clears the await when it re-ducks), so the leak guard still holds.
 	if a.d.Audio != nil && a.musicTabDucked && a.musicAwaitURL == "" {
 		a.d.Audio.StopMusic()
 		a.musicTabDucked = false
@@ -684,17 +614,9 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		// only a rough seek FALLBACK for the active tab; SwappedOutSnap is the drift-free
 		// primary, and the audible-switch branch below makes the return a same-track no-op
 		// anyway).
-		//
 		// Without this case the tab's audible continuity stream (MusicAcrossTabs ON) would
 		// keep playing the STALE song: the room that issues PlayMusic parks with the tab, so
 		// a backgrounded change never reached the mixer. Under ON, when the single stream
-		// belongs to THIS tab (musicOwnerKey — the honest owner signal set at the play
-		// sites), follow the change: switch the live stream to the new track using the SAME
-		// async start machinery the active-tab path bottoms out in (Audio.PlayMusic —
-		// singleflight-collapsed fetch, no new goroutine). A ~stop / area-name transfer left
-		// s.sess.MusicTrack "" / unchanged; only a real track switches. Under OFF (stream
-		// silent) or when another tab owns the stream, this is bookkeeping only — no audible
-		// change (the isolation the OFF toggle promises).
 		if url, ok := a.backgroundMusicFollow(s); ok {
 			a.d.Audio.PlayMusic(url, ev.Loop, ev.MusicEffects) // AssetType: Music
 		}
@@ -775,15 +697,7 @@ func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 
 // tabStripDefaultX centres the server-tab strip in the WINDOW — issue #14's "it
 // doesn't even center itself".
-//
 // It used to centre in the gap LEFT of the docked log column instead (issue #2: the
-// strip floated over the stage and landed ON the Log/Music/Areas tabs), which is why
-// the reporter's screenshot shows it parked well off to one side. That constraint is
-// gone because the reason for it is gone: the strip now docks in its own reserved
-// band (chrometop.go) and every screen — dock tabs included — starts below that band,
-// so no X can make the two collide. Clamped to the left edge so a strip wider than
-// the window still starts on-screen. Pure + alloc-free, so the centring is
-// unit-pinnable.
 func tabStripDefaultX(total, w int32) int32 {
 	x := (w - total) / 2
 	if x < 0 {
@@ -832,34 +746,8 @@ func (a *App) tabStripDockedRect(total, w int32) sdl.Rect {
 // BOTH, because each only rewrites keys that ALREADY EXIST: seeding after the
 // author's fold silently discarded an `[overrides] asyncao_tabbar` row, wrote a
 // client-computed rect over it, and then reported the theme as silent about the
-// key. With the seed first, all four consumers line up:
-//
-//   - themeLayoutIn ranges the design map, so the key finally enters the layout cache;
-//   - the themed editor builds its editable key set from that cache, so the strip
-//     finally gets a drag box — issue #14's undraggable strip, which was undraggable
-//     under every real theme, none of which declares the key;
-//   - applyRectOverrides only rewrites keys that ALREADY EXIST, so without the seed a
-//     dragged position could never be re-applied after a theme reload;
-//   - right-click reset and the editor's "Reset all" both restore from the pristine
-//     map, so the seed is what they put the strip back to.
-//
-// GEOMETRY. Centred at the TOP of the canvas, which is where a strip of server tabs
-// belongs on one. Only X/Y are ever consumed, and only once the strip is PARKED; W/H
-// are inert (tabBarDesignSeedW). The X/Y are canvas-relative CLIENT px like every
-// other value stored under this key (see themeTabBarKey), so "centred" here means
-// centred at scale 1 — which is the shipped default fit, and in any case this seed's
-// coordinates are overwritten by the first drag. In practice even X/Y are rarely read —
-// parking happens through a drag, which overwrites them — so the seeded rect's real
-// jobs are to put the key in the map (the editor's editable set and applyRectOverrides
-// are both built by ranging it) and to give right-click reset / "Reset all" something
-// to restore to.
-//
 // The seeded default does NOT move the strip on its own — tabStripThemeParked keeps
 // it in the client chrome band until the theme declares the key or the user drags it.
-// The band is above the canvas and has no design-space coordinates, so it cannot be
-// expressed here; what CAN be guaranteed is that the box the editor hands out sits on
-// the painted strip (tabStripCacheRect substitutes the live docked rect while
-// unparked).
 func seedTabBarDesignRect(layout map[string]theme.Rect) bool {
 	if layout == nil {
 		return false
@@ -882,20 +770,7 @@ func seedTabBarDesignRect(layout map[string]theme.Rect) bool {
 // seedTabBarThroughOverrides is the seed AND the theme author's [overrides] fold,
 // in the one order that answers an `asyncao_tabbar` row exactly once. It returns
 // what tabBarSeeded means: NOBODY BUT THIS CLIENT decided where the strip goes.
-//
 // The order is load-bearing in both directions, which is why the two steps are
-// one function rather than two adjacent lines somebody can reorder:
-//
-//   - SEED FIRST, because foldSidecarOverrides only rewrites keys that already
-//     exist. With the seed second, an author's `[overrides] asyncao_tabbar` row
-//     was accepted by themeKeyEditable, refused by the PRESENT gate (the key was
-//     not in the map yet), and then overwritten by the client's own default.
-//   - RE-READ AFTER, because the seed's return value alone then lies. The theme's
-//     courtroom_design.ini really was silent, so the seed fires and reports true —
-//     but the AUTHOR placed the strip in the AsyncAO tier, and tabStripThemeParked
-//     reads this flag as "the theme has no opinion", so their placement would sit
-//     in the map while the strip stayed docked in the client chrome band.
-//
 // Comparing the rect rather than re-asking the sidecar is deliberate: it reads the
 // [overrides] tier's OUTPUT, so there is no second copy of its policy here to
 // disagree with foldSidecarOverrides about editability or AO2's second spelling.
@@ -911,34 +786,9 @@ func seedTabBarThroughOverrides(layout map[string]theme.Rect, sc *theme.Sidecar)
 
 // tabStripThemeParked reports whether the THEME's design layout owns where the strip
 // sits, as opposed to the client chrome band it docks in by default.
-//
-// Parked-ness is RECORDED, never inferred from geometry. It used to be "the live
-// design rect differs from the pristine seed", and that quietly threw away any drag
-// that happened to land on the seed's own coordinates: the override was written, the
-// comparison then said "unchanged", and the strip snapped back into the chrome band as
-// if the user had never moved it. Two EXPLICIT sources answer it instead:
-//
-//   - the theme DECLARED asyncao_tabbar (tabBarSeeded is false): that rect is the
-//     theme author's own placement, so it is parked from the moment the theme loads;
-//   - a per-key rect override is PERSISTED for the active theme. The editor writes one
-//     on drag release and both reset paths delete it, so the override's presence IS
-//     the placement flag — recorded with the placement it belongs to, which is why a
-//     theme reload cannot disagree with it.
-//
-// Those two are the RECORDED placement — tabStripPlacementRecorded below, which is
-// what a caller asking "where does this strip belong" (as opposed to "where is it
-// being drawn this instant") must use.
-//
-// Plus one IN-FLIGHT arm: a themed-editor drag that has grabbed the strip is a
-// placement in progress. Nothing is persisted until the release (a press that never
-// moves must leave the strip docked, like every other widget), so without this arm the
-// live design rect the drag is rewriting would be ignored for the whole gesture and the
-// strip would sit frozen in the band until the mouse came up.
-//
 // Cheap enough for the draw path: the recorded ladder short-circuits first, so an
 // ordinary frame still costs one map probe on latched state plus two RLock'd prefs
 // probes and no allocation (that is what HasThemeRectOverride is for). Only a frame
-// with a strip drag in flight pays the extra map probe.
 func (a *App) tabStripThemeParked() bool {
 	if a.tabStripPlacementRecorded() {
 		return true
@@ -953,21 +803,9 @@ func (a *App) tabStripThemeParked() bool {
 // tabStripPlacementRecorded is tabStripThemeParked WITHOUT the in-flight arm: the
 // placement as it is RECORDED right now, in the two places that outlive a frame — the
 // theme's own declaration and the persisted per-key override.
-//
 // The distinction exists because the two questions have different answers exactly when
 // a drag is in flight, and one caller needs the recorded one: layoutSnapshotNow. An
 // undo step's job is to describe state that can be WRITTEN BACK, and restoreLayout
-// writes this flag straight to the persisted override — so a snapshot must carry what
-// was recorded, never a transient "the user's hand is on it".
-//
-// Nothing but ordering made that visible: drawLayoutEditor assigns editTgt/editDrag and
-// only THEN pushes the pre-press snapshot, so the in-flight arm was already true when
-// the state it was supposed to describe was still "docked, un-parked". The first drag's
-// undo therefore re-placed the strip at its synthesized seed instead of sending it home
-// to the chrome band. Fixed HERE rather than by moving the push above the assignment:
-// the ordering fix would have to be re-established at every future pushLayoutUndo call
-// site, invisibly, whereas the accessor states which question the snapshot is asking at
-// the place the answer is defined.
 func (a *App) tabStripPlacementRecorded() bool {
 	if _, present := a.themeRects[themeTabBarKey]; !present {
 		return false // no key at all ⇒ no themed home
@@ -992,40 +830,6 @@ func (a *App) tabStripIntrinsicW() int32 {
 
 // tabStripCacheRect is the strip's entry in the themed layout cache: THE LIVE PAINTED
 // RECT, parked or not.
-//
-// The strip is the one key in the cache that is not a plain transform of a design
-// rect, because it is intrinsically sized CLIENT chrome:
-//
-//   - its W/H come from the chips, never from the stored rect — the same reason the
-//     classic layout system registers the same widget move-only
-//     (slotResizeEdges(slotTabBar) == 0);
-//   - while nobody has parked it its home is the reserved band ABOVE the canvas, a
-//     place design coordinates cannot name, so the docked rect stands in.
-//
-// Everything the editor does to this key reads this one rect — the drag box, the
-// Tab-cycle stacking order (sorted by box AREA), the resize-grip probe, right-click
-// reset — so deriving it here, live, is what keeps box == widget. The window clamp is
-// applied HERE rather than in tabStripOrigin so the box and the paint clamp the same
-// way and can never disagree.
-//
-// PLACEMENT UNITS. A parked strip's stored X/Y are CANVAS-RELATIVE CLIENT px — the
-// offset from the canvas origin in the SAME pixels the strip is drawn in — not design
-// px scaled by the layout. Three reasons, in order of weight:
-//
-//   - It makes the forward map (below) and its inverse (editBaseFor) an EXACT pair by
-//     construction: one addition and one subtraction, no rounding on either side. A
-//     scaled map is not invertible over integers once the scale exceeds 1 — its image
-//     has gaps — so at Letterbox 1000x900 (scale 1.4006) a one-pixel drag was simply
-//     not expressible, and the editor's box drifted a constant −2 px from the cursor
-//     for the whole gesture. Client chrome the user is placing by hand has to land
-//     where the hand put it.
-//   - The strip's SIZE is already unscaled: its width comes from the chips and its
-//     height is tabBarH, both client px. Scaling only the origin was half a transform.
-//   - No shipped theme declares asyncao_tabbar (the 74-theme reference corpus has
-//     zero), and at the shipped default fit — Native, scale exactly 1 — the two
-//     readings are byte-identical anyway. A theme that does declare it gets its rect
-//     read as an offset from the canvas origin, which is what it looks like it means.
-//
 // Takes the half-built cache, the already-measured width and the already-resolved
 // parked flag explicitly: it runs inside themeLayoutIn before lay.valid, so it must
 // neither recurse into the rebuild nor re-measure or re-probe what the caller has.
@@ -1059,20 +863,9 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 // tabStripOrigin resolves the strip's top-left for this frame: a theme's
 // "asyncao_tabbar" rect first, then a layout-editor override, else the docked
 // default.
-//
-// The theme arm mirrors compactToolboxStripRect's asyncao_toolbox handling exactly,
-// including WHY only X/Y are taken: the strip is move-only (slotResizeEdges), its
-// width is chip-driven, so honouring a design W/H would smear it. The cache entry is
-// already the live painted rect — origin transformed, chip-sized, window-clamped
-// (tabStripCacheRect) — so this takes its X/Y verbatim rather than re-clamping against
-// a second, possibly different width. Re-deriving the clamp here is exactly how the
-// editor's box and the painted strip used to drift apart.
-//
 // It reads the layout cache directly rather than a latched flag because — unlike the
 // toolbox — this strip paints on EVERY screen, and a flag armed inside
 // drawCourtroomThemed would still be set on the next lobby frame and teleport the strip
-// into a courtroom rect. The screen/room/theater gate makes the answer false everywhere
-// the themed courtroom is not what is on screen.
 func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 	if tr, ok := a.tabStripThemeRect(); ok {
 		cur := def
@@ -1174,12 +967,6 @@ func (a *App) handleTabBar(w, h int32) {
 	// never drains (s.conn==nil) — a zombie tab. The dialog itself parks with the tab
 	// (it's on sessionState), so it wouldn't paint over the new tab; the hazard is the
 	// zombie slot plus the wipe-and-resurface-stale-modal race resetSessionState opens.
-	// So the strip is inert while the dialog owns the frame: the user resolves it
-	// (Reconnect / Back to lobby / Esc) first, THEN switches tabs. This is one of TWO
-	// primary-session-switch surfaces gated on disconnectDlg.open; the other is the
-	// pinned-client control-swap consume (app.go). (Unlike pendingCloseTab above, this
-	// modal isn't born on the strip; it's gated for state-safety, not click-leak.) Drag
-	// state cleared so a later release can't act on a stale grab.
 	if a.disconnectDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
@@ -1450,9 +1237,6 @@ func (a *App) resetSessionState() {
 		// literal. A boot-only seed (dndOn's pattern, App.dndOn) would look
 		// right at launch and silently un-mute the instant the user connects
 		// to a server. Reseed here, every time, like volStripOn.
-		// sfxMuted is the deliberate exception: the SFX mute is session-only
-		// (see toggleSFXMute) so an accidental hotkey press can't leave SFX
-		// silently muted across a restart.
 		masterMuted:  a.d.Prefs.Load().MasterVolMuted,
 		musicMuted:   a.d.Prefs.Load().MusicVolMuted,
 		sfxMuted:     false,
