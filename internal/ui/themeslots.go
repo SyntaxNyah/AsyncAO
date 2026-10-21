@@ -102,7 +102,8 @@ type themeSlot struct {
 	external bool
 	// draw is nil until the arc's harvest commit. It is a top-level func, never
 	// a method value — a method value would allocate a closure the first time the
-	// table is read, and the themed frame is gated at zero allocations.
+	// table is read, and the themed frame is gated at zero allocations. The
+	// registry test asserts every row is still nil (nothing paints through it yet).
 	draw func(*App, sdl.Rect)
 }
 

@@ -128,7 +128,8 @@ type chromeRowPlan struct {
 
 // rect finds a placed control. ok=false means DRAW NOTHING for it — the same
 // degradation contract plStrip.placeFlex publishes, and the reason every caller must
-// branch on it rather than assume.
+// branch on it rather than assume. Test-only today: the planner's callers read
+// placed(), and the placement tests reach through this accessor.
 func (p *chromeRowPlan) rect(id int) (sdl.Rect, bool) {
 	for i := 0; i < p.n; i++ {
 		if p.slot[i].id == id {
