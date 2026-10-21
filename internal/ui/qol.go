@@ -261,26 +261,14 @@ func (a *App) pollCharBind() {
 // input on the very first character, so a bare-key namespace either never fires
 // again or — worse — races the claim for the same letter. The user's order was to
 // remove the bare-letter space and move the survivors onto chords, so all six
-// namespaces moved together onto ALT+<key>, in this one function, rather than six
+// namespaces moved together onto ALT+<key>, in this one gate, rather than six
 // copies of a slightly different guard.
 //
-// ALT specifically: Ctrl is fully occupied (hotkeyDefs' collision sweep documents
-// that every Ctrl+letter, Ctrl+digit and Ctrl+symbol is already claimed), Shift is
-// text, and Alt was unused as a key chord — the layout editor's Alt+DRAG is a
-// mouse gesture in a different namespace.
-//
-// !ctrlHeld is load-bearing, not tidiness: AltGr on Windows reports as Ctrl+Alt
-// and produces real text, so a bare altHeld test would swallow every accented
-// character a European layout types into the IC box.
-//
-// The BIND-CAPTURE paths (bindingFor, jukeBindFor, …) deliberately keep reading
-// the plain key: you still press "m" to bind m — it simply fires as Alt+M.
+// The gate itself lives on the key registry (keys.go); this method is the App-side
+// entry that supplies the capture arbitration, which stays on App because four of
+// the eight capture flags are global.
 func (a *App) bareBindKey() sdl.Keycode {
-	c := a.ctx
-	if c.keyPressed == 0 || !c.altHeld || c.ctrlHeld || a.capturingKey() {
-		return 0
-	}
-	return c.keyPressed
+	return a.keys.bareBindKey(a.ctx, a.capturingKey())
 }
 
 // handleCharKeys wears a bound character on Alt+<bound key> (see bareBindKey for
