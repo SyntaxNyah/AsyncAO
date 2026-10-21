@@ -1,28 +1,6 @@
 package ui
 
 // The ROOM-CONSTRUCTION seam's gates (newroom.go).
-//
-// Five of them, and they catch five different deletions:
-//
-//   - TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded drives every PRODUCTION
-//     entry point and fails if any room comes back unwired, pref-deaf, or —
-//     for the three authoring surfaces — pref-INFECTED. It catches gutting
-//     newRoom and it catches gutting applyAuthoringVisualsToRoom.
-//   - TestAuthoringRoomsSurviveTheMasterEffectsOffSwitch covers the other route
-//     to the same three fields: the single master toggle that ORs itself into
-//     all of them at once.
-//   - TestExportKeepsItsDeliberateReduceMotionOverride pins the ruled deviation
-//     on its own, unchanged since the seam landed.
-//   - TestRoomConstructionHasExactlyOneCallSite fails if anything in this
-//     package builds a courtroom outside that seam. It catches ADDING a sixth
-//     mode the old way, which is how the split pane and the export room ended
-//     up without an overlay engine in the first place.
-//   - TestRoomConstructionSitesDoNotHandRollTheVisualGates fails if a
-//     construction site assigns an effect gate itself instead of calling the
-//     authoring seam. That is the exact shape of the defect: a lone
-//     `ReduceMotion = false` beside a room that has already been handed the
-//     viewer's ScreenEffects renders nothing, silently.
-//
 // None restates what the wiring does; all five call it.
 
 import (
@@ -52,12 +30,9 @@ func roomFactoryApp(t *testing.T) (*App, func()) {
 // handed back, so a gate can write a real asset file into it and drive the byte
 // path end to end (write characters/<x>/char.ini, point urls at
 // assets.LocalOriginFor of the same folder, and Manager.FetchRaw reads it).
-//
 // The split exists because a fixture that owns its mount privately can only ever
 // serve misses: every consumer of roomFactoryApp before this one drove the
 // fetch's FAILURE path, which is exactly how the char.ini→cache mapping shipped
-// with no end-to-end coverage at all (deleting `res.idle = ini.IdleAnim()` — and
-// `res.showname` beside it — left the whole package green).
 func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
@@ -122,12 +97,9 @@ func gateScene() *sceneRecording {
 
 // stagedRoomPath is one production way a *courtroom.Courtroom comes into
 // existence, together with the real call that makes it happen.
-//
 // The list is the POINT of this gate: a mode that is not here is a mode nothing
 // checks. Seven rows, six entry points — a replay appears twice because it is two
 // modes (viewing, and previewing for the maker). What stops a seventh from being
-// added without joining the list is TestRoomConstructionHasExactlyOneCallSite
-// (nothing may build a room another way) plus roomConstructionFuncs below
 // (the staging sites are pinned by name).
 type stagedRoomPath struct {
 	name string
@@ -240,29 +212,12 @@ func stagedRoomPaths() []stagedRoomPath {
 
 // TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded is the headline gate: EVERY mode
 // that stages messages gets the same wiring and the same preferences.
-//
 // It exists because two things were true at once and neither was visible. Two of
 // the five rooms — the pinned split pane and the comic/video export — were built
 // raw and never reached wireRoomOverlay, so a screen effect that played in the
-// tab you were watching did not play in the pane beside it and did not appear in
-// any exported comic. And FOUR of the five never received the ScreenEffects
-// preference at all, so they ran on NewCourtroom's hardcoded `true`: with the
-// setting OFF, a replay or a maker preview still resolved effect rosters,
-// fetched misc manifests, decoded art and uploaded pages — the exact cost
-// TestVisualGateOffCostsNoResolve forbids, on rooms that test cannot see.
-//
 // The preference is driven BOTH WAYS on purpose. Off alone would pass on a room
 // hardcoded to false; on alone would pass on the bug this replaces. Together
 // they can only pass if the room actually read the preference.
-//
-// The AUTHORING rooms are the mirror image, and they are why the exemption is a
-// column in the table rather than an assertion the reader has to infer. A comic
-// export, a maker preview and a maker-launched replay render what the recording
-// says: pushing the viewer's effect prefs onto them takes the shake, the flash
-// and the overlays out of a file that outlives this session — and the export
-// asks for them in writing, at its call site in gifexport.go. So the same
-// two preference settings that MUST reach the three viewing rooms MUST NOT
-// reach the three authoring ones, and one loop proves both.
 func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 	for _, want := range []bool{false, true} {
 		for _, p := range stagedRoomPaths() {

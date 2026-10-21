@@ -2,15 +2,6 @@ package ui
 
 // The element clock + effect gates (v1.90.0 W5) — the nine the wave plan names
 // (docs/wip/THEME-EDITOR-DESIGN.md §4 W5).
-//
-// Two of them are the whole reason this wave is risky, and they are opposites:
-//
-//	TestIdleElementsDoNotPinTheFrameRate  — a still element that holds the frame
-//	  rate up is the idle-CPU-burn defect (the v1.56.0 arc).
-//	TestStaticElementNeverCallsNoteAnimating and its live siblings — an element
-//	  that MOVES and fails to note the census freezes mid-animation, which is the
-//	  worse defect, because the pacer will happily sleep through it.
-//
 // The rest pin determinism (an exported GIF and a preset thumbnail must reproduce
 // any frame from elapsed alone), the two fixed pools, and the one accessibility gate
 // the feature has.
@@ -105,13 +96,6 @@ func fxTestStore(t *testing.T) *render.TextureStore {
 const fxTestPageSide = 8
 
 // fxTestPage is an ANIMATED page with n distinct frames and a uniform delay.
-//
-// It uploads a real assets.Decoded through the REAL theme-media tier, which is the
-// pattern seedElementArt (themeelements_test.go) and the render package's own media
-// gates already use. There is no lighter stand-in available: sdl.Texture is an
-// INCOMPLETE cgo type, so `new(sdl.Texture)` does not compile, and elementFrame
-// hands whatever it returns to a painter that blits it.
-//
 // The frames differ from each other so the page is genuinely an animation rather
 // than n copies of one picture — a page whose frames were identical would make every
 // "the frame advanced" assertion below pass without the index ever moving.
@@ -151,15 +135,9 @@ func fxNeutralTerms(fx elemFX) bool {
 
 // TestEveryEffectKindIsResolvable pins the resolver TOTAL over theme.EffectKind, the
 // way TestEveryElementKindHasAPainter pins the painter table.
-//
-// Totality matters for the same reason: the kind comes out of a file a stranger
-// wrote, and a kind the resolver has no arm for would be an effect that silently does
-// nothing — the failure nobody reports because the theme "just looks a bit plain".
-//
 // The second half is the design's own rule that every effect returns static at
 // amplitude 0. That is what makes `amp_pct = 0` a supported way to author a
 // still element that still NAMES its effect (so the editor can turn it back on),
-// rather than a way to pin the frame rate for no pixels.
 func TestEveryEffectKindIsResolvable(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k.String() == "" {
@@ -294,29 +272,7 @@ const (
 
 // TestSpinIsTheOnlyEffectThatRotates is the R2 rot gate: design §6.6's ratified
 // escalation had ZERO coverage after W5 shipped it.
-//
-// That is the dangerous shape of untested code, not the harmless one. The rot term
-// is FOUR LINES in two places — resolvePeriodicEffect's FXSpin arm and the one `if
-// fx.rot != 0` block in applyElementFX — with no assertion anywhere pointing at
-// either. A refactor that dropped the apply block would leave every other effect
-// gate green, every shipped theme loading, the resolver still returning a correct
-// rot, and spinning elements simply not spinning: the failure nobody reports because
-// the theme "just looks a bit plain". Proved by mutation before it was written —
-// disabling the branch at themeclock.go's `if fx.rot != 0` must fail this test and
-// nothing else in the package.
-//
 // Three claims, because the term is only honoured if all three hold:
-//
-//  1. FXSpin ADVANCES e.ang, by the resolved amount, added to the baked angle and
-//     wrapped into the byte.
-//  2. restoreElementFX PUTS IT BACK. The baked array is a cache the next frame
-//     re-reads, so an angle left applied would integrate: a spin would accelerate
-//     every frame until it was a strobe. elemFXSave carries `ang` for this reason
-//     alone, and nothing else asserts that it does.
-//  3. The other seven motion kinds LEAVE IT ALONE, across a whole period. Rotation
-//     is spin's identity; a pulse that also turned would be a second, undeclared
-//     effect, and the enum is the theme author's only contract about what a kind
-//     does.
 func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
 	period := time.Duration(fxTestPeriodMs) * time.Millisecond
 
@@ -397,13 +353,9 @@ func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
 
 // TestElementFrameIsAFunctionOfElapsed is the reason phase arithmetic beat
 // independent per-element wall clocks (design §Q3).
-//
-// The offscreen export (gifexport.go, through themeLayout) and the editor's live
-// preset miniatures must be able to reproduce ANY frame from elapsed alone.
 // Independent wall clocks would make an exported GIF non-reproducible and a preset
 // thumbnail non-deterministic — you could not diff two exports of the same recording,
 // and a gallery would shimmer.
-//
 // Both halves are pinned: the page index AND the effect terms.
 func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 	page := fxTestPage(t, fxTestStore(t), 5, 40*time.Millisecond)
@@ -654,16 +606,9 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 // TestElementEffectsAreAllocFreeAtCap extends W3's cap-full alloc gate over the code
 // this wave added: theme.ElementCap elements, every effect kind in rotation, all of
 // them LIVE, drawn on every frame.
-//
-// The W3 gate cannot reach any of it — its fixture leaves every fx zero, so it
-// measures drawElement's fast path and nothing else. This one measures the resolver,
-// the pool scan, the transform and the restore, at 96x amplification, which is where
-// a per-frame allocation on the motion path would actually show up.
-//
 // It is also the gate that catches the subtle one: an alpha effect on an ElemText
 // that folded its alpha into the ink colour would miss the label cache and rasterise
 // a texture EVERY FRAME (ui.go textKey includes the colour). That is invisible to
-// every other gate in the package.
 func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -971,15 +916,6 @@ func absDuration(d time.Duration) time.Duration {
 // ---------------------------------------------------------------------------
 
 // TestEffectBindNeverBuriesItsWidget is the gate the shipped corpus asked for.
-//
-// Every `[effect.*]` colour in the fourteen native themes is a bare `#rrggbb` — i.e.
-// FULLY OPAQUE — at amplitudes from 12 to 100, and every one of them is bound to a
-// widget somebody has to be able to read or click: the objection button, the chat
-// message, the whole viewport. Under a naive reading ("paint the colour, modulate its
-// alpha with the effect") the first frame of `[effect.viewport] effect = fade,
-// amp_pct = 100` is an opaque sheet over the entire stage that never clears, and
-// `[effect.objection]` is a solid red rectangle where the button was.
-//
 // So the rule this pins: a bind's plate IS its effect. `amp_pct` is the peak the wash
 // reaches, and the effect's envelope scales it from there — which means it is never
 // stronger than the author asked for, and a decayed one-shot is GONE.
@@ -1179,11 +1115,9 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 // render" claim carried forward to the half W5 added: a hand-authored sidecar
 // MOVES, and every moving part of it survives the whole pipeline rather than only
 // the unit test each part has of its own.
-//
 // The fixture (testdata/sidecars/w5_clocks.ini) is written the way an author
 // writes, so this gate reads a FILE through the real reader, the real bake, the
 // real clock pool and the real resolver — which is the only place the four of them
-// are ever in the same sentence.
 func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w5_clocks.ini")
 	defer cleanup()

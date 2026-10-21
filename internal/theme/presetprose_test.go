@@ -1,31 +1,10 @@
 package theme
 
 // THE SHIPPED PRESET'S PROSE IS DOCUMENTATION, NOT A WORK LOG (v1.90.0 W9).
-//
-// Every `;` comment in internal/theme/presets/ reaches a THEME AUTHOR: the
-// fragments are the worked examples the format ships, they are what a `.aotheme`
-// starts life as, and the editor's "open the preset" path puts them on screen
-// verbatim. So a comment there may only say things the reader can act on with
-// the file in front of them.
-//
-// The class this file closes is the opposite: prose that survived the authoring
-// pass still pointing at the wave's own paperwork — a planning dossier that was
-// never in the tree, a tier letter off a triage table nobody outside the wave
 // has, an internal Go enum name (`FXShake`) instead of the value an author
-// actually types (`shake`), a wave/round id. Three such lines shipped past a
-// hand review and a post-pass lint that measured line length, trailing
-// whitespace, block length and quote balance — all four are SHAPE rules, and
-// none of them can see a word. This is the vocabulary rule they were missing,
-// and finding four MORE offenders the hand grep had walked past is the argument
-// for having it be a test instead of a grep.
-//
 // The rule is deliberately absolute where a clever rule would be fragile: the
 // whole "tier" family is banned rather than only "tier (b)", because the next
 // author writing "tier 1 of 2" is one edit away from "tier (b)" and a reviewer
-// cannot tell the two apart at a glance. Words the corpus legitimately needs
-// (`refs`, `[sampled]`, `CORRECTED`) are NOT banned, and cleanCommentSamples
-// pins them so a later widening of a pattern fails here rather than forcing a
-// corpus-wide rewrite.
 
 import (
 	"fmt"
@@ -48,16 +27,6 @@ func presetFragmentPath(k PresetKind, id string) string {
 
 // presetProseMinCommentsPerFragment is the floor the scan must clear IN EVERY
 // SHIPPED FRAGMENT before its silence means anything.
-//
-// PER FRAGMENT, not per corpus, and that is the whole lesson of this constant.
-// A corpus-wide floor is a number that cannot see WHICH files were read: 200
-// against a ~1500-line comment corpus stayed green with the entire layout axis
-// dropped from the walk, because the style axis alone clears it seven times
-// over. The file set is now the library's own (eachPresetLine), so coverage is
-// exact and this floor only has to catch the remaining hole — a fragment that
-// was opened and yielded nothing. The leanest shipped fragment carries eight
-// comment lines, so five is below any fragment anyone would write and far above
-// zero.
 const presetProseMinCommentsPerFragment = 5
 
 // repoRootFromTheme is this package's path back to the checkout root, used to
@@ -177,15 +146,6 @@ func presetCommentOf(line string) string {
 // eachPresetLine visits every line of every shipped fragment on every axis. One
 // walk, four callers: the vocabulary gate, the citation gate, the allow-list
 // guard and the coverage gate all have to agree about what "the corpus" is.
-//
-// THE FILE SET IS THE LIBRARY'S, NOT A DIRECTORY LISTING'S. It used to be a
-// literal `[]string{presets.LayoutDir, presets.StyleDir}`, and editing that list
-// down to one entry left all three gates passing while 21 fragments went unread
-// — the corpus quietly became half a corpus and nothing said so. So the axes are
-// enumerated over the ENUM's full range and the ids come from ShippedPresets():
-// there is no list here to shorten, and presetCorpusCoverage re-derives the
-// expectation independently afterwards, so a walk that stops enumerating still
-// has to answer for what it skipped.
 func eachPresetLine(t *testing.T, visit func(path string, n int, line string)) {
 	t.Helper()
 	lib := shippedLibraryFor(t)
@@ -214,15 +174,6 @@ func eachPresetLine(t *testing.T, visit func(path string, n int, line string)) {
 // presetCorpusCoverage is the verdict on a corpus walk: it compares what the
 // walk visited against the SHIPPED LIBRARY and returns one sentence per way the
 // two disagree.
-//
-// IT ENUMERATES THE AXES ITSELF, over the enum's whole range, and that is the
-// point rather than an implementation detail — the walk's own loop is the thing
-// under suspicion, so a verdict that asked the walk which axes to check would
-// agree with a walk that reads one of them. A missing axis, a missing fragment
-// and a visit to something the library does not hold get three different
-// sentences because they have three different causes: a shortened loop, a file
-// the loader dropped, and a walk reading files that do not ship.
-//
 // A library with an EMPTY axis is itself a complaint, so passing nil (or a
 // library that failed to load) cannot make this return "all clear".
 func presetCorpusCoverage(lib *PresetLibrary, visited [PresetKindCount]map[string]bool) []string {
@@ -387,13 +338,9 @@ func TestPresetProseLintCatchesTheVocabularyItBans(t *testing.T) {
 // TestPresetCorpusWalkReadsEveryShippedFragment is the axis-loss gate, and it
 // drives the real walk rather than the verdict function so that it survives the
 // verdict being unhooked from eachPresetLine.
-//
 // THE REGRESSION IT PINS: replacing the walk's axis source with a single axis
 // left all three prose tests green while a whole axis — 21 fragments, several
 // hundred comment lines — stopped being linted. Nothing failed, because the
-// rules only ever speak about text they were handed. Here the expectation comes
-// from the library instead of from the walk, so "what did you read" and "what
-// ships" are two independent answers that have to match.
 func TestPresetCorpusWalkReadsEveryShippedFragment(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	type fragment struct {

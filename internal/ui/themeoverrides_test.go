@@ -1,20 +1,6 @@
 package ui
 
 // Gates for the AsyncAO tier's [overrides] applier (themeoverrides.go).
-//
-// The DISCIPLINE gates below drive foldSidecarOverrides directly: it rewrites,
-// never adds, it refuses a key nothing paints, and it honours AO2's second
-// spelling of the one widget that has two.
-//
-// These are the only half left. This file used to carry a second shape — a
-// SHIPPED-CONTENT gate driving the real ingest chain over the fourteen themes in
-// themes/ — and that was the half that mattered, because the tier was PARSED,
-// EXPOSED and DOCUMENTED for a whole wave with no applier behind it: every unit
-// test of the reader passed, every theme loaded, and ~60 rows per theme did
-// nothing. That corpus has since been retired from the repository, so the gate
-// went with it. Re-derive it from a corpus you actually ship before trusting an
-// applier change again; this package's own fixtures cannot see that class of
-// defect, by construction.
 
 import (
 	"fmt"
@@ -57,13 +43,8 @@ var ovLiveCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // ovWriteLiveTheme writes the fixture to a fresh root and returns the root to hand
 // to SetTheme. Two files and nothing else:
-//
 //   - a courtroom_design.ini with `courtroom` + `viewport` and NO widget keys.
-//     That pair is what themeLayoutIn validates on and what gates the AO2
-//     backstop, so this is the "a two-key design file plus a sidecar is a whole
-//     layout" case foldSidecarOverrides was written for — and it is why the
 //     assertions below can name AO2's stock rects as the not-applied answer.
-//   - a sidecar with one [overrides] row.
 func ovWriteLiveTheme(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -86,20 +67,6 @@ func ovWriteLiveTheme(t *testing.T) string {
 
 // TestThemeApplyRunsTheOverridesTier is the gate on the CALL SITE, and it is the
 // one gate in this file that a mirror cannot fake.
-//
-// The discipline gates above reach foldSidecarOverrides directly, which is the
-// right shape for pinning what the applier DOES and the wrong shape for pinning
-// that anything calls it: delete the
-// `foldSidecarOverrides(res.layout, res.sidecar)` line from app.go and every one
-// of them still passes, because they call it themselves. The tier shipped in
-// exactly that state for a whole wave — parsed, documented, exposed, and never
-// once invoked on the path a player takes.
-//
-// So this one drives applyThemeAsync and reads a.themeRects: the preference, the
-// apply goroutine, theme.Load, the design tier, the AO2 backstop, the fold,
-// pollThemeApply's landing and the player's own layout-editor pass. The same shape
-// panelfonts_test.go uses for the font rows, for the same reason.
-//
 // THE MUTATION IT ANSWERS TO: replace the fold's call in app.go with
 // `_ = res.sidecar` and this test must fail on ovLiveMovedKey. If it does not, the
 // gate is measuring the mirror again.
@@ -236,14 +203,6 @@ func TestSidecarOverrideNilSidecarIsInert(t *testing.T) {
 }
 
 // TestSidecarOverrideHonoursAO2SecondSpelling pins the one aliased widget.
-//
-// AO2 probes "immediate" first and falls back to "pre_no_interrupt"
-// (courtroom.cpp:1072; themedToggleRect, theme_layout.go:444-459), but AO2's own
-// stock design file spells it `pre_no_interrupt`, so that is the only spelling
-// applyAO2DefaultRects can supply. An author who writes the spelling AO2 reads
-// FIRST — themes/thh_trial writes exactly that — would otherwise have authored a
-// row that resolves to nothing at all, which is the silent failure this whole file
-// exists to end.
 func TestSidecarOverrideHonoursAO2SecondSpelling(t *testing.T) {
 	// Only the stock spelling is present, which is what the backstop produces.
 	layout := map[string]theme.Rect{"pre_no_interrupt": ovTestOther}

@@ -2,45 +2,8 @@ package ui
 
 // F1 / F1b — the "everything above 1345x840 goes blurry" report, and the smeared
 // speaker names inside it.
-//
-// The report named a threshold to the pixel, and the arithmetic matches it exactly:
-// autoScaleRefWidth/Height are 1280x800 and the auto scale snaps to
-// config.UIScaleStepPercent, so 1280x1.05 = 1344 and 800x1.05 = 840 are the first
-// window sizes that leave 100%. Everything the frame then draws is multiplied by
-// 1.05 by the renderer, and any surface still rasterized at 100% is stretched.
-//
-// WHAT THESE GATES PIN.
-//
-//   - The text pipeline re-rasterizes AT the new scale when that step is crossed
 //     (TestAutoScaleStepRerastersTextAtDeviceScale). This is #77 Part A's wiring —
-//     SetAutoScaleFromWindow → Ctx.SetUIScale → Ctx.SetTextDevScale — and deleting
-//     any link in it turns every glyph in the client into an upscaled 100% raster.
-//     Nothing tested it at the threshold before.
-//   - Weight is rasterized into the glyphs, not painted twice
-//     (TestBoldLabelIsOneRasterNotTwoDraws + TestNoFauxBoldSecondPassRemains). The
-//     faux-bold idiom drew the same texture again one LOGICAL pixel to the right;
-//     at 105% the renderer put the copies 1.05 device px apart on different
-//     sub-pixel phases, which is why names read DOUBLED beside message text on the
-//     same row that stayed crisp.
-//   - The device-exact blit (DrawScaled) reaches EVERY live emoji/mixed-script text
-//     surface, not just the chatbox body it started on
-//     (TestMessageRasterDrawIsExportOnly, TestLabelCoveringCenteredDeviceExactAtFractionalScale).
-//     labelEmojiWeight/labelCoveringCentered and the text field's emoji-fallback
-//     branch used to call the plain, non-device-exact Draw — the raster's spans were
-//     already built from device-sibling fonts (emojiRasterWeight/fieldRaster fold
-//     textDevPct), but blitting them through Draw threw that precision away by
-//     projecting back to logical BEFORE ren.SetScale multiplied it up again, the
-//     exact rounding mismatch deviceExact's own doc measures for the chatbox crawl.
 //   - Floating reaction badges (#2) rasterize at the device scale and blit
-//     device-exact too (TestEnsureReactBadgeBuildsFromDeviceFont,
-//     TestReactionBadgeCachePurgesOnDeviceScaleChange,
-//     TestBadgeDeviceExactDiffersFromResampleAtFractionalScale in
-//     internal/render/badge_test.go). ensureReactBadge used to build from EmojiFont
-//     (a fixed logical pixel size) and Badge.Draw had no SetScale bracket at all, so
-//     every float softened at any UI scale other than 100% — and the badge cache
-//     never invalidated on a scale change, so ensureReactBadge now purges it on a
-//     textDevPct mismatch (the same idiom SetTextDevScale uses for the label/emoji
-//     caches).
 
 import (
 	"bytes"
@@ -210,14 +173,9 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 // REAL production draw path (labelCoveringCentered), not a reimplementation of
 // DrawScaled's contract. It compares the production call's painted pixels against the
 // SAME underlying raster (same emojiRaster cache key, so literally the same texture)
-// drawn through the plain Draw it used to call.
-//
 //   - At 100% deviceExact is false for BOTH calls by design (the identity scale has
 //     nothing to fold), so they must be byte-identical — a regression here would be a
 //     DIFFERENT bug, and this test correctly does not claim to catch one.
-//   - At 105% the production call takes the device-exact branch and the comparison
-//     call does not, so they must differ. If labelCoveringCentered ever reverts to
-//     calling Draw again, this assertion goes back to passing where it must fail.
 func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 400, 200
 	const text = "React \U0001F600 label" // U+1F600 is supplementary-plane → NeedsEmojiFallback is unconditionally true

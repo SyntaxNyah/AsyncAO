@@ -135,14 +135,6 @@ func TestNoSlotHasGraduatedToTheTableYet(t *testing.T) {
 // the failure #21 is named for: music_search sat in the old themeLayoutKeys from
 // the day it was written with no draw site, so the editor offered a drag box that
 // moved nothing.
-//
-// It replaces a test that could not fail. The old TestBoundButInertSlotsAreNotEditable
-// asserted `s.state == slotStateInert && themeKeyEditable(s.key)` and
-// `s.fixed && themeKeyEditable(s.key)`, but themeKeyEditable is DERIVED from
-// exactly those two fields — `s.state != slotStateInert && !s.fixed` — so both
-// conjunctions are structurally unreachable. It reported the ghost-box rule as
-// covered while covering nothing, which is worse than no test: every later commit
-// that flipped a row to hand-drawn believed it was guarded.
 func TestEveryHandDrawnKeyHasAPainter(t *testing.T) {
 	// Themed draw sites resolve a rect through one of two helpers, and they live
 	// in more than one file — the chatbox fitter and the GIF exporter read theme
@@ -275,7 +267,6 @@ func TestThemeSlotRelSpaces(t *testing.T) {
 // Old name, still use it to not break compatibility (AO2-Client courtroom.cpp:831),
 // with the server chatlog at its own key (:834). Treating the two as one drew the
 // OOC log in the debug log's box.
-//
 // The row started INERT — ingested so the key wasn't reported unbound, but with
 // nothing painting it. It is now hand-drawn: drawThemedDebugLog paints the failure
 // ring there, and ooc_toggle swaps the two panels per on_ooc_toggle_clicked (:5197).
@@ -317,13 +308,7 @@ func TestOOCToggleLabelNamesTheVisiblePanel(t *testing.T) {
 
 // TestEmoteDropdownRowIndexIsTheEmoteIndex pins the invariant that makes the
 // dropdown safe to wire straight into selectEmote: row N must BE emote N.
-//
-// The list is built from a.emotes, and the tempting "improvement" is to build it
-// from a.emoteVisible instead so favourites filtering applies. That would be
-// silently wrong in the worst way — the dropdown would keep showing sensible
 // labels while every pick selected a different emote — because selectEmote indexes
-// the unfiltered slice.
-//
 // Also pins the 1-based label, which is AO2's (emotes.cpp:176 builds
 // QString::number(n + 1) + ": " + comment), and the empty-comment fallback, which
 // is deliberately NOT AO2's — see the comment at ensureEmoteChoices.
@@ -372,21 +357,6 @@ func TestEnsureEmoteChoicesIsAllocFreeWhenSettled(t *testing.T) {
 
 // TestButtonArtStemsMatchAO2 pins the image stems for the buttons a theme is most
 // likely to notice, because the failure mode is silent and looks like a layout bug.
-//
-// drawThemeButton falls back to a TEXT CHIP when a row carries no art, so five
-// rows that draw but declared none were painting "Pair", "D+", "D-", "P+", "P-"
-// into AO2 icon rects — pair_button is 42x42 and the HP steppers are 9x9 — while
-// the stock base ships pair_button.png, defplus.png, defminus.png, proplus.png and
-// prominus.png right beside them and the theme fallback already reaches that
-// folder. Nothing was broken enough to fail; it just looked wrong.
-//
-// evidence_button is a different failure: it listed "addevidence" as a fallback,
-// which is a DIFFERENT WIDGET's art. AO2 uses it for an empty evidence SLOT
-// (evidence.cpp:356 setThemeImage("addevidence.png")), not for the button
-// (evidence.cpp:103 setImage("evidence_button")). In the stock base
-// evidence_button.png and evidencebutton.png are byte-identical while
-// addevidence.png is a distinct "+" glyph — so a theme shipping only addevidence
-// drew a plus sign where the Evidence button belongs.
 func TestButtonArtStemsMatchAO2(t *testing.T) {
 	// stem -> the AO2 call it mirrors, so a wrong value fails with its own citation.
 	want := map[string]struct {
@@ -448,17 +418,6 @@ func TestButtonArtStemsMatchAO2(t *testing.T) {
 
 // TestMusicNameIsFixedToItsPlate pins the one rect in the registry whose
 // coordinates are NOT window-absolute once resolved.
-//
-// AO2 parents ui_music_name inside ui_music_display (courtroom.cpp:171), so its
-// declared rect is relative to the plate — which is why the registry marks it
-// relMusicDisplay and why the layout transform deliberately leaves such rects RAW
-// (no offX/offY, no clamp). The themed layout editor builds its drag boxes
-// straight from the resolved rect for every editable key and converts a drag back
-// to design space by subtracting the same offsets unconditionally. So a
-// music_name that is editable offers a box in the window's top-left corner that
-// moves the wrong thing — the ghost box the registry exists to end, in the one
-// place the usual painter check cannot see it.
-//
 // fixed:true is what keeps it out, exactly as showname and message are held out
 // of the editor for the same relative-rect reason.
 func TestMusicNameIsFixedToItsPlate(t *testing.T) {
