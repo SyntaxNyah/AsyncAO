@@ -109,7 +109,9 @@ func TestOnIncomingReactionGate(t *testing.T) {
 func TestQueueReactionSnapshot(t *testing.T) {
 	a := &App{}
 	a.lastReactRef, a.lastReactName = 777, "Phoenix"
-	a.toggleReactPicker() // opens + snapshots 777
+	// The opener that took this snapshot was removed with the IC-bar React button; set
+	// the state it produced and keep the consuming half under test.
+	a.showReactPicker, a.reactTargetRef, a.reactTargetName = true, a.lastReactRef, a.lastReactName
 	if !a.showReactPicker || a.reactTargetRef != 777 {
 		t.Fatalf("open didn't snapshot: show=%v target=%d", a.showReactPicker, a.reactTargetRef)
 	}
