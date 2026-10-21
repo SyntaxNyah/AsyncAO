@@ -8,15 +8,6 @@ import (
 
 // TestDroppedThemeBundleNeverRepointsTheThemeRoot is the W2 gate on drop
 // routing, and it is written from the failure rather than from the feature.
-//
-// The bug: SDL hands every drop to HandleFileDrop AND to the visible screen in
-// the same frame. The Settings screen's default arm calls resolveDroppedFolder,
-// which turns a dropped FILE into "its parent folder" and stores that as the
-// user's theme root. So dropping a .aotheme on the settings page repointed the
-// theme root at (typically) the Downloads folder — silently, while the global
-// handler was warning that the file "isn't a recording". Every theme the user
-// had resolved through the old root stopped resolving.
-//
 // The fix is one shared classifier, so the gate is: the bundle is claimed by
 // HandleFileDrop, the Settings screen's arm therefore never reaches its
 // theme-folder default, and the theme root is untouched by the drop.
@@ -38,14 +29,6 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 
 	// The Settings screen's routing: anything CLAIMED is a no-op there, and only
 	// the unclaimed default reaches resolveDroppedFolder.
-	//
-	// It DRIVES settingsDropAction (dropclaim.go) rather than restating the
-	// switch. That distinction is the whole gate: the arm used to live inline in
-	// drawSettings, which zero tests call, and the check here used to be
-	// `got == dropClaimNone` — a re-implementation. Deleting the
-	// `case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:` line
-	// therefore left the suite green while a dropped .aotheme or .ttf silently
-	// repointed the user's theme root at their Downloads folder.
 	for _, tc := range []struct {
 		path       string
 		armed      bool
@@ -92,30 +75,6 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 // itself vacuous. The enum carries six claims today; the floor is deliberately well
 // under that, because the point is to catch a walk that stopped walking, not to restate
 // the count — the same bargain settingsTabBodyCensusMin strikes in settingscardwidth_test.go.
-//
-// IT IS A LITERAL, INDEPENDENT OF dropClaimCount, and that is the whole point of it
-// having a name: a floor derived from the bound cannot audit the bound.
-//
-// IT DOES NOT REPLACE `seen != int(dropClaimCount)`, and an earlier draft of this
-// comment said it did, on the reasoning that the clause is "tautologically false" and
-// "can never fire". That is true only WHILE the loop bound IS dropClaimCount, and the
-// conditionality is the tripwire, not a defect in it. Proven by mutation on this
-// package: rewrite the walk to the pre-W10 shape
-// `for c := dropClaimNone; c <= dropClaimThemeFont; c++` — verbatim the W10 defect,
-// the one that left dropClaimThemeImage outside the census — and this floor of 3 stays
-// green while the clause fires with "the census walked 5 of 6 claims". Deleting it
-// therefore removed the only check that speaks to the exact bug class this file exists
-// to prevent, and the aphorism above, though true, was being aimed at a clause that
-// never audited the bound in the first place.
-//
-// THE THREE QUESTIONS ARE SEPARATE, and the split is exact:
-//   - the SENTINEL is audited by the COMPILER, via the dropClaimNames array literal
-//     (and, in the too-large direction, by the empty-name loop at the foot of the test);
-//   - the WALK is audited by `seen != int(dropClaimCount)` — it asks whether the loop is
-//     still bounded by the sentinel, and it fires the day someone reverts that bound to a
-//     named member or hand-lists the roster, which is a realistic refactor;
-//   - this FLOOR audits neither. It only refuses a roster too small to be worth walking —
-//     an enum shrunk to a claim or two would satisfy both of the above and prove nothing.
 const dropClaimCensusMin = 3
 
 // TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction total over
@@ -123,11 +82,9 @@ const dropClaimCensusMin = 3
 // joins this gate the moment it exists. The bound is the SENTINEL
 // (c < dropClaimCount), not the last named member: the walk once ended at
 // dropClaimThemeFont and W10's dropClaimThemeImage slipped past it.
-//
 // The sentinel itself is guarded by the compiler (dropClaimNames' fixed array),
 // by the empty-name loop at the foot of this test (sentinel too large, or a
 // claim added with no name) and by dropClaimCensusMin. Do not remove the loop:
-// it is one deletion away from silence.
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".

@@ -109,16 +109,9 @@ func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect
 // TestReduceMotionFreezesEveryEgg is the accessibility gate for the whole egg
 // roster, in the shape TestReduceMotionFreezesEveryElement (themeclock_test.go)
 // uses for the theme clock.
-//
 // Reduce motion is not "most of the motion": somebody who ticks that box because
 // movement makes them ill is not served by a chatbox that still breathes at them
 // because a stranger typed a name. Both entry points read the preference, and
-// NOTHING pinned it — the guest eggs shipped with an audit mutation that let Mint
-// alone bypass the gate, and a second that deleted the term outright so all seven
-// animated for a person who had asked them not to, and the entire package stayed
-// green under both. Each kind is driven through the real entry point twice: once
-// with the preference on (no pixels, no pacing) and once with it off, because the
-// frozen arm is only worth anything if the same call paints when it is allowed to.
 func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 	a, ct, vp, box, cleanup := eggOracleRig(t)
 	defer cleanup()
@@ -181,7 +174,6 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 // animates without noting parks the frame limiter at its idle cap and the field
 // crawls at a few frames a second — the msAnim precedent this repo has already
 // shipped once.
-//
 // Both dispatches, every kind, plus the two negatives: a message with no egg in
 // it must not pace, and a kind with no stage half must not pace from the stage.
 func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
@@ -384,14 +376,7 @@ func TestRingVisibleSkipsOnlyOffScreen(t *testing.T) {
 // allocations, so a sweep drawn on the wrong edge, off-by-N, or with a spurious
 // corner rect would fail no other test — this is the correctness gate for the
 // most intricate math in the eggs change.
-//
-// The ring is {100,200,400,300}: w=400, h=300, so the edge boundaries along the
-// perimeter are top=400, right=700, bottom=1100, and the full perimeter is 1400.
 // Each row starts an integer offset on a known edge so `consumed` compares
-// exactly. Rather than assert opaque rect literals, we check the geometric
-// INVARIANT per edge (a top/bottom bar is th tall and hugs the top/bottom side;
-// a left/right bar is th wide and hugs the left/right side), so a future
-// edge-flip or off-by-one fails with a legible message instead of a bare diff.
 func TestPerimSegment(t *testing.T) {
 	ring := sdl.Rect{X: 100, Y: 200, W: 400, H: 300}
 	const th = int32(3)
@@ -490,16 +475,6 @@ func TestPerimSegment(t *testing.T) {
 // sibling drives a creator-name message (ScreenEffects on, ReduceMotion off) so
 // the full drawCreatorEgg runs each measured frame. A non-zero count means a
 // per-frame allocation shipped in the egg draw (fix it, don't loosen the gate).
-//
-// THE ~5% FLAKE THIS USED TO CARRY IS FIXED — see the header in
-// allocgate_test.go. The reading that kept coming back, exactly 1.0/op on the
-// FanatSors arm, was diagnosed correctly here: one event of >= 200 allocations
-// inside the window, not a per-frame cost. What nobody spotted was that the old
-// settle() proved quiescence over 20 frames and then the assert measured 200, so
-// the event cleared the warm-up and failed the gate. allocsPerFrame settles and
-// asserts over the same window and outlasts a one-shot burst; a per-frame
-// allocation still fails on the first reading.
-//
 // DO NOT WEAKEN OR SKIP IT. Every egg path is genuinely alloc-free in the steady
 // state, and the class of bug this catches (a per-frame allocation in a draw
 // body) is one this codebase has shipped more than once.
@@ -615,16 +590,6 @@ func TestGuestEggsAreProceduralAndBounded(t *testing.T) {
 		}
 	}
 	// Continuity across the WRAP, which is the one place the fold is load-bearing.
-	//
-	// THE SEAM IS AT u≈1→0, NOT AT THE FOLD'S OWN APEX. This assertion used to
-	// sample 0.499 against 0.501, which cannot fail: the fold maps 0.501 back onto
-	// 0.499, so the two calls return the identical colour by construction — and an
-	// UNFOLDED straight lerp is smooth at mid-ramp too, so it measured 0 for both
-	// implementations. The discontinuity a straight lerp actually has is where the
-	// caller's clock wraps: rampBase is Mod(t/eggNorthDriftSecs, 1), so u walks off
-	// the top of the ramp and back onto the bottom once every drift cycle, and an
-	// unfolded ramp snaps violet→green there (measured on that mutant: 204,97,255 →
-	// 97,255,104). Sampled at the seam and one step wider, on EVERY channel.
 	for _, seam := range []struct{ before, after float64 }{
 		{0.999, 0.001},
 		{0.98, 0.02},
@@ -674,14 +639,6 @@ const eggAuroraSeamTol = 8
 
 // TestMintHashWindowsAreDisjoint pins the Mint egg's own distinct-salt rule
 // against the three fields that share eggHash.
-//
-// Each field takes FOUR draws per element, so it owns the 4n indices from its
-// salt; overlapping windows mean an element of one field wearing another's lane,
-// size, speed and phase all at once. The flecks shipped at salt 0 — entirely
-// inside the top frost edge's window — which is invisible only because the two
-// spend those numbers on different axes, and would stop being invisible the day
-// somebody gave a fleck a vertical drift. Driven off the caps, so growing a field
-// past its neighbour's salt fails here rather than silently re-correlating.
 func TestMintHashWindowsAreDisjoint(t *testing.T) {
 	// eggHashDrawsPerElement is the four draws every element of every egg field
 	// takes (lane, size, speed, phase) — the width one element occupies.

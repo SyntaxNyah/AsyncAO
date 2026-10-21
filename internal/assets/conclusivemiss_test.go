@@ -39,13 +39,9 @@ func settleMiss(t *testing.T, rig *testRig, prefetch func()) {
 // 404'd base never does. On a roster where most characters ship no char_icon and
 // no emotions/button<N>_off art that is a 404 leaving the client every couple of
 // seconds, indefinitely.
-//
 // Both halves are load-bearing and they pull in opposite directions. The server
 // must see the probes STOP — that is the whole fix. The warning must keep firing
 // — Courtroom.NotifyAssetMissing rides that lane to skip a preanimation that can
-// never arrive, so a memory that also swallowed the report would trade a network
-// storm for every later message with that preanim holding the stage for the full
-// PreanimTimeout.
 func TestConclusiveMissStopsTheProbeButNotTheWarning(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing: every probe 404s
 	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
@@ -114,14 +110,6 @@ func TestConclusiveMissKeysOnBaseAndType(t *testing.T) {
 }
 
 // TestNarrowChainDoesNotSilenceAWiderOne is why missChain carries the alt list.
-//
-// The same base is prefetched with DIFFERENT chains from different call sites —
-// ui/screens.go asks a preview sprite bare, then asks the same base again with
-// the (a)/(b)/bare ladder — and "the bare spelling 404s" says nothing about
-// whether the ladder would. Keying on base alone would let the narrow pass
-// answer the wide one's question, which is the same class of bug as blanking a
-// shared learned-format slot: one asset's verdict applied where it was never
-// established.
 func TestNarrowChainDoesNotSilenceAWiderOne(t *testing.T) {
 	sprite := encodePNG(t, 8, 8, color.RGBA{G: 255, A: 255})
 	cs := newCountingServer(t, map[string][]byte{
@@ -176,15 +164,6 @@ func TestRehearsalMissesAreNotRemembered(t *testing.T) {
 
 // TestFormatPreferenceChangeRetiresTheMemory pins what "exhausted" is relative
 // to, and it is not the base alone.
-//
-// A remembered miss means "every candidate the resolver generated 404'd", and
-// the resolver generates candidates from the format preferences. Change them and
-// that answer was about a list which is no longer the list. This is not a corner
-// case: it is the FIRST thing a user does when sprites look missing — open
-// Settings > Assets and add the format the server actually uses — and the gate
-// sits above the resolver, so a memory that ignored the change would make that
-// setting do nothing, silently and permanently.
-//
 // The scenario is TestManagerPNGOnlyServerWarnsThenFallbacksRecover's, which is
 // how the hole was found: a PNG-only server with fallbacks off warns, then
 // turning fallbacks on loads it without a restart.
@@ -322,22 +301,6 @@ func TestForgetUnderIsScopedToOneOrigin(t *testing.T) {
 // TestEveryPrefetchEntryPointConsultsTheMissGate is the encapsulation test: the
 // seam must not be bypassable, and a prefetch path added later must not be able
 // to quietly reopen the storm.
-//
-// It reflects over the Manager's exported Prefetch* surface rather than naming
-// the methods that exist today — that is the difference between pinning the
-// behaviour and pinning the file. A new PrefetchWhatever that submits a job
-// without consulting the memory fails here on the day it is written, with a
-// message that says what it forgot.
-//
-// WHAT IT MEASURES, AND WHY NOT REQUESTS. The first cut of this test counted
-// requests arriving at the server, and it PASSED for PrefetchSticky and
-// PrefetchRaw while both were ungated: the network client's own 404 cache
-// absorbs a repeat inside its TTL, so no wire traffic proves nothing about
-// whether the pipeline above it ran. Two real gaps sat green underneath that
-// assertion. The pool counter is the honest observable — a gated entry point
-// submits NO job, so Executed+Stale cannot move, and the network cache has no
-// say in it. The request count is still checked, because both costs matter, but
-// it is the weaker of the two and must never be the only one.
 func TestEveryPrefetchEntryPointConsultsTheMissGate(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing
 	rig := newRig(t, network.NewClientNotFoundTTL(0), false)

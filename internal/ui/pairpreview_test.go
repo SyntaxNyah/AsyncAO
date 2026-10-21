@@ -1,26 +1,6 @@
 package ui
 
 // REGRESSION: the Pairing dialog's sprite preview drew outside its own box.
-//
-// Live report, 2026-08-10 (screenshot): the ghost sprite rendered enormous and
-// spilled off the panel onto the courtroom, the music list and the IC bar. The
-// decisive field observation was that setting Offset X to 0 fixed the render —
-// and that Offset X was sitting at 53% without the user having typed it.
-//
-// Two defects, and the second is what supplied the 53:
-//
-//  1. NO CLIP. The ghost is fitted to the stage HEIGHT with its own aspect ratio
-//     (AO2's non-stretch arm, animationlayer.cpp:229-260 — the same rule the
-//     live viewport uses), so a wide sprite is legitimately wider than the narrow
-//     preview column, and the offset slides it further. AO2 survives that because
-//     ui_vp_player_char is a CHILD WIDGET and Qt clips children; nothing clipped
-//     here.
-//  2. THE RESIZE GRIP DRAGGED THE SPRITE. floatGripSz is 16 and the stage runs to
-//     pad (8) short of the panel edge, so the grip's top-left 8x8 quadrant is
-//     inside the stage. floatWinResize consumed the press through the shared
-//     `pressed` flag, but the ghost editor armed its own drag off raw
-//     c.mouseDown — so resizing the Pairing window silently rewrote the pair
-//     offsets to wherever the corner had been dragged.
 
 import (
 	"testing"
@@ -39,23 +19,9 @@ func containedIn(inner, outer sdl.Rect) bool {
 // TestTheGhostOverhangsItsStageAndTheClipCatchesIt is the report, put as the two
 // facts that make the fix load-bearing — and only those two, because an earlier
 // draft of this sweep asserted neither.
-//
-//  1. THE PREMISE. The raw sprite rect really does escape the preview column: a
-//     wide sprite fitted to the stage HEIGHT is legitimately wider than a narrow
-//     column, and the offset slides it further still. That is why a clip is
-//     required rather than tidy. Cropping the GEOMETRY instead is refused
-//     deliberately — the preview would then lie about what the real viewport is
-//     going to show, which is the one job this box has.
-//  2. THE CLIP HOLDS. Driven through clipIntersect, which IS pushClip's own
-//     arithmetic (ui.go), not a copy of it written here: a nested clip may only
-//     ever narrow the region in force, and a disjoint result is clipNowhere.
-//     Replace that rule with a plain "the inner rect wins" and this reddens.
-//
 // What it deliberately does NOT do is assert containment of an intersection with
 // the stage, which is true for every input by construction and cannot fail. The
 // sprite GEOMETRY is pinned next door (TestPairPreviewFitIsHeightBoundAndCentred)
-// and the two brackets by the AST census at the bottom of this file; between the
-// three, each part of the fix has a gate that a mutation actually reddens.
 func TestTheGhostOverhangsItsStageAndTheClipCatchesIt(t *testing.T) {
 	// Stages the pair panel produces at the window sizes the client runs at
 	// (pv = the right column below the numeric rows; pairPanelMinW 440 upward).
@@ -178,11 +144,9 @@ func TestPairOffsetsDefaultToZero(t *testing.T) {
 // the OUTGOING MS back the way a receiving client would rather than assuming the
 // send path was fine. Partner, both offsets and the order all have to survive,
 // unchanged.
-//
 // The order values are the repo's documented gotcha — ^0 is the speaker IN
 // FRONT — and the sibling gates in icbar_flip_test.go pin order and flip; this
 // one exists because the OFFSETS, the field the defect was about, had nothing
-// holding them to the wire at all.
 func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.pairWith = 1

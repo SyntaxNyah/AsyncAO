@@ -1,16 +1,6 @@
 package ui
 
 // THE THEME EDITOR'S PREVIEW, DRIVEN (field batch 9).
-//
-// Every gate here goes through the REAL frame (frameharness_test.go) and the real
-// input path: the button is pressed at the pixels drawEditorHeader publishes, Esc
-// arrives as a key on Ctx, and the demo is advanced by App.Frame rather than by
-// calling driveEditorPreview. That is deliberate — the wiring is what this feature
-// IS. A preview whose drive case were deleted from App.Frame's scene switch, whose
-// Esc rung were deleted from app.go's ladder, or whose draw arm were deleted from
-// drawThemeEditor would still have a perfectly working editorPreview type, and a
-// gate that called those functions itself would never notice.
-//
 // Rule 11's encapsulation gates are at the bottom: one construction site, one door
 // out, and a call-site census that fails if the seam is unwired anywhere.
 
@@ -528,11 +518,9 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 // temp folder: the catalog snapshot startThemeCreate reads to decide where this
 // install may write, and the preferences' custom theme root the subsequent apply
 // resolves the new folder under.
-//
 // Nothing about the create is faked — the funnel, the goroutine, themepack's own
 // CreateFromSidecar, the landing and the apply all run. What is substituted is a
 // machine fact (where this install's themes live), exactly as editorFixtureCatalog
-// substitutes it for the save gates.
 func seedWritableThemeRootForTest(t *testing.T, a *App) string {
 	t.Helper()
 	root := t.TempDir()
@@ -640,13 +628,6 @@ func driveKeyFrame(a *App, key sdl.Keycode) {
 
 // TestPreviewRefusesTheMutationFunnelItself drives editorApply — the ONE place the
 // screen mutates the document — while the demo is up.
-//
-// The storm gate above cannot cover this: every input it fires is already stopped
-// at a surface the demo does not draw, so it stays green with the funnel's refusal
-// deleted. The refusal is reachable all the same, by anything that lands from OFF
-// the input path (the intake polls below are exactly that), and it is the last line
-// between "a view state" and "a mode".
-//
 // The second half is what makes the first half mean something: the very same op
 // lands once the demo is left, so what is being pinned is the STATE's refusal and
 // not an op the document would have rejected anyway.
@@ -684,13 +665,6 @@ func TestPreviewRefusesTheMutationFunnelItself(t *testing.T) {
 
 // TestPreviewHoldsAFinishedFontLandingInsteadOfLosingIt is the other side of that
 // refusal, and it is a defect the refusal CREATED.
-//
-// drawThemeEditor runs the poll cluster ABOVE the preview arm on purpose (a save
-// started before Preview must still land), so a face whose copy finishes during the
-// demo was drained by pollEditorFont, refused by the funnel, and chipped as "the
-// [fonts] table is full" — a lost file, a false reason, and a chip drawn nowhere
-// the author could see it. A finished result is deferred, never dropped (hard rule
-// 7's shape): the job waits and the first editing frame after the demo lands it.
 func TestPreviewHoldsAFinishedFontLandingInsteadOfLosingIt(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -788,13 +762,6 @@ func TestPreviewHoldsAFinishedImageIntakeInsteadOfLosingIt(t *testing.T) {
 // TestThePreviewPassDoesNotEatThePrimarysCharINI pins beginEditorPreviewPass's
 // pinnedPass, which has nothing to do with drawing and everything to do with a
 // channel.
-//
-// drawCourtroom drains App-WIDE single-consumer channels (pollCharINI), and the
-// pass swaps the SESSION state under it — serverKey included. So a demo pass with
-// pinnedPass down receives the live session's char.ini, finds res.key != a.serverKey
-// (the demo's is empty), and returns: the result is consumed and thrown away, for
-// good, leaving the real courtroom on "Loading emotes…" forever. Hard rule 7's own
-// sentence — results are never dropped or stolen.
 func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
@@ -847,14 +814,6 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestLeavingPreviewFreesTheDemosChatTextures pins the release half of the swap.
-//
-// The demo draws through the real chatbox painter, so it builds its OWN
-// render.MessageRaster into its own sessionState; endEditorPreviewPass parks it back
-// into the preview, and exitEditorPreview then drops the pointer. Without a Destroy
-// there, every sdl.Texture that raster holds leaks — one raster's worth per Preview
-// press, unbounded across a session, on a 256 MiB budget (hard rule 4). clearSplit
-// already does exactly this for the pinned tab's parked state; the swap was copied
-// from there and the release has to come with it.
 func TestLeavingPreviewFreesTheDemosChatTextures(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()

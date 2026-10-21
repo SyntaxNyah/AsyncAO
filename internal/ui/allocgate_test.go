@@ -13,38 +13,9 @@ import (
 )
 
 // The measurement every zero-alloc draw gate runs on.
-//
-// WHAT WENT WRONG. These gates used to warm up through a settle() helper that
-// rendered 20-frame batches until one allocated nothing, and then asserted over a
-// 200-frame batch. Two different window sizes, and testing.AllocsPerRun divides
-// the GLOBAL malloc delta by the window and TRUNCATES — so twenty quiet frames
-// never implied two hundred. Anything that allocated fewer than 20 objects per
-// 20-frame batch cleared settle, and the same one-shot event landing inside the
-// 200-frame assert reported 1.0/op and failed the gate.
-//
-// WHAT IT ACTUALLY WAS, measured rather than assumed. Under the full package a
-// settled drawCourtroom reads 85–136/op in the FIRST window after settle and 0 in
-// every window after it — one burst of 17,000–27,000 objects, not a per-frame
-// cost. Run the same fixture alone and 40 consecutive windows read 0 from cold. A
-// control that burns the same wall clock per "frame" and cannot allocate reads 0
-// in every window of the loaded run, so those mallocs are the draw's own goroutine
-// and not a background one leaking into the window. The burst needs the loaded
-// package to appear at all and roughly a second of unrelated work absorbs it,
-// which is the signature of a shared capacity-bounded cache churning until this
-// fixture's working set wins it back — a warm-up. (Which cache is NOT pinned:
-// every instrument fine-grained enough to catch the stack — MemProfileRate=1 —
-// perturbs it out of existence. 80,000 profiled frames caught nothing.)
-//
-// The symptom, for the record: CI red on docs-only commits from 2026-08-10 to
-// 2026-08-29 (33013b3, 8ca21a6, dfd514d), and TestDrawCourtroomEggZeroAlloc
-// flaking at ~5% per arm for far longer.
-//
 // WHY THIS IS NOT LOOSENING THE GATE. A per-frame allocation is in EVERY window by
 // definition, so it can never produce a clean one: allocsPerFrame below still
 // fails it on the first reading. Only an event that is over by the next window can
-// come back 0, and that event is exactly what the gate was never meant to catch.
-// The detection power is identical — truncating division already meant anything
-// under one allocation per frame read 0 — and the false failures are gone.
 
 const (
 	// allocGateFrames is the window a whole-screen gate measures. Named so the
@@ -67,16 +38,9 @@ const (
 // allocsPerFrame reports what one settled frame of draw allocates. It measures
 // windows of frames frames until one comes in at or under budget, and returns the
 // LOWEST reading it saw.
-//
-// A non-zero return therefore means every one of allocGateWindows windows was
-// dirty, which is a per-frame cost and not a warm-up. Callers keep their own
-// failure messages: what they assert has not changed.
-//
 // BLIND SPOT: AllocsPerRun truncates its integer division, so any leak under one
 // allocation per frame reads 0 — an every-4th-frame alloc (0.25/op) or a
 // race-mode sync.Pool drop at ~25% passes forever. Only a constant ≥1-alloc/frame
-// cost is caught. Tightening to an exact runtime.MemStats count is a deliberate
-// decision, not made here.
 func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 	var lowest float64
 	for i := 0; i < allocGateWindows; i++ {
@@ -194,12 +158,9 @@ var wholeScreenDraws = []string{"drawCourtroom", "drawLobby", "driveFrame"}
 // measured; a new gate written the old way — settle-and-assert, or just a bare
 // window — brings the flake straight back with every test here still green,
 // because they would be exercising a helper that gate does not call.
-//
 // It resolves each bare window's SECOND argument, following a local closure
 // (draw := func() { a.drawCourtroom(w, h) }) to its body, and only complains when
 // a whole-screen draw is what that window actually measures. Judging the enclosing
-// function instead would condemn a file for a neighbouring gate that measures one
-// panel — themereportpanel_test.go does exactly that, legitimately.
 func TestWholeScreenGatesGoThroughAllocsPerFrame(t *testing.T) {
 	files, err := filepath.Glob("*_test.go")
 	if err != nil {
