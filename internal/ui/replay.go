@@ -306,7 +306,7 @@ func (a *App) clipInstantReplay() {
 	stem := "asyncao-clip-" + now.Format("20060102-150405")
 	name, _, err := saveSceneRecording(clip, stem)
 	if err != nil {
-		a.pushDebug("instant replay: " + err.Error())
+		a.debug.push("instant replay: " + err.Error())
 		a.warnLine = "Clip failed: " + err.Error()
 		a.warnAt = time.Now()
 		return
@@ -350,7 +350,7 @@ func (a *App) stopRecording() <-chan struct{} {
 	stem := "asyncao-" + stamp
 	name, done, err := saveSceneRecording(rec, stem)
 	if err != nil {
-		a.pushDebug("recording: " + err.Error())
+		a.debug.push("recording: " + err.Error())
 		return nil
 	}
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
@@ -508,7 +508,7 @@ func (a *App) openRecordingsFolder() {
 		return
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		a.pushDebug("recordings folder: " + err.Error())
+		a.debug.push("recordings folder: " + err.Error())
 		return
 	}
 	openInFileManager(dir) // windows→explorer / darwin→open / else→xdg-open (openpath.go)
@@ -767,7 +767,7 @@ func (a *App) recoverReplay(where string) {
 	if r == nil {
 		return
 	}
-	a.pushDebug("replay " + where + " panic: " + fmt.Sprint(r))
+	a.debug.push("replay " + where + " panic: " + fmt.Sprint(r))
 	a.endBundledReplay()
 	a.endReplayWarm() // H5: drop any in-flight pre-warm phase
 	a.replaying = false

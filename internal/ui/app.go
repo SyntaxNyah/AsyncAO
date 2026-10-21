@@ -204,6 +204,12 @@ type env struct {
 	wins wins
 	// keys is the key registry (a leaf service): one method, no state of its own.
 	keys keys
+	// debug is the bounded failure log the overlay draws. DELIBERATELY
+	// CLIENT-GLOBAL, unlike the per-tab IC transcripts: most of what lands in it
+	// has no tab at all (theme apply, extensions seeding, casing detection, the
+	// updater), and triaging the client wants every tab's failures in one stream.
+	// Memory-only (debugLogCap ring, never a file).
+	debug debugSink
 
 	// h is the narrow set of App capabilities a component needs beyond env's
 	// own shared state. Set once in wireComponents; nil in a bare or
@@ -558,17 +564,9 @@ type App struct {
 
 	// --- debug overlay (Settings toggle): bounded failure log ---
 	//
-	// DELIBERATELY CLIENT-GLOBAL, unlike the per-tab IC transcripts (translogs).
-	// It is a CLIENT diagnostic, not a chat record: most of what lands in it has no
-	// tab at all (theme apply, extensions.json seeding, asset casing detection, the
-	// updater), and the entries that do — a connect failure, a disconnect reason —
-	// are read while triaging the client, where seeing every tab's failures in one
-	// stream is the point. Splitting it per tab would hide a background tab's drop
-	// behind a tab switch. It is also memory-only (debugLogCap ring, never a file),
-	// so the unbounded-file-handle concern that drove the transcript split does not
-	// apply here.
-	debugLog   []debugEntry // ring of stamped failure rows, debugLogCap max (see pushDebugAt)
-	lastPktHdr string       // newest server packet header (health line)
+	// The ring itself is env.debug (client-global, like the rationale below says);
+	// these two are the newest server packet header for the health line.
+	lastPktHdr string // newest server packet header (health line)
 	lastPktAt  time.Time
 
 	// --- packet inspector (#333): Debug panel's live packet ring + counts ---

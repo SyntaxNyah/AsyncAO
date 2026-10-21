@@ -54,11 +54,11 @@ func (a *App) uploadEmbeddedMissingno() {
 	}
 	dec, err := assets.DecodeImage(missingnoWebP, false) // static: first frame only (the canonical placeholder is single-frame)
 	if err != nil {
-		a.pushDebug("missingno: embedded placeholder failed to decode: " + err.Error())
+		a.debug.push("missingno: embedded placeholder failed to decode: " + err.Error())
 		return
 	}
 	if err := a.d.Store.UploadPinned(render.MissingKey, dec); err != nil { // UploadPinned releases dec
-		a.pushDebug("missingno: embedded placeholder failed to upload: " + err.Error())
+		a.debug.push("missingno: embedded placeholder failed to upload: " + err.Error())
 	}
 }
 
@@ -131,7 +131,7 @@ func (a *App) pollErrorSprite() {
 	case res := <-a.errorSpriteRes:
 		if res.err != nil {
 			a.errorSpriteErr = res.err.Error()
-			a.pushDebug("Custom missing-sprite image failed to load: " + res.err.Error())
+			a.debug.push("Custom missing-sprite image failed to load: " + res.err.Error())
 			if res.dec != nil {
 				res.dec.Release()
 			}
@@ -141,7 +141,7 @@ func (a *App) pollErrorSprite() {
 		if a.d.Store != nil && res.dec != nil {
 			if err := a.d.Store.UploadPinned(render.MissingKey, res.dec); err != nil { // releases res.dec
 				a.errorSpriteErr = err.Error()
-				a.pushDebug("Custom missing-sprite image failed to upload: " + err.Error())
+				a.debug.push("Custom missing-sprite image failed to upload: " + err.Error())
 			}
 		} else if res.dec != nil {
 			res.dec.Release()

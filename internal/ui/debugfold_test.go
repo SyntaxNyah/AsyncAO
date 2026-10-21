@@ -32,14 +32,14 @@ func TestInterleavedRepeatsFoldIntoOneRow(t *testing.T) {
 	const rounds = 12
 	for i := 0; i < rounds; i++ {
 		now = now.Add(2 * time.Second) // the observed cadence: seconds apart
-		a.pushDebugAt(icPacketLine, now)
+		a.debug.pushAt(icPacketLine, now)
 		now = now.Add(time.Second)
-		a.pushDebugAt(assetMissLine, now)
+		a.debug.pushAt(assetMissLine, now)
 	}
-	if len(a.debugLog) != 2 {
-		t.Fatalf("interleaved repeats must fold to 2 rows, got %d:\n%s", len(a.debugLog), dumpDebug(a))
+	if len(a.debug.log) != 2 {
+		t.Fatalf("interleaved repeats must fold to 2 rows, got %d:\n%s", len(a.debug.log), dumpDebug(a))
 	}
-	for _, e := range a.debugLog {
+	for _, e := range a.debug.log {
 		if e.count != rounds {
 			t.Errorf("row %q folded %d sightings, want %d", e.raw, e.count, rounds)
 		}
@@ -49,7 +49,7 @@ func TestInterleavedRepeatsFoldIntoOneRow(t *testing.T) {
 	}
 	// Newest-last ordering survives folding (the panel draws the ring in order,
 	// and pushDebugAt's early exit depends on it).
-	if a.debugLog[0].at.After(a.debugLog[1].at) {
+	if a.debug.log[0].at.After(a.debug.log[1].at) {
 		t.Error("folded rows must stay ordered by latest sighting")
 	}
 }
@@ -61,13 +61,13 @@ func TestFoldedFloodCannotEvictRealFailures(t *testing.T) {
 	a := testTabApp(t)
 	now := time.Now()
 	const realFailure = "connect failed: dial tcp: connection refused"
-	a.pushDebugAt(realFailure, now)
+	a.debug.pushAt(realFailure, now)
 	for i := 0; i < 4*debugLogCap; i++ {
 		now = now.Add(100 * time.Millisecond)
-		a.pushDebugAt(icPacketLine, now)
-		a.pushDebugAt(assetMissLine, now)
+		a.debug.pushAt(icPacketLine, now)
+		a.debug.pushAt(assetMissLine, now)
 	}
-	for _, e := range a.debugLog {
+	for _, e := range a.debug.log {
 		if e.raw == realFailure {
 			return
 		}
@@ -81,17 +81,17 @@ func TestFoldedFloodCannotEvictRealFailures(t *testing.T) {
 func TestRepeatOutsideTheWindowStartsANewRow(t *testing.T) {
 	a := testTabApp(t)
 	now := time.Now()
-	a.pushDebugAt(assetMissLine, now)
-	a.pushDebugAt(assetMissLine, now.Add(debugFoldWindow/2)) // inside: folds
-	if len(a.debugLog) != 1 || a.debugLog[0].count != 2 {
+	a.debug.pushAt(assetMissLine, now)
+	a.debug.pushAt(assetMissLine, now.Add(debugFoldWindow/2)) // inside: folds
+	if len(a.debug.log) != 1 || a.debug.log[0].count != 2 {
 		t.Fatalf("inside the window must fold:\n%s", dumpDebug(a))
 	}
-	a.pushDebugAt(assetMissLine, now.Add(debugFoldWindow/2).Add(debugFoldWindow+time.Second))
-	if len(a.debugLog) != 2 {
+	a.debug.pushAt(assetMissLine, now.Add(debugFoldWindow/2).Add(debugFoldWindow+time.Second))
+	if len(a.debug.log) != 2 {
 		t.Fatalf("outside the window must start a new row:\n%s", dumpDebug(a))
 	}
-	if a.debugLog[1].count != 1 {
-		t.Errorf("the new row starts at one sighting, got %d", a.debugLog[1].count)
+	if a.debug.log[1].count != 1 {
+		t.Errorf("the new row starts at one sighting, got %d", a.debug.log[1].count)
 	}
 }
 
@@ -102,13 +102,13 @@ func TestDebugRingStaysBounded(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 3*debugLogCap; i++ {
 		now = now.Add(time.Millisecond)
-		a.pushDebugAt(distinctLine(i), now)
+		a.debug.pushAt(distinctLine(i), now)
 	}
-	if len(a.debugLog) != debugLogCap {
-		t.Fatalf("ring holds %d rows, want the %d cap", len(a.debugLog), debugLogCap)
+	if len(a.debug.log) != debugLogCap {
+		t.Fatalf("ring holds %d rows, want the %d cap", len(a.debug.log), debugLogCap)
 	}
-	if a.debugLog[0].raw != distinctLine(3*debugLogCap-debugLogCap) {
-		t.Errorf("oldest surviving row is %q, want the cap-th newest", a.debugLog[0].raw)
+	if a.debug.log[0].raw != distinctLine(3*debugLogCap-debugLogCap) {
+		t.Errorf("oldest surviving row is %q, want the cap-th newest", a.debug.log[0].raw)
 	}
 }
 
@@ -117,13 +117,13 @@ func TestDebugRingStaysBounded(t *testing.T) {
 func TestPushDebugStampsAndCounts(t *testing.T) {
 	a := testTabApp(t)
 	at := time.Date(2026, 8, 9, 2, 5, 32, 0, time.Local)
-	a.pushDebugAt(icPacketLine, at)
-	if want := "02:05:32 " + icPacketLine; a.debugLog[0].text != want {
-		t.Fatalf("single sighting = %q, want %q", a.debugLog[0].text, want)
+	a.debug.pushAt(icPacketLine, at)
+	if want := "02:05:32 " + icPacketLine; a.debug.log[0].text != want {
+		t.Fatalf("single sighting = %q, want %q", a.debug.log[0].text, want)
 	}
-	a.pushDebugAt(icPacketLine, at.Add(time.Second))
-	if want := "02:05:33 " + icPacketLine + "  ×2"; a.debugLog[0].text != want {
-		t.Fatalf("folded sighting = %q, want %q", a.debugLog[0].text, want)
+	a.debug.pushAt(icPacketLine, at.Add(time.Second))
+	if want := "02:05:33 " + icPacketLine + "  ×2"; a.debug.log[0].text != want {
+		t.Fatalf("folded sighting = %q, want %q", a.debug.log[0].text, want)
 	}
 }
 
@@ -133,7 +133,7 @@ func distinctLine(i int) string { return "failure #" + strconv.Itoa(i) }
 // dumpDebug renders the ring for a failure message.
 func dumpDebug(a *App) string {
 	var b strings.Builder
-	for _, e := range a.debugLog {
+	for _, e := range a.debug.log {
 		b.WriteString("  " + e.text + "\n")
 	}
 	return b.String()

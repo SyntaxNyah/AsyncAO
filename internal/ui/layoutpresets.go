@@ -60,7 +60,7 @@ func (a *App) cycleLayoutProfile() {
 	}
 	a.layoutProfileCursor = (a.layoutProfileCursor + 1) % len(names)
 	a.applyProfile(a.d.Prefs.Load().LayoutProfile(names[a.layoutProfileCursor]))
-	a.pushDebug("layout: profile applied from editor banner")
+	a.debug.push("layout: profile applied from editor banner")
 }
 
 // Layout premades + full-state profiles (#34 → A6): flip the whole courtroom
