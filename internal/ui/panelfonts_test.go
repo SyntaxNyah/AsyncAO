@@ -11,6 +11,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
+// fontElemIndex is the position of id in theme.FontElements, or -1. Test-only:
+// the production rows resolve by identifier, never by index.
+func fontElemIndex(id string) int {
+	for i, e := range theme.FontElements {
+		if e == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // TestPanelFontRowsMatchTheElementList is the pin that makes the persisted keys
 // safe. The overrides are stored by AO2 IDENTIFIER, not by index, precisely
 // because theme.FontElements is APPEND-ONLY and its indices are load-bearing —
@@ -21,7 +32,7 @@ func TestPanelFontRowsMatchTheElementList(t *testing.T) {
 	seen := map[string]bool{}
 	for i := range panelFontRows {
 		row := &panelFontRows[i]
-		idx := panelFontElementIndex(row.id)
+		idx := fontElemIndex(row.id)
 		if idx < 0 {
 			t.Errorf("row %q is not an entry in theme.FontElements — a saved override under that key would never apply", row.id)
 			continue

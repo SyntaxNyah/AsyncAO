@@ -1793,9 +1793,6 @@ func emoteGridLayout(r sdl.Rect, cellPx, gapPx [2]int, scale float64) emoteGridM
 	return m
 }
 
-// perPage is how many emote buttons one page of this grid holds.
-func (m emoteGridMetrics) perPage() int { return int(m.cols) * int(m.rows) }
-
 // cellRect is the pixel rect of the n-th cell of a page (0-based, row-major)
 // laid out in r. Draw AND hit-test go through this one function, so a click
 // can never land on a rect the grid didn't draw.
