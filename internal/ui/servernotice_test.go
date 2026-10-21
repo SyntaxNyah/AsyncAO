@@ -2,22 +2,7 @@ package ui
 
 // The gates for the server-notice box (servernotice.go) and for the wrapped body the
 // involuntary-disconnect dialog now shares with it.
-//
-// WHAT THESE ARE FOR. A server that refuses or ends a connection says why, and the
-// message carries the thing you have to act on: a whitelist code, a Discord invite, an
-// appeal link. AO2 puts it in a modal. We put a BD reason on the lobby as ONE clipped
-// label, so the tail of the message — where the code lives — was unreachable, and past
-// some length the label drew nothing at all. Three shapes of gate below:
-//
-//   - ROUTING: a pre-courtroom removal raises the box, with the tail intact.
-//   - LAYOUT: the body never ends silently, and never draws outside the panel.
-//   - FENCING: while the box is up, nothing behind it takes input — and the box's own
-//     buttons still do, which is the same coin's other face (the frame tail has to
-//     fence for the modal and then unfence for it).
-//
 // Where a gate can be driven through App.Frame it is, because the wiring is what broke:
-// a modal that draws but is never reached, or is reached but never fenced for, passes
-// every unit test of its own functions.
 
 import (
 	"strings"
@@ -48,13 +33,9 @@ const (
 
 // TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail is the regression gate for the
 // reported defect, driven through the real drop path.
-//
 // handleInvoluntaryDrop with no room to freeze is the arm a refused handshake lands on
 // (the server answers our join with BD and closes, so there is no courtroom yet). It
 // must now raise the box, attribute it to the server we dialled, and keep the WHOLE
-// reason — the last line especially. The disconnect dialog must NOT open: the two
-// surfaces are mutually exclusive branches, and `disconnectDlg.open ⇒ screen ==
-// Courtroom` is an invariant the frame tail relies on.
 func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	a := froomApp(t)
 	a.room = nil // a drop before the courtroom: char-select, or a refused join
@@ -227,11 +208,9 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 
 // TestTheNoticeBodyNeverEndsSilently is the layout half of the reported bug, measured
 // with the REAL font chain.
-//
 // A body that overflows its row budget must spend its last row SAYING so and pointing
 // at Copy. Silence is the actual defect: the tail of these payloads is the part you
 // need, so a body that just stops looks like the whole message.
-//
 // It runs on the frame harness because Ctx.TextWidth returns 0 with no font loaded —
 // a wrap gate written against a fontless Ctx passes vacuously, every row measuring
 // zero and everything "fitting".
@@ -643,19 +622,9 @@ func TestTheNoticeBoxFreezesTheTabStrip(t *testing.T) {
 
 // TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou drives the first of the two
 // holes the pointer fence structurally cannot cover.
-//
-// fencePointer blanks the MOUSE — clicked, mouseDown, the wheel, and the cursor itself
-// (ui.go) — and leaves the keyboard exactly as it was, so every site that reads a key
-// without going through handleHotkeys needs its own guard. The lobby's arrow-key
-// selection is the worst of them: the box is on screen precisely BECAUSE the selected
-// server refused us, and for a rate-limit refusal (429) redialling is the one action
-// that makes the situation worse.
-//
 // The second half is not decoration, it is the only thing standing between this gate
 // and vacuity — the arm being fenced shipped DEAD. It read c.keyPressed, which
 // HandleEvent can never set to Return (Return is answered with c.enter in an earlier
-// arm of the same switch), so "Enter joins the selected server" has done nothing since
-// it shipped. A fence around dead code passes no matter which way it is written.
 func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -700,20 +669,12 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 
 // TestEnterInTheICFieldIsFencedWithoutEatingTheDraft drives the second hole, on BOTH
 // courtroom layouts, and pins the half that is easy to get wrong while fixing it.
-//
 // BOTH, because the courtroom has two IC fields and only one of them was fenced when
 // this gate was first written. drawCourtroomThemed draws its own field at the theme's
 // ao2_ic_chat_message rect and shares only the send helper with the classic bar, so a
-// guard on one is not a guard on the other — and this was found by mutation, not by
-// reading: the frame fixture is THEMED, so the first version of this gate stayed green
-// with the classic fence deleted because the classic field never drew. The classic arm
-// therefore has to turn the theme layout off to reach the row at all.
-//
 // The fence must sit on the SEND, not on the field. Swallow the keystroke earlier and
 // the line the user typed is gone, which for a wall of IC text is a worse bug than the
 // one being fixed — so the draft has to survive the fenced press and still send on the
-// next one.
-//
 // "/unpair" is the draft on purpose. It is a LOCAL chat command (handleChatCommand), so
 // a send that gets through proves itself by clearing the field and moving pairWith, with
 // no live socket, no wire packet, and no MyCharID deref on a zero-value Session.
@@ -773,17 +734,9 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 // and it covers the two of its six inputs the other wrap gates leave untested: the ROW
 // BUDGET and the truncation MARK. (Width is pinned by the alloc gate above, the font
 // generation by the stale-chain gate.)
-//
-// Rows is the one with a live failure mode. Both modals derive their budget from the
-// window height, so a key that ignored it would keep a fourteen-row layout after a
-// resize into a three-row window, and the draw's own limit would then eat the extra rows
-// SILENTLY — the exact way of losing the tail of a message that this whole feature
-// exists to end.
-//
 // The mark is one step further out, and the type's own comment says why it is a key
 // rather than an argument: today both callers pass the same constant, so it reads as
 // invariant from inside either one, and the day a second marker appears a cache that
-// ignored it would serve one modal's marker from the other's cut.
 func TestEveryWrapInputIsPartOfTheCacheKey(t *testing.T) {
 	var shared paraWrapCache
 	measure := func(s string) int32 { return int32(len(s)) * 4 }
@@ -853,19 +806,9 @@ func TestAnOversizedAttributionCannotOverflowTheHeading(t *testing.T) {
 // TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself is the gate on the two
 // degradation clamps, and it is behavioural on purpose: both of them are arithmetic that
 // looks harmless and fails as "the button is not there".
-//
-// The logical window is the physical one divided by the UI scale, so config.MinWindowH
-// does NOT bound the height this code sees — 150% scale on a short window gets here.
-// Without the absolute floor the window clamp hands back a height smaller than the
-// chrome, and the buttons' y is measured from the panel's BOTTOM, so they climb off the
-// top of the panel. Without the X pin a 560 px panel centred in a 400 px viewport starts
-// at a NEGATIVE x, dragging left-anchored Copy — the button that exists to rescue an
-// access code — off the left edge.
-//
 // One click proves both: it lands on Copy under the clamps and misses it (into the gap
 // between the buttons, or off the row entirely) under either failure. Driven on the real
 // Ctx rather than through driveFrame because the harness drives a fixed 1280x720, and
-// the window size IS the variable under test.
 func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

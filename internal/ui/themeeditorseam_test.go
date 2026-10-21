@@ -1,17 +1,6 @@
 package ui
 
 // THE EDITOR'S FOUR STRUCTURAL SEAMS, DRIVEN (v1.90.0 W7a).
-//
-// The sibling files gate the editor's BEHAVIOUR — a drag moves a box, an undo puts
-// it back, a save lands a file. This one gates the four claims that are load-bearing
-// and yet have no behavioural symptom a fixture would trip over:
-//
-//  1. the canvas IS the live courtroom pass, not a mockup of it;
-//  2. the rails own their own pixels, so one press is never two;
-//  3. the peek is an ALPHA change and never a clip change;
-//  4. every document mutation goes through the one funnel, and unsaved edits survive
-//     a REAL background apply — the frame's own, not a hand-called reclaim.
-//
 // Each is a deletion-catcher: the mutation it answers to is named at the gate, and
 // each one leaves the rest of the suite green when applied.
 
@@ -39,23 +28,6 @@ const editorSeamThemeName = "w7aseamgate"
 
 // TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed is the wave's headline
 // requirement, asked mechanically.
-//
-// "Full-bleed LIVE courtroom preview — the real drawCourtroom themed pass as the
-// canvas, not a mockup" is the sentence the whole screen exists to satisfy, and it
-// is the one thing a screenshot cannot distinguish: a hand-drawn approximation of a
-// courtroom looks like a courtroom. So the gate asks the only witness that cannot be
-// faked. `toolboxThemeRectOn` is armed by drawCourtroomThemed and by nothing else,
-// and drawCourtroom CLEARS it at the top of every frame (screens.go), so its value
-// after one editor frame answers "did the real themed pass run inside this screen's
-// dispatch" and nothing else.
-//
-// THE SECOND HALF IS THE "NOT AN INSET PREVIEW" CLAIM, and it is arithmetic rather
-// than opinion: if the rails reserved space from the canvas, fitDesignCanvas would
-// have been handed a box editRailW*2 narrower and the fitted canvas could not be
-// wider than the gap between them. It is wider, so the rails float OVER the frame —
-// which is what makes the editor 1:1 with the size the theme will play, with no mode
-// hop for pixel work.
-//
 // Mutations it answers to: replacing `a.drawCourtroom(w, h)` in drawEditorCanvas with
 // the geometry arm (or with any mockup); insetting the canvas by the rails.
 func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
@@ -111,20 +83,9 @@ func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestARailPressNeverReachesTheCanvas pins editorCanvasRect's arithmetic.
-//
 // The kit is single-pass and the canvas hit-tests with raw pointIn (it must — the
 // courtroom underneath is fenced, so hovering() answers false everywhere), which
 // means nothing STOPS a press on an inspector button from also selecting whatever
-// the theme parked behind it. editorCanvasRect is the whole defence: the canvas
-// publishes the rect it is actually pressable in, minus the band and both rails.
-// That is overlayfence.go's "publish the rect that is actually painted" rule applied
-// by subtraction instead of by a fence, and a gate is the only thing that keeps it
-// true, because the symptom — one click doing two things — only appears on a theme
-// whose art happens to run under a rail.
-//
-// The fixture builds exactly that theme: the design canvas is centred, so its left
-// edge sits behind the left rail, and the element is parked in that overlap.
-//
 // Mutation it answers to: `editorCanvasRect` returning the whole window.
 func TestARailPressNeverReachesTheCanvas(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
@@ -205,14 +166,6 @@ const (
 
 // TestSpacePeekIsAnAlphaChangeNeverAClip pins the one decision on this screen that
 // was made to CLOSE a bug class rather than to fix a bug.
-//
-// The macOS blank-chatbox hunt established that SDL clip timing is backend-specific
-// — Metal evaluates the clip at USE time, so a device-exact bracket that measured
-// safe under the software renderer collapsed the clip and ate every chat line. A
-// Space-peek implemented as "clip the rails away" is that same shape, on a surface
-// nobody would test on Metal until a user reported the rails had vanished. Peek is
-// therefore an alpha on ONE function, and this gate keeps it there.
-//
 // Mutations it answers to: editorPlate darkening/tinting instead of fading (the
 // peek stops being a peek and the rails just change colour); any editor file
 // reaching for the renderer's own clip.
@@ -327,20 +280,9 @@ func editorSeamCallees(t *testing.T, name string) []string {
 
 // TestUnsavedEditsSurviveARealBackgroundThemeApply is the durability seam driven by
 // the FRAME rather than by a hand-called reclaim.
-//
-// This is the defect the whole document layer was built for, and it is worth the
-// expensive fixture: applies are NOT user-initiated. healTheme re-kicks one on any T1
-// eviction of a theme texture, the texture-filter row kicks one, boot kicks two — and
-// each one does `a.themeSidecar = res.sidecar`. Before the reclaim, a user could nudge
-// a decoration into place, take their hand off the keyboard, and watch it jump back
-// with nothing on screen to say why.
-//
 // Its sibling TestEditsSurviveAThemeReapply calls a.reclaimThemeDoc() itself, which
 // means it stays green if the call is DELETED from pollThemeApply — and greener still
 // if the call is merely MOVED above `a.themeSidecar = res.sidecar`, where it would be
-// overwritten a line later and do nothing at all. Only a real apply, landed by
-// App.Frame's own poll, can tell. That is exactly the gap the frame harness exists to
-// close, and this is the editor's instance of it.
 func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

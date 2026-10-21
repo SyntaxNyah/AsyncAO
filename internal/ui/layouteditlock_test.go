@@ -119,21 +119,6 @@ const layoutEditorBannerText = "LAYOUT EDIT — drag = move, arrows = nudge 1 px
 
 // TestThemedEditorSurvivesAnOpenCourtroomModal is the BLOCKING regression: the themed
 // courtroom could hard-lock.
-//
-// Three return-to-top modals — the timer, the pair popup and the SFX browser — were in
-// the courtroom modal table but NOT in the list the editors closed as they armed. With
-// one of them up, drawCourtroomThemed returned at its modal check, which (unlike the
-// classic twin) carried no editor guard. The consequences compounded:
-//
-//   - drawLayoutEditor never ran: no banner, no Done chip, and its own Esc handler
-//     never fired;
-//   - layoutEditFence had already set c.modalOn, so the modal's own kit buttons were
-//     hovering()-dead;
-//   - the server-tab strip stood down for an editor that was not drawing, and so did
-//     the menu bar;
-//   - and the app-level Esc guard had just been widened to swallow Esc whenever an
-//     editor was armed, closing the last exit.
-//
 // Nothing on screen answered. This test arms the editor with each of the three open
 // and asserts the editor draws, Done is present, and Esc exits — by both routes.
 func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
@@ -221,20 +206,6 @@ func exactlyOneStripPaint(t *testing.T, a *App, w, h int32, beforePass, afterPas
 }
 
 // TestTabStripPaintSiteIsLatchedOncePerFrame pins the frame-level decision.
-//
-// The strip has two draw sites — the courtroom pass (under a layout editor's overlay)
-// and App.Frame's over-everything paint — and exactly one may run per frame. They used
-// to answer INDEPENDENTLY, the in-pass site off the editor flag and App.Frame's off a
-// predicate re-evaluated after the whole screen dispatch, so any mid-frame change made
-// them disagree:
-//
-//   - DISMISS frame (Done, Esc, or a theme lost mid-pass): the in-pass site painted,
-//     the editor then disarmed itself, and App.Frame's gate re-opened and painted the
-//     same strip a SECOND time — over the banner that was still on screen.
-//   - ARM frame from the command palette (which draws inside the courtroom case, AFTER
-//     the in-pass site): the pass had already gone by, and App.Frame's re-test now said
-//     the editor owned it. Nobody painted the strip at all.
-//
 // One latch, taken at the top of the pass and replayed by both sites, makes the two
 // exact complements.
 func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
@@ -323,13 +294,9 @@ func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 // addition, so editBaseFor's subtraction is an EXACT inverse — and a one-pixel drag is
 // a one-pixel move at every scale, not only where the two rounding rules happened to
 // agree.
-//
 // While the map was scaled, the preimage rounded and the forward transform truncated,
 // so the base was not a fixed point: measured at Letterbox 1000x900 (scale 1.4006) a
 // +1,+1 cursor move took the box {460,22,79,22} → {459,23,79,22} — BACKWARDS on X —
-// and +40,+40 landed at +38,+40, a constant −2 px error riding the whole gesture. Crop
-// 900x700 (scale 1.2605) went {410,22} → {409,21}. Native and Stretch round-tripped
-// only at scale 1 and 2, which is why the first fixture could not see any of it.
 func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -387,16 +354,6 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 
 // TestTabStripBoxSurvivesADiscardedDrag is MAJOR 2 in isolation: the gesture whose
 // RELEASE flips parked-ness back off.
-//
-// Parked-ness has an in-flight arm — a drag that has grabbed the strip is a placement
-// in progress — so the layout cache is rebuilt with the parked (canvas) placement the
-// moment the press lands. A gesture that is then DISCARDED at release (a press with no
-// movement, or a move that comes back to where it started) writes no override, so
-// parked-ness goes back to false — and the cache kept the parked box. Measured at
-// Letterbox 1000x900: the editor's box sat at a canvas position while the strip
-// painted in the chrome band, and three further idle editor frames never healed it;
-// only a window, fit, theme or chip-width change did.
-//
 // Both halves of the fix are exercised here: parked-ness is part of the cache key (so
 // it is CORRECT) and the release invalidates (so it is IMMEDIATE).
 func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
@@ -457,13 +414,9 @@ func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 
 // TestTabStripParkedNessIsPartOfTheLayoutCacheKey pins the CORRECTNESS half of MAJOR
 // 2 directly, without leaning on a gesture.
-//
 // Parked-ness selects between two completely different placements — the docked chrome
 // band and a spot on the theme canvas — and its only source is a persisted per-key
 // override, which nothing about the window, the band, the fit, the theme or the chip
-// width reflects. It was NOT in the cache key, so every writer had to remember to
-// invalidate by hand; the two reset paths and restoreLayout did, and the editor's drag
-// release did not. In the key it cannot be forgotten again.
 func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
@@ -503,11 +456,9 @@ func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 // parked-ness in the key. The flag is resolved BEFORE the validity test — it has to
 // be, it is part of the test — so it now runs on every themeLayoutIn call, i.e. every
 // courtroom frame, on the cache-HIT path that the whole design exists to keep cheap.
-//
 // The existing themed whole-screen gate cannot cover this: its fixture's theme has no
 // asyncao_tabbar entry at all, so tabStripThemeParked returns on its first map probe
 // and never reaches the prefs read. This one seeds the key and parks the strip, which
-// is the branch that actually asks the preference layer.
 func TestThemeLayoutCacheHitIsAllocFreeWithASeededTabStrip(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
@@ -707,19 +658,9 @@ func TestSnappedTabStripDragStaysOnTheStrip(t *testing.T) {
 const stripGridDragDY = int32(143)
 
 // TestSnappedTabStripLandsOnTheWindowGrid pins the strip's grid PHASE.
-//
-// Its stored value is canvas-relative, so rounding it rounds against the canvas origin
-// and the grid the user sees moves with the fit mode and the window size. Measured, one
-// pixel of travel from the docked box at screen Y=22: Native 714x760 → 24, Native
-// 1152x864 → 20, Letterbox 1000x900 → 19. One gesture, one widget, three answers, none
-// of them on a line the window has anywhere. Every other step of this key's gesture —
-// base, delta, magnet, clamp — is already in window space, so the grid is now too
-// (snapTabStripScreen), and the landing is a window-grid line in every mode.
-//
 // A magnet flush BEATS the grid, deliberately and unchanged: the two run in that order
 // for every key, and the magnet was already a window-space rule for this one. A run the
 // magnet decided emits a horizontal guide, which is exactly how this test tells the two
-// apart instead of assuming.
 func TestSnappedTabStripLandsOnTheWindowGrid(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

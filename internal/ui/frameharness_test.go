@@ -1,47 +1,7 @@
 package ui
 
 // THE FRAME HARNESS — the one fixture in internal/ui that drives a real App.Frame.
-//
-// WHY IT EXISTS. `grep 'a\.Frame(' internal/ui/*_test.go` had no hits, and that one
-// mechanical fact is the largest single cause of uncaught seams in this package: the
-// functions were tested and the WIRING was not. Every chip's input and paint call
-// site, the poll cluster, the menu bar's two phases, the element pass hook and the
-// theme apply's landing all live inside App.Frame, so a test that calls
-// drawCourtroom (as every gate here did) reaches none of them. Deleting
-// `a.handleThemeErrChipInput(winW)`, `a.pollThemeApply()` or
-// `a.beginThemeFXPass()`'s only call site left the suite green.
-//
-// WHAT IT IS. stageThemedCourtroom — the fixture the alloc gates already use, so
-// the same App, the same renderer, the same settled scene — plus the three
-// dependencies App.Frame dereferences unconditionally (Manager, Pump, Audio) and the
-// latches that keep a headless frame off the network and off the clock. Nothing is
-// stubbed: the frame that runs is the frame the client runs.
-//
-// RULE 11, applied to the harness itself:
-//
-//   - SINGLE RESPONSIBILITY. Two functions with one concern each and no "and":
-//     stageFrameDrivenApp BUILDS an App a frame can run on; driveFrame RUNS one. They
-//     are separate because their lifetimes differ — a fixture is built once and a
-//     frame is driven many times, and a gate that needs ten frames must not rebuild
-//     the world ten times.
-//   - OPEN–CLOSED. OPEN to any gate that needs a real frame; the named concrete
-//     future call sites are the ledger's remaining frame-only rows (the base
-//     browser's memo protocol, the band-chip anchor chain, W7's editor pass). CLOSED
-//     against the existing suite: it adds a fixture and changes no assertion anywhere,
-//     and stageThemedCourtroom itself is untouched, so every alloc gate built on it
-//     measures the same frame it measured before.
-//   - SUBSTITUTABILITY. The harness's whole contract is "a.Frame is the real one".
-//     driveFrame therefore calls App.Frame and nothing else — no re-implementation of
 //     its order, no shortcut through drawCourtroom — and
-//     TestFrameGatesDriveTheRealFrame is the mechanical proof that no gate built on
-//     this fixture quietly swaps one for the other.
-//   - INTERFACE SEGREGATION. driveFrame takes (t, a, n): a count, not a bag of knobs.
-//     Anything a gate wants to vary it varies on the App it was handed, which is the
-//     same surface production code varies.
-//   - DEPENDENCY DIRECTION. The harness depends on internal/ui's own entry point and
-//     on the same internal/assets + internal/render constructors cmd/asyncao uses. It
-//     reaches into nothing, and it defines no type the production code must know about.
-//
 // SDL: skips (never fails) without a video driver, via newCaptureHarness.
 
 import (
@@ -164,16 +124,10 @@ const macroBindIdle = -1
 
 // driveFrame runs ONE real frame at the harness geometry, in the event loop's own
 // order: Ctx.BeginFrame, then App.Frame.
-//
 // BOTH HALVES, and the order is load-bearing rather than tidy. cmd/asyncao's loop
-// calls BeginFrame before it polls events, and BeginFrame is what clears the
-// per-frame input snapshot AND ZEROES THE OVERLAY FENCE REGISTRY — "a pass that
-// returns early still starts the next frame with a clear registry" (overlayfence.go).
 // A harness that called App.Frame alone would accumulate every frame's fences
 // forever, so from frame two onward the menu bar's own strip fence would cover the
 // band's three chips and every one of them would hit-test dead. That is not a
-// property of the client; it is a property of half a loop.
-//
 // It is the only way a gate advances the harness, and that is the point: a gate that
 // reached for drawCourtroom instead would be back to testing the function and not the
 // wiring, which is the whole failure this file exists to end.
@@ -219,15 +173,7 @@ func driveTypedText(a *App, s string) {
 }
 
 // driveHotkey runs one real frame carrying a Ctrl chord.
-//
-// ON c.hotkey, NEVER c.keyPressed, and that is the whole reason it exists: HandleEvent
 // routes every non-clipboard Ctrl combination to c.hotkey and returns (#96 configurable
-// hotkeys), so a gate that stamped keyPressed would be driving a key the client never
-// delivers and would pass against a dispatcher that does not exist. Seeded between
-// BeginFrame (which zeroes hotkey and re-reads the modifier state from SDL) and
-// App.Frame, exactly where the event loop seeds it; ctrlHeld is set for the same
-// fidelity, because BeginFrame derives it from SDL's mod state, which the dummy driver
-// leaves clear.
 func driveHotkey(a *App, key sdl.Keycode) {
 	a.ctx.BeginFrame(frameHarnessDt)
 	a.ctx.hotkey = key
@@ -236,14 +182,6 @@ func driveHotkey(a *App, key sdl.Keycode) {
 }
 
 // driveEnter runs one real frame carrying a RETURN keypress.
-//
-// ON c.enter, NEVER c.keyPressed, and HandleEvent is the authority rather than my
-// preference: its key-down switch answers K_RETURN/K_KP_ENTER with `c.enter = true`
-// (ui.go) and only reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm, so
-// keyPressed can never hold Return. A gate that stamped keyPressed would be pressing a
-// key no keyboard can produce — which is exactly how the lobby's own "Enter joins"
-// shipped dead. Seeded between BeginFrame (which clears enter) and App.Frame, where the
-// event loop seeds it.
 func driveEnter(a *App) {
 	a.ctx.BeginFrame(frameHarnessDt)
 	a.ctx.enter = true
@@ -276,16 +214,9 @@ func driveUntilThemeApplied(t *testing.T, a *App) {
 
 // TestTheFrameHarnessReallyDrivesAFrame proves the fixture is not a decoration: one
 // call to driveFrame must leave behind the marks only App.Frame makes.
-//
-// Each assertion names a DIFFERENT region of the frame, so the gate fails loudly if
-// the harness is ever quietly rewired to a screen draw:
-//
 //   - lastFrameDrawn is stamped at the top of Frame and nowhere else;
 //   - the menu-bar latch is taken by menuBarFrame (phase 1), which sits ABOVE the
 //     screen dispatch and which no drawCourtroom call reaches;
-//   - themeFXFrame is advanced by beginThemeFXPass, which rides the element pass;
-//   - the themed branch really ran, so the gates below are measuring the layout a
-//     theme renders rather than the classic fallback.
 func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -327,15 +258,7 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 // `return sdl.Rect{}, false` unconditionally and the suite stayed green, because the
 // only geometry gate t.Skip()s on exactly that condition and the visibility gate
 // asserts nothing but themeErrChipActive().
-//
 // So this drives real frames and asks the two questions a user would:
-//
-//  1. IS IT THERE — the chip's label reaches the label cache during App.Frame, which
-//     means drawMenuBar's `a.drawThemeErrChip(w)` really ran with a rect it accepted.
-//  2. DOES IT WORK — a click at its centre, resolved by App.Frame's own
-//     handleThemeErrChipInput call (pre-screen, above the strip's fence), opens the
-//     debug log and acknowledges the refusal.
-//
 // Mutations it answers to: `return sdl.Rect{}, false` at the top of themeErrChipRect;
 // deleting `a.drawThemeErrChip(w)` from drawMenuBar; deleting
 // `a.handleThemeErrChipInput(winW)` from App.Frame.
@@ -406,11 +329,8 @@ const clockHarnessSpeedPct = int16(250)
 // `a.applyThemeClocks(res.sidecar)` — a call the suite could delete and stay green,
 // because both clock gates call applyThemeClocks themselves and the shared fixture
 // assigns a.themeSidecar by hand without ever running pollThemeApply.
-//
 // `[clock.N]` was in the same parsed-documented-never-invoked state `[overrides]`
 // shipped in for four waves, and this is the shape that catches it:
-// TestThemeApplyRunsTheOverridesTier's, one level up — the whole path from the
-// preference to the pool, landed by a REAL FRAME.
 func TestThemeApplyLoadsTheClockPoolThroughAFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -480,11 +400,9 @@ func formatClockHarnessSpeed() string {
 // compile-time expression: beginThemeFXPass rides INSIDE refreshElementConditionsFrom,
 // so a band that painted without one would run on the previous pass's ReduceMotion
 // answer, on slots nobody swept and on last frame's resolved conditions.
-//
 // It is frame-driven because the ordering only exists inside a frame: the pass opens
 // at the top of drawCourtroomThemed's element work and the three bands paint after it,
 // which is a fact about App.Frame's dispatch and about nothing smaller.
-//
 // The mutation it answers to: delete `a.beginThemeFXPass()` from
 // refreshElementConditionsFrom. The stamp then never advances, so every painted
 // element is seen at a pass number that did not move.

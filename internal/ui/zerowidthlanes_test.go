@@ -1,24 +1,9 @@
 package ui
 
 // Gates for the zero-width sidechannel's DISPLAY boundary.
-//
-// AsyncAO transmits sprite styles, profiles, reactions and status as an invisible
-// run of zero-width runes appended to an IC/OOC body (courtroom/spritestyle.go).
-// The receiver deliberately keeps msg.Message literal so a recording replays the
-// same marker, and hands the chatbox a separately-decoded clean lane
-// (Courtroom.currentText). Every OTHER surface that turns a wire body into text a
-// human reads needed its own copy of that strip and did not have one, so the codec
-// runes reached the log — where they counted against the line cap, rode into the
-// clipboard and the URL scan, and walked the row's font pick off the primary face
-// so an occasional line drew in a stray family.
-//
-// The rule these gates hold: STRIP wherever a wire body becomes a DISPLAY string,
-// KEEP it wherever it stays a wire record (demofile.go, replay.go, makerSave).
-//
 // The four gates are deliberately different in kind — behavioural for what the
 // user sees, source-structural for the seams a unit test cannot reach (App
 // methods), and one cross-package harvest that keeps the codec alphabet and the
-// font predicate from drifting apart.
 
 import (
 	"go/ast"
@@ -112,14 +97,9 @@ func codecRunes(t *testing.T) []rune {
 // encoderRunes is codecRunes' BEHAVIOURAL twin: the union of every rune the real
 // encoder actually emits, gathered by running courtroom.SpriteStyle.EncodeMarker over a
 // spread of field values.
-//
 // It exists because the AST harvest has a blind spot it cannot see past. codecRunes
 // matches the declarations named zwStart and octalSyms; add a SECOND sentinel for a new
 // frame type — say zwStartV2 = 0x2065 — and the harvest still finds 1 sentinel and 8
-// symbols, every gate stays green, and U+2065 is genuinely NOT in isInvisibleRune
-// (ui.go covers 0x2060-0x2064 and 0x2066-0x2069; 0x2065 is the hole between them). The
-// original bug would return under a green suite. Only running the encoder sees it.
-//
 // The payload packs THREE bits per rune, so the spread has to vary the low-order colour
 // and percent bytes — flags alone never exercise all eight octal digits.
 func encoderRunes(t *testing.T) map[rune]bool {
@@ -227,16 +207,9 @@ func TestDisplayLanesStripTheZeroWidthSidechannel(t *testing.T) {
 
 // TestTheStripTakesTheBodyAndNeverTheName pins the half of the rule that is easy to
 // get backwards, and that the first cut of this fix DID get backwards.
-//
-// StripSpriteStyle is gated on the U+2060 sentinel but then deletes the whole nine-rune
-// alphabet, three of which (U+200B/200C/200D) are ordinary text — a ZWJ is what holds an
-// emoji cluster together. So it does not distribute over concatenation: run over a
 // composed "<name>: <body>", one speaker's BODY marker supplies the gate and the
-// deletion then eats codec-alphabet runes out of the NAME. Two things broke at once:
 // the name came apart on screen, and the stored speaker stopped being a substring of
-// the line it is stored parallel to, so Ctx.logRowSplit's strings.Index missed and the
 // bold + tinted name span silently vanished for every line that player sent.
-//
 // The substring property is the one to assert, because it is what logRowSplit actually
 // requires — of both logs, through both of their seams.
 func TestTheStripTakesTheBodyAndNeverTheName(t *testing.T) {
@@ -306,13 +279,9 @@ func TestStoredLinkComesFromTheStoredText(t *testing.T) {
 
 // TestIsInvisibleRuneCoversTheWholeZeroWidthCodec is the drift catcher behind the font
 // fix, and the one gate that spans the two packages.
-//
 // pickFont may ignore a rune the face lacks ONLY when isInvisibleRune says it draws
 // nothing. The codec picks its runes for a different reason — that they pass an
 // arbitrary AO server — so the two sets are maintained independently and nothing but
-// this test makes them agree. If the codec grows a ninth symbol outside
-// isInvisibleRune's ranges, one style-change message silently walks a whole log row
-// onto a stray font again, and no other test in the tree would notice.
 func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 	runes := codecRunes(t)
 	if len(runes) != 9 { // the sentinel plus the eight data symbols
@@ -378,14 +347,6 @@ func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 
 // TestPickFontIgnoresInvisibleRunesWhenChoosingAFace pins the render-side half of the
 // fix directly on the production picker.
-//
-// The bug: coverHasAll demanded a real cmap glyph for EVERY rune, and no ordinary text
-// face has one for the codec's zero-width symbols, so a single marker rune disqualified
-// the primary face and threw the whole row onto whatever came later in the chain. The
-// fix has to satisfy two things at once, which is why coverScan returns two values:
-// the PICK ignores invisible runes, and the covered flag stays HONEST (false here), so
-// the raster gate still takes the per-glyph path rather than blitting .notdef.
-//
 // Hermetic: pickFont only compares and returns the font pointers, never dereferences
 // them, so empty sentinels stand in for real faces and this runs with no SDL at all.
 func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
@@ -464,16 +425,9 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	// string this client has not drawn before at this (set, scale) — so this is not a
 	// per-frame cost; it is the cost of every FIRST sighting of a line, which for a
 	// busy log is every line. The reused sfnt buffer is what makes zero possible.
-	//
-	// BOTH exits are measured. The early return (a face covers the visible runes) and
-	// the fall-through (nothing does, so the last entry is handed back) walk different
-	// amounts of the chain, and only the fall-through scans every cover in the set.
-	//
 	// Measured through allocsPerFrame, not a bare AllocsPerRun window: that window
 	// counts the WHOLE process, so a background burst under two concurrent
 	// `go test ./internal/ui` runs read 92/op here (2026-10-20) with no per-call
-	// allocation present. A real per-call allocation is in every window, so the
-	// retry cannot hide one.
 	marked := "abc" + marker // concatenated OUTSIDE the measured closure
 	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, marked) }); n != 0 {
 		t.Errorf("pickFont allocated %v times per call on the early-return path", n)
