@@ -6,7 +6,6 @@ package assets
 import (
 	"fmt"
 	"image"
-	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -176,29 +175,9 @@ type ResolvedAsset struct {
 	Learned bool
 }
 
-// ErrAllFormatsMissing reports that every candidate format 404'd. The UI
-// surfaces it as a visible warning naming the asset and formats tried
-// (spec §4: "enable fallbacks or ask the server to ship .webp").
-type ErrAllFormatsMissing struct {
-	Base  string // URL base without extension
-	Type  AssetType
-	Tried []string // extensions probed, in order
-}
+// preferredExtFor named the modern format the warning nudged content packs
+// toward. It went with ErrAllFormatsMissing: nothing constructs that error (the
+// resolver falls through to the next tier and records a miss instead), so the
+// type, its Error() and this helper were dead — deadcode + `git grep -w` at the
+// tip found no constructor anywhere, tests included.
 
-func (e *ErrAllFormatsMissing) Error() string {
-	return fmt.Sprintf("assets: %s not found as %s (type %s); enable fallbacks or ask the server to ship %s",
-		e.Base, strings.Join(e.Tried, ", "), e.Type.Name(), preferredExtFor(e.Type))
-}
-
-// preferredExtFor names the modern format the warning nudges content packs
-// toward.
-func preferredExtFor(t AssetType) string {
-	if t.IsAudio() {
-		return config.ExtOpus
-	}
-	if t == AssetTypeCharIcon || t == AssetTypeMisc {
-		// Icons and misc art (chatbox skins) are png by convention.
-		return config.ExtPNG
-	}
-	return config.ExtWebP
-}
