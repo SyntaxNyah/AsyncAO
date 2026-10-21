@@ -34,27 +34,9 @@ const (
 	// answerable after the overlay moves on (rule §17.4 — the ring is capped, not
 	// a leak). Each entry is one LocalFetcher: a string slice and a hashed origin,
 	// nothing paged in, so the ceiling is bytes.
-	//
-	// Four is sized off what can actually still be holding a stale base. A base
-	// only survives a mount change inside a live scene or a PARKED TAB's URL
-	// builder (ui/tabs.go activateTab does not re-mint), so the reachable
-	// generations are "the ones the user made while those tabs sat in the
-	// background" — folder attaches happen one at a time in a settings dialog, not
-	// in bursts. Four covers a full editing session with room to spare and still
-	// evicts, so a user who reconfigures mounts all afternoon does not accumulate
-	// fetchers for folders they detached hours ago.
 	localOriginHistoryCap = 4
 	// conclusiveMissCap bounds the session's exhausted-chain set (rule §17.4 —
 	// see missSet for what it is and why the 404 cache could not be it).
-	//
-	// Sized off the case that produced it: a large character roster where most
-	// entries ship neither a char_icon nor emotions/button<N>_off art. One absent
-	// icon per character on a two-thousand-name roster, plus the ~60 button cells
-	// (on and off) of every character whose emote grid the user opens, plus the
-	// stray background and sound, all fit — so a whole session on such a server
-	// settles at zero repeat probes instead of churning the set. At roughly 150
-	// bytes an entry that is ~1.2 MiB against the 256 MiB budget.
-	//
 	// Overflow is a safety valve, not a design point: it drops the oldest eighth,
 	// and each dropped key costs at most one more pipeline pass before it is
 	// recorded again.
@@ -283,46 +265,9 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 
 // localSourceFor picks the mount fetcher a local:// URL was MINTED under, or nil
 // when no configured source claims that origin.
-//
-// The origin is not decoration: LocalFetcher hashes the whole mount list into it
-// (local.go NewLocalFetcher) so two mount configurations occupy disjoint cache
-// keyspace, exactly like two asset hosts. That makes the origin a GENERATION
-// stamp — attaching or detaching a folder mints a new one — and a Fetcher only
-// ever answers URLs under its own.
-//
-// Before this, a mid-session mount change stranded the client: the UI re-minted
-// its URL builder onto the NEW origin (ui/app.go rebuildAssetOrigin) while a
-// local-mode Manager's source stayed the LocalFetcher built at startup, so every
-// freshly-built URL came back "is not under local origin" until the user
-// restarted. The overlay pointer was already being re-pushed on every mounts
-// change — it was simply never read in local mode. Consulting it by ORIGIN fixes
-// both directions at once and keeps the separation structural:
-//
-//   - the CURRENT mount set (the overlay, re-pushed on every change) serves the
-//     URLs minted after the change, so content added mid-session resolves;
-//   - the mount set a still-held URL was minted under (a local-mode Manager's
-//     own source) keeps serving it, so a scene already on stage does not blink
-//     out — and its bytes stay cached under the origin they actually came from.
-//
-// Those two alone leave a hole one generation wide, and the field report walks
-// straight into it: a URL builder is PER-TAB session state and the UI does not
-// re-mint it on a tab switch (ui/tabs.go activateTab), so after a SECOND mount
-// change a parked tab still holds generation-2 URLs while the overlay is on 3
-// and the fixed source is on 1 — neither claims them, and that tab is stranded
-// exactly the way the whole session used to be. localRetired closes it: the
-// overlay's predecessors stay answerable for a bounded number of generations, so
-// any base minted recently enough to still be on screen resolves.
-//
-// This does NOT weaken the origin scheme, which is the point of the whole
-// mechanism: every fetcher still answers ONLY URLs under its own origin, bytes
-// are still cached under the origin they came from, and two mount
-// configurations still occupy disjoint keyspace. All that changes is how many
-// generations remain reachable at once.
-//
 // Overlay first: it is the newest mount set, and when nothing changed every
 // origin here is equal so the order cannot matter. Cheap (two atomic loads and a
 // handful of prefix compares against a cap-bounded slice) and only ever reached
-// for a local:// URL.
 func (m *Manager) localSourceFor(url string) Fetcher {
 	if ov := m.localOverlay.Load(); ov != nil && strings.HasPrefix(url, ov.BaseURL()) {
 		return ov
@@ -350,19 +295,6 @@ func (m *Manager) localSourceFor(url string) Fetcher {
 // empty mount set should be passed as nil, not an empty LocalFetcher (an empty
 // LocalFetcher answers every URL with a conclusive 404, which is wrong for
 // "cannot serve").
-//
-// It is meaningful in LOCAL mode too, and that is not a widening of the feature:
-// the overlay is simply the CURRENT mount set, and localSourceFor picks whichever
-// source owns the URL's origin. A local-mode Manager whose mounts never change
-// installs an overlay with the SAME origin as its own source, so routing is
-// unchanged; one whose mounts DID change can finally serve the URLs the UI
-// re-minted (see localSourceFor).
-//
-// The overlay it REPLACES is retired rather than dropped: URLs minted under it
-// may still be on screen (or parked on a background tab, whose URL builder the
-// UI does not re-mint), and a fetcher is the only thing that can answer its own
-// origin. Bounded at localOriginHistoryCap generations, newest first.
-//
 // Render thread only for the write (it is the mounts/pref change path); the
 // published slice is never mutated afterwards, so readers on pool workers need
 // no lock.
@@ -657,17 +589,8 @@ func missChainFor(base string, alts []string, t AssetType) missChain {
 
 // IsConclusiveMiss reports whether an ALT-LESS prefetch of base was already
 // probed to exhaustion this session — i.e. whether Prefetch would do anything.
-//
 // It exists for the drawing side. A cell that will never be filled should not
-// hold the frame pump awake waiting for it (ui/app.go demandAsset), and asking
-// here is how the UI learns that without duplicating the Manager's knowledge of
-// what was tried. Alt-less because every one of those call sites goes through
-// Prefetch; a chain's answer is not this question's to give.
-//
 // Nil-receiver safe, like every method on this memory and like missSet itself:
-// without a Manager the answer is "nothing is known missing", which is what a
-// headless UI test wants and is the truth in any case. One contract for the
-// whole quartet, so no call site has to remember which of them needs a guard.
 func (m *Manager) IsConclusiveMiss(base string, t AssetType) bool {
 	if m == nil {
 		return false
@@ -678,12 +601,9 @@ func (m *Manager) IsConclusiveMiss(base string, t AssetType) bool {
 // probeListGen is the configuration the miss memory is valid for: change the
 // format order or the fallback toggles and every remembered "we tried
 // everything" was an answer about a list that is no longer the list (missSet).
-//
 // Read from the preferences on every consult rather than cached here, because
 // the mutations that move it are user-driven and rare while the consults are
 // per-cell and hot — an atomic load is cheaper than any arrangement for being
-// told. Zero without preferences (headless rigs): a constant generation just
-// means nothing ever retires early.
 func (m *Manager) probeListGen() uint64 {
 	if m.prefs == nil {
 		return 0
@@ -693,13 +613,9 @@ func (m *Manager) probeListGen() uint64 {
 
 // ForgetConclusiveMisses empties the session's exhausted-chain memory, so every
 // asset that 404'd anywhere becomes probeable again.
-//
 // This is the explicit half of the deal missSet makes: it never expires on a
 // timer, so something has to say when the answer might have changed. The
 // blanket form is for the changes that are not confined to one server — the
-// byte sources (SetMountLayer / SetLocalOverlay call it themselves, so no
-// caller can forget) and the user's Settings button. A reconnect uses the
-// scoped form below.
 func (m *Manager) ForgetConclusiveMisses() {
 	if m == nil {
 		return
@@ -745,16 +661,6 @@ func (m *Manager) ConclusiveMissCount() int {
 // skipExhausted is what a prefetch does INSTEAD of a pipeline pass once the
 // chain is known exhausted: nothing on the wire, but the §4 warning still
 // fires.
-//
-// Reporting is deliberately not skipped with the probing. The warning lane is
-// not only a fetch outcome — Courtroom.NotifyAssetMissing rides it to skip a
-// preanimation that can never arrive (ui/app.go drainWarnings), so swallowing
-// the repeat would hold the stage for the full PreanimTimeout every time after
-// the first that the same absent preanim is played. The missing COUNTER is not
-// bumped, because this pass found nothing out: the count answers "how many
-// assets did we discover are absent", and letting a demand cadence inflate it
-// is what made it useless to read while this bug was live.
-//
 // Tried is empty here on purpose rather than remembered per key: the extension
 // list was already logged in full when the miss was discovered, and the lane
 // already carries nil from resolveExact, so consumers handle it.
@@ -960,11 +866,9 @@ func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
 // for tooling (the scene-archive exporter) that needs the resolved file itself,
 // not a decoded texture. It learns the winning format so a repeat call is a
 // single-probe hit. ok=false when every candidate is missing.
-//
 // Because export and replay both resolve through this same candidate logic, the
 // relative path an asset is written to (resolvedURL minus origin) is exactly the
 // path replay will later request — symmetry by construction (no hand-built
-// paths, no pre-seeded format table needed).
 func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
 	if base == "" || !t.Valid() {
 		return "", nil, false
@@ -986,34 +890,6 @@ func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
 // bounded packaging/report pass (contentjob.go's probe, the export loader's
 // seed) — NOT the live render path. The difference is the miss policy for an
 // UNLEARNED host:
-//
-//   - Learned host: try the learned format FIRST (one probe). A HIT returns
-//     immediately — the fast single-probe path a manifest-seeded or single-format
-//     host takes. A MISS falls through to the full walk rather than being honored
-//     as a terminal miss: the learned entry may have been won opportunistically by
-//     a sibling asset earlier in THIS pass (one shared per-(host,type) slot), and
-//     honoring it would strand a mixed-format sibling at the wrong format (see the
-//     WHY block on the method body). Confirming true absence across every format is
-//     the diagnostic path's job; the extra probes are all 404-TTL-cached.
-//   - Unlearned host (no manifest, or the manifest lacks this type): walk the
-//     FULL configured chain (the type's format order + its legacy fallback
-//     chain, deduped) instead of the zero-fallback single format, and
-//     RecordSuccess the winner so the very next ResolveRaw/warm of the same host
-//     is learned-first (a re-report or an export right after the report probes
-//     once, not the whole chain again).
-//
-// WHY the zero-fallback pillar doesn't apply here: that pillar protects the
-// LIVE render hot path — one network probe per asset, no speculative format
-// storm competing with the session's traffic. This is a user-triggered
-// diagnostic/packaging pass whose whole POINT is truth over probe count: a
-// server that "definitely has" a .gif/.png sprite must be findable even though
-// the client would never stream it that way live. The walk is still exactly one
-// network probe per candidate, and every 404 is cached by the 404-TTL layer +
-// collapsed by singleflight (FetchRaw → the same T2/T3/source pipeline), so a
-// repeat pass over the same scene re-probes nothing. The learned-first branch
-// above means a host whose learned format HITS is single-probed; only an unknown
-// or learned-but-missing asset walks the chain (the latter is how a mixed-format
-// sibling recovers from another sibling's opportunistically-learned format).
 func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool) {
 	if base == "" || !t.Valid() {
 		return "", nil, false
@@ -1021,25 +897,6 @@ func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool
 	host := hostOf(base)
 	// Learned host → try the learned format FIRST (the fast, single-probe path a
 	// manifest-seeded or single-format host takes). A HIT returns immediately.
-	//
-	// A MISS deliberately does NOT stop here — it falls through to the full walk
-	// below. This is the mixed-format-honesty case: the learned entry may have
-	// been won OPPORTUNISTICALLY by a sibling asset earlier in this same pass
-	// (ResolveRaw/ResolveRawFull's RecordSuccess writes one shared per-(host,type)
-	// slot), not authoritatively from a manifest. On a no-manifest host whose
-	// assets carry MIXED per-asset formats — charA only .gif, charB only .png —
-	// whichever probes first learns its format; honoring that as a terminal miss
-	// for the OTHER asset would 404 it at the wrong format and falsely report a
-	// real file Missing, nondeterministically by worker order. The learned table
-	// can't tell manifest-authoritative from walk-opportunistic (both go through
-	// RecordLearned), so the diagnostic path treats a learned MISS as "probe the
-	// rest of the chain to confirm" rather than "it isn't there." Confirming true
-	// absence across every format is exactly the diagnostic path's job; the
-	// zero-fallback pillar (one probe, honor the miss) protects only the LIVE
-	// render path, which never calls this method. Every re-probe here is one
-	// network probe per candidate, cached by the 404-TTL layer + collapsed by
-	// singleflight, so the walk after a learned miss adds no wire traffic once the
-	// first sibling has probed the chain.
 	if ext, ok := m.resolver.Learned(host, t); ok {
 		url := base + ext
 		if data, err := m.FetchRaw(context.Background(), url); err == nil && len(data) > 0 {
@@ -1196,23 +1053,8 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 // rememberExhausted records a chain that came back empty from every spelling
 // and every format, so the next demand for it costs a map lookup instead of a
 // pipeline pass (missSet).
-//
 // It holds both rules for when a 404 is NOT a finding, because both are
 // judgements about the pass rather than about the set:
-//
-//   - OFFLINE. Rehearsal mode makes netFetch answer ErrAssetNotFound for every
-//     candidate without asking anyone (see netFetch), so recording those would
-//     carry rehearsal's silence into the live session and blank assets that were
-//     only ever absent because the network was closed. The resolver refuses to
-//     learn formats from that same silence for the same reason.
-//
-//   - THE LIST MOVED UNDER US. startGen is the probe-list generation this pass
-//     began with. A pass that walked the old list and lands after the user
-//     changed the format preferences knows nothing about the new one, and
-//     recording it would tag an obsolete verdict as current — precisely what the
-//     generation exists to prevent, just through a narrower window. Dropping the
-//     record costs one more pipeline pass; keeping it would cost the asset for
-//     the rest of the session.
 func (m *Manager) rememberExhausted(k missChain, startGen uint64) {
 	if m.offline.Load() {
 		return
@@ -1247,10 +1089,6 @@ func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (d
 	// that exists in the learned format as missing (the "every emote button
 	// renders the same icon" report on a non-default-format host). Instead
 	// BuildFullListCandidates returns the format list WITHOUT touching the table.
-	// If a fallback format answers, walkCandidates' RecordSuccess re-learns it
-	// via a single old-valid -> new-valid CAS (a genuine repack heals here). If
-	// nothing answers, the asset is simply absent — and absence says nothing
-	// about the host's formats, so the learned entry is left exactly as it was.
 	cands = m.resolver.BuildFullListCandidates(base, t, host)
 	rest := make([]string, 0, len(cands.URLs))
 	for _, url := range cands.URLs {
@@ -1335,12 +1173,9 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 			// Opt-in thumbnail store: every character sprite that decodes leaves a
 			// tiny low-q stand-in behind (ThumbCache gates on its own enable and
 			// Store is a non-blocking enqueue, so this is free when off).
-			//
 			// NEVER for pack bytes. ThumbCache is a PERSISTENT disk cache keyed by
 			// BASE — the server's URL — so storing here would write the user's own
 			// art to disk under the server's identity, where it outlives the pack and
-			// keeps showing as that server's cold-load stand-in after the folder is
-			// gone.
 			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
 				d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
 				// Store once, from the frame-0 delivery (the progressive partial
@@ -1358,14 +1193,6 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 // SetMountLayer installs (or clears, with nil) the local-pack layer consulted
 // before the network. Safe from the render thread mid-session: readers load the
 // atomic pointer and never lock (rule 5).
-//
-// Installing a layer is the user asserting they have files the server did not
-// serve, so it drops the session's exhausted-chain memory with it — supplying a
-// missing asset is the whole reason to add a pack, and the prefetch gate sits
-// ABOVE the layer, so a remembered miss would shadow exactly the files that were
-// just made available. Done here rather than at the call sites for the same
-// reason ui/mountlayer.go forgets the texture store's negative caches inside
-// rescanLocalPacks: a caller that skips it fails silently.
 func (m *Manager) SetMountLayer(l *MountLayer) {
 	m.ForgetConclusiveMisses()
 	m.mountLayer.Store(l)
@@ -1375,15 +1202,6 @@ func (m *Manager) SetMountLayer(l *MountLayer) {
 func (m *Manager) MountLayer() *MountLayer { return m.mountLayer.Load() }
 
 // activeMountLayer returns the layer to consult for this pass, or nil.
-//
-// THE NIL CHECK COMES FIRST, and that ordering is the whole no-mounts contract:
-// with no local mounts configured — the overwhelmingly common case — the entire
-// feature costs ONE atomic load and a predicted branch. No index is built, no
-// goroutine runs, no directory is walked, no allocation happens, and no extra
-// probe is issued. Testing localMode or archiveSrc first would spend a second
-// load on every user who has never opened the Settings page.
-// ActiveMountLayer returns the current mount layer, or nil if none is active or
-// local-only mode is enabled. Exported for sidecar file access (loop points .txt).
 func (m *Manager) ActiveMountLayer() *MountLayer {
 	return m.activeMountLayer()
 }
@@ -1408,17 +1226,9 @@ func (m *Manager) activeMountLayer() *MountLayer {
 
 // serveFromMount answers base from the user's local mounts, delivering under
 // deliverBase, and reports whether it did.
-//
-// IT RETURNS NO ERROR, ON PURPOSE. That is what makes "a pack failure is never a
-// server failure" structural instead of conventional: there is no expressible way
-// for a pack read error to reach walkCandidates' pass-aborting default arm, so
-// one unreadable file — a yanked USB mount, an EACCES, a file deleted after
-// indexing — falls through to the network instead of killing the whole pass.
-//
 // A read error deliberately does NOT quarantine: it is environmental and usually
 // transient, and stickily disabling a pack that recovers would be worse than
 // re-reading it. Only a DECODE failure quarantines, because that is a
-// deterministic property of the bytes (see QuarantinePack).
 func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t AssetType) bool {
 	key, data, ok := m.packBytes(l, base, t)
 	if !ok {
@@ -1437,14 +1247,6 @@ func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t Asse
 
 // packBytes is the shared pack lookup: it walks the pack's format list for base
 // and returns the winning INDEX KEY plus its bytes.
-//
-// It does exactly four things — resolve the rel, walk candidates, skip
-// quarantined entries, read — and deliberately NOTHING else. No learning, no
-// caching, no counters, no delivery. That is what lets both the render path
-// (serveFromMount, which then caches and delivers) and the tooling path
-// (ResolveRawLayered, which must do neither) share one implementation without
-// the tooling path inheriting side effects that would poison the server's
-// learned formats or disk cache.
 func (m *Manager) packBytes(l *MountLayer, base string, t AssetType) (key string, data []byte, ok bool) {
 	idx := l.Index()
 	if idx == nil || !idx.acquire() {
@@ -1485,7 +1287,6 @@ func (m *Manager) packBytes(l *MountLayer, base string, t AssetType) (key string
 // because a char.ini is not a format family — its URL is already exact, so
 // walking PackFormatList over it would only manufacture nonsense keys
 // (char.ini.webp).
-//
 // Same four things and nothing else — resolve the rel, skip quarantined entries,
 // read, return — so both the synchronous reader (FetchRawLayered) and the warm
 // path (PrefetchRaw's early-out) share one implementation without either
@@ -1515,29 +1316,7 @@ func (m *Manager) packExactBytes(l *MountLayer, url string) ([]byte, bool) {
 
 // FetchRawLayered is FetchRaw for the text assets a content pack legitimately
 // ships — char.ini above all, and misc/<folder>/effects.ini beside it.
-//
 // WHY IT EXISTS AT ALL (issue #72). The pack layer was wired into the probe path
-// (resolveChain) and the exact DECODE path (resolveExact), but never into the raw
-// text lane, so a mounted base served a sprite maker's art and then read their
-// character's emote list, showname, blips, chatbox skin, scaling and idle pose
-// off the SERVER. Art from one base, metadata from another, is not a
-// half-working feature — it is a character that looks right and behaves like
-// somebody else's.
-//
-// It is a SEPARATE method rather than a flag inside FetchRaw for the reason
-// ResolveRawLayered is: FetchRaw writes T2 AND T3 under the passed URL, and the
-// callers that must NOT see a pack (the extensions.json manifest fetch, the
-// autoindex listings, the downloader's deliberate read-from-the-server) keep the
-// unlayered method by name rather than by remembering to pass false.
-//
-// THE PACK IS CONSULTED BEFORE T2, like the exact decode path (resolveExact) and
-// for the same reason: a server copy cached earlier this session must not beat
-// the file the user just edited on disk. Pack bytes are then returned WITHOUT
-// being cached anywhere — no T2 even under the local:// key, no T3. A char.ini is
-// a couple of KiB read once per character per session (every call site dedupes:
-// charMetaCache, previewChar, the emote list's own latch), and a cache here would
-// only add a way for a rescan to serve a stale ini back — the precise complaint
-// this method exists to answer.
 func (m *Manager) FetchRawLayered(ctx context.Context, url string) ([]byte, error) {
 	if l := m.activeMountLayer(); l != nil {
 		if b, ok := m.packExactBytes(l, url); ok {
@@ -1550,23 +1329,6 @@ func (m *Manager) FetchRawLayered(ctx context.Context, url string) ([]byte, erro
 
 // ResolveRawLayered is ResolveRaw for tooling that should see the user's local
 // packs — the content report and the scene exporter.
-//
-// It is a SEPARATE method rather than a flag threaded through ResolveRaw, and
-// that separation is the entire safety argument. ResolveRaw calls
-// resolver.RecordSuccess (which persists through prefs.RecordLearned) and
-// bottoms out in FetchRaw, which writes T2 AND T3 under the http URL where
-// skipDisk offers no protection. Routing pack bytes through either would teach
-// the SERVER host a format its files do not use and leave pack bytes on disk
-// under the server's identity — the v1.61.0 / v1.87.2 regression class, only
-// worse because it would persist across sessions.
-//
-// So the pack arm here does none of that: it reads and returns. Only the
-// fall-through to the server touches the normal machinery, which is correct,
-// because those bytes really are the server's.
-//
-// fromPack reports which arm answered, so callers can label the result honestly
-// — a recipient's experience depends on knowing an asset came from the sender's
-// own folders and not from the server.
 func (m *Manager) ResolveRawLayered(base string, t AssetType) (url string, data []byte, fromPack, ok bool) {
 	if base == "" || !t.Valid() {
 		return "", nil, false, false
@@ -1590,12 +1352,9 @@ func (m *Manager) PackCovers(base string) bool {
 // QuarantinePack marks a pack entry whose bytes failed to DECODE, so the next
 // demand skips it and the server's copy is fetched instead. url is the pack
 // transport URL from DecodedAsset.URL / AudioAsset.URL.
-//
 // Returns false for a URL that is not this layer's — the layer was swapped, or
 // the URL belongs to an archive replay or a mount overlay whose origin carries a
 // different mount-set hash. A false return means the caller must record NOTHING:
-// bytes that are provably not the server's must never negative-cache the
-// server's base. Render thread only.
 func (m *Manager) QuarantinePack(url string) bool {
 	l := m.activeMountLayer()
 	if l == nil {
@@ -1622,14 +1381,6 @@ func (m *Manager) Thumbs() *ThumbCache { return m.thumbs }
 // demand refetches clean bytes instead of re-promoting the same corrupt blob
 // forever. url is the FULL fetch URL (extension included) that produced the
 // corrupt payload — the exact key T2/T3 store under (never the sprite base).
-//
-// Called from the render thread's decode-error path: T2's onEvict is
-// memory-only (byte accounting, no render callback), and disk.Delete never
-// touches the disk on this goroutine — it enqueues onto the single async
-// writer — so this stays off both the render-thread SDL rule and the no-sync-
-// disk-I/O rule. Only NON-transient (corrupt-payload) failures may call this;
-// a transient network failure never saw the bytes, so there is nothing to
-// purge (see pump.go).
 func (m *Manager) PurgeCorrupt(url string) {
 	if url == "" {
 		return

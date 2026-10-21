@@ -1,28 +1,6 @@
 package ui
 
 // THE EDITOR'S DOCUMENT (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7.
-//
-// ONE concern: "what the editor is editing, and the only way to change it."
-//
-// WHY A DOCUMENT LAYER EXISTS AT ALL. W6 left the hazard written down at its own
-// site (layoutnudge.go's nudgeThemeElement): a.themeSidecar is REPLACED WHOLESALE
-// by pollThemeApply (`a.themeSidecar = res.sidecar`), and applies are not
-// user-initiated — healTheme re-kicks one on any T1 eviction of a theme texture,
-// the texture-filter row kicks one, boot kicks two. So every unsaved element edit
-// silently evaporated, with nothing on screen to say why. The document is what
-// makes edits durable: while the editor owns a theme, the document's model is the
-// authoritative one, and reclaimThemeDoc re-installs it after every apply.
-//
-// ONE MUTATION PATH, AND IT IS NOT OPTIONAL. themeDoc.apply is the only function
-// in the package that writes a field of a theme.Element belonging to the edited
-// document, and it RETURNS the op it performed with `before` filled in from the
-// live model. A field therefore cannot be edited without producing its own inverse
-// — not by discipline, but because the write and the inverse are the same line.
-// TestOnlyTheDocumentUsesTheFieldTables and
-// TestEveryDocumentMutationGoesThroughTheApplyFunnel are the censuses that keep
-// it that way, and TestEveryInspectorFieldIsUndoable proves the inverse really
-// inverts by hashing the serialised document before and after.
-//
 // SDL-FREE BY SHAPE. Nothing here draws, measures text or touches a texture; the
 // screen (themeeditor.go) does all of that. The split is what lets every gate in
 // this file run without a renderer.
@@ -48,13 +26,9 @@ const (
 
 	// editSlotRowPresent is the opSlotRect payload's "an [overrides] row for this
 	// key already existed" flag, carried in the b[0] lane.
-	//
 	// ONE BIT, AND IT IS LOAD-BEARING. Without it an undo can only put the NUMBERS
 	// back, not the row: a drag that created the theme's first override on a widget
 	// and was then undone would leave behind a row restating what the AO2 tier
-	// already says — a diff in the author's file for an edit the user took back.
-	// editValue is a union whose lanes are the writer's business (themeeditorop.go
-	// says so), so the flag lives here, beside the only two functions that read it.
 	editSlotRowPresent uint8 = 1
 )
 
@@ -141,16 +115,6 @@ const (
 	editFieldNoDecimate
 
 	// Identity (v1.90.0 W8). APPENDED, at the END, per this enum's own rule.
-	//
-	// editFieldElemID was deliberately ABSENT through W7b, and the reason is worth
-	// keeping now that it is here: an element's id is its SECTION SUFFIX — the writer
-	// emits `[element.<id>]` and no key carries it — and INIDoc had no way to move a
-	// section, so a rename would have APPENDED a second section for the same element
-	// and left the first behind: a file that reads back as TWO elements, on a save the
-	// user asked for. W8 is the wave that owns moving bytes around, so it landed
-	// theme.INIDoc.RenameSection and the one funnel allowed to drive it
-	// (theme.Sidecar.RenameElement, which moves the model and the header as one act).
-	// The setter below calls exactly that; nothing else in this package may.
 	editFieldElemID
 
 	// editFieldCount sizes the get/set tables — fixed arrays indexed by field, never
@@ -390,13 +354,9 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	// the only thing that can move both as one act. Assigning e.ID here would leave
 	// the carrier's header on the old name, and the next save would APPEND a second
 	// section: a file that reads back as two elements (see editFieldElemID).
-	//
 	// The error is dropped HERE and refused THERE: editorWriteStringField asks the
 	// same funnel first and shows the reason as a chip, because a setter cannot say
 	// no — the op is already recorded by the time it runs. What is left at this point
-	// is an id that has already been accepted once, so the only way this fails is a
-	// document that changed underneath a replayed op, and the honest answer to that
-	// is to leave the model alone.
 	editFieldElemID: func(d *themeDoc, e *theme.Element, v editValue) {
 		_ = d.side.RenameElement(e.ID, d.str(v.s))
 	},
@@ -455,28 +415,18 @@ type themeDoc struct {
 	name string
 	side *theme.Sidecar
 	// live is the APPLIED design map — a.themeRects itself, not a copy.
-	//
 	// It is here because an [overrides] edit has to land in TWO places to mean
 	// anything: the row (which is what gets saved) and the resolved geometry (which
 	// is what the next frame draws). foldSidecarOverrides runs on the theme-apply
-	// GOROUTINE, over a map nothing else can see yet, so an edit that wrote only the
-	// row would not move a pixel until the user switched themes and back — the
-	// "live preview, no Apply button" requirement, failed silently.
-	//
 	// It is REBOUND rather than captured: pollThemeApply replaces a.themeRects
 	// wholesale, so the map a document opened over is a dead object after any
 	// background apply. bindLive is called from the two places that know — the open
-	// path and the reclaim.
 	live map[string]theme.Rect
 	// baseLive is the resolved geometry as it stood when the editor OPENED, and
 	// baseElems / baseOv are the model as it stood then.
-	//
 	// They are what "exit without saving puts it back" is made of, and they are a
 	// snapshot rather than a replay of the undo ring on purpose: the ring is capped
 	// (themeEditUndoCap), so past 128 ops a replay would restore MOST of the
-	// document and say nothing about the rest. A snapshot cannot be partly right.
-	// baseLive doubles as the answer to "what did this widget's rect resolve to
-	// before we wrote a row for it", which is what undoing a row's CREATION needs.
 	baseLive  map[string]theme.Rect
 	baseElems []theme.Element
 	baseOv    []theme.KeyRect
@@ -488,14 +438,9 @@ type themeDoc struct {
 	baseBind  []theme.KV
 	// typeSigApplied is typeSig() as of the last theme apply this document caused —
 	// i.e. the tables the SDL_ttf faces on screen were resolved from.
-	//
 	// It exists because a save must be able to answer "did the TYPE change?" without
 	// asking "did anything change?". Geometry and colour are re-baked live by
 	// editorApply's invalidate and the art is re-planned live by editorSyncArt
-	// (themeeditorart.go), but a [fontbind] row is only resolved into real faces by a
-	// theme apply — and an apply re-anchors a.themeAt and purges the text cache, so
-	// kicking one for a rect nudge restarts every animated element in the theme.
-	//
 	// TWO WRITERS, both of which have just made it true: newThemeDoc (the editor opens
 	// over the APPLIED theme) and applyThemeAfterSaveIfTypeChanged (which kicks the
 	// apply in the same breath). It is never set anywhere an apply did not happen.
@@ -546,12 +491,6 @@ func newThemeDoc(name string, sc *theme.Sidecar) *themeDoc {
 }
 
 // bindLive points the document at the applied design map.
-//
-// TWO NAMED CALL SITES, both in themeeditor.go: armThemeEditor (open) and
-// reclaimThemeDoc (after a background theme apply replaced the map). It is not a
-// setter anyone else may call — a document bound to a map some other subsystem owns
-// would be the second-writer shape the sidecar's own deleted Doc() accessor had.
-//
 // The FIRST bind takes the baseline; later ones do not, because a re-bind means the
 // applied map was rebuilt underneath an editing session, not that the session
 // started again.
@@ -626,28 +565,6 @@ func (d *themeDoc) read(t editTarget, f editField) (editValue, bool) {
 }
 
 // editApplyResult is what themeDoc.apply says about a request.
-//
-// THREE ANSWERS, NOT TWO, and the third one is a shipped defect written down. A bare
-// ok=false conflated "the model already says that" with "a cap or a lock stopped
-// me", and the screen has to tell them apart: editorApply chips a refusal on the
-// rail for editStatusMs, so under one bit EVERY frame of a real human drag that
-// holds still — and every frame a drag sits against clampDesignRectToCanvas — posted
-// "a cap or a lock is in the way" on the wave's headline interaction, naming a limit
-// that was not there. Design §3.3 says a refusal must name the offender; it says
-// nothing that licenses inventing one.
-//
-// The distinction lives HERE, at the mutation, rather than in a second predicate the
-// screen could ask beforehand: "would this change anything" and "did this change
-// anything" answered by two functions is two chances to disagree about equality, and
-// the disagreement would be silent.
-//
-// ONE PRODUCER AND ONE CONSUMER, and both are already fenced: apply is the only thing
-// that returns one, and TestEveryDocumentMutationGoesThroughTheApplyFunnel forbids any
-// file but themeeditor.go from calling apply at all — so this cannot become a status
-// code half the package branches on. The two behaviours it exists for are pinned from
-// opposite sides (TestHoldingAWidgetStillNeverCriesRefused that a no-op is silent,
-// TestAGenuineCapRefusalStillChips that a bound is not), which is what collapsing it
-// back to a bool has to break.
 type editApplyResult uint8
 
 const (
@@ -660,32 +577,13 @@ const (
 	// code actually produces it, that is a NAMED bound — theme.OverrideCap
 	// (applySlotRect), theme.ElementCap (insertAt) or the full undo graveyard
 	// (graveSlot, insertAt's missing body) — which is why the chip names a cap.
-	//
-	// NARROWED DELIBERATELY (W7b). This used to read as though refusal MEANT "a named
-	// bound said no", and applyAdd's own arm quietly disagreed: insertAt also fails for
-	// an out-of-range target index, which is a stale op rather than a limit. The
-	// promise this constant makes is therefore the weaker, true one — "the document
-	// refused, and the caller must say so out loud" — and the CAP is a property of the
-	// three arms that raise it, stated where they raise it. A status code whose doc
-	// comment claims more than its producers deliver is how a chip ends up naming a
-	// limit that was not there, which is the exact defect editApplyResult exists for.
 	applyRefused
 	// applyDone: the model moved, and op carries its own inverse.
 	applyDone
 )
 
 // apply performs one mutation and RETURNS ITS OWN INVERSE.
-//
-// THE ONE MUTATION PATH. It reads the current value into op.before before writing
-// op.after, so the completed op is simultaneously "what happened" and "how to undo
-// it", and there is exactly one code path for both directions (revert calls write
-// with op.before). A caller cannot edit a field and forget to record it, because
-// the edit IS the record.
-//
 // Anything but applyDone means nothing changed, and a no-op must not reach the ring:
-// an undo step that does nothing is a keypress the user spends and sees no result
-// from, which reads as a broken undo. Which KIND of nothing is editApplyResult's
-// whole reason for existing.
 func (d *themeDoc) apply(op themeEditOp) (themeEditOp, editApplyResult) {
 	switch op.kind {
 	case opElemField:
@@ -724,11 +622,6 @@ func (d *themeDoc) apply(op themeEditOp) (themeEditOp, editApplyResult) {
 // mediaRowValue / mediaRowOf are the ONE encoding of a [media] row, a pair for the
 // same reason fontRowValue / fontRowOf are: four fields packed in one order and
 // unpacked in another compiles and is silently wrong.
-//
-// It rides fontRowSep (U+001F) for the reason that constant documents — INIDoc
-// refuses control characters in a value, so no field can contain the separator and
-// the encoding cannot be ambiguous for any row the reader would accept.
-//
 // AN EMPTY ID ENCODES TO "", which is the table's own "no row" value: it is what a
 // removal writes and what an append undoes to, so the two need no extra flag.
 func mediaRowValue(m theme.MediaEntry) string {
@@ -1054,12 +947,9 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 		// field arm follows, and here it also means a plain CLICK on a widget (press,
 		// no movement, release) never writes a row. Marking a theme edited because
 		// somebody selected a box would be a diff nobody asked for.
-		//
 		// AND IT IS NOT A REFUSAL EITHER, which is the half that shipped wrong: every
 		// frame of a drag that holds still lands here, as does every frame a drag sits
 		// against clampDesignRectToCanvas, so answering "refused" put a four-second
-		// "a cap or a lock is in the way" chip on the rail for the most ordinary
-		// gesture in the editor. See editApplyResult.
 		return op, applyNoChange
 	}
 	op.before = editValueSlotRect(cur, hadRow)
@@ -1299,14 +1189,6 @@ func (d *themeDoc) buried(v editValue) (theme.Element, bool) {
 // v names. IDENTITY IS THE INDEX (theme.Element's own doc comment), so a removal
 // renumbers every element after it — which is exactly why an op that outlives a
 // structural change is not replayable, and why the ring is reset on theme change.
-//
-// THE CARRIER LOSES THE SECTION TOO, and it did not until W9. The writer edits the
-// lossless document the reader kept, so an element taken out of the model and
-// nowhere else is re-emitted from its own surviving [element.<id>] section on the
-// next save and read straight back in — a delete that looked like it worked until
-// the theme was reopened. theme.Sidecar.RetireElementSection is the narrow act
-// (one named id, never a prune); the removal happens at WRITE time, and insertAt
-// cancels it, so undoing a delete still restores the file byte-identically.
 func (d *themeDoc) removeAt(t editTarget, v editValue) (theme.Element, bool) {
 	idx, ok := t.elemIdx()
 	if !ok || d.side == nil || idx < 0 || idx >= len(d.side.Elements) {
@@ -1352,23 +1234,6 @@ func (d *themeDoc) insertAt(t editTarget, v editValue) bool {
 // rebaseline re-takes the snapshot restoreBaseline restores to. ONE CALLER, and it
 // is the only event that may move the baseline: landEditorSave, after a write landed
 // (themeeditorsave.go).
-//
-// WHY "DISCARD" MEANS "BACK TO THE LAST SAVE" AND NOT "BACK TO WHEN I OPENED THIS".
-// The baseline used to be taken once, at open, and nothing moved it — so
-// edit → Save → edit → Back → Back left MEMORY at the pre-save document while DISK
-// held the save. Two states for one theme: the file on disk is the theme, the model
-// in memory is what the courtroom keeps drawing (closeThemeEditor drops the document,
-// not the model), and they disagreed until the next theme apply happened to read the
-// file back. The user's own words for the gesture are "throw away what I have not
-// saved", and that is what this makes true.
-//
-// typeSigApplied is not touched here and must not be: its one writer after open is
-// applyThemeAfterSaveIfTypeChanged, which runs in the same breath as this and sets it
-// only when it actually kicks an apply. Re-taking it here would claim an apply that
-// never happened. The tables it signs are the same tables this just snapshotted, so
-// after a save the baseline, the model, the file and the signature all agree — which
-// is the property the old shape lost.
-//
 // ALL OF IT OR NONE OF IT, exactly like restoreBaseline: a baseline where the
 // elements had moved on but the type tables had not is a discard that half-works.
 func (d *themeDoc) rebaseline() {
@@ -1392,27 +1257,9 @@ func (d *themeDoc) rebaseline() {
 // restoreBaseline puts the document back exactly as it stood at the BASELINE — the
 // model AND the resolved geometry. The baseline is the editor's open state until a
 // save lands, and the last save after that (see rebaseline).
-//
-// IT IS THE EXIT-WITHOUT-SAVING PATH, and it is deliberately not an undo replay.
 // The ring is capped, so replaying it would restore most of a long session and stay
 // silent about the rest; a snapshot is all-or-nothing, which is the only honest
 // answer to "throw my changes away". It also cannot fail part-way: three
-// assignments, no I/O, no validation — the document it produces is one that was
-// already live, so it is saveable by construction.
-//
-// IT IS THE RETIRE SEAM'S SECOND EXIT, and for one wave it was an uncovered one.
-// A delete has two halves — the model's and the CARRIER'S (removeAt's note) — and
-// the second is deferred to the next write as a pending retirement. insertAt
-// cancels it, because the per-element undo is one of the two ways an element comes
-// back; this is the other, and it restored the model while leaving the retirement
-// standing. The consequence outlives the session: delete, then "Back, Back", and
-// the very next Sidecar.Bytes still strips the author's [element.<id>] lines from
-// where they were written and re-emits the section canonically at the end of the
-// file. Element declaration order is reload order, so a DISCARD silently reordered
-// the theme and dropped that one section's key order and comments — and it reaches
-// disk from three places (the editor's own save, internal/themepack's copy and its
-// create), because a.themeSidecar and d.side are the same object and
-// closeThemeEditor drops only the editor.
 func (d *themeDoc) restoreBaseline() {
 	if d == nil || d.side == nil {
 		return
