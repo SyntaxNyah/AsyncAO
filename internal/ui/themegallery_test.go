@@ -126,15 +126,30 @@ func TestPresetThumbCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	lN, sN := pairAt(presetThumbCap)
 	c.get(lN, sN)
 
-	if !c.holds(l0, s0) {
+	if !thumbHolds(&c, l0, s0) {
 		t.Fatal("the most recently used entry was evicted — the cache is not an LRU, and scrubbing back up re-bakes")
 	}
-	if c.holds(l1, s1) {
+	if thumbHolds(&c, l1, s1) {
 		t.Fatal("the LEAST recently used entry survived an eviction — something else was thrown away instead")
 	}
 	if c.n != presetThumbCap {
 		t.Fatalf("the cache holds %d entries after an eviction, want %d", c.n, presetThumbCap)
 	}
+}
+
+// thumbHolds reports residency WITHOUT touching the LRU clock. Test-only: it
+// reads the cache's internals directly (it must not call get(), which would bake
+// the miss the eviction gate is measuring).
+func thumbHolds(c *presetThumbCache, l, s *theme.Preset) bool {
+	if l == nil || s == nil {
+		return false
+	}
+	for i := 0; i < c.n; i++ {
+		if c.e[i].layout == l.ID && c.e[i].style == s.ID {
+			return true
+		}
+	}
+	return false
 }
 
 // TestTheThumbnailShowsTheLayoutItIsFor pins that the miniature is derived from

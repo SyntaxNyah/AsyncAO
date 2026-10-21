@@ -139,26 +139,6 @@ func (c *presetThumbCache) get(l, s *theme.Preset) *presetThumb {
 	return &c.e[slot]
 }
 
-// holds reports whether a pair is resident WITHOUT touching the LRU clock. It is
-// a test seam and it is here rather than in the test file for the reason every
-// other seam in this package is: reading c.e/c.n from outside would be a second
-// reader of the cache's internals, and the first change to the layout would leave
-// the test asserting over a shape nothing else has.
-//
-// It must not use get(): asking through the front door would BAKE the miss it was
-// sent to detect, and the eviction gate would then measure its own probe.
-func (c *presetThumbCache) holds(l, s *theme.Preset) bool {
-	if l == nil || s == nil {
-		return false
-	}
-	for i := 0; i < c.n; i++ {
-		if c.e[i].layout == l.ID && c.e[i].style == s.ID {
-			return true
-		}
-	}
-	return false
-}
-
 // oldest is the LRU victim. Linear over a fixed array; see the type's comment.
 func (c *presetThumbCache) oldest() int {
 	victim := 0

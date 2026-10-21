@@ -20,6 +20,10 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+// gridPerPage is how many emote buttons one page of this grid holds. Test-only:
+// the production draw path derives it from cols*rows where it needs it.
+func gridPerPage(m emoteGridMetrics) int { return int(m.cols) * int(m.rows) }
+
 // writeThemeDesign fabricates a theme dir holding only a courtroom_design.ini.
 func writeThemeDesign(t *testing.T, design string) *theme.Theme {
 	t.Helper()
@@ -141,7 +145,7 @@ func TestEmoteGridNegativeSpacingFloored(t *testing.T) {
 			t.Fatalf("gap %v → pitch %d,%d: the column/row division would trap",
 				gap, g.cellW+g.gapX, g.cellH+g.gapY)
 		}
-		if g.cols < 1 || g.rows < 1 || g.perPage() < 1 {
+		if g.cols < 1 || g.rows < 1 || gridPerPage(g) < 1 {
 			t.Fatalf("gap %v → empty grid %+v", gap, g)
 		}
 	}

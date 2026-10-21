@@ -20,3 +20,11 @@ func withExeDataRoot(t *testing.T) string {
 	t.Cleanup(func() { setExeDataRoot(old) })
 	return dir
 }
+
+// setExeDataRoot is the test-only writer for the seam; production only reads it.
+func setExeDataRoot(root string) {
+	exeDataMu.Lock()
+	exeDataRoot = root
+	downloadsRootMemo = ""
+	exeDataMu.Unlock()
+}

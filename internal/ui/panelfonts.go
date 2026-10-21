@@ -7,7 +7,6 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // Per-panel font and size, chosen by the USER rather than by a theme.
@@ -238,12 +237,4 @@ func (a *App) panelFontPlaceholder(el themeFontElem) string {
 	return "the client's own font"
 }
 
-// panelFontElementIndex is the position of id in theme.FontElements, or -1.
-func panelFontElementIndex(id string) int {
-	for i, e := range theme.FontElements {
-		if e == id {
-			return i
-		}
-	}
-	return -1
-}
+// panelFontRows is the Settings → Fonts row table.

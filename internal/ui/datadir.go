@@ -33,10 +33,5 @@ func exeDataDir() (string, error) {
 }
 
 // setExeDataRoot points every exe-adjacent path at root and drops the downloads
-// memo built from the previous root. Tests use it through withExeDataRoot.
-func setExeDataRoot(root string) {
-	exeDataMu.Lock()
-	exeDataRoot = root
-	downloadsRootMemo = ""
-	exeDataMu.Unlock()
-}
+// memo built from the previous root. Test-only (datadir_test.go), so it lives in
+// the test file: the production path only ever reads the root.
