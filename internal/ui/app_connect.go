@@ -132,7 +132,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	})
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
-		a.pushDebug("connect failed: " + err.Error())
+		a.debug.push("connect failed: " + err.Error())
 		// A refusal the server EXPLAINED gets the notice box, same as a BD reason:
 		// the explanation is how you get in (a Discord invite to ask for a whitelist
 		// entry, an access code), and the lobby line is one row that cannot hold it.
@@ -663,7 +663,7 @@ func (a *App) pumpConnection() {
 	if err := a.sess.SendErr(); err != nil {
 		reason := "connection lost: " + err.Error()
 		a.connErr = reason
-		a.pushDebug("disconnected: " + reason)
+		a.debug.push("disconnected: " + reason)
 		a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 		return
 	}
@@ -694,7 +694,7 @@ func (a *App) pumpConnection() {
 					reason = err.Error()
 				}
 				a.connErr = reason
-				a.pushDebug("disconnected: " + reason)
+				a.debug.push("disconnected: " + reason)
 				a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 				return
 			}
@@ -812,7 +812,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// desync is on the wire/server; if it matches but the player list still
 			// shows the wrong char, it's in how the roster reports it.
 			if ev.Int >= 0 && ev.Int < len(a.sess.Chars) {
-				a.pushDebug(fmt.Sprintf("server assigned char_id=%d (%s)", ev.Int, a.sess.Chars[ev.Int].Name))
+				a.debug.push(fmt.Sprintf("server assigned char_id=%d (%s)", ev.Int, a.sess.Chars[ev.Int].Name))
 			}
 			a.enterCourtroom()
 		case courtroom.EventOOC:
@@ -998,7 +998,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
-			a.pushDebug("disconnected: " + ev.Text)
+			a.debug.push("disconnected: " + ev.Text)
 			// #60: KK/KB/BD surface here as "Kicked: …" / "Banned: …" — play the
 			// matching feedback sound (cooldown-gated, so an auto-reconnect retry
 			// loop can't machine-gun it) before the session tears down. The audio
@@ -1025,7 +1025,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventDebug:
 			// Protocol-level diagnostics (unhandled headers, dropped MS):
 			// the room has no use for these — debug overlay only.
-			a.pushDebug("server: " + ev.Text)
+			a.debug.push("server: " + ev.Text)
 			continue
 		}
 		if a.recActive { // M16: tap the scene event stream for a replay recording
@@ -1255,7 +1255,7 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 			}
 		}
 	}(key)
-	a.pushDebug("rehearsal: offline browse of " + name + " (cached assets only)")
+	a.debug.push("rehearsal: offline browse of " + name + " (cached assets only)")
 }
 
 // pickCharacter routes a char-select pick: live sessions ask the server
@@ -1267,7 +1267,7 @@ func (a *App) pickCharacter(idx int) {
 	// a playtest with the Debug overlay on shows whether the index we SEND matches
 	// the character picked (vs the server-assigned id logged at EventCharPicked).
 	if idx >= 0 && idx < len(a.sess.Chars) {
-		a.pushDebug(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.sess.Chars[idx].Name))
+		a.debug.push(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.sess.Chars[idx].Name))
 	}
 	if a.sess.Rehearsal {
 		a.sess.MyCharID = idx
@@ -1408,7 +1408,7 @@ func (a *App) pollCasingProbe() {
 		if hostOfURL(a.urls.Origin()) == res.host { // still on this server → apply now
 			a.urls = a.urls.WithCharCase(res.casing)
 		}
-		a.pushDebug("asset casing auto-detect: " + res.host + " → " + charCaseName(res.casing))
+		a.debug.push("asset casing auto-detect: " + res.host + " → " + charCaseName(res.casing))
 	default:
 	}
 }
@@ -1447,7 +1447,7 @@ func (a *App) fetchManifestAsync() {
 		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
 			n := m.SeedLearned(a.d.Prefs, host)
 			a.d.Resolver.WarmFromPrefs()
-			a.pushDebug(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
+			a.debug.push(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
 			return
 		}
 	}
@@ -1567,11 +1567,11 @@ func (a *App) pollManifest() {
 	case res := <-a.manifestRes:
 		a.noteManifestStatus(res.host, res.status)
 		if res.err != nil {
-			a.pushDebug("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
+			a.debug.push("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
 			return
 		}
 		a.d.Resolver.WarmFromPrefs()
-		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
+		a.debug.push(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
 	default:
 	}
 }
@@ -1709,7 +1709,7 @@ func (a *App) pollFontChain() {
 		}
 		a.rasterText = ""
 		settings.statusLine = clampLine(res.note)
-		a.pushDebug(res.note)
+		a.debug.push(res.note)
 	default:
 	}
 }

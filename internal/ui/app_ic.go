@@ -503,21 +503,21 @@ func (a *App) pollThemeApply() {
 		// missing fonts has them missing on every apply, so warning every time
 		// would make the client unusable for anyone not intending to fix it — and
 		// the second showing is what teaches people to dismiss without reading.
-		a.pushDebug(res.themeFontWarn)
+		a.debug.push(res.themeFontWarn)
 		a.maybeWarnMissingFonts(res.name, res.themeFontsMissing, res.themeFontWarn, res.userFontsDir)
 	}
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
-	a.pushDebug(line)
+	a.debug.push(line)
 	if res.inkGuard != "" {
-		a.pushDebug(res.inkGuard)
+		a.debug.push(res.inkGuard)
 	}
 	// A refused sidecar goes to the debug log on EVERY apply (pushDebug's ×N collapse
 	// keeps a re-kicked heal from flooding it) and takes over the Settings status
 	// line, which is the surface the user is looking at when they pick a theme. The
 	// chip is the third surface and the only one that survives leaving that screen.
 	if res.sidecarErr != "" {
-		a.pushDebug(res.sidecarErr)
+		a.debug.push(res.sidecarErr)
 		settings.statusLine = clampLine(res.sidecarErr)
 	}
 	// THE IMPORT REPORT (themereport.go). It SUBSUMES the #21 unbound-key
@@ -537,7 +537,7 @@ func (a *App) pollThemeApply() {
 	// probe is one map read per theme apply.
 	if res.name != "" && a.d.Prefs.Load().HasThemeRectOverride(res.name, "ms_chatlog") {
 		a.d.Prefs.ClearThemeRectOverride(res.name, "ms_chatlog")
-		a.pushDebug("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
+		a.debug.push("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
 	}
 	// Theme chrome uploads PINNED (above), so applying a theme can evict
 	// emote-button art from T1. The gen-keyed page cache re-Gets on the
@@ -794,12 +794,6 @@ func (e debugEntry) render() string {
 	return e.at.Format(debugStampLayout) + e.raw
 }
 
-// pushDebug appends one line to the bounded failure log (debug overlay),
-// folding a repeat of a message already seen inside debugFoldWindow into that
-// row's ×N counter so a chatty source can't flush real failures out of the
-// ring. Render thread only.
-func (a *App) pushDebug(line string) { a.pushDebugAt(line, time.Now()) }
-
 // logSpeakerAnimDiag logs the active speaker sprite's animation stats to the
 // debug log once per base change (#110 frame-rate diagnostic). The debug panel
 // cache inspector shows the same numbers live; this puts a record in the log.
@@ -815,41 +809,9 @@ func (a *App) logSpeakerAnimDiag() {
 		return // same base already logged — don't flood the ring
 	}
 	a.lastSpeakerDiagBase = si.Base
-	a.pushDebug(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
+	a.debug.push(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
 		si.Base, si.Kept, si.Source,
 		si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond))
-}
-
-// pushDebugAt is pushDebug with the clock injected — the fold is a TIME window,
-// so the tests drive the window from here rather than by sleeping.
-func (a *App) pushDebugAt(line string, now time.Time) {
-	// The ring is ordered by latest sighting (a fold moves its row to the tail),
-	// so scanning backwards can stop at the first row outside the window: every
-	// row before it is older still. That bounds the scan without a second cap.
-	for i := len(a.debugLog) - 1; i >= 0; i-- {
-		e := a.debugLog[i]
-		if now.Sub(e.at) > debugFoldWindow {
-			break
-		}
-		if e.raw != line {
-			continue
-		}
-		e.count++
-		e.at = now
-		e.text = e.render()
-		// Move to the tail: keeps the ordering the early exit above relies on,
-		// and keeps a repeating source where the reader is looking (newest end)
-		// instead of pinned at the position of its first sighting.
-		copy(a.debugLog[i:], a.debugLog[i+1:])
-		a.debugLog[len(a.debugLog)-1] = e
-		return
-	}
-	e := debugEntry{raw: line, at: now, count: 1}
-	e.text = e.render()
-	a.debugLog = append(a.debugLog, e)
-	if len(a.debugLog) > debugLogCap {
-		a.debugLog = a.debugLog[len(a.debugLog)-debugLogCap:]
-	}
 }
 
 // drainThumbs uploads loaded low-q sprite thumbnails into T1 under their
@@ -978,7 +940,7 @@ func (a *App) drainWarnings() {
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.pushDebug(line) // unconditional: the Debug ▸ Log tab is the detail view
+			a.debug.push(line) // unconditional: the Debug ▸ Log tab is the detail view
 			if show {
 				// #27: the chip, NOT warnLine. See assetmisschip.go for why the
 				// shared toast channel was the wrong surface for this class.
@@ -1002,7 +964,7 @@ func (a *App) drainMusicFailures() {
 		select {
 		case f := <-a.d.Manager.MusicFailures():
 			line := "Music didn't load (network) — " + shortMusicName(f.URL)
-			a.pushDebug(line + ": " + f.Err.Error())
+			a.debug.push(line + ": " + f.Err.Error())
 			a.jukeWarn(line)
 		default:
 			return

@@ -481,26 +481,26 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 	}
 	logR := sdl.Rect{X: r.X, Y: r.Y + btnH + 4, W: r.W, H: r.H - btnH - 4}
 	c.Border(logR, ColPanelHi)
-	if len(a.debugLog) == 0 {
+	if a.debug.len() == 0 {
 		c.LabelClipped(logR.X+6, logR.Y+6, logR.W-12, "No failures logged this session.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
 		a.debugLogScroll -= c.WheelIn(logR) * scrollStepPx
 	}
-	contentH := int32(len(a.debugLog)) * debugRowH
+	contentH := int32(a.debug.len()) * debugRowH
 	track := sdl.Rect{X: logR.X + logR.W - scrollBarW, Y: logR.Y, W: scrollBarW, H: logR.H}
 	a.debugLogScroll = c.VScrollbar("debuglog", track, a.debugLogScroll, contentH, logR.H)
 	clipPrev, clipHad := c.pushClip(logR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := logR.W - scrollBarW - 12
 	rowY := logR.Y - a.debugLogScroll
-	for i := len(a.debugLog) - 1; i >= 0; i-- { // newest first
+	for i := a.debug.len() - 1; i >= 0; i-- { // newest first
 		if rowY > logR.Y+logR.H {
 			break
 		}
 		if rowY >= logR.Y-debugRowH {
-			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
+			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debug.lines()[i].text, ColTextDim)
 		}
 		rowY += debugRowH
 	}
@@ -508,7 +508,7 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 
 // exportDebugLog writes the debug log to a timestamped .txt file on the desktop.
 func (a *App) exportDebugLog() {
-	if len(a.debugLog) == 0 {
+	if a.debug.len() == 0 {
 		return
 	}
 
@@ -527,20 +527,20 @@ func (a *App) exportDebugLog() {
 	var content string
 	content += "AsyncAO Debug Log Export\n"
 	content += fmt.Sprintf("Generated: %s\n", now.Format("2006-01-02 15:04:05"))
-	content += fmt.Sprintf("Entries: %d\n", len(a.debugLog))
+	content += fmt.Sprintf("Entries: %d\n", a.debug.len())
 	content += fmt.Sprintf("\n%s\n\n", "============================================================")
 
 	// Add all log entries (oldest first for readability)
-	for i := 0; i < len(a.debugLog); i++ {
-		e := a.debugLog[i]
+	for i := 0; i < a.debug.len(); i++ {
+		e := a.debug.lines()[i]
 		content += fmt.Sprintf("[%s] %s\n", e.at.Format("15:04:05"), e.text)
 	}
 
 	// Write file
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		a.pushDebug("Failed to export debug log: " + err.Error())
+		a.debug.push("Failed to export debug log: " + err.Error())
 	} else {
-		a.pushDebug("Debug log exported to: " + path)
+		a.debug.push("Debug log exported to: " + path)
 	}
 }
 

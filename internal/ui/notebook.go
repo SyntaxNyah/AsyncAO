@@ -20,7 +20,7 @@ func (a *App) pinNote(line string) {
 		return
 	}
 	a.notebook.Add(line)
-	a.pushDebug("notebook: pinned " + clampLine(line))
+	a.debug.push("notebook: pinned " + clampLine(line))
 	// Visible confirmation (the pin was otherwise silent — easy to miss).
 	a.warnLine = "Pinned to notebook (Notes tab)"
 	a.warnAt = time.Now()

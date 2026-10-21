@@ -25,7 +25,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 		lineH    = 16 // matches the small UI font row height
 		panelPad = 4
 	)
-	lines := a.debugLog
+	lines := a.debug.lines()
 	if len(lines) > debugOverlayLines {
 		lines = lines[len(lines)-debugOverlayLines:]
 	}
@@ -54,7 +54,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 func (a *App) debugHealthLine() string {
 	if a.sess == nil {
 		return "debug · no session (lobby) · log " +
-			fmt.Sprintf("%d/%d", len(a.debugLog), debugLogCap)
+			fmt.Sprintf("%d/%d", a.debug.len(), debugLogCap)
 	}
 	age := "none yet"
 	if !a.lastPktAt.IsZero() {
@@ -69,7 +69,7 @@ func (a *App) debugHealthLine() string {
 		wire = "json"
 	}
 	return fmt.Sprintf("debug · phase %s · server %s · wire %s · last pkt %s · log %d/%d",
-		a.sess.Phase(), software, wire, age, len(a.debugLog), debugLogCap)
+		a.sess.Phase(), software, wire, age, a.debug.len(), debugLogCap)
 }
 
 // debugDiagLine is the second readout: live structural counts that catch leaks

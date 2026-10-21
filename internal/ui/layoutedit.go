@@ -437,7 +437,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			a.themeRects[k] = r
 		}
 		a.invalidateThemeCanvases()
-		a.pushDebug("layout edit: all overrides reset for " + themeName)
+		a.debug.push("layout edit: all overrides reset for " + themeName)
 		return
 	}
 

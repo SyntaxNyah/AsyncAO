@@ -50,7 +50,7 @@ func (a *App) pollShownameBind() {
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
 	a.d.Prefs.SetShownameKeyBind(key, a.shownameBindFor)
-	a.pushDebug(fmt.Sprintf("key %q now sets showname %q", key, a.shownameBindFor))
+	a.debug.push(fmt.Sprintf("key %q now sets showname %q", key, a.shownameBindFor))
 	a.shownameBindFor = ""
 	a.refreshShownameKeys()
 }

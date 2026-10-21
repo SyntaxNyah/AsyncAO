@@ -71,7 +71,7 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 		return
 	}
 
-	lines := a.debugLog
+	lines := a.debug.lines()
 	contentH := int32(len(lines)) * lineH
 	maxScroll := contentH - body.H
 	if maxScroll < 0 {

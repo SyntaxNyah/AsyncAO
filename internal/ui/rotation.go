@@ -158,7 +158,7 @@ func (a *App) cycleSlotRotation(name string, fine bool) {
 		return
 	}
 	if !classicSlotRotatable(name) {
-		a.pushDebug("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
+		a.debug.push("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
 		return
 	}
 	// Rotation re-bases like the anchor: it needs an override to hang off, so mint
@@ -178,7 +178,7 @@ func (a *App) cycleSlotRotation(name string, fine bool) {
 		a.classicRot[name] = next
 		a.d.Prefs.SetClassicRotation(name, next)
 	}
-	a.pushDebug("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
+	a.debug.push("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }
 
 // cycleThemeRotation advances the hovered THEMED key's rotation (R-key). Offered
@@ -192,7 +192,7 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 		return
 	}
 	if !a.themedKeyRotatable(key) {
-		a.pushDebug("layout edit: " + key + " can't be rotated (no theme art — draws flat)")
+		a.debug.push("layout edit: " + key + " can't be rotated (no theme art — draws flat)")
 		return
 	}
 	cur := uint8(0)
@@ -206,5 +206,5 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 		a.d.Prefs.SetThemeRectRotation(themeName, key, next)
 	}
 	a.invalidateThemeCanvases() // re-bake ang so the new angle reaches the draw path
-	a.pushDebug("layout edit: " + key + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
+	a.debug.push("layout edit: " + key + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }

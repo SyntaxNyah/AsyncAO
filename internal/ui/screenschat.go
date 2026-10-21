@@ -508,7 +508,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// Arm the plain-label fallback so drawChatOverlay still puts the words on
 			// screen, and say so in the debug log so the next report carries the
 			// actual SDL error instead of "the text is invisible".
-			a.pushDebug("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
+			a.debug.push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
 			a.rasterFailedText = sc.MessageText
 			return
 		}

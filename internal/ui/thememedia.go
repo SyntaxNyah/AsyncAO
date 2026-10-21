@@ -596,7 +596,7 @@ func (a *App) landThemeMedia(res *themeApply) {
 			// points disagreeing, which is worth a log line rather than a shrug — but
 			// the element still exists and still draws its placeholder, so nothing is
 			// lost and nothing is silent.
-			a.pushDebug("theme media " + key + ": " + err.Error())
+			a.debug.push("theme media " + key + ": " + err.Error())
 			continue
 		}
 		a.themeMediaKeys[key] = true
