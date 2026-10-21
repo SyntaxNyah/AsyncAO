@@ -1,27 +1,6 @@
 package theme
 
 // asyncao_theme.ini — the AsyncAO extension tier of a theme folder.
-//
-// An AsyncAO theme IS an AO2 theme folder plus ONE sibling file. AO2-Client
-// never opens this file (get_theme_path only ever joins the three known INIs),
-// so a theme carrying one still loads byte-identically in stock AO2, and the
-// author's own courtroom_design.ini is never written in the normal path.
-//
-// The public, third-party-implementable grammar is docs/THEME-FORMAT.md. That
-// document and this file are the same format; when they disagree, the tests in
-// sidecar_test.go say which one is wrong.
-//
-// FOUR RULES GOVERN EVERYTHING BELOW (docs/THEME-FORMAT.md §7, normative):
-//
-//  1. Reading NEVER refuses on the format version. A theme from a newer client
-//     renders with everything this build understands.
-//  2. Unknown keys, unknown sections and the reserved [x.<vendor>.*] namespace
-//     are PRESERVED VERBATIM — carried by INIDoc, never rebuilt from the model.
-//  3. Unknown enum VALUES degrade to the nearest safe primitive and are still
-//     preserved on save; the element keeps drawing.
-//  4. Keys are additive-only and never repurposed. A new key's ZERO VALUE must
-//     mean "behave as version 1 did"; the presence of a key is its version.
-//
 // SDL-free by hard rule 1, and cold-path only: parsing walks maps and allocates
 // strings, so it belongs on the theme-apply goroutine and never on a draw,
 // decode or resolver path (rule 2).
@@ -62,11 +41,9 @@ const (
 // that number. They REFUSE rather than truncate — a silently truncated theme
 // that then gets saved is data loss, which is the one failure this feature
 // cannot recover from. Pinned by TestSidecarCapsRefuseNotTruncate.
-//
 // NoteCap is the exception and says so at its own declaration: it bounds the
 // import REPORT, never the load. Published in docs/THEME-FORMAT.md §7 and
 // pinned against it by TestPublishedCapsMatchTheConstants.
-// ---------------------------------------------------------------------------
 const (
 	// ElementCap bounds [element.*]. ~4x the densest style preset (Manga Panel
 	// is ~22 elements); 96 baked entries is a fixed array that never grows.
@@ -84,33 +61,9 @@ const (
 	// pair is by construction either a repeat of a slot already set — the reader's
 	// "later wins" rule makes it dead — or a key no generator resolves. There is
 	// nothing a file can say in a twelfth pair that it cannot say in eleven.
-	//
-	// IT WAS 8, sized in W1 against the pre-merge generator set ("the widest
-	// generator, halftone: dot, angle, tint, bg, jitter, uses five"). W4's
-	// consolidation then folded between two and six independently-invented
-	// generators into each of `plate`, `frame`, `radial` and `mottle`
-	// (GENERATOR-AND-EFFECT-PROPOSALS.md §1), and a merged generator legitimately
-	// spends every slot: `mottle` alone is four colour roles, four integers and two
-	// percents. W9 found shipped preset elements over the old bound — five
-	// fragments, four different authors — which is a cap that was measured against
-	// the wrong thing, not five authors who overreached.
-	//
-	// THE COUNT WAS FIRST WRITTEN AS TEN AND IS NINE, corrected after W9's
-	// dead-param pass: several of the ten only exceeded 8 because they carried a
-	// key that resolved to no slot at all (`bow`, `glow`, `ratio`, `rough`, `rgb`)
-	// or a pair of aliases that collapsed into one (`pitch`/`dot`, `pct`/`fade`),
-	// so part of the evidence for raising the bound was parameters that were doing
-	// nothing. Nine elements across five fragments still spend 9 or 10 pairs
-	// (`investigation/corkwall` and four of `thh_courtroom`'s are the widest at 10),
-	// so the conclusion survives its own correction — but the load-bearing argument
-	// is the STRUCTURAL one above, not the census: 11 is what the typed view can
-	// hold, and no measurement can move that.
-	//
 	// RAISING IT IS BACKWARD COMPATIBLE in the only direction that matters: every
 	// file that parsed under 8 still parses, and a file authored at 11 read by an
 	// older build is refused with the cap named rather than silently shortened
-	// (hard rule 4's "refuse, never truncate"). Published in docs/THEME-FORMAT.md
-	// §3/§5/§7 and pinned against all three by TestPublishedCapsMatchTheConstants.
 	GenParamCap = 11
 	// ClockCap bounds the authoring clock groups. Clock 0 is the shared theme
 	// anchor and is never declared; the densest style preset wants four.
@@ -134,11 +87,8 @@ const (
 	// both are bounded by MediaCap. It is written as a CONST ALIAS, not as a
 	// second 24, for the reason the texture budget already const-aliases its
 	// producer and store caps: two copies of a number are two numbers.
-	//
 	// The pool landed in W5 as internal/ui's themeFXCap, which aliases this
 	// constant exactly as the sentence that used to stand here asked it to.
-	// TestFXPoolIsFixedAndSelfClears keeps the two equal, so a change to
-	// MediaCap moves both or fails.
 	EffectBindCap = MediaCap
 	// SoundCap bounds [sounds], the AsyncAO-tier sound overrides.
 	SoundCap = 16
@@ -147,14 +97,9 @@ const (
 	SubthemeCap = 16
 	// ElementRetireCap bounds the pending-deletion list (Sidecar.retire): element
 	// sections a delete has dropped from the model and the next write must remove.
-	//
 	// TWICE ElementCap, because that is what a DOCUMENT can hold and the list only
 	// ever records an id whose section the document actually carries: at most
 	// ElementCap model elements, plus the sections of elements this build skipped
-	// and preserved (a newer client's `kind`, format rule 3), which the reader does
-	// not count against the element cap. Past it the removal is performed
-	// immediately instead of being recorded — the file stays correct and only the
-	// undo's byte-exactness is given up, which is the right thing to lose.
 	ElementRetireCap = 2 * ElementCap
 	// PreservedCap bounds how many unknown keys and sections one file may carry
 	// BEFORE it stops looking like a theme. INIDoc preserves the lines either
@@ -439,16 +384,9 @@ type Condition struct {
 }
 
 // Element is one free element: a box the AO2 registry has no row for.
-//
-// IDENTITY IS THE INDEX in Sidecar.Elements, not the ID — ID is authoring and
-// UI only (it is the [element.<id>] section suffix). Nothing about an element
-// ever enters the AO2 rect registry, which is why the totality census over
-// courtroom_design.ini's root keys structurally cannot see one.
-//
 // EVERY FIELD IS IN elementFieldKeys (sidecar_write.go), and
 // TestSidecarSchemaMatchesTheElementStruct fails on any that is not: a field
 // added here without a wire key would save silently as nothing, which is the
-// model-vs-format drift class the preferences save/load gate closed for prefs.
 type Element struct {
 	ID    string // [a-z0-9_-]{1,24}; the section suffix; editor-only
 	Kind  ElementKind
@@ -639,12 +577,6 @@ type ClockSpec struct {
 	// ID is the [clock.<ID>] suffix EXACTLY as the file spells it, and it is
 	// carried for the same reason Pane and Element carry theirs: the section
 	// name is the author's, not ours to re-derive.
-	//
-	// "01" is a legal id under the format's [a-z0-9_-]{1,24} grammar and reads
-	// as clock 1. Rebuilding the name from the array index would look for
-	// [clock.1], not find it, and APPEND a second section beside the author's
-	// saying the same thing — a file mutation on a save that changed nothing.
-	//
 	// It is empty for a group the editor declared rather than read; that one is
 	// written in the canonical spelling, because there is no author's spelling
 	// to preserve.
@@ -777,15 +709,9 @@ func NewSidecar() *Sidecar {
 // production consumers and a nil check for a test — and INIDoc's Set/Bytes/Write
 // are exported, so it handed any caller a second writer with no arbitration:
 // sc.Doc().Set("element.x", "z", "9") is silently reverted by the next Bytes()
-// when the model holds that key and silently persisted when it does not, and
-// os.WriteFile(p, sc.Doc().Bytes(), …) writes a sidecar the guard never saw
-// (ledger L32).
-//
 // W7's undo ring and autosave are the named future callers, and they get a
 // NARROW path — the shape the reader/writer pair can arbitrate, named at the
 // waves' own call sites — rather than this one back. The census that keeps the
-// door shut until then is TestNoExportedPathWritesASidecarWithoutTheGuard
-// (sidecar_validate_test.go).
 
 // IsFutureFormat reports a theme authored by a NEWER AsyncAO. It never blocks
 // reading (rule 1); it is what gates the editor into read-only with a
@@ -830,34 +756,6 @@ func (s *Sidecar) FindElement(id string) (*Element, bool) {
 
 // RetireElementSection marks an element's [element.<id>] lines for deletion from
 // the lossless carrier, and reports whether the file was actually carrying any.
-//
-// IT IS THE OTHER HALF OF DROPPING AN ELEMENT, and the model half cannot do it
-// alone: the writer edits the document the reader kept, so an element removed
-// from `Elements` and nowhere else is written back out from its own surviving
-// section and read in again next time. No element deletion of any kind had ever
-// persisted — the editor's delete included — until this existed.
-//
-// IT IS NOT A PRUNE, and that is deliberate. The caller names the ONE id the user
-// deleted; nothing here walks the document looking for sections the model does
-// not claim, because the reader deliberately PRESERVES an element section whose
-// `kind` a newer build invented (format rule 3) and a prune would delete exactly
-// that. Only the act that meant the deletion may cause one.
-//
-// IT IS DEFERRED TO THE WRITE, unlike the tier replace's own clear (which removes
-// immediately, because ITS undo restores the whole document from a snapshot). An
-// element delete's undo is a per-element resurrection out of the editor's
-// graveyard, and the file has to come back BYTE-IDENTICAL when the user changes
-// their mind — which it cannot if the lines are already gone: the writer would
-// re-emit the section canonically, at the end of the file, losing the author's
-// own key order and comments for that one element. Deferring costs nothing (the
-// removal happens inside Sidecar.Bytes, before a single key is written) and
-// UnretireElementSection is how the undo cancels it.
-//
-// The residual limit, stated rather than hidden: a delete, a SAVE, and then an
-// undo does re-emit the section canonically. At that point the removal is on
-// disk, so anything else would mean holding the removed lines for the rest of
-// the session — a second graveyard for one act.
-//
 // COLD PATH (hard rule 2).
 func (s *Sidecar) RetireElementSection(id string) bool {
 	if s == nil || s.doc == nil || !s.doc.hasSection(secElementPrefix+id) {
@@ -886,17 +784,6 @@ func (s *Sidecar) RetireElementSection(id string) bool {
 // UnretireElementSection cancels a pending retirement — the undo of a delete.
 // Nothing else may call it: "put the element back" is the only act that means
 // "the section was never really going".
-//
-// THERE ARE TWO ACTS THAT MEAN IT, not one, and the second was missed for a wave.
-// The per-element undo (internal/ui's insertAt) is the obvious one; the other is
-// the editor's DISCARD, which replaces the whole element list with an open-time
-// snapshot (restoreBaseline). Both put elements back, so both must cancel, and a
-// discard that did not left the next write stripping a section the theme still
-// holds and re-emitting it canonically at the end of the file — losing that one
-// element's authored key order, comments and declaration position, which is
-// reload order. Idempotent and safe to call for an id that was never retired,
-// which is what lets the discard sweep its whole restored list rather than track
-// which of them had been deleted.
 func (s *Sidecar) UnretireElementSection(id string) {
 	if s == nil {
 		return
@@ -1073,37 +960,14 @@ type sidecarMigration func(*INIDoc) error
 // is the point: the chain exists, is called, and is tested BEFORE it is needed,
 // so the first real migration is one entry in a table rather than a design
 // decision taken under pressure.
-//
-// TestMigrationChainIsIdentityAtV1 pins both halves: the chain is empty at v1,
-// and running it changes not one byte.
-//
-// A SLICE, NOT AN ARRAY, and the difference is testability rather than taste.
-// `[...]sidecarMigration{}` is a fixed [0]T: nothing can install a probe step
-// into it, so "does ParseSidecar actually RUN the chain?" was a question the
-// suite could not ask — and the answer was that deleting migrateSidecar's call
-// from sidecar_read.go left every migration test green. That is the same
-// parsed-documented-never-invoked shape [overrides] shipped in for four waves,
-// armed to fire on the day the first real migration lands: every migration test
-// would pass and no file would ever be migrated. As a package-level slice a test
-// can install a probe step (restoring it in t.Cleanup), which is exactly what
-// TestParseSidecarRunsTheMigrationChain does.
-//
 // Still bounded and still ships empty: its length is the number of grammars this
 // build knows, which is a compile-time fact either way (hard rule 4).
 var sidecarMigrations = []sidecarMigration{}
 
 // migrateSidecar walks the chain from the file's format up to this build's.
-//
-// It NEVER refuses on version (rule 1). A file NEWER than this build is left
-// exactly as it is: we render what we understand and preserve the rest, which
-// is what makes "your friend upgraded, you did not" a non-event.
-//
 // The bound is the CHAIN'S OWN LENGTH rather than ThemeFormatVersion, and the two
 // are the same number by TestMigrationChainCoversEveryFormatVersion — a step
 // exists to reach each grammar after the first. Reading the length is what lets a
-// test install a probe and prove the chain is invoked at all; reading the constant
-// made that impossible (the loop could never enter at v1), which is why the call
-// site was deletable green.
 func migrateSidecar(from int, d *INIDoc) error {
 	if d == nil {
 		return nil
@@ -1130,13 +994,6 @@ func migrateSidecar(from int, d *INIDoc) error {
 // ---------------------------------------------------------------------------
 
 // The FOUR characters percent-encoding covers, and nothing else.
-//
-// ';' cannot round-trip through this reader: QSettings truncates a line at the
-// first one (see iniCommentStart) and AsyncAO matches that ON PURPOSE, measured
-// against the reference corpus. So free text is percent-encoded on exactly
-// '%', ';', LF and CR. Percent-encoding beats a \x3b-style escape because it is
-// the convention a third-party writer will guess correctly.
-//
 // SCOPE IS ENUMERATED, NOT GENERAL: decoding applies ONLY to the free-text keys
 // of asyncao_theme.ini, never to an AO2 root-section value, where inventing an
 // escape AO2 does not have would break parity with every existing theme.

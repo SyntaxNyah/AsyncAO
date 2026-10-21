@@ -6,7 +6,6 @@ package ui
 // per theme (prefs.ThemeRectOverrides), applied on top of the theme's
 // courtroom_design.ini whenever it loads, so window resizes keep working
 // and the theme's own file is never touched.
-//
 // While the editor is on, a full-screen input fence (the dropdown modal
 // trick with an empty rect) keeps every real widget inert; the editor
 // reads raw cursor coordinates instead.
@@ -49,29 +48,9 @@ func snapDesign(v int) int {
 // snapTabStripScreen rounds the server-tab strip's stored origin so that its PAINTED
 // box lands on the WINDOW's grid — the grid the user is looking at — rather than on one
 // whose phase is the design canvas's origin.
-//
-// Every other step of this key's gesture already lives in screen space: the base is the
-// painted box (editBaseFor), the delta is the raw cursor delta, the magnet snaps painted
-// rects flush to painted rects with the WINDOW as the extent, and the stops come from
-// the window's edges (clampTabStripScreen). The grid was the one step left in canvas
-// phase, so its lines sat at (canvas origin mod layoutGridDesign) — an offset that is
-// drawn nowhere, that no other step of the same gesture shares, and that MOVES when the
-// window is resized or the fit mode changes. Measured, one pixel of travel from the
-// docked box at screen Y=22 with the shipped default (snap on): Native 714x760 → 24,
-// Native 1152x864 → 20, Letterbox 1000x900 → 19, Crop / Stretch / Custom → 22. One
-// gesture, one widget, four different answers. In window phase it is 24 in all six.
-//
-// A theme's OWN widgets keep the design grid, and that is not an inconsistency: their
-// coordinates, their siblings and their extent are all design-space, so the canvas is
-// the only phase their grid could sensibly have. The strip is the opposite case in
-// every one of those three respects.
-//
 // Snapping the painted coordinate also retires the negative-tolerant rounding this key
 // used to need. Its STORED value is legitimately negative while it is docked in the band
 // above the canvas, and flooring that at zero would have yanked it onto the stage on the
-// first snapped pixel; the PAINTED value is never negative — clampTabStripScreen keeps
-// it inside the window — so snapDesign's floor is exactly right here, because zero is
-// the window's top edge, a real stop the strip may legitimately land on.
 func snapTabStripScreen(r theme.Rect, lay *themeLayoutCache) theme.Rect {
 	r.X = snapDesign(r.X+int(lay.offX)) - int(lay.offX)
 	r.Y = snapDesign(r.Y+int(lay.offY)) - int(lay.offY)
@@ -90,14 +69,6 @@ func themedKeyResizable(key string) bool { return key != themeTabBarKey }
 // resizeDesignRect applies a resize drag's delta to the GRIPPED EDGES, in design px —
 // the design-space twin of drawClassicEditor's own per-edge arithmetic, which is where
 // this shape (and the anchored-edge floor below it) comes from.
-//
-// BEHAVIOUR-NEUTRAL FOR THE GRIP THAT ALREADY EXISTED. With edges == edgeR|edgeB —
-// which is handleEdgeMask[handleBottomRight], i.e. every press the themed editor could
-// possibly have started before W6 — the two assignments are `W = base.W + dx` and
-// `H = base.H + dy`, exactly what the single-corner path did. The L and T arms are the
-// new ones, and each keeps its ANCHORED edge fixed when the minimum floors, so a drag
-// pushed past layoutMinDesignPx parks against the floor instead of inverting the box.
-//
 // Pure, so the arithmetic is unit-testable without a renderer.
 func resizeDesignRect(base theme.Rect, edges uint8, dx, dy int) theme.Rect {
 	r := base
@@ -132,14 +103,6 @@ func resizeDesignRect(base theme.Rect, edges uint8, dx, dy int) theme.Rect {
 
 // snapDesignResize rounds a resize to the design grid by snapping the SIZE and holding
 // the anchored edge still.
-//
-// Snapping the size rather than the moving edge's coordinate is what the single-corner
-// path did (`W = snapDesign(W)`), and it is right for both directions: a widget a theme
-// authored off-grid keeps its authored origin, and the edge the user is dragging lands
-// on the same lattice in either direction rather than in two different phases depending
-// on which side they grabbed. An axis nobody gripped is not touched at all — before W6
-// both axes were snapped unconditionally, which was harmless only because the one grip
-// always gripped both.
 func snapDesignResize(r theme.Rect, edges uint8) theme.Rect {
 	if edges&(edgeL|edgeR) != 0 {
 		right := r.X + r.W
@@ -292,28 +255,9 @@ func (a *App) startLayoutEdit() {
 // closeEditorBlockingOverlays shuts everything that would either strand a layout
 // editor or float, inert, over it. Shared by BOTH editors so their arm paths cannot
 // drift from each other or from the modal table.
-//
-// Two groups, and the split matters:
-//
-//   - The RETURN-TO-TOP modals (courtroomModals). One of these open ends the
-//     courtroom pass before either editor's overlay draws, and the editor's own fence
-//     has already made the modal inert — the hard lock. Closed table-driven, so a new
-//     row is covered the day it is added. The hand-written list this replaces had
-//     drifted three entries behind the table.
-//   - The non-returning floating panels and pickers. They do not end the pass, but
-//     they paint over the stage the user is arranging and their kit widgets are dead
-//     behind the editor's fence, so an editor is no place for them.
-//
-// The menu bar goes with them: it neither paints nor takes input while an editor is
-// armed (menuBarPaints), so a pane left open would be an invisible surface still
-// holding the kit's modal fence — and the first thing Esc would answer.
-//
 // The FOCUSED FIELD goes too. A text field keeps eating keys while it holds focus —
 // the pointer fence blanks hovering(), not the keyboard — so an IC box still focused
 // from before Ctrl+F2 would swallow the editor's arrow-key nudge and its own Esc for
-// the whole edit, from a caret the editor's chrome is drawn over. Dropping it here is
-// also what makes the pre-screen field-undo gate's claim ("the editors never run with
-// a focused field", App.Frame) true rather than merely hoped for.
 func (a *App) closeEditorBlockingOverlays() {
 	a.closeCourtroomModals()
 	a.showEvid, a.showModcall, a.showPair = false, false, false
@@ -514,30 +458,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose grip is
 	// under the cursor — so a big box's grip can't be blocked by a small box sitting on its corner.
 	// Otherwise MOVE the armed box (hoverKey, Tab-cyclable).
-	//
-	// EIGHT HANDLES SINCE W6 (design §3.2). The probe is handleGripAt (edittarget.go),
-	// which hit-tests the same squares the overlay paints and masks them with
-	// resizeEdgesFor — so a move-only key still has no grip anywhere, and the
-	// bottom-right corner still grips exactly the rect and exactly the edges it did
-	// when it was the only one. The other seven are what the recon's PARTIAL was
-	// about: the classic editor has had them since v1.52.0 and the themed one had a
-	// single corner, so a themed widget could only ever grow down and right.
-	//
-	// FREE-ELEMENT PRESS PRIORITY — settled in W7a, and NOT here. This probe walks
-	// `keys`, the DESIGN-KEY set only, and resolves ties by LARGEST gripped box, which
-	// is the right rule while every candidate is an AO2 widget. Free elements are a
-	// second, overlapping population in the same pixels and they invert both rules: an
-	// element is authored ON TOP of the widget it decorates, and a theme's densest
-	// elements are its smallest — so appending them to this loop would hand every
-	// press on a 12x12 badge to the 490x98 emote grid underneath it.
-	//
-	// The shape that works is a SPACE PRIORITY (elements probed first, then design
-	// keys, with each population keeping its own tie-break), and it is implemented in
-	// the theme editor's own probe (editorProbe, themeeditorcanvas.go) rather than
-	// bolted on here. That is deliberate: this overlay edits PREFERENCES and cannot
-	// persist an element edit at all (see nudgeThemeElement), so offering elements
-	// here would be an affordance for work that evaporates. This loop stays
-	// design-keys-only, which is also why its behaviour is unchanged by W7.
 	if pressed && a.editDrag == 0 && c.mouseY > layoutBannerH && !overToolbox {
 		resizeKey, resizeEdges := "", uint8(0)
 		var gripArea int64 = -1
@@ -580,16 +500,9 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 
 	// Live drag: a theme's own widgets take screen deltas mapped back to design space
 	// through the layout scale; the cache invalidates per move (a ~40-rect rebuild).
-	//
 	// The server-tab strip takes the RAW cursor delta instead, because its drag is
 	// tracked in SCREEN space end to end: the base is its painted box (editBaseFor),
 	// the delta is the cursor's own, the snap/magnet/clamp below all work on painted
-	// pixels, and the stored value is that screen position minus the canvas origin —
-	// tabStripCacheRect's exact inverse. Nothing in the gesture divides by the scale,
-	// so nothing can round; the grab point is exact at every scale by construction
-	// rather than by two rounding rules agreeing. (Storing it costs one subtraction
-	// and is lossless, so writing it each frame — which is what lets the strip paint
-	// under the cursor mid-gesture — is identical to computing it once at release.)
 	if a.editDrag != 0 && c.mouseDown && editKey != "" {
 		screenDrag := editKey == themeTabBarKey
 		dx, dy := int(c.mouseX-a.editStart[0]), int(c.mouseY-a.editStart[1])
@@ -626,16 +539,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			// Piece-to-piece magnet (M3): grid first (above), then snap the dragged
 			// rect's edges/centre flush to the OTHER widgets and to the extent's
 			// edges/centre. Shift already bypassed the whole snap block above.
-			//
-			// TWO ARMS, one per drag space. A theme's widgets magnet in DESIGN space
-			// against design rects, with the DESIGN courtroom as the extent. The strip
-			// magnets in SCREEN space against the PAINTED rects (lay.r) with the window
-			// as the extent, because that is the space its whole gesture lives in —
-			// mixing the two would snap a client-pixel rect flush to design-pixel edges,
-			// i.e. to lines that are nowhere near where those widgets are drawn.
-			// NOTE: alignRect floors a snapped resize at classicMinPx=20 rather than
-			// layoutMinDesignPx=16; a themed resize thus bottoms out at 20 design px
-			// when it snaps — cosmetic, and only on the snapped axis.
 			switch court, ok := a.themeRectsOrig["courtroom"]; {
 			case screenDrag:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
@@ -725,14 +628,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Overlay: every editable rect outlined + named; selection pops.
-	//
-	// HANDLES: the full offered set on the box the user is actually working (selected
-	// or hovered), and the historical single bottom-right grip on every other. That is
-	// the classic editor's own doctrine — a quiet outline at rest, the full treatment
-	// on the box under the cursor (classiclayout.go's overlay comment) — and it is
-	// what keeps a forty-widget theme from becoming three hundred bright squares. The
-	// resting grip is unchanged from before W6, so nothing a user could already grab
-	// moved.
 	for _, k := range keys {
 		r := lay.r[k]
 		col := ColAccent
@@ -821,31 +716,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 
 // editBaseFor is the rect a drag starts from, in whatever space that key's drag is
 // tracked in.
-//
-// For every widget a theme authors that is DESIGN space and simply its stored design
-// rect: lay.r[k] is the transform of it, so base + (cursor delta ÷ scale) is
-// continuous by construction.
-//
-// The server-tab strip is the exception, and it is why this function exists. Its box
-// in lay.r is the LIVE PAINTED rect — the docked chrome band while unparked,
-// chip-sized always (tabStripCacheRect) — which is deliberately NOT the transform of
-// the stored seed. Starting a drag from the stored seed therefore teleported the strip
-// to the seed's position and stretched it to the seed's width on the very first pixel
-// of movement, before the user had moved anything: measured at a 714x760 window on the
-// stock 714x579 canvas, the box jumped {317,22,79,22} → {238,112,240,22}.
-//
-// So the base is the PAINTED box, expressed the way the strip is stored:
-// canvas-relative CLIENT px. That is the EXACT inverse of tabStripCacheRect's forward
-// map — one subtraction against the one addition, no scale on either side, no rounding
-// anywhere — so the base is a fixed point of the round trip at every scale and every
-// fit mode. It has to be: while the map was scaled, the preimage used math.Round and
-// the forward transform used int32() truncation, so the base was NOT a fixed point and
-// the box moved before the cursor did. Measured at Letterbox 1000x900 (scale 1.4006),
-// a +1,+1 cursor move took the box {460,22,79,22} → {459,23,79,22} — backwards on X —
-// and a +40,+40 move landed at +38,+40: a constant −2 px error, present on the first
-// pixel and riding the whole gesture. Native and Stretch round-tripped only because
-// their scales were 1 and 2, which is why the first fixture could not see it.
-//
 // The base's Y is legitimately NEGATIVE while the strip is docked — the chrome band
 // lives above the canvas — which is why clampTabStripScreen has to tolerate it, and why
 // the grid rounds the PAINTED coordinate instead of this one (snapTabStripScreen).
@@ -867,18 +737,6 @@ func (a *App) editBaseFor(key string, lay *themeLayoutCache) theme.Rect {
 
 // magnetSiblingRect is one entry of the DESIGN-space magnet's sibling list — the box
 // some OTHER key's snapped drag may snap flush to.
-//
-// For a theme's own widgets that is the stored design rect, which is precisely what
-// the layout transform scales and therefore precisely where the widget is drawn.
-//
-// The server-tab strip is the exception again, and it was reading the wrong rect:
-// while nobody has parked it, its stored entry is the synthesized SEED (a
-// tabBarDesignSeedW-wide box centred on the canvas that nothing paints or hit-tests),
-// so every other widget's snapped drag magnetted to a phantom while the strip sat in
-// the chrome band. Feed the magnet the same live painted rect the editor's drag box,
-// stacking order, grip probe and reset all read, mapped back into the design units
-// this list is expressed in — a hint, so the division is fine here where it is not in
-// the gesture itself.
 func (a *App) magnetSiblingRect(key string, stored theme.Rect, lay *themeLayoutCache) sdl.Rect {
 	if key == themeTabBarKey {
 		if box, ok := lay.rect(key); ok && lay.scaleX > 0 && lay.scaleY > 0 {
@@ -933,15 +791,6 @@ func (a *App) rawChip(r sdl.Rect, label string) {
 
 // applyRectOverrides lays the persisted edits for the active theme over
 // a fresh design map (pollThemeApply calls this after every theme load).
-//
-// The override container is a fixed [4]int shared by every themed key, so it cannot
-// express the server-tab strip's "origin only" value. Rather than widen the persisted
-// format for one key (every other key would pay for it, and old files would have to be
-// migrated), the strip's W/H are made DERIVED at every point that consumes them —
-// tabStripCacheRect sizes the layout entry and the editor's box from the live chips,
-// and tabStripOrigin keeps only X/Y — so the two stored slots are inert. Writing them
-// through unchanged keeps the record descriptive without letting it become
-// authoritative.
 func (a *App) applyRectOverrides(rects map[string]theme.Rect) map[string]theme.Rect {
 	themeName, _ := a.d.Prefs.Load().Theme()
 	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)

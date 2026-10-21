@@ -1,70 +1,9 @@
 package ui
 
 // THE CHARACTER GRID, ON AO2'S OWN ARITHMETIC (#20).
-//
-// charselectlayout.go established the canvas: the theme's char_select rect fitted
-// into the window, with every design rect scaled by the same transform as the
-// backdrop art. This file is the other half — where the character buttons actually
-// land inside that canvas.
-//
-// AO2's grid is three lines of integer arithmetic, and they are reproduced here
-// verbatim (AO2-Client src/charselect.cpp:160-162, with button_width = 60 from
-// src/courtroom.h:561):
-//
-//	s_button_size = button_width * themeScalingFactor()
-//	char_columns  = ((ui_char_buttons->width()  - s_button_size) / (spacing.x + s_button_size)) + 1
-//	char_rows     = ((ui_char_buttons->height() - s_button_size) / (spacing.y + s_button_size)) + 1
-//
-// and put_button_in_place (:246-276) places button n at
-// ((size + spacing.x) * col, (size + spacing.y) * row) RELATIVE to ui_char_buttons.
-//
-// WHERE A CELL ACTUALLY GOES, AND WHY IT IS NOT `origin + col*pitch`.
-//
-// The backdrop is one texture blitted into lay.area, so SDL stretches it at the
-// exact fractional ratio area.W/designW: the slot frame AO2 drew at design x lands
-// at area.X + x*area.W/designW. Placing a cell from an accumulated INTEGER pitch
-// (`int32(60*cs) + int32(7*cs)`, two separate truncations, multiplied by the column
-// index) tracks that only when the ratio is exactly 1. Measured against the stock
-// art, the first version of this file drifted 0.00 px at 1920x1080 / 1280x720 /
-// 1152x864 — and 7.79 px across / 9.77 px down on a 53 px cell at 944x644, which is
-// exactly the window the import auto-snap produces for AceAttorney2x, i.e. issue
 // #20's own theme in the shipped default configuration. 800x600 and 1024x600 were
-// worse (12.19 / 15.10 px), and a full sweep peaked at 16.14 px.
-//
-// So every cell is placed by mapping its DESIGN coordinate through the canvas RECT
-// once — scaleToCanvas below — never by stepping a rounded pitch. The residual is
-// then a single truncation and is bounded below one pixel at every scale, which is
-// what charselectgrid_test.go's sweep asserts. The device pitch survives only as
-// scroll bookkeeping (one wheel notch, one page), never as a position.
-//
-// The COUNTS are AO2's formula in DESIGN pixels for the same reason: AO2 gets scale
-// invariance free because themeScalingFactor() is an integer, so its rect and its
-// button width scale together. Ours is a fraction, and the truncated-scaled version
-// of that divide claims 8 columns at 800x600 where the art paints 7 — a whole column
 // of characters on blank panel, which is the defect #20 reported.
-//
-// The formula itself is not a guess and it is not approximate. A dark-run pixel scan of
-// the stock 714x668 charselect_background.png finds 7 horizontal runs starting at
-// x=226 and 9 vertical runs starting at y=36, each exactly 60 px, pitch 67 — which
-// is char_buttons = 226,36,518,596 with spacing 7,7 and button_width 60, to the
-// pixel. It was reproduced independently on eight more corpus themes with quite
-// different geometry (AAI 10x9, CCWidescreen 26x12, Mobile 5x11, AOHDMini 10x8 at
-// spacing 9, AOHDUltra 21x11, 3DS Widescreen 18x12 at spacing 4, final fantasy 1
-// 9x7 at spacing 20, and Uminek2x/3x which inherit the stock table and match their
-// own art). No theme in the 74-theme reference corpus implies a grid this formula
-// cannot produce. AsyncAO drawing its own 64+8 grid from x=pad over that art IS
 // issue #20's screenshot.
-//
-// WHAT WE KEEP THAT AO2 DOES NOT HAVE. AO2 PAGES (char_select_left/right step whole
-// pages of char_columns x char_rows buttons); AsyncAO scrolls, and its scrollbar,
-// wheel and search all work. Scrolling stays, and it costs almost nothing in
-// alignment: the themed grid quantises its scroll offset to whole rows OF THE DESIGN
-// LATTICE (charGridPlan.snapScroll), so scrolling by m rows puts grid row r on the
-// frame painted for row r-m. The backdrop itself never scrolls, so this is the only
-// thing that keeps a scrolled grid on the art at all. Measured at 944x644, where the
-// row pitch is a fractional 60.18 px, a resting cell is within 0.89 px of its frame
-// and a scrolled one within 1.23 px — a CONSTANT, not something that grows with how
-// far you have scrolled, which is exactly what a rounded device pitch could not do.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -95,28 +34,15 @@ const (
 
 	// charGridMinPitchPx floors the divisor in AO2's column/row formula, and the
 	// design pitch the cell placement steps by.
-	//
 	// AO2 divides by (spacing + button_size) with NO guard — compare evidence.cpp:211,
 	// which wraps the identical expression in qMax(1, ...) — so a theme shipping
 	// char_button_spacing = -60 divides by zero inside stock AO2. In Go that is a
-	// panic, i.e. a theme file that crashes the client, so the pitch is floored here.
-	// One pixel is the smallest step that still advances the grid: a hostile theme
-	// degrades into an unreadably dense grid instead of taking the process down.
 	charGridMinPitchPx int32 = 1
 
 	// charCellMinPx is the smallest themed cell worth drawing. Below it the screen
 	// falls back to its classic full-window grid, which is the same "sloppy theme
 	// data is not a widget" judgement minThemedElementPx makes for every other themed
 	// element (theme_layout.go).
-	//
-	// The floor is a CHARACTER ICON's floor, not a rectangle's. The kit's own
-	// smallest character-icon draw sites are the messaging panel's 20 px thread
-	// bubbles (msgBubbleIconPx) and its 22 px DM header, so 20 px is the smallest
-	// size at which AsyncAO itself is willing to claim a face is recognisable. It
-	// was 8 px, which is below the scrollbar's own width: `microsoft surface 4k
-	// webao` (a 2592x1719 canvas) at the 640x480 window floor scales to a 14 px cell,
-	// and that KEPT the themed grid — 64 px icon textures crushed into 14 px, star
-	// and caption both suppressed, under a classic header row that had correctly
 	// fallen back. The pre-#20 screen gave that user 64 px captioned cells.
 	charCellMinPx int32 = 20
 
@@ -126,24 +52,6 @@ const (
 	// client font's size in boxes of 15-20 px — so on a downscaled theme canvas each
 	// stops being a badge in the corner and becomes a large fraction of the character
 	// art, and its hover+click arm eats the cell's own click along with it.
-	//
-	// The number is the STAR's: 48 keeps it on every cell down to 0.8x canvas scale
-	// (AO2's button_width is 60). The download badge, the folder tag and the key
-	// badge are all within a couple of pixels of the same footprint — the badge is
-	// 20x18 inset 22 px from the cell's right edge, the star 17-18 px inset 18-20 —
-	// so one threshold for all four is honest, and it is what makes them appear and
-	// disappear TOGETHER instead of leaving a cell with three of the four.
-	//
-	// Measured, which is why it is one constant and not four: at the 640x480 window
-	// floor with the stock 714x668 table and the shipped chrome band the themed cell
-	// is 39 px. The Characters tab suppressed its 18 px star there and drew a 20x18
-	// download badge over the bottom-right quadrant, while the Wardrobe tab of the
-	// SAME grid drew a 17 px star, a 15 px folder tag and a 16 px key badge —
-	// three-quarters of the cell in chrome, each piece consuming the click that was
-	// aimed at the character. Nothing becomes unidentifiable when they go: both cells
-	// carry the character's name as a tooltip on a themed grid (AO2 does the same,
-	// charselect.cpp:304), and the courtroom's own wardrobe panels draw 64 px cells,
-	// so they never cross this floor at all.
 	charCellChromeMinPx int32 = 48
 
 	// charCellStarPx / charCellStarInsetPx are the Characters cell's ★ box and how far
@@ -161,13 +69,7 @@ const (
 
 // cellFitsCornerChrome reports whether a grid cell is big enough to carry AsyncAO's
 // fixed-size corner chrome (charCellChromeMinPx).
-//
-// ONE predicate, called by BOTH cell painters — drawCharCell for the Characters tab
-// and drawIniswapCell for the Wardrobe tab. They are the same grid on the same plan
 // since #20, and they diverged here: the star was gated on one and not the other, and
-// the download badge on neither. A shared predicate is what stops that recurring, and
-// it is what charselectgrid_test.go asserts against both painters.
-//
 // BOTH axes, not just the width: a theme is free to declare a char_buttons rect whose
 // scale leaves a cell wide enough and short enough that a 18-20 px badge still swallows
 // it vertically.
@@ -249,12 +151,9 @@ type charGridPlan struct {
 // scaleToCanvas maps a DESIGN-space coordinate onto the canvas rect the backdrop art
 // is actually blitted into — the one mapping that keeps a cell on the slot frame
 // behind it.
-//
 // Exact integer arithmetic, in int64 so a hostile theme's 100000-px canvas cannot
 // overflow the multiply. It is deliberately NOT `float64(design) * scale`: the canvas
 // rect is itself a truncation of design*scale, so the art's real ratio is
-// area.W/designW, and multiplying by the pre-truncation scale re-introduces a drift
-// that grows with the coordinate.
 func scaleToCanvas(design, canvasExtent, designExtent int32) int32 {
 	if designExtent < 1 {
 		return design
@@ -266,15 +165,9 @@ func scaleToCanvas(design, canvasExtent, designExtent int32) int32 {
 // MATCHING character's cell, window-absolute, at the given scroll offset. n counts
 // only the cells that pass the search filter, exactly as AO2 indexes into
 // ui_char_button_list_filtered rather than the full roster.
-//
-// This is the single placement function for both tabs. It is a value method on a
-// value receiver with no pointers in it, so it neither allocates nor escapes.
-//
 // The two arms are the two lattices. Classic is the pre-#20 screen's own arithmetic,
 // byte for byte: there is no artwork to line up with, so an integer pitch is exactly
 // right. Themed maps the cell's DESIGN coordinate through the canvas rect instead,
-// because that is where the stretched backdrop paints its slot frame — see the file
-// header for the pitch-accumulation drift this replaces.
 func (g charGridPlan) cellAt(n, scroll int32) sdl.Rect {
 	col, row := n%g.cols, n/g.cols
 	if !g.themed {
@@ -342,17 +235,6 @@ func (g charGridPlan) rows(n int32) int32 {
 // charSelectGridPlan resolves the cell metrics for a char-select frame: the classic
 // full-window grid, or — under a theme canvas that declares a usable char_buttons —
 // AO2's grid inside it.
-//
-// gridTop is the bottom of the client header row (search field, tabs, Spectate). It
-// matters on the themed path too: those widgets are AsyncAO's, they have no AO2
-// equivalent, and they are drawn BEFORE the grid, so the grid must start below them.
-// Rather than clip mid-cell, the viewport advances to the first WHOLE row of
-// char_buttons' own lattice at or below the header — the rows that would have been
-// half-hidden are simply not used, and every row that IS drawn still sits exactly on
-// the slot frame painted behind it. (In a window tall enough for the canvas to centre
-// clear of the header — 1080p and up at the stock 714x668 — nothing is skipped at
-// all.)
-//
 // Any themed condition it cannot satisfy falls back to the classic plan rather than
 // drawing a broken grid: no canvas, no char_buttons rect, a cell scaled below
 // charCellMinPx, or a viewport with no room for one cell.
@@ -439,10 +321,6 @@ func (a *App) charSelectGridPlan(w, h, gridTop int32, lay *charSelectLayoutCache
 	// number, since on screen the artwork's rows are 67 x area.H/668 apart — and the
 	// shortfall is rounded UP into design space first, which is what guarantees the
 	// row it picks really is at or below firstUsableY once mapped back.
-	//
-	// firstUsableY is never above the grid's own top (view.Y is already the
-	// intersection with the clip, and gridTop only pushes down), so the advance is
-	// never negative and the height below only ever shrinks.
 	firstUsableY := view.Y
 	if gridTop > firstUsableY {
 		firstUsableY = gridTop
@@ -542,18 +420,11 @@ func intersectRect(a, b sdl.Rect) sdl.Rect {
 // charGridScroll runs the shared scroll bookkeeping for one char-select tab: the
 // wheel band over the grid, the scrollbar in the plan's lane, and — on the themed
 // path — quantisation of the result to whole rows.
-//
 // WHY QUANTISE. AO2 never has this problem because it pages: a page always starts on
 // char_buttons' origin, so every button always sits on the slot frame painted behind
 // it. We scroll, and a pixel-scrolled grid would drift off those frames the moment
 // the wheel moved — re-creating issue #20's symptom for anyone who scrolls, having
 // just fixed it for everyone who does not. Snapping the offset to a multiple of the
-// row pitch keeps the lattice exact at every scroll position and makes one wheel
-// notch step whole rows, which is also how AO2's arrows feel.
-//
-// maxRow rounds UP so the last row can always be brought fully into view: snapping it
-// down would leave the final row permanently half-clipped, which is worse than
-// scrolling a fraction of a row past the content.
 func (a *App) charGridScroll(w int32, id string, g charGridPlan, scroll, matches int32) int32 {
 	c := a.ctx
 	contentH := g.contentHeight(matches)
