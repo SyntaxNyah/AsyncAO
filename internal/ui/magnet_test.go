@@ -44,7 +44,7 @@ func TestLivePanelDragPersistsSnappedRect(t *testing.T) {
 
 	// Give the Group Chat panel a known placed geometry and stamp its rect() dims
 	// (lastW/lastH/lastWinW/lastWinH) so snapToSiblings can run.
-	a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = 300, 200, 480, 360, true
+	a.wins.msgWin.x, a.wins.msgWin.y, a.wins.msgWin.w, a.wins.msgWin.h, a.wins.msgWin.placed = 300, 200, 480, 360, true
 	r0 := a.msgPanelRect(w, h) // stamps the floatWin's last* dims via rect()
 
 	// A sibling panel whose LEFT edge sits a few px from where the drag will land,
@@ -58,8 +58,8 @@ func TestLivePanelDragPersistsSnappedRect(t *testing.T) {
 	a.ctx.mouseDown = true
 	a.ctx.mouseX, a.ctx.mouseY = handle.X+5, handle.Y+5
 	pressed := true
-	a.floatWinDrag(&a.msgWin, handle, &pressed)
-	if !a.msgWin.dragging {
+	a.floatWinDrag(&a.wins.msgWin, handle, &pressed)
+	if !a.wins.msgWin.dragging {
 		t.Fatal("a press on the title must start the drag")
 	}
 
@@ -67,14 +67,14 @@ func TestLivePanelDragPersistsSnappedRect(t *testing.T) {
 	// edge, within alignSnapPx=6) — the magnet must pull it flush to siblingX.
 	a.ctx.mouseX = siblingX + 4 + 5 // +5 = the grab offset captured above
 	pressed = false
-	a.floatWinDrag(&a.msgWin, handle, &pressed)
-	if a.msgWin.x != siblingX {
-		t.Fatalf("mid-drag: X must snap flush to the sibling edge %d, got %d", siblingX, a.msgWin.x)
+	a.floatWinDrag(&a.wins.msgWin, handle, &pressed)
+	if a.wins.msgWin.x != siblingX {
+		t.Fatalf("mid-drag: X must snap flush to the sibling edge %d, got %d", siblingX, a.wins.msgWin.x)
 	}
 
 	// Release + persist (the gesture-END path drawMessagesPanel runs).
 	a.ctx.mouseDown = false
-	a.floatWinDrag(&a.msgWin, handle, &pressed)
+	a.floatWinDrag(&a.wins.msgWin, handle, &pressed)
 	a.persistMsgSlot(w, h)
 
 	// The persisted rect must reflect the SNAPPED X (siblingX / w), not the raw one.
@@ -96,7 +96,7 @@ func TestPanelMagnetCensusExcludesDraggedAndClosed(t *testing.T) {
 
 	// Two panels open; the pair panel is the one being dragged.
 	a.showPair = true
-	a.pairWin.dragging = true
+	a.wins.pairWin.dragging = true
 	a.showEvid = true // a second, non-dragged open panel → a legit candidate
 	// A closed panel must contribute nothing even though its floatWin has a rect.
 	a.showCMPanel = false
@@ -125,7 +125,7 @@ func TestPanelMagnetCensusExcludesDraggedAndClosed(t *testing.T) {
 	}
 
 	// Nothing dragging → the census is empty (drag-gated; settled-frame no-op).
-	a.pairWin.dragging = false
+	a.wins.pairWin.dragging = false
 	a.rebuildPanelMagnetRects(w, h)
 	if len(a.panelMagnetRects) != 0 {
 		t.Errorf("no drag active → census must be empty, got %d", len(a.panelMagnetRects))

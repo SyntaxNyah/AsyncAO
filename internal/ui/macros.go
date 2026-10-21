@@ -285,10 +285,10 @@ const (
 // loginPanelRect is the panel's screen rect, seeded from its persisted layout slot
 // on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) loginPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
 		return r
 	}
-	return a.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
+	return a.wins.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
 }
 
 // drawLoginDialog edits this server's credentials (plaintext storage —
@@ -300,7 +300,7 @@ func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 // still see the room you are sending it to.
 func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.loginWin.dragging || a.loginWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.loginWin.dragging || a.wins.loginWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.loginPanelRect(w, h)
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -311,11 +311,11 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 		a.showLogin = false
 		return
 	}
-	a.floatWinDrag(&a.loginWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.loginWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
+	a.floatWinResize(&a.wins.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.loginWin.dragging && !a.loginWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.loginWin.dragging && !a.wins.loginWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelLogin, panel, w, h)
 	}
 	y := panel.Y + floatTitleH + 8

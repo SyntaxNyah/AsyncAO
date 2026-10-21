@@ -63,15 +63,15 @@ func (a *App) voiceButtonState() (label string, border sdl.Color) {
 }
 
 func (a *App) voicePanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
 		return r
 	}
-	if !a.voiceWin.placed {
+	if !a.wins.voiceWin.placed {
 		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
 		dh := clampI32(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: w - dw - floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
+	return a.wins.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
 }
 
 // voicePeerName resolves a voice peer uid to a display name via the live roster,
@@ -200,7 +200,7 @@ func (a *App) voicePeerChar(uid int) string {
 // press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.voiceWin.dragging || a.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.voiceWin.dragging || a.wins.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.voicePanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -214,11 +214,11 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		a.showVoice = false
 		return
 	}
-	a.floatWinDrag(&a.voiceWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.voiceWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
+	a.floatWinResize(&a.wins.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.voiceWin.dragging && !a.voiceWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.voiceWin.dragging && !a.wins.voiceWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelVoice, r, w, h)
 	}
 

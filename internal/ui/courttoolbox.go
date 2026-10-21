@@ -758,8 +758,8 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	}
 	// Never placed and nothing saved: keep the original corner, so an existing
 	// user's panel does not move on them just because it became draggable.
-	if !a.piecesWin.placed {
-		if r, ok := a.seedPanelFromSlot(&a.piecesWin, slotPanelPieces, pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h); ok {
+	if !a.wins.piecesWin.placed {
+		if r, ok := a.seedPanelFromSlot(&a.wins.piecesWin, slotPanelPieces, pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h); ok {
 			return r
 		}
 		x := w - pw - compactToolboxMargin
@@ -769,7 +769,7 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 		}
 		return sdl.Rect{X: x, Y: y, W: pw, H: panelH}
 	}
-	return a.piecesWin.rect(pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h)
+	return a.wins.piecesWin.rect(pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h)
 }
 
 const (
@@ -945,9 +945,9 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// and so cannot share the frame's click.
 	piecesPressed := c.mouseDown && !a.piecesPrevDown
 	a.piecesPrevDown = c.mouseDown
-	wasManip := a.piecesWin.dragging
-	a.floatWinDrag(&a.piecesWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: toolboxFilterY}, &piecesPressed)
-	if wasManip && !a.piecesWin.dragging {
+	wasManip := a.wins.piecesWin.dragging
+	a.floatWinDrag(&a.wins.piecesWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: toolboxFilterY}, &piecesPressed)
+	if wasManip && !a.wins.piecesWin.dragging {
 		a.persistPanelSlot(slotPanelPieces, panel, w, h) // remember where, across sessions
 	}
 	if !c.mouseDown && wasManip {

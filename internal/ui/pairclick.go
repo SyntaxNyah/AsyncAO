@@ -283,10 +283,10 @@ const (
 // pairPopPanelRect is the panel's screen rect, seeded from its persisted layout
 // slot on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) pairPopPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
 		return r
 	}
-	return a.pairPopWin.rect(pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h)
+	return a.wins.pairPopWin.rect(pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h)
 }
 
 // drawPairPopup is the click-to-pair surface: the clicked target, an editable UID
@@ -304,7 +304,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 		a.pairPopupOpen = false
 		return
 	}
-	wasActive := a.pairPopWin.dragging || a.pairPopWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.pairPopPanelRect(w, h)
 	pw := panel.W
 	c.Fill(panel, ColPanel)
@@ -316,11 +316,11 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 		a.pairPopupOpen = false
 		return
 	}
-	a.floatWinDrag(&a.pairPopWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.pairPopWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.pairPopWin, grip, panel, pairPopPanelMinW, pairPopPanelMinH, pressed)
+	a.floatWinResize(&a.wins.pairPopWin, grip, panel, pairPopPanelMinW, pairPopPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.pairPopWin.dragging && !a.pairPopWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.pairPopWin.dragging && !a.wins.pairPopWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelPairPop, panel, w, h)
 	}
 	x := panel.X + 18

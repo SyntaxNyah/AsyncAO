@@ -20,10 +20,10 @@ func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
 
 // cmPanelRect is the CM panel's floating-window rect (floatwin.go).
 func (a *App) cmPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
 		return r
 	}
-	return a.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
+	return a.wins.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
 }
 
 const (
@@ -43,17 +43,17 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 		return
 	}
 	sw := a.detectedSoftware()
-	wasActive := a.cmWin.dragging || a.cmWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.cmWin.dragging || a.wins.cmWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.cmPanelRect(w, h)                      // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, chipCMColor)                                                     // gold = CM
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.cmWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.cmWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	cgrip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.cmWin, cgrip, panel, cmPanelMinW, cmPanelMinH, pressed)
+	a.floatWinResize(&a.wins.cmWin, cgrip, panel, cmPanelMinW, cmPanelMinH, pressed)
 	a.drawResizeGrip(cgrip)
-	if wasActive && !a.cmWin.dragging && !a.cmWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.cmWin.dragging && !a.wins.cmWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelCM, panel, w, h)
 	}
 	x := panel.X + modDashIn

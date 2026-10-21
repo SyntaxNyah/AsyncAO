@@ -107,10 +107,10 @@ func banBoxDims(kind int) (defH, minH int32) {
 // the open kind. Shared banWin geometry: a position/size the mod set carries over.
 func (a *App) banBoxRect(w, h int32) sdl.Rect {
 	defH, minH := banBoxDims(a.banBoxKind)
-	if r, ok := a.seedPanelFromSlot(&a.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
 		return r
 	}
-	return a.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
+	return a.wins.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
 }
 
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
@@ -493,10 +493,10 @@ func (a *App) fetchAreaForBan() {
 // drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
 // modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
 func (a *App) modDashRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
 		return r
 	}
-	return a.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
+	return a.wins.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
 }
 
 func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
@@ -505,17 +505,17 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 		a.showModDash = false
 		return
 	}
-	wasActive := a.modWin.dragging || a.modWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.modWin.dragging || a.wins.modWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.modDashRect(w, h)                        // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.modWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.modWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	mgrip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
+	a.floatWinResize(&a.wins.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
 	a.drawResizeGrip(mgrip)
-	if wasActive && !a.modWin.dragging && !a.modWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.modWin.dragging && !a.wins.modWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelMod, panel, w, h)
 	}
 	x := panel.X + modDashIn
@@ -937,17 +937,17 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	}
 	isBan := a.banBoxKind == 1
 	_, minH := banBoxDims(a.banBoxKind)
-	wasActive := a.banWin.dragging || a.banWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.banWin.dragging || a.wins.banWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.banBoxRect(w, h)                         // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
-	if wasActive && !a.banWin.dragging && !a.banWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn
@@ -1058,17 +1058,17 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	}
 	isBan := a.banBoxKind == 3
 	_, minH := banBoxDims(a.banBoxKind)
-	wasActive := a.banWin.dragging || a.banWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.banWin.dragging || a.wins.banWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.banBoxRect(w, h)                         // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
-	if wasActive && !a.banWin.dragging && !a.banWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn

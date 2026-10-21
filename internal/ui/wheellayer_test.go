@@ -90,11 +90,11 @@ func TestHkSheetFencesPointer(t *testing.T) {
 		t.Fatal("cursor off the sheet must not fence")
 	}
 
-	a.hkWin.dragging = true // a drag in flight keeps the fence even off-rect
+	a.wins.hkWin.dragging = true // a drag in flight keeps the fence even off-rect
 	if !a.hkSheetFencesPointer(w, h) {
 		t.Fatal("an in-flight sheet drag must keep the fence")
 	}
-	a.hkWin.dragging = false
+	a.wins.hkWin.dragging = false
 
 	a.showHotkeys = false
 	a.ctx.mouseX, a.ctx.mouseY = r.X+r.W/2, r.Y+r.H/2

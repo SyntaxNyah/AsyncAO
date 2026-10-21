@@ -53,10 +53,10 @@ func (a *App) toggleDebugPanel() { a.showDebugPanel = !a.showDebugPanel }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
 func (a *App) debugPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
 		return r
 	}
-	return a.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
+	return a.wins.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
 }
 
 func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
@@ -65,17 +65,17 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		a.showDebugPanel = false
 		return
 	}
-	wasActive := a.debugWin.dragging || a.debugWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.debugWin.dragging || a.wins.debugWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.debugPanelRect(w, h)
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: pw, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.debugWin, sdl.Rect{X: panel.X, Y: panel.Y, W: pw - 84 - debugPanelIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.debugWin, sdl.Rect{X: panel.X, Y: panel.Y, W: pw - 84 - debugPanelIn, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.debugWin, grip, panel, debugPanelMinW, debugPanelMinH, pressed)
+	a.floatWinResize(&a.wins.debugWin, grip, panel, debugPanelMinW, debugPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.debugWin.dragging && !a.debugWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.debugWin.dragging && !a.wins.debugWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelDebug, panel, w, h)
 	}
 	x := panel.X + debugPanelIn

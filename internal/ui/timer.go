@@ -180,10 +180,10 @@ const (
 // timerPanelRect is the panel's screen rect, seeded from its persisted layout slot
 // on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) timerPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.timerWin, slotPanelTimer, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.wins.timerWin, slotPanelTimer, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h); ok {
 		return r
 	}
-	return a.timerWin.rect(timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h)
+	return a.wins.timerWin.rect(timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h)
 }
 
 // drawTimerPanel is the countdown's setup surface: a large remaining readout,
@@ -198,7 +198,7 @@ func (a *App) timerPanelRect(w, h int32) sdl.Rect {
 // bar, resize the bottom-right grip) like the Evidence and Call Mod boxes.
 func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.timerWin.dragging || a.timerWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.wins.timerWin.dragging || a.wins.timerWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.timerPanelRect(w, h)
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -209,11 +209,11 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 		a.showTimer = false
 		return
 	}
-	a.floatWinDrag(&a.timerWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.wins.timerWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.timerWin, grip, panel, timerPanelMinW, timerPanelMinH, pressed)
+	a.floatWinResize(&a.wins.timerWin, grip, panel, timerPanelMinW, timerPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.timerWin.dragging && !a.timerWin.resizing { // drag/resize just ended → remember where
+	if wasActive && !a.wins.timerWin.dragging && !a.wins.timerWin.resizing { // drag/resize just ended → remember where
 		a.persistPanelSlot(slotPanelTimer, panel, w, h)
 	}
 
