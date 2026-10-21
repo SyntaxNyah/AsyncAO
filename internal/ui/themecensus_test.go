@@ -736,29 +736,6 @@ func TestAceAttorney2xCensusNotesTabIsReachable(t *testing.T) {
 	}
 }
 
-// TestAceAttorney2xCensusInertDeclaredRects reports the other half of the
-// picture: rects this theme DECLARES, that reach a themeSlots row, and that
-// still paint nothing — holes in the theme's own canvas. Informational (the
-// registry already says slotStateInert on purpose), but it is the list a release
-// check wants beside the overlap report.
-func TestAceAttorney2xCensusInertDeclaredRects(t *testing.T) {
-	th := loadAceAttorney2x(t)
-	var inert []string
-	for i := range themeSlots {
-		s := &themeSlots[i]
-		if s.state != slotStateInert {
-			continue
-		}
-		if r, ok := th.ElementRect(s.key); ok {
-			inert = append(inert, fmt.Sprintf("%s %+v", s.key, r))
-		}
-	}
-	sort.Strings(inert)
-	for _, s := range inert {
-		t.Logf("declared but painted by nothing (slotStateInert): %s", s)
-	}
-}
-
 // censusShippedOmissions are the layout keys that real, in-the-wild copies of
 // AO2 themes DO NOT declare, so the AO2 stock backstop has to supply them.
 //
@@ -918,46 +895,4 @@ func TestAO2BackstopAcrossTheThemeCorpus(t *testing.T) {
 	}
 	t.Logf("corpus audit: %d of %d themes with a design INI get a stock backstop rect on top of an authored widget",
 		affected, scanned)
-}
-
-// TestAO2BackstopCollisionSurface reports the SIZE of the class the gate above
-// pins one instance of: how many of the stock rects would land on an
-// author-declared widget if this theme had omitted them. Informational — it is
-// the argument for fixing the backstop generally rather than special-casing one
-// key, and the number to re-read after any change to ao2DefaultDesignRects.
-func TestAO2BackstopCollisionSurface(t *testing.T) {
-	th := loadAceAttorney2x(t)
-	authored := make(map[string]theme.Rect, len(themeLayoutKeys))
-	for _, k := range themeLayoutKeys {
-		if r, ok := th.ElementRect(k); ok {
-			authored[k] = r
-		}
-	}
-	colliding, total := 0, 0
-	var worst []string
-	for k, def := range ao2DefaultDesignRects {
-		if k == ao2CanvasKey || k == ao2ViewportKey {
-			continue
-		}
-		total++
-		var hits int
-		for ak, r := range authored {
-			if ak == k || ak == ao2CanvasKey || ak == ao2ViewportKey {
-				continue
-			}
-			if r.X < def.X+def.W && r.X+r.W > def.X && r.Y < def.Y+def.H && r.Y+r.H > def.Y {
-				hits++
-			}
-		}
-		if hits > 0 {
-			colliding++
-			worst = append(worst, fmt.Sprintf("%s→%+v hits %d", k, def, hits))
-		}
-	}
-	sort.Strings(worst)
-	t.Logf("if this 944x600 theme omitted a key, %d of %d stock backstop rects would land on an author-declared widget",
-		colliding, total)
-	for _, s := range worst {
-		t.Logf("  %s", s)
-	}
 }
