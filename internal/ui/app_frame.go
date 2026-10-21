@@ -38,8 +38,6 @@ func (a *App) RefreshServers() {
 	// wipe used to provide. Ping mode itself only exits via its toggle button
 	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
 	// correct for whichever list is showing, so neither needs abandoning.
-	// An explicit --master flag (anything non-default in Deps) wins over the
-	// Settings override, which wins over the built-in defaults.
 	urls := a.masterListURLs()
 	ch := a.lobbyResult
 	go func() {
@@ -267,26 +265,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// progress out: a focused text field (a search / callword box, the common
 	// case) releases on the first ESC, then the second ESC leaves — instead of
 	// the field silently swallowing the key ("ESC did nothing in Settings").
-	// Scoped to the menu screens so the courtroom's own ESC behaviour is
-	// untouched; skipped while a key-bind capture or an ESC-owning overlay
-	// (hotkey sheet / update modal) is up so it never steals their key.
-	// Esc backs out of whatever's open — one layer per press. On a full-screen MENU
-	// it closes a dropdown / field then leaves; on the courtroom or lobby it closes
-	// the topmost popup or floating panel (Group Chat, Voice, Evidence, Pair, Mod,
-	// CM, Call Mod, Timer, …) via closeTopOverlay. Skipped while a key-bind capture
-	// owns Esc — and ONLY that; the layout editors are handled by closeTopOverlay,
-	// never by a guard here (see the NOTE below, which is load-bearing).
-	// NOTE: Esc arrives as ctx.escPressed (HandleEvent maps K_ESCAPE there, NOT to
-	// keyPressed) — the old keyPressed==K_ESCAPE test never fired, which is why "Esc
-	// did nothing". Gate on escPressed.
 	// NO EDITOR GUARD HERE. Esc must ALWAYS have somewhere to go, and a bare guard is
 	// the one shape that cannot promise that: it swallows the key on the assumption
 	// that a draw-time handler will answer, which is false on any frame the editor's
-	// draw does not run (a return-to-top modal used to end the themed pass before it —
-	// a hard lock with no Done chip, no banner and every kit widget fenced dead).
-	// closeTopOverlay owns the editors instead, at the priority their pixels sit at,
-	// so the key is consumed by whoever is actually on top and the editors' own
-	// draw-time escPressed checks become a second guarantee rather than the only one.
 	if a.ctx.escPressed && !a.capturingKey() {
 		// Close the topmost popup / panel first (works on any screen — e.g. the
 		// reset-confirm or a dropdown over Settings); only if nothing was open do we
@@ -307,25 +288,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// Leaving goes through closeThemeEditor so the return target is the screen the
 				// editor was opened FROM — a.prevScreen belongs to the menu screens and would
 				// send a courtroom-opened editor to whatever menu was last visited.
-				//
-				// THE PANEL IS A RUNG (design §Q7's Esc row, "close top panel → deselect →
-				// leave"). It was missing while the Fonts panel was cosmetic and became a real
-				// hole the moment it became an input mode that fences BOTH rails: Esc walked
-				// straight past the thing on top of the screen and armed the discard chip
-				// instead. It sits above the selection because while a panel is up the
-				// selection cannot be changed at all (editorPanelUp fences the canvas and the
-				// rails), so the topmost surface is the only one Esc can honestly be about.
-				// (The keyboard map at design line 1891 writes "clear, then close panel"; its
-				// "clear" is this ladder's FOCUS rung, which is the reading that leaves both
-				// lines true.)
-				//
-				// PREVIEW IS THE TOP RUNG (field batch 9), above the focused field and
-				// above the panels. While the demo plays there IS no focused field and
-				// there ARE no panels — enterEditorPreview closes them — so a rung placed
-				// any lower would still be reached today; it sits here because "Esc leaves
-				// the thing that is covering the screen" must not depend on that staying
-				// true. It CONSUMES the press: an Esc that fell through would arm the
-				// discard chip on a document the user is not even looking at.
 				switch {
 				case a.editorPreviewOn():
 					a.exitEditorPreview()
@@ -355,10 +317,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// own Disconnect entry (extrasWidgets, floatbox.go), which goes through
 				// the same confirm. So the action did not disappear, it stopped being a
 				// keystroke.
-				//
 				// A focused field (the IC input) still eats the FIRST Esc, exactly like
 				// every menu screen — and under the Discord focus model (chatfocus.go)
-				// that rung is what lets you step out of the chat box at all.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
 				} else {
@@ -411,21 +371,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// The THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
 	// Ctrl+Y here, and the site is the fix rather than a tidy-up.
-	//
-	// editorUndoChord's only other caller is handleHotkeys, which runs from the three
-	// COURTROOM draw passes — so the chord reached the editor only while a live room
-	// was painting behind its canvas. The editor's headline entry point is the
-	// Settings row, which is reachable with NO SERVER ATTACHED (design §3): there
-	// drawEditorGeometryCanvas draws instead, no courtroom pass runs, and the chord
-	// sat in c.hotkey untouched for the whole frame. Present but unreachable, on the
-	// one screen whose entire contract is that every edit is one Ctrl+Z away.
-	//
-	// AFTER the focused-field arm above, deliberately: a focused inspector row (a hex
-	// value, an id) keeps the FIELD's own undo, which is the house rule every other
-	// editor already follows. BEFORE quick-connect and every other pre-screen chord
-	// consumer, because editorUndoChord's promise is that a key an armed editor owns
-	// can never also fire whatever else it happens to be bound to.
-	//
 	// Gated on themeEditorOpen() rather than called bare, so the two LEGACY overlay
 	// editors keep claiming their chord exactly where they always have — inside their
 	// own courtroom pass, via handleHotkeys — and nothing about their dispatch moves.
@@ -611,16 +556,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	//
-	// serverNoticeDlg joins them: it is blocking, and unlike the rest it can be up
-	// with NO session at all (a server that refuses during the handshake), so the
-	// screen underneath is the lobby — where an unfenced click lands on Reconnect and
-	// redials the server that just banned you.
-	//
-	// fontWarnDlg was MISSING from this list and was therefore click-through: it
-	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
-	// ever fenced the screen for it, so a click that looked like it hit the dialog
-	// also hit whatever was behind. Pre-existing, same family, one term.
 	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidServerPickerOpen || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
@@ -716,23 +651,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// so drawing it inside that pass left it dead (the recon BLOCKER). Post-court
 			// the fence is already lifted (drawCourtroom's deferred unfencePointer ran on
 			// return). Drawn AFTER drawFloatingPanels = above the other floating panels:
-			// it's a small utility popover the user just opened, so it should sit on top.
-			// It draws in BOTH layouts (this site is layout-agnostic) and self-gates on
-			// toolboxPinned && toolboxPieces (+ extrasSurfaceLive, matching its fence), so
-			// theater — which clears both flags in setTheater — and blocking modals both
-			// suppress it without a special case here.
-			//
-			// A1 Phase 1: the compact toolbox (grip + chips) and the pieces panel now
-			// survive INTO edit mode too — but the classic/themed editor fence sets
-			// c.modalOn for the whole courtroom pass (classicEditFence/layoutEditFence),
-			// and modalOn (unlike ptrFenced) is NOT cleared by the deferred unfence, so
-			// hovering() would read false here and the toolbox/panel would draw click-dead.
-			// The editor itself uses raw pointIn (it doesn't need modalOn), so release
-			// modalOn just for this toolbox draw, then restore it so downstream
-			// fence assumptions (FinishFrame, palette, tooltips) are undisturbed. Draw
-			// the compact grip/chips HERE while editing (its in-pass draw at
-			// screens.go/theme_layout.go is gated off during edit for the same
-			// fence reason).
 			editingLayout := a.classicEdit || a.layoutEdit
 			if editingLayout {
 				savedModal := a.ctx.modalOn
@@ -791,12 +709,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// courtroom: there it paints inside the courtroom pass, under the editor overlay,
 	// so its chips can't cover the editor's banner and controls (the "layering mess"
 	// playtest shot: a server chip parked top-right sat on the Snap/Done buttons).
-	// It REPLAYS the per-frame latch the courtroom pass took (chrometop.go) rather
-	// than re-deriving the predicate here: this site runs after the whole screen
-	// dispatch, so a re-test saw an editor that the pass had already dismissed (Done,
-	// Esc, a lost theme) and painted the strip a SECOND time over the banner that was
-	// still up. The two sites are exact complements of one latched bool, so exactly
-	// one of them paints per frame.
 	if a.tabStripPaintsOverEverything() {
 		a.drawTabBar(winW, winH)
 	}
@@ -911,7 +823,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 // since the custom root wins, that custom default would otherwise SHADOW the
 // built-in one, making the stock default unreachable once you've set a folder
 // (#87). The app directory is always the built-in fallback. Pure, for testing.
-//
 // Everything else about the ordering lives in themeSearchRoots, which the theme
 // PICKER and the catalog build from too: what the loader resolves and what the
 // user can SEE in the dropdown must never disagree about which directories exist.
@@ -935,25 +846,7 @@ const themeSearchRootCap = 3
 // three can drift into searching a root the others don't — the bug where a
 // theme resolved by name, appeared in the catalog, sat in the folder "Open
 // folder" opens, and was still absent from the dropdown.
-//
 // First hit per theme NAME wins downstream, so this order is the precedence.
-//
-// configBase goes LAST on purpose. It is the portable-aware config root
-// (config.UserThemesDir's parent), where a locked-down install (Program Files, an
-// unwritable exe dir) puts the themes the client itself writes — imports,
-// editable copies — so it must be searched; but inserting it any earlier would
-// silently flip which theme wins for anyone holding the same name in two places,
-// which is a live regression traded for nothing. Appended, never inserted.
-//
-// The samePath skip is DEFENSIVE — it is not a state production reaches.
-// config.ConfigBaseDir never returns the executable's directory: it resolves to
-// <exeDir>/config when portable and <osConfigDir>/AsyncAO otherwise
-// (config/location.go, resolveConfigBase). In a portable install the WRITE root
-// is <exeDir>/themes, which the exe root above already covers, and this third
-// root then probes <exeDir>/config/themes — a sibling nothing writes to, normally
-// absent, and harmless to miss. Do NOT "align" config.UserThemesDir to
-// <configBase>/themes for portable to make the skip meaningful: that would move
-// every portable user's write root into config/ and strand the themes they have.
 func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 	roots := make([]string, 0, themeSearchRootCap)
 	if customRoot != "" {
@@ -973,13 +866,6 @@ func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 // (config.ExecutableDir's first resolve, and whichever config memo is still
 // empty) — goroutine only, never a draw path (hard rule 2). customRoot is the
 // already-normalized custom folder, "" when there is none.
-//
-// config.ExecutableDir, never a local os.Executable + filepath.Dir: that raw
-// spelling skips EvalSymlinks, so on a symlinked or junctioned install it names
-// the same directory with a DIFFERENT string than config.UserThemesDir and the
-// catalog scan (themecatalog.go) do — and every "is this the same place?" check
-// downstream (samePath, the write-root backstop, the origin badge) is a string
-// comparison by design. One memoized answer, shared by every caller.
 func themeSearchRootsNow(customRoot string) []string {
 	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()

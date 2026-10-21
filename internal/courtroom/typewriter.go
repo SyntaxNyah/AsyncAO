@@ -36,28 +36,9 @@ const (
 
 	// blipsPerUpdate bounds the blips ONE Update may emit, and it is the whole of
 	// AsyncAO's departure from AO2's blip timing.
-	//
-	// AO2 sounds its blip from inside a chat_tick delivery (`blip_player->playBlip()`,
-	// AO2-Client courtroom.cpp:4545), and chat_tick is a one-shot QTimer: it STOPS on
-	// entry (:4271) and re-arms from the handling instant on the way out (:4586). So AO2
-	// submits at most one blip per delivery and any two blips are separated by real
-	// time — a blocked Qt event loop makes its crawl LATE, never louder.
-	//
-	// One AsyncAO Update is one delivery, but unlike AO2's it can carry several runes,
-	// because its dt is whatever the caller's step happens to be: a frame that took
-	// 100 ms at the 40 ms default crawl (cmd/asyncao/main.go's maxFrameDelta clamps a
-	// hitch to exactly that), or an exporter stepping the room at 1s/8 fps
-	// (internal/ui/gifexport.go). Sounding every due blip there hands the mixer N chunks
-	// in the SAME INSTANT, which is not a fast rhythm — it is one louder blip with the
-	// cadence gone, the reported symptom. (A `}}}` span also reveals many runes at once
-	// and is NOT why this exists: those runes take AO2's zero-delay fast path in Update
-	// and never reach the blip code at all.)
-	//
 	// The budget therefore sits on the AUDIBLE half ONLY; the reveal stays proportional
 	// to dt (see Update). Capping the reveal instead coupled the crawl to the caller's
 	// step rate: the exporters captured a fraction of the requested crawl and truncated
-	// the line at their frame cap, and the text-speed slider stopped reaching any crawl
-	// faster than the display refresh (config.MinTextCrawlMs is 5 ms = 200 runes/s).
 	blipsPerUpdate = 1
 )
 
@@ -107,16 +88,6 @@ func isExtColorCode(r rune) bool {
 // we interpret them at render time on both incoming and outgoing text and let
 // them survive to the wire untouched (packet.go escapes only `#%$&`, never
 // these). Semantics + the stock character table are transcribed from AO2-Client:
-// the parse loop is Courtroom::filter_ic_text (src/courtroom.cpp:3532-3817) and
-// the default characters are its stock theme's chat_config.ini
-// (bin/base/themes/default/chat_config.ini). The mapping to AsyncAO is exact:
-// AO2 colour index c0..c8 == render.TextColor index 0..8 == StyleRun.Color 0..8.
-//
-//	Palette: `Start` opens colour `Palette`; `End` closes it. When Start==End the
-//	delimiter TOGGLES (a second one closes) — chat_config.ini c1/c2/c3/c5/c6/c7,
-//	all `_remove = 1` (the delimiter is consumed, not shown). When Start != End
-//	the pair BRACKETS a span — c4 `(`…`)` and c8 `[`…`]`, both `_remove = 0`
-//	(the brackets stay visible). `Remove` mirrors that `_remove` flag.
 type ao2Markup struct {
 	Start   rune // opening delimiter (chat_config.ini cN_start)
 	End     rune // closing delimiter (cN_end; == Start for the toggle colours)
@@ -127,16 +98,9 @@ type ao2Markup struct {
 // ao2Markups is the STOCK default-theme table, in AO2 colour order c1..c8
 // (c0 is the uncoloured default — no delimiter). Values verbatim from
 // AO2-Client/bin/base/themes/default/chat_config.ini:
-//
-//	c1 Green   ` ` `  toggle remove=1   c5 Yellow  º º    toggle remove=1
-//	c2 Red     ~ ~    toggle remove=1   c6 Magenta № №    toggle remove=1
-//	c3 Orange  | |    toggle remove=1   c7 Cyan    √ √    toggle remove=1
-//	c4 Blue    ( )    pair   remove=0   c8 Gray    [ ]    pair   remove=0
-//
 // AsyncAO's theme system is asset-driven and does not (yet) expose per-theme
 // remappable chat markup, so we hard-code the stock table: it is what every
 // AO2/webAO peer sends by default, which is exactly the interop target. Every
-// character is a named constant here (no magic literals) — hard rule §9.
 var ao2Markups = [...]ao2Markup{
 	{Start: '`', End: '`', Palette: 1, Remove: true},  // c1 green
 	{Start: '~', End: '~', Palette: 2, Remove: true},  // c2 red
@@ -319,18 +283,6 @@ type MidEmoteMark struct {
 // visual is already idempotent (each fire just restamps the same ShakeLeft /
 // FlashLeft countdown), so dropping the overflow costs nothing real and keeps a
 // wall of \s from being a screenshake-spam vector.
-//
-// "One message" is per PARSE PHASE, not per parse, and that distinction is the
-// whole point on the 2.8 additive path. StartAppend re-parses prefix+message in one
-// pass — the prefix being every ADDITIVE line accumulated so far — so a whole-parse
-// budget would be spent by the accumulated chain and then refuse every mark in the
-// tail: the newest continuation's own \s/\f, including the mark AT the join that
-// StartAppend's skip loop deliberately preserves and that a tail-of-pure-markup
-// continuation exists to fire. The budget therefore restarts at the join
-// (effectMarkBase), so the tail always gets a full, unspent allowance no matter how
-// long the chain has grown. The slice stays bounded: at most two phases per parse,
-// hence at most 2×effectMarksMax marks, and the prefix's marks are dropped by
-// StartAppend's skip loop anyway (they fired on the original line).
 const effectMarksMax = 32
 
 // midMarksMax bounds how many mid-text markers ONE MESSAGE can record (same hard
@@ -368,23 +320,6 @@ func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 // they index into the typewriter's runes by simple accumulation — the reveal
 // and the styling can never drift (one parse, one rune sequence). Two inline
 // colour schemes are honoured:
-//
-//   - AsyncAO-native, render-ONLY `\c` codes: `\cN` (N = 0..8) starts a palette
-//     colour, `\cr` rainbow, `\c<letter>` an extended AsyncAO colour (#98),
-//     `\c#RRGGBB` an EXACT hex colour (v1.52.0), `\b`/`\i` toggle bold/italic,
-//     `\\` a literal backslash. These are stripped from the wire text, so they
-//     colour only on another AsyncAO client (extended/hex carry a nearest-
-//     standard wire text_color fallback so stock clients still see a sensible
-//     colour).
-//   - AO2 inline markup (§3.8, ao2Markups): the bare delimiters “ ` ~ | º № √ “
-//     (toggles) and `( )` / `[ ]` (pairs) that AO2/webAO keep IN the transmitted
-//     text. They map to palette indices 0..8 and are interpreted at render time
-//     on BOTH incoming and outgoing messages, and they SURVIVE to the wire — so a
-//     real AO2/webAO peer renders the same colour. `\` before a delimiter escapes
-//     it to a literal (AO2's own convention). The two schemes compose in one
-//     message: an AO2 span nests OVER the current `\c` colour and returns to it
-//     when it closes.
-//
 // A literal backtick, tilde, pipe, º, №, √, or a matched bracket pair therefore
 // now colours chat instead of showing verbatim — escape with a leading `\` to
 // type one literally.
@@ -669,7 +604,6 @@ func (t *Typewriter) addMidMark(m MidMark) {
 // prefix are DROPPED (they fired on the original line; a re-reveal must not re-fire
 // them), matching SkipToEnd's rule for skipped marks. prefix "" is identical to
 // Start(message).
-//
 // The tail also gets its OWN effect-mark budget rather than whatever the accumulated
 // prefix left of one — see effectMarksMax, and TestAppendTailKeepsItsOwnEffectBudget.
 func (t *Typewriter) StartAppend(prefix, message string) {
@@ -798,7 +732,6 @@ func (t *Typewriter) SkipToEnd() {
 // is what makes a bare-effect message behave like AO2, whose emptiness test
 // (start_chat_ticking, AO2-Client courtroom.cpp:4183) reads the RAW wire text —
 // and a raw "\f" is not empty, so AO2 ticks it and do_flash() runs.
-// Pure read, zero-alloc: safe on the per-frame Update path.
 func (t *Typewriter) EffectsPending() bool { return t.effectCursor < len(t.effects) }
 
 // NextEffect returns the next inline \s/\f mark whose position has been revealed
@@ -834,35 +767,9 @@ func (t *Typewriter) NextMidEmote() (MidEmoteMark, bool) {
 // Update advances the reveal by dt. It returns how many new runes became
 // visible and how many blips to fire this tick. The render thread's frame
 // cost stays O(revealed) — no per-character layout here (spec §12).
-//
-// REVEAL POLICY. The reveal is PROPORTIONAL to dt and deliberately uncapped: every
-// rune whose accumulated delay has elapsed becomes visible in this call. Update's
-// callers do not share a step size — the frame loop passes real elapsed time (bounded
-// by cmd/asyncao/main.go's maxFrameDelta, 100 ms, precisely so time-driven state
-// "resumes smoothly instead of bursting the backlog"), and the scene/GIF/WebP/video
-// exporters step the room at their own 1s/fps (internal/ui/gifexport.go, presets 8-24
-// fps) — so a per-call rune budget is really a hidden second speed knob keyed to the
-// caller's frame rate. The fractional accumulator is what keeps the AVERAGE cadence
-// exactly on the user's crawl; reveal-and-reset would quantise it onto the step grid.
-//
 // Only the BLIPS carry a per-call budget (blipsPerUpdate), because they are the half a
 // coarse step turns into one overlapping sound instead of a rhythm. That IS AO2's own
 // limit: one blip per chat_tick delivery (courtroom.cpp:4545, timer re-armed at :4586).
-//
-// ZERO-DELAY RUNES (speed step 0, `}}}`) reveal their whole remainder in one call and are
-// SILENT, which is AO2 transcribed rather than a concession: chat_tick's guard
-//
-//	if ((msg_delay <= 0 && tick_pos < f_message.size() - 1) || formatting_char) {
-//	  chat_tick_timer->start(0); ... }   // :4479-4484
-//
-// re-arms immediately and RETURNS before the render branch, so those characters reach
-// neither playBlip nor `++blip_ticker`: a `}}}` span sounds nothing and leaves the line's
-// blip phase exactly where it began. The clause's own exception is transcribed with it —
-// `tick_pos < f_message.size() - 1` means the message's LAST character falls through even
-// at speed 0, so an all-instant message still blips once. Leaving these runes to the
-// per-delivery budget alone (one blip per Update) would both invent a blip AO2 never
-// sounds and, by ticking on every instant rune, shift every later blip by one character
-// after an odd-length span.
 func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 	if t.Done() {
 		return 0, 0
@@ -890,38 +797,6 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 // tickBlip advances AO2's blip_ticker for one just-revealed rune and reports whether
 // that rune is DUE to sound a blip. Transcribed from Courtroom::chat_tick
 // (AO2-Client courtroom.cpp:4540-4555):
-//
-//	if ((blip_rate <= 0 && blip_ticker < 1) || (b_rate > 0 && blip_ticker % b_rate == 0)) {
-//	  if (!formatting_char && (f_character != ' ' || blank_blip)) { playBlip(); ++blip_ticker; }
-//	} else { ++blip_ticker; }
-//
-// Four rules fall out of that shape, and all four are load-bearing:
-//
-//   - the ticker is TESTED BEFORE it is advanced and starts at 0 (reset per message at
-//     :4233), so the FIRST printed character blips — not the second;
-//   - whitespace landing on a DUE tick neither blips nor advances: the tick waits for a
-//     letter to land on (AO2's own comment, :4550-4553);
-//   - whitespace landing on a NON-DUE tick DOES advance, so spaces shift the phase of
-//     everything after them. "a b c d" at rate 2 blips on all four letters;
-//   - a line break is NEITHER of those. `\n` is a formatting_char (:4436-4439), so
-//     chat_tick's :4479 guard diverts it before the blip block is ever reached: it hits
-//     neither playBlip (:4545) nor either ++blip_ticker (:4546,:4554). It is silent AND
-//     phase-neutral in every blank_blip setting. Treating it as a space instead lets it
-//     tick when it lands on a non-due rune, which puts every blip after the break one
-//     character out of phase.
-//
-// AO2's `blip_rate <= 0` clause (a rate of 0 sounds exactly once per message) is not
-// reachable here and is deliberately not transcribed: the rate is a preference clamped
-// to config.MinBlipRate == 1, and effectiveBlipRate floors it at 1 for direct callers.
-//
-// Update calls this for the runes that reach AO2's RENDER branch, plus the `\n`s that in
-// AO2 do not: a zero-delay rune short-circuits before this function, exactly as the :4479
-// guard does, so nothing here needs a `need == 0` special case — but a `\n` still arrives
-// with a normal delay, because we deliberately do NOT give it AO2's instant start(0)
-// reveal. That is a reveal-PACING difference (a line break costs one crawl tick here and
-// none in AO2), out of scope for the blip phase this function owns; the guard below
-// restores only the blip half of :4479.
-//
 // Whether the due blip is actually SOUNDED is Update's call (blipsPerUpdate) — the
 // ticker keeps AO2's phase either way, so a blip dropped for being simultaneous with
 // another does not shift the rhythm of the rest of the line.
@@ -949,14 +824,6 @@ func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
 //
 //	int b_rate = blip_rate;
 //	if (msg_delay != 0 && msg_delay <= 25)
-//	  b_rate = qMax(b_rate, qRound(static_cast<float>(text_crawl) / msg_delay));
-//
-// where text_crawl is the base cadence (our Interval) and msg_delay the
-// speed-code-scaled per-character delay (our intervals[i]). The ratio is
-// scale-free, so the only translation needed is the threshold, which rides
-// blipSpamCrawlNum/Den. A \p pause inflates intervals[i] well past the
-// threshold, so pauses correctly leave the rate alone — as does need == 0,
-// matching AO2's `msg_delay != 0` guard.
 func (t *Typewriter) effectiveBlipRate(need time.Duration) int {
 	rate := t.BlipRate
 	if rate < 1 {

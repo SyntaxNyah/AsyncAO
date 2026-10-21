@@ -388,10 +388,6 @@ type App struct {
 	// still-rolling stream is handed to the background (so it keeps its position
 	// but goes inaudible — tabs stay acoustically isolated); cleared when the
 	// active tab takes the stream back (its resumed track is what's playing).
-	// The tab-isolation work (ecd6d9e isolated logs/scenery) deliberately did NOT
-	// isolate music — continuity is the agreed exception; this duck is how it stays
-	// isolated ACOUSTICALLY without killing the stream. Suppressed entirely when
-	// the MusicAcrossTabs pref is ON (then a backgrounded stream stays audible).
 	musicTabDucked bool
 	// musicOwnerKey is the serverKey of the tab whose track is in the single music
 	// stream right now — stamped at the play sites (the active-tab EventMusic handler
@@ -423,9 +419,6 @@ type App struct {
 	// that CurrentMusicURL never equals, or a stalled download) fires no event, so
 	// the awaited URL simply never becomes current and settleAwaitedMusic never
 	// lifts the duck. settleAwaitedMusic uses this stamp as the last-resort release:
-	// past musicAwaitTimeout it un-ducks anyway so a backgrounded stream can't stay
-	// inaudible with no way out. Stamped at BOTH arm sites (the DJ /play handler and
-	// resumeActiveTabMusic); the zero value is "nothing armed" (await == "" too).
 	musicAwaitSince time.Time
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
@@ -706,12 +699,9 @@ type App struct {
 	// logs/<server>/<session>.log, opened lazily on that session's first logged
 	// message. Keyed by (server, sessionState.logSession) — keyed by server ALONE,
 	// two tabs on one server shared a writer and interleaved into a single file.
-	// Bounded by transcriptWriterCap. nil/empty = off / nothing logged yet.
-	//
 	// An entry lives exactly as long as the session that owns it: reapTranscripts
 	// retires and deletes it the moment nothing does (tab closed, session reset),
 	// and CloseTranscript drains whatever is left at exit. Holding them to shutdown
-	// instead leaked a file + goroutine per reconnect and hit the cap after 64.
 	translogs map[translogKey]*transcriptWriter
 	// nextLogSession mints sessionState.logSession. Monotonic for the process, so an
 	// id is never reused even after a tab closes — a reused id would let a new tab
@@ -921,12 +911,8 @@ type App struct {
 	// themeReport is the applied theme's IMPORT REPORT (themereport.go) — every
 	// degrade, missing family and unbound key the last apply noticed. Bounded by
 	// themeReportCap and replaced wholesale at each landing, never appended to.
-	//
 	// TWO READERS, both load-bearing: noteThemeReport says the headline on the warn
 	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go)
-	// show all of it. Before that panel existed this field was written on every
-	// apply and read by one test — the parsed-but-never-applied shape rule 11 names
-	// by example.
 	themeReport []string
 	// themeImp is the .aotheme TRANSPORT state machine (themeimport.go): the
 	// pending consent, and the one bundle job that may be in flight. On App
@@ -1044,20 +1030,15 @@ type App struct {
 	// never per element or per draw site (the two AllocsPerRun gates forbid the
 	// latter, and the theme-chrome draw sites number about ten), and it is what
 	// makes the accessibility answer and the pacing census the same decision.
-	//
 	// TWO latch points, both calling reduceMotionNow so there is one spelling of
 	// the read: App.Frame, because themeFrame is reached from screens that never
 	// open an element pass (char select, settings previews, the export capture);
-	// and beginThemeFXPass, because an offscreen pass may run without a Frame
-	// around it. Latching twice in a frame is harmless — the second read of an
-	// unchanged pref is the same answer.
 	themeFXFrozen bool
 	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
 	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
 	// hover text. Both are built on the apply goroutine because both format; "" is a
 	// theme whose extension tier loaded (or which has none at all), which is almost
 	// every theme.
-	//
 	// They exist because theme.Theme.SidecarErr had no consumer and a refused sidecar
 	// is INVISIBLE: the theme applies, its AO2 half renders, and every element,
 	// override, palette role and pane in the file is silently gone.
@@ -1096,22 +1077,12 @@ type App struct {
 	tabBarSeeded bool
 	// themeResizeArmGen is the one-shot that arms the #35 auto-resize. It holds the
 	// themeGen of the ONE apply allowed to move the window; 0 = disarmed.
-	//
 	// It NAMES its apply rather than being a bare flag because the apply pipeline is
 	// re-entered constantly by things that must never move the window — boot,
 	// healTheme's eviction repair (fired from any theme-art draw, including the
-	// Settings screen's own live preview), the texture-filter Purge recovery, and a
-	// server binding its own theme. A bare flag is consumed by whichever apply lands
-	// first, so a heal that was already in flight when the user opened the theme
-	// dropdown would eat the arming and snap the window to the PREVIOUS theme's
-	// canvas, leaving the theme they actually picked unsnapped. Comparing gens makes
-	// the arming unforgeable: only the apply the user's click started can spend it.
-	//
 	// Armed at the USER-INITIATED sites (the Settings dropdown, the < > cycle
 	// arrows, a user-driven theme-folder scan landing) and once at boot when the
 	// ThemeFit default move ran for this prefs file, consumed by
-	// maybeResizeToThemeDesign. Render thread on both ends, so it needs no
-	// synchronisation (hard rules 1 and 8).
 	themeResizeArmGen uint64
 
 	// --- live layout editor (themed courtroom; overrides persist per theme) ---
@@ -1211,12 +1182,6 @@ type App struct {
 	// results and its reusable other-slots buffer (classicalign.go). Editor
 	// path only; reused so a long drag allocates nothing after warm-up.
 	// alignGuides is ALSO reused by the live piece-to-piece magnet (magnet.go)
-	// and the themed editor's magnet: safe because (a) the CLASSIC editor's guides
-	// and the live magnet never share a frame — drawFloatingPanels early-returns
-	// while classicEdit is on (blockingCourtPopup); and (b) the THEMED editor both
-	// populates AND renders its guides inside drawLayoutEditor before the later
-	// drawFloatingPanels harmlessly re-slices the (already-drawn) buffer to empty
-	// (no live panel drags under the editor fence, so the live guide draw no-ops).
 	alignGuides  []alignGuide
 	alignScratch []sdl.Rect
 	// panelMagnetRects is the live-magnet candidate buffer (magnet.go): every
@@ -1285,10 +1250,6 @@ type App struct {
 	// that WE set c.modalOn; because that flag is SHARED with four sibling popups,
 	// the release also has to check that none of them is holding it (see
 	// menuBarModalFence / otherModalFenceHeld).
-	// menuBar is THIS FRAME's latched decision: menuBarFrame computes it above the
-	// screen dispatch (the fence-ordering precondition — see menubar.go's header)
-	// and drawMenuBar replays it after the screens. All value types, App-level (the
-	// bar is client chrome, not per-tab state).
 	menuOpen    string
 	menuSub     string
 	menuFenceOn bool
@@ -1920,12 +1881,9 @@ func (a *App) SetDisplayDPIScale(pct int) {
 // falls back to sdl.GetDisplayDPI for the window's display where the native path
 // is unavailable. The result flows through SetDisplayDPIScale, so the never-
 // below-100 floor and the window-size combination are unchanged.
-//
 // This only affects the auto path: an explicitly saved scale wins because the
 // manual slider requires UIScaleAuto off, and UIScale() then ignores the DPI-
 // derived value entirely (nothing here writes a preference — the seed is
-// runtime-only, so moving to a new monitor keeps re-seeding). Render thread
-// (touches the SDL window handle); call at boot and on a display change.
 func (a *App) SeedDisplayDPIScale() {
 	win := a.ctx.win
 	if win == nil {
@@ -1996,52 +1954,6 @@ func (a *App) NoteFocusLost() {
 // and why shrinking the window already looked right). It takes the larger of the
 // DPI scale and the window-height scale, floors at 100 (never shrink), snaps to
 // the step, and caps at the manual bounds.
-//
-// WHAT IS AND IS NOT CRISP ACROSS THIS STEP (the "everything above 1345x840 goes
-// blurry" report; the numbers are this function's arithmetic exactly —
-// 1280x1.05 = 1344, 800x1.05 = 840, and UIScaleStepPercent is 5):
-//
-//   - TEXT is crisp, and re-rasterizes here. SetUIScale → SetTextDevScale reopens
-//     every face at pt x scale and purges the label/width/raster caches, so glyphs
-//     are rasterized at DEVICE size (#77 Part A). Getting the raster built at device
-//     size is only half of it, though: the BLIT also has to stay device-exact
-//     (MessageRaster.DrawScaled, gated on the renderer's scale matching the raster's
-//     — see deviceExact's own doc for why the plain Draw resamples even a
-//     device-rasterized texture). That bracket now reaches every live text/emoji
-//     surface — the chatbox body, IC/OOC log lines and shownames (labelEmoji /
-//     labelCoveringCentered), the text field's emoji-fallback branch, and the
-//     floating reaction badges (Badge.Draw, render/badge.go) — not just the chatbox
-//     body it started on; a source scan bans the plain Draw everywhere outside the
-//     two export passes (which legitimately bracket their own scale), and the
-//     raster-rebuild wiring is pinned at this exact threshold.
-//   - RECT CHROME (panels, borders, bars) is resolution-independent: SDL rasterizes
-//     a filled rect at the scaled coordinates, so there is no resample to soften —
-//     only an edge that can land a pixel either way.
-//   - WHAT WAS NOT: the faux-bold second draw pass. A 1 px LOGICAL offset is
-//     multiplied by this scale, so the two copies of a bold name sat 1.05 device px
-//     apart on different sub-pixel phases and read as a doubled smear beside message
-//     text on the same row that stayed crisp. Fixed by rasterizing the weight into
-//     the glyphs (Ctx.textTextureBold) — this was the one text surface still built
-//     at one scale and drawn at another.
-//   - WHAT STILL IS NOT, deliberately: IMAGE surfaces — character sprites,
-//     backgrounds, theme pages, evidence and character icons. There is no
-//     higher-resolution source to re-rasterize from; the UI scale is one more factor
-//     in a stretch that already happens at 100% (a 256 px icon in a 40 px cell), so
-//     "re-raster at device scale" is not a thing that can be done for them.
-//   - WHAT STILL IS NOT, and IS worth doing (correcting this comment's earlier
-//     verdict): the PROCEDURAL textures — colorwheel.go, shapemask.go, and the
-//     theme GENERATOR TILES (gentex.go) — are built at logical size and stretched
-//     through the ambient scale exactly like sprite art. The generator tiles are
-//     NOT settings-only decoration: they back entire chatbox/panel/background skins
-//     for shipped community-style themes (vaporwave, cyberpunk, danganronpa,
-//     newspaper, …), so their softness is visible in ordinary themed-courtroom use,
-//     not just a floating colour-picker disc. Left unfixed this pass — a device-px
-//     rebake needs a rebuild-on-scale-change trigger (mirroring SetTextDevScale's
-//     no-op-on-unchanged-scale idiom) plus re-clamping the existing hostile-parameter
-//     DoS bound (theme.GenTileMaxPx / clampTilePx) through whatever multiplies the
-//     target size, and that is a wider-blast-radius change than this pass's
-//     text/badge fixes — recorded here, still, so the next person does not have to
-//     re-derive either the mechanism or the risk.
 func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	if !a.d.Prefs.Load().UIScaleAutoOn {
 		return // manual scale governs; the detected value is unused
@@ -2172,12 +2084,6 @@ func (a *App) Background(dt time.Duration) {
 	// window (which runs Background, never Frame) would otherwise freeze the clock
 	// at the last foreground timestamp. Every a.now()-driven deadline reachable from
 	// here is then wedged: the 10s music-await self-heal (settleAwaitedMusic below)
-	// never trips while minimized, so a silently-failed music fetch stays ducked-
-	// silent forever; auto-reconnect and the resume-seek elapsed math (musicStartedAt,
-	// stamped via pumpConnection→handleSessionEvents) drift the same way. Nothing
-	// reachable here WANTS a stale clock — every consumer is a timer/animation clock
-	// that is strictly more correct with real time — so restamp unconditionally, the
-	// same real-time snapshot Frame takes.
 	a.frameNow = time.Now()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
@@ -2227,17 +2133,6 @@ func (a *App) Background(dt time.Duration) {
 
 // noteOverlayStart rings the render doorbell the instant a screen effect is TRIGGERED
 // while nothing is being drawn.
-//
-// The pacing censuses are draw-site censuses by design (Viewport.AmbientAnimating →
-// NoteAnimating, and NextAnimDue's schedule), which means every one of them needs a
-// drawn frame to notice anything. That is fine for something already on screen and
-// wrong for the moment something STARTS: Background advances the room but never calls
-// Viewport.Update, so the viewport is still bound to the previous stage, NextAnimDue
-// still answers for it, and a parked event-driven loop sleeps out its whole idle period
-// before the effect's first frame — an eternity at the 10 fps idle default, and forever
-// at idle=off. Same shape as NotifyPreanimStarted: the thing that begins has to announce
-// itself once, rather than being discovered a tick later.
-//
 // Scene.Overlay.Gen is exactly that announcement and costs one uint32 compare per
 // Background pass: the courtroom bumps it on EVERY trigger (overlayfx.go), including a
 // repeat of the same effect, which is the case a Base comparison would miss.
@@ -2299,21 +2194,6 @@ func (a *App) keepActiveAssetsWarm() {
 // shapes and conflating them regressed (shipped a single demand
 // counter, and a merely-SLOW load burned it against ONE in-flight fetch —
 // three 250 ms keeper ticks — leaving a healthy scene latched for the epoch):
-//
-//   - warmMaxHealChurns bounds LANDED-THEN-EVICTED-AGAIN cycles: the base
-//     demonstrably loaded and got pushed out again, which means the settled
-//     working set exceeds the T1 main tier and every further heal just evicts
-//     another warm page (the whole-core decode→upload→evict→re-demand churn —
-//     the idle/minimized CPU-burn report). Nothing but a scene change fixes
-//     that; stop quickly.
-//   - warmMaxHealAsks bounds demands WITHOUT a landing in between: a slow
-//     origin, a still-decoding page, or a permanent 404. Roomier, because
-//     re-asks here are cheap (in-flight passes collapse; 404s hit the TTL
-//     cache) and the case usually resolves itself — and a LANDING resets it
-//     (the asks were by definition not futile), so a slow load can never
-//     strand a base: its own in-flight fetch still delivers (accepted jobs
-//     are never dropped) and the landing re-arms the budget.
-//
 // Both reset when the warm set changes or a new message ceremony begins.
 const (
 	warmMaxHealChurns = 3
@@ -2483,23 +2363,6 @@ func (a *App) keepSceneAssetsWarm() {
 		// base — which the next tick re-demanded, at ~4 whole-core-burning
 		// cycles/sec while the app sat idle or minimized (the CPU-burn report;
 		// the "stage blinks" report is the same churn's visible face).
-		//
-		// Char sprites re-demand through the FULL courtroom.SpriteHealAlts chain
-		// (bare, then folder — the same one healSpriteLayer and the primary
-		// per-message demand walk via EmoteAlts), NOT a single-spelling Prefetch.
-		// That is the missingno no-blip guarantee: a Warning (→ Store.MarkMissing
-		// → a missingno flash) fires ONLY on FULL chain exhaustion, so a sprite
-		// that exists ONLY under the bare or the "(a)/"-folder spelling must have
-		// that spelling probed here too, or this warm's single prefixed Prefetch
-		// would 404, report missing, and flash the placeholder over a sprite that
-		// DOES exist. Routing char warms through the SAME chain the primary
-		// resolve used makes "a char Warning fired" mean "every spelling, every
-		// format, exhausted" — and keeps a heal pass from recording its OWN
-		// conclusive-miss verdict on a shorter chain than the one that actually
-		// resolved the sprite (missChainFor keys on exact chain identity). The
-		// 404 cache absorbs the extra probes inside their TTL and the latch stops
-		// the repeats. bg/desk/chatskin have no alt spelling, so they keep the
-		// plain single Prefetch.
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
 			if t == assets.AssetTypeCharSprite {
 				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (bare + folder, so no spelling ever false-flags missing)

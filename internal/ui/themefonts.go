@@ -7,14 +7,6 @@ package ui
 // that file — the "message" family, applied GLOBALLY to every surface in the
 // client, and the message/showname colours — so a theme that sized its IC log at
 // 11 pt and its music list at 6 pt rendered both at the client's own scale.
-//
-// This file holds the resolved table and the accessors every draw site calls.
-// The table is a fixed-size ARRAY, not a map: an element lookup on the render
-// path is one indexed load, never a map probe or a font open (the 0-alloc
-// whole-screen gate). It is populated OFF-THREAD on theme apply (hard rule 2 —
-// no synchronous disk I/O on a draw path) and landed by pollThemeApply behind
-// the existing themeAppliedGen stale-generation guard.
-//
 // The ZERO table means "this theme dresses nothing", and every accessor then
 // returns exactly what the pre-#39 code returned — so a client with no theme, or
 // with the Theme fonts setting off, is byte-identical to before.
@@ -78,11 +70,6 @@ type themeElemFont struct {
 	// it as `<class> { color: rgba(...) }` on the widget (courtroom.cpp:1300), i.e.
 	// one FOREGROUND per element and never a background. colorSet false = the theme
 	// named no colour for this element and the draw site keeps the kit's own.
-	//
-	// elemShowname / elemMessage are deliberately left UNPOPULATED here: their
-	// colours already ride a.themeMsgCol / a.themeNameCol behind the chatbox-skin
-	// guard, and filling both would apply one colour twice through two different
-	// readability guards.
 	color    sdl.Color
 	colorSet bool
 	// userFont marks that the USER — not the theme — gave this element a font or a
@@ -136,13 +123,9 @@ func themeFontPx(points int) int {
 // FIXED user option (Options::themeScalingFactor, default 1.0) — it does NOT
 // scale them with the window, which is why AsyncAO doesn't either; the per-panel
 // Ctrl+wheel zoom is the user's equivalent knob and folds in through elemPct.
-//
 // TWO truncations used to eat the size and they compounded. Points were treated
 // as pixels (8 pt → 8 px instead of 11), and then the percent was rounded DOWN
 // again when the face was opened at UIFontSize×pct/100 — so this theme's 8 pt
-// music list resolved to a 7 px face, and its 24 pt message to 24 px where Qt
-// gives 32. Rounding UP here is what makes the round trip exact: 11 px wants
-// 91.67%, and 91% reopens at 10 px while 92% reopens at 11.
 func themeFontPct(points int) int {
 	px := themeFontPx(points)
 	return (px*DefaultScalePct + UIFontSize - 1) / UIFontSize
@@ -154,10 +137,7 @@ func themeFontPct(points int) int {
 // a 12 px base, so the old 400 would have silently capped every element above
 // 36 pt — the corpus's 50 pt outlier lands at 534 now instead of being cut to
 // three quarters of its authored size.
-//
 // Deliberately NOT the per-panel user clamps (config.MinLogScalePercent = 75):
-// real themes ship music_list = 6 (3DS Widescreen), which is legitimately below
-// the user zoom floor and must survive.
 const (
 	themeFontMinPct = 34  // 3 pt → 4 px
 	themeFontMaxPct = 534 // 48 pt → 64 px
@@ -189,18 +169,9 @@ func elemChat(el themeFontElem) bool { return el == elemShowname || el == elemMe
 // a.oocPct / a.musicPct / a.areaPct), a themed courtroom paints all of them at once,
 // and one zoom notch on any of them makes the percents differ. Routed to the shared
 // c.logSet, that measured ~42 allocations per frame with a full text-atlas teardown.
-// So the undressed case takes the same route with face = -1 (out of range ⇒
-// themeFontsFor uses the client's OWN chain — the path
-// TestThemeElemSetsCapAndOutOfRangeFace already pins), which is metrically identical
-// to the old shared set, just no longer shared.
-//
-// Bounded by construction (hard rule 4): the element sets are a fixed
-// [themeFontElemCount]fontSet array on Ctx, not a growing per-pct cache.
-//
 // The CHAT pair (showname + message) deliberately still routes to c.chatSet: the
 // message raster is also built by the GIF/comic exports at a caller-fitted pct
 // (messageFontFor), and pinning that to an element set would make an export thrash
-// the live chatbox's set instead.
 
 // elemFontFor is the ONE call an element draw site makes: the covering face for
 // text, at el's resolved scale, in el's own declared family.
@@ -246,12 +217,9 @@ func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
 // elemLabelFontAtPct is elemLabelFont with the scale ALREADY resolved, the split
 // elemFontAtPct makes for the themed chatbox — a surface that folds the theme
 // canvas's scale into the percent before asking for a face.
-//
 // The undressed arm deliberately still returns the fixed chrome face, ignoring
 // pct: that is the #39 contract (a theme that declares nothing for this element
 // must draw byte-identically to a client with no theme at all), and it is the
-// reason the fold is opt-in per element rather than applied inside elemPct. The
-// consequence is explicit: an UNDRESSED music_name cannot shrink with the canvas.
 func (a *App) elemLabelFontAtPct(el themeFontElem, pct int) *ttf.Font {
 	f := a.themeFonts.e[el]
 	if !f.dressed() {
@@ -274,16 +242,6 @@ func (a *App) elemBold(el themeFontElem) bool { return a.themeFonts.e[el].bold }
 
 // elemChromeFont is the face a PANEL should dress its whole self in, or nil to
 // leave the client's chrome alone. Handed straight to Ctx.pushPanelFont.
-//
-// Armed only when the USER picked a font or a size for that element — never on a
-// theme's own dressing. That is what makes the feature opt-in: with nothing set
-// this returns nil, pushPanelFont writes nothing, and every widget inside the
-// panel reads the identical chrome pointer it always did.
-//
-// ⚠ NOT a replacement for elemFont/elemFontFor at a ROW site. Those zoom with
-// Ctrl+wheel even when the element is undressed, because they route through the
-// element's own set; this one returns the fixed chrome face in that case. Swap a
-// row over to it and that row silently stops responding to the panel's zoom.
 func (a *App) elemChromeFont(el themeFontElem, userPct int) *ttf.Font {
 	if !a.themeFonts.e[el].userFont {
 		return nil
@@ -361,21 +319,6 @@ const themeSidecarFontDir = "fonts"
 
 // applySidecarFonts binds the AsyncAO tier's [fontbind] rows onto the per-element
 // font table (v1.90.0 W4 — the font-intake half).
-//
-// WHAT IT ADDS OVER courtroom_fonts.ini. AO2's own table names a FAMILY per element
-// and leaves finding it to Qt's system font database — which is why themes shared
-// on their own arrive with every family named and no file to be found (the
-// themeFontWarn case). The sidecar closes that: `[fonts]` maps a family to a FILE
-// INSIDE THE THEME, and `[fontbind]` maps an element id to that family. A native
-// theme therefore carries its own type, and it renders identically on a machine
-// that has never heard of the family.
-//
-// IT RUNS AFTER buildThemeFontTable AND OVERRIDES IT, which is the right precedence
-// for the same reason the whole sidecar is the extension tier: the AsyncAO file is
-// the one the author edited most recently and the only one that can point at a file
-// rather than at a hope. The USER's own per-panel picks still outrank both — that
-// ladder lives in landThemeFonts and is unchanged.
-//
 // Theme-apply goroutine only: it stats and reads files.
 func (res *themeApply) applySidecarFonts(sc *theme.Sidecar, sidecarDir string) {
 	if sc == nil || sidecarDir == "" || len(sc.FontBind) == 0 {
@@ -415,20 +358,8 @@ func (res *themeApply) applySidecarFonts(sc *theme.Sidecar, sidecarDir string) {
 // themeSidecarFontPath resolves a [fonts] file inside the theme folder, refusing
 // anything that escapes it (internal/safepath is THE copy of those guards, and a
 // theme is exactly the untrusted-archive shape they exist for).
-//
 // Two rungs, in order: <theme>/fonts/<file>, then <theme>/<file>. The first is the
-// convention; the second is what a hand-authored theme that dropped the .ttf beside
-// its INI actually looks like, and refusing that would be pedantry with a support
-// burden attached.
-//
-// THE AUTHOR'S STRING IS HANDED TO safepath RAW ON BOTH RUNGS, which is the whole
-// reason rung 1 pre-joins its own root instead of writing filepath.Join(fontDir, rel)
 // and passing that. filepath.Join CLEANS, so a `file = ../x.ttf` would arrive at
-// safepath already collapsed to `x.ttf` and sail through a guard that never saw a
-// `..` at all. Nothing escaped the theme folder in that case — but it is one rung of
-// leniency more than the sibling themeMediaPath grants for the same shape of
-// untrusted string, and two resolvers over the same untrusted file disagreeing about
-// what `..` means is exactly how one of them ends up wrong later.
 func themeSidecarFontPath(dir, file string) (string, bool) {
 	rel := strings.TrimSpace(file)
 	fontDir, err := safepath.Join(dir, themeSidecarFontDir)
@@ -451,12 +382,6 @@ func themeSidecarFontPath(dir, file string) (string, bool) {
 // the theme asked for. Runs on the same off-thread pass and immediately after
 // buildThemeFontTable, because both the family resolution and the face read
 // touch the disk (hard rule 2).
-//
-// The user's pick wins over the theme's, and that is the whole point: a theme
-// author chose a font for their own design, but only the person reading it knows
-// whether they can read it. Sizes and families are INDEPENDENT — someone who
-// only wants bigger text keeps the theme's family, and the reverse.
-//
 // Colour and bold are deliberately untouched. Those are the theme's design
 // (and, for colour, already guarded for readability), while size and family are
 // the two an accessibility need actually turns on.
@@ -570,20 +495,6 @@ const themeMissingFamilyCap = 8
 // and Qt resolves the class out of QFont's own alias table, so an AO2 theme
 // writing `serif` in courtroom_fonts.ini renders correctly upstream with no font
 // file anywhere near it.
-//
-// AsyncAO resolves theme faces from FILES — that is the whole point of the
-// sidecar's [fonts] tier: a theme that renders the same on a machine which never
-// heard of the family. So a generic class resolves to nothing here, the element
-// keeps the client's own face, and that is exactly what the author asked for.
-//
-// WITHOUT THIS TABLE the warning fires on data that is behaving correctly. It
-// already did, before any preset existed: any courtroom_fonts.ini writing `serif`
-// produced "this theme asks for fonts this machine does not have". The fourteen
-// shipped style presets bind generic classes deliberately — §6.4 forbids them
-// from bundling a face — so they would have made a false warning the NORMAL state
-// of the feature, and a warning that is usually wrong is one nobody reads the day
-// it is right.
-//
 // Lower-cased spellings only; the probe folds case.
 var themeGenericFontClasses = [...]string{
 	"serif", "sans", "sans-serif", "sansserif",
@@ -623,19 +534,6 @@ func (res *themeApply) noteMissingFamily(fam string) {
 
 // themeFontWarning is the line the user is shown when a theme asks for fonts
 // this machine does not have, or "" when everything resolved.
-//
-// It names the remedy rather than just the fault, and WHICH remedy depends on
-// what we found. AO2 keeps its fonts in the base's own fonts/ folder and
-// registers that folder globally at startup (main.cpp), so a theme downloaded on
-// its own — from a themes-only repository, which is how most of them are shared
-// — arrives with its families named and none of the files. That is the common
-// case and it is not the theme author's mistake, so the wording does not read as
-// one.
-//
-// anyFontsOnDisk distinguishes the two situations that need different advice: a
-// content root that HAS a fonts folder means the pack is set up correctly and
-// this particular family is simply not in it, while no fonts folder anywhere
-// means the user has the themes but not a base to go with them.
 func themeFontWarning(missing []string, anyFontsOnDisk bool, dropDir string) string {
 	if len(missing) == 0 {
 		return ""
@@ -683,16 +581,6 @@ func (res *themeApply) internFace(path string) int {
 // revert a newer theme's fonts — the "applies then reverts" class of bug).
 func (a *App) landThemeFonts(res *themeApply) {
 	// THE PRECEDENCE LADDER, most specific last, because the last write wins:
-	//
-	//   1. the theme's own table (below)
-	//   2. a global user font — the dyslexia toggle or a manual font path —
-	//      which drops the theme's FAMILIES but keeps its SIZES
-	//   3. the user's PER-PANEL pick, which is more specific than either
-	//
-	// with one deliberate exception: the dyslexia toggle beats even a per-panel
-	// pick. It is an accessibility switch, not a preference — someone who turns
-	// it on and still cannot read one panel because of an override they set weeks
-	// ago would be right to call that broken.
 	tbl := res.fontTable
 	dyslexia := fontChainSource(a.d.Prefs.Load().DyslexiaFont, a.d.Prefs.Load().FontOverridePaths) == fontSourceDyslexia
 	switch {
@@ -734,22 +622,6 @@ func (a *App) landThemeFonts(res *themeApply) {
 
 // systemFontDirs lists the fallback font folders theme.FontFiles searches for a
 // family the theme itself does not ship, IN ORDER:
-//
-//  1. AsyncAO's own fonts folder, where the user may drop font files. First,
-//     because dropping a file in there is an explicit act and should beat an
-//     ambient system font of the same name.
-//  2. the OS font folders — the tier that makes a theme declaring plain "Arial"
-//     (DRRetribution, KFO qHD) resolve at all. AO2 gets this free from Qt's
-//     system font database (get_qfont, courtroom.cpp:1263). Windows only: the
-//     mac / Linux font stores are laid out per-family and per-user, so probing
-//     them by file stem would resolve the wrong cut more often than the right
-//     one, and those platforms keep the client font.
-//
-// Both are scanned FLAT (theme.FontFiles gives this tier depth 1), which is why
-// the user folder is documented as a drop folder: files go directly in it, not
-// into subfolders. That is also what keeps the scan cheap on a Windows\Fonts
-// with several hundred files.
-//
 // Called off-thread — it walks the disk.
 func systemFontDirs() []string {
 	var dirs []string
@@ -806,15 +678,6 @@ func ensureUserFontsDir() string {
 
 // declaredFontInk converts a parsed courtroom_fonts.ini entry into an ink colour,
 // reporting false when the theme declared no "<id>_color" at all.
-//
-// The gate is FontSpec.ColorSet and NOT Theme.HasFont, which is the whole reason
-// this is a named function instead of two inline conditions. HasFont answers
-// "did the theme mention this element at all — size OR colour", and FontSpec.Color
-// carries the parser's WHITE default whenever no colour was declared. Gating on
-// HasFont therefore made a theme that only SIZES its chatbox — "message = 20" with
-// no message_color, an entirely ordinary thing to write — force white message and
-// showname ink it never asked for, discarding the client's own.
-//
 // AO2 cannot make that mistake because it reads the colour from its own key and
 // lets the size key imply nothing: courtroom.cpp:1223-1225 starts from a local
 // default and overwrites it only when that key actually parsed.

@@ -116,10 +116,6 @@ func (a *App) buildRoom() {
 // speaker (parity with handleSessionEvents, which `continue`s past
 // room.HandleEvent for ignored speakers — #81: no log, no sprite). nil = leave
 // the stage blank. Split out so the gate is unit-pinnable without a room.
-// Single-seed caveat: an ignored LAST speaker shadows the previous non-ignored
-// line (the session can't keep "last non-ignored under the active tab's
-// filter" — the list is per-tab UI state), so that corner restores blank: the
-// pre-restore status quo, never a wrong render.
 func (a *App) stageRestoreMsg() *protocol.ChatMessage {
 	if a.sess == nil {
 		return nil
@@ -137,9 +133,6 @@ func (a *App) stageRestoreMsg() *protocol.ChatMessage {
 // primary courtroom — drag it ANYWHERE, resize it, overlap the primary however
 // you like (a strict superset of the old fixed split). It carries that server's
 // live stage + chat log + IC input; you type into either client (click to focus).
-// The pinned room runs on courtroom.NopAudio so the single music stream stays
-// with the primary; its second viewport shares the texture store (origin-
-// qualified keys, so two servers' assets never clash).
 
 const splitInputH = 30 // pinned client's IC input row height (pass 2c)
 const (
@@ -788,12 +781,6 @@ func (a *App) crossfadeDur() time.Duration {
 // The loop used to re-render + present the whole UI every pass: vsync tied it to
 // the monitor (144/165 Hz laptop panels = a full-screen composite 165×/sec while
 // IDLE), and where vsync doesn't block (small windowed presents on some drivers)
-// it spun far past that (high GPU use even in a tiny window). FramePace hands
-// the main loop a per-frame budget instead: the foreground cap while you're
-// interacting or anything is animating, the idle rate when the client is a
-// static image, the unfocused rate when another window has focus. Input snaps it
-// back to full instantly (NoteInput + a grace window), so responsiveness is
-// untouched — a flat low cap would be a band-aid; only wasted redraws go.
 
 // inputGraceFrameDuration is one "frame" of the post-input full-rate hold — the
 // InputGraceFrames pref counts these. A fixed 60 fps reference, so the frame
@@ -915,10 +902,6 @@ func paceBudget(fps int) time.Duration {
 // "uncapped", but a knob set to config.FPSOff means "off / never redraw in this
 // state", the exact opposite — so every idle/unfocused consumer asks here and
 // branches on off BEFORE treating a 0 as uncapped:
-//
-//	FPSUnlimited (∞) → (0, false)   // uncapped, same as paceBudget's 0
-//	FPSOff           → (0, true)    // off — the caller decides (park, or the cap)
-//	N                → (1s/N, false)
 func rateBudget(fps int) (budget time.Duration, off bool) {
 	switch fps {
 	case config.FPSOff:
@@ -1056,22 +1039,6 @@ func pacerTierLabel(t pacerTier) string {
 // FramePace returns the frame budget the main loop should pace to (0 = no cap):
 // the sleep between CONSECUTIVE rendered frames. focused is the window's input-
 // focus state. Tiers, fastest first:
-//   - full rate: interaction or effects genuinely in flight (wantsFullRate)
-//   - anim-chrome rate: a self-driven UI animation (NoteAnimating census) —
-//     the cap, backstopped to a finite ~60 fps when the cap is ∞ (perpetual
-//     censuses must never zero the budget — see backstopBudget)
-//   - talk rate: a message is playing → the text crawl's cadence (talkBudget),
-//     which a fast speaker's frame flip may only TIGHTEN (earliest deadline
-//     wins, so a slow sprite loop never drags the typewriter/blips down — the
-//     "text renders at idle fps over animated sprites" report)
-//   - content cadence: only stage animations move → the next frame flip
-//   - active cap: a rendered-but-idle frame. Under the event-driven loop a
-//     genuinely idle screen SKIPS and parks (NextWakeDelay honours the idle
-//     rate there), so reaching this tier means a lone damage frame or a screen
-//     that declares itself non-skippable — pacing it at the active cap keeps the
-//     post-render sleep from injecting a whole idle period of input latency. The
-//     classic loop idle-renders here, so it keeps the idle rate.
-//
 // Rate knobs carry the widened trichotomy (rateBudget): ∞ → 0 (uncapped), off
 // (FPSOff) → the active cap in THIS render path (the "no idle render" behaviour
 // lives in the skip/park path, not here), N → 1s/N.
@@ -1194,15 +1161,6 @@ func backstopBudget(b time.Duration) time.Duration {
 // any scheduled animation, a live toast, a blinking caret, or a ticking timer
 // forces a real frame. Conservative by construction: a wrongly SKIPPED signal
 // heals on the next damage/deadline, never a hang.
-//
-// Under the EXPERIMENTAL event-driven loop the gate widens two ways: static
-// menu screens skip too (not just the courtroom), and the caret/clock refusals
-// become scheduled wakes (NextWakeDelay) — the loop parks on an OS event wait
-// and renders exactly when the blink/tick is due instead of idle-rendering a
-// static screen to animate a cursor. Damage that arrived since the last drawn
-// frame (packets, texture uploads/evictions — RenderNeeded) still refuses. The
-// classic loop instead re-renders at the idle rate (it doesn't track damage);
-// idle=off makes both lean on caret/timer/input for a static courtroom.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
@@ -1303,15 +1261,6 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 // path; the static menu screens join them; the lobby joins while no async
 // sweep is repainting rows. Anything unlisted defaults to classic
 // always-render.
-//
-// Settings skips too (the user's ask: "the one place where virtually nothing
-// moves"). Its self-driven surfaces still force frames through SkipFrame's own
-// later gates — the mic-test meter (micTest), a DRAWN animated sprite preview
-// (the anim-chrome census via drawSpritePreview), input + the caret, and
-// store-generation damage as art streams in. The lone
-// passive live readout is the T2 cache-stat line; it now refreshes at the idle
-// rate / on the next interaction rather than every frame (the perf HUD stays
-// the always-full-rate live-metrics surface for anyone watching numbers move).
 func (a *App) expScreenSkippable() bool {
 	switch a.screen {
 	case ScreenCourtroom, ScreenCharSelect:
@@ -1642,23 +1591,6 @@ func (a *App) applyMusicStreaming(on bool) {
 // ON transition, un-wedges a backgrounded stream that's currently silenced. It's a
 // method (not inline in the settings row) so a headless test can drive exactly what
 // the checkbox does — the same shape as applyMusicStreaming.
-//
-// ON acts UNCONDITIONALLY: it drops BOTH silencers — the duck (musicTabDucked) and
-// the delivery-await latch (musicAwaitURL) — and re-applies volumes. It's harmless
-// when nothing was ducked (all three are already cleared / no-ops). This is the fix
-// for "the toggle does nothing": the old inline code only un-ducked under
-// `next && a.musicTabDucked`, so a stream stuck behind a never-arriving await (duck
-// held, latch armed) — the wedge the deadline in settleAwaitedMusic also guards —
-// stayed silent when the user flipped this ON. Clearing the latch here means the
-// toggle is a reliable manual escape hatch regardless of how the stream got stuck.
-//
-// OFF acts immediately too: it re-ducks a currently-audible background stream on
-// the spot, because that is what the checkbox label promises ("off = keep it
-// playing but silent while backgrounded" — silent NOW, not at the next tab
-// switch). The earlier build deferred the re-duck to the next parkActive to avoid
-// yanking audio mid-listen, and users read that as the checkbox being dead — the
-// user flipping the box IS the yank request. The stream keeps playing (position
-// advances); only its volume drops, so flipping back ON restores it in place.
 func (a *App) applyMusicAcrossTabs(on bool) {
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -1698,19 +1630,6 @@ const musicResumeMaxSeekSec = 600 // 10 minutes
 // and total duration snapDur (seconds) captured at swap-out — plus elapsedSec of
 // wall time since, it returns where to seek the resumed stream and whether to
 // play it at all:
-//
-//   - snapDur <= 0 (duration unknown: mod/midi, or the source refused it): return
-//     seekSec 0, play true — an honest restart-from-top. We must NOT clock-seek
-//     into a track whose length we can't know (it could be past the end).
-//   - loop (persistent area track, the only case today): seekSec = (snapPos +
-//     elapsed) mod snapDur, play true. math.Mod handles multi-wrap (a 3-min loop
-//     parked 7 min lands at 1:00), which is the loop-aware exactness promised.
-//   - not looping, and snapPos+elapsed >= snapDur: the track ENDED while parked —
-//     play false (don't restart a finished one-shot). Future-proofing: resumeLoop
-//     is const true today, so this branch is currently unreachable, but it's the
-//     correct non-loop behaviour and is unit-tested.
-//   - not looping, still within the track: seekSec = snapPos + elapsed, play true.
-//
 // A negative elapsedSec (clock skew) clamps to 0 so base can never go below
 // snapPos — a negative math.Mod would fail the seek and silently restart.
 func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float64, play bool) {
@@ -1732,17 +1651,6 @@ func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float6
 
 // resumeActiveTabMusic re-seeds the newly-active tab's area song into the single
 // music stream on a room (re)build. It's the cross-tab continuity core:
-//
-//   - Same track already live (the common case: the stream was kept rolling,
-//     DUCKED, while this tab was backgrounded — see parkActive): PlayMusic is
-//     idempotent, so this is a no-op on the stream. We just clear the tab-duck and
-//     re-apply volumes, so the track picks up EXACTLY where it was, in sync.
-//   - A different track is live (another tab's song swapped the stream away, or a
-//     fresh entry): fetch this tab's track and SEEK best-effort to elapsed-since-
-//     start (musicStartedAt), so a persistent area track resumes near where it
-//     would be now. Unsupported formats / an overshoot degrade to playing from the
-//     top (PlayMusicAt handles that).
-//
 // StreamMusic OFF means nothing is fetched or played (§1.3): we only track
 // Now-Playing then, and leave the (nonexistent) stream's duck alone. Render thread
 // only (buildRoom runs there); no new goroutines.
@@ -1820,8 +1728,6 @@ func (a *App) resumeActiveTabMusic() {
 // HOLD the duck and AWAIT url — un-ducking now would make the foreign stream audible
 // during the fetch; settleAwaitedMusic lifts the duck when url is delivered. With the
 // MusicAcrossTabs pref ON the duck is already down (no isolation wanted); the await is
-// then harmless (settle just clears it, applyAudioVolumes no-ops). Either way it
-// re-applies volumes so the mixer reflects the decision.
 func (a *App) applyResumeDuck(sameTrack bool, url string) {
 	if sameTrack {
 		// Nothing awaited once we're on our own track; the right song is audible now.
@@ -1834,13 +1740,6 @@ func (a *App) applyResumeDuck(sameTrack bool, url string) {
 		// mid-fetch). GATED on the duck deliberately, mirroring the DJ /play arm (which
 		// arms only `if a.musicTabDucked`). Under MusicAcrossTabs ON the duck is already
 		// down (no acoustic isolation wanted) — arming an await then is pure liability:
-		// its ONLY job is to hold a duck until delivery, and with no duck to hold, a
-		// destination track that stalls / 404s / never becomes CurrentMusicURL would trip
-		// settleAwaitedMusic's never-arrives timeout, whose awaitTimeoutStop heals the
-		// deliberately-audible continuity stream to SILENCE — misclassifying the very
-		// input the toggle exists to keep playing. No release-time 404 signal exists
-		// (MusicFailures is transient-only, warningCh is droppable + wrong-granularity),
-		// so the only safe fix is arm-time: don't arm when there's no duck.
 		a.musicAwaitURL = url       // un-duck only once THIS track is the one playing
 		a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 	}
@@ -2267,22 +2166,9 @@ func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, 
 // demandAsset paces one visible cell's asset demand: shared per-frame
 // budget, one ask per slot per charIconRetryInterval (self-heals shed
 // low-lane jobs). stamps resizes lazily to n; callers tag the asset type.
-//
-// It reports whether the cell's art may still ARRIVE. False means the manager
-// already probed every format of this base to exhaustion this session, so no
-// amount of waiting or re-asking can fill the cell; callers use that to stop
-// holding the frame pump awake for art that is never coming (see
-// frameDemandPending). True is the ordinary answer, INCLUDING the frames where
-// this call asked for nothing because the budget or the retry window said no —
-// "not asked yet" is not "not coming".
-//
 // The conclusive-miss check comes before the pacing, not after, because it is
 // the cadence itself that had to stop. This retry loop only ever terminated on
 // residency, and a 404'd base can never become resident, so a roster whose
-// characters ship no char_icon and no emotions/button<N>_off art re-asked for
-// every one of them every charIconRetryInterval for as long as the grid was on
-// screen — a 404 leaving the client every couple of seconds, forever, with the
-// pool jobs and shed-loop spins behind each one taking the framerate with them.
 func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) bool {
 	if idx < 0 || idx >= n {
 		return false
@@ -2307,14 +2193,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 }
 
 // charINIURL builds a character's char.ini location.
-//
 // Through the URLBuilder's CharFolder, never a hand-rolled origin+"characters/"+name: that is the
-// ONE place the character-folder spelling is decided (casing pref, per-segment escaping, nested
-// identities like "SG/Faris NyanNyan"), and this site used to bypass all three — it hard-lowercased
-// the name, so char.ini 404'd outright on a capitalised-folder server, and it left spaces and
-// separators unescaped, so the char.ini cache key for a spaced name did not match the spelling every
-// other asset of the same character is keyed by. downloader.go builds the same URL the same way
-// (CharFolder + charINIFileName).
 func (a *App) charINIURL(name string) string {
 	return a.urls.CharFolder(name) + charINIFileName
 }
@@ -2429,14 +2308,6 @@ func (a *App) pollPreviewEmotes() {
 // previewPortraitAnim returns the emote the char-select grid should show for
 // name: the conventional "normal" idle pose, or — once the char.ini has been
 // parsed and turns out NOT to name one — the pack's FIRST real emote.
-//
-// "normal" is a convention, not a guarantee. A pack whose poses are spelled
-// SNormal/SCry/HSmug had no recovery at all here and previewed as a permanently
-// empty box (its cell icon still loaded — that's char_icon.png — so it read as
-// "the sprite is broken"). Same trap fixed for the pair-menu preview
-// ("always looked for a sprite named 'normal', which plenty of packs simply
-// don't have"); the fix was never carried over to this grid.
-//
 // Until the parse lands it answers the convention, so the common pack still
 // fills the box from ONE optimistic probe and never pays for a second.
 func (a *App) previewPortraitAnim(name string) string {
@@ -2503,7 +2374,6 @@ func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx
 // first emote at the top of the grid. Index and scroll move together so a kept
 // index can't desync from a stale scroll position. Pure so the session-isolation
 // behaviour is pinned by a unit test, not a manual rebuild.
-//
 // The second value was a PAGE index before the grid learned to scroll by row
 // (emotescroll.go); it is a row now. The contract is unchanged — "keep it, or
 // zero both" — which is why the signature and every caller stayed put.

@@ -1,46 +1,8 @@
 package theme
 
 // THE FOUR-TIER MERGE.
-//
 // A rendered AsyncAO theme is four tiers stacked in this order, lowest first:
-//
-//	1. the AO2 theme itself       — courtroom_design.ini, resolved by theme.Load
-//	2. the LAYOUT preset          — where things are
-//	3. the STYLE preset           — what they look like
-//	4. the author's own sidecar   — everything they changed by hand
-//
-// Tier 1 is not in this file: it is the AO2 rect map internal/ui folds
-// [overrides] onto, and it never enters the sidecar model. Tiers 2 and 3 are
-// applied HERE, into tier 4's model, which is why the whole thing is a merge of
-// three objects and not of four.
-//
-// WHY THIS IS A CONCATENATION AND NOT A NEGOTIATION. The two preset axes own
-// DISJOINT sections (preset.go's presetTierSections), so no key can be claimed
-// twice and there is no precedence question between tiers 2 and 3 to answer.
-// That is the entire orthogonality argument for a 21 x 14 gallery, and it is
-// enforced at parse time rather than assumed here.
-//
 // WHAT "APPLYING A PRESET" MEANS, stated once, because everything else follows:
-//
-//	REPLACE the tier's CONFIGURATION, MERGE the tier's MANIFESTS.
-//
-// Configuration is [overrides], [rotations], [pane.*], [palette], [chrome],
-// [fontbind], [clock.*], [effect.*] and the elements of that axis's kind. It is
-// replaced WHOLESALE — including anything the user hand-authored into it —
-// because "apply a layout" that left half of the previous layout behind is not
-// an act anyone can predict the result of, and because a tier you cannot replace
-// is a tier you cannot swap.
-//
-// Manifests are [fonts], [media] and [sounds]. They are MERGED BY ID, never
-// pruned, and the exception is not a softening — it is the same rule one level
-// down. Every value in those three sections NAMES A FILE INSIDE THE THEME
-// FOLDER: art the user dragged in, a font they licensed, a blip they recorded.
-// Dropping the entry does not drop the bytes, it ORPHANS them — the file stays
-// on disk, referenced by nothing, and the element that used it goes blank with
-// no way back. The shipped presets declare zero manifest entries of any kind
-// (§6.4: no bundled art), so today this costs nothing at all; it exists so that
-// the first preset that ever does declare one cannot delete a stranger's work.
-//
 // COLD PATH ONLY (hard rule 2): it allocates a whole model.
 
 import (
@@ -104,12 +66,6 @@ func (l *PresetLibrary) ResolvePresets(sc *Sidecar) (pair PresetPair, missing []
 }
 
 // MergePresets returns a NEW sidecar: `base` with both tiers applied.
-//
-// `base` IS NEVER TOUCHED — not its model, not its lossless document, not one
-// slice header it shares. That is the property the gallery's live preview rests
-// on (scrub a row, render it, throw it away) and the one
-// TestMergePresetsNeverMutatesItsBase hashes before and after.
-//
 // A nil `base` is "a theme from nothing", which is what the gallery's create
 // action passes: the result is a fresh sidecar whose document is empty, so the
 // writer emits every section canonically instead of editing someone's file.
@@ -135,14 +91,6 @@ const PresetGeneratedBy = "AsyncAO theme gallery"
 
 // NewThemeFromPresets builds a theme FROM NOTHING: a fresh sidecar carrying both
 // tiers, its identity stamped, its document empty.
-//
-// The empty document is the point. Every other path into a sidecar edits a file
-// somebody wrote, and the writer's whole contract is "emit the original bytes on
-// any line I did not deliberately change" — which for a file that does not exist
-// yet means it emits the model, canonically ordered, and nothing else. There is
-// no stale section to inherit and nothing of the user's to preserve, so this is
-// the one path where replacing a tier can never leave a trace of the old one.
-//
 // It is therefore the gallery's PRIMARY action, and the reason the gallery
 // creates rather than converts.
 func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
@@ -164,16 +112,6 @@ func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 }
 
 // PresetUndo is the one-deep snapshot a preset apply can be reverted from.
-//
-// WHY A SNAPSHOT AND NOT AN UNDO-RING OP. internal/ui's ring is built from
-// fixed-size field edits whose identity is an ELEMENT INDEX (themeeditordoc.go),
-// and applying a preset replaces the whole element list — so every op already in
-// the ring points at a row that is no longer the row it meant. The editor's own
-// answer to that class is a snapshot (restoreBaseline, for "throw away what I
-// have not saved"), for the stated reason that a capped replay restores most of a
-// session and stays silent about the rest. A preset apply is the same shape of
-// act and takes the same shape of answer: ALL OF IT OR NONE OF IT.
-//
 // The snapshot is opaque on purpose. It holds a whole *Sidecar, and exposing that
 // would hand a caller a second model of the same theme with no arbitration —
 // which is the exact door Sidecar.Doc() was deleted for (ledger L32).
@@ -203,11 +141,6 @@ func (s *Sidecar) SnapshotForPreset() (*PresetUndo, error) {
 }
 
 // RestorePreset puts this sidecar back exactly as the snapshot found it.
-//
-// IN PLACE, into the SAME object — the editor's document and the courtroom's
-// renderer hold this pointer, and handing back a new one would leave the two
-// looking at different themes (layoutnudge.go's evaporation hazard).
-//
 // The DOCUMENT is restored too. Skipping it would leave the carrier holding the
 // preset's lines after the model had gone back, and the next save would write a
 // file that is neither state.
@@ -226,17 +159,6 @@ func (s *Sidecar) RestorePreset(u *PresetUndo) bool {
 
 // AdoptPresetMerge takes over a merged model IN PLACE, keeping this object's
 // identity.
-//
-// THE POINTER IS THE THING, and that is why this exists instead of the caller
-// assigning the merge result. internal/ui's a.themeSidecar, themeDoc.side and
-// every element index in the editor's selection all name ONE *Sidecar; handing
-// back a different one leaves the courtroom rendering the old theme and the
-// editor saving the new one, which is layoutnudge.go's evaporation hazard with
-// the arrow pointing the other way.
-//
-// The DOCUMENT comes with it. The merge cloned the carrier alongside the model,
-// so keeping the old one would leave a file whose lines describe neither state.
-//
 // It is a no-op if src is nil or is this very sidecar: adopting yourself is what
 // a caller does when the merge changed nothing, and it must not be a way to
 // half-assign.
@@ -287,18 +209,8 @@ func clonePresetBase(base *Sidecar) (*Sidecar, error) {
 }
 
 // ApplyPresetTier replaces ONE axis of this sidecar IN PLACE.
-//
 // In place, because the editor's live model is shared by pointer with the
 // courtroom's renderer (a.themeSidecar and themeDoc.side are the same object):
-// a function that returned a new sidecar would leave the two pointing at
-// different themes, which is the evaporation hazard layoutnudge.go already
-// documents. The UNDO of this act is a snapshot taken by the caller, for the
-// same reason every other structural editor op takes one.
-//
-// A nil preset is a no-op and a success — "this theme declares no style" is a
-// legal state, not a failure, and making every call site branch on it is how a
-// missing tier becomes an error dialog.
-//
 // ALL OF IT OR NONE OF IT. Every refusal is decided before the first field
 // moves, so a failed apply leaves a model that was never half-written.
 func (s *Sidecar) ApplyPresetTier(p *Preset) error {
@@ -340,20 +252,6 @@ func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 
 // clearReplacedTier deletes, from the lossless CARRIER, every section this tier
 // replace has just taken over in the MODEL.
-//
-// IT IS THE OTHER HALF OF "REPLACE THE TIER'S CONFIGURATION" (see this file's
-// header), and it was missing. The writer edits the document the reader kept and
-// has no key or section delete of its own, so replacing the model's element list
-// left the previous style's [element.*] sections standing: 35 elements were
-// written and 70 read back, and the worst shipped re-style reloaded at 97 against
-// ElementCap = 96 — a theme the reader REFUSES the moment its author reopens it.
-// The same leak reached [effect.*] and [clock.*] (6 effects out, 10 back) and
-// would reach [overrides] the first time two layouts declared different key sets.
-//
-// The rule is presetTierClears plus droppedElementIDs, so the sections a tier
-// clears are the sections the partition already says it owns — there is no second
-// list to keep in step, and the manifests keep their documented exemption.
-//
 // A section the document never carried is not an error: an element authored this
 // session, or a whole theme built from nothing, has no lines to remove yet.
 func (s *Sidecar) clearReplacedTier(p *Preset) {
@@ -379,19 +277,6 @@ func (s *Sidecar) clearReplacedTier(p *Preset) {
 // droppedElementIDs is the set of element ids whose sections this tier replace
 // takes over: the ones the incoming axis OWNS in the model, plus every id the
 // incoming fragment itself declares.
-//
-// The ownership test is presetElementKindOK — the same one splitElementsByTier
-// uses, and the same one the parser enforces on the fragment — so "which elements
-// does this tier replace" has exactly one spelling in the package.
-//
-// AN ID THE NEW TIER RE-DECLARES IS CLEARED TOO, and leaving it in place was
-// wrong twice. The writer only edits a key when the model has something to say
-// about it (setKey: an empty value leaves the author's line alone), so an old
-// element's `anchor`, `media`, `shape`, `generator` or `text` would survive
-// underneath a new element of the same name that happens not to set them — a row
-// that is half of each style. And the surviving section keeps its OLD position in
-// the file, so the reload's declaration order stops matching the model's.
-//
 // A section for an id in NEITHER set is untouched, which is what keeps a
 // preserved forward-compat element (one whose `kind` this build does not know, so
 // the reader skipped it and kept its lines — format rule 3) out of the blast.
