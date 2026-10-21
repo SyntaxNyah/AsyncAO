@@ -31,35 +31,17 @@ func (cs *countingServer) requestCount(path string) int {
 }
 
 // TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets is the
-// regression for the learned-format empty-window race (the "every emote button
-// renders the same character icon" report on PNG-buttons hosts).
+// regression for the learned-format empty-window race ("every emote button
+// renders the same character icon" on PNG-buttons hosts): the old tryBase
+// blanked the shared per-(host, AssetType) learned slot before re-probing, so a
+// concurrent reader fell back to the type default (.webp), spuriously 404'd the
+// real .png and reported the asset missing without ever fetching it.
 //
-// Root cause it pins: the OLD tryBase, when every learned-first candidate 404'd,
-// blanked the shared per-(host, AssetType) learned slot with a speculative
-// resolver.Invalidate BEFORE re-probing/restoring it. During that window ANY
-// other asset of the same type on the same host — resolved on a different pool
-// worker with no serialization between distinct bases — read the empty slot,
-// fell back to the hardcoded type default (EmoteButton = .webp), spuriously
-// 404'd a file that exists as .png, and (because it began with usedLearned ==
-// false) took the early return without ever re-probing: it reported the asset
-// missing and never fetched the .png that was right there.
-//
-// The invariant the fix upholds: no reader of the learned table for
-// (host, AssetType) may EVER observe an empty entry while a different, still
-// valid asset of that type is being re-validated. The fix satisfies it by never
-// blanking the shared slot — the stale-learned re-probe reads the type's full
-// format list without touching the table, and the only table write is
-// walkCandidates' RecordSuccess CAS (old-valid -> new-valid), so a concurrent
-// reader sees one valid value or the other, never nothing.
-//
-// The test forces true wall-clock overlap by calling resolveChain directly from
-// its own goroutines (this test is in package assets): one goroutine drives the
-// per-iteration MISSING button (its 404 round-trip opens the invalidate window
-// on loopback ~0.1-1ms after start), and several drive EXISTING .png buttons,
-// staggered across that window so at least one reader lands inside it. Distinct
-// bases per iteration are mandatory — the inflight map dedups identical bases
-// (which would collapse the concurrency) and T2 caches by full URL (a reused
-// base would short-circuit before the resolver ran).
+// The invariant: no reader may observe an empty entry while another valid asset
+// of that type is being re-validated. The fix never blanks the slot. The test
+// forces wall-clock overlap with distinct bases per iteration (the inflight map
+// dedups identical bases and T2 caches by URL) and several staggered
+// existing-.png readers landing inside the 404 window.
 func TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets(t *testing.T) {
 	// raceIterations: enough distinct (missing, existing) bundles to hit the
 	// narrow invalidate window many times over across the stagger sweep, while
