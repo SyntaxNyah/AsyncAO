@@ -2,28 +2,6 @@ package ui
 
 // THE IMPORT REPORT PANEL (v1.90.0 W9) — design §3.1's "Import report … rail
 // footer chip; a panel", and §Q5's "expanding to an in-canvas panel".
-//
-// ONE concern: showing the report that themereport.go already built. It computes
-// nothing — every line comes out of App.themeReport, produced on the theme-apply
-// goroutine by buildThemeReport — and it decides nothing about what a note says.
-//
-// WHY IT IS THIS WAVE'S AND NOT A LATER ONE. themereport.go shipped in W8 with the
-// count and the FIRST note on the warn line and left the rest for here, in as many
-// words ("The expandable panel is W9's, on top of the same slice"). Until it
-// existed, App.themeReport was a bounded slice that was written on every apply,
-// kept for a reader, and read by exactly one test — which is the precise shape
-// CLAUDE.md rule 11 names as the failure the sidecar [overrides] tier shipped in
-// for four waves. A report with sixty-four notes and a surface for one is a
-// truncation with extra steps, and the notes it drops are the ones a theme author
-// most needs: a skipped element is note twelve, not note one.
-//
-// THE WRAP IS BAKED, NOT DRAWN. Ctx.WrapText allocates, the editor frame is gated
-// by editorChromeAllocBudget, and a report is up to themeReportCap notes of
-// arbitrary length — so wrapping on the draw would be the per-frame-string-in-a-
-// loop regression that budget is named for. The bake runs when the panel opens and
-// when its width changes; every other frame walks a fixed array. Same pattern, same
-// reason, as galleryCredit and bakeToggleLabels.
-//
 // A PANEL, NOT A MODAL (design §3.1, and the editor is allowed exactly two modals,
 // neither of which is this): it joins editorPanelUp so the rails behind it go
 // click-dead, and closeEditorPanels so Esc does not walk past it.
@@ -77,13 +55,6 @@ const (
 type themeReportPanel struct {
 	// w is the width the bake was wrapped to; src is the report it was of. Both are
 	// the bake's inputs, and a change in either rewraps.
-	//
-	// src IS THE SLICE, compared entry by entry, not its length. A theme re-applied
-	// under an open panel replaces App.themeReport wholesale, and two different
-	// themes very easily produce the same NUMBER of notes — a count-keyed bake would
-	// then leave the previous theme's diagnostics on screen under the new theme's
-	// name, which is worse than showing nothing at all. sameReport is themereport.go's
-	// own comparison, reused rather than repeated, and bounded by themeReportCap.
 	w     int32
 	src   []string
 	notes int
@@ -231,19 +202,6 @@ func (a *App) drawThemeReportPanel(w, h int32) {
 
 // drawEditorReportChip is the LEFT RAIL FOOTER chip design §3.1 names —
 // `Imported · 4 notes` — and the only way into the panel.
-//
-// It returns the height it took so the rail's own footer can sit above it, and 0
-// when there is nothing to report: an editor over a theme this client understood
-// completely says nothing at all, which is the whole difference between a
-// diagnostic and a nag.
-//
-// IT OPENS AND DOES NOT TOGGLE, and that is the panel fence rather than a choice.
-// The chip lives on a RAIL, and the rail draws under c.modalOn while any panel is
-// up (drawThemeEditor's bracket), so hovering() — and therefore Button — is blank
-// here for exactly as long as the panel it opened is on screen. A toggle branch
-// would be a branch that can never run. The way out is the panel's own Close, or
-// Esc through closeEditorPanels; TestTheImportReportReachesAUserSurface presses
-// both doors.
 func (a *App) drawEditorReportChip(rail sdl.Rect, y int32) int32 {
 	n := len(a.themeReport)
 	if n == 0 {
