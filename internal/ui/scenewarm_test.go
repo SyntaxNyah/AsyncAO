@@ -210,12 +210,12 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	a.d.Store = store
 
 	// Throttle window closed: no demand for a missing base.
-	a.activeWarmLastDemand = time.Now()
+	a.activeWarm.lastDemand = time.Now()
 	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
 
 	// Throttle open but the ask budget spent: still no demand.
-	a.activeWarmLastDemand = time.Time{}
-	a.activeWarmDemands = map[string]int{"warm://missing-button": warmMaxHealAsks}
+	a.activeWarm.lastDemand = time.Time{}
+	a.activeWarm.demands = map[string]int{"warm://missing-button": warmMaxHealAsks}
 	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
 
 	// A char/emote change resets the counters (keepActiveAssetsWarm's gate).
@@ -233,9 +233,9 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	if err := store.Upload(a.urls.CharIcon("TestChar"), dec); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	a.activeWarmChar, a.activeWarmIdx = "SomeoneElse", 2
+	a.activeWarm.char, a.activeWarm.idx = "SomeoneElse", 2
 	a.keepActiveAssetsWarm()
-	if len(a.activeWarmDemands) != 0 {
-		t.Fatalf("a char/emote change must reset the futility counters, still holds %v", a.activeWarmDemands)
+	if len(a.activeWarm.demands) != 0 {
+		t.Fatalf("a char/emote change must reset the futility counters, still holds %v", a.activeWarm.demands)
 	}
 }

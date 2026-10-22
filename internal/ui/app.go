@@ -2177,9 +2177,9 @@ func (a *App) keepActiveAssetsWarm() {
 	}
 	// Futility latch reset: a new character/emote pick warms different bases, so
 	// the per-base demand counters start over (see warmMaxDemandsPerBase).
-	if me != a.activeWarmChar || a.emoteIdx != a.activeWarmIdx {
-		a.activeWarmChar, a.activeWarmIdx = me, a.emoteIdx
-		clear(a.activeWarmDemands)
+	if me != a.activeWarm.char || a.emoteIdx != a.activeWarm.idx {
+		a.activeWarm.char, a.activeWarm.idx = me, a.emoteIdx
+		clear(a.activeWarm.demands)
 	}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
@@ -2267,20 +2267,20 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 	}
 	if a.d.Store.Contains(base) {
 		a.d.Store.Get(base)
-		if len(a.activeWarmDemands) != 0 {
-			delete(a.activeWarmDemands, base) // it landed: re-arm the heal budget
+		if len(a.activeWarm.demands) != 0 {
+			delete(a.activeWarm.demands, base) // it landed: re-arm the heal budget
 		}
 		return
 	}
-	if time.Since(a.activeWarmLastDemand) < sceneWarmRedemandEvery ||
-		a.activeWarmDemands[base] >= warmMaxHealAsks {
+	if time.Since(a.activeWarm.lastDemand) < sceneWarmRedemandEvery ||
+		a.activeWarm.demands[base] >= warmMaxHealAsks {
 		return
 	}
-	if a.activeWarmDemands == nil {
-		a.activeWarmDemands = make(map[string]int) // ≤3 keys: the two button spellings + the icon
+	if a.activeWarm.demands == nil {
+		a.activeWarm.demands = make(map[string]int) // ≤3 keys: the two button spellings + the icon
 	}
-	a.activeWarmDemands[base]++
-	a.activeWarmLastDemand = time.Now()
+	a.activeWarm.demands[base]++
+	a.activeWarm.lastDemand = time.Now()
 	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 }
 

@@ -152,13 +152,10 @@ type sessionState struct {
 	drawnDemandPending bool
 	// sceneWarm is the scene-residency keeper's memory (throttle, futility
 	// latches, message phase); see sceneWarmState.
-	sceneWarm         sceneWarmState
-	activeWarmDemands map[string]int
-	activeWarmChar    string // active-warm identity: character folder…
-	activeWarmIdx     int    // …and selected emote index
-	// activeWarmLastDemand throttles keepActiveAssetsWarm's re-demands to the
-	// scene keeper's cadence (the old path submitted a pool job per 50 ms tick).
-	activeWarmLastDemand time.Time
+	sceneWarm sceneWarmState
+	// activeWarm is the active-emote keeper's memory (identity, index, throttle);
+	// see activeWarmState.
+	activeWarm activeWarmState
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -1206,6 +1203,17 @@ type sceneWarmState struct {
 	set        [6]string                 // the warm set demands counts against
 	lastDemand time.Time                 // evicted-base heal: one pool job per sceneWarmRedemandEvery, never per frame
 	phase      courtroom.MessagePhase    // tracks the room's message phase so an idle→ceremony transition resets the heal budget even when the warm set is unchanged (the blankpost-same-emote case)
+}
+
+// activeWarmState is the active-emote keeper's memory: which character/emote the
+// keeper is keeping resident, its per-base demand counts, and the throttle that
+// pulls its re-demands onto the scene keeper's cadence (the old path submitted a
+// pool job per 50 ms tick).
+type activeWarmState struct {
+	demands    map[string]int // per-base demand counts; nil until first use
+	char       string         // identity: character folder…
+	idx        int            // …and selected emote index
+	lastDemand time.Time      // throttles re-demands to the scene keeper's cadence
 }
 
 type lobbyFetch struct {
