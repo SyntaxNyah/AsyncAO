@@ -1,22 +1,6 @@
 package ui
 
 // SETTINGS ▸ THEME EDITOR (v1.90.0 W10) — the authoring tab.
-//
-// ONE concern: the rows that make, open and receive a theme. Selection — the
-// catalog, the badge, the subtheme variant, the write root, the art budget — stays
-// on the Theme tab, which is what someone is looking at when they want to PICK one.
-//
-// WHY THERE IS A TAB AT ALL. The editor shipped as one row two thirds of the way
-// down the Theme tab, between "Get themes" and "Your themes folder", under the
-// label "Theme editor:" — findable by search (W7a's census made sure of that) and
-// invisible to anyone scrolling. A tab in the sidebar is the one surface a user
-// reads top-to-bottom before they give up, and the flagship of the release has to
-// be on it.
-//
-// THE ROW ORDER IS THE STORY: make one → open the one you have → take one somebody
-// sent you. Creation first because it is the act with no prerequisite; import last
-// because it is the one that needs a file you already have.
-//
 // Every draw helper here shadows `pad := a.formX` (the settings-origin rule — a
 // missing shadow renders the row silently under the sidebar) and registers its rows
 // with c.onRow so the gather-search finds them by label.
@@ -77,18 +61,6 @@ const (
 // ---------------------------------------------------------------------------
 
 // drawSettingsThemeEditor draws the authoring tab.
-//
-// THE WIDTH IS THE CARD'S, NOT THE WINDOW'S — the house form every other tab body
-// follows (drawSettingsGeneral, drawSettingsTheme, drawSettingsAssets, …), and it is
-// load-bearing here rather than cosmetic: drawSettingsTabBody hands each body the
-// WINDOW width, while the card is clipped to {formX, formW}. The two right-aligned
-// buttons below place themselves at `w - themeGetBtnW - scrollBarW`, so with the
-// window width they land outside the clip — clipped at the edge on a narrow window
-// and, on a wide one, drawn and hit-tested entirely past it (Ctx.hovering reads
-// false outside c.clipRect), i.e. an invisible, unpressable button. Rebasing here
-// also gives the note labels their true widths, which the card's row-label limit was
-// silently trimming for them. These rows read correct at the old call site only
-// because drawSettingsTheme had already rebased w before calling them.
 func (a *App) drawSettingsThemeEditor(y, _ int32) int32 {
 	w := a.formW2()
 	y = a.settingsSection(y, w, "New theme")
@@ -104,16 +76,9 @@ func (a *App) drawSettingsThemeEditor(y, _ int32) int32 {
 
 // drawThemeMakeRows is the CREATOR: a name, a starting point, and the button that
 // makes the folder and opens the editor over it.
-//
-// THE TEMPLATES ARE ALL THINGS THAT ALREADY SHIPPED (themecreate.go's header): a
-// blank sidecar, W9's preset compose funnel, or W8's copy-for-editing. This row
-// picks between them and performs none of them.
-//
 // A CYCLER, NOT THE GALLERY'S TWO-AXIS GRID. The gallery is 21 × 14 miniatures and
 // wants a panel; a settings row is one line tall, and the axes here are the same
 // two lists in the same order, so a user who picks a pair here and then opens the
-// gallery finds themselves where they left off (openThemeGallery seeds from the
-// theme's declared preset ids). The grid stays where the space for it is.
 func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -255,13 +220,6 @@ func (a *App) drawThemeEditorOpenRow(y, w int32) int32 {
 }
 
 // drawThemeImportRow is the .aotheme intake, moved here from the Theme tab.
-//
-// IT IS AUTHORING, not selection, and that is why it moved: it is the receiving
-// half of the editor's own Share button, the two shipped as one funnel in W8, and
-// the Theme tab is about choosing among the themes you already have. "Get themes"
-// stayed behind, because that row answers "I have none" — a selection dead end, not
-// a creator flow.
-//
 // IT IS THE SAME FUNNEL as a drag (themeimport.go): the button opens the in-app
 // browser bound to purposeThemeBundle, and picking calls handleThemeBundleDrop.
 func (a *App) drawThemeImportRow(y, w int32) int32 {
@@ -291,13 +249,9 @@ func (a *App) drawThemeImportRow(y, w int32) int32 {
 
 // drawThemeAuthoringHint is the pointer the Theme tab keeps where the editor and
 // import rows used to be.
-//
 // A MOVED ROW LEAVES A HOLE where the user's memory is, and the hint machinery is
 // the tool for it — the keyword fallback already draws exactly this sentence for a
 // search that resolves to another tab, so this is the same line in the same words,
-// on the surface rather than in the search results. It registers with c.onRow under
-// the label people would search for, so the gather-search finds the SIGNPOST too and
-// nobody lands on a tab that no longer answers.
 func (a *App) drawThemeAuthoringHint(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule

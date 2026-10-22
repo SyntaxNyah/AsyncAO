@@ -1,35 +1,6 @@
 package ui
 
 // THE THEME CREATOR (v1.90.0 W10) — "make a theme from nothing", from Settings.
-//
-// ONE concern: minting a NEW theme folder for this client, from a starting point
-// the user picked, and handing the result to whoever asked for it.
-//
-// WHY IT IS ITS OWN FILE AND ITS OWN FUNNEL. Before this, the editor could only
-// EDIT: you had to already own a theme, or copy somebody else's (themecopy.go).
-// The one path that made a theme out of nothing lived inside the preset gallery
-// panel — reachable only from inside the editor, which you can only open over a
-// theme you already own. A creator you need a theme to reach is not a creator.
-//
-// IT IS THE ONE MINT. internal/ui calls themepack.CreateFromSidecar in exactly one
-// place — startThemeCreate, below — and TestOneThemeCreationFunnel censuses the
-// package for a second. The gallery's "Make a theme from this pair" button routes
-// here too: it used to own a job, a channel, a poll and a landing of its own, and
-// two mints are two chances to forget the catalog seed, the collision suffix or
-// the write-root refusal. The INTENT is what differs between callers, not the act.
-//
-// EVERY TEMPLATE IS SOMETHING THAT ALREADY SHIPPED (design §Q4, and the user's own
-// "build themes from scratch with templates"):
-//
-//	Blank            → theme.NewSidecar, the format's own empty document.
-//	From a preset    → theme.NewThemeFromPresets, W9's compose funnel, unchanged.
-//	Copy of current  → copyThemeForEditing, W8's copy path, unchanged.
-//
-// The third one is NOT a create and does not come through here, deliberately: a
-// copy has a SOURCE FOLDER, so it carries files, layout overrides and provenance
-// that a model built in memory cannot. Routing it through CreateFromSidecar would
-// silently drop all three. The picker offers it; themecopy.go performs it.
-//
 // OFF THE RENDER THREAD (hard rule 2) and single-flight (hard rule 4): the job
 // pointer IS the flag, the channel is buffered so the goroutine never blocks on an
 // app that moved on. themeCopyJob's shape exactly.
@@ -192,15 +163,6 @@ func (e errThemeCreate) Error() string { return string(e) }
 // ---------------------------------------------------------------------------
 
 // startThemeCreate writes sc into a new folder under this install's write root.
-//
-// THE CATALOG IS THE AUTHORITY on where this client may write, exactly as it is
-// for a copy (copyThemeForEditing's own note): one snapshot answers both halves of
-// the question, so a create cannot land beside a root a different answer resolved.
-//
-// Every refusal is a visible line naming the offender and the fix (design §3.3),
-// posted where the user is actually looking — the editor's rail chip when the
-// editor is open, the client's warn line otherwise (noteThemeCopy).
-//
 // Returns whether a job was started, so a caller that has UI state to clear (the
 // Settings name field) can tell a start from a refusal without re-deriving it.
 func (a *App) startThemeCreate(name string, sc *theme.Sidecar, intent themeCreateIntent) bool {

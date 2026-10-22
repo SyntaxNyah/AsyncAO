@@ -2,34 +2,7 @@ package ui
 
 // THE PROPERTY INSPECTOR'S TABLE (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md
 // §Q7 ("Declarative property inspector") and §3.1's right rail.
-//
-// DECLARATIVE, NOT HAND-WRITTEN PER KIND. A per-kind draw function is how an
-// inspector rots: the eleventh field added in v1.9x is the one somebody forgets to
-// wire into undo, and nothing fails. Here a row is DATA — a label, a widget kind, a
-// getter and a mutator — and the mutator RETURNS AN OP rather than performing one,
-// so a field physically cannot bypass the undo stack. Adding a row to this table is
-// the whole of adding an inspector field, and it is undoable the moment it exists.
-//
-// TWO GATES HOLD THE SHAPE:
-//   - TestEveryElementKindHasInspectorFields — totality over theme.ElementKind, so a
-//     kind appended to the format cannot ship with an empty inspector.
-//   - TestEveryInspectorFieldIsUndoable — STRUCTURAL: every `mut` in this file names
-//     a top-level func whose result type is themeEditOp, and every row's mutation
-//     round-trips through the document with the serialised bytes hash-identical
-//     before and after the undo.
-//
-// TOP-LEVEL FUNCS, NEVER METHOD VALUES OR CLOSURES OVER STATE. A method value
-// (a.something) allocates a receiver box, and a closure over a field allocates per
 // row; themeslots.go:105 already states the rule for the shipped editors' tables.
-//
-// ONE DOCUMENTED DEVIATION from the design's literal signature. The design writes
-// `get func(*App, editTarget) editValue` / `mut func(editTarget, editValue)
-// themeEditOp`, which cannot know WHICH field it is reading — so it implies one
-// top-level func pair per field, i.e. ~64 near-identical three-line funcs whose only
-// difference is an enum. The field is passed as an argument instead. The property
-// the design's ban was protecting (no closures, no method values, no per-row
-// allocation) is strictly stronger this way: there are exactly FOUR function values
-// in the whole table, all package-level, all shared by every row.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -54,15 +27,6 @@ const (
 	// fkPick is a free-text value with a LIVE list of legal answers beside it
 	// (v1.90.0 W7b): the anchor keys this theme actually places, the generators this
 	// build rasterises, the silhouettes it draws, the faces it can resolve.
-	//
-	// IT IS NOT fkEnum, and the difference is the format's. An enum row's value IS its
-	// index — the wire names are the whole domain and a value outside them cannot be
-	// written. Every fkPick field is read as FREE TEXT by the reader (sidecar_read.go
-	// says so for `shape` and `generator` in as many words), because a name this build
-	// does not know must degrade rather than fail: a theme authored against a later
-	// build keeps its `generator = ripples` line and draws a flat fill here. So the
-	// picker OFFERS the live list and still lets a name be typed, and the row's `enum`
-	// stays nil because the list is not the format's — it is this build's.
 	fkPick
 	fieldKindCount
 )
@@ -88,12 +52,6 @@ const (
 	// declares in [fonts] — which is exactly the two things theme.Element.Font may
 	// name, quoted from its own comment: "a FontElements id (inherit that element's
 	// face) or a [fonts] family".
-	//
-	// pickFACE, not pickFont, and that is not a preference: `pickFont` is already a
-	// top-level FUNCTION in this package (ui.go — the per-run script-coverage picker),
-	// so the two cannot coexist and the wave did not compile until this was renamed.
-	// "Face" is the word this client already uses for what a family resolves to
-	// (internFace, the fonts panel's own copy).
 	pickFace
 	pickSourceCount
 )
@@ -161,14 +119,9 @@ func mutateElemField(t editTarget, f editField, v editValue) themeEditOp {
 }
 
 // mutateSlotRect is the mutator for an AO2 WIDGET's geometry — the [overrides] tier.
-//
 // It lives beside mutateElemField because they are the same kind of thing (a
 // top-level func that returns an op and writes nothing) and because W7b's inspector
 // gains a Transform section for slot selections that will wire this exact function:
-// "for a fixed SLOT selection the inspector shows Transform + Reset-to-theme only"
-// is the AO2-parity rule made visible, and it needs one undoable geometry mutator,
-// not a second one that happens to agree with the canvas drag's.
-//
 // The field is editFieldRect so the coalescing key reads honestly — a widget drag
 // and an element drag are the same gesture on the same kind of value.
 func mutateSlotRect(t editTarget, r theme.Rect) themeEditOp {
@@ -238,20 +191,12 @@ func pickRow(label string, sec inspectorSection, f editField, src pickSource) in
 const editRectSpanPx = 8192
 
 // identityFields open every rail: WHAT this box is and what it is called.
-//
 // Kind leads because it is the one field that changes which OTHER rows exist — the
 // fill arm is chosen by it — so a rail whose first row rewrote the rows below it
 // would be a rail the user has to hunt through. The design's §3.1 list starts at
-// Transform; the wave brief's does not ("for a free ELEMENT: kind, rect, …"), and the
-// brief wins because an element whose kind cannot be changed is an element that has
-// to be deleted and re-made to become a gradient.
 // THE ID ROW LANDED IN W8, and only because the carrier learned to move a section
 // (theme.INIDoc.RenameSection + theme.Sidecar.RenameElement). Through W7b it was
 // deliberately absent: an element's id IS its `[element.<id>]` header, INIDoc could
-// not move one, and a rename would therefore have appended a second section and left
-// the first — a file that reads back as two elements. The row is second, not first,
-// because Kind changes which rows exist below it and a rail whose first row rewrote
-// itself would be a rail nobody could aim at.
 var identityFields = []inspectorField{
 	row("Kind", secTransform, fkEnum, editFieldKind, 0, int32(theme.ElementKindCount)-1, theme.ElementKindNames()),
 	row("Id", secTransform, fkText, editFieldElemID, 0, 0, nil),
@@ -434,14 +379,6 @@ var slotFields = []inspectorField{{
 }}
 
 // inspectorRowsFor returns the rows for the selected target, or nil.
-//
-// For a SLOT selection (spaceDesign) it returns the ONE geometry row (slotFields) —
-// W7a returned nil here and the rail drew a bare "AO2 widget — geometry only" line,
-// which stated the parity rule and then offered no way to act on it: a widget could
-// be dragged but its rect could not be TYPED, so the one thing an author most often
-// wants from an imported theme (nudge this box to an exact number) was mouse-only.
-// The parity rule is unchanged and is now enforced by the table's shape rather than
-// by the absence of one.
 func (te *themeEditor) inspectorRowsFor(t editTarget) []inspectorField {
 	if te == nil {
 		return nil
