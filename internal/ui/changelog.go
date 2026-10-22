@@ -167,29 +167,29 @@ func (a *App) drawChangelog(w, h int32) {
 
 	// Reflow only when the column width changes (kept alloc-free per frame per
 	// this repo's UI bar, exactly like drawAbout).
-	if a.changelogFlat == nil || a.changelogFlatW != colW {
-		a.changelogFlat = a.buildChangelogFlat(c, colW)
-		a.changelogFlatW = colW
+	if a.docs.changelogFlat == nil || a.docs.changelogFlatW != colW {
+		a.docs.changelogFlat = a.buildChangelogFlat(c, colW)
+		a.docs.changelogFlatW = colW
 	}
 
 	lineH := int32(c.font.Height()) + 4
 	contentH := int32(0)
-	for _, fl := range a.changelogFlat {
+	for _, fl := range a.docs.changelogFlat {
 		contentH += fl.gap + lineH
 	}
 	contentH += pad
 
-	a.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	a.docs.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
 	// A draggable scrollbar on the right for fast up/down navigation of a long history.
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
-	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
+	a.docs.changelogScroll = c.VScrollbar("changelogbar", track, a.docs.changelogScroll, contentH, viewH)
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
 
-	y := top - a.changelogScroll
-	for _, fl := range a.changelogFlat {
+	y := top - a.docs.changelogScroll
+	for _, fl := range a.docs.changelogFlat {
 		y += fl.gap
 		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
 			c.Label(x0+fl.indent, y, fl.text, fl.col)

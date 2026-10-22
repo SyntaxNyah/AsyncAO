@@ -262,7 +262,7 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 // live-roster poll, whose queued OOC /gas is the documented server flood-kick
 // vector, and a user tidying their mount list would emit one per click.
 func (a *App) forgetParsedINIs() {
-	a.charMetaCache = nil // remote speakers: refetched on their next message
+	a.overlays.charMetaCache = nil // remote speakers: refetched on their next message
 	// The preview's own latch, or the next hover over the SAME character would be
 	// dropped as "already showing that one" and keep the pre-edit emote list.
 	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil

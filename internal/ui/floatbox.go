@@ -147,7 +147,7 @@ var panelSlotTable = []panelSlot{
 	// landed somewhere awkward, or under something else, could not be shifted.
 	// Joining this table gives it the drag, the position persistence and the
 	// de-overlap cascade every other floating panel already has.
-	{slotPanelPieces, func(a *App) *floatWin { return &a.wins.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
+	{slotPanelPieces, func(a *App) *floatWin { return &a.wins.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces }},
 	// The three ex-modals (#31). They were centred blocks that took the screen; as
 	// floatWins they get the same drag, position persistence and de-overlap cascade
 	// every sibling panel has.
@@ -215,10 +215,10 @@ func (a *App) extrasWidgets() []extrasWidget {
 func (a *App) toggleExtrasBox() {
 	if a.theaterOn {
 		a.setTheater(false)
-		a.showWidgets = true
+		a.toolbox.showWidgets = true
 		return
 	}
-	a.showWidgets = !a.showWidgets
+	a.toolbox.showWidgets = !a.toolbox.showWidgets
 }
 
 // extrasPalette is the resolved Extras-box theme for a frame. Empty prefs leave
@@ -309,7 +309,7 @@ func (a *App) blockingCourtPopup() bool {
 	// and the torn-off tabs must NOT hide for them — that is the whole point of the
 	// change. They fence by footprint through boxFencesPointer like every other panel.
 	return a.showIni || a.bgPick.show ||
-		a.classicEdit
+		a.classic.classicEdit
 }
 
 // courtModalOpen reports whether ANY pointer-fencing courtroom popup is up —
@@ -327,7 +327,7 @@ func (a *App) courtModalOpen() bool {
 // jukebox, macro, IC-phrase, style-preset, hold-to-clear). Those use Esc to
 // CANCEL, so the global Esc handler must stand down while one is active.
 func (a *App) capturingKey() bool {
-	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
+	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukebox.jukeBindFor != "" ||
 		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed ||
 		a.voicePTTBindArmed || a.macroBind >= 0
 }
@@ -385,8 +385,8 @@ func (a *App) closeTopOverlay() bool {
 		a.closeMenuBar()
 	case c.ddOpen != "":
 		c.ddOpen = "" // an open dropdown first
-	case a.paletteOpen: // #39: the palette sits above everything it launches
-		a.paletteOpen = false
+	case a.palette.paletteOpen: // #39: the palette sits above everything it launches
+		a.palette.paletteOpen = false
 		if c.focusID == paletteInputID {
 			c.focusID = ""
 		}
@@ -456,7 +456,7 @@ func (a *App) closeTopOverlay() bool {
 	// kit's modal fence, which app.go warns freezes the UI if it is ever stranded).
 	case a.layoutEdit:
 		a.stopLayoutEdit()
-	case a.classicEdit:
+	case a.classic.classicEdit:
 		a.stopClassicEdit()
 	case a.updates.visible():
 		a.updates.closeModal()
@@ -476,8 +476,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showIni = false
 	case a.showTimer:
 		a.showTimer = false
-	case a.toolboxPinned && a.toolboxPieces:
-		a.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
+	case a.toolbox.toolboxPinned && a.toolbox.toolboxPieces:
+		a.toolbox.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
 	case a.pairPopupOpen:
 		a.pairPopupOpen = false
 	case a.showHotkeys:
@@ -485,8 +485,8 @@ func (a *App) closeTopOverlay() bool {
 	// Non-blocking floating panels.
 	case a.showVoice:
 		a.showVoice = false
-	case a.showMessages:
-		a.showMessages = false
+	case a.msgs.showMessages:
+		a.msgs.showMessages = false
 	case a.showEvid:
 		a.showEvid = false
 	case a.showModcall:
@@ -510,8 +510,8 @@ func (a *App) closeTopOverlay() bool {
 	// The Extras box LAST of the panels: a picker opened from it (SFX / style) closes
 	// first, then the box itself. (#28: every courtroom popup answers Esc — and so Esc
 	// can't fall through to the courtroom's leave-the-server shortcut while one is open.)
-	case a.showWidgets:
-		a.showWidgets = false
+	case a.toolbox.showWidgets:
+		a.toolbox.showWidgets = false
 	// A PINNED sprite preview: it paints INSIDE the courtroom pass, i.e. under
 	// every floating panel above, so its case sits here — below them, above
 	// theater mode. Unpinned boxes need no case: they close on their own leave.
@@ -591,7 +591,7 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 	if a.extrasPlaced {
 		return
 	}
-	ov, ok := a.classicOv[slotExtras]
+	ov, ok := a.classic.classicOv[slotExtras]
 	if !ok {
 		return
 	}
@@ -688,14 +688,14 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
 		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
 		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning {
+		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
 	if a.splitActive() && pointIn(mx, my, a.clientWinRect(w, h)) { // the floating client window fences too
 		return true
 	}
-	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
+	if a.toolbox.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
 	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
@@ -728,7 +728,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
 		return true
 	}
-	if a.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
+	if a.msgs.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
 		return true
 	}
 	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
@@ -755,7 +755,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// agree on frame one (the click-leak class). !paletteOpen matches the draw's
 	// stand-down while the palette overlays it (drawToolboxPieces) — a fence with
 	// no visible panel would be a dead pointer zone.
-	if a.toolboxPinned && a.toolboxPieces && !a.paletteOpen && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
+	if a.toolbox.toolboxPinned && a.toolbox.toolboxPieces && !a.palette.paletteOpen && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -773,7 +773,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	}
 	// Torn-off tab panels (torntabs.go) fence the scene too — their list content is
 	// clickable, so a click in one must not also land on the stage behind it.
-	if len(a.classicOv) > 0 {
+	if len(a.classic.classicOv) > 0 {
 		for i := range tornTabTable {
 			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
 				return true
@@ -877,10 +877,10 @@ func (a *App) persistTornWidgetSlot(i int, w, h int32) {
 	}
 	key := tornWidgetSlotKey(a.extrasDetached[i].id)
 	frac := rectToFrac(a.detachedBoxRect(i, w, h), w, h)
-	if a.classicOv == nil {
-		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if a.classic.classicOv == nil {
+		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
-	a.classicOv[key] = frac
+	a.classic.classicOv[key] = frac
 	a.d.Prefs.SetClassicSlot(key, frac)
 }
 
@@ -918,11 +918,11 @@ func (a *App) reconstructTornWidgets(w, h int32) {
 		return
 	}
 	a.extrasTornRebuilt = true
-	if len(a.classicOv) == 0 {
+	if len(a.classic.classicOv) == 0 {
 		return
 	}
 	widgets := a.extrasWidgets()
-	for key, frac := range a.classicOv {
+	for key, frac := range a.classic.classicOv {
 		rest, ok := strings.CutPrefix(key, tornWidgetSlotPrefix)
 		if !ok {
 			continue
@@ -1020,7 +1020,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
 			a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
 			a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-			a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning {
+			a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
@@ -1069,7 +1069,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.showModcall { // call-mod is a floating box now — chat stays live behind it
 		a.drawModcallPanel(w, h, &pressed)
 	}
-	if a.showMessages { // Group Chat / DMs — non-blocking floating panel
+	if a.msgs.showMessages { // Group Chat / DMs — non-blocking floating panel
 		a.drawMessagesPanel(w, h, &pressed)
 	}
 	if a.showVoice { // Voice (Nyathena) — non-blocking floating panel
@@ -1091,10 +1091,10 @@ func (a *App) drawFloatingPanels(w, h int32) {
 // Sprite Style), sharing the press edge from drawFloatingPanels.
 func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
 	favOpen := a.d.Prefs.Load().FavEmoteBox
-	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
+	if !a.toolbox.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
 		return // every Extras box closed — nothing to draw
 	}
-	if a.showWidgets {
+	if a.toolbox.showWidgets {
 		a.drawExtrasMainBox(w, h, pressed)
 	}
 	a.drawExtrasDetached(w, h, pressed) // torn-off widgets persist even with the main box closed
@@ -1122,7 +1122,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
 	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", pal.text)
 	if c.ButtonCol(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x", pal.bg, pal.title, pal.border, pal.text) {
-		a.showWidgets = false
+		a.toolbox.showWidgets = false
 		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
 			a.extrasCloseHintShown = true
 			a.warnLine = clampLine("Extras hidden — press Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyExtras)) + " or Extras → AsyncAO Extras box to reopen")

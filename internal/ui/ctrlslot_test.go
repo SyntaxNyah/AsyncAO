@@ -11,7 +11,7 @@ import "testing"
 // compacts with no gap, no overlap.
 func TestCtrlSlotCompaction(t *testing.T) {
 	a := testTabApp(t)
-	a.hidden = map[string]bool{}
+	a.classic.hidden = map[string]bool{}
 
 	// A miniature of the real toolbar row: (key, width, advance) in draw order.
 	// The advances mirror screens.go (restyle's is 84+gGap = 100).

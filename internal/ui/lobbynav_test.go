@@ -10,7 +10,7 @@ import (
 // clamp at the ends (no wrap), and the Phone Book filter restricts movement to favourites.
 func TestNextJoinableServer(t *testing.T) {
 	a := testTabApp(t)
-	a.servers = []network.ServerEntry{
+	a.lobby.servers = []network.ServerEntry{
 		{Name: "A", WSPort: 1},                  // 0 joinable
 		{Name: "Legacy"},                        // 1 legacy (no ports) — skipped
 		{Name: "B", WSPort: 1, Favorite: true},  // 2 joinable + favourite
@@ -35,7 +35,7 @@ func TestNextJoinableServer(t *testing.T) {
 	}
 
 	// Phone Book page: only favourites (idx 2, 3) are reachable.
-	a.phoneBookPage = true
+	a.lobby.phoneBookPage = true
 	if got := a.nextJoinableServer(-1, 1); got != 2 {
 		t.Errorf("phonebook down from none = %d, want 2", got)
 	}
@@ -51,7 +51,7 @@ func TestNextJoinableServer(t *testing.T) {
 // the [listTop, h] viewport (so keyboard nav never parks the selection off-screen).
 func TestScrollServerIntoView(t *testing.T) {
 	a := testTabApp(t)
-	a.servers = []network.ServerEntry{
+	a.lobby.servers = []network.ServerEntry{
 		{Name: "A", WSPort: 1}, {Name: "Legacy"}, {Name: "B", WSPort: 1},
 		{Name: "C", WSPort: 1}, {Name: "D", WSPort: 1}, {Name: "E", WSPort: 1},
 	}
@@ -60,8 +60,8 @@ func TestScrollServerIntoView(t *testing.T) {
 		a.scrollServerIntoView(idx, listTop, h)
 		// Recompute the row's content-space top the same way the helper does.
 		top, legacy := int32(0), false
-		for i := range a.servers {
-			if e := &a.servers[i]; !e.Joinable() && !legacy {
+		for i := range a.lobby.servers {
+			if e := &a.lobby.servers[i]; !e.Joinable() && !legacy {
 				top += rowH
 				legacy = true
 			}
@@ -70,9 +70,9 @@ func TestScrollServerIntoView(t *testing.T) {
 			}
 			top += rowH
 		}
-		onScreen := listTop + top - a.lobbyScroll
+		onScreen := listTop + top - a.lobby.lobbyScroll
 		if onScreen < listTop || onScreen+rowH > h {
-			t.Errorf("row %d at on-screen y=%d not within [%d,%d] (scroll=%d)", idx, onScreen, listTop, h, a.lobbyScroll)
+			t.Errorf("row %d at on-screen y=%d not within [%d,%d] (scroll=%d)", idx, onScreen, listTop, h, a.lobby.lobbyScroll)
 		}
 	}
 }

@@ -72,16 +72,16 @@ func (a *App) demandMsgIcon(base string) {
 	if base == "" {
 		return
 	}
-	if a.msgIconAsk == nil {
-		a.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
+	if a.msgs.msgIconAsk == nil {
+		a.msgs.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
 	}
-	if time.Since(a.msgIconAsk[base]) < charIconRetryInterval {
+	if time.Since(a.msgs.msgIconAsk[base]) < charIconRetryInterval {
 		return
 	}
-	if len(a.msgIconAsk) >= msgIconAskCap {
-		a.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
+	if len(a.msgs.msgIconAsk) >= msgIconAskCap {
+		a.msgs.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
 	}
-	a.msgIconAsk[base] = time.Now()
+	a.msgs.msgIconAsk[base] = time.Now()
 	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 }
 

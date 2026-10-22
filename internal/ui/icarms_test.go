@@ -21,7 +21,7 @@ func armsTestApp(t *testing.T, names ...string) *App {
 	// armed" (capturingKey), which would make every focus bounce a no-op.
 	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX(names)},
 	}
 	return a

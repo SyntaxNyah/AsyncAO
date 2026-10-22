@@ -169,9 +169,9 @@ func (a *App) clearSplit() {
 	if a.ctx != nil && a.ctx.focusID == "ic-split" {
 		a.ctx.focusID = "" // the client's field is gone — don't leave focus dangling on it
 	}
-	if a.clientTex != nil {
-		_ = a.clientTex.Destroy()
-		a.clientTex = nil
+	if a.client.clientTex != nil {
+		_ = a.client.clientTex.Destroy()
+		a.client.clientTex = nil
 	}
 }
 
@@ -209,9 +209,9 @@ func (a *App) controlPinnedClient() {
 // active session/room mid-render.
 func (a *App) clientControlClick(view sdl.Rect) {
 	c := a.ctx
-	if c.clicked && !a.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
+	if c.clicked && !a.client.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
 		absInt(int(c.mouseX-c.downX))+absInt(int(c.mouseY-c.downY)) <= clientClickSlop {
-		a.pendingControlSwap = true
+		a.client.pendingControlSwap = true
 	}
 }
 
@@ -254,8 +254,8 @@ func (a *App) pinToSplit(t *courtTab) {
 	}}
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
-	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown              // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)
-	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
+	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown                     // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)
+	a.client.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
 	}
@@ -312,19 +312,19 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	c.Border(r, ColAccent)
 	// Title bar = drag handle + Full/Compact toggle + close.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
-	if a.clientHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
-		a.clientHdrName = a.splitTab.state.serverName
-		a.clientHdr = "▣ " + a.clientHdrName
+	if a.client.clientHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
+		a.client.clientHdrName = a.splitTab.state.serverName
+		a.client.clientHdr = "▣ " + a.client.clientHdrName
 	}
-	c.LabelClipped(r.X+10, r.Y+8, r.W-102, a.clientHdr, ColAccent)
+	c.LabelClipped(r.X+10, r.Y+8, r.W-102, a.client.clientHdr, ColAccent)
 	// Full ⇄ Compact: show the whole theme (view-only) or just stage+log+input.
 	tgl := sdl.Rect{X: r.X + r.W - 92, Y: r.Y + 5, W: 60, H: floatTitleH - 10}
 	tglLabel := "Full view"
-	if a.clientFull {
+	if a.client.clientFull {
 		tglLabel = "Compact"
 	}
 	if c.Button(tgl, tglLabel) {
-		a.clientFull = !a.clientFull
+		a.client.clientFull = !a.client.clientFull
 	}
 	c.TooltipAfter("cli-full", tgl, "Show the WHOLE theme (emote grid, buttons…) — view-only; chat in the strip below. Roughly doubles render cost while open.")
 	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 5, W: 20, H: floatTitleH - 10}, "x") {
@@ -340,7 +340,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 		a.persistPanelSlot(slotPanelClient, r, w, h)
 	}
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
-	if a.clientFull && a.canRenderFullClient() {
+	if a.client.clientFull && a.canRenderFullClient() {
 		a.drawClientFull(w, h, body, pressed)
 	} else {
 		a.drawClientBody(body)
@@ -352,7 +352,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 // modes (theater / either layout editor): those reskin drawCourtroom globally, so
 // the pinned pass would fight them. Compact view is shown instead while they're on.
 func (a *App) canRenderFullClient() bool {
-	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
+	return !a.theaterOn && !a.classic.classicEdit && !a.layoutEdit
 }
 
 // drawClientBody lays the pinned server's live stage (4:3, capped), chat log, and IC
@@ -386,7 +386,7 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
 	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
 	a.renderFullClientTexture(w, h)
-	if a.clientTex == nil {
+	if a.client.clientTex == nil {
 		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
 		a.drawSplitInput(inputRow)
 		return
@@ -394,7 +394,7 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
 	a.clientControlClick(view)           // a plain click on the client = take control of that server
 	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
-	_ = c.Ren.Copy(a.clientTex, &src, &view)
+	_ = c.Ren.Copy(a.client.clientTex, &src, &view)
 	// "Click to control" hint (top-left pill) — the rendered theme is a live view; a
 	// click makes this server the real, fully-interactive courtroom (swaps with primary).
 	const ctlHint = "▶ Click to control this server (buttons + chat)"
@@ -403,14 +403,14 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	c.LabelClipped(hintPill.X+6, hintPill.Y+3, view.W-12, ctlHint, ColAccent)
 	// Zoom readout / hint (memoized so the per-frame draw never Sprintfs), on a small
 	// dark pill for legibility over the rendered client.
-	pct := int(a.clientZoom*100 + 0.5)
-	if pct != a.clientZoomLblPct {
-		a.clientZoomLblPct = pct
-		a.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan", pct)
+	pct := int(a.client.clientZoom*100 + 0.5)
+	if pct != a.client.clientZoomLblPct {
+		a.client.clientZoomLblPct = pct
+		a.client.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan", pct)
 	}
-	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.clientZoomLbl) + 12, H: 18}
+	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.client.clientZoomLbl) + 12, H: 18}
 	c.Fill(pill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
-	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.clientZoomLbl, ColAccent)
+	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.client.clientZoomLbl, ColAccent)
 	a.drawSplitInput(inputRow) // quick-chat strip (sendICSplit) — fire a line without taking control
 }
 
@@ -418,11 +418,11 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 // the zoom factor and pan centre. At zoom 1 it's the whole texture (shrunk to fit);
 // zoomed in it's a centred-on-pan window that magnifies.
 func (a *App) clientViewSrc() sdl.Rect {
-	z := a.clientZoom
+	z := a.client.clientZoom
 	if z < clientZoomMin {
 		z = clientZoomMin
 	}
-	tw, th := float64(a.clientTexW), float64(a.clientTexH)
+	tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
 	sw, sh := tw/z, th/z
 	sx := a.clientPanX*tw - sw/2
 	sy := a.clientPanY*th - sh/2
@@ -436,12 +436,12 @@ func (a *App) clientViewSrc() sdl.Rect {
 // window never leaves the texture.
 func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 	c := a.ctx
-	if a.clientZoom < clientZoomMin {
-		a.clientZoom = clientZoomMin
+	if a.client.clientZoom < clientZoomMin {
+		a.client.clientZoom = clientZoomMin
 	}
 	hover := pointIn(c.mouseX, c.mouseY, view)
 	if hover && c.wheelY != 0 { // zoom around the cursor
-		old := a.clientZoom
+		old := a.client.clientZoom
 		nz := old * clientZoomStep
 		if c.wheelY < 0 {
 			nz = old / clientZoomStep
@@ -453,34 +453,34 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 			fy := float64(c.mouseY-view.Y) / float64(view.H)
 			texX := float64(src.X) + fx*float64(src.W) // texture point under the cursor
 			texY := float64(src.Y) + fy*float64(src.H)
-			tw, th := float64(a.clientTexW), float64(a.clientTexH)
+			tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
 			sw, sh := tw/nz, th/nz
-			a.clientZoom = nz
+			a.client.clientZoom = nz
 			a.clientPanX = (texX - fx*sw + sw/2) / tw // keep that point under the cursor
 			a.clientPanY = (texY - fy*sh + sh/2) / th
 			a.clampClientPan()
 		}
 		c.wheelY = 0 // consumed
 	}
-	if a.clientZoom > clientZoomMin { // drag to pan (only meaningful when zoomed)
+	if a.client.clientZoom > clientZoomMin { // drag to pan (only meaningful when zoomed)
 		if *pressed && hover {
 			*pressed = false
-			a.clientPanning = true
+			a.client.clientPanning = true
 			a.clientPanGrabX, a.clientPanGrabY = c.mouseX, c.mouseY
 			a.clientPanBaseX, a.clientPanBaseY = a.clientPanX, a.clientPanY
 		}
 		if !c.mouseDown {
-			a.clientPanning = false
+			a.client.clientPanning = false
 		}
-		if a.clientPanning {
-			tw, th := float64(a.clientTexW), float64(a.clientTexH)
-			sw, sh := tw/a.clientZoom, th/a.clientZoom
+		if a.client.clientPanning {
+			tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
+			sw, sh := tw/a.client.clientZoom, th/a.client.clientZoom
 			a.clientPanX = a.clientPanBaseX - float64(c.mouseX-a.clientPanGrabX)/float64(view.W)*sw/tw
 			a.clientPanY = a.clientPanBaseY - float64(c.mouseY-a.clientPanGrabY)/float64(view.H)*sh/th
 			a.clampClientPan()
 		}
 	} else {
-		a.clientPanning = false
+		a.client.clientPanning = false
 		a.clientPanX, a.clientPanY = 0.5, 0.5
 	}
 }
@@ -488,7 +488,7 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 // clampClientPan keeps the pan centre so the zoomed source window stays inside the
 // texture (its half-extent is 0.5/zoom in normalized space).
 func (a *App) clampClientPan() {
-	half := 0.5 / a.clientZoom
+	half := 0.5 / a.client.clientZoom
 	a.clientPanX = clampF(a.clientPanX, half, 1-half)
 	a.clientPanY = clampF(a.clientPanY, half, 1-half)
 }
@@ -522,23 +522,23 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if a.clientTex == nil || a.clientTexW != w || a.clientTexH != h {
-		if a.clientTex != nil {
-			_ = a.clientTex.Destroy()
-			a.clientTex = nil
+	if a.client.clientTex == nil || a.client.clientTexW != w || a.client.clientTexH != h {
+		if a.client.clientTex != nil {
+			_ = a.client.clientTex.Destroy()
+			a.client.clientTex = nil
 		}
 		tex, err := c.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_TARGET, w, h)
 		if err != nil {
 			return
 		}
-		a.clientTex, a.clientTexW, a.clientTexH = tex, w, h
+		a.client.clientTex, a.client.clientTexW, a.client.clientTexH = tex, w, h
 	}
 
 	// Bind the target and draw at 1:1 logical scale. The render-target + scale restore
 	// is DEFERRED so even a panic inside drawCourtroom can't leave the screen rendering
 	// into the texture (a black primary) — the worst silent failure of this path.
 	prevTarget := c.Ren.GetRenderTarget()
-	if c.Ren.SetRenderTarget(a.clientTex) != nil {
+	if c.Ren.SetRenderTarget(a.client.clientTex) != nil {
 		return
 	}
 	// #77: the pinned pass INHERITS the ambient text device scale (it does NOT
@@ -587,12 +587,12 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	a.sessionState = a.splitTab.state // promotes a.sess / a.icInput / a.emote* / msRaster … to the pinned tab
 	a.room = a.splitRoom              // drive the pinned LIVE room (a parked tab's sessionState.room is nil)
 	a.d.Viewport = a.splitVP
-	a.pinnedPass = true
+	a.client.pinnedPass = true
 
 	a.drawCourtroom(w, h)
 
 	// --- capture the pinned pass's side effects, then restore the primary ---
-	a.pinnedPass = false
+	a.client.pinnedPass = false
 	a.room = nil                      // a parked tab keeps no room — don't persist splitRoom into its slot
 	a.splitTab.state = a.sessionState // capture emote/scroll/raster/etc. side effects of the view-only pass
 	a.sessionState = savedSess        // restores a.room + a.sess + msRaster + everything promoted
@@ -1266,7 +1266,7 @@ func (a *App) expScreenSkippable() bool {
 	case ScreenCourtroom, ScreenCharSelect:
 		return a.sess != nil
 	case ScreenLobby:
-		return !a.lobbyFetching && !a.pinging
+		return !a.lobby.lobbyFetching && !a.lobby.pinging
 	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
 		return true
 	case ScreenThemeEditor:
@@ -2412,7 +2412,7 @@ func (a *App) loadCharINI() {
 }
 
 func (a *App) pollCharINI() {
-	if a.pinnedPass {
+	if a.client.pinnedPass {
 		return // the full-theme pinned render must not drain the primary's char.ini result
 	}
 	select {

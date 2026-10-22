@@ -91,7 +91,7 @@ func (a *App) editorDrawSiteRuns() bool {
 // editor drops the focus (closeEditorBlockingOverlays), so the only way back into
 // this branch is a surface the user opened AFTER arming — one they can close.
 func (a *App) keyboardSurfaceOverEditor() bool {
-	return a.paletteOpen || a.ctx.focusID != ""
+	return a.palette.paletteOpen || a.ctx.focusID != ""
 }
 
 // nudgeKeyDir maps an arrow keycode to a unit step in screen/design orientation (Y grows
@@ -225,8 +225,8 @@ func (a *App) editSelection() editTarget {
 	switch {
 	case a.layoutEdit:
 		return a.editTgt
-	case a.classicEdit:
-		return a.classicTgt
+	case a.classic.classicEdit:
+		return a.classic.classicTgt
 	}
 	return noTarget()
 }
@@ -390,7 +390,7 @@ func clampDesignRectToCanvas(r theme.Rect, court theme.Rect) theme.Rect {
 // px, through the same override → fraction → prefs path a drag release takes.
 func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int32) {
 	key := tgt.classicKey()
-	if key == "" || a.classicEditDrag != 0 {
+	if key == "" || a.classic.classicEditDrag != 0 {
 		return
 	}
 	base, ok := a.classicSlotCurrentRect(key, w, h)
@@ -410,11 +410,11 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 		return
 	}
 	a.pushClassicUndo()
-	if a.classicOv == nil {
-		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if a.classic.classicOv == nil {
+		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	ov := rectToFrac(r, w, h)
-	a.classicOv[key] = ov
+	a.classic.classicOv[key] = ov
 	a.syncAnchorWindow(key, w, h) // the override now describes THIS window size
 	a.d.Prefs.SetClassicSlot(key, ov)
 	if m := a.slotAnchorMode(key); m != "" {
@@ -430,10 +430,10 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 // yet. Only a slot with NO override needs the registry, and then only for the rect the
 // layout computed for it — which is exactly what a first nudge has to start from.
 func (a *App) classicSlotCurrentRect(key string, w, h int32) (sdl.Rect, bool) {
-	if ov, has := a.classicOv[key]; has {
+	if ov, has := a.classic.classicOv[key]; has {
 		return a.anchoredRect(key, ov, w, h), true
 	}
-	info, reg := a.slotReg[key]
+	info, reg := a.classic.slotReg[key]
 	return info.cur, reg
 }
 

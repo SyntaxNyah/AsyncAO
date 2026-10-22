@@ -38,57 +38,57 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
 	a.frameNow = base // fake clock: a.now() reads the frame snapshot (reconnect.go idiom)
-	a.lobbyResult = make(chan lobbyFetch, 1)
+	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network" // missing scheme: http.NewRequestWithContext errors before any I/O
 
 	// Entry edge with a cold (zero) stamp: fires immediately, arming the cap.
 	a.screen, a.drawnScreen = ScreenLobby, ScreenCourtroom
 	a.noteScreenTransition()
-	if !a.lobbyFetching {
+	if !a.lobby.lobbyFetching {
 		t.Fatal("entering the lobby with no prior fetch must refresh immediately")
 	}
-	if !a.lastLobbyRefreshAt.Equal(base) {
-		t.Errorf("RefreshServers must arm the cap stamp: got %v, want %v", a.lastLobbyRefreshAt, base)
+	if !a.lobby.lastLobbyRefreshAt.Equal(base) {
+		t.Errorf("RefreshServers must arm the cap stamp: got %v, want %v", a.lobby.lastLobbyRefreshAt, base)
 	}
-	<-a.lobbyResult // reap the (instantly failed) fetch so the goroutine is done
-	a.lobbyFetching = false
+	<-a.lobby.lobbyResult // reap the (instantly failed) fetch so the goroutine is done
+	a.lobby.lobbyFetching = false
 
 	// Sitting on the lobby: however stale the stamp, no transition = no request
 	// (the trigger is purely edge — there is no polling timer to fire).
 	a.frameNow = base.Add(2 * lobbyAutoRefreshMinInterval)
-	a.lastLobbyRefreshAt = time.Time{} // even maximally due…
+	a.lobby.lastLobbyRefreshAt = time.Time{} // even maximally due…
 	a.noteScreenTransition()
-	if a.lobbyFetching {
+	if a.lobby.lobbyFetching {
 		t.Error("no screen transition must never auto-refresh (edge-triggered, not polled)")
 	}
 
 	// Re-entry INSIDE the cap: suppressed — a manual refresh (or any fetch)
 	// moments ago already armed the stamp.
-	a.lastLobbyRefreshAt = a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
+	a.lobby.lastLobbyRefreshAt = a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
 	a.drawnScreen = ScreenSettings // last frame drew Settings → this frame is an entry edge
 	a.noteScreenTransition()
-	if a.lobbyFetching {
+	if a.lobby.lobbyFetching {
 		t.Error("re-entering the lobby within the cap must not refetch")
 	}
 
 	// Leaving the lobby: never fires, regardless of staleness.
-	a.lastLobbyRefreshAt = a.frameNow.Add(-2 * lobbyAutoRefreshMinInterval)
+	a.lobby.lastLobbyRefreshAt = a.frameNow.Add(-2 * lobbyAutoRefreshMinInterval)
 	a.screen = ScreenSettings // drawnScreen settled on ScreenLobby above
 	a.noteScreenTransition()
-	if a.lobbyFetching {
+	if a.lobby.lobbyFetching {
 		t.Error("a transition OUT of the lobby must not refetch")
 	}
 
 	// Re-entry PAST the cap: fires again and re-arms the stamp.
 	a.screen = ScreenLobby
 	a.noteScreenTransition()
-	if !a.lobbyFetching {
+	if !a.lobby.lobbyFetching {
 		t.Error("re-entering the lobby past the cap must refresh immediately")
 	}
-	if !a.lastLobbyRefreshAt.Equal(a.frameNow) {
-		t.Errorf("the auto fetch must re-arm the cap stamp: got %v, want %v", a.lastLobbyRefreshAt, a.frameNow)
+	if !a.lobby.lastLobbyRefreshAt.Equal(a.frameNow) {
+		t.Errorf("the auto fetch must re-arm the cap stamp: got %v, want %v", a.lobby.lastLobbyRefreshAt, a.frameNow)
 	}
-	<-a.lobbyResult
+	<-a.lobby.lobbyResult
 }
 
 // TestRefreshServersDedupKeepsCapStamp pins the stamp's placement BELOW the
@@ -97,12 +97,12 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 func TestRefreshServersDedupKeepsCapStamp(t *testing.T) {
 	a := testTabApp(t)
 	a.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a.lobbyFetching = true // a fetch is already in flight
+	a.lobby.lobbyFetching = true // a fetch is already in flight
 	armed := a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
-	a.lastLobbyRefreshAt = armed
+	a.lobby.lastLobbyRefreshAt = armed
 	a.RefreshServers() // dedup'd: must be a pure no-op
-	if !a.lastLobbyRefreshAt.Equal(armed) {
-		t.Errorf("a dedup'd RefreshServers must not re-arm the cap: got %v, want %v", a.lastLobbyRefreshAt, armed)
+	if !a.lobby.lastLobbyRefreshAt.Equal(armed) {
+		t.Errorf("a dedup'd RefreshServers must not re-arm the cap: got %v, want %v", a.lobby.lastLobbyRefreshAt, armed)
 	}
 }
 
@@ -117,31 +117,31 @@ func TestLobbyEntryDrainsParkedFetch(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
 	a.frameNow = base
-	a.lobbyResult = make(chan lobbyFetch, 1)
+	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network" // missing scheme: the fetch goroutine errors before any I/O
 
 	// Stage "left the lobby mid-fetch": the latch is up and the completed
 	// result sits parked, un-drained.
-	a.lobbyFetching = true
-	a.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{
+	a.lobby.lobbyFetching = true
+	a.lobby.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{
 		{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 3},
 	}}
 
 	// Re-entry past the cap: the edge must drain the parked result AND fire a
 	// fresh fetch.
-	a.lastLobbyRefreshAt = base.Add(-2 * lobbyAutoRefreshMinInterval)
+	a.lobby.lastLobbyRefreshAt = base.Add(-2 * lobbyAutoRefreshMinInterval)
 	a.screen, a.drawnScreen = ScreenLobby, ScreenSettings
 	a.noteScreenTransition()
-	if len(a.masterEntries) != 1 || a.masterEntries[0].Name != "Alpha" {
-		t.Errorf("the parked result must be applied on entry, got masterEntries=%v", a.masterEntries)
+	if len(a.lobby.masterEntries) != 1 || a.lobby.masterEntries[0].Name != "Alpha" {
+		t.Errorf("the parked result must be applied on entry, got masterEntries=%v", a.lobby.masterEntries)
 	}
-	if !a.lobbyFetching {
+	if !a.lobby.lobbyFetching {
 		t.Fatal("a new fetch must start after the drain (the stale latch must not dedup it away)")
 	}
-	if !a.lastLobbyRefreshAt.Equal(base) {
-		t.Errorf("the new fetch must re-arm the cap stamp (proof it passed the dedup gate): got %v, want %v", a.lastLobbyRefreshAt, base)
+	if !a.lobby.lastLobbyRefreshAt.Equal(base) {
+		t.Errorf("the new fetch must re-arm the cap stamp (proof it passed the dedup gate): got %v, want %v", a.lobby.lastLobbyRefreshAt, base)
 	}
-	<-a.lobbyResult // reap the new (instantly failed) fetch so its goroutine is done
+	<-a.lobby.lobbyResult // reap the new (instantly failed) fetch so its goroutine is done
 }
 
 // TestPollLobbyFetchKeepsSelectionByIdentity pins that a landing refresh
@@ -152,30 +152,30 @@ func TestLobbyEntryDrainsParkedFetch(t *testing.T) {
 // different server, so identity is the only safe key).
 func TestPollLobbyFetchKeepsSelectionByIdentity(t *testing.T) {
 	a := testTabApp(t)
-	a.lobbyResult = make(chan lobbyFetch, 1)
+	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}
 	beta := network.ServerEntry{IP: "b.example", WSPort: 1002, Name: "Beta", Players: 9}
-	a.servers = []network.ServerEntry{alpha, beta}
-	a.selServer = 1 // Beta
+	a.lobby.servers = []network.ServerEntry{alpha, beta}
+	a.lobby.selServer = 1 // Beta
 	wantURL := beta.WebSocketURL()
 
 	// The new list still contains Beta (extra entry, different sort order).
 	gamma := network.ServerEntry{IP: "c.example", WSPort: 1003, Name: "Gamma", Players: 20}
-	a.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{gamma, alpha, beta}}
+	a.lobby.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{gamma, alpha, beta}}
 	a.pollLobbyFetch()
-	if a.selServer < 0 || a.selServer >= len(a.servers) {
-		t.Fatalf("selection must survive a refresh containing the same server, got selServer=%d", a.selServer)
+	if a.lobby.selServer < 0 || a.lobby.selServer >= len(a.lobby.servers) {
+		t.Fatalf("selection must survive a refresh containing the same server, got selServer=%d", a.lobby.selServer)
 	}
-	if got := a.servers[a.selServer].WebSocketURL(); got != wantURL {
+	if got := a.lobby.servers[a.lobby.selServer].WebSocketURL(); got != wantURL {
 		t.Errorf("selection must follow the server's identity through the re-sort: got %s, want %s", got, wantURL)
 	}
 
 	// A new list WITHOUT Beta: the selection must clear — any carried index
 	// would now point at a different server (the wrong-join hazard).
-	a.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{gamma, alpha}}
+	a.lobby.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{gamma, alpha}}
 	a.pollLobbyFetch()
-	if a.selServer != -1 {
-		t.Errorf("a vanished server must clear the selection, got selServer=%d", a.selServer)
+	if a.lobby.selServer != -1 {
+		t.Errorf("a vanished server must clear the selection, got selServer=%d", a.lobby.selServer)
 	}
 }
 
@@ -189,43 +189,43 @@ func TestPollLobbyFetchKeepsSelectionByIdentity(t *testing.T) {
 func TestRefreshKeepsPingSortAndPrunes(t *testing.T) {
 	a := testTabApp(t)
 	a.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a.lobbyResult = make(chan lobbyFetch, 1)
+	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network"
 	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}
 	gone := "ws://gone.example:9999"
-	a.pingMode = true
-	a.pings = map[string]time.Duration{
+	a.lobby.pingMode = true
+	a.lobby.pings = map[string]time.Duration{
 		alpha.WebSocketURL(): 5 * time.Millisecond,
 		gone:                 8 * time.Millisecond,
 	}
 
 	a.RefreshServers()
-	if !a.pingMode {
+	if !a.lobby.pingMode {
 		t.Error("a refresh start must not exit ping-sort mode")
 	}
-	if len(a.pings) != 2 {
-		t.Errorf("a refresh start must not drop the connect-time cache, got %d entries", len(a.pings))
+	if len(a.lobby.pings) != 2 {
+		t.Errorf("a refresh start must not drop the connect-time cache, got %d entries", len(a.lobby.pings))
 	}
-	<-a.lobbyResult // reap the (instantly failed) real fetch so its goroutine is done
-	a.lobbyFetching = false
+	<-a.lobby.lobbyResult // reap the (instantly failed) real fetch so its goroutine is done
+	a.lobby.lobbyFetching = false
 
 	// Error landing: no prune (the merged list degraded to favorites-only).
-	a.lobbyResult <- lobbyFetch{err: errors.New("master down")}
+	a.lobby.lobbyResult <- lobbyFetch{err: errors.New("master down")}
 	a.pollLobbyFetch()
-	if len(a.pings) != 2 {
-		t.Errorf("an error landing must keep the connect-time cache, got %d entries", len(a.pings))
+	if len(a.lobby.pings) != 2 {
+		t.Errorf("an error landing must keep the connect-time cache, got %d entries", len(a.lobby.pings))
 	}
 
 	// Successful landing: live entries survive, vanished ones are pruned.
-	a.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{alpha}}
+	a.lobby.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{alpha}}
 	a.pollLobbyFetch()
-	if !a.pingMode {
+	if !a.lobby.pingMode {
 		t.Error("a landing list must not exit ping-sort mode")
 	}
-	if _, ok := a.pings[alpha.WebSocketURL()]; !ok {
+	if _, ok := a.lobby.pings[alpha.WebSocketURL()]; !ok {
 		t.Error("a live server's connect time must survive the landing")
 	}
-	if _, ok := a.pings[gone]; ok {
+	if _, ok := a.lobby.pings[gone]; ok {
 		t.Error("a vanished server's connect time must be pruned on a successful landing (boundedness, rule §17.4)")
 	}
 }
@@ -236,19 +236,19 @@ func TestRefreshKeepsPingSortAndPrunes(t *testing.T) {
 // the selection on it) mid-glance. Only the status line changes.
 func TestErrorLandingKeepsList(t *testing.T) {
 	a := testTabApp(t)
-	a.lobbyResult = make(chan lobbyFetch, 1)
+	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}
-	a.masterEntries = []network.ServerEntry{alpha}
-	a.servers = []network.ServerEntry{alpha}
-	a.selServer = 0
+	a.lobby.masterEntries = []network.ServerEntry{alpha}
+	a.lobby.servers = []network.ServerEntry{alpha}
+	a.lobby.selServer = 0
 
-	a.lobbyResult <- lobbyFetch{err: errors.New("master down")}
+	a.lobby.lobbyResult <- lobbyFetch{err: errors.New("master down")}
 	a.pollLobbyFetch()
-	if len(a.servers) != 1 || len(a.masterEntries) != 1 {
-		t.Errorf("an error landing must keep the visible list, got servers=%d master=%d", len(a.servers), len(a.masterEntries))
+	if len(a.lobby.servers) != 1 || len(a.lobby.masterEntries) != 1 {
+		t.Errorf("an error landing must keep the visible list, got servers=%d master=%d", len(a.lobby.servers), len(a.lobby.masterEntries))
 	}
-	if a.selServer != 0 {
-		t.Errorf("an error landing must not touch the selection, got selServer=%d", a.selServer)
+	if a.lobby.selServer != 0 {
+		t.Errorf("an error landing must not touch the selection, got selServer=%d", a.lobby.selServer)
 	}
 }
 
@@ -260,14 +260,14 @@ func TestErrorLandingKeepsList(t *testing.T) {
 // out of nowhere on re-entry.
 func TestLeaveLobbyClearsPingLatch(t *testing.T) {
 	a := testTabApp(t)
-	a.pinging = true
-	gen := a.pingGen
+	a.lobby.pinging = true
+	gen := a.lobby.pingGen
 	a.screen, a.drawnScreen = ScreenSettings, ScreenLobby // leaving the lobby this frame
 	a.noteScreenTransition()
-	if a.pinging {
+	if a.lobby.pinging {
 		t.Error("leaving the lobby must clear the pinging latch (dropped-sentinel wedge)")
 	}
-	if a.pingGen == gen {
+	if a.lobby.pingGen == gen {
 		t.Error("leaving the lobby must supersede the in-flight sweep (gen bump)")
 	}
 }

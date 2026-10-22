@@ -39,13 +39,13 @@ type pingResult struct {
 // bounded result channel. A re-probe bumps pingGen so a prior sweep's late
 // results are ignored.
 func (a *App) startPinging() {
-	if a.pinging {
+	if a.lobby.pinging {
 		return
 	}
 	type target struct{ url, addr string }
 	var targets []target
-	for i := range a.servers {
-		e := &a.servers[i]
+	for i := range a.lobby.servers {
+		e := &a.lobby.servers[i]
 		if !e.Joinable() {
 			continue
 		}
@@ -56,10 +56,10 @@ func (a *App) startPinging() {
 	if len(targets) == 0 {
 		return
 	}
-	a.pinging = true
-	a.pingMode = true
-	a.pingGen++
-	gen, res := a.pingGen, a.pingRes
+	a.lobby.pinging = true
+	a.lobby.pingMode = true
+	a.lobby.pingGen++
+	gen, res := a.lobby.pingGen, a.lobby.pingRes
 	go func() {
 		jobs := make(chan target)
 		var wg sync.WaitGroup
@@ -100,8 +100,8 @@ func (a *App) startPinging() {
 // Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
 // this is safe to call repeatedly.
 func (a *App) toggleConnectTimeSort() {
-	if a.pingMode {
-		a.pingMode = false
+	if a.lobby.pingMode {
+		a.lobby.pingMode = false
 		a.applyServerSort()
 		return
 	}
@@ -113,22 +113,22 @@ func (a *App) toggleConnectTimeSort() {
 func (a *App) pollPing() {
 	for {
 		select {
-		case r := <-a.pingRes:
-			if r.gen != a.pingGen {
+		case r := <-a.lobby.pingRes:
+			if r.gen != a.lobby.pingGen {
 				continue // a superseded sweep
 			}
 			if r.url == "" { // done
-				a.pinging = false
+				a.lobby.pinging = false
 				a.applyServerSort()
 				continue
 			}
-			if a.pings == nil {
-				a.pings = map[string]time.Duration{}
+			if a.lobby.pings == nil {
+				a.lobby.pings = map[string]time.Duration{}
 			}
 			if r.ok {
-				a.pings[r.url] = r.rtt
+				a.lobby.pings[r.url] = r.rtt
 			} else {
-				a.pings[r.url] = -1 // unreachable
+				a.lobby.pings[r.url] = -1 // unreachable
 			}
 		default:
 			return
@@ -139,10 +139,10 @@ func (a *App) pollPing() {
 // applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets
 // the index-based selection — mirroring the refresh / favourite re-sorts.
 func (a *App) applyServerSort() {
-	a.servers = a.mergedFavorites()
+	a.lobby.servers = a.mergedFavorites()
 	// Clear all three selection caches together (descLinks included — a stale
 	// link slice is a latent trap for any draw path that consults it alone).
-	a.selServer, a.descLines, a.descLinks = -1, nil, nil // row indices changed with the sort
+	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks = -1, nil, nil // row indices changed with the sort
 }
 
 // sortByPing orders joinable servers by connect RTT — favorites pinned, probed

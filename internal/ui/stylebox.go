@@ -41,22 +41,22 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	// drag-to-sketch press or a tap-to-add-point (the clipped-grids-need-pushClip
 	// class — raw pointIn would leak the interaction past the clip edge, #C).
 	inBox := c.hovering(box)
-	press := c.mouseDown && !a.pathPrevDown
-	a.pathPrevDown = c.mouseDown
+	press := c.mouseDown && !a.toolbox.pathPrevDown
+	a.toolbox.pathPrevDown = c.mouseDown
 	if press && inBox { // begin a stroke
-		a.pathDrawing, a.pathStroke = true, a.pathStroke[:0]
+		a.toolbox.pathDrawing, a.toolbox.pathStroke = true, a.toolbox.pathStroke[:0]
 	}
-	if a.pathDrawing && c.mouseDown && len(a.pathStroke) < pathStrokeCap {
-		a.pathStroke = append(a.pathStroke, sdl.Point{
+	if a.toolbox.pathDrawing && c.mouseDown && len(a.toolbox.pathStroke) < pathStrokeCap {
+		a.toolbox.pathStroke = append(a.toolbox.pathStroke, sdl.Point{
 			X: int32(clampInt(int(c.mouseX), int(box.X), int(box.X+box.W))),
 			Y: int32(clampInt(int(c.mouseY), int(box.Y), int(box.Y+box.H))),
 		})
 	}
-	if a.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
-		a.pathDrawing = false
+	if a.toolbox.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
+		a.toolbox.pathDrawing = false
 		switch {
-		case strokeMoved(a.pathStroke):
-			p.Path, p.PathLen = samplePathStroke(a.pathStroke, box)
+		case strokeMoved(a.toolbox.pathStroke):
+			p.Path, p.PathLen = samplePathStroke(a.toolbox.pathStroke, box)
 			a.d.Prefs.SetSpriteStyle(p)
 		case inBox && int(p.PathLen) < len(p.Path):
 			gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
@@ -65,14 +65,14 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 			p.PathLen++
 			a.d.Prefs.SetSpriteStyle(p)
 		}
-		a.pathStroke = a.pathStroke[:0]
+		a.toolbox.pathStroke = a.toolbox.pathStroke[:0]
 	}
 
 	// The live stroke while sketching, else the saved path (dots + connecting loop).
-	if a.pathDrawing && len(a.pathStroke) > 1 {
+	if a.toolbox.pathDrawing && len(a.toolbox.pathStroke) > 1 {
 		_ = c.Ren.SetDrawColor(ColTierGreen.R, ColTierGreen.G, ColTierGreen.B, 255)
-		for i := 1; i < len(a.pathStroke); i++ {
-			_ = c.Ren.DrawLine(a.pathStroke[i-1].X, a.pathStroke[i-1].Y, a.pathStroke[i].X, a.pathStroke[i].Y)
+		for i := 1; i < len(a.toolbox.pathStroke); i++ {
+			_ = c.Ren.DrawLine(a.toolbox.pathStroke[i-1].X, a.toolbox.pathStroke[i-1].Y, a.toolbox.pathStroke[i].X, a.toolbox.pathStroke[i].Y)
 		}
 	} else if n := int(p.PathLen); n >= 1 {
 		_ = c.Ren.SetDrawColor(ColAccent.R, ColAccent.G, ColAccent.B, 255)

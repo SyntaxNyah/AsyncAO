@@ -215,9 +215,9 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ViewportExactW = px })
 		cur = a.d.Prefs.Load().ViewportExactW
 		if cur == 0 {
-			a.vpExactBuf = ""
+			a.client.vpExactBuf = ""
 		} else {
-			a.vpExactBuf = strconv.Itoa(cur)
+			a.client.vpExactBuf = strconv.Itoa(cur)
 		}
 	}
 
@@ -263,10 +263,10 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 	// Exact-px entry for "specific numbers" (commit on Enter; mirrors the
 	// window-size inputs — no live filtering, Atoi just ignores junk on submit).
 	box := sdl.Rect{X: track.X + track.W + 14, Y: y, W: 64, H: fieldH}
-	next, submitted := c.TextField("vpexactpx", box, a.vpExactBuf, "px")
-	a.vpExactBuf = next
+	next, submitted := c.TextField("vpexactpx", box, a.client.vpExactBuf, "px")
+	a.client.vpExactBuf = next
 	if submitted {
-		if v, err := strconv.Atoi(strings.TrimSpace(a.vpExactBuf)); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(a.client.vpExactBuf)); err == nil {
 			set(v)
 		}
 	}

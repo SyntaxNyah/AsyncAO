@@ -200,7 +200,7 @@ func (a *App) openThemeEditor(from Screen) bool {
 	if a.themeSidecar == nil {
 		return false
 	}
-	if a.classicEdit {
+	if a.classic.classicEdit {
 		a.stopClassicEdit()
 	}
 	if a.layoutEdit {

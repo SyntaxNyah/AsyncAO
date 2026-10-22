@@ -67,8 +67,8 @@ func TestApplyAnchorFractionAxis(t *testing.T) {
 func TestSlotRectHonoursAnchor(t *testing.T) {
 	var a App
 	placed := sdl.Rect{X: 1000, Y: 600, W: 200, H: 80}
-	a.classicOv = map[string][4]float64{slotOOC: rectToFrac(placed, 1280, 720)}
-	a.classicAnchor = map[string]anchorRef{slotOOC: {h: anchorHigh, v: anchorHigh, winW: 1280, winH: 720}}
+	a.classic.classicOv = map[string][4]float64{slotOOC: rectToFrac(placed, 1280, 720)}
+	a.classic.classicAnchor = map[string]anchorRef{slotOOC: {h: anchorHigh, v: anchorHigh, winW: 1280, winH: 720}}
 	def := sdl.Rect{X: 1, Y: 1, W: 10, H: 10}
 	got := a.slotRect(slotOOC, def, 1920, 1080)
 	want := sdl.Rect{X: 1640, Y: 960, W: 200, H: 80}
@@ -76,8 +76,8 @@ func TestSlotRectHonoursAnchor(t *testing.T) {
 		t.Fatalf("slotRect pinned = %+v, want %+v", got, want)
 	}
 	// Un-anchored slots keep the pure fraction path byte-identical.
-	delete(a.classicAnchor, slotOOC)
-	if got := a.slotRect(slotOOC, def, 1920, 1080); got != fracToRect(a.classicOv[slotOOC], 1920, 1080) {
+	delete(a.classic.classicAnchor, slotOOC)
+	if got := a.slotRect(slotOOC, def, 1920, 1080); got != fracToRect(a.classic.classicOv[slotOOC], 1920, 1080) {
 		t.Fatalf("un-pinned slotRect must be plain fracToRect, got %+v", got)
 	}
 }

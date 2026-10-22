@@ -40,7 +40,7 @@ func fxTermsAt(t *testing.T, a *App, lay *themeLayoutCache, e bakedElement, elap
 	t.Helper()
 	var seen []bakedElement
 	restore := captureElementPaintValues(t, &seen)
-	a.themeAt = time.Now().Add(-elapsed)
+	a.toolbox.themeAt = time.Now().Add(-elapsed)
 	a.beginThemeFXPass()
 	a.drawElement(lay, &e, 0)
 	restore()
@@ -214,7 +214,7 @@ func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 	wash.wash = true
 	var seen []bakedElement
 	restore := captureElementPaintValues(t, &seen)
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 	a.drawElement(lay, &wash, 0)
 	restore()

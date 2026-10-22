@@ -755,18 +755,18 @@ func TestClientControlClick(t *testing.T) {
 	c := a.ctx
 	view := sdl.Rect{X: 0, Y: 0, W: 200, H: 200}
 
-	a.pendingControlSwap, a.clientPanning = false, false
+	a.client.pendingControlSwap, a.client.clientPanning = false, false
 	c.clicked = true
 	c.mouseX, c.mouseY, c.downX, c.downY = 50, 50, 50, 50 // released where pressed → a click
 	a.clientControlClick(view)
-	if !a.pendingControlSwap {
+	if !a.client.pendingControlSwap {
 		t.Error("a click in the view must request control")
 	}
 
-	a.pendingControlSwap = false
+	a.client.pendingControlSwap = false
 	c.mouseX, c.mouseY, c.downX, c.downY = 150, 150, 50, 50 // travelled far → a drag, not a click
 	a.clientControlClick(view)
-	if a.pendingControlSwap {
+	if a.client.pendingControlSwap {
 		t.Error("a drag must not request control (it pans)")
 	}
 }
@@ -776,12 +776,12 @@ func TestClientControlClick(t *testing.T) {
 // window never leaves the texture.
 func TestClientViewSrcZoom(t *testing.T) {
 	a := testTabApp(t)
-	a.clientTexW, a.clientTexH = 1000, 800
-	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	a.client.clientTexW, a.client.clientTexH = 1000, 800
+	a.client.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
 	if s := a.clientViewSrc(); s.X != 0 || s.Y != 0 || s.W != 1000 || s.H != 800 {
 		t.Fatalf("zoom 1 must show the whole texture, got %+v", s)
 	}
-	a.clientZoom = 2 // centred: middle 500×400 at (250,200)
+	a.client.clientZoom = 2 // centred: middle 500×400 at (250,200)
 	if s := a.clientViewSrc(); s.W != 500 || s.H != 400 || s.X != 250 || s.Y != 200 {
 		t.Fatalf("zoom 2 centred = 500x400 at (250,200), got %+v", s)
 	}
@@ -801,15 +801,15 @@ func TestClientViewSrcZoom(t *testing.T) {
 // the wheel; scrolling all the way out clamps back to the fit floor.
 func TestClientZoomWheel(t *testing.T) {
 	a := testTabApp(t)
-	a.clientTexW, a.clientTexH = 1000, 800
-	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	a.client.clientTexW, a.client.clientTexH = 1000, 800
+	a.client.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
 	c := a.ctx
 	view := sdl.Rect{X: 0, Y: 0, W: 400, H: 300}
 	pressed := false
 	c.mouseX, c.mouseY, c.wheelY = 200, 150, 1
 	a.handleClientZoomPan(view, &pressed)
-	if a.clientZoom <= 1 {
-		t.Fatalf("wheel up must zoom in, got %v", a.clientZoom)
+	if a.client.clientZoom <= 1 {
+		t.Fatalf("wheel up must zoom in, got %v", a.client.clientZoom)
 	}
 	if c.wheelY != 0 {
 		t.Error("zoom must consume the wheel so panels behind don't also scroll")
@@ -818,8 +818,8 @@ func TestClientZoomWheel(t *testing.T) {
 		c.mouseX, c.mouseY, c.wheelY = 200, 150, -1
 		a.handleClientZoomPan(view, &pressed)
 	}
-	if a.clientZoom != clientZoomMin {
-		t.Fatalf("zoom out must clamp to the fit floor %v, got %v", clientZoomMin, a.clientZoom)
+	if a.client.clientZoom != clientZoomMin {
+		t.Fatalf("zoom out must clamp to the fit floor %v, got %v", clientZoomMin, a.client.clientZoom)
 	}
 }
 
@@ -860,13 +860,13 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	if a.room != nil {
 		t.Error("primary room not restored (must stay nil here, not the splitRoom)")
 	}
-	if a.pinnedPass {
+	if a.client.pinnedPass {
 		t.Error("pinnedPass left set — primary polls would stay suppressed")
 	}
 	if a.ctx.Ren.GetRenderTarget() != nil {
 		t.Error("render target left bound to the texture — the screen would render into it")
 	}
-	if a.clientTex == nil {
+	if a.client.clientTex == nil {
 		t.Error("clientTex should have been created")
 	}
 }

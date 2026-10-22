@@ -193,7 +193,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 // whether the in-pass site painted and whether App.Frame's site still wants to.
 func exactlyOneStripPaint(t *testing.T, a *App, w, h int32, beforePass, afterPass func(*App)) (inPass, overEverything bool) {
 	t.Helper()
-	a.tabStripPaint = tabStripPaintLatch{} // App.Frame's per-frame reset
+	a.toolbox.tabStripPaint = tabStripPaintLatch{} // App.Frame's per-frame reset
 	if beforePass != nil {
 		beforePass(a)
 	}
@@ -276,12 +276,12 @@ func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
 func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 	a, w, h, cleanup := stageThemedEditorFixture(t)
 	defer cleanup()
-	a.tabStripPaint = tabStripPaintLatch{}
+	a.toolbox.tabStripPaint = tabStripPaintLatch{}
 	a.drawCourtroom(w, h)
-	if !a.tabStripPaint.inPass {
+	if !a.toolbox.tabStripPaint.inPass {
 		t.Fatal("fixture: the editor's pass did not claim the strip, so the stale-latch case is not being tested")
 	}
-	a.tabStripPaint = tabStripPaintLatch{} // App.Frame's reset, on a lobby frame
+	a.toolbox.tabStripPaint = tabStripPaintLatch{} // App.Frame's reset, on a lobby frame
 	if !a.tabStripPaintsOverEverything() {
 		t.Error("a frame with no courtroom pass must fall back to App.Frame's site, or the strip vanishes off the courtroom")
 	}

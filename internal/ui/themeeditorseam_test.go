@@ -44,7 +44,7 @@ func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 	a.invalidateThemeCanvases()
 
 	driveFrame(a) // a plain courtroom frame first, so the fixture's own state is known
-	if !a.toolboxThemeRectOn {
+	if !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture never reached drawCourtroomThemed on a plain courtroom frame — the witness " +
 			"below would be measuring nothing")
 	}
@@ -55,14 +55,14 @@ func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 		t.Fatal("openThemeEditor refused a theme that has a sidecar")
 	}
 
-	a.toolboxThemeRectOn = false
+	a.toolbox.toolboxThemeRectOn = false
 	driveFrame(a)
 
 	if a.screen != ScreenThemeEditor {
 		t.Fatalf("the frame left the editor screen (now %d) — nothing below is measuring an editor frame",
 			a.screen)
 	}
-	if !a.toolboxThemeRectOn {
+	if !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("an editor frame did not run drawCourtroomThemed — the canvas is a MOCKUP, so every " +
 			"pixel the user is editing against is one this client does not actually draw, and the " +
 			"1:1 promise the whole screen is built on is gone")

@@ -78,7 +78,7 @@ func (a *App) tabTorn(id int) bool {
 	if k == "" {
 		return false
 	}
-	_, ok := a.classicOv[k]
+	_, ok := a.classic.classicOv[k]
 	return ok
 }
 
@@ -164,7 +164,7 @@ func (a *App) drawTabContent(id int, inner sdl.Rect) {
 // window pin), or ok=false when the tab isn't torn. No slotReg write, so the
 // pointer-fence pass can call it.
 func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
-	ov, ok := a.classicOv[key]
+	ov, ok := a.classic.classicOv[key]
 	if !ok {
 		return sdl.Rect{}, false
 	}
@@ -205,14 +205,14 @@ func (a *App) tearOffTab(id int, w, h int32) {
 	if key == "" {
 		return
 	}
-	if _, exists := a.classicOv[key]; exists {
+	if _, exists := a.classic.classicOv[key]; exists {
 		return // already torn
 	}
 	frac := rectToFrac(a.tornTabDefaultRect(tornTabIndex(id), w, h), w, h)
-	if a.classicOv == nil {
-		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if a.classic.classicOv == nil {
+		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
-	a.classicOv[key] = frac
+	a.classic.classicOv[key] = frac
 	a.d.Prefs.SetClassicSlot(key, frac)
 }
 
@@ -222,13 +222,13 @@ func (a *App) tearOffTab(id int, w, h int32) {
 // value so the per-frame draw loop allocates nothing.
 func (a *App) tornTabOrder() [len(tornTabTable)]int {
 	var order [len(tornTabTable)]int
-	if len(a.tornZ) == 0 {
+	if len(a.classic.tornZ) == 0 {
 		for i := range tornTabTable {
 			order[i] = i
 		}
 		return order
 	}
-	copy(order[:], a.tornZ)
+	copy(order[:], a.classic.tornZ)
 	return order
 }
 
@@ -248,7 +248,7 @@ func (a *App) bringTornToFront(w, h int32) {
 	for j := len(order) - 1; j >= 0; j-- {
 		idx := order[j]
 		t := tornTabTable[idx]
-		if _, torn := a.classicOv[t.key]; !torn || a.tabHidden(t.id) {
+		if _, torn := a.classic.classicOv[t.key]; !torn || a.tabHidden(t.id) {
 			continue
 		}
 		r, ok := a.tornTabRect(t.key, w, h)
@@ -266,7 +266,7 @@ func (a *App) bringTornToFront(w, h int32) {
 				}
 			}
 			z = append(z, idx)
-			a.tornZ = z
+			a.classic.tornZ = z
 			return
 		}
 	}
@@ -279,14 +279,14 @@ func (a *App) bringTornToFront(w, h int32) {
 // fenced by boxFencesPointer); in the courtroom pass during edit (inert, so you
 // see what you're arranging). Alloc-free when nothing is torn.
 func (a *App) drawTornTabs(w, h int32) {
-	if len(a.classicOv) == 0 {
+	if len(a.classic.classicOv) == 0 {
 		return
 	}
 	c := a.ctx
 	a.bringTornToFront(w, h)
 	for _, idx := range a.tornTabOrder() {
 		t := tornTabTable[idx]
-		if _, torn := a.classicOv[t.key]; !torn {
+		if _, torn := a.classic.classicOv[t.key]; !torn {
 			continue
 		}
 		if a.tabHidden(t.id) {
@@ -305,7 +305,7 @@ func (a *App) drawTornTabs(w, h int32) {
 		// sat in the corner and was far too easy to hit by accident during normal play
 		// (playtest: it was hit by accident in normal play), so it's gone.
 		// In edit mode the tray chip / right-click-reset handle redocking instead.
-		if !a.classicEdit {
+		if !a.classic.classicEdit {
 			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")
 			if c.rightClicked && c.hovering(hdr) {
 				a.clearClassicSlot(t.key)
@@ -346,7 +346,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 	tx := int32(pad)
 	for i := range tornTabTable {
 		t := tornTabTable[i]
-		_, torn := a.classicOv[t.key]
+		_, torn := a.classic.classicOv[t.key]
 		cw := c.TextWidth(t.title) + 18
 		chip := sdl.Rect{X: tx, Y: trayY + 14, W: cw, H: 22}
 		bg := ColPanel
@@ -410,7 +410,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 	// fixed home in this layout you can drag here (click again to remove it). It only
 	// owns WHERE the panel sits — whether it's shown stays the Extras → Group Chat toggle.
 	tx += 14
-	_, gcPlaced := a.classicOv[slotMessages]
+	_, gcPlaced := a.classic.classicOv[slotMessages]
 	gcLabel := "Group Chat"
 	gw := c.TextWidth(gcLabel) + 18
 	gcChip := sdl.Rect{X: tx, Y: trayY + 14, W: gw, H: 22}
@@ -429,10 +429,10 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 			a.clearClassicSlot(slotMessages)
 		} else {
 			frac := rectToFrac(a.msgSlotDefaultRect(w, h), w, h)
-			if a.classicOv == nil {
-				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+			if a.classic.classicOv == nil {
+				a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 			}
-			a.classicOv[slotMessages] = frac
+			a.classic.classicOv[slotMessages] = frac
 			a.d.Prefs.SetClassicSlot(slotMessages, frac)
 		}
 	}

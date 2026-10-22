@@ -150,11 +150,11 @@ func TestToggleExtrasBoxLeavesTheaterFirst(t *testing.T) {
 	if a.theaterOn {
 		t.Error("summoning the Extras box from theater must exit theater")
 	}
-	if !a.showWidgets {
+	if !a.toolbox.showWidgets {
 		t.Error("…and must SHOW the box, never toggle it off")
 	}
 	a.toggleExtrasBox()
-	if a.showWidgets {
+	if a.toolbox.showWidgets {
 		t.Error("a second press outside theater must hide it again")
 	}
 }

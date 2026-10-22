@@ -193,13 +193,13 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	// A TORN Areas panel draws whatever logTab says and carries its own ⋮
 	// (torntabs.go), so the rows have to be live there too or that button is inert.
 	torn := onView(logTabMusic)
-	torn.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
+	torn.classic.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
 	if n, _ := drawn(torn); n != wantRows {
 		t.Errorf("a torn-off Areas panel offers %d of its %d rows — its ⋮ opens a menu with nothing in it", n, wantRows)
 	}
 	// …and a fully hidden Areas tab draws in none of the three places, torn or not.
 	hidden := onView(logTabAreas)
-	hidden.hidden = map[string]bool{panelTabAreas: true}
+	hidden.classic.hidden = map[string]bool{panelTabAreas: true}
 	if n, _ := drawn(hidden); n != 0 {
 		t.Errorf("a hidden Areas tab still offers %d area row(s)", n)
 	}

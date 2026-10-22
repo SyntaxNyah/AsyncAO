@@ -460,11 +460,11 @@ func (a *App) beginEditorPreviewPass() editorPreviewSaved {
 		screen:    a.screen,
 		tip:       c.tipText,
 		seqLen:    len(c.fieldSeq),
-		prevPinne: a.pinnedPass,
+		prevPinne: a.client.pinnedPass,
 	}
 	saved.in = a.snapshotInput()
 	a.sessionState = a.te.preview.state
-	a.pinnedPass = true
+	a.client.pinnedPass = true
 	return saved
 }
 
@@ -475,7 +475,7 @@ func (a *App) endEditorPreviewPass(saved editorPreviewSaved) {
 	if a.te != nil && a.te.preview != nil {
 		a.te.preview.state = a.sessionState
 	}
-	a.pinnedPass = saved.prevPinne
+	a.client.pinnedPass = saved.prevPinne
 	a.sessionState = saved.state
 	a.screen = saved.screen
 	c.tipText = saved.tip

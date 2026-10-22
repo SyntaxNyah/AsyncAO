@@ -94,7 +94,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.deliberateClose = false                   // a fresh connection starts with no pending deliberate-close intent
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
 	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
-	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
+	a.lobby.pinging = false                     // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it
@@ -284,7 +284,7 @@ func (a *App) Disconnect() {
 	}
 	a.closeActiveTab()
 	a.resetSessionState()
-	a.selServer, a.descLines = -1, nil
+	a.lobby.selServer, a.lobby.descLines = -1, nil
 	// Drain in-flight fetches so stale payloads can't land later (polls
 	// also key-guard, this just frees the slots).
 	select {

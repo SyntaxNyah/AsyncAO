@@ -184,7 +184,7 @@ func TestThemedEditorBoxFollowsAClassicSlotOverride(t *testing.T) {
 	}
 	// Persisted and reloaded the way the classic editor's drag-end does it.
 	a.d.Prefs.SetClassicSlot(slotTabBar, [4]float64{0.6, 0.7, 0.2, 0.05})
-	a.classicOvLoaded = false
+	a.classic.classicOvLoaded = false
 	a.themeLay.valid = false
 
 	box, ok := a.themeWindowLayout(stripEditW, stripEditH).rect(themeTabBarKey)
@@ -431,7 +431,7 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
 		"themed editor":  func(a *App) { a.layoutEdit = true },
-		"classic editor": func(a *App) { a.classicEdit = true },
+		"classic editor": func(a *App) { a.classic.classicEdit = true },
 	}
 	for editor, armEditor := range arm {
 		t.Run(editor, func(t *testing.T) {
@@ -548,7 +548,7 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 			name: "classic editor",
 			arm: func(a *App) {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // send drawCourtroom down the classic branch
-				a.classicEdit = true
+				a.classic.classicEdit = true
 			},
 			// Mirrors drawClassicEditor's own banner geometry.
 			done: func(w int32) sdl.Rect {

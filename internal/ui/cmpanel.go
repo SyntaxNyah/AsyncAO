@@ -44,7 +44,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	}
 	sw := a.detectedSoftware()
 	wasActive := a.wins.cmWin.dragging || a.wins.cmWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.cmPanelRect(w, h)                      // floating box: movable / resizable, non-blocking
+	panel := a.cmPanelRect(w, h)                                // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, chipCMColor)                                                     // gold = CM

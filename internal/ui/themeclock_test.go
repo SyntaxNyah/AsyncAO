@@ -413,7 +413,7 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 // one frame gated at exactly zero allocations. An allocation here is 96 of them a
 // frame, on every themed install that uses the feature at all.
 func TestElapsedForIsAllocFree(t *testing.T) {
-	a := &App{env: env{}, themeAt: time.Now().Add(-time.Second)}
+	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-time.Second)}}
 	a.themeClocks[1] = themeClock{speedPct: 250}
 	a.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
 	// Every arm of clockElapsed in one fixture: the shared anchor, a scaled group, a
@@ -463,7 +463,7 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 	a, lay, seen, restore := fxDrawRig(t)
 	defer restore()
 	store := fxTestStore(t)
-	a.themeAt = time.Now().Add(-time.Hour) // long past every one-shot's period
+	a.toolbox.themeAt = time.Now().Add(-time.Hour) // long past every one-shot's period
 	a.beginThemeFXPass()
 
 	type stillCase struct {
@@ -526,7 +526,7 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
@@ -537,7 +537,7 @@ func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 		a.frameAnimChrome = false
 		// A quarter of the way into the period: every kind, periodic or decaying, is
 		// unambiguously live there.
-		a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
 		if !a.frameAnimChrome {
 			t.Errorf("%s did not note the animation census a quarter into its period — the pacer may "+
@@ -566,7 +566,7 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// The baseline: this fixture's own chrome must already be settled, or the
@@ -591,9 +591,9 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	// An hour on the theme clock puts every one-shot far past its own period. Two
 	// passes before the measured one so that anything which DOES take a pool slot (the
 	// seeded conditional rows) has claimed and finished it as well.
-	a.themeAt = time.Now().Add(-time.Hour)
+	a.toolbox.themeAt = time.Now().Add(-time.Hour)
 	draw()
-	a.themeAt = time.Now().Add(-time.Hour - 10*time.Second)
+	a.toolbox.themeAt = time.Now().Add(-time.Hour - 10*time.Second)
 	draw()
 	a.frameAnimChrome = false
 	draw()
@@ -616,7 +616,7 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw() // themeLayoutIn rebuilds on its cold path; seed AFTER it
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	lay := &a.themeLay
@@ -787,7 +787,7 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// CONDITIONAL: that is the element shape the pool exists for. An unconditional
 	// one-shot resolves through fxAlwaysOrigin and takes no slot at all.
 	el := fxTestConditional(a, theme.FXSlam)
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
@@ -800,7 +800,7 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 
 	// Past its period, still on screen: finished, still holding its slot, no longer
 	// noting. Holding is correct — this is what stops the replay loop.
-	a.themeAt = time.Now().Add(-period * 3)
+	a.toolbox.themeAt = time.Now().Add(-period * 3)
 	a.beginThemeFXPass()
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
@@ -823,7 +823,7 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// And it plays again when the element comes back — which is what makes
 	// `visible_when = shout:objection` + `effect = slam` a stamp that lands with the
 	// shout, using no trigger syntax at all (design §6.6 R5 cut triggers for v1.90.0).
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
@@ -836,7 +836,7 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 // that falls back to the shared anchor rather than panicking on the render thread,
 // and a speed clamped into the format's own range.
 func TestClockPoolIsFixed(t *testing.T) {
-	a := &App{env: env{}, themeAt: time.Now().Add(-2 * time.Second)}
+	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-2 * time.Second)}}
 	if len(a.themeClocks) != theme.ClockCap {
 		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.themeClocks), theme.ClockCap)
 	}
@@ -945,7 +945,7 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 
 	el := be.el
 	// Mid-fade: visible, and no stronger than the authored peak.
-	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 2)
+	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 2)
 	a.beginThemeFXPass()
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
@@ -960,7 +960,7 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 
 	// Finished: the curtain is GONE, and the pacer is free again. This is the whole
 	// test — a wash that settles opaque is a theme that has covered the stage.
-	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond * 5)
+	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond * 5)
 	a.beginThemeFXPass()
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
@@ -1034,7 +1034,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	defer restore()
 
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 	if !a.themeFXFrozen {
 		t.Fatal("ReduceMotion did not latch on the pass — the branch is read once per pass, not per element")
@@ -1046,7 +1046,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 		before := el
 		a.frameAnimChrome = false
 		// A quarter into the period — every kind is live there when motion is allowed.
-		a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
 		if a.frameAnimChrome {
 			t.Errorf("%s noted the animation census under ReduceMotion — the screen would keep the client "+
@@ -1059,7 +1059,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	// Every animated page holds frame 0, and does not note.
 	art := fxTestElement(theme.FXNone)
 	art.kind, art.page, art.loop = theme.ElemImage, page, true
-	a.themeAt = time.Now().Add(-time.Second)
+	a.toolbox.themeAt = time.Now().Add(-time.Second)
 	a.frameAnimChrome = false
 	if got := a.elementFrame(&art); got != page.Frames[0] {
 		t.Error("an animated page did not hold frame 0 under ReduceMotion")
@@ -1099,7 +1099,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.beginThemeFXPass()
 	el := fxTestElement(theme.FXPulse)
-	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
 	if !a.frameAnimChrome {
@@ -1159,8 +1159,8 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	}
 	// A fixed frame snapshot: the ratios below are exact facts about the arithmetic,
 	// not a race between two time.Now() calls.
-	a.themeAt = time.Now()
-	a.frameNow = a.themeAt.Add(time.Second)
+	a.toolbox.themeAt = time.Now()
+	a.frameNow = a.toolbox.themeAt.Add(time.Second)
 	defer func() { a.frameNow = time.Time{} }()
 	if got := a.clockElapsed(15); got != 4*time.Second {
 		t.Errorf("a 400%% group resolved %v at one second on the shared anchor, want 4s", got)
@@ -1212,7 +1212,7 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// parsed, baked and then sat still would pass every assertion so far.
 	draw := func() { a.drawCourtroom(1280, 720) }
 	a.frameNow = time.Time{}
-	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 	a.frameAnimChrome = false
 	draw()
 	if !a.frameAnimChrome {

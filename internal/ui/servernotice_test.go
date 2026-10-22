@@ -636,13 +636,13 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	// refused by the OS in microseconds instead of waiting out a handshake.
 	const wantURL = "ws://127.0.0.1:1"
 	a.screen = ScreenLobby
-	a.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
-	a.selServer = 0
+	a.lobby.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
+	a.lobby.selServer = 0
 	a.ctx.focusID = "" // the arrow/Enter block only runs when no field holds the caret
 	// Arm the on-open auto-refresh's cap. lastLobbyRefreshAt is zero in a fresh fixture,
 	// which lobbyAutoRefreshDue reads as "maximally due", and a real master-list fetch
 	// would replace a.servers from a goroutine mid-test.
-	a.lastLobbyRefreshAt = a.now()
+	a.lobby.lastLobbyRefreshAt = a.now()
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "Refuser", noticeLockdownReason)
 	a.lastConnURL = ""
@@ -657,7 +657,7 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	}
 
 	a.closeServerNotice()
-	a.selServer = 0
+	a.lobby.selServer = 0
 	a.ctx.focusID = ""
 	driveEnter(a)
 	if a.lastConnURL != wantURL {

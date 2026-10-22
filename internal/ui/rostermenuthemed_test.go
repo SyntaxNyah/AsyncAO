@@ -71,12 +71,12 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	// The whole themed list panel is gated on the log region being visible
 	// (theme_layout.go). Hidden, there is no canvas music list on screen and the only
 	// music list left is a torn-off one, which honours the volume view.
-	a.hidden = map[string]bool{panelLog: true}
+	a.classic.hidden = map[string]bool{panelLog: true}
 	if a.rosterMenuThemed() {
 		t.Error("the log region is hidden, so the themed panel that hosts the music list " +
 			"is not drawn at all")
 	}
-	a.hidden = nil
+	a.classic.hidden = nil
 
 	// A theme that declares no music_list has no canvas music list to be inside, the
 	// same gate theme_layout.go opens the shared panel behind.

@@ -30,7 +30,7 @@ func TestTabTorn(t *testing.T) {
 	if a.tabTorn(logTabMusic) {
 		t.Fatal("no overrides: music must not read as torn")
 	}
-	a.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
+	a.classic.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
 	if !a.tabTorn(logTabMusic) {
 		t.Fatal("tab:music present: music must read as torn")
 	}
@@ -70,7 +70,7 @@ func TestDockedLogTabs(t *testing.T) {
 	}
 
 	// Tear Music + Players out → they leave the strip and the rest compact.
-	a.classicOv = map[string][4]float64{
+	a.classic.classicOv = map[string][4]float64{
 		"tab:music":   {0.1, 0.1, 0.3, 0.3},
 		"tab:players": {0.4, 0.1, 0.3, 0.3},
 	}
@@ -85,7 +85,7 @@ func TestDockedLogTabs(t *testing.T) {
 	}
 
 	// Every tear-offable tab torn → only Log remains (new default).
-	a.classicOv = map[string][4]float64{
+	a.classic.classicOv = map[string][4]float64{
 		"tab:music": {0, 0, .1, .1}, "tab:areas": {0, 0, .1, .1},
 		"tab:players": {0, 0, .1, .1}, "tab:notes": {0, 0, .1, .1},
 		"tab:friends": {0, 0, .1, .1},
@@ -99,7 +99,7 @@ func TestDockedLogTabs(t *testing.T) {
 // render path allocates nothing, even with a tab torn out (the worst case).
 func TestDockedLogTabsNoAlloc(t *testing.T) {
 	var a App
-	a.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
+	a.classic.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
 	if n := testing.AllocsPerRun(200, func() {
 		_, _ = a.dockedLogTabs(false)
 		_, _ = a.dockedLogTabs(true)
@@ -114,7 +114,7 @@ func TestTornTabRect(t *testing.T) {
 	if _, ok := a.tornTabRect("tab:music", w, h); ok {
 		t.Fatal("no override: tornTabRect must report not-torn")
 	}
-	a.classicOv = map[string][4]float64{"tab:music": {0.5, 0.25, 0.2, 0.5}}
+	a.classic.classicOv = map[string][4]float64{"tab:music": {0.5, 0.25, 0.2, 0.5}}
 	r, ok := a.tornTabRect("tab:music", w, h)
 	if !ok {
 		t.Fatal("override present: tornTabRect must report torn")

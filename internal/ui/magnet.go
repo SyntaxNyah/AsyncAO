@@ -96,11 +96,11 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		add(fw.rect(row.defW, row.defH, row.minW, row.minH, w, h))
 	}
 	// msgWin keeps its historical slot + wrappers, so it isn't in the table.
-	if a.showMessages && !a.wins.msgWin.dragging {
+	if a.msgs.showMessages && !a.wins.msgWin.dragging {
 		add(a.msgPanelRect(w, h))
 	}
 	// The bespoke (non-floatWin) boxes share the same shared helper.
-	if a.showWidgets && !a.extrasDragging {
+	if a.toolbox.showWidgets && !a.extrasDragging {
 		add(a.extrasBoxRect(w, h))
 	}
 	for i := range a.extrasDetached {
@@ -121,7 +121,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	// drawTornTabs' visibility rules: a torn tab that the user ALSO fully hid
 	// (tabHidden) or whose rect degenerated below classicMinPx is not drawn, so it
 	// must not be an invisible magnet target either.
-	if len(a.classicOv) > 0 {
+	if len(a.classic.classicOv) > 0 {
 		for i := range tornTabTable {
 			if a.tabHidden(tornTabTable[i].id) {
 				continue
@@ -264,7 +264,7 @@ func (a *App) anyPanelDragging() bool {
 		a.wins.debugWin.dragging || a.wins.debugWin.resizing || a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
 		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
 		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.clientPanning
+		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning
 }
 
 // magnetBypassed reports whether the live piece-to-piece magnet is suppressed

@@ -365,8 +365,8 @@ func (a *App) drawCourtroom(w, h int32) {
 	// piece hidden mid-session stops ghosting handles the moment it stops
 	// drawing — stale registrations from when it was visible used to live in
 	// the map forever. Edit-mode only (the registry isn't read otherwise).
-	if a.classicEdit {
-		clear(a.slotReg)
+	if a.classic.classicEdit {
+		clear(a.classic.slotReg)
 	}
 	// Load the slot overrides and re-tear last session's torn-off Extras widgets
 	// BEFORE the fence below reads them: boxFencesPointer walks a.classicOv (torn
@@ -398,13 +398,13 @@ func (a *App) drawCourtroom(w, h int32) {
 	// stale true from a prior themed frame would wrongly apply to the classic /
 	// theater toolbox after the theme toggled off (the flag outlives the themed
 	// pass because the toolbox draws post-court in app.go).
-	a.toolboxThemeRectOn = false
+	a.toolbox.toolboxThemeRectOn = false
 	// Same reset discipline for the toolbox's per-frame fence/draw latch: only
 	// fenceCompactToolbox (inside this pass, below the theme dispatch) sets it, so
 	// clearing here means a theater / dropped-session / lobby frame can never replay
 	// last frame's answer — and the post-courtroom draw site can trust !set as
 	// "the in-pass site did not own the toolbox this frame".
-	a.toolboxFence = compactToolboxLatch{}
+	a.toolbox.toolboxFence = compactToolboxLatch{}
 	// The server-tab strip's paint site is decided ONCE here, at the top of the pass,
 	// and replayed by both sites (chrometop.go). It must be taken BEFORE anything can
 	// arm or disarm an editor mid-pass — handleHotkeys, the force-stops below, and the
@@ -413,7 +413,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.latchTabStripPaint()
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
-		if a.classicEdit {
+		if a.classic.classicEdit {
 			a.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
 		}
 		a.screen = ScreenLobby
@@ -422,7 +422,7 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Theater mode preempts BOTH layouts: stage only, Esc exits.
 	if a.theaterOn {
-		if a.classicEdit {
+		if a.classic.classicEdit {
 			a.stopClassicEdit() // can't edit the layout from theater mode — release the fence
 		}
 		a.drawTheater(w, h)
@@ -435,7 +435,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// left UNDER the app-chrome band and offset down by it, so it can never slide
 	// beneath the menu bar / server-tab strip (#14).
 	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
-		if a.classicEdit {
+		if a.classic.classicEdit {
 			a.stopClassicEdit() // a themed layout took over; classic edit is default-only
 		}
 		a.drawCourtroomThemed(w, h, lay)
@@ -578,7 +578,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// while the flag was still set — is what keeps the strip painted exactly once even
 	// on that frame. App.Frame's over-everything site replays the same latch.
 	a.drawTabBarInPass(w, h)
-	if a.classicEdit {
+	if a.classic.classicEdit {
 		a.drawTornTabs(w, h)
 		a.drawMessagesSlotGhost(w, h) // Group Chat panel: inert placeholder so the editor gives it handles
 		a.drawClassicEditor(w, h)
@@ -603,7 +603,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	// no longer sits under the log — so the log reclaims the FULL column instead of leaving
 	// a dead gap where the OOC used to be (playtest: unpinning the OOC box left the IC
 	// log with permanent empty space).
-	_, oocMoved := a.classicOv[slotOOC]
+	_, oocMoved := a.classic.classicOv[slotOOC]
 	oocHidden := a.panelHidden(panelOOC)
 	if oocMoved || oocHidden {
 		logH = rcol.H

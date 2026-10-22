@@ -222,7 +222,7 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 	if !a.themeLay.valid {
 		t.Fatal("themeLayout did not validate — the fixture's rects never reached the themed branch")
 	}
-	if !a.toolboxThemeRectOn {
+	if !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
 	}
 
@@ -255,7 +255,7 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 
@@ -283,7 +283,7 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	name := a.room.Scene.ShownameText
@@ -322,7 +322,7 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.lobbyStatus = "Servers loaded."
+	a.lobby.lobbyStatus = "Servers loaded."
 
 	const w, h = 1280, 720
 	// noteScreenTransition rides inside the gated closure: its settled-frame

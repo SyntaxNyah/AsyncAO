@@ -43,7 +43,7 @@ func TestClassicDispatchFence(t *testing.T) {
 	if a.themeLay.valid {
 		t.Error("a themeless frame validated the themed layout cache — drawCourtroom would dispatch to drawCourtroomThemed")
 	}
-	if a.toolboxThemeRectOn {
+	if a.toolbox.toolboxThemeRectOn {
 		t.Error("toolboxThemeRectOn armed on a classic frame — only the themed path may set it")
 	}
 }

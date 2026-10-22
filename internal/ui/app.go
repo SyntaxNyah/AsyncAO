@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -311,63 +310,12 @@ type App struct {
 	pendingSessionCarry    *sessionCarry
 	pendingSessionCarryKey string
 
-	// --- lobby state ---
-	masterEntries []network.ServerEntry // raw master list (no favorites)
-	servers       []network.ServerEntry
-	lobbyStatus   string
-	lobbyFetching bool
-	lobbyResult   chan lobbyFetch
-	// lastLobbyRefreshAt is when the last master-list fetch STARTED (stamped in
-	// RefreshServers, past its dedup gate, so every path arms it). App-global,
-	// not sessionState: the lobby is a cross-tab surface. It feeds the on-open
-	// auto-refresh cap — see lobbyAutoRefreshDue / noteScreenTransition.
-	lastLobbyRefreshAt time.Time
-	directInput        string
-	directSecure       bool
-	directSave         bool
-	lobbyScroll        int32
-	// AsyncAO Server Phone Book: a dedicated lobby page over the user's saved
-	// (favorite) servers — manual add + connect, persisted in Favorites (survives
-	// Reset, cleared by Wipe), with its own export/import.
-	phoneBookPage bool
+	lobby         lobbyState
 	pbName, pbURL string // phone-book "add server" form
 	// Inline row edit (phone book only): pbEditURL is the identity (stored
 	// Favorites URL) of the row currently open for editing — empty = none; the
 	// two working buffers hold the in-progress name/address until Save.
 	pbEditURL, pbEditName, pbEditAddr string
-	// "Phone Fanat" chip (phone-book page only): a dim bottom-right button that
-	// pops a quip when clicked. phoneFanatLine holds the currently-shown line and
-	// phoneFanatShownAt stamps the click so it lingers for fanatShowDuration.
-	// Ephemeral — never persisted.
-	phoneFanatLine    string
-	phoneFanatShownAt time.Time
-	// click-to-expand selection: first click opens the full description
-	// under the row, a second click on the same row joins.
-	selServer  int
-	descLines  []string
-	descLinks  []string // clickable URLs found in the description
-	helpScroll int32    // ScreenServerHelp scroll position
-	// Ping-sort (M7, opt-in via the lobby "Ping" button): pings holds each
-	// joinable server's TCP-connect RTT by URL (0 = unprobed, <0 = unreachable);
-	// pingMode sorts the lobby by it; pinging gates a re-probe; pingGen drops
-	// stale results after a re-probe. A bounded worker pool feeds pingResult.
-	pings    map[string]time.Duration
-	pingRes  chan pingResult
-	pingMode bool
-	pinging  bool
-	pingGen  int
-
-	// #128 connection-quality chip (optional, off by default). A single background goroutine
-	// pings the ACTIVE conn and stores the round-trip time; the frame loop (updatePingLoop)
-	// starts/stops/retargets it as the active conn changes (connect / tab switch / reconnect /
-	// disconnect) or the chip toggles. pingRTT is the only field the goroutine touches (atomic,
-	// read by the render thread); the rest are render-thread-only. When the chip is off there's
-	// no goroutine at all, so it's truly zero-cost by default.
-	pingRTT     atomic.Int64       // round-trip nanoseconds (0 = unknown); goroutine→render
-	pingConn    *protocol.Conn     // the conn the live loop targets (nil = no loop)
-	pingCancel  context.CancelFunc // stops the live loop
-	pingLabel   string             // cached tooltip text, rebuilt only when the ms bucket changes
-	pingLabelMs int                // the ms the cached label was built for (-1 = none)
 
 	// --- the active server session (every per-server field) ---
 	// sessionState is EMBEDDED so the whole session parks/restores as one
@@ -1129,55 +1077,7 @@ type App struct {
 	editUndo []layoutSnapshot
 	editRedo []layoutSnapshot
 
-	// --- classic-layout slot editor (the default/non-themed courtroom) ---
-	// Mirrors the themed editor's feel, but edits SCREEN-space "slots" persisted
-	// as window FRACTIONS (config.ClassicLayout) so they survive window resizes.
-	// classicOv is an App-local lock-free snapshot read by slotRect on the render
-	// path (the editor is the sole writer); slotReg is this frame's registered
-	// slots, populated ONLY while editing so the common frame stays alloc-free.
-	classicEdit     bool
-	classicOv       map[string][4]float64
-	classicOvLoaded bool
-	// tornZ is the session-scoped tear-off panel z-order (torntabs.go), a
-	// permutation of tornTabTable indices back-to-front. Empty = table order.
-	// It exists so clicking a floating panel brings it to the front instead of
-	// the fixed order always drawing Players over Music/Areas.
-	tornZ []int
-	// classicAnchor holds per-slot window pins (parsed from
-	// config.ClassicAnchors alongside classicOv): a pinned slot's override
-	// re-bases to pixel offsets from its window corner/centre on resize
-	// instead of scaling with the fractions (classicanchor.go).
-	classicAnchor map[string]anchorRef
-	// classicRot holds per-slot ROTATION angle bytes (A4), snapshotted from
-	// config.ClassicRotations alongside classicOv/classicAnchor. Read by the draw
-	// path when resolving a texture-backed classic element's angle (the HP bar);
-	// an absent entry means angle 0 → the plain Copy path (byte-identical to the
-	// unrotated draw). The editor is the sole writer thereafter.
-	classicRot map[string]uint8
-	slotReg    map[string]slotInfo
-	// classicTgt is the classic editor's selection, the spaceClassic half of the
-	// shared edit-target model (edittarget.go). It was a bare slot-name string;
-	// the space it lives in — SCREEN px, persisted as a window fraction — is now part
-	// of the value rather than something the reader had to know.
-	classicTgt       editTarget
-	classicEditDrag  int // 0 none, 1 move, 2 resize
-	classicEditStart [2]int32
-	classicEditBase  sdl.Rect
-	classicEditEdges uint8 // which edges a resize drags (edgeL/R/T/B bitmask); 0 mid-move
-	classicEditPrev  bool  // press-edge latch (mouse-down rising edge)
-	classicEditMoved bool  // a drag actually moved/resized (else a click persists nothing)
-	// Undo/redo history of the whole override map (Ctrl+Z / Ctrl+Y), edit-mode only and
-	// bounded by layoutUndoCap. classicPickIdx/Sig drive Tab-cycling the stack of slots
-	// under the cursor so a big box hidden under a small one is still reachable.
-	classicUndo    []map[string][4]float64
-	classicRedo    []map[string][4]float64
-	classicPickIdx int
-	classicPickSig string
-	// classicChromeBot is the bottom Y of the editor's stacked top chrome
-	// (banner + tab tray), set to classicTabTrayBot each edit frame — slot name
-	// tags clamp below it so a box parked in the top strip can't plaster its tag
-	// over the editor's own controls.
-	classicChromeBot int32
+	classic classicState
 	// alignGuides/alignScratch are the editor's per-drag-frame alignment
 	// results and its reusable other-slots buffer (classicalign.go). Editor
 	// path only; reused so a long drag allocates nothing after warm-up.
@@ -1202,46 +1102,7 @@ type App struct {
 	// parallel mechanism. Session state (the chip re-derives from live names each
 	// draw, so a deleted/renamed profile can't strand it).
 	layoutProfileCursor int
-	// A1 — the compact bottom-right toolbox is the single show/hide + editor
-	// surface. toolboxPinned latches the flyout open (press the grip / pin chip);
-	// while pinned, toolboxPieces reveals the in-flyout per-piece hide/show panel
-	// (the retired drawUICfgPanel's replacement). toolboxPiecesScroll is that
-	// panel's vertical scroll. All three are session state (the &App{} zero value
-	// is "collapsed, no pieces"), so no ctor wiring is needed.
-	toolboxPinned       bool
-	toolboxPieces       bool
-	toolboxPiecesScroll int32
-	// toolboxFilter is the pieces-panel text filter (Phase 3 "easier to
-	// navigate"): the raw box text as typed. toolboxFilterLower is its lowered
-	// form, re-derived ONLY when toolboxFilter changes (drawToolboxPieces caches
-	// it), so per-row matching in the (per-frame) panel draw allocates nothing —
-	// it compares two already-lowered strings via strings.Contains. Session state
-	// (zero value = empty filter = every row shown).
-	toolboxFilter      string
-	toolboxFilterLower string
-	// toolboxThemeRect is the compact toolbox's per-frame themed position: a themed
-	// courtroom whose design INI ships the OPTIONAL "asyncao_toolbox" key sets this
-	// (from lay.rect) before drawing the toolbox, so the strip anchors where the
-	// theme/themed-editor placed it — the dual-key twin of the classic slotToolbox
-	// override (mirrors slotICFx's asyncao_ic_fx). Absent key ⇒ ok=false ⇒ the
-	// classic-slot / bottom-right default path. Set + cleared each themed frame; the
-	// value type (rect + bool) allocates nothing.
-	toolboxThemeRect   sdl.Rect
-	toolboxThemeRectOn bool
-	// toolboxFence is THIS FRAME's single toolbox decision (courttoolbox.go):
-	// fenceCompactToolbox latches it at the top of the courtroom pass and the draw
-	// at the bottom of the pass replays it, so the published overlay fence and the
-	// painted pixels are the same answer even though handleHotkeys and the modal
-	// return sit between them. Cleared at the top of every drawCourtroom, so a
-	// theater / lobby / dropped-session frame can never replay a stale one. Value
-	// type, App-level (the toolbox is client chrome, not per-tab state).
-	toolboxFence compactToolboxLatch
-	// tabStripPaint is THIS FRAME's answer to which of the server-tab strip's two draw
-	// sites paints it (chrometop.go). Taken once at the top of the courtroom pass and
-	// replayed by both sites, so a mid-frame arm/disarm can neither paint it twice nor
-	// drop it. Reset by App.Frame, so a frame with no courtroom pass falls back to the
-	// over-everything site. Value type, App-level — the strip is client chrome.
-	tabStripPaint tabStripPaintLatch
+	toolbox             toolboxState
 	// App-wide menu bar (#14, menubar.go). menuOpen is the TITLE of the open
 	// top-level menu and menuSub the LABEL of the open submenu row — strings, not
 	// indices, so the &App{} zero value is "closed" (index 0 would mean "Servers is
@@ -1254,58 +1115,11 @@ type App struct {
 	menuSub     string
 	menuFenceOn bool
 	menuBar     menuBarLatch
-	// editorBannerPainted is "a layout editor's banner reached the screen this
-	// frame" — set by the editors' own banner paint, reset by App.Frame, and read
-	// once by drawMenuBar (menuBarPaintsNow). See noteEditorBanner in menubar.go for
-	// why the paint decision needs this rather than the armed flags.
-	editorBannerPainted bool
-	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
-	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
-	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
-	pathStroke   []sdl.Point
-	pathDrawing  bool
-	pathPrevDown bool
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
 	themePagesGen uint64
-	// Chrome SHAPE masks (A5): procedural alpha silhouettes for the kit chrome,
-	// resolved into these fields ONCE per frame by refreshShapeMasks so the
-	// per-widget FillShaped/ButtonCol draws read pointers (never a store Get,
-	// which would clear on every streaming generation bump). shapeMasksBuilt
-	// latches after the pinned masks upload; shapeMasksGen mirrors the store
-	// generation so an eviction that dropped the pinned pages re-triggers a
-	// (paced) rebuild. shapeMaskShape records which preset the resident masks
-	// were built for so a Settings change re-rasters. See shapemask.go.
-	shapeMasksBuilt bool
-	shapeMasksGen   uint64
-	shapeMaskShape  string
-	shapeMaskAt     time.Time // last (re)build for eviction-heal pacing
-	// shapeResolved* memoize the last successful per-frame mask resolve
-	// (shape, ADJUSTED tier, store generation): when none of the three moved
-	// and the shaped path is still enabled, refreshShapeMasks skips the
-	// key-concat store Gets entirely, so the always-on frame hook is 0-alloc
-	// on settled frames. Safe because EVERY store mutation that could
-	// invalidate the pointers (eviction, our build/sweep, UploadPinned
-	// replacing a key, Purge) bumps the generation.
-	shapeResolvedShape string
-	shapeResolvedTier  int
-	shapeResolvedGen   uint64
-	// themeAt anchors the looping animation clock for animated theme art
-	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
-	themeAt time.Time
-	// themeAppliedName is the last theme that actually landed —
-	// ensureThemeForSession compares against it so per-server bindings
-	// only trigger loads when something really changes.
-	themeAppliedName string
 
-	// showWidgets opens the "Extras" box: every AsyncAO feature an AO2 theme has
-	// no button for. The themed Extras button opens it; so does the Extras
-	// hotkey, which works in EITHER mode (in the classic path it's just a quick
-	// launcher, since those features already have buttons). themedHintShown
-	// gates the one-time hint that points players at it (legacy themes carry no
-	// AsyncAO element keys).
-	showWidgets     bool
 	themedHintShown bool
 	// Floating Extras box (floatbox.go): movable geometry. extrasPlaced=false
 	// means "centered default until first dragged/seeded"; the rest tracks a
@@ -1359,99 +1173,13 @@ type App struct {
 	// showQuitConfirm: the "Quit AsyncAO?" dialog is up (Esc in the lobby, or a
 	// quit hotkey). Skipped when QuitConfirmSkip ("don't ask again") is set.
 	showQuitConfirm bool
-	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
-	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
-	showMessages   bool
-	msgSel         string
-	msgSelGroup    uint32 // selected group id (0 = a DM is selected via msgSel)
-	msgGroupManage bool   // group view is showing the members / invite panel
-	msgInput       string
-	msgListScroll  int32
-	msgGroups      map[uint32]*msgGroup // client-side group chats (keyed by group id)
-	pendingInvites []groupInvite        // group invites awaiting Accept / Decline
-	msgIconAsk     map[string]time.Time // paced char-icon demands for the messaging surfaces (bounded)
-	// Remote-speaker char.ini metadata (blips + chatbox skin) — URL-keyed cache
-	// + async fetch results (charmeta.go). Bounded; per-server by key structure.
-	charMetaCache map[string]charMeta
-	charMetaRes   chan charMetaFetch
-	// AO2 screen-effect overlays (effectspicker.go): the per-(origin, misc folder)
-	// roster cache and its async resolve results, the theme-tier art loads, and the
-	// dropdown's icon page cache. All bounded, all keyed so a server switch cannot
-	// hand one origin's rosters to another; overlayRosterGen drops the lot when the
-	// theme changes.
-	overlayRosters map[string]*overlayRoster
-	// overlayRosterInFlight is the in-flight marker set, kept SEPARATE from the
-	// settled cache above. Two reasons, both structural: the cap-reset that keeps
-	// overlayRosters bounded must never wipe a marker (dropping one lets the very
-	// next ask spawn a SECOND goroutine for a key already being resolved, whose
-	// two results then race and let the loser's stale paths win), and a bound on
-	// CONCURRENT resolves (overlayRosterFetchCap) is only expressible when the
-	// in-flight set is countable on its own.
-	overlayRosterInFlight map[string]bool
-	overlayRosterRes      chan overlayRosterFetch
-	overlayRosterGen      uint64
-	// overlayTheme is the APPLIED theme's immutable snapshot, published by
-	// pollThemeApply. The roster resolve reads its ladder off-thread instead of
-	// re-running theme.Load per resolve (spec §2.4: the theme-tier parse rides the
-	// theme apply). *theme.Theme is read-only after Load — dirs + four parsed INIs,
-	// no lazily-filled caches — so sharing it with the fetch goroutine is race-free.
-	overlayTheme      *theme.Theme
-	overlayTexRes     chan overlayTexLoad
-	overlayTexLoading map[string]bool
-	overlayIconPages  []*render.TexturePage
-	overlayIconGen    uint64
-	overlayIconAsk    []time.Time
-	overlayThumbFn    func(idx int, r sdl.Rect)
-	// overlayPreviewBase records the base the right-click effect PREVIEW opened the
-	// shared sprite-preview box on ("" = the picker owns no box). It is the close
-	// edge's ownership check: the box is pinned while the list is open, so it has to
-	// be taken down when the list closes (spec §1.d) — but previewBase is one shared
-	// slot, so only a box that is still OURS may be closed.
-	overlayPreviewBase string
-	// Per-frame memos. drawICInputRow asks "is there an effects roster" on EVERY
-	// frame and the courtroom screen is zero-alloc-gated, so neither the cache key
-	// (a concat), nor the char.ini URL (a concat), nor the choice slice (a copy +
-	// a prepend) may be rebuilt per frame. All three are baked on a state change
-	// and compared with plain string/pointer equality, which allocates nothing.
-	// pollOverlayRosters and pollCharMeta invalidate them when their inputs land.
-	overlayMemoOrigin    string
-	overlayMemoFolder    string
-	overlayMemoValid     bool
-	overlayMemoRoster    *overlayRoster
-	overlayMyFolder      string
-	overlayMyFolderChar  string
-	overlayMyFolderValid bool
-	overlayChoicesCache  []string
-	overlayChoicesRoster *overlayRoster
-	overlayChoicesValid  bool
-	// overlayIconKeys / overlayIconPaths are the per-ROW icon page key and (theme
-	// tier only) the LOCAL file it loads from, baked beside overlayChoicesCache
-	// when the roster changes — spec §3, "icon page keys are precomputed when the
-	// list is built, not per frame". Load-bearing, not tidiness: dropdownEx paints
-	// the CLOSED control's current pick through the same thumb painter on EVERY
-	// frame (ui.go:3938-3942), so building the key inside the painter allocated on
-	// every settled courtroom frame as soon as an effect was picked.
-	overlayIconKeys  []string
-	overlayIconPaths []string
-	// overlayIconFolder is the misc folder those keys were baked for. An iniswap or
-	// character swap into a DIFFERENT effects pack with the same row count would
-	// otherwise leave the old pages in place — cachedPage keys by INDEX.
-	overlayIconFolder string
-	// overlayIconSize is courtroom_design.ini's `effects_icon_size` (AO2
-	// courtroom.cpp:979). Zero = the theme is silent; the picker then sizes the
-	// strip from the row height like every other thumbnail dropdown.
-	overlayIconSize [2]int
-	// #39 command palette (Ctrl+Space): open state, live query, keyboard selection.
-	paletteOpen  bool
-	paletteQuery string
-	paletteSel   int
+	msgs            msgState
+	overlays        overlayState
+	palette         paletteState
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
 	hkScroll   int32 // hotkey cheat-sheet scroll offset (it's a scrollable list now)
-	// piecesPrevDown is the Hide-UI-pieces panel's press edge (its geometry moved to
-	// env.wins).
-	piecesPrevDown bool
 	// Multi-server split (pass 2a): splitTab pins a BACKGROUND tab whose live stage
 	// renders in the RIGHT pane (splitRoom over that tab's own session + URL builder
 	// on courtroom.NopAudio so only the focused left pane makes sound; splitVP over
@@ -1475,51 +1203,12 @@ type App struct {
 	// identity too: the log zoom (logPct) and the override-chain generation each
 	// change the metric its rows were broken at (#42, same rule as the main log
 	// wrap caches).
-	splitWrapPct int
-	splitWrapGen int
-	// The pinned server draws in a free-floating, movable/resizable "second client"
-	// window (geometry in env.wins) overlaying the primary — drag it anywhere, not a
-	// fixed split. clientHdr caches the title by server name so the per-frame draw
-	// never re-concats (0-alloc, like the single-pane path).
-	clientHdr     string
-	clientHdrName string
-	// clientFull toggles the full-theme view (the WHOLE pinned client UI, view-only)
-	// vs compact (stage + log + input). Full-theme renders the pinned drawCourtroom
-	// into clientTex at the logical screen size (so the theme lays out exactly as the
-	// primary), then shrink-blits it into the window — recreated only on a size change.
-	// VIEW-ONLY by necessity: the kit is single-instance (fixed widget ids would
-	// collide with the primary's, and a.screen / modal writes would leak), so input is
-	// neutralized during that pass; you watch the whole theme and chat via the input
-	// strip below it. Opt-in (default compact) — the primary path is untouched.
-	clientFull bool
-	clientTex  *sdl.Texture
-	clientTexW int32
-	clientTexH int32
-	// pinnedPass is true during a VIEW-ONLY drawCourtroom pass over a session that is
-	// not the live one: the full-theme render of the pinned client, and the theme
-	// editor's canned preview (themeeditorpreview.go). Single-consumer App channel
-	// drains (pollCharINI) skip while it's set, so such a pass can't eat an async
-	// result meant for the primary — the pinned client is already fully loaded in its
-	// parked sessionState, and the preview's demo session never asks for one.
-	pinnedPass bool
-	// pendingControlSwap: a click on the floating client's view requests "control
-	// this server" (make it the live, fully-interactive courtroom). Applied at the
-	// NEXT frame's top — never mid-render — since it swaps the active session/room.
-	pendingControlSwap bool
-	// Full-theme view zoom/pan: clientZoom magnifies (1 = fit), clientPan{X,Y} is the
-	// view centre in texture space (0..1) when zoomed. clientPanning tracks a drag.
-	// clientZoomLbl memoizes the readout so the per-frame draw doesn't Sprintf.
-	clientZoom                     float64
+	splitWrapPct                   int
+	splitWrapGen                   int
+	client                         clientState
 	clientPanX, clientPanY         float64
-	clientPanning                  bool
 	clientPanGrabX, clientPanGrabY int32
 	clientPanBaseX, clientPanBaseY float64
-	clientZoomLbl                  string
-	clientZoomLblPct               int
-	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
-	themeFitDrag      bool
-	themeFitDragStart [2]int32
-	themeFitDragBase  [2]int
 	// Sprite-preview box: wheel zoom + left-drag to reposition. Handled centrally
 	// (handlePreviewInput) before screens draw so it claims the wheel/press ahead
 	// of the grid scroll and icon clicks underneath. previewFrameRect caches last
@@ -1591,8 +1280,6 @@ type App struct {
 	// a.d.Preview.IsOpen() (previewIsDetached), so there is nothing here for
 	// the pop-out button to disagree with if the window closes itself.
 	previewWinWasOpen bool
-	vpExactBuf        string // edit buffer for the Settings exact-stage-width px field (commit on Enter)
-	hidden            map[string]bool
 
 	iniRes chan iniswapFetch
 
@@ -1627,56 +1314,12 @@ type App struct {
 	// chrome-less client across runs.
 	theaterOn bool
 
-	// --- jukebox (global DJ /play music-link library) ---
-	// App-global like dlPaused and OUTSIDE sessionState: the library is shared
-	// across every server and must survive disconnects and tab switches.
-	juke         *config.Jukebox      // global store, loaded off-thread
-	jukeRes      chan *config.Jukebox // off-thread load landing
-	jukeIORes    chan string          // off-thread export/import result → in-app toast
-	jukeCache    []config.Playlist    // rev-keyed Playlists() snapshot for drawing
-	jukeCacheRev int64
-	jukeOpen     int    // -1 = playlist list; else the open playlist index
-	jukeSearch   string // filters playlists (top) or songs (inside one)
-	jukeScroll   int32
-	aboutScroll  int32 // About screen scroll offset (the page outgrew small windows)
-	// About: the prose is reflowed to the current column width with WrapText and
-	// cached here (keyed by width), so the wrap runs only on a resize, never per
-	// frame (the page is off the hot path, but this repo keeps UI draws alloc-free).
-	aboutFlatW int32           // content width the cache was built for (0 = none)
-	aboutFlat  []aboutFlatLine // flattened, wrapped render lines
-	// Changelog ("What's New" version history): same width-keyed reflow cache as
-	// About — the embedded CHANGELOG.md is wrapped only on a resize, never per frame.
-	changelogScroll int32
-	changelogFlatW  int32
-	changelogFlat   []aboutFlatLine
-	// Help screen (glossary + privacy explainer): the same width-keyed reflow cache.
-	helpTab       int
-	helpDocScroll int32
-	helpFlatW     int32
-	helpFlat      []aboutFlatLine
+	jukebox jukeboxState
+	docs    docsState
 	// Settings: the content region (right of the sidebar) the section/row helpers
 	// draw into. Set once per frame by drawSettings; the helpers rebase their
 	// pad-relative layout onto formX so every box lands inside the content card.
-	formX, formW    int32
-	jukeNewName     string // "new playlist" input
-	jukeAddURL      string // "add song" URL input
-	jukeAddTitle    string // "add song" optional title input
-	jukeDelPlaylist int    // playlist index awaiting delete confirmation (-1 = none)
-	jukeBindFor     string // key-capture target: "" / "p:<i>" / "e:<pl>:<i>"
-	jukeFiltered    []int  // memoized matching entry indices in the open playlist
-	jukeFilteredKey jukeFilterKey
-	musicHist       []musicHistEntry // session-only "recently played" ring (MRU, capped)
-	jukeShowRecent  bool             // top-level jukebox view: recently-played vs playlists
-	jukeHistScroll  int32
-	jukeRecentLbl   string            // cached "Recently played (N)" toggle label (rebuilt only on change, so the per-frame draw never Sprintfs)
-	musicHostInput  string            // Settings: "add a domain" field for the music-history allowlist
-	jukeGroupRows   []jukeGroupRow    // memoized domain-grouped row layout for the "Music history" playlist
-	jukeGroupKey    jukeGroupCacheKey // (playlist, revision) the grouped layout was built for
-	jukeShowFav     bool              // top-level jukebox view: ★ favorites vs playlists/recent
-	jukeFavScroll   int32
-	jukeFavs        []favRef // memoized list of starred songs across all playlists
-	jukeFavRev      int64    // library revision the favorites list was built for
-	jukeFavLbl      string   // cached "★ Favorites (N)" toggle label (rebuilt only on change)
+	formX, formW int32
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
@@ -1707,8 +1350,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			applyRes: make(chan error, 1),
 		},
 		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
-		lobbyResult:         make(chan lobbyFetch, 1),
-		pingRes:             make(chan pingResult, pingResBuf),
+		lobby:               lobbyState{lobbyResult: make(chan lobbyFetch, 1), selServer: -1, pingRes: make(chan pingResult, pingResBuf)},
 		charINIres:          make(chan charINIFetch, 1),
 		previewEmoteRes:     make(chan previewEmoteFetch, 1),
 		iniRes:              make(chan iniswapFetch, 1),
@@ -1722,18 +1364,14 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		cjkFontRes:          make(chan [][]byte, 1),
 		errorSpriteRes:      make(chan errorSpriteLoad, 1),
 		notebookRes:         make(chan notebookLoad, 1),
-		jukeRes:             make(chan *config.Jukebox, 1),
-		jukeIORes:           make(chan string, 4),
-		jukeOpen:            -1,
-		jukeDelPlaylist:     -1,
-		selServer:           -1,
+		jukebox:             jukeboxState{jukeRes: make(chan *config.Jukebox, 1), jukeDelPlaylist: -1, jukeOpen: -1, jukeIORes: make(chan string, 4)},
 		activeTab:           -1,
 		tabDragFrom:         -1,
 		macroBind:           -1,
 		themeTex:            map[string]bool{},
 		themeMediaKeys:      map[string]bool{},
 		themePages:          map[string]*render.TexturePage{},
-		hidden:              map[string]bool{},
+		classic:             classicState{hidden: map[string]bool{}},
 	}
 	a.wireComponents()
 	a.resetSessionState()
@@ -1770,7 +1408,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// pollJukebox so the keybinds and wardrobe tab have it ready.
 	go func() {
 		if j, err := config.LoadJukebox(); err == nil {
-			a.jukeRes <- j
+			a.jukebox.jukeRes <- j
 		}
 	}()
 	a.armBootThemeResize(a.applyThemeAsync())                                          // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
@@ -1982,7 +1620,7 @@ func (a *App) setTheater(on bool) {
 		// panel + the pin latch so an invisible-but-armed panel can't swallow a
 		// click in theater — drawToolboxPieces self-gates on these, and its fence
 		// (boxFencesPointer) reads the same flags, so both go silent together.
-		a.toolboxPieces, a.toolboxPinned = false, false
+		a.toolbox.toolboxPieces, a.toolbox.toolboxPinned = false, false
 	}
 	if a.ctx.win != nil {
 		a.ctx.win.SetBordered(!on)

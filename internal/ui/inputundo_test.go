@@ -240,7 +240,7 @@ func TestUndoChordRouting(t *testing.T) {
 	c := a.ctx
 
 	route := func() { // the App.Frame conversion, verbatim gate
-		if c.focusID != "" && !a.classicEdit && !a.layoutEdit {
+		if c.focusID != "" && !a.classic.classicEdit && !a.layoutEdit {
 			switch c.hotkey {
 			case sdl.K_z:
 				c.undoReq = !c.shiftHeld

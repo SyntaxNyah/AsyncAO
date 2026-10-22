@@ -33,9 +33,9 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	ngW := c.TextWidth(ngLabel) + 16
 	ngR := sdl.Rect{X: r.X + r.W - ngW - 4, Y: r.Y, W: ngW, H: 22}
 	if c.Button(ngR, ngLabel) {
-		a.showMessages = true
+		a.msgs.showMessages = true
 		a.createGroup("New group")
-		a.msgGroupManage = true // open straight on the members / invite view
+		a.msgs.msgGroupManage = true // open straight on the members / invite view
 	}
 	c.Tooltip(ngR, "Start a group chat with other AsyncAO players, then invite them in the Group Chat panel")
 

@@ -175,7 +175,7 @@ var hideableButtons = []struct{ id, label string }{
 }
 
 // panelHidden reports whether the user hid a chrome region.
-func (a *App) panelHidden(id string) bool { return a.hidden[id] }
+func (a *App) panelHidden(id string) bool { return a.classic.hidden[id] }
 
 // setPanelHidden flips one region and persists the full set.
 func (a *App) setPanelHidden(id string, hide bool) {
@@ -184,15 +184,15 @@ func (a *App) setPanelHidden(id string, hide bool) {
 		// preferences at startup, but this is now reachable from a HOTKEY, and a key
 		// pressed before that seeding — or on any path that never ran it — would
 		// otherwise be a nil-map write, which is a panic and not a no-op.
-		if a.hidden == nil {
-			a.hidden = make(map[string]bool, 4)
+		if a.classic.hidden == nil {
+			a.classic.hidden = make(map[string]bool, 4)
 		}
-		a.hidden[id] = true
+		a.classic.hidden[id] = true
 	} else {
-		delete(a.hidden, id)
+		delete(a.classic.hidden, id)
 	}
-	ids := make([]string, 0, len(a.hidden))
-	for k := range a.hidden {
+	ids := make([]string, 0, len(a.classic.hidden))
+	for k := range a.classic.hidden {
 		ids = append(ids, k)
 	}
 	sort.Strings(ids) // stable JSON, stable diffs
@@ -209,9 +209,9 @@ func (a *App) setPanelHidden(id string, hide bool) {
 // prefs reset/import, layout-profile apply — whose saved Hidden slice may
 // predate the guard or carry a stranded pair.
 func (a *App) seedHiddenFromPrefs() {
-	a.hidden = map[string]bool{}
+	a.classic.hidden = map[string]bool{}
 	for _, id := range a.d.Prefs.Load().HiddenPanels() {
-		a.hidden[id] = true
+		a.classic.hidden[id] = true
 	}
 	// Every mouse lifeline hidden at once — a saved set that predates the guard, a
 	// layout profile, or a prefs import — un-hides the toolbox, which is the one
@@ -220,7 +220,7 @@ func (a *App) seedHiddenFromPrefs() {
 	// hid the toolbox and the menu bar had no mouse chrome left.
 	stranded := true
 	for _, l := range mouseLifelines {
-		if !a.hidden[l] {
+		if !a.classic.hidden[l] {
 			stranded = false
 			break
 		}
@@ -232,7 +232,7 @@ func (a *App) seedHiddenFromPrefs() {
 	// entry would sit in HiddenPanels forever hiding nothing. Dropped on load
 	// rather than migrated, because there is no successor to move it to — the
 	// Extras MENU is not hideable, it is the chrome home those commands moved to.
-	if a.hidden[panelExtras] {
+	if a.classic.hidden[panelExtras] {
 		a.setPanelHidden(panelExtras, false)
 	}
 }

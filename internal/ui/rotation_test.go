@@ -18,7 +18,7 @@ func TestClassicSlotRotationResolve(t *testing.T) {
 	if got := a.classicSlotRotation(slotViewport); got != 0 {
 		t.Fatalf("nil classicRot → %g, want 0 (plain Copy path)", got)
 	}
-	a.classicRot = map[string]uint8{slotViewport: 0, slotOOC: 64}
+	a.classic.classicRot = map[string]uint8{slotViewport: 0, slotOOC: 64}
 	// An explicit 0 byte still resolves 0 (routes to Copy).
 	if got := a.classicSlotRotation(slotViewport); got != 0 {
 		t.Fatalf("explicit-0 byte → %g, want 0", got)
@@ -42,7 +42,7 @@ func TestClassicSlotRotationNoAlloc(t *testing.T) {
 	}); n != 0 {
 		t.Fatalf("classicSlotRotation allocates %v/op on the unrotated path; want 0", n)
 	}
-	a.classicRot = map[string]uint8{slotOOC: 128}
+	a.classic.classicRot = map[string]uint8{slotOOC: 128}
 	if n := testing.AllocsPerRun(200, func() {
 		_ = a.classicSlotRotation(slotOOC) // rotated: a map probe + float mul, still 0-alloc
 	}); n != 0 {

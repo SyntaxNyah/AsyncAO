@@ -83,7 +83,7 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	// Match the applied theme so Disconnect()→ensureThemeForSession is a no-op
 	// (no async theme reload in a headless test), as the kick test does.
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
@@ -156,7 +156,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	})
 
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
@@ -220,7 +220,7 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	})
 
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 
@@ -281,7 +281,7 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	})
 
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 

@@ -97,11 +97,11 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	// Seed the cache through pollCharMeta — the one production door into it — so
 	// this drives the same store the live courtroom fills. Writing the map here
 	// would be the mirror-test shape rule 11 forbids.
-	a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
+	a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 	oddURL := a.charINIURL("Beatrice")
 	convURL := a.charINIURL("Phoenix")
-	a.charMetaRes <- charMetaFetch{url: oddURL, showname: "Beatrice", idle: "HSmug"}
-	a.charMetaRes <- charMetaFetch{url: convURL, showname: "Phoenix", idle: "normal"}
+	a.overlays.charMetaRes <- charMetaFetch{url: oddURL, showname: "Beatrice", idle: "HSmug"}
+	a.overlays.charMetaRes <- charMetaFetch{url: convURL, showname: "Phoenix", idle: "normal"}
 	a.pollCharMeta()
 
 	if got := a.iniIdleAnimFor("Beatrice", ghostFallbackEmote); got != "HSmug" {

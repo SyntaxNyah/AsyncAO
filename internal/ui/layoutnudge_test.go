@@ -38,13 +38,13 @@ func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
 	a := testTabApp(t)
 	r := sdl.Rect{X: 10, Y: 20, W: 30, H: 40}
 	a.regSlot("", r, r)
-	if _, present := a.slotReg[""]; present {
+	if _, present := a.classic.slotReg[""]; present {
 		t.Fatal("regSlot registered an unnamed slot — it is indistinguishable from \"nothing " +
 			"selected\", and persisting it writes a classic-layout entry keyed by the empty string")
 	}
 	// A real name still registers, so the guard is a filter and not a stand-down.
 	a.regSlot(slotOOC, r, r)
-	if got, present := a.slotReg[slotOOC]; !present || got.cur != r {
+	if got, present := a.classic.slotReg[slotOOC]; !present || got.cur != r {
 		t.Fatalf("a named slot did not register: %+v (present=%v)", got, present)
 	}
 }
@@ -368,8 +368,8 @@ func stageClassicNudge(t *testing.T) *App {
 	a.screen = ScreenCourtroom
 	a.room = newRoomForTest(t)
 	a.sess = &courtroom.Session{}
-	a.classicEdit = true
-	a.classicTgt = classicTarget(slotOOC)
+	a.classic.classicEdit = true
+	a.classic.classicTgt = classicTarget(slotOOC)
 	a.regSlot(slotOOC, sdl.Rect{X: 301, Y: 205, W: 320, H: 140}, sdl.Rect{X: 301, Y: 205, W: 320, H: 140})
 	return a
 }
@@ -480,7 +480,7 @@ func TestClassicNudgePersistsAndUndoes(t *testing.T) {
 	}
 
 	a.classicEditUndo()
-	if _, ok := a.classicOv[slotOOC]; ok {
+	if _, ok := a.classic.classicOv[slotOOC]; ok {
 		t.Error("undo must drop the override the nudge minted")
 	}
 	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
@@ -506,8 +506,8 @@ func TestClassicNudgeRespectsTheWindowClamp(t *testing.T) {
 	if got := classicNudgeRect(a); got != before {
 		t.Fatalf("a slot flush against the window edge moved to %+v, want %+v", got, before)
 	}
-	if len(a.classicUndo) != 0 {
-		t.Errorf("a refused nudge pushed %d undo entries, want none", len(a.classicUndo))
+	if len(a.classic.classicUndo) != 0 {
+		t.Errorf("a refused nudge pushed %d undo entries, want none", len(a.classic.classicUndo))
 	}
 	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
 		t.Error("a refused nudge persisted an override for a slot that never moved")
@@ -525,7 +525,7 @@ func TestArrowsAreUntouchedWithNoEditorArmed(t *testing.T) {
 		name  string
 		spoil func(*App)
 	}{
-		{"no editor armed", func(a *App) { a.classicEdit, a.layoutEdit = false, false }},
+		{"no editor armed", func(a *App) { a.classic.classicEdit, a.layoutEdit = false, false }},
 		{"not on the courtroom screen", func(a *App) { a.screen = ScreenSettings }},
 		{"no room", func(a *App) { a.room = nil }},
 		{"no session", func(a *App) { a.sess = nil }},
@@ -581,7 +581,7 @@ func TestNudgeConsumesTheKeyItOwns(t *testing.T) {
 		t.Errorf("hotkey = %v after the coarse nudge, want it consumed", a.ctx.hotkey)
 	}
 	// Nothing selected is still a consumed key: a bound action must not fire mid-edit.
-	a.classicTgt = noTarget()
+	a.classic.classicTgt = noTarget()
 	a.ctx.keyPressed = sdl.K_LEFT
 	if !a.editorNudgeKeys(classicNudgeW, classicNudgeH) || a.ctx.keyPressed != 0 {
 		t.Error("with no widget selected the editor must still swallow its own arrow key")
@@ -644,7 +644,7 @@ func TestPaletteKeepsItsArrowsWhileAnEditorIsArmed(t *testing.T) {
 	a := stageClassicNudge(t)
 	before := classicNudgeRect(a)
 	a.togglePalette() // the real front door: Ctrl+Space reaches this with an editor armed
-	if !a.paletteOpen {
+	if !a.palette.paletteOpen {
 		t.Fatal("fixture: the palette did not open")
 	}
 
@@ -675,7 +675,7 @@ func TestPaletteKeepsItsArrowsWhileAnEditorIsArmed(t *testing.T) {
 	// And the nudge comes straight back when the palette closes — the yield is scoped
 	// to the frames another surface actually owns.
 	a.togglePalette()
-	if a.paletteOpen {
+	if a.palette.paletteOpen {
 		t.Fatal("fixture: the palette did not close")
 	}
 	if !pressNudge(t, a, sdl.K_DOWN, false, classicNudgeW, classicNudgeH) {
@@ -724,7 +724,7 @@ func TestArmingAnEditorDropsTheFocusedField(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageClassicNudge(t)
-			a.classicEdit, a.layoutEdit = false, false
+			a.classic.classicEdit, a.layoutEdit = false, false
 			a.ctx.focusID = "icmsg"
 			tc.arm(a)
 			if a.ctx.focusID != "" {
@@ -736,10 +736,10 @@ func TestArmingAnEditorDropsTheFocusedField(t *testing.T) {
 	// End to end on the classic editor: arm with a field focused, re-select the slot
 	// the way a user's click does, and the very first arrow must still nudge.
 	a := stageClassicNudge(t)
-	a.classicEdit = false
+	a.classic.classicEdit = false
 	a.ctx.focusID = "icmsg"
 	a.startClassicEdit()
-	a.classicTgt = classicTarget(slotOOC) // the arm clears the selection; the user's click re-sets it
+	a.classic.classicTgt = classicTarget(slotOOC) // the arm clears the selection; the user's click re-sets it
 	before := classicNudgeRect(a)
 	if !pressNudge(t, a, sdl.K_RIGHT, false, classicNudgeW, classicNudgeH) {
 		t.Fatal("a freshly armed editor must own its arrow keys")

@@ -52,7 +52,7 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 		name string
 		set  func(*App)
 	}{
-		{"classic slot editor", func(a *App) { a.classicEdit = true }},
+		{"classic slot editor", func(a *App) { a.classic.classicEdit = true }},
 		{"themed rect editor", func(a *App) { a.layoutEdit = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 			}
 
 			// Leaving the editor brings the strip straight back.
-			a.classicEdit, a.layoutEdit = false, false
+			a.classic.classicEdit, a.layoutEdit = false, false
 			menuBarFrameFor(a, w, h)
 			if !a.menuBar.draws {
 				t.Error("leaving the editor must bring the strip back")
@@ -135,7 +135,7 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			t.Error("the pane must be closed and the modal fence released on the arm frame")
 		}
 		// And the editor's banner, painted by the pass below, keeps it down.
-		a.editorBannerPainted = true
+		a.toolbox.editorBannerPainted = true
 		if a.menuBarPaintsNow() {
 			t.Error("the strip paints over a banner that reached the screen this frame")
 		}
@@ -151,8 +151,8 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 		if !a.menuBar.draws {
 			t.Fatal("fixture: the bar must be painting before the editor arms")
 		}
-		a.classicEdit = true
-		a.editorBannerPainted = true // what drawClassicEditor publishes when it paints
+		a.classic.classicEdit = true
+		a.toolbox.editorBannerPainted = true // what drawClassicEditor publishes when it paints
 		if a.menuBarPaintsNow() {
 			t.Error("an editor armed after phase 1 still had the strip painted over its banner")
 		}
@@ -182,12 +182,12 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				a := stageMenuBarApp(t)
 				a.screen = ScreenCourtroom
-				a.classicEdit, a.layoutEdit = true, true
+				a.classic.classicEdit, a.layoutEdit = true, true
 				menuBarFrameFor(a, w, h)
 				if a.menuBar.draws {
 					t.Fatal("fixture: phase 1 must have stood the bar down")
 				}
-				a.classicEdit, a.layoutEdit = false, false
+				a.classic.classicEdit, a.layoutEdit = false, false
 				tc.stop(a)
 				if !a.menuBarPaintsNow() {
 					t.Error("the editor stopped without painting anything, and the top band was left empty for the frame")
@@ -214,7 +214,7 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			"scene maker": func(a *App) { a.makerOpen = true },
 		} {
 			a := stageMenuBarApp(t)
-			a.classicEdit = true
+			a.classic.classicEdit = true
 			set(a)
 			menuBarFrameFor(a, w, h)
 			if a.menuBar.editorHeld || a.menuBarPaintsNow() {
@@ -848,7 +848,7 @@ func stageMenuBarDrawApp(t *testing.T) (*App, func()) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.lobbyStatus = "Servers loaded."
+	a.lobby.lobbyStatus = "Servers loaded."
 	return a, cleanup
 }
 

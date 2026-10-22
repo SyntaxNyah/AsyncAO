@@ -32,7 +32,7 @@ import (
 func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	// Clock 1 is HELD at a point a quarter into the period — the position
@@ -72,7 +72,7 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	// clock still notes, or the gate above would pass with the census deleted.
 	live := fxTestElement(theme.FXPulse)
 	live.clock = 0
-	a.themeAt = time.Now().Add(-held)
+	a.toolbox.themeAt = time.Now().Add(-held)
 	a.frameAnimChrome = false
 	a.drawElement(lay, &live, 0)
 	if !a.frameAnimChrome {
@@ -88,7 +88,7 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	a, lay, seen, restore := fxDrawRig(t)
 	defer restore()
-	a.themeAt = time.Now()
+	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	// A drift is pure geometry, so its held terms are visible as a moved rect.
@@ -109,7 +109,7 @@ func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	// The same clock, unpaused, is at exactly the same position: a scrub holds a real
 	// frame of the animation rather than a neutral one.
 	a.themeClocks[1] = themeClock{}
-	a.themeAt = time.Now().Add(-held)
+	a.toolbox.themeAt = time.Now().Add(-held)
 	free := fxTestElement(theme.FXDrift)
 	free.clock = 1
 	a.drawElement(lay, &free, 4)

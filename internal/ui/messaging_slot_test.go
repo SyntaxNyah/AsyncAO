@@ -13,7 +13,7 @@ import (
 func TestMessagesSlotSeedsPanel(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1000), int32(800)
-	a.classicOv = map[string][4]float64{slotMessages: {0.1, 0.1, 0.5, 0.5}}
+	a.classic.classicOv = map[string][4]float64{slotMessages: {0.1, 0.1, 0.5, 0.5}}
 
 	got := a.msgPanelRect(w, h)
 	want := sdl.Rect{X: 100, Y: 80, W: 500, H: 400}
@@ -36,13 +36,13 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	a.persistMsgSlot(w, h)
 
 	want := [4]float64{0.2, 0.125, 0.48, 0.45}
-	if got := a.classicOv[slotMessages]; got != want {
+	if got := a.classic.classicOv[slotMessages]; got != want {
 		t.Errorf("live override = %v, want %v", got, want)
 	}
 	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotMessages]; got != want {
 		t.Errorf("persisted override = %v, want %v", got, want)
 	}
-	if a.showMessages {
+	if a.msgs.showMessages {
 		t.Error("persisting geometry must not change visibility (showMessages)")
 	}
 }
