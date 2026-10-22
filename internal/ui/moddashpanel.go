@@ -252,7 +252,7 @@ func (a *App) formatModAudit() string {
 		b.WriteString(" — " + a.serverName)
 	}
 	b.WriteByte('\n')
-	for _, e := range a.modAudit {
+	for _, e := range a.modDash.audit {
 		b.WriteString(e.at.Format("2006-01-02 15:04:05"))
 		b.WriteByte('\t')
 		b.WriteString(e.action)
@@ -268,11 +268,11 @@ func (a *App) formatModAudit() string {
 // copyModAudit puts the audit log on the clipboard — the "export" path. Clipboard, not a file, so
 // there's no disk I/O on the render thread (the phone book / jukebox share the same way, §17.2).
 func (a *App) copyModAudit() {
-	if len(a.modAudit) == 0 {
+	if len(a.modDash.audit) == 0 {
 		return
 	}
 	_ = sdl.SetClipboardText(a.formatModAudit())
-	a.warnLine = clampLine("Copied " + strconv.Itoa(len(a.modAudit)) + " audit entries to the clipboard.")
+	a.warnLine = clampLine("Copied " + strconv.Itoa(len(a.modDash.audit)) + " audit entries to the clipboard.")
 	a.warnAt = a.now()
 }
 
@@ -296,9 +296,9 @@ func (a *App) recordModAudit(action, target, cmd string) {
 	if cmd == "" {
 		return
 	}
-	a.modAudit = append(a.modAudit, modAuditEntry{at: a.now(), action: action, target: target, cmd: cmd})
-	if len(a.modAudit) > modAuditCap {
-		a.modAudit = a.modAudit[len(a.modAudit)-modAuditCap:] // keep the newest modAuditCap entries
+	a.modDash.audit = append(a.modDash.audit, modAuditEntry{at: a.now(), action: action, target: target, cmd: cmd})
+	if len(a.modDash.audit) > modAuditCap {
+		a.modDash.audit = a.modDash.audit[len(a.modDash.audit)-modAuditCap:] // keep the newest modAuditCap entries
 	}
 }
 
@@ -312,26 +312,26 @@ func (a *App) toggleModSelected(uid string) {
 	if uid == "" {
 		return
 	}
-	if a.modDashSelected[uid] {
-		delete(a.modDashSelected, uid)
+	if a.modDash.selected[uid] {
+		delete(a.modDash.selected, uid)
 		return
 	}
-	if len(a.modDashSelected) >= modBulkCap {
+	if len(a.modDash.selected) >= modBulkCap {
 		a.warnLine = clampLine("Bulk selection is capped at " + strconv.Itoa(modBulkCap) + " players.")
 		a.warnAt = a.now()
 		return
 	}
-	if a.modDashSelected == nil {
-		a.modDashSelected = make(map[string]bool)
+	if a.modDash.selected == nil {
+		a.modDash.selected = make(map[string]bool)
 	}
-	a.modDashSelected[uid] = true
+	a.modDash.selected[uid] = true
 }
 
 // clearModSelected drops the whole bulk selection (the "Clear" button) — also the escape hatch for
 // ticked players who have since left, since their rows are gone and can't be unticked individually.
 func (a *App) clearModSelected() {
-	for k := range a.modDashSelected {
-		delete(a.modDashSelected, k)
+	for k := range a.modDash.selected {
+		delete(a.modDash.selected, k)
 	}
 }
 
@@ -339,13 +339,13 @@ func (a *App) clearModSelected() {
 // player who left is silently dropped, so a bulk command never targets a stale slot. Order matches
 // the roster so the bulk box lists people the way the mod sees them.
 func (a *App) selectedPresentUIDs() []string {
-	if len(a.modDashSelected) == 0 {
+	if len(a.modDash.selected) == 0 {
 		return nil
 	}
 	roster := a.rosterView()
-	out := make([]string, 0, len(a.modDashSelected))
+	out := make([]string, 0, len(a.modDash.selected))
 	for i := range roster {
-		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
+		if uid := roster[i].uid; uid != "" && a.modDash.selected[uid] {
 			out = append(out, uid)
 		}
 	}
@@ -355,13 +355,13 @@ func (a *App) selectedPresentUIDs() []string {
 // countSelectedPresent is the allocation-free count of ticked-and-still-present players, for the
 // per-frame button labels (selectedPresentUIDs allocates, so it's reserved for the one-shot freeze).
 func (a *App) countSelectedPresent() int {
-	if len(a.modDashSelected) == 0 {
+	if len(a.modDash.selected) == 0 {
 		return 0
 	}
 	roster := a.rosterView()
 	n := 0
 	for i := range roster {
-		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
+		if uid := roster[i].uid; uid != "" && a.modDash.selected[uid] {
 			n++
 		}
 	}
@@ -459,7 +459,7 @@ func (a *App) sendModCommand(cmd string) {
 // can't repoint the command at whoever shifted into that slot — only the IPID is allowed to fill
 // in later (re-resolved by the frozen UID, i.e. the same person).
 func (a *App) openModDashBox(kind int) {
-	row, ok := a.rosterByUID(a.modDashTargetUID)
+	row, ok := a.rosterByUID(a.modDash.targetUID)
 	if !ok {
 		return
 	}
@@ -563,27 +563,27 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	rightW := panel.X + pw - modDashIn - rightX
 	// Left column: the roster picker OR the session audit log (#13), switched by a two-button toggle.
 	rosterLabel := "Players (" + strconv.Itoa(len(a.rosterView())) + ")"
-	auditLabel := "Audit (" + strconv.Itoa(len(a.modAudit)) + ")"
+	auditLabel := "Audit (" + strconv.Itoa(len(a.modDash.audit)) + ")"
 	rosterBtn := sdl.Rect{X: x, Y: bodyTop, W: c.TextWidth(rosterLabel) + 22, H: btnH}
 	auditBtn := sdl.Rect{X: rosterBtn.X + rosterBtn.W + 8, Y: bodyTop, W: c.TextWidth(auditLabel) + 22, H: btnH}
 	if c.Button(rosterBtn, rosterLabel) {
-		a.modDashShowAudit = false
+		a.modDash.showAudit = false
 	}
 	if c.Button(auditBtn, auditLabel) {
-		a.modDashShowAudit = true
+		a.modDash.showAudit = true
 	}
-	if a.modDashShowAudit {
+	if a.modDash.showAudit {
 		c.Border(auditBtn, ColAccent)
 	} else {
 		c.Border(rosterBtn, ColAccent)
 	}
-	if a.modDashShowAudit && len(a.modAudit) > 0 { // export the audit log to the clipboard
+	if a.modDash.showAudit && len(a.modDash.audit) > 0 { // export the audit log to the clipboard
 		if c.Button(sdl.Rect{X: auditBtn.X + auditBtn.W + 8, Y: bodyTop, W: 60, H: btnH}, "Copy") {
 			a.copyModAudit()
 		}
 	}
 	leftRect := sdl.Rect{X: x, Y: bodyTop + btnH + 6, W: leftW, H: bodyBottom - (bodyTop + btnH + 6)}
-	if a.modDashShowAudit {
+	if a.modDash.showAudit {
 		a.drawModDashAudit(leftRect)
 	} else {
 		a.drawModDashRoster(leftRect)
@@ -618,7 +618,7 @@ func (a *App) drawModDashChip(x, y int32, label string, on bool) int32 {
 // yet when you claim it); the uncm / area-kick / lock controls are gated on actually being CM.
 func (a *App) drawModDashActions(x, y, w int32) {
 	c := a.ctx
-	row, hasTarget := a.rosterByUID(a.modDashTargetUID)
+	row, hasTarget := a.rosterByUID(a.modDash.targetUID)
 
 	if hasTarget {
 		c.LabelClipped(x, y, w, "Target: ["+row.uid+"] "+rosterDisplayName(row), ColText)
@@ -716,18 +716,18 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	// Ctrl+wheel (or wheel-button) resizes the dashboard list text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
-		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
+		a.modDash.scroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(0)
 	for i := range rows {
 		contentH += modRowHeight(rows[i], a.modDashPct)
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.modDashScroll = c.VScrollbar("moddashroster", track, a.modDashScroll, contentH, r.H)
+	a.modDash.scroll = c.VScrollbar("moddashroster", track, a.modDash.scroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 4
-	rowY := r.Y - a.modDashScroll
+	rowY := r.Y - a.modDash.scroll
 	for i := range rows {
 		rh := modRowHeight(rows[i], a.modDashPct)
 		if rowY > r.Y+r.H {
@@ -764,8 +764,8 @@ func modRowHeight(row rosterRow, pct int) int32 {
 func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
-	selected := p.uid != "" && p.uid == a.modDashTargetUID // single ban/kick target (accent row)
-	checked := p.uid != "" && a.modDashSelected[p.uid]     // ticked for the bulk batch (green box)
+	selected := p.uid != "" && p.uid == a.modDash.targetUID // single ban/kick target (accent row)
+	checked := p.uid != "" && a.modDash.selected[p.uid]     // ticked for the bulk batch (green box)
 	switch {
 	case selected:
 		c.Fill(rrow, ColAccent)
@@ -791,7 +791,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 		}
 	}
 	if !clickedCB && c.hovering(rrow) && c.clicked && p.uid != "" {
-		a.modDashTargetUID = p.uid
+		a.modDash.targetUID = p.uid
 	}
 
 	isSpec := strings.EqualFold(p.name, "Spectator")
@@ -827,31 +827,31 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	if a.modDashPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.modDashPct = a.logPct
 	}
-	if len(a.modAudit) == 0 {
+	if len(a.modDash.audit) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No ban / kick actions sent yet this session.", ColTextDim)
 		return
 	}
 	// Ctrl+wheel (or wheel-button) resizes the audit text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
-		a.modAuditScroll -= c.WheelIn(r) * scrollStepPx
+		a.modDash.auditScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.modDashPct)
 	auditRowH := auditRowHeight(int32(font.Height())) // two-line row, scales with the zoom
-	contentH := int32(len(a.modAudit)) * auditRowH
+	contentH := int32(len(a.modDash.audit)) * auditRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.modAuditScroll = c.VScrollbar("moddashaudit", track, a.modAuditScroll, contentH, r.H)
+	a.modDash.auditScroll = c.VScrollbar("moddashaudit", track, a.modDash.auditScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 8
 	subLineY := int32(font.Height()) + modAuditSubLinePad // second line sits one scaled line + slack below the first
-	rowY := r.Y - a.modAuditScroll
-	for i := len(a.modAudit) - 1; i >= 0; i-- { // newest first
+	rowY := r.Y - a.modDash.auditScroll
+	for i := len(a.modDash.audit) - 1; i >= 0; i-- { // newest first
 		if rowY > r.Y+r.H {
 			break
 		}
 		if rowY >= r.Y-auditRowH {
-			e := a.modAudit[i]
+			e := a.modDash.audit[i]
 			c.LabelClippedFont(font, r.X+6, rowY+3, rowW, e.at.Format("15:04:05")+"   ·   "+e.action+"   ·   "+e.target, ColText)
 			c.LabelClippedFont(font, r.X+6, rowY+subLineY, rowW, e.cmd, ColTextDim)
 		}
