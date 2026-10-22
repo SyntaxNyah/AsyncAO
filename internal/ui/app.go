@@ -2267,21 +2267,45 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 	}
 	if a.d.Store.Contains(base) {
 		a.d.Store.Get(base)
-		if len(a.activeWarm.demands) != 0 {
-			delete(a.activeWarm.demands, base) // it landed: re-arm the heal budget
-		}
+		a.activeWarm.landed(base)
 		return
 	}
-	if time.Since(a.activeWarm.lastDemand) < sceneWarmRedemandEvery ||
-		a.activeWarm.demands[base] >= warmMaxHealAsks {
+	now := time.Now()
+	if !a.activeWarm.mayDemand(base, now) {
 		return
 	}
-	if a.activeWarm.demands == nil {
-		a.activeWarm.demands = make(map[string]int) // ≤3 keys: the two button spellings + the icon
-	}
-	a.activeWarm.demands[base]++
-	a.activeWarm.lastDemand = time.Now()
+	a.activeWarm.noteDemand(base, now)
 	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+}
+
+// landed clears the ask counter for a base that is resident again: the asks were
+// not futile. Only the keeper's own map is touched, and only when it is non-empty
+// (the steady state allocates and writes nothing).
+func (w *activeWarmState) landed(base string) {
+	if len(w.demands) != 0 {
+		delete(w.demands, base)
+	}
+}
+
+// mayDemand is the throttle: at most one re-demand per sceneWarmRedemandEvery, and
+// at most warmMaxHealAsks asks per base without a landing. Buttons and icons live
+// in the small-UI shield tier where eviction ping-pong is structurally impossible,
+// so a plain asks bound suffices — the only futile shape there is a permanent 404.
+func (w *activeWarmState) mayDemand(base string, now time.Time) bool {
+	if now.Sub(w.lastDemand) < sceneWarmRedemandEvery {
+		return false
+	}
+	return w.demands[base] < warmMaxHealAsks
+}
+
+// noteDemand records the demand the caller is about to submit (bounded: ≤3 keys —
+// the two button spellings plus the icon).
+func (w *activeWarmState) noteDemand(base string, now time.Time) {
+	if w.demands == nil {
+		w.demands = make(map[string]int)
+	}
+	w.demands[base]++
+	w.lastDemand = now
 }
 
 // sceneWarmRedemandEvery throttles keepSceneAssetsWarm's heal path: a cold
