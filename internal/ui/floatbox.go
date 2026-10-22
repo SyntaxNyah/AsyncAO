@@ -458,8 +458,8 @@ func (a *App) closeTopOverlay() bool {
 		a.stopLayoutEdit()
 	case a.classicEdit:
 		a.stopClassicEdit()
-	case a.updates.show:
-		a.updates.show = false
+	case a.updates.visible():
+		a.updates.closeModal()
 	case a.showLogin:
 		a.showLogin = false
 	case a.rosterMenuOpen:
