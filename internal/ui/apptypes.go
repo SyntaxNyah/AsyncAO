@@ -182,15 +182,9 @@ type sessionState struct {
 	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
 	// rebuild while the reason is being typed can never repoint a destructive command at someone
 	// else. Only the IPID is allowed to fill in later (re-resolved by the frozen UID — same person).
-	banBoxKind      int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
-	banBoxUID       string                // snapshot: target UID (the identity anchor)
-	banBoxIPID      string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
-	banBoxName      string                // snapshot: display name for the box header
-	banBoxDur       courtroom.BanDuration // chosen duration (ban only)
-	banBoxCustomDur string                // a saved CUSTOM duration chip's canonical token ("45m"); "" = the enum preset banBoxDur applies
-	banBoxReason    string                // typed reason
-	modDashScroll   int32                 // mod dashboard roster scroll offset
-	cmRosterScroll  int32                 // CM panel roster scroll offset
+	banBox         banBoxState
+	modDashScroll  int32 // mod dashboard roster scroll offset
+	cmRosterScroll int32 // CM panel roster scroll offset
 	// #13 mod dashboard v2: a session audit log, bulk targeting, and the left-column view switch.
 	// All per-session (per-tab): a new server connection starts with an empty log and selection.
 	modDashShowAudit bool            // left column shows the session audit log instead of the roster
@@ -1198,6 +1192,19 @@ type sessionState struct {
 	// Creator easter eggs: the detection cache (text + resolved kind) is its own
 	// component (eggstate.go), parked with the tab.
 	eggs eggs
+}
+
+// banBoxState is the frozen snapshot the moderator ban/kick box works from (#130).
+// It lives on sessionState so a tab switch parks and restores it with the rest of
+// the session, and so a roster rebuild cannot repoint a destructive command.
+type banBoxState struct {
+	kind      int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
+	uid       string                // snapshot: target UID (the identity anchor)
+	ipid      string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
+	name      string                // snapshot: display name for the box header
+	dur       courtroom.BanDuration // chosen duration (ban only)
+	customDur string                // a saved CUSTOM duration chip's canonical token ("45m"); "" = the enum preset dur applies
+	reason    string                // typed reason
 }
 
 type lobbyFetch struct {

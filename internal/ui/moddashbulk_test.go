@@ -63,7 +63,7 @@ func TestSendBulk(t *testing.T) {
 		{uid: "2", name: "edgeworth"},
 	}
 	a.bulkBoxUIDs = []string{"1", "2"}
-	a.banBoxReason = "spam"
+	a.banBox.reason = "spam"
 
 	if n := a.sendBulk(false); n != 2 { // false = kick
 		t.Fatalf("sendBulk queued %d, want 2", n)
