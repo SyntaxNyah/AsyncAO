@@ -4,14 +4,9 @@ package ui
 // Friends) can be popped OUT of the docked tab strip into their own movable,
 // resizable floating panels — each rendering the tab's real content. A torn tab
 // is just a classic-layout SLOT (classiclayout.go) under a "tab:<name>" key:
-// presence in classicOv means "torn off, and here's where". That reuse buys drag,
-// 8-handle resize, right-click-to-redock and cross-session persistence for free —
-// the generic drawClassicEditor already does all of it over any registered slot.
-//
 // Reset-all (the editor's "Reset all") clears the whole map, so every tab redocks
 // and the default is plain buttons again — exactly the user's "by default it's
 // buttons" ask. Log and OOC are deliberately NOT tear-offable: Log is the home /
-// fallback tab, and OOC is already its own box in the new default.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"

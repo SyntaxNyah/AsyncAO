@@ -7,17 +7,6 @@ package ui
 // floatWin panel, the Extras box + its torn-off widgets, the favourite-emotes
 // box and the Sprite-Style box — and to the THEMED layout editor's design-space
 // drags, WITHOUT rewriting any of the four bespoke drag models.
-//
-// One shared primitive (snapRectToSiblings) wraps alignRect in move-mode and is
-// SDL-type-light so it unit-tests without SDL, exactly like classicalign_test.go.
-// The candidate set is a per-frame-rebuilt, capped App buffer (panelMagnetRects)
-// assembled once at the top of drawFloatingPanels from every OTHER currently-open
-// floating surface; screen edges + centre come free from alignRect's window
-// targets (they overlap snapToEdges' floatSnapPx=12 branches, which stay exactly
-// as they were — the sibling pass is purely additive). Reuses alignSnapPx=6: 6px
-// is already tuned in the classic editor, so a distinct live threshold would be
-// unjustified magic. Always-on, Shift-bypass (matching the editor's KMOD_SHIFT
-// check) — no new pref.
 
 import "github.com/veandco/go-sdl2/sdl"
 
@@ -26,13 +15,9 @@ const (
 	// rule §17.4). Excess candidates past the cap are simply not considered as
 	// magnet targets — a benign degradation, but a silent one, so the cap is sized
 	// to keep real headroom rather than to sit exactly on the live count.
-	//
 	// The fixed surfaces are 19: the 14 table-driven floatWin panels (the three
 	// ex-modals joined them in #31), msgWin, the Extras box, the fav-emote box, the
 	// sprite-style box and the compact toolbox strip. Five torn-off TAB panels take
-	// that to 24 — which is where the cap used to sit, i.e. with nothing left for the
-	// torn-off Extras WIDGETS, of which there can be one per entry in the widget
-	// table. 32 restores a working margin.
 	panelMagnetCap = 32
 )
 
@@ -56,11 +41,9 @@ func snapRectToSiblings(r sdl.Rect, others []sdl.Rect, w, h int32, guides []alig
 // this-frame mouse-grab positions). The buffer is always truncated to length 0
 // first, so a settled frame (nothing dragging) leaves it empty and this does no
 // work beyond the reslice — the alloc gate never sees a populate or a guide draw.
-//
 // Only ONE surface drags at a time (they share one press edge), so skipping the
 // active-drag surface cleanly yields "all other open surfaces". Bounded by
 // panelMagnetCap. Runs only while a live drag is active (anyPanelDragging), off
-// every settled frame.
 func (a *App) rebuildPanelMagnetRects(w, h int32) {
 	a.panelMagnetRects = a.panelMagnetRects[:0]
 	if !a.anyPanelDragging() {
@@ -271,11 +254,9 @@ func (a *App) anyPanelDragging() bool {
 // this frame: Shift held (the editor's precise-placement modifier). Screen-edge
 // snapping (snapToEdges) is NOT bypassed — that is the pre-existing #21 behaviour
 // and stays independent, so Shift only turns off the new sibling magnet.
-//
 // The layoutedit.go grid gate (`layoutSnap && !magnetBypassed()`) reads THIS
 // (Shift-only) form deliberately: the persistent "Magnet: off" chip must not
 // disable grid snapping, only sibling snapping — so the chip is folded into
-// siblingMagnetOff below, NOT into magnetBypassed.
 func magnetBypassed() bool {
 	return sdl.GetModState()&sdl.KMOD_SHIFT != 0
 }

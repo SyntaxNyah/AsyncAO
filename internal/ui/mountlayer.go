@@ -3,14 +3,6 @@ package ui
 // Local-pack layer lifecycle: deciding WHEN to build the mount index, publishing
 // it to the Manager, and invalidating exactly the textures a source change makes
 // stale.
-//
-// The whole file is render-thread code except the one goroutine that runs the
-// blocking directory/archive walk — indexing is disk I/O and may never happen on
-// the render path (rule 2). The walk posts to a cap-1 channel drained in the
-// frame loop, copying the casing-probe idiom (its channel AND its single-flight
-// latch — without the latch, rapid mount edits or reconnect flapping spawn
-// concurrent multi-mount walks, which is exactly the unbounded-goroutine case
-// rule 4 forbids).
 
 import (
 	"log"
@@ -60,17 +52,6 @@ func mountSetKey(mounts []string) string {
 // applyMountLayer reconciles the live layer with what the preferences ask for. It
 // is cheap and idempotent, so it can be called from every path that might change
 // either the mount set or the set of live asset origins.
-//
-// THREE TRANSITIONS, and the leave case is the subtle one:
-//
-//   - enter / rebuild (the mount set changed): clear the layer synchronously so
-//     nothing serves from a stale index, bump the generation, and kick ONE walk.
-//   - leave (layering turned off): capture the OUTGOING layer FIRST, publish nil,
-//     then invalidate using the captured value. The invalidation predicate needs a
-//     layer that is by then already nil, which is why rescanLocalPacks takes it as
-//     an argument and never reads the live one.
-//   - origins only (a tab connected or was activated): republish a fresh wrapper
-//     around the SAME index. No re-walk — the index holds rels, not URLs.
 func (a *App) applyMountLayer() {
 	if a.d.Manager == nil {
 		return
@@ -213,16 +194,9 @@ func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 }
 
 // rescanLocalPacks drops the render-side state a source change invalidates.
-//
-// layer is passed IN rather than read from the Manager because the "layering was
-// just turned off" path publishes nil before invalidating — the predicate needs
-// the OUTGOING layer to know which textures that pack was answering.
-//
 // It deliberately does NOT rebuild the room. buildRoom re-arms the live-roster
 // poll, which queues an OOC /gas — the documented server flood-kick vector — so a
 // user tidying their mount list would emit one per click. It also does not bump
-// the pool epoch: that marks EVERY queued job stale, including live high-priority
-// message work.
 func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 	// FIRST, and not behind the Store guard: parsed INIs are UI state, not
 	// textures, and gating them on a texture store existing would be an
@@ -248,19 +222,9 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 
 // forgetParsedINIs drops everything derived from a char.ini so a source change is
 // visible without a reconnect.
-//
-// The texture caches above are not enough, and this is the half that makes the
-// feature feel broken when it is missing: an ini is PARSED into UI state — the
-// emote list, the preview's emote cycle, every speaker's showname/blips/chatbox
-// skin/effects/scaling — and those parsed copies are keyed by URL in maps no
-// texture invalidation touches. A sprite maker's loop is "edit the ini, press
-// Rescan, look", and without this they would keep looking at the answer from
-// before the edit for the rest of the session.
-//
 // It re-reads the ACTIVE character's ini directly rather than rebuilding the
 // room, for the reason rescanLocalPacks does not rebuild: buildRoom re-arms the
 // live-roster poll, whose queued OOC /gas is the documented server flood-kick
-// vector, and a user tidying their mount list would emit one per click.
 func (a *App) forgetParsedINIs() {
 	a.overlays.charMetaCache = nil // remote speakers: refetched on their next message
 	// The preview's own latch, or the next hover over the SAME character would be
