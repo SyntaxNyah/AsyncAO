@@ -1,36 +1,6 @@
 package ui
 
 // COPY FOR EDITING (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q5.
-//
-// ONE concern: turning a theme you are not allowed to write into one you are, so
-// that the editor always has somewhere to save.
-//
-// WHY IT IS A WHOLE PATH AND NOT A SENTENCE. Two surfaces used to end in advice:
-// Settings ▸ Theme said "this theme has no AsyncAO tier yet — copy it for editing
-// first" and drew no button beside it, and the editor's Save refused a bundled or
-// read-only theme with "copy it into your themes folder before editing it" — after
-// a whole session's work. Both told the user to go and use Explorer. This is the
-// act those sentences describe, and themepack.CopyForEditing is the primitive that
-// performs it; a copy nothing calls is the parsed-but-never-applied shape hard rule
-// 11 forbids, and advice nothing performs is its user-facing twin.
-//
-// THE COPY IS ALWAYS THE APPLIED THEME. You can only edit what is on screen — the
-// editor opens over the applied sidecar (armThemeEditor) — so the copy becomes the
-// applied theme as part of landing. That is the same "live, not next launch" rule
-// the import lands under, for the same reason.
-//
-// FIVE THINGS THE LANDING OWNS, and they are one event rather than five:
-//
-//	1. the layout-editor tweaks come with it (design §Q5 step 5) — a copy that
-//	   lost them would look wrong the moment it applied;
-//	2. the catalog learns about the folder this client just wrote, so the very
-//	   next Save can resolve it without waiting for a rescan;
-//	3. the copy becomes the applied theme;
-//	4. the OPEN SESSION is retargeted (the Save path), so a session's unsaved work
-//	   follows the user into the copy instead of being the price of it;
-//	5. the editor opens over it (the Settings path), because "Copy for editing" is
-//	   one act and finishing in Explorer is not.
-//
 // OFF THE RENDER THREAD (hard rule 2) and single-flight (hard rule 4): the job
 // pointer IS the flag, the channel is buffered so the goroutine never blocks on an
 // app that moved on, and the shape is editExportJob's exactly.
@@ -160,13 +130,6 @@ func (a *App) appliedThemeEditReason() themeEditReason {
 
 // copyThemeForEditing is every decision a copy makes, and the ONE entry point
 // both surfaces use.
-//
-// THE CATALOG IS THE AUTHORITY for both halves of the question — where this theme
-// LIVES (entry.Dir), and where this client may WRITE (themeCatalog.WriteRoot, which
-// is config.UserThemesDir() as the scan resolved it). That is editorSidecarPath's
-// own doctrine, and asking one snapshot for both is what stops a copy reading a
-// folder one answer named and writing beside a root a different answer resolved.
-//
 // Every refusal is a visible line naming the offender and the fix (design §3.3) —
 // a button that sometimes does nothing is worse than one that says why it cannot.
 func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
@@ -364,13 +327,6 @@ func (a *App) carryThemeRectOverrides(from, to string) {
 
 // noteCopiedTheme publishes a catalog snapshot that includes the folder this
 // client has just written.
-//
-// WHY THE SCAN IS NOT ENOUGH. requestThemeCatalog is single-flight and floored: a
-// scan already in flight makes the request a no-op, so the freshly copied theme
-// can be invisible for seconds — and the editor's Save resolves its write root
-// THROUGH the catalog, so an invisible copy is a Save that refuses a theme sitting
-// on disk. The scan is still requested; this only removes the window.
-//
 // COPY-ON-WRITE + CAS, never a mutation: a snapshot is immutable and the draw path
 // reads it with no lock at all. A losing CAS means a real scan published first,
 // and its answer is the better one by definition.

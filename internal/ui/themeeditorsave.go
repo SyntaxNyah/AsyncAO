@@ -1,32 +1,9 @@
 package ui
 
 // SAVING THE DOCUMENT (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §3.3.
-//
-// ONE concern: getting the edited document onto disk without ever being able to
-// break the theme it came from.
-//
-// SAFE BY CONSTRUCTION, IN THREE INDEPENDENT WAYS, and none of them is discipline:
-//
-//  1. THE BYTES GO THROUGH THE GUARD. themeDoc.bytes is Sidecar.Bytes, which
-//     VALIDATES the model and refuses before it touches the lossless carrier — so a
-//     document the reader would not accept never becomes a file. The refusal
-//     surfaces as a chip naming the offender, which is the whole of design §3.3's
-//     error-copy rule: name the offender, name the limit, offer the fix.
-//  2. THE WRITE ROOT IS NOT A PARAMETER. It is the catalog's own answer for this
-//     theme (themeCatalogEntry.Dir + Origin), and only themeOriginYours is written.
-//     A bundled or read-only theme is REFUSED with the reason, because editing
-//     somebody else's folder in place is the highest-blast-radius risk the design
-//     names (§6 R3). The refusal is not a dead end: it OFFERS the copy that fixes
-//     it, and a second Save performs it (offerCopyOnSaveRefusal, themecopy.go).
-//  3. THE FILE IS REPLACED ATOMICALLY. Temp file in the SAME directory, then
-//     os.Rename — the shape config's preference saver and the disk cache's writer
-//     both use. A crash mid-write leaves the previous theme, never half of one.
-//
 // OFF THE RENDER THREAD (hard rule 2). Serialising is cheap and pure and happens on
 // the render thread so the guard's refusal can be shown immediately; the WRITE is a
 // goroutine. Exactly one can be in flight — the job pointer is the flag — and its
-// channel is buffered, so the goroutine can never block on an editor that closed
-// while it ran.
 
 import (
 	"errors"
@@ -87,19 +64,9 @@ func (a *App) editorSave() {
 
 // offerCopyOnSaveRefusal turns "you may not write this theme" into something the
 // user can press (v1.90.0 W8, design §Q5).
-//
-// THE DEFECT IT CLOSES. A bundled or read-only theme opened, took a whole
-// session's work, and only then refused to save — with advice to go and copy a
-// folder in Explorer. The copy is now the second half of the same button:
-//
-//	Save       → the refusal, naming the theme, the reason, and the act that fixes it
-//	Save again → inside themeCopyConfirmWindow: copy, retarget this session, write it
-//
 // PRESS-AGAIN RATHER THAN A MODAL: the design allows exactly two modals in the
 // whole editor and W7 spends neither, so a third here would be the modal misery
 // requirement 10 forbids. It is the same idiom requestEditorExit and the import
-// consent already use, and the window is the CHIP's own lifetime — the offer never
-// outlives the sentence that made it.
 func (a *App) offerCopyOnSaveRefusal(err error) {
 	if !errors.Is(err, errThemeNotYours) {
 		a.te.note(err.Error())
@@ -154,30 +121,9 @@ func (a *App) landEditorSave(err error) {
 
 // applyThemeAfterSaveIfTypeChanged kicks a theme apply when — and ONLY when — the
 // saved file's TYPE tables differ from the ones the faces on screen were resolved from.
-//
-// WHY AN APPLY IS NEEDED AT ALL (v1.90.0 W7b). Geometry and colour are re-baked live by
-// editorApply's own invalidate, and the ART is re-planned and re-landed live by
-// editorSyncArt (themeeditorart.go) — that half is named explicitly because this comment
-// once claimed the whole preview was live while an edited generator went on drawing its
-// OLD tile until the next theme switch. What is left is the TYPE: a [fontbind] row is
-// turned into real SDL_ttf faces by applySidecarFonts, which runs on the theme-apply
-// goroutine against the sidecar ON DISK. Without this, a binding could be edited, saved,
-// and still be drawn in the old face until the user switched themes and back.
-//
-// WHY IT IS GATED ON THE TABLES AND NOT ON "a save happened", which is how it shipped:
-// pollThemeApply re-anchors a.themeAt and re-runs applyThemeClocks (so every clock
-// group in the theme restarts from zero) and calls purgeTextCache(). Design
-// §"Live preview, no Apply button" is normative about it — applyThemeAsync runs only
-// for media/font import and theme switch — so an unconditional kick made saving a rect
-// nudge restart all motion and hitch the text cache, and would do it every two seconds
-// once the design's debounced autosave lands. The comparison is against the last apply
-// THIS DOCUMENT caused (themeDoc.typeSigApplied), not against the last save, so a
-// binding edited and saved twice kicks once.
-//
 // AFTER THE WRITE rather than at the edit, and that ordering is also load-bearing: an
 // apply re-reads the file, so kicking one on an unsaved binding would resolve the OLD
 // file and look like the edit had been thrown away. reclaimThemeDoc re-installs the
-// document over the landed apply, so unsaved geometry in flight survives it.
 func (a *App) applyThemeAfterSaveIfTypeChanged() {
 	if a.te == nil || a.te.doc == nil {
 		return

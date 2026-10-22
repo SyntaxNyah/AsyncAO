@@ -1,39 +1,11 @@
 package ui
 
 // IMPORTING A THEME BUNDLE (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q4/§Q6.
-//
-// ONE concern: turning a dropped .aotheme into an applied theme, with the user
-// told what is inside it BEFORE a byte is written.
-//
-// WHAT W2 PARKED AND THIS LANDS. W2 fixed the half that was actively wrong — a
-// dropped bundle used to fall through the Settings screen's default arm and
-// silently repoint the user's THEME ROOT at their Downloads folder — and left the
-// extraction for the wave that could do it safely, with a note telling the user to
-// unzip by hand. themes/README.md made the same promise ("one-step bundle import
-// arrives with the theme editor"). This is that step.
-//
-// CONSENT WITHOUT A SHEET, AND WHY. The design specifies a consent panel rendered
-// before extraction. A drop can land on ANY screen — lobby, courtroom, settings,
-// the editor — so a panel would need a draw site on every one of them, and the
-// editor's own budget of exactly two modals is already spent (design §3.1). The
-// consent is therefore a TWO-DROP confirmation on the client's existing warn
-// line, which is the same press-again-to-confirm idiom requestEditorExit already
-// uses in this feature:
-//
-//	drop  → Inspect (central directory ONLY; nothing is written, nothing is
-//	        decompressed but the sidecar) → a line naming the theme, the file
-//	        count, both sizes, the fonts and every licence warning
-//	drop again inside themeImportConsentWindow → Extract → apply
-//
 // The user learns exactly what the design's sheet would have told them, at the
 // moment the sheet would have told them, and the confirming act is deliberate.
-// The one thing it gives up is a Cancel BUTTON — cancelling is walking away, and
-// the window expires on its own.
-//
 // SINGLE-FLIGHT AND OFF-THREAD (hard rules 2 and 4). Both stages are disk work on
 // a goroutine; the job pointer IS the flag, so exactly one bundle can be in
 // flight; the result channel is buffered so the goroutine never blocks on an app
-// that moved on.
 
 import (
 	"path/filepath"
@@ -63,10 +35,6 @@ const (
 	// themeBundleConsentLine below — call to action second, detail last — is
 	// correct precisely because clampLine's bound, not this file's, is the one that
 	// decides what falls off the end.)
-	//
-	// themeImportFontsNamed bounds how many fonts the summary names before it
-	// switches to a count. Two is what fits beside everything else the line has
-	// to say, and the export sheet names them all.
 	themeImportFontsNamed = 2
 	// bytesPerMiB / bytesPerKiB are the divisors behind every size in this file.
 	bytesPerMiB = 1 << 20
@@ -215,13 +183,9 @@ func (a *App) themeImportRowAction() {
 
 // handleThemeBundleDrop is HandleFileDrop's .aotheme arm (dropclaim.go names it
 // the single owner). It is the only way a bundle enters the client.
-//
 // It is TWO functions, and the split is a seam rather than a style choice: "where
 // may I write themes?" is a question about portability and preferences that only
 // internal/config can answer, and a gate that had to answer it would either write
-// into the developer's real AppData or re-implement the policy. So the resolution
-// lives here, in one line, and every decision the import makes lives in
-// bundleDrop, which takes the root as an argument.
 func (a *App) handleThemeBundleDrop(path string) {
 	a.bundleDrop(path, config.UserThemesDir())
 }

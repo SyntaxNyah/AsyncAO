@@ -1,41 +1,6 @@
 package ui
 
 // THE EDITOR'S CANVAS (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §3.2.
-//
-// ONE concern: what the POINTER means over the live frame. The screen's chrome is
-// themeeditor.go, the document themeeditordoc.go, the timeline themeeditorop.go;
-// this file turns a press, a drag and a release into ops on that timeline.
-//
-// SPACE PRIORITY, NOT LARGEST-WINS. W6 left the trap written down at the legacy
-// overlay's own probe (layoutedit.go): that probe walks the DESIGN-KEY set and
-// resolves ties by the largest gripped box, which is right when every candidate is
-// an AO2 widget. Free elements are a second population in the same pixels and they
-// invert both rules — an element is authored ON TOP of the widget it decorates
-// (that is what a decoration is) and a theme's densest elements are its smallest —
-// so appending them to one flat largest-wins loop would hand every press on a 12x12
-// badge to the 490x98 emote grid underneath it, and the badge would be unselectable
-// by mouse for the whole wave. Elements are therefore probed FIRST, as their own
-// population, with paint order (band, then z, then declaration) deciding inside it;
-// design keys are probed only when no element answered, keeping their own tie-break.
-// A theme with no elements takes byte-identical decisions to the legacy overlay's.
-//
-// ONE GESTURE, ONE UNDO STEP. Every frame of a drag calls the same editorApply the
-// inspector and the keyboard use, so the ring's coalescing window merges the whole
-// gesture into one op — and the group opened at the press is held OPEN for the
-// gesture's whole life rather than reopened per frame, because the group id is part
-// of the coalescing identity: a fresh group each frame would give every frame a
-// different key, defeat the merge, and fill a 128-entry ring in two seconds of
-// dragging three elements.
-//
-// THE GESTURE RUNS IN AUTHORED UNITS, WITH THE MAGNET FOLDED BACK. The numbers we
-// write are the authored ones (design px for a widget or a courtroom-space element,
-// window px for a `space = window` element), so the grid means the design grid and a
-// stored value is never the round trip of a scaled one — the rounding trap the
-// server-tab strip's whole drag path exists to document. The MAGNET is the one step
-// that cannot live there: an element's rect is a signed delta on its anchor (design
-// §6.6 R1), so two elements' authored numbers are not comparable at all, while their
-// painted boxes always are. So the magnet runs on the PAINTED projection and its
-// correction is divided back out — one conversion, at one step, named here.
 
 import (
 	"fmt"
@@ -112,19 +77,6 @@ type editTargetGeom struct {
 // editorTargetGeom resolves a target. ok=false for anything that is not on the
 // canvas this frame — an inert element, a widget this build does not place, a
 // document that does not own the key.
-//
-// IT IS THE ONLY PLACE THE SPACES DIVERGE. Everything downstream works in authored
-// units plus a scale, so the drag, the resize, the magnet fold-back and the readout
-// are one implementation for widgets and elements alike.
-//
-// A BUILT CACHE, NOT A VALID ONE, and the difference is deliberate: every write
-// this file makes invalidates the layout (the geometry it edits is what the cache
-// derives), so a `lay.valid` test here would make the SECOND target of a multi-drag
-// — and the whole overlay that draws after the edit — silently resolve to nothing.
-// The contract is instead that the caller obtained lay from themeWindowLayout THIS
-// frame, so it is either fresh or freshly invalidated by us, and the two differ only
-// in the numbers this gesture is about to overwrite anyway. drawThemeEditor re-asks
-// for the cache between the input and the overlay, which is what rebuilds it.
 func (a *App) editorTargetGeom(lay *themeLayoutCache, t editTarget) (editTargetGeom, bool) {
 	if a.te == nil || lay == nil || lay.scaleX <= 0 || lay.scaleY <= 0 {
 		return editTargetGeom{}, false
@@ -166,15 +118,6 @@ func (a *App) editorTargetGeom(lay *themeLayoutCache, t editTarget) (editTargetG
 }
 
 // editorSlotKeyEditable reports that the EDITOR may author a design key.
-//
-// It is themeKeyEditable plus one refusal: the server-tab strip is CLIENT chrome,
-// not part of any theme. Its placement is a preference (tabStripPlacementRecorded),
-// its size is derived from the live chips rather than authored, and its whole drag
-// runs in screen space with a stored value that is the inverse of a painted box —
-// three properties no [overrides] row can express, and one the AO2-parity rule says
-// a theme has no business declaring anyway. The legacy Ctrl+F2 overlay keeps owning
-// it; the editor does not offer it at all, which is why nothing downstream of here
-// carries the strip's special cases.
 func editorSlotKeyEditable(key string) bool {
 	return key != "" && key != themeTabBarKey && themeKeyEditable(key)
 }
@@ -210,15 +153,6 @@ func unprojectDelta(d int32, scale float64) int {
 
 // editorProbe answers "what is under (mx, my)": the target, and the resize edges a
 // press there would grip (0 = a move).
-//
-// See the file header for why elements go first. Within each population:
-//
-//   - a RESIZE grip wins over a move, and among grips the LARGEST box wins, so a big
-//     box's corner cannot be blocked by a small box sitting on it (the legacy rule,
-//     kept verbatim);
-//   - among moves, paint order decides for elements (topmost band, then highest z,
-//     then the smallest box) and the smallest box decides for widgets (the legacy
-//     stack's own sort), because a widget stack has no z at all.
 func (a *App) editorProbe(lay *themeLayoutCache, mx, my int32) (editTarget, uint8) {
 	if a.te == nil || lay == nil {
 		return noTarget(), 0
@@ -372,12 +306,9 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 	// A PANEL IS UP, so the canvas behind it is CLICK-DEAD (design §3.1). The rails go
 	// dead through c.modalOn, which hovering() honours — but this probe hit-tests with
 	// raw pointIn and would see straight through that, so it refuses the press itself.
-	//
 	// The shape it closes: editorFontPanelRect centres the panel INSIDE the canvas rect,
 	// so every `<` / `>` / `x` on a font row also ran editorProbe + editorBeginGesture
 	// on whatever element or AO2 widget sat beneath it — the art moved while a face was
-	// being picked. A live gesture is untouched (it returned above): the button is still
-	// down, and a drag that started before the panel opened must still be able to end.
 	if a.editorPanelUp() {
 		return
 	}
@@ -523,17 +454,9 @@ func editorRescale(d int, from, to float64) int {
 
 // editorMagnet snaps the candidate flush to its siblings, in PAINTED space, and
 // folds the correction back into authored units (see the file header).
-//
-// The sibling set is every OTHER editable box on the canvas — widgets and elements
-// together — because "flush with the log column" and "flush with that badge" are the
-// same request.
-//
 // CANVAS-LOCAL, not window-absolute: alignRect's extent argument is a width and a
 // height measured from the origin, so feeding it painted window coordinates with the
 // canvas's own W/H would put the "right edge" magnet at x = canvas width instead of
-// at the canvas's right edge — every letterboxed fit mode off by the bar. Shifting
-// every box by the canvas origin costs one subtraction each and makes the extent
-// mean the stage. The guides come back local too; the draw adds the origin back.
 func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r theme.Rect, kind, edges uint8) theme.Rect {
 	self := a.te.primary()
 	ox, oy := lay.area.X, lay.area.Y

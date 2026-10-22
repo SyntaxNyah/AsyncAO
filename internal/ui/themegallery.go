@@ -3,31 +3,6 @@ package ui
 // THE PRESET GALLERY (v1.90.0 W9) — docs/wip/THEME-EDITOR-DESIGN.md §3.1's panel
 // list, which has named this surface since W7 ("OPEN to the panels design §3.1
 // still owes (preset gallery, …)", editorPanelUp).
-//
-// ONE concern: choosing a point on the 21 x 14 grid and doing something with it.
-// It owns no merging (internal/theme's presetmerge.go), no writing (themepack's
-// CreateFromSidecar) and no format knowledge; what is here is the pick, the
-// miniature and the three acts.
-//
-// THE THREE ACTS, and why they are three and not one:
-//
-//   CREATE  — build a NEW theme from the pair. The primary act, and the only one
-//             that is unconditionally safe: it writes a fresh folder whose sidecar
-//             has never held anything else, so there is no previous tier to leave
-//             a trace of. It is also the flagship's actual use — "give me a theme".
-//   APPLY   — replace a tier of the theme already open in the editor. One
-//             snapshot, one undo (theme.PresetUndo), and it is how you swap the
-//             style of something you are already working on.
-//   UNDO    — put the last APPLY back, exactly. Not a ring op: see PresetUndo's
-//             own comment for why a bulk structural replace cannot be one.
-//
-// THE MINIATURE IS ARITHMETIC, NOT A RENDER. A live render of 294 combinations
-// would be 294 offscreen frames and 294 textures against a texture budget the
-// whole feature is already careful with (risk R2). What the card actually has to
-// answer is "where do things sit, and what colour is it", and both come straight
-// out of the merged model: the layout's [overrides] normalised to its own design
-// canvas, painted in the style's [palette]. It costs one bounded bake per pair,
-// cached, and it draws with plain Fill calls that upload nothing.
 
 import (
 	"strconv"
@@ -234,24 +209,10 @@ func maxInt32(a, b int32) int32 {
 
 // galleryCredit is the hovered style's `[preset] credit`, wrapped, baked on
 // change.
-//
 // IT EXISTS BECAUSE OF THE ALLOC GATE, not because wrapping is expensive.
-// Ctx.WrapText allocates a slice and its lines, and the panel draws inside the
-// editor frame that editorChromeAllocBudget bounds — so wrapping a 380-rune
-// attribution every frame is the exact per-frame-string-in-a-loop regression that
-// budget exists to catch. This is the bakeToggleLabels pattern: the work happens
-// when the INPUT changes (a different style under the pointer, or a resized
-// panel), and every other frame reads a fixed array.
-//
-// FIXED ARRAY, bounded by presetCreditLineCap (hard rule 4), for the same reason
-// presetThumb holds one: it is per-panel state that outlives the frame that filled it.
-//
 // WHY THE CREDIT IS ON SCREEN AT ALL. §6.5 clause 7 is a CONTRACT — "zero bytes of
 // bundled art; every [preset] credit line states it" — and a contract nobody can
 // read is a comment. TestEveryShippedPresetShipsZeroBytesOfArt proves the corpus
-// holds it; this is where the person who is about to build a theme out of one gets
-// told. Only the STYLE axis has one: a layout fragment is rects, and rects have no
-// provenance to state (TestOnlyTheStyleAxisCarriesACredit pins both halves).
 type galleryCredit struct {
 	// style / w are what the bake was for. Both, because a narrower panel rewraps
 	// the same text differently and a stale wrap overflows the column it was cut to.
@@ -389,16 +350,9 @@ func presetAt(list []*theme.Preset, i int) *theme.Preset {
 
 // applyGalleryPick replaces both tiers of the OPEN theme with the picked pair, as
 // one undoable act.
-//
-// THE SNAPSHOT IS TAKEN FIRST AND THE APPLY IS ALL-OR-NOTHING. ApplyPresetTier
-// refuses before it moves a field, so a layout that lands and a style that does
-// not leaves a model that is half of two themes — hence both tiers go through one
-// MergePresets, whose result is only adopted once it exists.
-//
 // THE UNDO RING IS RESET, deliberately. Its ops identify an element BY INDEX
 // (theme.Element's own doc comment), and this replaces the element list wholesale,
 // so every op already in the ring points at a row that is no longer the row it
-// meant — the same reason the ring is reset on a theme change.
 func (a *App) applyGalleryPick() {
 	g, sc := a.gallery(), a.editorSidecar()
 	if g == nil || sc == nil {
@@ -446,14 +400,6 @@ func (a *App) undoGalleryPick() {
 }
 
 // createThemeFromGalleryPick writes a NEW theme from the picked pair.
-//
-// IT OWNS THE PICK AND NOTHING ELSE (v1.90.0 W10). The job, the channel, the poll,
-// the landing, the write-root refusal and the catalog seed used to live here as a
-// second copy of themecopy.go's shape; they are now startThemeCreate's, and this is
-// the pick that feeds it. A gallery that minted its own folder was the second place
-// in internal/ui calling themepack.CreateFromSidecar, and TestOneThemeCreationFunnel
-// now forbids a third.
-//
 // THE INTENT IS themeCreateThenNote, which is the one thing this caller decides
 // differently: the editor is open over a theme the user may have unsaved work in,
 // so the new one is written and NAMED rather than applied and opened.
@@ -476,12 +422,9 @@ func (a *App) createThemeFromGalleryPick() {
 // that said only "Vaporwave" would collide with itself the moment the same style
 // is built on a second layout — and themepack's collision suffix would then be
 // the only thing telling them apart.
-//
 // NIL-SAFE ON BOTH AXES (v1.90.0 W10). It used to be called only behind a
 // pair.Empty() guard; the create moved to the shared funnel, which makes that guard
 // newThemeSidecarFrom's, and a name derived before the refusal would have
-// dereferenced a nil layout on an empty pair. "" is the honest answer and the
-// sanitizer's own refusal value.
 func galleryThemeName(pair theme.PresetPair) string {
 	switch {
 	case pair.Layout == nil && pair.Style == nil:

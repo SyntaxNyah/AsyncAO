@@ -1,51 +1,9 @@
 package ui
 
 // THE THEME EDITOR'S PREVIEW — the canned offline demo (v1.90.0, field batch 9).
-//
-// ONE CONCERN: the editor's PREVIEW VIEW STATE. Entering it, driving it, drawing
-// it, leaving it. The document it previews lives in themeeditordoc.go, the screen
-// around it in themeeditor.go; nothing here mutates a theme.
-//
-// WHY A VIEW STATE AND NOT A TOGGLE. The editor already has a Live/Frozen toggle
-// (themeEditor.livePaused), and it is a FREEZE SWITCH for canvas re-baking — its
-// whole value is that the off state does LESS work (editorLiveOn's own note). A
-// demo player is the opposite thing: it does MORE work, it owns the whole screen,
-// and it has to be leavable with Esc. Folding a player into a freeze switch would
-// give one control two meanings and leave "frozen" ambiguous between "stop
-// re-baking" and "stop the demo". So the toggle is untouched and Preview is a
-// distinct state, the pointer IS the flag (the shape `gallery` and `report`
-// already use), and a session that never presses it pays one nil pointer.
-//
-// WHAT IT PLAYS, AND WHY THAT IS THE REAL THING. The demo is not a mock renderer.
-// It builds its OWN offline courtroom through App.newRoom — the one sanctioned
-// construction site (newroom.go) — feeds it synthetic courtroom.Event values, and
-// then draws the REAL drawCourtroom pass over it with the demo session temporarily
-// installed in the App's embedded slots. That is renderFullClientTexture's own
-// pattern (app.go), for the same reason: the kit is single-instance and the
-// courtroom reads a.room / a.sess / a.icLog through promoted fields, so the only
-// honest way to render a second session is to be that session for the duration and
-// put everything back. What the author sees is therefore the real typewriter, the
-// real chatbox painter, the real blip cadence, the real showname plate, the real
-// music marquee and the real IC log — with their real theme applied.
-//
-// FULLY OFFLINE, BY TWO INDEPENDENT MEANS. First, the scene carries no fetchable
-// content: no character, no background, no desk art, no music playback, and a nil
-// audio sink (NewCourtroom substitutes NopAudio). Second — because
-// courtroom.stageMessage's prefetch fan-out is unconditional and URLBuilder always
-// mints a URL — the demo brackets the manager's own single structural egress point
-// (assets.Manager.SetOffline, netFetch's gate, the same one rehearsal mode uses)
-// for exactly the demo's lifetime, saving and restoring whatever it found. The
-// live courtroom is not drawing while the demo is up, so nothing else is demanding
-// assets, and TestEditorPreviewProbesNothing counts source-level probes at zero
-// across a driven demo.
-//
 // THE CHARACTER IS PROCEDURAL. A demo that shipped bundled sprite art would be a
 // licence problem and a byte problem both; a demo with an empty stage would not
 // show an author where their chatbox sits relative to a body. So the stage draws a
-// silhouette out of rectangles, beside drawStageEgg in the one place both the
-// classic and the themed courtroom render the viewport (vpzoom.go) — which is how
-// it gets the stage rect for free in both layouts.
-//
 // Render thread only, like every other App method here.
 
 import (
@@ -113,11 +71,9 @@ const (
 	// (marqueeScrolls, AO2's scrollEnabled), so a short title would show the
 	// author a marquee that never moves. This one is wider than the stock 224 px
 	// music_name at every sane face size.
-	//
 	// IT CARRIES ITS EXTENSION because AO music track names do: a name with no
 	// audio extension is an AREA TRANSFER on the unified music/area list, not a
 	// song (isAreaTransfer, courtroom.go:830), and the room would drop it. The
-	// banner strips it again for display (MusicDisplayName).
 	editorPreviewTrack = "Pursuit ~ Cornered (Theme Preview Extended Orchestral Arrangement).opus"
 
 	// editorPreviewRest is how long a settled message rests before the demo plays
@@ -238,7 +194,6 @@ func (a *App) enterEditorPreview() {
 	// authoring one: a theme is judged as a player will see it, so reduce-motion and
 	// the effect gates must reach it (requirement 6 is that ReduceMotion freezes the
 	// demo, not that the demo overrides it).
-	//
 	// A NIL AUDIO SINK: NewCourtroom substitutes NopAudio, so the blip CADENCE
 	// (Typewriter.tickBlip) runs exactly as it does live while nothing resolves a
 	// sound over the wire. An offline demo cannot make noise; it can keep time.
@@ -372,20 +327,9 @@ func (a *App) replayEditorPreviewLine() {
 // driveEditorPreview advances the demo one frame. Called from App.Frame's scene
 // switch, beside driveMakerPreview and for the same reason: the shared viewport
 // must track the room that is on screen, not the live one behind it.
-//
-// REDUCE MOTION FREEZES IT. Not "plays it slower" — the whole point of the setting
-// is that nothing moves on its own, and this is a self-driven animation the user
-// did not ask for. The frozen frame still shows the staged message, the filled
-// plate and the banner, so the theme is still previewable; it simply holds still.
-// reduceMotionNow is the app's ONE spelling of that answer (themeclock.go), which
-// is what keeps the demo frozen by the same switch the themed chrome freezes on.
-//
 // IT RIDES THE PACING CENSUS. While it animates it calls NoteAnimating every
 // frame, exactly like the marquee and the theme clock, so FramePace holds the
 // active cap and the crawl is smooth on a screen the pacer otherwise parks
-// (expScreenSkippable returns true for the editor). The census is RETROSPECTIVE
-// and self-clearing, so leaving the demo releases it with no second call — which
-// is precisely what TestEditorPreviewReleasesThePacingCensusOnExit pins.
 func (a *App) driveEditorPreview(dt time.Duration) {
 	if !a.editorPreviewOn() {
 		return
@@ -437,22 +381,6 @@ type editorPreviewSaved struct {
 // beginEditorPreviewPass installs the demo session in the App's embedded slots and
 // neutralizes input. ALWAYS paired with endEditorPreviewPass, normally by a defer
 // on the next line.
-//
-// It is renderFullClientTexture's swap (app.go), minus the render target, and the
-// list of what it borrows is the same list for the same reasons: the session state
-// (which promotes a.room / a.sess / a.icLog / the chat raster), the screen (a
-// view-only pass must not navigate — drawCourtroom sends a session-less app to the
-// lobby), the tooltip, the Tab-focus order, and every input signal.
-//
-// INPUT IS NEUTRALIZED, and that is a FEATURE and not only a safety rail: the brief
-// asks for "buttons at rest", and a demo whose widgets lit up under the pointer
-// would be inviting clicks that cannot mean anything. It is also what makes
-// requirement 9 structural rather than careful — nothing inside this pass can see a
-// key or a click, so nothing inside it can mutate the theme document.
-//
-// pinnedPass is raised for the same reason the pinned client raises it: drawCourtroom
-// drains single-consumer App channels (pollCharINI), and a view-only pass must not
-// eat a result the primary session asked for.
 func (a *App) beginEditorPreviewPass() editorPreviewSaved {
 	c := a.ctx
 	saved := editorPreviewSaved{
@@ -549,13 +477,6 @@ func editorPreviewBtnRect(w int32) sdl.Rect {
 
 // drawEditorPreviewFigure paints the procedural stand-in on the stage: a head, a
 // neck and a tapering torso, built from rectangles.
-//
-// RECTANGLES AND NOTHING ELSE, deliberately. It draws inside the courtroom frame,
-// which every whole-screen alloc gate covers at ZERO allocations per frame, so a
-// texture, a surface or a per-frame slice here would be a regression in the one
-// place this package measures hardest. A bounded band count (rule 4) taper is the
-// most body-shaped thing a fixed number of Fill calls can be.
-//
 // Called from renderViewportZoomed beside drawStageEgg — the one place both the
 // classic and the themed courtroom hand over the stage rect.
 func (a *App) drawEditorPreviewFigure(vp sdl.Rect) {
