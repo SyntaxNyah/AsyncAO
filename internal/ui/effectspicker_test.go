@@ -151,7 +151,7 @@ func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
 	// An empty roster yields nothing at all, so the control never draws (AO2 hides
 	// ui_effects_dropdown when the list is empty, courtroom.cpp:5586-5598).
 	a.overlays.overlayRosters[a.overlayRosterKey("")] = &overlayRoster{set: theme.MergeOverlayFX(nil)}
-	a.overlayInvalidateMemos() // the poll does this for real; here we mutate the map directly
+	a.overlays.overlayInvalidateMemos() // the poll does this for real; here we mutate the map directly
 	if got := a.overlayChoices(); len(got) != 0 {
 		t.Errorf("an empty roster must yield no choices, got %v", got)
 	}
@@ -482,7 +482,7 @@ func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
 		art:  map[string]string{"tv on": "/themes/t/effects/tv on.webp"},
 		icon: map[string]string{},
 	}
-	a.overlayInvalidateMemos() // the poll does this for real
+	a.overlays.overlayInvalidateMemos() // the poll does this for real
 	res, ok = a.overlayResolve("tv on", "transitions")
 	if !ok || res.Pending {
 		t.Fatal("a landed roster must answer, not defer")
@@ -697,7 +697,7 @@ func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
 	// Ask again (memo dropped, as a landed char.ini or a new speaker would do):
 	// the marker must suppress a second goroutine.
 	for i := 0; i < 3; i++ {
-		a.overlayInvalidateMemos()
+		a.overlays.overlayInvalidateMemos()
 		if r := a.overlayRosterFor("transitions"); r != nil {
 			t.Fatalf("ask %d answered %+v before the resolve landed", i, r)
 		}
@@ -718,7 +718,7 @@ func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
 	default:
 	}
 	// A MISS caches: the settled (empty) roster answers, and nothing re-resolves.
-	a.overlayInvalidateMemos()
+	a.overlays.overlayInvalidateMemos()
 	if r := a.overlayRosterFor("transitions"); r == nil {
 		t.Fatal("a settled miss must answer from the cache, not re-resolve")
 	}

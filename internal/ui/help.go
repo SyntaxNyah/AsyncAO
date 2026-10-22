@@ -116,9 +116,9 @@ var privacySections = []privacySection{
 // buildHelpFlat reflows the active Help section to colW (cached by width via
 // a.helpFlat / a.helpFlatW). The aboutFlatLine model + the draw loop mirror
 // drawChangelog, so the wrap runs only on a resize, never per frame.
-func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
+func (docs1 *docsState) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 128)
-	switch a.docs.helpTab {
+	switch docs1.helpTab {
 	case 1: // Privacy — what a server can see
 		for si, s := range privacySections {
 			gap := int32(16)
@@ -153,9 +153,9 @@ func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 
 // openHelp switches to the Help screen on a given section tab (0 = Glossary,
 // 1 = Privacy), re-reflowing for that section. Callers set prevScreen first.
-func (a *App) openHelp(tab int) {
-	a.docs.helpTab, a.docs.helpFlat, a.docs.helpDocScroll = tab, nil, 0
-	a.screen = ScreenHelp
+func (docs1 *docsState) openHelp(tab int) {
+	docs1.helpTab, docs1.helpFlat, docs1.helpDocScroll = tab, nil, 0
+	docs1.env.screen = ScreenHelp
 }
 
 func (a *App) drawHelp(w, h int32) {
@@ -203,7 +203,7 @@ func (a *App) drawHelp(w, h int32) {
 		x0 = pad
 	}
 	if a.docs.helpFlat == nil || a.docs.helpFlatW != colW {
-		a.docs.helpFlat = a.buildHelpFlat(c, colW)
+		a.docs.helpFlat = a.docs.buildHelpFlat(c, colW)
 		a.docs.helpFlatW = colW
 	}
 

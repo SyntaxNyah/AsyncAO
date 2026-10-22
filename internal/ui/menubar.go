@@ -461,7 +461,7 @@ func menuOpenHelpTab(a *App, tab int) {
 	if a.screen != ScreenHelp {
 		a.prevScreen = a.screen
 	}
-	a.openHelp(tab)
+	a.docs.openHelp(tab)
 }
 
 func menuOpenLogs(a *App, _ int) {

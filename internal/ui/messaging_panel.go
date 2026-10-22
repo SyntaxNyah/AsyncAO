@@ -27,7 +27,7 @@ const (
 	msgPanelMinH = 240
 )
 
-func (a *App) toggleMessages() { a.msgs.showMessages = !a.msgs.showMessages }
+func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
 
 // seedPanelFromSlot is the generic first-open seed shared by every persistable
 // floatWin panel (extracted from msgPanelRect). If the layout editor positioned

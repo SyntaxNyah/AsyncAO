@@ -7,7 +7,7 @@ import "testing"
 // panel is open doesn't; opening the group clears the count (drawGroupView).
 func TestGroupUnreadFlow(t *testing.T) {
 	a := &App{env: env{}}
-	g := a.ensureGroup(7)
+	g := a.msgs.ensureGroup(7)
 	g.name = "case prep"
 	g.ownerUID = 1
 

@@ -142,7 +142,7 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	if a.overlays.overlayRosterGen != a.themeAppliedGen {
 		a.overlays.overlayRosterGen = a.themeAppliedGen
 		a.overlays.overlayRosters = nil
-		a.overlayInvalidateMemos()
+		a.overlays.overlayInvalidateMemos()
 	}
 	// The memo, because this runs on the zero-alloc courtroom frame and the cache
 	// KEY is a concatenation. Plain string compares, no allocation.
@@ -176,16 +176,16 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 // overlayInvalidateMemos drops the per-frame memos. Called whenever one of their
 // inputs changes: a theme apply (new rosters), a landed resolve, and a landed
 // char.ini (the character's own effects folder may have just arrived).
-func (a *App) overlayInvalidateMemos() {
-	a.overlays.overlayMemoValid = false
-	a.overlays.overlayMemoRoster = nil
-	a.overlays.overlayMyFolderValid = false
-	a.overlays.overlayChoicesValid = false
-	a.overlays.overlayChoicesRoster = nil
-	a.overlays.overlayChoicesCache = nil
+func (overlay *overlayState) overlayInvalidateMemos() {
+	overlay.overlayMemoValid = false
+	overlay.overlayMemoRoster = nil
+	overlay.overlayMyFolderValid = false
+	overlay.overlayChoicesValid = false
+	overlay.overlayChoicesRoster = nil
+	overlay.overlayChoicesCache = nil
 	// The baked icon keys belong to that cache — they are indexed by the SAME row
 	// numbers and are only correct for the roster that produced them.
-	a.overlays.overlayIconKeys, a.overlays.overlayIconPaths = nil, nil
+	overlay.overlayIconKeys, overlay.overlayIconPaths = nil, nil
 }
 
 // overlayRosterFetchOne resolves one roster OFF the render thread: the local
@@ -322,8 +322,8 @@ func (a *App) pollOverlayRosters() {
 					a.overlays.overlayRosters = make(map[string]*overlayRoster, overlayManifestCap)
 				}
 				a.overlays.overlayRosters[res.key] = res.roster
-				a.overlayInvalidateMemos()
-				a.overlayIconPagesReset() // the row count just changed; cachedPage keys by INDEX
+				a.overlays.overlayInvalidateMemos()
+				a.overlays.overlayIconPagesReset() // the row count just changed; cachedPage keys by INDEX
 			default:
 				drained = true
 			}
@@ -360,27 +360,27 @@ func overlayThemeKey(path string) string { return overlayThemeKeyPrefix + string
 // overlayDemandTheme queues one local overlay file for an off-thread read +
 // decode, bounded by themeOverlayLoadCap in flight. Idempotent: a key already
 // resident or already loading costs a map probe. Render thread only.
-func (a *App) overlayDemandTheme(path, key string) {
-	if path == "" || key == "" || a.d.Store == nil {
+func (overlay *overlayState) overlayDemandTheme(path, key string) {
+	if path == "" || key == "" || overlay.env.d.Store == nil {
 		return
 	}
-	if a.d.Store.Contains(key) {
+	if overlay.env.d.Store.Contains(key) {
 		return
 	}
-	if a.overlays.overlayTexLoading == nil {
-		a.overlays.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
+	if overlay.overlayTexLoading == nil {
+		overlay.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
 	}
-	if a.overlays.overlayTexLoading[key] || len(a.overlays.overlayTexLoading) >= themeOverlayLoadCap {
+	if overlay.overlayTexLoading[key] || len(overlay.overlayTexLoading) >= themeOverlayLoadCap {
 		return
 	}
-	if a.overlays.overlayTexRes == nil {
-		a.overlays.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
+	if overlay.overlayTexRes == nil {
+		overlay.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
 	}
-	a.overlays.overlayTexLoading[key] = true
-	anims := a.d.Prefs.Load().PreferAnimated
+	overlay.overlayTexLoading[key] = true
+	anims := overlay.env.d.Prefs.Load().PreferAnimated
 	// Captured on the render thread for the reason overlayRosterFetchOne captures
 	// its own: the worker must read nothing off App (hard rule 8).
-	out := a.overlays.overlayTexRes
+	out := overlay.overlayTexRes
 	go func() {
 		res := overlayTexLoad{key: key}
 		if data, err := os.ReadFile(path); err == nil {
@@ -432,7 +432,7 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	}
 	if path, ok := roster.art[strings.ToLower(name)]; ok {
 		key := overlayThemeKey(path)
-		a.overlayDemandTheme(path, key)
+		a.overlays.overlayDemandTheme(path, key)
 		out.Base = key
 		return out, true
 	}
@@ -529,7 +529,7 @@ func (a *App) overlayChoices() []string {
 		// each other's icons. A plain string compare, so the settled frame pays
 		// nothing.
 		a.overlays.overlayIconFolder = folder
-		a.overlayIconPagesReset()
+		a.overlays.overlayIconPagesReset()
 	}
 	roster := a.overlayRosterFor(folder)
 	if a.overlays.overlayChoicesValid && a.overlays.overlayChoicesRoster == roster {
@@ -664,7 +664,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	if path != "" {
 		// Idempotent (a resident or already-loading key costs a map probe) and it is
 		// what HEALS the page after an eviction — overlay art is uploaded evictable.
-		a.overlayDemandTheme(path, base)
+		a.overlays.overlayDemandTheme(path, base)
 	}
 	if page, ok := a.cachedPage(&a.overlays.overlayIconPages, &a.overlays.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
 		// Through the shared cgo scratch, never &tr: taking the address of a
@@ -818,7 +818,7 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 // overlayIconPagesReset drops the cached icon pages — called when the roster
 // changes shape so a stale page cannot draw under the wrong row (cachedPage keys
 // by INDEX, not URL, exactly like the pos thumbnails).
-func (a *App) overlayIconPagesReset() {
-	a.overlays.overlayIconPages = nil
-	a.overlays.overlayIconAsk = nil
+func (overlay *overlayState) overlayIconPagesReset() {
+	overlay.overlayIconPages = nil
+	overlay.overlayIconAsk = nil
 }

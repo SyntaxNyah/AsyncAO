@@ -220,7 +220,7 @@ func (a *App) pollCharMeta() {
 			}
 			// Our own character's effects folder may have just arrived: drop the
 			// picker's per-frame memos so the roster is re-resolved for it.
-			a.overlayInvalidateMemos()
+			a.overlays.overlayInvalidateMemos()
 		default:
 			return
 		}

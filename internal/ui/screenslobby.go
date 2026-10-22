@@ -232,11 +232,11 @@ func (a *App) drawLobby(w, h int32) {
 	}
 	if r, ok := helpSlot(0); ok && c.ButtonCol(r, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
-		a.openHelp(1)
+		a.docs.openHelp(1)
 	}
 	if r, ok := helpSlot(1); ok && c.ButtonCol(r, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
-		a.openHelp(0)
+		a.docs.openHelp(0)
 	}
 	// What's New sheds FIRST: Privacy and Glossary are what a newcomer needs before
 	// they play, and the release notes are also reachable from the changelog the
@@ -880,7 +880,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		rightX -= privW
 		if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: privW, H: btnH}, "Privacy") {
 			a.prevScreen = ScreenCharSelect
-			a.openHelp(1)
+			a.docs.openHelp(1)
 		}
 	}
 	if a.sess == nil {

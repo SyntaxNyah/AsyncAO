@@ -173,8 +173,8 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"SFX Browser", "Browse, preview (▶) and favourite (★) sounds for your next IC message — incl. any sound by name", "", func() { a.toggleSfxBrowser() }},
 			{"Screenshot", "Save a PNG of the current frame to the screenshots\\ folder next to AsyncAO — for sharing a moment (Ctrl+S)", hotkeyScreenshot, func() { a.captureScreenshot() }},
 			{"Logs", "Search your saved chat transcripts — any server, any session, filter by text", "", func() { a.prevScreen = ScreenCourtroom; a.openLogBrowser(); a.screen = ScreenLogs }},
-			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.openHelp(0) }},
-			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
+			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.docs.openHelp(0) }},
+			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.msgs.toggleMessages() }},
 			{voiceExtraLabel, "Voice chat (Nyathena): join the voice channel, see who's talking. Live mic audio is coming; for now it shares presence + speaking state", "", func() { a.toggleVoice() }},
 			// "Hide chrome" + "Theater" retired here (A1): both live on the
 			// bottom-right toolbox now (Hide-UI chip / Theater chip), plus their

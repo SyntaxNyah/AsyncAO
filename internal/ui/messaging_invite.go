@@ -56,7 +56,7 @@ func (a *App) acceptInvite(inv groupInvite) {
 			courtroom.WireMessage{Kind: courtroom.MsgJoin, GroupID: inv.gid}.EncodeMarker()
 		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
-	a.removePendingInvite(inv.gid)
+	a.msgs.removePendingInvite(inv.gid)
 	a.msgs.showMessages, a.msgs.msgSelGroup, a.msgs.msgSel = true, inv.gid, ""
 }
 
@@ -67,17 +67,17 @@ func (a *App) declineInvite(inv groupInvite) {
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: inv.gid}.EncodeMarker()
 		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
-	a.removePendingInvite(inv.gid)
+	a.msgs.removePendingInvite(inv.gid)
 }
 
-func (a *App) removePendingInvite(gid uint32) {
-	out := a.msgs.pendingInvites[:0]
-	for _, inv := range a.msgs.pendingInvites {
+func (msg *msgState) removePendingInvite(gid uint32) {
+	out := msg.pendingInvites[:0]
+	for _, inv := range msg.pendingInvites {
 		if inv.gid != gid {
 			out = append(out, inv)
 		}
 	}
-	a.msgs.pendingInvites = out
+	msg.pendingInvites = out
 }
 
 // inviteToastGapY is the breathing room between the app-chrome band and the invite

@@ -2,6 +2,7 @@ package ui
 
 // docsState owns docs state.
 type docsState struct {
+	env         *env
 	aboutScroll int32 // About screen scroll offset (the page outgrew small windows)
 	// About: the prose is reflowed to the current column width with WrapText and
 	// cached here (keyed by width), so the wrap runs only on a resize, never per
