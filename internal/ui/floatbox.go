@@ -6,12 +6,9 @@ package ui
 // z-aware input, so instead of fencing the whole screen (a modal) the courtroom
 // pass runs pointer-blind only while the cursor sits over a box footprint
 // (boxFencesPointer + fencePointer), then the boxes draw last with real input.
-// Opened by the Extras button or the 'x' hotkey (toggles a.showWidgets).
-//
 // Widgets live in the main grid but TEAR OUT: drag one past a small threshold
 // and it pops into its own little floating box you move and close independently
 // (closing returns it to the grid). Every box shares one per-frame mouse-press
-// edge so exactly one of them grabs a given press.
 
 import (
 	"strconv"
@@ -90,25 +87,9 @@ type panelSlot struct {
 // panelSlotTable is the CANONICAL enumeration of the persistable floatWin panels
 // (every floatWin except msgWin, which keeps its historical slotMessages key and
 // its own seed/persist wrappers). It is the single source of truth for:
-//   - applyProfile's .placed reset (so open panels re-seed from an applied profile),
-//   - the live-magnetism panel census (rebuildPanelMagnetRects derives its candidate
-//     set here — the "future magnetism" this comment used to name).
-//
-// It is iterated ONLY on cold paths (applyProfile) and while a live drag is active
-// (the magnet census, which is drag-gated so it never runs on a settled frame).
-// Each panel's draw path calls seedPanelFromSlot / persistPanelSlot directly with
-// &a.<panel>Win, so no table iteration and no App-capturing closure ever touches a
-// settled frame; the census fn's accessors are non-capturing package-level funcs,
-// so iterating it during a drag is also alloc-free. Adding a floatWin panel? Add
-// its slot const (classiclayout.go), a row here (with its OPEN predicate), and the
-// two-line seed/persist wiring in its draw/rect fns. NOTE: this is a 4th independent
-// panel list — do NOT try to unify it with floatbox.go's three deliberately-non-
-// identical fence/suppression lists.
-//
 // Nominal heights for the panels whose real default height is computed at draw
 // time (ban box: by kind; hotkey sheet + pairing: window-height responsive). Only
 // the census below uses these — the live seed still passes each panel's own
-// dynamic default — so they need only be representative, not exact.
 const (
 	panelNomBanH    = int32(600) // banBoxDims default (ban kind) height
 	panelNomBanMinH = int32(556) // banBoxDims default (ban kind) minimum height
@@ -292,22 +273,7 @@ func (a *App) blockingCourtPopup() bool {
 	// stays live behind them (you can keep chatting / follow the log while one is open). The
 	// ban/kick box used to be a blocking modal; it's a draggable floating box now too, with
 	// the live preview + the explicit Send button keeping the destructive-action safety.
-	// The pinned toolbox pieces panel is deliberately NOT here: it's a non-blocking
-	// floating surface that fences via boxFencesPointer (which early-returns on
-	// !extrasSurfaceLive == a blocking popup). Adding it to a blocking predicate
-	// would make extrasSurfaceLive false while it's open, disabling its own fence.
-	// NOT the same set as courtroomModalUp (screens.go), and deliberately so: this
-	// list adds classicEdit (an editor is not a popup, but panels must still yield to
-	// it) and omits showSfxBrowser. The omission is PRE-EXISTING and left alone here
-	// on purpose — adding the SFX browser would also flip extrasSurfaceLive, which
-	// gates the pinned toolbox-pieces panel and the torn-off tabs, i.e. a visible
-	// behaviour change well beyond a fence question. Anything that needs "will
-	// drawCourtroomModals take the screen?" must ask courtroomModalUp, which is
-	// derived from that draw's own table.
 	// showTimer / showLogin / pairPopupOpen left this set in #31 along with their rows
-	// in courtroomModals: they are non-blocking floatWin panels now, so the Extras box
-	// and the torn-off tabs must NOT hide for them — that is the whole point of the
-	// change. They fence by footprint through boxFencesPointer like every other panel.
 	return a.showIni || a.bgPick.show ||
 		a.classic.classicEdit
 }
@@ -446,14 +412,7 @@ func (a *App) closeTopOverlay() bool {
 	// above are painted by App.Frame AFTER the screen dispatch, so they cover an
 	// editor's banner, while every popup and floating panel below is painted by (or
 	// under) the courtroom pass that the editor's own overlay closes on top of.
-	//
 	// They MUST be answered here rather than by a guard around this whole function.
-	// Esc is the editor's documented exit; a guard consumed the key and left the exit
-	// to a draw-time handler, which is dead on any frame the editor's draw does not
-	// run — and if nothing here answers, Esc falls into the ScreenCourtroom arm below
-	// and pops the LEAVE-THE-SERVER confirm over a screen the user was arranging.
-	// Each editor gets its own case so each runs its own teardown (both release the
-	// kit's modal fence, which app.go warns freezes the UI if it is ever stranded).
 	case a.layoutEdit:
 		a.stopLayoutEdit()
 	case a.classic.classicEdit:
@@ -903,16 +862,8 @@ func (a *App) reattachWidget(i int) {
 // applyProfile). Called from drawCourtroom right after ensureClassicOv and BEFORE
 // boxFencesPointer, so the fence sees the reconstructed boxes on frame one — never
 // adds per-frame work.
-//
-// Why here (not App init): a detachedWidget stores PIXELS, so reconstruction needs
-// the live window size; App init has none. drawCourtroom is the first spot that has
-// both the loaded classicOv AND a real w/h, and ensureClassicOv has just run above
-// it — so this is the natural one-shot home (ensureClassicOv itself takes no w/h).
-//
 // Unknown ids (from a newer build) are IGNORED, not deleted — their slots stay
 // persisted so a downgrade/upgrade round-trips. The result is structurally bounded:
-// ids must match an extrasWidgets() entry and are deduped, so at most one box per
-// widget.
 func (a *App) reconstructTornWidgets(w, h int32) {
 	if a.extrasTornRebuilt {
 		return
@@ -965,12 +916,6 @@ func (a *App) extrasTearDetect(id int, cell sdl.Rect, pressed *bool) bool {
 // on top of the live courtroom. Picking a widget runs its action but LEAVES the
 // box open (non-invasive); a widget that opens its own blocking panel hides the
 // surface until that panel closes, then it returns.
-// drawFloatingPanels draws every non-blocking floating panel on the live
-// courtroom — the Extras boxes AND the Pair menu — sharing ONE mouse-press edge
-// per frame so exactly one panel grabs a given press (no double-grab where two
-// overlap). Called after drawCourtroom with input restored, so they draw on top
-// with real input while the courtroom behind stays interactive everywhere the
-// cursor isn't over a panel (you can still chat with one open).
 func (a *App) drawFloatingPanels(w, h int32) {
 	if !a.extrasSurfaceLive() { // live courtroom, no blocking modal
 		return

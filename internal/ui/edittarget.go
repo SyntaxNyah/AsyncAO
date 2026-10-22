@@ -2,29 +2,9 @@ package ui
 
 // The EDIT TARGET — one representation of "the thing being dragged", shared by both
 // overlay editors (v1.90.0 W6, docs/wip/THEME-EDITOR-DESIGN.md §W6).
-//
-// Two editors grew up beside each other with two private answers to the same
-// question. The classic slot editor tracked a screen-space slot name
-// (classicEditKey); the themed editor tracked a design-space rect key (editKey).
-// Neither could say what W7's theme editor has to say every frame — "the thing under
-// the cursor is FREE ELEMENT 12" — because an element has no key at all: its identity
-// is its INDEX in the sidecar (theme.Element's own doc comment says so, and the whole
-// AO2-parity-by-construction argument in design §Q1 rests on it).
-//
-// THE SPACE IS A FIELD, NEVER A DEDUCTION. The obvious cheap shape — one struct with
-// a key AND an index, where "the index is set" means "it is an element" — is the bug
-// the design doc is emphatic about, and it is not hypothetical: the two payloads have
-// legitimate zero values (an element at index 0; the empty key that both editors use
-// for "nothing selected"), so every reader would be guessing, and readers guess
-// differently. Here the space is a separate field with no valid zero value, every
-// constructor demands it, and the payload accessors answer only for their own space:
-// designKey() on an element target is "", elemIdx() on a slot target reports !ok. A
-// target therefore cannot be misread even by a caller that never checks.
-//
 // BEHAVIOUR-NEUTRAL BY CONSTRUCTION. W6 ships no new UI, so nothing constructs an
 // element target outside the tests yet; the classic and design arms carry exactly the
 // keys their private string fields carried before. What changes is that there is now
-// ONE place to add the third case, and W7 adds it once instead of in each editor.
 
 import "github.com/veandco/go-sdl2/sdl"
 
@@ -57,32 +37,10 @@ const (
 	// spaceFont: ONE ROW OF THE THEME'S TYPE TABLES (v1.90.0 W7b) — a [fonts] family
 	// or a [fontbind] class binding, identified by its INDEX in that table, exactly as
 	// an element is identified by its index in Sidecar.Elements.
-	//
-	// IT CARRIES NO GEOMETRY, and that is a real widening of what a space is, made
-	// deliberately rather than by drift. The alternative was a second, parallel
-	// "editable thing" type with its own selection array, its own inspector dispatch
-	// and its own undo plumbing — i.e. two answers to "what is selected" living beside
-	// each other, which is precisely the duplication W6 collapsed this type out of.
-	// resizeEdgesFor answers 0 for it (a font row has no edges to drag), which is the
-	// same honest answer it gives the server-tab strip, and the payload accessors
-	// below refuse it exactly as they refuse every other foreign space. WHICH table
-	// the index addresses is the OP KIND's business (opFontFamily / opFontBind), never
-	// the target's: the two tables are edited by two different ops and a target that
-	// tried to say which one would be a second, weaker copy of that distinction.
 	spaceFont
 	// spaceMedia: ONE ROW OF THE THEME'S [media] TABLE (v1.90.0 W10) — a declared
 	// image, identified by its INDEX in Sidecar.Media, exactly as a font row is
 	// identified by its index in Sidecar.Fonts.
-	//
-	// IT IS NOT spaceFont WITH A DIFFERENT OP, and the distinction is the one
-	// spaceFont's own note draws: which TABLE an index addresses is a property of
-	// the space, and the two ops that share spaceFont ([fonts] and [fontbind])
-	// share it because they address two halves of ONE thing — a family and the
-	// binding that points at it, both indexed by the type tables. A [media] row is
-	// a third table with its own cap, its own budget and its own reader, so an
-	// index that meant "a font row or a media row depending on the op" would be a
-	// target that cannot be validated without its op.
-	//
 	// LIKE spaceFont IT CARRIES NO GEOMETRY. The image's rect belongs to the
 	// ELEMENT that draws it (spaceElement); this row is the declaration of the file.
 	spaceMedia
@@ -109,13 +67,6 @@ type editTarget struct {
 
 // newEditTarget is the ONE constructor. It PANICS on a target that does not say what
 // it is, or that carries the other space's payload.
-//
-// A panic rather than a silent zero value, and at the construction site rather than at
-// the first confused read: this runs on the render thread, so the only acceptable
-// outcomes are "a correct target" and "a stack trace naming the line that built the
-// wrong one". Every input here is a compile-time-known space plus a local payload, so
-// a panic is unreachable for correct code — it is an assertion, not error handling.
-//
 // TestEditTargetSpaceIsExplicitNotInferred pins every refusal below, and
 // TestEditTargetIsOnlyBuiltByItsConstructors pins that no other file sidesteps them
 // with a composite literal.
@@ -219,7 +170,6 @@ func (t editTarget) mediaIdx() (int, bool) {
 // three spaces. Each space keeps its own rule, and the rules stay where their reasons
 // are: slotResizeEdges knows why the control block is width-only, themedKeyResizable
 // knows why the server-tab strip has no authored size at all.
-//
 // The two must agree about the SAME widget where both can see it — the strip is
 // move-only in both (slotResizeEdges(slotTabBar) == 0, themedKeyResizable
 // (themeTabBarKey) == false), and TestTabBarSlotIsMoveOnlyAndRegisters pins one half.
@@ -269,44 +219,16 @@ const handleCount = 8
 const handleBottomRight = 3
 
 // editHandleRoomPx is the smallest box that is offered its FULL handle set, per axis.
-//
-// The grips are layoutHandlePx squares laid ON the box, so a small box is entirely
-// covered by its own handles and becomes impossible to MOVE. Five handle widths is the
-// smallest span that fits two corner grips, the midpoint grip between them, and a
-// grabbable gap on each side of that midpoint — i.e. the smallest box that can offer
-// the full set and still be picked up by its own interior.
-//
 // The classic editor does not need this rule and does not use it: its probe is a
 // margin BAND around every edge (classicEdgeAt), which covers a small slot completely
 // — and the escape hatch it grew for that is Alt-forces-a-move, documented at its
-// press site. The themed editor has no Alt arm, so its grips have to leave the
-// interior alone instead.
 const editHandleRoomPx = 5 * layoutHandlePx
 
 // handleGripMask is the set of classicHandles indices a box at r offers, as a bitmask
 // (bit i = handle i), given the edges its target honours.
-//
-// TWO FILTERS, and the second is the one that keeps this refactor honest:
-//
-//  1. a handle whose mask includes an edge the target does not honour is dropped —
-//     verbatim drawSlotHandles' rule ("the affordance never lies");
-//  2. a box with less than editHandleRoomPx on either axis keeps ONLY its bottom-right
-//     corner. That is exactly the single grip the themed editor offered before this
-//     wave, so no small widget loses anything, and none of them becomes unmovable —
-//     which is what 8 grips on a 24-px-tall AO2 button would have meant.
-//
 // THE ORDER OF THE TWO FILTERS IS LOAD-BEARING, and the trap is worth naming because
 // the "obvious" reorder is wrong in a way nothing on screen would show. Filter 1 runs
 // FIRST, so the cramped fallback is not "keep one grip" but "keep the bottom-right
-// grip IF the target honours edgeR|edgeB". A target that honours only some other pair
-// — slotResizeEdges' width-only control block is the live example, edgeL|edgeR —
-// therefore gets NO handle at all once it is cramped, which is correct: every handle
-// it could offer grips an edge it does not honour, and "the affordance never lies"
-// outranks "offer something". Reordering (fallback first, then filter) would offer the
-// bottom-right corner on a width-only widget and a drag on it would silently move an
-// edge the target refuses. No caller reaches that combination today — the two design
-// spaces answer all-four-or-none and elements answer all four — so this is a guard
-// against the next caller, and TestCrampedBoxOffersNoLyingHandle pins it.
 func handleGripMask(r sdl.Rect, allowed uint8) uint8 {
 	if allowed == 0 {
 		return 0
@@ -327,13 +249,6 @@ func handleGripMask(r sdl.Rect, allowed uint8) uint8 {
 
 // handleGripAt reports which edges a press at (mx,my) grips on a box at r, or 0 for
 // "not on a handle" (= the caller moves it instead).
-//
-// It hit-tests the handle SQUARES — the very rects the editor paints — rather than
-// classicEdgeAt's margin band. That is deliberate and it is what makes the 8-handle
-// wiring a strict superset of the single corner grip it replaces: handle
-// handleBottomRight is bit-identical to the themed editor's old grip rect and carries
-// the same edge mask, so a press on it behaves exactly as it always did.
-//
 // Corners are probed before midpoints (classicHandles' own order), so an overlap on a
 // box near the room floor resolves to the corner.
 func handleGripAt(r sdl.Rect, allowed uint8, mx, my int32) uint8 {

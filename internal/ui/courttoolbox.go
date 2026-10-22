@@ -23,22 +23,9 @@ import (
 // the themed Edit-layout entry). This consolidates those three entry points into
 // one toolbox, collapsed to small hover-revealed chips so it stays out of the way
 // during normal play.
-//
-// So this is a compact, collapsed-by-default strip pinned to the bottom-right
-// corner, shown in NORMAL play (both the classic and themed courtroom). Collapsed
-// it's a slim, semi-transparent grip (a drawn hamburger primitive — no glyph
-// font dependency) with a visually negligible footprint. On hover it expands
-// LEFT into a row of small icon chips with tooltip labels: Pin, Theater, Edit
-// layout, and Hide UI (the last opens the pinned per-piece panel below — the
-// drawUICfgPanel dialog is retired, so this toolbox is now the ONLY home for
-// Theater, the themed Edit-layout entry, and per-piece show/hide).
-//
 // Perf (it draws per-frame in normal play, under the ui AllocsPerRun gates): the
 // chip set is a fixed package-level slice with CONSTANT labels, so nothing is
 // allocated per frame and the TextWidth probes hit the width cache after warm-up.
-// The reveal is a pure hover state (no persistent animation, no NoteAnimating
-// keepalive) — the hover transition already forces the redraw via the input path,
-// so it can't wake the render loop at full rate while idle.
 
 const (
 	// compactGripW/H size the collapsed grip (the slim edge tab). Deliberately
@@ -335,11 +322,9 @@ func (a *App) drawCompactToolboxInPass() {
 // and outside the editor's modal fence, force-expanded so Edit/Hide-UI/Theater stay
 // reachable. It evaluates its own latch because the in-pass fence deliberately
 // stands down for that frame.
-//
 // It stands down in turn if the in-pass site already took a latch this frame: a
 // hotkey can arm the editor from INSIDE the pass (handleHotkeys runs mid-pass), and
 // drawing the toolbox twice would hit-test its chips twice on a single click —
-// toggling the pin latch straight back off.
 func (a *App) drawCompactToolboxOverEditor(w, h int32) {
 	if a.toolbox.toolboxFence.set {
 		return
@@ -440,7 +425,6 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	// anything drawn later that ISN'T pointer-fenced — the later widget owns the
 	// pixels, so it must own the click. The one genuine double-fire (a chip arming the
 	// editor mid-pass, then the post-courtroom site drawing the toolbox a second time)
-	// is closed structurally by drawCompactToolboxOverEditor's latch guard instead.
 	if !editing && c.hovering(grip) && c.clicked {
 		a.compactTogglePin()
 	}
@@ -537,12 +521,9 @@ func compactToolboxHoverRect(grip sdl.Rect) sdl.Rect {
 // the toolbox draws post-courtroom as a stable target and force-expands, so its
 // grip/chips are always reachable for Edit/Hide-UI/Theater without hunting for the
 // hover sweet spot over the busy editor overlay (A1 Phase 1).
-//
 // Evaluated ONCE per frame, by latchCompactToolbox at the top of the courtroom pass
 // (the draw replays the answer): the fence must cover the strip on exactly the frames
 // the strip is on screen, and a second evaluation at draw time could disagree — the
-// cursor is re-read from the same Ctx, but classicEdit / layoutEdit can be flipped by
-// handleHotkeys in between.
 func (a *App) compactToolboxExpanded(strip, grip sdl.Rect) bool {
 	c := a.ctx
 	return a.classic.classicEdit || a.layoutEdit || a.toolbox.toolboxPinned ||
@@ -609,21 +590,6 @@ func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 // control buttons, and a press on a chip used to fire "Call Mod" underneath as well,
 // because the theme button draws EARLIER in the same single pass and had no way to
 // know.
-//
-// Two call sites, both INSIDE the courtroom pass: after the theme dispatch for the
-// classic path, and immediately after the asyncao_toolbox arming for the themed one.
-//
-// Publishes NOTHING unless the expanded strip really paints:
-//   - a layout editor is armed: the in-pass draw is skipped (the toolbox draws
-//     post-courtroom instead) and the editor's own modalOn already fences everything.
-//     The latch stays UNSET so the post-courtroom site knows it owns the draw.
-//   - a return-to-top modal is open: drawCourtroomModals ends the pass before the
-//     toolbox draw is ever reached, so a fence here would blank a ~122×22 band of
-//     the modal over pixels nothing painted.
-//   - hidden via panelToolbox: drawCompactToolbox early-returns, nothing is drawn.
-//   - collapsed: only the slim grip paints. Fencing the whole strip there would eat
-//     clicks over empty pixels, and it would be pointless anyway — the pointer being
-//     anywhere on the grip is itself what expands the strip on the very same frame.
 func (a *App) fenceCompactToolbox(w, h int32) {
 	c := a.ctx
 	a.toolbox.toolboxFence = compactToolboxLatch{mark: c.overlayFenceMark()}
@@ -838,24 +804,18 @@ func (a *App) toolboxPiecesContentH() int32 {
 
 // mouseLifelines are the chrome routes a pure-mouse user has back to the client's
 // own controls. Hiding the LAST surviving one is refused (A6, #21).
-//
 // The set is three, not two, and the third is why: ctrlSettingsSlot is drawn only
 // by drawICControls, which runs on the CLASSIC path — a themed courtroom returns
 // long before it. So for a themed user that lifeline never exists to be hidden,
-// the old two-way guard could never fire, and hiding the toolbox and then the menu
-// bar left no mouse chrome at all. The themed ★ Extras chip row that used to be
-// the fallback was deleted in this arc (rule (c): it painted over the canvas).
 var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 
 // toggleChromePanel flips one chrome piece from the keyboard and says which way
 // it went. The feedback is not decoration: these binds exist precisely for when
 // you cannot see or reach the panel that owns the switch, so pressing one and
 // getting no response at all would be its own dead end.
-//
 // Routed through setPanelHiddenGuarded rather than setPanelHidden, so the
 // keyboard is held to the same no-strand rule as the panel. A hotkey that can
 // strand you is worse than no hotkey: the person who pressed it is by definition
-// the one who could not find the way back.
 func (a *App) toggleChromePanel(id, label string) {
 	hide := !a.panelHidden(id)
 	a.setPanelHiddenGuarded(id, hide)

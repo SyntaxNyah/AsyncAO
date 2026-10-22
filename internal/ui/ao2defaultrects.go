@@ -1,30 +1,8 @@
 package ui
 
 // AO2's stock `default` theme geometry, as a fallback tier (#21).
-//
-// AO2 resolves a missing design key by falling through to the bundled
-// base/themes/default (get_config_value walks theme → subtheme → default). A
-// STREAMING client has no such tree on disk, so before this table a key the theme
-// omitted resolved to nothing at all. That is only safe while every widget also
-// has an AsyncAO-native place to fall back to — and the governing rule for issue
 // #21 is that it does not: inside a theme's canvas a missing rect means "draw
-// nothing", not "use AsyncAO's own arrangement".
-//
-// This table is what makes that rule survivable. A theme that declares `courtroom`
-// and `viewport` and nothing else still gets a complete, coherent AO2 courtroom,
-// exactly as it would under AO2 itself, instead of an empty canvas.
-//
-// It is transcribed from AO2-Client/base/themes/default/courtroom_design.ini —
-// machine-extracted from that file rather than typed, then filtered to the keys
-// the themeSlots registry actually reads. The precedent and the reasoning are
-// charSelectDefaultRects (charselectlayout.go), which solved the same problem for
-// the character-select screen.
-//
 // Keys deliberately absent:
-//   - player_list, which the stock default does not declare either.
-//   - the asyncao_* opt-ins, which are AsyncAO's own and have no AO2 default.
-//   - `immediate`, which AO2's stock file spells `pre_no_interrupt`; the registry
-//     row carries both and resolves the alt.
 
 import "github.com/SyntaxNyah/AsyncAO/internal/theme"
 
@@ -44,40 +22,15 @@ var ao2DefaultCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // applyAO2DefaultRects fills AO2's per-key default for every courtroom key the
 // theme was silent about.
-//
-// GATED ON THE THEME DECLARING A CANVAS OF ITS OWN, which is the whole safety
-// argument: the stock table declares courtroom AND viewport, so an ungated fill
-// would hand those two keys to a theme directory that has no
-// courtroom_design.ini at all — and themeLayoutIn validates on exactly that pair.
 // Every user whose theme ships no design INI would be silently moved onto AO2's
 // 714x579 layout. This reproduces AO2's fallback for a theme that HAS a design
 // INI; it is not a way to invent one.
-//
 // SECOND GATE: a default is refused when it would land on a widget the theme's
 // author placed themselves, unless the theme is working on AO2's own canvas.
-//
-// The reason is generational, and it is the defect this gate was added for.
-// Widgets arrive in AO2 over time — slide_enable is a 2.11 addition — and the
-// enormous majority of themes in circulation were authored for 2.10 or earlier,
-// so they are silent about it through no fault of their own. AO2 fills that
-// silence from its own default file and gets away with it because those
-// coordinates are native there. AsyncAO carries the same numbers onto a canvas
-// the theme chose: aceattorney2x is 944x600, VA-11 HALL-A is 1262x700. On those,
-// slide_enable's stock {200,464} is not "where the Slide box goes" — it is a
-// point that happens to sit on top of the author's Pre row, their colour
-// dropdown and their music panel. Reported from a live run as a Slide checkbox
-// colliding with the toggle row, on two different themes.
-//
-// Scaling the rect instead was rejected: a proportional guess is still a guess,
-// and it would land somewhere equally unrelated to the author's arrangement,
-// only less obviously wrong. Drawing nothing is what AO2's own rule for a
-// missing rect says (set_size_and_pos hides a widget the theme is silent about,
 // courtroom.cpp:1334-1338) and what #21's rule (e) demands.
-//
 // On AO2's OWN canvas the defaults go in verbatim, overlaps included — the stock
 // file overlaps itself (slide_enable 200,464 against casing 200,470; pre 5,400
 // against flip 64,400), so a theme that adopts that canvas is asking for exactly
-// that arrangement and must get it.
 func applyAO2DefaultRects(layout map[string]theme.Rect) {
 	canvas, ok := layout[ao2CanvasKey]
 	if !ok {
