@@ -2,35 +2,8 @@ package ui
 
 // The theme-sidecar refusal chip (v1.90.0 W4 — docs/wip/THEME-EDITOR-DESIGN.md §3.3,
 // "cap-hit and error UX").
-//
-// THE SHIP-BLOCKER THIS CLOSES. theme.Theme.SidecarErr() had existed since W1 with
-// ZERO consumers. A sidecar the reader refuses — a named cap exceeded
-// (theme.ErrSidecarCap), or a file that is not INI at all (theme.ErrSidecarUnreadable)
-// — is swallowed on purpose (format rule 1: reading never refuses, so a theme with an
-// unreadable extension tier renders as the stock AO2 theme it validly is). That is
-// the right LOAD behaviour and it was a catastrophic REPORTING one: seven of the
-// fourteen themes this repository ships lost their entire AsyncAO tier — every
-// element, override, palette role and pane — through the whole of W2 because one
-// free-text line was one rune over a named cap, and absolutely nothing anywhere said
-// so. The theme applied. It just quietly was not the theme.
-//
-// So a refusal now has a surface: a chip in the menu-bar band carrying the reason.
-//
 // WHERE IT LIVES, AND WHY. The same band, and for the same three reasons, as #27's
-// missing-asset chip (assetmisschip.go) and the Iniswap button (iniswapchip.go):
-// always on screen at a fixed place, ABOVE every theme's design canvas by
 // construction (so it can never sit on an AO2 control — #21's parity rule), and
-// already the home for AsyncAO chrome AO2 has no rect for. This file follows those
-// two files' geometry, their two-phase input/paint split and their "drop rather than
-// overlap" rule; it does not invent a third idiom for a third chip.
-//
-// NOT TIME-LIMITED, unlike the missing-asset chip. A missing asset is an EVENT and
-// that chip is a notification of it; a refused sidecar is a STATE — it is refused
-// now, it will be refused on the next apply, and it stays refused until somebody
-// edits the file. A thirty-second badge for a permanent condition is a badge nobody
-// sees. It clears when the user acknowledges it (the click, which opens the log
-// holding the full line) and re-arms on the next apply that still refuses, so the
-// state cannot be silently lost either.
 
 import (
 	"fmt"
@@ -72,24 +45,9 @@ func (a *App) themeErrChipActive() bool {
 
 // themeErrChipRect is the chip's rect in the menu-bar band, right-aligned.
 // ok=false means DRAW NOTHING this frame.
-//
-// It is the OUTERMOST thing in the band, and that placement is what lets a third
-// chip join without the other two moving: the missing-asset chip now measures its
-// own right edge against menuBarRightContentLeft instead of against the window, and
-// the Iniswap chip's reserve is taken off the same value. Two chips both anchored to
-// `w` would have drawn on top of each other — the mirror of the problem
-// menuBarLeftContentRight already solves on the other side of the band.
-//
-// This chip wins the outer slot on purpose: it reports a permanent, actionable state
-// while the missing-asset chip reports a transient event that clears itself in
-// thirty seconds.
-//
 // It measures its clearance against the menu TITLES ALONE (menuBarTitlesRight) and
 // not against menuBarLeftContentRight, which is a correctness requirement rather
 // than a simplification: menuBarLeftContentRight asks iniswapChipRect, iniswapChipRect
-// asks menuBarRightContentLeft, and menuBarRightContentLeft asks this — so consulting
-// it here would be unbounded recursion on the render thread. The band's whole
-// geometry resolves strictly outside-in, and this is the outermost step.
 func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 	if !a.themeErrChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false

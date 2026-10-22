@@ -18,14 +18,8 @@ import (
 // read the demo files AO2's built-in recorder writes — play them in the replay
 // player, edit them in the Scene Maker, export them to GIF/WebP/Video/Comic —
 // and write our recordings BACK out as .demo so AO2 users can watch them.
-//
 // The format (canonical: ../AO2-Client/src/demoserver.cpp): a text file of raw
-// SERVER→client packets, one per line (a packet may span lines — the loader
-// joins until the line ends with '%'), with "wait#<ms>#%" packets carrying the
-// timing and usually an "SC#…#%" char list first. Pre-2.9.1 files have the
 // wait-desync bug (waits recorded one slot late — AO2 PR #496); AO2 detects
-// those by "starts with SC, ENDS with wait" and shifts every wait one slot
-// earlier, and we mirror that exactly (in memory only — the file is untouched).
 const (
 	demoExt = ".demo"
 	// demoMaxWaitMs caps one imported gap, in the spirit of the demo server's
@@ -92,12 +86,9 @@ func fixDemoWaitDesync(records []string) []string {
 // — the scene model deliberately covers what the stage shows. origin is the
 // asset host to stream from (demos don't store one; AO2 plays them against a
 // local base folder).
-//
 // Two independent counters come back: skipped (packets we recognize but don't
 // model — SC/CT/HP/…, byte-identical to before) and truncated (valid scene
 // packets dropped because the scene already holds maxRecordedEvents). They are
-// reported separately so the user can tell "this demo has non-scene chatter" from
-// "this demo is longer than the editor's scene cap."
 func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, truncated int, err error) {
 	records := fixDemoWaitDesync(parseDemoRecords(data))
 	if len(records) == 0 {
@@ -120,12 +111,6 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	// PREFIX (stop-at-cap, exactly recordEvent's replay.go:155 / makerInsert's
 	// scenemaker.go:436 semantics — NOT the instant-replay ring's oldest-eviction:
 	// OffsetMs is cumulative, so only a leading run stays timeline-consistent).
-	// maxRecordedEvents is deliberately the SAME ceiling every ingestion path uses
-	// (the scene maker's insert guard, live recording, replay, cloneScene), and it is
-	// now sized (50000) to admit a whole real session — the largest real fixture is
-	// 8943 scene events — so a full demo imports intact. Video export length is bounded
-	// separately by maxVideoHours (video streams to ffmpeg, holding nothing), so a big
-	// import stays fully exportable.
 	capReached := func() bool { return len(rec.Events) >= maxRecordedEvents }
 	for _, raw := range records {
 		pkt, err := protocol.ParsePacket(strings.TrimSuffix(raw, "\n"))
@@ -294,18 +279,6 @@ func (a *App) mountOrigin() string {
 
 // demoDefaultOrigin picks the asset host an imported .demo streams from — the
 // user-set source-selection default:
-//   - Local-asset mounts configured (Settings → Assets) → the mount's local://
-//     origin, so an imported .demo resolves against the local base folder. This
-//     works even in a normal STREAMING session now: the Manager's local:// overlay
-//     (seeded from the same mounts) serves those URLs, so the default is no longer
-//     confined to legacy local-asset mode. It is AO2 parity (AO2 plays a .demo
-//     against its local base) and sidesteps a dead recorded server entirely (a
-//     .demo stores none).
-//   - No mounts → today's behavior: the current URL builder's origin (the live
-//     session's when connected; "" offline is fine — the empty-origin warning
-//     fires and the user can set one in the Scene Maker afterwards, like a new
-//     scene).
-//
 // Only .demo import is steered here: loadRecordingForExport ignores this origin
 // for a .aorec (an .aorec carries its own recorded Origin, stamped at record
 // time — the .aorec-defaults-to-its-recorded-server half of the matrix).
@@ -368,14 +341,6 @@ func loadRecordingForExport(path, origin string) gifLoadResult {
 	// only bare asset names — never WHERE the server's assets live. rec.Origin was
 	// just filled by demoDefaultOrigin, so the note reflects WHICH source it will
 	// stream from, keyed on the resolved origin's SCHEME:
-	//   - a local:// origin: the configured local mounts (AO2 parity) — a positive
-	//     note, no warning; a missing local asset simply shows in the content report.
-	//   - "" (no mounts, no session): every music/SFX/sprite URL is unfetchable, so
-	//     the demo plays SILENT with a blank stage and nothing says why (v1.72.0).
-	//     Warn honestly, with the two real remedies. The local:// case can NEVER
-	//     reach the empty-origin clause (a local:// origin is non-empty), so the
-	//     empty-origin warning is automatically suppressed when mounts cover the demo.
-	// warnLine is visible on Settings since the picker-hotfix banner fix.
 	switch {
 	case strings.HasPrefix(rec.Origin, assets.LocalScheme):
 		res.warnMsg = "Imported " + base + " — resolving from your local assets. Anything not in your mounts shows in the content report."
@@ -438,20 +403,9 @@ func importDroppedRecording(path string) string {
 // AO2 .demo is copied into recordings\ (importDroppedRecording) and then, by
 // default, starts playing immediately — share a recording by literally dragging
 // the file onto someone's AsyncAO. Anything else is politely ignored.
-//
-// Screen-aware routing: when the Settings screen's Studio tab is showing, the
-// drop is treated as a ".demo → video" request (the dedicated call-out lives
-// there) and routes to the video-export flow instead of playback — so a user who
-// opened Studio to make a video gets one from a drop (importRecordingToVideo,
-// which then shows the export's "Reading …" banner). Everywhere else the behavior
-// is unchanged (import + play). This is the SINGLE owner of dropped recordings:
-// the Settings-screen c.dropped consumer skips them.
-//
 // It is also the single owner of dropped THEME BUNDLES, which is new and is the
 // point of routing through claimDroppedFile: a .aotheme used to fall through
 // both here (warned as "not a recording") and into the Settings screen's
-// theme-folder arm, which pointed the theme root at the bundle's parent folder.
-// See dropclaim.go.
 func (a *App) HandleFileDrop(path string) {
 	switch claimDroppedFile(path, settings.importArmed) {
 	case dropClaimRecording:
@@ -482,15 +436,6 @@ func (a *App) HandleFileDrop(path string) {
 // unchanged; only what it does is.)
 
 // handleThemeFontDrop parks a dropped .ttf / .otf (v1.90.0 W4's font intake).
-//
-// The half that was actively WRONG is fixed by the claim alone: the file no longer
-// repoints the user's theme root at whatever folder it came out of. What it cannot
-// do yet is INSTALL the face, and that boundary is a decision rather than an
-// omission — landing a font means writing two keys into somebody's
-// asyncao_theme.ini, and the sidecar WRITER is wired to the editor's document and
-// its undo stack (W7). Copying a file in and editing an INI behind the user's back,
-// with no editor open and nothing to undo it with, is not the smaller action.
-//
 // So it says exactly what to do, naming the folder and both keys — the same shape,
 // and for the same reason, as handleThemeBundleDrop above. A dead silent drop would
 // be worse than the bug it replaces.
@@ -516,14 +461,6 @@ func (a *App) handleThemeFontDrop(path string) {
 }
 
 // handleThemeImageDrop routes a dropped picture (v1.90.0 W10's image intake).
-//
-// THE SAME TWO-STATE SHAPE handleThemeFontDrop has, and deliberately the same: with
-// the editor OPEN the picture is copied into the theme and declared as one undoable
-// act (editorTakeImage, which owns every cap and every refusal); with the editor
-// SHUT there is no document to write into and no undo stack to take it back with,
-// so the drop says where the feature is instead of editing somebody's
-// asyncao_theme.ini behind their back.
-//
 // The claim alone already fixed the half that was actively wrong: the file no longer
 // falls through to the Settings screen's theme-folder arm, which used to repoint the
 // user's theme root at whatever folder the picture came out of.
@@ -560,11 +497,6 @@ func (a *App) handleUnclaimedDrop(path string) {
 // imported file. sceneExportFromPath owns the on-screen banner from here on — it
 // synchronously posts "Reading …" (then the async load tail, startSceneExport,
 // posts its own ffmpeg-refusal message on a box without ffmpeg, which still wins).
-// No warnLine is set here: the export path overwrites it within this same
-// synchronous call, before any frame draws, so an "Imported into recordings\ —
-// exporting video…" note could never be seen — it was dead. The import itself
-// already happened upstream (importDroppedRecording), which truthfully falls back
-// to the original path when the copy fails or the file already lives there.
 func (a *App) importRecordingToVideo(dest string) {
 	a.sceneExportFromPath(dest, exportVideo)
 }

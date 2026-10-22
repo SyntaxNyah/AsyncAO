@@ -1,21 +1,8 @@
 package ui
 
 // Theme media — the PRODUCER side (v1.90.0 W4). design §Q2.
-//
-// internal/render owns the store's ceiling; this file owns the PLAN. The apply
-// goroutine works out, before it decodes a single byte, which of a theme's declared
-// images and generator tiles fit the allowance — and what to do with the ones that
-// do not.
-//
 // TWO ENFORCEMENT POINTS, because a bug in one is a budget breach and the budget is
 // the product. The plan here is the first; render.UploadThemeMedia is the second.
-// They share ONE number: render.ThemeMediaByteCap, called (never copied) from both
-// sides, so the planner and the store cannot disagree about what the allowance is.
-//
-// AT THE CAP THE USER NEVER DEAD-ENDS. An over-budget entry is not dropped and the
-// theme is not refused: the element is planned in state elemOverBudget, carrying its
-// own reason ("anime-girl.webp — 18.2 MiB, over the 8.0 MiB per-image cap"), and the
-// editor draws it as a hatch placeholder with inline fixes. The theme still saves.
 // A silent drop would make a theme render differently depending on the order its
 // author added elements, which is a property nobody can reason about — and refusing
 // the import dead-ends somebody at the exact moment they are being creative.
@@ -109,13 +96,9 @@ type themeMediaPlan struct {
 	// and the inspector quote the same number the planner used.
 	Budget int64
 	// ArtSig signs the ELEMENTS this plan's keys were derived from (themeArtSig).
-	//
 	// It rides on the plan rather than beside it because a signature that can be set
 	// without deriving the keys is a signature that will one day say the plan is
 	// current when it is not: planElements — the ONE derivation — stamps it in the
-	// same breath as it fills ElemKeys, so the two cannot disagree, and a plan
-	// carried between goroutines carries its own provenance with it.
-	//
 	// Its consumer is the editor (themeeditorart.go), which asks every frame whether
 	// the drawn art still matches the document being edited.
 	ArtSig uint64
@@ -180,26 +163,9 @@ func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) th
 // planElements derives the ELEMENT half of a plan: the T1 key every element resolves
 // to, the generator tiles those keys need, and the signature of the model they came
 // from.
-//
-// SPLIT OUT OF planThemeMedia — AND CALLED BY IT, so there is exactly one copy — for
-// the editor (v1.90.0 W7b). The inspector edits an element's `kind`, `media`,
-// `generator` and `gen_params`, and adding or deleting an element shifts every later
-// index; all four therefore change which page an element draws, and the bake resolves
-// that page by INDEX out of this array (themeelementbake.go). Re-deriving this half in
-// place is what makes those rows change the picture instead of the file, and it is the
-// half that CAN be re-derived on a frame: the [media] entries above stat the theme
-// folder, which is disk I/O the render thread may not do (hard rule 2), and they
-// cannot move under the editor anyway because no op writes the [media] table.
-//
-// IDEMPOTENT, and it ALLOCATES its two slices fresh rather than reslicing what it was
-// handed. The editor derives into a COPY of the live plan, so reusing the backing
-// arrays would write through them while the frame that is still drawing reads the old
-// lengths.
-//
 // Generator tiles are deduplicated by content address, and they are planned against
 // their own count cap rather than competing with images for one, because a tile is
 // 256 KiB at worst and refusing one to keep a wallpaper would be the wrong trade in
-// every case.
 func (plan *themeMediaPlan) planElements(sc *theme.Sidecar, themeID string) {
 	if sc == nil {
 		plan.ElemKeys, plan.Gens, plan.GenBytes, plan.ArtSig = nil, nil, 0, themeArtSig(nil)
@@ -246,18 +212,9 @@ func (plan *themeMediaPlan) planElements(sc *theme.Sidecar, themeID string) {
 // else: the kind, the media id, the generator name and its params, the `hidden` flag
 // that Inert() turns on, and the element COUNT and ORDER (the keys are indexed by
 // position, so a delete that shifts the tail changes the answer).
-//
-// IT IS themeDoc.typeSig's TWIN, and it exists for the same reason: a save has to be
-// able to ask "did the TYPE change" without asking "did anything change", and a frame
-// has to be able to ask "did the ART change" without re-planning for a rect nudge.
-// Same FNV-1a parameters, same terminator-per-field fold, so "ab"+"c" and "a"+"bc"
-// cannot sign alike.
-//
 // ALLOCATION-FREE, which typeSig does not have to be and this does: it is read on
 // EVERY editor frame. That is why it folds the RAW fields instead of building the
 // normalised theme.GeneratorSpec the key is hashed from — GeneratorSpecOf lower-cases
-// and trims, i.e. allocates, and this only has to CHANGE when the spec would, never to
-// agree with it.
 func themeArtSig(sc *theme.Sidecar) uint64 {
 	h := typeSigOffset64
 	if sc == nil {
@@ -347,23 +304,6 @@ func themeMediaPath(dir, file string) (string, bool) {
 }
 
 // themeSanitizeID folds a theme folder name into the id used in a cache key.
-//
-// IDENTITY IS THE FOLDER NAME (docs/THEME-FORMAT.md §1), lowercased and stripped of
-// anything that is not the id grammar — never the sidecar's display name, because
-// re-shared zips get renamed constantly and a manifest-name identity would make two
-// different themes the same theme, which is precisely the collision the namespace
-// exists to prevent.
-//
-// THE FOLD IS LOSSY AND THAT WAS CONSIDERED. Every rune outside the grammar becomes
-// '_', so "My Theme" and "My_Theme" — two folders that can coexist on disk — share
-// one namespace, and the id is truncated at themeMediaIDMaxLen besides. Benign,
-// because a key is only ever a CACHE key here and only one theme is applied at a
-// time: landThemeMedia prunes every key the incoming theme did not declare and then
-// uploads its own, so a shared key is REPLACED by the theme that is actually on
-// screen rather than read from the other one, and a key whose upload was refused or
-// whose decode failed is pruned rather than left standing. The property the
-// namespace has to carry is "theme A's art cannot be served to theme B", and
-// replace-on-apply gives that even when the two ids fold together.
 func themeSanitizeID(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
@@ -449,13 +389,6 @@ func downscaleThemeMedia(d *assets.Decoded) *assets.Decoded {
 
 // themeDecimationNote is the inspector's honest concession about a long animation,
 // or "" when nothing was dropped.
-//
-// design §Q2 states the concession in the product rather than hiding it: a 60 fps
-// full-screen animated background is not deliverable inside a 256 MiB process. What
-// IS deliverable is the correct DURATION, an exact count of the frames kept, and the
-// name of the one knob that changes it — which is what this sentence carries.
-// assets.Decoded.SourceFrames already reports the pre-decimation count, so nothing
-// new has to be measured.
 func themeDecimationNote(d *assets.Decoded) string {
 	if d == nil || d.SourceFrames <= len(d.Frames) {
 		return ""
@@ -534,16 +467,6 @@ func (res *themeApply) loadThemeMediaSet(anims bool) {
 
 // releaseDecoded hands every pixel buffer this apply is still holding back to the
 // decoder's pool, for an apply that will never land.
-//
-// The DROP PATH needs it and the land path does not: an upload copies the pixels
-// into a texture and the store's own accounting takes over from there, but a result
-// that loses the consume-side newest-wins race (pollThemeApply) is dropped whole,
-// and without this its buffers reach the GC as ordinary garbage instead of the pool
-// they came from. W4 is what made that worth a line of code: a stale drop used to
-// strand at most the chrome stems, and it can now strand those PLUS up to
-// render.ThemeMediaCap media pages and render.ThemeGenCap generator tiles, each one
-// of them a full-size RGBA frame set.
-//
 // Release is idempotent (it nils both Frames and the pooled list), so this is safe
 // against a future caller that releases twice, and it is pure memory bookkeeping —
 // no I/O, nothing that could not run on either side of the hand-off.
@@ -561,15 +484,7 @@ func (res *themeApply) releaseDecoded() {
 }
 
 // landThemeMedia lands one apply's art on the render thread.
-//
 // PRUNE FIRST, THEN ADMIT — the opposite order to the chrome loop's, and the order
-// is load-bearing. Chrome uploads then prunes because it has no budget and replacing
-// a skin in place avoids a one-frame gap. Theme media HAS a budget, and the outgoing
-// theme's art is not part of the incoming theme's allowance: admit-then-prune
-// measures the new pages against an allowance the old theme is still holding, so a
-// swap between two heavy themes admits nothing and then leaves the user with a blank
-// one. Both halves happen inside one pollThemeApply, before the frame paints, so
-// pruning first costs nothing visible.
 func (a *App) landThemeMedia(res *themeApply) {
 	budgetMiB := a.d.Prefs.Load().TexBudgetMiB()
 	if a.themeMediaKeys == nil {
@@ -606,18 +521,8 @@ func (a *App) landThemeMedia(res *themeApply) {
 
 // landThemeMediaPage is the INCREMENTAL land path: one page, in place, with no
 // theme apply behind it.
-//
 // It exists for the editor (W7), where changing one image must not restage the whole
 // theme — and the two things it deliberately does NOT do are the whole point:
-//
-//   - it does not re-anchor a.themeAt, so every animated element keeps its phase.
-//     Restarting the theme clock makes every looping generator and every animated
-//     skin on screen jump back to frame 0, which reads as the client glitching every
-//     time the author nudges a value.
-//   - it does not purge the text cache. That purge exists for a PALETTE change (label
-//     textures are colour-keyed); a media page has no colour anyone cached, and
-//     purging would re-raster every string in the client for one image.
-//
 // Gated by TestIncrementalMediaLandDoesNotRestartTheThemeClock. Render thread only.
 func (a *App) landThemeMediaPage(key string, d *assets.Decoded) error {
 	if d == nil {

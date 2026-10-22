@@ -1,55 +1,6 @@
 package ui
 
 // THE IMPORT REPORT (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q5.
-//
-// ONE concern: everything this client noticed about a theme and then said nothing
-// about.
-//
-// WHY IT HAD TO EXIST BEFORE ANYTHING ELSE IN THIS WAVE COULD. `Sidecar.Notes()`
-// has collected degrade reports since W1 — a skipped element, an unreadable
-// colour, a `[pane.*]` that claimed a widget somebody else already hosts — and a
-// census across the tree found its only readers were TESTS. That is the exact
-// shape CLAUDE.md rule 11 names: a tier parsed, held, mirrored by an assertion,
-// and never applied. W8's metadata degrade would have joined it, and a
-// "degrade-with-a-note" ruling whose note reaches nobody is just a silent
-// truncation with extra steps.
-//
-// FIVE INPUTS, ALL ALREADY COMPUTED, none of which reached a user:
-//
-//	res.sidecar.Notes()      every degrade the reader recorded
-//	res.themeFontsMissing    families the theme names that resolved to no file
-//	res.unbound              rect keys this theme declares that no widget reads
-//	sidecar [import] flags   the AO2 features §Q5 INHERITS rather than imports
-//	sidecar Unknown()        sections and keys this build preserved but does not read
-//
-// THE DECLARED GAPS ARE NAMED, WITH THE REASON, and that is §Q5's own requirement
-// rather than a nicety. `per_misc` and `lobby_design` are recorded by the reader
-// and applied by nothing — the format's own comment says so — so a theme that
-// shipped a lobby_design.ini looks, to its author, like a theme this client
-// silently ignored half of. It did; the report is where it admits it. The
-// `[x.*]` vendor sections are the same shape from the other side: carried through
-// untouched, which is exactly right and exactly invisible.
-//
-// ONE DECLARED GAP IS DELIBERATELY ABSENT: the `_sharp` font keys ("declared,
-// deliberately not applied", §Q5). They are not on the sidecar at all — they are a
-// courtroom_design.ini font-tier read (theme.go's FontSpec.Sharp), reachable only
-// per element id, and there is no "which ids declared one?" census to ask. Adding
-// one is a theme.Theme seam with its own gates and no other caller, which is the
-// speculative-generality shape rule 11 warns about; it belongs with the wave that
-// has a second reason to want it. TestImportReportNamesEveryDeclaredGap pins the
-// four that ARE reachable, so the day that census exists this file fails until it
-// is wired.
-//
-// TWO SURFACES, AND THIS FILE OWNS THE SMALL ONE. A theme is imported far more
-// often than it is edited — most people who import one never open the editor at
-// all — so the report lands first on the client's own warn line, which every
-// screen already draws: the count, then the first note, on the apply that produced
-// them. The design's rail footer ("Imported · 4 notes", expanding to an in-canvas
-// panel) is the EDITOR's half and it shipped in W9 as themereportpanel.go, reading
-// the same App.themeReport slice this file lands. Until it existed that slice was
-// written on every apply and read by nothing, which is why the panel is a rule-11
-// obligation rather than a nicety.
-//
 // BOUNDED (hard rule 4) and built on the theme-apply goroutine, never on a draw.
 
 import (
@@ -173,13 +124,9 @@ func themeReportLine(name string, report []string) string {
 
 // noteThemeReport lands a report on the render thread: kept for the editor, and
 // said out loud once per DISTINCT report.
-//
 // NOT ONCE PER APPLY, which is the trap. An apply is not a user action: healTheme
 // re-kicks one on any T1 eviction of a theme texture, the texture-filter row kicks
 // one, boot kicks two — so "say it on every apply" would re-post the same four
-// notes at unpredictable moments for the whole session and turn a diagnostic into
-// a nag. Comparing against what was last said means the line appears when the
-// report CHANGES, which is exactly when a theme was switched or imported.
 func (a *App) noteThemeReport(name string, report []string) {
 	same := sameReport(a.themeReport, report)
 	a.themeReport = report
