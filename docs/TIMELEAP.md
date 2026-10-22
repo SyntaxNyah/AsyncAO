@@ -3,6 +3,8 @@
 > Client: **AsyncAO** (Go, SDL3, aolib-go v2.6.1)
 > Server: **Nyathena** · Sibling client: **LemmyAO**
 > Status: **groundwork landed** on branch `timeleap`. POC: save/restore.
+> §9 specifies **D-Mail (`DM`)**, a sibling extension that is **designed but not
+> implemented**.
 
 **Companion documents**
 
@@ -243,8 +245,87 @@ screen. Not required for correctness, but players will ask.
 * `docs/KNOWN-ISSUES.md`: record the "cast layout not restored yet" limitation so
   it is not mistaken for a regression.
 * `docs/ROADMAP.md`: park D2 (forward travel) and the meter as future work.
-* If `registerCodecsOnce` ever becomes per-connection, revisit P0-4's test: the
-  once-guard is what keeps a second Dial from re-writing the registry under a live
-  read loop.
+---
+
+## 9. D-Mail (`DM`) — client behaviour
+
+> **Status: specification only.** Nothing in this repo handles `DM` today; there
+> is no codec, no handler and no UI. The normative packet, gating and command
+> design live in the Nyathena doc (§13); this section is the AsyncAO plan.
+
+### 9.1 What the client has to do
+
+A `DM` frame is a **message plus a worldline shift**. The client:
+
+1. shows a popup (subject, body, sender);
+2. rolls a divergence meter from `divergence_from` to `divergence_to`;
+3. if `reading_steiner`, adds a "you remember the prior worldline" hint and
+   shows the old number;
+4. does **not** restore anything itself. If the D-Mail changes the past, the
+   server sends a separate `TL` snapshot; the existing TL path re-stages the room.
+
+Ordering guarantee from the server: `DM` first, `TL` second. So the popup must
+survive a `TL` restore that lands while it is on screen — `applyTimeLeap` today
+touches the room only, so this is already true, but any future "clear overlays on
+restore" change must exempt the D-Mail popup.
+
+### 9.2 Files (proposed)
+
+| File | Role |
+|---|---|
+| `internal/packetutil/dm.go` | `DMPacket` + `RegisterDMailCodec()` (JSON-only, `aolib.RegisterPacket("DM", …)`) |
+| `internal/protocol/dm.go` | render model `DMail` + `FromDM` + `DMailFromPacket` |
+| `internal/protocol/conn.go` | one line in `registerCodecs()` |
+| `internal/protocol/inbound.go` | `OnCustom("DM", …)` beside `TL` |
+| `internal/protocol/features.go` | `FeatureDMail = "dmail"`, and `advertiseFeatures` includes it |
+| `internal/courtroom/session.go` | `Session.DMail`, `EventDMail`, `case "DM"` |
+| `internal/ui/app_dmail.go` | popup + animation driver |
+
+This mirrors TL one-for-one, which is the point: two custom headers, one shape.
+
+### 9.3 The animation problem
+
+AsyncAO has **no divergence meter yet** — that is P1 in §8. The honest POC
+sequence is therefore:
+
+* **Step 1 (no new art):** popup with the numbers as text, e.g.
+  `1.048596 → 1.130205`, plus a short cross-fade. No meter, no licence question.
+* **Step 2:** the native meter lands (shared with TL), and the DM popup drives it
+  with `AnimateDivergence(from, to, ~1400ms, settle-left-to-right)`.
+* **Step 3:** operator-supplied tube art through the asset origin, exactly as the
+  LemmyAO doc describes. Nothing copyrighted is bundled.
+
+Doing step 1 first keeps DM shippable without waiting on the renderer work.
+
+### 9.4 Reading Steiner
+
+`reading_steiner` is a hint, not a permission (Nyathena §13.7). AsyncAO should:
+
+* add a preference ("I am a Reading Steiner holder", default off);
+* when the flag is set **and** the packet says `reading_steiner`, show the prior
+  worldline in the popup plus a badge;
+* otherwise show the roll only, with a single flavour line.
+
+Store the preference with the existing preferences system (it already has boolean
+toggles and migration), not in a new file.
+
+### 9.5 Next steps for DM (after TL is signed off)
+
+**P0**
+1. `packetutil/dm.go` + `protocol/dm.go` + the two registration lines. No UI.
+2. `case "DM"` → `Session.DMail` + `EventDMail`; a test asserting the reducer,
+   mirroring `TestHandlePacketTL`.
+3. Advertise `dmail` in `advertiseFeatures` (one line, behind
+   `s.Features.Has(protocol.FeatureDMail)`).
+
+**P1**
+4. `app_dmail.go`: popup with subject/body/sender, dismiss button, esc-to-close.
+5. The text-form worldline line (`from → to`) and the RS preference.
+6. Assert the popup survives a `TL` restore (a test, not a hope).
+
+**P2**
+7. Native meter, then drive it from the popup.
+8. Optional queueing if two D-Mails land at once — today the last would win.
+
 
 
