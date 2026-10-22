@@ -89,15 +89,15 @@ func (a *App) applyLayoutPreset(m map[string][4]float64) {
 	// preset may have been saved months ago at another resolution — re-basing
 	// its fresh rect against that stale window would misplace it). Untouched
 	// slots keep their pins, so a stage-only premade never unpins the log.
-	for k := range a.classicAnchor {
-		if m[k] != a.classicOv[k] {
-			delete(a.classicAnchor, k)
+	for k := range a.classic.classicAnchor {
+		if m[k] != a.classic.classicOv[k] {
+			delete(a.classic.classicAnchor, k)
 			a.d.Prefs.ClearClassicAnchor(k)
 		}
 	}
 	a.d.Prefs.SetClassicLayout(m)
-	a.classicOv = cloneClassicOv(m)
-	a.classicOvLoaded = true
+	a.classic.classicOv = cloneClassicOv(m)
+	a.classic.classicOvLoaded = true
 }
 
 // applyProfile makes a full-state LayoutProfile (A6) the live layout AND the
@@ -112,15 +112,15 @@ func (a *App) applyLayoutPreset(m map[string][4]float64) {
 func (a *App) applyProfile(p config.LayoutProfile) {
 	// Classic slots.
 	a.d.Prefs.SetClassicLayout(p.Classic)
-	a.classicOv = cloneClassicOv(p.Classic)
-	a.classicOvLoaded = true
+	a.classic.classicOv = cloneClassicOv(p.Classic)
+	a.classic.classicOvLoaded = true
 	// Window anchors (wholesale; the profile carries WinW/WinH per anchor).
 	a.d.Prefs.SetClassicAnchors(p.Anchors)
-	a.classicAnchor = parseAnchors(p.Anchors)
+	a.classic.classicAnchor = parseAnchors(p.Anchors)
 	// Rotations (A4, wholesale like the anchors). Seed the live App map from the
 	// durable snapshot so live and persisted read the same sanitized source.
 	a.d.Prefs.SetClassicRotations(p.Rotations)
-	a.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()
+	a.classic.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()
 	// Hidden-chrome set — durable + the live map (mirror applyPrefsToState). Rebuild
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and
@@ -163,7 +163,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 // when the courtroom hasn't been entered yet this session.
 func (a *App) applyStagePreset(vp [4]float64) {
 	a.ensureClassicOv()
-	ov := cloneClassicOv(a.classicOv)
+	ov := cloneClassicOv(a.classic.classicOv)
 	if ov == nil {
 		ov = map[string][4]float64{}
 	}

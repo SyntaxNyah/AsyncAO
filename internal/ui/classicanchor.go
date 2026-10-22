@@ -181,7 +181,7 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 // The no-anchor path is the historical fracToRect — anchored resolution costs
 // one extra map lookup, only for slots that HAVE an override.
 func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
-	if ar, ok := a.classicAnchor[name]; ok {
+	if ar, ok := a.classic.classicAnchor[name]; ok {
 		return applyAnchor(ov, ar, w, h)
 	}
 	return fracToRect(ov, w, h)
@@ -189,7 +189,7 @@ func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
 
 // slotAnchorMode reports a slot's current pin mode string ("" = unpinned).
 func (a *App) slotAnchorMode(name string) string {
-	ar, ok := a.classicAnchor[name]
+	ar, ok := a.classic.classicAnchor[name]
 	if !ok {
 		return ""
 	}
@@ -201,31 +201,31 @@ func (a *App) slotAnchorMode(name string) string {
 // (pin-in-place without a drag); clearing the pin keeps the override.
 func (a *App) cycleSlotAnchor(name string, w, h int32) {
 	next := nextAnchorMode(a.slotAnchorMode(name))
-	if _, ok := a.classicOv[name]; !ok {
+	if _, ok := a.classic.classicOv[name]; !ok {
 		// Pin-in-place: the anchor re-bases an override, so mint one from the
 		// rect the slot drew at this frame.
-		info, reg := a.slotReg[name]
+		info, reg := a.classic.slotReg[name]
 		if !reg {
 			return
 		}
 		ov := rectToFrac(info.cur, w, h)
-		if a.classicOv == nil {
-			a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+		if a.classic.classicOv == nil {
+			a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 		}
-		a.classicOv[name] = ov
+		a.classic.classicOv[name] = ov
 		a.d.Prefs.SetClassicSlot(name, ov)
 	}
 	if next == "" {
-		delete(a.classicAnchor, name)
+		delete(a.classic.classicAnchor, name)
 		a.d.Prefs.ClearClassicAnchor(name)
 		a.debug.push("layout: " + classicSlotLabel(name) + " unpinned")
 		return
 	}
 	hm, vm, _ := parseAnchorMode(next)
-	if a.classicAnchor == nil {
-		a.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
+	if a.classic.classicAnchor == nil {
+		a.classic.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
 	}
-	a.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
+	a.classic.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
 	a.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
 	a.debug.push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
 }
@@ -235,9 +235,9 @@ func (a *App) cycleSlotAnchor(name string, w, h int32) {
 // override now describes the rect at THIS window size). Persisted at
 // drag-release alongside the override.
 func (a *App) syncAnchorWindow(name string, w, h int32) {
-	if ar, ok := a.classicAnchor[name]; ok {
+	if ar, ok := a.classic.classicAnchor[name]; ok {
 		ar.winW, ar.winH = w, h
-		a.classicAnchor[name] = ar
+		a.classic.classicAnchor[name] = ar
 	}
 }
 
@@ -248,7 +248,7 @@ const anchorPinDot = int32(7)
 // small filled dot at the pinned corner (or centre; edge-midpoints for
 // single-axis pins from hand-edited prefs).
 func (a *App) drawAnchorPin(r sdl.Rect, name string) {
-	ar, ok := a.classicAnchor[name]
+	ar, ok := a.classic.classicAnchor[name]
 	if !ok {
 		return
 	}

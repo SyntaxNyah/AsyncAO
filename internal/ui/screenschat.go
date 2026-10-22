@@ -890,7 +890,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
 	// content-driven. The override is read lock-free; off the edit path this is one map
 	// lookup, no alloc. controlsBlockOrigin is the pure core.
-	ctrlOv, ctrlEdited := a.classicOv[slotControls]
+	ctrlOv, ctrlEdited := a.classic.classicOv[slotControls]
 	var ctrlRect sdl.Rect
 	if ctrlEdited {
 		ctrlRect = a.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
@@ -924,7 +924,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// buttons end after a width resize. def keeps the default full width; its height
 	// reflects the live row count (recomputing the default wrap would mean laying the
 	// rows out twice — reset just recomputes for real next frame).
-	if a.classicEdit {
+	if a.classic.classicEdit {
 		a.regSlot(slotControls,
 			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
 			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
@@ -1714,9 +1714,9 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// overridden-Immediate does, so an overridden Pre never cascades the rest and an
 	// un-edited narrow bar stays byte-identical. Comma-ok map read is nil-safe + alloc-
 	// free (the same read slotRect does).
-	_, preOv := a.classicOv[slotICPre]
+	_, preOv := a.classic.classicOv[slotICPre]
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
-	if icOptionalDraws(preGuardOK, preOv, a.classicEdit, a.panelHidden(slotICPre)) {
+	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
 		a.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim), a.icPreanim)
@@ -1730,9 +1730,9 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
 	// editor win over the drop (same rule as Pre); FX has no panelHidden gate in the classic
 	// row, so pass hidden=false to keep it a pure width/override/edit call.
-	_, fxOv := a.classicOv[slotICFx]
+	_, fxOv := a.classic.classicOv[slotICFx]
 	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
-	if icOptionalDraws(fxGuardOK, fxOv, a.classicEdit, false) {
+	if icOptionalDraws(fxGuardOK, fxOv, a.classic.classicEdit, false) {
 		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
@@ -1783,11 +1783,11 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// minuscule widths, where even the compact form can't clear the input floor,
 	// does SFX drop entirely — and the layout-editor override (sfxOv) still forces
 	// it back (the documented escape hatch).
-	_, sfxOv := a.classicOv[slotICSFX]
+	_, sfxOv := a.classic.classicOv[slotICSFX]
 	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
 	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
 	switch {
-	case icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false):
+	case icOptionalDraws(sfxGuardOK, sfxOv, a.classic.classicEdit, false):
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
 			a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
@@ -1825,9 +1825,9 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
 	// buttons (redesign), so it's the FIRST to yield on a narrow bar. Override /
 	// editor win over the drop (same rule as Pre); hidden still hides.
-	_, emojiOv := a.classicOv[slotICEmoji]
+	_, emojiOv := a.classic.classicOv[slotICEmoji]
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
-	if icOptionalDraws(emojiGuardOK, emojiOv, a.classicEdit, a.panelHidden(slotICEmoji)) {
+	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}

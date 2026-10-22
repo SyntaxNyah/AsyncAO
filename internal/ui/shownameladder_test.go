@@ -632,7 +632,7 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// Prove the ladder actually fires on this frame, or the gate passes vacuously.

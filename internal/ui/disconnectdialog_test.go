@@ -18,7 +18,7 @@ func froomApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	a.d.Viewport = render.NewViewport(nil)
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"

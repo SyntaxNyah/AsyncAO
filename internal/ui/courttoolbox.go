@@ -301,9 +301,9 @@ func (a *App) compactEditLayout() { a.openLayoutEditor() }
 // compactTogglePin latches the flyout open / closed. Unpinning also closes the
 // per-piece panel so a later hover doesn't silently re-reveal it.
 func (a *App) compactTogglePin() {
-	a.toolboxPinned = !a.toolboxPinned
-	if !a.toolboxPinned {
-		a.toolboxPieces = false
+	a.toolbox.toolboxPinned = !a.toolbox.toolboxPinned
+	if !a.toolbox.toolboxPinned {
+		a.toolbox.toolboxPieces = false
 	}
 }
 
@@ -312,9 +312,9 @@ func (a *App) compactTogglePin() {
 // pinning: the panel is gated on toolboxPinned, so without this a click from a
 // hover-only flyout would set a flag that shows nothing.
 func (a *App) compactHideUI() {
-	a.toolboxPieces = !a.toolboxPieces
-	if a.toolboxPieces {
-		a.toolboxPinned = true
+	a.toolbox.toolboxPieces = !a.toolbox.toolboxPieces
+	if a.toolbox.toolboxPieces {
+		a.toolbox.toolboxPinned = true
 	}
 }
 
@@ -324,10 +324,10 @@ func (a *App) compactHideUI() {
 // pixels can never disagree. No latch (a modal owns the screen, an editor is armed,
 // theater, or the toolbox is hidden) ⇒ nothing drew, so nothing is drawn.
 func (a *App) drawCompactToolboxInPass() {
-	if !a.toolboxFence.set {
+	if !a.toolbox.toolboxFence.set {
 		return
 	}
-	a.drawCompactToolbox(a.toolboxFence)
+	a.drawCompactToolbox(a.toolbox.toolboxFence)
 }
 
 // drawCompactToolboxOverEditor is the POST-courtroom draw site (app.go): while a
@@ -341,7 +341,7 @@ func (a *App) drawCompactToolboxInPass() {
 // drawing the toolbox twice would hit-test its chips twice on a single click —
 // toggling the pin latch straight back off.
 func (a *App) drawCompactToolboxOverEditor(w, h int32) {
-	if a.toolboxFence.set {
+	if a.toolbox.toolboxFence.set {
 		return
 	}
 	a.drawCompactToolbox(a.latchCompactToolbox(w, h))
@@ -418,7 +418,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	// (or a brighter nub while pinned) so it's clear where the strip folds back to
 	// and whether it's latched.
 	gripCol := ColPanelHi
-	if a.toolboxPinned {
+	if a.toolbox.toolboxPinned {
 		gripCol = ColAccent
 	}
 	c.Fill(grip, gripCol)
@@ -431,7 +431,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	// where the grip is the toolbox's DRAG handle (Phase 2): the same press already
 	// grabbed the toolbox for a move in the editor pass, so a pin toggle here would
 	// double-fire on one click.
-	editing := a.classicEdit || a.layoutEdit
+	editing := a.classic.classicEdit || a.layoutEdit
 	// NOT consumed (no `c.clicked = false`). The press is already exclusive where it
 	// needs to be: the overlay fence blanks everything drawn UNDER us in this pass,
 	// and the post-courtroom floating surfaces that could paint OVER us run the whole
@@ -468,7 +468,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 		}
 		// The Pin chip shows its latched state; the Hide-UI chip shows whether the
 		// per-piece panel is open, so both read as toggles.
-		if (ch.icon == iconPin && a.toolboxPinned) || (ch.icon == iconEyeOff && a.toolboxPieces) {
+		if (ch.icon == iconPin && a.toolbox.toolboxPinned) || (ch.icon == iconEyeOff && a.toolbox.toolboxPieces) {
 			bg = ColAccent
 		}
 		// Chip background follows the chrome SHAPE (A5); the vector icon glyph
@@ -545,7 +545,7 @@ func compactToolboxHoverRect(grip sdl.Rect) sdl.Rect {
 // handleHotkeys in between.
 func (a *App) compactToolboxExpanded(strip, grip sdl.Rect) bool {
 	c := a.ctx
-	return a.classicEdit || a.layoutEdit || a.toolboxPinned ||
+	return a.classic.classicEdit || a.layoutEdit || a.toolbox.toolboxPinned ||
 		c.hovering(compactToolboxHoverRect(grip)) || c.hovering(strip)
 }
 
@@ -594,7 +594,7 @@ func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 	// (Theater / Edit layout / Hide UI) live on the top menu bar's Extras menu, the
 	// command palette and the hotkeys. It still draws while a layout editor is armed,
 	// where the menu bar stands down and the strip is the reachable control surface.
-	if !a.classicEdit && !a.layoutEdit {
+	if !a.classic.classicEdit && !a.layoutEdit {
 		return lat
 	}
 	lat.draws = true
@@ -626,21 +626,21 @@ func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 //     anywhere on the grip is itself what expands the strip on the very same frame.
 func (a *App) fenceCompactToolbox(w, h int32) {
 	c := a.ctx
-	a.toolboxFence = compactToolboxLatch{mark: c.overlayFenceMark()}
-	if a.classicEdit || a.layoutEdit {
+	a.toolbox.toolboxFence = compactToolboxLatch{mark: c.overlayFenceMark()}
+	if a.classic.classicEdit || a.layoutEdit {
 		return
 	}
 	if a.courtroomModalUp() {
 		// set, but draws=false: the in-pass site is still the owner (the editor is
 		// not armed), it simply never gets there.
-		a.toolboxFence.set = true
+		a.toolbox.toolboxFence.set = true
 		return
 	}
-	a.toolboxFence = a.latchCompactToolbox(w, h)
-	if !a.toolboxFence.expanded {
+	a.toolbox.toolboxFence = a.latchCompactToolbox(w, h)
+	if !a.toolbox.toolboxFence.expanded {
 		return
 	}
-	c.fenceOverlay(a.toolboxFence.strip)
+	c.fenceOverlay(a.toolbox.toolboxFence.strip)
 }
 
 // compactToolboxStripRect is the expanded strip's footprint (grip + the icon chips
@@ -658,14 +658,14 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// strip at that (themed-editor-draggable) rect, taking precedence over the
 	// classic slot — exactly as the FX button's asyncao_ic_fx rect wins over its
 	// classic slotICFx. Keep the intrinsic (move-only) W/H; clamp on-window.
-	if a.toolboxThemeRectOn {
+	if a.toolbox.toolboxThemeRectOn {
 		cur := def
-		cur.X = clampI32(a.toolboxThemeRect.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
-		cur.Y = clampI32(a.toolboxThemeRect.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
+		cur.X = clampI32(a.toolbox.toolboxThemeRect.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
+		cur.Y = clampI32(a.toolbox.toolboxThemeRect.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
 		return cur
 	}
 	cur := def
-	if ov, ok := a.classicOv[slotToolbox]; ok {
+	if ov, ok := a.classic.classicOv[slotToolbox]; ok {
 		cur = a.anchoredRect(slotToolbox, ov, w, h) // fracToRect unless the slot is window-pinned
 		// The strip is MOVE-only (slotResizeEdges): its W/H are chip-count-driven,
 		// not user-resizable. The override persists position as a window FRACTION,
@@ -680,7 +680,7 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// exactly as slotRect does — but with the NORMALIZED rect, so the editor's drag
 	// base and this draw agree on the strip's true W/H. Done inline (not via slotRect)
 	// precisely because slotRect can't apply the move-only W/H normalization above.
-	if a.classicEdit {
+	if a.classic.classicEdit {
 		a.regSlot(slotToolbox, cur, def)
 	}
 	return cur
@@ -703,7 +703,7 @@ func (a *App) editOverToolbox(w, h int32) bool {
 	// normal box, so don't suppress the chips region either — let the themed editor own
 	// the whole strip. The classic editor drags via the slotToolbox registration
 	// (compactToolboxStripRect → regSlot) whenever the press lands on the grip.
-	if !a.toolboxThemeRectOn && !a.panelHidden(panelToolbox) {
+	if !a.toolbox.toolboxThemeRectOn && !a.panelHidden(panelToolbox) {
 		strip := a.compactToolboxStripRect(w, h)
 		grip := compactToolboxGripRect(strip)
 		if pointIn(c.mouseX, c.mouseY, strip) && !pointIn(c.mouseX, c.mouseY, grip) {
@@ -713,7 +713,7 @@ func (a *App) editOverToolbox(w, h int32) bool {
 	// The pinned pieces panel is drawn post-courtroom and takes its own input there,
 	// but it overlaps the bottom-right where slots can park — fence a slot-move under
 	// it too so an editor press can't grab a box beneath the open panel.
-	if a.toolboxPinned && a.toolboxPieces && pointIn(c.mouseX, c.mouseY, a.toolboxPiecesRect(w, h)) {
+	if a.toolbox.toolboxPinned && a.toolbox.toolboxPieces && pointIn(c.mouseX, c.mouseY, a.toolboxPiecesRect(w, h)) {
 		return true
 	}
 	return false
@@ -912,7 +912,7 @@ func (a *App) lastMouseLifeline(id string) bool {
 // hotkey (hotkeyUIChrome) can open it even when the grip is hidden (the
 // un-strand path: a user who hid the toolbox can still reach per-piece hiding).
 func (a *App) drawToolboxPieces(w, h int32) {
-	if !a.toolboxPinned || !a.toolboxPieces {
+	if !a.toolbox.toolboxPinned || !a.toolbox.toolboxPieces {
 		return
 	}
 	// Agree with the fence: boxFencesPointer early-returns on !extrasSurfaceLive
@@ -929,7 +929,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// palette's rows: a Z/input inversion. Stand down while the palette is up
 	// (its fence in boxFencesPointer reads the same flag, so draw and fence
 	// stay in lockstep — the ddOpen dropdown precedent).
-	if a.paletteOpen {
+	if a.palette.paletteOpen {
 		return
 	}
 	c := a.ctx
@@ -943,8 +943,8 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// field. (The Close button lives in the footer, so it is clear either way.)
 	// piecesPressed is this panel's OWN press edge: it draws over other surfaces
 	// and so cannot share the frame's click.
-	piecesPressed := c.mouseDown && !a.piecesPrevDown
-	a.piecesPrevDown = c.mouseDown
+	piecesPressed := c.mouseDown && !a.toolbox.piecesPrevDown
+	a.toolbox.piecesPrevDown = c.mouseDown
 	wasManip := a.wins.piecesWin.dragging
 	a.floatWinDrag(&a.wins.piecesWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: toolboxFilterY}, &piecesPressed)
 	if wasManip && !a.wins.piecesWin.dragging {
@@ -960,11 +960,11 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// raw text drives the TextField; the lowered form is cached and only re-derived
 	// when the text changes, so per-row matching below stays allocation-free.
 	filterRect := sdl.Rect{X: panel.X + pad, Y: panel.Y + toolboxFilterY, W: panel.W - 2*pad, H: toolboxFilterH}
-	if next, _ := c.TextField("toolboxfilter", filterRect, a.toolboxFilter, "Filter pieces…"); next != a.toolboxFilter {
-		a.toolboxFilter = next
-		a.toolboxFilterLower = strings.ToLower(strings.TrimSpace(next)) // lowered ONCE per edit, not per frame
+	if next, _ := c.TextField("toolboxfilter", filterRect, a.toolbox.toolboxFilter, "Filter pieces…"); next != a.toolbox.toolboxFilter {
+		a.toolbox.toolboxFilter = next
+		a.toolbox.toolboxFilterLower = strings.ToLower(strings.TrimSpace(next)) // lowered ONCE per edit, not per frame
 	}
-	q := a.toolboxFilterLower
+	q := a.toolbox.toolboxFilterLower
 
 	// The control-button grid only applies to the new-default toolbar; the
 	// legacy/themed row draws fixed inline buttons that ignore the hidden set, so
@@ -984,13 +984,13 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		barReserve = scrollBarW + scrollBarGap
 	}
 	if !c.ctrlHeld {
-		a.toolboxPiecesScroll -= c.WheelIn(body) * scrollStepPx
+		a.toolbox.toolboxPiecesScroll -= c.WheelIn(body) * scrollStepPx
 	}
 	if needsBar {
 		track := sdl.Rect{X: body.X + body.W - scrollBarW - pad, Y: body.Y, W: scrollBarW, H: body.H}
-		a.toolboxPiecesScroll = c.VScrollbar("toolboxpieces", track, a.toolboxPiecesScroll, contentH, body.H)
+		a.toolbox.toolboxPiecesScroll = c.VScrollbar("toolboxpieces", track, a.toolbox.toolboxPiecesScroll, contentH, body.H)
 	} else {
-		a.toolboxPiecesScroll = 0
+		a.toolbox.toolboxPiecesScroll = 0
 	}
 	// Clipped, input-aware (pushClip honours hovering) so a label tail can't leak
 	// a click past the body edge or over the scrollbar lane.
@@ -1001,7 +1001,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	clipPrev, clipHad := c.pushClip(clipBody)
 	rowW := panel.W - 2*pad - barReserve
 	colW := rowW / toolboxPiecesCols
-	y := body.Y - a.toolboxPiecesScroll
+	y := body.Y - a.toolbox.toolboxPiecesScroll
 	for _, p := range hideablePanels {
 		if !toolboxPieceMatches(p.id, q) {
 			continue
@@ -1060,7 +1060,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// OUTSIDE the scroll body and OUTSIDE the filter, so no query can strand it.
 	footerY := panel.Y + panel.H - btnH - 8
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 84 - pad, Y: footerY, W: 84, H: btnH}, "Close") {
-		a.toolboxPieces = false
+		a.toolbox.toolboxPieces = false
 	}
 }
 

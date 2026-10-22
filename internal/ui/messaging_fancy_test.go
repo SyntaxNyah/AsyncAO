@@ -11,14 +11,14 @@ func TestGroupUnreadFlow(t *testing.T) {
 	g.name = "case prep"
 	g.ownerUID = 1
 
-	a.showMessages = false
+	a.msgs.showMessages = false
 	a.applyGroupText(7, 2, "Edgeworth", "hello")
 	a.applyGroupText(7, 2, "Edgeworth", "anyone?")
 	if g.unread != 2 {
 		t.Fatalf("unread = %d, want 2 (panel closed)", g.unread)
 	}
-	a.showMessages = true
-	a.msgSelGroup = 7
+	a.msgs.showMessages = true
+	a.msgs.msgSelGroup = 7
 	a.applyGroupText(7, 2, "Edgeworth", "oh hi")
 	if g.unread != 2 {
 		t.Fatalf("a line landing while the group is on screen must not bump unread (got %d)", g.unread)

@@ -355,16 +355,16 @@ func (a *App) editorUndoChord() bool {
 		c.hotkey = 0
 		return true
 	}
-	if !a.classicEdit && !a.layoutEdit {
+	if !a.classic.classicEdit && !a.layoutEdit {
 		return false
 	}
 	if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
 		return false
 	}
 	switch {
-	case a.classicEdit && c.hotkey == sdl.K_z:
+	case a.classic.classicEdit && c.hotkey == sdl.K_z:
 		a.classicEditUndo()
-	case a.classicEdit:
+	case a.classic.classicEdit:
 		a.classicEditRedo()
 	case c.hotkey == sdl.K_z:
 		a.layoutEditUndo()
@@ -507,7 +507,7 @@ func (a *App) handleHotkeys() {
 		if a.theaterOn {
 			a.setTheater(false)
 		}
-		a.toolboxPinned, a.toolboxPieces = true, true
+		a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 	case a.hotkeyFor(hotkeyToggleMenuBar):
 		a.toggleChromePanel(panelMenuBar, "Menu bar")
 	case a.hotkeyFor(hotkeyToggleToolbox):

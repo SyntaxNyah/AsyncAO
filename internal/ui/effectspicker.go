@@ -139,37 +139,37 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	folder = strings.TrimSpace(folder)
 	// A theme change invalidates every roster: the theme tier contributes both
 	// names and properties, and its art paths move with it.
-	if a.overlayRosterGen != a.themeAppliedGen {
-		a.overlayRosterGen = a.themeAppliedGen
-		a.overlayRosters = nil
+	if a.overlays.overlayRosterGen != a.themeAppliedGen {
+		a.overlays.overlayRosterGen = a.themeAppliedGen
+		a.overlays.overlayRosters = nil
 		a.overlayInvalidateMemos()
 	}
 	// The memo, because this runs on the zero-alloc courtroom frame and the cache
 	// KEY is a concatenation. Plain string compares, no allocation.
-	if a.overlayMemoValid && a.overlayMemoFolder == folder && a.overlayMemoOrigin == a.urls.Origin() {
-		return a.overlayMemoRoster
+	if a.overlays.overlayMemoValid && a.overlays.overlayMemoFolder == folder && a.overlays.overlayMemoOrigin == a.urls.Origin() {
+		return a.overlays.overlayMemoRoster
 	}
 	key := a.overlayRosterKey(folder)
-	r, cached := a.overlayRosters[key]
-	if !cached && !a.overlayRosterInFlight[key] {
+	r, cached := a.overlays.overlayRosters[key]
+	if !cached && !a.overlays.overlayRosterInFlight[key] {
 		// The SETTLED cache is a cache: past the cap it resets and a re-resolve heals.
 		// The in-flight SET is not part of it and is never wiped here — see
 		// overlayManifestCap. A reset that dropped a marker would let this very call
 		// spawn a duplicate goroutine for a key already being resolved.
-		if len(a.overlayRosters) >= overlayManifestCap {
-			a.overlayRosters = nil
+		if len(a.overlays.overlayRosters) >= overlayManifestCap {
+			a.overlays.overlayRosters = nil
 		}
-		if len(a.overlayRosterInFlight) < overlayRosterFetchCap {
-			if a.overlayRosterInFlight == nil {
-				a.overlayRosterInFlight = make(map[string]bool, overlayRosterFetchCap)
+		if len(a.overlays.overlayRosterInFlight) < overlayRosterFetchCap {
+			if a.overlays.overlayRosterInFlight == nil {
+				a.overlays.overlayRosterInFlight = make(map[string]bool, overlayRosterFetchCap)
 			}
-			a.overlayRosterInFlight[key] = true // exactly one resolve per key
+			a.overlays.overlayRosterInFlight[key] = true // exactly one resolve per key
 			a.overlayRosterFetchOne(key, folder)
 		}
 		r = nil
 	}
-	a.overlayMemoOrigin, a.overlayMemoFolder, a.overlayMemoValid = a.urls.Origin(), folder, true
-	a.overlayMemoRoster = r
+	a.overlays.overlayMemoOrigin, a.overlays.overlayMemoFolder, a.overlays.overlayMemoValid = a.urls.Origin(), folder, true
+	a.overlays.overlayMemoRoster = r
 	return r
 }
 
@@ -177,23 +177,23 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 // inputs changes: a theme apply (new rosters), a landed resolve, and a landed
 // char.ini (the character's own effects folder may have just arrived).
 func (a *App) overlayInvalidateMemos() {
-	a.overlayMemoValid = false
-	a.overlayMemoRoster = nil
-	a.overlayMyFolderValid = false
-	a.overlayChoicesValid = false
-	a.overlayChoicesRoster = nil
-	a.overlayChoicesCache = nil
+	a.overlays.overlayMemoValid = false
+	a.overlays.overlayMemoRoster = nil
+	a.overlays.overlayMyFolderValid = false
+	a.overlays.overlayChoicesValid = false
+	a.overlays.overlayChoicesRoster = nil
+	a.overlays.overlayChoicesCache = nil
 	// The baked icon keys belong to that cache — they are indexed by the SAME row
 	// numbers and are only correct for the roster that produced them.
-	a.overlayIconKeys, a.overlayIconPaths = nil, nil
+	a.overlays.overlayIconKeys, a.overlays.overlayIconPaths = nil, nil
 }
 
 // overlayRosterFetchOne resolves one roster OFF the render thread: the local
 // effects.ini ladder, the one origin manifest, the merge, and the local art/icon
 // paths. Every step is disk or network work — hard rule 2 keeps all of it here.
 func (a *App) overlayRosterFetchOne(key, folder string) {
-	if a.overlayRosterRes == nil {
-		a.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
+	if a.overlays.overlayRosterRes == nil {
+		a.overlays.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
 	}
 	// Snapshot everything the goroutine needs on the RENDER thread: reading prefs
 	// off-thread while the debounced saver marshals is the interleaving -race
@@ -202,7 +202,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	// published, not re-loaded here (spec §2.4 — the theme-tier parse belongs to the
 	// theme apply). It also removes the last two preference reads this goroutine
 	// used to need: the theme name/dir/subtheme are baked into the loaded object,
-	t := a.overlayTheme
+	t := a.overlays.overlayTheme
 	// The apply generation this resolve belongs to. Compared again when the result
 	// lands: a theme applied in the meantime moved every path this walk resolved.
 	gen := a.themeAppliedGen
@@ -217,7 +217,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	// that nils it would be an instant -race failure (hard rule 8) on a field a
 	// worker is reading concurrently. A captured local cannot go stale, and it also
 	// says out loud that the goroutine owns nothing on App.
-	res := a.overlayRosterRes
+	res := a.overlays.overlayRosterRes
 	go func() {
 		roster := &overlayRoster{
 			art:  map[string]string{},
@@ -300,13 +300,13 @@ func (a *App) pollOverlayRosters() {
 	// ahead of every screen draw (app.go's poll cluster).
 	a.emoteGridDrewPreview = false
 	a.overlayPreviewCloseEdge()
-	if a.overlayRosterRes != nil {
+	if a.overlays.overlayRosterRes != nil {
 		for drained := false; !drained; {
 			select {
-			case res := <-a.overlayRosterRes:
+			case res := <-a.overlays.overlayRosterRes:
 				// The fetch slot is freed whatever the verdict — a dropped result must
 				// still let the key be resolved again.
-				delete(a.overlayRosterInFlight, res.key)
+				delete(a.overlays.overlayRosterInFlight, res.key)
 				if res.gen != a.themeAppliedGen {
 					// A theme apply landed while this was in flight. Its art/icon paths,
 					// its theme-tier property files and its display order all belong to
@@ -318,10 +318,10 @@ func (a *App) pollOverlayRosters() {
 					// re-resolves against the theme that is actually applied.
 					continue
 				}
-				if a.overlayRosters == nil {
-					a.overlayRosters = make(map[string]*overlayRoster, overlayManifestCap)
+				if a.overlays.overlayRosters == nil {
+					a.overlays.overlayRosters = make(map[string]*overlayRoster, overlayManifestCap)
 				}
-				a.overlayRosters[res.key] = res.roster
+				a.overlays.overlayRosters[res.key] = res.roster
 				a.overlayInvalidateMemos()
 				a.overlayIconPagesReset() // the row count just changed; cachedPage keys by INDEX
 			default:
@@ -329,13 +329,13 @@ func (a *App) pollOverlayRosters() {
 			}
 		}
 	}
-	if a.overlayTexRes == nil {
+	if a.overlays.overlayTexRes == nil {
 		return
 	}
 	for {
 		select {
-		case res := <-a.overlayTexRes:
-			delete(a.overlayTexLoading, res.key)
+		case res := <-a.overlays.overlayTexRes:
+			delete(a.overlays.overlayTexLoading, res.key)
 			if res.dec == nil {
 				continue
 			}
@@ -367,20 +367,20 @@ func (a *App) overlayDemandTheme(path, key string) {
 	if a.d.Store.Contains(key) {
 		return
 	}
-	if a.overlayTexLoading == nil {
-		a.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
+	if a.overlays.overlayTexLoading == nil {
+		a.overlays.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
 	}
-	if a.overlayTexLoading[key] || len(a.overlayTexLoading) >= themeOverlayLoadCap {
+	if a.overlays.overlayTexLoading[key] || len(a.overlays.overlayTexLoading) >= themeOverlayLoadCap {
 		return
 	}
-	if a.overlayTexRes == nil {
-		a.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
+	if a.overlays.overlayTexRes == nil {
+		a.overlays.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
 	}
-	a.overlayTexLoading[key] = true
+	a.overlays.overlayTexLoading[key] = true
 	anims := a.d.Prefs.Load().PreferAnimated
 	// Captured on the render thread for the reason overlayRosterFetchOne captures
 	// its own: the worker must read nothing off App (hard rule 8).
-	out := a.overlayTexRes
+	out := a.overlays.overlayTexRes
 	go func() {
 		res := overlayTexLoad{key: key}
 		if data, err := os.ReadFile(path); err == nil {
@@ -507,11 +507,11 @@ func (a *App) overlayEffectSound(folder, name string) string {
 // memo when a fetch lands.
 func (a *App) myOverlayFolder() string {
 	char := a.activeCharName()
-	if a.overlayMyFolderValid && a.overlayMyFolderChar == char {
-		return a.overlayMyFolder
+	if a.overlays.overlayMyFolderValid && a.overlays.overlayMyFolderChar == char {
+		return a.overlays.overlayMyFolder
 	}
-	a.overlayMyFolderChar, a.overlayMyFolder, a.overlayMyFolderValid = char, a.overlayEffectsFolderFor(char), true
-	return a.overlayMyFolder
+	a.overlays.overlayMyFolderChar, a.overlays.overlayMyFolder, a.overlays.overlayMyFolderValid = char, a.overlayEffectsFolderFor(char), true
+	return a.overlays.overlayMyFolder
 }
 
 // overlayChoices builds the dropdown's option list: "None" at index 0, then the
@@ -522,21 +522,21 @@ func (a *App) myOverlayFolder() string {
 // asked on every courtroom frame (the zero-alloc gate).
 func (a *App) overlayChoices() []string {
 	folder := a.myOverlayFolder()
-	if a.overlayIconFolder != folder {
+	if a.overlays.overlayIconFolder != folder {
 		// An iniswap or character swap into a DIFFERENT effects pack: the icon pages
 		// are keyed by ROW INDEX (cachedPage), and cachedPage only reallocates when
 		// the row COUNT changes — two packs of the same size would otherwise draw
 		// each other's icons. A plain string compare, so the settled frame pays
 		// nothing.
-		a.overlayIconFolder = folder
+		a.overlays.overlayIconFolder = folder
 		a.overlayIconPagesReset()
 	}
 	roster := a.overlayRosterFor(folder)
-	if a.overlayChoicesValid && a.overlayChoicesRoster == roster {
-		return a.overlayChoicesCache
+	if a.overlays.overlayChoicesValid && a.overlays.overlayChoicesRoster == roster {
+		return a.overlays.overlayChoicesCache
 	}
-	a.overlayChoicesRoster, a.overlayChoicesValid, a.overlayChoicesCache = roster, true, nil
-	a.overlayIconKeys, a.overlayIconPaths = nil, nil
+	a.overlays.overlayChoicesRoster, a.overlays.overlayChoicesValid, a.overlays.overlayChoicesCache = roster, true, nil
+	a.overlays.overlayIconKeys, a.overlays.overlayIconPaths = nil, nil
 	if roster == nil || roster.set == nil {
 		return nil
 	}
@@ -546,9 +546,9 @@ func (a *App) overlayChoices() []string {
 	}
 	out := make([]string, 0, len(names)+1)
 	out = append(out, overlayNoneRow)
-	a.overlayChoicesCache = append(out, names...)
+	a.overlays.overlayChoicesCache = append(out, names...)
 	a.bakeOverlayIconKeys(folder, roster)
-	return a.overlayChoicesCache
+	return a.overlays.overlayChoicesCache
 }
 
 // bakeOverlayIconKeys precomputes every row's icon page KEY, and for the theme
@@ -558,14 +558,14 @@ func (a *App) overlayChoices() []string {
 // (courtroom.cpp:5606-5610) but no theme in the corpus ships one, so it draws the
 // empty chip rather than burning a probe per open.
 func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
-	choices := a.overlayChoicesCache
-	a.overlayIconKeys = make([]string, len(choices))
-	a.overlayIconPaths = make([]string, len(choices))
+	choices := a.overlays.overlayChoicesCache
+	a.overlays.overlayIconKeys = make([]string, len(choices))
+	a.overlays.overlayIconPaths = make([]string, len(choices))
 	origin := a.urls.Origin()
 	for i := 1; i < len(choices); i++ {
 		name := choices[i]
 		if p, ok := roster.icon[strings.ToLower(name)]; ok {
-			a.overlayIconKeys[i], a.overlayIconPaths[i] = overlayThemeKey(p), p
+			a.overlays.overlayIconKeys[i], a.overlays.overlayIconPaths[i] = overlayThemeKey(p), p
 			continue
 		}
 		if origin == "" {
@@ -574,7 +574,7 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 			continue
 		}
 		if cands := a.urls.OverlayEffectMiscIcon(folder, name); len(cands) > 0 {
-			a.overlayIconKeys[i] = cands[0]
+			a.overlays.overlayIconKeys[i] = cands[0]
 		}
 	}
 }
@@ -607,21 +607,21 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	if a.overlayChoiceIdx < 0 || a.overlayChoiceIdx >= len(choices) {
 		a.overlayChoiceIdx = 0
 	}
-	if a.overlayThumbFn == nil {
+	if a.overlays.overlayThumbFn == nil {
 		// Bound ONCE (the posThumbFn idiom): a per-frame closure here would
 		// allocate on the settled path, which the whole-screen alloc gate catches.
-		a.overlayThumbFn = a.overlayIconDraw
+		a.overlays.overlayThumbFn = a.overlayIconDraw
 	}
 	rowH, thumbW := overlayIconRowH, overlayIconThumbW
-	if a.overlayIconSize[0] > 0 && a.overlayIconSize[1] > 0 {
+	if a.overlays.overlayIconSize[0] > 0 && a.overlays.overlayIconSize[1] > 0 {
 		// effects_icon_size (courtroom.cpp:979), plus the padding every thumbnail
 		// dropdown row carries.
-		thumbW = int32(a.overlayIconSize[0]) + 4
-		if h := int32(a.overlayIconSize[1]) + 6; h > rowH {
+		thumbW = int32(a.overlays.overlayIconSize[0]) + 4
+		if h := int32(a.overlays.overlayIconSize[1]) + 6; h > rowH {
 			rowH = h
 		}
 	}
-	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.overlayChoiceIdx, rowH, thumbW, a.overlayThumbFn)
+	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.overlayChoiceIdx, rowH, thumbW, a.overlays.overlayThumbFn)
 	if changed {
 		a.overlayChoiceIdx = next
 		// on_effects_dropdown_changed's other half (courtroom.cpp:5653-5657): it sets
@@ -649,11 +649,11 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	c := a.ctx
 	n := len(a.overlayChoices())
-	if i < 0 || i >= n || i >= len(a.overlayIconKeys) {
+	if i < 0 || i >= n || i >= len(a.overlays.overlayIconKeys) {
 		return
 	}
-	base := a.overlayIconKeys[i]
-	path := a.overlayIconPaths[i]
+	base := a.overlays.overlayIconKeys[i]
+	path := a.overlays.overlayIconPaths[i]
 	if base == "" {
 		// Row 0 ("None") and any row with no art anywhere: the empty chip, never a
 		// probe. See bakeOverlayIconKeys.
@@ -666,7 +666,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 		// what HEALS the page after an eviction — overlay art is uploaded evictable.
 		a.overlayDemandTheme(path, base)
 	}
-	if page, ok := a.cachedPage(&a.overlayIconPages, &a.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.overlays.overlayIconPages, &a.overlays.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
 		// Through the shared cgo scratch, never &tr: taking the address of a
 		// parameter heap-escapes on EVERY cgo call (the ui.go cgoRect contract), and
 		// the closed control paints this on every settled frame.
@@ -676,7 +676,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 		c.Fill(tr, overlayIconChipColor)
 		if path == "" {
 			// AssetType: Effect (dropdown row icon, visible rows only, LOW priority)
-			a.demandAsset(&a.overlayIconAsk, n, i, base, assets.AssetTypeEffect)
+			a.demandAsset(&a.overlays.overlayIconAsk, n, i, base, assets.AssetTypeEffect)
 		}
 	}
 	c.Border(tr, ColPanelHi)
@@ -703,7 +703,7 @@ func (a *App) previewOverlayRow(choices []string, row int) {
 		a.previewPinned = true
 		a.previewNameFor = res.Base
 		a.previewName = name
-		a.overlayPreviewBase = res.Base // ownership: the close edge takes down only this box
+		a.overlays.overlayPreviewBase = res.Base // ownership: the close edge takes down only this box
 	}
 	// The SAME sentinel filter the message path uses (courtroom.OverlaySoundPlayable,
 	// spec §1.b). previewSFX rejects only "" and the empty origin, and KFO's stock
@@ -722,19 +722,19 @@ func (a *App) previewOverlayRow(choices []string, row int) {
 // overlayPreviewCloseEdge takes the right-click effect preview down when the
 // effects list closes — spec §1.d, "must clear on dropdown close".
 func (a *App) overlayPreviewCloseEdge() {
-	if a.overlayPreviewBase == "" || a.ctx == nil {
+	if a.overlays.overlayPreviewBase == "" || a.ctx == nil {
 		return
 	}
 	if a.ctx.ddOpen == overlayEffectsDDID {
 		return // still open: keep the box up across rows
 	}
-	if a.previewBase == a.overlayPreviewBase {
+	if a.previewBase == a.overlays.overlayPreviewBase {
 		// Routed through closeSpritePreview, never a raw previewBase = "": it also
 		// clears the pin latch and disarms the dwell id (screens.go:1563-1576), the
 		// trap the five earlier dismissal sites fell into.
 		a.closeSpritePreview()
 	}
-	a.overlayPreviewBase = ""
+	a.overlays.overlayPreviewBase = ""
 }
 
 // overlayRosterFXFor is a small accessor so the preview and the send path do not
@@ -819,6 +819,6 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 // changes shape so a stale page cannot draw under the wrong row (cachedPage keys
 // by INDEX, not URL, exactly like the pos thumbnails).
 func (a *App) overlayIconPagesReset() {
-	a.overlayIconPages = nil
-	a.overlayIconAsk = nil
+	a.overlays.overlayIconPages = nil
+	a.overlays.overlayIconAsk = nil
 }

@@ -37,6 +37,6 @@ func (a *App) insertICInline(code string) {
 		return
 	}
 	a.icInput = insertRunesAt(a.icInput, c.caret, code)
-	c.selAnchor = -1          // the spliced code is not selected; the caret follows it
+	c.selAnchor = -1 // the spliced code is not selected; the caret follows it
 	c.caret += utf8.RuneCountInString(code)
 }

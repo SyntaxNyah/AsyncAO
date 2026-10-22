@@ -27,18 +27,18 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 	if gid == 0 {
 		return
 	}
-	if _, joined := a.msgGroups[gid]; joined {
+	if _, joined := a.msgs.msgGroups[gid]; joined {
 		return
 	}
-	for _, inv := range a.pendingInvites {
+	for _, inv := range a.msgs.pendingInvites {
 		if inv.gid == gid {
 			return // already pending
 		}
 	}
-	if len(a.pendingInvites) >= maxPendingInvites {
+	if len(a.msgs.pendingInvites) >= maxPendingInvites {
 		return
 	}
-	a.pendingInvites = append(a.pendingInvites, groupInvite{gid: gid, name: name, ownerUID: ownerUID, ownerName: ownerName})
+	a.msgs.pendingInvites = append(a.msgs.pendingInvites, groupInvite{gid: gid, name: name, ownerUID: ownerUID, ownerName: ownerName})
 	a.warnLine = clampLine(ownerName + " invited you to the group \"" + name + "\"")
 	a.warnAt = a.now()
 	a.ctx.FlashWindow()
@@ -57,7 +57,7 @@ func (a *App) acceptInvite(inv groupInvite) {
 		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
 	a.removePendingInvite(inv.gid)
-	a.showMessages, a.msgSelGroup, a.msgSel = true, inv.gid, ""
+	a.msgs.showMessages, a.msgs.msgSelGroup, a.msgs.msgSel = true, inv.gid, ""
 }
 
 // declineInvite drops the invite and tells the owner to remove us.
@@ -71,13 +71,13 @@ func (a *App) declineInvite(inv groupInvite) {
 }
 
 func (a *App) removePendingInvite(gid uint32) {
-	out := a.pendingInvites[:0]
-	for _, inv := range a.pendingInvites {
+	out := a.msgs.pendingInvites[:0]
+	for _, inv := range a.msgs.pendingInvites {
 		if inv.gid != gid {
 			out = append(out, inv)
 		}
 	}
-	a.pendingInvites = out
+	a.msgs.pendingInvites = out
 }
 
 // inviteToastGapY is the breathing room between the app-chrome band and the invite
@@ -92,11 +92,11 @@ const inviteToastGapY = int32(8)
 // chrome band, with Accept / Decline. Non-blocking; drawn over the courtroom only,
 // and only when an invite is pending (zero cost otherwise).
 func (a *App) drawGroupInviteToast(w, h int32) {
-	if len(a.pendingInvites) == 0 {
+	if len(a.msgs.pendingInvites) == 0 {
 		return
 	}
 	c := a.ctx
-	inv := a.pendingInvites[len(a.pendingInvites)-1]
+	inv := a.msgs.pendingInvites[len(a.msgs.pendingInvites)-1]
 	const bw, bh = int32(430), int32(58)
 	r := sdl.Rect{X: (w - bw) / 2, Y: a.topChromeH() + inviteToastGapY, W: bw, H: bh}
 	c.Fill(r, ColPanel)

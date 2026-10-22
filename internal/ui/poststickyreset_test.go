@@ -125,7 +125,7 @@ func TestClearPreAfterSendReadsTheRealPreferences(t *testing.T) {
 func stickyFXFixture(a *App) {
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	fx := []theme.OverlayFX{{Name: "tv on", Sound: "switch tv"}, {Name: "sticky one", Sound: "s", Sticky: true}}
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX([]string{"tv on", "sticky one"}, fx)},
 	}
 }

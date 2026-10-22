@@ -39,7 +39,7 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 			a := testTabApp(t)
 			a.sess = courtroom.NewRehearsalSession("", nil)
 			a.room = &courtroom.Courtroom{}
-			a.showWidgets = true
+			a.toolbox.showWidgets = true
 			p.open(a)
 
 			if a.courtroomModalUp() {
@@ -51,7 +51,7 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 			if !a.extrasSurfaceLive() {
 				t.Error("the Extras surface must stay live behind it")
 			}
-			if !(a.showWidgets && a.extrasSurfaceLive()) {
+			if !(a.toolbox.showWidgets && a.extrasSurfaceLive()) {
 				t.Error("the Extras box must stay visible — you open the Timer FROM it")
 			}
 		})

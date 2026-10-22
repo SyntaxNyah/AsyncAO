@@ -666,9 +666,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Cleared after the themed pass (drawCompactToolbox for THIS courtroom draws
 	// post-court in app.go, so the flag must outlive this function — cleared there).
 	if tr, ok := lay.rect("asyncao_toolbox"); ok {
-		a.toolboxThemeRect, a.toolboxThemeRectOn = tr, true
+		a.toolbox.toolboxThemeRect, a.toolbox.toolboxThemeRectOn = tr, true
 	} else {
-		a.toolboxThemeRectOn = false
+		a.toolbox.toolboxThemeRectOn = false
 	}
 	// Latch this frame's toolbox decision and occlude whatever the strip covers
 	// (#26 — the reported symptom is a theme whose "Call Mod" button sits under it).

@@ -154,7 +154,7 @@ func (a *App) drawLobby(w, h int32) {
 	// hdrY is this screen's header row, and every offset below is relative to it.
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "AsyncAO", ColText)
-	c.Label(pad, hdrY+30, a.lobbyStatus, ColTextDim)
+	c.Label(pad, hdrY+30, a.lobby.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
 		c.Label(pad+220, hdrY+30, a.connErrLabel(), ColDanger)
 		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
@@ -261,16 +261,16 @@ func (a *App) drawLobby(w, h int32) {
 	// screen (see the cluster comment) because "← All servers" is this page's only
 	// way back; the Servers menu carries the same toggle through the same setter.
 	pbLabel := "★ Phone Book"
-	if a.phoneBookPage {
+	if a.lobby.phoneBookPage {
 		pbLabel = "← All servers"
 	}
 	if c.Button(pbBtn, pbLabel) {
-		a.setPhoneBookPage(!a.phoneBookPage)
+		a.setPhoneBookPage(!a.lobby.phoneBookPage)
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
 	dcY := lobbyDirectRowY(a.topChromeH())
-	if a.phoneBookPage {
+	if a.lobby.phoneBookPage {
 		a.drawPhoneBookBar(w, dcY)
 	} else {
 		// Direct connect row, laid out by lobbyDirectRow so nothing walks off the right
@@ -282,9 +282,9 @@ func (a *App) drawLobby(w, h int32) {
 		if row.label != "" {
 			c.Label(row.labelX, dcY+4, row.label, ColText)
 		}
-		a.directInput, _ = c.TextField(directConnectFieldID, sdl.Rect{X: row.fieldX, Y: dcY, W: row.fieldW, H: fieldH}, a.directInput, "127.0.0.1:50001")
-		a.directSecure = c.Checkbox(row.tlsX, dcY+4, tlsLabel, a.directSecure)
-		a.directSave = c.Checkbox(row.saveX, dcY+4, saveLabel, a.directSave)
+		a.lobby.directInput, _ = c.TextField(directConnectFieldID, sdl.Rect{X: row.fieldX, Y: dcY, W: row.fieldW, H: fieldH}, a.lobby.directInput, "127.0.0.1:50001")
+		a.lobby.directSecure = c.Checkbox(row.tlsX, dcY+4, tlsLabel, a.lobby.directSecure)
+		a.lobby.directSave = c.Checkbox(row.saveX, dcY+4, saveLabel, a.lobby.directSave)
 		if c.Button(sdl.Rect{X: row.connX, Y: dcY, W: dcConnectW, H: btnH}, "Connect") {
 			a.directConnect()
 		}
@@ -307,24 +307,24 @@ func (a *App) drawLobby(w, h int32) {
 	// guarded on the same predicate the menu row's `enabled` uses.
 	listActY := dcY + lobbyListActionsDropY
 	refreshLabel := "Refresh"
-	if a.lobbyFetching {
+	if a.lobby.lobbyFetching {
 		refreshLabel = "Refreshing…"
 	}
 	refreshBtn := sdl.Rect{X: pad, Y: listActY, W: lobbyListActionW, H: btnH}
-	if c.Button(refreshBtn, refreshLabel) && !a.lobbyFetching {
+	if c.Button(refreshBtn, refreshLabel) && !a.lobby.lobbyFetching {
 		a.RefreshServers()
 	}
 	c.Tooltip(refreshBtn, "Re-fetch the master server list")
 
 	sortLabel := "Sort: name"
-	if a.pingMode {
+	if a.lobby.pingMode {
 		sortLabel = "Sort: speed"
 	}
-	if a.pinging {
+	if a.lobby.pinging {
 		sortLabel = "Pinging…"
 	}
 	sortBtn := sdl.Rect{X: pad + lobbyListActionW + lobbyUtilBtnGap, Y: listActY, W: lobbyListActionW, H: btnH}
-	if c.Button(sortBtn, sortLabel) && !a.pinging {
+	if c.Button(sortBtn, sortLabel) && !a.lobby.pinging {
 		a.toggleConnectTimeSort()
 	}
 	c.Tooltip(sortBtn, "Order the list by how fast each server answers, instead of by name")
@@ -333,19 +333,19 @@ func (a *App) drawLobby(w, h int32) {
 	// row; click the selected row again: join (Join button still works).
 	// Wheel scrolls only over the list itself (never the connect row).
 	listTop := lobbyListTop(a.topChromeH())
-	a.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
-	if a.lobbyScroll < 0 {
-		a.lobbyScroll = 0
+	a.lobby.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
+	if a.lobby.lobbyScroll < 0 {
+		a.lobby.lobbyScroll = 0
 	}
 	lineH := int32(c.font.Height()) + 3
-	y := listTop - a.lobbyScroll
+	y := listTop - a.lobby.lobbyScroll
 	legacyHeaderDrawn := false
 	// "Phone Fanat" chip (Phone Book page only): claim its click BEFORE the rows
 	// draw — the chip sits over the bottom-right corner where a server row can be,
 	// and rows act on c.clicked immediately, so consuming the click here (like
 	// classicEditFence) stops an accidental select/connect from a chip press. The
 	// chip's visual draws later, on top, in drawPhoneFanatChip.
-	if a.phoneBookPage {
+	if a.lobby.phoneBookPage {
 		a.claimPhoneFanatClick(w, h)
 	}
 	// Snapshot the slice for the whole loop: a ★-click removal (drawServerRow →
@@ -355,10 +355,10 @@ func (a *App) drawLobby(w, h int32) {
 	// length and panic. Ranging the snapshot keeps i valid against the old
 	// backing array for the rest of this frame; the stale rows draw once more
 	// (standard immediate-mode) and the next frame ranges the fresh list.
-	servers := a.servers
+	servers := a.lobby.servers
 	for i := range servers {
 		e := &servers[i]
-		if a.phoneBookPage && !e.Favorite {
+		if a.lobby.phoneBookPage && !e.Favorite {
 			continue // Phone Book shows only your saved servers
 		}
 		if !e.Joinable() && !legacyHeaderDrawn {
@@ -387,19 +387,19 @@ func (a *App) drawLobby(w, h int32) {
 			a.drawServerRow(e, i, y, w)
 		}
 		y += rowH
-		if i == a.selServer && len(a.descLines) > 0 {
-			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + btnH + 16
+		if i == a.lobby.selServer && len(a.lobby.descLines) > 0 {
+			boxH := int32(len(a.lobby.descLines)+len(a.lobby.descLinks))*lineH + btnH + 16
 			if y > listTop-boxH && y < h {
 				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
 				c.Fill(box, ColPanelHi)
 				c.Border(box, ColAccent)
 				ly := y + 3
-				for _, line := range a.descLines {
+				for _, line := range a.lobby.descLines {
 					c.LabelClipped(box.X+6, ly, box.W-12, line, ColText)
 					ly += lineH
 				}
 				// URLs from the description: clickable, opens the browser.
-				for _, link := range a.descLinks {
+				for _, link := range a.lobby.descLinks {
 					a.linkLabel(box.X+6, ly, box.W-12, link)
 					ly += lineH
 				}
@@ -441,21 +441,21 @@ func (a *App) drawLobby(w, h int32) {
 		// Consumed on use so one press joins once and nothing downstream sees it twice.
 		if c.enter {
 			c.enter = false
-			if a.selServer >= 0 && a.selServer < len(a.servers) && a.servers[a.selServer].Joinable() {
-				e := &a.servers[a.selServer]
+			if a.lobby.selServer >= 0 && a.lobby.selServer < len(a.lobby.servers) && a.lobby.servers[a.lobby.selServer].Joinable() {
+				e := &a.lobby.servers[a.lobby.selServer]
 				a.Connect(e.Name, e.WebSocketURL())
 				return
 			}
 		}
 		switch c.keyPressed {
 		case sdl.K_DOWN:
-			if nx := a.nextJoinableServer(a.selServer, 1); nx >= 0 {
+			if nx := a.nextJoinableServer(a.lobby.selServer, 1); nx >= 0 {
 				a.selectServerRow(nx, w)
 				a.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
 		case sdl.K_UP:
-			if nx := a.nextJoinableServer(a.selServer, -1); nx >= 0 {
+			if nx := a.nextJoinableServer(a.lobby.selServer, -1); nx >= 0 {
 				a.selectServerRow(nx, w)
 				a.scrollServerIntoView(nx, listTop, h)
 			}
@@ -466,7 +466,7 @@ func (a *App) drawLobby(w, h int32) {
 	// "Phone Fanat" chip: a small, dim, always-visible click-to-quip button in the
 	// bottom-right of the Phone Book page only. Drawing strictly inside this branch
 	// keeps it off the plain all-servers lobby and out of the rest of the app.
-	if a.phoneBookPage {
+	if a.lobby.phoneBookPage {
 		a.drawPhoneFanatChip(w, h)
 	}
 
@@ -483,7 +483,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	row := sdl.Rect{X: pad, Y: y, W: w - 2*pad, H: rowH - 2}
 	hover := c.hovering(row)
 	bg := ColPanel
-	if idx == a.selServer {
+	if idx == a.lobby.selServer {
 		bg = ColPanelHi
 	} else if hover {
 		bg = ColPanelHi
@@ -496,7 +496,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// and the tooltip for the row under edit. Identity is the stored Favorites
 	// URL (== WebSocketURL()); guarded by phoneBookPage && Favorite so it can
 	// never trigger on a plain master-list row.
-	editing := a.phoneBookPage && e.Favorite && a.pbEditURL != "" && a.pbEditURL == e.WebSocketURL()
+	editing := a.lobby.phoneBookPage && e.Favorite && a.pbEditURL != "" && a.pbEditURL == e.WebSocketURL()
 	if editing {
 		fy := y + (rowH-2-fieldH)/2
 		a.pbEditName, _ = c.TextField("pbedit_name", sdl.Rect{X: row.X + 6, Y: fy, W: 150, H: fieldH}, a.pbEditName, "name")
@@ -534,7 +534,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// rows). It sits between the star and the name, so the name's start-x shifts
 	// right in this branch only — the normal lobby row is byte-for-byte unchanged.
 	nameX := row.X + 52
-	if a.phoneBookPage && e.Favorite {
+	if a.lobby.phoneBookPage && e.Favorite {
 		const editBtnW = 40
 		editBtn := sdl.Rect{X: starRect.X + 22, Y: y + 1, W: editBtnW, H: rowH - 4}
 		if c.Button(editBtn, "Edit") {
@@ -558,9 +558,9 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// time takes this slot instead (the verbose tier text would run under the
 	// number — the tier COLOUR still reads off the left swatch). "…" probing,
 	// "unreachable" on a failed dial.
-	if a.pingMode && e.Joinable() {
+	if a.lobby.pingMode && e.Joinable() {
 		label, col := "…", ColTextDim
-		if d, ok := a.pings[e.WebSocketURL()]; ok {
+		if d, ok := a.lobby.pings[e.WebSocketURL()]; ok {
 			if d < 0 {
 				label, col = "unreachable", ColDanger
 			} else {
@@ -584,7 +584,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		// assets. Always visible so the feature is discoverable — without
 		// a remembered roster (recorded on each join) it explains itself
 		// instead of silently not existing.
-		if idx == a.selServer {
+		if idx == a.lobby.selServer {
 			info := a.d.Prefs.Load().ServerWarmInfoFor(e.WebSocketURL())
 			rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
 			if c.hovering(rehBtn) {
@@ -603,7 +603,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 
 	// Row body click: select-and-expand first, join on the second click.
 	if hover && !joinHover && c.clicked {
-		if idx == a.selServer && e.Joinable() {
+		if idx == a.lobby.selServer && e.Joinable() {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
@@ -617,16 +617,16 @@ const maxDescLinks = 4
 // selectServerRow selects a lobby row and (re)builds its cached description lines + links — shared
 // by a row click and keyboard navigation (#18) so both show the same expanded detail.
 func (a *App) selectServerRow(idx int, w int32) {
-	if idx < 0 || idx >= len(a.servers) {
+	if idx < 0 || idx >= len(a.lobby.servers) {
 		return
 	}
-	a.selServer = idx
-	desc := a.servers[idx].Description
+	a.lobby.selServer = idx
+	desc := a.lobby.servers[idx].Description
 	if desc == "" {
 		desc = "(no description)"
 	}
-	a.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
-	a.descLinks = extractURLs(desc, maxDescLinks)
+	a.lobby.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
+	a.lobby.descLinks = extractURLs(desc, maxDescLinks)
 }
 
 // serverRowTooltip shows a lobby row's details on hover (#17): the connect URL and the server's
@@ -643,10 +643,10 @@ func (a *App) serverRowTooltip(row sdl.Rect, e *network.ServerEntry) {
 // nextJoinableServer returns the index of the next joinable server from `from` in direction dir
 // (+1 down / -1 up), respecting the Phone Book filter; -1 when there's none that way (no wrap).
 func (a *App) nextJoinableServer(from, dir int) int {
-	n := len(a.servers)
+	n := len(a.lobby.servers)
 	for i := from + dir; i >= 0 && i < n; i += dir {
-		e := &a.servers[i]
-		if a.phoneBookPage && !e.Favorite {
+		e := &a.lobby.servers[i]
+		if a.lobby.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if e.Joinable() {
@@ -661,9 +661,9 @@ func (a *App) nextJoinableServer(from, dir int) int {
 func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 	top := int32(0) // content-space offset (pre-scroll) of row idx's top
 	legacyDrawn := false
-	for i := range a.servers {
-		e := &a.servers[i]
-		if a.phoneBookPage && !e.Favorite {
+	for i := range a.lobby.servers {
+		e := &a.lobby.servers[i]
+		if a.lobby.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if !e.Joinable() && !legacyDrawn {
@@ -676,13 +676,13 @@ func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 		top += rowH
 	}
 	view := h - listTop
-	if top < a.lobbyScroll {
-		a.lobbyScroll = top
-	} else if top+rowH > a.lobbyScroll+view {
-		a.lobbyScroll = top + rowH - view
+	if top < a.lobby.lobbyScroll {
+		a.lobby.lobbyScroll = top
+	} else if top+rowH > a.lobby.lobbyScroll+view {
+		a.lobby.lobbyScroll = top + rowH - view
 	}
-	if a.lobbyScroll < 0 {
-		a.lobbyScroll = 0
+	if a.lobby.lobbyScroll < 0 {
+		a.lobby.lobbyScroll = 0
 	}
 }
 
@@ -809,20 +809,20 @@ func (a *App) toggleFavorite(e *network.ServerEntry) {
 	} else {
 		a.d.Prefs.AddFavorite(e.Name, url, e.Description)
 	}
-	a.servers = a.mergedFavorites()
-	a.selServer, a.descLines = -1, nil // the list just reordered
+	a.lobby.servers = a.mergedFavorites()
+	a.lobby.selServer, a.lobby.descLines = -1, nil // the list just reordered
 }
 
 func (a *App) directConnect() {
-	url, err := network.ParseDirectAddress(a.directInput, a.directSecure)
+	url, err := network.ParseDirectAddress(a.lobby.directInput, a.lobby.directSecure)
 	if err != nil {
 		a.connErr = err.Error()
 		return
 	}
-	if a.directSave {
-		a.d.Prefs.AddFavorite(a.directInput, url, "")
+	if a.lobby.directSave {
+		a.d.Prefs.AddFavorite(a.lobby.directInput, url, "")
 	}
-	a.Connect(a.directInput, url)
+	a.Connect(a.lobby.directInput, url)
 }
 
 // --- CHARACTER SELECT ---------------------------------------------------------------
@@ -1538,9 +1538,9 @@ func (a *App) noteScreenTransition() {
 	// generation so the moot sweep's stragglers — including a late done
 	// sentinel's surprise re-sort — are discarded. Same idiom as the join path
 	// (connectWith).
-	if prev == ScreenLobby && a.pinging {
-		a.pinging = false
-		a.pingGen++
+	if prev == ScreenLobby && a.lobby.pinging {
+		a.lobby.pinging = false
+		a.lobby.pingGen++
 	}
 	// Lobby-entry auto-refresh: past the early-return we KNOW this frame is a
 	// screen switch, so landing on ScreenLobby is the entry edge. Detecting it
@@ -1562,7 +1562,7 @@ func (a *App) noteScreenTransition() {
 		// comment's "past the cap the refresh fires immediately on entry"
 		// promise. One empty-channel select when nothing is parked.
 		a.pollLobbyFetch()
-		if lobbyAutoRefreshDue(a.lastLobbyRefreshAt, a.now()) {
+		if lobbyAutoRefreshDue(a.lobby.lastLobbyRefreshAt, a.now()) {
 			a.RefreshServers()
 		}
 	}

@@ -219,9 +219,9 @@ func (a *App) drawAbout(w, h int32) {
 
 	// Reflow only when the column width changes (off the hot path, but kept
 	// alloc-free per frame per this repo's UI bar).
-	if a.aboutFlat == nil || a.aboutFlatW != colW {
-		a.aboutFlat = a.buildAboutFlat(c, colW)
-		a.aboutFlatW = colW
+	if a.docs.aboutFlat == nil || a.docs.aboutFlatW != colW {
+		a.docs.aboutFlat = a.buildAboutFlat(c, colW)
+		a.docs.aboutFlatW = colW
 	}
 
 	lineH := int32(c.font.Height()) + 4
@@ -234,7 +234,7 @@ func (a *App) drawAbout(w, h int32) {
 
 	// --- total content height (prose + portrait + link cards) ---------------
 	contentH := int32(0)
-	for _, fl := range a.aboutFlat {
+	for _, fl := range a.docs.aboutFlat {
 		contentH += fl.gap + lineH
 		if fl.mayo && hasMayo {
 			contentH += mayoBlock
@@ -250,12 +250,12 @@ func (a *App) drawAbout(w, h int32) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	a.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	if a.aboutScroll < 0 {
-		a.aboutScroll = 0
+	a.docs.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	if a.docs.aboutScroll < 0 {
+		a.docs.aboutScroll = 0
 	}
-	if a.aboutScroll > maxScroll {
-		a.aboutScroll = maxScroll
+	if a.docs.aboutScroll > maxScroll {
+		a.docs.aboutScroll = maxScroll
 	}
 
 	// #31: pushClip (not a raw SetClipRect) so hovering() honours the clip —
@@ -266,8 +266,8 @@ func (a *App) drawAbout(w, h int32) {
 	clipPrev, clipHad := c.pushClip(clip)
 	defer c.popClip(clipPrev, clipHad)
 
-	y := top - a.aboutScroll
-	for _, fl := range a.aboutFlat {
+	y := top - a.docs.aboutScroll
+	for _, fl := range a.docs.aboutFlat {
 		y += fl.gap
 		if fl.mayo && hasMayo {
 			dst := sdl.Rect{X: x0 + (colW-mayoLogW)/2, Y: y, W: mayoLogW, H: mayoLogH}

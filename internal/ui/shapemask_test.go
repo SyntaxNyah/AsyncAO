@@ -208,8 +208,8 @@ func TestRefreshShapeMasksZeroAlloc(t *testing.T) {
 	if !a.ctx.shapeMaskReady || a.ctx.shapeFillTex == nil {
 		t.Fatalf("post-rebuild refresh must re-resolve the fresh mask pointers")
 	}
-	if a.shapeResolvedGen != a.shapeStoreGen() {
+	if a.toolbox.shapeResolvedGen != a.shapeStoreGen() {
 		t.Fatalf("resolve memo generation = %d, want the store's %d — a stale memo would pin freed pointers",
-			a.shapeResolvedGen, a.shapeStoreGen())
+			a.toolbox.shapeResolvedGen, a.shapeStoreGen())
 	}
 }

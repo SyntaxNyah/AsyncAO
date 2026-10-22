@@ -45,15 +45,15 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	// both rows Joinable (no legacy-header branch to shift the row geometry).
 	a.d.Prefs.AddFavorite("Alpha", "ws://a.example:1001", "")
 	a.d.Prefs.AddFavorite("Beta", "ws://b.example:1002", "")
-	a.servers = a.mergedFavorites()
-	if len(a.servers) != 2 {
-		t.Fatalf("setup: want 2 favorites, got %d", len(a.servers))
+	a.lobby.servers = a.mergedFavorites()
+	if len(a.lobby.servers) != 2 {
+		t.Fatalf("setup: want 2 favorites, got %d", len(a.lobby.servers))
 	}
-	before := len(a.servers)
+	before := len(a.lobby.servers)
 
 	// Phone Book page (faithful to the bug report) with no selection/desc box.
-	a.phoneBookPage = true
-	a.selServer = -1
+	a.lobby.phoneBookPage = true
+	a.lobby.selServer = -1
 
 	// Point the mouse at row 0's ★ and arm a left-click release. The ★ handler is
 	// a plain `hovering(star) && c.clicked` (not ClickedIn), so setting the
@@ -77,7 +77,7 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 		a.drawLobby(1280, 720)
 	}()
 
-	if len(a.servers) != before-1 {
-		t.Fatalf("★-remove must shrink the saved list by one: got %d, want %d", len(a.servers), before-1)
+	if len(a.lobby.servers) != before-1 {
+		t.Fatalf("★-remove must shrink the saved list by one: got %d, want %d", len(a.lobby.servers), before-1)
 	}
 }

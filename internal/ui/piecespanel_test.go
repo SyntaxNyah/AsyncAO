@@ -100,11 +100,11 @@ func TestPiecesPanelIsInTheFloatingRegistry(t *testing.T) {
 	}
 	// Its visibility predicate must agree with the draw's own early return, or the
 	// de-overlap census would shove other panels away from one that is not shown.
-	a.toolboxPinned, a.toolboxPieces = false, false
+	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = false, false
 	if found.open(a) {
 		t.Error("the panel reports visible while closed — siblings would dodge a panel that is not there")
 	}
-	a.toolboxPinned, a.toolboxPieces = true, true
+	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 	if !found.open(a) {
 		t.Error("the panel reports hidden while open")
 	}

@@ -207,10 +207,10 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 		// (threads key by character name; sendDirectMessage resolves the live
 		// UID per send). Works for non-AsyncAO players too — it rides the
 		// server's /pm, they just reply through OOC.
-		a.showMessages = true
-		a.msgSel = p.name
-		a.msgSelGroup = 0
-		a.msgGroupManage = false
+		a.msgs.showMessages = true
+		a.msgs.msgSel = p.name
+		a.msgs.msgSelGroup = 0
+		a.msgs.msgGroupManage = false
 		a.ctx.FocusField("msgcompose")
 	case rosterActPair:
 		a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed

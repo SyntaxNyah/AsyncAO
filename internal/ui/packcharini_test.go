@@ -162,7 +162,7 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 // session — the feature reads as broken even though the fetch is now correct.
 func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
-	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
+	a.overlays.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
 	a.previewChar = "witch"
 	a.previewAnims = []string{"stale"}
 	a.previewLabels = []string{"Stale"}
@@ -171,8 +171,8 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 
 	a.rescanLocalPacks(nil)
 
-	if len(a.charMetaCache) != 0 {
-		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)
+	if len(a.overlays.charMetaCache) != 0 {
+		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.overlays.charMetaCache)
 	}
 	if a.previewChar != "" || a.previewAnims != nil || a.previewLabels != nil || a.previewEmoteIdx != 0 {
 		t.Errorf("the preview kept its latch (%q/%v) — re-hovering the same character redraws the pre-edit emotes",

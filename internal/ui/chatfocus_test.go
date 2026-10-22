@@ -119,7 +119,7 @@ func TestTypingClaimRefusesWhereTheKeyBelongsToSomethingElse(t *testing.T) {
 		{"a modal fence is up", func(a *App) { a.ctx.modalOn = true }},
 		{"a key-bind capture is armed", func(a *App) { a.bindingFor = "Judge" }},
 		{"the layout editor owns the keyboard", func(a *App) { a.layoutEdit = true }},
-		{"the classic editor owns the keyboard", func(a *App) { a.classicEdit = true }},
+		{"the classic editor owns the keyboard", func(a *App) { a.classic.classicEdit = true }},
 		{"the IC field is not on screen", func(a *App) { a.ctx.drawnFieldSeq = nil }},
 	} {
 		a := focusTestApp()

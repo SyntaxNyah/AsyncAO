@@ -81,7 +81,7 @@ func TestToolIconAllocFree(t *testing.T) {
 func TestUICfgRetired(t *testing.T) {
 	a := testTabApp(t)
 	a.sess = &courtroom.Session{}        // handleHotkeys early-returns without a session
-	a.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
+	a.classic.hidden = map[string]bool{} // App init seeds this; bare test fixture must too
 	a.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
 	// Bind the action to whatever name SDL gives Ctrl+F4's keycode (headless
 	// GetKeyName can differ from the "f4" default), so the bind and the dispatch
@@ -96,8 +96,8 @@ func TestUICfgRetired(t *testing.T) {
 
 	a.handleHotkeys()
 
-	if !a.toolboxPinned || !a.toolboxPieces {
-		t.Fatalf("hotkeyUIChrome must open the pinned per-piece panel (pinned=%v pieces=%v), even with the toolbox hidden", a.toolboxPinned, a.toolboxPieces)
+	if !a.toolbox.toolboxPinned || !a.toolbox.toolboxPieces {
+		t.Fatalf("hotkeyUIChrome must open the pinned per-piece panel (pinned=%v pieces=%v), even with the toolbox hidden", a.toolbox.toolboxPinned, a.toolbox.toolboxPieces)
 	}
 	// The panel draws gated ONLY on pinned+pieces, never on panelHidden(panelToolbox):
 	// prove the grip stays hidden but the panel is armed.
@@ -126,7 +126,7 @@ func TestEditLayoutHotkey(t *testing.T) {
 
 	a.handleHotkeys()
 
-	if !a.classicEdit {
+	if !a.classic.classicEdit {
 		t.Fatal("hotkeyEditLayout (Ctrl+F2) must open the layout editor (classicEdit) on the default layout")
 	}
 }
@@ -154,10 +154,10 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	// backing hidden map (it lives on App, not sessionState); and the panel's own
 	// draw gate.
 	a.ctx = c
-	a.hidden = map[string]bool{}
+	a.classic.hidden = map[string]bool{}
 	a.sess = courtroom.NewRehearsalSession("", nil)
 	a.room = &courtroom.Courtroom{}
-	a.toolboxPinned, a.toolboxPieces = true, true
+	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)
 	panel := a.toolboxPiecesRect(w, h)
@@ -213,10 +213,10 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.ctx = c
-	a.hidden = map[string]bool{}
+	a.classic.hidden = map[string]bool{}
 	a.sess = courtroom.NewRehearsalSession("", nil)
 	a.room = &courtroom.Courtroom{}
-	a.toolboxPinned, a.toolboxPieces = true, true
+	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)
 	panel := a.toolboxPiecesRect(w, h)

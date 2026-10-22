@@ -80,12 +80,12 @@ func TestTabStripDocksInsideTheChromeBand(t *testing.T) {
 	// A layout-editor override lifts the strip out of the band, and the band goes
 	// with it: reserving space for a strip that is no longer there would leave a dead
 	// gap at the top of every screen.
-	a.classicOv = map[string][4]float64{slotTabBar: {0.1, 0.5, 0.16, 0.03}}
+	a.classic.classicOv = map[string][4]float64{slotTabBar: {0.1, 0.5, 0.16, 0.03}}
 	if got := a.tabStripBandH(); got != 0 {
 		t.Errorf("with a slotTabBar override the reserved band = %d, want 0", got)
 	}
 	// No sessions at all ⇒ no strip ⇒ no band (a first-run lobby has no dead gap).
-	a.classicOv = nil
+	a.classic.classicOv = nil
 	a.tabs = nil
 	if got := a.tabStripBandH(); got != 0 {
 		t.Errorf("with no tabs the reserved band = %d, want 0", got)
@@ -101,7 +101,7 @@ func TestTabBarSlotOverrideRepositions(t *testing.T) {
 	if got := a.slotRect(slotTabBar, def, 1000, 800); got != def {
 		t.Errorf("no override: slotRect = %+v, want the default %+v", got, def)
 	}
-	a.classicOv = map[string][4]float64{slotTabBar: {0.1, 0.5, 0.16, 0.03}}
+	a.classic.classicOv = map[string][4]float64{slotTabBar: {0.1, 0.5, 0.16, 0.03}}
 	want := sdl.Rect{X: 100, Y: 400, W: 160, H: 24}
 	if got := a.slotRect(slotTabBar, def, 1000, 800); got != want {
 		t.Errorf("override: slotRect = %+v, want the moved spot %+v", got, want)
@@ -119,9 +119,9 @@ func TestTabBarSlotIsMoveOnlyAndRegisters(t *testing.T) {
 		t.Errorf("classicSlotLabel(slotTabBar) = %q, want it to name the Server tabs", got)
 	}
 	a := testTabApp(t)
-	a.classicEdit = true
+	a.classic.classicEdit = true
 	a.slotRect(slotTabBar, sdl.Rect{X: 10, Y: 0, W: 100, H: tabBarH}, 1000, 800)
-	if _, ok := a.slotReg[slotTabBar]; !ok {
+	if _, ok := a.classic.slotReg[slotTabBar]; !ok {
 		t.Error("while editing, the strip must register its slot so the editor hands it drag handles")
 	}
 }

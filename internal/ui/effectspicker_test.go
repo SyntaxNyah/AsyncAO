@@ -134,7 +134,7 @@ func TestOverlayRosterKeyIsPerOrigin(t *testing.T) {
 func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
 	a := &App{env: env{}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX([]string{"flash", "realization", "realization", "tv on"})},
 	}
@@ -150,7 +150,7 @@ func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
 	}
 	// An empty roster yields nothing at all, so the control never draws (AO2 hides
 	// ui_effects_dropdown when the list is empty, courtroom.cpp:5586-5598).
-	a.overlayRosters[a.overlayRosterKey("")] = &overlayRoster{set: theme.MergeOverlayFX(nil)}
+	a.overlays.overlayRosters[a.overlayRosterKey("")] = &overlayRoster{set: theme.MergeOverlayFX(nil)}
 	a.overlayInvalidateMemos() // the poll does this for real; here we mutate the map directly
 	if got := a.overlayChoices(); len(got) != 0 {
 		t.Errorf("an empty roster must yield no choices, got %v", got)
@@ -173,7 +173,7 @@ func TestOutgoingEffectsFieldShape(t *testing.T) {
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	fx := []theme.OverlayFX{{Name: "tv on", Sound: "switch tv"}, {Name: "sticky one", Sound: "s", Sticky: true}}
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX([]string{"tv on", "sticky one"}, fx)},
 	}
@@ -221,7 +221,7 @@ func TestOutgoingEffectsFieldShape(t *testing.T) {
 func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
 	a := &App{env: env{}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX([]string{"flash"})},
 	}
 	if a.overlayEffectsVisible() {
@@ -252,7 +252,7 @@ func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
 // from the LOBBY resolves effects through an origin-less builder.
 func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	landed := func(a *App) {
-		a.overlayRosters = map[string]*overlayRoster{
+		a.overlays.overlayRosters = map[string]*overlayRoster{
 			a.overlayRosterKey("transitions"): {
 				// Properties but NO local art: rung 8 is the only one left, which is
 				// exactly the shape that leaked.
@@ -317,7 +317,7 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	rows := []string{overlayNoneRow, "tv on"}
 
 	lobby := &App{env: env{}} // no connect yet: urls is the zero value
-	lobby.overlayRosters = map[string]*overlayRoster{lobby.overlayRosterKey(""): roster}
+	lobby.overlays.overlayRosters = map[string]*overlayRoster{lobby.overlayRosterKey(""): roster}
 	if lobby.urls.Origin() != "" {
 		t.Fatal("fixture: a lobby App must have no origin")
 	}
@@ -329,12 +329,12 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// Driven with an effects FOLDER, because a lobby App's character has none and
 	// an empty folder yields no candidates for any origin — that would test the
 	// wrong thing.
-	lobby.overlayChoicesCache = rows
+	lobby.overlays.overlayChoicesCache = rows
 	lobby.bakeOverlayIconKeys(folder, roster)
-	if len(lobby.overlayIconKeys) != len(rows) {
-		t.Fatalf("baked %d icon keys for %d rows — the keys are indexed BY ROW", len(lobby.overlayIconKeys), len(rows))
+	if len(lobby.overlays.overlayIconKeys) != len(rows) {
+		t.Fatalf("baked %d icon keys for %d rows — the keys are indexed BY ROW", len(lobby.overlays.overlayIconKeys), len(rows))
 	}
-	for i, k := range lobby.overlayIconKeys {
+	for i, k := range lobby.overlays.overlayIconKeys {
 		if k != "" {
 			t.Errorf("row %d baked %q with no origin — a relative url is a permanent junk T1 key and a probe that can never resolve", i, k)
 		}
@@ -344,13 +344,13 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// something: the guard has to skip the key, not the feature.
 	live := &App{env: env{}}
 	live.urls = courtroom.NewURLBuilder("https://one.test/base")
-	live.overlayChoicesCache = rows
+	live.overlays.overlayChoicesCache = rows
 	live.bakeOverlayIconKeys(folder, roster)
-	if live.overlayIconKeys[0] != "" {
-		t.Errorf("the None row baked %q — AO2 asks for its icon too, but no theme in the corpus ships one, so it must not burn a probe per open", live.overlayIconKeys[0])
+	if live.overlays.overlayIconKeys[0] != "" {
+		t.Errorf("the None row baked %q — AO2 asks for its icon too, but no theme in the corpus ships one, so it must not burn a probe per open", live.overlays.overlayIconKeys[0])
 	}
-	if !strings.HasPrefix(live.overlayIconKeys[1], "https://one.test/base") {
-		t.Errorf("row 1 key = %q, want an absolute url built off the origin", live.overlayIconKeys[1])
+	if !strings.HasPrefix(live.overlays.overlayIconKeys[1], "https://one.test/base") {
+		t.Errorf("row 1 key = %q, want an absolute url built off the origin", live.overlays.overlayIconKeys[1])
 	}
 }
 
@@ -361,7 +361,7 @@ func effectPreviewApp(t *testing.T) (*App, []string) {
 	t.Helper()
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on", Sound: "0"}}),
 			art:  map[string]string{"tv on": "/themes/t/effects/tv on.webp"},
@@ -427,7 +427,7 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 	if a.previewPinned {
 		t.Error("the pin must go with the box, or the next hover preview can never leave-close")
 	}
-	if a.overlayPreviewBase != "" {
+	if a.overlays.overlayPreviewBase != "" {
 		t.Error("the ownership record must be dropped with the box")
 	}
 
@@ -440,7 +440,7 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 	if a.previewBase != "characters/phoenix/(a)normal" {
 		t.Error("the close edge closed a box it does not own (previewBase is one shared slot)")
 	}
-	if a.overlayPreviewBase != "" {
+	if a.overlays.overlayPreviewBase != "" {
 		t.Error("the claim must still be dropped even when the box moved on")
 	}
 }
@@ -462,7 +462,7 @@ func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
 	// "Resolving": a nil answer from overlayRosterFor. Staged as an unsettled cache
 	// entry rather than through overlayRosterInFlight so this pins the ANSWER the
 	// resolver gives the courtroom, whichever way the marker happens to be stored.
-	a.overlayRosters = map[string]*overlayRoster{a.overlayRosterKey("transitions"): nil}
+	a.overlays.overlayRosters = map[string]*overlayRoster{a.overlayRosterKey("transitions"): nil}
 	res, ok := a.overlayResolve("tv on", "transitions")
 	if !ok {
 		t.Fatal("an in-flight roster must not report a MISS — that clears the overlay and loses the effect outright")
@@ -477,7 +477,7 @@ func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
 		t.Error("a deferred resolve must not hand back properties it has not read")
 	}
 	// Once it lands, the LOCAL art wins with no network rung at all.
-	a.overlayRosters[a.overlayRosterKey("transitions")] = &overlayRoster{
+	a.overlays.overlayRosters[a.overlayRosterKey("transitions")] = &overlayRoster{
 		set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on", Loop: true}}),
 		art:  map[string]string{"tv on": "/themes/t/effects/tv on.webp"},
 		icon: map[string]string{},
@@ -515,7 +515,7 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 	a := &App{env: env{ctx: ctx}}
 	a.d.Store = store
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on"}}),
 			art:  map[string]string{},
@@ -557,14 +557,14 @@ func TestEffectsDropdownClosedIsZeroAlloc(t *testing.T) {
 	}
 	// The keys must be BAKED, not built in the painter — that is the fix, and
 	// allocation counts alone would not say which half moved.
-	if got, want := a.overlayIconKeys[1], overlayThemeKey(iconPath); got != want {
+	if got, want := a.overlays.overlayIconKeys[1], overlayThemeKey(iconPath); got != want {
 		t.Fatalf("row 1 icon key = %q, want the precomputed %q", got, want)
 	}
-	if a.overlayIconPaths[1] != iconPath {
-		t.Fatalf("row 1 icon path = %q, want the local file the key decodes from", a.overlayIconPaths[1])
+	if a.overlays.overlayIconPaths[1] != iconPath {
+		t.Fatalf("row 1 icon path = %q, want the local file the key decodes from", a.overlays.overlayIconPaths[1])
 	}
-	if a.overlayIconKeys[0] != "" {
-		t.Errorf("the None row must carry NO key (courtroom.cpp:5606-5610 asks, no theme ships one) — got %q", a.overlayIconKeys[0])
+	if a.overlays.overlayIconKeys[0] != "" {
+		t.Errorf("the None row must carry NO key (courtroom.cpp:5606-5610 asks, no theme ships one) — got %q", a.overlays.overlayIconKeys[0])
 	}
 
 	a.overlayChoiceIdx = 1 // an effect is PICKED: the state that regressed
@@ -588,7 +588,7 @@ func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 	const localIcon = "/themes/t/misc/packb/icons/tv on.png"
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey("packa"): {
 			set:  theme.MergeOverlayFX([]string{"flash"}),
 			art:  map[string]string{},
@@ -602,34 +602,34 @@ func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 	}
 	// Drive the folder through the memo the picker itself uses (char "" so the
 	// memo hits without a char.ini fetch).
-	a.overlayMyFolderValid, a.overlayMyFolderChar, a.overlayMyFolder = true, "", "packa"
+	a.overlays.overlayMyFolderValid, a.overlays.overlayMyFolderChar, a.overlays.overlayMyFolder = true, "", "packa"
 
 	if got := a.overlayChoices(); len(got) != 2 || got[1] != "flash" {
 		t.Fatalf("fixture: choices = %v", got)
 	}
 	// No local icon but an origin: the row falls to the misc-tier URL (rung 8).
-	if want := "https://one.test/base/misc/packa/icons/flash"; a.overlayIconKeys[1] != want {
-		t.Errorf("origin icon key = %q, want %q", a.overlayIconKeys[1], want)
+	if want := "https://one.test/base/misc/packa/icons/flash"; a.overlays.overlayIconKeys[1] != want {
+		t.Errorf("origin icon key = %q, want %q", a.overlays.overlayIconKeys[1], want)
 	}
-	if a.overlayIconPaths[1] != "" {
-		t.Errorf("an origin-tier row must carry no LOCAL path, got %q", a.overlayIconPaths[1])
+	if a.overlays.overlayIconPaths[1] != "" {
+		t.Errorf("an origin-tier row must carry no LOCAL path, got %q", a.overlays.overlayIconPaths[1])
 	}
-	a.overlayIconPages = make([]*render.TexturePage, 2) // pretend a frame cached both rows
+	a.overlays.overlayIconPages = make([]*render.TexturePage, 2) // pretend a frame cached both rows
 
 	// Swap to a character declaring its own pack — the SAME row count, so
 	// cachedPage would happily keep the old pages under the new names.
-	a.overlayMyFolder = "packb"
+	a.overlays.overlayMyFolder = "packb"
 	if got := a.overlayChoices(); len(got) != 2 || got[1] != "tv on" {
 		t.Fatalf("after the swap: choices = %v", got)
 	}
-	if a.overlayIconPages != nil {
+	if a.overlays.overlayIconPages != nil {
 		t.Error("the index-keyed icon pages survived a pack swap of the same size — that is a stale icon under the wrong row")
 	}
-	if want := overlayThemeKey(localIcon); a.overlayIconKeys[1] != want {
-		t.Errorf("icon key = %q, want the new pack's local art %q", a.overlayIconKeys[1], want)
+	if want := overlayThemeKey(localIcon); a.overlays.overlayIconKeys[1] != want {
+		t.Errorf("icon key = %q, want the new pack's local art %q", a.overlays.overlayIconKeys[1], want)
 	}
-	if a.overlayIconPaths[1] != localIcon {
-		t.Errorf("icon path = %q, want %q", a.overlayIconPaths[1], localIcon)
+	if a.overlays.overlayIconPaths[1] != localIcon {
+		t.Errorf("icon path = %q, want %q", a.overlays.overlayIconPaths[1], localIcon)
 	}
 }
 
@@ -644,20 +644,20 @@ func TestStaleRosterResultIsDropped(t *testing.T) {
 	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	a.themeAppliedGen = 7
 	key := a.overlayRosterKey("transitions")
-	a.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
-	a.overlayRosterInFlight = map[string]bool{key: true}
+	a.overlays.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
+	a.overlays.overlayRosterInFlight = map[string]bool{key: true}
 
 	stale := &overlayRoster{
 		set:  theme.MergeOverlayFX([]string{"old theme fx"}),
 		art:  map[string]string{"old theme fx": "/themes/OLD/effects/x.webp"},
 		icon: map[string]string{},
 	}
-	a.overlayRosterRes <- overlayRosterFetch{key: key, gen: 6, roster: stale} // started a theme ago
+	a.overlays.overlayRosterRes <- overlayRosterFetch{key: key, gen: 6, roster: stale} // started a theme ago
 	a.pollOverlayRosters()
-	if got, ok := a.overlayRosters[key]; ok {
+	if got, ok := a.overlays.overlayRosters[key]; ok {
 		t.Fatalf("a resolve from theme gen 6 landed under gen 7: %+v", got)
 	}
-	if a.overlayRosterInFlight[key] {
+	if a.overlays.overlayRosterInFlight[key] {
 		t.Error("the fetch slot must be freed even when the result is dropped, or the folder can never resolve again")
 	}
 
@@ -667,13 +667,13 @@ func TestStaleRosterResultIsDropped(t *testing.T) {
 		art:  map[string]string{},
 		icon: map[string]string{},
 	}
-	a.overlayRosterInFlight[key] = true
-	a.overlayRosterRes <- overlayRosterFetch{key: key, gen: 7, roster: fresh}
+	a.overlays.overlayRosterInFlight[key] = true
+	a.overlays.overlayRosterRes <- overlayRosterFetch{key: key, gen: 7, roster: fresh}
 	a.pollOverlayRosters()
-	if a.overlayRosters[key] != fresh {
-		t.Fatalf("the current-gen resolve did not land: %+v", a.overlayRosters[key])
+	if a.overlays.overlayRosters[key] != fresh {
+		t.Fatalf("the current-gen resolve did not land: %+v", a.overlays.overlayRosters[key])
 	}
-	if a.overlayRosterInFlight[key] {
+	if a.overlays.overlayRosterInFlight[key] {
 		t.Error("a landed resolve must free its fetch slot")
 	}
 }
@@ -691,7 +691,7 @@ func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
 	if r := a.overlayRosterFor("transitions"); r != nil {
 		t.Fatalf("a cold folder must answer nil while it resolves, got %+v", r)
 	}
-	if !a.overlayRosterInFlight[key] {
+	if !a.overlays.overlayRosterInFlight[key] {
 		t.Fatal("no resolve was started for a cold folder")
 	}
 	// Ask again (memo dropped, as a landed char.ini or a new speaker would do):
@@ -704,16 +704,16 @@ func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
-	for a.overlayRosters[key] == nil && time.Now().Before(deadline) {
+	for a.overlays.overlayRosters[key] == nil && time.Now().Before(deadline) {
 		a.pollOverlayRosters()
 		time.Sleep(time.Millisecond)
 	}
-	if a.overlayRosters[key] == nil {
+	if a.overlays.overlayRosters[key] == nil {
 		t.Fatal("the resolve never landed")
 	}
 	// Exactly ONE goroutine ran: a second would have queued a second result.
 	select {
-	case extra := <-a.overlayRosterRes:
+	case extra := <-a.overlays.overlayRosterRes:
 		t.Fatalf("a second resolve ran for the same folder: %+v", extra)
 	default:
 	}
@@ -722,7 +722,7 @@ func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
 	if r := a.overlayRosterFor("transitions"); r == nil {
 		t.Fatal("a settled miss must answer from the cache, not re-resolve")
 	}
-	if a.overlayRosterInFlight[key] {
+	if a.overlays.overlayRosterInFlight[key] {
 		t.Error("a settled folder must hold no fetch slot")
 	}
 }
@@ -748,7 +748,7 @@ func effectsPickerRoster(t *testing.T, n int) (*App, *int) {
 	for i := range names {
 		names[i] = "fx" + strconv.Itoa(i)
 	}
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX(names),
 			art:  map[string]string{},
@@ -756,7 +756,7 @@ func effectsPickerRoster(t *testing.T, n int) (*App, *int) {
 		},
 	}
 	painted := 0
-	a.overlayThumbFn = func(int, sdl.Rect) { painted++ }
+	a.overlays.overlayThumbFn = func(int, sdl.Rect) { painted++ }
 	return a, &painted
 }
 
@@ -775,7 +775,7 @@ func TestEffectIconsAreNotFetchedUntilTheDropdownOpens(t *testing.T) {
 	if a.overlayChoiceIdx != 0 {
 		t.Fatalf("fixture: the picker starts on None, got %d", a.overlayChoiceIdx)
 	}
-	if len(a.overlayIconKeys) == 0 || a.overlayIconKeys[0] != "" {
+	if len(a.overlays.overlayIconKeys) == 0 || a.overlays.overlayIconKeys[0] != "" {
 		t.Error("the None row carries an icon key, want none")
 	}
 }
@@ -819,8 +819,8 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	a.themeSounds = map[string]string{"realization": "themerealize"}
 	// Pre-seeded (settled, nothing declared): charMetaFor would otherwise fire a
 	// fetch through the nil Manager.
-	a.charMetaCache = map[string]charMeta{a.charINIURL("Phoenix"): {done: true}}
-	a.overlayRosters = map[string]*overlayRoster{
+	a.overlays.charMetaCache = map[string]charMeta{a.charINIURL("Phoenix"): {done: true}}
+	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX(
 				[]string{"realization", "tv on"},
@@ -843,7 +843,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	}
 
 	// The character declares one: it wins outright.
-	a.charMetaCache[a.charINIURL("Phoenix")] = charMeta{realization: "mine", done: true}
+	a.overlays.charMetaCache[a.charINIURL("Phoenix")] = charMeta{realization: "mine", done: true}
 	if got := a.overlayEffectSound("", "realization"); got != "mine" {
 		t.Errorf("sound = %q, want char.ini [Options] realization", got)
 	}

@@ -293,7 +293,7 @@ func TestShoutConditionInternsAsTheLiveStem(t *testing.T) {
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	lay := &a.themeLay
-	if !lay.valid || !a.toolboxThemeRectOn {
+	if !lay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — nothing was baked")
 	}
 	if lay.elN != len(elemShoutConditions) {

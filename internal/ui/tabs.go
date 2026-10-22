@@ -943,7 +943,7 @@ func (a *App) handleTabBar(w, h int32) {
 	// While the Edit Layout editor is open it OWNS the strip (drag the whole slot to
 	// move it); don't also switch / park-to-lobby / close on the same press. The
 	// tabBarRects call above already registered the slot, so the editor can grab it.
-	if a.classicEdit {
+	if a.classic.classicEdit {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}

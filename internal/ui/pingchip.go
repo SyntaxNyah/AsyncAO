@@ -40,7 +40,7 @@ func (a *App) updatePingLoop() {
 	if !a.d.Prefs.Load().PingChip {
 		want = nil
 	}
-	if want == a.pingConn {
+	if want == a.lobby.pingConn {
 		return // already pinging the right conn (or both nil)
 	}
 	a.stopPingLoop()
@@ -51,21 +51,21 @@ func (a *App) updatePingLoop() {
 
 func (a *App) startPingLoop(conn *protocol.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
-	a.pingCancel = cancel
-	a.pingConn = conn
-	a.pingRTT.Store(0)
+	a.lobby.pingCancel = cancel
+	a.lobby.pingConn = conn
+	a.lobby.pingRTT.Store(0)
 	go a.pingLoop(ctx, conn)
 }
 
 // stopPingLoop cancels the live loop (idempotent). Also clears the RTT so the chip doesn't show
 // a stale ping for a connection that's gone.
 func (a *App) stopPingLoop() {
-	if a.pingCancel != nil {
-		a.pingCancel()
-		a.pingCancel = nil
+	if a.lobby.pingCancel != nil {
+		a.lobby.pingCancel()
+		a.lobby.pingCancel = nil
 	}
-	a.pingConn = nil
-	a.pingRTT.Store(0)
+	a.lobby.pingConn = nil
+	a.lobby.pingRTT.Store(0)
 }
 
 // pingLoop pings conn every pingInterval until ctx is cancelled, storing the round-trip time
@@ -89,10 +89,10 @@ func (a *App) pingOnce(ctx context.Context, conn *protocol.Conn) {
 	rtt, err := conn.Ping(pctx)
 	cancel()
 	if err != nil {
-		a.pingRTT.Store(0) // unknown
+		a.lobby.pingRTT.Store(0) // unknown
 		return
 	}
-	a.pingRTT.Store(int64(rtt))
+	a.lobby.pingRTT.Store(int64(rtt))
 }
 
 // pingQuality maps a round-trip ms to a filled-bar count + colour (0 bars / dim when unknown).
@@ -120,7 +120,7 @@ func (a *App) drawPingChip(x, y int32) {
 		return
 	}
 	c := a.ctx
-	rtt := a.pingRTT.Load()
+	rtt := a.lobby.pingRTT.Load()
 	unknown := rtt == 0
 	ms := int(rtt / int64(time.Millisecond))
 	bars, col := pingQuality(ms, unknown)
@@ -137,13 +137,13 @@ func (a *App) drawPingChip(x, y int32) {
 		c.Fill(sdl.Rect{X: x + i*(barW+gap), Y: y + (chipH - bh), W: barW, H: bh}, bc)
 	}
 
-	if a.pingLabelMs != ms || a.pingLabel == "" { // rebuild the tooltip only when the ms moves
+	if a.lobby.pingLabelMs != ms || a.lobby.pingLabel == "" { // rebuild the tooltip only when the ms moves
 		if unknown {
-			a.pingLabel = "Ping: — (measuring…)"
+			a.lobby.pingLabel = "Ping: — (measuring…)"
 		} else {
-			a.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
+			a.lobby.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
 		}
-		a.pingLabelMs = ms
+		a.lobby.pingLabelMs = ms
 	}
-	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.pingLabel)
+	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.lobby.pingLabel)
 }

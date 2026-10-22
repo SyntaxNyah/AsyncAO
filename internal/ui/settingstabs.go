@@ -434,10 +434,10 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// once. The pieces panel refuses to hide BOTH the toolbox and the Settings
 	// button precisely so this button stays reachable by mouse. Drawn only
 	// while something is actually hidden.
-	if len(a.hidden) > 0 {
+	if len(a.classic.hidden) > 0 {
 		lbl := "Show all hidden UI pieces"
 		if c.Button(sdl.Rect{X: pad + 158, Y: y, W: c.TextWidth(lbl) + 16, H: btnH}, lbl) {
-			a.hidden = map[string]bool{}
+			a.classic.hidden = map[string]bool{}
 			a.d.Prefs.SetHiddenPanels(nil)
 			a.debug.push("layout: all hidden UI pieces restored")
 		}
@@ -870,19 +870,19 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		}
 		a.invalidateThemeCanvases()
 	}
-	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {
-		a.themeFitDrag = true
-		a.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
+	if c.hovering(box) && c.mouseDown && !a.client.themeFitDrag {
+		a.client.themeFitDrag = true
+		a.client.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
 		px, py := a.d.Prefs.Load().ThemePan()
-		a.themeFitDragBase = [2]int{px, py}
+		a.client.themeFitDragBase = [2]int{px, py}
 	}
-	if a.themeFitDrag {
+	if a.client.themeFitDrag {
 		if !c.mouseDown {
-			a.themeFitDrag = false
+			a.client.themeFitDrag = false
 		} else if box.W > 0 && box.H > 0 {
-			dx := int(c.mouseX-a.themeFitDragStart[0]) * 100 / int(box.W)
-			dy := int(c.mouseY-a.themeFitDragStart[1]) * 100 / int(box.H)
-			a.d.Prefs.SetThemeFitPan(a.themeFitDragBase[0]+dx, a.themeFitDragBase[1]+dy)
+			dx := int(c.mouseX-a.client.themeFitDragStart[0]) * 100 / int(box.W)
+			dy := int(c.mouseY-a.client.themeFitDragStart[1]) * 100 / int(box.H)
+			a.d.Prefs.SetThemeFitPan(a.client.themeFitDragBase[0]+dx, a.client.themeFitDragBase[1]+dy)
 			a.invalidateThemeCanvases()
 		}
 	}
@@ -1247,8 +1247,8 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		a.d.Prefs.ResetAll()
 		_ = a.d.Manager.ClearDisk()
 		a.d.Resolver.InvalidateAll()
-		if a.juke != nil {
-			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
+		if a.jukebox.juke != nil {
+			a.jukebox.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}
 		if a.notebook != nil {
 			a.notebook.Clear() // empty + stop its flush before deleting the files
@@ -1264,8 +1264,8 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	// auto-refresh funnels through it), so a factory reset clears it here
 	// explicitly — an ephemeral sort mode + RTT cache must not outlive
 	// "fresh-install state". The gen bump discards an in-flight sweep.
-	a.pings, a.pingMode, a.pinging = nil, false, false
-	a.pingGen++
+	a.lobby.pings, a.lobby.pingMode, a.lobby.pinging = nil, false, false
+	a.lobby.pingGen++
 	a.RefreshServers() // favourites/master re-merge
 	a.showReset = false
 	a.warnAt = time.Now()

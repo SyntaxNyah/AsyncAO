@@ -128,10 +128,10 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 
 // togglePalette opens/closes the palette (the Ctrl+Space hotkey).
 func (a *App) togglePalette() {
-	a.paletteOpen = !a.paletteOpen
-	if a.paletteOpen {
-		a.paletteQuery = ""
-		a.paletteSel = 0
+	a.palette.paletteOpen = !a.palette.paletteOpen
+	if a.palette.paletteOpen {
+		a.palette.paletteQuery = ""
+		a.palette.paletteSel = 0
 		a.ctx.focusID = paletteInputID // type immediately, and binds stand down
 	} else if a.ctx.focusID == paletteInputID {
 		a.ctx.focusID = ""
@@ -142,7 +142,7 @@ func (a *App) togglePalette() {
 // first, so an action that opens a screen isn't covered), a command form
 // lands in the OOC input ready to fill in.
 func (a *App) runPaletteMatch(m paletteMatch) {
-	a.paletteOpen = false
+	a.palette.paletteOpen = false
 	if a.ctx.focusID == paletteInputID {
 		a.ctx.focusID = ""
 	}
@@ -168,16 +168,16 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 // drawPalette renders the overlay: a centred search field + the filtered rows.
 // ↑/↓ move, Enter runs, Esc closes (closeTopOverlay), click-outside closes.
 func (a *App) drawPalette(w, h int32) {
-	if !a.paletteOpen {
+	if !a.palette.paletteOpen {
 		return
 	}
 	c := a.ctx
-	matches := a.paletteMatches(a.paletteQuery)
-	if a.paletteSel >= len(matches) {
-		a.paletteSel = len(matches) - 1
+	matches := a.paletteMatches(a.palette.paletteQuery)
+	if a.palette.paletteSel >= len(matches) {
+		a.palette.paletteSel = len(matches) - 1
 	}
-	if a.paletteSel < 0 {
-		a.paletteSel = 0
+	if a.palette.paletteSel < 0 {
+		a.palette.paletteSel = 0
 	}
 	pw := paletteW
 	if pw > w-2*pad {
@@ -190,29 +190,29 @@ func (a *App) drawPalette(w, h int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 
-	prev := a.paletteQuery
+	prev := a.palette.paletteQuery
 	var submit bool
-	a.paletteQuery, submit = c.TextField(paletteInputID, sdl.Rect{X: px + 6, Y: py + 6, W: pw - 12, H: fieldH}, a.paletteQuery, "type a command… (↑↓ pick · Enter run · Esc close)")
-	if a.paletteQuery != prev {
-		a.paletteSel = 0 // a new query restarts the selection at the best match
+	a.palette.paletteQuery, submit = c.TextField(paletteInputID, sdl.Rect{X: px + 6, Y: py + 6, W: pw - 12, H: fieldH}, a.palette.paletteQuery, "type a command… (↑↓ pick · Enter run · Esc close)")
+	if a.palette.paletteQuery != prev {
+		a.palette.paletteSel = 0 // a new query restarts the selection at the best match
 	}
 	// Keyboard: ↑/↓ steer even while the field has focus (arrows don't type).
 	switch c.keyPressed {
 	case sdl.K_DOWN:
-		if a.paletteSel < len(matches)-1 {
-			a.paletteSel++
+		if a.palette.paletteSel < len(matches)-1 {
+			a.palette.paletteSel++
 		}
 		c.keyPressed = 0
 	case sdl.K_UP:
-		if a.paletteSel > 0 {
-			a.paletteSel--
+		if a.palette.paletteSel > 0 {
+			a.palette.paletteSel--
 		}
 		c.keyPressed = 0
 	}
 	ry := py + 6 + fieldH + 4
 	for i, m := range matches {
 		r := sdl.Rect{X: px + 4, Y: ry, W: pw - 8, H: paletteRowH - 2}
-		if i == a.paletteSel {
+		if i == a.palette.paletteSel {
 			c.Fill(r, ColPanelHi)
 			c.Border(r, ColAccent)
 		} else if c.hovering(r) {
@@ -234,12 +234,12 @@ func (a *App) drawPalette(w, h int32) {
 		c.LabelClipped(px+8, ry+2, pw-16, "no matches — try fewer letters", ColTextDim)
 	}
 	if submit && len(matches) > 0 {
-		a.runPaletteMatch(matches[a.paletteSel])
+		a.runPaletteMatch(matches[a.palette.paletteSel])
 		return
 	}
 	// A click outside the panel closes it (and doesn't leak underneath).
 	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.paletteOpen = false
+		a.palette.paletteOpen = false
 		if c.focusID == paletteInputID {
 			c.focusID = ""
 		}

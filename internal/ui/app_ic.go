@@ -370,9 +370,9 @@ func (a *App) pollThemeApply() {
 	// The effects picker's per-row icon size, and a roster/icon-cache drop: the new
 	// theme contributes different names, properties AND art paths, so a cached
 	// roster (or an icon page keyed by row index) from the old one would be wrong.
-	a.overlayIconSize = res.effectsIcon
-	a.overlayTheme = res.themeObj
-	a.overlayRosters = nil
+	a.overlays.overlayIconSize = res.effectsIcon
+	a.overlays.overlayTheme = res.themeObj
+	a.overlays.overlayRosters = nil
 	a.overlayIconPagesReset()
 	// Lands beside the geometry it belongs to. A themeless apply carries the zero
 	// value, which is Left — so dropping a theme restores AO2's own default rather
@@ -411,7 +411,7 @@ func (a *App) pollThemeApply() {
 	a.themeSidecarErr, a.themeSidecarTip = res.sidecarErr, res.sidecarTip
 	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
-	a.themeAt = time.Now() // restart the theme-art animation clock
+	a.toolbox.themeAt = time.Now() // restart the theme-art animation clock
 	// The element clock groups re-anchor WITH it (design §Q3), so a theme reload
 	// restarts every phase together instead of leaving the incoming theme's motion
 	// mid-cycle. A nil sidecar zeroes the pool, which is what makes a swap back to a
@@ -426,7 +426,7 @@ func (a *App) pollThemeApply() {
 	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
 	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
 	a.rasterText = "" // re-raster the current message with theme colors
-	a.themeAppliedName = res.name
+	a.toolbox.themeAppliedName = res.name
 	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
 	// manual font / the dyslexia toggle). Re-resolve only when it actually changed,
 	// so a same-font theme switch doesn't re-kick the off-thread font read.
@@ -516,7 +516,7 @@ func (a *App) ensureThemeForSession() {
 	if want == "" {
 		want, _ = a.d.Prefs.Load().Theme()
 	}
-	if want != "" && want != a.themeAppliedName {
+	if want != "" && want != a.toolbox.themeAppliedName {
 		a.applyThemeAsync()
 	}
 }
@@ -638,10 +638,10 @@ func (a *App) now() time.Time {
 // steps with pageFrameLoop instead of freezing on Frames[0]. Reads the
 // frame snapshot — themed frames step this at ~10 draw sites.
 func (a *App) themeElapsed() time.Duration {
-	if a.themeAt.IsZero() {
+	if a.toolbox.themeAt.IsZero() {
 		return 0
 	}
-	return a.now().Sub(a.themeAt)
+	return a.now().Sub(a.toolbox.themeAt)
 }
 
 // themeFrame picks the current animation frame for a theme page — static pages

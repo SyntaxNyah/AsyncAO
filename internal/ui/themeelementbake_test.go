@@ -70,7 +70,7 @@ func applyFixtureSidecar(a *App, sc *theme.Sidecar) error {
 	foldSidecarOverrides(a.themeRects, sc)
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		return errFixtureNotThemed
 	}
 	return nil

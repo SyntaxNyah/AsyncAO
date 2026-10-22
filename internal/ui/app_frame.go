@@ -17,17 +17,17 @@ import (
 )
 
 func (a *App) RefreshServers() {
-	if a.lobbyFetching {
+	if a.lobby.lobbyFetching {
 		return
 	}
-	a.lobbyFetching = true
+	a.lobby.lobbyFetching = true
 	// Arm the on-open auto-refresh cap. Stamped here — not at the auto-trigger —
 	// so EVERY fetch start (boot, the manual Refresh button, a master-URL change,
 	// the on-open auto) pushes the cap out: entering the lobby right after a
 	// manual refresh must not fire a second request. Below the dedup gate above
 	// because a coalesced call started nothing and must not extend the cap.
-	a.lastLobbyRefreshAt = a.now()
-	a.lobbyStatus = "Fetching server list..."
+	a.lobby.lastLobbyRefreshAt = a.now()
+	a.lobby.lobbyStatus = "Fetching server list..."
 	// Ping state deliberately survives a refresh: the on-open auto-refresh
 	// funnels through here too, and the old wipe (pings/pingMode/pinging reset
 	// at fetch START) snapped a ping-sorted lobby back to player order the
@@ -39,7 +39,7 @@ func (a *App) RefreshServers() {
 	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
 	// correct for whichever list is showing, so neither needs abandoning.
 	urls := a.masterListURLs()
-	ch := a.lobbyResult
+	ch := a.lobby.lobbyResult
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
@@ -73,8 +73,8 @@ func lobbyAutoRefreshDue(last, now time.Time) bool {
 
 func (a *App) pollLobbyFetch() {
 	select {
-	case res := <-a.lobbyResult:
-		a.lobbyFetching = false
+	case res := <-a.lobby.lobbyResult:
+		a.lobby.lobbyFetching = false
 		if res.err != nil {
 			// A failed fetch KEEPS the list on screen. Refreshes now fire with
 			// zero user action (the on-open auto-refresh), so a transient master
@@ -84,9 +84,9 @@ func (a *App) pollLobbyFetch() {
 			// stay un-pruned too: pruning against a degraded list would throw
 			// away every connect time over a hiccup. Only a boot-time failure
 			// (nothing merged yet) rebuilds, so phone-book favorites still show.
-			a.lobbyStatus = "Master list error: " + res.err.Error()
-			if len(a.servers) == 0 {
-				a.servers = a.mergedFavorites()
+			a.lobby.lobbyStatus = "Master list error: " + res.err.Error()
+			if len(a.lobby.servers) == 0 {
+				a.lobby.servers = a.mergedFavorites()
 			}
 			return
 		}
@@ -97,12 +97,12 @@ func (a *App) pollLobbyFetch() {
 		// before the swap, re-match after — so a background auto-refresh landing
 		// mid-glance no longer deselects the row the user is about to join.
 		prevSel := ""
-		if a.selServer >= 0 && a.selServer < len(a.servers) {
-			prevSel = a.servers[a.selServer].WebSocketURL()
+		if a.lobby.selServer >= 0 && a.lobby.selServer < len(a.lobby.servers) {
+			prevSel = a.lobby.servers[a.lobby.selServer].WebSocketURL()
 		}
-		a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
-		a.masterEntries = res.entries
-		a.servers = a.mergedFavorites()
+		a.lobby.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
+		a.lobby.masterEntries = res.entries
+		a.lobby.servers = a.mergedFavorites()
 		// Prune on the successful land: the map was sized by the last good list
 		// and each land re-prunes to the current one (boundedness, rule §17.4).
 		a.pruneStalePings()
@@ -117,12 +117,12 @@ func (a *App) pollLobbyFetch() {
 // rebuilds the cached description lines/links against the NEW entry — the
 // master list may have changed the description text the cache was built from.
 func (a *App) reselectServer(url string) {
-	a.selServer, a.descLines, a.descLinks = -1, nil, nil
+	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks = -1, nil, nil
 	if url == "" {
 		return
 	}
-	for i := range a.servers {
-		if a.servers[i].WebSocketURL() == url {
+	for i := range a.lobby.servers {
+		if a.lobby.servers[i].WebSocketURL() == url {
 			a.selectServerRow(i, a.winW)
 			return
 		}
@@ -135,16 +135,16 @@ func (a *App) reselectServer(url string) {
 // longer stomps the user's ping sort with zero user action. Off the hot path:
 // runs once per fetch landing, never per frame.
 func (a *App) pruneStalePings() {
-	if len(a.pings) == 0 {
+	if len(a.lobby.pings) == 0 {
 		return
 	}
-	live := make(map[string]struct{}, len(a.servers))
-	for i := range a.servers {
-		live[a.servers[i].WebSocketURL()] = struct{}{}
+	live := make(map[string]struct{}, len(a.lobby.servers))
+	for i := range a.lobby.servers {
+		live[a.lobby.servers[i].WebSocketURL()] = struct{}{}
 	}
-	for url := range a.pings {
+	for url := range a.lobby.pings {
 		if _, ok := live[url]; !ok {
-			delete(a.pings, url)
+			delete(a.lobby.pings, url)
 		}
 	}
 }
@@ -152,11 +152,11 @@ func (a *App) pruneStalePings() {
 // mergedFavorites merges the phone book into a fresh copy of the master
 // list and sorts for display (favorites pinned top, legacy pinned bottom).
 func (a *App) mergedFavorites() []network.ServerEntry {
-	entries := make([]network.ServerEntry, len(a.masterEntries))
-	copy(entries, a.masterEntries)
+	entries := make([]network.ServerEntry, len(a.lobby.masterEntries))
+	copy(entries, a.lobby.masterEntries)
 	entries = network.MergeFavorites(entries, a.d.Prefs.Load().FavoriteServers())
-	if a.pingMode {
-		sortByPing(entries, a.pings) // lobby "Ping" sort: connect-time ascending
+	if a.lobby.pingMode {
+		sortByPing(entries, a.lobby.pings) // lobby "Ping" sort: connect-time ascending
 	} else {
 		network.SortServers(entries)
 	}
@@ -358,7 +358,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// can double-fire while typing. Ctrl+Shift+Z is redo too. The armed layout
 	// editors keep their own Ctrl+Z (editorUndoChord); they never run with a
 	// focused field, but the gate makes that explicit.
-	if a.ctx.focusID != "" && !a.classicEdit && !a.layoutEdit {
+	if a.ctx.focusID != "" && !a.classic.classicEdit && !a.layoutEdit {
 		switch a.ctx.hotkey {
 		case sdl.K_z:
 			a.ctx.undoReq = !a.ctx.shiftHeld
@@ -392,10 +392,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.updates.pumpInput(winW, winH) // self-update: one-shot check, drain, chip/modal click before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
-	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
-	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
-		a.pendingControlSwap = false
+	a.voicePump()                    // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
+	a.handleTabBar(winW, winH)       // chip clicks resolve BEFORE screens see them
+	if a.client.pendingControlSwap { // a click on the floating client last frame → take control now (before any draw)
+		a.client.pendingControlSwap = false
 		// controlPinnedClient → activateTab → parkActive is a PRIMARY-session switch,
 		// the one park surface handleTabBar's guard (tabs.go) doesn't cover. It must be
 		// inert while the involuntary-disconnect dialog owns the frame, for the same
@@ -604,12 +604,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// full-window modes below — leaves it clear, which reads as "the over-everything
 	// site owns the paint". Same reset discipline as the toolbox latch, one level up,
 	// because this one is decided inside a pass that does not always run.
-	a.tabStripPaint = tabStripPaintLatch{}
+	a.toolbox.tabStripPaint = tabStripPaintLatch{}
 	// Same discipline for "a layout editor's banner reached the screen this frame"
 	// (menubar.go). It is published by the editors' own banner paints, below, and read
 	// once by drawMenuBar to settle who owns the top band — so it must be cleared AFTER
 	// phase 1 and BEFORE the dispatch, or the bar would replay a stale answer.
-	a.editorBannerPainted = false
+	a.toolbox.editorBannerPainted = false
 	// Arrow-key nudging for an armed layout editor (layoutnudge.go). PRE-SCREEN, and
 	// for the same reason the editors' Ctrl+Z lives in editorUndoChord rather than in
 	// their draw bodies: both editors draw LAST in their pass, by which point a focused
@@ -651,7 +651,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// so drawing it inside that pass left it dead (the recon BLOCKER). Post-court
 			// the fence is already lifted (drawCourtroom's deferred unfencePointer ran on
 			// return). Drawn AFTER drawFloatingPanels = above the other floating panels:
-			editingLayout := a.classicEdit || a.layoutEdit
+			editingLayout := a.classic.classicEdit || a.layoutEdit
 			if editingLayout {
 				savedModal := a.ctx.modalOn
 				a.ctx.modalOn = false

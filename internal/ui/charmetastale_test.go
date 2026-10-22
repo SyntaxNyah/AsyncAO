@@ -16,26 +16,26 @@ func TestCharMetaStaleMarkerRefetches(t *testing.T) {
 	a, cleanup := roomFactoryApp(t)
 	defer cleanup()
 	a.urls = courtroom.NewURLBuilder(gateOrigin)
-	a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
+	a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 
 	url := a.charINIURL("Phoenix")
 
 	// First call arms a fetch and records a fresh in-flight marker.
 	_ = a.charMetaFor("Phoenix")
-	if a.charMetaCache[url].done || a.charMetaCache[url].stamp.IsZero() {
-		t.Fatalf("first miss must arm an in-flight marker: %+v", a.charMetaCache[url])
+	if a.overlays.charMetaCache[url].done || a.overlays.charMetaCache[url].stamp.IsZero() {
+		t.Fatalf("first miss must arm an in-flight marker: %+v", a.overlays.charMetaCache[url])
 	}
 
 	// Simulate a result dropped on channel overflow: the marker is left done=false
 	// with a stale stamp.
-	a.charMetaCache[url] = charMeta{}
+	a.overlays.charMetaCache[url] = charMeta{}
 
 	// The next call must re-arm (fresh stamp), not hand back the dead marker.
 	_ = a.charMetaFor("Phoenix")
-	if a.charMetaCache[url].stamp.IsZero() {
+	if a.overlays.charMetaCache[url].stamp.IsZero() {
 		t.Fatal("a stale in-flight marker was returned without re-arming the fetch")
 	}
-	if a.charMetaCache[url].done {
+	if a.overlays.charMetaCache[url].done {
 		t.Fatal("a re-armed fetch must still be an in-flight marker, not settled")
 	}
 
@@ -45,7 +45,7 @@ func TestCharMetaStaleMarkerRefetches(t *testing.T) {
 	deadline := time.After(5 * time.Second)
 	for i := 0; i < 2; i++ {
 		select {
-		case <-a.charMetaRes:
+		case <-a.overlays.charMetaRes:
 		case <-deadline:
 			t.Fatal("char.ini fetch goroutine did not settle")
 		}

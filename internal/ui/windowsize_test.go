@@ -276,8 +276,8 @@ func TestThemeResizeNeverFiresUnarmed(t *testing.T) {
 	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("boot apply persisted window %dx%d, want it untouched (0x0 = never set)", w, h)
 	}
-	if a.themeAppliedName != "fixture" {
-		t.Fatalf("the landing did not actually run (themeAppliedName = %q)", a.themeAppliedName)
+	if a.toolbox.themeAppliedName != "fixture" {
+		t.Fatalf("the landing did not actually run (themeAppliedName = %q)", a.toolbox.themeAppliedName)
 	}
 }
 

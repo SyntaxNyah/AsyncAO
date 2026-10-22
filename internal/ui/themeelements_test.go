@@ -208,7 +208,7 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
 	if a.themeLay.elN != 0 {
@@ -256,7 +256,7 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 	// One frame FIRST: themeLayoutIn rebuilds the whole cache (`*lay = themeLayoutCache{…}`)
 	// on its cold path, which would wipe anything seeded before it.
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
 	lay := &a.themeLay
@@ -322,7 +322,7 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 	// Prove the themed branch really ran: a silently-classic frame would measure a
 	// screen the element model never touches.
 	draw()
-	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		b.Fatal("the fixture did not reach the themed branch — the benchmark would measure the classic path")
 	}
 	if a.themeLay.elN != 0 {

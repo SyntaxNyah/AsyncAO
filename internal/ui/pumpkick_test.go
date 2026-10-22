@@ -70,7 +70,7 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	// otherwise kick off: with the applied name already matching the pref, it's a
 	// no-op (themeAppliedName lives on App, so resetSessionState won't clear it).
 	name, _ := a.d.Prefs.Load().Theme()
-	a.themeAppliedName = name
+	a.toolbox.themeAppliedName = name
 	// Simulate a live connection to a named server, as connectWith would leave it,
 	// so Disconnect captures the reconnect target.
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"

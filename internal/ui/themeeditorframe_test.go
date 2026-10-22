@@ -57,10 +57,10 @@ func TestThemeEditorScreenSurvivesRealFrames(t *testing.T) {
 	// The two legacy overlay editors are DISARMED: two tools, two scopes, never armed
 	// simultaneously (layouteditlock_test.go enforces the exclusion from the other
 	// side).
-	if a.layoutEdit || a.classicEdit {
+	if a.layoutEdit || a.classic.classicEdit {
 		t.Errorf("a legacy overlay editor is still armed under the theme editor "+
 			"(layoutEdit=%v classicEdit=%v) — the courtroom would be fenced by an editor nobody can see",
-			a.layoutEdit, a.classicEdit)
+			a.layoutEdit, a.classic.classicEdit)
 	}
 }
 

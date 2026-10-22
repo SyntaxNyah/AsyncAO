@@ -166,8 +166,8 @@ func roundedRectCoverage(x, y, dim, radius int32) float64 {
 // per-frame refresh stops rebuilding.
 func (a *App) buildShapeMasks() {
 	shape := a.d.Prefs.ChromeShape()
-	a.shapeMaskShape = shape
-	a.shapeMaskAt = a.now()
+	a.toolbox.shapeMaskShape = shape
+	a.toolbox.shapeMaskAt = a.now()
 	if a.d.Store != nil {
 		// A preset switch abandons the departing shape's masks: sweep every
 		// OTHER kind's pages out of the pinned tier (sharp sweeps them all)
@@ -188,8 +188,8 @@ func (a *App) buildShapeMasks() {
 	if shape == shapeSharp || a.d.Store == nil {
 		// Nothing to build; the draw sites fall through to sharp. Mark built so
 		// we don't spin (a Settings change to a real shape rebuilds explicitly).
-		a.shapeMasksBuilt = true
-		a.shapeMasksGen = a.shapeStoreGen()
+		a.toolbox.shapeMasksBuilt = true
+		a.toolbox.shapeMasksGen = a.shapeStoreGen()
 		return
 	}
 	ok := true
@@ -212,8 +212,8 @@ func (a *App) buildShapeMasks() {
 			ok = false
 		}
 	}
-	a.shapeMasksBuilt = ok
-	a.shapeMasksGen = a.shapeStoreGen()
+	a.toolbox.shapeMasksBuilt = ok
+	a.toolbox.shapeMasksGen = a.shapeStoreGen()
 }
 
 // shapeStoreGen reads the texture store generation, 0 when the store is absent
@@ -248,7 +248,7 @@ func (a *App) refreshShapeMasks() {
 	if shape == shapeSharp {
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
-		a.shapeResolvedShape = "" // drop the memo; a later non-sharp pick re-resolves
+		a.toolbox.shapeResolvedShape = "" // drop the memo; a later non-sharp pick re-resolves
 		return
 	}
 	// A shape changed since we built, or the store generation moved past what we
@@ -256,17 +256,17 @@ func (a *App) refreshShapeMasks() {
 	// paced so a burst of streaming generation bumps can't rebuild every frame.
 	if a.d.Store != nil {
 		gen := a.shapeStoreGen()
-		stale := a.shapeMaskShape != shape || !a.shapeMasksBuilt
-		if stale || gen != a.shapeMasksGen {
+		stale := a.toolbox.shapeMaskShape != shape || !a.toolbox.shapeMasksBuilt
+		if stale || gen != a.toolbox.shapeMasksGen {
 			// Verify residency cheaply: if the fill mask for the active tier is
 			// gone, heal (paced); a same-generation shape change rebuilds now.
 			if stale || !a.shapeMaskResident(shape) {
-				if stale || a.now().Sub(a.shapeMaskAt) > shapeHealPeriod {
+				if stale || a.now().Sub(a.toolbox.shapeMaskAt) > shapeHealPeriod {
 					a.buildShapeMasks()
 				}
 			} else {
 				// Masks still resident, only the generation counter moved — adopt it.
-				a.shapeMasksGen = gen
+				a.toolbox.shapeMasksGen = gen
 			}
 		}
 	}
@@ -288,7 +288,7 @@ func (a *App) refreshShapeMasks() {
 	// read AFTER the (possible) rebuild above so a fresh build re-resolves
 	// against its own post-upload generation.
 	gen := a.shapeStoreGen()
-	if c.shapeMaskReady && shape == a.shapeResolvedShape && tier == a.shapeResolvedTier && gen == a.shapeResolvedGen {
+	if c.shapeMaskReady && shape == a.toolbox.shapeResolvedShape && tier == a.toolbox.shapeResolvedTier && gen == a.toolbox.shapeResolvedGen {
 		return
 	}
 	radius := shapeTierRadii[tier]
@@ -299,7 +299,7 @@ func (a *App) refreshShapeMasks() {
 		// sharp this frame — no flash, and the next frame retries.
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
-		a.shapeResolvedShape = "" // no memo — retry the resolve next frame
+		a.toolbox.shapeResolvedShape = "" // no memo — retry the resolve next frame
 		return
 	}
 	c.shapeFillTex = fillPage.Frames[0]
@@ -307,7 +307,7 @@ func (a *App) refreshShapeMasks() {
 	c.shapeMaskDim = 2*radius + shapeMaskCenter
 	c.shapeMaskR = radius
 	c.shapeMaskReady = true
-	a.shapeResolvedShape, a.shapeResolvedTier, a.shapeResolvedGen = shape, tier, gen
+	a.toolbox.shapeResolvedShape, a.toolbox.shapeResolvedTier, a.toolbox.shapeResolvedGen = shape, tier, gen
 }
 
 // invalidateShapeMasks drops the frame-resolved mask pointers (Ctx) and the
@@ -320,8 +320,8 @@ func (a *App) refreshShapeMasks() {
 // frame would Copy a freed texture (the stale-handle/black-flash class). Any
 // future mid-frame Store.Purge()/invalidation site must make this same call.
 func (a *App) invalidateShapeMasks() {
-	a.shapeMasksBuilt = false
-	a.shapeResolvedShape = "" // drop the resolve memo with the pointers
+	a.toolbox.shapeMasksBuilt = false
+	a.toolbox.shapeResolvedShape = "" // drop the resolve memo with the pointers
 	c := a.ctx
 	c.shapeMaskReady = false
 	c.shapeFillTex, c.shapeStrokeTex = nil, nil

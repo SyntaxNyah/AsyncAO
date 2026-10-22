@@ -292,21 +292,21 @@ func buildThemeFitMenu() []menuItem {
 // neither would be a silent no-op — the failure mode the disabled-not-absent rule
 // above exists to avoid.
 
-func menuCanRefreshServers(a *App, _ int) bool { return !a.lobbyFetching }
+func menuCanRefreshServers(a *App, _ int) bool { return !a.lobby.lobbyFetching }
 func menuActRefreshServers(a *App, _ int)      { a.RefreshServers() }
 
-func menuPhoneBookOn(a *App, _ int) bool { return a.phoneBookPage }
+func menuPhoneBookOn(a *App, _ int) bool { return a.lobby.phoneBookPage }
 func menuTogglePhoneBook(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
-	a.setPhoneBookPage(!a.phoneBookPage)
+	a.setPhoneBookPage(!a.lobby.phoneBookPage)
 }
 
 // menuCanPingSort dims the row while a sweep is in flight: startPinging refuses a
 // second one (it would race its own results), so a live row there would do nothing.
 // Dimming is also the only progress feedback the menu can give — the on-screen button
 // this replaced said "Pinging…" in its label, which a static menu row cannot.
-func menuCanPingSort(a *App, _ int) bool { return !a.pinging }
-func menuPingSortOn(a *App, _ int) bool  { return a.pingMode }
+func menuCanPingSort(a *App, _ int) bool { return !a.lobby.pinging }
+func menuPingSortOn(a *App, _ int) bool  { return a.lobby.pingMode }
 func menuTogglePingSort(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
 	a.toggleConnectTimeSort()
@@ -398,7 +398,9 @@ func menuActTheater(a *App, _ int)      { a.compactTheater() }
 func menuActEditLayout(a *App, _ int)   { a.compactEditLayout() }
 func menuActHideUIPieces(a *App, _ int) { a.compactHideUI() }
 
-func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.toolboxPieces }
+func menuToolboxPiecesOpen(a *App, _ int) bool {
+	return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces
+}
 
 // menuToolboxShown / menuToggleToolbox drive the floating strip's visibility through
 // the SAME hidden-chrome entry the per-piece panel's own checkbox uses, guard
@@ -408,8 +410,8 @@ func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.too
 // in force rather than relaxed here, where relaxing it could not be tested against
 // every profile/import path that also writes the hidden set.)
 // The chrome home for AsyncAO's own controls (#21 rule (c)) — each reaches the
-func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
-func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
+func menuExtrasBoxOpen(a *App, _ int) bool { return a.toolbox.showWidgets }
+func menuToggleExtrasBox(a *App, _ int)    { a.toolbox.showWidgets = !a.toolbox.showWidgets }
 
 // menuActWardrobe opens the Wardrobe on its browse tab — the same entry point the
 // band's Iniswap chip uses (iniswapchip.go), so the two can never drift.
@@ -576,7 +578,7 @@ func (a *App) menuBarPaints() bool {
 // menuBarPaintsNow is the FINAL word on the strip's paint, taken at the paint site
 // because that is the only point in a frame where the answer can no longer change.
 func (a *App) menuBarPaintsNow() bool {
-	if a.editorBannerPainted {
+	if a.toolbox.editorBannerPainted {
 		return false
 	}
 	return a.menuBar.draws || a.menuBar.editorHeld
@@ -586,12 +588,12 @@ func (a *App) menuBarPaintsNow() bool {
 // Called from the exact statement that fills the banner, never from the arm path, so
 // the flag means what menuBarPaintsNow needs it to mean: painted, not merely armed.
 // App.Frame clears it every frame, next to the tab strip's paint latch.
-func (a *App) noteEditorBanner() { a.editorBannerPainted = true }
+func (a *App) noteEditorBanner() { a.toolbox.editorBannerPainted = true }
 
 // layoutEditorArmed is "one of the two layout editors owns the screen": the classic
 // slot editor (classiclayout.go) or the themed rect editor (layoutedit.go). Named
 // because three separate rules key off the pair.
-func (a *App) layoutEditorArmed() bool { return a.classicEdit || a.layoutEdit }
+func (a *App) layoutEditorArmed() bool { return a.classic.classicEdit || a.layoutEdit }
 
 // menuBarHeight is the vertical space the bar occupies — the ONE number the layout
 // stage offsets screen content by, so no caller ever hardcodes menuBarH. Reports

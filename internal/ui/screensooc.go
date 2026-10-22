@@ -404,7 +404,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.Load().NameColors       // per-speaker OOC name colours (read once)
+	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
@@ -569,10 +569,10 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 // OOC log and the OOC tab. Only ever called for the single hovered link.
 func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 	c := a.ctx
-	if a.juke != nil {
+	if a.jukebox.juke != nil {
 		saveBtn := sdl.Rect{X: rowRect.X + rowRect.W - 96, Y: rowRect.Y + 1, W: 94, H: rowRect.H - 2}
 		if c.Button(saveBtn, "+ Jukebox") {
-			if a.juke.QuickAdd(jukeboxOOCPlaylist, "", url) {
+			if a.jukebox.juke.QuickAdd(jukeboxOOCPlaylist, "", url) {
 				a.warnLine = "Saved to Jukebox → " + jukeboxOOCPlaylist
 			} else {
 				a.warnLine = "Already in your Jukebox (or it's full)"
@@ -628,7 +628,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.Load().NameColors       // per-speaker OOC name colours (read once)
+	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {

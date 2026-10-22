@@ -770,10 +770,10 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 18
 		c.Label(pad+16, y, "for a server's user-rip path (e.g. miku.pizza/base/youtube → only songs under it). Discord: audio files only.", ColTextDim)
 		y += 22
-		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
+		a.jukebox.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.jukebox.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
 		if c.Button(sdl.Rect{X: pad + 262, Y: y, W: 80, H: btnH}, "+ Add") {
-			if a.d.Prefs.AddMusicHost(a.musicHostInput) {
-				a.musicHostInput = ""
+			if a.d.Prefs.AddMusicHost(a.jukebox.musicHostInput) {
+				a.jukebox.musicHostInput = ""
 			} else {
 				a.jukeWarn("Enter a host or host/folder (or it's already listed / at the cap).")
 			}

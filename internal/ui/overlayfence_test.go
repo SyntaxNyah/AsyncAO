@@ -260,7 +260,7 @@ func TestOverlayFenceZeroAlloc(t *testing.T) {
 // pixels — the mirror of the bug being fixed).
 func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 	a := testTabApp(t)
-	a.hidden = map[string]bool{} // App init seeds this; a bare fixture must too
+	a.classic.hidden = map[string]bool{} // App init seeds this; a bare fixture must too
 	const w, h = int32(1280), int32(720)
 	c := a.ctx
 
@@ -276,7 +276,7 @@ func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 
 	// Pin it open so the expanded case doesn't hinge on hover-halo geometry; the
 	// genuinely-collapsed case is exercised further down.
-	a.toolboxPinned = true
+	a.toolbox.toolboxPinned = true
 	if !a.compactToolboxExpanded(strip, grip) {
 		t.Fatal("test setup: a pinned toolbox must read as expanded")
 	}
@@ -291,8 +291,8 @@ func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 	if c.overlayFenceN != 0 {
 		t.Fatalf("a retired (normal-play) toolbox must publish no fence, got depth %d", c.overlayFenceN)
 	}
-	if a.toolboxFence.draws {
-		t.Errorf("latch must say the strip does NOT paint in normal play: %+v", a.toolboxFence)
+	if a.toolbox.toolboxFence.draws {
+		t.Errorf("latch must say the strip does NOT paint in normal play: %+v", a.toolbox.toolboxFence)
 	}
 	if !c.hovering(themeBtn) {
 		t.Error("the theme button must stay live now the strip is retired")
@@ -300,7 +300,7 @@ func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 
 	// Collapsed: cursor parked far away, nothing pinned → publish nothing.
 	c.overlayFenceN = 0
-	a.toolboxPinned = false
+	a.toolbox.toolboxPinned = false
 	c.mouseX, c.mouseY = 10, 10
 	a.fenceCompactToolbox(w, h)
 	if c.overlayFenceN != 0 {
@@ -308,21 +308,21 @@ func TestCompactToolboxFencesWhatItCovers(t *testing.T) {
 	}
 
 	// Hidden via panelToolbox: drawCompactToolbox early-returns, so must the fence.
-	a.toolboxPinned = true
-	a.hidden[panelToolbox] = true
+	a.toolbox.toolboxPinned = true
+	a.classic.hidden[panelToolbox] = true
 	a.fenceCompactToolbox(w, h)
 	if c.overlayFenceN != 0 {
 		t.Errorf("a hidden toolbox must publish no fence, got depth %d", c.overlayFenceN)
 	}
 	// A layout editor owns the pointer itself (modalOn) and the toolbox draws
 	// post-courtroom there, so the in-pass fence must stand down.
-	delete(a.hidden, panelToolbox)
-	a.classicEdit = true
+	delete(a.classic.hidden, panelToolbox)
+	a.classic.classicEdit = true
 	a.fenceCompactToolbox(w, h)
 	if c.overlayFenceN != 0 {
 		t.Errorf("no in-pass fence while a layout editor is armed, got depth %d", c.overlayFenceN)
 	}
-	if a.toolboxFence.set {
+	if a.toolbox.toolboxFence.set {
 		t.Error("with an editor armed the POST-courtroom site owns the draw — the in-pass latch must stay unset")
 	}
 }
@@ -340,8 +340,8 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 	// stale flag would make later cases unreachable.
 	for i := range courtroomModals {
 		a := testTabApp(t)
-		a.hidden = map[string]bool{}
-		a.toolboxPinned = true // expanded, so a fence WOULD be published but for the modal
+		a.classic.hidden = map[string]bool{}
+		a.toolbox.toolboxPinned = true // expanded, so a fence WOULD be published but for the modal
 		if !courtroomModals[i].open(a) {
 			// Arm this modal via its own flag. The table holds only the predicate, so
 			// set the flags directly through the same fields the predicate reads.
@@ -364,7 +364,7 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			t.Errorf("modal %d: the pass returns before the toolbox draws, so it must publish no fence (depth %d)",
 				i, a.ctx.overlayFenceN)
 		}
-		if a.toolboxFence.draws {
+		if a.toolbox.toolboxFence.draws {
 			t.Errorf("modal %d: the latch must record that the toolbox does NOT paint this frame", i)
 		}
 	}
@@ -386,7 +386,7 @@ func TestCompactToolboxDrawsFromExactlyOneSite(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.ctx = ctx
-	a.hidden = map[string]bool{}
+	a.classic.hidden = map[string]bool{}
 	a.uiScalePct = 100
 	const w, h = int32(1280), int32(720)
 
@@ -397,23 +397,23 @@ func TestCompactToolboxDrawsFromExactlyOneSite(t *testing.T) {
 	pinChip := sdl.Rect{X: grip.X - compactChipH - 4, Y: grip.Y, W: compactChipH, H: compactChipH}
 	ctx.mouseX, ctx.mouseY = pinChip.X+pinChip.W/2, pinChip.Y+pinChip.H/2
 	ctx.downX, ctx.downY = ctx.mouseX, ctx.mouseY
-	a.classicEdit = true // the post-courtroom site's real context
+	a.classic.classicEdit = true // the post-courtroom site's real context
 
 	// Control: with no in-pass latch, the post-courtroom site owns the draw and the
 	// chip fires. (Proves the assertion below isn't vacuous.)
-	a.toolboxFence = compactToolboxLatch{}
+	a.toolbox.toolboxFence = compactToolboxLatch{}
 	ctx.clicked = true
 	a.drawCompactToolboxOverEditor(w, h)
-	if !a.toolboxPinned {
+	if !a.toolbox.toolboxPinned {
 		t.Fatal("test setup: with no in-pass latch the post-courtroom site must draw and its Pin chip must fire")
 	}
 
 	// The real case: the in-pass site already drew this frame (a hotkey armed the
 	// editor mid-pass). The post-courtroom site must stand down entirely.
-	a.toolboxFence = compactToolboxLatch{set: true, draws: true, expanded: true, strip: strip}
+	a.toolbox.toolboxFence = compactToolboxLatch{set: true, draws: true, expanded: true, strip: strip}
 	ctx.clicked = true
 	a.drawCompactToolboxOverEditor(w, h)
-	if !a.toolboxPinned {
+	if !a.toolbox.toolboxPinned {
 		t.Error("the toolbox drew twice on one frame: the second pass re-fired the Pin chip and unpinned it")
 	}
 }
@@ -443,7 +443,7 @@ func TestCourtroomModalUpMatchesDraw(t *testing.T) {
 		t.Error("blockingCourtPopup deliberately does NOT list the SFX browser — do not reuse it as the modal predicate")
 	}
 	a.showSfxBrowser = false
-	a.classicEdit = true
+	a.classic.classicEdit = true
 	if a.courtroomModalUp() {
 		t.Error("the layout editor is not a return-to-top modal, though blockingCourtPopup counts it")
 	}

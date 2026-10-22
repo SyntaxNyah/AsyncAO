@@ -104,7 +104,7 @@ func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName s
 
 // applyGroupJoin adds a member who announced they joined a group we're in.
 func (a *App) applyGroupJoin(id uint32, uid int, name string) {
-	if g := a.msgGroups[id]; g != nil {
+	if g := a.msgs.msgGroups[id]; g != nil {
 		g.addMember(uid, name)
 	}
 }
@@ -114,13 +114,13 @@ func (a *App) applyGroupJoin(id uint32, uid int, name string) {
 // (for the bubble icon) resolves from the live roster at receipt; a group that
 // isn't on screen counts the line as unread (the chat-list badge).
 func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
-	g := a.msgGroups[id]
+	g := a.msgs.msgGroups[id]
 	if g == nil {
 		return
 	}
 	g.addMember(fromUID, fromName)
 	g.appendLine(fromName, text, false, a.rosterCharByUID(fromUID))
-	if !a.showMessages || a.msgSelGroup != id {
+	if !a.msgs.showMessages || a.msgs.msgSelGroup != id {
 		g.unread++
 	}
 }
@@ -129,12 +129,12 @@ func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 // owner (byUID == ownerUID); the server-attributed sender makes this unforgeable. If
 // we are the target, the group is dropped locally.
 func (a *App) applyGroupKick(id uint32, byUID, targetUID int) {
-	g := a.msgGroups[id]
+	g := a.msgs.msgGroups[id]
 	if g == nil || byUID != g.ownerUID {
 		return
 	}
 	if targetUID == a.myUID() {
-		delete(a.msgGroups, id)
+		delete(a.msgs.msgGroups, id)
 		return
 	}
 	g.removeMember(targetUID)
@@ -142,24 +142,24 @@ func (a *App) applyGroupKick(id uint32, byUID, targetUID int) {
 
 // applyGroupLeave removes a member who announced they left.
 func (a *App) applyGroupLeave(id uint32, uid int) {
-	if g := a.msgGroups[id]; g != nil {
+	if g := a.msgs.msgGroups[id]; g != nil {
 		g.removeMember(uid)
 	}
 }
 
 // ensureGroup returns the group for id, creating it (bounded) if absent. nil at the cap.
 func (a *App) ensureGroup(id uint32) *msgGroup {
-	if a.msgGroups == nil {
-		a.msgGroups = map[uint32]*msgGroup{}
+	if a.msgs.msgGroups == nil {
+		a.msgs.msgGroups = map[uint32]*msgGroup{}
 	}
-	if g := a.msgGroups[id]; g != nil {
+	if g := a.msgs.msgGroups[id]; g != nil {
 		return g
 	}
-	if len(a.msgGroups) >= maxGroups {
+	if len(a.msgs.msgGroups) >= maxGroups {
 		return nil
 	}
 	g := &msgGroup{id: id}
-	a.msgGroups[id] = g
+	a.msgs.msgGroups[id] = g
 	return g
 }
 
@@ -203,7 +203,7 @@ func (a *App) createGroup(name string) {
 	}
 	g.ownerUID = a.myUID()
 	g.addMember(a.myUID(), a.oocNameOrDefault())
-	a.msgSelGroup, a.msgSel = g.id, ""
+	a.msgs.msgSelGroup, a.msgs.msgSel = g.id, ""
 }
 
 // sendGroupText fans a message out to every other member over /pm (one command) and
@@ -256,8 +256,8 @@ func (a *App) leaveGroup(g *msgGroup) {
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: g.id}.EncodeMarker()
 		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
-	delete(a.msgGroups, g.id)
-	if a.msgSelGroup == g.id {
-		a.msgSelGroup = 0
+	delete(a.msgs.msgGroups, g.id)
+	if a.msgs.msgSelGroup == g.id {
+		a.msgs.msgSelGroup = 0
 	}
 }

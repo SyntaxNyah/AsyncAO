@@ -63,7 +63,7 @@ func TestRosterMenuItems(t *testing.T) {
 
 	// UI… hide prefs trim menu entries (same ids that hid the old buttons).
 	a.rosterMenuOpen = false
-	a.hidden = map[string]bool{rosterBtnPair: true, rosterBtnUID: true, rosterBtnIPID: true, rosterBtnIgnore: true}
+	a.classic.hidden = map[string]bool{rosterBtnPair: true, rosterBtnUID: true, rosterBtnIPID: true, rosterBtnIgnore: true}
 	a.openRosterMenu(&p, false, false, sdl.Point{})
 	got = menuKinds(a)
 	for _, hidden := range []rosterMenuKind{rosterActPair, rosterActCopyUID, rosterActCopyIPID, rosterActIgnore} {

@@ -28,11 +28,11 @@ import (
 // unconditionally, and doing that from the all-servers page must not clear a
 // selection the user is reading.
 func (a *App) setPhoneBookPage(on bool) {
-	if a.phoneBookPage == on {
+	if a.lobby.phoneBookPage == on {
 		return
 	}
-	a.phoneBookPage = on
-	a.selServer, a.descLines, a.descLinks, a.lobbyScroll = -1, nil, nil, 0
+	a.lobby.phoneBookPage = on
+	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks, a.lobby.lobbyScroll = -1, nil, nil, 0
 	a.cancelPhoneBookEdit()
 }
 
@@ -74,9 +74,9 @@ func (a *App) addPhoneBookServer() {
 		name = in
 	}
 	a.d.Prefs.AddFavorite(name, url, "")
-	a.servers = a.mergedFavorites()
+	a.lobby.servers = a.mergedFavorites()
 	a.pbName, a.pbURL, a.connErr = "", "", ""
-	a.lobbyStatus = "Added " + name + " to your phone book."
+	a.lobby.lobbyStatus = "Added " + name + " to your phone book."
 }
 
 // exportPhoneBook copies the phone book to the clipboard as JSON — render-thread
@@ -92,7 +92,7 @@ func (a *App) exportPhoneBook() {
 		return
 	}
 	a.connErr = ""
-	a.lobbyStatus = "Phone book copied to the clipboard — paste it to a friend to share."
+	a.lobby.lobbyStatus = "Phone book copied to the clipboard — paste it to a friend to share."
 }
 
 // importPhoneBook merges a phone-book export from the clipboard (additive, dedup
@@ -108,9 +108,9 @@ func (a *App) importPhoneBook() {
 		a.connErr = "Clipboard isn't a valid phone-book export."
 		return
 	}
-	a.servers = a.mergedFavorites()
+	a.lobby.servers = a.mergedFavorites()
 	a.connErr = ""
-	a.lobbyStatus = fmt.Sprintf("Imported %d new server(s) into your phone book.", n)
+	a.lobby.lobbyStatus = fmt.Sprintf("Imported %d new server(s) into your phone book.", n)
 }
 
 // beginPhoneBookEdit opens the inline editor for a phone-book row, seeding the
@@ -153,10 +153,10 @@ func (a *App) savePhoneBookEdit(oldURL, desc string) {
 		a.connErr = "That address is already in your phone book under another entry."
 		return
 	}
-	a.servers = a.mergedFavorites()
+	a.lobby.servers = a.mergedFavorites()
 	a.cancelPhoneBookEdit()
 	a.connErr = ""
-	a.lobbyStatus = "Updated " + name + " in your phone book."
+	a.lobby.lobbyStatus = "Updated " + name + " in your phone book."
 }
 
 // --- "Phone Fanat" click-to-quip chip (phone-book page only) ------------------
@@ -184,8 +184,8 @@ func phoneFanatChipRect(w, h int32) sdl.Rect {
 func (a *App) claimPhoneFanatClick(w, h int32) {
 	c := a.ctx
 	if c.hovering(phoneFanatChipRect(w, h)) && c.clicked {
-		a.phoneFanatLine = fanatLines[rand.IntN(len(fanatLines))]
-		a.phoneFanatShownAt = a.now()
+		a.lobby.phoneFanatLine = fanatLines[rand.IntN(len(fanatLines))]
+		a.lobby.phoneFanatShownAt = a.now()
 		c.clicked = false // top-most element wins; the rows below must not also act
 	}
 }
@@ -211,11 +211,11 @@ func (a *App) drawPhoneFanatChip(w, h int32) {
 	// The zero-value phoneFanatShownAt keeps this false until the first click, so
 	// no init flag is needed. The quip draws just ABOVE the chip so it never
 	// overlaps it (right-aligned to the chip's right edge).
-	if a.phoneFanatLine != "" && a.now().Sub(a.phoneFanatShownAt) < fanatShowDuration {
-		x := chip.X + fanatChipW - c.TextWidth(a.phoneFanatLine)
+	if a.lobby.phoneFanatLine != "" && a.now().Sub(a.lobby.phoneFanatShownAt) < fanatShowDuration {
+		x := chip.X + fanatChipW - c.TextWidth(a.lobby.phoneFanatLine)
 		if x < pad {
 			x = pad // a longer line can't run off the left edge
 		}
-		c.Label(x, chip.Y-18, a.phoneFanatLine, ColTextDim)
+		c.Label(x, chip.Y-18, a.lobby.phoneFanatLine, ColTextDim)
 	}
 }

@@ -33,7 +33,7 @@ import (
 // fast path) when the slot has no rotation, which is every slot on a settled,
 // unedited frame. Kept tiny and SDL-free so the angle==0 routing is unit-testable.
 func (a *App) classicSlotRotation(slot string) float64 {
-	b, ok := a.classicRot[slot]
+	b, ok := a.classic.classicRot[slot]
 	if !ok || b == 0 {
 		return 0
 	}
@@ -164,18 +164,18 @@ func (a *App) cycleSlotRotation(name string, fine bool) {
 	// Rotation re-bases like the anchor: it needs an override to hang off, so mint
 	// one from the current rect if the slot has none (unreachable while no classic
 	// slot is rotatable, but kept correct for the forward-compat path).
-	if _, ok := a.classicOv[name]; !ok {
+	if _, ok := a.classic.classicOv[name]; !ok {
 		return
 	}
-	next := nextRotationByte(a.classicRot[name], fine)
-	if a.classicRot == nil {
-		a.classicRot = make(map[string]uint8, classicSlotRegCap)
+	next := nextRotationByte(a.classic.classicRot[name], fine)
+	if a.classic.classicRot == nil {
+		a.classic.classicRot = make(map[string]uint8, classicSlotRegCap)
 	}
 	if next == 0 {
-		delete(a.classicRot, name)
+		delete(a.classic.classicRot, name)
 		a.d.Prefs.ClearClassicRotation(name)
 	} else {
-		a.classicRot[name] = next
+		a.classic.classicRot[name] = next
 		a.d.Prefs.SetClassicRotation(name, next)
 	}
 	a.debug.push("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")

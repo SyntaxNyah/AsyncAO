@@ -142,7 +142,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	line(a.debugHealthLine(), ColText) // phase · server · wire · last pkt · log fill
 	line(a.debugDiagLine(), ColText)   // tabs · area · queue · ic · ooc · goroutines
 
-	rtt := a.pingRTT.Load()
+	rtt := a.lobby.pingRTT.Load()
 	switch {
 	case rtt > 0:
 		line(fmt.Sprintf("Ping (WS round-trip): %d ms", rtt/int64(time.Millisecond)), ColText)
@@ -559,7 +559,7 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 		y += debugLineH
 	}
 
-	themeName := a.themeAppliedName
+	themeName := a.toolbox.themeAppliedName
 	if themeName == "" {
 		themeName = "(none - default AO2 look)"
 	}

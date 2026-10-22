@@ -109,7 +109,7 @@ func (a *App) charMetaFor(char string) charMeta {
 		return charMeta{}
 	}
 	url := a.charINIURL(char)
-	if m, ok := a.charMetaCache[url]; ok {
+	if m, ok := a.overlays.charMetaCache[url]; ok {
 		// A settled entry (hit or miss) is final. An in-flight marker that has
 		// gone stale means its result was dropped on channel overflow (#69):
 		// fall through and re-arm the fetch instead of returning a marker that
@@ -118,13 +118,13 @@ func (a *App) charMetaFor(char string) charMeta {
 			return m
 		}
 	}
-	if a.charMetaCache == nil {
-		a.charMetaCache = make(map[string]charMeta, charMetaCap)
+	if a.overlays.charMetaCache == nil {
+		a.overlays.charMetaCache = make(map[string]charMeta, charMetaCap)
 	}
-	if len(a.charMetaCache) >= charMetaCap {
-		a.charMetaCache = make(map[string]charMeta, charMetaCap) // reset: it's a cache, refetch heals
+	if len(a.overlays.charMetaCache) >= charMetaCap {
+		a.overlays.charMetaCache = make(map[string]charMeta, charMetaCap) // reset: it's a cache, refetch heals
 	}
-	a.charMetaCache[url] = charMeta{stamp: time.Now()} // in-flight marker: one fetch per URL
+	a.overlays.charMetaCache[url] = charMeta{stamp: time.Now()} // in-flight marker: one fetch per URL
 	a.charMetaFetchOne(url, char)
 	return charMeta{}
 }
@@ -136,8 +136,8 @@ func (a *App) charMetaFor(char string) charMeta {
 // resolved here so the cache holds canon's finished answer and no second copy
 // of the rule exists at the read side.
 func (a *App) charMetaFetchOne(url, char string) {
-	if a.charMetaRes == nil {
-		a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
+	if a.overlays.charMetaRes == nil {
+		a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 	}
 	// Capture the Manager and the result channel BEFORE the goroutine. A test App
 	// (or a torn-down one) has no Manager, and the goroutine must not read a.d
@@ -148,7 +148,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 		return
 	}
 	ub := a.urls // captured too: the goroutine must not read a.urls after spawn
-	resCh := a.charMetaRes
+	resCh := a.overlays.charMetaRes
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
@@ -202,16 +202,16 @@ func (a *App) charMetaFetchOne(url, char string) {
 // pollCharMeta drains landed char.ini fetches into the cache (called once per
 // frame from the poll cluster; no-op with nothing pending).
 func (a *App) pollCharMeta() {
-	if a.charMetaRes == nil {
+	if a.overlays.charMetaRes == nil {
 		return
 	}
 	for {
 		select {
-		case res := <-a.charMetaRes:
-			if a.charMetaCache == nil {
-				a.charMetaCache = make(map[string]charMeta, charMetaCap)
+		case res := <-a.overlays.charMetaRes:
+			if a.overlays.charMetaCache == nil {
+				a.overlays.charMetaCache = make(map[string]charMeta, charMetaCap)
 			}
-			a.charMetaCache[res.url] = charMeta{
+			a.overlays.charMetaCache[res.url] = charMeta{
 				blips: res.blips, chat: res.chat, effects: res.effects,
 				realization: res.realization, scaling: res.scaling,
 				showname: res.showname, idle: res.idle, done: true,

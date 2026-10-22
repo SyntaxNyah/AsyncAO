@@ -123,20 +123,20 @@ type tabStripPaintLatch struct {
 // latchTabStripPaint takes that decision. Called once, at the top of the courtroom
 // pass.
 func (a *App) latchTabStripPaint() {
-	a.tabStripPaint = tabStripPaintLatch{set: true, inPass: a.tabStripPaintsUnderEditor()}
+	a.toolbox.tabStripPaint = tabStripPaintLatch{set: true, inPass: a.tabStripPaintsUnderEditor()}
 }
 
 // drawTabBarInPass is the courtroom pass's strip site, REPLAYING the latch rather than
 // re-reading the editor flags. Called unconditionally from both passes.
 func (a *App) drawTabBarInPass(w, h int32) {
-	if a.tabStripPaint.inPass {
+	if a.toolbox.tabStripPaint.inPass {
 		a.drawTabBar(w, h)
 	}
 }
 
 // tabStripPaintsOverEverything is App.Frame's site, replaying the SAME latch. The two
 // are exact complements, so exactly one paints per frame.
-func (a *App) tabStripPaintsOverEverything() bool { return !a.tabStripPaint.inPass }
+func (a *App) tabStripPaintsOverEverything() bool { return !a.toolbox.tabStripPaint.inPass }
 
 // tabStripBandH is the vertical band the DOCKED server-tab strip owns, directly
 // under the menu bar. Zero in the two cases where the strip is not in the band:
@@ -158,7 +158,7 @@ func (a *App) tabStripBandH() int32 {
 	if len(a.tabs) == 0 {
 		return 0
 	}
-	if _, moved := a.classicOv[slotTabBar]; moved {
+	if _, moved := a.classic.classicOv[slotTabBar]; moved {
 		return 0
 	}
 	return tabBarH

@@ -62,7 +62,7 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	page := animatedThemePage(t, a, themeTexKey("gatechatbox"))
 
 	// The theme clock well past frame 0, so a moving page would be somewhere else.
-	a.themeAt = a.now().Add(-time.Second)
+	a.toolbox.themeAt = a.now().Add(-time.Second)
 
 	// Motion ALLOWED: the page steps and the census fires. This half is the
 	// non-vacuity check — without it a themeFrame hardwired to frame 0 would pass
@@ -109,7 +109,7 @@ func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	a.themeFXFrozen = false
 
 	for _, el := range []time.Duration{0, 45 * time.Millisecond, 130 * time.Millisecond, time.Second} {
-		a.themeAt = a.now().Add(-el)
+		a.toolbox.themeAt = a.now().Add(-el)
 		want, _ := elementFrameIndex(page, a.themeElapsed(), true)
 		got := a.themeFrame(page)
 		if got != page.Frames[want] {

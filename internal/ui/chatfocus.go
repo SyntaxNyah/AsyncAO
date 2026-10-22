@@ -120,7 +120,7 @@ func (a *App) claimTypingForIC() {
 	if c.ctrlHeld || c.altHeld || c.modalOn {
 		return
 	}
-	if a.capturingKey() || a.classicEdit || a.layoutEdit {
+	if a.capturingKey() || a.classic.classicEdit || a.layoutEdit {
 		return
 	}
 	if !c.fieldDrewLastFrame(icFieldID) {

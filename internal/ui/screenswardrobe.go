@@ -163,9 +163,9 @@ func (a *App) drawIniswapPanel(w, h int32) {
 			// Each section owns its own preview — and its own dwell, so this goes
 			// through closeSpritePreview rather than blanking previewBase.
 			a.closeSpritePreview()
-			a.iniMenuChar = ""   // close any open character move-to-folder menu
-			a.wardDelFolder = "" // close any open folder-delete confirmation
-			a.jukeBindFor = ""   // cancel any armed jukebox key-capture
+			a.iniMenuChar = ""         // close any open character move-to-folder menu
+			a.wardDelFolder = ""       // close any open folder-delete confirmation
+			a.jukebox.jukeBindFor = "" // cancel any armed jukebox key-capture
 			if t.id == wardSectionBackgrounds {
 				a.rebuildBgFav()
 			}
