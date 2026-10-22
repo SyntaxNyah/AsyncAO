@@ -69,6 +69,26 @@ type selfUpdate struct {
 	relaunchOnExit bool                 // "Restart to apply": relaunch the new binary after a clean shutdown
 }
 
+// fenceHeld reports whether the update modal holds the app-wide modal fence.
+// App-side modal accounting asks this instead of reading the field, so the
+// component owns the bit (and the pairing count stays at zero).
+func (s *selfUpdate) fenceHeld() bool { return s.fenceOn }
+
+// visible reports whether the What's New modal is open (and therefore owns Esc).
+func (s *selfUpdate) visible() bool { return s.show }
+
+// closeModal closes the What's New modal; the Esc chain calls it by behaviour.
+func (s *selfUpdate) closeModal() { s.show = false }
+
+// resetForChannel drops a stale offer after the update channel changed: re-arm
+// the one-shot launch check and close the modal, so the other channel's build
+// cannot be pushed at the user.
+func (s *selfUpdate) resetForChannel() {
+	s.checked = false
+	s.rel = nil
+	s.show = false
+}
+
 // wireComponents points every component's env at App's own env, and gives that
 // env its host capabilities (a redraw request and the chrome band), so a
 // component reaches shared state through one pointer. NewApp calls it once
