@@ -139,30 +139,30 @@ func TestSceneHealBudget(t *testing.T) {
 	// Slow-load shape: repeated asks with no landing stay allowed up to the
 	// asks bound, then latch.
 	for i := 0; i < warmMaxHealAsks; i++ {
-		if !a.sceneHealAllowed("warm://slow") {
+		if !a.sceneWarm.healAllowed("warm://slow") {
 			t.Fatalf("ask %d of %d must be allowed (no landing yet ≠ futile)", i+1, warmMaxHealAsks)
 		}
 	}
-	if a.sceneHealAllowed("warm://slow") {
+	if a.sceneWarm.healAllowed("warm://slow") {
 		t.Fatal("asks past the bound with no landing must latch")
 	}
 
 	// The landing re-arms the budget — a slow load can never strand a base.
-	a.markSceneResident("warm://slow")
-	if !a.sceneHealAllowed("warm://slow") {
+	a.sceneWarm.markResident("warm://slow")
+	if !a.sceneWarm.healAllowed("warm://slow") {
 		t.Fatal("a landing must reset the asks bound")
 	}
 
 	// Churn shape: land → demand (churn 1) … until the churn bound latches,
 	// regardless of landings in between.
 	for i := 1; i < warmMaxHealChurns; i++ { // one churn already counted above
-		a.markSceneResident("warm://slow")
-		if !a.sceneHealAllowed("warm://slow") {
+		a.sceneWarm.markResident("warm://slow")
+		if !a.sceneWarm.healAllowed("warm://slow") {
 			t.Fatalf("churn %d of %d must still be allowed", i+1, warmMaxHealChurns)
 		}
 	}
-	a.markSceneResident("warm://slow")
-	if a.sceneHealAllowed("warm://slow") {
+	a.sceneWarm.markResident("warm://slow")
+	if a.sceneWarm.healAllowed("warm://slow") {
 		t.Fatal("landed-then-evicted cycles past the churn bound must latch")
 	}
 

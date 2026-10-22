@@ -2208,14 +2208,14 @@ type sceneHealState struct {
 	seenResident bool // the base landed at some point since the last demand
 }
 
-// sceneHealAllowed gates one live-scene re-demand against the shared per-scene
+// healAllowed gates one live-scene re-demand against the shared per-scene
 // futility budget and counts it. healScenery and keepSceneAssetsWarm share the
 // budget: they heal the same bases, and either one alone could sustain the
 // over-budget eviction churn. Counters reset on a warm-set change or a new
 // ceremony (keepSceneAssetsWarm, which runs on both the drawn and the
-// skipped/minimized paths and marks landings via markSceneResident).
-func (a *App) sceneHealAllowed(base string) bool {
-	st := a.sceneWarm.demands[base]
+// skipped/minimized paths and marks landings via markResident).
+func (s *sceneWarmState) healAllowed(base string) bool {
+	st := s.demands[base]
 	if st.seenResident {
 		// It landed since the last demand and is missing AGAIN: a genuine
 		// eviction-churn cycle — the thing the hard bound exists for. Persist
@@ -2224,7 +2224,7 @@ func (a *App) sceneHealAllowed(base string) bool {
 		st.churns++
 		st.asks = 0
 		st.seenResident = false
-		a.sceneWarm.demands[base] = st
+		s.demands[base] = st
 	}
 	// Exactly warmMaxHealChurns churn cycles get a heal (refused from the
 	// N+1th), and warmMaxHealAsks demands may run without a landing between.
@@ -2232,25 +2232,25 @@ func (a *App) sceneHealAllowed(base string) bool {
 		return false
 	}
 	st.asks++
-	if a.sceneWarm.demands == nil {
-		a.sceneWarm.demands = make(map[string]sceneHealState) // bounded: scene bases only, reset per scene
+	if s.demands == nil {
+		s.demands = make(map[string]sceneHealState) // bounded: scene bases only, reset per scene
 	}
-	a.sceneWarm.demands[base] = st
+	s.demands[base] = st
 	return true
 }
 
-// markSceneResident records that a demanded base is resident right now — the
-// landing proof sceneHealAllowed's asks bound resets on, and the arming edge
+// markResident records that a demanded base is resident right now — the
+// landing proof healAllowed's asks bound resets on, and the arming edge
 // for its churn bound. No-op for bases never demanded (no map growth) and for
 // already-marked entries (no map write on the steady state).
-func (a *App) markSceneResident(base string) {
-	st, ok := a.sceneWarm.demands[base]
+func (s *sceneWarmState) markResident(base string) {
+	st, ok := s.demands[base]
 	if !ok || (st.seenResident && st.asks == 0) {
 		return
 	}
 	st.seenResident = true
 	st.asks = 0
-	a.sceneWarm.demands[base] = st
+	s.demands[base] = st
 }
 
 // warmBase keeps base resident across a minimized upload burst: touch it (→
@@ -2339,7 +2339,7 @@ func (a *App) keepSceneAssetsWarm() {
 			// Touch → most-recent, the last to evict; a demanded base being
 			// resident is also the landing proof the heal budget re-arms on.
 			a.d.Store.Get(base)
-			a.markSceneResident(base)
+			a.sceneWarm.markResident(base)
 			return
 		}
 		// A desk that 404'd CONCLUSIVELY can never become Contains, so without this
@@ -2363,7 +2363,7 @@ func (a *App) keepSceneAssetsWarm() {
 		// base — which the next tick re-demanded, at ~4 whole-core-burning
 		// cycles/sec while the app sat idle or minimized (the CPU-burn report;
 		// the "stage blinks" report is the same churn's visible face).
-		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
+		if throttleOpen && !demanded && a.sceneWarm.healAllowed(base) {
 			if t == assets.AssetTypeCharSprite {
 				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (bare + folder, so no spelling ever false-flags missing)
 			} else {
