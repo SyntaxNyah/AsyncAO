@@ -2,43 +2,9 @@ package ui
 
 // GHOST TEXT — the IC log's QUEUED, not-yet-started messages, drawn faint. One
 // concern, one file.
-//
-// THE PROBLEM. AsyncAO writes a line into the IC log the moment its packet
-// ARRIVES (the EventMessage branch in app.go), while the courtroom speaks it
-// later — after the ones already queued ahead of it. On a busy server the log
-// therefore runs several WHOLE MESSAGES ahead of the chatbox, and you read every
-// punchline before the character says it.
-//
-// THE RULE (spec as CORRECTED in the field, default ON). A log entry is drawn
-// FAINT while it is still WAITING IN THE QUEUE, and turns solid the moment the
-// courtroom starts speaking it:
-//
-//	messages still queued behind the current one   → faint (the preview)
-//	the message being spoken right now             → NORMAL, every row of it
-//	everything already said                        → normal
-//
-// ENTRY granularity, not row and not rune. The first cut ghosted the CURRENT
-// message's un-crawled tail as well, row by row, and that is the defect the
-// field report names: it made the line on stage flicker solid one row at a time
-// while the reader was watching the chatbox anyway, and it ghosted the very text
-// the crawl was in the middle of revealing. The queued-successor preview is the
-// whole feature; the current message is the one thing that must NOT be ghosted.
-//
-// Entry granularity also drops the crawl out of the boundary entirely, so the
-// ghost span no longer moves between messages: it changes only when the queue
-// does. No measurement, no per-row rune counting, no allocation, and the log's
-// draw path is untouched for anyone who leaves the option alone.
-//
-// PAIRING BY COUNT, not by identity. The number of log lines still waiting is
-// derivable from live state every frame — the courtroom's queue length — so
-// nothing has to be remembered, nothing can leak, and a message the queue sheds
-// (or a catch-up skip) simply un-ghosts a frame later instead of stranding a
-// line faint forever.
-//
 // NO PACING CENSUS. The ghost boundary only moves when the play queue does, and
 // a playing message already holds the pacer at the talk tier and refuses
 // SkipFrame (roomBusy) — a NoteAnimating here would be a second, redundant claim
-// on the frame budget, which is precisely what the census doctrine warns against.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -67,11 +33,9 @@ func ghostInk(col, bg sdl.Color) sdl.Color {
 // entry `entry` and of everything after it is faint. ok=false means nothing is
 // ghosted (the option is off, nothing is queued) and the log draws exactly as it
 // always has.
-//
 // There is no row field. The message on stage is never partially ghosted, so a
 // boundary INSIDE an entry has nothing left to express — and removing it is what
 // stops the "ghost the current message's own lines" behaviour from coming back
-// through a helper.
 type ghostSpan struct {
 	entry int // first icLog index that has not started being spoken
 	ok    bool
@@ -105,7 +69,6 @@ func queuedCount(queued int) int {
 // in the queue. Backward because the pairing is with the TAIL of the log:
 // system lines (music, evidence) interleave freely and are skipped, since they
 // were true the instant they appeared and were never queued.
-//
 // Returns len(log) when n is 0 or the log holds fewer speech lines than the queue
 // claims (a shed message, a catch-up skip): fewer ghosted rows is the safe way to
 // be wrong — it can under-hide, never hide a line that has already been said.
