@@ -333,28 +333,10 @@ func (a *App) applyWindowSize(w, h int) {
 
 // themeDesignWindowSize reports the window size the ACTIVE theme was drawn for —
 // its courtroom_design.ini `courtroom` rect — and whether it declares one.
-//
-// That rect is the theme's canvas: stock AO2 hands it straight to
-// set_courtroom_size(), so the AO2 window simply IS the canvas and every theme
-// renders 1:1 with no scaling at all (the same setFixedSize idea as
 // AO2-Client charselect.cpp:83 on the char-select screen). Matching the window to
-// it is what makes an imported theme look right with no settings tweaking.
-//
-// `courtroom` is the only sane target: it is the one rect present on 100% of the
-// reference theme corpus, whereas char_select is absent on 21 of 74 themes and
-// differs from courtroom on 41 of them (stock AO2 genuinely resizes its window
-// between the two screens). Reads the PRISTINE geometry, so a layout-editor
-// override can't drag the window with it — and `courtroom` is a `fixed` themeSlots row
-// anyway, so the two maps agree here by construction.
-//
 // `viewport` must be declared too, because that is the SECOND half of
 // themeLayout()'s own validity test: a theme with a courtroom rect but no
 // viewport draws through the CLASSIC layout, so its canvas is not what is on
-// screen and snapping the window to it would only cramp that layout — while the
-// affordance's hint promises "the window becomes the canvas". The two
-// preconditions have to read the same or the promise is false. (Overrides never
-// add or remove keys — applyRectOverrides only rewrites existing ones — so
-// testing the pristine map here matches themeLayout() testing the override map.)
 func (a *App) themeDesignWindowSize() (int, int, bool) {
 	r, ok := a.themeRectsOrig["courtroom"]
 	if !ok || r.W <= 0 || r.H <= 0 {
@@ -368,13 +350,7 @@ func (a *App) themeDesignWindowSize() (int, int, bool) {
 
 // themeDesignSizeOffer reports the theme's design size and whether the MANUAL
 // "Theme's design size" affordance should be offered at all.
-//
 // It exists so both halves of #35 agree about when a theme canvas is meaningful.
-// The automatic snap already refuses while the themed courtroom layout is off
-// (maybeResizeToThemeDesign): with that pref off the CLASSIC layout is what is
-// drawn, the theme's canvas is not on screen, and shrinking the window to it just
-// cramps the classic layout — while the row's hint claims "the window becomes the
-// canvas, like the stock AO2 client", which would then be false.
 func (a *App) themeDesignSizeOffer() (int, int, bool) {
 	w, h, ok := a.themeDesignWindowSize()
 	return w, h, ok && a.d.Prefs.Load().ThemeLayoutOn
@@ -385,25 +361,6 @@ func (a *App) themeDesignSizeOffer() (int, int, bool) {
 // above the design canvas, so a window exactly designH tall would leave the canvas
 // designH-band and force it to scale down — quietly breaking the one promise this
 // affordance makes.
-//
-// Deliberately the FULL band (menu bar + docked server-tab strip) rather than
-// a.topChromeH(): the live band depends on how many sessions are open and on whether
-// the strip has been dragged out, and the promise is specifically "the COURTROOM
-// draws this theme 1:1" — the courtroom is the screen where both strips show. A
-// constant also keeps the snap deterministic, so pressing the button twice from two
-// different screens can never give two different window sizes.
-//
-// It DOES push 44 more px into config.ClampWindowSize, so a theme whose canvas exactly
-// filled a display now clamps where it previously would not have. The inset is still
-// right, because the clamp is not the comparison that matters — what the CANVAS ends
-// up with is:
-//
-//	without the inset  canvas height = window - 44, i.e. scaled down ALWAYS, on every
-//	                   display, even one with room to spare;
-//	with the inset     the same downscale — never worse — only on a display that
-//	                   genuinely cannot fit canvas + band, and EXACTLY 1:1 whenever it
-//	                   can.
-//
 // So it costs no display anything it would otherwise have had, and it is the only
 // version that can deliver the 1:1 this affordance promises.
 const themeDesignWindowInset = menuBarH + tabBarH
@@ -436,36 +393,13 @@ func (a *App) applyThemeDesignWindowSize() bool {
 // armed at the user-initiated theme-pick call sites and snaps the window to the
 // freshly applied theme's canvas, so importing a theme delivers stock-AO2 1:1
 // with zero user action. `gen` is the themeGen of the apply that just landed.
-//
 // The one-shot is why this can't key off "the theme name changed": pollThemeApply
-// is also re-entered at boot, by healTheme on a T1 eviction, by the texture-filter
-// Purge recovery, and whenever a SERVER binds a theme — a window that jumped on
-// any of those would be far worse than the bug being fixed. Both the arming sites
-// and this consumer run on the render thread, so the arming needs no
-// synchronisation (hard rules 1 and 8).
-//
-// The gen comparison is the whole point: applies overlap (healTheme can be in
-// flight when the user opens the theme dropdown) and completion order is not
-// start order. ONLY the exact apply the arming named may spend it. An older
-// landing carries the PREVIOUS theme's geometry, so firing on it would snap the
-// window to the wrong canvas AND swallow the arming, leaving the theme the user
-// actually picked unsnapped; a newer landing may be a server binding its own
-// theme, which must never move the window. Neither resizes.
-//
 // A NEWER landing does disarm, though, because it proves the armed apply can
 // never arrive: themeRes is a single slot, the publish loop drops a result
 // outraced by a higher generation, and pollThemeApply's consume-side guard drops
-// anything below themeAppliedGen — which this landing has just raised past the
-// armed generation. Leaving the arming set would strand it for the process
-// lifetime (generations only increase, so it can never match again). It cannot
-// mis-fire either way: this branch only ever clears, never resizes.
-//
 // Guard rails, in order: consume the arming unconditionally once its own apply
 // lands (a pick that can't resize must not resize LATER, on some unrelated
 // re-apply); never fight a user who chose fullscreen or maximized; respect the
-// "use the theme's courtroom layout" opt-out, because under the classic layout
-// the theme's canvas is not what is on screen; and skip a no-op resize, since
-// ResizeWindow also recenters and would yank a window the user had positioned.
 func (a *App) maybeResizeToThemeDesign(gen uint64) {
 	if a.themeResizeArmGen == 0 {
 		return
@@ -501,23 +435,6 @@ func (a *App) maybeResizeToThemeDesign(gen uint64) {
 // armBootThemeResize gives the ONE boot apply named by gen the same window snap
 // a deliberate theme pick gets — but only on the single launch where the #29
 // theme-fit default move actually ran for this preferences file.
-//
-// This is the upgrade path. The default moved Stretch→Native, and Native draws
-// the theme's canvas 1:1 and centres it: without a matching geometry move an
-// existing user's first launch after updating replaces their edge-to-edge
-// courtroom with a small canvas ringed by bars, and the only way back is to go
-// and find a setting — exactly the outcome the "an imported theme must look
-// right with zero tweaking" rule forbids. Snapping the window to the theme's
-// design size once makes the canvas fill the window, so the bars never appear.
-//
-// It is driven by the STAMP being newly written, never by "is this boot": the
-// stamp is persisted — synchronously, on the migrating launch, precisely so a
-// crash inside the saver's debounce window cannot resurrect it — so the signal
-// is false on every later launch, forever.
-// A file that kept a deliberate Letterbox/Crop/Custom pick reports false too —
-// its mode did not change, so nothing about its look did either. And because the
-// arming names one generation, it cannot leak onto healTheme, the texture-purge
-// recovery, or a server-bound theme, all of which re-enter the same pipeline.
 func (a *App) armBootThemeResize(gen uint64) {
 	if a.d.Prefs.ThemeFitDefaultJustMoved() {
 		a.themeResizeArmGen = gen
@@ -758,9 +675,6 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// to download. So KEEP the duck and record the awaited URL instead;
 			// settleAwaitedMusic lifts it the frame the new track's bytes land (the mixer
 			// swaps in startMusic, CurrentMusicURL catches up, ~16ms, imperceptible).
-			// Skip the ~stop sentinel (it clears MusicTrack). Same URL builder as the
-			// room's PlayMusic (both use a.urls), so the await compares equal to
-			// Audio.CurrentMusicURL once delivered.
 			if a.sess.MusicTrack != "" {
 				// This active tab is now the audible owner of the single stream (its DJ
 				// /play is what the room's handler plays below). Stamp the owner so its
@@ -1014,12 +928,6 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// ever a KK/KB/BD kick/ban (session.go:696-701) — the server removing us on
 			// purpose — so shouldAutoReconnect returns false for both prefixes and no
 			// retry arms; the dialog shows the reason and its buttons still work.
-			// Genuine transport drops rearm via the pumpConnection closed-channel /
-			// SendErr paths instead. RETURN (not continue): the freeze keeps a.sess/
-			// a.room alive, so any further events in THIS batch would otherwise apply to
-			// the frozen room — stop draining the batch the instant the session ends
-			// (mirrors the pump's conn==nil re-check, and today's Disconnect nilled the
-			// room so the tail no-op'd anyway).
 			a.handleInvoluntaryDrop(ev.Text)
 			return
 		case courtroom.EventDebug:
@@ -1145,15 +1053,6 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 
 // installAssetOrigin points this session's URL builder at origin — the ONE
 // place rebuildAssetOrigin mints one, mounts branch and server branch alike.
-//
-// It also gives that origin's remembered misses a fresh look. The manager keeps
-// every chain it probed to exhaustion for the whole session and nothing else
-// expires it (assets.missSet), so (re)connecting has to be the moment the
-// server gets a clean slate — otherwise a server that repacked between visits
-// would stay half-invisible until a restart. Scoped to THIS origin, because one
-// Manager serves every open tab and reconnecting one of them says nothing about
-// what the others already established.
-//
 // Both jobs live here so they cannot drift apart: an origin installed without
 // the flush would silently serve a previous visit's verdict.
 func (a *App) installAssetOrigin(origin string) {
@@ -1292,11 +1191,6 @@ func (a *App) pickCharacter(idx int) {
 // stone cold. Default ON (Settings → auto-detect); switching it off keeps
 // the manual per-type probing in full control, and manual orders still
 // govern servers without a manifest either way.
-// extProfileFor returns the effective format profile (extensions.json text) for
-// an asset host: a user-set per-server profile wins; otherwise the AO official
-// vanilla base/server gets the bundled vanilla example. "" = no profile, so the
-// server's own extensions.json is fetched (and the global default still covers a
-// server that ships none).
 func (a *App) extProfileFor(host string) string {
 	if p := a.d.Prefs.Load().ExtProfile(host); p != "" {
 		return p
@@ -1759,8 +1653,3 @@ func (a *App) enterCourtroom() {
 // state WITHOUT touching the per-entry bits (iniChar / sidePref) — so a tab
 // reactivation rebuilds the room while the parked iniswap and /pos ride along
 // (loadCharINI below re-applies the active, possibly iniswapped, character).
-// enterCourtroom layers the fresh-entry resets on top; activateTab calls this
-// directly. The court-extras reset + hpPrev re-arm stay here on PURPOSE: they must
-// run on reactivation too, because background tabs apply HP via HandlePacket but
-// never route it to the penalty-sfx logic, so hpPrev must re-arm at the session's
-// current bars or the next HP packet fires a spurious sound.

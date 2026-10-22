@@ -120,15 +120,6 @@ func lobbyListTop(topChrome int32) int32 {
 // reason is never truncated in connErr itself, and a server-authored one now also
 // goes to the notice box (servernotice.go), which is where the whole thing —
 // newlines, access code, appeal link — is readable and copyable.
-//
-// Two things are wrong with drawing connErr raw, and both are invisible failures:
-//
-//   - a reason with newlines is one Label call, and SDL_ttf does not break lines,
-//     so the second line either vanishes or lands as a tofu box mid-sentence;
-//   - a long enough reason draws NOTHING AT ALL. LabelClipped would not have saved
-//     it either — it rasterizes the whole string and clips only the blit width, so
-//     past some length the texture is the thing that fails, not the layout.
-//
 // Memoized against connErrSrc because the clamp allocates and this is called from
 // the per-frame lobby draw.
 func (a *App) connErrLabel() string {
@@ -194,11 +185,9 @@ func (a *App) drawLobby(w, h int32) {
 	// the right-hand utility cluster. Centred in the gap between the title and that
 	// cluster; the width shrinks and anchors after the title on a narrow window so the
 	// row never overlaps either side.
-	//
 	// What's New is here rather than in the menu bar because release notes are a LOBBY
 	// concern: you read them between sessions, not mid-trial. It previously lived in the
 	// Help menu with a green unread dot riding the Help title, which overlapped the
-	// title's last glyph and read as a rendering defect rather than a notification.
 	const (
 		helpBtnWMax     = int32(132) // prominent width when there's room (fullscreen)
 		helpBtnWMin     = int32(96)  // floor so "What's New" stays readable when squeezed
@@ -294,17 +283,12 @@ func (a *App) drawLobby(w, h int32) {
 	// back out of the Servers menu by request: they act on the LIST, so a menu
 	// carrying them is dead weight the moment you are in a server, and a refresh
 	// button belongs beside the thing it refreshes.
-	//
 	// They sit HERE rather than in the header's utility cluster because that
 	// cluster shares its row with the Privacy/Glossary/What's New trio; three
 	// buttons there squeezed the trio to nothing at config.MinWindowW, and What's
-	// New has no other home. This strip has the full window width to itself.
-	//
 	// Both still exist as Servers-menu rows and call the same setters, so the two
 	// surfaces cannot drift. The LABEL carries the in-flight state rather than the
 	// button grey­ing or vanishing: a control that disappears under the cursor
-	// mid-click is worse than one that says what it is doing, and the click is
-	// guarded on the same predicate the menu row's `enabled` uses.
 	listActY := dcY + lobbyListActionsDropY
 	refreshLabel := "Refresh"
 	if a.lobby.lobbyFetching {
@@ -689,22 +673,9 @@ func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 // drawWardrobeGrid is the char-select grid over the wardrobe menu: same
 // cells, same demand pipeline, same search box. Picking claims the first
 // free slot and wears the custom on PV (wearFromMenu).
-//
 // It takes the SAME charGridPlan the Characters tab lays out on (#20). The two tabs
-// are one screen and shared iconCell/iconGap before the theme canvas existed; letting
-// only one of them become theme-driven would have desynced them on the first resize.
 // It also takes the same charListRows, so the wardrobe's cell order matches the name
 // column's row order exactly — that is what lets a clicked name reveal the right cell.
-//
-// THIS FUNCTION IS A HOST, not just a loop. drawIniswapCell DEFERS two of its actions
-// rather than performing them inline, because both rebuild the iniList / iniWardrobe /
-// iniFolders slices the loop is ranging (toggling mid-loop panicked on a remove — the
-// reported crash): the ★ parks its toggle in iniFavPending, and a right-click parks a
-// move-to-folder menu in iniMenuChar. Only drawIniswapPanel ever serviced them, so on
-// THIS screen the ★ silently did nothing and the right-click armed a menu that was
-// drawn nowhere — and both then fired later, out of context, the next time the
-// wardrobe modal opened. The wrapper below runs the same before/after bookkeeping the
-// modal does, so a cell behaves identically wherever it is drawn.
 func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, query string) {
 	// The open move-to-folder menu resolves its clicks BEFORE the grid draws, so a
 	// click on it can never leak through to a cell underneath (drawWardrobeCharsBody's
@@ -850,11 +821,9 @@ func (a *App) drawCharSelect(w, h int32) {
 	// (no themed grid, or the rects scaled below a usable size, or the theme gives the
 	// whole area to char_buttons and leaves nowhere for the name column), the screen
 	// keeps the header row it has always had, on top of the theme's backdrop.
-	//
 	// The predicate needs the grid plan and the plan needs to know whether a header
 	// row is in its way, so the themed candidate is built first and the classic plan
 	// rebuilt underneath it when the answer is no. charSelectGridPlan is alloc-free
-	// and pure, so building it twice on that frame costs nothing.
 	themedTop := a.topChromeH()
 	themedUI := csLay.valid && a.charSelectWidgetsThemed(csLay, a.charSelectGridPlan(w, h, themedTop, csLay))
 	gridTop := themedTop
@@ -1312,12 +1281,10 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// invisible but still clickable is the lie assetmisschip.go's rule forbids,
 	// so draw order follows hit order here. Hit-testing lives in
 	// handlePreviewInput off previewFrameRect and is unaffected by this move.
-	//
 	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
 	// emote it's showing, so the preview surface reports it too — not just the
 	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
 	// nav bar already captions the name) or when no name is supplied (character
-	// previews). A translucent strip across the box top, clipped to the box width.
 	if name != "" && !cycle {
 		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
 		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
@@ -1405,15 +1372,6 @@ func previewDetachRect(frame sdl.Rect) sdl.Rect {
 // previewIsPinned is the box's "stays open" state: the per-session latch (set by
 // a right-click open, or by this box's own pin button), the sticky preference,
 // OR the sprite currently being detached into its own OS window.
-//
-// The detached arm (preview-window-wire, requirement 3) is the ENTIRE
-// wiring the detached window needs to keep following emote picks: it is what
-// makes followPinnedPreview's own `!a.previewIsPinned()` guard pass while
-// detached, so all three of its existing call sites (selectEmote,
-// drawEmoteGridThemed, applyStylePreset) retarget the window for free through
-// the exact same seam shipped — no fourth pick implementation, and the
-// the pinned-preview census never
-// has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
 	return a.previewPinned || a.d.Prefs.Load().PreviewPinned || a.previewIsDetached()
 }
@@ -1591,12 +1549,9 @@ const previewDragBottomReserve = 22
 // the registry depth taken just BEFORE its footprint was published, handed to
 // pushOverlayOwner so the box's own − / + zoom buttons and pinned × stay live
 // while everything painted UNDER the box goes inert (overlayfence.go).
-//
 // A latch rather than a re-derived predicate for the reason compactToolboxLatch
 // documents: the fence is published at the TOP of the courtroom pass (a fence is
 // only consulted at hit-test time, and a single-pass kit hit-tests as it draws)
-// while the box itself paints near the BOTTOM, and a fence that disagrees with
-// the draw eats clicks over pixels nothing painted.
 type previewFenceLatch struct {
 	mark int  // registry depth before our publication (0 when nothing was published)
 	on   bool // we published — so the draw must suspend it for its own widgets
@@ -1607,18 +1562,9 @@ type previewFenceLatch struct {
 // no fence a click on it ALSO fired the music row underneath: the box won the
 // pixels, the row won the click, and a song started playing. The row draws far
 // earlier in the same single pass and has no way to know the box is coming.
-//
-// Called from both courtroom passes immediately AFTER fenceCompactToolbox, and
-// that order is load-bearing in both directions: the toolbox paints ABOVE the
-// preview (it draws at the very bottom of the pass), so its own owner-suspend —
-// which is mark-scoped to "mine and everything after mine" — must cover this
-// fence, while ours must not cover the toolbox's.
-//
 // The footprint is last frame's rect. That is the same one-frame latch
 // handlePreviewInput has always hit-tested against (previewFrameRect is cached
 // for exactly this reason), and it cannot leak in practice: the box only appears
-// after a hover dwell, many frames before any press, and while it is being
-// DRAGGED the whole pointer is fenced instead (boxFencesPointer).
 func (a *App) fenceSpritePreview() {
 	c := a.ctx
 	a.previewFence = previewFenceLatch{mark: c.overlayFenceMark()}

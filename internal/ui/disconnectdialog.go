@@ -9,46 +9,9 @@ import (
 )
 
 // Involuntary-disconnect dialog.
-//
-// BOTH drop arms reach it, through the one shared freeze
-// (freezeSessionUnderDialog). An ACTIVE tab whose link dies under the user
-// freezes in place; a PARKED tab that died in the background can't boot the user
-// off whatever tab they're actually looking at, so it latches its reason and
-// surfaces the same modal when the user later reactivates it (tabs.go,
-// activateTab).
-//
-// The two used to diverge: v1.81.4 made an active-tab drop tear straight down to
-// the lobby, so the tab you were LOOKING at vanished while a background tab got a
-// dialog. Playtesters hit exactly that and reported it. The freeze was collateral
-// damage in that commit — what actually needed removing was its 5-minute grace
-// window and its background auto-retry, both of which are gone and stay gone.
-//
-// The dialog keeps the tab's courtroom on screen — FROZEN, the IC/OOC log
-// TAIL still readable around the modal (the whole frozen pass is pointer-fenced, so
-// scrolling back through history is not available while it's up) — under a modal
-// that says what happened and offers one-click Reconnect / Back to lobby.
-//
-// "Frozen" means precisely: the network session is torn down (conn closed and
-// nilled, music/voice stopped) so no more packets arrive, but a.sess and a.room
-// are DELIBERATELY kept alive so drawCourtroom keeps rendering the last scene and
-// the IC/OOC logs stay drawn. The pointer fence (like every confirm modal) makes
-// the COURTROOM PASS behind the dialog click-proof, and handleHotkeys short-circuits
-// while the dialog is up, so no keyboard shout or IC send reaches the dead socket.
-// (The non-blocking floating panels — Extras / Pair / the pinned second-server
-// client — draw AFTER the courtroom's fence lifts, so they stay live; a send there
-// into a closed conn is harmless, just recorded in sendErr, and the pinned client is
-// a DIFFERENT server that must keep working.) handleTabBar is also inert while the
-// dialog is up, so a chip click can't park the frozen-but-not-dead session into a
-// zombie tab (tabs.go). Back to lobby then runs the real Disconnect() (today's exact
-// post-disconnect path); Reconnect tears the frozen session down and redials — the
-// same server + name, so the once-per-join auto-login machinery takes over on the
-// fresh join.
-//
 // This is one more member of the confirm-modal family (drawDisconnectConfirm /
 // drawCloseTabConfirm / drawQuitConfirm): same dimmed backdrop, same fence
 // discipline (fenced with the family in app.go's frame tail, pointer restored
-// just before it draws), same Esc rung via closeTopOverlay. Copy that shape,
-// don't invent one.
 
 // disconnectDialog is the modal's state. The zero value is closed/inert (open ==
 // false), so an App with no drop showing costs a single bool check per frame.
@@ -57,9 +20,6 @@ import (
 // dialog directly. A tab that drops while BACKGROUNDED can't pop a modal then (it
 // would cover whatever tab the user is looking at), so it arms its own deadReason
 // instead and surfaces this same dialog on reactivation (see tabs.go, activateTab).
-// Nothing relies on it surviving resetSessionState — the close paths
-// (closeDisconnectDialogToLobby / reconnectFromDisconnectDialog) snapshot name/url
-// and clear the dialog BEFORE any teardown/reset runs.
 type disconnectDialog struct {
 	open   bool
 	reason disconnectReason
@@ -135,13 +95,6 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 
 // serverRemovalMessage pulls the SERVER'S OWN words out of a drop reason, which is
 // the only thing the notice box is for.
-//
-// EventDisconnect builds its Text as "Kicked: " / "Banned: " plus the raw wire
-// field (internal/courtroom/session.go, the KK/KB/BD cases). Anything else — a
-// transport drop, a timeout, our own dial error — is OUR prose, already fully said
-// by the lobby line and the friendly sentence above, and must NOT raise a modal:
-// popping a box on every blip is the nagging drawFontWarnDialog exists to avoid.
-//
 // A removal with no reason attached returns false too. "The server banned you."
 // is already on screen; a modal whose body is "no reason given" adds a click and
 // no information.
@@ -173,7 +126,6 @@ const serverNoticeRemovedFallbackTitle = "The server closed your connection"
 // that must happen the instant the link dies — and deliberately not the session
 // reset, tab close or navigation, which wait for the dialog's Back to lobby /
 // Reconnect so the room stays drawable underneath.
-//
 // Its guards make it a no-op for the half a parked tab has already done (its
 // socket was nilled when it died), so both arms can call it unconditionally.
 func (a *App) freezeSessionUnderDialog(raw string) {
@@ -223,13 +175,9 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// one click. That is the same end state a PARKED tab reaches via activateTab,
 	// and playtesters reported the inconsistency directly — a background tab showed
 	// the box while the tab they were looking at was slammed to the server list.
-	//
 	// This restores the freeze v1.81.4 removed, WITHOUT the two things that made it
 	// a bug then: there is no grace window (see freezeSessionUnderDialog), and no
 	// auto-reconnect is armed here. Arming would paint a countdown that
-	// pollAutoReconnect can never fire — it returns early off the lobby — and
-	// re-adding a background retry is exactly the regression that dumped users at
-	// char-select while minimized. The dialog's Reconnect button is the action.
 	if !deliberate && a.room != nil && a.sess != nil && a.screen == ScreenCourtroom {
 		a.freezeSessionUnderDialog(reason)
 		return
@@ -237,21 +185,9 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// No room to freeze (char-select, already torn down) or a deliberate close:
 	// today's plain teardown to the lobby, which still arms auto-reconnect for a
 	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
-	//
-	// This is the arm the reported bug lives on. A server that refuses during the
-	// handshake — locked down, or whitelisting by IP — sends its instructions as the
-	// BD reason and closes, and we reach here with a.room == nil, so there is no
-	// frozen courtroom for the disconnect dialog to sit on. All the reason had left
-	// was one unclipped label on the lobby, which cannot show a second line; a
-	// lockdown puts the access code on the LAST line, so the code was structurally
-	// unreachable. Snapshot the pieces BEFORE the teardown: serverName is on
-	// sessionState and resetSessionState rebuilds that struct wholesale, so reading
-	// it after Disconnect would attribute the message to nobody.
-	//
 	// The two surfaces stay mutually exclusive by construction: the branch above
 	// returns, so a drop either freezes under the disconnect dialog (which gets the
 	// same wrapped body and Copy) or lands here and raises the notice box. Never
-	// both, and the a.disconnectDlg.open ⇒ screen == Courtroom invariant is untouched.
 	noticeBody, showNotice := "", false
 	if !deliberate {
 		noticeBody, showNotice = serverRemovalMessage(reason)

@@ -173,12 +173,9 @@ type sessionState struct {
 	// server. Detailed logging keyed on serverName alone, which is why two tabs on
 	// one server interleaved into ONE file (the reported defect) — and, worse, two
 	// tabs on the SAME server had no way to tell their lines apart afterwards.
-	//
 	// It lives on sessionState, not App, because park/activate MOVE the whole struct
 	// between the live slot and the tab: the id then follows its tab automatically,
 	// and a tab that is backgrounded and brought back keeps writing to the same file
-	// instead of starting a new one. A fresh live slot (park, Disconnect, NewApp)
-	// gets a fresh id, which is exactly "a new session is a new file".
 	logSession   int
 	connAt       time.Time // session start (Rich Presence elapsed timer)
 	curArea      string    // last area WE clicked (Rich Presence, best-effort)
@@ -298,12 +295,7 @@ type sessionState struct {
 	// (drawReactionFloats); reactBadges caches one alpha-fadeable texture per palette index
 	// (built once the colour-emoji face lands); reactRect is the reused draw scratch (a fresh
 	// local would heap-escape through cgo). reactSpawnSeq scatters floats horizontally.
-	// reactBadgeDevScale is the ctx.textDevPct every cached badge in reactBadges was built
-	// at — ensureReactBadge purges the whole map on a mismatch, the same "one stale scale
 	// invalidates everything" idiom SetTextDevScale uses for the label/emoji caches (#77);
-	// it lives here rather than on Ctx because reactBadges does too, and the two must
-	// invalidate together or a float outlives a UI-scale change blitting a stale-scale
-	// texture through the non-exact fallback forever.
 	reactionFloats     []reactionFloat
 	reactBadges        map[uint8]*render.Badge
 	reactBadgeDevScale int32
@@ -487,11 +479,9 @@ type sessionState struct {
 	// default_side (courtroom.cpp:4723-4726 = get_char_side). Empty means "not
 	// known yet or none declared", which defaultSide() reports as "wit", matching
 	// get_char_side's own fallback (text_file_functions.cpp:480-483).
-	//
 	// It MUST be cleared whenever the active character changes, before the new
 	// char.ini lands. pos_remove is shown by comparing the current side against
 	// this, and clicking it SENDS /pos — so a stale value is a wrong packet on the
-	// wire, not a cosmetic glitch.
 	charDefaultSide string
 	// emote_dropdown's option list (#21 label 11), cached with the same
 	// plain-field guard as sfxChoices above and for the same reason: it is
@@ -625,10 +615,6 @@ type sessionState struct {
 	// state is keyed by the category HEADER's index into a.sess.Music (not
 	// its text — servers can reuse a category name, and the index is unique
 	// per occurrence). Absent from the map = expanded (the default AO2 look).
-	// musicCollapseGen bumps on every toggle/Expand-All/Collapse-All so
-	// musicRows (screens.go refreshMusicGroups) knows to rebuild; the grouped
-	// row layout itself is memoized the same way as musicFiltered so folding
-	// a category doesn't re-scan+re-lowercase the whole list every frame.
 	musicCollapsed   map[int]bool
 	musicCollapseGen uint64
 	musicRows        []musicRow
@@ -639,12 +625,9 @@ type sessionState struct {
 	// that allocates) every frame. areaFiltered holds matching indices into
 	// a.sess.Areas (which parallels a.sess.AreaInfo, so the ORIGINAL index
 	// is what indexes both).
-	//
 	// ONE SLOT PER QUERY SOURCE (areaQuerySlots, screens.go): the list can be on
 	// screen twice in one frame under two different queries — a torn-off Areas
 	// panel filtered by its own field, and the themed canvas copy filtered by
-	// AO2's music_search — and a single slot would let them evict each other
-	// every frame, which is a memo that never hits.
 	areaSearch     string
 	areaFiltered   [areaQuerySlots][]int
 	areaFilterMemo [areaQuerySlots]areaFilterKey
@@ -936,11 +919,6 @@ type sessionState struct {
 	// currently ducked under a playing message (transition-driven).
 	// masterMuted/musicMuted/blipMuted are the per-channel mute toggles in the
 	// volume strip (#10). All four PERSIST (config.AssetPreferences'
-	// *VolMuted fields) — they zero the channel in applyAudioVolumes WITHOUT
-	// touching the stored slider level (master mutes all). Living on
-	// sessionState instead of App, they don't survive on their own: resetSessionState
-	// reseeds them from prefs on every fresh session (NewApp/Connect/
-	// Disconnect), the same pattern already used above for volStripOn.
 	sfxMuted           bool
 	masterMuted        bool
 	musicMuted         bool
@@ -1058,8 +1036,6 @@ type sessionState struct {
 	// the row would then slide out from under it. Instead we latch the target and
 	// re-nudge it into view every frame until it expires: the frame after the
 	// rebuild reorders the list, the nudge follows the row to its new spot.
-	// Lives in sessionState so it parks per tab (never leaks across servers); the
-	// zero value is inert (empty target), so resetSessionState needs no seeding.
 	areaJumpFollow      string    // target area name to keep scrolled into view ("" = disarmed)
 	areaJumpFollowUntil time.Time // hard expiry: a lost/rejected transfer can never pin the scroll past this
 	playerSort          int       // roster sort (players): 0=UID, 1=name, 2=speakers-first
@@ -1422,13 +1398,9 @@ type themeApply struct {
 	// element's rect, and backdropSampled says whether there was any art to
 	// measure. Filled here (res.images is only reachable on the apply goroutine —
 	// hard rule 2) and consumed by the render-thread ink guard.
-	//
 	// TWO arrays rather than one plus a sentinel, because the ZERO VALUE has to
 	// mean "unknown": an int sentinel makes an unfilled themeApply — a theme that
 	// failed to load, or one a test built by hand — read as a BLACK backdrop, and
-	// black is the one value that silently KEEPS black ink. Unsampled falls back to
-	// ColPanel, which is what AsyncAO actually fills those panels with when the
-	// theme ships no background (theme_layout.go's stage else-branch).
 	backdropLuma    [themeFontElemCount]int
 	backdropSampled [themeFontElemCount]bool
 }
@@ -1543,35 +1515,10 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // courtroom.cpp:3328 ("chat" falling back to "chatbox"; "chatblank" last
 // for themes that ship only the blank skin); splash stems mirror
 // handle_wtce's filenames with the bare legacy spelling second.
-//
-// THE PER-CHARACTER MISC CHATBOX IS DEFERRED, and this is where the decision is
-// recorded (the design scoped "FindAssetMisc wired into the chatbox ladder";
-// and why it was declined).
-//
-// What AO2 actually does: `p_misc` is a per-CHARACTER chatbox pack, read from the
 // speaking character's own char.ini (`get_chat(customchar)`, courtroom.cpp:3299)
-// and refreshed on EVERY message (`current_misc = get_chat(m_chatmessage[CHAR_NAME])`,
-// :4243, and only when Options::customChatboxEnabled()). It does not add a stem —
-// the ladder below is unchanged — it changes WHERE each stem is looked up, by
-// inserting `misc/<p_misc>/` in front of the theme rungs (get_asset_paths,
 // path_functions.cpp:181-189). theme.FindAssetMisc is exactly those two rungs and
-// it exists, gated, today.
-//
-// Why it is not wired here. Everything in this table is a PINNED theme texture:
-// resolved once per theme apply, uploaded once, eviction-exempt, and accounted
-// against the theme media budget (risk R2 — the budget is 3/8 of TexBudgetMiB and
-// two of the three "all emote buttons identical" reports were texture exhaustion).
-// A per-character chatbox is not a theme texture: it is resolved per SPEAKER, from
-// a char.ini this client reads over the network, and honouring it means a
-// re-resolve, a decode and an upload on every character change, with its own cap
-// and its own lifetime so a roster of 4000 cannot pin 4000 skins. That is a tier,
-// not a rung — the same shape as the media plan built for [media] — and
-// bolting it onto a table whose whole contract is "one per theme, pinned" would
-// either leak textures or silently stop honouring the pack.
-//
 // What is kept green in the meantime:
 // the stem order AND the position the misc rungs must take when the tier is
-// built, so the wave that builds it has a fixed target instead of a guess.
 func themeImageStems() map[string][]string {
 	m := map[string][]string{
 		themeStemChatbox:   {"chat", "chatbox", "chatblank"},
@@ -1633,10 +1580,6 @@ var themeButtonExts = []string{".png", ".webp", ".apng", ".gif"}
 // the themeSlots registry (themeslots.go). "courtroom" + "viewport" are mandatory
 // for the layout to activate; every other key resolves per element, and a key the
 // theme omits simply has no widget — AO2 hides it too (courtroom.cpp:1334-1338).
-//
-// The AsyncAO-only asyncao_* opt-ins are rows in that table like everything else;
-// they are an AUTHOR OVERRIDE tier, not the layout mechanism (see themeslots.go).
-//
 // Sorted so a failing table test names a stable key rather than a map-order one.
 var themeLayoutKeys = func() []string {
 	keys := make([]string, 0, 2*len(themeSlots))
@@ -1653,13 +1596,6 @@ var themeLayoutKeys = func() []string {
 
 // themeBtnStems is the precomputed theme:// stem ("btn/<design key>") for every
 // courtroom_design.ini key the themed courtroom can draw as a button.
-//
-// drawThemeButton runs a dozen times per THEMED FRAME (three shouts, the eight
-// judge chips, pos/pair/modcall/evidence, the two emote-page arrows) and
-// `themeBtnPrefix + key` is a runtime concat — one heap allocation per button per
-// frame, which is exactly what the themed whole-screen gate measures. The map is
-// built once from themeLayoutKeys, a fixed compile-time table, so it is bounded
-// by construction (hard rule 4).
 var themeBtnStems = func() map[string]string {
 	m := make(map[string]string, len(themeLayoutKeys))
 	for _, k := range themeLayoutKeys {
@@ -1691,12 +1627,9 @@ const (
 	// falls through get_config_value to the bundled DEFAULT THEME before it gives
 	// up and returns 0,0. A streaming client has no such tree on disk, so these
 	// constants stand in for it — see designPair.
-	//
 	// The gap was 1 for a long while, which was nobody's value: not AO2's stock 9,
 	// not AO2's give-up 0. It never showed in the 74-theme reference corpus because
 	// every top-level theme there declares the key (33 of them declare exactly
-	// 9, 9), so this only ever governed a theme that omits it entirely — where 1
-	// silently drew a tighter grid than the client the theme was authored against.
 	defaultEmoteCellPx = 40
 	defaultEmoteGapPx  = 9
 )
@@ -1705,50 +1638,15 @@ const (
 // get_button_spacing bails when the split yields fewer (AO2-Client
 // text_file_functions.cpp:208-211); we bail at the same point but NOT to the same
 // value, and the difference is deliberate.
-//
-// AO2 returns 0,0 there — its return_value is pre-set to 0,0 at
 // text_file_functions.cpp:198-199 and the short-split branch returns it
-// untouched, exactly as the "value == """ (key resolved nowhere) branch four
-// lines above does. That 0,0 is AO2's GIVE-UP value, not a theme declaring flush
-// buttons: it is what you get once the key has failed to resolve in the theme,
-// the sub-theme AND the on-disk default theme. A streaming client has no such
-// tree to fall back through, so the caller's named stock constant stands in for
-// it — see designPair, which makes the identical argument for a missing key. A
-// half-written tuple is no more a declaration than a missing one, so it gets the
-// same stand-in rather than a silent zero.
 const designPairComponents = 2
 
 // designPair parses a "x, y" design tuple (emote_button_size and friends).
-//
-// ZERO IS A LEGITIMATE VALUE, not a missing one. AO2's get_button_spacing
 // (AO2-Client text_file_functions.cpp:193-216) converts both components with
-// QString::toInt() and applies no positivity test whatsoever, so "0, 0" means
-// what it says: buttons flush against each other, no gutter. Twelve shipped
-// themes — the whole CC* family, AAI, GrayGarden, "alter ego (mobi)" — declare
-// exactly that, and treating it as absent substituted a 1 px gap that walked
-// their emote grid off the artwork drawn behind it, a little further with every
-// column.
-//
-// A MISSING key still falls back to the caller's default rather than to AO2's
-// literal 0,0, because AO2 only returns 0,0 once the key has resolved NOWHERE:
-// get_button_spacing asks get_config_value, which searches the theme, the
-// sub-theme and then the on-disk DEFAULT theme (the default_theme argument), and
-// that theme declares emote_button_spacing = 9, 9 / emote_button_size = 40, 40.
-// A streaming client has no such tree on disk, so the caller's named constant
-// stands in for it — and defaultEmoteGapPx / defaultEmoteCellPx are those exact
-// stock values, so the fallback reproduces AO2 rather than inventing a look.
-//
-// An UNPARSEABLE component gets the same treatment, and that is the one place
-// this knowingly diverges from Qt: QString::toInt() yields 0 on junk, so AO2
-// reads HDF-Standard's "emote_button_spacing = 8, 8SS" as 8, 0 where we read
-// 8, defY. One pixel, one theme, and a real default beats a silent zero that is
-// indistinguishable from a deliberate one.
-//
 // Negative components pass through, exactly as AO2 lets them. The consumer
 // floors them — see minEmoteGapPx — because AO2 itself does not: emotes.cpp:70
 // and charselect.cpp:160 both divide by (spacing + button size) with no guard,
 // unlike evidence.cpp:211 which wraps the same expression in qMax(1, ...). A
-// theme shipping a spacing of -60 crashes AO2; it must not crash us.
 func designPair(t *theme.Theme, key string, defX, defY int) [2]int {
 	raw, ok := t.DesignValue(key)
 	if !ok {

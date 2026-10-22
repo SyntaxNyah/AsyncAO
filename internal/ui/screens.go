@@ -76,17 +76,9 @@ const (
 // cursor rather than the raw `w - <literal> - pad` rects it used to carry, because
 // those literals ran off the left edge of the window long before config.MinWindowW:
 // "What's New" landed at x=-78 and "Logs" at x=-198 on a 640-wide window.
-//
-// Six of the cluster's buttons — Refresh, Settings, About, Ping, What's New,
-// Logs — are rows of the app-wide menu bar now (menubar.go); only the Phone
-// Book toggle and the centred Privacy/Glossary/What's New trio stay in the
-// header.
-//
 // PHONE BOOK STAYS. Its label flips to "← All servers" on the phone-book page, so it
 // is not really a command — it is that page's only way BACK, and burying a back
 // affordance inside a menu strands anyone who does not know the menu is there. It is
-// in the Servers menu as well; both surfaces call setPhoneBookPage, so they agree.
-// Privacy and Glossary stay too, deliberately centre-stage for newcomers.
 const (
 	// lobbyUtilBtnW is the comfortable width when the window has room for the whole
 	// cluster — the historical width, so a normal window is pixel-identical.
@@ -101,13 +93,9 @@ const (
 	// lobbyUtilBtnCount is how many buttons the cluster lays out. It MUST match the
 	// number of cursor steps in drawLobby; it is what turns "does the row fit?" into
 	// arithmetic instead of a measured pass.
-	//
 	// One. Refresh and the connect-time sort came back from the Servers menu by
 	// request, but NOT to this cluster: it shares the header row with the
 	// Privacy/Glossary/What's New trio, and three utility buttons squeezed that row
-	// to nothing at config.MinWindowW — which would strand What's New, whose only
-	// other home is that row. They sit on their own strip above the server list
-	// instead, which is both where they act and out of the header's way.
 	lobbyUtilBtnCount int32 = 1
 	// lobbyDirectRowDropY is how far below the header the direct-connect row sits;
 	// lobbyListActionsDropY is how far below THAT the server list's own action strip
@@ -561,9 +549,6 @@ func (a *App) drawCourtroom(w, h int32) {
 	// the whole courtroom pointer-blind while the cursor is over the panel, so its
 	// checkboxes/scrollbar/Close would be dead here. It draws post-courtroom in
 	// app.go (alongside drawFloatingPanels, where input is restored) instead.
-	// Unconditional: the `!a.classicEdit` gate that used to stand here now lives in
-	// the latch (fenceCompactToolbox), so the fence published at the top of this pass
-	// and the draw can no longer disagree when a hotkey arms the editor mid-pass.
 	a.drawCompactToolboxInPass()
 
 	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
@@ -571,12 +556,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
 	// so you see what you're arranging. In normal play they draw post-courtroom (app.go) where the
 	// content is interactive and the pointer is fenced over them. (torntabs.go)
-	//
 	// The strip is painted just BEFORE it, replaying the frame's paint-site latch
 	// (chrometop.go) rather than riding the classicEdit flag: this pass force-stops the
 	// classic editor when a themed layout takes over, and the latch — taken at the top,
-	// while the flag was still set — is what keeps the strip painted exactly once even
-	// on that frame. App.Frame's over-everything site replays the same latch.
 	a.drawTabBarInPass(w, h)
 	if a.classic.classicEdit {
 		a.drawTornTabs(w, h)
@@ -648,14 +630,6 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 // reaches its draw at all, and a second hand-maintained copy of this set is exactly
 // how the two drift (a fence over pixels nothing painted eats clicks, the mirror of
 // the leak the fence exists to stop).
-//
-// `close` joins them for the same reason. The layout editors have to shut every one
-// of these before they arm — a modal that survives ends the courtroom pass at
-// drawCourtroomModals, so the editor's own overlay never draws — and the hand-listed
-// copy of the set they used to close had drifted three entries behind this table
-// (showTimer, pairPopupOpen and showSfxBrowser were all missing), which is a HARD
-// LOCK: no Done chip, no banner, and a modal whose own kit buttons the editor's
-// input fence has already killed.
 type courtroomModal struct {
 	open  func(*App) bool
 	draw  func(*App, int32, int32)
@@ -691,15 +665,6 @@ func (a *App) closeCourtroomModals() {
 
 // modalReturnSkippedWhileEditing reports whether the courtroom pass must SKIP its
 // return-to-top modal check this frame because a layout editor owns the screen.
-//
-// Both courtroom passes end at `if drawCourtroomModals(...) { return }`, and both
-// editors' overlays draw at the very END of their pass — so an open modal deletes the
-// editor from the frame entirely. That is not merely cosmetic: the editor's input
-// fence (c.modalOn) has already made every kit widget in the frame inert, so the
-// modal that took the screen cannot be clicked away either, the menu bar and the
-// server-tab strip have both stood down for the editor, and the editor's own Esc
-// handler lives inside the draw that never ran. Nothing on screen answers.
-//
 // The classic pass has carried this guard since the editor existed; the themed twin
 // never did. Sharing ONE predicate is the point — a guard that holds in one pass and
 // not the other is exactly how the lock was reachable.
@@ -1090,22 +1055,9 @@ func (a *App) reshowSprites() {
 
 // chatBoxTopStrip is the showname strip above the message text (text draws at box.Y+chatBoxTopStrip);
 // chatBoxBottomPad leaves a little air under the last line. Used to grow the box to fit its message.
-//
-// chatOverlayPadX / chatOverlayNameY name the rest of the classic overlay's inset,
-// which drawChatOverlay used to spell as bare 8 / 4 / 16 literals sprinkled across a
-// dozen expressions (hard rule 9). VALUES ARE UNCHANGED — this is naming only, and
-// the classic box draws at the exact pixels it drew before.
-//
-// There WAS a chatOverlayBoldNudge here — the 1 px right shift of a faux-bold second
-// draw pass. It is gone (F1b): weight belongs in the glyphs, not in a second blit,
-// because a LOGICAL pixel offset is multiplied by the UI scale and the two copies
-// then sit on different sub-pixel phases. See Ctx.textTextureBold.
-//
 // These are AsyncAO's OWN furniture, not AO2 geometry: the classic overlay
 // invents a chatbox where the theme declares none, so nothing here is a
 // courtroom_design.ini rect. They double as the themed chatbox's fallback for a
-// theme that declares an ao2_chatbox but no showname / message child (see
-// chatboxfit.go), which is the role they always played.
 const (
 	chatBoxTopStrip  = int32(26)
 	chatBoxBottomPad = int32(8)
