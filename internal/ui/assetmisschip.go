@@ -201,8 +201,8 @@ func (a *App) handleAssetMissChipInput(w int32) {
 		return
 	}
 	c.clicked = false
-	a.showDebugPanel = true
-	a.debugSection = assetMissDebugLogTab()
+	a.debugPanel.open = true
+	a.debugPanel.section = assetMissDebugLogTab()
 	a.assetMissCount = 0 // acknowledged: the log owns the detail from here
 }
 

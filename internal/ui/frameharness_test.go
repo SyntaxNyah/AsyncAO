@@ -297,14 +297,14 @@ func TestSidecarRefusalChipReachesTheScreenAndTakesItsClick(t *testing.T) {
 	}
 
 	// The click, through App.Frame's own pre-screen claim.
-	a.showDebugPanel = false
+	a.debugPanel.open = false
 	cx, cy := frameHarnessRectCentre(r)
 	driveClickAt(a, cx, cy)
 	if !a.themeSidecarErrAck {
 		t.Error("a click on the chip did not acknowledge the refusal — App.Frame is not claiming its " +
 			"input before the screens see it")
 	}
-	if !a.showDebugPanel {
+	if !a.debugPanel.open {
 		t.Error("the click did not open the debug log, which is where the full refusal line lives")
 	}
 	// Acknowledged: it stops painting, so the dismissal is real.

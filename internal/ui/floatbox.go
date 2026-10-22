@@ -140,7 +140,7 @@ var panelSlotTable = []panelSlot{
 	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
 	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
 	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBox.kind != 0 }},
-	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
+	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.debugPanel.open }},
 	{slotPanelClient, func(a *App) *floatWin { return &a.wins.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
 	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
 	// it — not by dragging, and not in the layout editor either — so a panel that
@@ -493,8 +493,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showModcall = false
 	case a.showModDash:
 		a.showModDash = false
-	case a.showDebugPanel:
-		a.showDebugPanel = false
+	case a.debugPanel.open:
+		a.debugPanel.open = false
 	case a.showICColorWheel:
 		a.showICColorWheel = false
 	case a.showFxPicker:
@@ -704,7 +704,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
 		return true
 	}
-	if a.showDebugPanel && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
+	if a.debugPanel.open && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
 		return true
 	}
 	if a.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
@@ -1038,7 +1038,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
 	}
-	if a.showDebugPanel {
+	if a.debugPanel.open {
 		a.drawDebugPanel(w, h, &pressed)
 	}
 	if a.showFxPicker {

@@ -44,12 +44,12 @@ const (
 	debugSectionGap = int32(22)
 )
 
-// debugSections are the panel's tabs, indexed by a.debugSection.
+// debugSections are the panel's tabs, indexed by a.debugPanel.section.
 var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Fonts"}
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
 // or Settings → Power user → Diagnostics).
-func (a *App) toggleDebugPanel() { a.showDebugPanel = !a.showDebugPanel }
+func (a *App) toggleDebugPanel() { a.debugPanel.open = !a.debugPanel.open }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
 func (a *App) debugPanelRect(w, h int32) sdl.Rect {
@@ -62,7 +62,7 @@ func (a *App) debugPanelRect(w, h int32) sdl.Rect {
 func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.showDebugPanel = false
+		a.debugPanel.open = false
 		return
 	}
 	wasActive := a.wins.debugWin.dragging || a.wins.debugWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -82,7 +82,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 
 	c.Heading(x, panel.Y+12, "Debug", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - debugPanelIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.showDebugPanel = false
+		a.debugPanel.open = false
 		return
 	}
 
@@ -93,9 +93,9 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		bw := c.TextWidth(name) + 22
 		r := sdl.Rect{X: bx, Y: sy, W: bw, H: btnH}
 		if c.Button(r, name) {
-			a.debugSection = i
+			a.debugPanel.section = i
 		}
-		if a.debugSection == i {
+		if a.debugPanel.section == i {
 			c.Border(r, ColAccent)
 		}
 		bx += bw + 8
@@ -103,7 +103,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 
 	top := sy + btnH + 10
 	body := sdl.Rect{X: x, Y: top, W: pw - 2*debugPanelIn, H: panel.Y + ph - top - debugPanelIn}
-	switch a.debugSection {
+	switch a.debugPanel.section {
 	case 1:
 		a.drawDebugPackets(body)
 	case 2:
@@ -190,28 +190,28 @@ func (a *App) drawDebugPackets(r sdl.Rect) {
 	listR := sdl.Rect{X: r.X, Y: r.Y + 22, W: r.W, H: r.Y + r.H - (r.Y + 22)}
 	c.Border(listR, ColPanelHi)
 
-	a.debugPktBuf = a.pkts.recent(a.debugPktBuf, pktLogCap) // reused slice → alloc-free after warmup
-	if len(a.debugPktBuf) == 0 {
+	a.debugPanel.pktBuf = a.pkts.recent(a.debugPanel.pktBuf, pktLogCap) // reused slice → alloc-free after warmup
+	if len(a.debugPanel.pktBuf) == 0 {
 		c.LabelClipped(listR.X+6, listR.Y+6, listR.W-12, "No packets recorded yet on this connection.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugPktScroll -= c.WheelIn(listR) * scrollStepPx
+		a.debugPanel.pktScroll -= c.WheelIn(listR) * scrollStepPx
 	}
-	contentH := int32(len(a.debugPktBuf)) * debugRowH
+	contentH := int32(len(a.debugPanel.pktBuf)) * debugRowH
 	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
-	a.debugPktScroll = c.VScrollbar("debugpkts", track, a.debugPktScroll, contentH, listR.H)
+	a.debugPanel.pktScroll = c.VScrollbar("debugpkts", track, a.debugPanel.pktScroll, contentH, listR.H)
 	clipPrev, clipHad := c.pushClip(listR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := listR.W - scrollBarW - 12
-	rowY := listR.Y - a.debugPktScroll
+	rowY := listR.Y - a.debugPanel.pktScroll
 	now := a.now()
-	for i := range a.debugPktBuf {
+	for i := range a.debugPanel.pktBuf {
 		if rowY > listR.Y+listR.H {
 			break
 		}
 		if rowY >= listR.Y-debugRowH {
-			rec := a.debugPktBuf[i]
+			rec := a.debugPanel.pktBuf[i]
 			dir, col := "IN ", ColText
 			if rec.out {
 				dir, col = "OUT", ColAccent
@@ -486,15 +486,15 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugLogScroll -= c.WheelIn(logR) * scrollStepPx
+		a.debugPanel.logScroll -= c.WheelIn(logR) * scrollStepPx
 	}
 	contentH := int32(a.debug.len()) * debugRowH
 	track := sdl.Rect{X: logR.X + logR.W - scrollBarW, Y: logR.Y, W: scrollBarW, H: logR.H}
-	a.debugLogScroll = c.VScrollbar("debuglog", track, a.debugLogScroll, contentH, logR.H)
+	a.debugPanel.logScroll = c.VScrollbar("debuglog", track, a.debugPanel.logScroll, contentH, logR.H)
 	clipPrev, clipHad := c.pushClip(logR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := logR.W - scrollBarW - 12
-	rowY := logR.Y - a.debugLogScroll
+	rowY := logR.Y - a.debugPanel.logScroll
 	for i := a.debug.len() - 1; i >= 0; i-- { // newest first
 		if rowY > logR.Y+logR.H {
 			break
@@ -582,27 +582,27 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 	listR := sdl.Rect{X: r.X, Y: y, W: r.W, H: r.Y + r.H - y}
 	c.Border(listR, ColPanelHi)
 
-	a.debugFontBuf = a.icFontPickRows(a.debugFontBuf)
-	if len(a.debugFontBuf) == 0 {
+	a.debugPanel.fontBuf = a.icFontPickRows(a.debugPanel.fontBuf)
+	if len(a.debugPanel.fontBuf) == 0 {
 		c.LabelClipped(listR.X+6, listR.Y+6, listR.W-12, "No IC log rows yet.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugFontScroll -= c.WheelIn(listR) * scrollStepPx
+		a.debugPanel.fontScroll -= c.WheelIn(listR) * scrollStepPx
 	}
-	contentH := int32(len(a.debugFontBuf)) * debugRowH
+	contentH := int32(len(a.debugPanel.fontBuf)) * debugRowH
 	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
-	a.debugFontScroll = c.VScrollbar("debugfonts", track, a.debugFontScroll, contentH, listR.H)
+	a.debugPanel.fontScroll = c.VScrollbar("debugfonts", track, a.debugPanel.fontScroll, contentH, listR.H)
 	clipPrev, clipHad := c.pushClip(listR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := listR.W - scrollBarW - 12
-	rowY := listR.Y - a.debugFontScroll
-	for i := range a.debugFontBuf {
+	rowY := listR.Y - a.debugPanel.fontScroll
+	for i := range a.debugPanel.fontBuf {
 		if rowY > listR.Y+listR.H {
 			break
 		}
 		if rowY >= listR.Y-debugRowH {
-			rec := a.debugFontBuf[i]
+			rec := a.debugPanel.fontBuf[i]
 			col, flag := ColText, ""
 			switch {
 			case rec.shared && !rec.covered:
