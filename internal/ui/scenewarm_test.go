@@ -53,7 +53,7 @@ func TestKeepSceneAssetsWarm(t *testing.T) {
 	// A missing base while the throttle window is closed: no demand either.
 	a.room.Scene.ShowDesk = true
 	a.room.Scene.DeskBase = "warm://missing-desk"
-	a.sceneWarmLastDemand = time.Now()
+	a.sceneWarm.lastDemand = time.Now()
 	a.keepSceneAssetsWarm()
 
 	// Steady state (everything resident) is on the per-frame path: pin it at
@@ -85,8 +85,8 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 	a.room.Scene.BackgroundBase = "warm://never-lands"
 
 	// Latched past the churn cap: throttle open + missing base → no demand.
-	a.sceneWarmSet = [6]string{"warm://never-lands", "", "", "", "", ""}
-	a.sceneWarmDemands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
+	a.sceneWarm.set = [6]string{"warm://never-lands", "", "", "", "", ""}
+	a.sceneWarm.demands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
 	a.keepSceneAssetsWarm()
 
 	// A warm-set change (the next message swaps the stage) resets the latch.
@@ -101,8 +101,8 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 	}
 	a.room.Scene.BackgroundBase = "warm://next-message"
 	a.keepSceneAssetsWarm()
-	if len(a.sceneWarmDemands) != 0 {
-		t.Fatalf("a warm-set change must reset the futility counters, still holds %v", a.sceneWarmDemands)
+	if len(a.sceneWarm.demands) != 0 {
+		t.Fatalf("a warm-set change must reset the futility counters, still holds %v", a.sceneWarm.demands)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestHealSceneryFutilityLatch(t *testing.T) {
 	a.d.Store = store
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.BackgroundBase = "warm://never-lands"
-	a.sceneWarmDemands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
+	a.sceneWarm.demands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
 	a.healScenery() // latched: no demand submitted
 }
 
@@ -178,19 +178,19 @@ func TestSceneHealBudget(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.sceneWarmLastDemand = time.Now()
+	a.sceneWarm.lastDemand = time.Now()
 	a.room = newRoomForTest(t)
 	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "a new message begins")})
 	if a.room.Phase() == courtroom.PhaseIdle {
 		t.Fatal("test setup: the message never started a ceremony")
 	}
-	a.sceneWarmPhase = a.room.Phase() // no phase edge on the sync pass
-	a.keepSceneAssetsWarm()           // syncs sceneWarmSet (its clear consumed here)
-	a.sceneWarmDemands = map[string]sceneHealState{"warm://latched": {churns: warmMaxHealChurns + 1}}
-	a.sceneWarmPhase = courtroom.PhaseIdle // as if the previous epoch ended idle
-	a.keepSceneAssetsWarm()                // warm set unchanged: only the idle→ceremony edge can clear
-	if len(a.sceneWarmDemands) != 0 {
-		t.Fatalf("a new ceremony must reset the heal budget, still holds %v", a.sceneWarmDemands)
+	a.sceneWarm.phase = a.room.Phase() // no phase edge on the sync pass
+	a.keepSceneAssetsWarm()            // syncs sceneWarmSet (its clear consumed here)
+	a.sceneWarm.demands = map[string]sceneHealState{"warm://latched": {churns: warmMaxHealChurns + 1}}
+	a.sceneWarm.phase = courtroom.PhaseIdle // as if the previous epoch ended idle
+	a.keepSceneAssetsWarm()                 // warm set unchanged: only the idle→ceremony edge can clear
+	if len(a.sceneWarm.demands) != 0 {
+		t.Fatalf("a new ceremony must reset the heal budget, still holds %v", a.sceneWarm.demands)
 	}
 }
 

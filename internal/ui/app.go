@@ -2215,7 +2215,7 @@ type sceneHealState struct {
 // ceremony (keepSceneAssetsWarm, which runs on both the drawn and the
 // skipped/minimized paths and marks landings via markSceneResident).
 func (a *App) sceneHealAllowed(base string) bool {
-	st := a.sceneWarmDemands[base]
+	st := a.sceneWarm.demands[base]
 	if st.seenResident {
 		// It landed since the last demand and is missing AGAIN: a genuine
 		// eviction-churn cycle — the thing the hard bound exists for. Persist
@@ -2224,7 +2224,7 @@ func (a *App) sceneHealAllowed(base string) bool {
 		st.churns++
 		st.asks = 0
 		st.seenResident = false
-		a.sceneWarmDemands[base] = st
+		a.sceneWarm.demands[base] = st
 	}
 	// Exactly warmMaxHealChurns churn cycles get a heal (refused from the
 	// N+1th), and warmMaxHealAsks demands may run without a landing between.
@@ -2232,10 +2232,10 @@ func (a *App) sceneHealAllowed(base string) bool {
 		return false
 	}
 	st.asks++
-	if a.sceneWarmDemands == nil {
-		a.sceneWarmDemands = make(map[string]sceneHealState) // bounded: scene bases only, reset per scene
+	if a.sceneWarm.demands == nil {
+		a.sceneWarm.demands = make(map[string]sceneHealState) // bounded: scene bases only, reset per scene
 	}
-	a.sceneWarmDemands[base] = st
+	a.sceneWarm.demands[base] = st
 	return true
 }
 
@@ -2244,13 +2244,13 @@ func (a *App) sceneHealAllowed(base string) bool {
 // for its churn bound. No-op for bases never demanded (no map growth) and for
 // already-marked entries (no map write on the steady state).
 func (a *App) markSceneResident(base string) {
-	st, ok := a.sceneWarmDemands[base]
+	st, ok := a.sceneWarm.demands[base]
 	if !ok || (st.seenResident && st.asks == 0) {
 		return
 	}
 	st.seenResident = true
 	st.asks = 0
-	a.sceneWarmDemands[base] = st
+	a.sceneWarm.demands[base] = st
 }
 
 // warmBase keeps base resident across a minimized upload burst: touch it (→
@@ -2316,20 +2316,20 @@ func (a *App) keepSceneAssetsWarm() {
 	// the previous epoch) for the whole message.
 	warmSet := [6]string{sc.BackgroundBase, sc.DeskBase,
 		sc.Speaker.Active, sc.Speaker.IdleBase, sc.Pair.Active, sc.ChatSkinBase}
-	if warmSet != a.sceneWarmSet {
-		a.sceneWarmSet = warmSet
-		clear(a.sceneWarmDemands)
+	if warmSet != a.sceneWarm.set {
+		a.sceneWarm.set = warmSet
+		clear(a.sceneWarm.demands)
 	}
 	if a.room != nil {
-		if p := a.room.Phase(); p != a.sceneWarmPhase {
-			if a.sceneWarmPhase == courtroom.PhaseIdle {
-				clear(a.sceneWarmDemands) // idle → ceremony: a new message began
+		if p := a.room.Phase(); p != a.sceneWarm.phase {
+			if a.sceneWarm.phase == courtroom.PhaseIdle {
+				clear(a.sceneWarm.demands) // idle → ceremony: a new message began
 			}
-			a.sceneWarmPhase = p
+			a.sceneWarm.phase = p
 		}
 	}
 	now := time.Now()
-	throttleOpen := now.Sub(a.sceneWarmLastDemand) >= sceneWarmRedemandEvery
+	throttleOpen := now.Sub(a.sceneWarm.lastDemand) >= sceneWarmRedemandEvery
 	demanded := false
 	warm := func(base string, t assets.AssetType) {
 		if base == "" {
@@ -2370,7 +2370,7 @@ func (a *App) keepSceneAssetsWarm() {
 				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			}
 			demanded = true
-			a.sceneWarmLastDemand = now
+			a.sceneWarm.lastDemand = now
 		}
 	}
 	warm(sc.BackgroundBase, assets.AssetTypeBackground)
