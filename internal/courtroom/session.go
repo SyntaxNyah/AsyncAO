@@ -614,6 +614,33 @@ func (s *Session) reply(p protocol.Packet) {
 	}
 }
 
+// advertiseFeatures mirrors the server's FL back, but only for features the
+// server itself offered — advertising into the void gains nothing (and surprises
+// packet-count tests).
+//
+// Deliberately a POSITIONAL packet, never NewTypedPacket(&aolib.FL{...}): once
+// jsonMode is on (inbound.go: decryptor#JSON flips it), Conn.Send encodes typed
+// packets as JSON, and a server that models FL as server->client parses the
+// client's advert positionally. A JSON FL arrives there with a nil Body and
+// CLEARS the advertised feature set. A Packet with typed == nil takes the
+// p.String() branch in Conn.encode, so this stays FL#...#% in both wire modes.
+//
+// One frame carries every supported feature, so a single advert can never erase
+// a feature advertised earlier in the session.
+func (s *Session) advertiseFeatures() {
+	var want []string
+	if s.Features.Has(protocol.FeatureGroupPair) {
+		want = append(want, protocol.FeatureGroupPair)
+	}
+	if s.Features.Has(protocol.FeatureTimeLeap) {
+		want = append(want, protocol.FeatureTimeLeap)
+	}
+	if len(want) == 0 {
+		return
+	}
+	s.reply(protocol.NewPacket("FL", want...))
+}
+
 // KFOCompat reports whether the connected server is KFO-Server (from the ID packet's
 // software name; tsuserver.py sets self.software = "KFO-Server"). KFO's MS validator
 // (validate_net_cmd) rejects EMPTY strings for the frame/effect fields it types STR —
@@ -646,12 +673,7 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 	case *aolib.FL:
 		s.Features = protocol.ParseFeatures(v.Features)
-		// Symmetric FL: advertise our own capabilities back, but only features
-		// the server itself supports — advertising grouppair to a server that
-		// never sent it would gain nothing (and surprises packet-count tests).
-		if s.Features.Has(protocol.FeatureGroupPair) {
-			s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
-		}
+		s.advertiseFeatures()
 		return nil, true
 
 	case *aolib.PN:
@@ -866,9 +888,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "FL":
 		s.Features = protocol.ParseFeatures(p.Fields)
-		if s.Features.Has(protocol.FeatureGroupPair) {
-			s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
-		}
+		s.advertiseFeatures()
 
 	case "GP":
 		if gp := protocol.GroupPairFromPacket(p); gp != nil {
