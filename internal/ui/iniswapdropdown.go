@@ -4,41 +4,18 @@ import "strings"
 
 // The theme's iniswap_dropdown / iniswap_remove pair (#21 label 11 — the
 // reporter's "iniswap missing").
-//
-// AO2 builds the list in on_iniswap_dropdown_changed's neighbourhood
 // (../AO2-Client/src/courtroom.cpp:5331-5332):
-//
-//	iniswaps.prepend(char_list.at(m_cid).name);
-//	iniswaps.removeDuplicates();
-//
-// so the player's OWN folder is always index 0 and the saved swaps follow. The
-// remove button is offered only while something other than index 0 is worn
-// (:5323-5328 hides the pair outright when m_cid is -1).
-//
 // The list logic lives here as PURE functions rather than inline at the draw
 // site, because the index it produces is destructive: it feeds RemoveWardrobe,
 // which PERSISTS. An off-by-one deletes a wardrobe entry the user did not pick,
-// and that is not something to leave to a loop written inside a draw call.
 
 // buildIniswapChoices returns own-folder-first, then the saved wardrobe, then the
 // worn folder if it is in neither. dst is truncated and reused (the draw site
 // calls this behind a generation guard, so it must not allocate per frame).
-//
-// The trailing "worn if absent" entry is the load-bearing part, and it is AO2's
-// behaviour by a different route: AO2's combobox is EDITABLE with InsertAtBottom
 // (courtroom.cpp:938-939) and it rewrites iniswaps.ini on every change, so
-// whatever you are wearing is always in the list. AsyncAO can wear a folder that
-// was never saved — wearFromMenu takes entries from the SERVER's iniswap.txt and
-// never calls AddWardrobe — so without this the current value would not be found,
-// the dropdown would display the player's own character while they were wearing
-// something else, and the remove button would hide itself exactly when it is
-// needed.
-//
 // Matching is case-insensitive, which is a deliberate divergence: AO2's
 // removeDuplicates and its selection compare are both case-SENSITIVE, so it would
 // keep "Phoenix" and "phoenix" as separate rows and select neither. Asset folder
-// lookups are effectively case-folded for a streaming client, so treating them as
-// one entry is right here even though it is not literal parity.
 func buildIniswapChoices(dst []string, own string, wardrobe []string, worn string) []string {
 	dst = dst[:0]
 	if own == "" {

@@ -10,30 +10,6 @@ import (
 )
 
 // H5 — replay pre-warm for FLAT (non-bundled) recordings.
-//
-// A bundled .aorec already plays gap-free: its assets are local files the Manager
-// reads from disk, so the very first frame has its sprites and the music starts on
-// time. A FLAT recording streams the SAME assets from the origin CDN, and the
-// replay's typewriter pacing runs faster than a cold async fetch — so without a
-// warm phase the first lines pop in sprite-by-sprite and the opening track plays
-// silent until it downloads. This inserts a bounded warm BEFORE the first event:
-// seed the origin's formats (so probes hit the right extension), submit the scene's
-// sprite/background refs through the SAME per-tick window discipline the export
-// warm uses (nextWarmBatch / warmRoom / warmSettled — reused, not forked), and
-// prefetch the scene's music refs (Exact URLs, bounded count) so sound is ready.
-//
-// It reuses the export warm's ceilings so the two can't drift and no origin can
-// hang the phase. An empty / non-http origin skips the warm entirely (the
-// HasPrefix "http" guard in startReplayWarm) and plays as before — so the only
-// dead-origin case that reaches the warm is a REACHABLE-scheme host that is
-// actually down or 404ing. Two exits cover it: the conclusive-404 release
-// (warmSettled counts a base whose whole chain returned clean 404s as done —
-// requires a REACHABLE host that answers with 404s) ends such an all-404 replay
-// promptly; a host that TRANSPORT-errors (DNS-gone / connection-refused / 5xx)
-// never becomes IsMissing (manager.go returns "done" on the first transport error
-// without reportMissing), so it does NOT release early and instead exits via the
-// wall-clock backstop (gifWarmHardCap) — bounded, but not sub-second. Either way
-// the phase always ends and playback begins; nothing hangs.
 
 const (
 	// replayMusicWarmCap bounds how many DISTINCT music tracks the replay pre-warm
