@@ -149,8 +149,8 @@ func (a *App) handleThemeErrChipInput(w int32) {
 		return
 	}
 	c.clicked = false
-	a.showDebugPanel = true
-	a.debugSection = assetMissDebugLogTab()
+	a.debugPanel.open = true
+	a.debugPanel.section = assetMissDebugLogTab()
 	// Acknowledged: the log owns the detail from here, and the next apply that still
 	// refuses re-arms the chip (pollThemeApply). Never cleared by a TIMER — the
 	// condition it reports does not expire on its own.

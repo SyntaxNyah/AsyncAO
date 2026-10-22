@@ -43,18 +43,9 @@ type sessionState struct {
 	voiceCapsAnnounced bool
 	showModDash        bool // the mod (ban/kick) dashboard panel is open
 	showCMPanel        bool // the separate CM (area control) panel is open
-	// Debug panel (Extras → Debug): sectioned diagnostics view (#333 packet inspector + perf + log).
-	showDebugPanel bool
-	debugSection   int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Cache · 4 Log · 5 Fonts
-	debugPktScroll int32       // Packets list scroll offset
-	debugLogScroll int32       // Log list scroll offset
-	debugPktBuf    []packetRec // reused recent()-into buffer (alloc-free draw)
-	// Fonts tab (fontpickdebug.go, the "funky fonts" readout): the resolved
-	// font/colour for the recent IC log rows, driven through the same calls
-	// drawICLogList makes. debugFontBuf is reused across frames like
-	// debugPktBuf — built and read ONLY while this tab is open.
-	debugFontScroll int32
-	debugFontBuf    []fontPickRow
+	// Debug panel (Extras → Debug): sectioned diagnostics view (#333 packet
+	// inspector + perf + log); see debugPanelState.
+	debugPanel debugPanelState
 	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
 	showFxPicker bool
 	// showICColorWheel floats the free-hex colour wheel anchored to
@@ -1214,6 +1205,21 @@ type activeWarmState struct {
 	char       string         // identity: character folder…
 	idx        int            // …and selected emote index
 	lastDemand time.Time      // throttles re-demands to the scene keeper's cadence
+}
+
+// debugPanelState is the Extras → Debug panel's per-session view state: which
+// section is showing, each list's scroll offset, and the two buffers reused
+// across frames so the draw is alloc-free (each is built and read ONLY while its
+// own tab is open). The font tab readout resolves through the same calls
+// drawICLogList makes (fontpickdebug.go, the "funky fonts" readout).
+type debugPanelState struct {
+	open       bool        // the panel is open
+	section    int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Cache · 4 Log · 5 Fonts
+	pktScroll  int32       // Packets list scroll offset
+	logScroll  int32       // Log list scroll offset
+	pktBuf     []packetRec // reused recent()-into buffer (alloc-free draw)
+	fontScroll int32       // Fonts list scroll offset
+	fontBuf    []fontPickRow
 }
 
 type lobbyFetch struct {

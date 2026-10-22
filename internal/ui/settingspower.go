@@ -25,7 +25,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// floating panel draws. Also on F8 anywhere, and Extras → Debug.
 	y = a.settingsSection(y, w, "Diagnostics")
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Open Debug panel (F8)") {
-		a.showDebugPanel = true
+		a.debugPanel.open = true
 		a.screen = a.prevScreen // back to the courtroom, where the panel is drawn
 	}
 	y += btnH + 6
