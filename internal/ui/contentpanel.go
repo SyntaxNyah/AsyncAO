@@ -8,21 +8,6 @@ package ui
 // scrollable list, kit VScrollbar, and Esc routed through closeTopOverlay so one
 // press peels it off (floatbox.go doctrine — a fenced popup MUST answer Esc or it
 // silently reappears on the next Settings open).
-//
-// Data comes entirely from the engine's exported model: ContentReport /
-// CategoryReport / AssetItem + the shared FormatReport (used verbatim for the
-// Copy button, so the panel text and the bundle's MISSING-CONTENT.txt never
-// drift). This file owns NO probing/packaging logic — it only starts, queries,
-// packages, and cancels the job through the engine's API.
-//
-// Perf/hard-rule discipline (spec §17): the draw is alloc-free. The item list is
-// a CACHED "visible rows" slice rebuilt only when the filter toggles or the
-// report mutates (a probe result landing changes the Totals signature) — never a
-// fresh filtered slice per frame. Rows draw as separate cached labels (status
-// tag + name), never a per-frame fmt.Sprintf (that both allocates and misses the
-// label texture cache — the demobrowser lesson). No filesystem/network touch on
-// the render thread: the pick loads the rec once (event-loop one-off, like
-// importDroppedRecording), and the probe is the async single-flight job.
 
 import (
 	"path/filepath"
@@ -134,13 +119,6 @@ type contentPanelState struct {
 	// SAME string drives enumeration AND packaging (writeContentBundle's per-asset
 	// CutPrefix(url, rec.Origin) must match the origin the probe resolved against —
 	// a mismatch would count every asset "external" and write an empty bundle).
-	//   originServer: the recording's server origin (a .aorec's stamped Origin, or a
-	//     .demo's live session AssetURL) — "" when offline / none recorded.
-	//   originLocal:  the configured mounts' local:// origin — "" when local-asset
-	//     mode is off / no mounts.
-	// useLocal is the current choice; it is NOT cleared on a fresh open, so the last
-	// pick sticks for the session (a per-session preference, no saved pref needed —
-	// the panel singleton holds it like showAll's transient state).
 	originServer string
 	originLocal  string
 	useLocal     bool
@@ -200,7 +178,6 @@ var contentPanel contentPanelState
 // bad load or a refused start (a job already running, empty recording) leaves the
 // panel closed and the engine's warnLine explaining why. pkg latches the package
 // build to fire once the probe is ready.
-//
 // Render thread only: loadRecordingAny emits its import notes on this thread, and
 // StartContentReport spawns the probe goroutines here. The load is a one-off
 // event-loop read (the importDroppedRecording precedent), never a render-path I/O.
@@ -471,25 +448,9 @@ func cpStatusTag(st AssetStatus) string {
 // segmented control and returns the y past it. The active source is accent-filled;
 // clicking the inactive source calls switchContentSource (cancel + re-run against
 // the other origin).
-//
-// Servability follows what the Manager can actually query, in the overlay world:
-//   - "Local base" is servable whenever mounts are configured (originLocal!="").
-//     ANY Manager can now serve local:// URLs: a streaming Manager routes them
-//     through its local:// mount OVERLAY (SetLocalOverlay), and a local-mode
-//     Manager's source already IS the LocalFetcher. So the local half is no longer
-//     tied to the Manager's mode — only to a base being configured.
-//   - "This server" (https://) still needs a streaming Manager: a local-mode
-//     Manager holds a LocalFetcher with NO network source, so an https:// origin is
-//     structurally unreachable there. That half of the matrix is UNCHANGED this
-//     wave. probeRef reports a transport-error base as [missing]/[unreachable], so
-//     leaving "This server" enabled in local mode would yield false rows.
-//
 // When "Local base" is servable but NO base is configured (originLocal==""), the
 // segment is still CLICKABLE: clicking expands an inline setup row (a folder-path
 // field + "Use") so the user can set a base right here — see drawLocalSetupRow.
-// The disabled segment stays visible (the mode indicator) but draws dim and
-// no-ops. All labels/buttons are cached strings/consts — the panel's alloc-free
-// budget (the setup row's field draws only while expanded).
 func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
 	c := a.ctx
 	// The Manager's fixed mode still decides whether the SERVER (https://) source is

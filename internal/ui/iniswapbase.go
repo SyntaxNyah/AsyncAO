@@ -1,37 +1,9 @@
 package ui
 
 // "Swap from your base" — the Iniswaps tab's second source.
-//
-// THE GAP THIS CLOSES. The wardrobe's browse tab only ever listed the server's
-// `iniswap.txt`, a file most servers do not publish; on those servers the tab was a
-// paragraph explaining that you could type a folder name if you happened to know
-// one. But the client already KNOWS two complete lists of folders that exist on the
-// base:
-//
-//   - the server's character ROSTER (the SC packet — every character folder the
-//     server offers, taken or not), and
-//   - the character folders inside the user's own LOCAL MOUNTS, which is the whole
-//     point of having mounted a content pack.
-//
-// Both are now browsable and wearable. What CANNOT be listed is a plain remote HTTP
-// base: there is no directory listing over HTTP, and probing for names is exactly
-// the fallback-storm this client is built to avoid — so the type-a-name field stays,
-// and now carries a visible line saying why.
-//
-// WHY A SEPARATE BROWSER, not more entries in a.iniList. iniList is the wardrobe's
-// backing store: it is index-keyed (a.iniPages / a.iniAsk are parallel slices, and
-// cachedPage does not re-check the URL behind an index), and char select's Wardrobe
-// tab ranges it WHOLE. Merging a 4000-character roster into it would flood that tab
-// with the entire server and invalidate every cached icon page on each rebuild. This
-// browser keeps its own list AND its own icon page cache (a.iniBase.pages / .ask),
-// so it can draw the same 64 px char-icon cells without aliasing the wardrobe's, and
-// touches nothing the wardrobe owns.
-//
 // THREADING. The local scan is os.ReadDir on the user's disk, so it runs on a
 // goroutine and lands through a buffered channel that the draw drains — hard rule 2
 // (no synchronous disk I/O on a draw path). It is bounded twice: at most
-// config.LocalMountCap mounts are walked, and at most iniBaseLocalFolderCap names
-// come back (hard rule 4).
 
 import (
 	"fmt"
@@ -196,14 +168,9 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 // mode is actually ON. Both accessors hand back the stored paths whatever their
 // mode flag says, so the flag is what must be tested: offering folders from mounts
 // the asset pipeline is not reading would list characters that then fail to load.
-// LayeredAssets normalizes the reachable both-set state, so asking it second is
-// enough (config.LayeredAssets).
-//
 // This COPIES (both accessors do), so it is for callers that keep the list. The
 // staleness check does not: it asks config.BaseMountsEqual, which answers the same
 // question against the stored slice under the read lock. The two must agree on
-// which mode yields which list — TestBaseMountsEqualMatchesBaseMounts walks the
-// mode matrix to keep them from drifting apart.
 func (a *App) baseMounts() []string {
 	if on, mounts := a.d.Prefs.LocalAssets(); on {
 		return mounts
@@ -217,15 +184,6 @@ func (a *App) baseMounts() []string {
 // ensureLocalCharFolders starts a scan when the mount list has changed since the
 // last one. Cheap and allocation-free when nothing changed (a slice compare), which
 // is what lets a draw path call it every frame.
-//
-// That "allocation-free" is why the unchanged path asks config.BaseMountsEqual
-// instead of comparing against baseMounts(): baseMounts routes through
-// LocalAssets/LayeredAssets, and BOTH of those take a make+copy of the stored
-// paths under the lock. Fetching the list only to throw it away would have cost a
-// user with mounts — the exact user this feature exists for — one or two heap
-// allocations EVERY frame the Iniswaps tab was open. The copy is now taken only
-// on the changed path, which runs once per mount edit and hands the slice to a
-// goroutine that must own it anyway.
 func (a *App) ensureLocalCharFolders() {
 	b := &a.iniBase
 	if b.scanning {

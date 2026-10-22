@@ -6,42 +6,10 @@ import (
 
 // The server notice box: the one modal that shows a server's own words to the
 // user, verbatim and copyable, on any screen.
-//
-// WHY IT EXISTS. Four packets are a server talking directly to the person at the
-// keyboard — KK (kick), KB (ban), BD (ban with reason, which is what a lockdown
-// sends) and BB (a popup notice). AO2 puts all four in a real modal
-// (courtroom.cpp call_notice / the QMessageBox in packet_distribution.cpp). We
-// had three different fates for them instead:
-//
-//   - BB became one OOC line and a toast, so it scrolled away;
-//   - KK/KB/BD opened the disconnect dialog ONLY if a room already existed,
-//     because handleInvoluntaryDrop gates on a.screen == ScreenCourtroom;
-//   - a drop before the courtroom (the common case: the server refuses during
-//     the handshake) fell through to a single unclipped label on the lobby.
-//
-// That last one is the reported bug. A server that is locked down, or that
-// whitelists by IP, sends the instructions for getting in — a Discord invite, an
-// access code — in that string, and a lockdown message puts the code on the LAST
 // line (../Nyathena/internal/athena/lockdown_passkey.go). One label cannot show a
-// second line, so the code was structurally unreachable. Worse, LabelClipped is
-// not a safety net: it rasterizes the WHOLE string and only clips the blit, so
-// past some length the label drew nothing at all.
-//
-// WHY IT IS ON App, NOT sessionState. resetSessionState rebuilds that struct
-// wholesale (tabs.go), on connect AND on disconnect, so a removal reason stored
-// there is wiped by the very teardown that produced it — before the lobby draws.
-// fontWarnDlg is the existing App-level precedent and says the same thing.
-//
-// WHY IT BLOCKS. It joins the disconnectDlg / pendingCloseTab family (dimmed
-// backdrop, pointer fence, Esc closes), not the panelSlotTable floatWins: those
-// are deliberately non-blocking with a live courtroom behind them
-// (blockingCourtPopup, floatbox.go), and this has to work with no session at all.
-//
 // WHY NO SCROLLBAR. The body is capped at serverNoticeMaxRows and says so when it
 // cuts. A scroll region here would need WheelIn, which is single-consumer, and a
 // clipped click region, which needs pushClip rather than a raw SetClipRect — both
-// avoidable, because Copy already hands over the entire uncapped message and that
-// is what someone with a code to type actually wants.
 
 // serverNoticeKind is what the notice MEANS, which is the only thing the box
 // varies on. It deliberately does not encode which packet arrived: the box is not
@@ -134,20 +102,9 @@ type serverNoticeDialog struct {
 }
 
 // openServerNotice raises the box for one server-authored message.
-//
-// title must be CLIENT-authored and short; body is the server's text and may be
-// any length and any script. Only body is ever copied, and only body is wrapped.
-//
-// The box does NOT navigate. A serverNoticeRemoved notice arrives after the
-// caller has already torn the session down and routed to the lobby, so dismissing
-// it has nothing to undo; keeping the routing out here is what lets the whole
-// modal be driven headlessly by a test with no session, and keeps internal/ui's
-// screen machine out of the box's dependencies.
-//
 // PRECEDENCE: a removal always replaces whatever is showing, and an info notice
 // never replaces a removal. A server that spams a MOTD popup as it closes the
 // socket must not be able to bury the ban reason underneath it — that reason is
-// the only copy of the appeal instructions the user will get.
 func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string) {
 	if kind == serverNoticeNone {
 		return
@@ -233,14 +190,7 @@ func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {
 
 // chromeWrapMeasure is the metric every modal body wrap breaks rows against: the
 // width of the row in the face LabelClipped will ACTUALLY draw it in.
-//
-// Not ctx.TextWidth. That measures the base chrome font, and chromeFaceFor may hand
-// the draw a different face entirely for non-Latin text — measuring in a face that
 // does not cover the script and drawing in one that does is the #42 bug class, and
-// it is not hypothetical here: the notice this was built for is Russian. Going
-// through chromeFaceFor also latches the off-thread fallback load (noteScript) for
-// free, so the first frame that needs Cyrillic is the frame that asks for it.
-//
 // Built ONCE and kept. A closure — or a bound method value — allocates, and this is
 // handed to a cache that is consulted on every frame a modal is open.
 func (a *App) chromeWrapMeasure() func(string) int32 {

@@ -106,16 +106,6 @@ func (a *App) openDetachedPreview() {
 // and its close reconciled on passes where the in-app box itself never
 // draws, e.g. previewBase=="" after noteScreenTransition force-cleared it
 // while the window stayed open).
-//
-// Reconciling a self-close: whether the user re-attached via the pop-out
-// toggle or closed the OS window with its own titlebar X (measured fact 1 —
-// nothing calls back into this package when that happens), the ONLY way to
-// notice is polling IsOpen() and comparing against last frame's answer. The
-// falling edge is exactly when the window's final rect (PreviewWindow.
-// LastRect, captured by Close() before it destroys anything) gets persisted
-// — once, not every frame, and never a per-move write (CLAUDE.md hard rules
-// 2/3).
-//
 // "Closed = free": a.d.Preview.IsOpen() is one nil+nil check when nothing
 // has ever been detached, matching every other preview-window touch point's
 // own contract (TestSyncPreviewWindowClosedIsZeroAlloc).
@@ -140,30 +130,9 @@ func (a *App) syncPreviewWindow() {
 // advancing even while the main loop's SkipFrame/minimized branches suppress
 // every full redraw of the main window, which is the whole reason a preview
 // gets popped out in the first place.
-//
-// The GPU work (readTexturePixels' render-target blit+readback, and the
-// texture upload underneath SetFrame/ShowAnimFrame) only happens on a
-// genuine CHANGE — a new pick, a new source page (T1 evicted and re-decoded
-// the same base), or the frame INDEX advancing — never merely because this
-// function was called again. pageFrameLoop is a pure, cheap function of the
-// wall clock (already proven safe to call every pass by the in-app box's own
-// identical use, screens.go), so recomputing idx here every call costs
-// nothing on the passes where nothing changed.
-//
-// A static/1-frame page (page.Animated false, or a single frame) always
-// resolves idx to 0 and never changes it, so it keeps the ORIGINAL "fed
-// exactly once per pick" behavior via SetFrame, completely unchanged from
-// before this animated-preview feature existed
-// (TestFeedDetachedPreviewFrameUploadsOnce is unmodified evidence of that).
-// A page with more than one frame calls render.PreviewWindow.ShowAnimFrame
-// instead, which caches each distinct frame the first time it is visited so
-// a LOOPING animation performs the readback at most once per distinct
-// frame, never once per visit.
-//
 // A still-loading pick (nothing resident yet) is retried next call — cheap
 // (a texture-store lookup, no allocation) since a real decode settles within
 // a handful of frames, and the window simply keeps showing its previous
-// content (or a black window on the very first-ever pick) until then.
 func (a *App) feedDetachedPreviewFrame() {
 	if a.previewBase == "" {
 		return
@@ -202,13 +171,9 @@ func (a *App) feedDetachedPreviewFrame() {
 // to show" decision, factored out as a pure function so it can be driven
 // exhaustively by a test. It is not a duplicate of the gate: it IS the gate,
 // its only production caller being the line above.
-//
 // A frequency gate rather than a correctness one — ShowAnimFrame's own cache
 // would absorb a redundant call on the normal path — but it stops being merely
 // an optimization the moment a pick overflows the animation cache budget:
-// there, an uncached ordinal calls fill on EVERY visit, so without the
-// fedIdx == idx test a 60 Hz main loop would run a full GPU readback per
-// rendered frame instead of one per animation frame tick.
 func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, animated bool, fedIdx, idx int) bool {
 	if fedBase != base || fedPage != page {
 		return true // different pick, or the same base re-decoded into a new page
@@ -224,12 +189,9 @@ func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, 
 // window showing an animated pick would freeze the instant the main window
 // minimizes or the static-skip gate engages — exactly the case a user pops
 // the window out FOR (watching it while alt-tabbed away).
-//
 // Not a second implementation of anything: this calls the SAME
 // syncPreviewWindow handlePreviewInput already calls, just reachable from a
 // pass that never reaches handlePreviewInput. The closed-preview cost is
-// unchanged — syncPreviewWindow's own "closed = free" contract
-// (TestSyncPreviewWindowClosedIsZeroAlloc) already covers every call site.
 func (a *App) AdvanceDetachedPreview() {
 	a.syncPreviewWindow()
 }
@@ -239,16 +201,6 @@ func (a *App) AdvanceDetachedPreview() {
 // and showing a page with more than one frame — otherwise the loop's own
 // much longer idle/minimized nap would freeze the popped-out animation for
 // the length of that nap even though AdvanceDetachedPreview is being called.
-// Modeled on assetDemandWakeInterval (app.go): a coarse, bounded extra wake,
-// not a precise "time until this animation's next frame-index change"
-// computation — NextWakeDelay's considerRender/render=true contract is
-// deliberately NOT reused here (see PreviewAnimWakeCap's doc) because that
-// would force a full main-window redraw just to animate an unrelated small
-// window, exactly the cost this feature's own performance constraint rules
-// out. ~10 Hz is brisk enough that typical AO idle-sprite frame delays (tens
-// to a couple hundred ms) read as smooth, and this cap only ever applies
-// while a detached window is actually open AND actually animating — the
-// overwhelmingly common case (nothing detached) pays nothing at all.
 const previewAnimWakeCap = 100 * time.Millisecond
 
 // PreviewAnimWakeCap reports the longest cmd/asyncao's main loop should
@@ -257,14 +209,6 @@ const previewAnimWakeCap = 100 * time.Millisecond
 // static pick). Callers combine it with whatever nap/wait duration they
 // already chose, e.g. `if cap := a.PreviewAnimWakeCap(); cap > 0 && nap >
 // cap { nap = cap }`.
-//
-// Deliberately NOT routed through SkipFrame/NextWakeDelay's render-forcing
-// contract: this only bounds a SLEEP duration on a pass that has ALREADY
-// decided not to draw the main window, it never flips that decision — the
-// main window's own pacing (its "last frame is still exactly right"
-// contract) is untouched regardless of what a completely separate OS window
-// is doing. Render-thread only, like every other a.d.Store/a.d.Preview touch
-// point.
 func (a *App) PreviewAnimWakeCap() time.Duration {
 	if !a.previewIsDetached() || a.d.Store == nil {
 		return 0
@@ -284,13 +228,9 @@ func (a *App) PreviewAnimWakeCap() time.Duration {
 // preview is on screen to detach, and internal/assets.Manager's own
 // T1-residency short-circuit would make a second Prefetch for it a silent
 // no-op with no decode event to catch.
-//
 // Render-thread only (every call is an SDL call: a scratch render-target
 // texture, a blit, ReadPixels, then the render target is restored). Called
 // at most once per emote pick while the preview window is open — never per
-// render frame — so the extra blit+readback this needs (there is no cheaper
-// way to get pixels out of an SDL texture) is a bounded, human-timescale
-// cost, not a hot-path one.
 func readTexturePixels(ren *sdl.Renderer, tex *sdl.Texture, w, h int32) (*image.RGBA, error) {
 	if ren == nil || tex == nil || w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("ui: readTexturePixels: nothing to read")

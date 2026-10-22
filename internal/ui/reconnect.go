@@ -50,14 +50,6 @@ func (a *App) quickConnect() {
 // the frame loop — the same blocking connect the manual button and restore-on-
 // launch use — so there's no off-thread session setup; idle, this is a single
 // time compare per frame.
-//
-// Deliberately NEVER gives up: an AFK/minimized session (the whole point of
-// auto-reconnect) has nobody there to click a manual Reconnect if it stopped, so
-// a transient drop must keep self-healing no matter how long the user is away.
-// Retrying costs nothing extra once backed off to autoReconnectMax — one dial
-// attempt at most every 30s — so there is no resource case for a cutoff.
-// shouldAutoReconnect already excludes the cases that SHOULD stay stopped
-// (a kick, a ban, a deliberate close): those never arm this loop at all.
 
 const (
 	// autoReconnectBase is the first backoff delay; it doubles each failed
@@ -84,15 +76,6 @@ func autoReconnectDelay(tries int) time.Duration {
 // shouldAutoReconnect decides whether an ended connection should auto-retry. It
 // is the single source of truth for the "drop vs ban/kick vs user-close"
 // distinction (#1), kept pure so it unit-tests directly:
-//
-//   - deliberate: a user-initiated close (Disconnect button, tab close, quit,
-//     rehearsal end) never reconnects — the user meant to leave.
-//   - a server KICK or BAN never reconnects: reconnecting after a ban reads as
-//     ban evasion, and a kick is the server removing you on purpose — both are
-//     bad optics. Matched by the EventDisconnect reason prefixes ("Banned: " /
-//     "Kicked: ", session.go:697-701).
-//   - anything else is a genuine transport drop (Wi-Fi blip, server restart,
-//     read error) — the exact case auto-reconnect exists for — so retry.
 func shouldAutoReconnect(reason string, deliberate bool) bool {
 	if deliberate {
 		return false
@@ -129,14 +112,6 @@ func (a *App) cancelAutoReconnect() {
 // The dial blocks the frame (like the manual button); on failure it backs off and
 // reschedules, on success it clears. It calls connectWith directly (not Connect) so
 // the backoff counter survives.
-//
-// The retry fires ONLY from the lobby (v1.70.0 behaviour, restored by user
-// request): a drop lands on the phone book with the "Auto-reconnecting…" countdown
-// and the retry runs there. It is deliberately called only from the FOREGROUND
-// Frame loop, not from Background — so a drop taken while the window is minimized
-// waits at the lobby until the user returns, instead of silently reconnecting in
-// the background and landing them at char-select before they even restore. Any
-// other screen (courtroom, settings, a live second tab) suppresses the retry.
 func (a *App) pollAutoReconnect() {
 	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) || a.screen != ScreenLobby {
 		return
