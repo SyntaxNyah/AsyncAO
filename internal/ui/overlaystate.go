@@ -10,6 +10,7 @@ import (
 
 // overlayState owns overlays state.
 type overlayState struct {
+	env *env
 	// AO2 screen-effect overlays (effectspicker.go): the per-(origin, misc folder)
 	// roster cache and its async resolve results, the theme-tier art loads, and the
 	// dropdown's icon page cache. All bounded, all keyed so a server switch cannot

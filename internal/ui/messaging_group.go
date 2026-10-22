@@ -88,7 +88,7 @@ func (a *App) myUID() int {
 // applyGroupInvite records a group we were invited to (owner = the inviter), adding
 // the owner and us as the initial members. Idempotent; bounded.
 func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName string) {
-	g := a.ensureGroup(id)
+	g := a.msgs.ensureGroup(id)
 	if g == nil {
 		return
 	}
@@ -103,8 +103,8 @@ func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName s
 }
 
 // applyGroupJoin adds a member who announced they joined a group we're in.
-func (a *App) applyGroupJoin(id uint32, uid int, name string) {
-	if g := a.msgs.msgGroups[id]; g != nil {
+func (msg *msgState) applyGroupJoin(id uint32, uid int, name string) {
+	if g := msg.msgGroups[id]; g != nil {
 		g.addMember(uid, name)
 	}
 }
@@ -141,25 +141,25 @@ func (a *App) applyGroupKick(id uint32, byUID, targetUID int) {
 }
 
 // applyGroupLeave removes a member who announced they left.
-func (a *App) applyGroupLeave(id uint32, uid int) {
-	if g := a.msgs.msgGroups[id]; g != nil {
+func (msg *msgState) applyGroupLeave(id uint32, uid int) {
+	if g := msg.msgGroups[id]; g != nil {
 		g.removeMember(uid)
 	}
 }
 
 // ensureGroup returns the group for id, creating it (bounded) if absent. nil at the cap.
-func (a *App) ensureGroup(id uint32) *msgGroup {
-	if a.msgs.msgGroups == nil {
-		a.msgs.msgGroups = map[uint32]*msgGroup{}
+func (msg *msgState) ensureGroup(id uint32) *msgGroup {
+	if msg.msgGroups == nil {
+		msg.msgGroups = map[uint32]*msgGroup{}
 	}
-	if g := a.msgs.msgGroups[id]; g != nil {
+	if g := msg.msgGroups[id]; g != nil {
 		return g
 	}
-	if len(a.msgs.msgGroups) >= maxGroups {
+	if len(msg.msgGroups) >= maxGroups {
 		return nil
 	}
 	g := &msgGroup{id: id}
-	a.msgs.msgGroups[id] = g
+	msg.msgGroups[id] = g
 	return g
 }
 
@@ -194,7 +194,7 @@ func (a *App) createGroup(name string) {
 		a.warnAt = a.now()
 		return
 	}
-	g := a.ensureGroup(randGroupID())
+	g := a.msgs.ensureGroup(randGroupID())
 	if g == nil {
 		return
 	}

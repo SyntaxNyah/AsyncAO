@@ -1233,7 +1233,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		}
 		gcR := sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}
 		if c.Button(gcR, "Group Chat") {
-			a.toggleMessages()
+			a.msgs.toggleMessages()
 		}
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
@@ -1396,7 +1396,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		}
 		gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
 		if c.Button(gcR, "Group Chat") {
-			a.toggleMessages()
+			a.msgs.toggleMessages()
 		}
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")

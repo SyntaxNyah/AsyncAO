@@ -279,10 +279,10 @@ func (a *App) routeIncomingPM(uid int, sender, body string) {
 			a.applyGroupText(m.GroupID, uid, sender, clean)
 			return
 		case courtroom.MsgJoin:
-			a.applyGroupJoin(m.GroupID, uid, sender)
+			a.msgs.applyGroupJoin(m.GroupID, uid, sender)
 			return
 		case courtroom.MsgLeave:
-			a.applyGroupLeave(m.GroupID, uid)
+			a.msgs.applyGroupLeave(m.GroupID, uid)
 			return
 		case courtroom.MsgKick:
 			a.applyGroupKick(m.GroupID, uid, m.TargetUID)

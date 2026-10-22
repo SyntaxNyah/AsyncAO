@@ -4,6 +4,7 @@ import "time"
 
 // msgState owns msgs state.
 type msgState struct {
+	env *env
 	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
 	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
 	showMessages   bool

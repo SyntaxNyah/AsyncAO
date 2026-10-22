@@ -373,7 +373,7 @@ func (a *App) pollThemeApply() {
 	a.overlays.overlayIconSize = res.effectsIcon
 	a.overlays.overlayTheme = res.themeObj
 	a.overlays.overlayRosters = nil
-	a.overlayIconPagesReset()
+	a.overlays.overlayIconPagesReset()
 	// Lands beside the geometry it belongs to. A themeless apply carries the zero
 	// value, which is Left — so dropping a theme restores AO2's own default rather
 	// than leaving the previous theme's alignment behind.
