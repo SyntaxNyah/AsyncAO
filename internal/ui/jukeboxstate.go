@@ -4,6 +4,7 @@ import "github.com/SyntaxNyah/AsyncAO/internal/config"
 
 // jukeboxState owns jukebox state.
 type jukeboxState struct {
+	env *env
 	// --- jukebox (global DJ /play music-link library) ---
 	// App-global like dlPaused and OUTSIDE sessionState: the library is shared
 	// across every server and must survive disconnects and tab switches.

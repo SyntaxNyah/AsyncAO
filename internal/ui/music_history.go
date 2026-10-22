@@ -79,14 +79,14 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 	if len(a.jukebox.musicHist) > musicHistoryCap {
 		a.jukebox.musicHist = a.jukebox.musicHist[:musicHistoryCap]
 	}
-	a.refreshRecentLabel()
+	a.jukebox.refreshRecentLabel()
 }
 
 // refreshRecentLabel rebuilds the cached toggle label. Called only when the ring
 // size changes (capture / clear) — never per frame — so the jukebox draw reads a
 // ready string instead of formatting one every frame.
-func (a *App) refreshRecentLabel() {
-	a.jukebox.jukeRecentLbl = fmt.Sprintf("Recently played (%d)", len(a.jukebox.musicHist))
+func (jukebox1 *jukeboxState) refreshRecentLabel() {
+	jukebox1.jukeRecentLbl = fmt.Sprintf("Recently played (%d)", len(jukebox1.musicHist))
 }
 
 // drawJukeHistory is the jukebox's "Recently played" top-level view: a back
@@ -103,7 +103,7 @@ func (a *App) drawJukeHistory(x, y, wide, bottom int32) {
 		if c.Button(sdl.Rect{X: x + wide - 100, Y: y, W: 100, H: btnH}, "Clear list") {
 			a.jukebox.musicHist = a.jukebox.musicHist[:0]
 			a.jukebox.jukeHistScroll = 0
-			a.refreshRecentLabel()
+			a.jukebox.refreshRecentLabel()
 			return
 		}
 	}
@@ -181,13 +181,13 @@ const jukeHistoryDomainOther = "other"
 // history" playlist: entries bucketed under a header per domain, domains sorted.
 // Memoized against (playlist, revision); the per-frame draw just walks the
 // cached slice, so the grouping costs nothing on the render loop.
-func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
-	key := jukeGroupCacheKey{pl: pl, rev: a.jukebox.jukeCacheRev}
-	if key == a.jukebox.jukeGroupKey && a.jukebox.jukeGroupRows != nil {
+func (jukebox1 *jukeboxState) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
+	key := jukeGroupCacheKey{pl: pl, rev: jukebox1.jukeCacheRev}
+	if key == jukebox1.jukeGroupKey && jukebox1.jukeGroupRows != nil {
 		return
 	}
-	a.jukebox.jukeGroupKey = key
-	a.jukebox.jukeGroupRows = a.jukebox.jukeGroupRows[:0]
+	jukebox1.jukeGroupKey = key
+	jukebox1.jukeGroupRows = jukebox1.jukeGroupRows[:0]
 
 	type de struct {
 		domain string
@@ -195,7 +195,7 @@ func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
 	}
 	pairs := make([]de, len(entries))
 	for i, e := range entries {
-		d := a.d.Prefs.Load().MusicURLDomain(e.URL)
+		d := jukebox1.env.d.Prefs.Load().MusicURLDomain(e.URL)
 		if d == "" {
 			d = jukeHistoryDomainOther
 		}
@@ -208,9 +208,9 @@ func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
 	for i, p := range pairs {
 		if i == 0 || p.domain != cur {
 			cur = p.domain
-			a.jukebox.jukeGroupRows = append(a.jukebox.jukeGroupRows, jukeGroupRow{domain: cur})
+			jukebox1.jukeGroupRows = append(jukebox1.jukeGroupRows, jukeGroupRow{domain: cur})
 		}
-		a.jukebox.jukeGroupRows = append(a.jukebox.jukeGroupRows, jukeGroupRow{entry: p.idx})
+		jukebox1.jukeGroupRows = append(jukebox1.jukeGroupRows, jukeGroupRow{entry: p.idx})
 	}
 }
 

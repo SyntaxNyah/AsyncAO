@@ -23,20 +23,20 @@ type favRef struct {
 // refreshJukeFavs rebuilds the cross-playlist favorites list (and its cached
 // count label) when the library revision changed — never per frame. Reads the
 // jukeCache snapshot refreshJukeCache already maintains.
-func (a *App) refreshJukeFavs() {
-	if a.jukebox.jukeFavRev == a.jukebox.jukeCacheRev && a.jukebox.jukeFavs != nil {
+func (jukebox1 *jukeboxState) refreshJukeFavs() {
+	if jukebox1.jukeFavRev == jukebox1.jukeCacheRev && jukebox1.jukeFavs != nil {
 		return
 	}
-	a.jukebox.jukeFavRev = a.jukebox.jukeCacheRev
-	a.jukebox.jukeFavs = a.jukebox.jukeFavs[:0]
-	for pl := range a.jukebox.jukeCache {
-		for e := range a.jukebox.jukeCache[pl].Entries {
-			if a.jukebox.jukeCache[pl].Entries[e].Fav {
-				a.jukebox.jukeFavs = append(a.jukebox.jukeFavs, favRef{pl: pl, e: e})
+	jukebox1.jukeFavRev = jukebox1.jukeCacheRev
+	jukebox1.jukeFavs = jukebox1.jukeFavs[:0]
+	for pl := range jukebox1.jukeCache {
+		for e := range jukebox1.jukeCache[pl].Entries {
+			if jukebox1.jukeCache[pl].Entries[e].Fav {
+				jukebox1.jukeFavs = append(jukebox1.jukeFavs, favRef{pl: pl, e: e})
 			}
 		}
 	}
-	a.jukebox.jukeFavLbl = fmt.Sprintf("★ Favorites (%d)", len(a.jukebox.jukeFavs))
+	jukebox1.jukeFavLbl = fmt.Sprintf("★ Favorites (%d)", len(jukebox1.jukeFavs))
 }
 
 // drawJukeFavorites is the top-level "★ Favorites" view: a back button and a
