@@ -1036,7 +1036,7 @@ func (a *App) healScenery() {
 	// when the settled working set exceeds the T1 main tier, every heal evicts
 	// another live base and this loop — paced or not — churned decode→upload→
 	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
-	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
+	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneWarm.healAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
@@ -1044,7 +1044,7 @@ func (a *App) healScenery() {
 	// conclusively can never become Contains: without this the desk arm re-demanded
 	// a known-absent desk every charIconRetryInterval for the whole heal budget,
 	// which is what produced the ×5..×9 runs of the same missing-asset line (#27).
-	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
+	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneWarm.healAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
@@ -1067,7 +1067,7 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 	if a.d.Store.Contains(layer.Active) {
 		return // resident — nothing to heal
 	}
-	if !a.sceneHealAllowed(layer.Active) {
+	if !a.sceneWarm.healAllowed(layer.Active) {
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
