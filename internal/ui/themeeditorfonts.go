@@ -1,35 +1,9 @@
 package ui
 
 // THE FONT RAIL (v1.90.0 W7b) — docs/wip/THEME-EDITOR-DESIGN.md §3.1's panel list.
-//
-// ONE concern: the theme's TYPE, as a thing you can drop a file onto and point at a
-// widget.
-//
-// WHY IT IS THE TIER THAT SHIPS. There are two font tiers in this format and only one
-// of them renders. `[fonts]` + `[fontbind]` bind an AO2 element CLASS to a face file
-// the theme carries; applySidecarFonts resolves them on every theme apply and the
-// courtroom really does change face (W4, themefontbind_test.go). An ELEMENT's own
-// `font`/`size` are carried and not drawn in format 1, and that is a MEASURED ruling
-// rather than an omission — paintElementText spells out the arithmetic: every other
-// face in this client lives in a fontSet holding exactly one point size, so an element
-// asking a panel's set for its own size rebuilds that set, and purges the text cache
-// with it, on every frame the panel and the element are both on screen. Reversing it
-// needs a per-element face pool with its own cap and its own lifetime, which is a wave
-// of its own; W7b therefore ships the picker, the rail and the intake for the tier
-// that renders, and the inspector SAYS SO on the tier that does not
-// (drawInspectorTail) instead of letting `size = 27` do nothing in silence.
-//
-// EVERY EDIT IS AN OP. opFontFamily and opFontBind go through editorApply exactly as a
-// rect drag does, so Ctrl+Z takes back a binding, "Back, Back" throws the whole
-// session's type away with the rest of it (restoreBaseline), and the censuses that
-// forbid a second mutation path cover this rail without knowing it exists.
-//
 // THE FILE COPY IS NOT AN OP, and that asymmetry is deliberate. Undo restores the
 // [fonts] ROW; the .ttf stays in the theme's fonts\ folder. A font file nobody
 // references is inert — it is not read, not opened and not shipped by anything but an
-// export — whereas an undo that deleted a file the user dropped would be an undo that
-// destroys data outside the document it owns. Same judgement the media graveyard
-// makes: bodies survive, rows are the undoable thing.
 
 import (
 	"os"
@@ -273,14 +247,6 @@ func (te *themeEditor) mutateFontFamily(idx int, family, file string) themeEditO
 // ---------------------------------------------------------------------------
 
 // editorTakeFontDrop is W4's deferred half, landed.
-//
-// W4's handleThemeFontDrop wrote down exactly why it could not install a face: "landing
-// a font means writing two keys into somebody's asyncao_theme.ini, and the sidecar
-// WRITER is wired to the editor's document and its undo stack (W7)." With the editor
-// open both of those exist, so the drop installs; with it shut the W4 message still
-// stands and still tells the user what to do by hand.
-//
-// ok=false means "not ours" — the caller keeps its own message.
 func (a *App) editorTakeFontDrop(path string) bool {
 	if a.te == nil || a.te.doc == nil {
 		return false

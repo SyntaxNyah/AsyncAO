@@ -1,28 +1,11 @@
 package ui
 
 // The courtroom_design.ini widget registry (#21).
-//
-// AO2 does not have a "list of keys". It has a list of WIDGETS, each of which
-// asks set_size_and_pos for its own identifier and HIDES ITSELF when the theme
-// is silent about it — qWarning + p_widget->hide(), AO2-Client
 // src/courtroom.cpp:1328-1344. AsyncAO's themeLayoutKeys was the other shape: a
-// whitelist of NAMES with no widget behind them. Two failure modes followed, and
 // issue #21 reported both. A key the theme declared but the list omitted was
-// structurally invisible (aceattorney2x declares ~100 rects; 35 were ingested).
-// And a key the list held but nothing painted became a ghost box in the layout
-// editor — music_search has been in themeLayoutKeys since it was written and has
-// never had a single draw site.
-//
-// This table is the widget list. Every row names one AO2 element, says which
-// coordinate system its rect lives in, which pass paints it, and whether anything
-// paints it YET. themeLayoutKeys, themeButtonStems and the editor's editable set
-// are all DERIVED from it, so a key cannot be ingested without a row, and a row
-// cannot be draggable without a painter.
-//
 // Rows land as slotStateInert and graduate to slotStateHandDrawn as each binding
 // commit of the #21 arc lands; the arc's last structural commit moves the
 // hand-ordered draw bodies into the `draw` field and flips them to
-// slotStateTable. That is why the state is data and not a bool.
 
 import "github.com/veandco/go-sdl2/sdl"
 
@@ -296,19 +279,11 @@ func themeSlotRel(key string) themeSlotRelSpace {
 
 // themeSlotOtherSpelling returns AO2's OTHER name for the same widget, when the key
 // is one of the pair that has two.
-//
-// AO2 probes two identifiers for exactly one widget — "immediate" first, then
 // "pre_no_interrupt" (courtroom.cpp:1072, mirrored by themedToggleRect,
 // theme_layout.go:444-459) — and its own stock design file spells it
-// `pre_no_interrupt`, so that is the only spelling applyAO2DefaultRects can supply.
-// Anything that looks a design key up in a resolved layout therefore has to be
-// willing to try the other one, or an author who wrote the spelling AO2 reads FIRST
-// has written a line that resolves to nothing.
-//
 // One function, three callers (sidecarOverrideTarget, absSlotRect, and any future
 // one): the alias used to be spelled out inline in the [overrides] applier and
 // nowhere else, which made honouring it in one tier and not the next an easy
-// accident rather than a decision.
 func themeSlotOtherSpelling(key string) (string, bool) {
 	s := themeSlotIndex[key]
 	if s == nil || s.alt == "" {

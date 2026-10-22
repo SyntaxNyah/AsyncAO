@@ -8,11 +8,9 @@ package ui
 // independent) or — when nothing is overridden — the exact rect the layout
 // already computed. Un-edited ⇒ pixel-identical to before (the safety
 // invariant); the override path is purely additive and off the hot frame.
-//
 // The editor (drawClassicEditor) reuses the themed editor's feel — drag = move,
 // edge / corner handles = resize (independently horizontal or vertical),
 // right-click = reset a box, Snap, Esc/Done — but works in screen space over the
-// live courtroom and persists to config.ClassicLayout.
 
 import (
 	"fmt"
@@ -158,19 +156,8 @@ func (a *App) ensureClassicOv() {
 
 // fracPx resolves one stored window-fraction against an extent, rounding to the NEAREST
 // pixel instead of truncating.
-//
-// Truncation does not round-trip. float64(x)/float64(e)*float64(e) is only guaranteed to
-// be within one ulp of x, and whenever that ulp falls short int32() throws a whole pixel
-// away: measured over every x < e for a dozen common window sizes, 346 positions came
-// back one pixel short, and the stock AO2 canvas width (714) loses roughly one position
-// in six. A mouse drag travels far enough that nobody could ever see it. The arrow-key
-// nudge (layoutnudge.go) moves exactly one pixel, so a dropped pixel is the ENTIRE
-// gesture — a held arrow key would visibly stall against nothing.
-//
 // Rounding is also the fix at the right end: it leaves what is written to disk alone (a
 // drag onto 360 of 1000 px still persists 0.36) and only makes reading it back exact.
-// math.Floor(v+0.5) rather than int32(v+0.5) so a hand-edited negative fraction rounds
-// the same way as a positive one instead of toward zero.
 func fracPx(f float64, extent int32) int32 {
 	return int32(math.Floor(f*float64(extent) + 0.5))
 }
@@ -235,15 +222,6 @@ func (a *App) snapViewportTo43(w, h int32) {
 }
 
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
-//
-// AN EMPTY NAME IS REFUSED. "" is the classic editor's own spelling of "nothing
-// selected" (classicEditKey, and editTarget's whole reason for having a space
-// field), so an unnamed registration would put a hoverable, draggable box in
-// slotReg that compares equal to the unselected state — and its release would call
-// config.SetClassicSlot(""), which keys the persisted layout by name. The only way
-// to reach here with one is a caller passing a computed key, which is exactly what
-// W7's element work will be doing; refusing it costs one compare on an edit-only
-// path.
 func (a *App) regSlot(name string, cur, def sdl.Rect) {
 	if name == "" {
 		return
@@ -437,7 +415,6 @@ func slotResizeEdges(name string) uint8 {
 // control block) would steal the grip. Only when the cursor is over NO box (a grip in
 // the outer margin between/around boxes) does it fall back to the smallest gripped
 // RESIZABLE box. Move-only slots are always skipped. Pure + testable.
-//
 // The per-slot edge rule goes through resizeEdgesFor (edittarget.go) rather than
 // straight to slotResizeEdges: one entry point for both editors' spaces, so the design
 // path's 8-handle probe and this one cannot grow different answers for the same widget.
@@ -541,8 +518,6 @@ func (a *App) classicEditFence() {
 // rows decide it). Old move-only overrides saved W as the full content width,
 // so they land exactly on the default wrap — nothing shifts on upgrade. Pure +
 // alloc-free so the invariant is unit-pinnable.
-// r is the slot's RESOLVED rect (anchoredRect — window pins included); ok
-// mirrors the override's presence.
 func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, dy, clusterRight int32) {
 	clusterX, blockY = pad, defY
 	contentW := w - 2*pad

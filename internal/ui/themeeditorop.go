@@ -2,25 +2,10 @@ package ui
 
 // THE UNDO STACK (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7
 // ("ONE undo stack over ONE document") and §3.2's keyboard map.
-//
-// ONE STACK, ONE DOCUMENT, ONE MUTATION PATH. The user's model is "undo the last
-// thing I did", and cross-domain mutations are the norm in an editor of this shape:
-// paste-style writes colour AND font AND effect, applying a preset writes
-// everything, a marquee drag writes twelve rects. Separate per-domain stacks make
-// Ctrl+Z ambiguous, which is the modal misery the brief forbids in as many words.
-//
-// AN OP IS A VALUE — no pointers, no closures, no method values. That is not
-// stylistic: a closure per op ALLOCATES, and this ring is written to on the render
 // thread from a drag that fires every frame. themeslots.go:105 states the same rule
-// for the shipped editors' tables. Everything an op needs to be undone is packed
-// into two fixed-size editValues plus an interned string id, so
-// [themeEditUndoCap]themeEditOp is a plain array on App and pushing to it cannot
-// heap-allocate. Gate: TestUndoRingIsCappedAndNeverAllocatesAfterWarmup.
-//
 // EVERY MUTATION RETURNS ITS OWN INVERSE. themeDoc.apply reads the CURRENT value
 // into op.before before writing op.after, so undo is "write before" and redo is
 // "write after" — one code path, and a field physically cannot be edited without
-// producing an undo entry (themeeditordoc.go carries that argument at the funnel).
 
 import "time"
 
@@ -63,12 +48,6 @@ type editStrID int16
 const editStrNone editStrID = 0
 
 // editValue is one field's value, in a FIXED SIZE, for every field kind.
-//
-// Four int32s carry a rect (x, y, w, h) or a single scalar in i[0]; four bytes
-// carry an RGBA; one interned id carries a string. A union rather than an
-// interface, because an interface field would box every int and allocate on a path
-// that runs per frame during a drag.
-//
 // Which lanes a field uses is the FIELD's business, not this type's — editFieldGet
 // and editFieldSet are the only two places that know, and they are each other's
 // inverse by construction (TestEveryInspectorFieldIsUndoable pins the round trip).
@@ -152,19 +131,6 @@ const (
 	// (mediaRowValue), and an EMPTY after removes it — which is what makes "undo an
 	// image intake" and "delete a declared image" the same code path, exactly as
 	// opFontFamily does for a face.
-	//
-	// IT IS ALWAYS GROUPED WITH THE ELEMENT THAT DRAWS IT (thememediaintake.go): a
-	// declared image with nothing pointing at it still costs the theme's art budget,
-	// so an undo that took back the element and left the declaration would leave the
-	// budget bar counting a picture nobody can see. One group, one Ctrl+Z.
-	//
-	// THE CARRIER KEEPS THE LINE until the next full rewrite, and that is the same
-	// limitation opSlotReset carries: INIDoc can remove a SECTION
-	// (RetireElementSection's route) but not a KEY, so a removed row disappears from
-	// the model — which is what the plan, the budget bar and the canvas all read —
-	// while the file keeps the text until the format grows a key removal. Stated
-	// here rather than discovered later; it is a stale declaration of a file that is
-	// still in the folder, not a corrupt one, and the reader accepts it.
 	opMediaRow
 	// editOpKindCount sizes the census tables; never a real kind.
 	editOpKindCount

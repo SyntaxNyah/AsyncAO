@@ -3,21 +3,7 @@ package ui
 // Macro engine + built-in server account login. The login is for ANY
 // /login account system — member perks, donator ranks, mod powers alike
 // — not just staff auth.
-//
 // A macro is a sequence of OOC lines sent in order with a fixed pace
-// (macroLineDelay) — enough for prompt-style flows like Akashi's
-// two-step login ("/login" → server prompts → "user pass"). Lines go
-// out through the normal OOC send with the user's OOC name, falling
-// back to a sticky random "AsyncAO<1-200>" when none is set (servers
-// reject empty OOC names; commands and macros must always be sendable).
-//
-// The built-in login knows the two wire shapes in the wild:
-//   - Akashi:                       "/login" then "<user> <pass>"
-//     (the credential line answers Akashi's prompt and is NOT echoed
-//     into OOC by the server, so nothing leaks)
-//   - Nyathena/KFO/Athena/Whisker:  "/login <user> <pass>"
-// The flow picks itself from the server software announced in the ID
-// handshake; unknown servers get the one-line form (the common wire).
 
 import (
 	"fmt"
@@ -39,17 +25,6 @@ const (
 	macroQueueCap = 32
 	// oocSendMinGap is the HARD floor between two automated OOC sends, enforced
 	// at drain time so a backlog can never leave as a burst.
-	//
-	// Servers flood-guard OOC per IP and KICK on breach, and the kick arrives as
-	// a bare close with no reason: Nyathena's pktOOC calls checkIPOOCRateLimit
-	// (ooc_rate_limit, commonly 4 per second) and CheckRateLimit
-	// (message_rate_limit, commonly 10 per 7 s ≈ 1.4/s) and on either breach runs
-	// KickForRateLimit, which queues its explanation ASYNCHRONOUSLY but closes
-	// SYNCHRONOUSLY — so the reason races off the wire and the client only sees
-	// the socket shut. One second keeps us under the tighter message_rate_limit
-	// even while draining a full queue back-to-back, and still lets a login macro
-	// finish quickly. Deliberately slower than macroLineDelay: being kicked is far
-	// worse than a macro taking an extra beat.
 	oocSendMinGap = time.Second
 	// defaultOOCNameRange is the N in the "AsyncAO<N>" fallback name.
 	defaultOOCNameRange = 200

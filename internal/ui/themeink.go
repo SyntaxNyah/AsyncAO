@@ -7,34 +7,14 @@ package ui
 // (../AO2-Client/src/courtroom.cpp:1223-1225 and :1300). AsyncAO parsed all
 // eight identifiers' colours and then used exactly two of them — showname and
 // message — so a theme that coloured its OOC log or its track list was ignored.
-//
-// Two rules shape everything here.
-//
-// CANVAS ONLY. These are AO2 widgets, and AO2's widgets cannot exist outside the
-// courtroom design canvas at all: set_size_and_pos hides any widget the theme is
 // silent about (courtroom.cpp:1334-1338), so an off-canvas copy of ui_music_list
-// is not representable there. The ink is therefore gated on a canvasInk
-// PARAMETER passed down from the draw site, never a per-frame App latch — a
-// torn-off tab draws its music/area list AFTER the courtroom pass (torntabs.go),
-// and a latch would still read true and paint canvas ink into floating chrome.
-//
 // READABILITY. AO2 gets away with colours AsyncAO cannot copy verbatim, because
 // its legibility for the list widgets comes from a source we deliberately do not
 // paint: opaque per-ROW brushes. found_song_color / missing_song_color are
 // applied with treeItem->setBackground(0, ...) at courtroom.cpp:1771/1775, and
-// the seven area_*_color brushes (read at :1177-1183) at :1851-1882. Those are a
-// non-goal and not out of laziness — AO2's found/missing split is
-// file_exists(get_real_path(get_music_path(i_song))), a synchronous LOCAL disk
-// stat PER ROW, which a streaming client cannot reproduce without violating hard
-// rule 2. So a theme's black track-list ink lands on our unpainted background
-// instead of AO2's pale green brush, and the same contrast guard the chatbox ink
-// already uses drops it when the gap is too small.
-//
 // Measured on the theme this issue came from (aceattorney2x): its
 // courtroombackground is luma 17 under ic_chatlog, 139 under server_chatlog and
 // 44 under music_list. So server_chatlog_color = 0,0,0 is kept — a real
-// readability win over the white we drew before — while music_list_color = 0,0,0
-// is dropped, because black on 44 is invisible without AO2's row brush.
 
 import (
 	"fmt"
@@ -93,7 +73,6 @@ const (
 // (hard rule 2 — no decode-buffer access from the render thread). Cost is one
 // strided sample per element per theme apply, the same shape as the chatbox
 // skin's.
-//
 // MUST be called after applyAO2DefaultRects, so an element that gets its rect
 // from AO2's stock defaults is measured at the place it will actually draw.
 func (res *themeApply) sampleThemeBackdrops() {
@@ -149,17 +128,9 @@ func designRectToArt(r, court theme.Rect, art image.Rectangle) image.Rectangle {
 // guardThemeInk drops per-element ink that has no contrast against what it will
 // actually be drawn on, and appends a line to the theme's debug-log report
 // naming every element it dropped and the luma it measured.
-//
-// Runs on the RENDER THREAD (from landThemeFonts) and not beside the sampling,
-// because an element with no art behind it is compared against ColPanel — and
-// ColPanel is only final once applyThemePalette has landed this theme's
-// stylesheet, which pollThemeApply does immediately before. What is left here is
-// integer arithmetic on a landed struct.
-//
 // On failure the element DROPS to the kit colour rather than being hue-lifted
 // into readability: lifting 0,0,0 yields a hue-free grey that is neither the
 // theme's intent nor the client's, and both existing guards (the chatbox skin's
-// and applyThemePalette's kit-wide floor) drop for the same reason.
 func guardThemeInk(res *themeApply, tbl *themeFontTable) {
 	var dropped []string
 	for el := range tbl.e {

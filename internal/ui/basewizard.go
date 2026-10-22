@@ -2,25 +2,7 @@ package ui
 
 // Settings ▸ Assets ▸ "Use my own AO files…" — the guided way to point AsyncAO
 // at a base folder of your own (issue #72).
-//
-// WHY A WIZARD RATHER THAN THE ROWS UNDER IT. The controls it fronts are all
-// still there, and they are correct; they are just not a thing a sprite maker
-// can act on. Setting this up used to mean reading three radio labels, deciding
-// between them before knowing what any of them would do, typing an absolute path
-// into a text field with no picker, pressing Add, and then noticing — or not —
-// a yellow line further down saying the folder was configured but not being
-// used. Nothing on that page ever told the user what was in the folder they
-// named, so a typo, a folder one level too high, and a correct setup all looked
-// the same.
-//
-// So the panel keeps ONE button, and everything else happens here: pick, see
-// what was found, choose how it is used, apply. The order matters — the mode
-// choice comes AFTER the report, because "never stream" is only a safe answer
-// once you can see the folder actually holds a base.
-//
 // It changes nothing until "Use this folder". Cancel is always a full no-op:
-// browsing, scanning and re-picking are all read-only, which is what makes the
-// report worth showing before the commit rather than after it.
 
 import (
 	"path/filepath"
@@ -107,11 +89,8 @@ func (w *baseWizardState) setBasePath(path string) {
 // result is tagged with the path it scanned, and pollBaseScan re-kicks when a
 // superseded one lands — the same reconcile-on-landing shape applyMountLayer uses
 // for the mount index, and the reason neither needs a queue.
-//
 // BOTH the path and the channel are passed as arguments, so the goroutine holds
 // no reference to w at all and the only shared object left is the channel itself.
-// Reaching through w for the channel instead is a data race the moment anything
-// reassigns the struct, which is exactly what the race detector caught.
 func (w *baseWizardState) kickScan() {
 	if w.scanning || w.path == "" {
 		return
@@ -137,16 +116,9 @@ func (w *baseWizardState) pollBaseScan() {
 
 // baseWizardTakesDrop gives the OPEN wizard first refusal on a dropped path,
 // reporting whether it consumed the drop.
-//
-// A modal that says "or drop a folder here" has to mean it. Without this the
-// drop falls through to the Settings screen's default arm, which points the
-// user's THEME ROOT at the dropped folder — the exact silent-wrong-action class
-// dropclaim.go was written to end, arriving by a different door.
-//
 // Global claims still win: a .aotheme or a recording dropped on the open wizard
 // belongs to HandleFileDrop, and stealing it here would resurrect the two-owners
 // bug from the other side. Anything unclaimed is a folder pick, including a .zip,
-// which is a mountable pack.
 func (a *App) baseWizardTakesDrop(path string) bool {
 	if !baseWizard.open || claimDroppedFile(path, settings.importArmed) != dropClaimNone {
 		return false
