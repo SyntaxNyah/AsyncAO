@@ -20,11 +20,11 @@ func TestCloseTopOverlay(t *testing.T) {
 
 	// Priority: a confirm modal closes before a floating panel.
 	a.showMessages = true
-	a.banBoxKind = 1
+	a.banBox.kind = 1
 	if !a.closeTopOverlay() {
 		t.Fatal("should close the modal")
 	}
-	if a.banBoxKind != 0 {
+	if a.banBox.kind != 0 {
 		t.Error("ban confirm should close before the panel")
 	}
 	if !a.showMessages {

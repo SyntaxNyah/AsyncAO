@@ -133,13 +133,13 @@ var panelSlotTable = []panelSlot{
 	// The mod dashboard hides while its own ban box is open (they share the modWin
 	// draw slot in drawFloatingPanels) — match that so the census never carries a
 	// panel that isn't on screen.
-	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBoxKind == 0 }},
+	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBox.kind == 0 }},
 	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
 	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
 	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
 	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
 	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
-	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
+	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBox.kind != 0 }},
 	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
 	{slotPanelClient, func(a *App) *floatWin { return &a.wins.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
 	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
@@ -437,8 +437,8 @@ func (a *App) closeTopOverlay() bool {
 		a.pendingCloseTab = nil
 	case a.showQuitConfirm:
 		a.showQuitConfirm = false
-	case a.banBoxKind != 0:
-		a.banBoxKind = 0
+	case a.banBox.kind != 0:
+		a.banBox.kind = 0
 	case a.showReset:
 		a.showReset = false
 	// The two LAYOUT EDITORS, immediately below the blocking window modals above and
@@ -701,7 +701,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
-	if a.showModDash && a.banBoxKind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
+	if a.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
 		return true
 	}
 	if a.showDebugPanel && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
@@ -713,7 +713,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
 		return true
 	}
-	if a.banBoxKind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
+	if a.banBox.kind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
 		return true
 	}
 	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
@@ -1035,7 +1035,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.showPair {
 		a.drawPairPanel(w, h, &pressed)
 	}
-	if a.showModDash && a.banBoxKind == 0 { // the dashboard hides while its ban/kick box is open (below)
+	if a.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
 	}
 	if a.showDebugPanel {
@@ -1078,7 +1078,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	// The ban/kick box draws last = topmost (it's the focused destructive action). It's drawn
 	// INSTEAD of the dashboard (above), which mirrors the old blocking modal that hid the dashboard
 	// — only now the courtroom behind stays live, so the mod can drag it aside and keep chatting.
-	if a.banBoxKind != 0 {
+	if a.banBox.kind != 0 {
 		a.drawModDashBanBox(w, h, &pressed)
 	}
 	// Live-magnet alignment guides LAST — the full-length green hairlines drawn
