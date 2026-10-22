@@ -25,25 +25,9 @@ import (
 // independently, which is how the two drifted apart in the first place (a
 // selection that always measured the row at plain weight while the draw put
 // a BOLD speaker on it — "select empty space past the text").
-//
-// ok=false covers every case drawLogLineNamed's old inline gate fell through
-// on: no speaker, name colours and bold both off, the speaker not found in
-// the line, a line no single face covers (or that needs the emoji/mixed-
-// script raster), or either segment's width lookup itself failing — every one
-// of those draws (and must measure) the WHOLE line at plain weight via
-// a.labelEmoji, never a partial bold span.
-//
-// boldEnd is a BYTE offset into line (nameStart+len(speaker), matching
-// strings.Index's own unit) so callers slice line directly; a caller that
-// needs a rune offset converts once with utf8.RuneCountInString, same as the
-// rest of this file already does for wrap indices.
-//
 // Both width lookups are proven to succeed HERE, before either drawLogLineNamed
 // or logPrefixWidth commits to anything — the old code drew the "pre" segment
 // and only THEN checked whether the speaker segment would measure, so a rare
-// SizeUTF8 failure on the speaker left "pre" painted once and the whole line
-// painted again on top of it via the plain-weight fallback (a real double
-// draw, not merely a mis-measurement).
 func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameOn, bold bool) (nameStart, boldEnd int, ok bool) {
 	if speaker == "" || !(nameOn || bold) {
 		return 0, 0, false
@@ -169,29 +153,7 @@ func (a *App) logLineText(which, i int) string {
 // the two can never disagree about where a row's bold speaker span ends. Used
 // only for the two partial-end lines of a selection (interior lines fill the
 // whole column, so they need no measurement).
-//
 // Before the bold-aware split (see git history), the selection side always
-// measured at plain weight regardless of what drew — a named row's true
-// on-screen width (bold speaker + plain message) was systematically
-// under-measured by the bold/plain advance delta, so the mouse had to travel
-// past the last glyph into empty space before hitTestRune's binary search
-// would conclude the line was fully covered ("you have to select empty space
-// past the text to select it all").
-//
-// Every partial-row width here goes through devTextWidthWeight, NOT
-// fontTextWidthWeight (the plain c.font.SizeUTF8 measure) — the same two
-// steps (device-face SizeUTF8, uiLogicalFromDevice fold) the row's actual
-// draw performs in textTextureBold/cachedText.logicalW(). The two faces are
-// independently-hinted FreeType rasterizations at different point sizes and
-// agree exactly only at textDevPct==100; at any fractional UI scale a
-// logical-only measure drifts from the real glyph advances, growing with how
-// far into the row the offset reaches, until a long wrapped row's highlight
-// and clipboard copy land on visibly different runes than the ones drawn
-// (measured on the MOTD, the longest text in a typical log, but the row-
-// relative mechanism is identical for IC and OOC and for any long row of
-// either). Both branches below fold with the SAME c.textDevPct, so an
-// interrupted bold+plain split still sums to one consistent device-exact
-// prefix width.
 func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes []rune, off int) int32 {
 	c := a.ctx
 	if font == nil || off <= 0 {

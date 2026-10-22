@@ -156,12 +156,9 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		// "Smooth log scrolling", pin the VISUAL offset to the new bottom here, which
 		// makes easeICScroll's "already there" branch take over (no NoteAnimating, so
 		// the follow also costs no extra frames at a low idle cap).
-		//
 		// Guarded on `a.icScroll != maxScroll` (the log actually GREW this frame) and
 		// on the user not having moved the offset first, so a wheel step that lands
 		// exactly at the bottom, a scrollbar drag, and VScrollbar's clamp of a
-		// capped/cleared log all keep whatever smoothing they have today. Only the
-		// on-new-message follow changes.
 		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
 			a.icScrollVis = float64(maxScroll)
 		}
@@ -381,12 +378,6 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 // drawOOCLogList renders the OOC scrollback into rect (themed
 // server_chatlog element; the classic OOC tab keeps its own copy with the
 // identity fields).
-//
-// canvasInk carries the caller's "am I the themed server_chatlog element", the
-// same contract as drawICLogList. Both of today's callers are the themed pass,
-// but the flag stays explicit: drawOOCPanel is the chrome twin of this function
-// and passes ColText, and nothing should be able to grow a third caller that
-// leaks canvas ink into chrome without saying so.
 func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	// See drawPlayerList.
@@ -470,12 +461,9 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 // link). The id is what the draw tints by, so the wrapped pieces of ONE
 // hard-split link light up together while a different link on the same row stays
 // plain.
-//
 // #38: this used to resolve to a RUN OF ROWS sharing the row's single URL, which
 // tinted the whole message and made only a paragraph's first link clickable. The
 // hit test is now horizontal too — against the span's pixel range, measured at
-// wrap time in the row's own drawing face — so neighbouring text and a second
-// link on the same row are correctly missed.
 func (a *App) oocHoverSpan(list sdl.Rect, scroll, lineH, wrapW int32, n int) (int, int32) {
 	c := a.ctx
 	if lineH <= 0 || !c.hovering(list) || c.mouseX >= list.X+wrapW {
@@ -525,11 +513,8 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 // name-split / emoji raster inside drawLogLineNamed keep working untouched. The
 // clip keeps the list's vertical bounds so a partially scrolled top/bottom row
 // still cuts at the rect edge.
-//
 // Per-frame cost: the common (nothing hovered) case is the single draw it always
 // was; a hovered link costs at most two extra clipped draws on its rows.
-// base is the row's plain-text colour: the themed server_chatlog_color when this
-// is the canvas panel, ColText when it is the chrome OOC box (drawOOCPanel).
 func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool, base sdl.Color) {
 	c := a.ctx
 	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
@@ -728,7 +713,6 @@ const areaWrapMaxLines = 3
 // query came from. One shared slot would be worse than none: each drawer would
 // evict the other's entry every frame, so the O(N) filter scan AND the whole-list
 // re-wrap would run twice per frame forever, and the re-wrap allocates.
-//
 // Two slots is the exact number of simultaneous drawers: a tab that is torn off
 // leaves the docked strip (dockedLogTabs), so "docked + torn" cannot happen, and
 // the classic and themed courtrooms are alternatives, never both.
@@ -781,12 +765,6 @@ func (row areaWrapRow) lineCount() int32 {
 // (possibly search-filtered) areas, rebuilding only when the ARUP state
 // (areaInfoSeq), search query, card width, zoom, or font chain changed —
 // never per frame (mirrors icWrapped in qol.go).
-//
-// query is passed IN, already lowered and trimmed, rather than read from
-// a.areaSearch here: the themed copy of this list is filtered by AO2's
-// music_search field instead (drawAreaList's duplicate-box rule), and a local
-// read would word-wrap a different set of areas than the count line above it
-// promised. slot is the matching memo slot (areaQuerySlotOwn/Themed).
 func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) []areaWrapRow {
 	m := &a.areaWrap[slot]
 	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
@@ -845,20 +823,9 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 // separator) when nothing has been reported at all — info's fields all sit at
 // their "unknown" zero value, or info itself is nil (the area index is out of
 // range, e.g. a partial snapshot mid-connect).
-//
-// The leading "  ·  " on a non-empty result is deliberate: every caller glues
-// this onto a headline it already has (the Areas tab's population count in
-// areaWrapped, the Players tab's headcount in drawAreaHeaderRow) rather than
-// knowing in advance which fields are set — see areaWrapped above and
-// drawAreaHeaderRow in playerlist.go, the two production call sites
-// share it. A caller with
-// nothing else on the line (drawCurrentAreaStatusStrip) trims it back off.
-//
 // AsyncAO deliberately keeps its own simplified status colour buckets
 // (areaStatusColor below) rather than adding AO2-Client's full
 // LFP/CASING/RP/GAMING/RECESS 5-way split (courtroom.cpp:1858-1877) as a
-// SECOND vocabulary for the Players tab — one status vocabulary across both
-// tabs beats upstream parity here.
 func arupStatusText(info *courtroom.AreaInfo) string {
 	if info == nil {
 		return ""
@@ -892,16 +859,6 @@ const (
 // themedListSearchDrew reports whether the themed courtroom painted AO2's own
 // `music_search` field this frame, i.e. whether the list panel already has a search
 // box above it.
-//
-// It re-derives drawCourtroomThemed's condition rather than being handed the answer,
-// because drawAreaList is called from THREE places (the classic docked tab in this
-// file, a torn-off Areas tab in torntabs.go, and the themed music_list panel in
-// theme_layout.go — AO2 has no separate area_list rect to draw into; switch_area_music
-// swaps the two views inside music_list) and only the last is inside the canvas — so
-// the flag would have to be threaded through every one of them. a.themeLay is the
-// very cache drawCourtroomThemed lays out from
-// (themeLayoutIn returns &a.themeLay), so the two cannot disagree; a stale cache is
-// impossible because the layout is rebuilt before the pass that calls us.
 func (a *App) themedListSearchDrew() bool {
 	if a.panelHidden(panelLog) {
 		return false
@@ -945,12 +902,9 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// AO2's own analogue of them is the row BACKGROUND brush
 	// (courtroom.cpp:1851-1882), not the text colour, so the theme's single
 	// foreground key has no claim on them.
-	//
 	// A theme that sets the key therefore paints empty and populated names alike,
 	// which is AO2's own behaviour: it has ONE area_list foreground and puts the
 	// population in the row's second COLUMN as text. AsyncAO's detail block already
-	// carries that count, so the information survives the flattening — and a theme
-	// that sets no colour keeps the dim/full pair exactly as before.
 	areaIdleCol := a.elemInkOr(elemAreaList, canvasInk, ColTextDim)
 	areaLiveCol := a.elemInkOr(elemAreaList, canvasInk, ColText)
 	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Lives HERE
@@ -984,15 +938,6 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// Search filter (#20 — parity with the Music tab beside it): type to narrow
 	// a hub server's hundreds of areas. Memoized so the O(N) scan runs only when
 	// the query or the Areas list changes (refreshAreaFilter).
-	//
-	// DUPLICATE-BOX RULE. Inside the theme's design canvas the panel already carries a
-	// search field: AO2's own `music_search` rect, which drawCourtroomThemed paints in
-	// its own band with the A/M (switch_area_music) button beside it. Two search boxes
-	// for the same panel, in a 212 px music_list, is the debloat this pass exists to
-	// remove — so when that field is on screen it drives the AREA filter too and this
-	// row shrinks to its match count alone. Everywhere the theme field is absent (the
-	// classic docked tab, a torn-off Areas tab, a theme that declares no music_search)
-	// the field is drawn here exactly as before.
 	searchExternal := canvasInk && a.themedListSearchDrew()
 	// The header row is SPLIT (areamenu.go), not laid out offset by offset: the Areas
 	// view's ⋮ goes at the right end and the search field and the counter are measured
@@ -1120,11 +1065,6 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 // (paced asks, 64 px thumbnail icons, 404 cache), same search, same
 // scrollbar, same 3 s hover preview. Picking one iniswaps outgoing
 // messages into that folder; the server slot is untouched.
-// wardrobeFolders lists the distinct folder names in the current menu, in
-// first-seen order (stable, no per-frame sort) — the folder icons at the
-// wardrobe's top level. Membership-derived: a folder exists exactly while a
-// character is filed in it (filing the first creates it, emptying it removes
-// it), so there's no separate folder table to keep in sync.
 func (a *App) wardrobeFolders() []string {
 	var out []string
 	seen := map[string]struct{}{}

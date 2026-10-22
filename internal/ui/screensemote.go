@@ -47,15 +47,6 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 // that was just picked, so "pinned" means "keep showing whatever's currently
 // selected" instead of freezing on whichever cell the hover/right-click that
 // opened it happened to land on (playtest: "stuck on one you called it on").
-//
-// Both guards matter: a.previewBase == "" leaves a CLOSED box closed — picking
-// an emote must never spontaneously pop the preview open for someone who
-// never touched it, or this stops being a fix and becomes an annoyance. And
-// !previewIsPinned() leaves an unpinned OPEN box to its existing close-on-click
-// contract (closeSpritePreviewOnLeave / dismissPreviewOnClick) — a bare hover
-// preview still vanishes on a click.
-// One boolean short-circuit, so a click with the box closed (the common
-// case) costs nothing beyond the field read already sitting in a register.
 func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
 	if a.previewBase == "" || !a.previewIsPinned() {
 		return
@@ -65,23 +56,6 @@ func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
 
 // drawSpritePreviewFallback paints the shared sprite-preview box on the courtroom
 // passes where its PRIMARY draw site — the tail of the emote grid — did not run.
-//
-// The box has always been drawn from inside drawEmoteRow / drawEmoteGridThemed,
-// which is fine for the hover preview that grid itself triggers. It stops being
-// fine now that OTHER surfaces open the box: right-clicking an effects-dropdown
-// row (effectspicker.go) sets previewBase from the IC bar, and the grid is simply
-// not drawn when the user hid the emote panel (ctrl "Emotes" off), when a themed
-// design.ini declares no `emotes` rect, or while char.ini is still loading (both
-// painters return early on charINIBusy). In those states the box was armed,
-// PINNED, and never painted — an invisible modal that only its own x could close,
-// except that its x was invisible too.
-//
-// Exclusive by construction: it draws only when the grid path did NOT, so the box
-// is never composited twice in a frame. Free when nothing is previewing.
-//
-// themed picks the dismissal the layout's own grid site uses, so the fallback is
-// behaviourally identical to the site it stands in for (the themed grid dismisses
-// on click only; the classic one runs the full leave-corridor).
 func (a *App) drawSpritePreviewFallback(themed bool) {
 	if a.previewBase == "" || a.emoteGridDrewPreview {
 		return
@@ -320,11 +294,9 @@ func (a *App) emotePageCounter(page, pages, n int) string {
 // one heap allocation per frame for as long as the tab is open — invisible to
 // the classic whole-screen gate (it only ever draws the IC-log tab) but measured
 // the moment the themed gate put the music/areas panel on screen.
-//
 // Each list owns its OWN memo rather than sharing one slot: the Music and Areas
 // panels can be visible at once (a torn-off tab beside a docked one, or a theme
 // that gives them separate rects), and one shared slot would then rebuild twice
-// every frame — worse than the leak it replaces.
 type shownTotalMemo struct {
 	label        string
 	shown, total int
@@ -527,12 +499,9 @@ const (
 // the typed line clips (and the keep-caret-visible scroll turns over) short of
 // them instead of running underneath: the reported symptom was typing straight
 // through the counter until the digits were unreadable.
-//
 // It is deliberately the SAME arithmetic drawMsgCounter uses, read off the same
 // two helpers, rather than a second estimate — a reservation that disagrees with
 // the draw would reintroduce the overlap it exists to prevent (or waste room).
-// Returns 0 when neither overlay is live, in which case ReserveFieldTail is a
-// no-op and the field keeps every pixel it had before.
 func (a *App) icFieldTailReserve(counterOn bool) int32 {
 	band := a.icMutedBandW()
 	if counterOn {
@@ -916,14 +885,6 @@ const ghostAlpha = 110
 // message), and your idle sprite at YOUR offsets — drag it to set them
 // (the numeric rows above mirror live). Same offset math as the real
 // viewport: percent of stage width/height.
-//
-// grip is the panel's bottom-right RESIZE corner, whose top-left quadrant
-// overlaps this stage: the grip is floatGripSz (16) square in the panel's
-// corner and pv runs to pad (8) short of it, so 8x8 logical pixels belong to
-// both. floatWinResize consumes that press through the shared `pressed` flag,
-// but this editor armed its drag off raw c.mouseDown and therefore ALSO started
-// dragging — every panel resize silently rewrote the pair offsets, which is how
-// an offset nobody typed ends up at 53%.
 func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	c := a.ctx
 	// CLIP THE STAGE. A character sprite is fitted to the stage HEIGHT with its
@@ -934,10 +895,6 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	// arithmetic because ui_vp_player_char is a CHILD WIDGET and Qt clips children
 	// to the viewport; nothing clipped here, so the ghost painted straight over the
 	// panel edge and out onto the courtroom, the music list and the IC bar.
-	//
-	// pushClip, not a raw Ren.SetClipRect: hovering() honours the mirrored clip, so
-	// the drag/press hit tests below are bounded by the same rectangle the pixels
-	// are (the raw call clips DRAW only — the repo's known clipped-grid class).
 	prevClip, hadClip := c.pushClip(pv)
 	defer c.popClip(prevClip, hadClip)
 	// Real background behind the ghosts, so you place your sprite against the
@@ -965,14 +922,6 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		// sprite — once a paired message arrived. Before that we ask their char.ini
 		// for the pose they actually stand in (iniIdleAnimFor: the first [Emotions]
 		// anim, AO2's emote 1) rather than minting the "normal" literal at them.
-		//
-		// It was the literal, and for the partner it was the WHOLE preview: your own
-		// ghost has been the selected emote's idle, but theirs had no
-		// such signal, so every pack whose poses are spelled SNormal/HSmug previewed
-		// as an empty box with a name in the middle. The char.ini this reads was
-		// already being fetched for their blips, skin and showname, so honesty here
-		// costs no extra probe; until it lands the conventional idle is still the
-		// answer, which keeps the common pack at one request.
 		gx, gy := 0, 0
 		anim := a.iniIdleAnimFor(name, ghostFallbackEmote)
 		base := a.urls.Emote(name, anim, courtroom.EmoteIdle)
@@ -1087,19 +1036,9 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 // ghostSpriteRect is where one ghost lands on the miniature stage: the sprite
 // scaled to the stage HEIGHT with its own aspect ratio, centred, then slid by
 // the pair offsets as a percentage of the stage.
-//
-// It is deliberately the SAME rule the live viewport draws a character with, and
-// deliberately NOT the same function as the shout bubble's fit
-// (render.splashFitRect): AO2 gives the two layers one shared height-factor
-// scale but only the character carries an offset (courtroom.cpp
-// on_pair_offset_changed → move()), so folding them into one helper would let a
-// change to the objection bubble move everybody's pair placement. Two rules,
-// two homes, one test each.
-//
 // The returned rect CAN be wider than pv — that is correct, and it is why the
 // caller clips. A sprite authored 16:9 at a 3:4 preview column overhangs by
 // design; cropping it here instead would make the preview lie about what the
-// real viewport will show, which is the one job this box has.
 func ghostSpriteRect(pv sdl.Rect, srcW, srcH int32, offX, offY int) sdl.Rect {
 	if srcH <= 0 {
 		return sdl.Rect{X: pv.X, Y: pv.Y}
@@ -1393,10 +1332,6 @@ func (a *App) sendIC() {
 	// leading space in the IC input to separate sentences. We prepend that space at
 	// packet build instead of in the field, so your typed line (a.icInput, read by
 	// recordSentIC/icPendingSent below) stays clean — the wire result is identical.
-	// A blankpost (" ") already starts with a space, so it's untouched; AsyncAO
-	// receivers de-glue on display and skip an already-spaced fragment, so
-	// AsyncAO->AsyncAO never double-spaces. Applied last: the invisible markers ride
-	// the tail, and StripChatMarkup inside the helper sees past any funColor markup.
 	if a.icAdditive {
 		text = courtroom.AdditiveOutgoingLeadingSpace(text)
 	}
@@ -1467,12 +1402,6 @@ func (a *App) sendIC() {
 	// (area.set_next_msg_delay), so an optimistic clear cost the whole typed
 	// line whenever two people sent at once and the other side won the race.
 	// The echo handler is prefix-aware (issue #56): if the box still starts
-	// with this exact line, only the sent prefix is consumed and whatever the
-	// user typed on top of it during the round trip survives — an unrelated
-	// edit (not a continuation of this line) still survives whole, same as
-	// before.
-	// evidPresent stays armed for the same reason (AO2 resets it on the echo):
-	// a swallowed send must not disarm the evidence you presented.
 	a.icPendingSent = a.icInput
 	// The ONE-SHOT arms clear here, exactly where AO2 clears them — beside
 	// objection_state the moment the packet is built (courtroom.cpp:2327-2329,
@@ -1528,14 +1457,6 @@ func (a *App) clearPreAfterSend() {
 // with a prefix-aware check (issue #56 — a plain exact-match gate discarded
 // the pending snapshot on ANY edit, including simply continuing to type the
 // next line during the round trip, and the box was then never cleared):
-//   - the box still STARTS WITH the sent line → strip just that prefix,
-//     keeping whatever the user typed on top of it while waiting. An
-//     unchanged box (the box still IS exactly the sent line) is the
-//     zero-length-remainder case of this same rule, so it clears too —
-//     matching AO2-Client's unconditional clear for that case.
-//   - anything else (a genuine, unrelated edit — e.g. the swallowed-message
-//     recovery case) → leave it untouched, exactly as before.
-//
 // A send the server swallowed never echoes, so everything stays put for an
 // immediate re-Enter regardless of which branch a LATER echo would have hit.
 func (s *sessionState) noteOwnICEcho() {
@@ -2006,7 +1927,6 @@ type icColorSel struct {
 // unfocuses it, dropping the live selection before the pick lands next frame. So we
 // snapshot here while it exists; once the dropdown is open the field is unfocused,
 // selectionFor returns ok=false, and we leave the frozen snapshot untouched.
-//
 // Alloc-free: selectionFor → fieldSel(utf8.RuneCountInString) is int-only, so the
 // per-frame IC-row alloc gate stays green (the splice runs only on the pick).
 func (a *App) captureICColorSel() {
@@ -2033,23 +1953,9 @@ func (a *App) captureICColorSel() {
 // applyICColorPick is Courtroom::on_text_color_changed, transcribed whole
 // (src/courtroom.cpp:6364-6403) — the IC colour dropdown's handler for BOTH IC
 // bars. Three halves, in canon's order:
-//
-//	:6366-6389  with a selection, wrap it in the colour's markdown_start /
-//	            markdown_end and leave the whole-message text_color alone;
-//	:6391-6401  with no selection, set the whole-message colour
-//	            (applyICColorChoice);
-//	:6402       focus_ic_input — on BOTH branches, because it is the last
-//	            statement of the handler, outside the if/else.
-//
-// The wrap does NOTHING for a colour with no markup characters (c0/default;
-// :6370-6375 qWarning+return). AO2MarkupFor mirrors that: ok is true only for the
-// eight colours (1..8) that carry delimiters, false for palette 0 — so both the
-// wrap and the "no-markup → do nothing" case fall out of the one branch.
-//
 // Only standard palette entries (dropdown index 0..extColorFirst) map to an AO2
 // colour; the AsyncAO-native extras (extended/rainbow/random/custom hex) have no
 // AO2 wire markup, so they always fall through to applyICColorChoice — the
-// no-selection behaviour — rather than inventing new wire markup.
 func (a *App) applyICColorPick(next int) {
 	sel := a.icColorSel
 	a.icColorSel.active = false // consume the snapshot: the next open re-captures
@@ -2078,13 +1984,7 @@ func (a *App) applyICColorPick(next int) {
 // icColorPickOpensWheel reports whether dropdown row next hands the keyboard to
 // the free-hex colour wheel rather than back to the message — the ONE arm of the
 // pick that must not bounce.
-//
 // This is a deliberate divergence from courtroom.cpp:6402, and it is forced:
-// AO2's dropdown has no Custom… row at all (its colour list is the palette and
-// nothing else), so canon never faces the case. AsyncAO's Custom… opens a modal
-// float that owns the keyboard — it carries its own "iccustomhex" text field
-// (colorwheel.go) — and the IC field's Enter SENDS the message. Bouncing here
-// would arm a hidden send under a wheel the user is still dragging.
 func icColorPickOpensWheel(next int) bool { return next == icColorCustomIdx }
 
 // wrapICSelection splices the AO2 delimiters start/end around the [lo,hi) RUNE
@@ -2157,11 +2057,6 @@ const emoteDropdownLabelSep = ": "
 // ensureEmoteChoices rebuilds the emote_dropdown option list when the character
 // or its emote count changes (AO2-Client emotes.cpp:176 —
 // `addItem(QString::number(n + 1) + ": " + get_emote_comment(current_char, n))`).
-//
-// Same plain-field guard as ensureSFXChoices: this is called from a draw site that
-// runs every frame, and building a "<char>:<n>" comparison key would allocate on
-// the settled path.
-//
 // It walks a.emotes, NOT the favourites-filtered a.emoteVisible — the dropdown's
 // index is the emote index that selectEmote takes, so filtering here would make
 // picking row N select a different emote.

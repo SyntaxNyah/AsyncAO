@@ -256,10 +256,6 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 // selection's; activating either clears the other so they never fight over a
 // Ctrl+C. Shared by the classic overlay and the themed chatbox.
 // scrollY is the crawl-follow offset the text is DRAWN with
-// (chatcrawlscroll.go): the hit REGION stays the box, but the rune lookup has to
-// be measured from where the glyphs actually are, or a click inside a scrolled
-// message picks the rune that used to be under the cursor. Zero for every message
-// that fits, which is the overwhelming majority of them.
 func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.Scene) {
 	c := a.ctx
 	pressed := c.mouseDown && !a.chatSelPrevDown
@@ -450,14 +446,7 @@ func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
 // ensureChatRaster (re)rasterizes the current message when the text,
 // color, zoom, wrap width, or skin presence changed — shared by the
 // classic overlay and the themed chatbox.
-//
-// pct is the RESOLVED message scale, passed in rather than computed here because
-// the two callers no longer agree on it: the classic overlay uses messagePct
 // (the theme's declared point size folded with the Text zoom knob, #39), while
-// the themed chatbox folds the theme canvas's scale in on top so the text keeps
-// the ratio to its box that the theme author drew (chatboxfit.go). It is what
-// the raster is built at AND what rasterScale remembers, so a theme swap, a zoom
-// notch or a window resize that moves it re-rasters exactly once.
 func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
@@ -501,10 +490,6 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// without recording rasterText, so every later frame re-entered, failed
 			// identically, and drew NOTHING — a permanently blank chatbox under a
 			// showname that still painted, with no message anywhere and no diagnostic.
-			// Whatever makes one face fail on one machine (a system face the census
-			// found that SDL_ttf can't size, a texture the backend refuses), losing
-			// the player's text silently is never the right answer.
-			//
 			// Arm the plain-label fallback so drawChatOverlay still puts the words on
 			// screen, and say so in the debug log so the next report carries the
 			// actual SDL error instead of "the text is invisible".
@@ -884,12 +869,6 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// block. Un-edited, the content width is w-2*pad, so the wrap structure — and
 	// therefore the block's row count and height — matches the classic layout exactly
 	// (clusterX == pad, y == defY, dy == 0 ⇒ every rect, every wrap edge identical:
-	// the un-edited courtroom stays pixel-identical). An override translates the block
-	// and (Tifera) its WIDTH drives the wrap edge — narrowing re-wraps
-	// the buttons into a taller stack, and the judge strip / emote grid below anchor to
-	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
-	// content-driven. The override is read lock-free; off the edit path this is one map
-	// lookup, no alloc. controlsBlockOrigin is the pure core.
 	ctrlOv, ctrlEdited := a.classic.classicOv[slotControls]
 	var ctrlRect sdl.Rect
 	if ctrlEdited {
@@ -943,18 +922,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// color selector: a swatch previews the active wire color (MS
 	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
 	// showname box OVERRIDES the Settings showname for the session.
-	// The whole IC bar is a movable + resizable slot ("icbar"). Its default now spans the
 	// stage width (vp.W) DIRECTLY under the stage (icBarTop, #8) — the first thing below
-	// the viewport. Everything inside lays out relative to the slot (icBar.X / .W) and the
-	// fH-tall row is centred within the slot height, so a drag moves the bar and a width
-	// resize widens / narrows the text input (still floored at minICInputW). The emoji /
-	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
-	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
-	// the top now, to place the control block below this bar.)
-	// (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
-	// every element below is its own independent movable+resizable slot, so the
-	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
-	// override in prefs is simply ignored; Reset all clears it.)
 	icBar := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
 	rowY := icBar.Y
 	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
@@ -969,19 +937,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// drawICInputRow. It returns whether Enter was pressed. icBar is passed by
 	// value (alloc-free); the chain flows from the DEFAULT positions, never an
 	// override, so freeing one slot never cascades the rest (unchanged behaviour).
-	//
 	// ENTER is the only sender. The shout row ARMS (courtroom.cpp:6048-6127) and
-	// the armed state rides sendIC's own read of a.icShout — it no longer feeds a
-	// modifier straight into a send.
-	//
-	// The send is ALSO gated on the notice box, and this is the one keyboard path the
-	// handleHotkeys guard cannot cover: the field reads Ctx.enter directly, which is
-	// neither a hotkey chord nor pointer state, so neither that early return nor
-	// fencePointer touches it. A BB notice arrives while the session is fully live, so
-	// it can land with the IC field focused mid-sentence — and pressing Enter under a
-	// modal the user is still reading would transmit a real message they did not see
-	// themselves send. The field still takes the keystroke (the draft is not lost); only
-	// the send waits.
 	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.serverNoticeDlg.open {
 		a.sendIC()
 	}
@@ -1074,11 +1030,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 // knobs — from the block origin (clusterX, y). clusterX / y arrive by value and the
 // local x cursor never escapes, so the row stays allocation-free (moved verbatim
 // from drawICControls).
-//
 // The buttons ARM (toggleShout, icarms.go); the armed one wears drawArmedOverlay,
 // standing in for AO2's "*_selected" sprite swap (courtroom.cpp:6062 etc.). It used
 // to return a modifier the caller fed straight into sendIC, which is why a click
-// fired the interjection on the spot.
 func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 	c := a.ctx
 	x := clusterX
@@ -1536,7 +1490,6 @@ func icOptionalDraws(guardOK, hasOverride, editing, hidden bool) bool {
 // the SFX dropdown, then emoji) and each button advances the cursor only when it fits,
 // the LATER buttons (SFX, emoji) are the first to fail this guard on a narrow bar —
 // which is exactly the intended sacrifice order. Factored out (value params, no closure)
-// so the survival math is unit-testable off the SDL path, like icOptionalDraws.
 func icBarButtonFits(barW, used, demand, tailReserve int32) bool {
 	return barW-used-demand >= tailReserve
 }
@@ -1673,16 +1626,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// width for users with a narrower stage ("the IC bar disappeared"). Widths key off the
 	// slot (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no
 	// closure) to keep this per-frame row allocation-free.
-	//
-	// DRAW / DROP ORDER (redesign): Pre, FX, SFX-dropdown, emoji. Pre sits beside
-	// Immediate (AO2-canonical) and FX draws right after it; because row order == survival
-	// order under this drop discipline, drawing Pre and FX EARLY makes them outrank the SFX
-	// dropdown and the emoji button — those two now yield first on a tight bar, so the
-	// default-visible Pre + Text-FX pair survives the 720p bar. On 2.8/additive servers the
-	// +90px Additive toggle can push everything past the bar at 720p (accepted): the sacrifice
-	// order is then emoji → SFX → FX → Pre, and the classic editor override (below) is the
-	// escape hatch to force any dropped button back.
-	//
 	// The message counter no longer reserves any tail width — it draws INSIDE the input's
 	// right edge now (drawMsgCounter), so tailReserve is just the input floor (minICInputW,
 	// a package-level const shared with the layout tests). sfxDDW / preW are package-level too.
@@ -1697,23 +1640,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// would have regressed that guard. Movable slot (#4a), same wrap-not-extract
 	// rule: draws through slotRect, the row cursor advances by the DEFAULT width so
 	// an un-edited bar is pixel-identical and moving it never cascades the rest.
-	// slotRect is alloc-free off the edit path.
-	//
-	// Pre is now a CORE button (redesign): drawing it FIRST (before SFX/emoji)
-	// makes it outrank them, so its guard prices in only its OWN width + the input floor —
-	// SFX and emoji, drawn later, drop first on a narrow bar. This inverts the old
-	// self-sacrifice lookahead (which made Pre yield to the whole SFX+emoji+FX tail); that
-	// was needed only while Pre drew AFTER them. preW (package-level, trimmed from 60) keeps
-	// the Pre+FX pair inside the 720p default bar with margin — see the width table on the
-	// const. Inlined arithmetic (no closure) — this row is inside the whole-screen 0-alloc gate.
-	// OVERRIDE / EDITOR win over the width drop: a dropped button never
-	// reached slotRect, so it never registered a slot and could not be grabbed in the
-	// editor — nor did a saved override force it back. Draw when the width guard passes
-	// OR the user has a saved slot override OR the editor is armed (hidden still hides).
-	// The row cursor still advances by the DEFAULT width (icX += preW+6), exactly as
-	// overridden-Immediate does, so an overridden Pre never cascades the rest and an
-	// un-edited narrow bar stays byte-identical. Comma-ok map read is nil-safe + alloc-
-	// free (the same read slotRect does).
 	_, preOv := a.classic.classicOv[slotICPre]
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
 	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.panelHidden(slotICPre)) {
@@ -1748,14 +1674,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// (#4a). pairFlip is SESSION state that already parks/resets per tab,
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
-	//
-	// Flip is UNCONDITIONAL on flipping servers: no width guard. AO2-Client shows
-	// ui_flip whenever the server feature is present regardless of bar width, and the prior
-	// width-guarded form meant Flip could vanish at any window size, which users found
-	// indistinguishable from the feature being removed. At narrow bars (720p additive) the
-	// IC text input shrinks slightly past the ideal floor; that is the accepted tradeoff for
-	// guaranteed discoverability. SFX/emoji still carry their own width guards; since Flip
-	// now always draws first, the flipDrewOrAbsent priority-latch is no longer needed.
 	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
 	if flipInChain && !a.panelHidden(slotICFlip) {
 		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
@@ -1775,14 +1693,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Override / editor win over the drop (same rule as Pre above). SFX has no
 	// panelHidden gate in the classic row (it never had one) — keep it that way: pass
 	// hidden=false so this stays a pure width/override/edit decision.
-	//
-	// Two-form drop discipline (fixes "the SFX picker vanished, feature removed?"):
-	// the FULL sfxDDW dropdown draws when it fits (or an override/editor forces it);
-	// where it no longer fits, a COMPACT fixed-width "SFX" button draws instead —
-	// same slot, opening the same choice list (the SFX Browser). Only at truly
-	// minuscule widths, where even the compact form can't clear the input floor,
-	// does SFX drop entirely — and the layout-editor override (sfxOv) still forces
-	// it back (the documented escape hatch).
 	_, sfxOv := a.classic.classicOv[slotICSFX]
 	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
 	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)

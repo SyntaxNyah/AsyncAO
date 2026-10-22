@@ -5,11 +5,9 @@ package ui
 // per-player packet (only ARUP area COUNTS), so it's refresh-driven and stamped
 // "as of HH:MM", not live. IPIDs are mod-only data shown in-session — never
 // persisted. The foundation for future mod/user tools.
-//
 // On top of the bare roster this draws: a char-icon per row (the char grid's
 // demand/cache pipeline), role highlights (you / current speaker / friends),
 // Spectator + CM chips, a sort toggle, and — before any /ga — a live ARUP count
-// for the area you're in.
 
 import (
 	"sort"
@@ -149,46 +147,7 @@ func playerSortLabel(mode int) string {
 // rosterMenuThemed is the `themed` answer the roster's ⋮ overflow opens with: it
 // reports whether a THEMED music list — AO2's own music_list element — is the list
 // this menu's rows act on.
-//
-// The roster shares the music panel, so its ⋮ is the SAME menu, and one of that
-// menu's rows is the Volume-sliders view. That row's whole effect is
-// `volMode := a.musicVolMode && !themed` inside drawMusicList (screens.go), so a
-// menu opened with themed=false while the canvas music list is the one on screen
-// offers a row that can never draw anything — and SetMusicVolMode still persists the
-// flip, arming a view the user did not ask for in their next un-themed layout. That
 // ghost/inert control is exactly what musicMenuRowLive's `!themed` guard and #21's
-// parity rule exist to prevent, so the roster has to answer the question honestly
-// instead of hardcoding it.
-//
-// It re-derives the answer rather than being handed it, the way themedListSearchDrew
-// already does (screens.go) and for the same reason: drawPlayerList is called from
-// THREE places — the classic docked Players tab (screens.go), a torn-off Players
-// panel (torntabs.go) and the themed music_list rect (theme_layout.go) — so a
-// parameter would have to be threaded through all three, two of which this panel does
-// not own. a.themeLay is the very cache drawCourtroomThemed lays out from
-// (themeLayoutIn returns &a.themeLay), so the two cannot disagree, and the layout is
-// rebuilt before the pass that calls us, so it cannot be stale either.
-//
-// The clauses are the screen's own dispatch, verbatim:
-//   - themeLay.valid + ThemeLayoutEnabled is what hands the courtroom to
-//     drawCourtroomThemed at all (screens.go). Without it the classic docked panel
-//     drew, its Music tab passes themed=false, and the volume view works there.
-//   - music_list + !panelHidden(panelLog) is the exact gate the themed panel is drawn
-//     behind (theme_layout.go). A theme with no music_list rect — or a hidden log
-//     panel — paints no canvas music list at all.
-//
-// Deliberately NOT gated on a.logTab: the canvas music list is what the row targets
-// whether or not the roster happens to be the view currently up, and gating on the
-// visible view is the same mistake musicMenuRowLive already refuses to make for the
-// roster rows.
-//
-// A torn-off Players panel is floating chrome drawn AFTER the courtroom pass, and
-// under CLASSIC geometry it reads false here — which is right, since a torn Music
-// panel honours volMode. Under a THEME it reads true, and that is the correct answer
-// too rather than a miss: the canvas music list is the one the row would have to
-// paint in, and it discards volMode. The one place the volume view still paints under
-// a theme is a torn-off MUSIC panel, and that panel passes themed=false from its own
-// header (torntabs.go), so the view is never made unreachable — only the ghost is.
 func (a *App) rosterMenuThemed() bool {
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false // classic geometry: this panel is chrome, and so is any torn panel
@@ -228,13 +187,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// together — a theme's music_list rect gives it 212 px — and its Status button
 	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
 	// width. The plan below cannot overlap: it is one cursor.
-	//
-	// Three header rows are now ONE: the mode row (● LIVE / Refresh / Legacy), the
-	// Pairs/Follow row and the "12 here · live" readout are gone from the strip. The
-	// readouts were deleted outright — the roster IS the readout — and every FUNCTION
-	// moved into the ⋮ overflow the Music header already debloated into
-	// (musicheader.go), which this panel shares.
-	//
 	// Labels are built HERE, not in the planner: they come from App state, and
 	// building them at the call site keeps the planner pure (and testable without a
 	// renderer) while allocating no more than the old inline concatenations did.
@@ -422,9 +374,6 @@ func (a *App) rowHeight(row rosterRow) int32 {
 // up to reveal a row above, down to reveal one below — and never negative. viewH
 // is the already-computed visible height (the caller passes r.H, the content
 // region left after the header rows are subtracted), so no extra offset is applied.
-// A missing header (a flat /ga roster, or the area vanished from the snapshot) is a
-// clean no-op. Bounded O(rows) — the same walk class the draw already does to sum
-// contentH — and allocation-free.
 func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 	if area == "" {
 		return
@@ -605,12 +554,6 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// The roster's own font and size, through the same per-element table the
 	// chatlogs use. a.playerPct stays the per-panel zoom on top of it, exactly as
 	// a.logPct does for the IC log.
-	//
-	// labelEmoji, NOT LabelClippedFont: a roster row is SERVER-supplied text, and a
-	// single face cannot draw a name that needs two of them — an emoji or a script
-	// outside the picked face rendered as tofu here while the very same showname
-	// drew correctly in the chatbox and the log, which take this path already. The
-	// plain-text fast path inside is byte-identical, so a Latin roster is unchanged.
 	rosterEmoji := a.elemEmoji(elemPlayerList, a.playerPct)
 	a.labelEmoji(a.elemFontFor(elemPlayerList, a.playerPct, ic), rosterEmoji, cx, row.Y+5, textW-(cx-textX), ic, nameCol)
 	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
@@ -696,11 +639,9 @@ func (a *App) currentSpeakerName() string {
 // parallel to, by index — session.go's ARUP handler). ok is false when there
 // is no session, no area has that name, or the index is out of range for
 // AreaInfo (a partial snapshot mid-connect).
-//
 // The single "name → *AreaInfo" lookup for the whole package: curAreaPlayers
 // below and drawAreaHeaderRow / drawCurrentAreaStatusStrip (both read it FRESH
 // every frame, never memoized — see the staleness note on drawAreaHeaderRow)
-// all go through this one scan rather than three copies of it.
 func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
 	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
 		return nil, false
@@ -956,11 +897,6 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	// rosterStamp()/areaListAt, not areaInfoSeq: an ARUP-only change (a mod
 	// locks this area, nobody joins or leaves) would not invalidate that memo
 	// and a baked-in string would go stale silently.
-	//
-	// arupStatusText and the colour buckets below are the Areas tab's own
-	// (screens.go) — reused, not reinvented, so the two tabs share one status
-	// vocabulary (TestArupStatusTextSharedAcrossAreaAndPlayerTabs pins both
-	// callers).
 	if info, ok := a.areaInfoByName(hr.area); ok {
 		if extra := arupStatusText(info); extra != "" {
 			extraCol := ColTextDim
@@ -982,11 +918,9 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 // (courtroom.AreaInfo, via areaInfoByName), read LIVE every frame — same
 // staleness rule as drawAreaHeaderRow: never cached alongside a memoized roster
 // row, since playerRosterRows/the roster memo does not key on areaInfoSeq.
-//
 // A no-op (blank strip) when there's no session, the area name doesn't match
 // (a mid-transfer race), or ARUP simply hasn't reported anything notable yet —
 // the common case before a server's first ARUP burst, matching how the Areas
-// tab degrades (an empty detail block, not placeholder text).
 func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
 	c := a.ctx
 	info, ok := a.areaInfoByName(a.myAreaName())
@@ -1015,14 +949,6 @@ func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
 // jumpToArea transfers us to area by name (AO switches areas through the music
 // list: MC#<area name>#<char id>). The name comes from the same server, so it
 // matches the area list.
-//
-// The optimistic local updates (per-area scrollback swap, curArea, presence)
-// live here, not at the call sites, because every jump entry point — the
-// Players-tab header click, the Areas-tab cards, the Recent chips and the M3
-// auto-follow — must move the local selection identically. When they didn't,
-// the current-area highlight, per-area scrollback and Rich Presence only
-// worked from the one entry point that inlined them (the Areas-tab card),
-// which was the reported "click to jump doesn't update the selection" bug.
 func (a *App) jumpToArea(area string) {
 	if a.sess == nil || area == "" {
 		return
