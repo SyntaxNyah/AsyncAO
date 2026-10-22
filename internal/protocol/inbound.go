@@ -78,4 +78,11 @@ func (c *Conn) registerInbound() {
 			c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})
 		}
 	})
+
+	// TL: the JSON-only TimeLeap snapshot (Nyathena extension).
+	_ = s.OnCustom("TL", func(p any) {
+		if o, ok := p.(aolib.Outgoing); ok {
+			c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})
+		}
+	})
 }
