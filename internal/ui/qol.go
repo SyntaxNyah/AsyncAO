@@ -255,15 +255,6 @@ func (a *App) pollCharBind() {
 // character keys, showname keys, IC quick-phrases, jukebox keys, the emote number
 // row and the voice push-to-talk key. It returns the keycode those namespaces may
 // act on this frame, or 0.
-//
-// They used to fire on a BARE key, fenced only by "no text field is focused". The
-// Discord focus model (chatfocus.go) retires that fence: typing now claims the IC
-// input on the very first character, so a bare-key namespace either never fires
-// again or — worse — races the claim for the same letter. The user's order was to
-// remove the bare-letter space and move the survivors onto chords, so all six
-// namespaces moved together onto ALT+<key>, in this one gate, rather than six
-// copies of a slightly different guard.
-//
 // The gate itself lives on the key registry (keys.go); this method is the App-side
 // entry that supplies the capture arbitration, which stays on App because four of
 // the eight capture flags are global.
@@ -315,16 +306,6 @@ func (a *App) handleEmoteKeys() {
 // hotkeys), so editor undo was silently dead AND Ctrl+Y fell through to its
 // default bind ("Reshow hidden sprites") mid-edit. Consumes the chord whether
 // or not history exists, so a bound action can never fire while editing.
-//
-// TWO CALL SITES, one per claimant, and the split is not redundancy:
-//
-//   - handleHotkeys, inside the courtroom pass, for the two LEGACY overlay editors —
-//     they only exist while that pass runs, so their chord belongs where their pixels
-//     are;
-//   - App.Frame, pre-screen, gated on themeEditorOpen(), for the v1.90.0 theme
-//     EDITOR SCREEN. It has no courtroom pass to ride when it is opened from Settings
-//     with no server attached, which is the design's headline entry point — dispatching
-//     it only from the courtroom left Ctrl+Z dead in exactly that case.
 func (a *App) editorUndoChord() bool {
 	c := a.ctx
 	// The v1.90.0 theme editor is the THIRD claimant, and it is checked FIRST because
@@ -342,11 +323,9 @@ func (a *App) editorUndoChord() bool {
 		// c.redoReq for exactly the same reason. An editor that answered Ctrl+Z and
 		// Ctrl+Y but not Ctrl+Shift+Z would be the only surface in the app that does
 		// not, and the user finds out by losing the thing they just undid.
-		//
 		// The shift test rides c.shiftHeld rather than a second hotkey value because
 		// HandleEvent folds every non-clipboard Ctrl combination into ONE c.hotkey
 		// keysym and keeps the modifier flags beside it (#96) — there is no
-		// "Ctrl+Shift+Z" keysym to compare against.
 		if c.hotkey == sdl.K_z && !c.shiftHeld {
 			a.editorUndo()
 		} else {
@@ -835,20 +814,6 @@ const (
 // never-arrives branch (split from the Audio calls like settleAwaitedDuck / mixChannels
 // / resumeSeek). Given the mixer's current URL and the clock, it decides how to release
 // a wedged await once the deadline passes:
-//
-//   - deadline not yet reached (or no stamp): awaitTimeoutNone — a slow-but-real
-//     download may still arrive, keep the duck.
-//   - past the deadline, cur == "": awaitTimeoutUnduck — nothing foreign is loaded
-//     (the awaited fetch delivered nothing, or delivered bytes that failed to decode,
-//     which startMusic already stopped to silence). Just lift the duck; the stream is
-//     already quiet, so this can't reveal a wrong track.
-//   - past the deadline, cur != "" (and, by construction here, cur != musicAwaitURL —
-//     settleAwaitedDuck already returned for a match): awaitTimeoutStop. A FOREIGN
-//     stream (the previous tab/server's still-rolling, ducked track) is loaded. Lifting
-//     the duck would make that wrong song audible — the cross-server "wrong music after
-//     switching" bug — so heal to SILENCE instead (the caller's StopMusic also purges the
-//     still-pending fetch, so it won't land late over the silence). A WRONG audible track
-//     is worse than silence; that's the sanctioned tradeoff here.
 func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
 	if a.musicAwaitSince.IsZero() || now.Sub(a.musicAwaitSince) < musicAwaitTimeout {
 		return awaitTimeoutNone
@@ -1507,14 +1472,7 @@ const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 // byte range the link occupies inside that row's DISPLAYED text, the pixel range
 // it covers (measured at wrap time in the very face the row draws in), and the
 // URL to open.
-//
 // #38: the old model was one URL string per row — a paragraph's FIRST link, on
-// every one of its rows. That made the hover tint swallow the whole message and
-// left every link after the first unclickable ("only 1 link outta this link dump
-// being clickable"). Spans replace it: each link in a paragraph gets its own id,
-// and a link the wrap HARD-SPLIT across rows contributes one span per row all
-// sharing that id — so the highlight still covers the whole link (the deliberate
-// earlier fix) while stopping at its edges.
 type oocLinkSpan struct {
 	row    int32  // display-row index into a.oocWrap
 	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
@@ -1533,15 +1491,6 @@ type oocLinkSpan struct {
 const oocLinksPerParagraphMax = 64
 
 // appendLinkSpans records the clickable link regions of ONE wrapped paragraph.
-//
-// rows are the display rows the wrap just produced for it, already appended to
-// the wrap at index rowBase. raw is the paragraph as it ARRIVED; masked is what
-// is actually DRAWN — streamer mode redacts the sender prefix and IP-like tokens
-// (streamerMaskLine), which shifts every byte offset after them. So positions
-// come from the MASKED text (the pixels the user sees and clicks) while the URL
-// to OPEN comes from the RAW one (masking is display-only; the log keeps the
-// real link, and that is the pre-existing contract).
-//
 // Runs only inside oocWrapped's cached rebuild — never per frame.
 func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
 	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
@@ -1633,13 +1582,10 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 // measureLinkSpans fills in the pixel range of the spans dst[start:], in the
 // exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
 // the tint and the hit test land on the glyphs the user sees.
-//
 // A row the per-glyph raster draws (emoji, or a mixed-script row no single face
 // covers) has no advance we can trust here: labelEmoji composes per-rune faces,
 // so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
 // row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
-// which is honest instead of drawing a lie, and keeps the row's spans
-// non-overlapping.
 func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
 	w := start
 	for k := start; k < len(dst); k++ {
@@ -1739,13 +1685,9 @@ func (a *App) oocWrapped(width int32) []string {
 			// colour emoji as narrow tofu and hard-split it mid-rune); plain lines keep
 			// the cheap word-wrap. BOTH break against the same per-candidate drawn
 			// width, so neither can measure a row in a face the draw won't use (#42).
-			//
 			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
 			// SILENTLY (they don't report truncation), so an extra row lets us tell a
 			// paragraph that exactly filled the budget from one that overflowed it. We
-			// only ever pass ≥ 2 here (remaining ≥ 1 is guaranteed above), which also
-			// dodges the two wrappers' disagreement on maxLines ≤ 0 (wrapToWidth cuts
-			// to nothing, WrapMeasured treats it as unbounded).
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
@@ -1962,17 +1904,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 // font, and only runs on cache rebuilds). Words wider than the column
 // hard-split so a long URL can't force a 1-line overflow. A nil font
 // (headless tests) measures at a rough 8 px/char.
-// wrapToWidth breaks text to maxW, measuring each candidate string with the font
-// pick returns FOR THAT STRING — the same per-line covering face the log DRAW
-// picks (LogFontFor). This keeps wrap and draw in agreement even when the active
-// chain is multi-face (a custom font + the embedded last resort): a wrapped line
-// the custom font covers is measured AND drawn in the custom face, so it neither
-// overflows (the wrap measured the whole paragraph in the narrower fallback the
-// custom font couldn't fully cover) nor silently drops to the embedded face
 // (#42). A single-font chain makes pick constant, so this is a no-op there.
-// constFont adapts a single fixed face to wrapToWidth's per-string picker — for
-// callers (the area list, tests) whose text all draws in one font, where the
-// per-line pick can't diverge.
 func constFont(f *ttf.Font) func(string) *ttf.Font {
 	return func(string) *ttf.Font { return f }
 }
@@ -2056,14 +1988,6 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 	width := measure
 	for _, word := range strings.Fields(text) {
 		// Hard-split single words wider than the column, bisecting on RUNE indices.
-		//
-		// This bisected on BYTE indices, which is fine for the Latin text it was
-		// written against and corrupts everything else. Japanese, Chinese and Thai do
-		// not put spaces between words, so strings.Fields hands a whole sentence over
-		// as one "word" and this split ALWAYS runs on them; halving a 3-bytes-per-rune
-		// run lands off a rune boundary most of the time, and the invalid UTF-8 that
-		// produced was then measured and drawn — mojibake at the wrap point of every
-		// long CJK/Thai line in the IC log, the OOC log and the area list.
 		rw := []rune(word)
 		for width(word) > maxW && len(rw) > 1 {
 			cut := len(rw) / 2
@@ -2105,20 +2029,7 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 // reason, a BB popup notice, a lockdown message with its access code alone on the
 // last line (../Nyathena/internal/athena/lockdown_passkey.go), a KFO removal
 // formatted "<reason>\nUntil: <when>\nID: <n>".
-//
 // It exists because the wrapper underneath it CANNOT do this itself:
-// wrapToWidthMeasured loops strings.Fields, which discards newlines outright, so
-// handing it a multi-paragraph reason reflows the whole payload into one run and
-// the Until/ID/code lines stop being lines at all. This is oocWrapped's proven
-// split-then-wrap shape lifted out for the modal surfaces, same "+1 probe" and
-// same shared-budget rule, so the two stay consistent.
-//
-// maxLines is a budget shared across ALL paragraphs rather than per paragraph, so
-// the total row count stays bounded however the server chooses to split its text.
-// ok reports whether everything fit: false means the caller MUST show a truncation
-// marker, because these payloads put the part you actually need (the code, the
-// appeal link) at the tail, and silently dropping it is the whole bug.
-//
 // Callers must pass maxLines >= 1. The two wrappers in this package disagree on
 // maxLines <= 0 — wrapToWidthMeasured cuts to nothing, Ctx.WrapText treats it as
 // unbounded — so this refuses to guess rather than inheriting either reading.
@@ -2159,14 +2070,9 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 
 // paraWrapCache memoizes ONE wrapParagraphs result for a modal that redraws every
 // frame while it is up.
-//
 // It exists because the wrap is not cheap and the modals are not transient. Each
 // row is measured through chromeFaceFor, which for non-ASCII text builds a face set
 // and runs a per-candidate coverage pick; the wrap itself allocates (a []string, and
-// the rune slices behind the measure). Doing that 60 times a second for text that
-// CANNOT change while the box is open would put allocations on a drawn screen, which
-// is what the alloc gates exist to catch.
-//
 // Embedded by value in the two modal states that show server-authored prose — the
 // notice box and the involuntary-disconnect dialog — so there is one cache rule and
 // one place to get it wrong, and both are invalidated on the same keys.
@@ -2187,18 +2093,6 @@ type paraWrapCache struct {
 
 // get returns the wrapped lines and whether everything fit, rewrapping only when
 // the text, the width, the row budget or the font generation changed.
-//
-// gen must be ctx.fontChainGen. It is load-bearing rather than paranoia: a Cyrillic
-// or CJK notice is first measured in the embedded face, which does NOT cover it, and
-// the covering fallback lands ASYNC a few frames later and bumps that counter
-// (ui.go, "wrap caches invalidate"). Without this key the rows would keep the widths
-// we guessed before the face we draw them in existed.
-//
-// mark, when non-empty, is spent on the LAST row whenever the text overflowed the
-// budget. wrapParagraphs reports the overflow but wrapToWidthMeasured underneath it
-// truncates silently, and silence is the actual bug being fixed here: the tail of a
-// server's removal notice is where the access code and the appeal link live, so a
-// body that just stops has to say so.
 func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width int32, rows int, mark string) ([]string, bool) {
 	if p.lines != nil && p.src == s && p.width == width && p.rows == rows && p.gen == gen &&
 		p.mark == mark {

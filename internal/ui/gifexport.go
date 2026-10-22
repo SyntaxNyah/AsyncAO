@@ -48,15 +48,6 @@ func exportChatPct(vpH int32, textScale int) int {
 // "🎞 GIF" button), an animated WebP ("🎬 WebP"), or an MP4/WebM video ("🎥
 // Video") — no trip through the maker. A bundled archive renders from its own
 // folder (the archive source is dropped when the export finishes).
-//
-// The disk read + parse (ReadFile + demoToRecording / JSON unmarshal) is
-// deferred to ONE goroutine off the render thread — a 30–60 MB .aorec or an
-// all-day .demo froze the whole window otherwise. This function only VALIDATES,
-// creates the job shell in its "loading" phase, sets a.gifExporting=true (so the
-// progress overlay draws a "Reading demo…" screen immediately), and spawns that
-// loader. tickGifExport's loading branch polls the result and finishes the
-// export on the render thread. Single-flight: the a.gifExporting guard refuses a
-// second attempt exactly as before.
 func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	if a.gifExporting || a.replaying || a.recActive {
 		a.warnLine = "Finish the current replay / recording first."
@@ -167,12 +158,6 @@ const (
 	// thread — for the whole storm — BEFORE the progress overlay ever draws (the
 	// reported "whole window freezes with no loading screen"). Instead the refs
 	// are stored on the job and submitted a bounded batch per warm tick.
-	//
-	// warmInFlightWindow is the OUTSTANDING (submitted-but-not-yet-resident) bound:
-	// kept well under highLaneCap so a Submit can never find a full high lane and
-	// block. warmPrefetchPerTick is the per-tick burst cap (= the pool's worker
-	// count, DefaultWorkers), a small batch that drains within a frame. The two
-	// together mean one warm tick's submissions cost microseconds, never a stall.
 	warmInFlightWindow  = 32 // < highLaneCap(64): outstanding high-lane jobs stay below the cap
 	warmPrefetchPerTick = 16 // = network.DefaultWorkers: a frame's-worth of submissions
 
@@ -473,10 +458,6 @@ type gifExportJob struct {
 	// room is 0 and submission stops, so the set never exceeds that named cap. It
 	// counts ONLY real submits (a pre-resident, never-submitted ref is never in it),
 	// which is why pre-resident refs can't deflate the window and re-open the block.
-	// warmSubmitted is a cumulative count of real submits (observability + the
-	// overlay). warmSubmitDone latches once every ref has been submitted — only then
-	// does the quiescence/timeout clock start (a huge ref list mustn't be
-	// guillotined by gifWarmMax while it's still being fed to the pool).
 	pendingWarm    []courtroom.AssetRef
 	warmInFlight   map[string]struct{}
 	warmSubmitted  int
@@ -971,33 +952,6 @@ func warmRoom(outstanding int) int {
 // for: waiting only burns the clock while the stage will show the placeholder
 // either way. Treating "missing" as settled is what wires the conclusive-404
 // signal into the warm's end conditions.
-//
-// SCOPE — this releases only a REACHABLE host that returns clean 404s. IsMissing
-// is set by drainWarnings, which fires only when the Manager's walkCandidates
-// exhausts EVERY candidate with a clean 404 (manager.go reportMissing). A
-// TRANSPORT error — an empty/schemeless origin, an unreachable host (DNS failure /
-// connection refused — a .demo whose CDN is gone), or a 5xx — is NOT a clean 404:
-// walkCandidates returns "done" on the first transport error WITHOUT reportMissing
-// (manager.go delivers a Transient error instead), so the base never becomes
-// IsMissing and warmSettled stays false for it. Such a wholly-dead origin
-// therefore does NOT release here; it exits via the wall-clock ceiling below
-// (gifWarmMax once submission finishes, up to gifWarmHardCap for a large ref list)
-// and captures a BLANK stage (missingno draws only for IsMissing bases). WITHOUT
-// this release even a reachable all-404 scene would pin the settled count at 0
-// (warmInFlight never prunes, warmSubmitDone never latches) and sit frozen at
-// "0 / N" for the full hard cap — the reported "export that never converts"; WITH
-// it a reachable-404 scene ends promptly and still exports a COMPLETE video with
-// placeholder art (H3, covered end-to-end by exportstall_test.go over a 404 server).
-//
-// Note the production exit for a REAL mixed-type scene is quiescence, not all-ready:
-// drainWarnings MarkMissing's AssetTypeCharSprite and AssetTypeDeskOverlay bases
-// only (app.go), so a 404'd BACKGROUND never reads IsMissing here and can hold the
-// settled count below len(warmRefs). That's fine when at least one sprite or desk
-// settles — the quiesce window (gifWarmQuiet) then closes in well under a second. A
-// scene with NO conclusively-missing sprite/desk (e.g. a background-only all-404
-// recording) keeps settled at 0, so the settled>0 quiesce guard never fires and it
-// too waits out the wall-clock ceiling — bounded (never the 20 s hard cap for a
-// small ref set), but not sub-second. Render thread only (IsMissing is render-thread).
 func (a *App) warmSettled(base string) bool {
 	return a.d.Store.Contains(base) || a.d.Store.IsMissing(base)
 }
@@ -1108,7 +1062,6 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 // job, never touching the live a.msRaster or the render hot path. Render thread
 // only (called inside the capture's draw callback).
 // gifChatNameRowH is the speaker-name row above the message text in the export
-// chatbox; the message is drawn this far below the box top.
 const gifChatNameRowH = 24
 
 // gifChatboxHeight sizes the export chatbox to FIT the rasterized message (height
@@ -1167,31 +1120,12 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, skin
 // Otherwise it keeps the full-frame default (viewport fills the frame, chatbox
 // pinned to the bottom). Fixes #41: the recorder used to ALWAYS take the default
 // path, so a themed session that "played" with its layout exported to a video
-// that looked like the stock layout. The layout is computed for the EXPORT
-// frame's size (dst is origin-anchored at 0,0), not the window's.
-// An export frame is NOT the window: it deliberately goes through themeLayout (no
-// app-chrome band reserved) rather than themeWindowLayout, so the menu bar / tab
-// strip band can never appear as a black stripe across an exported video or comic.
-//
 // THE SHARED LAYOUT CACHE IS BORROWED, NOT THRASHED — measured, because the two
 // entry points differ in `top` and there is exactly one cache (a.themeLay), so the
 // obvious worry is a cold rebuild (a 12 KiB struct clear, the rect map and, since
-// W3, the element bake) every time the two alternate. They never alternate:
-//
-//   - an export is a FULL-WINDOW MODE. App.Frame's gif > replay > maker > screen
-//     precedence draws tickGifExport + drawGifProgress INSTEAD of any screen, so
-//     drawCourtroomThemed — the only non-test caller of themeWindowLayout that
-//     builds this cache — does not run for the whole job. chrometop.go's
-//     screenDispatchPreempted is that rule written down, and the tab strip already
-//     depends on it for the same reason.
-//   - within a tick, gifFramesPerTick captures all pass the SAME dst, so the key is
-//     unchanged and every capture after the first is a cache hit.
-//
 // The cost is therefore two cold rebuilds PER JOB (one entering the export, one on
 // the first courtroom frame after it), not two per frame — which is the same price
 // any window resize pays and is not worth a second resident 12 KiB cache to avoid.
-// TestExportBorrowsTheThemeLayoutCacheWithoutThrashing pins it, because the
-// property depends on a precedence rule two files away.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
 	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if _, ok := lay.rect("viewport"); ok {
@@ -1209,25 +1143,9 @@ func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect
 // (falling back to a bottom overlay over the viewport when the theme omits a
 // chatbox rect). Geometry comes from the SAME themeLayout the live themed
 // courtroom uses, so the video matches what Studio playback shows.
-//
-// FREE ELEMENTS PAINT HERE TOO (v1.90.0 W4). The three band calls are the same
-// three drawCourtroomThemed makes, at the analogous points — and they are the whole
-// of export parity for the extension tier. Without them a native theme's wallpaper,
-// its chatbox frame and its masthead are on screen and missing from every GIF, video
-// and Studio render of the same session, which reads as the exporter being broken
-// rather than as a feature boundary.
-//
-// The mapping between the two passes is exact where an export HAS the same surface
-// and collapses where it does not: the export draws no logs, no panels and no
-// modals, so the mid band's "between the stage and the panels" and the overlay
-// band's "above every AO2 widget" both land after the chatbox, in that order. Band
-// ORDER is what the format promises (docs/THEME-FORMAT.md §4); the widgets between
-// the bands are the client's, and an export legitimately has fewer of them.
-//
 // The COMIC exporter is deliberately NOT wired: it composes paper panels with its
 // own speech bubble and never takes the themed path at all (comicexport.go —
 // captureComicPanel renders the bare viewport), so there is no themed frame to be
-// at parity with.
 func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black
@@ -1310,15 +1228,7 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 
 	// showname/message sit at their chatbox-relative design rects (AO2 child
 	// semantics), falling back to the classic offsets when the theme omits them.
-	//
-	// SHARED with the live chatbox, deliberately: this used to be its own copy of
-	// the same arithmetic, so the Qt message inset and showname_align would have
-	// landed on screen and not in the exported video. The one difference the export
-	// keeps is its taller fallback name row (gifChatNameRowH), which only applies to
-	// a theme that declares no `message` rect.
-	//
 	// Resolved before the skin is painted for the same reason as the live chatbox:
-	// the widen-and-swap ladder below decides WHICH skin is painted.
 	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+gifChatNameRowH)
 	msgX, msgY, wrapW := msgBox.X, msgBox.Y, msgBox.W
 
@@ -1360,12 +1270,9 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
 	// chatbox paths runs across a whole export, so the shared cache never drifts).
-	//
 	// The MESSAGE deliberately does NOT take the canvas fold the showname above
 	// takes. j.chatPct is exportChatPct, already derived from the capture height,
 	// and fitChatRaster then shrinks it until the block fits the box — so this text
-	// is sized against the export frame twice over already, and folding a third
-	// factor in would only fight the fit loop.
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()

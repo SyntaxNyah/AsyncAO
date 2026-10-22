@@ -227,12 +227,9 @@ const (
 	// and taking a bundle somebody sent you. It exists because the editor — the
 	// flagship — deserves a dedicated tab: a feature you have to scroll to
 	// discover is a feature nobody discovers.
-	//
 	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
 	// one" / "make one"), and the sidebar is scanned top to bottom, so the
 	// authoring tab has to be where the eye already is when it fails to find the
-	// editor on Theme. The Theme tab keeps SELECTION — the catalog, the badge, the
-	// subtheme variant, the write root — and points here (drawThemeAuthoringHint).
 	tabThemeEditor
 	tabAssets
 	// tabFormats owns EVERY control that decides which image/audio file type is
@@ -310,12 +307,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// keywords, so a long term here that merely CONTAINS a later tab's short query
 		// passes the gate while stealing that query for real. Hence three exclusions,
 		// each a word a later tab owns outright:
-		//   - anything containing "download" — Assets owns "download"/"downloader".
-		//   - "source repository" — the bare "source" belongs to Assets' "asset
-		//     source", the only other "source" term and the owner of the real
-		//     "Asset source" section.
-		//   - "new themes" — the bare "new" belongs to Chat's "jump to newest".
-		// "github" and "theme repository" stay: no later tab claims either word.
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
@@ -324,34 +315,9 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	},
 	tabThemeEditor: {
 		// sections: New theme, The editor, Bring a theme in.
-		//
-		// THE SHADOW DISCIPLINE IS UNCHANGED and it still governs every line here.
 		// The table is scanned in TAB ORDER and matches FORWARD (the query must be a
 		// substring of a term), so a term on this tab swallows every later tab's
 		// query hidden inside it. This tab is index 2, so "later" is Assets onwards —
-		// the same set the theme-editor block was vetted against at index 1, minus Theme
-		// itself, which sits BEFORE us and therefore still wins its own words.
-		//
-		// Each exclusion below is a word a later tab owns outright:
-		//   - nothing containing "export" or "import" (tabData, tabStudio) — hence
-		//     no "export theme" and no "import theme" either. "aotheme" and "theme
-		//     bundle" carry the transport rows instead; they contain neither word.
-		//   - nothing containing "layer" (tabAssets owns "layer"/"layered", the
-		//     layered assets). THIS is why the editor's noun is "element".
-		//   - nothing containing "custom" (tabAudio's "custom music", tabAssets'
-		//     "custom error sprite"). This is why the brief's suggested "customize
-		//     layout" is NOT here: it would steal the bare "custom" from both. The
-		//     feature is not lost — "edit the layout" and "move things around" below
-		//     answer the same question with words nobody else claims, and the
-		//     gather-search matches ROW LABELS first regardless.
-		//   - not "maker" on its own and nothing containing it (tabStudio's "scene
-		//     maker"): "theme maker" would steal the bare "maker". "theme builder"
-		//     and "theme creator" say the same thing and collide with nothing.
-		//   - nothing containing "scan" ("scanlines" → tabAssets' "rescan"),
-		//     "order"/"list" (tabFormats' "probe order", tabAccount's "master
-		//     list"), "new" (tabChat's "jump to newest"), "download" (tabAssets),
-		//     "source" (tabAssets' "asset source") or "grid"/"glow" (tabGeneral).
-		//     Hence "start a theme from scratch", never "new theme".
 		"theme editor", "editor", "make a theme", "build a theme", "create a theme",
 		"theme builder", "theme creator", "edit theme", "edit a theme", "edit my theme",
 		"start a theme", "from scratch", "blank theme", "template", "templates",
@@ -399,11 +365,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// (Studio's video export — so no "webp format" either, which would still
 		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
 		// (its ".json" tail would swallow Data's "json").
-		// None of those are lost: the gather-search matches ROW LABELS first, and
-		// this tab's rows literally read ".webp", "extensions.json", "Export
-		// learned". This table is only the concept-level fallback. Bare
-		// "audio"/"format" need no entry at all — they match a TAB NAME, and the
-		// name pass runs before this one.
 		"image format", "file type", "file types", "extension", "extensions", "manifest",
 		"format profile", "server format profile", "per-server format", "pin format",
 		"probe", "probing", "one probe", "probe order", "format order", "which format",
@@ -579,18 +540,9 @@ func (a *App) drawSettings(w, h int32) {
 	// it must go click-dead (header Back/search, tab strip, tab body), so a click on
 	// the modal can't also fire a widget beneath it. Recomputed fresh each frame from
 	// the open flag — no cross-frame persist-and-release bug (unlike emojiPickerFence).
-	// It's set HERE (before the header widgets draw) and RELEASED at the very end,
-	// right before the browser itself draws, so the browser's own c.Button/VScrollbar
-	// (which read hovering()) work while everything behind stays fenced. Mirrors the
-	// app.go toolbox release-and-restore idiom. The Studio content-report panel
-	// (contentpanel.go) is the SAME kind of blocking modal and rides the same fence —
-	// the two are mutually exclusive (picking in the browser closes it and opens the
-	// panel), so one flag OR the other is set, never contended.
-	//
 	// The base-folder wizard (basewizard.go) is the same kind of blocking modal and
 	// joins the same fence. It is NOT exclusive with the browser — its step 1 opens
 	// one on top of itself — so the wizard fences ITSELF while the browser is up;
-	// see drawBaseWizard.
 	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = true
 	}
@@ -615,11 +567,7 @@ func (a *App) drawSettings(w, h int32) {
 		// through to the default here, or the same drop would ALSO repoint the
 		// theme folder at the file's parent directory — silently, since the
 		// global handler was meanwhile warning about the very same file.
-		// Anything unclaimed still points the theme folder, which is the
 		// documented folder-import path (#21).
-		// The routing itself is settingsDropAction (dropclaim.go) — a named
-		// function with a table test on it, so the arm that stops a .ttf or a
-		// .aotheme from repointing the theme root cannot be deleted green.
 		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
 		case settingsDropImportSettings:
 			settings.importArmed = false
@@ -699,26 +647,6 @@ func (a *App) drawSettings(w, h int32) {
 	a.formW = cardW - 2*settCardPadX
 	// F2: no chrome label may draw past the card. The settings rows carry sentence-
 	// long help text and the form draws it two ways, both of which overflowed:
-	//
-	//   - Checkbox grew its hit box and its label to whatever the string measured,
-	//     with nothing bounding it, so on a narrow window the row ran off the card
-	//     and out of the WINDOW entirely. That is the FONTS section's system-fonts
-	//     line and about forty siblings.
-	//   - The bare help lines under the rows — roughly a hundred c.Label calls, some
-	//     190 characters, plus the FONTS chain line's c.LabelClipped, whose own maxW
-	//     is the window and not the card — stayed inside the window but were cut dead
-	//     at the card's clip edge, with no ellipsis to say the sentence continued.
-	//     A hard cut reads as a rendering fault; that is the "cut off at the right
-	//     border" half of the report.
-	//
-	// One bracket answers both: Ctx.Label / LabelClipped / Checkbox all consult it,
-	// the card knows its own right edge and the rows do not need to be told. Popped
-	// with defer so the several early returns below cannot strand the limit on the
-	// shared Ctx and truncate the courtroom's labels on the next screen — and popped
-	// AGAIN, explicitly, the moment the card's clip closes, because the chrome after
-	// it (the full-window warn banner, the .demo browser, the content panel) is not
-	// inside the card and must keep its own width. Popping twice with the same saved
-	// value is idempotent.
 	cardLabelLimit := c.pushRowLabelLimit(a.formX + a.formW)
 	defer c.popRowLabelLimit(cardLabelLimit)
 
@@ -1543,12 +1471,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// ANIMATED preview holds the frame pacer at the active cap for as long as it is
 	// up — true of the right-click pin already, but a sticky default makes it the
 	// steady state, hence the note in the label.
-	//
 	// The row says "pin button", never a 📌. This label is drawn through
 	// chromeFaceFor like every other settings string, and U+1F4CC is outside the
 	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
-	// whose whole job is to point at a control. It would also be a lie: the box
-	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
 	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = next })
@@ -1931,15 +1856,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		// manual resize. Same applyWindowSize route as every button above, so the
 		// clamp, the un-maximize and the persist are shared, and it stays a one-line
 		// call a future Window menu can reuse.
-		//
-		// themeDesignSizeOffer, not themeDesignWindowSize: it also gates on the
-		// themed courtroom layout being the one actually drawn, so this row and the
-		// automatic snap agree about when a theme canvas is meaningful.
-		// The label carries the size the button APPLIES, not the theme's raw canvas.
-		// They are not the same number: the canvas sits below the app-chrome band, so
-		// the snap asks for canvas + themeDesignWindowInset (44 px) — the stock theme's
-		// 714×579 canvas needs a 714×623 window. Printing the canvas here while
-		// applying the window size made the button describe a resize it never performed.
 		if _, _, ok := a.themeDesignSizeOffer(); ok {
 			tw, th, _ := a.themeDesignWindowTarget()
 			label := fmt.Sprintf("Theme's design size (%d×%d)", tw, th)
