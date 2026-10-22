@@ -23,7 +23,7 @@ func TestRefreshJukeFavs(t *testing.T) {
 		{Name: "B", Entries: []config.JukeboxEntry{b0}},
 	}
 	a.jukebox.jukeCacheRev = 1
-	a.refreshJukeFavs()
+	a.jukebox.refreshJukeFavs()
 
 	want := []favRef{{pl: 0, e: 1}, {pl: 1, e: 0}}
 	if len(a.jukebox.jukeFavs) != len(want) {
@@ -40,13 +40,13 @@ func TestRefreshJukeFavs(t *testing.T) {
 
 	// Memoized: an unchanged revision doesn't rebuild even though the data changed.
 	a.jukebox.jukeCache[0].Entries[0].Fav = true
-	a.refreshJukeFavs()
+	a.jukebox.refreshJukeFavs()
 	if len(a.jukebox.jukeFavs) != 2 {
 		t.Errorf("unchanged rev must not rebuild, got %d", len(a.jukebox.jukeFavs))
 	}
 	// A revision bump rebuilds and picks up the new star.
 	a.jukebox.jukeCacheRev = 2
-	a.refreshJukeFavs()
+	a.jukebox.refreshJukeFavs()
 	if len(a.jukebox.jukeFavs) != 3 {
 		t.Errorf("rev bump should rebuild, got %d", len(a.jukebox.jukeFavs))
 	}

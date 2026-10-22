@@ -503,7 +503,7 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 	if int(s.row) != li {
 		return
 	}
-	a.oocLinkActions(rowRect, sdl.Rect{X: textX + s.x0, Y: y, W: s.x1 - s.x0, H: lineH}, s.url)
+	a.jukebox.oocLinkActions(rowRect, sdl.Rect{X: textX + s.x0, Y: y, W: s.x1 - s.x0, H: lineH}, s.url)
 }
 
 // drawOOCLogRow draws one wrapped OOC row, tinting ONLY the hovered link
@@ -552,17 +552,17 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 // opening / copying is gated on linkRect — the link's own characters — so a
 // click on the plain text beside it does nothing (#38). Shared by the courtroom
 // OOC log and the OOC tab. Only ever called for the single hovered link.
-func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
-	c := a.ctx
-	if a.jukebox.juke != nil {
+func (jukebox1 *jukeboxState) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
+	c := jukebox1.env.ctx
+	if jukebox1.juke != nil {
 		saveBtn := sdl.Rect{X: rowRect.X + rowRect.W - 96, Y: rowRect.Y + 1, W: 94, H: rowRect.H - 2}
 		if c.Button(saveBtn, "+ Jukebox") {
-			if a.jukebox.juke.QuickAdd(jukeboxOOCPlaylist, "", url) {
-				a.warnLine = "Saved to Jukebox → " + jukeboxOOCPlaylist
+			if jukebox1.juke.QuickAdd(jukeboxOOCPlaylist, "", url) {
+				jukebox1.env.warnLine = "Saved to Jukebox → " + jukeboxOOCPlaylist
 			} else {
-				a.warnLine = "Already in your Jukebox (or it's full)"
+				jukebox1.env.warnLine = "Already in your Jukebox (or it's full)"
 			}
-			a.warnAt = time.Now()
+			jukebox1.env.warnAt = time.Now()
 			return
 		}
 		if c.hovering(saveBtn) {
@@ -574,8 +574,8 @@ func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 		openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time (copy stays bare, as displayed)
 	} else if c.rightClicked {
 		_ = sdl.SetClipboardText(url)
-		a.warnLine = "Link copied to clipboard"
-		a.warnAt = time.Now()
+		jukebox1.env.warnLine = "Link copied to clipboard"
+		jukebox1.env.warnAt = time.Now()
 	}
 }
 

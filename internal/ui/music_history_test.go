@@ -111,7 +111,7 @@ func TestRefreshJukeGroups(t *testing.T) {
 		{Title: "b", URL: "https://catbox.moe/b.mp3"},       // catbox.moe
 	}
 	a.jukebox.jukeCacheRev = 1
-	a.refreshJukeGroups(0, entries)
+	a.jukebox.refreshJukeGroups(0, entries)
 	want := []jukeGroupRow{
 		{domain: "catbox.moe"},
 		{entry: 0},
@@ -129,12 +129,12 @@ func TestRefreshJukeGroups(t *testing.T) {
 	}
 
 	// Memoized: same (playlist, rev) doesn't rebuild; a rev bump does.
-	a.refreshJukeGroups(0, entries[:1])
+	a.jukebox.refreshJukeGroups(0, entries[:1])
 	if len(a.jukebox.jukeGroupRows) != len(want) {
 		t.Errorf("unchanged key must not rebuild (got %d rows)", len(a.jukebox.jukeGroupRows))
 	}
 	a.jukebox.jukeCacheRev = 2
-	a.refreshJukeGroups(0, entries[:1])
+	a.jukebox.refreshJukeGroups(0, entries[:1])
 	if len(a.jukebox.jukeGroupRows) != 2 { // header + one entry
 		t.Errorf("rev bump should rebuild, got %+v", a.jukebox.jukeGroupRows)
 	}
