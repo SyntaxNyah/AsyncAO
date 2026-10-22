@@ -14,24 +14,24 @@ func TestRecordModAudit(t *testing.T) {
 	a.recordModAudit("Kick", "[5] Phoenix", "/kick 5 spam")
 	a.recordModAudit("Ban", "[6] Edgeworth", "") // empty command — not recorded
 	a.recordModAudit("Ban", "[7] Maya", "/ban -u 7 -d perma trolling")
-	if len(a.modAudit) != 2 {
-		t.Fatalf("len = %d, want 2 (the empty command must be skipped)", len(a.modAudit))
+	if len(a.modDash.audit) != 2 {
+		t.Fatalf("len = %d, want 2 (the empty command must be skipped)", len(a.modDash.audit))
 	}
-	if a.modAudit[0].action != "Kick" || a.modAudit[1].target != "[7] Maya" {
-		t.Errorf("order/fields wrong: %+v", a.modAudit)
+	if a.modDash.audit[0].action != "Kick" || a.modDash.audit[1].target != "[7] Maya" {
+		t.Errorf("order/fields wrong: %+v", a.modDash.audit)
 	}
-	if a.modAudit[1].cmd != "/ban -u 7 -d perma trolling" {
-		t.Errorf("cmd not stored: %q", a.modAudit[1].cmd)
+	if a.modDash.audit[1].cmd != "/ban -u 7 -d perma trolling" {
+		t.Errorf("cmd not stored: %q", a.modDash.audit[1].cmd)
 	}
 
 	// Overflow: keep only the newest modAuditCap entries, dropping the oldest.
 	for i := 0; i < modAuditCap+25; i++ {
 		a.recordModAudit("Kick", "[1] x", "/kick 1 "+strconv.Itoa(i))
 	}
-	if len(a.modAudit) != modAuditCap {
-		t.Fatalf("after overflow len = %d, want %d", len(a.modAudit), modAuditCap)
+	if len(a.modDash.audit) != modAuditCap {
+		t.Fatalf("after overflow len = %d, want %d", len(a.modDash.audit), modAuditCap)
 	}
-	if last := a.modAudit[len(a.modAudit)-1].cmd; last != "/kick 1 "+strconv.Itoa(modAuditCap+25-1) {
+	if last := a.modDash.audit[len(a.modDash.audit)-1].cmd; last != "/kick 1 "+strconv.Itoa(modAuditCap+25-1) {
 		t.Errorf("newest entry = %q, want the last command recorded", last)
 	}
 }

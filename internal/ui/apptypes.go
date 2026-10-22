@@ -154,25 +154,18 @@ type sessionState struct {
 	amICMNow   bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
-	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
-	// index: rebuildLiveRoster replaces the slice on every join/leave, so an index would repoint
-	// a ban at whoever shifted into that slot.
 	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
 	// rebuild while the reason is being typed can never repoint a destructive command at someone
 	// else. Only the IPID is allowed to fill in later (re-resolved by the frozen UID — same person).
-	banBox         banBoxState
-	modDashScroll  int32 // mod dashboard roster scroll offset
-	cmRosterScroll int32 // CM panel roster scroll offset
-	// #13 mod dashboard v2: a session audit log, bulk targeting, and the left-column view switch.
-	// All per-session (per-tab): a new server connection starts with an empty log and selection.
-	modDashShowAudit bool            // left column shows the session audit log instead of the roster
-	modAudit         []modAuditEntry // bounded, session-scoped record of commands sent from the dash
-	modAuditScroll   int32           // audit list scroll offset
-	modDashSelected  map[string]bool // UIDs ticked for a bulk ban / kick (lazily inited; ≤ modBulkCap)
-	bulkBoxUIDs      []string        // frozen snapshot of the ticked UIDs when a bulk box opens
-	modTemplatesEdit bool            // the ban box's reason-template editor is open (× removes a chip)
-	modDurEdit       bool            // the ban box's custom-duration editor is open (× removes a chip)
-	modDurInput      string          // the "add custom duration" field's draft ("45m", "2 days", …)
+	banBox banBoxState
+	// modDash is the mod dashboard's per-session view and selection state; see
+	// modDashState.
+	modDash          modDashState
+	cmRosterScroll   int32    // CM panel roster scroll offset
+	bulkBoxUIDs      []string // frozen snapshot of the ticked UIDs when a bulk box opens
+	modTemplatesEdit bool     // the ban box's reason-template editor is open (× removes a chip)
+	modDurEdit       bool     // the ban box's custom-duration editor is open (× removes a chip)
+	modDurInput      string   // the "add custom duration" field's draft ("45m", "2 days", …)
 	serverName       string
 	serverKey        string // ws URL: keys the per-server warm state in prefs
 	// logSession is THIS TAB's transcript identity: a process-unique ordinal minted
@@ -1220,6 +1213,23 @@ type debugPanelState struct {
 	pktBuf     []packetRec // reused recent()-into buffer (alloc-free draw)
 	fontScroll int32       // Fonts list scroll offset
 	fontBuf    []fontPickRow
+}
+
+// modDashState is the mod dashboard's per-session view and selection state (#13):
+// the selected target, the roster and audit scroll offsets, the left-column view
+// switch, the bounded session audit log, and the bulk tick set. All per-session
+// (per-tab): a new server connection starts with an empty log and selection.
+//
+// targetUID is the selection, never a roster index — rebuildLiveRoster replaces
+// the slice on every join/leave, so an index would repoint a ban at whoever
+// shifted into that slot.
+type modDashState struct {
+	targetUID   string          // selected target's UID ("" = none)
+	scroll      int32           // roster scroll offset
+	showAudit   bool            // left column shows the session audit log instead of the roster
+	audit       []modAuditEntry // bounded, session-scoped record of commands sent from the dash
+	auditScroll int32           // audit list scroll offset
+	selected    map[string]bool // UIDs ticked for a bulk ban / kick (lazily inited; ≤ modBulkCap)
 }
 
 type lobbyFetch struct {

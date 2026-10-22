@@ -29,12 +29,12 @@ func TestModBulkSelection(t *testing.T) {
 		t.Errorf("countSelectedPresent = %d, want 2", a.countSelectedPresent())
 	}
 	a.toggleModSelected("1") // untick removes it
-	if a.modDashSelected["1"] {
+	if a.modDash.selected["1"] {
 		t.Error("untick didn't remove the UID")
 	}
 	a.clearModSelected()
-	if len(a.modDashSelected) != 0 {
-		t.Errorf("clear left %d entries", len(a.modDashSelected))
+	if len(a.modDash.selected) != 0 {
+		t.Errorf("clear left %d entries", len(a.modDash.selected))
 	}
 }
 
@@ -45,8 +45,8 @@ func TestModBulkSelectionCap(t *testing.T) {
 	for i := 0; i < modBulkCap+10; i++ {
 		a.toggleModSelected("u" + strconv.Itoa(i))
 	}
-	if len(a.modDashSelected) != modBulkCap {
-		t.Errorf("selection grew to %d, want capped at %d", len(a.modDashSelected), modBulkCap)
+	if len(a.modDash.selected) != modBulkCap {
+		t.Errorf("selection grew to %d, want capped at %d", len(a.modDash.selected), modBulkCap)
 	}
 }
 
@@ -74,10 +74,10 @@ func TestSendBulk(t *testing.T) {
 	if a.oocQueue[0].line != "/kick 1 spam" {
 		t.Errorf("first queued = %q, want /kick 1 spam", a.oocQueue[0].line)
 	}
-	if len(a.modAudit) != 2 {
-		t.Errorf("audit has %d entries, want 2", len(a.modAudit))
+	if len(a.modDash.audit) != 2 {
+		t.Errorf("audit has %d entries, want 2", len(a.modDash.audit))
 	}
-	if len(a.bulkBoxUIDs) != 0 || len(a.modDashSelected) != 0 {
+	if len(a.bulkBoxUIDs) != 0 || len(a.modDash.selected) != 0 {
 		t.Error("sendBulk must clear both the frozen list and the live selection")
 	}
 }
