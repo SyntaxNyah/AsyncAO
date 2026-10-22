@@ -1,41 +1,6 @@
 package ui
 
 // THE CHROME-ROW REFLOW GUARD (v1.90.0 W7b).
-//
-// ONE concern: lay a row of chrome controls inside a rect a THEME chose, so that no
-// two of them can ever land on top of each other.
-//
-// THE DEFECT IT CLOSES, from a tester's screenshot of an imported AO2 theme: the
-// Music panel's header stacked Expand all and Collapse all — and the roster chip
-// above them — into the same pixels. That is the same class musicheader.go's own
-// header describes ("Expand all was painted ON TOP of Stop music … ONE click fired
-// BOTH"), returning through a different door: a panel whose rect is theme DATA can be
-// squeezed until a row's controls no longer fit, and the strip that laid them out
-// either refused them one at a time or handed the leftovers to a SECOND anchor —
-// the chip strip and the header row are placed by two independent cursors, reconciled
-// only by arithmetic that a short panel can falsify.
-//
-// SO THE GUARD IS STRUCTURAL, NOT ARITHMETIC. planChromeRow places every control
-// through ONE cursor, and a cursor cannot overlap itself. What is new is what happens
-// when the cursor runs out, because "refuse the control" is not good enough for a row
-// whose controls are the only route to a feature:
-//
-//	1. NATURAL — everything at the width its label wants.
-//	2. SHRINK — an equal share of the line each, while that share is >= the control's
-//	   own declared minimum. This is fitThemedChips' segmented step, generalised.
-//	3. WRAP — onto further lines, while the block still keeps chromeRowMinBodyPx for
-//	   the thing the row is a header FOR.
-//	4. DROP BY PRIORITY — the least valuable control leaves, and the rest are laid out
-//	   again from scratch. This is the width-drop contract the IC bar already ships
-//	   (the Flip segment drops at 720p by contract), applied to a themed panel: a
-//	   control the panel cannot hold is dropped DELIBERATELY, in an order the caller
-//	   chose, rather than by whichever placement happened to fail first.
-//
-// The result is total: for ANY rect, the plan either places a control inside the rect
-// or does not place it at all, and never places two controls that intersect.
-// TestChromeRowNeverOverlapsAtAnySize sweeps that, and
-// TestSqueezedMusicPanelNeverStacksItsHeader drives the reported shape end to end.
-//
 // PURE AND ALLOCATION-FREE. Fixed arrays, an injected measure, no App and no Ctx —
 // so the geometry is gate-able headless and the per-frame draw pays nothing for it.
 

@@ -2,39 +2,6 @@ package ui
 
 // contentjob.go — the data/engine half of two Studio features over an imported
 // recording (a .demo/.aorec):
-//
-//   1. "Missing-content report": enumerate EVERYTHING the recording references
-//      (character sprites, backgrounds + desks, music, SFX, chat blips), probe
-//      what actually exists at the origin (or a local:// mount), and produce a
-//      structured found/missing/unreachable report per category.
-//   2. "Package this RP": fetch every FOUND asset's raw bytes and write a
-//      self-contained bundle folder in the EXISTING archive format (byte-
-//      compatible with archive.ExportAssets / beginBundledReplay) so the folder
-//      replays offline forever. The report doubles as the package's gap list,
-//      written into the bundle as a plain-text file recipients can read.
-//
-// Design (mirrors the wave-1 gif-export machinery, gifexport.go):
-//   - ONE contentJob at a time (single-flight; a second request is refused
-//     politely). It runs through phases enumerate → probe → [report ready] →
-//     optionally package.
-//   - Probing runs OFF the render thread: Manager.ResolveRaw / FetchRaw are
-//     synchronous blocking calls (hard rule: no sync net/disk on the render
-//     path), so a bounded, NAMED set of probe goroutines drains a bounded work
-//     channel and reports each result on a bounded result channel the render
-//     thread polls once per frame (tickContentJob). This keeps the wave-1
-//     "bounded in-flight window + hard wall-clock ceiling" discipline: the
-//     window is the worker count, and a dead origin still produces a report
-//     because probing stops at contentProbeHardCap.
-//   - One network probe per asset stays the law: ResolveRaw/FetchRaw go through
-//     T2 → T3 → source, and the 404-TTL + singleflight layers below dedupe, so
-//     nothing here re-probes.
-//   - Packaging runs in ONE goroutine (bounded 1-buffered delivery, generation-
-//     checked): it drains the already-probed bytes and writes the folder; disk
-//     writes happen in the goroutine, never on the render thread.
-//   - Cancel is safe at every phase: the job is replaced by generation, buffered
-//     channels always accept, and every spawned goroutine finishes and dies
-//     (never leaks blocked on a send).
-//
 // Everything except the render-thread poll is pure / headless-testable.
 
 import (
@@ -299,10 +266,6 @@ func (cr *CategoryReport) recount() {
 // backgrounds/desks + music), then adds the SFX and chat-blip references
 // SceneAssets deliberately omits (it bundles only the spine) — those ARE part
 // of "everything a recording references", so the report enumerates them too.
-//
-// origin is the asset host resolved on the render thread (demoDefaultOrigin);
-// "" is honest and flagged (OriginMissing) rather than probed as all-missing.
-// Pure over its inputs so enumeration completeness unit-tests without SDL.
 func enumerateContent(origin, startBg string, events []courtroom.Event) *ContentReport {
 	r := &ContentReport{
 		Origin:        origin,
@@ -572,11 +535,9 @@ type contentPackageResult struct {
 // returning false so the caller can keep its button disabled. rec must be
 // non-nil; the origin comes from rec.Origin (the caller filled it via
 // demoDefaultOrigin on load), so this touches no other App fields.
-//
 // The report is enumerated synchronously here (pure + fast — no I/O), then the
 // probe work is fed to a bounded set of goroutines. If the origin is empty the
 // job short-circuits to phaseReport with everything StatusUnknown flagged
-// OriginMissing (nothing to probe).
 func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	if a.contentBusy {
 		a.warnLine = "A content report / package is already running — let it finish first."
@@ -671,10 +632,6 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 // is nothing to package, and the flat .aorec already landed. Render thread only
 // (reads a.d.Manager/Prefs, spawns the seed/probe goroutines) — called AFTER
 // stopRecording's async .aorec write, so it never blocks or slows the stop.
-//
-// rec.Origin is the SESSION origin stamped at startRecording (a.urls.Origin() at
-// record start) — the right host even if the session later disconnected before
-// stop, so we read rec.Origin, not the live a.urls.
 func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	if a.contentBusy {
 		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
@@ -847,16 +804,6 @@ func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, res
 // concurrently (contentProbeWorkers), so the format one char's sprite wins via
 // RecordSuccess must NOT lock a sibling char of a different format out — the
 // sibling's learned-miss re-walks the full chain and is found at its own format.
-// A server whose sprites are .gif/.png but publishes no extensions.json is thus
-// found whether its formats are uniform or mixed, which the zero-fallback live
-// path deliberately won't do. It's still one network probe per candidate (404s
-// cached by the 404-TTL layer + collapsed by singleflight through FetchRaw), and
-// the winner is learned (RecordSuccess inside ResolveRawFull) so the export warm
-// right after this — AND any later re-report/re-export of the same demo — resolve
-// learned-first for the common single-format server. A found asset's URL is
-// exactly the origin-relative path a bundle writes. A transport failure (dead
-// host) surfaces as StatusUnreachable via the phase hard cap, distinct from a
-// real all-formats-404 (StatusMissing).
 func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus, bool) {
 	if mgr == nil {
 		return "", StatusUnreachable, false
