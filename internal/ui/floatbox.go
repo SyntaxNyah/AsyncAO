@@ -416,7 +416,7 @@ func (a *App) closeTopOverlay() bool {
 	case a.layoutEdit:
 		a.stopLayoutEdit()
 	case a.classic.classicEdit:
-		a.stopClassicEdit()
+		a.classic.stopClassicEdit()
 	case a.updates.visible():
 		a.updates.closeModal()
 	case a.showLogin:
@@ -554,7 +554,7 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 	if !ok {
 		return
 	}
-	r := a.anchoredRect(slotExtras, ov, w, h)
+	r := a.classic.anchoredRect(slotExtras, ov, w, h)
 	a.extrasBoxX, a.extrasBoxY = r.X, r.Y
 	if r.W > 0 && r.H > 0 {
 		a.extrasUserW, a.extrasUserH = clampI32(r.W, extrasMinW, w), clampI32(r.H, extrasMinH, h)
@@ -850,7 +850,7 @@ func (a *App) reattachWidget(i int) {
 	if i < 0 || i >= len(a.extrasDetached) {
 		return
 	}
-	a.clearClassicSlot(tornWidgetSlotKey(a.extrasDetached[i].id)) // capture id BEFORE the splice
+	a.classic.clearClassicSlot(tornWidgetSlotKey(a.extrasDetached[i].id)) // capture id BEFORE the splice
 	a.extrasDetached = append(a.extrasDetached[:i], a.extrasDetached[i+1:]...)
 	a.extrasDetachDragging = false
 }

@@ -53,7 +53,7 @@ func (a *App) areaMenuRowLive(_ musicMenuKind) bool {
 	if a.tabHidden(logTabAreas) {
 		return false
 	}
-	return a.logTab == logTabAreas || a.tabTorn(logTabAreas)
+	return a.logTab == logTabAreas || a.classic.tabTorn(logTabAreas)
 }
 
 // areaMenuRowEnabled greys the rows that cannot act. Greyed rather than hidden, on

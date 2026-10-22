@@ -71,7 +71,7 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	if !isSpec && p.name != "" && a.sess != nil {
 		items = append(items, rosterMenuItem{rosterActMessage, "Message (PM)"})
 	}
-	if !a.panelHidden(rosterBtnPair) {
+	if !a.classic.panelHidden(rosterBtnPair) {
 		switch {
 		case p.uid != "":
 			items = append(items, rosterMenuItem{rosterActPair, "Pair"})
@@ -88,11 +88,11 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 		}
 		items = append(items, rosterMenuItem{rosterActFollow, fl})
 	}
-	if p.uid != "" && !a.panelHidden(rosterBtnUID) {
+	if p.uid != "" && !a.classic.panelHidden(rosterBtnUID) {
 		items = append(items, rosterMenuItem{rosterActCopyUID, "Copy UID"})
 	}
 	// IPID is mod-only server data — its presence IS the authorization.
-	if p.ipid != "" && !a.panelHidden(rosterBtnIPID) {
+	if p.ipid != "" && !a.classic.panelHidden(rosterBtnIPID) {
 		items = append(items, rosterMenuItem{rosterActCopyIPID, "Copy IPID"})
 	}
 	if fk != "" && a.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
@@ -102,14 +102,14 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 		}
 		items = append(items, rosterMenuItem{rosterActFriend, fl})
 	}
-	if fk != "" && a.serverKey != "" && !a.panelHidden(rosterBtnIgnore) {
+	if fk != "" && a.serverKey != "" && !a.classic.panelHidden(rosterBtnIgnore) {
 		il := "Ignore"
 		if a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, fk) {
 			il = "Unignore"
 		}
 		items = append(items, rosterMenuItem{rosterActIgnore, il})
 	}
-	if _, ok := a.profileFor(p, isMe); ok && !a.panelHidden(rosterBtnProfile) {
+	if _, ok := a.profileFor(p, isMe); ok && !a.classic.panelHidden(rosterBtnProfile) {
 		items = append(items, rosterMenuItem{rosterActProfile, "Profile"})
 	}
 	a.rosterMenuItems = items

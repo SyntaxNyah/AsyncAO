@@ -96,6 +96,7 @@ func (s *selfUpdate) resetForChannel() {
 func (a *App) wireComponents() {
 	a.env.h = a
 	a.updates.env = &a.env
+	a.classic.env = &a.env
 }
 
 // maybeKickUpdateCheck fires the update probe EXACTLY ONCE, on the first frame

@@ -225,12 +225,12 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// corner, but each is its own movable slot now ("the random char
 	// button is always stuck in the emote grid corner") and hideable like any
 	// control button.
-	if !a.panelHidden("ctrl.favsfilter") {
+	if !a.classic.panelHidden("ctrl.favsfilter") {
 		a.drawEmoteFavToggle(a.slotRect("ctrl.favsfilter", sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH}, a.winW, a.winH))
 	}
 	// Swap to a random available character — replaced the old "Random" emote
 	// button (redundant with per-send auto-random + the wheel cycling emotes).
-	if !a.panelHidden("ctrl.randchar") {
+	if !a.classic.panelHidden("ctrl.randchar") {
 		rcb := a.slotRect("ctrl.randchar", sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}, a.winW, a.winH)
 		if c.Button(rcb, "Rand char") {
 			a.randomChar()

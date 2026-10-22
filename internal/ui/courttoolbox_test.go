@@ -80,9 +80,9 @@ func TestToolIconAllocFree(t *testing.T) {
 // per-piece list. The old showUICfg field is gone; this is now the only trigger.
 func TestUICfgRetired(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{}        // handleHotkeys early-returns without a session
-	a.classic.hidden = map[string]bool{} // App init seeds this; bare test fixture must too
-	a.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
+	a.sess = &courtroom.Session{}                // handleHotkeys early-returns without a session
+	a.classic.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
+	a.classic.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
 	// Bind the action to whatever name SDL gives Ctrl+F4's keycode (headless
 	// GetKeyName can differ from the "f4" default), so the bind and the dispatch
 	// agree. This proves the wiring, not a key-name quirk. Skip only if key names
@@ -101,7 +101,7 @@ func TestUICfgRetired(t *testing.T) {
 	}
 	// The panel draws gated ONLY on pinned+pieces, never on panelHidden(panelToolbox):
 	// prove the grip stays hidden but the panel is armed.
-	if !a.panelHidden(panelToolbox) {
+	if !a.classic.panelHidden(panelToolbox) {
 		t.Fatal("test setup: the toolbox grip should still be hidden")
 	}
 }
@@ -166,7 +166,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	firstID := hideablePanels[0].id
 	rowX := panel.X + pad + 3
 	rowY := panel.Y + toolboxPiecesHeaderH + 3
-	if a.panelHidden(firstID) {
+	if a.classic.panelHidden(firstID) {
 		t.Fatalf("test setup: %q should start shown", firstID)
 	}
 
@@ -175,7 +175,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	c.mouseX, c.mouseY = rowX, rowY
 	c.clicked = true
 	a.drawToolboxPieces(w, h)
-	if !a.panelHidden(firstID) {
+	if !a.classic.panelHidden(firstID) {
 		t.Fatalf("a click on the first pieces-panel checkbox must hide %q — the panel is blind to input", firstID)
 	}
 
@@ -183,8 +183,8 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	// as boxFencesPointer did inside drawCourtroom. Re-show the piece, fence, and
 	// re-click: the fence blanks the pointer, so the checkbox must NOT toggle. This
 	// pins WHY the draw had to move out of the fenced pass.
-	a.setPanelHidden(firstID, false)
-	if a.panelHidden(firstID) {
+	a.classic.setPanelHidden(firstID, false)
+	if a.classic.panelHidden(firstID) {
 		t.Fatal("test setup: piece should be re-shown before the fenced case")
 	}
 	c.mouseX, c.mouseY = rowX, rowY
@@ -192,7 +192,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	c.fencePointer() // what the courtroom pass did over the panel
 	a.drawToolboxPieces(w, h)
 	c.unfencePointer()
-	if a.panelHidden(firstID) {
+	if a.classic.panelHidden(firstID) {
 		t.Fatalf("a fenced pass must NOT toggle %q (this is the bug the move fixed)", firstID)
 	}
 }
@@ -223,7 +223,7 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	firstID := hideablePanels[0].id
 	rowX := panel.X + pad + 3
 	rowY := panel.Y + toolboxPiecesHeaderH + 3
-	if a.panelHidden(firstID) {
+	if a.classic.panelHidden(firstID) {
 		t.Fatalf("test setup: %q should start shown", firstID)
 	}
 
@@ -235,7 +235,7 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	c.modalOn = true
 	a.drawToolboxPieces(w, h)
 	c.modalOn = false
-	if a.panelHidden(firstID) {
+	if a.classic.panelHidden(firstID) {
 		t.Fatalf("with modalOn set (editor fence), the panel must be click-dead — got %q hidden", firstID)
 	}
 
@@ -245,7 +245,7 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	c.clicked = true
 	c.modalOn = false // app.go saves+clears modalOn while editing, then restores
 	a.drawToolboxPieces(w, h)
-	if !a.panelHidden(firstID) {
+	if !a.classic.panelHidden(firstID) {
 		t.Fatalf("with modalOn released (app.go edit path), a click must hide %q", firstID)
 	}
 }

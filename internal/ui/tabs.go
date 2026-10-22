@@ -681,7 +681,7 @@ func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 	// band chrometop.go reserves for it. The whole strip is a MOVE-ONLY layout slot,
 	// so an Edit Layout drag still lifts it anywhere; un-edited it uses this default.
 	// ensureClassicOv loads the override map slotRect reads.
-	a.ensureClassicOv()
+	a.classic.ensureClassicOv()
 	def := a.tabStripDockedRect(total, w)
 	origin := a.tabStripOrigin(def, w, h)
 	x, y := origin.X, origin.Y
@@ -845,7 +845,7 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 		// chrome band, so the strip really is floating there), else the docked home.
 		// Only the origin survives: the slot's persisted W/H are window fractions and
 		// the strip is move-only, so its size is always the chips'.
-		a.ensureClassicOv()
+		a.classic.ensureClassicOv()
 		r := a.slotRect(slotTabBar, def, w, h)
 		r.W, r.H = def.W, def.H
 		return r, true

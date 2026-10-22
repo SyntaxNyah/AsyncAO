@@ -83,21 +83,21 @@ const (
 // durable pref. It takes effect the same frame whether or not the editor is open —
 // slotRect reads a.classicOv, which this replaces and marks loaded. A nil/empty map
 // is the stock reset (every box back to its computed default).
-func (a *App) applyLayoutPreset(m map[string][4]float64) {
+func (classic1 *classicState) applyLayoutPreset(m map[string][4]float64) {
 	// A wholesale swap invalidates the window PIN of every slot whose rect it
 	// changes: the pin's saved-window context described the OLD override (a
 	// preset may have been saved months ago at another resolution — re-basing
 	// its fresh rect against that stale window would misplace it). Untouched
 	// slots keep their pins, so a stage-only premade never unpins the log.
-	for k := range a.classic.classicAnchor {
-		if m[k] != a.classic.classicOv[k] {
-			delete(a.classic.classicAnchor, k)
-			a.d.Prefs.ClearClassicAnchor(k)
+	for k := range classic1.classicAnchor {
+		if m[k] != classic1.classicOv[k] {
+			delete(classic1.classicAnchor, k)
+			classic1.env.d.Prefs.ClearClassicAnchor(k)
 		}
 	}
-	a.d.Prefs.SetClassicLayout(m)
-	a.classic.classicOv = cloneClassicOv(m)
-	a.classic.classicOvLoaded = true
+	classic1.env.d.Prefs.SetClassicLayout(m)
+	classic1.classicOv = cloneClassicOv(m)
+	classic1.classicOvLoaded = true
 }
 
 // applyProfile makes a full-state LayoutProfile (A6) the live layout AND the
@@ -162,13 +162,13 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 // layout swap. ensureClassicOv first so persisted other-slot overrides aren't dropped
 // when the courtroom hasn't been entered yet this session.
 func (a *App) applyStagePreset(vp [4]float64) {
-	a.ensureClassicOv()
+	a.classic.ensureClassicOv()
 	ov := cloneClassicOv(a.classic.classicOv)
 	if ov == nil {
 		ov = map[string][4]float64{}
 	}
 	ov[slotViewport] = vp
-	a.applyLayoutPreset(ov)
+	a.classic.applyLayoutPreset(ov)
 }
 
 // theaterStageFrac builds the "Theater" premade's viewport fraction: one big 4:3 stage

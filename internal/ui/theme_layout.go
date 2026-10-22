@@ -777,7 +777,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	icRect, okIC := lay.rect("ic_chatlog")
 	oocRect, okOOC := lay.rect("server_chatlog")
 	merged := okIC && okOOC && rectOverlapFrac(icRect, oocRect) >= logMergeOverlapFrac
-	if merged && !a.panelHidden(panelLog) {
+	if merged && !a.classic.panelHidden(panelLog) {
 		// ONE inset for the whole panel (#25): the chip strip and the list body both
 		// start from the inset body, so they share the theme's margin and the gap
 		// between them is exactly themedChipGap. Insetting only the body would leave
@@ -801,7 +801,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		default:
 			a.drawICLogList(inner, true)
 		}
-	} else if okIC && !a.panelHidden(panelLog) {
+	} else if okIC && !a.classic.panelHidden(panelLog) {
 		a.drawICLogList(insetThemedBody(icRect), true)
 	}
 	// ooc_toggle swaps the server chat panel for the debug log, exactly as AO2
@@ -811,13 +811,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// set_size_and_pos's hide-when-missing rule.
 	dbgRect, okDbg := lay.rect("ms_chatlog")
 	showDebug := a.debugOOC && okDbg
-	if okOOC && !merged && !showDebug && !a.panelHidden(panelOOC) {
+	if okOOC && !merged && !showDebug && !a.classic.panelHidden(panelOOC) {
 		a.drawOOCLogList(insetThemedBody(oocRect), true)
 	}
-	if showDebug && !a.panelHidden(panelOOC) {
+	if showDebug && !a.classic.panelHidden(panelOOC) {
 		a.drawThemedDebugLog(insetThemedBody(dbgRect))
 	}
-	if tr, ok := lay.rect("ooc_toggle"); ok && !a.panelHidden(panelOOC) {
+	if tr, ok := lay.rect("ooc_toggle"); ok && !a.classic.panelHidden(panelOOC) {
 		// The label names the panel currently ON SCREEN, not what the click will do
 		// (AO2 writes "Server" while server chat is up, courtroom.cpp:1014). The
 		// button is inert without an ms_chatlog rect: with nowhere to draw the debug
@@ -829,7 +829,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	// OOC inputs draw wherever the theme put them — independent of how
 	// the log rects resolved (merged tabs still need a send box).
-	if !a.panelHidden(panelOOC) {
+	if !a.classic.panelHidden(panelOOC) {
 		if in, ok := lay.rect("ooc_chat_message"); ok {
 			var send bool
 			a.oocInput, send = c.TextField("ooc", in, a.oocInput, "OOC chat...")
@@ -862,7 +862,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// drawMusicList both fills that band and gives the list back the ~27px our own
 	// search row was taking out of the theme's budgeted height.
 	searchExternal := false
-	if r, ok := lay.rect("music_search"); ok && !a.panelHidden(panelLog) {
+	if r, ok := lay.rect("music_search"); ok && !a.classic.panelHidden(panelLog) {
 		searchExternal = true
 		a.musicSearch, _ = c.TextField("musicsearch", r, a.musicSearch, "Search")
 	}
@@ -871,14 +871,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// the answer that matters is whether the NAME drew, not the plate art: a plate
 	// with no usable music_name paints nothing readable, so the panel keeps its row.
 	nameDrew := false
-	if !a.panelHidden(panelLog) {
+	if !a.classic.panelHidden(panelLog) {
 		nameDrew = a.drawThemedMusicPlate(lay)
 	}
 	// switch_area_music is AO2's "A/M" button (courtroom.cpp:1060-1061). AO2 places
 	// ui_area_list at the SAME music_list rect (:864), so this button is how it
 	// swaps the two — a declared rect that painted nothing until now.
 	// chip beside it are duplicate controls inside the design canvas (#21's parity
-	if r, ok := lay.rect("switch_area_music"); ok && !a.panelHidden(panelLog) {
+	if r, ok := lay.rect("switch_area_music"); ok && !a.classic.panelHidden(panelLog) {
 		if a.drawThemeButton("switch_area_music", "A/M", r) {
 			a.logTab = themedSwitchAreaMusic(a.logTab)
 		}
@@ -892,14 +892,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// No asyncao_* key is invented for it: the AO2 key exists, and inventing a
 	// parallel one would be the actual violation.
 	rosterOwnRect := false
-	if r, ok := lay.rect("player_list"); ok && !a.panelHidden(panelLog) {
+	if r, ok := lay.rect("player_list"); ok && !a.classic.panelHidden(panelLog) {
 		a.drawPlayerList(insetThemedBody(r))
 		rosterOwnRect = true
 	}
 
 	// Music / Areas (and the roster too, unless it just drew at its own rect) share
 	// the music_list rect — AO2 toggles them; we chip.
-	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
+	if r, ok := lay.rect("music_list"); ok && !a.classic.panelHidden(panelLog) {
 		// One inset for chips AND body, exactly as the log panel above (#25):
 		// drawMusicList / drawAreaList / drawPlayerList also place their first widget
 		// at r.X/r.Y, so without it a theme showed padded logs beside a flush list.
@@ -979,7 +979,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// pre (AO2 ui_pre, courtroom.cpp:1065). AUTO-FOLLOWS each emote pick
 	// (selectEmote); unchecked forces idle at the send site so the intro is
 	// skipped even when the emote defines one.
-	if r, ok := themedToggleRect(lay, "pre", "", "asyncao_ic_pre"); ok && !a.panelHidden(slotICPre) {
+	if r, ok := themedToggleRect(lay, "pre", "", "asyncao_ic_pre"); ok && !a.classic.panelHidden(slotICPre) {
 		// bounceOnToggle: ui_pre → focus_ic_input (courtroom.cpp:502), the same wiring
 		// the classic row carries — both IC bars or neither.
 		a.icPreanim = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.icPreanim), a.icPreanim)
@@ -1006,7 +1006,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// ALONE when the toggle is hidden — a stale flip stops being shown, never
 	// silently cleared, because pairFlip is real pair state that parks per tab.
 	if r, ok := themedToggleRect(lay, "flip", "", ""); ok &&
-		!a.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
+		!a.classic.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
 		a.pairFlip = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip), a.pairFlip) // ui_flip → focus_ic_input (courtroom.cpp:503)
 		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 	}
@@ -1111,7 +1111,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if r, ok := lay.rect("asyncao_ic_fx"); ok {
 		a.fxButton(r)
 	}
-	if r, ok := lay.rect("asyncao_ic_emoji"); ok && !a.panelHidden(slotICEmoji) {
+	if r, ok := lay.rect("asyncao_ic_emoji"); ok && !a.classic.panelHidden(slotICEmoji) {
 		if a.drawEmojiBarButton(r) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}
@@ -1142,7 +1142,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Shouts at their design rects, themed art when shipped.
-	if !a.panelHidden(panelShouts) {
+	if !a.classic.panelHidden(panelShouts) {
 		shouts := []struct {
 			key, label string
 			mod        int
@@ -1316,7 +1316,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Emote grid at the theme's metrics, with page arrows.
-	if r, ok := lay.rect("emotes"); ok && !a.panelHidden(panelEmotes) {
+	if r, ok := lay.rect("emotes"); ok && !a.classic.panelHidden(panelEmotes) {
 		a.drawEmoteGridThemed(r, lay, vp)
 	}
 	// A themed layout that declares no `emotes` rect (or a hidden grid, or a

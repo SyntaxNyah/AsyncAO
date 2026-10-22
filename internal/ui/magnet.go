@@ -118,7 +118,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	// absent from the census before): panels can now snap flush to it. It's never the
 	// surface dragged in this file, and it's always present in normal play unless the
 	// user hid it (panelToolbox).
-	if !a.panelHidden(panelToolbox) {
+	if !a.classic.panelHidden(panelToolbox) {
 		add(a.compactToolboxStripRect(w, h))
 	}
 }

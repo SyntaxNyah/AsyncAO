@@ -180,16 +180,16 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 // anchoredRect resolves one slot's override honouring its window pin, if any.
 // The no-anchor path is the historical fracToRect — anchored resolution costs
 // one extra map lookup, only for slots that HAVE an override.
-func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
-	if ar, ok := a.classic.classicAnchor[name]; ok {
+func (classic1 *classicState) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
+	if ar, ok := classic1.classicAnchor[name]; ok {
 		return applyAnchor(ov, ar, w, h)
 	}
 	return fracToRect(ov, w, h)
 }
 
 // slotAnchorMode reports a slot's current pin mode string ("" = unpinned).
-func (a *App) slotAnchorMode(name string) string {
-	ar, ok := a.classic.classicAnchor[name]
+func (classic1 *classicState) slotAnchorMode(name string) string {
+	ar, ok := classic1.classicAnchor[name]
 	if !ok {
 		return ""
 	}
@@ -200,7 +200,7 @@ func (a *App) slotAnchorMode(name string) string {
 // slot with no override yet gets one minted from its current on-screen rect
 // (pin-in-place without a drag); clearing the pin keeps the override.
 func (a *App) cycleSlotAnchor(name string, w, h int32) {
-	next := nextAnchorMode(a.slotAnchorMode(name))
+	next := nextAnchorMode(a.classic.slotAnchorMode(name))
 	if _, ok := a.classic.classicOv[name]; !ok {
 		// Pin-in-place: the anchor re-bases an override, so mint one from the
 		// rect the slot drew at this frame.
@@ -234,10 +234,10 @@ func (a *App) cycleSlotAnchor(name string, w, h int32) {
 // called whenever the editor rewrites the slot's fraction override (the
 // override now describes the rect at THIS window size). Persisted at
 // drag-release alongside the override.
-func (a *App) syncAnchorWindow(name string, w, h int32) {
-	if ar, ok := a.classic.classicAnchor[name]; ok {
+func (classic1 *classicState) syncAnchorWindow(name string, w, h int32) {
+	if ar, ok := classic1.classicAnchor[name]; ok {
 		ar.winW, ar.winH = w, h
-		a.classic.classicAnchor[name] = ar
+		classic1.classicAnchor[name] = ar
 	}
 }
 
@@ -247,8 +247,8 @@ const anchorPinDot = int32(7)
 // drawAnchorPin marks an anchored box's pinned reference in the editor: a
 // small filled dot at the pinned corner (or centre; edge-midpoints for
 // single-axis pins from hand-edited prefs).
-func (a *App) drawAnchorPin(r sdl.Rect, name string) {
-	ar, ok := a.classic.classicAnchor[name]
+func (classic1 *classicState) drawAnchorPin(r sdl.Rect, name string) {
+	ar, ok := classic1.classicAnchor[name]
 	if !ok {
 		return
 	}
@@ -267,6 +267,6 @@ func (a *App) drawAnchorPin(r sdl.Rect, name string) {
 		py = r.Y + r.H - anchorPinDot - 1
 	}
 	dot := sdl.Rect{X: px, Y: py, W: anchorPinDot, H: anchorPinDot}
-	a.ctx.Fill(dot, ColTierGreen)
-	a.ctx.Border(dot, ColBackground)
+	classic1.env.ctx.Fill(dot, ColTierGreen)
+	classic1.env.ctx.Border(dot, ColBackground)
 }

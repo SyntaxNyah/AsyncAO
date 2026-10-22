@@ -568,7 +568,7 @@ type compactToolboxLatch struct {
 // dispatch, never from an App-level pre-pass where the flag is stale.
 func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 	lat := compactToolboxLatch{set: true, mark: a.ctx.overlayFenceMark()}
-	if a.panelHidden(panelToolbox) {
+	if a.classic.panelHidden(panelToolbox) {
 		return lat // drawCompactToolbox early-returns; nothing is painted, so nothing is fenced
 	}
 	// #101: the floating bottom-right grip is retired in normal play — its commands
@@ -632,7 +632,7 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	}
 	cur := def
 	if ov, ok := a.classic.classicOv[slotToolbox]; ok {
-		cur = a.anchoredRect(slotToolbox, ov, w, h) // fracToRect unless the slot is window-pinned
+		cur = a.classic.anchoredRect(slotToolbox, ov, w, h) // fracToRect unless the slot is window-pinned
 		// The strip is MOVE-only (slotResizeEdges): its W/H are chip-count-driven,
 		// not user-resizable. The override persists position as a window FRACTION,
 		// which would scale W/H on a resized window and smear the strip — so keep only
@@ -647,7 +647,7 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// base and this draw agree on the strip's true W/H. Done inline (not via slotRect)
 	// precisely because slotRect can't apply the move-only W/H normalization above.
 	if a.classic.classicEdit {
-		a.regSlot(slotToolbox, cur, def)
+		a.classic.regSlot(slotToolbox, cur, def)
 	}
 	return cur
 }
@@ -669,7 +669,7 @@ func (a *App) editOverToolbox(w, h int32) bool {
 	// normal box, so don't suppress the chips region either — let the themed editor own
 	// the whole strip. The classic editor drags via the slotToolbox registration
 	// (compactToolboxStripRect → regSlot) whenever the press lands on the grip.
-	if !a.toolbox.toolboxThemeRectOn && !a.panelHidden(panelToolbox) {
+	if !a.toolbox.toolboxThemeRectOn && !a.classic.panelHidden(panelToolbox) {
 		strip := a.compactToolboxStripRect(w, h)
 		grip := compactToolboxGripRect(strip)
 		if pointIn(c.mouseX, c.mouseY, strip) && !pointIn(c.mouseX, c.mouseY, grip) {
@@ -817,9 +817,9 @@ var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 // keyboard is held to the same no-strand rule as the panel. A hotkey that can
 // strand you is worse than no hotkey: the person who pressed it is by definition
 func (a *App) toggleChromePanel(id, label string) {
-	hide := !a.panelHidden(id)
+	hide := !a.classic.panelHidden(id)
 	a.setPanelHiddenGuarded(id, hide)
-	if a.panelHidden(id) != hide {
+	if a.classic.panelHidden(id) != hide {
 		return // refused by the guard, which has set its own explanatory toast
 	}
 	a.warnLine = label + " shown"
@@ -840,7 +840,7 @@ func (a *App) setPanelHiddenGuarded(id string, hide bool) {
 		a.warnAt = time.Now()
 		return
 	}
-	a.setPanelHidden(id, hide)
+	a.classic.setPanelHidden(id, hide)
 }
 
 // lastMouseLifeline reports whether hiding id would leave every mouse lifeline
@@ -857,7 +857,7 @@ func (a *App) lastMouseLifeline(id string) bool {
 		return false
 	}
 	for _, l := range mouseLifelines {
-		if l != id && !a.panelHidden(l) {
+		if l != id && !a.classic.panelHidden(l) {
 			return false // something else still gets them back
 		}
 	}
@@ -966,7 +966,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		if !toolboxPieceMatches(p.id, q) {
 			continue
 		}
-		hidden := a.panelHidden(p.id)
+		hidden := a.classic.panelHidden(p.id)
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.short, hidden); next != hidden {
 			a.setPanelHiddenGuarded(p.id, next)
 		}
@@ -987,7 +987,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 				}
 				cx := panel.X + pad + vis%toolboxPiecesCols*colW
 				cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
-				hidden := a.panelHidden(b.id)
+				hidden := a.classic.panelHidden(b.id)
 				if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
 					a.setPanelHiddenGuarded(b.id, next)
 				}
@@ -1006,7 +1006,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 			}
 			cx := panel.X + pad + vis%toolboxPiecesCols*colW
 			cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
-			hidden := a.panelHidden(b.id)
+			hidden := a.classic.panelHidden(b.id)
 			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
 				a.setPanelHiddenGuarded(b.id, next)
 			}

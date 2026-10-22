@@ -32,8 +32,8 @@ import (
 // in ensureClassicOv) — O(1), no prefs read — and returns 0 (the plain-Copy
 // fast path) when the slot has no rotation, which is every slot on a settled,
 // unedited frame. Kept tiny and SDL-free so the angle==0 routing is unit-testable.
-func (a *App) classicSlotRotation(slot string) float64 {
-	b, ok := a.classic.classicRot[slot]
+func (classic1 *classicState) classicSlotRotation(slot string) float64 {
+	b, ok := classic1.classicRot[slot]
 	if !ok || b == 0 {
 		return 0
 	}
@@ -153,32 +153,32 @@ func rotationChipLabel(b uint8) string {
 // the anchor pin (classiclayout.go:598 — pins aren't in the undo history either);
 // persistence rides the SetClassicRotation setter directly (user-initiated, no
 // SaveNow), matching cycleSlotAnchor.
-func (a *App) cycleSlotRotation(name string, fine bool) {
+func (classic1 *classicState) cycleSlotRotation(name string, fine bool) {
 	if name == "" {
 		return
 	}
 	if !classicSlotRotatable(name) {
-		a.debug.push("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
+		classic1.env.debug.push("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
 		return
 	}
 	// Rotation re-bases like the anchor: it needs an override to hang off, so mint
 	// one from the current rect if the slot has none (unreachable while no classic
 	// slot is rotatable, but kept correct for the forward-compat path).
-	if _, ok := a.classic.classicOv[name]; !ok {
+	if _, ok := classic1.classicOv[name]; !ok {
 		return
 	}
-	next := nextRotationByte(a.classic.classicRot[name], fine)
-	if a.classic.classicRot == nil {
-		a.classic.classicRot = make(map[string]uint8, classicSlotRegCap)
+	next := nextRotationByte(classic1.classicRot[name], fine)
+	if classic1.classicRot == nil {
+		classic1.classicRot = make(map[string]uint8, classicSlotRegCap)
 	}
 	if next == 0 {
-		delete(a.classic.classicRot, name)
-		a.d.Prefs.ClearClassicRotation(name)
+		delete(classic1.classicRot, name)
+		classic1.env.d.Prefs.ClearClassicRotation(name)
 	} else {
-		a.classic.classicRot[name] = next
-		a.d.Prefs.SetClassicRotation(name, next)
+		classic1.classicRot[name] = next
+		classic1.env.d.Prefs.SetClassicRotation(name, next)
 	}
-	a.debug.push("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
+	classic1.env.debug.push("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }
 
 // cycleThemeRotation advances the hovered THEMED key's rotation (R-key). Offered

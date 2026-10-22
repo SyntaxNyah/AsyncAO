@@ -152,7 +152,7 @@ func (a *App) rosterMenuThemed() bool {
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false // classic geometry: this panel is chrome, and so is any torn panel
 	}
-	if a.panelHidden(panelLog) {
+	if a.classic.panelHidden(panelLog) {
 		return false // the themed panel that hosts the music list is not on screen
 	}
 	_, ok := a.themeLay.rect("music_list")

@@ -144,14 +144,14 @@ type slotInfo struct {
 // (the editor is the sole writer thereafter). A nil snapshot means "no edits" —
 // slotRect then just returns the computed default. Called every courtroom frame;
 // after the first it is a single bool check (alloc-free).
-func (a *App) ensureClassicOv() {
-	if a.classic.classicOvLoaded {
+func (classic1 *classicState) ensureClassicOv() {
+	if classic1.classicOvLoaded {
 		return
 	}
-	a.classic.classicOv = a.d.Prefs.Load().ClassicLayoutOverrides()
-	a.classic.classicAnchor = parseAnchors(a.d.Prefs.Load().ClassicAnchorSnapshot()) // window pins ride alongside
-	a.classic.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()                // rotations ride alongside too (A4)
-	a.classic.classicOvLoaded = true
+	classic1.classicOv = classic1.env.d.Prefs.Load().ClassicLayoutOverrides()
+	classic1.classicAnchor = parseAnchors(classic1.env.d.Prefs.Load().ClassicAnchorSnapshot()) // window pins ride alongside
+	classic1.classicRot = classic1.env.d.Prefs.Load().ClassicRotationSnapshot()                // rotations ride alongside too (A4)
+	classic1.classicOvLoaded = true
 }
 
 // fracPx resolves one stored window-fraction against an extent, rounding to the NEAREST
@@ -211,7 +211,7 @@ func (a *App) snapViewportTo43(w, h int32) {
 		return // already 4:3 — no phantom undo entry
 	}
 	r.H = nh
-	a.pushClassicUndo()
+	a.classic.pushClassicUndo()
 	if a.classic.classicOv == nil {
 		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
@@ -222,14 +222,14 @@ func (a *App) snapViewportTo43(w, h int32) {
 }
 
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
-func (a *App) regSlot(name string, cur, def sdl.Rect) {
+func (classic1 *classicState) regSlot(name string, cur, def sdl.Rect) {
 	if name == "" {
 		return
 	}
-	if a.classic.slotReg == nil {
-		a.classic.slotReg = make(map[string]slotInfo, classicSlotRegCap)
+	if classic1.slotReg == nil {
+		classic1.slotReg = make(map[string]slotInfo, classicSlotRegCap)
 	}
-	a.classic.slotReg[name] = slotInfo{cur: cur, def: def}
+	classic1.slotReg[name] = slotInfo{cur: cur, def: def}
 }
 
 // slotRect returns a movable+resizable widget's rect: the user override (frac→px)
@@ -238,10 +238,10 @@ func (a *App) regSlot(name string, cur, def sdl.Rect) {
 func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	cur := def
 	if ov, ok := a.classic.classicOv[name]; ok {
-		cur = a.anchoredRect(name, ov, w, h) // fracToRect unless the slot is window-pinned
+		cur = a.classic.anchoredRect(name, ov, w, h) // fracToRect unless the slot is window-pinned
 	}
 	if a.classic.classicEdit {
-		a.regSlot(name, cur, def)
+		a.classic.regSlot(name, cur, def)
 	}
 	return cur
 }
@@ -265,7 +265,7 @@ func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) 
 // pixel-identical to before. The returned rect still routes through slotRect, so an
 // Edit-Layout override repositions a visible button as usual.
 func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect, bool) {
-	if a.panelHidden(key) {
+	if a.classic.panelHidden(key) {
 		return sdl.Rect{}, false
 	}
 	r := a.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
@@ -465,7 +465,7 @@ func classicHandles(r sdl.Rect) [handleCount]sdl.Rect {
 // startClassicEdit arms the default-courtroom slot editor. Open modals close
 // (they'd be fenced shut); mirrors startLayoutEdit.
 func (a *App) startClassicEdit() {
-	a.ensureClassicOv()
+	a.classic.ensureClassicOv()
 	a.classic.classicEdit = true
 	// A1 Phase 1: the compact toolbox (grip + per-piece hide/show panel) now SURVIVES
 	// into edit mode — it's the clean replacement for the retired top-band chip strip,
@@ -488,21 +488,21 @@ func (a *App) startClassicEdit() {
 }
 
 // stopClassicEdit disarms and releases the input fence.
-func (a *App) stopClassicEdit() {
-	a.classic.classicEdit = false
-	a.classic.classicTgt = noTarget()
-	a.classic.classicEditDrag = 0
-	a.classic.classicEditEdges = 0
-	a.classic.classicUndo, a.classic.classicRedo = nil, nil // free the history (it's edit-session-scoped)
-	a.ctx.modalOn = false
+func (classic1 *classicState) stopClassicEdit() {
+	classic1.classicEdit = false
+	classic1.classicTgt = noTarget()
+	classic1.classicEditDrag = 0
+	classic1.classicEditEdges = 0
+	classic1.classicUndo, classic1.classicRedo = nil, nil // free the history (it's edit-session-scoped)
+	classic1.env.ctx.modalOn = false
 }
 
 // classicEditFence claims the pointer for the slot editor BEFORE the default
 // courtroom's widgets draw — they see hovering()==false and stay inert while the
 // editor reads raw cursor coordinates (pointIn). Mirrors layoutEditFence.
-func (a *App) classicEditFence() {
-	if a.classic.classicEdit {
-		a.ctx.modalOn = true
+func (classic1 *classicState) classicEditFence() {
+	if classic1.classicEdit {
+		classic1.env.ctx.modalOn = true
 	}
 }
 
@@ -537,24 +537,24 @@ func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, 
 // the classic editor. The View knob and the edge divider then defer to that
 // override (it would otherwise change vpPct silently, which the override shadows)
 // until the box is reset.
-func (a *App) viewportOverridden() bool {
-	_, ok := a.classic.classicOv[slotViewport]
+func (classic1 *classicState) viewportOverridden() bool {
+	_, ok := classic1.classicOv[slotViewport]
 	return ok
 }
 
 // clearClassicSlot drops one slot's override from both the durable pref and the
 // App-local snapshot so it reverts to the computed default the same frame. The
 // window pin goes with it (config's ClearClassicSlot already cascades).
-func (a *App) clearClassicSlot(name string) {
-	a.d.Prefs.ClearClassicSlot(name)
-	if a.classic.classicOv != nil {
-		delete(a.classic.classicOv, name)
+func (classic1 *classicState) clearClassicSlot(name string) {
+	classic1.env.d.Prefs.ClearClassicSlot(name)
+	if classic1.classicOv != nil {
+		delete(classic1.classicOv, name)
 	}
-	if a.classic.classicAnchor != nil {
-		delete(a.classic.classicAnchor, name)
+	if classic1.classicAnchor != nil {
+		delete(classic1.classicAnchor, name)
 	}
-	if a.classic.classicRot != nil {
-		delete(a.classic.classicRot, name) // rotation dies with the override (A4), like the pin
+	if classic1.classicRot != nil {
+		delete(classic1.classicRot, name) // rotation dies with the override (A4), like the pin
 	}
 }
 
@@ -575,20 +575,20 @@ func cloneClassicOv(m map[string][4]float64) map[string][4]float64 {
 // pushClassicUndo snapshots the overrides BEFORE an edit and forks history (a fresh edit
 // drops the redo stack). Bounded by layoutUndoCap; edit-mode only, never on the render
 // frame, so the alloc-free guarantee for normal play is untouched.
-func (a *App) pushClassicUndo() {
-	a.classic.classicUndo = append(a.classic.classicUndo, cloneClassicOv(a.classic.classicOv))
-	if len(a.classic.classicUndo) > layoutUndoCap {
-		a.classic.classicUndo = a.classic.classicUndo[1:]
+func (classic1 *classicState) pushClassicUndo() {
+	classic1.classicUndo = append(classic1.classicUndo, cloneClassicOv(classic1.classicOv))
+	if len(classic1.classicUndo) > layoutUndoCap {
+		classic1.classicUndo = classic1.classicUndo[1:]
 	}
-	a.classic.classicRedo = a.classic.classicRedo[:0]
+	classic1.classicRedo = classic1.classicRedo[:0]
 }
 
 // restoreClassicOv applies an undo/redo snapshot: it becomes the live overrides AND the
 // durable pref (so the result survives a relog, like the themed editor's restoreLayout).
 // The snapshot is cloned so the live map never aliases a history entry.
-func (a *App) restoreClassicOv(snap map[string][4]float64) {
-	a.classic.classicOv = cloneClassicOv(snap)
-	a.d.Prefs.SetClassicLayout(a.classic.classicOv)
+func (classic1 *classicState) restoreClassicOv(snap map[string][4]float64) {
+	classic1.classicOv = cloneClassicOv(snap)
+	classic1.env.d.Prefs.SetClassicLayout(classic1.classicOv)
 }
 
 // classicEditUndo / classicEditRedo swap the live override map with a history
@@ -603,7 +603,7 @@ func (a *App) classicEditUndo() {
 	a.classic.classicRedo = append(a.classic.classicRedo, cloneClassicOv(a.classic.classicOv))
 	snap := a.classic.classicUndo[len(a.classic.classicUndo)-1]
 	a.classic.classicUndo = a.classic.classicUndo[:len(a.classic.classicUndo)-1]
-	a.restoreClassicOv(snap)
+	a.classic.restoreClassicOv(snap)
 }
 
 func (a *App) classicEditRedo() {
@@ -613,7 +613,7 @@ func (a *App) classicEditRedo() {
 	a.classic.classicUndo = append(a.classic.classicUndo, cloneClassicOv(a.classic.classicOv))
 	snap := a.classic.classicRedo[len(a.classic.classicRedo)-1]
 	a.classic.classicRedo = a.classic.classicRedo[:len(a.classic.classicRedo)-1]
-	a.restoreClassicOv(snap)
+	a.classic.restoreClassicOv(snap)
 }
 
 // drawClassicEditor paints the slot-editor overlay and owns every interaction.
@@ -622,7 +622,7 @@ func (a *App) classicEditRedo() {
 func (a *App) drawClassicEditor(w, h int32) {
 	c := a.ctx
 	if w <= 0 || h <= 0 {
-		a.stopClassicEdit()
+		a.classic.stopClassicEdit()
 		return
 	}
 
@@ -652,11 +652,11 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// check here was dead code — the chord had already been routed away.
 
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
-		a.stopClassicEdit()
+		a.classic.stopClassicEdit()
 		return
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, resetBtn) {
-		a.pushClassicUndo() // so Reset all is itself undoable (pins aren't in history — see below)
+		a.classic.pushClassicUndo() // so Reset all is itself undoable (pins aren't in history — see below)
 		a.d.Prefs.ClearClassicSlot("")
 		a.classic.classicOv = nil
 		a.classic.classicAnchor = nil // pins die with their overrides
@@ -768,7 +768,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// keybind on R can't also fire mid-edit. No classic slot is texture-backed
 	// today, so cycleSlotRotation reports an "n/a" hint (honest, not silent).
 	if a.classic.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_r {
-		a.cycleSlotRotation(hoverKey, sdl.GetModState()&sdl.KMOD_SHIFT != 0)
+		a.classic.cycleSlotRotation(hoverKey, sdl.GetModState()&sdl.KMOD_SHIFT != 0)
 		c.keyPressed = 0
 	}
 
@@ -803,7 +803,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			a.classic.classicEditStart = [2]int32{c.mouseX, c.mouseY}
 			a.classic.classicEditBase = a.classic.slotReg[editKey].cur
 			a.classic.classicEditMoved = false
-			a.pushClassicUndo() // snapshot before the move/resize (popped at release if it was a no-op)
+			a.classic.pushClassicUndo() // snapshot before the move/resize (popped at release if it was a no-op)
 		}
 	}
 
@@ -812,8 +812,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// default box would litter the history with no-ops).
 	if c.rightClicked && hoverKey != "" && !overTray && !overToolbox {
 		if _, ov := a.classic.classicOv[hoverKey]; ov {
-			a.pushClassicUndo()
-			a.clearClassicSlot(hoverKey)
+			a.classic.pushClassicUndo()
+			a.classic.clearClassicSlot(hoverKey)
 		}
 	}
 
@@ -911,7 +911,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			a.classic.classicOv[editKey] = rectToFrac(r, w, h)
 			// A pinned slot's override now describes THIS window size —
 			// re-base the local anchor so resolution round-trips exactly.
-			a.syncAnchorWindow(editKey, w, h)
+			a.classic.syncAnchorWindow(editKey, w, h)
 		}
 	}
 
@@ -926,7 +926,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			if ov, ok := a.classic.classicOv[editKey]; ok {
 				a.d.Prefs.SetClassicSlot(editKey, ov)
 				// Persist the pin's re-based window size with the override.
-				if m := a.slotAnchorMode(editKey); m != "" {
+				if m := a.classic.slotAnchorMode(editKey); m != "" {
 					a.d.Prefs.SetClassicAnchor(editKey, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 				}
 			}
@@ -951,22 +951,22 @@ func (a *App) drawClassicEditor(w, h int32) {
 		r := a.classic.slotReg[k].cur
 		if a.classic.classicEditDrag != 0 && k == editKey {
 			if ov, ok := a.classic.classicOv[k]; ok {
-				r = a.anchoredRect(k, ov, w, h)
+				r = a.classic.anchoredRect(k, ov, w, h)
 			}
 		}
 		switch {
 		case k == editKey:
 			c.Border(r, ColDanger)
 			a.drawSlotHandles(r, k, ColDanger)
-			a.drawSlotTag(r, k, ColDanger)
+			a.classic.drawSlotTag(r, k, ColDanger)
 		case k == hoverKey:
 			c.Border(r, ColTierYellow)
 			a.drawSlotHandles(r, k, ColTierYellow)
-			a.drawSlotTag(r, k, ColTierYellow)
+			a.classic.drawSlotTag(r, k, ColTierYellow)
 		default:
 			c.Border(r, dimEdge) // resting: structure only, no clutter
 		}
-		a.drawAnchorPin(r, k) // pinned boxes show a green dot at their reference
+		a.classic.drawAnchorPin(r, k) // pinned boxes show a green dot at their reference
 	}
 	// Alignment guides: full-length hairlines at whatever the dragged box just
 	// snapped flush to — the Inkscape-style "you are aligned" feedback.
@@ -1043,7 +1043,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			classicSlotLabel(hoverKey), len(stack), a.classic.classicPickIdx+1, len(stack)), ColTierYellow)
 	case hoverKey != "":
 		hint := classicSlotLabel(hoverKey) + "  ·  drag to move (Alt = always move) · edge to resize · right-click to reset · A = pin · R = rotate"
-		if m := a.slotAnchorMode(hoverKey); m != "" {
+		if m := a.classic.slotAnchorMode(hoverKey); m != "" {
 			hint = classicSlotLabel(hoverKey) + "  ·  pinned to the " + anchorModeLabel(m) + " (stays glued when the window resizes) · A = next pin · right-click to reset"
 		}
 		c.Label(pad, h-22, hint, ColTierYellow)
@@ -1085,15 +1085,15 @@ func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
 // editor's stacked top chrome (banner + tray, bottom recorded in classicChromeBot =
 // classicTabTrayBot): a box parked in the top strip gets its tag just BELOW the
 // chrome instead of over the hint text and buttons.
-func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
-	c := a.ctx
+func (classic1 *classicState) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
+	c := classic1.env.ctx
 	label := classicSlotLabel(key)
 	const th = int32(16)
 	tw := c.TextWidth(label) + 14
 	if tw > r.W && r.W > 0 {
 		tw = r.W
 	}
-	chromeBot := a.classic.classicChromeBot
+	chromeBot := classic1.classicChromeBot
 	if chromeBot < classicBannerH { // toolbox not drawn this frame (shouldn't happen mid-edit): at least clear the banner
 		chromeBot = classicBannerH
 	}

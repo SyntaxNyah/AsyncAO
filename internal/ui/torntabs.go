@@ -68,12 +68,12 @@ func tornTabIndex(id int) int {
 
 // tabTorn reports whether tab id is currently torn out into a floating panel.
 // A nil/empty classicOv (the common case) makes this a cheap, alloc-free miss.
-func (a *App) tabTorn(id int) bool {
+func (classic1 *classicState) tabTorn(id int) bool {
 	k := tornKeyFor(id)
 	if k == "" {
 		return false
 	}
-	_, ok := a.classic.classicOv[k]
+	_, ok := classic1.classicOv[k]
 	return ok
 }
 
@@ -99,7 +99,7 @@ func tabHideID(tab int) string {
 // gone from the docked strip AND not drawn even if it was torn out.
 func (a *App) tabHidden(tab int) bool {
 	id := tabHideID(tab)
-	return id != "" && a.panelHidden(id)
+	return id != "" && a.classic.panelHidden(id)
 }
 
 // dockedLogTabs builds the docked tab strip, skipping any tab torn into a floating
@@ -111,15 +111,15 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	n := int32(0)
 	d[n] = dockTab{logTabLog, "Log"} // never tear-offable
 	n++
-	if !a.tabTorn(logTabMusic) && !a.tabHidden(logTabMusic) {
+	if !a.classic.tabTorn(logTabMusic) && !a.tabHidden(logTabMusic) {
 		d[n] = dockTab{logTabMusic, "Music"}
 		n++
 	}
-	if !a.tabTorn(logTabAreas) && !a.tabHidden(logTabAreas) {
+	if !a.classic.tabTorn(logTabAreas) && !a.tabHidden(logTabAreas) {
 		d[n] = dockTab{logTabAreas, "Areas"}
 		n++
 	}
-	if !a.tabTorn(logTabPlayers) && !a.tabHidden(logTabPlayers) {
+	if !a.classic.tabTorn(logTabPlayers) && !a.tabHidden(logTabPlayers) {
 		d[n] = dockTab{logTabPlayers, "Players"}
 		n++
 	}
@@ -127,11 +127,11 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 		d[n] = dockTab{logTabOOC, "OOC"}
 		n++
 	}
-	if !a.tabTorn(logTabNotes) && !a.tabHidden(logTabNotes) {
+	if !a.classic.tabTorn(logTabNotes) && !a.tabHidden(logTabNotes) {
 		d[n] = dockTab{logTabNotes, "Notes"}
 		n++
 	}
-	if !a.tabTorn(logTabFriends) && !a.tabHidden(logTabFriends) {
+	if !a.classic.tabTorn(logTabFriends) && !a.tabHidden(logTabFriends) {
 		d[n] = dockTab{logTabFriends, "Friends"}
 		n++
 	}
@@ -163,7 +163,7 @@ func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	return a.anchoredRect(key, ov, w, h), true
+	return a.classic.anchoredRect(key, ov, w, h), true
 }
 
 // tornTabDefaultRect is where a tab lands the first time it's popped out: a
@@ -215,15 +215,15 @@ func (a *App) tearOffTab(id int, w, h int32) {
 // tornTabTable indices. Session-scoped: tornZ records bring-to-front clicks;
 // empty means the table's own order (the pre-z-order default). A fixed-size
 // value so the per-frame draw loop allocates nothing.
-func (a *App) tornTabOrder() [len(tornTabTable)]int {
+func (classic1 *classicState) tornTabOrder() [len(tornTabTable)]int {
 	var order [len(tornTabTable)]int
-	if len(a.classic.tornZ) == 0 {
+	if len(classic1.tornZ) == 0 {
 		for i := range tornTabTable {
 			order[i] = i
 		}
 		return order
 	}
-	copy(order[:], a.classic.tornZ)
+	copy(order[:], classic1.tornZ)
 	return order
 }
 
@@ -237,7 +237,7 @@ func (a *App) bringTornToFront(w, h int32) {
 	if !c.clicked {
 		return
 	}
-	order := a.tornTabOrder()
+	order := a.classic.tornTabOrder()
 	// Scan front-to-back: the panel already on top under the cursor wins, and
 	// promoting it is a no-op when it is already front.
 	for j := len(order) - 1; j >= 0; j-- {
@@ -279,7 +279,7 @@ func (a *App) drawTornTabs(w, h int32) {
 	}
 	c := a.ctx
 	a.bringTornToFront(w, h)
-	for _, idx := range a.tornTabOrder() {
+	for _, idx := range a.classic.tornTabOrder() {
 		t := tornTabTable[idx]
 		if _, torn := a.classic.classicOv[t.key]; !torn {
 			continue
@@ -303,7 +303,7 @@ func (a *App) drawTornTabs(w, h int32) {
 		if !a.classic.classicEdit {
 			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")
 			if c.rightClicked && c.hovering(hdr) {
-				a.clearClassicSlot(t.key)
+				a.classic.clearClassicSlot(t.key)
 				continue // redocked — skip its body; other panels still draw
 			}
 		}
@@ -356,7 +356,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		c.LabelClipped(chip.X+6, chip.Y+3, chip.W-12, t.title, ColText)
 		if c.clicked && pointIn(c.mouseX, c.mouseY, chip) {
 			if torn {
-				a.clearClassicSlot(t.key) // redock
+				a.classic.clearClassicSlot(t.key) // redock
 			} else {
 				a.tearOffTab(t.id, w, h)
 			}
@@ -421,7 +421,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 	c.Tooltip(gcChip, "Give the Group Chat / DMs panel a fixed home here (then drag it). Open it with Extras → Group Chat.")
 	if c.clicked && pointIn(c.mouseX, c.mouseY, gcChip) {
 		if gcPlaced {
-			a.clearClassicSlot(slotMessages)
+			a.classic.clearClassicSlot(slotMessages)
 		} else {
 			frac := rectToFrac(a.msgSlotDefaultRect(w, h), w, h)
 			if a.classic.classicOv == nil {

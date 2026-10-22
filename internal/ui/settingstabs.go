@@ -427,7 +427,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += btnH + 8
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
-		a.applyLayoutPreset(nil)
+		a.classic.applyLayoutPreset(nil)
 		a.debug.push("layout: reset to stock")
 	}
 	// Mouse-reachable chrome recovery (A6 no-strand): un-hides every piece at

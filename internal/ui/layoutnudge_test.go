@@ -37,13 +37,13 @@ var nudgeCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
 	a := testTabApp(t)
 	r := sdl.Rect{X: 10, Y: 20, W: 30, H: 40}
-	a.regSlot("", r, r)
+	a.classic.regSlot("", r, r)
 	if _, present := a.classic.slotReg[""]; present {
 		t.Fatal("regSlot registered an unnamed slot — it is indistinguishable from \"nothing " +
 			"selected\", and persisting it writes a classic-layout entry keyed by the empty string")
 	}
 	// A real name still registers, so the guard is a filter and not a stand-down.
-	a.regSlot(slotOOC, r, r)
+	a.classic.regSlot(slotOOC, r, r)
 	if got, present := a.classic.slotReg[slotOOC]; !present || got.cur != r {
 		t.Fatalf("a named slot did not register: %+v (present=%v)", got, present)
 	}
@@ -370,7 +370,7 @@ func stageClassicNudge(t *testing.T) *App {
 	a.sess = &courtroom.Session{}
 	a.classic.classicEdit = true
 	a.classic.classicTgt = classicTarget(slotOOC)
-	a.regSlot(slotOOC, sdl.Rect{X: 301, Y: 205, W: 320, H: 140}, sdl.Rect{X: 301, Y: 205, W: 320, H: 140})
+	a.classic.regSlot(slotOOC, sdl.Rect{X: 301, Y: 205, W: 320, H: 140}, sdl.Rect{X: 301, Y: 205, W: 320, H: 140})
 	return a
 }
 
@@ -495,7 +495,7 @@ func TestClassicNudgePersistsAndUndoes(t *testing.T) {
 // a slot off the window, and a refused nudge leaves no undo entry and no override.
 func TestClassicNudgeRespectsTheWindowClamp(t *testing.T) {
 	a := stageClassicNudge(t)
-	a.regSlot(slotOOC, sdl.Rect{X: 0, Y: 0, W: 320, H: 140}, sdl.Rect{X: 0, Y: 0, W: 320, H: 140})
+	a.classic.regSlot(slotOOC, sdl.Rect{X: 0, Y: 0, W: 320, H: 140}, sdl.Rect{X: 0, Y: 0, W: 320, H: 140})
 	before := classicNudgeRect(a)
 
 	for _, key := range []sdl.Keycode{sdl.K_LEFT, sdl.K_UP} {
