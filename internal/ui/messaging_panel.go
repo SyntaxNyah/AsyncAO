@@ -46,7 +46,7 @@ func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, min
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	r := a.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
+	r := a.classic.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
 	fw.x, fw.y, fw.w, fw.h, fw.placed = r.X, r.Y, r.W, r.H, true
 	return fw.rect(defW, defH, minW, minH, w, h), true
 }
@@ -65,9 +65,9 @@ func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	a.classic.classicOv[slot] = frac
-	a.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
+	a.classic.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
 	a.d.Prefs.SetClassicSlot(slot, frac)
-	if m := a.slotAnchorMode(slot); m != "" {
+	if m := a.classic.slotAnchorMode(slot); m != "" {
 		a.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 	}
 }

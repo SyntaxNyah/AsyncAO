@@ -295,14 +295,14 @@ func TestMenuExtrasTogglesTheFloatingToolbox(t *testing.T) {
 		t.Fatal("the strip ships visible, so the row must start checked")
 	}
 	a.fireMenuItem(row)
-	if !a.panelHidden(panelToolbox) {
+	if !a.classic.panelHidden(panelToolbox) {
 		t.Fatal("unticking must hide the floating toolbox through the shipped hidden-chrome set")
 	}
 	if row.checked(a, 0) {
 		t.Error("and the row must then read as unchecked")
 	}
 	a.fireMenuItem(row)
-	if a.panelHidden(panelToolbox) {
+	if a.classic.panelHidden(panelToolbox) {
 		t.Error("re-ticking must bring the strip back")
 	}
 }

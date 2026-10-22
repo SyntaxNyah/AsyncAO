@@ -176,7 +176,7 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			name string
 			stop func(*App)
 		}{
-			{"classic Done", func(a *App) { a.stopClassicEdit() }},
+			{"classic Done", func(a *App) { a.classic.stopClassicEdit() }},
 			{"themed force-stop", func(a *App) { a.stopLayoutEdit() }},
 		} {
 			t.Run(tc.name, func(t *testing.T) {

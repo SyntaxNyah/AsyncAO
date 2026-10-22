@@ -362,7 +362,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// frame one fences a stale/empty set (the same statelessness torn tabs already
 	// enjoy). Neither call needs room/sess; both are latched, so this stays
 	// alloc-free after the first courtroom frame.
-	a.ensureClassicOv()
+	a.classic.ensureClassicOv()
 	a.reconstructTornWidgets(w, h)
 	// Fence the courtroom under the non-blocking Extras box: while the pointer is
 	// over the box, this whole pass runs pointer-blind so a click in the box can't
@@ -402,7 +402,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
 		if a.classic.classicEdit {
-			a.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
+			a.classic.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
 		}
 		a.screen = ScreenLobby
 		return
@@ -411,7 +411,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Theater mode preempts BOTH layouts: stage only, Esc exits.
 	if a.theaterOn {
 		if a.classic.classicEdit {
-			a.stopClassicEdit() // can't edit the layout from theater mode — release the fence
+			a.classic.stopClassicEdit() // can't edit the layout from theater mode — release the fence
 		}
 		a.drawTheater(w, h)
 		return
@@ -424,7 +424,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// beneath the menu bar / server-tab strip (#14).
 	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if a.classic.classicEdit {
-			a.stopClassicEdit() // a themed layout took over; classic edit is default-only
+			a.classic.stopClassicEdit() // a themed layout took over; classic edit is default-only
 		}
 		a.drawCourtroomThemed(w, h, lay)
 		return
@@ -437,7 +437,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Classic slot editor (default layout only): fence the pointer BEFORE any
 	// widget draws so its clicks reach the editor, not the courtroom; the overlay
 	// itself draws LAST (after drawICControls).
-	a.classicEditFence()
+	a.classic.classicEditFence()
 	// Classic path's toolbox latch + occlusion (#26). It must sit HERE, below the
 	// theme dispatch above: compactToolboxStripRect consults a.toolboxThemeRectOn,
 	// which this function force-clears each frame and only drawCourtroomThemed
@@ -525,7 +525,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// slot ("rightcol"), draggable/resizable on BOTH the default and Legacy themes.
 	rx := vpDef.X + vpDef.W + pad
 	rw := w - rx - pad
-	if !a.panelHidden(panelLog) {
+	if !a.classic.panelHidden(panelLog) {
 		rcolDef := sdl.Rect{X: rx, Y: vpDef.Y, W: rw, H: vpDef.H}
 		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
 		// OOC lives in its own box by default; the Legacy theme — or the opt-in
@@ -586,7 +586,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	// a dead gap where the OOC used to be (playtest: unpinning the OOC box left the IC
 	// log with permanent empty space).
 	_, oocMoved := a.classic.classicOv[slotOOC]
-	oocHidden := a.panelHidden(panelOOC)
+	oocHidden := a.classic.panelHidden(panelOOC)
 	if oocMoved || oocHidden {
 		logH = rcol.H
 	}
@@ -714,7 +714,7 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 // the View knob's own clamp so the two never disagree.
 func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 	c := a.ctx
-	if !a.d.Prefs.Load().DragLayout || a.vpZoom > 1 || a.courtModalOpen() || a.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
+	if !a.d.Prefs.Load().DragLayout || a.vpZoom > 1 || a.courtModalOpen() || a.classic.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
 		a.dragVpDivider = false
 		a.dividerPrevDwn = c.mouseDown
 		return

@@ -201,7 +201,7 @@ func (a *App) openThemeEditor(from Screen) bool {
 		return false
 	}
 	if a.classic.classicEdit {
-		a.stopClassicEdit()
+		a.classic.stopClassicEdit()
 	}
 	if a.layoutEdit {
 		a.stopLayoutEdit()

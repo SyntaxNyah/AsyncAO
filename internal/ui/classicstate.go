@@ -4,6 +4,7 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // classicState owns classic state.
 type classicState struct {
+	env *env
 	// --- classic-layout slot editor (the default/non-themed courtroom) ---
 	// Mirrors the themed editor's feel, but edits SCREEN-space "slots" persisted
 	// as window FRACTIONS (config.ClassicLayout) so they survive window resizes.

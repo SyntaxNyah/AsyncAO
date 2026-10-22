@@ -680,7 +680,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
 	oocAsTab := a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab
-	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
+	if (!oocAsTab && a.logTab == logTabOOC) || a.classic.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
 		a.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
@@ -872,7 +872,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	ctrlOv, ctrlEdited := a.classic.classicOv[slotControls]
 	var ctrlRect sdl.Rect
 	if ctrlEdited {
-		ctrlRect = a.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
+		ctrlRect = a.classic.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
 	}
 	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlRect, ctrlEdited, w, defY)
 
@@ -904,7 +904,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// reflects the live row count (recomputing the default wrap would mean laying the
 	// rows out twice — reset just recomputes for real next frame).
 	if a.classic.classicEdit {
-		a.regSlot(slotControls,
+		a.classic.regSlot(slotControls,
 			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
 			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
 	}
@@ -947,7 +947,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// editor never registers a handle for a grid that isn't drawn. The default is
 	// byte-identical to before, so an un-edited courtroom is pixel-identical.
 	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
-	if !a.panelHidden(panelEmotes) {
+	if !a.classic.panelHidden(panelEmotes) {
 		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
 		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
@@ -965,8 +965,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// user who hides the right column with NO OOC input anywhere — no OOC chat and
 	// no way to run a slash command. The invariant is one live OOC input in every
 	// state, and only an explicit "hide OOC chat" may take it away.
-	oocBoxUnreachable := a.panelHidden(panelLog)
-	if !a.panelHidden(panelOOC) && (a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab || oocBoxUnreachable) {
+	oocBoxUnreachable := a.classic.panelHidden(panelLog)
+	if !a.classic.panelHidden(panelOOC) && (a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab || oocBoxUnreachable) {
 		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
 		// the bottom row, the row centred within the slot height. Registered only while it
 		// actually draws, so the editor offers a handle for it only when OOC is a tab.
@@ -1036,7 +1036,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 	c := a.ctx
 	x := clusterX
-	if !a.panelHidden(panelShouts) {
+	if !a.classic.panelHidden(panelShouts) {
 		shoutW := int32(96)
 		// Each shout is individually movable in the layout editor (literal slot keys
 		// keep the row alloc-free; the struct is range-only so it stays on the stack).
@@ -1050,7 +1050,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			{"ctrl.takethat", "Take That!", protocol.ShoutTakeThat},
 		}
 		for _, s := range shouts {
-			if a.panelHidden(s.key) {
+			if a.classic.panelHidden(s.key) {
 				continue // individually hideable (the row compacts); the group toggle still hides all
 			}
 			// slotRect ONCE and reuse it, rather than movableButton plus a second
@@ -1088,13 +1088,13 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			}
 		}
 	}
-	if !a.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
+	if !a.classic.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
 		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
 			a.showPair = !a.showPair
 		}
 		x += 80
 	}
-	if !a.panelHidden(panelKnobs) && !a.d.Prefs.Load().DragLayout { // drag-resize mode hides the +/− knobs
+	if !a.classic.panelHidden(panelKnobs) && !a.d.Prefs.Load().DragLayout { // drag-resize mode hides the +/− knobs
 		if a.d.Prefs.Load().ViewportExactW == 0 { // exact-px sizing shadows vpPct, so the View knob would no-op — hide it (set the size in Settings instead)
 			x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
 		}
@@ -1225,7 +1225,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
 	// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
-	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.classic.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4
@@ -1241,7 +1241,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
 	// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
-	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
+	if a.voiceOfferable() && !a.classic.panelHidden("ctrl.voice") {
 		const vcW = int32(80)
 		if x+vcW > clusterRight {
 			y2 += btnH + 4
@@ -1388,7 +1388,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// APPENDED at the end of the functional buttons so it can never shift the ones
 	// before it; when off it's skipped entirely (no x advance), so the row is
 	// byte-identical to before. A movable slot, so Edit Layout can reposition it.
-	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.classic.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4
@@ -1405,7 +1405,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
 	// Nyathena), so it shows up when you move into a VC-supported room and hides
 	// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
-	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
+	if a.voiceOfferable() && !a.classic.panelHidden("ctrl.voice") {
 		const vcW = int32(80)
 		if x+vcW > clusterRight {
 			y2 += btnH + 4
@@ -1426,7 +1426,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		y2 += btnH + 4
 		x = clusterX
 	}
-	if !a.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
+	if !a.classic.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
 		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
 			a.requestDisconnect()
 			return y2, true
@@ -1642,7 +1642,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// an un-edited bar is pixel-identical and moving it never cascades the rest.
 	_, preOv := a.classic.classicOv[slotICPre]
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
-	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.panelHidden(slotICPre)) {
+	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.classic.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
 		a.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim), a.icPreanim)
@@ -1675,7 +1675,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
 	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
-	if flipInChain && !a.panelHidden(slotICFlip) {
+	if flipInChain && !a.classic.panelHidden(slotICFlip) {
 		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
 		// bounceOnToggle: ui_flip → focus_ic_input (courtroom.cpp:503). Only the IC-bar
 		// view bounces; the Pair panel's mirror of the same bool is not an IC-bar
@@ -1737,7 +1737,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// editor win over the drop (same rule as Pre); hidden still hides.
 	_, emojiOv := a.classic.classicOv[slotICEmoji]
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
-	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.panelHidden(slotICEmoji)) {
+	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.classic.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}

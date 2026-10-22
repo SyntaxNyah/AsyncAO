@@ -60,7 +60,7 @@ func TestCtrlSlotCompaction(t *testing.T) {
 	//    exactly that button's advance (96) — no gap, and the button before it
 	//    is untouched.
 	const wardrobeAdv int32 = 96
-	a.setPanelHidden("ctrl.wardrobe", true)
+	a.classic.setPanelHidden("ctrl.wardrobe", true)
 	at2, end2 := run()
 	if _, shown := at2["ctrl.wardrobe"]; shown {
 		t.Error("a hidden button must not be drawn")

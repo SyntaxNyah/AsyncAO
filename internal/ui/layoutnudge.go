@@ -296,15 +296,15 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 	if r == base {
 		return
 	}
-	a.pushClassicUndo()
+	a.classic.pushClassicUndo()
 	if a.classic.classicOv == nil {
 		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	ov := rectToFrac(r, w, h)
 	a.classic.classicOv[key] = ov
-	a.syncAnchorWindow(key, w, h) // the override now describes THIS window size
+	a.classic.syncAnchorWindow(key, w, h) // the override now describes THIS window size
 	a.d.Prefs.SetClassicSlot(key, ov)
-	if m := a.slotAnchorMode(key); m != "" {
+	if m := a.classic.slotAnchorMode(key); m != "" {
 		a.d.Prefs.SetClassicAnchor(key, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 	}
 }
@@ -318,7 +318,7 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 // layout computed for it — which is exactly what a first nudge has to start from.
 func (a *App) classicSlotCurrentRect(key string, w, h int32) (sdl.Rect, bool) {
 	if ov, has := a.classic.classicOv[key]; has {
-		return a.anchoredRect(key, ov, w, h), true
+		return a.classic.anchoredRect(key, ov, w, h), true
 	}
 	info, reg := a.classic.slotReg[key]
 	return info.cur, reg

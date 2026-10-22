@@ -175,28 +175,28 @@ var hideableButtons = []struct{ id, label string }{
 }
 
 // panelHidden reports whether the user hid a chrome region.
-func (a *App) panelHidden(id string) bool { return a.classic.hidden[id] }
+func (classic1 *classicState) panelHidden(id string) bool { return classic1.hidden[id] }
 
 // setPanelHidden flips one region and persists the full set.
-func (a *App) setPanelHidden(id string, hide bool) {
+func (classic1 *classicState) setPanelHidden(id string, hide bool) {
 	if hide {
 		// Created on demand rather than assumed. The map is normally seeded from
 		// preferences at startup, but this is now reachable from a HOTKEY, and a key
 		// pressed before that seeding — or on any path that never ran it — would
 		// otherwise be a nil-map write, which is a panic and not a no-op.
-		if a.classic.hidden == nil {
-			a.classic.hidden = make(map[string]bool, 4)
+		if classic1.hidden == nil {
+			classic1.hidden = make(map[string]bool, 4)
 		}
-		a.classic.hidden[id] = true
+		classic1.hidden[id] = true
 	} else {
-		delete(a.classic.hidden, id)
+		delete(classic1.hidden, id)
 	}
-	ids := make([]string, 0, len(a.classic.hidden))
-	for k := range a.classic.hidden {
+	ids := make([]string, 0, len(classic1.hidden))
+	for k := range classic1.hidden {
 		ids = append(ids, k)
 	}
 	sort.Strings(ids) // stable JSON, stable diffs
-	a.d.Prefs.SetHiddenPanels(ids)
+	classic1.env.d.Prefs.SetHiddenPanels(ids)
 }
 
 // seedHiddenFromPrefs rebuilds the live hidden-chrome map from the persisted
@@ -226,14 +226,14 @@ func (a *App) seedHiddenFromPrefs() {
 		}
 	}
 	if stranded {
-		a.setPanelHidden(panelToolbox, false)
+		a.classic.setPanelHidden(panelToolbox, false)
 	}
 	// panelExtras is retired (#21): the row it hid no longer exists, so a stale
 	// entry would sit in HiddenPanels forever hiding nothing. Dropped on load
 	// rather than migrated, because there is no successor to move it to — the
 	// Extras MENU is not hideable, it is the chrome home those commands moved to.
 	if a.classic.hidden[panelExtras] {
-		a.setPanelHidden(panelExtras, false)
+		a.classic.setPanelHidden(panelExtras, false)
 	}
 }
 
@@ -387,7 +387,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	now := time.Now()
 
 	barH := int32(0)
-	if !a.panelHidden(panelHP) {
+	if !a.classic.panelHidden(panelHP) {
 		defR, okDef := sdl.Rect{}, false
 		proR, okPro := sdl.Rect{}, false
 		if lay != nil {
@@ -410,7 +410,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 
 	// Server clocks: centered chips along the viewport top (between the
 	// bars), drawn only while the server marked them visible.
-	if !a.panelHidden(panelTimers) {
+	if !a.classic.panelHidden(panelTimers) {
 		chips := a.timerChipLabels(now)
 		var totalW int32
 		for _, label := range chips {
@@ -430,7 +430,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 
 	// Testimony recording badge under the defense bar (loops while the
 	// server is recording — RT testimony1 starts it, testimony1#1 ends).
-	if a.testimonyOn && !a.panelHidden(panelTestimony) {
+	if a.testimonyOn && !a.classic.panelHidden(panelTestimony) {
 		by := vp.Y + 6 + barH + 4
 		if page, ok := a.themePage("testimony"); ok {
 			if len(page.Frames) > 1 {
@@ -532,7 +532,7 @@ func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	if def {
 		rotKey = classicRotHPBarDef
 	}
-	a.drawHPBarRect(sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}, def, val, a.classicSlotRotation(rotKey))
+	a.drawHPBarRect(sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}, def, val, a.classic.classicSlotRotation(rotKey))
 	return h
 }
 
@@ -608,7 +608,7 @@ func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int, angleDeg float64) {
 // judgeVisible mirrors show_judge_controls: the JD state wins; pos-dependent
 // falls back to "are we on the judge stand" (get_pos_is_judge).
 func (a *App) judgeVisible() bool {
-	if a.panelHidden(panelJudge) {
+	if a.classic.panelHidden(panelJudge) {
 		return false
 	}
 	switch a.sess.Judge {
@@ -793,7 +793,7 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 		ddDefW = int32(posSelectThumbW)
 	}
 	adv := labelW + ddDefW + 6
-	if a.panelHidden("ctrl.pos") {
+	if a.classic.panelHidden("ctrl.pos") {
 		return x // hidden: the row compacts, exactly like ctrlSlot
 	}
 	r := a.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.winW, a.winH)

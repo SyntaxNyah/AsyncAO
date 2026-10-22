@@ -183,7 +183,7 @@ func TestCloneClassicOvNoAlias(t *testing.T) {
 func TestPushClassicUndoCap(t *testing.T) {
 	var a App
 	for i := 0; i < layoutUndoCap+10; i++ {
-		a.pushClassicUndo()
+		a.classic.pushClassicUndo()
 	}
 	if len(a.classic.classicUndo) != layoutUndoCap {
 		t.Fatalf("undo stack = %d, want capped at %d", len(a.classic.classicUndo), layoutUndoCap)
@@ -198,14 +198,14 @@ func TestClassicEditUndoReSyncsPref(t *testing.T) {
 		a.classic.classicRedo = append(a.classic.classicRedo, cloneClassicOv(a.classic.classicOv))
 		snap := a.classic.classicUndo[len(a.classic.classicUndo)-1]
 		a.classic.classicUndo = a.classic.classicUndo[:len(a.classic.classicUndo)-1]
-		a.restoreClassicOv(snap)
+		a.classic.restoreClassicOv(snap)
 	}
 
-	a.pushClassicUndo() // snapshot the empty state
+	a.classic.pushClassicUndo() // snapshot the empty state
 	a.classic.classicOv = map[string][4]float64{slotOOC: {0.1, 0.1, 0.2, 0.2}}
 	a.d.Prefs.SetClassicSlot(slotOOC, a.classic.classicOv[slotOOC])
 
-	a.pushClassicUndo() // snapshot OOC-at-0.1
+	a.classic.pushClassicUndo() // snapshot OOC-at-0.1
 	a.classic.classicOv[slotOOC] = [4]float64{0.5, 0.5, 0.2, 0.2}
 	a.d.Prefs.SetClassicSlot(slotOOC, a.classic.classicOv[slotOOC])
 

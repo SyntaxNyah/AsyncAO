@@ -113,18 +113,18 @@ func TestChromeToggleDefaultsAvoidTheTakenSpace(t *testing.T) {
 // be useless if it gave no feedback about which way it went.
 func TestChromeToggleFlipsAndReports(t *testing.T) {
 	a := testTabApp(t)
-	if a.panelHidden(panelToolbox) {
+	if a.classic.panelHidden(panelToolbox) {
 		t.Fatal("the toolbox starts hidden in this fixture; the test assumes shown")
 	}
 	a.toggleChromePanel(panelToolbox, "Toolbox")
-	if !a.panelHidden(panelToolbox) {
+	if !a.classic.panelHidden(panelToolbox) {
 		t.Fatal("the toggle did not hide the toolbox")
 	}
 	if !strings.Contains(a.warnLine, "hidden") {
 		t.Errorf("no feedback after hiding: %q", a.warnLine)
 	}
 	a.toggleChromePanel(panelToolbox, "Toolbox")
-	if a.panelHidden(panelToolbox) {
+	if a.classic.panelHidden(panelToolbox) {
 		t.Fatal("the toggle did not bring the toolbox back")
 	}
 	if !strings.Contains(a.warnLine, "shown") {
@@ -215,7 +215,7 @@ func TestChromeToggleCannotStrandYou(t *testing.T) {
 	a.warnLine = ""
 
 	a.toggleChromePanel(panelMenuBar, "Menu bar")
-	if a.panelHidden(panelMenuBar) {
+	if a.classic.panelHidden(panelMenuBar) {
 		t.Error("the hotkey hid the LAST mouse lifeline — there would be no way back to the controls")
 	}
 	if a.warnLine == "" {

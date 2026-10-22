@@ -27,17 +27,17 @@ func TestTornKeyFor(t *testing.T) {
 
 func TestTabTorn(t *testing.T) {
 	var a App
-	if a.tabTorn(logTabMusic) {
+	if a.classic.tabTorn(logTabMusic) {
 		t.Fatal("no overrides: music must not read as torn")
 	}
 	a.classic.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
-	if !a.tabTorn(logTabMusic) {
+	if !a.classic.tabTorn(logTabMusic) {
 		t.Fatal("tab:music present: music must read as torn")
 	}
-	if a.tabTorn(logTabAreas) {
+	if a.classic.tabTorn(logTabAreas) {
 		t.Fatal("only music torn: areas must not read as torn")
 	}
-	if a.tabTorn(logTabLog) {
+	if a.classic.tabTorn(logTabLog) {
 		t.Fatal("Log is never tear-offable")
 	}
 }

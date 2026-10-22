@@ -439,9 +439,9 @@ func menuAmICM(a *App, _ int) bool       { return a.amICMNow }
 func menuCMPanelOpen(a *App, _ int) bool { return a.showCMPanel }
 func menuActCMPanel(a *App, _ int)       { a.toggleCMPanel() }
 
-func menuToolboxShown(a *App, _ int) bool { return !a.panelHidden(panelToolbox) }
+func menuToolboxShown(a *App, _ int) bool { return !a.classic.panelHidden(panelToolbox) }
 func menuToggleToolbox(a *App, _ int) {
-	a.setPanelHiddenGuarded(panelToolbox, !a.panelHidden(panelToolbox))
+	a.setPanelHiddenGuarded(panelToolbox, !a.classic.panelHidden(panelToolbox))
 }
 
 func menuOpenSettings(a *App, _ int) { a.menuGoto(ScreenSettings) }
@@ -563,7 +563,7 @@ func newMenuBarLatch(mark int) menuBarLatch {
 // menuBarPaints because a user who turned the band off wants the pixels back — the
 // layout-editor exception below is about not MOVING a band that is still reserved.
 func (a *App) menuBarShows() bool {
-	return !a.screenDispatchPreempted() && !a.theaterOn && !a.panelHidden(panelMenuBar)
+	return !a.screenDispatchPreempted() && !a.theaterOn && !a.classic.panelHidden(panelMenuBar)
 }
 
 // menuBarPaints is PHASE 1's answer to whether the strip paints. It is menuBarShows

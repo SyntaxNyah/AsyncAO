@@ -18,7 +18,7 @@ func TestEditorUndoChordRoutesCtrlZY(t *testing.T) {
 	a := testTabApp(t)
 	a.classic.classicEdit = true
 	a.classic.classicOv = map[string][4]float64{slotViewport: {0.1, 0.1, 0.5, 0.5}}
-	a.pushClassicUndo()                                                // snapshot BEFORE the "drag"
+	a.classic.pushClassicUndo()                                        // snapshot BEFORE the "drag"
 	a.classic.classicOv[slotViewport] = [4]float64{0.2, 0.2, 0.5, 0.5} // the drag
 
 	a.ctx.hotkey = sdl.K_z

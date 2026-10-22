@@ -71,7 +71,7 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 	if got, want := a.topChromeH(), menuBarH+tabBarH; got != want {
 		t.Fatalf("band = %d before hiding, want %d", got, want)
 	}
-	a.setPanelHidden(panelMenuBar, true)
+	a.classic.setPanelHidden(panelMenuBar, true)
 	if a.menuBarShows() {
 		t.Error("a hidden menu bar must not reserve its band")
 	}
@@ -82,18 +82,18 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 		t.Errorf("band = %d while hidden, want just the tab strip (%d)", got, want)
 	}
 	// Reversible, and the hide survives a prefs round trip like every other piece.
-	a.setPanelHidden(panelMenuBar, false)
+	a.classic.setPanelHidden(panelMenuBar, false)
 	if got, want := a.topChromeH(), menuBarH+tabBarH; got != want {
 		t.Errorf("band = %d after unhiding, want %d", got, want)
 	}
-	a.setPanelHidden(panelMenuBar, true)
+	a.classic.setPanelHidden(panelMenuBar, true)
 	a.seedHiddenFromPrefs()
-	if !a.panelHidden(panelMenuBar) {
+	if !a.classic.panelHidden(panelMenuBar) {
 		t.Error("hiding the menu bar did not survive seedHiddenFromPrefs")
 	}
 	// Hiding the bar alone must never be "corrected" away — the toolbox is still a
 	// route back, so there is nothing to protect against yet.
-	if a.panelHidden(panelToolbox) {
+	if a.classic.panelHidden(panelToolbox) {
 		t.Error("hiding the menu bar must not disturb the toolbox lifeline")
 	}
 }
@@ -192,13 +192,13 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	// Hiding two of the three is allowed — one route survives.
 	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
 	a.setPanelHiddenGuarded(panelToolbox, true)
-	if !a.panelHidden(panelToolbox) || !a.panelHidden(ctrlSettingsSlot) {
+	if !a.classic.panelHidden(panelToolbox) || !a.classic.panelHidden(ctrlSettingsSlot) {
 		t.Fatal("hiding two lifelines while a third survives must be allowed")
 	}
 	// The LAST one is refused, with a toast rather than a silent undo.
 	a.warnLine = ""
 	a.setPanelHiddenGuarded(panelMenuBar, true)
-	if a.panelHidden(panelMenuBar) {
+	if a.classic.panelHidden(panelMenuBar) {
 		t.Error("hiding the last mouse lifeline was allowed — a themed user would have no chrome left")
 	}
 	if a.warnLine == "" {
@@ -210,7 +210,7 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	b.setPanelHiddenGuarded(panelMenuBar, true)
 	b.setPanelHiddenGuarded(ctrlSettingsSlot, true)
 	b.setPanelHiddenGuarded(panelToolbox, true)
-	if b.panelHidden(panelToolbox) {
+	if b.classic.panelHidden(panelToolbox) {
 		t.Error("the guard is order-dependent — hiding the toolbox last slipped through")
 	}
 	// A wholesale write that strands (a saved set predating the guard, a profile
@@ -218,7 +218,7 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	c := testTabApp(t)
 	c.d.Prefs.SetHiddenPanels([]string{panelToolbox, ctrlSettingsSlot, panelMenuBar})
 	c.seedHiddenFromPrefs()
-	if c.panelHidden(panelToolbox) {
+	if c.classic.panelHidden(panelToolbox) {
 		t.Error("a stranded saved set must un-hide the toolbox on load")
 	}
 }
