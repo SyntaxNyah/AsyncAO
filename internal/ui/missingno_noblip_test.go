@@ -130,7 +130,7 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	a.room.Scene.Speaker.Active = glued
 	a.room.Scene.Speaker.IdleBase = glued
 
-	a.sceneWarmLastDemand = time.Time{}
+	a.sceneWarm.lastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	settleDeadline := time.Now().Add(5 * time.Second)
@@ -235,7 +235,7 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	a.room.Scene.Speaker.IdleBase = prefixed
 
 	// Throttle open so the warm re-demand actually fires this pass.
-	a.sceneWarmLastDemand = time.Time{}
+	a.sceneWarm.lastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	// Let the synchronous LocalFetcher pipeline settle: the decode of the resolved
@@ -288,7 +288,7 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	a.room.Scene.Speaker.Active = prefixed
 	a.room.Scene.Speaker.IdleBase = prefixed
 
-	a.sceneWarmLastDemand = time.Time{}
+	a.sceneWarm.lastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	// Wait for the Warning (whole chain 404'd) to land, then relay it.

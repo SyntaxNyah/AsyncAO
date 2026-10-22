@@ -150,19 +150,9 @@ type sessionState struct {
 	// shows something (art or the shared icon), so it costs nothing at rest.
 	frameDemandPending bool
 	drawnDemandPending bool
-	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
-	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
-	sceneWarmLastDemand time.Time
-	// Warm-keeper futility latches (warmMaxHealChurns/warmMaxHealAsks):
-	// per-base heal history, reset when the respective warm set changes or a
-	// new ceremony begins. Bounded by the sets themselves (≤6 scene bases /
-	// ≤3 active-emote bases); lazily allocated.
-	sceneWarmDemands map[string]sceneHealState
-	sceneWarmSet     [6]string // the warm set sceneWarmDemands counts against
-	// sceneWarmPhase tracks the room's message phase so an idle→ceremony
-	// transition resets the heal budget even when the warm set is unchanged
-	// (the blankpost-same-emote case).
-	sceneWarmPhase    courtroom.MessagePhase
+	// sceneWarm is the scene-residency keeper's memory (throttle, futility
+	// latches, message phase); see sceneWarmState.
+	sceneWarm         sceneWarmState
 	activeWarmDemands map[string]int
 	activeWarmChar    string // active-warm identity: character folder…
 	activeWarmIdx     int    // …and selected emote index
@@ -1205,6 +1195,17 @@ type banBoxState struct {
 	dur       courtroom.BanDuration // chosen duration (ban only)
 	customDur string                // a saved CUSTOM duration chip's canonical token ("45m"); "" = the enum preset dur applies
 	reason    string                // typed reason
+}
+
+// sceneWarmState is the scene-residency keeper's memory. Warm-keeper futility
+// latches (warmMaxHealChurns/warmMaxHealAsks) keep a per-base heal history,
+// reset when the warm set changes or a new ceremony begins; it is bounded by the
+// set itself (≤6 scene bases) and lazily allocated.
+type sceneWarmState struct {
+	demands    map[string]sceneHealState // per-base heal history; nil until first use
+	set        [6]string                 // the warm set demands counts against
+	lastDemand time.Time                 // evicted-base heal: one pool job per sceneWarmRedemandEvery, never per frame
+	phase      courtroom.MessagePhase    // tracks the room's message phase so an idle→ceremony transition resets the heal budget even when the warm set is unchanged (the blankpost-same-emote case)
 }
 
 type lobbyFetch struct {

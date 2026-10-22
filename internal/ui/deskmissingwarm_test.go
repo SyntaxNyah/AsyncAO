@@ -36,7 +36,7 @@ func TestWarmKeeperSkipsAConclusivelyMissingDesk(t *testing.T) {
 		a.room = &courtroom.Courtroom{}
 		a.room.Scene.ShowDesk = true
 		a.room.Scene.DeskBase = "warm://botc-townsquare/evening_overlay"
-		a.sceneWarmLastDemand = time.Time{} // throttle wide open
+		a.sceneWarm.lastDemand = time.Time{} // throttle wide open
 		return a, store
 	}
 
