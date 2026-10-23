@@ -84,12 +84,6 @@ func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 
 // TestBackDoesNotOutliveTheRailsThatDrawAfterIt is a crash gate, and it is one a
 // function-level test could not have found.
-//
-// drawThemeEditor's order is header, then both rails. The header's own Back button calls
-// requestEditorExit, which on a CLEAN document releases a.te on the spot — and every
-// rail below dereferences a.te.doc. Pressing Back was therefore a nil dereference on the
-// render thread, i.e. a client crash, on the most ordinary exit there is.
-//
 // It drives the real button through the real frame, so it also fails if the band is
 // re-spaced out from under it (a miss leaves the editor open, which is the assertion).
 func TestBackDoesNotOutliveTheRailsThatDrawAfterIt(t *testing.T) {
@@ -203,18 +197,6 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 // TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the gate the chord's
 // own dispatch was missing, and it is the difference between "the function works" and
 // "the key works".
-//
-// THE DEFECT IT CLOSES. editorUndoChord had exactly one caller — handleHotkeys — and
-// handleHotkeys is called from the three COURTROOM draw passes. drawEditorCanvas
-// reaches drawCourtroom only with a live room, so on the editor's HEADLINE entry point
-// (the Settings row, reachable with no server attached) the offline arm
-// drawEditorGeometryCanvas drew instead, no dispatcher ran, and Ctrl+Z did nothing at
-// all while c.hotkey survived the frame to fire whatever it was bound to. Every gate
-// that covered the chord called a.editorUndoChord() by hand, so the suite could not
-// see it: the same "present but unreachable" shape
-// TestUnsavedEditsSurviveARealBackgroundThemeApply was written to close for the
-// reclaim.
-//
 // So this one nils the room — the state the Settings entry point is in — and drives
 // the chord through App.Frame. The mutation it answers to is deleting
 // `if a.themeEditorOpen() { a.editorUndoChord() }` from App.Frame.

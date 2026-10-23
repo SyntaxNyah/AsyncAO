@@ -1,20 +1,7 @@
 package ui
 
 // THE PARTNER PREVIEW MINTED A LITERAL: characters/<them>/(a)normal.
-//
-// Report (user + Crystalwarrior, 2026-08-11): the Pairing dialog's partner ghost
-// assumes a "normal" emote exists. It does not, for a large slice of the fleet —
-// packs whose poses are spelled SNormal / HSmug / 1-idle ship no normal.* sprite
-// at all — and those partners previewed as an empty box with a name label in the
-// middle of it. Your OWN ghost has been the selected emote's idle since v1.53.0;
-// the partner had no such signal and kept the literal.
-//
 // The answer is the character's own char.ini: emote 1's anim
-// (courtroom.CharINI.IdleAnim), which is the pose AO2 has selected for them the
-// instant they are picked. It rides the char.ini fetch that was ALREADY happening
-// for their blips, chat skin, effects, scaling and showname, so an honest preview
-// costs no extra network probe.
-//
 // The gates below drive the real cache seam (charMetaFor / iniIdleAnimFor) and the
 // real parser, and pin the call site by census — a missing seam has no return
 // value, the box simply stays empty.
@@ -79,11 +66,9 @@ func TestIdleAnimIsTheFirstEmotesAnim(t *testing.T) {
 // cache seam rather than a mirror of it: charMetaFor answers, iniIdleAnimFor
 // applies the convention-until-the-ini-disagrees rule, and the pair ghost mints
 // from that.
-//
 // Both halves are asserted because either alone is passable by a wrong fix. A
 // character whose first emote is NOT "normal" must preview on their own pose; a
 // character who DOES have "normal" must be byte-identical to before, so the
-// change cannot have moved the common pack's single probe.
 func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	// roomFactoryApp, not the bare settled courtroom: the "never seen" arm below
 	// reaches charMetaFor's MISS path, which fires a real fetch, and that needs a
@@ -169,15 +154,6 @@ const (
 
 // TestACharINIOnTheWireReachesTheIdleCache is the END-TO-END gate for the fetch,
 // and it exists because every other gate in this file starts downstream of it.
-//
-// charMetaFetchOne parses a char.ini and copies the fields it wants into a
-// charMetaFetch; pollCharMeta copies THAT into the cache record. Both of the
-// pins above seed the channel by hand, so neither ever runs the parse→result
-// mapping — and an audit proved the consequence: deleting `res.idle =
-// ini.IdleAnim()` (charmeta.go), the single line joining the parser to the
-// feature, left the entire internal/ui suite green. That is the
-// parsed-but-never-applied shape CLAUDE.md rule 11 names by precedent.
-//
 // So this one writes a REAL char.ini into the Manager's mount folder, lets the
 // real fetch goroutine read it, pumps the real poll, and asks the real seam. It
 // closes `showname` in the same pass, which had the identical hole.

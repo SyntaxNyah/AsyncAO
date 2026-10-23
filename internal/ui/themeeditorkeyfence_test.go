@@ -1,22 +1,6 @@
 package ui
 
 // THE EDITOR'S KEYS YIELD TO A MODAL (v1.90.0 W10).
-//
-// THE HOLE. drawThemeEditor raises c.modalOn for the embedded file browser BEFORE the
-// key handler runs, and its comment says so — but modalOn only gates hovering(), so the
-// raise buys the POINTER half its protection and the keyboard half none. With the
-// browser up over the editor, DELETE deleted the selected element, H and L toggled
-// hidden and locked, and the arrows nudged it, all underneath a panel that owns the
-// screen. The pointer half was covered separately (`if demoBrowser.open { return }` in
-// editorCanvasInput); the keys were not, and could not have been before this wave,
-// because nothing modal could be opened over this screen until the image intake was.
-//
-// AND IT SPENDS THE KEY. handleEditorKeys zeroes c.keyPressed on every arm it takes, so
-// the loss is not only a stray edit: a modal that later wants Escape, or grows a text
-// field, would be handed a key the editor had already eaten. The browser reads no keys
-// today and has no field — c.focusID stays empty — which is exactly why the existing
-// focused-field yield does not cover this.
-//
 // The gate drives REAL FRAMES through App.Frame, so it fails if the guard is deleted
 // and it cannot go green against a re-implementation of it.
 
@@ -28,13 +12,9 @@ import (
 
 // openBrowserOverEditor puts the in-app file browser up in the image-intake purpose the
 // editor opens it in, and takes it back down when the test ends.
-//
 // The state is set rather than opened through openDemoBrowserFor because the FENCE is
 // what is under test and the fence reads demoBrowser.open — while the real open path
 // spawns a directory-listing goroutine over the user's home folder, which would put a
-// machine-dependent disk walk inside a gate about a keystroke. demoBrowser is a
-// package-level singleton (resetContentPanel documents the same discipline), so the
-// cleanup is not optional.
 func openBrowserOverEditor(t *testing.T) {
 	t.Helper()
 	demoBrowser.open = true

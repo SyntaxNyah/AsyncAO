@@ -151,20 +151,11 @@ func TestChatboxRungStems(t *testing.T) {
 // TestChatboxBlankRungIsDistinctAndDeclinesADuplicate covers the fourth rung —
 // AO2's plate-less `chatblank` skin — which rides the same enum as the two
 // widening variants but answers both halves of a rung's identity differently.
-//
-// Its T1 stem is fixed like the others, but its FILE stem is not derived from the
-// base skin: AO2 names it outright, `setImage("chatblank", p_misc)`
 // (AO2-Client courtroom.cpp:3322), where med/big are string-appended to the
 // resolved base's own path (courtroom.cpp:3358/:3362). The consequence is the case
-// the other rungs cannot have: for the two reference themes whose BASE skin
-// already resolved to chatblank, the blank rung is the base, so it declines with
-// an empty stem rather than pinning the same art under a second key.
-//
 // The decline is driven through the loader's own lookup expression
 // (app.go: theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), …)),
 // not re-implemented here, and the fixture ships the `.png` dotfile that the empty
-// stem would otherwise adopt — theme.TestFindAssetInRefusesAnEmptyStem is the same
-// guard from the other side.
 func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
 	// (1) Identity: four rungs, four distinct T1 keys. A collision would have one
 	// rung's art overwrite another's in themeTex.
@@ -221,11 +212,9 @@ func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
 // skin decision, the one the widen-and-swap ladder is not: a post whose showname
 // trims to nothing wears the plate-less box (AO2-Client courtroom.cpp:3320-3331,
 // `if (ui_vp_showname->text().trimmed().isEmpty())`).
-//
 // Both arms of AO2's branch are here, and so are the two states a streaming client
 // adds: a theme that ships no blank art at all (most of them) must be byte-identical
 // to the pre-fix draw, and the decision must stay free per frame — it runs on every
-// themed chatbox frame, not once per message.
 func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
 	a, cleanup := ladderHarness(t)
 	defer cleanup()
@@ -290,17 +279,9 @@ func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
 
 // TestChatboxLadderArtComesFromTheBaseSkinsOwnDirectory pins the lookup rule that
 // keeps the ladder honest across a theme that inherits from another.
-//
-// AO2 never looks the variants up by NAME: it appends to the resolved base
 // image's own path (AO2-Client courtroom.cpp:3358, over AOImage's remembered
-// m_file_name), so a variant can only ever come out of the directory the base
-// came out of. FindAsset — which falls through to the bundled default theme —
-// would happily pair one theme's base with another theme's variant and stretch
-// mismatched art into the same box.
-//
 // The fixture is the shape that actually occurs: a theme with its own chat.png
 // and chatmed.png, inheriting from a default theme that also ships a chatbig.png.
-// AO2 shows that theme its med skin and never its parent's big.
 func TestChatboxLadderArtComesFromTheBaseSkinsOwnDirectory(t *testing.T) {
 	root := t.TempDir()
 	themeDir := filepath.Join(root, theme.ThemesDirName, "inheritor")
@@ -600,7 +581,6 @@ func TestChatboxSkinLadderProbesNothingPerMessage(t *testing.T) {
 // FIRING — the state a stock-theme player is in the moment somebody with a long
 // showname speaks, and the only one of the themed gates that reaches the measure,
 // the two variant probes and the skin swap on every frame.
-//
 // The other themed gates leave themeTex empty, so their chatbox is the flat panel
 // and the ladder short-circuits on the first integer test. This one pins all three
 // skins and gives the theme the stock 24 px rung, so the frame really does measure

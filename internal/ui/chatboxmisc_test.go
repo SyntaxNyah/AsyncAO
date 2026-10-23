@@ -1,25 +1,6 @@
 package ui
 
 // THE CHATBOX LADDER, AND THE RUNG THAT IS NOT THERE YET (v1.90.0 W9).
-//
-// Design §W8 scoped "FindAssetMisc wired into the chatbox ladder" and named this
-// gate. W9 DEFERS the wiring — the reason is written at themeImageStems, and it
-// is that a per-character chatbox is a per-SPEAKER asset tier with its own cap and
-// lifetime, not a rung on a table whose whole contract is "one per theme, pinned".
-//
-// A deferral with no test is a deferral nobody can act on, so this gate pins the
-// two things the future wave needs pinned:
-//
-//  1. THE STEM ORDER, which the misc tier must not change. AO2 inserts
-//     `misc/<p_misc>/` in front of the theme rungs (get_asset_paths,
-//     path_functions.cpp:181-189); it does not add, remove or reorder a stem
-//     (courtroom.cpp:3323-3330). So the answer to "what does the ladder look like
-//     with misc" is "exactly this, looked up in more places".
-//  2. THE HELPER IS REAL AND UNUSED. theme.FindAssetMisc ships gated
-//     (TestFindAssetMiscProbeOrderMatchesAO2) with one caller — the effects
-//     overlay. If a later wave deletes it as dead code the chatbox tier loses its
-//     resolver, and if a later wave wires it into this table without building the
-//     per-speaker lifetime, the texture budget is the thing that finds out.
 
 import (
 	"os"

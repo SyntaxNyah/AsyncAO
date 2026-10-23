@@ -1,20 +1,6 @@
 package ui
 
 // The pane bake's [overrides] reading (L18).
-//
-// bakePanes used to ask the SIDECAR for a host's override rect, while the layout
-// tier asked sidecarOverrideTarget. Two spellings of one policy, and they
-// disagreed for one file in three ways at once:
-//
-//   - an inert key (player_list) is refused by themeKeyEditable, so the tier
-//     leaves the widget where the theme put it — and the pane applied the row
-//     anyway;
-//   - a row written `immediate` gets AO2's second-spelling fold in the tier and
-//     in absSlotRect, and got none in the pane;
-//   - a player's own layout-editor drag on a pane host was silently overruled by
-//     the theme author, inverting the documented precedence (rung 4 beats rung
-//     3, themeoverrides.go).
-//
 // The fix deletes the second reading outright: lay.r already carries the tier's
 // answer, so the pane re-bases what it is given and never learns that
 // [overrides] exists. Both gates below fail the moment that raw read comes back.
@@ -64,16 +50,9 @@ func paneHostFixture(t *testing.T, host, rowKey string, row theme.Rect, seed map
 
 // TestPaneRefusesTheOverrideTheLayoutTierRefused: an [overrides] row addressing a
 // key the client will not move must not move it inside a pane either.
-//
-// mute_button is slotStateInert — nothing paints there, so themeKeyEditable
-// refuses the row and the layout tier leaves the theme's own rect alone. Under
-// the old raw read the pane honoured it, so ONE file produced two different
-// answers for one widget depending on whether it happened to be hosted.
-//
 // The specimen used to be player_list. That key stopped being inert when the
 // roster ruling gave the player list AO2's own rect (theme_layout.go,
 // courtroom.cpp:879), so the fixture moved to a key that is STILL inert — the
-// invariant under test is unchanged, only what it is measured on.
 func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
 	const host = "mute_button"
 	// The fixture seeds the key into the theme's own rects, so the pane has

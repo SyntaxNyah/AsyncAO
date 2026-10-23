@@ -161,16 +161,6 @@ func TestCharSelectThemedRowNeedsItsThreeEssentials(t *testing.T) {
 
 // TestCharSelectThemedRowNeedsItsEssentialsONSCREEN is the half the first version of
 // the gate was missing, and it shipped an unusable screen.
-//
-// Char-select rects are deliberately never clamped into the canvas — char_buttons
-// overhangs by 30 px BY DESIGN and shifting it back would walk every column off the
-// artwork — so "resolved" says a rect is big enough, never that it is reachable.
-// ThemeFitCrop scales UP on purpose: at 1920x1080 with the shipped chrome band the
-// stock table scales by 2.69 and the canvas becomes {0,-336,1920,1796}, putting
-// char_search at y=-318, back_to_lobby at y=-323 and spectator at y=1385 on a 1080 px
-// window. All three resolved, so the themed row was taken and the client's own header
-// was suppressed: no search, no Spectate, no way out. The draw pushes lay.clip, so
-// they were painted nowhere and hovering() rejected them.
 func TestCharSelectThemedRowNeedsItsEssentialsONSCREEN(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	a := stageCharSelect(t, stockCharSelectDesign())
@@ -214,13 +204,10 @@ func TestCharSelectThemedRowNeedsItsEssentialsONSCREEN(t *testing.T) {
 
 // TestCharSelectTinyCellFallsBackToTheClassicScreen pins the cell floor against the
 // one corpus theme that exercises the downscale path.
-//
 // `microsoft surface 4k webao` declares a canvas far larger than any real window, so
 // at config.MinWindowW/H it scales to about a quarter. With the floor at 8 px the
 // themed grid was KEPT there on a 14 px cell: 64 px icon textures crushed to 14 px,
-// star and caption both suppressed, and — because the widget gate correctly fell back
 // — AsyncAO's own header row sitting over a themed grid. The pre-#20 screen gave that
-// user 64 px captioned cells, so the themed path has to stand down.
 func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 	big := stockCharSelectDesign()
@@ -301,15 +288,9 @@ func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 }
 
 // TestCharSelectControlsAtTheWindowFloor is C3, both ends.
-//
-// UP: eleven corpus themes are smaller than config.MinWindowW/H and letterbox
-// permanently. That is correct, and their controls must stay at full size and stay
-// usable — nothing may be dropped just because the window is at its floor.
-//
 // DOWN: only `microsoft surface 4k webao` exercises the downscale path. Its 22 px
 // design controls land on 5 px at 640x480, below the layout's own minThemedElementPx,
 // so the themed row must FALL BACK to AsyncAO's header rather than leave the user
-// clicking invisible slivers.
 func TestCharSelectControlsAtTheWindowFloor(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 
