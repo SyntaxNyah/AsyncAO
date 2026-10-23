@@ -127,14 +127,14 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 }
 
 // togglePalette opens/closes the palette (the Ctrl+Space hotkey).
-func (a *App) togglePalette() {
-	a.palette.paletteOpen = !a.palette.paletteOpen
-	if a.palette.paletteOpen {
-		a.palette.paletteQuery = ""
-		a.palette.paletteSel = 0
-		a.ctx.focusID = paletteInputID // type immediately, and binds stand down
-	} else if a.ctx.focusID == paletteInputID {
-		a.ctx.focusID = ""
+func (palette1 *paletteState) togglePalette(e *env) {
+	palette1.paletteOpen = !palette1.paletteOpen
+	if palette1.paletteOpen {
+		palette1.paletteQuery = ""
+		palette1.paletteSel = 0
+		e.ctx.focusID = paletteInputID // type immediately, and binds stand down
+	} else if e.ctx.focusID == paletteInputID {
+		e.ctx.focusID = ""
 	}
 }
 

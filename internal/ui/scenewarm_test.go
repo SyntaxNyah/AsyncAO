@@ -211,12 +211,12 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 
 	// Throttle window closed: no demand for a missing base.
 	a.activeWarm.lastDemand = time.Now()
-	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
+	a.activeWarm.warmBase(&a.env, "warm://missing-button", assets.AssetTypeEmoteButton)
 
 	// Throttle open but the ask budget spent: still no demand.
 	a.activeWarm.lastDemand = time.Time{}
 	a.activeWarm.demands = map[string]int{"warm://missing-button": warmMaxHealAsks}
-	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
+	a.activeWarm.warmBase(&a.env, "warm://missing-button", assets.AssetTypeEmoteButton)
 
 	// A char/emote change resets the counters (keepActiveAssetsWarm's gate).
 	// The warmed icon is resident so the pass is touch-only.

@@ -74,7 +74,7 @@ func (a *App) addPhoneBookServer() {
 		name = in
 	}
 	a.d.Prefs.AddFavorite(name, url, "")
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	a.pbName, a.pbURL, a.connErr = "", "", ""
 	a.lobby.lobbyStatus = "Added " + name + " to your phone book."
 }
@@ -108,7 +108,7 @@ func (a *App) importPhoneBook() {
 		a.connErr = "Clipboard isn't a valid phone-book export."
 		return
 	}
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	a.connErr = ""
 	a.lobby.lobbyStatus = fmt.Sprintf("Imported %d new server(s) into your phone book.", n)
 }
@@ -153,7 +153,7 @@ func (a *App) savePhoneBookEdit(oldURL, desc string) {
 		a.connErr = "That address is already in your phone book under another entry."
 		return
 	}
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	a.cancelPhoneBookEdit()
 	a.connErr = ""
 	a.lobby.lobbyStatus = "Updated " + name + " in your phone book."

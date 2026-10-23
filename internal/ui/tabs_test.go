@@ -758,14 +758,14 @@ func TestClientControlClick(t *testing.T) {
 	a.client.pendingControlSwap, a.client.clientPanning = false, false
 	c.clicked = true
 	c.mouseX, c.mouseY, c.downX, c.downY = 50, 50, 50, 50 // released where pressed → a click
-	a.clientControlClick(view)
+	a.client.clientControlClick(&a.env, view)
 	if !a.client.pendingControlSwap {
 		t.Error("a click in the view must request control")
 	}
 
 	a.client.pendingControlSwap = false
 	c.mouseX, c.mouseY, c.downX, c.downY = 150, 150, 50, 50 // travelled far → a drag, not a click
-	a.clientControlClick(view)
+	a.client.clientControlClick(&a.env, view)
 	if a.client.pendingControlSwap {
 		t.Error("a drag must not request control (it pans)")
 	}

@@ -38,14 +38,14 @@ type pingResult struct {
 // here (render thread) so the goroutines touch no shared App state except the
 // bounded result channel. A re-probe bumps pingGen so a prior sweep's late
 // results are ignored.
-func (a *App) startPinging() {
-	if a.lobby.pinging {
+func (lobby1 *lobbyState) startPinging() {
+	if lobby1.pinging {
 		return
 	}
 	type target struct{ url, addr string }
 	var targets []target
-	for i := range a.lobby.servers {
-		e := &a.lobby.servers[i]
+	for i := range lobby1.servers {
+		e := &lobby1.servers[i]
 		if !e.Joinable() {
 			continue
 		}
@@ -56,10 +56,10 @@ func (a *App) startPinging() {
 	if len(targets) == 0 {
 		return
 	}
-	a.lobby.pinging = true
-	a.lobby.pingMode = true
-	a.lobby.pingGen++
-	gen, res := a.lobby.pingGen, a.lobby.pingRes
+	lobby1.pinging = true
+	lobby1.pingMode = true
+	lobby1.pingGen++
+	gen, res := lobby1.pingGen, lobby1.pingRes
 	go func() {
 		jobs := make(chan target)
 		var wg sync.WaitGroup
@@ -105,7 +105,7 @@ func (a *App) toggleConnectTimeSort() {
 		a.applyServerSort()
 		return
 	}
-	a.startPinging()
+	a.lobby.startPinging()
 }
 
 // pollPing drains probe results into a.pings on the render thread — a
@@ -139,7 +139,7 @@ func (a *App) pollPing() {
 // applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets
 // the index-based selection — mirroring the refresh / favourite re-sorts.
 func (a *App) applyServerSort() {
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	// Clear all three selection caches together (descLinks included — a stale
 	// link slice is a latent trap for any draw path that consults it alone).
 	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks = -1, nil, nil // row indices changed with the sort

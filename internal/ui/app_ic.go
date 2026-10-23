@@ -1048,8 +1048,8 @@ func (a *App) healScenery() {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
-	a.healSpriteLayer(&sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
-	a.healSpriteLayer(&sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
+	a.sceneWarm.healSpriteLayer(&a.env, &sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
+	a.sceneWarm.healSpriteLayer(&a.env, &sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
 }
 
 // healSpriteLayer re-demands one visible character sprite layer if its active
@@ -1057,25 +1057,25 @@ func (a *App) healScenery() {
 // bare-then-folder chain EmoteAlts feeds the primary per-message demand —
 // paced per layer like the scenery above. No-op while the sprite is resident
 // or recently asked.
-func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
+func (scenewarm *sceneWarmState) healSpriteLayer(e *env, layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
 	if !layer.Visible || layer.Active == "" {
 		return
 	}
 	if *askBase == layer.Active && now.Sub(*askAt) < charIconRetryInterval {
 		return // recently asked for this exact base; let it land
 	}
-	if a.d.Store.Contains(layer.Active) {
+	if e.d.Store.Contains(layer.Active) {
 		return // resident — nothing to heal
 	}
-	if !a.sceneWarm.healAllowed(layer.Active) {
+	if !scenewarm.healAllowed(layer.Active) {
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
-	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
+	e.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
 	// Cold sprite + thumbnails on: also ask for the low-q stand-in (paced by the
 	// same retry window above; the loader reads + decodes off-thread and
 	// drainThumbs uploads under the thumb:// key the renderer probes).
-	if th := a.d.Manager.Thumbs(); th != nil && th.Enabled() && !a.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
+	if th := e.d.Manager.Thumbs(); th != nil && th.Enabled() && !e.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
 		th.RequestLoad(layer.Active)
 	}
 }

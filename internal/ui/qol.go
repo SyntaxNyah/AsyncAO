@@ -430,7 +430,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyClipReplay):
 		a.clipInstantReplay()
 	case a.hotkeyFor(hotkeyPalette):
-		a.togglePalette()
+		a.palette.togglePalette(&a.env)
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):

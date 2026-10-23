@@ -207,11 +207,11 @@ func (a *App) controlPinnedClient() {
 // a CLICK (press+release with little travel — a drag there pans/zooms instead). The
 // swap is deferred to the next frame top (pendingControlSwap) so we never mutate the
 // active session/room mid-render.
-func (a *App) clientControlClick(view sdl.Rect) {
-	c := a.ctx
-	if c.clicked && !a.client.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
+func (client1 *clientState) clientControlClick(e *env, view sdl.Rect) {
+	c := e.ctx
+	if c.clicked && !client1.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
 		absInt(int(c.mouseX-c.downX))+absInt(int(c.mouseY-c.downY)) <= clientClickSlop {
-		a.client.pendingControlSwap = true
+		client1.pendingControlSwap = true
 	}
 }
 
@@ -368,7 +368,7 @@ func (a *App) drawClientBody(r sdl.Rect) {
 	}
 	stage := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
-	a.clientControlClick(stage) // click the stage → take control of this server
+	a.client.clientControlClick(&a.env, stage) // click the stage → take control of this server
 	logTop := stage.Y + stage.H + 3
 	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
 	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
@@ -391,9 +391,9 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 		a.drawSplitInput(inputRow)
 		return
 	}
-	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
-	a.clientControlClick(view)           // a plain click on the client = take control of that server
-	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
+	a.handleClientZoomPan(view, pressed)      // scroll = zoom (cursor-anchored), drag = pan
+	a.client.clientControlClick(&a.env, view) // a plain click on the client = take control of that server
+	src := a.clientViewSrc()                  // sub-rect of the texture from zoom + pan
 	_ = c.Ren.Copy(a.client.clientTex, &src, &view)
 	// "Click to control" hint (top-left pill) — the rendered theme is a live view; a
 	// click makes this server the real, fully-interactive courtroom (swaps with primary).

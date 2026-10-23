@@ -4,6 +4,7 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // clientState owns client state.
 type clientState struct {
+	env *env
 	// The pinned server draws in a free-floating, movable/resizable "second client"
 	// window (geometry in env.wins) overlaying the primary — drag it anywhere, not a
 	// fixed split. clientHdr caches the title by server name so the per-frame draw

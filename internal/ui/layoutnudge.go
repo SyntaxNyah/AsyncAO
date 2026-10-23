@@ -42,8 +42,8 @@ func (a *App) editorDrawSiteRuns() bool {
 // It cannot strand the nudge behind a field the user cannot see: arming either
 // editor drops the focus (closeEditorBlockingOverlays), so the only way back into
 // this branch is a surface the user opened AFTER arming — one they can close.
-func (a *App) keyboardSurfaceOverEditor() bool {
-	return a.palette.paletteOpen || a.ctx.focusID != ""
+func (palette1 *paletteState) keyboardSurfaceOverEditor(e *env) bool {
+	return palette1.paletteOpen || e.ctx.focusID != ""
 }
 
 // nudgeKeyDir maps an arrow keycode to a unit step in screen/design orientation (Y grows
@@ -131,7 +131,7 @@ func nudgeCoord(v, dir int, coarse bool, phase, grid int) int {
 // pair-ghost offset nudge and the emote-preview cycler have all had a look at
 // c.keyPressed. An in-draw check would have been handed a key that was already spent.
 func (a *App) editorNudgeKeys(w, h int32) bool {
-	if !a.editorDrawSiteRuns() || a.keyboardSurfaceOverEditor() {
+	if !a.editorDrawSiteRuns() || a.palette.keyboardSurfaceOverEditor(&a.env) {
 		return false // no editor owns the screen: arrows belong to whoever else wants them
 	}
 	dx, dy, coarse, ok := takeNudgeKey(a.ctx)

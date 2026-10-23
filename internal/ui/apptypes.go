@@ -1160,6 +1160,7 @@ type banBoxState struct {
 // reset when the warm set changes or a new ceremony begins; it is bounded by the
 // set itself (≤6 scene bases) and lazily allocated.
 type sceneWarmState struct {
+	env        *env
 	demands    map[string]sceneHealState // per-base heal history; nil until first use
 	set        [6]string                 // the warm set demands counts against
 	lastDemand time.Time                 // evicted-base heal: one pool job per sceneWarmRedemandEvery, never per frame
@@ -1171,6 +1172,7 @@ type sceneWarmState struct {
 // pulls its re-demands onto the scene keeper's cadence (the old path submitted a
 // pool job per 50 ms tick).
 type activeWarmState struct {
+	env        *env
 	demands    map[string]int // per-base demand counts; nil until first use
 	char       string         // identity: character folder…
 	idx        int            // …and selected emote index
