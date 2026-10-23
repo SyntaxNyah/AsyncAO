@@ -354,9 +354,6 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	// the only thing that can move both as one act. Assigning e.ID here would leave
 	// the carrier's header on the old name, and the next save would APPEND a second
 	// section: a file that reads back as two elements (see editFieldElemID).
-	// The error is dropped HERE and refused THERE: editorWriteStringField asks the
-	// same funnel first and shows the reason as a chip, because a setter cannot say
-	// no — the op is already recorded by the time it runs. What is left at this point
 	editFieldElemID: func(d *themeDoc, e *theme.Element, v editValue) {
 		_ = d.side.RenameElement(e.ID, d.str(v.s))
 	},
@@ -894,8 +891,6 @@ func (d *themeDoc) writeFontBind(class, family string) bool {
 
 // ---------------------------------------------------------------------------
 // The AO2 tier's geometry — [overrides], the OTHER sanctioned way to move a widget
-// ---------------------------------------------------------------------------
-//
 // WHY THE EDITOR WRITES A ROW AND THE Ctrl+F2 OVERLAY WRITES A PREFERENCE. Design
 // §"Where geometry is written" splits them by OWNERSHIP: a live tweak of a theme you
 // merely use is yours alone and belongs in ThemeRectOv; editing a theme you own is

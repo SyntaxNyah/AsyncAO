@@ -11,13 +11,6 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row).
 // Two coverage rules so none render as tofu boxes:
-//  1. BMP symbol emoji (U+2xxx: ✨ ⭐ ❓ ❗ ✅ ❌ …) carry a trailing VARIATION SELECTOR-16
-//     (U+FE0F). Without it they're text-presentation code points and never reach the
-//     colour-emoji font (isEmojiBase only auto-promotes the supplementary plane) — they'd
-//     box. The selector is invisible; ❤️ ✌️ ⚖️ already have it.
-//  2. No bleeding-edge code points: the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are
-//     absent from emoji fonts that predate them, and a streaming client can't ship its own
-//     coloured glyphs, so the set stays within widely-shipped (≤ Unicode 11) pictographs.
 var icEmojiSet = []string{
 	"😀", "😂", "🙂", "😉", "😍", "😎", "😭", "😡",
 	"👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋",

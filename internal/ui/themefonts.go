@@ -7,9 +7,7 @@ package ui
 // that file — the "message" family, applied GLOBALLY to every surface in the
 // client, and the message/showname colours — so a theme that sized its IC log at
 // 11 pt and its music list at 6 pt rendered both at the client's own scale.
-// The ZERO table means "this theme dresses nothing", and every accessor then
 // returns exactly what the pre-#39 code returned — so a client with no theme, or
-// with the Theme fonts setting off, is byte-identical to before.
 
 import (
 	"os"
@@ -169,9 +167,6 @@ func elemChat(el themeFontElem) bool { return el == elemShowname || el == elemMe
 // a.oocPct / a.musicPct / a.areaPct), a themed courtroom paints all of them at once,
 // and one zoom notch on any of them makes the percents differ. Routed to the shared
 // c.logSet, that measured ~42 allocations per frame with a full text-atlas teardown.
-// The CHAT pair (showname + message) deliberately still routes to c.chatSet: the
-// message raster is also built by the GIF/comic exports at a caller-fitted pct
-// (messageFontFor), and pinning that to an element set would make an export thrash
 
 // elemFontFor is the ONE call an element draw site makes: the covering face for
 // text, at el's resolved scale, in el's own declared family.

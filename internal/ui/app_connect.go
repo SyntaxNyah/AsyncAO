@@ -394,12 +394,6 @@ func (a *App) applyThemeDesignWindowSize() bool {
 // freshly applied theme's canvas, so importing a theme delivers stock-AO2 1:1
 // with zero user action. `gen` is the themeGen of the apply that just landed.
 // The one-shot is why this can't key off "the theme name changed": pollThemeApply
-// A NEWER landing does disarm, though, because it proves the armed apply can
-// never arrive: themeRes is a single slot, the publish loop drops a result
-// outraced by a higher generation, and pollThemeApply's consume-side guard drops
-// Guard rails, in order: consume the arming unconditionally once its own apply
-// lands (a pick that can't resize must not resize LATER, on some unrelated
-// re-apply); never fight a user who chose fullscreen or maximized; respect the
 func (a *App) maybeResizeToThemeDesign(gen uint64) {
 	if a.themeResizeArmGen == 0 {
 		return

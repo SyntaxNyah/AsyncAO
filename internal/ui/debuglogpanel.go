@@ -6,13 +6,7 @@ import (
 
 // AO2's ooc_toggle: one button that swaps the server chat panel for the debug
 // log (issue #21 label 10, "server/debug?").
-//
 // AO2 wires ui_ooc_toggle to on_ooc_toggle_clicked (../AO2-Client/src/courtroom.cpp:5197):
-// it shows ui_debug_log, hides ui_server_chatlog and relabels itself "Debug",
-// then swaps back. The debug log lives at the ms_chatlog rect — set_size_and_pos(
-// ui_debug_log, "ms_chatlog") at :831, an old key name AO2 keeps for theme
-// compatibility — which is why ms_chatlog is NOT a server_chatlog alias.
-//
 // The button's label names what is CURRENTLY on screen, not what clicking does
 // (AO2 sets "Server" at :1014 while server chat is up). Easy to invert.
 

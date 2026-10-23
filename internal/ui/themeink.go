@@ -8,13 +8,7 @@ package ui
 // eight identifiers' colours and then used exactly two of them — showname and
 // message — so a theme that coloured its OOC log or its track list was ignored.
 // silent about (courtroom.cpp:1334-1338), so an off-canvas copy of ui_music_list
-// READABILITY. AO2 gets away with colours AsyncAO cannot copy verbatim, because
-// its legibility for the list widgets comes from a source we deliberately do not
-// paint: opaque per-ROW brushes. found_song_color / missing_song_color are
 // applied with treeItem->setBackground(0, ...) at courtroom.cpp:1771/1775, and
-// Measured on the theme this issue came from (aceattorney2x): its
-// courtroombackground is luma 17 under ic_chatlog, 139 under server_chatlog and
-// 44 under music_list. So server_chatlog_color = 0,0,0 is kept — a real
 
 import (
 	"fmt"

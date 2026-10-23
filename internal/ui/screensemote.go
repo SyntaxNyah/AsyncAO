@@ -499,9 +499,6 @@ const (
 // the typed line clips (and the keep-caret-visible scroll turns over) short of
 // them instead of running underneath: the reported symptom was typing straight
 // through the counter until the digits were unreadable.
-// It is deliberately the SAME arithmetic drawMsgCounter uses, read off the same
-// two helpers, rather than a second estimate — a reservation that disagrees with
-// the draw would reintroduce the overlap it exists to prevent (or waste room).
 func (a *App) icFieldTailReserve(counterOn bool) int32 {
 	band := a.icMutedBandW()
 	if counterOn {
@@ -1927,8 +1924,6 @@ type icColorSel struct {
 // unfocuses it, dropping the live selection before the pick lands next frame. So we
 // snapshot here while it exists; once the dropdown is open the field is unfocused,
 // selectionFor returns ok=false, and we leave the frozen snapshot untouched.
-// Alloc-free: selectionFor → fieldSel(utf8.RuneCountInString) is int-only, so the
-// per-frame IC-row alloc gate stays green (the splice runs only on the pick).
 func (a *App) captureICColorSel() {
 	c := a.ctx
 	if lo, hi, ok := c.selectionFor(icFieldID, a.icInput); ok {

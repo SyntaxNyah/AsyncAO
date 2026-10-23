@@ -34,12 +34,6 @@ const (
 	// sized to import a WHOLE real session: the largest real fixture is 8943 scene
 	// events, so 50000 is ~5.6× that — full archives fit with room to spare. Memory
 	// math: an MS event costs ~464 B of struct (the recEvent slot + its heap
-	// *ChatMessage) + ~250 B of string backing ≈ 700 B avg (≈1 KB worst), so one
-	// resident scene at 50000 events is ~35 MB, and the transient export/preview
-	// second copy adds only ~23 MB (string bytes are shared across clones, only the
-	// structs multiply) — well inside the 256 MiB budget. Video export length is NO
-	// LONGER coupled to this: video streams to ffmpeg under its own maxVideoHours
-	// wedge-brake, so a big import is fully exportable.
 	maxRecordedEvents = 50000
 
 	// instantReplayMaxEvents bounds the always-on rolling clip buffer (hard rule
