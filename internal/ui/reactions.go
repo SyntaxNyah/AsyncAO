@@ -12,14 +12,6 @@ import (
 // Real reactions (#2), UI side. The wire codec lives in courtroom (reactionwire.go); this
 // file is the parts that need SDL: the floating-emoji overlay over the stage, the react
 // button + palette, and the per-message piggyback on send.
-//
-// Flow: you click React → pick an emoji from the palette → it's QUEUED (rides your next IC
-// message as an invisible frame referencing the message you reacted to). Every AsyncAO
-// viewer (including you, when your message echoes back) decodes the frame, matches the
-// content-stable ref to a message in their IC log, and floats the emoji up from the stage.
-// AO2 / webAO see clean text. Incoming floats display by default (like received sprite
-// styles / profiles / effects); HideReactions is the viewer opt-out. The overlay is a
-// 0-alloc early-return when nothing is floating, so a room with no reactions pays nothing.
 
 const (
 	// reactionFloatPct sizes the floating emoji as a percent of the UI font — chunky, so a
@@ -134,13 +126,9 @@ func reactionAlpha(prog float64) uint8 {
 // from the colour-emoji face at the CURRENT device text scale. Returns nil (not cached)
 // while the face is still loading, so it retries on a later frame; warmReactBadges
 // pre-builds all of them once the face lands.
-//
 // A UI-scale change purges every cached badge first (reactBadgeDevScale mismatch) — the
 // same "one stale scale invalidates the whole cache" idiom SetTextDevScale already uses
 // for the label/emoji-raster caches. Without it a badge built at whatever scale was
-// active the first time a reaction floated would keep blitting that device pixel count
-// forever, going soft again the moment the user changed the UI scale (Badge.Draw's
-// non-exact fallback still displays it at the right LOGICAL size, just resampled).
 func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if a.ctx.textDevPct != a.reactBadgeDevScale {
 		a.purgeReactBadges()

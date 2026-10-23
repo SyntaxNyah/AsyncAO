@@ -286,9 +286,6 @@ func (a *App) drawLobby(w, h int32) {
 	// They sit HERE rather than in the header's utility cluster because that
 	// cluster shares its row with the Privacy/Glossary/What's New trio; three
 	// buttons there squeezed the trio to nothing at config.MinWindowW, and What's
-	// Both still exist as Servers-menu rows and call the same setters, so the two
-	// surfaces cannot drift. The LABEL carries the in-flight state rather than the
-	// button grey­ing or vanishing: a control that disappears under the cursor
 	listActY := dcY + lobbyListActionsDropY
 	refreshLabel := "Refresh"
 	if a.lobby.lobbyFetching {
@@ -821,9 +818,6 @@ func (a *App) drawCharSelect(w, h int32) {
 	// (no themed grid, or the rects scaled below a usable size, or the theme gives the
 	// whole area to char_buttons and leaves nowhere for the name column), the screen
 	// keeps the header row it has always had, on top of the theme's backdrop.
-	// The predicate needs the grid plan and the plan needs to know whether a header
-	// row is in its way, so the themed candidate is built first and the classic plan
-	// rebuilt underneath it when the answer is no. charSelectGridPlan is alloc-free
 	themedTop := a.topChromeH()
 	themedUI := csLay.valid && a.charSelectWidgetsThemed(csLay, a.charSelectGridPlan(w, h, themedTop, csLay))
 	gridTop := themedTop
@@ -1283,8 +1277,6 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// handlePreviewInput off previewFrameRect and is unaffected by this move.
 	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
 	// emote it's showing, so the preview surface reports it too — not just the
-	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
-	// nav bar already captions the name) or when no name is supplied (character
 	if name != "" && !cycle {
 		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
 		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})

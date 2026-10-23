@@ -2307,9 +2307,6 @@ func clipIntersect(r, prev sdl.Rect, had bool) sdl.Rect {
 // scrolled top/bottom row is cut at the rect edge instead of spilling over
 // neighbouring widgets — that overspill is what struck the tab strip through the
 // first OOC line.
-// Returns by value (no closure) so the per-frame log/list draws stay
-// allocation-free — the render loop must not heap-allocate. sdl.Rect.Intersect
-// is pure Go in go-sdl2 (no cgo, nothing escapes).
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	// The previous clip comes from the mirror fields, NOT an SDL query:
 	// GetClipRect's named-return pointer escapes through cgo and heap-allocates
@@ -2365,9 +2362,6 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 // glyphs twice a pixel apart.
 // WHY THE DOUBLE DRAW HAD TO GO (F1b). A 1 px offset is a LOGICAL offset, and at a
 // #77 field/message work applies everywhere else.
-// The style is set on the DEVICE face for exactly the RenderUTF8Blended call and
-// restored by defer, so the shared cached face never leaks a weight into the plain
-// text drawn next (buildSpan's idiom, same reason).
 func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold bool) (cachedText, bool) {
 	if text == "" || font == nil {
 		return cachedText{}, false
@@ -2610,9 +2604,6 @@ func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
 // label instead of only the focused field's moving parts. Only reached when
 // uiDeviceExactAt has already confirmed the texture's own device scale matches
 // the renderer's current one.
-// Allocation-free: c.drawSrc/c.drawDst (already-reused scratch rects) and
-// c.cgoRect carry every rect: no &local ever crosses into cgo. The scale is
-// restored by RECOMPUTING it from c.RenderScalePct(), never by Ren.GetScale(),
 func (c *Ctx) blitLabelExact(t cachedText, x, y, wLog int32) {
 	dev := t.devPct
 

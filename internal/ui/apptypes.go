@@ -625,9 +625,6 @@ type sessionState struct {
 	// that allocates) every frame. areaFiltered holds matching indices into
 	// a.sess.Areas (which parallels a.sess.AreaInfo, so the ORIGINAL index
 	// is what indexes both).
-	// ONE SLOT PER QUERY SOURCE (areaQuerySlots, screens.go): the list can be on
-	// screen twice in one frame under two different queries — a torn-off Areas
-	// panel filtered by its own field, and the themed canvas copy filtered by
 	areaSearch     string
 	areaFiltered   [areaQuerySlots][]int
 	areaFilterMemo [areaQuerySlots]areaFilterKey
@@ -1520,8 +1517,6 @@ var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
 // handle_wtce's filenames with the bare legacy spelling second.
 // speaking character's own char.ini (`get_chat(customchar)`, courtroom.cpp:3299)
 // path_functions.cpp:181-189). theme.FindAssetMisc is exactly those two rungs and
-// What is kept green in the meantime:
-// the stem order AND the position the misc rungs must take when the tier is
 func themeImageStems() map[string][]string {
 	m := map[string][]string{
 		themeStemChatbox:   {"chat", "chatbox", "chatblank"},
@@ -1630,9 +1625,6 @@ const (
 	// falls through get_config_value to the bundled DEFAULT THEME before it gives
 	// up and returns 0,0. A streaming client has no such tree on disk, so these
 	// constants stand in for it — see designPair.
-	// The gap was 1 for a long while, which was nobody's value: not AO2's stock 9,
-	// not AO2's give-up 0. It never showed in the 74-theme reference corpus because
-	// every top-level theme there declares the key (33 of them declare exactly
 	defaultEmoteCellPx = 40
 	defaultEmoteGapPx  = 9
 )

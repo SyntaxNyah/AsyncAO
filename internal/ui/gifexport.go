@@ -1120,12 +1120,6 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, skin
 // Otherwise it keeps the full-frame default (viewport fills the frame, chatbox
 // pinned to the bottom). Fixes #41: the recorder used to ALWAYS take the default
 // path, so a themed session that "played" with its layout exported to a video
-// THE SHARED LAYOUT CACHE IS BORROWED, NOT THRASHED — measured, because the two
-// entry points differ in `top` and there is exactly one cache (a.themeLay), so the
-// obvious worry is a cold rebuild (a 12 KiB struct clear, the rect map and, since
-// The cost is therefore two cold rebuilds PER JOB (one entering the export, one on
-// the first courtroom frame after it), not two per frame — which is the same price
-// any window resize pays and is not worth a second resident 12 KiB cache to avoid.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
 	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if _, ok := lay.rect("viewport"); ok {
@@ -1143,9 +1137,6 @@ func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect
 // (falling back to a bottom overlay over the viewport when the theme omits a
 // chatbox rect). Geometry comes from the SAME themeLayout the live themed
 // courtroom uses, so the video matches what Studio playback shows.
-// The COMIC exporter is deliberately NOT wired: it composes paper panels with its
-// own speech bubble and never takes the themed path at all (comicexport.go —
-// captureComicPanel renders the bare viewport), so there is no themed frame to be
 func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black

@@ -8,15 +8,6 @@ import (
 )
 
 // The proxy section of the Power-user tab.
-//
-// The READOUT is the load-bearing part of this, not the controls. The biggest
-// risk in honouring a machine's proxy configuration is honouring one that cannot
-// carry AO traffic — a proxy that blocks CONNECT to the non-443 ports community
-// AO servers use will make every room fail to load, and from the player's side
-// that looks exactly like the client being broken. So the user has to be able to
-// see WHAT was detected and WHERE it came from, on screen, without a debug log
-// and without guessing; and "Never use a proxy" has to be one click away from
-// reading that line.
 
 // proxyModeLabel is the cycle button's text: what is IN EFFECT, not what
 // clicking would switch to.

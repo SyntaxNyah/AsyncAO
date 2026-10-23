@@ -133,9 +133,6 @@ func (c *Ctx) emojiPctFor(primary *ttf.Font) int {
 // The kit needed its own entry because the widgets that show SERVER-supplied text
 // (the showname picker's rows, the lobby's server labels) draw through Ctx alone.
 // They resolved a single face and blitted it, so a name whose glyphs live in two
-// The plain-text branch is the byte-identical textTexture/blitLabel path the
-// widgets already used, behind the same cheap gate labelEmoji uses, so ASCII
-// chrome — nearly every label in the client — keeps its allocations and its speed.
 func (c *Ctx) labelCoveringCentered(x, rowY, rowH, maxW int32, text string, col sdl.Color) {
 	face := c.chromeFaceFor(text)
 	needEmoji := render.NeedsEmojiFallback(text)
@@ -181,9 +178,6 @@ func (c *Ctx) blitCenteredLabel(face *ttf.Font, x, rowY, rowH, maxW int32, text 
 // paint with another.
 // showname draws in the theme's own family at the theme's own point size (#39).
 // Measuring the wrong face would offset a centred name by the difference.
-// Allocation-free once warm, which is what lets an aligned showname stay inside
-// the whole-screen zero-alloc gate: each branch is a probe of the very cache the
-// draw call that follows will hit again (textCache on the plain path,
 func (a *App) labelEmojiWidth(primary, emoji *ttf.Font, text string, col sdl.Color) int32 {
 	c := a.ctx
 	if primary == nil || text == "" {
@@ -306,9 +300,6 @@ func (c *Ctx) emojiRasterWeight(text string, col sdl.Color, primary, emoji *ttf.
 	// The nil is CACHED: uncached, every visible emoji label re-ran []rune +
 	// coverRunes per frame while the colour-emoji face wasn't loaded — the IC
 	// bar's 🙂 button leaked exactly 1 alloc/frame into the whole-screen gate.
-	// The pictograph mask is deliberately NOT an escape from this bail: with no
-	// colour face there is nothing to promote TO, so the label keeps today's box and
-	// the key (which carries the face pointer) makes nil→face a new entry that
 	if emoji == nil && allSameFont(textFonts, primary) {
 		return c.cacheEmojiRaster(key, nil)
 	}
