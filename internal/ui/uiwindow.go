@@ -110,18 +110,12 @@ const sdlWindowPosDisplayMax = 0xFFFF
 
 // CenteredWindowPos builds the SDL_WINDOWPOS_CENTERED_DISPLAY(n) magic value for
 // one display, for SetPosition / CreateWindow.
-//
 // This exists because the bare sdl.WINDOWPOS_CENTERED is NOT "centre on whatever
 // display you are on": SDL_video.h defines it as SDL_WINDOWPOS_CENTERED_DISPLAY(0),
 // and SDL_SetWindowPosition derives the target from the low 16 bits, so it always
-// means display 0. Recentering with it teleports a window the user dragged onto a
-// second monitor back to the primary one — and worse, it does so with a size that
-// was clamped against the OTHER monitor's usable bounds.
-//
 // Anything outside the encodable range degrades to the primary display. SDL
 // itself clamps an in-range-but-nonexistent index back to 0, so only the encoding
 // bound has to be enforced here — see sdlWindowPosDisplayMax for why a too-large
-// index would otherwise produce a position word that is not "centered" at all.
 func CenteredWindowPos(display int) int32 {
 	if display < 0 || display > sdlWindowPosDisplayMax {
 		display = primaryDisplayIndex
@@ -140,17 +134,10 @@ func (c *Ctx) WindowMaximized() bool {
 
 // UnmaximizeWindow drops a maximized window back to its restored geometry so a
 // following SetSize/SetPosition actually sticks.
-//
 // It has to be explicit because SDL_SetWindowSize has NO maximized guard: it
 // writes window->windowed.w/h and calls the backend regardless
 // (SDL 2.32.10 src/video/SDL_video.c), and WIN_SetWindowSize's SetWindowPos runs
-// against an HWND that still carries WS_MAXIMIZE
-// (src/video/windows/SDL_windowswindow.c), so Windows keeps the maximized
-// geometry and the resize silently does nothing.
-//
 // The MAXIMIZED-only gate is deliberate and must not be replaced by SDL's own:
-// SDL_RestoreWindow self-gates on (MAXIMIZED | MINIMIZED), so calling it blind
-// would also pop a MINIMIZED window back onto the screen. Render thread only.
 func (c *Ctx) UnmaximizeWindow() {
 	if c.win == nil || c.win.GetFlags()&sdl.WINDOW_MAXIMIZED == 0 {
 		return
@@ -171,11 +158,8 @@ func (c *Ctx) WindowSize() (int, int) {
 // actually on (NOT display 0 — see CenteredWindowPos), so a too-big or
 // off-screen window snaps back into view. No-op headless; the caller clamps the
 // size first.
-//
 // Deliberately does NOT un-maximize: applyFullscreen's leave-fullscreen snap-back
 // shares this call, and F11 must not also change a maximized window's state.
-// App.applyWindowSize owns that (it is the layer that persists the size too).
-// Render thread only.
 func (c *Ctx) ResizeWindow(w, h int) {
 	if c.win == nil {
 		return

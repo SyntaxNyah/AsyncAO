@@ -130,14 +130,9 @@ func (c *Ctx) emojiPctFor(primary *ttf.Font) int {
 // font doesn't have — another script, or colour emoji — vertically centred in a
 // rowH-tall row and clipped to maxW. It is labelEmoji's logic for the widget kit,
 // which has no App to reach labelEmoji through.
-//
 // The kit needed its own entry because the widgets that show SERVER-supplied text
 // (the showname picker's rows, the lobby's server labels) draw through Ctx alone.
 // They resolved a single face and blitted it, so a name whose glyphs live in two
-// faces came out as boxes there while the identical string drew correctly in the
-// chatbox and the log. Picking a covering face (chromeFaceFor) fixes the script
-// half; only a per-glyph raster can fix a string that needs the emoji face TOO.
-//
 // The plain-text branch is the byte-identical textTexture/blitLabel path the
 // widgets already used, behind the same cheap gate labelEmoji uses, so ASCII
 // chrome — nearly every label in the client — keeps its allocations and its speed.
@@ -184,16 +179,11 @@ func (c *Ctx) blitCenteredLabel(face *ttf.Font, x, rowY, rowH, maxW int32, text 
 // through the SAME two paths and the same caches as the draw itself — so a
 // caller that aligns a label inside a box can never measure on one face and
 // paint with another.
-//
-// It is not c.TextWidth: that one always measures the fixed CHROME face, while a
 // showname draws in the theme's own family at the theme's own point size (#39).
 // Measuring the wrong face would offset a centred name by the difference.
-//
 // Allocation-free once warm, which is what lets an aligned showname stay inside
 // the whole-screen zero-alloc gate: each branch is a probe of the very cache the
 // draw call that follows will hit again (textCache on the plain path,
-// emojiCache on the fallback path), and the emoji branch's nil result is itself
-// cached.
 func (a *App) labelEmojiWidth(primary, emoji *ttf.Font, text string, col sdl.Color) int32 {
 	c := a.ctx
 	if primary == nil || text == "" {
@@ -265,13 +255,9 @@ func (a *App) labelNameElem(el themeFontElem, x, y, maxW int32, text string, col
 // ASCII — so a normal message keeps the field's exact single-font fast path with no per-frame
 // font work. For non-ASCII it kicks the colour-emoji load (NeedsEmojiFallback) and returns a
 // log-set covering face (LogFontFor also latches the broad / CJK unicode load via noteScript)
-// so typed emoji / non-Latin render real glyphs instead of the chrome font's tofu. #M5.
-//
 // SIZE: always the CHROME size (DefaultScalePct) — the same size the field's
 // single-font path draws (c.font) — so typing one non-Latin rune never changes
 // the rendered text size. These used to come back at the LOG zoom (a.logPct),
-// which made the whole field visibly grow the moment a Cyrillic letter landed
-// (playtest: typing one Cyrillic rune grew the whole field a size).
 func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 	if isASCII(text) {
 		return nil, nil
@@ -320,14 +306,9 @@ func (c *Ctx) emojiRasterWeight(text string, col sdl.Color, primary, emoji *ttf.
 	// The nil is CACHED: uncached, every visible emoji label re-ran []rune +
 	// coverRunes per frame while the colour-emoji face wasn't loaded — the IC
 	// bar's 🙂 button leaked exactly 1 alloc/frame into the whole-screen gate.
-	// Self-invalidating: the key embeds the emoji-face pointer (nil→face is a
-	// new key) and SetEmojiFont/SetFallbackFonts/SetCJKFonts/purgeTextCache all
-	// purge this cache when the underlying faces change.
-	//
 	// The pictograph mask is deliberately NOT an escape from this bail: with no
 	// colour face there is nothing to promote TO, so the label keeps today's box and
 	// the key (which carries the face pointer) makes nil→face a new entry that
-	// rebuilds the moment pollEmojiFont lands one.
 	if emoji == nil && allSameFont(textFonts, primary) {
 		return c.cacheEmojiRaster(key, nil)
 	}

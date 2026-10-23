@@ -463,18 +463,6 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 // drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of every
 // character folder this client knows exists on the base, from TWO sources the
 // chip row switches between.
-//
-//   - "Server list" is the server's published iniswap.txt: art cells, ★ to add one
-//     to your wardrobe (it then appears under Characters), click to try it on. It
-//     renders from the SAME a.iniList with the SAME indices as the Characters grid,
-//     so the index-keyed thumbnail cache (a.iniPages) stays valid across a tab
-//     switch (the cachedPage reorder invariant — a different list under the same
-//     index keys would paint wrong art).
-//   - "From your base" is the server's character ROSTER plus the characters/ folders
-//     in your local mounts — the answer for the many servers that publish no
-//     iniswap.txt at all. It keeps its OWN list and draws name buttons rather than
-//     index-keyed art cells, for exactly the invariant above; see iniswapbase.go.
-//
 // No folders in either — organizing lives in Characters.
 func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
@@ -951,11 +939,8 @@ type musicFilterKey struct {
 // query, memoized against the query + the list identity. Only this O(N) scan
 // (and its ToLower allocs) is gated here; the per-frame call is an O(1) key
 // compare and early-return when neither the query nor the list changed.
-//
 // It matches the RAW list entry, which covers the displayed short name too:
-// courtroom.MusicDisplayName only ever slices, so the display is always a
 // substring of the raw name (#43 shortened the rows, not what you can search).
-// Searching the raw text additionally keeps a directory ("songs/") findable.
 func (a *App) refreshMusicFilter(query string) {
 	n := len(a.sess.Music)
 	key := musicFilterKey{q: query, n: n}
@@ -1000,12 +985,9 @@ type musicGroupKey struct {
 // category — or typing in the search box — costs an O(N) rescan only on the
 // frame that actually changed something (the icWrapped/refreshMusicFilter
 // idiom), never per frame.
-//
 // While a search is active, collapse state is bypassed entirely: matching
 // tracks always show (auto-expanded, VSCode-style), with their category
 // header pulled in for context even if that header didn't itself match.
-// Manual collapse state is untouched and resumes the moment the query is
-// cleared.
 func (a *App) refreshMusicGroups(query string) {
 	n := len(a.sess.Music)
 	key := musicGroupKey{q: query, n: n, collapseGen: a.musicCollapseGen}
@@ -1095,10 +1077,6 @@ type areaFilterKey struct {
 // refreshMusicFilter. The indices are ORIGINAL indices into a.sess.Areas, which
 // parallels a.sess.AreaInfo, so a caller uses ti (not the visible index) to look
 // up either.
-//
-// slot names the query SOURCE (areaQuerySlotOwn/Themed), never the drawer: two
-// panels reading the same box share a slot and hit the same memo entry, while the
-// two boxes cannot evict each other.
 func (a *App) refreshAreaFilter(query string, slot int) []int {
 	n := len(a.sess.Areas)
 	key := areaFilterKey{q: query, n: n}

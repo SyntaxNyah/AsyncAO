@@ -156,9 +156,6 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		// "Smooth log scrolling", pin the VISUAL offset to the new bottom here, which
 		// makes easeICScroll's "already there" branch take over (no NoteAnimating, so
 		// the follow also costs no extra frames at a low idle cap).
-		// Guarded on `a.icScroll != maxScroll` (the log actually GREW this frame) and
-		// on the user not having moved the offset first, so a wheel step that lands
-		// exactly at the bottom, a scrollbar drag, and VScrollbar's clamp of a
 		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
 			a.icScrollVis = float64(maxScroll)
 		}
@@ -513,8 +510,6 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 // name-split / emoji raster inside drawLogLineNamed keep working untouched. The
 // clip keeps the list's vertical bounds so a partially scrolled top/bottom row
 // still cuts at the rect edge.
-// Per-frame cost: the common (nothing hovered) case is the single draw it always
-// was; a hovered link costs at most two extra clipped draws on its rows.
 func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool, base sdl.Color) {
 	c := a.ctx
 	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
@@ -713,9 +708,6 @@ const areaWrapMaxLines = 3
 // query came from. One shared slot would be worse than none: each drawer would
 // evict the other's entry every frame, so the O(N) filter scan AND the whole-list
 // re-wrap would run twice per frame forever, and the re-wrap allocates.
-// Two slots is the exact number of simultaneous drawers: a tab that is torn off
-// leaves the docked strip (dockedLogTabs), so "docked + torn" cannot happen, and
-// the classic and themed courtrooms are alternatives, never both.
 const (
 	areaQuerySlotOwn    = iota // the panel's own field (a.areaSearch)
 	areaQuerySlotThemed        // AO2's music_search driving the canvas copy (a.musicSearch)
@@ -823,8 +815,6 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 // separator) when nothing has been reported at all — info's fields all sit at
 // their "unknown" zero value, or info itself is nil (the area index is out of
 // range, e.g. a partial snapshot mid-connect).
-// AsyncAO deliberately keeps its own simplified status colour buckets
-// (areaStatusColor below) rather than adding AO2-Client's full
 // LFP/CASING/RP/GAMING/RECESS 5-way split (courtroom.cpp:1858-1877) as a
 func arupStatusText(info *courtroom.AreaInfo) string {
 	if info == nil {
@@ -902,9 +892,6 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// AO2's own analogue of them is the row BACKGROUND brush
 	// (courtroom.cpp:1851-1882), not the text colour, so the theme's single
 	// foreground key has no claim on them.
-	// A theme that sets the key therefore paints empty and populated names alike,
-	// which is AO2's own behaviour: it has ONE area_list foreground and puts the
-	// population in the row's second COLUMN as text. AsyncAO's detail block already
 	areaIdleCol := a.elemInkOr(elemAreaList, canvasInk, ColTextDim)
 	areaLiveCol := a.elemInkOr(elemAreaList, canvasInk, ColText)
 	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Lives HERE
