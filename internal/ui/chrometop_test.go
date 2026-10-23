@@ -105,7 +105,6 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 // on a 768 px window has a 206 px logical zone. Both the row and the Phone Book
 // button would then hit-test, so one click would open the changelog AND toggle the
 // page. Two buttons fitted, which is why adding the third made it reachable.
-//
 // This mirrors the production arithmetic rather than calling drawLobby, which needs
 // a live renderer — so it is a geometry pin, not a proof the draw uses it. The
 // shed loop it mirrors is small and directly above the three ButtonCol calls.
@@ -489,7 +488,6 @@ func stockLikeThemeLayout() map[string]theme.Rect {
 // persisted edits laid over a copy. Tests that stage a.themeRects by hand skip
 // all of it, which is exactly how a key that never entered the apply path could
 // look wired up while being dead in the running client.
-//
 // It calls seedTabBarThroughOverrides rather than restating the two steps, so it
 // cannot get the order right while production has it wrong (or the reverse).
 func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
@@ -512,13 +510,9 @@ func applyThemeGeometryWithSidecarForTest(a *App, layout map[string]theme.Rect, 
 
 // TestThemeAuthorCanPlaceTheTabStripFromTheSidecar is L48: an
 // `[overrides] asyncao_tabbar` row is a real placement and must be answered ONCE.
-//
 // It used to be answered four times, all silently. themeKeyEditable passed the
 // row; the fold's PRESENT gate refused it, because the key was not in the design
 // map yet; the client's own seed — which ran later, and on the render thread —
-// then wrote a centred default over the top; and the strip was finally recorded
-// as tabBarSeeded, i.e. "the theme did not declare it", so it stayed docked in
-// the client chrome band. The author's line did nothing and said nothing.
 func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	const themeName = "authored-tabbar"
 	a := testTabApp(t)
@@ -586,14 +580,6 @@ func stageTabbarlessCourtroom(t *testing.T, themeName string) *App {
 // TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt is issue #14's first defect —
 // the strip cannot be moved under a theme — and it was still UNSHIPPED after
 // asyncao_tabbar was added to themeLayoutKeys.
-//
-// Registering the key only means it is READ IF THE THEME DECLARES IT: the apply path
-// copies only keys ElementRect resolves, the layout cache is built by ranging that
-// map, and the themed editor's editable set is built from the layout cache. No shipped
-// theme declares the key, so the strip never entered any of the three and the themed
-// editor handed out no drag box — while the classic slot route stays closed under a
-// theme (drawCourtroom force-stops the classic editor there). The two existing tests
-// both stage the key by hand, so neither could catch it.
 func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 	const themeName = "stocklike"
 	a := stageTabbarlessCourtroom(t, themeName)
@@ -677,13 +663,9 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 // press on the strip's box, a drag, a release — and then the same reload the test
 // above simulates. This is the end-to-end proof that the affordance issue #14 asked
 // for actually exists, rather than the geometry merely being in the right maps.
-//
 // It asserts against the PAINTED BOX, not against "the stored design rect plus the
 // delta". The strip is intrinsically sized, so its box is not the transform of its
 // stored rect (tabStripCacheRect), and an assertion phrased as base+delta is satisfied
-// by a drag that teleports the widget: measured before the fix, one pixel of movement
-// moved the box {317,22,79,22} → {238,112,240,22} — 80 px left, 90 px down and 79→240
-// wide — and the base+delta form sailed straight through it.
 func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

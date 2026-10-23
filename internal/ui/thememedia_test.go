@@ -38,18 +38,6 @@ func writeThemeMediaFile(t *testing.T, dir, name string) {
 
 // TestOverBudgetElementIsCreatedNotDropped is design §Q2's "the UX never
 // dead-ends", as a gate.
-//
-// Three behaviours, and every one of them is a decision that could plausibly have
-// gone the other way:
-//
-//   - the over-budget entry STAYS IN THE PLAN. Dropping it would make the theme
-//     render differently depending on the order its author added elements, which is
-//     a property nobody can reason about and no bug report can describe.
-//   - it carries its own REASON, naming the file, its size and the cap it broke.
-//     "Something did not fit" is not actionable; "18.2 MiB, over the 8.0 MiB
-//     per-image cap" is.
-//   - the ELEMENT still exists and still bakes. The theme saves, the element is
-//     dormant until it is fixed, and nothing the author wrote is lost.
 func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 	dir := t.TempDir()
 	writeThemeMediaFile(t, dir, "huge.png")
@@ -145,17 +133,8 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 
 // TestIncrementalMediaLandDoesNotRestartTheThemeClock pins the two things the
 // incremental land path must NOT do.
-//
 // It exists for the editor: changing one image must not restage the theme. The two
 // omissions are the whole feature —
-//
-//   - a.themeAt is the animation clock every looping generator, animated skin and
-//     phased element reads through themeElapsed(). Re-anchoring it makes everything
-//     on screen jump back to frame 0, which reads as the client glitching every time
-//     the author nudges a value.
-//   - the text-cache purge exists for a PALETTE change (label textures are
-//     colour-keyed). A media page has no colour anyone cached, and purging would
-//     re-raster every string in the client for one image.
 func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

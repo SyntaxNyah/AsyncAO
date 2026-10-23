@@ -343,14 +343,6 @@ func TestCanvasDragIsOneUndoStepThroughTheRealChord(t *testing.T) {
 
 // TestAnOrdinarySnappedDragIsAlsoOneUndoStep is the same gate for the gesture people
 // actually make, and it exists because the one above cannot cover it.
-//
-// drivePreciseDrag holds SHIFT, which bypasses the grid and the magnet — and it SKIPS
-// outright on an SDL build that does not honour SetModState, taking the only "one
-// gesture, one undo entry" evidence in the suite with it. An unmodified drag writes a
-// SNAPPED value every frame, so it is also the arm where a coalescing key that
-// included the value, or a snap that re-opened the group, would put a hundred entries
-// in the ring for one gesture — and the user finds that out by pressing Ctrl+Z and
-// watching the box crawl back a grid line at a time.
 func TestAnOrdinarySnappedDragIsAlsoOneUndoStep(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{3, 5}) // off-grid, so the snap really runs
 	defer cleanup()
@@ -607,16 +599,6 @@ func TestUndoOfAWidgetDragRemovesTheRowItCreated(t *testing.T) {
 const editorHoldFrames = 5
 
 // TestHoldingAWidgetStillNeverCriesRefused is the false-alarm gate.
-//
-// THE DEFECT IT CLOSES: editorApply exempted only opElemField from the refusal chip,
-// while applySlotRect refuses a no-change request by exactly the same rule — so the
-// second and every later frame of a widget gesture that holds still (i.e. every real
-// human drag) and every frame a drag sat against clampDesignRectToCanvas posted
-// "this slot rect was refused — a cap or a lock is in the way", which then stayed on
-// the rail for editStatusMs. That inverts design §3.3's own rule (name the offender,
-// name the limit) into naming a limit that is not there, on the wave's headline
-// interaction.
-//
 // The mutation it answers to: chipping on any result other than applyRefused.
 func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t)

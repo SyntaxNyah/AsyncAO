@@ -1,18 +1,7 @@
 package ui
 
 // CHATBOX OVERFLOW: the crawl kept revealing text below the visible box.
-//
-// Live report, 2026-08-10 (repro "a\nb\nc\nd", screenshot): a message taller
-// than the chatbox is cut off with no way to see the rest, and the typewriter
-// carries on typing into the void underneath.
-//
-// This is a PRE-EXISTING gap that AO2's row pitch (b44b186) made easy to hit —
-// the rows got taller, so fewer of them fit — rather than a defect that commit
-// introduced. Canon has always followed the crawl: chat_tick moves the cursor to
-// the revealed position and calls ensureCursorVisible on every tick
 // (courtroom.cpp:4514-4521), with both scrollbars policy-hidden (:99-100), so
-// AO2 shows no bar and never loses the line either.
-//
 // The gates below drive the real raster where they can and the pure arithmetic
 // where a raster needs a font.
 
@@ -101,12 +90,10 @@ func TestCrawlRowFollowsTheRevealedRune(t *testing.T) {
 // rows that scrolled out the top landed on the showname strip. "a\nb\nc\nd"
 // produces about one row of scroll, and one row (>=20 px at AO2's pitch) is nearly
 // as tall as the 22 logical px the classic overlay gives the plate.
-//
 // The gate measures the TOP EDGE OF THE PAINT, which nothing did before: the
 // topmost row's origin against the clip that is actually in force. It asserts the
 // premise as well as the fix — that the unbounded origin really does reach into
 // the name band — so it cannot pass by clipping something that was never in
-// danger.
 func TestTheScrolledMessageNeverPaintsOnTheNamePlate(t *testing.T) {
 	// The classic overlay's real geometry (screens.go): the name inks at
 	// box.Y+chatOverlayNameY and the message starts at box.Y+chatBoxTopStrip, so
@@ -194,17 +181,9 @@ func TestChatCrawlClipRaisesOnlyTheTop(t *testing.T) {
 
 // TestAnimatedSpansKeepTheirTopPixels is the field-8 reviewer's deferred defect,
 // pinned from both ends at once.
-//
-// THE DEFECT. A wave/shake/bounce span DISPLACES its glyphs off the layout row
-// (render/animtext.go: dy = round(sin·waveAmpPx), so ±3 px, and the shake and
-// bounce offsets are the same order). On the FIRST row the layout origin IS the
-// text origin, so a clip raised to that origin cuts the crests — 2-3 px off the
-// top of every animated span in the first line of every post that wears one.
-//
 // THE FIX has to be exactly as narrow as the defect, which is why both halves
 // are here: the animated painter gets the whole box back, and a SCROLLED
 // (non-animated) message still may not reach the name plate. A remedy that
-// answered `box` unconditionally would pass the first half and fail the second.
 func TestAnimatedSpansKeepTheirTopPixels(t *testing.T) {
 	// The classic overlay's real geometry, same as the name-plate gate above.
 	const lineH, rows = 20, 6
@@ -275,12 +254,9 @@ const maxAnimLiftPx = 3
 // sites: the decision has exactly one home now, so this drives that home with
 // both shapes it can be handed and asserts the two answers are the two DIFFERENT
 // rects — which is what an inverted predicate cannot satisfy.
-//
 // Its sibling gates assert the two answers are each CORRECT (the whole box for
 // the #M5 painter, the raised edge for the raster). This one asserts they are
 // not the same rect, so a branch that collapsed to one answer — `anim == nil`,
-// `true ||`, the term deleted — fails here with a message that names the
-// polarity instead of only the arm that happened to be checked first.
 func TestTheAnimatedExemptionKnowsWhichWayRoundItIs(t *testing.T) {
 	// A box whose text origin is genuinely inside it, or both arms would answer
 	// the box and the difference this gate measures would not exist.

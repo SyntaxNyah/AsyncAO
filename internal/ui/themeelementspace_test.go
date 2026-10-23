@@ -1,23 +1,6 @@
 package ui
 
 // THE TWO MOST-USED GEOMETRY PATHS IN THE SHIPPED CORPUS (ledger L11).
-//
-// Both were completely uncovered, and both fail in the same invisible way — the
-// element still bakes, still paints, and is simply in the wrong place (or nowhere):
-//
-//   - THE ANCHOR RE-BASING (absSlotRect). courtroom_design.ini declares four
-//     coordinate systems and only the courtroom-relative ones are made
-//     window-absolute at rebuild; showname/message stay chatbox-relative,
-//     music_name stays plate-relative, the two evidence icons stay
-//     viewport-relative. Delete the re-basing and 20+ `anchor = showname` elements
-//     across 10 of the 14 shipped themes jump to the WINDOW origin. No fixture
-//     anchored a chatbox/viewport/music_display-relative key, so nothing failed.
-//
-//   - THE SPACE ORIGIN (elementSpaceRect's non-courtroom arms). Neuter them and 79
-//     shipped elements go inert. Every fixture element in those spaces also
-//     declared an anchor, so it took elementAnchorRect instead and the arms never
-//     ran.
-//
 // The two fixture rows these drive (shownamepin, chatbacking) are in
 // testdata/sidecars/w3_render.ini beside the elements they close the gap for.
 

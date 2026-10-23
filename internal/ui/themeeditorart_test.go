@@ -81,14 +81,6 @@ func genTileCount(a *App) int {
 // ---------------------------------------------------------------------------
 
 // TestAGeneratorEditMovesTheDrawnPage is the gate the wave's fill rows were missing.
-//
-// THE DEFECT IT CLOSES. themeelementbake.go resolves art as
-// themeMediaPage(themeMediaPlan.ElemKey(idx)), and the plan was written in exactly one
-// place — landThemeMedia, from a theme apply. planElements derives those keys from the
-// element's kind, media, generator and params, so editing any of them left the OLD key
-// in the plan: the Generator and Params rows wrote the file and the box on screen went
-// on drawing the previous tile until the user switched themes and back.
-//
 // It asserts on THREE independent things, because the hole has three shapes: the plan's
 // key (what the bake will ask for), the store (whether the new tile exists at all) and
 // the set of pages the bake handed the painter (whether anything on screen moved).
@@ -238,16 +230,6 @@ func reopenEditorAtBaseline(t *testing.T, a *App) {
 
 // TestDiscardingOnExitPutsTheBaselineArtBack is the exit direction of the wave's defect,
 // and it is the one site themeeditorart.go's header named as covered and was not.
-//
-// THE DEFECT IT CLOSES. requestEditorExit's second Back restores the baseline MODEL and
-// invalidates the geometry caches — but a.te = nil ends the editor's frame, and the frame
-// was the only thing that ever compared the plan's signature against the document. So the
-// courtroom came back holding the EDITED plan: the generator drew the tile the discarded
-// edit had asked for, and because pruneEditorGenTiles had already released the baseline's
-// orphaned tile, the element could draw NOTHING until a theme switch rebuilt it. Discard
-// is the one action whose whole promise is "put it back", so this is the worst place in
-// the editor for the model and the picture to disagree.
-//
 // It asserts through the BAKE after real frames, not on the plan alone: the plan is what
 // was wrong, so a gate that only read the plan back would be arguing with itself.
 func TestDiscardingOnExitPutsTheBaselineArtBack(t *testing.T) {
@@ -427,13 +409,6 @@ func TestTheArtSignatureCoversWhatThePlannerReads(t *testing.T) {
 
 // TestEscClosesThePanelBeforeItClearsTheSelection pins the rung design §Q7 specifies
 // ("close top panel → deselect → leave") and app.go was missing.
-//
-// THE DEFECT IT CLOSES. While the Fonts panel was cosmetic this was invisible; W7b made
-// it a real input mode that fences BOTH rails and the canvas (editorPanelUp), so Esc
-// walked straight past the only surface on screen the user could interact with, cleared
-// their selection underneath it and then armed the discard chip — with the panel still
-// up.
-//
 // Driven through App.Frame, because the ladder lives inside Frame's key handling and
 // nothing that calls drawThemeEditor directly reaches it.
 func TestEscClosesThePanelBeforeItClearsTheSelection(t *testing.T) {
