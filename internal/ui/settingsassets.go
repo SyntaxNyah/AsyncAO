@@ -4,11 +4,9 @@ package ui
 // streaming, layering their own folders over the stream, and the legacy
 // folders-only mode, and where they manage the folders and .zip packs those two
 // modes read.
-//
 // Copy note: two things MUST stay spelled out here rather than only in the docs —
 // that .zip packs work as mounts, and that the user's own files WIN over the
 // server's at the same path. Both are things people otherwise discover by being
-// confused.
 
 import (
 	"fmt"
@@ -72,12 +70,9 @@ func (a *App) drawAssetSourceSettings(y, w int32) int32 {
 // drawAssetSourceHeadline is what a user who has never set this up sees: one
 // sentence saying what is happening now, and one button that starts the guided
 // setup (basewizard.go).
-//
 // It is the whole panel for that user, and that is the point. The controls below
 // it are not wrong, but they are not actionable either — three radio labels to
 // choose between before knowing what any of them does, a text field wanting an
-// absolute path with no picker beside it, and a warning further down that only
-// appears once you have got it half right. A sprite maker who wants to look at
 // their own character should not have to read a settings page to do it (#72).
 func (a *App) drawAssetSourceHeadline(pad, y int32, mounts []string) int32 {
 	c := a.ctx

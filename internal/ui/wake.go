@@ -12,11 +12,6 @@ import (
 // work immediately instead of waiting out its idle tick. SDL_PushEvent is
 // documented thread-safe, which is the whole point: this is the ONE sanctioned
 // cross-thread doorbell into the SDL event queue (no SDL state is touched).
-//
-// wakePending collapses bursts: a hundred packets landing while one loop pass
-// runs push exactly one event (the pass drains everything anyway). The flag
-// clears when the loop consumes the event, so a producer firing after that
-// queues a fresh one — at most one stale extra pass, never a missed wake.
 var (
 	wakeEventType atomic.Uint32
 	wakePending   atomic.Bool

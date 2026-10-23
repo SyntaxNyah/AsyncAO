@@ -8,9 +8,6 @@ package ui
 // independent) or — when nothing is overridden — the exact rect the layout
 // already computed. Un-edited ⇒ pixel-identical to before (the safety
 // invariant); the override path is purely additive and off the hot frame.
-// The editor (drawClassicEditor) reuses the themed editor's feel — drag = move,
-// edge / corner handles = resize (independently horizontal or vertical),
-// right-click = reset a box, Snap, Esc/Done — but works in screen space over the
 
 import (
 	"fmt"
@@ -415,9 +412,6 @@ func slotResizeEdges(name string) uint8 {
 // control block) would steal the grip. Only when the cursor is over NO box (a grip in
 // the outer margin between/around boxes) does it fall back to the smallest gripped
 // RESIZABLE box. Move-only slots are always skipped. Pure + testable.
-// The per-slot edge rule goes through resizeEdgesFor (edittarget.go) rather than
-// straight to slotResizeEdges: one entry point for both editors' spaces, so the design
-// path's 8-handle probe and this one cannot grow different answers for the same widget.
 func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx, my, margin int32) (string, uint8) {
 	if hoverKey != "" { // pointing at a box → only that box may resize (matches move)
 		if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin) & resizeEdgesFor(classicTarget(hoverKey)); e != 0 {

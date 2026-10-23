@@ -370,9 +370,6 @@ const (
 // building them concatenates two labels, allocates an options slice and formats
 // the truncation note. Uncached that is four allocations on every frame the Theme
 // tab is up, which is exactly what the settings-text doctrine (see fmtOrderText)
-// The validity key holds the catalog POINTER: the snapshot is immutable and
-// republished by pointer swap (themecatalog.go), so pointer identity is a
-// complete "did the answer change?" test — nil, the pre-first-scan state,
 type themeRowText struct {
 	valid bool
 	cat   *themeCatalog
@@ -544,9 +541,6 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	// It STAYS rather than being deleted along with the corpus, because the
 	// question it exists for — "I have none, where do these come from?" — is
 	// exactly as real when the answer is "you write one". There is deliberately no
-	// ABOVE the write root deliberately: this row draws even on the arm where the
-	// write root could not be resolved at all — the case where a user needs to
-	// know where themes come from MOST.
 	if c.onRow != nil {
 		c.onRow("Get themes", y)
 	}

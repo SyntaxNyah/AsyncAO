@@ -317,8 +317,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// own Disconnect entry (extrasWidgets, floatbox.go), which goes through
 				// the same confirm. So the action did not disappear, it stopped being a
 				// keystroke.
-				// A focused field (the IC input) still eats the FIRST Esc, exactly like
-				// every menu screen — and under the Discord focus model (chatfocus.go)
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
 				} else {
@@ -823,9 +821,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 // since the custom root wins, that custom default would otherwise SHADOW the
 // built-in one, making the stock default unreachable once you've set a folder
 // (#87). The app directory is always the built-in fallback. Pure, for testing.
-// Everything else about the ordering lives in themeSearchRoots, which the theme
-// PICKER and the catalog build from too: what the loader resolves and what the
-// user can SEE in the dropdown must never disagree about which directories exist.
 func themeLoadRoots(name, customRoot, exeDir, configBase string) []string {
 	if name == theme.DefaultThemeName {
 		// #87, above: the stock default is the one theme a custom root may not answer.

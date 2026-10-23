@@ -6,9 +6,6 @@ package ui
 // z-aware input, so instead of fencing the whole screen (a modal) the courtroom
 // pass runs pointer-blind only while the cursor sits over a box footprint
 // (boxFencesPointer + fencePointer), then the boxes draw last with real input.
-// Widgets live in the main grid but TEAR OUT: drag one past a small threshold
-// and it pops into its own little floating box you move and close independently
-// (closing returns it to the grid). Every box shares one per-frame mouse-press
 
 import (
 	"strconv"
@@ -862,8 +859,6 @@ func (a *App) reattachWidget(i int) {
 // applyProfile). Called from drawCourtroom right after ensureClassicOv and BEFORE
 // boxFencesPointer, so the fence sees the reconstructed boxes on frame one — never
 // adds per-frame work.
-// Unknown ids (from a newer build) are IGNORED, not deleted — their slots stay
-// persisted so a downgrade/upgrade round-trips. The result is structurally bounded:
 func (a *App) reconstructTornWidgets(w, h int32) {
 	if a.extrasTornRebuilt {
 		return

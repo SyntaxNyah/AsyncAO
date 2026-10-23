@@ -130,9 +130,6 @@ func (c *Ctx) fontTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, b
 // device measure lands the caret on the actual glyph seam (kills the
 // length-growing caret-to-glyph drift, #77 S1b). Mirrors render/text.go:568-570,
 // where the non-ASCII field path already measures device advances and folds back.
-// Memoized in its own map (raw device px), CAPPED by textCacheMax like widthCache
-// and PURGED wherever widthCache is (SetTextDevScale, SetChromeFont) — so a
-// stale-size entry after a scale change is impossible. Callers at 100% must NOT
 func (c *Ctx) devTextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
@@ -160,9 +157,6 @@ func (c *Ctx) devTextWidth(text string) int32 {
 // unfolded, exactly like devTextWidth: callers fold with uiLogicalFromDevice
 // at the read site (logPrefixWidth), the same two steps textTextureBold /
 // cachedText.logicalW() perform for the actual draw.
-// Memoized in its own map (logDevWidth), same key shape and cap as
-// fontTextWidthWeight's panelWidth; see logDevWidth's field doc for why
-// sharing panelWidth's purge site (purgeTextCache) is sufficient even though
 func (c *Ctx) devTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, bool) {
 	if f == nil {
 		return 0, false

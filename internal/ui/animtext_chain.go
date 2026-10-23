@@ -8,14 +8,7 @@ package ui
 // chain the plain fallback path uses (screens.go renderRaster → deviceCoverRunes / emoji.go
 // assignEmoji) and hands it to render.RasterizeAnimated as a FontResolver, so an effects line
 // becomes pixel-consistent with a plain line.
-//
-// The chain is precomputed ONCE per message (layout time) — the closure it returns is a pair
-// of index reads, so RasterizeAnimated's per-rune calls stay allocation-light, and Draw never
-// touches it (the resolved face is stored on each animRune). The animated path stays on the
 // LOGICAL faces (the #77 PUNT: its per-glyph pen positions + pixel-amplitude effects aren't
-// device-scale-folded yet, so it draws 1:1 and the renderer's SetScale stretches it), so this
-// resolver uses the logical coverRunes / EmojiFont — matching the logical base face that
-// renderAnimated passes as the fallback.
 
 import (
 	"github.com/veandco/go-sdl2/ttf"

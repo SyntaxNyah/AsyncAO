@@ -31,12 +31,6 @@ type hkEntry struct {
 // consumeHotkeyCapture binds the next keypress to whichever action armed the
 // capture; Esc cancels. The key is consumed so it cannot also fire something
 // else on its way past.
-//
-// Shared by BOTH rebinding surfaces — the Settings rows and the F1 sheet — and
-// that sharing is the point rather than tidiness: it used to live inside the
-// Settings draw, so a capture armed anywhere else would simply never complete,
-// leaving a row stuck on "press a key…" until the user opened Settings.
-//
 // Invalidates the sheet's cached rows on a real change, since one of them now
 // shows a key that just moved.
 func (a *App) consumeHotkeyCapture() {
