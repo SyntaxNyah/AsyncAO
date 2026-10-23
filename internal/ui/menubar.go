@@ -588,7 +588,7 @@ func (a *App) menuBarPaintsNow() bool {
 // Called from the exact statement that fills the banner, never from the arm path, so
 // the flag means what menuBarPaintsNow needs it to mean: painted, not merely armed.
 // App.Frame clears it every frame, next to the tab strip's paint latch.
-func (a *App) noteEditorBanner() { a.toolbox.editorBannerPainted = true }
+func (toolbox1 *toolboxState) noteEditorBanner() { toolbox1.editorBannerPainted = true }
 
 // layoutEditorArmed is "one of the two layout editors owns the screen": the classic
 // slot editor (classiclayout.go) or the themed rect editor (layoutedit.go). Named

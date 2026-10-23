@@ -8,6 +8,7 @@ import (
 
 // toolboxState owns toolbox state.
 type toolboxState struct {
+	env *env
 	// A1 — the compact bottom-right toolbox is the single show/hide + editor
 	// surface. toolboxPinned latches the flyout open (press the grip / pin chip);
 	// while pinned, toolboxPieces reveals the in-flyout per-piece hide/show panel

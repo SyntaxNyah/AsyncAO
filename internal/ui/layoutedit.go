@@ -324,7 +324,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// because the line clips from the right on a narrow window (below) — the tail is
 	// what disappears first, so the newest entry must not live there.
 	banner := "LAYOUT EDIT — drag = move, arrows = nudge 1 px (Ctrl = grid), corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
-	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
+	a.toolbox.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: layoutBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
 	resetBtn := sdl.Rect{X: doneBtn.X - 96, Y: 2, W: 90, H: 22}

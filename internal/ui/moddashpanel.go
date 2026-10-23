@@ -397,7 +397,7 @@ func (a *App) bulkCommandFor(uid string, isBan bool) string {
 	}
 	sw := a.detectedSoftware()
 	if isBan {
-		return a.banCmdFor(sw, ipid, uid) // custom-duration-aware, same builder as the single box
+		return a.banBox.banCmdFor(sw, ipid, uid) // custom-duration-aware, same builder as the single box
 	}
 	return courtroom.KickCommand(sw, ipid, uid, a.banBox.reason)
 }
@@ -877,21 +877,21 @@ const modAuditRowBottomPad = int32(4)
 
 // banBoxDurLabel is the friendly label of the CURRENTLY chosen duration — the custom
 // chip's when one is active, else the enum preset's.
-func (a *App) banBoxDurLabel() string {
-	if a.banBox.customDur != "" {
-		return courtroom.BanDurationTokenLabel(a.banBox.customDur)
+func (banbox *banBoxState) banBoxDurLabel() string {
+	if banbox.customDur != "" {
+		return courtroom.BanDurationTokenLabel(banbox.customDur)
 	}
-	return courtroom.BanDurationLabel(a.banBox.dur)
+	return courtroom.BanDurationLabel(banbox.dur)
 }
 
 // banCmdFor builds the /ban for the chosen duration — the custom token when a custom
 // chip is active, else the enum preset. One spot so the preview, the single Send and
 // the bulk builder can never disagree.
-func (a *App) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
-	if a.banBox.customDur != "" {
-		return courtroom.BanCommandToken(sw, ipid, uid, a.banBox.customDur, a.banBox.reason)
+func (banbox *banBoxState) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
+	if banbox.customDur != "" {
+		return courtroom.BanCommandToken(sw, ipid, uid, banbox.customDur, banbox.reason)
 	}
-	return courtroom.BanCommand(sw, ipid, uid, a.banBox.dur, a.banBox.reason)
+	return courtroom.BanCommand(sw, ipid, uid, banbox.dur, banbox.reason)
 }
 
 // banActionSummary is the plain-English "who · how long · why" line shown in the ban/kick box, so a
@@ -993,13 +993,13 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 
 	// At-a-glance summary of the action (always shown, even before the exact command below can be
 	// built) so the mod sees who, how long and why — the "ban someone 6 hours for disrespect" feedback.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBox.uid+"] "+a.banBox.name, a.banBoxDurLabel(), a.banBox.reason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBox.uid+"] "+a.banBox.name, a.banBox.banBoxDurLabel(), a.banBox.reason), ColText)
 	y += 24
 
 	// Live preview of the exact command.
 	var cmd string
 	if isBan {
-		cmd = a.banCmdFor(sw, a.banBox.ipid, a.banBox.uid)
+		cmd = a.banBox.banCmdFor(sw, a.banBox.ipid, a.banBox.uid)
 	} else {
 		cmd = courtroom.KickCommand(sw, a.banBox.ipid, a.banBox.uid, a.banBox.reason)
 	}
@@ -1131,7 +1131,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
 	// At-a-glance summary of the bulk action (always shown), so the mod sees how long and why.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDurLabel(), a.banBox.reason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBox.banBoxDurLabel(), a.banBox.reason), ColText)
 	y += 22
 
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID

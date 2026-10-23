@@ -96,6 +96,8 @@ func (s *selfUpdate) resetForChannel() {
 func (a *App) wireComponents() {
 	a.env.h = a
 	a.updates.env = &a.env
+	a.toolbox.env = &a.env
+	a.banBox.env = &a.env
 	a.msgs.env = &a.env
 	a.overlays.env = &a.env
 	a.docs.env = &a.env

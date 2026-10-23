@@ -719,7 +719,7 @@ func (a *App) drawEditorHeader(w int32) {
 	// menuBarPaintsNow) — the same publication both legacy editors make from the
 	// statement that fills their banner. Without it an opaque 22 px strip paints over
 	// Undo / Redo / Save / Back after the screen dispatch.
-	a.noteEditorBanner()
+	a.toolbox.noteEditorBanner()
 	c.Fill(band, a.te.editorPlate(ColPanel))
 	name := a.te.doc.name
 	if name == "" {

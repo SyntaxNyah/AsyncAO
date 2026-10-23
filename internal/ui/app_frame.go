@@ -709,7 +709,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// courtroom: there it paints inside the courtroom pass, under the editor overlay,
 	// so its chips can't cover the editor's banner and controls (the "layering mess"
 	// playtest shot: a server chip parked top-right sat on the Snap/Done buttons).
-	if a.tabStripPaintsOverEverything() {
+	if a.toolbox.tabStripPaintsOverEverything() {
 		a.drawTabBar(winW, winH)
 	}
 	// Download progress chip floats under the strip while a grab runs.

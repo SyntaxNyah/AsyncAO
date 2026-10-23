@@ -446,7 +446,7 @@ func (a *App) drawEditorPreviewCanvas(w, h int32) {
 // then the only way out is the keyboard.
 func (a *App) drawEditorPreviewExit(w int32) {
 	c := a.ctx
-	a.noteEditorBanner()
+	a.toolbox.noteEditorBanner()
 	r := editorPreviewBtnRect(w)
 	// Its own plate, because there is no header band behind it any more: the button
 	// floats over whatever the theme painted there and has to stay legible on a

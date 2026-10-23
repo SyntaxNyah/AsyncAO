@@ -1145,6 +1145,7 @@ type sessionState struct {
 // It lives on sessionState so a tab switch parks and restores it with the rest of
 // the session, and so a roster rebuild cannot repoint a destructive command.
 type banBoxState struct {
+	env       *env
 	kind      int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
 	uid       string                // snapshot: target UID (the identity anchor)
 	ipid      string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)

@@ -202,7 +202,7 @@ func exactlyOneStripPaint(t *testing.T, a *App, w, h int32, beforePass, afterPas
 	if afterPass != nil {
 		afterPass(a) // e.g. the command palette, which draws AFTER the in-pass site
 	}
-	return textCacheHasLabel(a.ctx, a.tabChipLabel(1)), a.tabStripPaintsOverEverything()
+	return textCacheHasLabel(a.ctx, a.tabChipLabel(1)), a.toolbox.tabStripPaintsOverEverything()
 }
 
 // TestTabStripPaintSiteIsLatchedOncePerFrame pins the frame-level decision.
@@ -282,7 +282,7 @@ func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 		t.Fatal("fixture: the editor's pass did not claim the strip, so the stale-latch case is not being tested")
 	}
 	a.toolbox.tabStripPaint = tabStripPaintLatch{} // App.Frame's reset, on a lobby frame
-	if !a.tabStripPaintsOverEverything() {
+	if !a.toolbox.tabStripPaintsOverEverything() {
 		t.Error("a frame with no courtroom pass must fall back to App.Frame's site, or the strip vanishes off the courtroom")
 	}
 }
