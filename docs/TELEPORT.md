@@ -53,13 +53,13 @@ there is no conformance vector.
 
 ## 1. Status
 
-Branch `teleport` (base `d2923aa`):
+Branch `timeleap` (base `d2923aa`):
 
 | Commit | What |
 |---|---|
-| `cf4ea1b` | `fix(fl): send the capability advert positionally` |
-| `ad55f34` | `feat(tp): receive Teleport snapshots` |
-| `8ae181f` | `feat(tp): re-stage the room from a snapshot` |
+| `cf4ea1b` | send the capability advert positionally |
+| `ad55f34` | receive Teleport snapshots |
+| `8ae181f` | re-stage the room from a snapshot |
 
 Tests: `TestAdvertiseFeaturesEmitsPositionalPacket`,
 `TestAdvertiseFeaturesTypedPathIsAlsoPositional`,
