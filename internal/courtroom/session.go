@@ -262,9 +262,9 @@ const (
 	// EventGroupPair signals the group-pair roster changed (GP); the UI re-reads
 	// Session.GroupPair.
 	EventGroupPair
-	// EventTimeLeap signals a TimeLeap snapshot arrived (TL); the UI re-reads
-	// Session.TimeLeap and re-stages the room from it.
-	EventTimeLeap
+	// EventTeleport signals a Teleport snapshot arrived (TP); the UI re-reads
+	// Session.Teleport and re-stages the room from it.
+	EventTeleport
 )
 
 // Evidence operation kinds, carried in EventEvidenceChanged.Int2.
@@ -552,9 +552,9 @@ type Session struct {
 	// with the speaker included. nil/empty when not in a group.
 	GroupPair *protocol.GroupPair
 
-	// TimeLeap is the most recent TimeLeap snapshot (TL extension). The room is
-	// re-staged from it when EventTimeLeap is handled; nil means "live".
-	TimeLeap *protocol.TimeLeap
+	// Teleport is the most recent Teleport snapshot (TP extension). The room is
+	// re-staged from it when EventTeleport is handled; nil means "live".
+	Teleport *protocol.Teleport
 
 	// Voice (Nyathena/LemmyAO VS_* relay): the caps the server advertised, the
 	// live voice peer set, and who's currently transmitting. All mutated only by
@@ -639,8 +639,8 @@ func (s *Session) advertiseFeatures() {
 	if s.Features.Has(protocol.FeatureGroupPair) {
 		want = append(want, protocol.FeatureGroupPair)
 	}
-	if s.Features.Has(protocol.FeatureTimeLeap) {
-		want = append(want, protocol.FeatureTimeLeap)
+	if s.Features.Has(protocol.FeatureTeleport) {
+		want = append(want, protocol.FeatureTeleport)
 	}
 	if len(want) == 0 {
 		return
@@ -905,12 +905,12 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		return []Event{{Kind: EventGroupPair}}
 
-	case "TL":
+	case "TP":
 		// A snapshot replaces the previous one wholesale (idempotent, like GP).
-		// A TL frame that carries no typed payload clears the snapshot, so the
+		// A TP frame that carries no typed payload clears the snapshot, so the
 		// room returns to live state.
-		s.TimeLeap = protocol.TimeLeapFromPacket(p)
-		return []Event{{Kind: EventTimeLeap}}
+		s.Teleport = protocol.TeleportFromPacket(p)
+		return []Event{{Kind: EventTeleport}}
 
 	case "PN":
 		// Population marker, the tail of every server family's greeting.

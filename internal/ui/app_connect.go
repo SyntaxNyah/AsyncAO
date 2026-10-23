@@ -656,11 +656,11 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// inside the wipe branch so a plain /bg behaves exactly as it does today.
 				a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
 			}
-		case courtroom.EventTimeLeap:
-			// The snapshot is client-side state (Session.TimeLeap); the room is
+		case courtroom.EventTeleport:
+			// The snapshot is client-side state (Session.Teleport); the room is
 			// re-staged from it here, in the same place every other room event is
 			// consumed.
-			a.applyTimeLeap()
+			a.applyTeleport()
 		case courtroom.EventMusic:
 			// Log "<name> has played a song: <song>" in the IC log like webAO and
 			// AO2-Client (handle_song). The room still plays the track below.

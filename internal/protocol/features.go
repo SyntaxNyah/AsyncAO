@@ -26,7 +26,7 @@ const (
 	FeaturePrezoom          = "prezoom"
 	FeatureCustomBlips      = "custom_blips"
 	FeatureGroupPair        = "grouppair" // Nyathena extension: group pairing (GP + additional_chars)
-	FeatureTimeLeap         = "timeleap"  // Nyathena extension: room snapshots (TL)
+	FeatureTeleport         = "teleport"  // Nyathena extension: room snapshots (TP)
 )
 
 // FeatureSet is the set of features a server advertised.

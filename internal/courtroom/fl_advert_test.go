@@ -28,7 +28,7 @@ func captureSession() (*Session, *[]protocol.Packet) {
 func TestAdvertiseFeaturesEmitsPositionalPacket(t *testing.T) {
 	s, sent := captureSession()
 
-	feed(t, s, "FL#grouppair#timeleap#%")
+	feed(t, s, "FL#grouppair#teleport#%")
 
 	if len(*sent) != 1 {
 		t.Fatalf("advert replies = %d, want 1: %+v", len(*sent), *sent)
@@ -37,7 +37,7 @@ func TestAdvertiseFeaturesEmitsPositionalPacket(t *testing.T) {
 	if p.Typed() != nil {
 		t.Fatal("advert carries a typed form: it would encode as JSON in JSON mode and clear the server's feature set")
 	}
-	if got, want := p.String(), "FL#grouppair#timeleap#%"; got != want {
+	if got, want := p.String(), "FL#grouppair#teleport#%"; got != want {
 		t.Fatalf("advert wire = %q, want %q", got, want)
 	}
 }
@@ -48,7 +48,7 @@ func TestAdvertiseFeaturesTypedPathIsAlsoPositional(t *testing.T) {
 	s, sent := captureSession()
 
 	s.HandlePacket(protocol.NewTypedPacket(&aolib.FL{Features: []string{
-		protocol.FeatureGroupPair, protocol.FeatureTimeLeap,
+		protocol.FeatureGroupPair, protocol.FeatureTeleport,
 	}}))
 
 	if len(*sent) != 1 {
@@ -57,7 +57,7 @@ func TestAdvertiseFeaturesTypedPathIsAlsoPositional(t *testing.T) {
 	if (*sent)[0].Typed() != nil {
 		t.Fatal("typed-path advert carries a typed form; it must be positional")
 	}
-	if got, want := (*sent)[0].String(), "FL#grouppair#timeleap#%"; got != want {
+	if got, want := (*sent)[0].String(), "FL#grouppair#teleport#%"; got != want {
 		t.Fatalf("advert wire = %q, want %q", got, want)
 	}
 }
@@ -70,6 +70,6 @@ func TestAdvertiseFeaturesSkipsUnsupported(t *testing.T) {
 	feed(t, s, "FL#yellowtext#%")
 
 	if len(*sent) != 0 {
-		t.Fatalf("advert = %+v, want none (server offered no TL/GP feature)", *sent)
+		t.Fatalf("advert = %+v, want none (server offered no TP/GP feature)", *sent)
 	}
 }

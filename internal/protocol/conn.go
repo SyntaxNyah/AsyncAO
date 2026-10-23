@@ -196,7 +196,7 @@ var registerCodecsOnce sync.Once
 func registerCodecs() {
 	packetutil.RegisterVoiceCodecs()
 	packetutil.RegisterGroupPairCodec()
-	packetutil.RegisterTimeLeapCodec()
+	packetutil.RegisterTeleportCodec()
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.

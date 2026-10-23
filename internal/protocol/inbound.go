@@ -79,8 +79,8 @@ func (c *Conn) registerInbound() {
 		}
 	})
 
-	// TL: the JSON-only TimeLeap snapshot (Nyathena extension).
-	_ = s.OnCustom("TL", func(p any) {
+	// TP: the JSON-only Teleport snapshot (Nyathena extension).
+	_ = s.OnCustom("TP", func(p any) {
 		if o, ok := p.(aolib.Outgoing); ok {
 			c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})
 		}
