@@ -187,9 +187,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// together — a theme's music_list rect gives it 212 px — and its Status button
 	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
 	// width. The plan below cannot overlap: it is one cursor.
-	// Labels are built HERE, not in the planner: they come from App state, and
-	// building them at the call site keeps the planner pure (and testable without a
-	// renderer) while allocating no more than the old inline concatenations did.
 	labels := plToolbarLabels{
 		sort: "Sort: " + playerSortLabel(a.playerSort),
 		// #M1: your own cross-client status — the button cycles none → AFK → Busy →

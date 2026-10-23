@@ -6,9 +6,6 @@ package ui
 // per theme (prefs.ThemeRectOverrides), applied on top of the theme's
 // courtroom_design.ini whenever it loads, so window resizes keep working
 // and the theme's own file is never touched.
-// While the editor is on, a full-screen input fence (the dropdown modal
-// trick with an empty rect) keeps every real widget inert; the editor
-// reads raw cursor coordinates instead.
 
 import (
 	"fmt"

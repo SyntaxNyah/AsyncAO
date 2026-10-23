@@ -5,13 +5,9 @@ package ui
 // at higher text zoom it landed ON the OOC/IPID line — so every single-player
 // action now lives in one anchored popup, opened by the row's "…" button or by
 // right-clicking the row (the shortcut; the button keeps it discoverable).
-// Rows go back to clean two-lane height. The item list is data-driven so
-// future single-target actions (mod/CM commands) slot in as new kinds.
-//
 // Input discipline: while open the menu holds the kit's modal fence (modalOn),
 // so everything underneath — rows, lists, wheel — is pointer-blind on the
 // whole screen; the menu itself hit-tests with raw pointIn, exactly like the
-// emoji picker and the open-dropdown list. Esc closes via closeTopOverlay.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"

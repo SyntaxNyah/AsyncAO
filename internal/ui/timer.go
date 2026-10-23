@@ -189,13 +189,9 @@ func (a *App) timerPanelRect(w, h int32) sdl.Rect {
 // drawTimerPanel is the countdown's setup surface: a large remaining readout,
 // Minutes/Seconds sliders + quick presets while idle, and Start/Pause/Resume/Reset
 // + Repeat. Opened from the Extras "Timer" entry.
-//
 // It was a return-to-top modal, and that is issue #31: opening a personal
 // countdown blanked the courtroom, the logs, the music list and every button —
 // drawCourtroomModals ends the pass, so nothing under it draws at all. A timer is
-// the LAST thing that should take the screen; you set it precisely so you can
-// watch the scene against it. It is a non-blocking floatWin now (drag the title
-// bar, resize the bottom-right grip) like the Evidence and Call Mod boxes.
 func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.timerWin.dragging || a.wins.timerWin.resizing // detect the drag/resize-end frame for slot persistence

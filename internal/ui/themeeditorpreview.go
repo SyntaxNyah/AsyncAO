@@ -194,9 +194,6 @@ func (a *App) enterEditorPreview() {
 	// authoring one: a theme is judged as a player will see it, so reduce-motion and
 	// the effect gates must reach it (requirement 6 is that ReduceMotion freezes the
 	// demo, not that the demo overrides it).
-	// A NIL AUDIO SINK: NewCourtroom substitutes NopAudio, so the blip CADENCE
-	// (Typewriter.tickBlip) runs exactly as it does live while nothing resolves a
-	// sound over the wire. An offline demo cannot make noise; it can keep time.
 	p.state.room = a.newRoom(p.state.urls, nil, nil)
 	a.te.preview = p
 

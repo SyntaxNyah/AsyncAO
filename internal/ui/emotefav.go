@@ -11,12 +11,8 @@ import (
 // labels and talking sprites duplicate within a character (Apollo has three
 // "normal" emotes sharing one anim), so a name key would merge distinct emotes
 // into one star. See config.ToggleEmoteFav.
-//
 // Performance: the grid draw is per-frame, so the lookups must be free. A click
 // rebuilds emoteFavSet (O(1) membership) and emoteVisible (the indices to show)
-// once, then every steady-state frame is a single guard-key compare. The
-// backing arrays are reused; nothing here touches the render loop, which keeps
-// its 0-alloc gate (render.Viewport).
 
 const emoteFavStarPx = 15 // star badge size in an emote cell's top-right corner
 

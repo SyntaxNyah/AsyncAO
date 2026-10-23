@@ -292,12 +292,9 @@ func (a *App) pairPopPanelRect(w, h int32) sdl.Rect {
 // drawPairPopup is the click-to-pair surface: the clicked target, an editable UID
 // box (the reliable core) + Send, a Refresh that runs /getarea, and a clickable
 // roster of parsed players (real UID per row — picking one needs no name match).
-//
 // A non-blocking floatWin rather than a return-to-top modal (#31). Pairing is a
 // thing you do WITH the room: the roster fills from a /ga reply that arrives in the
 // OOC log, and the whole-screen dim used to hide both that log and the player you
-// were trying to pair with. The dim is gone with it — nothing is being blocked, so
-// nothing should look blocked.
 func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {

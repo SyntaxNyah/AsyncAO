@@ -25,9 +25,6 @@ import (
 // independently, which is how the two drifted apart in the first place (a
 // selection that always measured the row at plain weight while the draw put
 // a BOLD speaker on it — "select empty space past the text").
-// Both width lookups are proven to succeed HERE, before either drawLogLineNamed
-// or logPrefixWidth commits to anything — the old code drew the "pre" segment
-// and only THEN checked whether the speaker segment would measure, so a rare
 func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameOn, bold bool) (nameStart, boldEnd int, ok bool) {
 	if speaker == "" || !(nameOn || bold) {
 		return 0, 0, false

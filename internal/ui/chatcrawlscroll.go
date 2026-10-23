@@ -5,10 +5,6 @@ package ui
 // (courtroom.cpp:4514-4521):
 // (courtroom.cpp:4227).
 // the chatbox (courtroom.cpp:3310), so its viewport clips at the top of the
-// NOT COVERED, honestly: the ANIMATED path (#M5 shake/wave/rainbow) draws from
-// AnimatedText, which bakes a per-glyph y at layout time and exposes no row
-// lookup, so an overlong message wearing inline text effects still clips. Both
-// draw sites pass the same offset, so it will follow the moment AnimatedText
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
