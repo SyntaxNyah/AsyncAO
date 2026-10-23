@@ -365,19 +365,9 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 
 // TestTabStripUndoOfTheFirstDragSendsItHome is the OTHER half of the parked-flag
 // contract, and the half the path that actually produces snapshots gets wrong.
-//
-// TestTabStripPlacementSurvivesAnUnrelatedUndo above pushes its snapshot by hand, with
-// no drag in flight, and asserts a placed strip STAYS placed. It therefore cannot see
-// the press site's ordering: drawLayoutEditor assigns editTgt/editDrag and only THEN
-// calls pushLayoutUndo, so the snapshot of the PRE-PRESS state is taken while
-// tabStripThemeParked's "a placement is happening right now" arm is already true. An
-// un-parked, docked strip is recorded as parked=true, and restoreLayout's parked arm
-// then WRITES the override — which is the placement flag — instead of clearing it.
-//
 // Measured at Native 714x760 with snap off before the fix: docked {317 22 79 22},
 // drag (+40,+300) → {357 322 79 22}, one undo step with parked=TRUE, and after
 // layoutEditUndo the strip read parked with its box back at the pristine SEED's canvas
-// spot {237 112 79 22} — not the docked box the press started from.
 func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 	a, ctx, cleanup := stripEditFixture(t)
 	defer cleanup()
@@ -421,13 +411,9 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 // strip's two draw sites: App.Frame's over-everything paint (after the screen dispatch)
 // and the in-pass one under a layout editor's overlay. Exactly one may run per frame —
 // running both paints the strip twice, running neither loses it.
-//
 // The over-everything site used to be gated on classicEdit alone, so with the THEMED
 // editor armed the strip painted AFTER drawLayoutEditor and buried its banner. The
 // predicate must not simply be "an editor is armed" either: an editor flag outlives
-// the frames where its draw site actually runs (drawCourtroom bails to the lobby with
-// no room, returns early in theater, and gif export / replay / the scene maker preempt
-// the whole screen dispatch), and the strip would then vanish on those frames.
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
 		"themed editor":  func(a *App) { a.layoutEdit = true },
@@ -524,7 +510,6 @@ func textCacheHasLabel(c *Ctx, text string) bool {
 // measured at 1152x864 with one session, a chip at {545,22,28,22} buried 4 px of banner
 // and the bottom 2 px of every chip, and a strip wide enough marches into the Done
 // cluster itself.
-//
 // Rendering the SAME frame twice, differing only in whether the strip is painted after
 // the editor, is what makes this exact: if the two agree, the strip's chips never reach
 // those pixels and the test is vacuous, so the assertion is that they DIFFER — the

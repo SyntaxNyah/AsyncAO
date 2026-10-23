@@ -52,12 +52,9 @@ func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
 // TestOversizeRectIsMovedNotShrunk pins clampDesignRectToCanvas' documented
 // translate-vs-limit choice, which had no test at all and reads as a bug at the call
 // site: a widget WIDER than the canvas comes back at a NEGATIVE X.
-//
 // It is deliberate — the clamp moves boxes and the resize gesture sizes them, so a
 // move that silently changed a theme's authored width would be unrecoverable — but a
 // deliberate surprise with no gate is one refactor away from being "fixed" into a
-// silent resize. This states the whole shape, including the two ordinary arms, so the
-// oversize row cannot be read as an accident of the other two.
 func TestOversizeRectIsMovedNotShrunk(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -590,14 +587,9 @@ func TestNudgeConsumesTheKeyItOwns(t *testing.T) {
 
 // TestNudgeIgnoresADegenerateBox pins that the nudge asks the SAME question editBaseFor
 // asks — lay.rect, which rejects W<=0 || H<=0 — and not a bare map probe.
-//
 // A degenerate entry passing a bare probe is not harmless: editBaseFor would fall
 // through to a.themeRects[key], and for the server-tab strip that entry is the inert
 // synthesized SEED (seedTabBarDesignRect) that nothing ever paints or hit-tests. The
-// nudge would then move and PERSIST the seed — and for this key the override IS the
-// placement flag (tabStripPlacementRecorded), so the strip would come out "placed" at a
-// coordinate that never appeared on screen, and leave the docked chrome band for it.
-// That is exactly the phantom the drag's no-op discard exists to prevent.
 func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	a.sess = &courtroom.Session{}
@@ -750,14 +742,6 @@ func TestArmingAnEditorDropsTheFocusedField(t *testing.T) {
 }
 
 // TestFracPxRoundTripsEveryPixel pins the arithmetic the classic nudge stands on.
-//
-// A classic slot's position is persisted as a window FRACTION, so every nudge is a
-// pixel → fraction → pixel round trip. With a truncating frac→px that round trip is not
-// the identity: the quotient-times-extent is only within one ulp of the original, and
-// when the ulp falls short a whole pixel is thrown away. 714 (the stock AO2 canvas
-// width) was the worst of the common sizes, losing roughly one position in six — enough
-// that a held arrow key visibly stalls. 391 and 943 are the two other awkward widths
-// from the theme corpus.
 func TestFracPxRoundTripsEveryPixel(t *testing.T) {
 	for _, extent := range []int32{256, 391, 640, 714, 800, 943, 1152, 1366, 1918} {
 		for px := int32(0); px <= extent; px++ {

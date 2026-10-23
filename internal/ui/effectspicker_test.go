@@ -243,13 +243,10 @@ func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
 // with, the guard every other origin-dependent path in this package carries
 // (charMetaFor charmeta.go:58, previewSFX sfxbrowser.go:56, warmCharINI
 // app.go:7510, overlayRosterFetchOne above).
-//
 // Without it, an origin-less URLBuilder hands back the RELATIVE
 // "misc/<folder>/<name>": that would be submitted to the worker pool (the manager
 // rejects only an EMPTY base) and stored as Scene.Overlay.Base — a permanent junk
-// T1 key that can never resolve. It is reachable today, not theoretical: App.urls
 // is the ZERO value until a connect assigns one (app.go:4757), so a .demo replayed
-// from the LOBBY resolves effects through an origin-less builder.
 func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	landed := func(a *App) {
 		a.overlays.overlayRosters = map[string]*overlayRoster{
@@ -301,10 +298,7 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 // would arm as a T1 page key and submit to the worker pool. That key can never
 // resolve, and it is baked ONCE per roster and read on every frame the picker
 // draws, so it would sit there for the life of the session.
-//
 // Reachable, not theoretical, in exactly the way the resolve's guard is:
-// App.urls is the ZERO value until a connect assigns one, so a .demo replayed
-// from the LOBBY bakes its icon keys through an origin-less builder.
 func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// Properties but NO local icon, so the origin rung is the only one left —
 	// exactly the shape the guard is about.
@@ -453,7 +447,6 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 // OverlayFX nothing would ever correct. That is not a rare path: a 3-part wire
 // field carries the folder, so it is the FIRST message from any character
 // shipping its own misc effects pack.
-//
 // The App here has no Manager at all, so a regression that falls through to
 // PrefetchChain fails loudly rather than silently costing two probes.
 func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
@@ -535,15 +528,7 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 
 // TestEffectsDropdownClosedIsZeroAlloc is spec §3's "closed dropdown and
 // no-effect frames must be byte-identical to today", measured where it bites.
-//
-// dropdownEx paints the CLOSED control's current pick through the SAME thumb
 // painter on every frame (ui.go:3938-3942) — the open list is the exceptional
-// case, the closed chip is the steady state. So from the moment a user picks an
-// effect, overlayIconDraw runs once per courtroom frame forever, and the version
-// that built its page key inside the painter (overlayThemeKey's concatenation, or
-// URLBuilder.OverlayEffectMiscIcon's candidate SLICE, or &tr into cgo) allocated
-// on every one of them — under the whole-screen courtroom alloc gate.
-//
 // The measured surface is the two calls dropdownEx makes per frame for a closed
 // thumbnail control: the option list and the current row's thumb. Drawing the
 // whole picker would drag in the kit's text path, which has its own gates.

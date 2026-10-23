@@ -27,15 +27,6 @@ func focusTestApp() *App {
 // TestTypingClaimsTheICInputOnTheFIRSTKeystroke is half (a) of the Discord model,
 // and the half that distinguishes it from plain click-to-focus: the character that
 // arms the focus is the character that gets typed.
-//
-// FRAME-DRIVEN, and that is not tidiness. The previous version of this gate seeded
-// ctx.fieldSeq by hand and called a.claimTypingForIC() directly, and it was green
-// against a feature that could never fire in the shipped client: App.Frame calls
-// ctx.BeginDraw() — whose whole body empties the field list — some 280 lines ABOVE
-// the claim, and nothing in between draws a TextField, so the on-screen test the
-// claim ends on always answered "no". That is precisely the hand-seeded mirror
-// CLAUDE.md rule 11 refuses to count. The only honest question is the user's: type
-// a letter into a settled courtroom with nothing focused, and see where it lands.
 func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -205,13 +196,8 @@ func TestSFXPickBouncesFocusAndAuditions(t *testing.T) {
 
 // TestICColorPickBouncesFocusExceptTheColourWheel drives the applier both IC bars
 // call, because the source census above only proves they REACH it.
-//
-// on_text_color_changed's focus_ic_input is the handler's last statement, outside
 // its if/else (courtroom.cpp:6402), so it runs on both the wrap branch and the
 // whole-message branch — this walks both. The one arm that must not bounce is
-// Custom…, which has no canon counterpart at all (AO2's dropdown holds only the
-// palette names, set_text_color_dropdown :6302-6341) and which opens a float that
-// owns the keyboard.
 func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// Whole-message branch: no frozen selection, a standard palette pick.
 	a := colorPickTestApp(t)

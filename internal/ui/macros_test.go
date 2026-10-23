@@ -55,19 +55,6 @@ func TestMacroQueuePacing(t *testing.T) {
 }
 
 // TestOOCQueueNeverBursts pins the minimized-disconnect fix.
-//
-// The live-roster poll used to queue a /gas OOC command every 3 seconds.
-// Its producer ran in App.Background (which DOES run while the window is
-// minimized); the drain used to run only in Frame (which does NOT). So the
-// queue filled for the whole occlusion and then flushed every due entry in one
-// pass on the first restored frame. That timed producer is now DELETED outright
-// (liveroster.go, 2026-08-08) — this pins the drain-side half, which still guards
-// every remaining producer: macros, auto-login, and the manual roster fetches.
-// Servers count OOC per IP — Nyathena kicks
-// at 4/s (and at message_rate_limit ≈ 1.4/s) via KickForRateLimit, which closes
-// the socket synchronously while its explanation is still queued, so the client
-// saw a bare close with no reason.
-//
 // However long the drain is stalled, a single call must release at most ONE
 // line, and clearing a backlog must take one oocSendMinGap per line.
 func TestOOCQueueNeverBursts(t *testing.T) {

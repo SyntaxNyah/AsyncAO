@@ -29,15 +29,6 @@ func writeCatalogTheme(t *testing.T, root, name string, kindFiles ...string) str
 
 // TestThemeCatalogIsBoundedAndPublishedAtomically is the W2 gate on the scan.
 // Three properties, all of them rules rather than preferences:
-//
-//   - BOUNDED (hard rule 4): a user who points the theme folder at a directory
-//     holding a thousand entries gets themeCatalogCap of them and a flag saying
-//     so — never an unbounded slice behind a pointer the draw path reads.
-//   - PUBLISHED, not mutated: the snapshot the UI holds is immutable, so a scan
-//     landing mid-frame swaps a pointer instead of growing a slice under it.
-//   - BADGED: the kind comes from the files actually present, which is what
-//     makes "this folder holds no theme files" a visible state instead of a
-//     theme that silently does nothing.
 func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 	root := t.TempDir()
 
@@ -112,13 +103,9 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 
 	// The snapshot is published whole. Nothing mutates a live one: swapping
 	// the pointer is the only way it changes.
-	//
 	// The count to compare against is CAPTURED, not hardcoded: this scan also
 	// walks this machine's real theme roots (exe dir, config base), so the
 	// number of entries depends on what the developer happens to have in
-	// <config>/themes. The property under test is "publishing cat left cat2
-	// alone", and a baseline taken before the publish tests exactly that
-	// without going red the day someone uses the folder this wave ships.
 	cat2Len := len(cat2.Entries)
 	a := &App{env: env{}}
 	a.themeCat.Store(cat2)

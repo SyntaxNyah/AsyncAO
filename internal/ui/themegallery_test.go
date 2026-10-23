@@ -94,11 +94,9 @@ func TestPresetThumbCacheIsBounded(t *testing.T) {
 // claim, and it exists because the boundedness gate above does not imply it: a
 // cache that always evicted slot 0 is just as bounded and just as correct, and it
 // passes that test unchanged (measured — the mutation was run).
-//
 // It matters for the one interaction the panel is built around. Hover-scrub walks
 // a column of 14 or 21 and comes back; under always-evict-slot-0 the entry you
 // started from is the first thing thrown away, so scrubbing back up re-bakes every
-// card. LRU is what makes the second pass free.
 func TestPresetThumbCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -215,7 +213,6 @@ func TestTheThumbnailShowsTheLayoutItIsFor(t *testing.T) {
 // if the only reader is a test, and this preset library is a redistributable
 // artefact under AGPLv3 whose attribution has to reach the person redistributing
 // it — which is exactly the person standing in front of the gallery.
-//
 // It drives galleryCredit.lines, the one producer the panel draws from, over all
 // fourteen shipped styles at the real panel width, and it looks for the fragment's
 // own opening words in what came back.
@@ -379,16 +376,6 @@ func TestPresetApplyThenUndoRestoresExactly(t *testing.T) {
 
 // TestApplyingAPresetSurvivesTheSaveThatFollowsIt is the arm every other apply
 // gate in this file stops one step short of.
-//
-// The button path is Apply → Save → next session, and the SAVE is where the model
-// and the lossless carrier get to disagree: the writer edits the document the
-// reader kept, so the tier a preset REPLACED stayed in the file as a set of
-// orphan [element.*] sections and came back on the next read. Measured through
-// exactly this fixture before the fix: 35 elements out, 36 back, with
-// `mine_badge` — the element the apply had just dropped — still in the bytes.
-// TestGalleryPickRunsTheMergeEngine asserts it is gone from the MODEL and never
-// serialises, and TestPresetApplyThenUndoRestoresExactly compares two byte
-// strings that both carried it, so it cancelled out of both.
 func TestApplyingAPresetSurvivesTheSaveThatFollowsIt(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()
@@ -479,11 +466,9 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 // it is written in the shape TestThemeApplyRunsTheOverridesTier established:
 // perform the real act through the real button path, then assert on something only
 // the real engine could have produced.
-//
 // What it looks for is a preset's OWN element, by id, in the live model — a thing
 // the gallery has no way to invent, because the ids come out of the embedded
 // fragment. A panel that had re-implemented "apply a style" as, say, copying the
-// palette across would pass every other test in this file and fail this one.
 func TestGalleryPickRunsTheMergeEngine(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()

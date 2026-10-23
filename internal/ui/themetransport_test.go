@@ -286,13 +286,6 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 
 // TestEveryDegradeReachesASurface is the gate that had to exist before the
 // metadata ruling could.
-//
-// Sidecar.Notes() had collected degrade reports since W1 and a census across the
-// tree found its only readers were TESTS — the format promised "degrade with a
-// note" and the note reached nobody. W8's metadata truncation would have inherited
-// exactly that, so the truncation would have been silent in practice however
-// loudly the format described it.
-//
 // It drives buildThemeReport and noteThemeReport, which is the shipped pair, and
 // then asserts on a.warnLine — the surface a human actually reads.
 func TestEveryDegradeReachesASurface(t *testing.T) {
@@ -356,14 +349,6 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 // TestImportReportNamesEveryDeclaredGap is design §Q5's own requirement, stated as
 // a gate: an AO2 feature this client INHERITS rather than imports must be named,
 // with its reason, on the theme that ships one.
-//
-// WHY IT IS A CENSUS OVER themeReportGaps AND NOT THREE HAND-WRITTEN CASES. The
-// gaps are a table precisely so a third one is a row; a gate that listed the two
-// that exist today would go green the day somebody added the third and reported
-// nothing. So it walks the table, builds a sidecar that trips exactly that row, and
-// demands a line — which is a claim about the mechanism rather than about its
-// current contents.
-//
 // The two gaps are `[import] lobby_design` and `per_misc`. `_sharp` is the one
 // declared gap deliberately absent, for the reason themereport.go states: it is not
 // on the sidecar and there is no census to ask.

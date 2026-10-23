@@ -1,14 +1,6 @@
 package ui
 
 // The shared edit target and the 8-handle design-rect resize (v1.90.0 W6).
-//
-// W6 is a behaviour-neutral refactor with exactly one capability added — the themed
-// editor's other seven handles — so everything here pins the NEW surface: that a
-// target cannot exist without saying which space it is in, that the design path now
-// offers the full handle set (and still offers exactly the historical single grip
-// where a box is too small for more), and that every one of those handles reaches the
-// magnet. The old behaviour is pinned where it always was, by the tab-strip quartet
-// and classiclayout_test.go, which this wave did not have to change.
 
 import (
 	"testing"
@@ -108,13 +100,9 @@ var designHandleRect = sdl.Rect{X: 100, Y: 100, W: 200, H: 200}
 // wantHandleEdges is the LITERAL, per-position expectation for handleEdgeMask, in
 // classicHandles' order: four corners (TL, TR, BL, BR), then the four edge midpoints
 // (top, bottom, left, right).
-//
 // It exists because the gate below used to compare handleGripAt's answer against
 // handleEdgeMask itself, which is a tautology: swap any two rows of the production
 // table and every assertion still held, while the editor grew a top-left grip that
-// resized from the bottom-right. A test that reads its expectation out of the thing
-// under test is not measuring it. These eight values are the contract — corners grip
-// two edges, midpoints grip one, and between them they cover each side exactly twice.
 var wantHandleEdges = [handleCount]uint8{
 	edgeL | edgeT, // 0 top-left
 	edgeR | edgeT, // 1 top-right
@@ -163,7 +151,6 @@ func TestHandleEdgeMaskIsTheDocumentedTable(t *testing.T) {
 // fallback, so a target that does not honour edgeR|edgeB gets no grip at all once it
 // is too small for the full set — rather than being offered a bottom-right corner
 // whose drag would move an edge it refuses.
-//
 // No production call site reaches this combination today (both design spaces answer
 // all-four-or-none), which is exactly why it needs a test: the next caller is where
 // it would ship.
