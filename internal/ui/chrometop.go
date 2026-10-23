@@ -75,7 +75,9 @@ func (a *App) drawTabBarInPass(w, h int32) {
 
 // tabStripPaintsOverEverything is App.Frame's site, replaying the SAME latch. The two
 // are exact complements, so exactly one paints per frame.
-func (a *App) tabStripPaintsOverEverything() bool { return !a.toolbox.tabStripPaint.inPass }
+func (toolbox1 *toolboxState) tabStripPaintsOverEverything() bool {
+	return !toolbox1.tabStripPaint.inPass
+}
 
 // tabStripBandH is the vertical band the DOCKED server-tab strip owns, directly
 // under the menu bar. Zero in the two cases where the strip is not in the band:

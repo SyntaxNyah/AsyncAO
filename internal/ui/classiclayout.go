@@ -984,7 +984,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// (you can drag boxes up there — playtest: the top strip was wasted space). A
 	// side effect of painting after the click handlers: the Snap/4:3 labels
 	// show the state a click just set, not last frame's.
-	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
+	a.toolbox.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.Label(pad, 6, "Edit Layout", ColTierYellow)
 	snapLabel := "Snap: off"
