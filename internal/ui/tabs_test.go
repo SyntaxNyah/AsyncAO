@@ -385,13 +385,6 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 // (applyResumeDuck), split out so it needs no audio device (the branch selection
 // reads CurrentMusicURL, but the FLAG mutation — the part with the bug history — is
 // pure and unit-pinnable like mixChannels):
-//
-//   - sameTrack=true (PRESERVE clause): the stream is already this exact track,
-//     kept rolling across the switch. Un-duck IMMEDIATELY (no delivery is coming)
-//     and clear any stale await.
-//   - sameTrack=false (swap path): a foreign/other-tab track is live. HOLD the duck
-//     (un-ducking now would make the foreign track audible during the fetch) and
-//     AWAIT this tab's url — the same delivery-time guard as the DJ /play path.
 func TestMusicResumeDuckDecision(t *testing.T) {
 	const url = "http://cdn/trial.opus"
 
@@ -1464,15 +1457,6 @@ func TestMoveTab(t *testing.T) {
 // TestSettleAwaitTimeoutDecision pins settleAwaitTimeout, the pure never-arrives
 // release decision (split out like settleAwaitedDuck / mixChannels so it needs no
 // Audio device). It encodes two fixes at once:
-//
-//   - the FROZEN-CLOCK fix: the decision is a function of the clock passed in, so a
-//     live clock (advanced past the deadline) releases while a frozen one (Background
-//     never restamping frameNow, the minimized wedge) returns None and holds. The bug
-//     was that the ONLY clock feeding this was a.now(), frozen while minimized.
-//   - the FOREIGN-STREAM fix: past the deadline the action depends on what's loaded —
-//     a foreign track still rolling under the duck (cur != "") heals to SILENCE
-//     (awaitTimeoutStop), never un-ducks onto the wrong song; an empty stream
-//     (cur == "") just lifts the duck (awaitTimeoutUnduck).
 func TestSettleAwaitTimeoutDecision(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)

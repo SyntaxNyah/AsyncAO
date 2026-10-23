@@ -39,13 +39,9 @@ func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 // TestBuildIniswapChoicesKeepsTheWornFolder is the hole review found: a.iniChar
 // can hold a folder that is NOT in the saved wardrobe, because wearFromMenu takes
 // entries from the SERVER's iniswap.txt and never calls AddWardrobe.
-//
 // Without the trailing entry, iniswapCurrentIndex finds no match and falls back
 // to 0 — so the dropdown would display the player's OWN character while they were
 // visibly wearing something else, and iniswap_remove (gated on cur != 0) would
-// hide itself exactly when it is needed. AO2 cannot hit this: its combobox is
-// editable with InsertAtBottom and it rewrites iniswaps.ini on every change, so
-// what you wear is always in the list.
 func TestBuildIniswapChoicesKeepsTheWornFolder(t *testing.T) {
 	// Worn folder absent from the wardrobe → appended, and findable.
 	got := buildIniswapChoices(nil, "Phoenix", []string{"Edgeworth"}, "ServerOnlyChar")
@@ -110,15 +106,7 @@ func TestBuildIniswapChoicesReusesItsBuffer(t *testing.T) {
 
 // TestPosRemoveHiddenWhileTheCharINIIsInFlight is the wire-safety pin for
 // pos_remove, and it is about a WINDOW, not a steady state.
-//
 // The button reverts to the character's declared side, and clicking it SENDS
-// /pos. Before the fix, charDefaultSide was written only on the char.ini success
-// path, so three situations left the PREVIOUS character's default in place — the
-// char.ini failure branch, a character switch (enterCourtroom clears sidePref but
-// resetSessionState does not run there), and setIniswap. In that window the
-// button would paint for a side the user never overrode and one click would put a
-// wrong /pos on the wire.
-//
 // Clearing the field makes defaultSide() read "wit", which is exactly what AO2's
 // get_char_side returns for an unreadable ini (text_file_functions.cpp:480-483),
 // so the loading window matches mySide()'s own fallback and the button stays down.
@@ -163,11 +151,6 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 // pin above, and it is the one that can only be checked by driving the real code
 // path. The test above proves the PREDICATE hides the button for an empty default;
 // this proves the default actually gets emptied when the character changes.
-//
-// setIniswap is the path review flagged: it resets the emote list and reloads
-// char.ini but used to touch neither side field, so the previous character's
-// declared side survived into the window before the new ini landed. Verified in
-// the other direction too — deleting the clear makes this fail.
 func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 	a := testTabApp(t)
 	a.charDefaultSide = "def"

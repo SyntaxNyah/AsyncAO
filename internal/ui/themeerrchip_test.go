@@ -24,16 +24,6 @@ import (
 // SHAPE of the real defect: the reader refuses the whole file on a named cap
 // (theme.ErrSidecarCap, never a truncation — a truncated theme that then got saved
 // would be data loss), so one long line costs a theme its entire AsyncAO tier.
-//
-// CHANGED FIXTURE (v1.90.0 W8, the metadata-cap ruling). It used to be `credit`,
-// and `credit` no longer refuses: metadata degrades with a note, precisely so that
-// a stranger's attribution line cannot cost them their whole theme (see
-// internal/theme/metatext.go and THEME-FORMAT §7). The PROPERTY these gates pin —
-// "a refused sidecar reaches a surface the user can see" — is unchanged, so the
-// fixture moves to a [theme] key that is still structural: `base` names the
-// terminal AO2 fallback FOLDER, and a shortened one resolves a different theme or
-// none at all. Everything else about the file, and every assertion below, is
-// untouched.
 func overCapBase() string { return strings.Repeat("x", theme.NameRuneCap+1) }
 
 // refusedSidecarSource is a minimal but otherwise perfectly good sidecar whose
@@ -136,13 +126,9 @@ func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 
 // TestSidecarRefusalChipDoesNotOverlapItsNeighbours pins the band's geometry with
 // three chips in it.
-//
 // Two right-anchored chips both measured from the window edge would have drawn on
 // top of each other — the exact failure the band's "drop rather than overlap" rule
 // exists to prevent, and one a single anchor cannot express. It also pins the
-// no-error case as byte-identical: menuBarRightContentLeft must be the window width
-// when nothing is right-anchored, or every install without a theme error pays a
-// layout change for a feature it is not using.
 func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

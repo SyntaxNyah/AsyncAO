@@ -17,20 +17,6 @@ import (
 
 // TestPumpConnectionSurvivesServerKick pins two coupled fixes around a server
 // kick/ban packet (KK/KB/BD → courtroom.EventDisconnect):
-//
-//  1. NO CRASH. The kick tears the session down MID-DRAIN: handleSessionEvents
-//     calls Disconnect(), whose resetSessionState() zeroes conn/sess.
-//     pumpConnection's drain loop must re-check before it touches
-//     a.conn.Incoming() again — without the guard the next iteration nil-derefs
-//     the freed *Conn (conn.go:73, the reported crash).
-//  2. DISCONNECT STATE SURVIVES + a kick does NOT auto-reconnect (#1). connErr /
-//     lastConn* live on App (not sessionState), so the kick reason still shows in
-//     the lobby and the Reconnect button has a target — Disconnect's
-//     resetSessionState() no longer wipes them. But auto-reconnect must NOT arm:
-//     a kick is the server removing us on purpose (and a ban-retry reads as ban
-//     evasion), so shouldAutoReconnect returns false for the "Kicked: "/"Banned: "
-//     reasons. Only genuine transport drops rearm (covered separately).
-//
 // The trigger is the kick packet, NOT the BB "popup" the user happened to see
 // first (that's EventNotice and never disconnects).
 func TestPumpConnectionSurvivesServerKick(t *testing.T) {

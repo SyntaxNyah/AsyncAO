@@ -114,14 +114,6 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 }
 
 // TestLobbyListActionsAreOnTheLobby pins where the SERVER-LIST actions live.
-//
-// Refresh and the connect-time sort came back out of the menu by request: they act
-// on the server list, so a menu carrying them is dead weight the moment you are in
-// a server, and a refresh button belongs beside the thing it refreshes. The
-// cluster's count MUST match the number of cursor steps drawLobby takes, because
-// that constant is what turns "does the row fit?" into arithmetic instead of a
-// measured pass.
-//
 // Both surfaces survive on purpose and call the same setters, so they cannot
 // drift — this test is what stops one of them quietly growing a second copy.
 func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
@@ -387,14 +379,6 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 
 // TestFxAndEmojiAreReachableUnderATheme pins the regression that the themed IC-bar
 // rewrite introduced and an adversarial review caught.
-//
-// Text FX and the emoji picker are the only two IC controls with NO AO2 design
-// key. The themed bar draws them solely at the asyncao_ic_fx / asyncao_ic_emoji
-// override rects, which no stock AO2 theme declares — and the cram row that used
-// to host them was deleted. For one commit they were unreachable under every real
-// theme: no menu row, no hotkey, no Extras-box entry. icEffect is sticky session
-// state, so an effect armed in the classic layout would then wrap every line with
-// no way to clear it.
 func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 	a := stageMenuBarApp(t)
 	for _, label := range []string{"Text FX…", "Emoji picker…"} {

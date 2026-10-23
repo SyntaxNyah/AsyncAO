@@ -1,16 +1,9 @@
 package ui
 
 // The UI half of the conclusive-miss brake.
-//
-// The manager's own suite (assets/conclusivemiss_test.go) proves the memory is
-// recorded and that every Prefetch entry point consults it. These prove the two
-// things only this package can answer: that the DEMAND CADENCE stops, and that a
-// cell which can never fill stops holding the frame pump awake.
-//
 // Both halves matter and they failed together in the field: a character roster
 // where most entries ship no char_icon and no emotions/button<N>_off art sent a
 // 404 every couple of seconds per visible cell, indefinitely, and the client sank
-// under the pool jobs and disk probes behind them.
 
 import (
 	"path/filepath"
@@ -213,13 +206,6 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 }
 
 // TestBlankEmoteCellDoesNotHoldTheFramePumpAwake is the "sub 10fps" half.
-//
-// A cell with neither emotions/button<N> art nor a char_icon draws a permanently
-// grey box. It used to set frameDemandPending unconditionally on blankness, which
-// tells NextWakeDelay to keep re-rendering at the demand cadence — so an idle
-// client with such a grid on screen never settled, forever, for art that could not
-// arrive. Now the flag rides demandAsset's answer.
-//
 // Drives the real drawEmoteImageButton rather than reasoning about the flag,
 // because the bug was in the RELATIONSHIP between the two.
 func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {

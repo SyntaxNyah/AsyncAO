@@ -206,12 +206,9 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 // counterpart of TestFeedDetachedPreviewFrameUploadsOnce: a multi-frame
 // animated pick must advance previewWinFedFrame exactly when the wall clock
 // crosses a frame boundary.
-//
 // This test covers the POSITIVE direction only: it would still pass if the
 // gate degraded to "feed on every call", because ShowAnimFrame's own cache
 // absorbs the redundant calls invisibly. The gate itself is pinned by
-// TestPreviewFeedNeeded below, which drives the real predicate
-// feedDetachedPreviewFrame asks.
 func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
 	a.previewBase = previewAnimFeedFixtureBase
@@ -271,11 +268,9 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 // stops being cosmetic the moment a pick overflows the animation cache
 // budget, where an uncached ordinal calls fill on EVERY visit and losing the
 // gate turns one readback per animation tick into one per rendered frame.
-//
 // Weaken any arm of previewFeedNeeded and a named case here fails: return
 // true unconditionally and both "nothing changed" cases fail; drop the page
 // comparison and the re-decode case fails; drop the `animated &&` and the
-// static case fails.
 func TestPreviewFeedNeeded(t *testing.T) {
 	pageA, pageB := &render.TexturePage{}, &render.TexturePage{}
 	const baseA, baseB = "char://a", "char://b"
@@ -492,12 +487,6 @@ func TestSyncPreviewWindowPersistsOnReattach(t *testing.T) {
 // "boring but fatal" case #4 verbatim: closing the OS window via its own
 // titlebar X (simulated the same way cmd/asyncao's dispatchEvent would —
 // calling Close() DIRECTLY, never through toggleDetachPreview) must both (a)
-// make previewIsDetached() — the pop-out button's ENTIRE truth — report
-// false again, and (b) get its final position persisted, exactly like an
-// explicit re-attach does. There is no separate "detached" bool that could
-// disagree with reality here; this proves that by driving the real
-// discrepancy path (Close() called out of band) and checking the single
-// source of truth.
 func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	a := newPreviewFeedApp(t)
 	a.toggleDetachPreview()
@@ -560,9 +549,6 @@ func TestDetachedPreviewSurvivesDisconnect(t *testing.T) {
 // App-global — matching the PRE-EXISTING precedent for previewPinned/
 // previewOffX/areaPct/musicPct, all of which already survive a session swap
 // by design — so resetSessionState must leave every one of them untouched:
-// if the preview ever leaked INTO sessionState, switching tabs would
-// silently close or blank it, exactly the class of bug "per-session state
-// on App, not sessionState" guards against in the OTHER direction too.
 func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 	a := newPreviewFeedApp(t)
 	a.toggleDetachPreview()
