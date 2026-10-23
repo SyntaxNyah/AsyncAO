@@ -6,20 +6,10 @@ package ui
 // the classic HP bar) through the layout editor's R-key; the angle persists per
 // element (config.ThemeRectRotations / config.ClassicRotations) and the draw
 // path blits it with SDL's CopyEx.
-//
-// INVARIANT (architect ruling 1): angle 0 takes the ORIGINAL Copy path, so the
-// unedited courtroom stays byte-identical and the settled zero-alloc gate — which
-// runs entirely unrotated — is unaffected. Only a nonzero persisted angle routes
-// through CopyEx(angle, center=nil, FLIP_NONE). Every swap site is structured as
-//
-//	angle := <O(1) resolve>
-//	if angle == 0 { existing Copy } else { CopyEx }
-//
 // The EXPENSIVE tier (interactive rotated panels — inverse-rotated hit-testing,
 // per-panel render-to-texture, a fenced inverse-cursor stash) is a ruled NO-GO
 // this milestone. The persistence is already per-key, so a later slice can read
 // the same side-maps, add per-panel render-to-texture + a fenced inverse cursor,
-// and reuse the R-key UX without touching this file's format.
 
 import (
 	"strconv"
@@ -58,9 +48,6 @@ const (
 // chatbox skin is deliberately out of scope (ruling 5 scopes chatbox rotation to
 // the themed skin). So this returns false for every slot and the classic R-key
 // reports "n/a" — an honest, ruling-6-compliant result, not a silent no-op.
-// a.classicRot is fed only by an applied LayoutProfile. Kept as a function (not a
-// bare false) so a future slice that adds a texture-backed classic slot has one
-// place to register it.
 func classicSlotRotatable(slot string) bool {
 	_ = slot
 	return false

@@ -3,23 +3,9 @@ package ui
 // The system-font CENSUS: the backstop that ends the hardcoded-fallback-list
 // treadmill, and the reason a rune the client cannot draw should now be a
 // genuinely unassigned codepoint rather than "nobody added that font path yet".
-//
-// The curated tiers (fontfallback.go) stay: they are ranked, they pick the RIGHT
-// face for a script rather than merely a covering one — Japanese before Chinese
-// for shared Han, a modern proportional Gothic before a bitmap-era legacy face —
-// and for the overwhelming majority of sessions they answer everything with two
-// or three faces. The census only runs when something reaches the draw that none
-// of them covers. Then it asks a much simpler question: of every font actually
-// installed on this machine, which one has this rune? That is self-maintaining
-// (a user who installs a Tibetan font gets Tibetan), OS-agnostic (it is the only
-// reason macOS and Linux are not permanently stuck on the embedded Latin face),
-// and it needs no new font bytes shipped in the binary.
-//
 // EVERYTHING HERE IS OFF THE RENDER THREAD. Parsing is done through
 // sfnt.ParseReaderAt, so a face is never slurped into the heap — but that also
 // means every GlyphIndex call is a disk read, which is exactly the synchronous
-// I/O the render path forbids (CLAUDE.md rule 2). The render thread only ever
-// hands over runes and receives font BYTES; it never touches a census face.
 
 import (
 	"os"
@@ -148,14 +134,9 @@ func (fc *fontCensus) index() {
 		fc.walk(dir, fontCensusMaxDepth, &budget)
 	}
 	// Regular faces first, then smallest first.
-	//
 	// Size is the primary signal because a rune covered by both a 0.4 MB Leelawadee
 	// and a 35 MB PMingLiU should resolve to Leelawadee: it opens faster, costs less
 	// in every per-size set, and a font that small is almost always the one actually
-	// designed for that script rather than a pan-Unicode catch-all that happens to
-	// include it. But bold and italic cuts are usually SMALLER than their regular
-	// sibling, so size alone picked "Leelawadee UI Bold" for Thai — correct glyphs,
-	// wrong weight, next to text drawn in a regular face. Weight outranks size.
 	sort.SliceStable(fc.files, func(i, j int) bool {
 		bi, bj := isStyledCut(fc.files[i].path), isStyledCut(fc.files[j].path)
 		if bi != bj {

@@ -17,21 +17,6 @@ import (
 // presets and orthogonal to it. Where chrome.go recolours the flat kit chrome,
 // this reshapes it: buttons/chips/panel frames gain rounded or pill corners while
 // hit-testing stays the SAME rectangle everywhere (no polygon picking).
-//
-// Mechanism: procedurally-rastered WHITE-RGB, straight-alpha silhouette MASKS
-// (one "fill" mask + one "stroke ring" mask per shape/tier) uploaded ONCE into
-// the eviction-exempt pinned texture tier under a shape:// key scheme, then drawn
-// 9-slice (corners 1:1, edges/center stretched) and tinted per draw via
-// SetColorMod + SetAlphaMod — the exact glyphcache white-texture idiom. So a
-// button's fill colour and border colour survive, its translucency survives (the
-// toolbox's A:120/A:205), and the whole thing costs zero per-frame allocation
-// once the masks are resident (two persistent scratch rects, set-then-Copy).
-//
-// SHARP IS THE DEFAULT AND IS BYTE-IDENTICAL: when the active preset is "sharp"
-// (or the masks are not yet resident), every shaped draw site early-returns into
-// the verbatim Fill+Border body it had before A5. The settled-frame 0-alloc gate
-// runs at the default prefs, so the default path is untouched by construction.
-//
 // The mask keys mirror the config package's persisted vocabulary. shapeSharp is
 // never rastered (it has no mask — it IS the fall-through).
 const (
@@ -385,13 +370,9 @@ func (c *Ctx) borderShaped(r sdl.Rect, col sdl.Color) {
 // mask radius, or min(w,h)/2 for pill) so the curve size is correct at any widget
 // size. Everything uses the two persistent scratch rects (set-then-Copy) so no
 // &local escapes through cgo — the hot path is 0-alloc once masks are resident.
-//
 // SetColorMod + SetAlphaMod tint the mask to col before the passes. NO restore
 // to 255 afterwards — a DELIBERATE divergence from the shared-texture rule
 // (viewport.go restores because sprite textures are drawn by many sites): these
-// mask textures are shape-dedicated, never blitted by any other code path, and
-// every draw9Slice re-sets both mods first. Do not copy this un-restored
-// pattern onto any texture something else also draws.
 func (c *Ctx) draw9Slice(tex *sdl.Texture, dst sdl.Rect, col sdl.Color) {
 	if dst.W <= 0 || dst.H <= 0 {
 		return

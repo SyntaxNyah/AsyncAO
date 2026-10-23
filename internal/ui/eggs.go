@@ -1,18 +1,9 @@
 package ui
 
 // Creator easter eggs in the IC chatbox.
-//
-// When the DISPLAYED IC message's text mentions one of AsyncAO's creators, the
-// chatbox grows an animated glow ring keyed to that person. Detection runs on
-// the RECEIVED / displayed text (a plain case-insensitive substring check), so
-// every AsyncAO client in the room renders the same effect with ZERO wire
-// changes — nobody has to "send" an egg, mentioning the name is enough.
-//
 // The scan is once per message (creatorEgg, a pure function, table-tested) and
 // cached on the eggs component via refresh's compare-and-store, so a settled frame
 // costs one string compare — not a rescan and not an allocation. The per-frame
-// DRAW (drawCreatorEgg) is math + SetDrawColor + scratch-rect fills only, so it
-// stays inside the whole-screen 0-alloc gate (TestDrawCourtroomZeroAlloc).
 
 import (
 	"math"
@@ -115,19 +106,6 @@ func creatorEgg(text string) uint8 {
 
 // eggWordPresent reports whether word appears in low (already lower-cased) as a
 // WHOLE WORD — i.e. with a non-letter, non-digit on both sides or a string edge.
-//
-// The one trigger that needs it is eggNameMint, for the reason stated at its
-// declaration. It is deliberately NOT applied to the other five: those are
-// compounds that cannot occur by accident, and switching them to boundaries would
-// silently change what "fanatsors!!!" and "@omnitroid" light after years of
-// Contains — a behaviour change dressed as a refactor.
-//
-// ASCII boundaries only, and that is the honest scope: an AO handle is ASCII by
-// convention, and a rune-aware scan would need a decode per candidate on a path
-// that runs once per message. A leading multi-byte letter reads as a boundary
-// here, which errs toward FIRING rather than toward the false-positive class this
-// exists to stop, and only for text that is not the word in the first place.
-//
 // Allocation-free: it indexes the string the caller already lower-cased, and the
 // loop carries no closure.
 func eggWordPresent(low, word string) bool {
@@ -360,14 +338,6 @@ func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 // theater) get it without three copies of the call. Drawn BEFORE the frame (that's
 // chrome and belongs on top) and before drawChatOverlay runs later in the frame,
 // so petals fall BEHIND the message box instead of across the words.
-//
-// It refreshes the detection cache itself instead of leaning on drawChatEgg,
-// because drawChatOverlay early-returns on a blankpost and would leave the last
-// kind latched — petals would keep falling after the message was gone. Passing
-// eggSceneText (which mirrors that same gate) keeps the two halves in agreement,
-// and the refresh is idempotent for the chatbox path that runs later in the frame:
-// same text ⇒ one string compare, no rescan, no allocation. Gated on the SAME
-// accessibility pair as the ring eggs and the AO2 screen effects.
 func (a *App) drawStageEgg(vp sdl.Rect, sc *courtroom.Scene) {
 	a.eggs.refresh(eggSceneText(sc))
 	if !eggDrawsOnStage(a.eggs.kindOf()) || !a.d.Prefs.Load().ScreenEffects || a.d.Prefs.Load().ReduceMotionOn {

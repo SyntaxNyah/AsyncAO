@@ -9,24 +9,7 @@ import (
 )
 
 // GH #27 — the missing-asset report gets a surface of its own.
-//
-// It used to ride warnLine, the client's ONE shared single-line toast channel,
-// which every screen paints as bare ColDanger glyphs directly over whatever is
-// underneath: on the classic courtroom at oocY-20 (15 px into the last row of
-// emote buttons), and on an AO2 theme at h-44 — i.e. INSIDE the theme's design
 // canvas, over music_list / ao2_ooc_chat, which the #21 rule forbids outright.
-// It also carried the full base URL including the mount pseudo-origin, and
-// re-stamped its 12 s timer on every warning with no dedup, so a source that
-// re-fires faster than that made the red line permanent — and warnActive() is in
-// the full-rate gate, so a permanent banner also pinned the frame pacer.
-//
-// The replacement is a compact right-aligned chip inside the app's ALREADY
-// RESERVED menu-bar band: no new reserved space, no reflow, no layout-cache
-// churn, identical on AO2 themes and native layouts, and outside every design
-// canvas by construction. The chip says only how many assets are missing; the
-// F8 Debug ▸ Log tab keeps the full detail (pushDebug is unconditional and
-// un-gated, complete with the tried-extension list and the ×N collapse), and
-// clicking the chip goes straight there.
 
 const (
 	// assetMissDedupCap bounds the recently-warned ring. Small on purpose: it is
@@ -133,16 +116,9 @@ func (a *App) assetMissChipLabel() string {
 // ok is false when the bar is not painting its band this frame (a layout editor
 // owns the top band whole), or when the menu titles have grown far enough right
 // that the chip would sit on one of them.
-//
-// menuBarPaints is deliberately the SAME predicate menuBarFrame gates its own
-// input on, so the chip is live exactly when the titles beside it are.
-//
 // Input and draw call this at two different points of one frame (pre-screen vs
 // drawMenuBar phase 2), so the two answers can differ by a frame in both
 // directions — a miss that arrives after the input pass draws before it is
-// clickable, and the click that zeroes assetMissCount suppresses the same frame's
-// draw. Both are self-correcting within one frame and neither leaves live chrome
-// unclickable at rest, which is the property that matters here.
 func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 	// ACTIVE FIRST, and this is a correctness gate rather than an optimisation.
 	// The band's geometry is a chain — menuBarLeftContentRight asks the Iniswap
@@ -154,7 +130,6 @@ func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 	// nothing. The two call sites below already check Active() themselves, so this
 	// changes no painted frame; it makes the helper honest for the third caller,
 	// which is what a SHARED geometry helper is for.
-	//
 	// It does NOT change the two-answers-per-frame skew between the input pass and
 	// drawMenuBar's phase 2 — that is ruled deliberate and documented below.
 	if !a.assetMissChipActive() || !a.menuBarPaints() {

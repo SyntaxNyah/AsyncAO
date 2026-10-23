@@ -106,9 +106,6 @@ func (a *App) openDetachedPreview() {
 // and its close reconciled on passes where the in-app box itself never
 // draws, e.g. previewBase=="" after noteScreenTransition force-cleared it
 // while the window stayed open).
-// "Closed = free": a.d.Preview.IsOpen() is one nil+nil check when nothing
-// has ever been detached, matching every other preview-window touch point's
-// own contract (TestSyncPreviewWindowClosedIsZeroAlloc).
 func (a *App) syncPreviewWindow() {
 	if a.previewIsDetached() {
 		a.previewWinWasOpen = true
@@ -130,9 +127,6 @@ func (a *App) syncPreviewWindow() {
 // advancing even while the main loop's SkipFrame/minimized branches suppress
 // every full redraw of the main window, which is the whole reason a preview
 // gets popped out in the first place.
-// A still-loading pick (nothing resident yet) is retried next call — cheap
-// (a texture-store lookup, no allocation) since a real decode settles within
-// a handful of frames, and the window simply keeps showing its previous
 func (a *App) feedDetachedPreviewFrame() {
 	if a.previewBase == "" {
 		return
@@ -189,9 +183,6 @@ func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, 
 // window showing an animated pick would freeze the instant the main window
 // minimizes or the static-skip gate engages — exactly the case a user pops
 // the window out FOR (watching it while alt-tabbed away).
-// Not a second implementation of anything: this calls the SAME
-// syncPreviewWindow handlePreviewInput already calls, just reachable from a
-// pass that never reaches handlePreviewInput. The closed-preview cost is
 func (a *App) AdvanceDetachedPreview() {
 	a.syncPreviewWindow()
 }
@@ -228,9 +219,6 @@ func (a *App) PreviewAnimWakeCap() time.Duration {
 // preview is on screen to detach, and internal/assets.Manager's own
 // T1-residency short-circuit would make a second Prefetch for it a silent
 // no-op with no decode event to catch.
-// Render-thread only (every call is an SDL call: a scratch render-target
-// texture, a blit, ReadPixels, then the render target is restored). Called
-// at most once per emote pick while the preview window is open — never per
 func readTexturePixels(ren *sdl.Renderer, tex *sdl.Texture, w, h int32) (*image.RGBA, error) {
 	if ren == nil || tex == nil || w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("ui: readTexturePixels: nothing to read")

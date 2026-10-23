@@ -3,22 +3,6 @@ package ui
 // THE MINT EGG: frost creeping in from the stage edges with cocoa flecks drifting
 // through it, and a ring banded mint / cocoa. One concern, one file (eggs.go owns
 // the trigger table, the enum and the two dispatches; this owns the pixels).
-//
-// WHOLLY PROCEDURAL — no bundled art, per the licensing stance. A frost finger is
-// ONE axis-aligned bar growing inward from an edge, its length breathing on its
-// own phase; a fleck is one small dark square. Every property comes from
-// eggHash(index), so the field is a pure function of (index, clock): no
-// allocation, no seeding, no state to reset between messages, and every AsyncAO
-// client in the room draws the identical frost.
-//
-// WHY IT READS AS DIFFERENT FROM THE OTHER STAGE EGGS. The other three are fields
-// scattered through the MIDDLE of the stage and they travel on the vertical axis
-// — petals fall, shards rise, the aurora hangs. This one is anchored to the
-// PERIMETER and grows inward, and its flecks drift SIDEWAYS, so nothing about its
-// motion collides with theirs. The ring is the same idea: two flat colours
-// alternating ring by ring, the assignment marching outward, as against the
-// continuous lerps and hue walks every other egg's ring does. Mint chocolate,
-// said in the only two shapes a fill can make.
 
 import (
 	"math"
@@ -97,18 +81,6 @@ const (
 // elements share all four of their properties, which is the correlation the
 // "separate salts" rule in drawEggPetals exists to prevent; the three of them lay
 // out like this:
-//
-//	top frost edge     0                 .. 4*eggMintFingers-1 (0..87)
-//	bottom frost edge  eggMintBottomSalt .. +4*eggMintFingers-1 (977..1064)
-//	cocoa flecks       eggMintFleckSalt  .. +4*eggMintFlecks-1  (1601..1656)
-//
-// The values themselves are arbitrary beyond clearing the window before them —
-// eggHash is a murmur finalizer, so any disjoint run decorrelates as well as any
-// other. TestMintHashWindowsAreDisjoint is what keeps them clear when a field's
-// cap grows. (The flecks used to start at 0, i.e. entirely inside the top edge's
-// window, so fleck i wore frost finger i's four numbers; the two spend them on
-// different axes and different time bases, which is why it was invisible rather
-// than harmless.)
 const (
 	eggMintBottomSalt = uint32(977)
 	eggMintFleckSalt  = uint32(1601)
