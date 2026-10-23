@@ -95,6 +95,13 @@ func (s *selfUpdate) resetForChannel() {
 // (and headless rigs call it directly); nothing is reassigned afterwards.
 func (a *App) wireComponents() {
 	a.env.h = a
+	a.wireComponentEnvs()
+}
+
+// wireComponentEnvs re-points the components' env. resetSessionState installs a
+// fresh sessionState, which zeroes every component parked inside it, so the
+// pointers have to be restored after each park/restore as well as at boot.
+func (a *App) wireComponentEnvs() {
 	a.updates.env = &a.env
 	a.lobby.env = &a.env
 	a.palette.env = &a.env

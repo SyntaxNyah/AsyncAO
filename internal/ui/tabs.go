@@ -1262,6 +1262,7 @@ func (a *App) resetSessionState() {
 		charShowTaken: true,
 		charListSel:   -1, // no name-column selection yet
 	}
+	a.wireComponentEnvs()
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change
 	// (park/disconnect/connect) would highlight stale lines in a different tab's log.
