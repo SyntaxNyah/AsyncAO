@@ -360,11 +360,11 @@ func overlayThemeKey(path string) string { return overlayThemeKeyPrefix + string
 // overlayDemandTheme queues one local overlay file for an off-thread read +
 // decode, bounded by themeOverlayLoadCap in flight. Idempotent: a key already
 // resident or already loading costs a map probe. Render thread only.
-func (overlay *overlayState) overlayDemandTheme(path, key string) {
-	if path == "" || key == "" || overlay.env.d.Store == nil {
+func (overlay *overlayState) overlayDemandTheme(e *env, path, key string) {
+	if path == "" || key == "" || e.d.Store == nil {
 		return
 	}
-	if overlay.env.d.Store.Contains(key) {
+	if e.d.Store.Contains(key) {
 		return
 	}
 	if overlay.overlayTexLoading == nil {
@@ -377,7 +377,7 @@ func (overlay *overlayState) overlayDemandTheme(path, key string) {
 		overlay.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
 	}
 	overlay.overlayTexLoading[key] = true
-	anims := overlay.env.d.Prefs.Load().PreferAnimated
+	anims := e.d.Prefs.Load().PreferAnimated
 	// Captured on the render thread for the reason overlayRosterFetchOne captures
 	// its own: the worker must read nothing off App (hard rule 8).
 	out := overlay.overlayTexRes
@@ -432,7 +432,7 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	}
 	if path, ok := roster.art[strings.ToLower(name)]; ok {
 		key := overlayThemeKey(path)
-		a.overlays.overlayDemandTheme(path, key)
+		a.overlays.overlayDemandTheme(&a.env, path, key)
 		out.Base = key
 		return out, true
 	}
@@ -664,7 +664,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	if path != "" {
 		// Idempotent (a resident or already-loading key costs a map probe) and it is
 		// what HEALS the page after an eviction — overlay art is uploaded evictable.
-		a.overlays.overlayDemandTheme(path, base)
+		a.overlays.overlayDemandTheme(&a.env, path, base)
 	}
 	if page, ok := a.cachedPage(&a.overlays.overlayIconPages, &a.overlays.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
 		// Through the shared cgo scratch, never &tr: taking the address of a
