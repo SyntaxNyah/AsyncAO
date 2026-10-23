@@ -43,7 +43,7 @@ func (a *App) updatePingLoop() {
 	if want == a.lobby.pingConn {
 		return // already pinging the right conn (or both nil)
 	}
-	a.stopPingLoop()
+	a.lobby.stopPingLoop()
 	if want != nil {
 		a.startPingLoop(want)
 	}
@@ -59,13 +59,13 @@ func (a *App) startPingLoop(conn *protocol.Conn) {
 
 // stopPingLoop cancels the live loop (idempotent). Also clears the RTT so the chip doesn't show
 // a stale ping for a connection that's gone.
-func (a *App) stopPingLoop() {
-	if a.lobby.pingCancel != nil {
-		a.lobby.pingCancel()
-		a.lobby.pingCancel = nil
+func (lobby1 *lobbyState) stopPingLoop() {
+	if lobby1.pingCancel != nil {
+		lobby1.pingCancel()
+		lobby1.pingCancel = nil
 	}
-	a.lobby.pingConn = nil
-	a.lobby.pingRTT.Store(0)
+	lobby1.pingConn = nil
+	lobby1.pingRTT.Store(0)
 }
 
 // pingLoop pings conn every pingInterval until ctx is cancelled, storing the round-trip time
@@ -73,26 +73,26 @@ func (a *App) stopPingLoop() {
 func (a *App) pingLoop(ctx context.Context, conn *protocol.Conn) {
 	t := time.NewTicker(pingChipInterval)
 	defer t.Stop()
-	a.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
+	a.lobby.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.pingOnce(ctx, conn)
+			a.lobby.pingOnce(ctx, conn)
 		}
 	}
 }
 
-func (a *App) pingOnce(ctx context.Context, conn *protocol.Conn) {
+func (lobby1 *lobbyState) pingOnce(ctx context.Context, conn *protocol.Conn) {
 	pctx, cancel := context.WithTimeout(ctx, pingChipTimeout)
 	rtt, err := conn.Ping(pctx)
 	cancel()
 	if err != nil {
-		a.lobby.pingRTT.Store(0) // unknown
+		lobby1.pingRTT.Store(0) // unknown
 		return
 	}
-	a.lobby.pingRTT.Store(int64(rtt))
+	lobby1.pingRTT.Store(int64(rtt))
 }
 
 // pingQuality maps a round-trip ms to a filled-bar count + colour (0 bars / dim when unknown).

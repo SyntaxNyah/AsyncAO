@@ -643,7 +643,7 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 func TestPaletteKeepsItsArrowsWhileAnEditorIsArmed(t *testing.T) {
 	a := stageClassicNudge(t)
 	before := classicNudgeRect(a)
-	a.togglePalette() // the real front door: Ctrl+Space reaches this with an editor armed
+	a.palette.togglePalette(&a.env) // the real front door: Ctrl+Space reaches this with an editor armed
 	if !a.palette.paletteOpen {
 		t.Fatal("fixture: the palette did not open")
 	}
@@ -674,7 +674,7 @@ func TestPaletteKeepsItsArrowsWhileAnEditorIsArmed(t *testing.T) {
 
 	// And the nudge comes straight back when the palette closes — the yield is scoped
 	// to the frames another surface actually owns.
-	a.togglePalette()
+	a.palette.togglePalette(&a.env)
 	if a.palette.paletteOpen {
 		t.Fatal("fixture: the palette did not close")
 	}

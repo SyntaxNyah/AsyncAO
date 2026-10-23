@@ -176,7 +176,7 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	layer := &courtroom.SpriteLayer{Visible: true, Active: glued}
 	var askBase string
 	var askAt time.Time
-	a.healSpriteLayer(layer, &askBase, &askAt, time.Now())
+	a.sceneWarm.healSpriteLayer(&a.env, layer, &askBase, &askAt, time.Now())
 
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false

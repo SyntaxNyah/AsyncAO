@@ -1820,10 +1820,10 @@ func (a *App) keepActiveAssetsWarm() {
 		clear(a.activeWarm.demands)
 	}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
-		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
+		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
+		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
 	}
-	a.warmBase(a.urls.CharIcon(me), assets.AssetTypeCharIcon)
+	a.activeWarm.warmBase(&a.env, a.urls.CharIcon(me), assets.AssetTypeCharIcon)
 }
 
 // The scene-heal futility budget: how the heal machinery (keepSceneAssetsWarm,
@@ -1899,21 +1899,21 @@ func (s *sceneWarmState) markResident(base string) {
 // bound suffices here: buttons/icons live in the small-UI shield tier where
 // eviction ping-pong is structurally impossible, so the only futile shape is a
 // permanent 404). A landing clears the counter: the asks were not futile.
-func (a *App) warmBase(base string, t assets.AssetType) {
+func (activewarm *activeWarmState) warmBase(e *env, base string, t assets.AssetType) {
 	if base == "" {
 		return
 	}
-	if a.d.Store.Contains(base) {
-		a.d.Store.Get(base)
-		a.activeWarm.landed(base)
+	if e.d.Store.Contains(base) {
+		e.d.Store.Get(base)
+		activewarm.landed(base)
 		return
 	}
 	now := time.Now()
-	if !a.activeWarm.mayDemand(base, now) {
+	if !activewarm.mayDemand(base, now) {
 		return
 	}
-	a.activeWarm.noteDemand(base, now)
-	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+	activewarm.noteDemand(base, now)
+	e.d.Manager.Prefetch(base, t, network.PriorityHigh)
 }
 
 // landed clears the ask counter for a base that is resident again: the asks were

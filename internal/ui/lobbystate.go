@@ -11,6 +11,7 @@ import (
 
 // lobbyState owns lobby state.
 type lobbyState struct {
+	env *env
 	// --- lobby state ---
 	masterEntries []network.ServerEntry // raw master list (no favorites)
 	servers       []network.ServerEntry

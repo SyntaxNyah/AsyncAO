@@ -433,15 +433,15 @@ func (a *App) drawLobby(w, h int32) {
 		}
 		switch c.keyPressed {
 		case sdl.K_DOWN:
-			if nx := a.nextJoinableServer(a.lobby.selServer, 1); nx >= 0 {
-				a.selectServerRow(nx, w)
-				a.scrollServerIntoView(nx, listTop, h)
+			if nx := a.lobby.nextJoinableServer(a.lobby.selServer, 1); nx >= 0 {
+				a.lobby.selectServerRow(&a.env, nx, w)
+				a.lobby.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
 		case sdl.K_UP:
-			if nx := a.nextJoinableServer(a.lobby.selServer, -1); nx >= 0 {
-				a.selectServerRow(nx, w)
-				a.scrollServerIntoView(nx, listTop, h)
+			if nx := a.lobby.nextJoinableServer(a.lobby.selServer, -1); nx >= 0 {
+				a.lobby.selectServerRow(&a.env, nx, w)
+				a.lobby.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
 		}
@@ -591,7 +591,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
-		a.selectServerRow(idx, w) // select + (re)build the cached description lines/links
+		a.lobby.selectServerRow(&a.env, idx, w) // select + (re)build the cached description lines/links
 	}
 }
 
@@ -600,17 +600,17 @@ const maxDescLinks = 4
 
 // selectServerRow selects a lobby row and (re)builds its cached description lines + links — shared
 // by a row click and keyboard navigation (#18) so both show the same expanded detail.
-func (a *App) selectServerRow(idx int, w int32) {
-	if idx < 0 || idx >= len(a.lobby.servers) {
+func (lobby1 *lobbyState) selectServerRow(e *env, idx int, w int32) {
+	if idx < 0 || idx >= len(lobby1.servers) {
 		return
 	}
-	a.lobby.selServer = idx
-	desc := a.lobby.servers[idx].Description
+	lobby1.selServer = idx
+	desc := lobby1.servers[idx].Description
 	if desc == "" {
 		desc = "(no description)"
 	}
-	a.lobby.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
-	a.lobby.descLinks = extractURLs(desc, maxDescLinks)
+	lobby1.descLines = e.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
+	lobby1.descLinks = extractURLs(desc, maxDescLinks)
 }
 
 // serverRowTooltip shows a lobby row's details on hover (#17): the connect URL and the server's
@@ -626,11 +626,11 @@ func (a *App) serverRowTooltip(row sdl.Rect, e *network.ServerEntry) {
 
 // nextJoinableServer returns the index of the next joinable server from `from` in direction dir
 // (+1 down / -1 up), respecting the Phone Book filter; -1 when there's none that way (no wrap).
-func (a *App) nextJoinableServer(from, dir int) int {
-	n := len(a.lobby.servers)
+func (lobby1 *lobbyState) nextJoinableServer(from, dir int) int {
+	n := len(lobby1.servers)
 	for i := from + dir; i >= 0 && i < n; i += dir {
-		e := &a.lobby.servers[i]
-		if a.lobby.phoneBookPage && !e.Favorite {
+		e := &lobby1.servers[i]
+		if lobby1.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if e.Joinable() {
@@ -642,12 +642,12 @@ func (a *App) nextJoinableServer(from, dir int) int {
 
 // scrollServerIntoView adjusts lobbyScroll so the row at idx is fully visible — accounting for the
 // "NOT SUPPORTED" legacy header and the Phone Book filter, so keyboard nav never selects off-screen.
-func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
+func (lobby1 *lobbyState) scrollServerIntoView(idx int, listTop, h int32) {
 	top := int32(0) // content-space offset (pre-scroll) of row idx's top
 	legacyDrawn := false
-	for i := range a.lobby.servers {
-		e := &a.lobby.servers[i]
-		if a.lobby.phoneBookPage && !e.Favorite {
+	for i := range lobby1.servers {
+		e := &lobby1.servers[i]
+		if lobby1.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if !e.Joinable() && !legacyDrawn {
@@ -660,13 +660,13 @@ func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 		top += rowH
 	}
 	view := h - listTop
-	if top < a.lobby.lobbyScroll {
-		a.lobby.lobbyScroll = top
-	} else if top+rowH > a.lobby.lobbyScroll+view {
-		a.lobby.lobbyScroll = top + rowH - view
+	if top < lobby1.lobbyScroll {
+		lobby1.lobbyScroll = top
+	} else if top+rowH > lobby1.lobbyScroll+view {
+		lobby1.lobbyScroll = top + rowH - view
 	}
-	if a.lobby.lobbyScroll < 0 {
-		a.lobby.lobbyScroll = 0
+	if lobby1.lobbyScroll < 0 {
+		lobby1.lobbyScroll = 0
 	}
 }
 
@@ -780,7 +780,7 @@ func (a *App) toggleFavorite(e *network.ServerEntry) {
 	} else {
 		a.d.Prefs.AddFavorite(e.Name, url, e.Description)
 	}
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	a.lobby.selServer, a.lobby.descLines = -1, nil // the list just reordered
 }
 

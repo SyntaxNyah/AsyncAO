@@ -18,31 +18,31 @@ func TestNextJoinableServer(t *testing.T) {
 	}
 
 	// All servers: skip the legacy row, clamp at the ends.
-	if got := a.nextJoinableServer(-1, 1); got != 0 {
+	if got := a.lobby.nextJoinableServer(-1, 1); got != 0 {
 		t.Errorf("down from none = %d, want 0", got)
 	}
-	if got := a.nextJoinableServer(0, 1); got != 2 {
+	if got := a.lobby.nextJoinableServer(0, 1); got != 2 {
 		t.Errorf("down from 0 = %d, want 2 (skips legacy)", got)
 	}
-	if got := a.nextJoinableServer(3, 1); got != -1 {
+	if got := a.lobby.nextJoinableServer(3, 1); got != -1 {
 		t.Errorf("down from last = %d, want -1 (no wrap)", got)
 	}
-	if got := a.nextJoinableServer(2, -1); got != 0 {
+	if got := a.lobby.nextJoinableServer(2, -1); got != 0 {
 		t.Errorf("up from 2 = %d, want 0 (skips legacy)", got)
 	}
-	if got := a.nextJoinableServer(0, -1); got != -1 {
+	if got := a.lobby.nextJoinableServer(0, -1); got != -1 {
 		t.Errorf("up from first = %d, want -1", got)
 	}
 
 	// Phone Book page: only favourites (idx 2, 3) are reachable.
 	a.lobby.phoneBookPage = true
-	if got := a.nextJoinableServer(-1, 1); got != 2 {
+	if got := a.lobby.nextJoinableServer(-1, 1); got != 2 {
 		t.Errorf("phonebook down from none = %d, want 2", got)
 	}
-	if got := a.nextJoinableServer(2, 1); got != 3 {
+	if got := a.lobby.nextJoinableServer(2, 1); got != 3 {
 		t.Errorf("phonebook down from 2 = %d, want 3", got)
 	}
-	if got := a.nextJoinableServer(3, 1); got != -1 {
+	if got := a.lobby.nextJoinableServer(3, 1); got != -1 {
 		t.Errorf("phonebook down from last fav = %d, want -1", got)
 	}
 }
@@ -57,7 +57,7 @@ func TestScrollServerIntoView(t *testing.T) {
 	}
 	const listTop, h = int32(100), int32(220) // a short viewport so most rows are off-screen
 	for _, idx := range []int{5, 0, 3} {      // jump around
-		a.scrollServerIntoView(idx, listTop, h)
+		a.lobby.scrollServerIntoView(idx, listTop, h)
 		// Recompute the row's content-space top the same way the helper does.
 		top, legacy := int32(0), false
 		for i := range a.lobby.servers {

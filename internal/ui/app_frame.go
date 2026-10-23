@@ -86,7 +86,7 @@ func (a *App) pollLobbyFetch() {
 			// (nothing merged yet) rebuilds, so phone-book favorites still show.
 			a.lobby.lobbyStatus = "Master list error: " + res.err.Error()
 			if len(a.lobby.servers) == 0 {
-				a.lobby.servers = a.mergedFavorites()
+				a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 			}
 			return
 		}
@@ -102,10 +102,10 @@ func (a *App) pollLobbyFetch() {
 		}
 		a.lobby.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
 		a.lobby.masterEntries = res.entries
-		a.lobby.servers = a.mergedFavorites()
+		a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 		// Prune on the successful land: the map was sized by the last good list
 		// and each land re-prunes to the current one (boundedness, rule §17.4).
-		a.pruneStalePings()
+		a.lobby.pruneStalePings()
 		a.reselectServer(prevSel)
 	default:
 	}
@@ -123,7 +123,7 @@ func (a *App) reselectServer(url string) {
 	}
 	for i := range a.lobby.servers {
 		if a.lobby.servers[i].WebSocketURL() == url {
-			a.selectServerRow(i, a.winW)
+			a.lobby.selectServerRow(&a.env, i, a.winW)
 			return
 		}
 	}
@@ -134,29 +134,29 @@ func (a *App) reselectServer(url string) {
 // in RefreshServers provided, moved to the result landing so a refresh no
 // longer stomps the user's ping sort with zero user action. Off the hot path:
 // runs once per fetch landing, never per frame.
-func (a *App) pruneStalePings() {
-	if len(a.lobby.pings) == 0 {
+func (lobby1 *lobbyState) pruneStalePings() {
+	if len(lobby1.pings) == 0 {
 		return
 	}
-	live := make(map[string]struct{}, len(a.lobby.servers))
-	for i := range a.lobby.servers {
-		live[a.lobby.servers[i].WebSocketURL()] = struct{}{}
+	live := make(map[string]struct{}, len(lobby1.servers))
+	for i := range lobby1.servers {
+		live[lobby1.servers[i].WebSocketURL()] = struct{}{}
 	}
-	for url := range a.lobby.pings {
+	for url := range lobby1.pings {
 		if _, ok := live[url]; !ok {
-			delete(a.lobby.pings, url)
+			delete(lobby1.pings, url)
 		}
 	}
 }
 
 // mergedFavorites merges the phone book into a fresh copy of the master
 // list and sorts for display (favorites pinned top, legacy pinned bottom).
-func (a *App) mergedFavorites() []network.ServerEntry {
-	entries := make([]network.ServerEntry, len(a.lobby.masterEntries))
-	copy(entries, a.lobby.masterEntries)
-	entries = network.MergeFavorites(entries, a.d.Prefs.Load().FavoriteServers())
-	if a.lobby.pingMode {
-		sortByPing(entries, a.lobby.pings) // lobby "Ping" sort: connect-time ascending
+func (lobby1 *lobbyState) mergedFavorites(e *env) []network.ServerEntry {
+	entries := make([]network.ServerEntry, len(lobby1.masterEntries))
+	copy(entries, lobby1.masterEntries)
+	entries = network.MergeFavorites(entries, e.d.Prefs.Load().FavoriteServers())
+	if lobby1.pingMode {
+		sortByPing(entries, lobby1.pings) // lobby "Ping" sort: connect-time ascending
 	} else {
 		network.SortServers(entries)
 	}

@@ -45,7 +45,7 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	// both rows Joinable (no legacy-header branch to shift the row geometry).
 	a.d.Prefs.AddFavorite("Alpha", "ws://a.example:1001", "")
 	a.d.Prefs.AddFavorite("Beta", "ws://b.example:1002", "")
-	a.lobby.servers = a.mergedFavorites()
+	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
 	if len(a.lobby.servers) != 2 {
 		t.Fatalf("setup: want 2 favorites, got %d", len(a.lobby.servers))
 	}
