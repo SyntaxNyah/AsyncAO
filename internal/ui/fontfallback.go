@@ -89,12 +89,9 @@ func parseCover(data []byte) *sfnt.Font {
 // (fontcensus.go) supplies anything else on demand, from whatever is actually
 // installed. Absent files are skipped, so an unusual install just leans on the
 // census sooner.
-//
 // Every OS gets a list. Returning nil off Windows — which this used to do — left
 // macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
 // Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
-// there. Those paths cannot be verified from a Windows dev box; the census is the
-// safety net that makes a wrong guess harmless rather than fatal.
 func fallbackFontCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
@@ -185,12 +182,6 @@ func (a *App) pollFallbackFont() {
 // YaHei's heavier, Simplified-shaped, uniform-width CJK glyphs — the "monospace-looking
 // legacy face" the user reported. A modern proportional Japanese Gothic (Yu Gothic /
 // Meiryo) must win instead.
-//
-// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of
-// YuGothR.ttc is "Yu Gothic Regular" — already a modern proportional Japanese Gothic (the
-// "Yu Gothic UI" faces live at higher indices in the same collection, but the non-UI face
-// at index 0 is the right modern look and needs no index support we don't have). Meiryo's
-// index 0 is "Meiryo" likewise. So the non-UI family at index 0 is deliberately used.
 var cjkHanCandidates = []string{
 	`C:\Windows\Fonts\YuGothM.ttc`,             // Yu Gothic Medium — modern proportional Japanese (best JP)
 	`C:\Windows\Fonts\YuGothR.ttc`,             // Yu Gothic Regular — modern proportional Japanese

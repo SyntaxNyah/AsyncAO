@@ -1,18 +1,9 @@
 package ui
 
 // The emote grid's SCROLL POSITION — one concern, one file.
-//
-// The grid used to store a PAGE index and the wheel stepped it whole pages at a
-// time, so one notch jumped a screenful and there was no way to see the two rows
-// straddling a page boundary at once. The stored position is a first-visible ROW
-// now, which makes the wheel a smooth per-row scroll while leaving the page
-// arrows, the "page x/y" counter and the number-key row exactly as paged as they
-// were — they are all pure functions of (row, cols, rows-per-page) computed here.
-//
 // Both grids (the classic row in screens.go and the themed one in
 // theme_layout.go) drive the same seam, so the two can no longer disagree about
 // where the grid is scrolled to; App.emoteRow / emoteCols / emoteRowsPerPage are
-// the whole of the state.
 
 // emoteWheelRows is how many grid rows one wheel notch moves. 1 = "smooth per
 // row", which is the point of the change; named rather than inlined so a future

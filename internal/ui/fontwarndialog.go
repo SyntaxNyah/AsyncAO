@@ -7,24 +7,12 @@ import (
 )
 
 // The missing-theme-fonts modal.
-//
-// A theme names its fonts and usually does not include them — in AO2 they live in
-// the base's fonts/ folder, which Qt registers globally at startup, so a theme
-// shared on its own arrives with every family named and no files. AsyncAO then
-// renders those strings in its own face and says nothing, which from the user's
-// side reads as "the client got the font wrong". It was reported exactly that way,
-// on three separate themes, before this existed.
-//
 // A MODAL rather than the warning toast, because the toast is gone in a few
 // seconds and this needs an action taken in a file manager. It is a member of the
 // same family as drawDisconnectDialog: dimmed backdrop, panel, heading, body, and
-// buttons along the bottom.
-//
 // ONCE PER THEME, and that is the whole design constraint. A theme with missing
 // fonts has them missing on every single apply, so warning every time would make
 // the client unusable for anyone who does not intend to fix it — and the second
-// showing teaches people to dismiss it without reading. The set of themes already
-// warned about is persisted, so it survives a restart too.
 
 // fontWarnDialog is the modal's state. The zero value is closed.
 type fontWarnDialog struct {

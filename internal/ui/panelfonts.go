@@ -10,12 +10,7 @@ import (
 )
 
 // Per-panel font and size, chosen by the USER rather than by a theme.
-//
-// A theme already sets a family and a point size for each courtroom element, and
 // #39 made AsyncAO honour them. But a theme author picked those for their own
-// design; only the person reading knows whether they can actually read it. This
-// is the override — same table, same off-thread resolution, applied last.
-//
 // Size and family are INDEPENDENT on purpose. The common request is "the same
 // look, but bigger", and forcing someone to also name a font to get that would
 // make the feature useless to exactly the people who need it most.
@@ -130,13 +125,9 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 		// The size box shows the size actually in use when nothing is set, so the
 		// starting point is what the user is looking at rather than a blank.
-		//
 		// WHILE THE FIELD HAS FOCUS ITS OWN TEXT IS AUTHORITATIVE, and that is the
 		// whole fix rather than a nicety. This used to clamp on every keystroke and
 		// feed the clamped number straight back in, so typing the "1" of "18" became
-		// a 6 (the minimum) before the "8" could be typed, and no size below ten was
-		// reachable at all. A field must never rewrite what someone is in the middle
-		// of typing.
 		sizeID := "panelsize-" + row.id
 		sizeRect := sdl.Rect{X: pad + panelFontLabelW + panelFontFamilyW + 8, Y: y, W: panelFontSizeW, H: fieldH}
 		shown := a.panelSizeText(sizeID, row.id, cur.SizePx)

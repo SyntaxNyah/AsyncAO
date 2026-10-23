@@ -171,14 +171,6 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 
 // themeFitOption pairs one row of the "Theme fit:" dropdown with the mode
 // constant it selects.
-//
-// The kit's Dropdown speaks LIST INDEXES, and the old code fed the index
-// straight to SetThemeFit — correct only for as long as the rows happened to sit
-// in constant order. They no longer do: the mode constants are persisted on disk
-// and therefore append-only (config.ThemeFitNative is 4), while Native has to be
-// listed FIRST because it is the shipped default. This table keeps the two
-// orders independent, so reordering or inserting a row can never silently
-// reinterpret somebody's saved mode.
 type themeFitOption struct {
 	mode  int
 	label string

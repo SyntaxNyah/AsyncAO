@@ -16,18 +16,10 @@ import (
 // + the Opus codec (internal/voice) into real talking. It captures the mic,
 // encodes Opus, and hands frames to the session (VS_FRAME); and decodes peers'
 // VS_AUDIO, mixes them, and plays the result.
-//
 // Threading / hard rule #1: every SDL audio call here runs on the MAIN thread —
-// the engine is driven by voicePump() from App.Frame() each frame, using SDL's
-// callback-free QUEUE api (QueueAudio / DequeueAudio), so there are no audio-
-// thread callbacks into Go and no goroutines. Outgoing frames are sent from the
-// same loop (single writer — never races other packet sends).
-//
 // Safety: the engine only exists while you've JOINED a Nyathena voice channel
 // (opt-in; default is not-in-voice) and the server advertised voice (VS_CAPS), so
 // the audio path is unreachable for everyone else. Every init step is fail-safe:
-// a missing mic / device / codec disables that half (or voice entirely) and is
-// never fatal.
 
 const (
 	// voiceFrameBytes is one Opus frame as raw S16 mono bytes (960 samples * 2).

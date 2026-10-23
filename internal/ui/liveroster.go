@@ -15,10 +15,6 @@ import (
 // people join and leave with ZERO extra traffic (no floodguard risk) and zero
 // per-frame cost — it rebuilds on the packet, never in the draw loop.
 // Spectators have no character, so CharsCheck can't see them by name; but
-// spectator_count = ARUP head-count − taken characters, which still drops when
-// one leaves, so anonymous Spectator rows appear and vanish too (parity with
-// webAO, which also can't name live spectators over the AO protocol). The rich
-// roster — names, UIDs, IPIDs — is snapshot-only data: flip the Legacy tick box
 
 // specName is the wire/display name AO uses for a character-less player; the
 // roster row renderer already special-cases it (no icon, a SPEC chip).
@@ -256,11 +252,7 @@ const areaEchoSuppressWindow = 3 * time.Second
 // (Athena/internal/athena/commands.go:282, `Usage: /players [-a]`). So a
 // commands_registry.go:319).
 // by exact string equality (macros.go:137). Making the pull family-aware means
-// Being wrong here used to be a repeating cost, because the poll re-sent it forever;
-// now every caller is a person, so a server that does not register /gas answers once,
-// to a press, and the user sees the answer. Akashi/WAP, tsuserver3/KFO and Athena all
 // akashi/src/commands/command_helper.cpp:33, Athena/internal/athena/commands.go:392),
-// Shared by the Players-panel pull, the mod IPID refresh, and the on-auth pull.
 func (a *App) fetchRoster() {
 	if a.oocQueuePending(rosterCmd) {
 		// One /gas is already waiting to go out. Stacking another buys nothing (they
@@ -289,9 +281,6 @@ const (
 // row is the only roster control the debloated toolbar kept (playerlisttoolbar.go),
 // and a menu row that reliably replies "unknown command" is worse than no row —
 // the degradation contract there is that a control may be absent, never inert.
-// The families with no 2.11 live player list (serverhelp.go) are exactly the ones
-// that depend on this, and Whisker is one of them (plistPlugin) — so each family
-// MUST get a spelling it actually registers, or the one roster control that family
 func (a *App) rosterDetailCmd() string {
 	switch a.detectedSoftware() {
 	case courtroom.SoftwareAthena, courtroom.SoftwareNyathena, courtroom.SoftwareWhisker:

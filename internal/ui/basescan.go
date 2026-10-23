@@ -2,18 +2,10 @@ package ui
 
 // "What is actually in this folder?" — the report the base-folder setup shows
 // before it changes anything.
-//
 // It exists because the flow it replaces asked the user to type a path into a
 // text field and then said nothing at all. A typo, a folder one level too high,
 // and a folder full of characters that ship no char.ini all looked identical to
-// a correct setup: the client went on quietly streaming and there was nothing on
-// screen to disagree with. Every number here is counted off the disk, and
-// anything the scan cannot establish is reported as unknown rather than guessed.
-//
 // OFF THE RENDER THREAD, ALWAYS (hard rule 2). Nothing in this file takes an
-// *App or touches SDL; the single caller is the wizard's one bounded scan
-// goroutine (basewizard.go). Keeping it a plain function over a path is also what
-// lets it be tested against a real temp folder without a window.
 
 import (
 	"archive/zip"

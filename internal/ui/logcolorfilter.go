@@ -47,17 +47,9 @@ func buildLogColorFilterChoices() []string {
 // inline colour runs the typewriter parsed (courtroom.StyleRun); a run with
 // ColorDefault (-1) resolves to the message colour, so a standard-palette target
 // matching on e.color already covers those runs.
-//
-// sel == logColorFilterAny matches everything (no filter). Otherwise:
-//   - a standard palette index matches when the message colour equals it or any
-//     inline run pins that exact index;
-//   - an extended colour matches when any inline run carries ColorExtBase+code;
-//   - Rainbow matches when any inline run carries ColorRainbow.
-//
 // Custom-hex spans (\c#RRGGBB, ColorHexBase+…, v1.52.0) are deliberately not
 // filterable — the colour is arbitrary and can't be enumerated — but such a
 // message still matches its nearest standard palette via e.color (the wire
-// text_color fallback chosen at send).
 func icEntryUsesColor(e *icEntry, sel int) bool {
 	if sel == logColorFilterAny {
 		return true
