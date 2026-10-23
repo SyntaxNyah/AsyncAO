@@ -479,9 +479,6 @@ func absSlotRect(lay *themeLayoutCache, key string) (sdl.Rect, bool) {
 		// anchors decoration to `immediate` on a layout the backstop filled as
 		// `pre_no_interrupt` would resolve to nothing and go inert, silently, the
 		// same way an override on that spelling used to.
-		// Latent when this landed: no shipped theme anchors either spelling. That is
-		// the reason to fold it here rather than to note the asymmetry — the two
-		// tiers reading one design vocabulary differently is a trap that costs
 		alt, hasAlt := themeSlotOtherSpelling(key)
 		if !hasAlt {
 			return sdl.Rect{}, false

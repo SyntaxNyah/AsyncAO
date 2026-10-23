@@ -9,11 +9,9 @@ package ui
 // quit (requestRelaunch → MaybeRelaunch). It degrades to opening the release
 // page in the browser only when the release has no matching asset or the
 // install dir is read-only (the low-level pieces live in internal/update).
-//
 // Input is handled in handleUpdateInput BEFORE the screens draw (the kit has
 // one per-frame click bool, so a modal must consume it first — same pattern as
 // the tab strip); drawUpdateAvailable only paints, in the overlay phase, using
-// the same rects.
 
 import (
 	"context"
@@ -47,11 +45,9 @@ const (
 // persistent "update available" chip, and the What's New patch-notes modal.
 // Its env pointer is wired to &App.env once in NewApp, so the component reaches
 // the shared deps/ctx/notice/navigation through one pointer.
-//
 // Field names are deliberately short and unprefixed: INSIDE the component the
 // receiver already says whose state it is (s.rel, s.busy). From App the access
 // is spelled a.updates.rel — one hop, no promotion, so a reader can tell
-// component state from App state at the call site.
 type selfUpdate struct {
 	env *env
 

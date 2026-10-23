@@ -7,10 +7,6 @@ package ui
 // pairing, evidence, voice flags, the ban dashboard...) is connection-scoped
 // and must come back fresh on a redial — resetSessionState (tabs.go) still
 // wipes those unconditionally and is unchanged by this file.
-// This is the ONE place the "what survives a same-server resume" field list
-// is allowed to appear: snapshotSessionCarry is the only writer,
-// applySessionCarryIfPending the only reader, and both live here so a future
-// change to either side can't drift from the other. See
 type sessionCarry struct {
 	icLog        []icEntry
 	icLogSeq     uint64

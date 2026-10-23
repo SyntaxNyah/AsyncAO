@@ -6,10 +6,6 @@ package ui
 // the classic HP bar) through the layout editor's R-key; the angle persists per
 // element (config.ThemeRectRotations / config.ClassicRotations) and the draw
 // path blits it with SDL's CopyEx.
-// The EXPENSIVE tier (interactive rotated panels — inverse-rotated hit-testing,
-// per-panel render-to-texture, a fenced inverse-cursor stash) is a ruled NO-GO
-// this milestone. The persistence is already per-key, so a later slice can read
-// the same side-maps, add per-panel render-to-texture + a fenced inverse cursor,
 
 import (
 	"strconv"

@@ -12,13 +12,9 @@ import (
 // how long that event was on screen in the recording (its OffsetMs gap to the
 // next event), so you SEE the pacing: which message dominates, where the dead air
 // is. Click a segment to select it; drag the ⟦ ⟧ handles to crop In/Out directly.
-//
 // Honest-axis guards: segments are by ARRAY ORDER (offsets drive width only, so
 // edits don't reshuffle them); idle gaps are CLAMPED [min,max] in ms so an AFK
 // pause can't swallow the strip, plus a MIN PIXEL floor so every event stays
-// clickable (the strip scrolls when they overflow); a hand-built scene with no
-// recorded pacing (all-zero offsets) clamps to equal widths automatically. Only
-// drawn while the maker is open — no live-render cost.
 
 const (
 	makerTimelineH = int32(72) // total strip height (label + track + scrub lane + overhang)

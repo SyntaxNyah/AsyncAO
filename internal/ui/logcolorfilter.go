@@ -47,9 +47,6 @@ func buildLogColorFilterChoices() []string {
 // inline colour runs the typewriter parsed (courtroom.StyleRun); a run with
 // ColorDefault (-1) resolves to the message colour, so a standard-palette target
 // matching on e.color already covers those runs.
-// Custom-hex spans (\c#RRGGBB, ColorHexBase+…, v1.52.0) are deliberately not
-// filterable — the colour is arbitrary and can't be enumerated — but such a
-// message still matches its nearest standard palette via e.color (the wire
 func icEntryUsesColor(e *icEntry, sel int) bool {
 	if sel == logColorFilterAny {
 		return true

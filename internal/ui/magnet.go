@@ -41,9 +41,6 @@ func snapRectToSiblings(r sdl.Rect, others []sdl.Rect, w, h int32, guides []alig
 // this-frame mouse-grab positions). The buffer is always truncated to length 0
 // first, so a settled frame (nothing dragging) leaves it empty and this does no
 // work beyond the reslice — the alloc gate never sees a populate or a guide draw.
-// Only ONE surface drags at a time (they share one press edge), so skipping the
-// active-drag surface cleanly yields "all other open surfaces". Bounded by
-// panelMagnetCap. Runs only while a live drag is active (anyPanelDragging), off
 func (a *App) rebuildPanelMagnetRects(w, h int32) {
 	a.panelMagnetRects = a.panelMagnetRects[:0]
 	if !a.anyPanelDragging() {

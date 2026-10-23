@@ -8,9 +8,6 @@ package ui
 // local theme dir to read, so we embed the art and upload it once under the
 // reserved render.MissingKey; render/viewport.go probes store.IsMissing(base) in
 // the miss branch and blits this page.
-// Art origin: internal/ui/assets/missingno.webp is AO2-Client's canonical default
-// theme placeholder (bin/base/themes/default/placeholder.webp) copied verbatim —
-// the scrambled purple/white glitch sprite AO players recognise. Kept as its
 
 import (
 	_ "embed"

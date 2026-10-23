@@ -136,9 +136,6 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 // bare "[MOD CALL] …" / "SERVER: …" / "CLIENT: …" line for a system one), so
 // the file always matches what the screen showed rather than a second,
 // independently-derived rendering of it. Pure — unit-tested.
-// Still readable by logbrowser.ParseWho: the literal "[OOC]" tag has
-// no "] " substring of its own (its "]" is immediately followed by "[", never
-// a space), so the first "] " in the result is still the one right after the
 func oocLogLine(now time.Time, line string) string {
 	var b strings.Builder
 	b.WriteString("[OOC][")

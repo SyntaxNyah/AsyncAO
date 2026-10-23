@@ -322,9 +322,6 @@ func (a *App) editorApply(op themeEditOp) bool {
 		// asks applySlotRect for the rect it already holds, and so does every frame a
 		// drag sits against clampDesignRectToCanvas: those posted "a cap or a lock is
 		// in the way" for four seconds, naming a limit that was not there.
-		// The kind is no longer the question; the ANSWER is (editApplyResult). A real
-		// theme.OverrideCap / theme.ElementCap / graveyard-full refusal still says so
-		// out loud — design §3.3: name the offender, name the limit, never a bare
 		if res == applyRefused {
 			a.te.note("this " + op.kind.String() + " was refused — a cap or a lock is in the way")
 		}
