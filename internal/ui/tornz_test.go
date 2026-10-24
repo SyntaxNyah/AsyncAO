@@ -30,7 +30,7 @@ func TestBringTornToFront(t *testing.T) {
 	// A click inside the Players panel (index 2) promotes it to front.
 	a.ctx.clicked = true
 	a.ctx.mouseX, a.ctx.mouseY = 350, 120 // inside {300,80,200,160}
-	a.bringTornToFront(1000, 800)
+	a.classic.bringTornToFront(&a.env, 1000, 800)
 
 	got := a.classic.tornTabOrder()
 	if got[len(got)-1] != 2 {

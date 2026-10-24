@@ -653,7 +653,7 @@ func (a *App) sendPairOrder(uid int, op string) {
 func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.pairWin.dragging || a.wins.pairWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.pairPanelRect(w, h)
+	r := a.classic.pairPanelRect(&a.env, w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	// Title bar / drag handle + close + bottom-right resize grip — a non-blocking
@@ -850,12 +850,12 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 
 // pairPanelRect is the Pair menu's floating-window rect (floatwin.go): movable +
 // resizable, clamped on-screen, with a window-height-responsive default size.
-func (a *App) pairPanelRect(w, h int32) sdl.Rect {
+func (classic1 *classicState) pairPanelRect(e *env, w, h int32) sdl.Rect {
 	defH := clampI32(h-120, pairPanelMinH, 560)
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
 		return r
 	}
-	return a.wins.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
+	return e.wins.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
 }
 
 const (

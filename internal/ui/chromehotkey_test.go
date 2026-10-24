@@ -210,8 +210,8 @@ func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 func TestChromeToggleCannotStrandYou(t *testing.T) {
 	a := testTabApp(t)
 	// Hide every lifeline but the last, the way a determined user would.
-	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
-	a.setPanelHiddenGuarded(panelToolbox, true)
+	a.classic.setPanelHiddenGuarded(&a.env, ctrlSettingsSlot, true)
+	a.classic.setPanelHiddenGuarded(&a.env, panelToolbox, true)
 	a.warnLine = ""
 
 	a.toggleChromePanel(panelMenuBar, "Menu bar")

@@ -19,11 +19,11 @@ import (
 func (a *App) toggleCMPanel() { a.modUI.showCMPanel = !a.modUI.showCMPanel }
 
 // cmPanelRect is the CM panel's floating-window rect (floatwin.go).
-func (a *App) cmPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
+func (classic1 *classicState) cmPanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
 		return r
 	}
-	return a.wins.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
+	return e.wins.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
 }
 
 const (
@@ -44,7 +44,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	}
 	sw := a.detectedSoftware()
 	wasActive := a.wins.cmWin.dragging || a.wins.cmWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.cmPanelRect(w, h)                                // floating box: movable / resizable, non-blocking
+	panel := a.classic.cmPanelRect(&a.env, w, h)                // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, chipCMColor)                                                     // gold = CM

@@ -288,11 +288,11 @@ func (a *App) placeClientAt(mx, my int32) {
 }
 
 // clientWinRect is the floating client window's clamped screen rect.
-func (a *App) clientWinRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
+func (classic1 *classicState) clientWinRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
 		return r
 	}
-	return a.wins.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
+	return e.wins.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
 }
 
 // drawFloatClient draws the pinned server as a movable + resizable floating
@@ -307,7 +307,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	}
 	c := a.ctx
 	wasActive := a.wins.clientWin.dragging || a.wins.clientWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.clientWinRect(w, h)
+	r := a.classic.clientWinRect(&a.env, w, h)
 	c.Fill(r, ColBackground)
 	c.Border(r, ColAccent)
 	// Title bar = drag handle + Full/Compact toggle + close.

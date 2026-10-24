@@ -250,8 +250,8 @@ func (classic1 *classicState) slotRect(name string, def sdl.Rect, w, h int32) sd
 // button never cascades the rest (the "wrap, not extract" pattern). key MUST be a
 // string literal (no per-frame formatting) to keep the row allocation-free. Returns
 // whether the button was clicked this frame.
-func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) bool {
-	return a.ctx.Button(a.classic.slotRect(key, def, w, h), label)
+func (classic1 *classicState) movableButton(e *env, key string, def sdl.Rect, label string, w, h int32) bool {
+	return e.ctx.Button(classic1.slotRect(key, def, w, h), label)
 }
 
 // ctrlSlot positions one courtroom control button at the shared row cursor *x and
@@ -261,11 +261,11 @@ func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) 
 // (width + spacing) the inline row used, so a row with nothing hidden is
 // pixel-identical to before. The returned rect still routes through slotRect, so an
 // Edit-Layout override repositions a visible button as usual.
-func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect, bool) {
-	if a.classic.panelHidden(key) {
+func (classic1 *classicState) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect, bool) {
+	if classic1.panelHidden(key) {
 		return sdl.Rect{}, false
 	}
-	r := a.classic.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
+	r := classic1.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
 	*x += adv
 	return r, true
 }
