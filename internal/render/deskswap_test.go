@@ -47,12 +47,10 @@ func deskSwapRig(t *testing.T) (*sdl.Renderer, *TextureStore, *Viewport) {
 // deskDraws reports whether drawFill actually blitted the desk layer. drawFill
 // writes v.fillRect only on the path that reaches ren.Copy, so a zero rect after
 // a cleared start means "nothing was drawn" — AO2's ui_vp_desk->hide().
-//
 // SCOPE, because this is easy to mistake for end-to-end coverage: it calls
 // drawFill DIRECTLY, so it deliberately bypasses the `if scene.ShowDesk` gate at
 // the real desk draw site (viewport.go). What it proves is the RESIDENCY half —
 // that the store binds, releases and re-binds the desk layer correctly.
-//
 // The STATE half — whether Scene.ShowDesk says yes at all — lives in the
 // courtroom and is pinned there (TestBackgroundChangeReDerivesDesk,
 // TestLateDeskUploadHealsTheMissingSet). Both halves had to be wrong together to
@@ -69,18 +67,8 @@ func deskDraws(t *testing.T, ren *sdl.Renderer, v *Viewport, deskBase string) bo
 
 // TestDeskNeverHoldsPreviousRoom is #44 itself: a background that ships no desk
 // image for the current position must draw NO desk — not the previous scene's.
-//
-// Before the fix the scenery sticky gate (syncAnimSticky) only rebound a layer once
-// the incoming base was RESIDENT. A desk base that 404s never becomes resident, so
-// deskAnim stayed pinned to the previous room's desk FOREVER and drawFill kept
-// blitting it (drawFill resolves anim.base, not its base argument). Since most
-// sessions open at "wit", the stale desk was typically the witness desk — exactly
-// what the issue reports.
-//
 // AO2-Client's set_scene file_exists-checks the desk and hides the layer when it is
 // absent, with no fallback (../AO2-Client/src/courtroom.cpp:4628-4634, :4656-4663).
-// Room B's background is deliberately NOT resident here, so the ONLY thing that can
-// release the layer is the conclusive-404 signal under test.
 func TestDeskNeverHoldsPreviousRoom(t *testing.T) {
 	ren, store, v := deskSwapRig(t)
 

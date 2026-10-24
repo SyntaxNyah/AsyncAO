@@ -12,13 +12,6 @@ import (
 // device-exact message blit rests on: that SDL_RenderSetClipRect bakes the clip
 // into device pixels at SET time, so bracketing a SetScale(1,1) around the blit
 // leaves the clip covering the same physical rows.
-//
-// If SDL instead re-evaluates the clip against the CURRENT scale, then setting a
-// clip at 125% and then dropping to 1:1 shrinks the clip to 1/1.25 of its
-// intended height — and a message drawn in device coordinates inside that bracket
-// is cut off part-way down, worse the higher the scale. That is exactly the
-// reported chatbox symptom, so this test decides whether the bracket is the bug.
-//
 // It renders white into a wide rect under the bracket and reports the LAST row
 // that actually received ink.
 func TestClipRectSurvivesScaleChange(t *testing.T) {
@@ -74,12 +67,6 @@ func TestClipRectSurvivesScaleChange(t *testing.T) {
 	// at clip.H-1 and would mean the device-exact blit is silently cutting every
 	// scaled chatbox short — the thing this test exists to catch if a future SDL
 	// (or a different backend) ever changes the rule.
-	// NOT asserted as a required behaviour any more, only reported. This renderer
-	// is RENDERER_SOFTWARE, which bakes at SET time — but macOS's Metal backend
-	// evaluates the clip at USE time, and asserting the software answer here is
-	// precisely the mistake that "proved" the bracket safe while it was silently
-	// deleting every chatbox line on a Mac. MessageRaster.draw no longer depends on
-	// either answer: it re-asserts the clip in device pixels inside the bracket.
 	wantBaked := int(float64(clip.H)*scale) - 1
 	t.Logf("this backend inked to device row %d (baked-at-set would be ~%d, applied-at-use ~%d)",
 		lastInk, wantBaked, clip.H-1)

@@ -1,11 +1,6 @@
 //go:build themecensus
 
 // OPT-IN: run with `go test -tags themecensus ./internal/ui/`.
-//     chrome-over-theme layering that predates issue #21 — a transient warning
-//     another test can flip is worse than no gate, and the courtroom draw path
-// It has already paid for itself — it is how the AO2 backstop defect was
-// root-caused rather than guessed at — so it is kept, tagged, and its triage is
-// tracked separately.
 
 package ui
 
@@ -152,7 +147,6 @@ const (
 )
 
 // buildAceCensus resolves every box the themed courtroom draws for the fixture.
-//
 // It drives the REAL themeLayoutIn over the REAL ingest pipeline (themeLayoutKeys
 // → ElementRect → applyAO2DefaultRects), so the rects are the ones a player gets,
 // including the off-design filter, the canvas clamp and the minThemedElementPx
@@ -688,7 +682,6 @@ func TestAceAttorney2xCensusChipStripFits(t *testing.T) {
 // stacked its two logs on one rect (the merged branch, theme_layout.go:787). This
 // theme puts them at 0,0,216x300 and 728,0,216x346 — no overlap, no strip — so
 // under aceattorney2x the Notes tab has no entry point in the courtroom at all.
-// Reported, not asserted away: whether Notes deserves a home in a themed canvas
 // is a product call (#21 rule (c) says AsyncAO extras belong in the chrome). The
 // test exists so the answer is a decision instead of an accident.
 func TestAceAttorney2xCensusNotesTabIsReachable(t *testing.T) {
@@ -767,14 +760,10 @@ func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
 // `themes/`, which is what theme.Load takes). Env-gated rather than checked in:
 // the corpus is ~80 third-party theme packs and hundreds of megabytes of art, and
 // nobody's machine has it at the same path. Set it before a release audit:
-//
-//	$env:ASYNCAO_THEME_CORPUS = "C:\...\Skrapegropen AO THEMES"
-//	go test -run TestAO2BackstopAcrossTheThemeCorpus -v ./internal/ui/
 const themeCorpusEnv = "ASYNCAO_THEME_CORPUS"
 
 // TestAO2BackstopAcrossTheThemeCorpus is the blast-radius measurement for the
 // backstop defect, taken over REAL themes rather than the one fixture.
-//
 // It walks every theme in the corpus, ingests it exactly as pollThemeApply does,
 // and reports each key the stock backstop had to supply that then lands on a rect
 // the AUTHOR declared. A theme is only affected when it omits a key AND its canvas

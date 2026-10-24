@@ -3,15 +3,6 @@ package ui
 // The "the emote preview must follow each click" gates (screens.go's
 // followPinnedPreview, wired into selectEmote and drawEmoteGridThemed's inline
 // duplicate of it).
-//
-// Three behavior tests pin the contract from the App's point of view:
-// pinned+open follows, unpinned+open is left for the draw-site close contract,
-// and closed never spontaneously opens. A fourth, source-level gate closes the
-// hole that caused the bug in the first place — the themed grid keeps its own
-// copy of "an emote was picked" instead of calling selectEmote — by demanding
-// every such copy, present or future, also calls followPinnedPreview. It reads
-// production source and contains none of followPinnedPreview's own logic, so
-// it cannot go green against a re-implementation (CLAUDE.md rule 11).
 
 import (
 	"os"
@@ -177,8 +168,6 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 // followPinnedPreview seam wave 1 shipped, not a new one. If detaching ever
 // grew its own separate "keep it open" bookkeeping instead of feeding
 // previewIsPinned(), this test — not just the census above — would catch it:
-// the census only proves every pick call site invokes followPinnedPreview,
-// it says nothing about whether a DETACHED preview counts as pinned to it.
 func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	os.Setenv("SDL_VIDEODRIVER", "dummy")

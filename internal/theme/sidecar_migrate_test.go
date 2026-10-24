@@ -1,13 +1,6 @@
 package theme
 
 // THE MIGRATION CHAIN'S CALL SITE (ledger L17).
-//
-// TestMigrationChainIsIdentityAtV1 drives migrateSidecar directly, so
-// sidecar_read.go's `migrateSidecar(s.Format, doc)` was deletable with the whole
-// suite green — the same shape [overrides] shipped in for four waves, and armed to
-// fire on exactly the day it matters: every migration test would pass, and no file
-// would ever be migrated.
-//
 // It could not be tested before because the chain was a fixed-length ARRAY
 // (`[...]sidecarMigration{}` is a [0]T) bounded by ThemeFormatVersion, so nothing
 // could install a probe step and the loop could never enter at v1. It is a slice
@@ -26,10 +19,6 @@ const migrateProbeMarker = VendorSectionPrefix + "migrateprobe"
 
 // installMigrationProbe appends one counting step to the chain and restores the
 // shipped (empty) chain when the test ends. Returns the counter.
-//
-// t.Cleanup rather than a returned restore func: the chain is a package-level var,
-// so a t.Fatal between install and restore would leave every later test in this
-// package running a mutated grammar.
 func installMigrationProbe(t *testing.T) *int {
 	t.Helper()
 	saved := sidecarMigrations

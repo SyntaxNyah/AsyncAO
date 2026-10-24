@@ -1,7 +1,6 @@
 package ui
 
 // THE EDITOR'S CANVAS, DRIVEN (v1.90.0 W7a).
-//
 // Every gate here goes through the REAL frame (frameharness_test.go) and the real
 // pointer path: a press is a press, a drag is a run of frames with the button down,
 // and a release is a frame with it up. Nothing calls editorDragFrame with a
@@ -60,7 +59,6 @@ func editorCanvasElement(id string, r theme.Rect) theme.Element {
 // stageEditorCanvas opens the editor over the themed fixture with one element per
 // offset, each a editorGateBoxPx box placed at the canvas centre plus that offset in
 // DESIGN px.
-//
 // The elements are authored BEFORE the open, so the document's baseline contains
 // them — which is what makes the exit-without-saving gate measure the right thing.
 func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTarget) {
@@ -152,7 +150,6 @@ func driveDrag(a *App, x0, y0, x1, y1 int32) {
 }
 
 // drivePreciseDrag is the same gesture with Shift held for the MOVES only.
-//
 // The split is the interaction's own: at PRESS time Shift means "add to the
 // selection" (§3.2), and during the drag it means "pixel-precise — bypass the grid
 // and the magnet". A gate that held Shift over the press would never start a drag at
@@ -175,7 +172,6 @@ func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 
 // editorFixtureCatalog publishes a catalog snapshot that puts the fixture theme in
 // dir with the given origin — i.e. it answers the ONE question the save path asks.
-//
 // It waits for the real scan first. openThemeEditor kicks one so Save has an answer
 // on hand, and that goroutine stores its own snapshot when it finishes; without the
 // wait it would land over the fixture's a moment later and the gate would fail on a
@@ -227,7 +223,6 @@ func editorWidgetTarget(t *testing.T, a *App) editTarget {
 // legacy probe's own site: a flat largest-wins loop hands every press on a small
 // decoration to the big widget underneath it, and the decoration is unselectable by
 // mouse for the whole wave.
-//
 // The fixture is exactly that shape — a 12x12 element parked on a full widget — and
 // the gate asserts BOTH directions, because a priority that made widgets
 // unreachable would be the same bug with the roles swapped.
@@ -398,7 +393,6 @@ func TestDragHoldsOneUndoGroupForTheWholeGesture(t *testing.T) {
 
 // TestEveryHandleResizesItsOwnEdges is W6's first named consumer: eight grips, each
 // moving exactly the edges its mask names and nothing else.
-//
 // The fixture box is sized past editHandleRoomPx precisely so the full set is
 // offered (see editorGateBoxPx) — on a cramped box the design keeps one grip, and a
 // gate that used one would be measuring the fallback.
@@ -502,7 +496,6 @@ func TestAnUnmodifiedDragSnapsWhereAPreciseOneDoesNot(t *testing.T) {
 
 // TestArrowNudgeMovesTheSelectionOnTheEditorScreen drives the keyboard through the
 // screen's own handler.
-//
 // The keys are claimed BEFORE the canvas draws, which is the point: the courtroom is
 // this screen's canvas, and its own arrow consumers (the IC/OOC recall rings, the
 // emote-preview cycler) draw first and would otherwise have spent the key — the same
@@ -648,7 +641,6 @@ func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 
 // TestAGenuineCapRefusalStillChips is the other half of the same seam, and it is what
 // keeps the fix above from becoming "the editor never complains".
-//
 // A widget with no [overrides] row needs an APPEND, and theme.OverrideCap refuses one
 // past its bound (setOverrideRow refuses, it never evicts — the reader's own ruling).
 // That is a real limit with a name, so the rail must say so: silence here is an edit
@@ -853,10 +845,6 @@ func TestSaveRefusesAThemeThatIsNotYours(t *testing.T) {
 
 // TestOnlyTheDocumentWritesTheOverridesTier is the anti-second-writer census for the
 // geometry tier — the twin of TestOnlyTheDocumentUsesTheFieldTables for elements.
-//
-// themeDoc.writeSlotRect is the ONE function that may move an AO2 widget in a
-// document under edit. Anything else reaching into Sidecar.Overrides is a writer
-// with no undo entry and no live map update: half an edit, silently.
 func TestOnlyTheDocumentWritesTheOverridesTier(t *testing.T) {
 	const owner = "themeeditordoc.go"
 	needles := []string{".Overrides = append", ".Overrides[i].Rect ="}

@@ -1,7 +1,6 @@
 package ui
 
 // THE IMPORT REPORT PANEL'S GATES (v1.90.0 W9).
-//
 // The property that matters is the one hard rule 11 names: App.themeReport was a
 // bounded slice written on every theme apply, kept "for the editor", and read by
 // nothing but a test — the sidecar-[overrides] shape exactly. These gates fail if
@@ -26,7 +25,6 @@ var reportFixtureNotes = []string{
 
 // stageReportEditor opens the frame-driven editor over a theme whose apply
 // produced notes.
-//
 // The report is INSTALLED THE WAY THE APPLY INSTALLS IT — through noteThemeReport,
 // the one landing site the poll uses — so the fixture cannot pass by writing a
 // slice somewhere the real path never touches.
@@ -52,11 +50,9 @@ func reportChipCentre() (x, y int32) {
 // new seam, and it is driven through App.Frame rather than by calling the panel's
 // own predicate — a gate that asserted on themeReportPanelUp() would be a mirror
 // of the fix and would stay green with the rail's call site deleted.
-//
 // It looks for a note's OWN WORDS in what the panel bakes: text the panel has no
 // way to invent, because it came out of the sidecar reader. A surface that had
 // re-implemented "say something about the theme" (a count, a canned sentence)
-// passes every other test in this file and fails this one.
 func TestTheImportReportReachesAUserSurface(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	defer cleanup()
@@ -193,14 +189,6 @@ func TestTheReportWrapsOnChangeAndNotPerFrame(t *testing.T) {
 
 // TestTheReportChipAllocatesNothingPerFrame is the alloc gate for the two strings
 // this wave added to a surface that draws sixty times a second.
-//
-// IT MEASURES THE SEAM, NOT THE FRAME, and that is deliberate — it was measured
-// the other way first. editorChromeAllocBudget is 512, so a frame-level assertion
-// swallows the two allocations an unbaked chip label costs: the mutation (drop the
-// change-check, rebuild "Imported · 4 notes" every draw) PASSES a frame gate and
-// fails this one. A budget that cannot see the regression it was cited for is a
-// budget, not a gate.
-//
 // ZERO, not a budget, because both producers are supposed to be pure reads once
 // baked: the chip hands Button an interned string, and the panel walks a fixed
 // array. Anything above zero here is work that moved onto the draw.

@@ -8,11 +8,8 @@ import (
 // configured with, so they assert INVARIANTS rather than values — a dev box, a
 // CI runner and a corporate laptop all give different answers and all three must
 // be handled without a crash.
-//
 // The parsing and matching that turn these readings into a decision are covered
 // by the platform-neutral tests, which is where the logic deliberately lives:
-// this file's job is to prove the syscall layer does not fault, does not hang
-// and does not lie about the shape of what it returns.
 
 // TestWinhttpIEConfigDoesNotFault is the load-bearing one. It exercises the
 // hand-rolled struct layout, the System32-only DLL load, the UTF-16 walk and the
@@ -72,14 +69,6 @@ func TestRegistryReadsAreTotal(t *testing.T) {
 
 // TestAutomaticDetectionIsRESOLVEDNotAssumed is the whole reason
 // WinHttpGetProxyForUrl is worth its syscall surface.
-//
-// "Automatically detect settings" is ON BY DEFAULT on Windows, including on the
-// overwhelming majority of home machines that have no proxy whatsoever — this
-// dev box among them. Treating the flag as "a proxy exists that we cannot
-// evaluate" and failing closed on it would break every one of those users on
-// first launch, which is a far worse outcome than the leak the fail-closed rule
-// exists to prevent. The flag means "look for a WPAD server; if there is none,
-// connect directly", so the only correct move is to make Windows answer it.
 func TestAutomaticDetectionIsRESOLVEDNotAssumed(t *testing.T) {
 	cfg, ok := winhttpIEConfig()
 	if !ok {

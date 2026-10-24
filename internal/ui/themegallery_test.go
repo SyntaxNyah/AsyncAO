@@ -1,7 +1,6 @@
 package ui
 
 // THE PRESET GALLERY'S GATES (v1.90.0 W9).
-//
 // Three properties, and the third is the one hard rule 11 asks for by name: the
 // panel must DRIVE the merge engine rather than re-implement a corner of it. The
 // sidecar [overrides] tier shipped parsed-but-never-applied through four waves
@@ -51,7 +50,6 @@ func stageGalleryEditor(t testing.TB) (*App, func()) {
 // gallery is 294 cells and hover-scrub walks them, so a cache that grew on demand
 // would hold 294 baked miniatures after a minute of idle mousing — which is the
 // shape of every unbounded cache that has ever shipped by accident.
-//
 // It drives get() with every combination, which is also the only honest way to
 // prove the LRU never corrupts an entry: after the flood, a re-ask must return the
 // right miniature for the pair, not whichever one happened to be in that slot.
@@ -94,9 +92,6 @@ func TestPresetThumbCacheIsBounded(t *testing.T) {
 // claim, and it exists because the boundedness gate above does not imply it: a
 // cache that always evicted slot 0 is just as bounded and just as correct, and it
 // passes that test unchanged (measured — the mutation was run).
-// It matters for the one interaction the panel is built around. Hover-scrub walks
-// a column of 14 or 21 and comes back; under always-evict-slot-0 the entry you
-// started from is the first thing thrown away, so scrubbing back up re-bakes every
 func TestPresetThumbCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -213,9 +208,6 @@ func TestTheThumbnailShowsTheLayoutItIsFor(t *testing.T) {
 // if the only reader is a test, and this preset library is a redistributable
 // artefact under AGPLv3 whose attribution has to reach the person redistributing
 // it — which is exactly the person standing in front of the gallery.
-// It drives galleryCredit.lines, the one producer the panel draws from, over all
-// fourteen shipped styles at the real panel width, and it looks for the fragment's
-// own opening words in what came back.
 func TestTheGallerySurfacesEveryShippedCredit(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()
@@ -326,7 +318,6 @@ func mustFindStyle(t testing.TB, lib *theme.PresetLibrary, id string) *theme.Pre
 // the property it pins is the one that makes a gallery safe to touch: pressing
 // Apply on a theme you have been editing is REVERSIBLE, exactly, including the
 // parts of the model the panel never mentions.
-//
 // It compares the SERIALISED theme before and after, not a field list. A field
 // list is a second place that has to know what a preset can change, and it would
 // have gone stale the first time the merge learned to touch a new section.
@@ -466,9 +457,6 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 // it is written in the shape TestThemeApplyRunsTheOverridesTier established:
 // perform the real act through the real button path, then assert on something only
 // the real engine could have produced.
-// What it looks for is a preset's OWN element, by id, in the live model — a thing
-// the gallery has no way to invent, because the ids come out of the embedded
-// fragment. A panel that had re-implemented "apply a style" as, say, copying the
 func TestGalleryPickRunsTheMergeEngine(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()

@@ -12,11 +12,6 @@ import (
 // TestNoMountsIsExactlyOneAtomicLoad: measure the REAL per-frame call site
 // directly (drawICLogList — the function screens.go's courtroom draw calls
 // every frame) and assert the Fonts-tab readout added nothing to it.
-//
-// allocsPerFrame (not a bare testing.AllocsPerRun) is this package's own
-// established idiom for a draw-path gate — see allocgate_test.go's header for
-// why a bare AllocsPerRun on a fully-loaded package flakes on an unrelated
-// warm-up burst.
 func TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
@@ -37,14 +32,6 @@ func TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout(t *testing.T) {
 // "plain ASCII is always covered" on its own — which is exactly the failure
 // mode that would make a readout report "correct" while the real draw goes
 // wrong, per the task brief this diagnostic shipped to satisfy.
-//
-// It dresses ic_chatlog with its own face at a non-100% scale so pickIn is
-// off the single-font fast path (buildSet only shares the embedded pointer at
-// exactly 100%/100%) and onto the real per-(text,set,pct) memo, drives one
-// real IC line through it, then reaches into that SAME memo entry — the one
-// pickIn itself wrote — and flips its covered bit, exactly as pickIn would
-// have written it had the theme's face genuinely not covered the line. Only a
-// readout that calls the real coversFace/elemFontFor pair notices.
 func TestICFontPickRowsReadsTheRealCoverageDecisionNotAGuess(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
