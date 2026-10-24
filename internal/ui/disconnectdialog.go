@@ -234,7 +234,7 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 	// the appeal instructions the user will get, and nothing may destroy it. (It
 	// cannot be open here anyway — a removal takes the other branch of
 	// handleInvoluntaryDrop — so this is the invariant, stated where it is enforced.)
-	if a.serverNoticeDlg.open && a.serverNoticeDlg.kind == serverNoticeInfo {
+	if a.font.serverNoticeDlg.open && a.font.serverNoticeDlg.kind == serverNoticeInfo {
 		a.closeServerNotice()
 	}
 	a.dialogs.disconnectDlg = disconnectDialog{

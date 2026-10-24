@@ -1030,8 +1030,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
 		raw := strings.TrimSpace(settings.errorSpriteInput)
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ErrorSpriteFile = raw })
-		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
-		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
+		a.font.errorSpriteErr = "" // clear a stale error; the load reports fresh via pollErrorSprite
+		a.applyErrorSprite(raw)    // "" restores the embedded default synchronously
 		if raw == "" {
 			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
 		} else {
@@ -1039,8 +1039,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 		}
 	}
 	y += 30
-	if a.errorSpriteErr != "" {
-		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
+	if a.font.errorSpriteErr != "" {
+		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.font.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
 		y += 22
 	}
 	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)

@@ -109,13 +109,13 @@ func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string
 	if kind == serverNoticeNone {
 		return
 	}
-	if a.serverNoticeDlg.open && kind == serverNoticeInfo && a.serverNoticeDlg.kind == serverNoticeRemoved {
+	if a.font.serverNoticeDlg.open && kind == serverNoticeInfo && a.font.serverNoticeDlg.kind == serverNoticeRemoved {
 		return
 	}
 	// Whole-struct assignment, so no field of a previous notice can survive into
 	// this one — the wrap cache included. A stale wrapped body under a new title
 	// would be a server putting words in another server's mouth.
-	a.serverNoticeDlg = serverNoticeDialog{
+	a.font.serverNoticeDlg = serverNoticeDialog{
 		open: true,
 		kind: kind,
 		// Both the title and the attribution are clamped, and the attribution is the
@@ -132,7 +132,7 @@ func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string
 
 // closeServerNotice dismisses the box and drops the cached wrap with it.
 func (a *App) closeServerNotice() {
-	a.serverNoticeDlg = serverNoticeDialog{}
+	a.font.serverNoticeDlg = serverNoticeDialog{}
 }
 
 // clampRunes cuts s to at most n runes, marking a cut. RUNES, not bytes: a
@@ -180,7 +180,7 @@ func serverNoticeChromeH() int32 {
 // the script and drawing in one that does is the #42 bug class, and it is not
 // hypothetical here: the reported notice is Russian.
 func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {
-	d := &a.serverNoticeDlg
+	d := &a.font.serverNoticeDlg
 	src := d.body
 	if src == "" {
 		src = serverNoticeNoReason
@@ -194,21 +194,21 @@ func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {
 // Built ONCE and kept. A closure — or a bound method value — allocates, and this is
 // handed to a cache that is consulted on every frame a modal is open.
 func (a *App) chromeWrapMeasure() func(string) int32 {
-	if a.chromeMeasure == nil {
-		a.chromeMeasure = func(s string) int32 { return fontWidth(a.ctx.chromeFaceFor(s), s) }
+	if a.font.chromeMeasure == nil {
+		a.font.chromeMeasure = func(s string) int32 { return fontWidth(a.ctx.chromeFaceFor(s), s) }
 	}
-	return a.chromeMeasure
+	return a.font.chromeMeasure
 }
 
 // drawServerNotice paints the box. Drawn at the frame tail with the rest of the
 // blocking modal family so nothing behind it can be clicked. Off the render hot
 // path — only while open.
 func (a *App) drawServerNotice(w, h int32) {
-	if !a.serverNoticeDlg.open {
+	if !a.font.serverNoticeDlg.open {
 		return
 	}
 	c := a.ctx
-	d := &a.serverNoticeDlg
+	d := &a.font.serverNoticeDlg
 
 	textW := int32(serverNoticeW) - 2*pad
 	rows := serverNoticeRows(h)

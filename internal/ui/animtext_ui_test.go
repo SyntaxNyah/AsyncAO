@@ -194,7 +194,7 @@ func TestAnimFontResolverEmoji(t *testing.T) {
 	if emojiFace == nil {
 		t.Skip("emoji face unavailable headlessly")
 	}
-	a.emojiLoadStarted = true // skip the off-thread kick; the face is already installed
+	a.font.emojiLoadStarted = true // skip the off-thread kick; the face is already installed
 
 	// "A😀" — ASCII 'A' then a supplementary-plane emoji (2 runes).
 	text := "A\U0001F600"

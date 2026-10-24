@@ -39,7 +39,7 @@ func TestICFontPickRowsReadsTheRealCoverageDecisionNotAGuess(t *testing.T) {
 
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
 	a.skin.themeFonts.e[elemICChatlog] = themeElemFont{face: 1, pct: themeFontPct(11)}
-	a.themeFaceNames = []string{"OpenDyslexic-Regular.otf"}
+	a.font.themeFaceNames = []string{"OpenDyslexic-Regular.otf"}
 
 	a.chatlog.icLog = a.chatlog.icLog[:0]
 	a.pushIC("Celes: rip", 0, false, -1, "Celes")

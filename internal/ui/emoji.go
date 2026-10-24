@@ -100,11 +100,11 @@ func bestEmojiFont() []byte {
 // drained by pollEmojiFont. Always yields a renderable face now (the OS font when
 // SDL_ttf can draw it, else bundled Twemoji), so emoji never tofu on a COLRv1 OS.
 func (a *App) ensureEmojiFontLoad() {
-	if a.emojiLoadStarted {
+	if a.font.emojiLoadStarted {
 		return
 	}
-	a.emojiLoadStarted = true
-	ch := a.emojiFontRes
+	a.font.emojiLoadStarted = true
+	ch := a.font.emojiFontRes
 	go func() {
 		if b := bestEmojiFont(); len(b) > 0 {
 			select {
@@ -121,7 +121,7 @@ func (a *App) ensureEmojiFontLoad() {
 // message repaints in color.
 func (a *App) pollEmojiFont() {
 	select {
-	case data := <-a.emojiFontRes:
+	case data := <-a.font.emojiFontRes:
 		a.ctx.SetEmojiFont(data)
 		a.ctx.EmojiFont(a.chatPct)        // pre-warm at the chat size
 		a.ctx.EmojiFont(emojiPickerPct)   // …and the picker-grid size, so the grid paints colour at once

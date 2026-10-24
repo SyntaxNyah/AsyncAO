@@ -388,7 +388,7 @@ func (a *App) closeTopOverlay() bool {
 	// top of a still-fenced box. Unlike the dialog above this one CAN just close —
 	// there is no dead-but-drawn session under it; the teardown or the live session,
 	// whichever applies, was already settled before the box opened.
-	case a.serverNoticeDlg.open:
+	case a.font.serverNoticeDlg.open:
 		a.closeServerNotice()
 	case a.dialogs.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",

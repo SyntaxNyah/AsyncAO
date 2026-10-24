@@ -363,7 +363,7 @@ func (a *App) editorUndoChord() bool {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		// A BB notice can land while the courtroom is fully LIVE, so this one is not
 		// about a dead socket: it is that the box owns the frame, and a shout or a
 		// pos-cycle fired blind underneath it is an action the user did not see

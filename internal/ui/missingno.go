@@ -64,7 +64,7 @@ func (a *App) uploadEmbeddedMissingno() {
 func (a *App) applyErrorSprite(path string) {
 	if path == "" {
 		// Cleared: restore the embedded default immediately (render thread, no I/O).
-		a.errorSpriteErr = ""
+		a.font.errorSpriteErr = ""
 		a.uploadEmbeddedMissingno()
 		return
 	}
@@ -100,11 +100,11 @@ func (a *App) applyErrorSprite(path string) {
 func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 	for {
 		select {
-		case a.errorSpriteRes <- res:
+		case a.font.errorSpriteRes <- res:
 			return
 		default:
 			select {
-			case old := <-a.errorSpriteRes:
+			case old := <-a.font.errorSpriteRes:
 				if old.dec != nil {
 					old.dec.Release()
 				}
@@ -121,19 +121,19 @@ func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 // embedded default at worst). Drained once per frame beside the font polls.
 func (a *App) pollErrorSprite() {
 	select {
-	case res := <-a.errorSpriteRes:
+	case res := <-a.font.errorSpriteRes:
 		if res.err != nil {
-			a.errorSpriteErr = res.err.Error()
+			a.font.errorSpriteErr = res.err.Error()
 			a.debug.push("Custom missing-sprite image failed to load: " + res.err.Error())
 			if res.dec != nil {
 				res.dec.Release()
 			}
 			return
 		}
-		a.errorSpriteErr = ""
+		a.font.errorSpriteErr = ""
 		if a.d.Store != nil && res.dec != nil {
 			if err := a.d.Store.UploadPinned(render.MissingKey, res.dec); err != nil { // releases res.dec
-				a.errorSpriteErr = err.Error()
+				a.font.errorSpriteErr = err.Error()
 				a.debug.push("Custom missing-sprite image failed to upload: " + err.Error())
 			}
 		} else if res.dec != nil {

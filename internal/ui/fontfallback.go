@@ -136,15 +136,15 @@ func fallbackFontCandidates() []string {
 // called each frame, kicks the read on the first. Eager (not lazy like the emoji
 // face): script gaps are common, so we want coverage from the start.
 func (a *App) ensureFallbackFontLoad() {
-	if a.fallbackLoadStarted {
+	if a.font.fallbackLoadStarted {
 		return
 	}
-	a.fallbackLoadStarted = true
+	a.font.fallbackLoadStarted = true
 	cands := fallbackFontCandidates()
 	if len(cands) == 0 {
 		return
 	}
-	ch := a.fallbackFontRes
+	ch := a.font.fallbackFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cands {
@@ -167,7 +167,7 @@ func (a *App) ensureFallbackFontLoad() {
 // repaints with coverage.
 func (a *App) pollFallbackFont() {
 	select {
-	case data := <-a.fallbackFontRes:
+	case data := <-a.font.fallbackFontRes:
 		a.ctx.SetFallbackFonts(data)
 		a.raster.rasterText = "" // re-raster the visible message with the broader coverage
 	default:
@@ -276,11 +276,11 @@ func fileReadable(p string) bool {
 // set — if CJK detection shared that guard it would die silently after the first
 // accent and never fire.
 func (a *App) ensureCJKFontLoad() {
-	if a.cjkLoadStarted {
+	if a.font.cjkLoadStarted {
 		return
 	}
-	a.cjkLoadStarted = true
-	ch := a.cjkFontRes
+	a.font.cjkLoadStarted = true
+	ch := a.font.cjkFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cjkFontList() {
@@ -302,7 +302,7 @@ func (a *App) ensureCJKFontLoad() {
 // re-rastering the visible message so a previously-tofu CJK name/line repaints.
 func (a *App) pollCJKFont() {
 	select {
-	case data := <-a.cjkFontRes:
+	case data := <-a.font.cjkFontRes:
 		a.ctx.SetCJKFonts(data)
 		a.raster.rasterText = ""
 	default:

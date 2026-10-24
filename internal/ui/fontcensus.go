@@ -275,13 +275,13 @@ func (fc *fontCensus) close() {
 // startCensus launches the census goroutine on first need. It serves requests
 // forever (one per uncovered rune) and answers with the font's bytes. Idempotent.
 func (a *App) startCensus() {
-	if a.censusStarted {
+	if a.font.censusStarted {
 		return
 	}
-	a.censusStarted = true
-	a.censusReq = make(chan rune, censusQueueCap)
-	a.censusRes = make(chan []byte, 2)
-	req, res := a.censusReq, a.censusRes
+	a.font.censusStarted = true
+	a.font.censusReq = make(chan rune, censusQueueCap)
+	a.font.censusRes = make(chan []byte, 2)
+	req, res := a.font.censusReq, a.font.censusRes
 	go func() {
 		fc := &fontCensus{}
 		defer fc.close()
@@ -321,8 +321,8 @@ func (a *App) startCensus() {
 // goroutine is deferred to the first miss, so a session that never draws an
 // uncoverable rune — nearly all of them — never scans the font directories at all.
 func (a *App) drainMissingRunes() {
-	a.missingBuf = a.ctx.TakeMissingRunes(a.missingBuf)
-	if len(a.missingBuf) == 0 {
+	a.font.missingBuf = a.ctx.TakeMissingRunes(a.font.missingBuf)
+	if len(a.font.missingBuf) == 0 {
 		return
 	}
 	// The census reads whatever fonts the MACHINE has, so it is the one subsystem
@@ -338,9 +338,9 @@ func (a *App) drainMissingRunes() {
 		return // the chain is already at its cap; more faces would be evicted anyway
 	}
 	a.startCensus()
-	for _, r := range a.missingBuf {
+	for _, r := range a.font.missingBuf {
 		select {
-		case a.censusReq <- r:
+		case a.font.censusReq <- r:
 		default: // queue full — the rune is still uncovered next frame
 		}
 	}
@@ -349,11 +349,11 @@ func (a *App) drainMissingRunes() {
 // pollCensusFont installs a face the census found, on the render thread, and
 // forces a re-raster so the text that was drawing tofu repaints with real glyphs.
 func (a *App) pollCensusFont() {
-	if !a.censusStarted {
+	if !a.font.censusStarted {
 		return
 	}
 	select {
-	case data := <-a.censusRes:
+	case data := <-a.font.censusRes:
 		a.ctx.AddCensusFace(data)
 		a.raster.rasterText = "" // re-raster the visible message with the wider coverage
 	default:
