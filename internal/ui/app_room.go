@@ -247,8 +247,8 @@ func (a *App) pinToSplit(t *courtTab) {
 	// keeps it correct for the pane's whole lifetime; a.mySide would be the wrong
 	// tab entirely.
 	a.splitRoom.Env = envResolver{a: a, side: func() string {
-		if t.state.sidePref != "" {
-			return t.state.sidePref
+		if t.state.compose.sidePref != "" {
+			return t.state.compose.sidePref
 		}
 		return defaultSide
 	}}
@@ -674,9 +674,9 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 1}, ColPanelHi) // rule above the input
 	box := sdl.Rect{X: r.X + 6, Y: r.Y + 5, W: r.W - 12, H: r.H - 10}
 	s := &a.splitTab.state
-	primary, emoji := a.icFieldFonts(s.icInput)
+	primary, emoji := a.icFieldFonts(s.compose.icInput)
 	var send bool
-	s.icInput, send = c.TextFieldEmoji("ic-split", box, s.icInput, "Chat in the pinned server — click to focus", primary, emoji)
+	s.compose.icInput, send = c.TextFieldEmoji("ic-split", box, s.compose.icInput, "Chat in the pinned server — click to focus", primary, emoji)
 	// Fenced under the notice box like both single-pane send sites. The pinned pane is a
 	// DIFFERENT socket, so this one is not about writing to a dead connection: the box is
 	// App-level and pointer-blinds the whole frame, which leaves a still-focused field's
@@ -733,13 +733,13 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := r.W - 8
-	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
+	if wrapW != a.splitWrapW || s.chatlog.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
 		a.logPct != a.splitWrapPct || c.fontChainGen != a.splitWrapGen {
-		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.icLogSeq, a.splitPinEpoch
+		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.chatlog.icLogSeq, a.splitPinEpoch
 		a.splitWrapPct, a.splitWrapGen = a.logPct, c.fontChainGen
 		a.splitWrapRows = a.splitWrapRows[:0]
-		for i := range s.icLog {
-			e := &s.icLog[i]
+		for i := range s.chatlog.icLog {
+			e := &s.chatlog.icLog[i]
 			col := ColText
 			if e.color > 0 {
 				col = render.TextColor(e.color)
@@ -1766,9 +1766,9 @@ func (a *App) activeCharName() string {
 // character) and reloads the emote list for the new active folder.
 func (a *App) setIniswap(name string) {
 	a.iniChar = name
-	a.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
-	a.emoteAsk = nil
-	a.emoteIdx, a.emoteRow = 0, 0 // new active folder = new emote list: start at the first
+	a.compose.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
+	a.emotepick.emoteAsk = nil
+	a.emotepick.emoteIdx, a.emotepick.emoteRow = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
 }
 
@@ -2202,10 +2202,10 @@ func (a *App) charINIURL(name string) string {
 // eventual pick costs a memory hit instead of an RTT. One submit per
 // hovered name; the manager dedupes and the 404 cache absorbs misses.
 func (a *App) warmCharINI(name string) {
-	if name == "" || name == a.iniWarmed || a.urls.Origin() == "" {
+	if name == "" || name == a.compose.iniWarmed || a.urls.Origin() == "" {
 		return
 	}
-	a.iniWarmed = name
+	a.compose.iniWarmed = name
 	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
 }
 
@@ -2392,7 +2392,7 @@ func (a *App) loadCharINI() {
 		return
 	}
 	url := a.charINIURL(name)
-	a.charINIBusy = true
+	a.compose.charINIBusy = true
 	key := a.serverKey
 	mgr := a.d.Manager
 	ch := a.charINIres
@@ -2420,7 +2420,7 @@ func (a *App) pollCharINI() {
 		if res.key != a.serverKey {
 			return // landed after a tab switch: another server's char.ini
 		}
-		a.charINIBusy = false
+		a.compose.charINIBusy = false
 		a.uiDirty = true // the emote list just changed (and "Loading emotes…" must clear): force one redraw, like the character list does on its packet
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
@@ -2435,8 +2435,8 @@ func (a *App) pollCharINI() {
 			}
 			a.warnLine = clampLine("char.ini for " + a.activeCharName() + ": " + reason + " — using a default emote")
 			a.warnAt = time.Now()
-			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
-			a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
+			a.emotepick.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+			a.emotepick.emoteIdx, a.emotepick.emoteRow = clampEmoteSel(a.emotepick.emoteIdx, a.emotepick.emoteRow, len(a.emotepick.emotes))
 			// The char.ini never arrived, so this character declares no default side.
 			// CLEARING is the whole point: without it the PREVIOUS character's default
 			// survives, pos_remove paints for a side the user never overrode, and one
@@ -2444,12 +2444,12 @@ func (a *App) pollCharINI() {
 			// get_char_side simply returns "wit" for an unreadable ini
 			// (text_file_functions.cpp:480-483), which is what defaultSide() reports for
 			// an empty value.
-			a.charDefaultSide = ""
+			a.compose.charDefaultSide = ""
 			return
 		}
-		a.emotes = res.ini.Emotes
-		if len(a.emotes) == 0 {
-			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+		a.emotepick.emotes = res.ini.Emotes
+		if len(a.emotepick.emotes) == 0 {
+			a.emotepick.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
 		}
 		// OUR side comes from our char.ini (AO2-Client semantics), never
 		// from whoever spoke last; /pos overrides it.
@@ -2458,23 +2458,23 @@ func (a *App) pollCharINI() {
 		// and it must be assigned even when the value is empty so a previous
 		// character's default cannot survive an iniswap.
 		side := strings.ToLower(strings.TrimSpace(res.ini.Side))
-		a.charDefaultSide = side
+		a.compose.charDefaultSide = side
 		if side != "" {
-			a.sidePref = side
+			a.compose.sidePref = side
 		}
-		a.charBlips = res.ini.Blips
+		a.compose.charBlips = res.ini.Blips
 		// Custom shout menu: the base "custom" entry (renamed by
 		// custom_name) plus the named 2.10 interjections.
-		a.customShouts = res.ini.CustomShouts
-		a.customIdx = -1 // base custom
-		a.customName = res.ini.CustomName
+		a.compose.customShouts = res.ini.CustomShouts
+		a.compose.customIdx = -1 // base custom
+		a.compose.customName = res.ini.CustomName
 		// Preserve the per-tab emote selection across a REACTIVATION reload: snap
 		// to the first emote only when the restored index no longer fits the
 		// freshly loaded list. A real character change (enterCourtroom / setIniswap)
 		// zeroes these synchronously before the fetch, so a fresh pick still starts
 		// at emote 0 — see clampEmoteSel.
-		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
-		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
+		a.emotepick.emoteIdx, a.emotepick.emoteRow = clampEmoteSel(a.emotepick.emoteIdx, a.emotepick.emoteRow, len(a.emotepick.emotes))
+		a.emotepick.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Speculatively prefetch emote sprites at LOW priority (sheds under load, never blocks
 		// live HIGH fetches). #127: with the bundle toggle on, grab this character's FULL set —
 		// every emote's idle AND talk (with the bare-spelling fallback) — so switching emotes is
@@ -2483,12 +2483,12 @@ func (a *App) pollCharINI() {
 		// already cached/in-flight.
 		me := a.myCharName()
 		if a.d.Prefs.Load().CharBundlePrefetch {
-			for _, e := range a.emotes {
+			for _, e := range a.emotepick.emotes {
 				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 			}
 		} else {
-			for i, e := range a.emotes {
+			for i, e := range a.emotepick.emotes {
 				if i >= 8 {
 					break
 				}

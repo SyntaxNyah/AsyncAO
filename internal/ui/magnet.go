@@ -89,10 +89,10 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		}
 		add(a.detachedBoxRect(i, w, h))
 	}
-	if a.d.Prefs.Load().FavEmoteBox && !a.favBoxDragging {
+	if a.d.Prefs.Load().FavEmoteBox && !a.favstyle.favBoxDragging {
 		add(a.favBoxRect(w, h))
 	}
-	if a.showStyleBox && !a.styleBoxDragging {
+	if a.favstyle.showStyleBox && !a.favstyle.styleBoxDragging {
 		sr, _ := a.styleBoxRect(w, h)
 		add(sr)
 	}
@@ -236,7 +236,7 @@ func (a *App) panelDeOverlapCensus(exclude sdl.Rect, w, h int32) []sdl.Rect {
 // leaves the census populated but fires no snapToSiblings call, which is harmless.
 func (a *App) anyPanelDragging() bool {
 	return a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
-		a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+		a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
 		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing ||
 		a.wins.cmWin.dragging || a.wins.cmWin.resizing || a.wins.evidWin.dragging || a.wins.evidWin.resizing ||
 		a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||

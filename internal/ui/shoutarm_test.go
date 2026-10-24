@@ -27,13 +27,13 @@ import (
 func TestShoutClickArmsAndSendsNothing(t *testing.T) {
 	a, sent := flipSendApp(t)
 	for _, mod := range []int{protocol.ShoutHoldIt, protocol.ShoutObjection, protocol.ShoutTakeThat, protocol.ShoutCustom} {
-		a.icShout = 0
+		a.compose.icShout = 0
 		a.toggleShout(mod)
 		if len(*sent) != 0 {
 			t.Fatalf("shout %d put %d packet(s) on the wire — clicking a shout must not SEND", mod, len(*sent))
 		}
-		if a.icShout != mod {
-			t.Fatalf("shout %d did not arm: objection_state = %d", mod, a.icShout)
+		if a.compose.icShout != mod {
+			t.Fatalf("shout %d did not arm: objection_state = %d", mod, a.compose.icShout)
 		}
 	}
 }
@@ -66,10 +66,10 @@ func TestShoutDisarmsAfterTheSend(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleShout(protocol.ShoutTakeThat)
 	a.sendICFresh()
-	if a.icShout != 0 {
-		t.Fatalf("objection_state = %d after the send, want 0 (courtroom.cpp:2327)", a.icShout)
+	if a.compose.icShout != 0 {
+		t.Fatalf("objection_state = %d after the send, want 0 (courtroom.cpp:2327)", a.compose.icShout)
 	}
-	a.icInput = "a second line"
+	a.compose.icInput = "a second line"
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Objection != 0 {
 		t.Fatalf("the NEXT message still carries shout %d — the arm is stuck", msg.Objection)
@@ -85,12 +85,12 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 	a, _ := flipSendApp(t)
 	a.toggleShout(protocol.ShoutHoldIt)
 	a.toggleShout(protocol.ShoutObjection)
-	if a.icShout != protocol.ShoutObjection {
-		t.Fatalf("objection_state = %d, want the newly clicked shout to replace the old one", a.icShout)
+	if a.compose.icShout != protocol.ShoutObjection {
+		t.Fatalf("objection_state = %d, want the newly clicked shout to replace the old one", a.compose.icShout)
 	}
 	a.toggleShout(protocol.ShoutObjection)
-	if a.icShout != 0 {
-		t.Fatalf("clicking the ARMED shout must disarm it, got %d", a.icShout)
+	if a.compose.icShout != 0 {
+		t.Fatalf("clicking the ARMED shout must disarm it, got %d", a.compose.icShout)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleRealization()
-	if !a.icRealize {
+	if !a.compose.icRealize {
 		t.Fatal("realization no longer sets its wire flag")
 	}
 	if len(*sent) != 0 {
@@ -119,8 +119,8 @@ func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 		t.Fatalf("realization=%v objection=%d — the two arms must ride one message together",
 			msg.Realization, msg.Objection)
 	}
-	if a.icRealize || a.icShout != 0 {
+	if a.compose.icRealize || a.compose.icShout != 0 {
 		t.Fatalf("post-send arms: realize=%v shout=%d, want both cleared (courtroom.cpp:2327-2329)",
-			a.icRealize, a.icShout)
+			a.compose.icRealize, a.compose.icShout)
 	}
 }

@@ -417,7 +417,7 @@ func menuToggleExtrasBox(a *App, _ int)    { a.toolbox.showWidgets = !a.toolbox.
 // band's Iniswap chip uses (iniswapchip.go), so the two can never drift.
 func menuActWardrobe(a *App, _ int) { a.openIniswapBrowse() }
 
-func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
+func menuSpriteStyleOpen(a *App, _ int) bool { return a.favstyle.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
 
 // Text FX and the emoji picker: the two IC controls with no AO2 design key, so

@@ -29,12 +29,12 @@ func TestInsertRunesAt(t *testing.T) {
 // the caret advances past it (issue #131).
 func TestInsertICInlineAtCaret(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
-	a.icInput = "hello"
+	a.compose.icInput = "hello"
 	a.ctx.focusID = icFieldID
 	a.ctx.caret = 2
 	a.insertICInline(`\s`)
-	if a.icInput != "he\\sllo" {
-		t.Fatalf("icInput = %q, want %q", a.icInput, "he\\sllo")
+	if a.compose.icInput != "he\\sllo" {
+		t.Fatalf("icInput = %q, want %q", a.compose.icInput, "he\\sllo")
 	}
 	if a.ctx.caret != 2+utf8.RuneCountInString(`\s`) {
 		t.Errorf("caret = %d, want %d", a.ctx.caret, 2+utf8.RuneCountInString(`\s`))
@@ -45,10 +45,10 @@ func TestInsertICInlineAtCaret(t *testing.T) {
 // appends (the same behaviour as insertICEmoji) so the button always lands the code.
 func TestInsertICInlineAppendsWhenUnfocused(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
-	a.icInput = "hi"
+	a.compose.icInput = "hi"
 	a.ctx.focusID = ""
 	a.insertICInline(`\f`)
-	if a.icInput != "hi\\f" {
-		t.Fatalf("icInput = %q, want %q", a.icInput, "hi\\f")
+	if a.compose.icInput != "hi\\f" {
+		t.Fatalf("icInput = %q, want %q", a.compose.icInput, "hi\\f")
 	}
 }

@@ -27,12 +27,12 @@ type sessionCarry struct {
 // history (rule 4). Its contents are already bounded by icLogCap/oocLineCap
 func (a *App) snapshotSessionCarry() {
 	a.pendingSessionCarry = &sessionCarry{
-		icLog:        a.icLog,
-		icLogSeq:     a.icLogSeq,
-		icReadMark:   a.icReadMark,
-		oocLog:       a.oocLog,
-		oocSpeakers:  a.oocSpeakers,
-		oocSeq:       a.oocSeq,
+		icLog:        a.chatlog.icLog,
+		icLogSeq:     a.chatlog.icLogSeq,
+		icReadMark:   a.compose.icReadMark,
+		oocLog:       a.chatlog.oocLog,
+		oocSpeakers:  a.chatlog.oocSpeakers,
+		oocSeq:       a.chatlog.oocSeq,
 		areaLogs:     a.areaLogs,
 		areaLogOrder: a.areaLogOrder,
 	}
@@ -52,12 +52,12 @@ func (a *App) applySessionCarryIfPending(wsURL string) {
 	if carry == nil || wsURL == "" || wsURL != key {
 		return // no pending carry, or it belongs to a DIFFERENT server: the fresh session's empty log stands
 	}
-	a.icLog = carry.icLog
-	a.icLogSeq = carry.icLogSeq
-	a.icReadMark = carry.icReadMark
-	a.oocLog = carry.oocLog
-	a.oocSpeakers = carry.oocSpeakers
-	a.oocSeq = carry.oocSeq
+	a.chatlog.icLog = carry.icLog
+	a.chatlog.icLogSeq = carry.icLogSeq
+	a.compose.icReadMark = carry.icReadMark
+	a.chatlog.oocLog = carry.oocLog
+	a.chatlog.oocSpeakers = carry.oocSpeakers
+	a.chatlog.oocSeq = carry.oocSeq
 	a.areaLogs = carry.areaLogs
 	a.areaLogOrder = carry.areaLogOrder
 }

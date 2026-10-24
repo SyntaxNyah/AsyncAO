@@ -96,7 +96,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if col, ok := a.partPanel(partEmotes); ok {
 		c.Fill(r, col)
 	}
-	if a.charINIBusy {
+	if a.compose.charINIBusy {
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
 	}
@@ -107,7 +107,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	a.refreshEmoteView() // build the favourite set + the visible-index list (#77)
-	vis := a.emoteVisible
+	vis := a.favstyle.emoteVisible
 
 	// Uniform grid so hundreds of emotes page cleanly. The old layout
 	// wrapped and `break`ed on overflow, silently dropping every emote past
@@ -136,7 +136,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// Stamp the layout this frame resolved; emotescroll.go derives the scroll
 	// range, the number-key origin and the page readout from it.
 	a.setEmoteGridMetrics(int(cols), int(gridRows(gridH, cellH, gap)), len(vis))
-	perPage := a.emotePerPage
+	perPage := a.emotepick.emotePerPage
 	// Mouse-wheel over the grid SCROLLS IT BY ROW (up = earlier). It used to jump
 	// a whole page per notch, which made the two rows either side of a page seam
 	// impossible to see together. WheelIn fences the scroll so nothing else moves.
@@ -149,7 +149,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
-		e := &a.emotes[i]
+		e := &a.emotepick.emotes[i]
 		label := e.Comment
 		if label == "" {
 			label = e.Anim
@@ -160,7 +160,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			Y: r.Y + (n/cols)*(cellH+gap),
 			W: cellW, H: cellH,
 		}
-		selected := i == a.emoteIdx
+		selected := i == a.emotepick.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
 		}
@@ -259,11 +259,11 @@ func emoteHasPreanim(e *courtroom.Emote) bool {
 // message will need, and refocuses the IC input (AO2 focus_ic_input).
 // Out-of-range indices are ignored.
 func (a *App) selectEmote(i int) {
-	if i < 0 || i >= len(a.emotes) {
+	if i < 0 || i >= len(a.emotepick.emotes) {
 		return
 	}
-	a.emoteIdx = i
-	a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre, emotes.cpp:211-221)
+	a.emotepick.emoteIdx = i
+	a.compose.icPreanim = emoteHasPreanim(&a.emotepick.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre, emotes.cpp:211-221)
 	me := a.activeCharName()
 	// Warm BOTH button states at HIGH: the _on (pressed) art the selected
 	// cell wants, AND the _off art it falls back to while _on streams in —
@@ -272,8 +272,8 @@ func (a *App) selectEmote(i int) {
 	// press" report).
 	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh)  // AssetType: EmoteButton (on)
 	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (off fallback)
-	a.speculateEmote(me, &a.emotes[i])
-	a.followPinnedPreview(me, &a.emotes[i]) // a pinned box follows the pick; a closed one stays closed
+	a.speculateEmote(me, &a.emotepick.emotes[i])
+	a.followPinnedPreview(me, &a.emotepick.emotes[i]) // a pinned box follows the pick; a closed one stays closed
 	a.ctx.FocusField("ic")
 }
 
@@ -282,11 +282,11 @@ func (a *App) selectEmote(i int) {
 // fmt.Sprintf runs only when the page, page count, or emote total changes (the
 // same memoize-on-change idiom as the generation-cached texture pages).
 func (a *App) emotePageCounter(page, pages, n int) string {
-	if key := [3]int{page, pages, n}; a.emotePageLabel == "" || key != a.emotePageLabelKey {
-		a.emotePageLabel = fmt.Sprintf("page %d/%d · %d emotes", page, pages, n)
-		a.emotePageLabelKey = key
+	if key := [3]int{page, pages, n}; a.emotepick.emotePageLabel == "" || key != a.emotepick.emotePageLabelKey {
+		a.emotepick.emotePageLabel = fmt.Sprintf("page %d/%d · %d emotes", page, pages, n)
+		a.emotepick.emotePageLabelKey = key
 	}
-	return a.emotePageLabel
+	return a.emotepick.emotePageLabel
 }
 
 // shownTotalMemo memoizes a list header's "<shown> / <total>" counter, the same
@@ -392,20 +392,20 @@ func nextRandomEmote(n, cur int) int {
 // 1 visible emote.
 func (a *App) randomEmoteForSend() {
 	a.refreshEmoteView()
-	vis := a.emoteVisible
+	vis := a.favstyle.emoteVisible
 	if len(vis) <= 1 {
 		return
 	}
 	cur := -1 // current selection's slot in the visible list (-1 if not visible)
 	for k, idx := range vis {
-		if idx == a.emoteIdx {
+		if idx == a.emotepick.emoteIdx {
 			cur = k
 			break
 		}
 	}
 	slot := nextRandomEmote(len(vis), cur)
 	i := vis[slot]
-	if i == a.emoteIdx {
+	if i == a.emotepick.emoteIdx {
 		return
 	}
 	a.selectEmote(i)
@@ -449,7 +449,7 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 	if countX < input.X+msgCounterPad { // no room left inside the field: drop it (chip/text win)
 		return
 	}
-	c.Label(countX, input.Y+(input.H-14)/2, a.icCountStr, col)
+	c.Label(countX, input.Y+(input.H-14)/2, a.compose.icCountStr, col)
 }
 
 // refreshICCount refreshes the cached count string when the typed length changed
@@ -459,9 +459,9 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 // the drawn count is exactly the overlap this whole band exists to stop.
 // Reformats only on a length change, so a settled frame stays 0-alloc.
 func (a *App) refreshICCount() int {
-	n := utf8.RuneCountInString(a.icInput)
-	if n != a.icCountN {
-		a.icCountN, a.icCountStr = n, strconv.Itoa(n)
+	n := utf8.RuneCountInString(a.compose.icInput)
+	if n != a.compose.icCountN {
+		a.compose.icCountN, a.compose.icCountStr = n, strconv.Itoa(n)
 	}
 	return n
 }
@@ -469,7 +469,7 @@ func (a *App) refreshICCount() int {
 // icCountBandW is the count's own footprint measured from wherever it starts:
 // its glyphs plus the inset that separates it from whatever is to its right.
 // Width-cached, so a stable count is a map hit and this stays alloc-free.
-func (a *App) icCountBandW() int32 { return a.ctx.TextWidth(a.icCountStr) + msgCounterPad }
+func (a *App) icCountBandW() int32 { return a.ctx.TextWidth(a.compose.icCountStr) + msgCounterPad }
 
 // icMutedBandW is how much of the input's right edge the muted chip owns
 // (0 when not muted). The chip metric MUST match the one the IC-bar draw site
@@ -521,8 +521,8 @@ func (a *App) randomShowname() {
 		a.warnAt = a.now()
 		return
 	}
-	a.shownameOverride = presets[rand.IntN(len(presets))]
-	a.warnLine = clampLine("Showname → " + a.shownameOverride)
+	a.compose.shownameOverride = presets[rand.IntN(len(presets))]
+	a.warnLine = clampLine("Showname → " + a.compose.shownameOverride)
 	a.warnAt = a.now()
 }
 
@@ -543,14 +543,14 @@ func (a *App) cycleShowname() {
 			break
 		}
 	}
-	a.shownameOverride = presets[next]
-	a.warnLine = clampLine("Showname → " + a.shownameOverride)
+	a.compose.shownameOverride = presets[next]
+	a.warnLine = clampLine("Showname → " + a.compose.shownameOverride)
 	a.warnAt = a.now()
 }
 
 func (a *App) cycleEmote(delta int) {
 	a.refreshEmoteView()
-	vis := a.emoteVisible
+	vis := a.favstyle.emoteVisible
 	n := len(vis)
 	if n == 0 {
 		return
@@ -560,7 +560,7 @@ func (a *App) cycleEmote(delta int) {
 	// the wrap tolerates.
 	cur := -1
 	for k, idx := range vis {
-		if idx == a.emoteIdx {
+		if idx == a.emotepick.emoteIdx {
 			cur = k
 			break
 		}
@@ -595,11 +595,11 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 	if selected {
 		cache, gen = &a.emoteBtnOn, &a.emoteBtnOnGen
 	}
-	page, ok := a.cachedPage(cache, gen, len(a.emotes), i, base)
+	page, ok := a.cachedPage(cache, gen, len(a.emotepick.emotes), i, base)
 	if !ok {
-		a.demandAsset(&a.emoteAsk, len(a.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
+		a.demandAsset(&a.emotepick.emoteAsk, len(a.emotepick.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
 		if selected {
-			page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotes), i, a.urls.EmoteButton(me, i+1, false))
+			page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotepick.emotes), i, a.urls.EmoteButton(me, i+1, false))
 		}
 	}
 	if ok && len(page.Frames) > 0 {
@@ -668,7 +668,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	c.Heading(r.X+pad, r.Y+6, "Pairing", ColText)
 	if c.Button(sdl.Rect{X: r.X + r.W - 84 - pad, Y: r.Y + 3, W: 84, H: btnH}, "Close") {
-		a.showPair = false
+		a.pairbox.showPair = false
 		return
 	}
 	a.floatWinDrag(&a.wins.pairWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 94 - pad, H: floatTitleH}, pressed)
@@ -686,14 +686,14 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	y := contentTop
 	c.LabelClipped(r.X+pad, y, listW, "Partner: "+a.pairLabel(), ColAccent)
 	y += 24
-	a.pairSearch, _ = c.TextField("pairsearch", sdl.Rect{X: r.X + pad, Y: y, W: listW - 80, H: fieldH}, a.pairSearch, "Search...")
+	a.pairbox.pairSearch, _ = c.TextField("pairsearch", sdl.Rect{X: r.X + pad, Y: y, W: listW - 80, H: fieldH}, a.pairbox.pairSearch, "Search...")
 	if c.Button(sdl.Rect{X: r.X + pad + listW - 74, Y: y, W: 74, H: btnH}, "Unpair") {
-		a.pairWith = protocol.UnpairedCharID
+		a.pairbox.pairWith = protocol.UnpairedCharID
 	}
 	y += fieldH + 8
 
 	a.ensureCharLower()
-	query := a.pairQ.get(a.pairSearch)
+	query := a.pairQ.get(a.pairbox.pairSearch)
 	lineH := int32(22)
 	listTop := y
 	listH := r.Y + r.H - listTop - pad
@@ -704,11 +704,11 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		}
 	}
 	if c.hovering(sdl.Rect{X: r.X + pad, Y: listTop, W: listW, H: listH}) {
-		a.pairScroll -= c.wheelY * scrollStepPx
+		a.pairbox.pairScroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: r.X + pad + listW - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
-	a.pairScroll = c.VScrollbar("pairscroll", track, a.pairScroll, matches*lineH, listH)
-	rowY := listTop - a.pairScroll
+	a.pairbox.pairScroll = c.VScrollbar("pairscroll", track, a.pairbox.pairScroll, matches*lineH, listH)
+	rowY := listTop - a.pairbox.pairScroll
 	for i := range a.sess.Chars {
 		if i == a.sess.MyCharID { // can't pair with yourself
 			continue
@@ -722,14 +722,14 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		if rowY >= listTop-lineH {
 			row := sdl.Rect{X: r.X + pad, Y: rowY, W: listW - scrollBarW - scrollBarGap, H: lineH - 2}
 			hover := c.hovering(row)
-			if i == a.pairWith {
+			if i == a.pairbox.pairWith {
 				c.Fill(row, ColAccent)
 			} else if hover {
 				c.Fill(row, ColPanelHi)
 			}
 			c.LabelClipped(row.X+4, rowY+3, row.W-8, a.sess.Chars[i].Name, ColText)
 			if hover && c.clicked {
-				a.pairWith = i
+				a.pairbox.pairWith = i
 			}
 		}
 		rowY += lineH
@@ -739,11 +739,11 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	// mousewheel over the row — all three work).
 	rx := r.X + r.W/2 + pad
 	ry := contentTop
-	a.pairOffX = a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairOffX, &a.pairOffXText)
+	a.pairbox.pairOffX = a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairbox.pairOffX, &a.pairbox.pairOffXText)
 	ry += 34
-	a.pairOffY = a.offsetControl("pairoffy", rx, ry, "Offset Y %", a.pairOffY, &a.pairOffYText)
+	a.pairbox.pairOffY = a.offsetControl("pairoffy", rx, ry, "Offset Y %", a.pairbox.pairOffY, &a.pairbox.pairOffYText)
 	ry += 34
-	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
+	a.pairbox.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairbox.pairFlip)
 	ry += 28
 	// Explicit two-segment order control — WIRE-AWARE. On a FantaCode server the
 	// classic ^order suffix is the only mechanism, so the segments set a.pairOrder
@@ -790,7 +790,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	}
 	c.Tooltip(sdl.Rect{X: rx, Y: ry, W: pairOrderLabelW + 2*pairOrderSegW + pairOrderSegGap, H: btnH}, orderTip)
 
-	frontActive := a.pairOrder == protocol.PairSpeakerInFront
+	frontActive := a.pairbox.pairOrder == protocol.PairSpeakerInFront
 	if inGroup {
 		frontActive = myIdx == 0
 	}
@@ -798,14 +798,14 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		if inGroup {
 			a.sendPairOrder(a.sess.PlayerID, "front")
 		} else {
-			a.pairOrder = protocol.PairSpeakerInFront
+			a.pairbox.pairOrder = protocol.PairSpeakerInFront
 		}
 	}
 	if orderSeg("To behind", !frontActive) {
 		if inGroup {
 			a.sendPairOrder(a.sess.PlayerID, "back")
 		} else {
-			a.pairOrder = protocol.PairSpeakerBehind
+			a.pairbox.pairOrder = protocol.PairSpeakerBehind
 		}
 	}
 	ry += 36
@@ -899,10 +899,10 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	// YOUR position's bg; a flat fill stands in until it streams in.
 	bgPart, _ := courtroom.PositionScene(a.mySide())
 	base := a.urls.Background(a.sess.Background, bgPart)
-	if base != a.pairBgKey {
-		a.pairBgPages, a.pairBgKey = nil, base
+	if base != a.pairbox.pairBgKey {
+		a.pairbox.pairBgPages, a.pairbox.pairBgKey = nil, base
 	}
-	if page, ok := a.cachedPage(&a.pairBgPages, &a.pairBgGen, 1, 0, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.pairbox.pairBgPages, &a.pairbox.pairBgGen, 1, 0, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &pv)
 	} else {
 		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
@@ -913,8 +913,8 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	c.Border(pv, ColPanelHi)
 
 	// Partner ghost first (behind), then me.
-	if a.pairWith >= 0 && a.pairWith < len(a.sess.Chars) {
-		name := a.sess.Chars[a.pairWith].Name
+	if a.pairbox.pairWith >= 0 && a.pairbox.pairWith < len(a.sess.Chars) {
+		name := a.sess.Chars[a.pairbox.pairWith].Name
 		// The scene's pair layer knows their REAL offsets — and their real idle
 		// sprite — once a paired message arrived. Before that we ask their char.ini
 		// for the pose they actually stand in (iniIdleAnimFor: the first [Emotions]
@@ -937,12 +937,12 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		// packs without a normal.* sprite (playtest: the ghost sprite did not
 		// display at all) while the live viewport worked fine.
 		anim := ghostFallbackEmote
-		if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-			anim = a.emotes[a.emoteIdx].Anim
+		if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
+			anim = a.emotepick.emotes[a.emotepick.emoteIdx].Anim
 		}
 		base := a.urls.Emote(me, anim, courtroom.EmoteIdle)
 		alts := a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle)
-		a.drawGhostSprite(pv, me, base, alts, a.pairOffX, a.pairOffY, a.pairFlip, 255)
+		a.drawGhostSprite(pv, me, base, alts, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip, 255)
 	}
 	c.Label(pv.X+4, pv.Y+2, "drag your sprite to place — arrow keys nudge 1%", ColTextDim)
 
@@ -957,7 +957,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	if pressed && c.hovering(pv) && !pointIn(c.mouseX, c.mouseY, grip) {
 		a.ghostDrag = true
 		a.ghostStart = [2]int32{c.mouseX, c.mouseY}
-		a.ghostBase = [2]int{a.pairOffX, a.pairOffY}
+		a.ghostBase = [2]int{a.pairbox.pairOffX, a.pairbox.pairOffY}
 	}
 	if a.wins.pairWin.resizing { // a resize that started outside pv must not capture it mid-gesture either
 		a.ghostDrag = false
@@ -966,8 +966,8 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		a.ghostDrag = false
 	}
 	if a.ghostDrag && pv.W > 0 && pv.H > 0 {
-		a.pairOffX = clampOffset(a.ghostBase[0] + int(c.mouseX-a.ghostStart[0])*100/int(pv.W))
-		a.pairOffY = clampOffset(a.ghostBase[1] + int(c.mouseY-a.ghostStart[1])*100/int(pv.H))
+		a.pairbox.pairOffX = clampOffset(a.ghostBase[0] + int(c.mouseX-a.ghostStart[0])*100/int(pv.W))
+		a.pairbox.pairOffY = clampOffset(a.ghostBase[1] + int(c.mouseY-a.ghostStart[1])*100/int(pv.H))
 		a.refreshPairOffsetBufs() // a focused numeric row must follow the drag live
 	}
 	// Arrow keys nudge your offset 1% for fine placement — only with no text
@@ -976,13 +976,13 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	if c.focusID == "" {
 		switch c.keyPressed {
 		case sdl.K_LEFT:
-			a.pairOffX = clampOffset(a.pairOffX - 1)
+			a.pairbox.pairOffX = clampOffset(a.pairbox.pairOffX - 1)
 		case sdl.K_RIGHT:
-			a.pairOffX = clampOffset(a.pairOffX + 1)
+			a.pairbox.pairOffX = clampOffset(a.pairbox.pairOffX + 1)
 		case sdl.K_UP:
-			a.pairOffY = clampOffset(a.pairOffY - 1)
+			a.pairbox.pairOffY = clampOffset(a.pairbox.pairOffY - 1)
 		case sdl.K_DOWN:
-			a.pairOffY = clampOffset(a.pairOffY + 1)
+			a.pairbox.pairOffY = clampOffset(a.pairbox.pairOffY + 1)
 		}
 	}
 }
@@ -1109,17 +1109,17 @@ func clampOffset(v int) int {
 func (a *App) refreshPairOffsetBufs() {
 	switch a.ctx.focusID {
 	case "pairoffx":
-		a.pairOffXText = strconv.Itoa(a.pairOffX)
+		a.pairbox.pairOffXText = strconv.Itoa(a.pairbox.pairOffX)
 	case "pairoffy":
-		a.pairOffYText = strconv.Itoa(a.pairOffY)
+		a.pairbox.pairOffYText = strconv.Itoa(a.pairbox.pairOffY)
 	}
 }
 
 func (a *App) pairLabel() string {
-	if a.pairWith <= protocol.UnpairedCharID || a.sess == nil || a.pairWith >= len(a.sess.Chars) {
+	if a.pairbox.pairWith <= protocol.UnpairedCharID || a.sess == nil || a.pairbox.pairWith >= len(a.sess.Chars) {
 		return "(unpaired)"
 	}
-	return fmt.Sprintf("%d — %s", a.pairWith, a.sess.Chars[a.pairWith].Name)
+	return fmt.Sprintf("%d — %s", a.pairbox.pairWith, a.sess.Chars[a.pairbox.pairWith].Name)
 }
 
 // sendIC builds and sends the outgoing MS message (chat commands handled
@@ -1158,8 +1158,8 @@ func funColor(text string, color, ext, customRGB int, rainbow, random bool, rand
 // carrying that emote's preanim and per-emote sound. The wire's silence sentinels
 // ("", "0", "1") read as "no sound", matching outgoingSFXName's convention.
 func (a *App) midEmoteResolver(stem string) (courtroom.MidEmote, bool) {
-	for i := range a.emotes {
-		e := &a.emotes[i]
+	for i := range a.emotepick.emotes {
+		e := &a.emotepick.emotes[i]
 		if strings.EqualFold(e.Anim, stem) || strings.EqualFold(e.Comment, stem) {
 			sfx := e.SFXName
 			if sfx == "" || sfx == "0" || sfx == "1" {
@@ -1176,10 +1176,10 @@ func (a *App) midEmoteResolver(stem string) (courtroom.MidEmote, bool) {
 // where canon reads it too — on_chat_return_pressed, courtroom.cpp:2136-2147.
 // Passing a shout in was what made a shout BUTTON a send button.
 func (a *App) sendIC() {
-	shout := a.icShout
-	text := strings.TrimSpace(a.icInput)
+	shout := a.compose.icShout
+	text := strings.TrimSpace(a.compose.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
-		a.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
+		a.compose.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
 		return
 	}
 	// Mid-text emotes (#130): a typed :emote: shortcode becomes the internal <e:...>
@@ -1218,27 +1218,27 @@ func (a *App) sendIC() {
 		a.randomEmoteForSend()
 	}
 	emote := courtroom.Emote{Anim: "normal", Preanim: "-", DeskMod: protocol.DeskShow}
-	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-		emote = a.emotes[a.emoteIdx]
+	if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
+		emote = a.emotepick.emotes[a.emotepick.emoteIdx]
 	}
 	hasPre := emoteHasPreanim(&emote)
 	// Per-emote audio from char.ini: the emote's own sound accompanies the PREANIM and
 	// nothing else, so a line sent with Pre unticked carries the silence sentinel. The
 	// whole rule (and the canon it is transcribed from) lives in icsfx.go.
-	sfxName := outgoingSFXName(&emote, a.icPreanim, a.sfxChoiceIdx, a.sfxChoices)
+	sfxName := outgoingSFXName(&emote, a.compose.icPreanim, a.emotepick.sfxChoiceIdx, a.emotepick.sfxChoices)
 	// AO2's sfx_on_idle rewrite (courtroom.cpp:2102-2116, OFF by default like
 	// upstream): a hand-picked sound on an IDLE/ZOOM line promotes the emote mod so
 	// receivers actually play it, with the pre name blanked and the delay zeroed so
 	// no animation runs. All three fields move together — see sfxIdlePromotion.
-	emoteMod := protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features)
+	emoteMod := protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.compose.icPreanim, false, a.sess.Features)
 	preEmote, sfxDelay := emote.Preanim, emote.SFXDelay
-	if m, promoted := sfxIdlePromotion(emoteMod, a.sfxChoiceIdx, a.d.Prefs.Load().SFXOnIdle, a.sess.Features.Has(protocol.FeaturePrezoom)); promoted {
+	if m, promoted := sfxIdlePromotion(emoteMod, a.emotepick.sfxChoiceIdx, a.d.Prefs.Load().SFXOnIdle, a.sess.Features.Has(protocol.FeaturePrezoom)); promoted {
 		emoteMod, preEmote, sfxDelay = m, "", 0
 	}
 	// Per-emote blip override (2.9.1 custom_blips), else the character's.
 	blip := emote.Blip
 	if blip == "" {
-		blip = a.charBlips
+		blip = a.compose.charBlips
 	}
 	// #M5 animated text: the sticky FX button wraps the whole message first (no-op when off
 	// / blankpost / you already typed inline markup), then ParseTextEffects pulls all the
@@ -1258,10 +1258,10 @@ func (a *App) sendIC() {
 	// M61 fun colour: rainbow (\cr prefix), an extended AsyncAO colour (\c<letter>
 	// + nearest-standard wire fallback, #98), or a random palette colour per message.
 	customRGB := -1
-	if a.icCustomOn {
-		customRGB = a.icCustomRGB
+	if a.compose.icCustomOn {
+		customRGB = a.compose.icCustomRGB
 	}
-	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, customRGB, a.d.Prefs.Load().RainbowMessages, a.d.Prefs.Load().RandomMessageColor, rand.IntN(render.TextColorCount))
+	text, msgColor := funColor(text, a.compose.icColor, a.compose.icExtColor-1, customRGB, a.d.Prefs.Load().RainbowMessages, a.d.Prefs.Load().RandomMessageColor, rand.IntN(render.TextColorCount))
 	// Transmitted sprite style (#103): append the invisible zero-width marker at
 	// the END of the text — other AsyncAO clients decode + render it on this
 	// character; AO2/webAO see nothing. End placement keeps the visible text intact
@@ -1271,24 +1271,24 @@ func (a *App) sendIC() {
 	// the invisible run and blip on each character, so a marker on every message was
 	// audible spam. lastSentStyle tracks what we last transmitted this session.
 	curStyle := a.mySpriteStyle()
-	if marker := curStyle.EncodeChangeMarker(a.lastSentStyle); marker != "" {
+	if marker := curStyle.EncodeChangeMarker(a.compose.lastSentStyle); marker != "" {
 		text += marker
 	}
-	a.lastSentStyle = curStyle
+	a.compose.lastSentStyle = curStyle
 	// Transmitted character profile (#101 slice 2): the same invisible channel, also
 	// send-on-CHANGE, appended AFTER the style marker (an older AsyncAO client reads only
 	// the first zero-width run, so the style must stay first). Only pronouns + tagline
 	// ride; the receiver shows them on this character's player-list card.
 	curProfile := a.myWireProfile()
-	if pm := curProfile.EncodeChangeMarker(a.lastSentProfile); pm != "" {
+	if pm := curProfile.EncodeChangeMarker(a.compose.lastSentProfile); pm != "" {
 		text += pm
 	}
-	a.lastSentProfile = curProfile
+	a.compose.lastSentProfile = curProfile
 	// Cross-client presence status (#M1): same invisible channel, send-on-change.
-	if sm := courtroom.EncodeStatusChangeMarker(a.myStatus, a.lastSentStatus); sm != "" {
+	if sm := courtroom.EncodeStatusChangeMarker(a.compose.myStatus, a.compose.lastSentStatus); sm != "" {
 		text += sm
 	}
-	a.lastSentStatus = a.myStatus
+	a.compose.lastSentStatus = a.compose.myStatus
 	// Additive leading-space span shift: when the additive box prepends a leading
 	// space below (line ~6188), every visible rune shifts right by one, but the
 	// effect spans were indexed over the space-LESS visible text. Shift each span's
@@ -1302,7 +1302,7 @@ func (a *App) sendIC() {
 	// marker is appended at the end). effectSpans is nil on a blankpost and the
 	// predicate is false on a leading-space message, so this is a no-op unless a
 	// non-blank additive message actually carries effect markup.
-	if a.icAdditive && courtroom.AdditiveWantsLeadingSpace(text) {
+	if a.compose.icAdditive && courtroom.AdditiveWantsLeadingSpace(text) {
 		for i := range effectSpans {
 			effectSpans[i].Start++
 		}
@@ -1329,7 +1329,7 @@ func (a *App) sendIC() {
 	// leading space in the IC input to separate sentences. We prepend that space at
 	// packet build instead of in the field, so your typed line (a.icInput, read by
 	// recordSentIC/icPendingSent below) stays clean — the wire result is identical.
-	if a.icAdditive {
+	if a.compose.icAdditive {
 		text = courtroom.AdditiveOutgoingLeadingSpace(text)
 	}
 	out := protocol.OutgoingMS{
@@ -1363,17 +1363,17 @@ func (a *App) sendIC() {
 		Objection:   shout,
 		TextColor:   msgColor, // swatch cycler, or M61 random-per-message colour
 		Showname:    a.effectiveShowname(),
-		PairWith:    a.pairWith,
-		PairOrder:   a.pairOrder,
-		OffsetX:     a.pairOffX,
-		OffsetY:     a.pairOffY,
-		Flip:        a.pairFlip,
-		Immediate:   outgoingImmediate(a.icImmediate, a.icPreanim), // non-interrupting preanim — only ships when Pre (a preanimation) is also on; AO2's pre_no_interrupt rides ui_pre
-		Additive:    a.icAdditive,                                  // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
-		Slide:       a.icSlide,                                     // #21: slide into position instead of cutting (AO2 ui_slide)
-		Realization: a.icRealize,                                   // #21: white flash + sound on this message (AO2 realization_state)
-		Screenshake: a.icShake,                                     // #21: shake the courtroom on this message (AO2 screenshake_state)
-		KFOCompat:   a.sess.KFOCompat(),                            // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
+		PairWith:    a.pairbox.pairWith,
+		PairOrder:   a.pairbox.pairOrder,
+		OffsetX:     a.pairbox.pairOffX,
+		OffsetY:     a.pairbox.pairOffY,
+		Flip:        a.pairbox.pairFlip,
+		Immediate:   outgoingImmediate(a.compose.icImmediate, a.compose.icPreanim), // non-interrupting preanim — only ships when Pre (a preanimation) is also on; AO2's pre_no_interrupt rides ui_pre
+		Additive:    a.compose.icAdditive,                                          // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
+		Slide:       a.compose.icSlide,                                             // #21: slide into position instead of cutting (AO2 ui_slide)
+		Realization: a.compose.icRealize,                                           // #21: white flash + sound on this message (AO2 realization_state)
+		Screenshake: a.compose.icShake,                                             // #21: shake the courtroom on this message (AO2 screenshake_state)
+		KFOCompat:   a.sess.KFOCompat(),                                            // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 		// AO2 screen effect (ui_effects_dropdown): "<name>|<folder>|<sound>", where
 		// folder is OUR char.ini [Options] effects and sound is the merged property
 		// (courtroom.cpp:2296-2308). "" for the "None" row.
@@ -1381,8 +1381,8 @@ func (a *App) sendIC() {
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
 	// (formatObjection assembles it; courtroom.cpp:2142).
-	if shout == protocol.ShoutCustom && a.customIdx >= 0 && a.customIdx < len(a.customShouts) {
-		out.CustomShout = a.customShouts[a.customIdx].File
+	if shout == protocol.ShoutCustom && a.compose.customIdx >= 0 && a.compose.customIdx < len(a.compose.customShouts) {
+		out.CustomShout = a.compose.customShouts[a.compose.customIdx].File
 	}
 	// Armed evidence rides this message; the wire shifts ids by 1 because
 	// 0 means "no evidence" (legacy standard, courtroom.cpp:2160).
@@ -1391,7 +1391,7 @@ func (a *App) sendIC() {
 	}
 	a.sess.SendChat(out)
 	a.lastICSend = time.Now()
-	a.recordSentIC(a.icInput) // #8: remember the raw typed line for Up-arrow recall
+	a.recordSentIC(a.compose.icInput) // #8: remember the raw typed line for Up-arrow recall
 	// Keep-until-echo (AO2-Client parity, courtroom.cpp handle_chatmessage):
 	// the input is NOT cleared here — noteOwnICEcho clears it when the server
 	// echoes our message back. tsuserver-family servers silently swallow an MS
@@ -1399,7 +1399,7 @@ func (a *App) sendIC() {
 	// (area.set_next_msg_delay), so an optimistic clear cost the whole typed
 	// line whenever two people sent at once and the other side won the race.
 	// The echo handler is prefix-aware (issue #56): if the box still starts
-	a.icPendingSent = a.icInput
+	a.compose.icPendingSent = a.compose.icInput
 	// The ONE-SHOT arms clear here, exactly where AO2 clears them — beside
 	// objection_state the moment the packet is built (courtroom.cpp:2327-2329,
 	// and :2362 for the slide, "Slides can't be sticky for nausea reasons").
@@ -1407,8 +1407,8 @@ func (a *App) sendIC() {
 	// Unlike the input above, these are cleared OPTIMISTICALLY rather than on the
 	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
 	// fires on every following line, which is the failure everyone notices.
-	a.icSlide, a.icRealize, a.icShake = false, false, false
-	a.icShout = 0 // objection_state, courtroom.cpp:2327 — the line it literally sits on
+	a.compose.icSlide, a.compose.icRealize, a.compose.icShake = false, false, false
+	a.compose.icShout = 0 // objection_state, courtroom.cpp:2327 — the line it literally sits on
 	// The three STICKY picks get their reset here, in the same place AO2's
 	// Courtroom::reset_ui does (courtroom.cpp:2340-2359). All three upstream
 	// options ship TRUE ("sticky"), so out of the box every one of these is a
@@ -1432,10 +1432,10 @@ func (a *App) clearSFXAfterSend() {
 	if a.d.Prefs.Load().StickySounds {
 		return
 	}
-	if !a.d.Prefs.Load().SFXOnIdle && !a.icPreanim {
+	if !a.d.Prefs.Load().SFXOnIdle && !a.compose.icPreanim {
 		return
 	}
-	a.sfxChoiceIdx = 0 // row 0 is the "auto" / Default row (sfxAutoLabel)
+	a.emotepick.sfxChoiceIdx = 0 // row 0 is the "auto" / Default row (sfxAutoLabel)
 }
 
 // clearPreAfterSend is courtroom.cpp:2356-2359: with Sticky Preanims OFF the Pre
@@ -1445,7 +1445,7 @@ func (a *App) clearPreAfterSend() {
 	if a.d.Prefs.Load().StickyPreanims {
 		return
 	}
-	a.icPreanim = false
+	a.compose.icPreanim = false
 }
 
 // noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
@@ -1467,8 +1467,8 @@ func (s *sessionState) noteOwnICEcho() {
 	// undo history records the clear at its next draw (fieldhistory.go's
 	// out-of-band detector), so Ctrl+Z still brings a fully-cleared
 	// sent line back — with real redo on top.
-	s.icInput = strings.TrimPrefix(s.icInput, s.icPendingSent)
-	s.icPendingSent = ""
+	s.compose.icInput = strings.TrimPrefix(s.compose.icInput, s.compose.icPendingSent)
+	s.compose.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
 }
 
@@ -1525,19 +1525,23 @@ func recallLine(c *Ctx, focused bool, input *string, hist []string, idx *int, dr
 }
 
 // recordSentIC / recallIC: the IC recall ring (#8).
-func (a *App) recordSentIC(raw string) { recordSentLine(raw, &a.icSentHist, &a.icRecallIdx) }
+func (a *App) recordSentIC(raw string) {
+	recordSentLine(raw, &a.compose.icSentHist, &a.compose.icRecallIdx)
+}
 
 func (a *App) recallIC() {
-	recallLine(a.ctx, a.ctx.focusID == "ic", &a.icInput, a.icSentHist, &a.icRecallIdx, &a.icRecallDraft)
+	recallLine(a.ctx, a.ctx.focusID == "ic", &a.compose.icInput, a.compose.icSentHist, &a.compose.icRecallIdx, &a.compose.icRecallDraft)
 }
 
 // recordSentOOC / recallOOC: the OOC recall ring — the same Up/Down history, fired from any of the
 // OOC inputs (the OOC box "oocmsg", the bottom bar "ooc", the themed "ooc"), all sharing oocInput.
-func (a *App) recordSentOOC(raw string) { recordSentLine(raw, &a.oocSentHist, &a.oocRecallIdx) }
+func (a *App) recordSentOOC(raw string) {
+	recordSentLine(raw, &a.compose.oocSentHist, &a.compose.oocRecallIdx)
+}
 
 func (a *App) recallOOC() {
 	f := a.ctx.focusID
-	recallLine(a.ctx, f == "ooc" || f == "oocmsg", &a.oocInput, a.oocSentHist, &a.oocRecallIdx, &a.oocRecallDraft)
+	recallLine(a.ctx, f == "ooc" || f == "oocmsg", &a.compose.oocInput, a.compose.oocSentHist, &a.compose.oocRecallIdx, &a.compose.oocRecallDraft)
 }
 
 // areaLockedBg / areaCurrentBg fill a locked area's card dark red and the area
@@ -1579,8 +1583,8 @@ const defaultSide = "wit"
 // receivers (LemmyAO's MS schema enumerates the eight standard sides)
 // reject wholesale.
 func (a *App) mySide() string {
-	if a.sidePref != "" {
-		return a.sidePref
+	if a.compose.sidePref != "" {
+		return a.compose.sidePref
 	}
 	return defaultSide
 }
@@ -1596,22 +1600,22 @@ func (a *App) handleChatCommand(text string) bool {
 		return true
 	case strings.HasPrefix(text, "/pair "):
 		if id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/pair "))); err == nil {
-			a.pairWith = id
+			a.pairbox.pairWith = id
 		}
 		return true
 	case text == "/unpair":
-		a.pairWith = protocol.UnpairedCharID
+		a.pairbox.pairWith = protocol.UnpairedCharID
 		return true
 	case strings.HasPrefix(text, "/offset "):
 		parts := strings.Fields(strings.TrimPrefix(text, "/offset "))
 		if len(parts) >= 1 {
 			if x, err := strconv.Atoi(parts[0]); err == nil {
-				a.pairOffX = clampOffset(x)
+				a.pairbox.pairOffX = clampOffset(x)
 			}
 		}
 		if len(parts) >= 2 {
 			if y, err := strconv.Atoi(parts[1]); err == nil {
-				a.pairOffY = clampOffset(y)
+				a.pairbox.pairOffY = clampOffset(y)
 			}
 		}
 		a.refreshPairOffsetBufs() // pair panel rows mirror the command
@@ -1845,32 +1849,32 @@ func buildICColorChoices() []string {
 // a.icExtColor and ship as inline markup with a nearest-standard wire fallback,
 // so the wire field never leaves 0..8 (#98).
 func (a *App) applyICColorChoice(next int) {
-	a.icCustomOn = false // every non-Custom pick turns the free hex off (mutual exclusion)
+	a.compose.icCustomOn = false // every non-Custom pick turns the free hex off (mutual exclusion)
 	switch {
 	case next == icColorCustomIdx:
 		// Free hex pick (Tifera): seed from the last persisted custom
 		// colour and open the wheel. Selecting Custom… again just reopens it.
-		a.icCustomOn = true
-		a.icCustomRGB = a.d.Prefs.Load().ICCustomColorRGB()
+		a.compose.icCustomOn = true
+		a.compose.icCustomRGB = a.d.Prefs.Load().ICCustomColorRGB()
 		a.showICColorWheel = true
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
-		a.icExtColor = 0
+		a.compose.icExtColor = 0
 	case next == icColorRainbowIdx:
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = true })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
-		a.icExtColor = 0
+		a.compose.icExtColor = 0
 	case next == icColorRandomIdx:
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = true })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
-		a.icExtColor = 0
+		a.compose.icExtColor = 0
 	case next >= extColorFirst && next < extColorFirst+render.ExtColorCount():
-		a.icExtColor = next - extColorFirst + 1 // 1-based; 0 = none
+		a.compose.icExtColor = next - extColorFirst + 1 // 1-based; 0 = none
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 	default: // standard palette 0..8
-		a.icColor = next
-		a.icExtColor = 0
+		a.compose.icColor = next
+		a.compose.icExtColor = 0
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = false })
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomMessageColor = false })
 	}
@@ -1885,12 +1889,12 @@ func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
 		return icColorRainbowIdx, chatRainbow[0]
 	case a.d.Prefs.Load().RandomMessageColor:
 		return icColorRandomIdx, ColTextDim
-	case a.icCustomOn:
-		return icColorCustomIdx, sdl.Color{R: uint8(a.icCustomRGB >> 16), G: uint8(a.icCustomRGB >> 8), B: uint8(a.icCustomRGB), A: 255}
-	case a.icExtColor > 0 && a.icExtColor <= render.ExtColorCount():
-		return extColorFirst + a.icExtColor - 1, render.ExtColorAt(a.icExtColor - 1).Color
+	case a.compose.icCustomOn:
+		return icColorCustomIdx, sdl.Color{R: uint8(a.compose.icCustomRGB >> 16), G: uint8(a.compose.icCustomRGB >> 8), B: uint8(a.compose.icCustomRGB), A: 255}
+	case a.compose.icExtColor > 0 && a.compose.icExtColor <= render.ExtColorCount():
+		return extColorFirst + a.compose.icExtColor - 1, render.ExtColorAt(a.compose.icExtColor - 1).Color
 	default:
-		return a.icColor, render.TextColor(a.icColor)
+		return a.compose.icColor, render.TextColor(a.compose.icColor)
 	}
 }
 
@@ -1926,8 +1930,8 @@ type icColorSel struct {
 // selectionFor returns ok=false, and we leave the frozen snapshot untouched.
 func (a *App) captureICColorSel() {
 	c := a.ctx
-	if lo, hi, ok := c.selectionFor(icFieldID, a.icInput); ok {
-		a.icColorSel = icColorSel{lo: lo, hi: hi, active: true} // focused + non-empty: track live
+	if lo, hi, ok := c.selectionFor(icFieldID, a.compose.icInput); ok {
+		a.compose.icColorSel = icColorSel{lo: lo, hi: hi, active: true} // focused + non-empty: track live
 		return
 	}
 	if c.focusID == icFieldID || c.ddOpen != icColorDDID {
@@ -1939,7 +1943,7 @@ func (a *App) captureICColorSel() {
 		// stale rune indices into edited text). The frozen snapshot is only
 		// meaningful inside the open colour dropdown's own focus-stealing
 		// window, so that is the only unfocused state that preserves it.
-		a.icColorSel.active = false
+		a.compose.icColorSel.active = false
 		return
 	}
 	// Unfocused while the colour dropdown is open: keep the frozen pre-open selection.
@@ -1952,8 +1956,8 @@ func (a *App) captureICColorSel() {
 // colour; the AsyncAO-native extras (extended/rainbow/random/custom hex) have no
 // AO2 wire markup, so they always fall through to applyICColorChoice — the
 func (a *App) applyICColorPick(next int) {
-	sel := a.icColorSel
-	a.icColorSel.active = false // consume the snapshot: the next open re-captures
+	sel := a.compose.icColorSel
+	a.compose.icColorSel.active = false // consume the snapshot: the next open re-captures
 	if sel.active && next >= 0 && next < extColorFirst {
 		if start, end, ok := courtroom.AO2MarkupFor(next); ok {
 			a.wrapICSelection(sel.lo, sel.hi, start, end)
@@ -1990,7 +1994,7 @@ func icColorPickOpensWheel(next int) bool { return next == icColorCustomIdx }
 // draw and Ctrl+Z undoes the wrap (fieldhistory.go). The build runs only on a pick
 // (a rare event), so a plain slice build is fine — it is off the per-frame path.
 func (a *App) wrapICSelection(lo, hi int, start, end rune) {
-	rs := []rune(a.icInput)
+	rs := []rune(a.compose.icInput)
 	if lo < 0 || hi > len(rs) || lo > hi { // stale snapshot vs a value edited since: ignore
 		return
 	}
@@ -2000,7 +2004,7 @@ func (a *App) wrapICSelection(lo, hi int, start, end rune) {
 	out = append(out, rs[lo:hi]...)
 	out = append(out, end)
 	out = append(out, rs[hi:]...)
-	a.icInput = string(out)
+	a.compose.icInput = string(out)
 }
 
 // chatRainbow is the palette inline rainbow (\cr) cycles through, per rune.
@@ -2057,22 +2061,22 @@ const emoteDropdownLabelSep = ": "
 // picking row N select a different emote.
 func (a *App) ensureEmoteChoices() {
 	name := a.activeCharName()
-	if a.emoteChoicesForName == name && a.emoteChoicesForCount == len(a.emotes) {
+	if a.emotepick.emoteChoicesForName == name && a.emotepick.emoteChoicesForCount == len(a.emotepick.emotes) {
 		return
 	}
-	a.emoteChoicesForName, a.emoteChoicesForCount = name, len(a.emotes)
-	a.emoteChoices = a.emoteChoices[:0]
-	for i := range a.emotes {
+	a.emotepick.emoteChoicesForName, a.emotepick.emoteChoicesForCount = name, len(a.emotepick.emotes)
+	a.emotepick.emoteChoices = a.emotepick.emoteChoices[:0]
+	for i := range a.emotepick.emotes {
 		// DIVERGENCE, deliberate: AO2's get_emote_comment returns the comment field
 		// verbatim and never falls back, so an emote with an empty comment shows as
 		// a bare "2: " there. We fall back to the animation name, matching what the
 		// themed emote GRID already does, because a list of bare ordinals is
 		// unusable and the two surfaces must agree on what an emote is called.
-		label := a.emotes[i].Comment
+		label := a.emotepick.emotes[i].Comment
 		if label == "" {
-			label = a.emotes[i].Anim
+			label = a.emotepick.emotes[i].Anim
 		}
-		a.emoteChoices = append(a.emoteChoices,
+		a.emotepick.emoteChoices = append(a.emotepick.emoteChoices,
 			strconv.Itoa(i+1)+emoteDropdownLabelSep+label)
 	}
 }

@@ -26,9 +26,9 @@ func oocRowSelectionFixture(t *testing.T, text, speaker string) (a *App, wide in
 	t.Helper()
 	a = scaleTestApp(t)
 	a.oocPct = DefaultScalePct
-	a.oocLog = []string{text}
-	a.oocSpeakers = []string{speaker}
-	a.oocSeq++
+	a.chatlog.oocLog = []string{text}
+	a.chatlog.oocSpeakers = []string{speaker}
+	a.chatlog.oocSeq++
 	const fixtureWidth = 4000 // wider than any fixture string can wrap
 	lines := a.oocWrapped(fixtureWidth - logWrapIndentPx)
 	if len(lines) != 1 || lines[0] != text {
@@ -176,8 +176,8 @@ func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 
 	// IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
 	const speaker = "Wright"
-	a.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
-	a.icLogSeq++
+	a.chatlog.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
+	a.chatlog.icLogSeq++
 	const fixtureWidth = 4000
 	rows := a.icWrapped(fixtureWidth-logWrapIndentPx, false)
 	if len(rows) != 1 {
@@ -284,8 +284,8 @@ func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale(t *testing.T) {
 func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScaleIC(t *testing.T) {
 	a := scaleTestApp(t)
 	a.logPct = DefaultScalePct
-	a.icLog = []icEntry{{text: motdSelectionFixtureLine, speaker: "Wright"}}
-	a.icLogSeq++
+	a.chatlog.icLog = []icEntry{{text: motdSelectionFixtureLine, speaker: "Wright"}}
+	a.chatlog.icLogSeq++
 	const fixtureWidth = 4000
 	rows := a.icWrapped(fixtureWidth-logWrapIndentPx, false)
 	if len(rows) != 1 {

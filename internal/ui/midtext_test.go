@@ -11,7 +11,7 @@ import (
 // AO silence sentinels ("", "0", "1") reading as "no sound".
 func TestMidEmoteResolver(t *testing.T) {
 	a := &App{env: env{}}
-	a.emotes = []courtroom.Emote{
+	a.emotepick.emotes = []courtroom.Emote{
 		{Comment: "normal", Preanim: "-", Anim: "normal", SFXName: ""},
 		{Comment: "Angry", Preanim: "flourish", Anim: "angry", SFXName: "whip"},
 		{Comment: "quiet", Anim: "quiet", SFXName: "1"},

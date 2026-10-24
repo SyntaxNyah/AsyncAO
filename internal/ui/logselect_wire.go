@@ -238,7 +238,7 @@ func (a *App) logRowNameStyle(which, li int) (speaker string, nameOn, bold bool)
 	if a.ghostLogSpan(a.icWrap).ghosted(li, entry) {
 		return "", nameOn, bold // not spoken yet: drawn ghostInk-only, the name tint drops with it
 	}
-	return a.icLog[entry].speaker, nameOn, bold
+	return a.chatlog.icLog[entry].speaker, nameOn, bold
 }
 
 // logPointAt maps a pixel position to a selection point: the wrapped-line index

@@ -26,9 +26,9 @@ func presetTestApp(t *testing.T) *App {
 // the current character's emote list).
 func TestStylePresetSaveApply(t *testing.T) {
 	a := presetTestApp(t)
-	a.emotes = []courtroom.Emote{{Anim: "happy"}, {Anim: "angry"}}
-	a.emoteIdx = 1 // "angry"
-	a.icColor = 3
+	a.emotepick.emotes = []courtroom.Emote{{Anim: "happy"}, {Anim: "angry"}}
+	a.emotepick.emoteIdx = 1 // "angry"
+	a.compose.icColor = 3
 	a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{Tint: true, R: 200, Glow: true})
 
 	a.saveStylePreset("Rage")
@@ -41,14 +41,14 @@ func TestStylePresetSaveApply(t *testing.T) {
 	}
 
 	// Change everything, then apply the preset back.
-	a.icColor, a.emoteIdx = 0, 0
+	a.compose.icColor, a.emotepick.emoteIdx = 0, 0
 	a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	a.applyStylePreset(ps[0])
-	if a.icColor != 3 {
-		t.Errorf("colour not applied: %d", a.icColor)
+	if a.compose.icColor != 3 {
+		t.Errorf("colour not applied: %d", a.compose.icColor)
 	}
-	if a.emoteIdx != 1 {
-		t.Errorf("emote-by-name not applied: emoteIdx=%d, want 1 (angry)", a.emoteIdx)
+	if a.emotepick.emoteIdx != 1 {
+		t.Errorf("emote-by-name not applied: emoteIdx=%d, want 1 (angry)", a.emotepick.emoteIdx)
 	}
 	if s := a.d.Prefs.Load().MySpriteStyle; !s.Tint || s.R != 200 || !s.Glow {
 		t.Errorf("style not applied: %+v", s)
@@ -81,14 +81,14 @@ func TestStylePresetKeyApply(t *testing.T) {
 	if !a.handleStylePresetKeys() {
 		t.Fatal("Alt + a bound key didn't apply its preset")
 	}
-	if a.icColor != 5 {
-		t.Errorf("preset colour not applied via keybind: %d", a.icColor)
+	if a.compose.icColor != 5 {
+		t.Errorf("preset colour not applied via keybind: %d", a.compose.icColor)
 	}
 
 	// Ctrl+Alt is AltGr on Windows and DOES produce text: it must never reach a
 	// bind namespace, or every accented character on a European layout would swap
 	// the style while you type it.
-	a.icColor = 0
+	a.compose.icColor = 0
 	a.ctx.keyPressed, a.ctx.ctrlHeld = sdl.K_F2, true
 	if a.handleStylePresetKeys() {
 		t.Error("style keybind fired on Ctrl+Alt (AltGr)")

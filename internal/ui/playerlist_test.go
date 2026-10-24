@@ -295,19 +295,19 @@ func TestJumpToAreaDrivesScrollback(t *testing.T) {
 
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.curArea = "C1"
-	a.icLog = []icEntry{{text: "c1 line"}}
+	a.chatlog.icLog = []icEntry{{text: "c1 line"}}
 
 	a.jumpToArea("C2") // saves "c1 line" under the OLD curArea (C1), loads empty C2
-	if len(a.icLog) != 0 {
-		t.Fatalf("entering a fresh area must start empty, got %d", len(a.icLog))
+	if len(a.chatlog.icLog) != 0 {
+		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
 	if a.curArea != "C2" {
 		t.Fatalf("jump must advance curArea, got %q", a.curArea)
 	}
 
 	a.jumpToArea("C1") // back to C1 → its saved line returns
-	if len(a.icLog) != 1 || a.icLog[0].text != "c1 line" {
-		t.Fatalf("returning to an area must restore its log, got %v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "c1 line" {
+		t.Fatalf("returning to an area must restore its log, got %v", a.chatlog.icLog)
 	}
 }
 
@@ -328,17 +328,17 @@ func TestJumpToAreaGuards(t *testing.T) {
 	})
 
 	a.curArea = "orig"
-	a.icLog = []icEntry{{text: "keep me"}}
+	a.chatlog.icLog = []icEntry{{text: "keep me"}}
 	a.jumpToArea("Elsewhere")
-	if a.curArea != "orig" || len(a.icLog) != 1 || a.icLog[0].text != "keep me" {
-		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.curArea, a.icLog)
+	if a.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
+		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.curArea, a.chatlog.icLog)
 	}
 
 	// Live session but empty area name (the guard's other half).
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.jumpToArea("")
-	if a.curArea != "orig" || len(a.icLog) != 1 || a.icLog[0].text != "keep me" {
-		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.curArea, a.icLog)
+	if a.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
+		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.curArea, a.chatlog.icLog)
 	}
 }
 

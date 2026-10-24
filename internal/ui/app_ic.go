@@ -494,7 +494,7 @@ func (a *App) pollThemeApply() {
 	// re-demand so the emote grid heals immediately after a theme switch
 	// (the same invariant pollCharINI applies on a character change).
 	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
-	a.emoteAsk, a.emoteIconAsk = nil, nil
+	a.emotepick.emoteAsk, a.emoteIconAsk = nil, nil
 	// #35: last, because it needs the geometry landed above (themeRectsOrig) and
 	// because a resize is the most disruptive thing this function can do. No-op
 	// unless THIS apply's generation is the one a user-initiated pick armed —
@@ -1237,7 +1237,7 @@ func (a *App) switchAreaScrollback(toArea string) {
 	if _, seen := a.areaLogs[a.curArea]; !seen {
 		a.areaLogOrder = append(a.areaLogOrder, a.curArea)
 	}
-	a.areaLogs[a.curArea] = a.icLog
+	a.areaLogs[a.curArea] = a.chatlog.icLog
 	for len(a.areaLogOrder) > areaLogCacheMax {
 		oldest := a.areaLogOrder[0]
 		a.areaLogOrder = a.areaLogOrder[1:]
@@ -1246,10 +1246,10 @@ func (a *App) switchAreaScrollback(toArea string) {
 		}
 	}
 	// Load the target area's saved log (nil = unvisited = a fresh empty log).
-	a.icLog = a.areaLogs[toArea]
-	a.icLogSeq++ // invalidate the wrap + filter caches
-	a.icScroll, a.icStick = 0, true
-	a.icReadMark = len(a.icLog)
+	a.chatlog.icLog = a.areaLogs[toArea]
+	a.chatlog.icLogSeq++ // invalidate the wrap + filter caches
+	a.chatlog.icScroll, a.compose.icStick = 0, true
+	a.compose.icReadMark = len(a.chatlog.icLog)
 }
 
 // logDetailed appends an IC message to the transcript when detailed logging is
@@ -1389,12 +1389,12 @@ func (a *App) pushICStyled(line string, color int, friend bool, friendColor int3
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-	if cap := a.icLogCapFor(); cap > 0 && len(a.icLog) > cap {
-		copy(a.icLog, a.icLog[len(a.icLog)-cap:])
-		a.icLog = a.icLog[:cap]
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+	if cap := a.icLogCapFor(); cap > 0 && len(a.chatlog.icLog) > cap {
+		copy(a.chatlog.icLog, a.chatlog.icLog[len(a.chatlog.icLog)-cap:])
+		a.chatlog.icLog = a.chatlog.icLog[:cap]
 	}
-	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
+	a.chatlog.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
 }
 
 // icLogCapFor returns the effective IC scrollback cap: 0 = don't cap at all,
@@ -1473,9 +1473,9 @@ func (a *App) pushOOC(line, speaker string) {
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}
-	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
-	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
-	a.oocSeq++ // invalidate the wrapped-lines cache
+	a.chatlog.oocLog = appendCapped(a.chatlog.oocLog, line, icLogCap)
+	a.chatlog.oocSpeakers = appendCapped(a.chatlog.oocSpeakers, speaker, icLogCap)
+	a.chatlog.oocSeq++ // invalidate the wrapped-lines cache
 	// Every active-tab OOC-ish event (real chat, [MOD CALL], CLIENT auth lines,
 	// [CASE], [SERVER] notices/mute) already funnels through this one function,
 	// same as AO2's single append_server_chatmessage entry point — so this one

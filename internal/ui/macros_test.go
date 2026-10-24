@@ -132,7 +132,7 @@ func TestOOCNameFallback(t *testing.T) {
 	if len(n) == 0 || len(n) > 3 {
 		t.Fatalf("fallback suffix %q out of the 1-200 range shape", n)
 	}
-	a.oocName = "Nyah"
+	a.compose.oocName = "Nyah"
 	if got := a.oocNameOrDefault(); got != "Nyah" {
 		t.Fatalf("a set name must win, got %q", got)
 	}

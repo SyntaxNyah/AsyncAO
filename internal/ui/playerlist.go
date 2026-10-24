@@ -192,7 +192,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		// #M1: your own cross-client status — the button cycles none → AFK → Busy →
 		// Writing → LFRP. Send-on-change transmits it on your next IC message;
 		// AsyncAO players see a coloured chip on your row, standard clients see nothing.
-		status: playerStatusButtonLabel(a.myStatus),
+		status: playerStatusButtonLabel(a.compose.myStatus),
 	}
 	// Rooms orders the /gas AREA GROUPS (a second axis from Sort, which orders
 	// players). Only built when the roster spans areas — there is nothing to order
@@ -236,7 +236,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			c.Tooltip(it.r, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
 		case plItemStatus:
 			if c.Button(it.r, it.label) {
-				a.myStatus = (a.myStatus + 1) % courtroom.StatusCount
+				a.compose.myStatus = (a.compose.myStatus + 1) % courtroom.StatusCount
 			}
 			c.Tooltip(it.r, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
 		case plItemMenu:
@@ -529,7 +529,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// only a set status draws a chip, so the common (none) case costs nothing.
 	st := courtroom.StatusNone
 	if isMe {
-		st = a.myStatus
+		st = a.compose.myStatus
 	} else if a.room != nil {
 		if rs, ok := a.room.RemoteStatus(p.name); ok {
 			st = rs
@@ -625,8 +625,8 @@ func rosterBarColor(isMe, isSpeaker, friend bool) (sdl.Color, bool) {
 // speakers-first sort. "" when nobody has spoken or the last line was a system
 // line.
 func (a *App) currentSpeakerName() string {
-	if n := len(a.icLog); n > 0 {
-		return strings.ToLower(strings.TrimSpace(a.icLog[n-1].speaker))
+	if n := len(a.chatlog.icLog); n > 0 {
+		return strings.ToLower(strings.TrimSpace(a.chatlog.icLog[n-1].speaker))
 	}
 	return ""
 }

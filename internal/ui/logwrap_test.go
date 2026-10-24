@@ -35,8 +35,8 @@ func TestLogHangingIndent(t *testing.T) {
 	a.oocPct = DefaultScalePct
 
 	// IC: one entry long enough to wrap into several rows.
-	a.icLog = append(a.icLog, icEntry{text: "this message is long enough to wrap into rows"})
-	a.icLogSeq++
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "this message is long enough to wrap into rows"})
+	a.chatlog.icLogSeq++
 	rows := a.icWrapped(160, false)
 	if len(rows) < 2 {
 		t.Fatalf("IC fixture must wrap, got %d rows", len(rows))
@@ -50,9 +50,9 @@ func TestLogHangingIndent(t *testing.T) {
 
 	// OOC: a wrapping paragraph THEN an explicit newline — the wrap's rows are
 	// continuations, the newline's row starts a fresh unindented paragraph.
-	a.oocLog = append(a.oocLog, "a long first paragraph that will wrap across rows\nsecond para")
-	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
-	a.oocSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, "a long first paragraph that will wrap across rows\nsecond para")
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "MOTD")
+	a.chatlog.oocSeq++
 	lines := a.oocWrapped(160)
 	if len(lines) < 3 {
 		t.Fatalf("OOC fixture must wrap, got %d rows", len(lines))
@@ -245,9 +245,9 @@ func TestOOCWrapLongHelpNoLoss(t *testing.T) {
 		b.WriteString("alpha bravo charlie ") // 20 chars/group, all fit a 160 px column
 	}
 	help := strings.TrimSpace(b.String())
-	a.oocLog = append(a.oocLog, help)
-	a.oocSpeakers = append(a.oocSpeakers, "Server")
-	a.oocSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, help)
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "Server")
+	a.chatlog.oocSeq++
 
 	rows := a.oocWrapped(160)
 	if len(rows) <= oocWrapMaxLinesPerEntryOld {
@@ -285,10 +285,10 @@ func TestPushOOCStoreCapIntact(t *testing.T) {
 	a := testTabApp(t)
 	huge := strings.Repeat("x", oocLineCap+500) // comfortably over the cap
 	a.pushOOC(huge, "")
-	if len(a.oocLog) != 1 {
-		t.Fatalf("expected one stored entry, got %d", len(a.oocLog))
+	if len(a.chatlog.oocLog) != 1 {
+		t.Fatalf("expected one stored entry, got %d", len(a.chatlog.oocLog))
 	}
-	stored := a.oocLog[0]
+	stored := a.chatlog.oocLog[0]
 	if !strings.HasSuffix(stored, "…") {
 		t.Fatal("over-cap entry must be marked with a trailing …")
 	}
@@ -299,7 +299,7 @@ func TestPushOOCStoreCapIntact(t *testing.T) {
 	a2 := testTabApp(t)
 	fits := strings.Repeat("y", oocLineCap-1)
 	a2.pushOOC(fits, "")
-	if len(a2.oocLog) != 1 || a2.oocLog[0] != fits {
+	if len(a2.chatlog.oocLog) != 1 || a2.chatlog.oocLog[0] != fits {
 		t.Fatal("an under-cap entry must be stored verbatim")
 	}
 }
@@ -316,9 +316,9 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 
 	// No spaces → the wrap hard-splits it; longer than the budget so it overflows.
 	pathological := strings.Repeat("Z", oocWrapMaxLinesPerEntry+50)
-	a.oocLog = append(a.oocLog, pathological)
-	a.oocSpeakers = append(a.oocSpeakers, "")
-	a.oocSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, pathological)
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "")
+	a.chatlog.oocSeq++
 
 	rows := a.oocWrapped(8) // 8 px ≈ 1 char/row, well under oocWrapMinCharsPerRow
 	if len(rows) == 0 {
@@ -338,7 +338,7 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 			len(rows), len(a.oocWrapName), len(a.oocWrapCont), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
 	}
 	// A NORMAL width never trips the marker for the same content.
-	a.oocSeq++ // force a cache rebuild at the new width
+	a.chatlog.oocSeq++ // force a cache rebuild at the new width
 	wide := a.oocWrapped(4000)
 	for _, ln := range wide {
 		if ln == "…" {
@@ -398,9 +398,9 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 
 	// The column the OOC list wraps against (its own indent already removed).
 	const colW = 240
-	a.oocLog = append(a.oocLog, motd)
-	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
-	a.oocSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, motd)
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "MOTD")
+	a.chatlog.oocSeq++
 	rows := a.oocWrapped(colW)
 	if len(rows) < 3 {
 		t.Fatalf("MOTD must wrap into several rows, got %d", len(rows))
@@ -419,8 +419,8 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 
 	// The IC log wraps through the same measure — pin it too (same entry, so the
 	// same paragraph-vs-row pick split).
-	a.icLog = append(a.icLog, icEntry{text: motd})
-	a.icLogSeq++
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: motd})
+	a.chatlog.icLogSeq++
 	icRows := a.icWrapped(colW, false)
 	if len(icRows) < 3 {
 		t.Fatalf("IC entry must wrap into several rows, got %d", len(icRows))
@@ -466,9 +466,9 @@ func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
 
 	const colW = 240
 	entry := speaker + ": " + strings.Repeat("word ", 20)
-	a.oocLog = append(a.oocLog, entry)
-	a.oocSpeakers = append(a.oocSpeakers, speaker)
-	a.oocSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, entry)
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, speaker)
+	a.chatlog.oocSeq++
 
 	rows := a.oocWrapped(colW)
 	if len(rows) < 2 {

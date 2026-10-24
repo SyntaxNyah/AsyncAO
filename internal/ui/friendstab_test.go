@@ -51,7 +51,7 @@ func TestPMThreadBounds(t *testing.T) {
 	for i := 0; i < pmThreadLineCap+20; i++ {
 		a.pmAppend("Phoenix", true, "msg")
 	}
-	if n := len(a.pmThreads["phoenix"]); n != pmThreadLineCap {
+	if n := len(a.compose.pmThreads["phoenix"]); n != pmThreadLineCap {
 		t.Errorf("thread len = %d, want %d (capped)", n, pmThreadLineCap)
 	}
 
@@ -59,7 +59,7 @@ func TestPMThreadBounds(t *testing.T) {
 	for i := 0; i < pmThreadCap+10; i++ {
 		a.pmAppend(fmt.Sprintf("partner%d", i), true, "hi")
 	}
-	if n := len(a.pmThreads); n > pmThreadCap {
+	if n := len(a.compose.pmThreads); n > pmThreadCap {
 		t.Errorf("threads = %d, want <= %d", n, pmThreadCap)
 	}
 
@@ -67,11 +67,11 @@ func TestPMThreadBounds(t *testing.T) {
 	a2 := &App{env: env{d: Deps{Prefs: prefs}}}
 	a2.serverKey = "s"
 	a2.detectIncomingPM("PM sent to Phoenix: hi")
-	if len(a2.pmThreads) != 0 {
-		t.Errorf("outgoing echo must not create a thread, got %d", len(a2.pmThreads))
+	if len(a2.compose.pmThreads) != 0 {
+		t.Errorf("outgoing echo must not create a thread, got %d", len(a2.compose.pmThreads))
 	}
 	a2.detectIncomingPM("PM from Phoenix: hi back")
-	if got := a2.pmThreads["phoenix"]; len(got) != 1 || got[0].fromMe || got[0].text != "hi back" {
+	if got := a2.compose.pmThreads["phoenix"]; len(got) != 1 || got[0].fromMe || got[0].text != "hi back" {
 		t.Errorf("incoming PM recorded wrong: %+v", got)
 	}
 }

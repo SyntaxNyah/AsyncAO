@@ -95,7 +95,7 @@ func TestPanelMagnetCensusExcludesDraggedAndClosed(t *testing.T) {
 	const w, h = int32(1000), int32(800)
 
 	// Two panels open; the pair panel is the one being dragged.
-	a.showPair = true
+	a.pairbox.showPair = true
 	a.wins.pairWin.dragging = true
 	a.showEvid = true // a second, non-dragged open panel → a legit candidate
 	// A closed panel must contribute nothing even though its floatWin has a rect.

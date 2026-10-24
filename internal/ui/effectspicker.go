@@ -604,8 +604,8 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	if len(choices) <= 1 {
 		return
 	}
-	if a.overlayChoiceIdx < 0 || a.overlayChoiceIdx >= len(choices) {
-		a.overlayChoiceIdx = 0
+	if a.emotepick.overlayChoiceIdx < 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
+		a.emotepick.overlayChoiceIdx = 0
 	}
 	if a.overlays.overlayThumbFn == nil {
 		// Bound ONCE (the posThumbFn idiom): a per-frame closure here would
@@ -621,9 +621,9 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 			rowH = h
 		}
 	}
-	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.overlayChoiceIdx, rowH, thumbW, a.overlays.overlayThumbFn)
+	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.emotepick.overlayChoiceIdx, rowH, thumbW, a.overlays.overlayThumbFn)
 	if changed {
-		a.overlayChoiceIdx = next
+		a.emotepick.overlayChoiceIdx = next
 		// on_effects_dropdown_changed's other half (courtroom.cpp:5653-5657): it sets
 		// `effect` and calls focus_ic_input(). Picking a screen effect is a step in
 		// composing the line, so the keyboard goes back to the line (chatfocus.go).
@@ -755,15 +755,15 @@ func (a *App) overlayRosterFXFor(folder, name string) (theme.OverlayFX, bool) {
 // play on top of the sound the user explicitly chose for this line.
 func (a *App) outgoingEffectsField() string {
 	choices := a.overlayChoices()
-	if a.overlayChoiceIdx <= 0 || a.overlayChoiceIdx >= len(choices) {
+	if a.emotepick.overlayChoiceIdx <= 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
 		return ""
 	}
-	name := choices[a.overlayChoiceIdx]
+	name := choices[a.emotepick.overlayChoiceIdx]
 	folder := a.myOverlayFolder()
 	// get_effect_property(effect, current_char, folder, "sound") — including its
 	// realization special case (courtroom.cpp:2299 calls the very same accessor).
 	sound := a.overlayEffectSound(folder, name)
-	if !a.icPreanim && a.sfxChoiceIdx > 0 {
+	if !a.compose.icPreanim && a.emotepick.sfxChoiceIdx > 0 {
 		sound = "0"
 	}
 	return courtroom.BuildEffectsField(name, folder, sound)
@@ -787,13 +787,13 @@ func (a *App) overlayPostSendReset(globalSticky bool) {
 		return // canon's default: the pick rides every following line
 	}
 	choices := a.overlayChoices()
-	if a.overlayChoiceIdx <= 0 || a.overlayChoiceIdx >= len(choices) {
+	if a.emotepick.overlayChoiceIdx <= 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
 		return
 	}
-	if fx, ok := a.overlayRosterFXFor(a.myOverlayFolder(), choices[a.overlayChoiceIdx]); ok && fx.Sticky {
+	if fx, ok := a.overlayRosterFXFor(a.myOverlayFolder(), choices[a.emotepick.overlayChoiceIdx]); ok && fx.Sticky {
 		return // the effect declares sticky: the selection survives even then
 	}
-	a.overlayChoiceIdx = 0
+	a.emotepick.overlayChoiceIdx = 0
 }
 
 // drawOverlayChatLayer paints the `chat`-rung overlay. AO2 reparents that one

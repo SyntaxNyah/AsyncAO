@@ -699,8 +699,8 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 
 			const draft = "/unpair"
 			const pairedWith = 7
-			a.icInput = draft
-			a.pairWith = pairedWith
+			a.compose.icInput = draft
+			a.pairbox.pairWith = pairedWith
 			a.ctx.focusID = icFieldID // the field only returns its Enter while it holds focus
 			a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
@@ -709,22 +709,22 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 			// non-vacuity press below then sends a REAL IC line — which on a fixture with no
 			// socket panics inside Session.reply and buries this failure in a stack trace.
 			// Stopping here keeps a broken fence reading as a broken fence.
-			if a.icInput != draft {
+			if a.compose.icInput != draft {
 				t.Fatalf("icInput = %q, want %q — either the send went through under the box or the "+
-					"keystroke was swallowed somewhere that took the draft with it", a.icInput, draft)
+					"keystroke was swallowed somewhere that took the draft with it", a.compose.icInput, draft)
 			}
-			if a.pairWith != pairedWith {
+			if a.pairbox.pairWith != pairedWith {
 				t.Errorf("pairWith = %d, want %d — the line was sent into a room the server has "+
-					"already removed us from", a.pairWith, pairedWith)
+					"already removed us from", a.pairbox.pairWith, pairedWith)
 			}
 
 			a.closeServerNotice()
 			a.ctx.focusID = icFieldID
 			driveEnter(a)
-			if a.icInput != "" || a.pairWith != protocol.UnpairedCharID {
+			if a.compose.icInput != "" || a.pairbox.pairWith != protocol.UnpairedCharID {
 				t.Fatalf("Enter with nothing in the way left icInput=%q pairWith=%d — this layout's "+
 					"IC field never reaches sendIC in the fixture, so the arm above proves nothing "+
-					"about it", a.icInput, a.pairWith)
+					"about it", a.compose.icInput, a.pairbox.pairWith)
 			}
 		})
 	}

@@ -130,12 +130,12 @@ func TestPairPreviewFitIsHeightBoundAndCentred(t *testing.T) {
 // session's pair placement is dead centre, and anything else came from a WRITE.
 func TestPairOffsetsDefaultToZero(t *testing.T) {
 	a := testTabApp(t)
-	if a.pairOffX != 0 || a.pairOffY != 0 {
-		t.Fatalf("fresh pair offsets = %d,%d, want 0,0", a.pairOffX, a.pairOffY)
+	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 {
+		t.Fatalf("fresh pair offsets = %d,%d, want 0,0", a.pairbox.pairOffX, a.pairbox.pairOffY)
 	}
 	a.resetSessionState()
-	if a.pairOffX != 0 || a.pairOffY != 0 {
-		t.Fatalf("pair offsets after a session reset = %d,%d, want 0,0", a.pairOffX, a.pairOffY)
+	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 {
+		t.Fatalf("pair offsets after a session reset = %d,%d, want 0,0", a.pairbox.pairOffX, a.pairbox.pairOffY)
 	}
 }
 
@@ -149,9 +149,9 @@ func TestPairOffsetsDefaultToZero(t *testing.T) {
 // one exists because the OFFSETS, the field the defect was about, had nothing
 func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	a, sent := flipSendApp(t)
-	a.pairWith = 1
-	a.pairOffX, a.pairOffY = -37, 21
-	a.pairOrder = protocol.PairSpeakerInFront
+	a.pairbox.pairWith = 1
+	a.pairbox.pairOffX, a.pairbox.pairOffY = -37, 21
+	a.pairbox.pairOrder = protocol.PairSpeakerInFront
 	a.sendICFresh()
 
 	msg := lastSentMS(t, a, sent)
@@ -175,7 +175,7 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	// spelling. Without y_offset only X is representable, which is why the arm
 	// above asserts the bare number.
 	a.sess.Features[protocol.FeatureYOffset] = struct{}{}
-	a.icInput = "and vertically"
+	a.compose.icInput = "and vertically"
 	a.sendICFresh()
 	if got := (*sent)[len(*sent)-1].Field(outgoingSelfOffsetField); got != "-37&21" {
 		t.Errorf("wire self offset field = %q, want %q (2.9 y_offset)", got, "-37&21")
@@ -183,14 +183,14 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	// Unpairing clears the partner and leaves the offsets alone — they are YOUR
 	// placement, not a property of the pair (AO2 keeps ui_pair_offset_spinbox
 	// across an unpair too).
-	a.pairWith = protocol.UnpairedCharID
-	a.icInput = "solo now"
+	a.pairbox.pairWith = protocol.UnpairedCharID
+	a.compose.icInput = "solo now"
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Pair.Active() {
 		t.Errorf("unpaired send still carries a pair block: %+v", msg.Pair)
 	}
-	if a.pairOffX != -37 || a.pairOffY != 21 {
-		t.Errorf("unpairing moved the offsets to %d,%d", a.pairOffX, a.pairOffY)
+	if a.pairbox.pairOffX != -37 || a.pairbox.pairOffY != 21 {
+		t.Errorf("unpairing moved the offsets to %d,%d", a.pairbox.pairOffX, a.pairbox.pairOffY)
 	}
 }
 

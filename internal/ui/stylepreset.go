@@ -20,15 +20,15 @@ import (
 // colour by hand.
 func (a *App) applyStylePreset(p config.StylePreset) {
 	a.d.Prefs.SetSpriteStyle(p.Style)
-	a.icColor = p.Color
-	a.icExtColor = 0
-	a.icCustomOn = false // a preset picks a palette colour — the free hex turns off
+	a.compose.icColor = p.Color
+	a.compose.icExtColor = 0
+	a.compose.icCustomOn = false // a preset picks a palette colour — the free hex turns off
 	if p.Emote != "" {
-		for i := range a.emotes {
-			if strings.EqualFold(a.emotes[i].Anim, p.Emote) {
-				a.emoteIdx = i
-				a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre)
-				a.followPinnedPreview(a.activeCharName(), &a.emotes[i])
+		for i := range a.emotepick.emotes {
+			if strings.EqualFold(a.emotepick.emotes[i].Anim, p.Emote) {
+				a.emotepick.emoteIdx = i
+				a.compose.icPreanim = emoteHasPreanim(&a.emotepick.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre)
+				a.followPinnedPreview(a.activeCharName(), &a.emotepick.emotes[i])
 				break
 			}
 		}
@@ -46,13 +46,13 @@ func (a *App) saveStylePreset(name string) {
 		return
 	}
 	emote := ""
-	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-		emote = a.emotes[a.emoteIdx].Anim
+	if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
+		emote = a.emotepick.emotes[a.emotepick.emoteIdx].Anim
 	}
 	a.d.Prefs.AddStylePreset(config.StylePreset{
 		Name:  name,
 		Style: a.d.Prefs.Load().MySpriteStyle,
-		Color: a.icColor,
+		Color: a.compose.icColor,
 		Emote: emote,
 	})
 }

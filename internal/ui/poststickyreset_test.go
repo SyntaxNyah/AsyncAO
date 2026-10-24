@@ -77,13 +77,13 @@ func TestClearSFXAfterSendReadsTheRealPreferences(t *testing.T) {
 					sn.SFXOnIdle = pv1
 				})
 			}
-			a.icPreanim = tc.pre
-			a.sfxChoiceIdx = stickySFXPickedRow
+			a.compose.icPreanim = tc.pre
+			a.emotepick.sfxChoiceIdx = stickySFXPickedRow
 			a.clearSFXAfterSend()
-			cleared := a.sfxChoiceIdx == 0
+			cleared := a.emotepick.sfxChoiceIdx == 0
 			if cleared != tc.wantCleared {
 				t.Errorf("sfxChoiceIdx=%d (cleared=%v), want cleared=%v — courtroom.cpp:2340",
-					a.sfxChoiceIdx, cleared, tc.wantCleared)
+					a.emotepick.sfxChoiceIdx, cleared, tc.wantCleared)
 			}
 		})
 	}
@@ -110,10 +110,10 @@ func TestClearPreAfterSendReadsTheRealPreferences(t *testing.T) {
 					sn.StickyPreanims = pv2
 				})
 			}
-			a.icPreanim = tc.startPre
+			a.compose.icPreanim = tc.startPre
 			a.clearPreAfterSend()
-			if a.icPreanim != tc.wantPre {
-				t.Errorf("icPreanim = %v, want %v (%s)", a.icPreanim, tc.wantPre, tc.wantWhy)
+			if a.compose.icPreanim != tc.wantPre {
+				t.Errorf("icPreanim = %v, want %v (%s)", a.compose.icPreanim, tc.wantPre, tc.wantWhy)
 			}
 		})
 	}
@@ -161,11 +161,11 @@ func TestClearEffectsAfterSendReadsTheRealPreference(t *testing.T) {
 				})
 			}
 			stickyFXFixture(a)
-			a.overlayChoiceIdx = tc.row
+			a.emotepick.overlayChoiceIdx = tc.row
 			a.clearEffectsAfterSend()
-			if a.overlayChoiceIdx != tc.wantRow {
+			if a.emotepick.overlayChoiceIdx != tc.wantRow {
 				t.Errorf("overlayChoiceIdx = %d, want %d — courtroom.cpp:2348-2354 with stickyeffects=%v",
-					a.overlayChoiceIdx, tc.wantRow, tc.sticky)
+					a.emotepick.overlayChoiceIdx, tc.wantRow, tc.sticky)
 			}
 		})
 	}
@@ -197,19 +197,19 @@ func TestStickyResetsSurviveAPreferenceRoundTrip(t *testing.T) {
 	a := &App{env: env{d: Deps{Prefs: reloaded}}}
 	stickyFXFixture(a)
 
-	a.sfxChoiceIdx, a.icPreanim = stickySFXPickedRow, false
+	a.emotepick.sfxChoiceIdx, a.compose.icPreanim = stickySFXPickedRow, false
 	a.clearSFXAfterSend()
-	if a.sfxChoiceIdx != 0 {
+	if a.emotepick.sfxChoiceIdx != 0 {
 		t.Error("after a reload, sfx_on_idle=true must still let an idle-line send clear the SFX pick")
 	}
-	a.icPreanim = true
+	a.compose.icPreanim = true
 	a.clearPreAfterSend()
-	if a.icPreanim {
+	if a.compose.icPreanim {
 		t.Error("after a reload, stickyPreanims=false must still untick Pre")
 	}
-	a.overlayChoiceIdx = stickyFXPlainRow
+	a.emotepick.overlayChoiceIdx = stickyFXPlainRow
 	a.clearEffectsAfterSend()
-	if a.overlayChoiceIdx != 0 {
+	if a.emotepick.overlayChoiceIdx != 0 {
 		t.Error("after a reload, stickyEffects=false must still clear a plain effect to None")
 	}
 }

@@ -1272,7 +1272,7 @@ func (a *App) applyPrefsToState() {
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.uiScalePct = a.d.Prefs.Load().UIScalePct
 	a.ctx.SetUIScale(a.UIScale())
-	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
+	a.compose.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
 	a.refreshCharKeys()
 	a.applyThemeAsync()
 	a.applyAudioVolumes()

@@ -503,15 +503,15 @@ func TestVisibleWhenIsInternedAndGatesTheDraw(t *testing.T) {
 		restore()
 		return len(seen)
 	}
-	a.sidePref = "pro"
+	a.compose.sidePref = "pro"
 	base := count()
-	a.sidePref = "def" // the fixture's defencebadge is gated on pos:def
+	a.compose.sidePref = "def" // the fixture's defencebadge is gated on pos:def
 	withDef := count()
 	if withDef <= base {
 		t.Fatalf("switching pos to def dispatched %d painters, was %d at pos:pro — a visible_when gate "+
 			"that never changes the frame is not being evaluated", withDef, base)
 	}
-	a.sidePref = "pro"
+	a.compose.sidePref = "pro"
 	if again := count(); again != base {
 		t.Fatalf("switching pos back dispatched %d painters, want %d — the per-axis memo is not "+
 			"re-resolving on a change", again, base)
@@ -526,7 +526,7 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
 
-	a.sidePref = "def"
+	a.compose.sidePref = "def"
 	a.drawCourtroom(1280, 720)
 	genBefore := lay.condGen
 	liveBefore := a.condLive[theme.CondPos]
@@ -645,7 +645,7 @@ func TestHandAuthoredSidecarRendersEveryW3Painter(t *testing.T) {
 		}
 	}
 	// pos:def so the conditional element is on screen too.
-	a.sidePref = "def"
+	a.compose.sidePref = "def"
 	collect(a)
 	cleanupA()
 

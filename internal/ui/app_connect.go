@@ -469,7 +469,7 @@ func (a *App) toggleFullscreen() { a.applyFullscreen(!a.d.Prefs.Load().WindowFul
 // effectiveShowname is the name outgoing messages carry: the courtroom
 // override box when filled, the persisted Settings showname otherwise.
 func (a *App) effectiveShowname() string {
-	if s := strings.TrimSpace(a.shownameOverride); s != "" {
+	if s := strings.TrimSpace(a.compose.shownameOverride); s != "" {
 		return s
 	}
 	return a.d.Prefs.Load().Showname
@@ -758,14 +758,14 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart)
 				// Store the speaker's courtroom position (wire Side) per entry so the
 				// advanced pos filter (#129) can narrow the log to one position.
-				a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
+				a.chatlog.icLog[len(a.chatlog.icLog)-1].pos = icPos(ev.Message)
 				// This line has a message in the play queue behind it: the log is written
 				// on ARRIVAL, the courtroom speaks it later, and the ghost-text option
 				// (ghosttext.go) pairs the two by counting. Stamped here, next to the
 				// reaction ref, because the EventMessage branch is the ONLY push that
 				// enqueues — every other pushIC call site is a system line that is true
 				// the instant it appears.
-				a.icLog[len(a.icLog)-1].speech = true
+				a.chatlog.icLog[len(a.chatlog.icLog)-1].speech = true
 				// #2 reactions: stamp this entry with its CONTENT-STABLE ref, computed from the
 				// RAW wire fields (CharName + marker-free text) — NOT the display line, which
 				// bakes in client-local showname / nick / timestamp and so wouldn't match a
@@ -774,7 +774,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// message carries (the reactor piggybacks on their next line).
 				if speaker != "" {
 					ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
-					a.icLog[len(a.icLog)-1].ref = ref
+					a.chatlog.icLog[len(a.chatlog.icLog)-1].ref = ref
 					a.lastReactRef, a.lastReactName = ref, speaker
 				}
 				if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
@@ -826,12 +826,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// gates the sound and the window flash on !ui_guard->isChecked()). The OOC
 			// line above and the auto-clip below still land, so a guarded mod loses the
 			// interruption, never the report.
-			if !a.modcallGuard {
+			if !a.compose.modcallGuard {
 				a.playThemeSFX("mod_call")
 				a.ctx.FlashWindow()
 			}
-			a.signalModcall(a.serverName, ev.Text)            // desktop toast (opt-in)
-			a.autoClipModcall(a.serverName, a.icLog, ev.Text) // freeze IC context for mods (opt-out)
+			a.signalModcall(a.serverName, ev.Text)                    // desktop toast (opt-in)
+			a.autoClipModcall(a.serverName, a.chatlog.icLog, ev.Text) // freeze IC context for mods (opt-out)
 		case courtroom.EventAuth:
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log
 			// (on_authentication_state_received).
@@ -850,7 +850,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.pushOOC("CLIENT: You were logged out.", "")
 			}
 		case courtroom.EventSetPos:
-			a.sidePref = ev.Text // SP: the server moved us
+			a.compose.sidePref = ev.Text // SP: the server moved us
 		case courtroom.EventCase:
 			a.pushOOC("[CASE] "+ev.Text, "")
 			if enabled, roles := a.d.Prefs.Load().Casing(); enabled && ev.Int&roles != 0 {
@@ -1628,13 +1628,13 @@ func (a *App) enterCourtroom() {
 	// leaking across tabs: re-entering a tab un-iniswapped you and reset your /pos).
 	a.iniChar = a.pendingIni
 	a.pendingIni = ""
-	a.sidePref = ""
-	a.charDefaultSide = "" // a fresh character declares its own default; the old one must not outlive it
+	a.compose.sidePref = ""
+	a.compose.charDefaultSide = "" // a fresh character declares its own default; the old one must not outlive it
 	// FRESH entry / character switch starts at the first emote (page 0). The
 	// reactivation path (activateTab → buildRoom) deliberately skips this so each
 	// tab keeps its own emote selection; pollCharINI then clamps rather than
 	// resets, so the parked index survives the reload.
-	a.emoteIdx, a.emoteRow = 0, 0
+	a.emotepick.emoteIdx, a.emotepick.emoteRow = 0, 0
 	// A fresh character must not inherit the previous character's last staged
 	// message — buildRoom's stageRestoreMsg would otherwise re-stage the OLD
 	// speaker's sprite (the "swapped to Armstrong, Phoenix's emote on the witness

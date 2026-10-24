@@ -62,7 +62,7 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 	})
 	a.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
 	a.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
-	a.emotes = []courtroom.Emote{
+	a.emotepick.emotes = []courtroom.Emote{
 		{Anim: "happy", Comment: "happy"},
 		{Anim: "sad", Comment: "sad"},
 		{Anim: "angry", Comment: "angry"},
@@ -76,8 +76,8 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 // whatever's picked", not "freeze on whatever opened it".
 func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
-	a.previewEmote("TestChar", &a.emotes[0]) // as if emote 0's hover/right-click opened the box
-	a.previewPinned = true                   // …and the right-click pinned it
+	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // as if emote 0's hover/right-click opened the box
+	a.previewPinned = true                             // …and the right-click pinned it
 	openedOn := a.previewBase
 	if openedOn == "" {
 		t.Fatal("fixture did not open a preview — nothing below is measuring the follow")
@@ -106,7 +106,7 @@ func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 // test would not exist to catch if followPinnedPreview's pin guard were removed.
 func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
-	a.previewEmote("TestChar", &a.emotes[0]) // hover only — no right-click, no sticky pref
+	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // hover only — no right-click, no sticky pref
 	openedOn := a.previewBase
 	if openedOn == "" || a.previewIsPinned() {
 		t.Fatal("fixture must open an UNPINNED preview")
@@ -148,22 +148,22 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 
 	// Closed: must not open.
-	a.followPinnedPreview("TestChar", &a.emotes[0])
+	a.followPinnedPreview("TestChar", &a.emotepick.emotes[0])
 	if a.previewBase != "" {
 		t.Fatal("followPinnedPreview opened a closed box")
 	}
 
 	// Open + unpinned: must not move.
-	a.previewEmote("TestChar", &a.emotes[0])
+	a.previewEmote("TestChar", &a.emotepick.emotes[0])
 	before := a.previewBase
-	a.followPinnedPreview("TestChar", &a.emotes[1])
+	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
 	if a.previewBase != before {
 		t.Fatal("followPinnedPreview moved an unpinned box")
 	}
 
 	// Open + pinned: must follow.
 	a.previewPinned = true
-	a.followPinnedPreview("TestChar", &a.emotes[1])
+	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
 	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.previewBase, want)
@@ -192,7 +192,7 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	}
 	defer a.d.Preview.Close()
 
-	a.previewEmote("TestChar", &a.emotes[0]) // as if a hover opened it, THEN the user detached
+	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // as if a hover opened it, THEN the user detached
 	if !a.previewIsDetached() {
 		t.Fatal("fixture: a.d.Preview.Open succeeded but previewIsDetached() reports false")
 	}

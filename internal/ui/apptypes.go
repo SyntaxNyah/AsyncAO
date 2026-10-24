@@ -316,199 +316,9 @@ type sessionState struct {
 	lastReactRef    uint32
 	lastReactName   string
 
-	// --- courtroom chrome ---
-	icInput string
-	// icPendingSent snapshots icInput at IC send time. AO2-Client parity
-	// (courtroom.cpp handle_chatmessage): the input box clears only when the
-	// server ECHOES our message back (CHAR_ID == m_cid) — tsuserver-family
-	// servers silently swallow an MS that lands inside another message's
-	// area-wide delay window (area.can_send_message), so clearing at send
-	// time threw the whole typed line away whenever two people sent at once.
-	icPendingSent string
-	// (The old one-slot icUndoText/oocUndoText Ctrl+Z stash is gone: every
-	// text field now has a real undo history — fieldhistory.go — whose
-	// out-of-band detector catches the same clears, with redo.)
-	oocInput string
-	// oocName is THIS TAB's OOC chat name, seeded from the saved default in
-	// resetSessionState — it lived on App and a name typed in one tab showed
-	// up in every other (playtest). Only the Settings field writes the saved
-	// default; the courtroom fields are tab-local.
-	oocName string
-	// IC message recall (#8): Up/Down in the IC field walk your recently-sent messages,
-	// shell-style. icRecallIdx == -1 = editing the live draft; icRecallDraft stashes that
-	// draft while you browse history. Per-tab (lives in sessionState).
-	icSentHist    []string
-	icRecallIdx   int
-	icRecallDraft string
-	// OOC message recall: the same Up/Down history walk for the OOC inputs (the OOC box,
-	// the bottom OOC bar, and the themed OOC field — they all share oocInput). Its own ring,
-	// separate from IC, so OOC and IC histories never bleed together.
-	oocSentHist    []string
-	oocRecallIdx   int
-	oocRecallDraft string
-	// Friends-tab PM composer (#friends): the selected friend + the message being
-	// typed. Sends as "/pm <their uid> <message>" over OOC.
-	pmTarget string
-	pmInput  string
-	// pmThreads is the per-conversation PM history (keyed by the partner's
-	// canonical name via pmThreadKey) the Friends tab shows as a little DM thread.
-	// Outgoing lines append on send; incoming ones are best-effort parsed out of
-	// OOC (detectIncomingPM — server formats vary, a miss just stays in the OOC
-	// log). Session-scoped (PMs are per-server) and bounded.
-	pmThreads map[string][]pmLine
-	// shownameOverride is the in-courtroom showname box: when non-blank
-	// it wins over the persisted Settings showname for outgoing messages
-	// (session-scoped — it never overwrites the saved one).
-	shownameOverride string
-	sidePref         string // OUR side (char.ini default, /pos override)
-	// lastSentStyle is the sprite style we last TRANSMITTED this session. Send-on-
-	// change appends the marker only when the current style differs (EncodeChangeMarker),
-	// so the invisible run rides change-messages only — zero value = nothing sent yet,
-	// so the first active style (re)transmits on a fresh connection.
-	lastSentStyle courtroom.SpriteStyle
-	// lastSentProfile is the cross-client character profile (#101 slice 2) we last
-	// TRANSMITTED this session — send-on-change like lastSentStyle (a profile rarely
-	// changes, so the invisible run rides at most our first post-join message).
-	lastSentProfile courtroom.WireProfile
-	// myStatus is our chosen presence flag (#M1); lastSentStatus is what we last
-	// TRANSMITTED (send-on-change). Session-scoped — a fresh connect starts at None.
-	myStatus       courtroom.Status
-	lastSentStatus courtroom.Status
-	iniWarmed      string // last char.ini hover-warmed (dedupe)
-	icColor        int    // outgoing MS text_color (dropdown)
-	// icExtColor selects an extended AsyncAO colour (#98), 1-based into
-	// render.ExtColorAt (icExtColor-1); 0 = none, so the &App{} zero value stays
-	// idle. Mutually exclusive with the wire palette / Rainbow / Random.
-	icExtColor int
-	// icCustomOn/icCustomRGB: the free hex chat colour (Tifera). The
-	// exact colour ships as inline `\c#RRGGBB` markup with a nearest-standard
-	// wire fallback (funColor); per-tab like every other colour pick. The last
-	// pick also persists globally (Prefs.ICCustomColorRGB seeds a fresh tab).
-	icCustomOn  bool
-	icCustomRGB int
-	// icColorSel freezes the IC field's selection so the colour dropdown can wrap
-	// it (§3.8 select-and-colour, folded into the dropdown to match AO2's
-	// on_text_color_changed). captureICColorSel snapshots it every frame BEFORE the
-	// dropdown draws — while the field is still focused — because the dropdown's
-	// open-click unfocuses the field (clearing the live Ctx selection) before the
-	// pick lands a frame later. applyICColorPick consumes it. Session-scoped; the
-	// zero value (active:false) is idle.
-	icColorSel  icColorSel
-	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
-	icPreanim   bool  // "Pre" toggle: send the selected emote's preanimation (session toggle; AUTO-FOLLOWS each emote pick — set when the new emote defines a usable preanim, mirroring AO2-Client ui_pre; the user can override until the next pick). Seeded true in resetSessionState so an untouched fresh join reproduces today's always-play-preanim behavior.
-	icAdditive  bool  // #14 2.8 ADDITIVE: this message appends to your last (session toggle; shown only when the server advertises additive + the pref is on)
-	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
-	// icSlide is AO2's ui_slide (#21): the next message SLIDES the character into
-	// position rather than cutting. Session-scoped like every other IC toggle. AO2
-	// resets it after each send — "Slides can't be sticky for nausea reasons"
-	// (courtroom.cpp:2362) — which the send site does, not this field.
-	icSlide bool
-	// icRealize / icShake are AO2's realization_state / screenshake_state (#21):
-	// ONE-SHOT arms that ride the next message — the white flash and the camera
-	// shake. AO2 clears both the instant the packet is built, next to
-	// objection_state (courtroom.cpp:2327-2329), which is what stops a stuck arm
-	// firing on every following line.
-	icRealize bool
-	icShake   bool
-	// icShout is AO2's objection_state (courtroom.cpp:6048-6127) — the ARMED
-	// interjection, riding the NEXT message exactly like icRealize and icShake:
-	// 0 none, 1 Hold It!, 2 Objection!, 3 Take That!, 4 the custom shout
-	// (protocol.Shout*). ONE int, so the four buttons are mutually exclusive by
-	// construction, which is what canon's four "reset the other three sprites"
-	// arms add up to. Cleared beside them the instant the packet is built
-	// (:2327). The shout buttons used to call sendIC directly, which fired the
-	// interjection on the click instead of arming it.
-	icShout int
-	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
-	// session. sessionState rather than a preference because AO2's ui_guard is a
-	// bare QCheckBox with no Options read (courtroom.cpp:316-319) — it is a
-	// per-session mute, not a setting, and a mod watching two servers wants it per
-	// tab. The OOC line and the auto-clip still land; only the noise stops.
-	modcallGuard bool
-	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
-	// resetSessionState, so it can't leak across tabs like the App-global version
-	// did). pairOffXText/Y are the typed edit buffers (commit on valid parse).
-	pairOffX, pairOffY         int
-	pairFlip                   bool
-	pairOffXText, pairOffYText string
-	// Pair-preview background cache (drawPairGhost): the stage bg drawn behind the
-	// ghost sprites via cachedPage; pairBgKey invalidates it when the bg/position changes.
-	pairBgPages []*render.TexturePage
-	pairBgGen   uint64
-	pairBgKey   string
-	// Pos-dropdown thumbnail cache (drawPosSelect): one bg thumbnail per position,
-	// keyed by row index; posBgKey (the current bg name) invalidates the whole set
-	// when the background changes so a stale stage can't show under the wrong bg.
-	posBgPages []*render.TexturePage
-	posBgGen   uint64
-	posBgKey   string
-	posBgAsk   []time.Time               // demandAsset pacing for the pos-dropdown thumbnails
-	posThumbFn func(idx int, r sdl.Rect) // stable (one-time) pos-thumbnail draw fn — avoids a per-frame closure alloc on the hot Pos selector
-	emotes     []courtroom.Emote
-	emoteIdx   int
-	// Emote-grid scroll position (emotescroll.go owns every derived answer). The
-	// stored value is the first visible ROW, not a page: the wheel scrolls one row
-	// per notch while the arrows and the "page x/y" readout stay page-shaped.
-	// cols / rowsPerPage / totalRows are stamped by whichever grid drew last
-	// (classic or themed), so the number-key row and the page label always
-	// describe the grid actually on screen.
-	emoteRow         int
-	emoteCols        int
-	emoteRowsPerPage int
-	emoteTotalRows   int
-	emotePerPage     int // cols*rowsPerPage, kept as its own field: several sites ask "is a grid laid out yet?"
-	// SFX picker (IC-bar dropdown): the chosen sound that OVERRIDES this character's
-	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
-	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
-	// Rebuilt by ensureSFXChoices when the character (or its emote count)
-	// changes — tracked as two plain fields, NOT a concatenated key string:
-	// the guard runs every frame in drawICInputRow, and building a key just to
-	// compare it allocated on the settled path (whole-screen gate catch).
-	sfxChoiceIdx       int
-	sfxChoices         []string
-	sfxChoicesForName  string
-	sfxChoicesForCount int
-	// effects_dropdown selection for the next message (AO2 ui_effects_dropdown).
-	// Index 0 is the prepended "None" row, which sends "" — so the zero value is
-	// correct for a fresh session and resetSessionState needs no seeding, exactly
-	// like sfxChoiceIdx. It SURVIVES the send: AO2's `stickyeffects` option
-	// defaults true, so courtroom.cpp:2348's reset never fires out of the box (see
-	// clearEffectsAfterSend, which owns the whole rule).
-	overlayChoiceIdx int
-	// charDefaultSide is the side the ACTIVE character's char.ini declares — AO2's
-	// default_side (courtroom.cpp:4723-4726 = get_char_side). Empty means "not
-	// known yet or none declared", which defaultSide() reports as "wit", matching
-	// get_char_side's own fallback (text_file_functions.cpp:480-483).
-	// It MUST be cleared whenever the active character changes, before the new
-	// char.ini lands. pos_remove is shown by comparing the current side against
-	// this, and clicking it SENDS /pos — so a stale value is a wrong packet on the
-	charDefaultSide string
-	// emote_dropdown's option list (#21 label 11), cached with the same
-	// plain-field guard as sfxChoices above and for the same reason: it is
-	// rebuilt from a draw site that runs every frame. Per-tab, like a.emotes
-	// itself — the zero values are correct for a fresh session, so
-	// resetSessionState needs no seeding.
-	emoteChoices         []string
-	emoteChoicesForName  string
-	emoteChoicesForCount int
-	// iniswap_dropdown's option list (#21 label 11), same guarded-cache shape.
-	// The wardrobe guard is a generation counter because WardrobeList CLONES —
-	// rebuilding unguarded would allocate every frame on the settled path.
-	iniswapChoices        []string
-	iniswapChoicesForChar string
-	iniswapChoicesWorn    string
-	iniswapChoicesGen     uint64
-	// #12 SFX Browser: an opt-in modal that expands the dropdown with persisted favourites,
-	// per-row preview, and a free-text "use any sound name" entry. It picks into the SAME
-	// sfxChoiceIdx override (find-or-append), so the dropdown reflects whatever it chose.
-	showSfxBrowser   bool
-	sfxBrowserQuery  string // the search / free-text field (filters the list; usable as an exact name)
-	sfxBrowserScroll int32
-	// emotePageLabel memoizes the "page x/y · N emotes" counter so the per-frame
-	// emote-grid draw allocates nothing while paging is stable; rebuilt only when
-	// {page, pages, total} change (same idiom as the generation-cached pages).
-	emotePageLabel    string
-	emotePageLabelKey [3]int
+	compose   composeState
+	pairbox   pairBoxState
+	emotepick emotePickState
 	// musicCount / areaCount memoize the "<shown> / <total>" header counters of
 	// the Music and Areas lists (shownTotalMemo, screens.go) — same reason as
 	// emotePageLabel: a bare Sprintf there is one allocation per frame for as long
@@ -520,90 +330,10 @@ type sessionState struct {
 	// musicNowLabel memoizes the Music header's "Now playing: <track>" readout for
 	// exactly the same reason (nowPlayingMemo, screens.go).
 	musicNowLabel nowPlayingMemo
-	// Emote favourites view (#77): emoteFavSet holds the active character's
-	// favourited emote indices for lock-free O(1) star lookups, and emoteVisible
-	// is the list of emote indices the grid shows (all, or favs-only) — a reused
-	// buffer. Both are rebuilt by refreshEmoteView ONLY when the guard key
-	// (char/favs-only/emote count/edit-rev) changes, so a steady-state frame does
-	// one cheap compare and nothing else.
-	emoteFavSet      map[int]struct{}
-	emoteVisible     []int
-	favBoxList       []int  // current character's favourite emote indices (always; for the floating box)
-	emoteFavRev      int    // bumped on every favourite toggle to invalidate the view
-	emoteViewChar    string // guard: character the view was built for
-	emoteViewFavOnly bool   // guard: favs-only state the view was built for
-	emoteViewLen     int    // guard: len(emotes) the view was built for
-	emoteViewRev     int    // guard: emoteFavRev the view was built for
-	// Floating favourite-emotes box (#85): movable geometry (session, like the
-	// Extras box) + the drag grab offset. Open state is the FavEmoteBox pref.
-	favBoxX, favBoxY int32
-	favBoxPlaced     bool
-	favBoxDragging   bool
-	favBoxGrabDX     int32
-	favBoxGrabDY     int32
-	// Floating Sprite Style box (#104): the non-modal, draggable picker for the
-	// transmitted sprite style — open state + movable geometry are session-only.
-	showStyleBox     bool
-	styleBoxX        int32
-	styleBoxY        int32
-	styleBoxPlaced   bool
-	styleBoxDragging bool
-	styleBoxResizing bool  // the right-edge width grip is being dragged
-	styleBoxUserW    int32 // user-set width (0 = the default styleBoxW); height stays content-driven
-	styleBoxScroll   int32 // vertical scroll of the box body (the box clamps to the window; the body scrolls inside — #C); clamped to [0, maxScroll] every frame
-	styleBoxGrabDX   int32
-	styleBoxGrabDY   int32
-	// Custom glitch fringe-colour hex buffers (the style box's A/B fields): they
-	// hold in-progress typing and mirror the pref's effective colour when unfocused.
-	glitchHexA string
-	glitchHexB string
-	// Style-box live preview: collapse state, the background page cache (the
-	// pair-ghost pattern; keys are full URLs so per-server separation is
-	// structural), and the sprite prefetch dedupe (one warm per emote base).
-	stylePrevOff     bool
-	stylePrevBgPages []*render.TexturePage
-	stylePrevBgGen   uint64
-	stylePrevBgKey   string
-	stylePrevWarm    string
-	// showAreaWheel expands the area-colour row's inline colour wheel (Settings →
-	// Area list) — session-only chrome, like the other settings expanders.
-	showAreaWheel bool
-	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
-	// displayed second changes, into a reused scratch slice — so a visible (esp.
-	// paused) clock costs nothing on the always-on courtroom draw.
-	timerChips     []string
-	timerLabels    [courtroom.TimerCount]string
-	timerLabelSecs [courtroom.TimerCount]int
-	charBlips      string // char.ini blips/gender (outgoing default)
-	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
-	// "custom" art, ≥ 0 indexes customShouts.
-	customShouts []courtroom.CustomShout
-	customIdx    int
-	customName   string
-	charINIBusy  bool
-	icLog        []icEntry
-	icLogSeq     uint64 // bumps per mutation: keys the filter cache
-	icScroll     int32
-	// icScrollVis is the EASED on-screen scroll offset (#22 smooth scrolling):
-	// icScroll is the target (wheel/stick/bar writes it), the visual glides
-	// toward it exponentially so wheel steps and the sticky-bottom's new-line
-	// jumps stop teleporting. frameDtMs (stamped per drawn frame) drives the
-	// time constant so the feel is frame-rate independent.
-	icScrollVis float64
-	frameDtMs   float32
-	logSearch   string
-	// Advanced log filters (#129): show ONLY entries whose speaker matches
-	// logFilterShowname and whose position matches logFilterPos ("" = no
-	// filter), stacked on top of the logSearch text match. Both inclusive.
-	logFilterShowname string
-	logFilterPos      string
-	logFilterColor    int  // colour filter (0 = "Any color"); index into logColorFilterChoices (#49)
-	logFilterOpen     bool // the filter sub-panel is expanded
-	oocSeq            uint64
-	oocLog            []string
-	oocSpeakers       []string // parallel to oocLog: speaker per line ("" = system line); for name colours
-	oocScroll         int32
-	musicScroll       int32
+	favstyle      favStyleState
+	chipUI        chipRowState
+	chatlog       chatLogState
+	musicScroll   int32
 	// Music-list search (AO2/webAO parity): the query plus a memoized filter so
 	// a list of thousands isn't re-scanned (and re-lowercased — that allocates)
 	// every frame. musicFiltered holds matching indices into a.sess.Music.
@@ -632,40 +362,9 @@ type sessionState struct {
 	// areaInfoSeq bumps on every EventAreasUpdated (ARUP) so areaWrapped
 	// (screens.go) knows when to re-wrap; it deliberately excludes cosmetic
 	// per-frame state (a.curArea) which the draw loop re-reads live instead.
-	areaInfoSeq uint64
-	// areaWrap caches the word-wrapped ARUP row text (Issue #22: area names
-	// and the player-count/status detail line previously never wrapped and
-	// just clipped off the panel edge). Mirrors the icWrapped idiom — rebuilds
-	// only when the ARUP state, search query, panel width, zoom, or font
-	// chain actually changed, never per frame. One slot per query source, for
-	// the same reason areaFiltered has two: the two drawers differ in WIDTH as
-	// well as query, and re-wrapping every area twice a frame is the expensive
-	// half of that thrash.
-	areaWrap [areaQuerySlots]areaWrapCache
-	logTab   int
-	// debugOOC swaps the themed server_chatlog panel for the debug log — what
-	// AO2's ooc_toggle button does (on_ooc_toggle_clicked, courtroom.cpp:5197:
-	// show ui_debug_log, hide ui_server_chatlog, relabel the button).
-	//
-	// Stored INVERTED relative to AO2's server_ooc so the ZERO value is AO2's
-	// initial state (server chat visible, button reads "Server"). A field that
-	// defaulted true would have to be seeded in resetSessionState, and forgetting
-	// that seed is a standing bug class in this file.
-	debugOOC       bool
-	debugOOCScroll int32 // the debug panel's own scroll offset (per tab, like the logs)
-	volStripOn     bool  // the log panel's toggleable on-screen volume strip
-	musicVolMode   bool  // Music tab shows the volume sliders instead of the track list
-	// Stick flags: the logs FOLLOW new lines while true; scrolling up
-	// releases, scrolling back to the bottom re-sticks. (The old "within
-	// one line of the bottom" heuristic broke whenever one wrapped
-	// message added several rows at once.)
-	icStick  bool
-	oocStick bool
-	// icReadMark is the IC entry count when last caught up to the bottom; while
-	// scrolled up, len(icLog)-icReadMark is the unread count the "N new" pill shows.
-	icReadMark int
-	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
-	emoteAsk []time.Time
+	areaInfoSeq  uint64
+	volStripOn   bool // the log panel's toggleable on-screen volume strip
+	musicVolMode bool // Music tab shows the volume sliders instead of the track list
 
 	// --- case notebook (per-server pins) ---
 	notebook     *config.Notebook
@@ -951,12 +650,6 @@ type sessionState struct {
 	pairAskBase string // pair sprite heal pacing
 	pairAskAt   time.Time
 
-	// Click-to-pair (/pair <uid> for servers that sync pairs via the OOC command).
-	// areaUIDs/areaPlayers are parsed from /getarea in pushOOC; the popup pre-fills
-	// the UID when it can confidently match the clicked char, else manual entry.
-	pairPopupOpen bool
-	pairPopupChar string
-	pairPopupUID  string
 	areaUIDs      map[string]string
 	areaPlayers   []areaPlayer
 	areaLastUID   string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
@@ -1022,8 +715,6 @@ type sessionState struct {
 	shownameFor    map[string]string
 	lastSFXName    string // M11: most-recent emote SFX name, for one-click "Mute last SFX"
 	lastBlipChar   string // M11: most-recent speaker char, for one-click per-character blip volume
-	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
-	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
 	playerScroll   int32 // Players-tab roster scroll
 	// Area-jump scroll follow (the "click to jump →" fix): the grouped roster
@@ -1083,12 +774,6 @@ type sessionState struct {
 	rasterChatMsgHas bool
 	rasterDevPct     int32 // #77: the device font scale the raster was built at — a UI-scale change must rebuild it
 
-	// pairing panel
-	pairSearch string
-	pairScroll int32
-	pairWith   int
-	pairOrder  int
-	showPair   bool
 	msRaster   *render.MessageRaster
 	rasterText string
 	// rasterFailedText is the message whose raster could NOT be built, arming the

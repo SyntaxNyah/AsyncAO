@@ -224,7 +224,7 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	a.sess = &courtroom.Session{}
 	a.iniChar = "TestChar" // activeCharName() override — no picked char needed
 	a.urls = courtroom.NewURLBuilder("http://warmtest/")
-	a.emoteIdx = -1 // out of range: only the char icon warms
+	a.emotepick.emoteIdx = -1 // out of range: only the char icon warms
 	dec := &assets.Decoded{
 		Frames: []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 2, 2))},
 		Delays: []time.Duration{0},

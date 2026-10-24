@@ -51,10 +51,10 @@ func (a *App) sendICPhrase(phrase string) {
 	if a.sess == nil || a.sess.MyCharID < 0 || strings.TrimSpace(phrase) == "" {
 		return
 	}
-	draft := a.icInput
-	a.icInput = phrase
+	draft := a.compose.icInput
+	a.compose.icInput = phrase
 	a.sendIC()
-	a.icInput = draft
+	a.compose.icInput = draft
 }
 
 // pollICPhraseBind completes an armed Settings key-capture: the next plain keypress

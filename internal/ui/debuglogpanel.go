@@ -19,7 +19,7 @@ const (
 
 // oocToggleLabel is what AO2 writes on the button: the panel now showing.
 func (s *sessionState) oocToggleLabel() string {
-	if s.debugOOC {
+	if s.chatlog.debugOOC {
 		return "Debug"
 	}
 	return "Server"
@@ -72,15 +72,15 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 		maxScroll = 0
 	}
 	if d := c.WheelIn(body); d != 0 {
-		a.debugOOCScroll -= d * scrollStepPx
+		a.chatlog.debugOOCScroll -= d * scrollStepPx
 	}
 	track := sdl.Rect{X: body.X + body.W - scrollBarW, Y: body.Y, W: scrollBarW, H: body.H}
-	a.debugOOCScroll = c.VScrollbar("debugoocscroll", track, a.debugOOCScroll, contentH, body.H)
-	if a.debugOOCScroll > maxScroll {
-		a.debugOOCScroll = maxScroll
+	a.chatlog.debugOOCScroll = c.VScrollbar("debugoocscroll", track, a.chatlog.debugOOCScroll, contentH, body.H)
+	if a.chatlog.debugOOCScroll > maxScroll {
+		a.chatlog.debugOOCScroll = maxScroll
 	}
-	if a.debugOOCScroll < 0 {
-		a.debugOOCScroll = 0
+	if a.chatlog.debugOOCScroll < 0 {
+		a.chatlog.debugOOCScroll = 0
 	}
 
 	if len(lines) == 0 {
@@ -93,7 +93,7 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// Clip so the partially-scrolled top and bottom rows stop at the panel edge
 	// rather than bleeding over the theme's art.
 	clipPrev, clipHad := c.pushClip(body)
-	y := body.Y - a.debugOOCScroll
+	y := body.Y - a.chatlog.debugOOCScroll
 	for _, e := range lines {
 		ln := e.text
 		if y+lineH > body.Y && y < body.Y+body.H { // skip rows scrolled out of view

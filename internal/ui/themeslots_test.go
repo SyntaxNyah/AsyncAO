@@ -300,7 +300,7 @@ func TestOOCToggleLabelNamesTheVisiblePanel(t *testing.T) {
 	if got := s.oocToggleLabel(); got != "Server" {
 		t.Errorf("a fresh session must open on server chat and read %q, got %q", "Server", got)
 	}
-	s.debugOOC = true
+	s.chatlog.debugOOC = true
 	if got := s.oocToggleLabel(); got != "Debug" {
 		t.Errorf("with the debug log showing the button must read %q, got %q", "Debug", got)
 	}
@@ -314,7 +314,7 @@ func TestOOCToggleLabelNamesTheVisiblePanel(t *testing.T) {
 // is deliberately NOT AO2's — see the comment at ensureEmoteChoices.
 func TestEmoteDropdownRowIndexIsTheEmoteIndex(t *testing.T) {
 	a := testTabApp(t)
-	a.emotes = []courtroom.Emote{
+	a.emotepick.emotes = []courtroom.Emote{
 		{Comment: "normal", Anim: "normal"},
 		{Comment: "", Anim: "pointing"}, // no comment: falls back to the anim name
 		{Comment: "thinking", Anim: "think"},
@@ -322,22 +322,22 @@ func TestEmoteDropdownRowIndexIsTheEmoteIndex(t *testing.T) {
 	a.ensureEmoteChoices()
 
 	want := []string{"1: normal", "2: pointing", "3: thinking"}
-	if len(a.emoteChoices) != len(want) {
+	if len(a.emotepick.emoteChoices) != len(want) {
 		t.Fatalf("built %d rows %v, want %d — a filtered list would desync row index from emote index",
-			len(a.emoteChoices), a.emoteChoices, len(want))
+			len(a.emotepick.emoteChoices), a.emotepick.emoteChoices, len(want))
 	}
 	for i, w := range want {
-		if a.emoteChoices[i] != w {
-			t.Errorf("row %d = %q, want %q", i, a.emoteChoices[i], w)
+		if a.emotepick.emoteChoices[i] != w {
+			t.Errorf("row %d = %q, want %q", i, a.emotepick.emoteChoices[i], w)
 		}
 	}
 
 	// The guard must rebuild when the emote COUNT changes (an iniswap to a
 	// character with a different sheet), not just when the name does.
-	a.emotes = a.emotes[:2]
+	a.emotepick.emotes = a.emotepick.emotes[:2]
 	a.ensureEmoteChoices()
-	if len(a.emoteChoices) != 2 {
-		t.Errorf("a shorter emote list must rebuild the rows, got %d", len(a.emoteChoices))
+	if len(a.emotepick.emoteChoices) != 2 {
+		t.Errorf("a shorter emote list must rebuild the rows, got %d", len(a.emotepick.emoteChoices))
 	}
 }
 
@@ -346,7 +346,7 @@ func TestEmoteDropdownRowIndexIsTheEmoteIndex(t *testing.T) {
 // strings per frame forever on the zero-allocation render path.
 func TestEnsureEmoteChoicesIsAllocFreeWhenSettled(t *testing.T) {
 	a := testTabApp(t)
-	a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal"}, {Comment: "point", Anim: "point"}}
+	a.emotepick.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal"}, {Comment: "point", Anim: "point"}}
 	a.ensureEmoteChoices() // prime
 
 	if n := testing.AllocsPerRun(100, func() { a.ensureEmoteChoices() }); n != 0 {

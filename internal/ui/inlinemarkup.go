@@ -30,13 +30,13 @@ func insertRunesAt(s string, at int, code string) string {
 // insertICEmoji uses — so the button always lands the code in the line.
 func (a *App) insertICInline(code string) {
 	c := a.ctx
-	rc := utf8.RuneCountInString(a.icInput)
+	rc := utf8.RuneCountInString(a.compose.icInput)
 	if c.focusID != icFieldID || c.caret < 0 || c.caret > rc {
-		a.icInput += code
+		a.compose.icInput += code
 		a.ctx.FocusField(icFieldID)
 		return
 	}
-	a.icInput = insertRunesAt(a.icInput, c.caret, code)
+	a.compose.icInput = insertRunesAt(a.compose.icInput, c.caret, code)
 	c.selAnchor = -1 // the spliced code is not selected; the caret follows it
 	c.caret += utf8.RuneCountInString(code)
 }

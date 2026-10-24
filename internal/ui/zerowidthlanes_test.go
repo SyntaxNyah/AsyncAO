@@ -262,10 +262,10 @@ func TestStoredLinkComesFromTheStoredText(t *testing.T) {
 
 	a := &App{env: env{}}
 	a.pushIC("Nick: see "+url+marker, 0, false, -1, "Nick")
-	if len(a.icLog) != 1 {
-		t.Fatalf("pushIC stored %d entries, want 1", len(a.icLog))
+	if len(a.chatlog.icLog) != 1 {
+		t.Fatalf("pushIC stored %d entries, want 1", len(a.chatlog.icLog))
 	}
-	e := a.icLog[0]
+	e := a.chatlog.icLog[0]
 	if e.url != url {
 		t.Errorf("icEntry.url = %q, want %q — it is scanned off the line BEFORE the strip", e.url, url)
 	}

@@ -19,8 +19,8 @@ func TestApplySide(t *testing.T) {
 
 	// A real change lowercases, stores, and fires exactly one /pos over OOC (CT).
 	a.applySide("  Def ")
-	if a.sidePref != "def" {
-		t.Fatalf("sidePref = %q, want %q", a.sidePref, "def")
+	if a.compose.sidePref != "def" {
+		t.Fatalf("sidePref = %q, want %q", a.compose.sidePref, "def")
 	}
 	if len(sent) != 1 || sent[0].Header != "CT" || len(sent[0].Fields) < 2 || sent[0].Fields[1] != "/pos def" {
 		t.Fatalf("sent = %+v, want one CT carrying \"/pos def\"", sent)
@@ -34,14 +34,14 @@ func TestApplySide(t *testing.T) {
 
 	// Empty / whitespace-only is a no-op and never sends.
 	a.applySide("   ")
-	if a.sidePref != "def" || len(sent) != 1 {
-		t.Fatalf("empty pick changed state: sidePref=%q sent=%+v", a.sidePref, sent)
+	if a.compose.sidePref != "def" || len(sent) != 1 {
+		t.Fatalf("empty pick changed state: sidePref=%q sent=%+v", a.compose.sidePref, sent)
 	}
 
 	// A different side sends again.
 	a.applySide("pro")
-	if a.sidePref != "pro" || len(sent) != 2 || sent[1].Fields[1] != "/pos pro" {
-		t.Fatalf("second change wrong: sidePref=%q sent=%+v", a.sidePref, sent)
+	if a.compose.sidePref != "pro" || len(sent) != 2 || sent[1].Fields[1] != "/pos pro" {
+		t.Fatalf("second change wrong: sidePref=%q sent=%+v", a.compose.sidePref, sent)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestApplySide(t *testing.T) {
 func TestApplySideNilSession(t *testing.T) {
 	a := &App{env: env{}}
 	a.applySide("wit")
-	if a.sidePref != "wit" {
-		t.Fatalf("sidePref = %q, want wit", a.sidePref)
+	if a.compose.sidePref != "wit" {
+		t.Fatalf("sidePref = %q, want wit", a.compose.sidePref)
 	}
 }

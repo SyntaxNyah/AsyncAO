@@ -412,11 +412,11 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 	if a.charINIres == nil {
 		a.charINIres = make(chan charINIFetch, 1)
 	}
-	a.charINIBusy = true
+	a.compose.charINIBusy = true
 	a.uiDirty = false
 	a.charINIres <- charINIFetch{key: a.serverKey}
 	a.pollCharINI()
-	if a.charINIBusy {
+	if a.compose.charINIBusy {
 		t.Error("pollCharINI must clear charINIBusy on a matching result")
 	}
 	if !a.uiDirty {

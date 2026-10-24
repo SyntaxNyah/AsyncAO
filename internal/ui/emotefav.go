@@ -24,38 +24,38 @@ const emoteFavStarPx = 15 // star badge size in an emote cell's top-right corner
 func (a *App) refreshEmoteView() {
 	char := a.activeCharName()
 	favOnly := a.d.Prefs.Load().EmoteFavOnly
-	if a.emoteVisible != nil && a.emoteViewChar == char && a.emoteViewFavOnly == favOnly &&
-		a.emoteViewLen == len(a.emotes) && a.emoteViewRev == a.emoteFavRev {
+	if a.favstyle.emoteVisible != nil && a.favstyle.emoteViewChar == char && a.favstyle.emoteViewFavOnly == favOnly &&
+		a.favstyle.emoteViewLen == len(a.emotepick.emotes) && a.favstyle.emoteViewRev == a.favstyle.emoteFavRev {
 		return // nothing that affects the view changed
 	}
-	a.emoteViewChar, a.emoteViewFavOnly = char, favOnly
-	a.emoteViewLen, a.emoteViewRev = len(a.emotes), a.emoteFavRev
+	a.favstyle.emoteViewChar, a.favstyle.emoteViewFavOnly = char, favOnly
+	a.favstyle.emoteViewLen, a.favstyle.emoteViewRev = len(a.emotepick.emotes), a.favstyle.emoteFavRev
 
-	if a.emoteFavSet == nil {
-		a.emoteFavSet = make(map[int]struct{}, 16)
+	if a.favstyle.emoteFavSet == nil {
+		a.favstyle.emoteFavSet = make(map[int]struct{}, 16)
 	} else {
-		clear(a.emoteFavSet)
+		clear(a.favstyle.emoteFavSet)
 	}
 	for _, idx := range a.d.Prefs.Load().EmoteFavsFor(char) {
-		a.emoteFavSet[idx] = struct{}{}
+		a.favstyle.emoteFavSet[idx] = struct{}{}
 	}
 
 	// favBoxList is always the favourites in emote order (the floating box reads
 	// it regardless of the grid filter). Built here so both it and the box stay
 	// allocation-free at steady state — only this rebuild touches them.
-	a.favBoxList = a.favBoxList[:0]
-	for i := range a.emotes {
-		if _, ok := a.emoteFavSet[i]; ok {
-			a.favBoxList = append(a.favBoxList, i)
+	a.favstyle.favBoxList = a.favstyle.favBoxList[:0]
+	for i := range a.emotepick.emotes {
+		if _, ok := a.favstyle.emoteFavSet[i]; ok {
+			a.favstyle.favBoxList = append(a.favstyle.favBoxList, i)
 		}
 	}
 
-	a.emoteVisible = a.emoteVisible[:0]
+	a.favstyle.emoteVisible = a.favstyle.emoteVisible[:0]
 	if favOnly {
-		a.emoteVisible = append(a.emoteVisible, a.favBoxList...) // favs-only == the fav list
+		a.favstyle.emoteVisible = append(a.favstyle.emoteVisible, a.favstyle.favBoxList...) // favs-only == the fav list
 	} else {
-		for i := range a.emotes {
-			a.emoteVisible = append(a.emoteVisible, i)
+		for i := range a.emotepick.emotes {
+			a.favstyle.emoteVisible = append(a.favstyle.emoteVisible, i)
 		}
 	}
 }
@@ -64,7 +64,7 @@ func (a *App) refreshEmoteView() {
 // and invalidates the cached view so the next refresh rebuilds it.
 func (a *App) toggleEmoteFav(realIdx int) {
 	a.d.Prefs.ToggleEmoteFav(a.activeCharName(), realIdx)
-	a.emoteFavRev++
+	a.favstyle.emoteFavRev++
 }
 
 // drawEmoteFavStar draws the favourite badge in an emote cell's top-right corner
@@ -80,7 +80,7 @@ func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 		return false // favourites are opt-in (default off): no badge, no tofu on every cell
 	}
 	c := a.ctx
-	_, fav := a.emoteFavSet[realIdx]
+	_, fav := a.favstyle.emoteFavSet[realIdx]
 	sr := sdl.Rect{X: cell.X + cell.W - emoteFavStarPx, Y: cell.Y, W: emoteFavStarPx, H: emoteFavStarPx}
 	col := ColTextDim
 	if fav {
@@ -121,7 +121,7 @@ func (a *App) drawEmoteFavToggle(btn sdl.Rect) {
 
 		})
 
-		a.emoteFavRev++ // force the visible list to rebuild for the new filter state
+		a.favstyle.emoteFavRev++ // force the visible list to rebuild for the new filter state
 	}
 	c.Tooltip(btn, "Show only your favourite emotes — click the ★ on an emote to add it")
 }

@@ -52,7 +52,7 @@ func (a *App) defaultOOCName() string {
 // the user's name when set, else a sticky random AsyncAO<1-200> minted
 // once per run (so one session keeps one identity).
 func (a *App) oocNameOrDefault() string {
-	if n := strings.TrimSpace(a.oocName); n != "" {
+	if n := strings.TrimSpace(a.compose.oocName); n != "" {
 		return n
 	}
 	if a.defaultOOC == "" {

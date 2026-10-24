@@ -257,7 +257,7 @@ func (a *App) startLayoutEdit() {
 // from before Ctrl+F2 would swallow the editor's arrow-key nudge and its own Esc for
 func (a *App) closeEditorBlockingOverlays() {
 	a.closeCourtroomModals()
-	a.showEvid, a.showModcall, a.showPair = false, false, false
+	a.showEvid, a.showModcall, a.pairbox.showPair = false, false, false
 	a.showModDash, a.banBox.kind, a.showCMPanel = false, 0, false
 	a.debugPanel.open, a.showFxPicker = false, false
 	a.closeMenuBar()

@@ -257,8 +257,8 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 // live (the swatch + the next send use it) and the pick persists as the
 // default a fresh tab seeds from.
 func (a *App) setICCustomRGB(rgb int) {
-	a.icCustomRGB = rgb & 0xFFFFFF
-	icRGB := a.icCustomRGB
+	a.compose.icCustomRGB = rgb & 0xFFFFFF
+	icRGB := a.compose.icCustomRGB
 	a.d.Prefs.Update(func(sn *config.Settings) {
 		sn.ICCustomColor = icRGB
 	})
@@ -281,7 +281,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	// allocation change.
 	c.LabelClipped(r.X+8, r.Y+5, r.W-16, icColorWheelCaption, ColTextDim)
 
-	cur := a.icCustomRGB
+	cur := a.compose.icCustomRGB
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
 	hh, ss, vv := rgbToHSV(r8, g8, b8)
 

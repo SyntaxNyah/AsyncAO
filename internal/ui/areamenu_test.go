@@ -158,7 +158,7 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	// cases below.
 	onView := func(tab int) *App {
 		a := &App{env: env{}}
-		a.logTab = tab
+		a.chatlog.logTab = tab
 		return a
 	}
 

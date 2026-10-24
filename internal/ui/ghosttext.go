@@ -103,8 +103,8 @@ func (a *App) ghostLogSpan(_ []icWrapLine) ghostSpan {
 	if n == 0 {
 		return ghostSpan{} // nothing behind the current line: nothing to preview
 	}
-	entry := firstQueuedEntry(a.icLog, n)
-	if entry >= len(a.icLog) {
+	entry := firstQueuedEntry(a.chatlog.icLog, n)
+	if entry >= len(a.chatlog.icLog) {
 		return ghostSpan{}
 	}
 	return ghostSpan{entry: entry, ok: true}

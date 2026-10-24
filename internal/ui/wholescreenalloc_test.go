@@ -107,8 +107,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// Caught-up-at-bottom is the faithful settled state — and it skips BOTH the
 	// "↓ N new" and "↓ Latest" pills, whose fmt.Sprintf / TextWidth would
 	// otherwise allocate every frame (that's a scrolled-up frame, not settled).
-	a.icStick = true
-	a.icReadMark = len(a.icLog)
+	a.compose.icStick = true
+	a.compose.icReadMark = len(a.chatlog.icLog)
 	// The OOC scrollback too. Since v1.87.0 the OOC BOX is the default layout, so
 	// drawCleanRightColumn → drawOOCPanel is on the settled frame's critical path
 	// for a fresh install — but with an empty OOC log its per-line raster loop

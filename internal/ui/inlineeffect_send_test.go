@@ -24,7 +24,7 @@ func sendICOnce(t *testing.T, a *App, line string) []protocol.Packet {
 	var sent []protocol.Packet
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	a.sess.MyCharID = 7
-	a.icInput = line
+	a.compose.icInput = line
 	a.sendIC()
 	return sent
 }
@@ -70,12 +70,12 @@ func TestSendBareInlineEffectObeysRateLimit(t *testing.T) {
 	a.sess.MyCharID = 7
 	a.lastICSend = time.Time{} // no prior send: the first one must go through
 
-	a.icInput = `\s`
+	a.compose.icInput = `\s`
 	a.sendIC()
 	if len(sent) != 1 {
 		t.Fatalf("the first bare effect must send, got %d packets", len(sent))
 	}
-	a.icInput = `\s`
+	a.compose.icInput = `\s`
 	a.sendIC() // immediately again — inside the window
 	if len(sent) != 1 {
 		t.Errorf("a bare effect inside the rate-limit window must be dropped, got %d packets", len(sent))

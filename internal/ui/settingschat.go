@@ -370,15 +370,15 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = next })
 	}
 	wheelLbl := "Wheel…"
-	if a.showAreaWheel {
+	if a.chipUI.showAreaWheel {
 		wheelLbl = "Close"
 	}
 	if c.Button(sdl.Rect{X: pad + 306, Y: y - 1, W: 64, H: 22}, wheelLbl) {
-		a.showAreaWheel = !a.showAreaWheel
+		a.chipUI.showAreaWheel = !a.chipUI.showAreaWheel
 	}
 	c.LabelClipped(pad+378, y+4, w-pad-378-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
 	y += 32
-	if a.showAreaWheel {
+	if a.chipUI.showAreaWheel {
 		// The shared inline colour wheel (drawWheelPicker), writing back as hex —
 		// the same value the field above edits. The extra button restores the
 		// stock green (the blank-pref default).

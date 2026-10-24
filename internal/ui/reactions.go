@@ -204,13 +204,13 @@ func (a *App) reactionTargetKnown(ref uint32) bool {
 	if ref == 0 {
 		return false
 	}
-	n := len(a.icLog)
+	n := len(a.chatlog.icLog)
 	lo := n - reactionMatchScan
 	if lo < 0 {
 		lo = 0
 	}
 	for i := n - 1; i >= lo; i-- {
-		if a.icLog[i].ref == ref {
+		if a.chatlog.icLog[i].ref == ref {
 			return true
 		}
 	}

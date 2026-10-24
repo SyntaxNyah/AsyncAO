@@ -92,7 +92,7 @@ func writePackFiles(t *testing.T, root string, files map[string]string) {
 func awaitCharINI(t *testing.T, a *App) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for a.charINIBusy {
+	for a.compose.charINIBusy {
 		a.pollCharINI()
 		if time.Now().After(deadline) {
 			t.Fatal("the char.ini load never settled — it is not reading the mount")
@@ -115,11 +115,11 @@ func TestMountedPackSuppliesTheEmoteList(t *testing.T) {
 	a.loadCharINI()
 	awaitCharINI(t, a)
 
-	if len(a.emotes) != 2 {
-		t.Fatalf("emote list = %d entries (%v), want the PACK's 2 — the ini was read off the server", len(a.emotes), a.emotes)
+	if len(a.emotepick.emotes) != 2 {
+		t.Fatalf("emote list = %d entries (%v), want the PACK's 2 — the ini was read off the server", len(a.emotepick.emotes), a.emotepick.emotes)
 	}
-	if a.emotes[0].Anim != "grin" || a.emotes[1].Anim != "glare" {
-		t.Errorf("emotes = %q/%q, want grin/glare", a.emotes[0].Anim, a.emotes[1].Anim)
+	if a.emotepick.emotes[0].Anim != "grin" || a.emotepick.emotes[1].Anim != "glare" {
+		t.Errorf("emotes = %q/%q, want grin/glare", a.emotepick.emotes[0].Anim, a.emotepick.emotes[1].Anim)
 	}
 	if a.warnLine != "" {
 		t.Errorf("warned %q about a char.ini it successfully read", a.warnLine)
@@ -167,7 +167,7 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	a.previewAnims = []string{"stale"}
 	a.previewLabels = []string{"Stale"}
 	a.previewEmoteIdx = 3
-	a.iniWarmed = "witch"
+	a.compose.iniWarmed = "witch"
 
 	a.rescanLocalPacks(nil)
 
@@ -178,7 +178,7 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 		t.Errorf("the preview kept its latch (%q/%v) — re-hovering the same character redraws the pre-edit emotes",
 			a.previewChar, a.previewAnims)
 	}
-	if a.iniWarmed != "" {
+	if a.compose.iniWarmed != "" {
 		t.Error("the hover-warm latch survived — the next hover skips the refetch")
 	}
 }

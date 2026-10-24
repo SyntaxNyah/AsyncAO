@@ -214,8 +214,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
-	a.frameDtMs = float32(dt.Seconds() * 1000)
-	a.recordFrameDt(a.frameDtMs)
+	a.chatlog.frameDtMs = float32(dt.Seconds() * 1000)
+	a.recordFrameDt(a.chatlog.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
 	// a room). updatePresence no-ops when presence is unset or the toggle is off.

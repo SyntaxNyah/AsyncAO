@@ -357,7 +357,7 @@ func pageFrameLoop(page *render.TexturePage, elapsed time.Duration) int {
 // stable (e.g. paused) clock allocates nothing on the always-on courtroom draw,
 // and a running one rebuilds at most once per second instead of every frame.
 func (a *App) timerChipLabels(now time.Time) []string {
-	chips := a.timerChips[:0]
+	chips := a.chipUI.timerChips[:0]
 	for id := 0; id < courtroom.TimerCount; id++ {
 		t := &a.sess.Timers[id]
 		if !t.Visible {
@@ -368,13 +368,13 @@ func (a *App) timerChipLabels(now time.Time) []string {
 			secs = 0
 		}
 		// A built label is never "" → that doubles as the "not yet built" check.
-		if a.timerLabels[id] == "" || a.timerLabelSecs[id] != secs {
-			a.timerLabels[id] = fmt.Sprintf("T%d %02d:%02d", id+1, secs/60, secs%60)
-			a.timerLabelSecs[id] = secs
+		if a.chipUI.timerLabels[id] == "" || a.chipUI.timerLabelSecs[id] != secs {
+			a.chipUI.timerLabels[id] = fmt.Sprintf("T%d %02d:%02d", id+1, secs/60, secs%60)
+			a.chipUI.timerLabelSecs[id] = secs
 		}
-		chips = append(chips, a.timerLabels[id])
+		chips = append(chips, a.chipUI.timerLabels[id])
 	}
-	a.timerChips = chips // keep the grown backing for next frame's reuse
+	a.chipUI.timerChips = chips // keep the grown backing for next frame's reuse
 	return chips
 }
 
@@ -706,17 +706,17 @@ func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 // either, the button hides (playtest: it highlighted on hover for chars
 // with no custom shout at all).
 func (a *App) hasCustomShout() bool {
-	return len(a.customShouts) > 0 || a.customName != ""
+	return len(a.compose.customShouts) > 0 || a.compose.customName != ""
 }
 
 // customShoutLabel is the active custom-shout button text: a named
 // [Shouts] pick, the char.ini custom_name rename, or plain "Custom!".
 func (a *App) customShoutLabel() string {
-	if a.customIdx >= 0 && a.customIdx < len(a.customShouts) {
-		return a.customShouts[a.customIdx].Name + "!"
+	if a.compose.customIdx >= 0 && a.compose.customIdx < len(a.compose.customShouts) {
+		return a.compose.customShouts[a.compose.customIdx].Name + "!"
 	}
-	if a.customName != "" {
-		return a.customName + "!"
+	if a.compose.customName != "" {
+		return a.compose.customName + "!"
 	}
 	return "Custom!"
 }
@@ -747,10 +747,10 @@ func (a *App) posChoices() []string {
 // and the same-side guard makes a re-pick of the current side a no-op (no resend).
 func (a *App) applySide(side string) {
 	side = strings.ToLower(strings.TrimSpace(side))
-	if side == "" || side == a.sidePref {
+	if side == "" || side == a.compose.sidePref {
 		return
 	}
-	a.sidePref = side
+	a.compose.sidePref = side
 	if a.sess != nil {
 		a.sess.SendOOC(a.oocNameOrDefault(), "/pos "+side)
 	}
@@ -821,13 +821,13 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 		}
 		return x + adv
 	}
-	if a.posBgKey != bg { // bg changed: drop the now-wrong thumbnails (cachedPage keys by index, not URL)
-		a.posBgPages, a.posBgKey = nil, bg
+	if a.pairbox.posBgKey != bg { // bg changed: drop the now-wrong thumbnails (cachedPage keys by index, not URL)
+		a.pairbox.posBgPages, a.pairbox.posBgKey = nil, bg
 	}
-	if a.posThumbFn == nil { // bind once: a stable fn (reads the live bg/choices), so the per-frame Pos selector never allocates a closure
-		a.posThumbFn = a.posThumbDraw
+	if a.pairbox.posThumbFn == nil { // bind once: a stable fn (reads the live bg/choices), so the per-frame Pos selector never allocates a closure
+		a.pairbox.posThumbFn = a.posThumbDraw
 	}
-	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, a.posThumbFn); changed {
+	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, a.pairbox.posThumbFn); changed {
 		a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 	}
 	return x + adv
@@ -852,11 +852,11 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	}
 	bgPart, _ := courtroom.PositionScene(choices[i])
 	base := a.urls.Background(bg, bgPart)
-	if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.pairbox.posBgPages, &a.pairbox.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &tr)
 	} else {
 		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-		a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb)
+		a.demandAsset(&a.pairbox.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb)
 	}
 	c.Border(tr, ColPanelHi)
 }

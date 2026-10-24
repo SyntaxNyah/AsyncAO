@@ -39,7 +39,7 @@ func TestDashDetection(t *testing.T) {
 	a.sess.Areas = []string{"Lobby", "Court 1"}
 	a.sess.AreaInfo = []courtroom.AreaInfo{{}, {CM: "Phoenix Wright"}}
 	a.curArea = "Court 1"
-	a.shownameOverride = "Phoenix" // effectiveShowname returns this (no prefs needed)
+	a.compose.shownameOverride = "Phoenix" // effectiveShowname returns this (no prefs needed)
 	if !a.amICM() {
 		t.Error("ARUP CM 'Phoenix Wright' should match showname 'Phoenix'")
 	}
@@ -54,7 +54,7 @@ func TestDashDetection(t *testing.T) {
 	// UID match: Athena/Nyathena write the CM column as "<char> (<uid>)", so our own client uid
 	// (PlayerID) in that parened form is an exact CM signal — even when the name doesn't match.
 	a.sess.PlayerID = 7
-	a.shownameOverride = "Zzz" // ensure ONLY the uid can match
+	a.compose.shownameOverride = "Zzz" // ensure ONLY the uid can match
 	a.sess.AreaInfo[1].CM = "Apollo Justice (7)"
 	if !a.amICM() {
 		t.Error("our uid in the '(7)' form should read as us being CM")
@@ -66,7 +66,7 @@ func TestDashDetection(t *testing.T) {
 	a.sess.PlayerID = 0 // reset so the substring-only checks below aren't affected
 
 	// A non-matching identity reads as not-CM (no false positive).
-	a.shownameOverride = "Nobody"
+	a.compose.shownameOverride = "Nobody"
 	a.sess.AreaInfo[1].CM = "Apollo"
 	if a.amICM() {
 		t.Error("a non-matching name must not read as us being CM")
