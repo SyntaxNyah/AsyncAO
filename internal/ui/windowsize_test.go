@@ -582,7 +582,6 @@ func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 // the SAME one-shot. Without it an existing user's first launch after updating
 // swaps an edge-to-edge courtroom for a small centred canvas ringed by bars, and
 // the only way out is a settings hunt — the outcome the product rule forbids.
-//
 // The trigger is the STAMP being newly written, never "is this boot", so it can
 // fire exactly once ever.
 func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {

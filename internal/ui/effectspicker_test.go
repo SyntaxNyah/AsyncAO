@@ -243,9 +243,6 @@ func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
 // with, the guard every other origin-dependent path in this package carries
 // (charMetaFor charmeta.go:58, previewSFX sfxbrowser.go:56, warmCharINI
 // app.go:7510, overlayRosterFetchOne above).
-// Without it, an origin-less URLBuilder hands back the RELATIVE
-// "misc/<folder>/<name>": that would be submitted to the worker pool (the manager
-// rejects only an EMPTY base) and stored as Scene.Overlay.Base — a permanent junk
 // is the ZERO value until a connect assigns one (app.go:4757), so a .demo replayed
 func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	landed := func(a *App) {
@@ -298,7 +295,6 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 // would arm as a T1 page key and submit to the worker pool. That key can never
 // resolve, and it is baked ONCE per roster and read on every frame the picker
 // draws, so it would sit there for the life of the session.
-// Reachable, not theoretical, in exactly the way the resolve's guard is:
 func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// Properties but NO local icon, so the origin rung is the only one left —
 	// exactly the shape the guard is about.
@@ -374,7 +370,6 @@ func effectPreviewApp(t *testing.T) (*App, []string) {
 // and the empty origin, so an unfiltered preview mints urls.SFX("0") — a real
 // probe plus a 404-cache entry per format in the SFX fallback chain, per row
 // right-clicked. That is the exact probe spec §1.b told this wave to guard.
-//
 // The fixture has NO audio engine, so a regression panics here rather than
 // silently costing probes (the nil-Manager idiom of the resolve test above).
 func TestEffectPreviewFiltersTheSoundSentinels(t *testing.T) {
@@ -853,7 +848,6 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 // IC-bar sfxdd row and the SFX-BROWSER row audition on right-click and commit
 // nothing. Left-click is what picks; before this there was no way to hear a sound
 // without putting it on your next message.
-//
 // No origin, so previewSFX is its documented lobby no-op — this half pins the
 // non-effects (selection, consumption, modal state). The positive half is the
 // test below.
@@ -875,8 +869,6 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	// consumed. The consume is the OPEN LIST's fence, decided once in
 	// DropdownRowRightClicked — every in-range row belongs to the list; only the
 	// dead tail past the last row is left for others (TestDropdownRowRightClicked).
-	// previewOverlayRow's row-0 "None" arm has the identical shape, and the proof
-	// that row 0 does nothing is the negative case in TestRightClickSFXRowActuallyPreviews.
 	a := newApp(&Ctx{})
 	list := sdl.Rect{X: 100, Y: 200, W: 120, H: 90}
 	stampOpenDropdown(a.ctx, "sfxdd", list, 30, len(a.emotepick.sfxChoices), 0)

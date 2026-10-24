@@ -223,9 +223,6 @@ func editorWidgetTarget(t *testing.T, a *App) editTarget {
 // legacy probe's own site: a flat largest-wins loop hands every press on a small
 // decoration to the big widget underneath it, and the decoration is unselectable by
 // mouse for the whole wave.
-// The fixture is exactly that shape — a 12x12 element parked on a full widget — and
-// the gate asserts BOTH directions, because a priority that made widgets
-// unreachable would be the same bug with the roles swapped.
 func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

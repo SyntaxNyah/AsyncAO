@@ -299,9 +299,6 @@ func TestElementOpacityFoldsIntoTheBakedColours(t *testing.T) {
 // prevents is cumulative: a second reparent composes the pane's origin onto a rect
 // that already carries it, so the widget walks further off screen at every rebuild
 // — a window resize away from a bug nobody can reproduce from a screenshot.
-// "Exactly once" is checked as an ARITHMETIC identity rather than a call count: the
-// host lands at pane origin + its pane-relative override, and a second application
-// could not produce that rect.
 func TestPaneReparentsExactlyOnce(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_panes.ini")
 	defer cleanup()

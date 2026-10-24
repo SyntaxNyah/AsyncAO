@@ -69,8 +69,6 @@ func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 // software renderer over the dummy video driver, the same one every other
 // page-building test in this package runs on. SKIPPED rather than failed where SDL
 // is unavailable, which is the package's standing rule for its SDL-backed gates.
-// Only the four tests that need a real page ask for one, so the effect-only gates
-// (the pool, the binds) still run with no renderer at all.
 func fxTestStore(t *testing.T) *render.TextureStore {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)

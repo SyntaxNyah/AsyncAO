@@ -174,8 +174,6 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 // animates without noting parks the frame limiter at its idle cap and the field
 // crawls at a few frames a second — the msAnim precedent this repo has already
 // shipped once.
-// Both dispatches, every kind, plus the two negatives: a message with no egg in
-// it must not pace, and a kind with no stage half must not pace from the stage.
 func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 	a, _, vp, box, cleanup := eggOracleRig(t)
 	defer cleanup()
@@ -475,9 +473,6 @@ func TestPerimSegment(t *testing.T) {
 // sibling drives a creator-name message (ScreenEffects on, ReduceMotion off) so
 // the full drawCreatorEgg runs each measured frame. A non-zero count means a
 // per-frame allocation shipped in the egg draw (fix it, don't loosen the gate).
-// DO NOT WEAKEN OR SKIP IT. Every egg path is genuinely alloc-free in the steady
-// state, and the class of bug this catches (a per-frame allocation in a draw
-// body) is one this codebase has shipped more than once.
 func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
@@ -533,7 +528,6 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 
 // TestEggWordPresentIsABoundaryMatch pins the one trigger that is not a plain
 // Contains, from both sides.
-//
 // "mint" is ordinary English, so a substring match fires on peppermint, minted,
 // spearmint and mintage — the exact false-positive class the full-handle rule
 // keeps out for the other five, applied to a handle that cannot buy specificity

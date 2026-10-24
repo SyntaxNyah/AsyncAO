@@ -20,8 +20,6 @@ import (
 // issue #20 is about — the column count, the pitch and the origin the cells land on
 // — plus the three places our scrolling grid has to work harder than AO2's paged one
 // to stay on the artwork's lattice.
-//
-// stageCharSelect / stockCharSelectDesign live in charselectlayout_test.go.
 
 // charSelectGridTop is the header offset drawCharSelect passes the plan builder, for
 // a window with no chrome band. Spelled out so a test that means "the header does not
