@@ -500,7 +500,7 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 			break
 		}
 		if rowY >= logR.Y-debugRowH {
-			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debug.lines()[i].text, ColTextDim)
+			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debug.lines()[i].Text, ColTextDim)
 		}
 		rowY += debugRowH
 	}
@@ -533,7 +533,7 @@ func (a *App) exportDebugLog() {
 	// Add all log entries (oldest first for readability)
 	for i := 0; i < a.debug.len(); i++ {
 		e := a.debug.lines()[i]
-		content += fmt.Sprintf("[%s] %s\n", e.at.Format("15:04:05"), e.text)
+		content += fmt.Sprintf("[%s] %s\n", e.At.Format("15:04:05"), e.Text)
 	}
 
 	// Write file
