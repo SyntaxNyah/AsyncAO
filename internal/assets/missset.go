@@ -8,7 +8,6 @@ import (
 
 // missChain identifies one resolution CHAIN, not one file: the base, the asset
 // type, and the alternate spellings probed after it.
-//
 // The chain has to be part of the identity because the SAME base is prefetched
 // with different alt lists from different call sites — ui/screens.go asks a
 // preview sprite for its bare base (drawPreanimPreview), then asks the same
@@ -17,7 +16,6 @@ import (
 // base alone would let the narrower pass silence the wider one, which is the
 // same class of bug as blanking a shared learned-format slot: one asset's
 // answer applied to a question it never asked.
-//
 // A struct key rather than a joined string because the alt-less lookup is the
 // hot one — every non-resident grid cell consults it on the way to a demand —
 // and a struct key hashes its fields in place, allocating nothing.
@@ -49,47 +47,10 @@ const missSetOverflowEvictShift = 3
 
 // missSet remembers, for the LIFE OF THE SESSION, that a prefetch chain was
 // probed to exhaustion and every spelling of it 404'd.
-//
-// It is the brake on the UI's demand cadence. A visible grid cell re-asks for
-// its asset every charIconRetryInterval until the texture lands (ui/app.go
-// demandAsset), and an asset the server does not have can never land, so
-// without a memory the ask repeats for as long as the cell is on screen. The
-// field report that produced this type: a character roster where most entries
-// ship neither a char_icon nor emotions/button<N>_off art, one 404 leaving the
-// client every couple of seconds, indefinitely, and the framerate collapsing
-// under the pool jobs, disk probes and shed-loop spins behind them.
-//
-// The network client's 404 cache is not that memory and cannot be made into
-// one. It is sized and timed for a different job (network.NotFoundCacheSize
-// entries, NotFoundCacheTTL each): a roster with more absent assets than it has
-// slots evicts its way back onto the wire, and even one that fits expires and
-// re-probes on the next tick. It also sits at the very BOTTOM of the pipeline,
-// so a hit there still costs the pool job, the resolver walk and the disk reads
-// above it — everything the sub-10fps half of the report was made of.
-//
-// WHY A SET AND NOT A missMemo. The two negative caches answer different
-// questions. missMemo answers "was this file absent RECENTLY?" — a guess with a
-// deliberate expiry, because a file can appear at any moment and 30 s of
-// staleness is the price of not re-walking the mounts on every probe. missSet
-// answers "did we already establish, this session, that this chain does not
-// resolve?" — a fact about work already done, which only a SOURCE change can
-// invalidate. Facts do not expire on a timer, so this type carries no clock at
-// all: it is emptied by the events that actually change the answer (a
-// reconnect, a mount or pack change) and by the user's explicit Settings
-// button. See Manager.ForgetConclusiveMisses.
-//
-// WHAT "EXHAUSTED" IS RELATIVE TO. A remembered miss means "every candidate the
-// resolver generated for this chain 404'd" — and the candidate list is built
-// from the format preferences, so the memory is only valid for the
-// configuration it was recorded under. Every entry therefore carries the
-// config.FormatGeneration of the moment it was established (see gen below), and
-// a change to it retires the whole set at once rather than entry by entry: when
-// the probe list changes, every answer in here was computed from the old one.
 // Without that, turning fallbacks on — or adding .png to the format order in
 // Settings, which is exactly what a user does when sprites look missing — would
 // change nothing on screen, because the gate sits above the resolver and would
 // never let the new list be tried.
-//
 // Bounded (rule §17.4) and mutex-guarded: written by pool workers on the
 // exhaustion path, read by the render thread on every prefetch.
 type missSet struct {
@@ -195,7 +156,6 @@ func (s *missSet) forget() {
 
 // forgetUnder empties only the chains whose base sits under prefix — one asset
 // origin's worth.
-//
 // Scoping matters because one Manager serves every open server tab, and the
 // events that invalidate this memory are mostly per-SERVER: reconnecting to one
 // server says nothing about what another still-connected tab has already

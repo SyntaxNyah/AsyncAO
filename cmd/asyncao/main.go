@@ -177,16 +177,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// the asset client below and well ahead of the first master-list fetch,
 	// otherwise the launch's earliest requests would go direct while everything
 	// after them was proxied — the split tunnel this exists to remove.
-	//
-	// Synchronous on purpose. On Windows it may read the registry and ask WinHTTP
-	// to run a WPAD discovery, which is a network round trip; the justification
-	// for doing that here is that it is before sdl.Init below, so no window or
-	// renderer exists yet and a slow answer costs BOOT LATENCY rather than
-	// frames. (Note it is NOT "before the render loop exists" —
-	// runtime.LockOSThread is the first statement of main, so this goroutine is
-	// already pinned to the render thread.) Nothing on a request path repeats it:
-	// the answer is a snapshot, refreshed only when the user changes the setting
-	// or asks for a re-check.
 	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
 	log.Printf("proxy: %s", proxyPolicy.Describe())
 
@@ -282,13 +272,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// reserves below the stage (screens.go: vpH = h-220). The stage never fills
 	// the whole display, so capping to the real stage height makes the final
 	// per-frame GPU scale gentler in EVERY window size (sharper, esp. windowed)
-	// AND cheaper than the full display height. Strictly 0 per-frame cost: the
-	// cached texture is smaller, and the single decode-time downscale is
-	// unchanged. High-res art (e.g. 2000px sprites) is high-quality downscaled
-	// once at decode; downscale-only, so a no-op for already-small art. Safe at
-	// the common UI scale >= 1 (the real reserve only grows with scale); a tall-
-	// stage theme at fullscreen costs at most a mild ~1.1:1 upscale, far below
-	// the gap this fixes. The floor avoids over-shrinking on a tiny display.
 	const (
 		stageBottomReservePx = 220 // mirrors screens.go default-courtroom chatbox reserve
 		minSpriteCapPx       = 480
@@ -659,16 +642,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// loop straight around and render it — the next pass's SkipFrame
 				// refuses on RenderNeeded. Otherwise park on the OS event wait
 				// until input, a wake doorbell, or the nearest scheduled deadline.
-				// NextWakeDelay reports both HOW LONG to park and whether a plain
-				// timeout is a real redraw deadline (idle-rate tick, caret flip,
-				// clock second) or just the Background-only housekeeping floor —
-				// the floor pumps the session and re-parks WITHOUT drawing, which
-				// is how idle=off reaches genuinely zero redraws. Input/wake events
-				// interrupt the wait regardless, for instant response at zero cost.
-				// Damage loops straight around to render — unless SkipFrame will
-				// keep refusing (unfocused + background cap OFF): there the damage
-				// can't draw until focus returns, and looping on it was a zero-
-				// sleep spin (packets re-dirty faster than anything clears).
 				if app.RenderNeeded() && !app.RenderSuppressed(focused) {
 					continue
 				}
@@ -734,20 +707,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
 		// and some windowed present paths don't block at all (the "54% GPU in a
 		// tiny window" report). Two nested budgets:
-		//
-		//   hardCap — the user's active (focused) or unfocused FPS ceiling. It is
-		//     INVIOLABLE: slept UNINTERRUPTIBLY, so an input flood — above all
-		//     mouse motion, which streams an event every few ms — can never
-		//     interrupt the pace and drive the loop past the cap. This is the
-		//     "caps are ALWAYS obeyed" contract, and it also enforces the
-		//     unfocused cap even when FramePace lifts an unfocused animation
-		//     toward the active rate.
-		//   pace   — FramePace's adaptive tier (full while interacting/animating,
-		//     the idle rate on a static screen). Always ≥ hardCap when focused;
-		//     the SURPLUS beyond the ceiling is slept INTERRUPTIBLY so input during
-		//     a slow idle/animation frame still responds within one ceiling instead
-		//     of waiting the whole slow budget out (the low-idle input-lag fix).
-		//
 		// With vsync off both fall back to the old fixed ~60 fps sleep.
 		pace := app.FramePace(focused)
 		hardCap := app.HardCapBudget(focused)

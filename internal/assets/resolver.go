@@ -32,19 +32,6 @@ const learnedExtCap = 4
 // learnedTable is the immutable snapshot behind the resolver's atomic
 // pointer: host → fixed per-type extension list. Lookups are one atomic
 // load, one map access, one array index — no locks (spec §17.5).
-//
-// Each entry is an ORDERED list, front = the format to probe first, rather
-// than the single string it used to be. A host can genuinely serve more than
-// one format for the same class — umineko.online declares
-// "emotions_extensions": [".png", ".webp"] and really does ship ~560 PNG-button
-// and ~490 WebP-button characters — and a one-slot table could only ever hold
-// one of them. Worse, it held whichever loaded LAST: the first WebP character
-// flipped the slot for the whole host, and every PNG character then 404'd its
-// only candidate and had nothing left to probe, because the type's configured
-// list (config.defaultFormatOrders) is itself the single entry .webp. That is
-// the "every emote button shows the same icon" report — the grid falls back to
-// the character icon in every cell (internal/ui/screens.go, drawEmoteImageButton).
-//
 // The list is read-only by contract: writers copy-on-write (see promoteExt).
 type learnedTable struct {
 	hosts map[string]*[AssetTypeCount][]string
@@ -54,14 +41,6 @@ var emptyLearnedTable = &learnedTable{hosts: map[string]*[AssetTypeCount][]strin
 
 // promoteExt returns prev with ext moved to the FRONT, as a fresh slice — the
 // published table is immutable, so this never writes through to prev.
-//
-// Promote, not overwrite. Overwriting is what made the old single-slot table an
-// absorbing state: once it held .webp, a PNG-only character probed .webp, 404'd,
-// found nothing else to try, and could never record the .png success that would
-// have corrected the slot. Keeping the loser in the list means both halves of a
-// mixed fleet stay reachable no matter which one loaded most recently; only the
-// ORDER churns, and the front is always the last format that actually worked.
-//
 // Returns prev unchanged (same backing array) when ext is already the front, so
 // the steady-state hit does no allocation and RecordSuccess can skip its CAS.
 func promoteExt(prev []string, ext string) []string {
@@ -196,7 +175,6 @@ func (r *Resolver) LearnedList(host string, t AssetType) []string {
 // Miss → the preference FormatList for the type (zero-fallback defaults are
 // a single format, spec §4). Callers must hand the result back via
 // PutCandidates.
-//
 // Fast path budget: < 100 ns, ≤ 1 alloc (the joined URL string) — gated by
 // BenchmarkBuildCandidates_Learned and TestBuildCandidatesLearnedAllocGate.
 func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candidates {
@@ -230,14 +208,6 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 // base WITHOUT reading or writing the shared learned table. It exists to close
 // the learned-format empty-window race: the manager's stale-learned re-probe
 // (a learned-first candidate 404'd) used to blank the shared per-(host, type)
-// slot with Invalidate before restoring it, so a DIFFERENT concurrent asset of
-// the same type could read the empty slot, fall back to the type default, and
-// spuriously report a file that exists in the learned format as missing (the
-// "every emote button renders the same icon" report). By probing the remaining
-// formats through this table-free path, the re-probe never touches the slot:
-// the only table write left is walkCandidates' RecordSuccess CAS, so a
-// concurrent reader always sees one valid value or another, never nothing.
-//
 // It does NOT bump learnedMisses: that counter tracks learned-TABLE lookups
 // that missed, and this method performs no table lookup — counting it would
 // double-count the same asset (BuildCandidates already recorded the miss that
@@ -297,16 +267,9 @@ func (r *Resolver) formatList(t AssetType) []string {
 
 // PackFormatList returns the probe list to use against the user's LOCAL MOUNT
 // FOLDERS, cached per format generation exactly like formatList.
-//
 // It is deliberately the FULL chain (the configured order plus the legacy
 // fallback chain, deduped) where the network path keeps the zero-fallback single
 // format. That asymmetry is the whole point:
-//
-// The one-probe-per-asset pillar exists to protect NETWORK egress — every extra
-// candidate is a real HTTP round trip against someone's asset host. A mount
-// lookup is an in-memory map hit against a pre-built index, so exhausting every
-// known extension locally costs nothing measurable and issues no request.
-//
 // Without this, layering would be inert for most real content. The shipped
 // defaults are {.webp} per type with fallbacks OFF, and a freshly indexed pack
 // has no learned formats, so a stock AO2 pack full of .png files would be probed

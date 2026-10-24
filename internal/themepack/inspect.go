@@ -1,26 +1,8 @@
 package themepack
 
 // INSPECT — read a bundle's CENTRAL DIRECTORY and nothing else.
-//
 // ONE concern: "what is in this file, and would I accept it?", answered without
 // decompressing a byte.
-//
-// It is the sleeper primitive of the whole wave. A zip's central directory
-// carries every entry's name and UNCOMPRESSED size, so the entire cap census —
-// count, per-entry bytes, total bytes, path length, depth, zip-slip, and one file
-// per name — is decided from metadata. That is what lets the consent sheet render
-// BEFORE anything is written, what makes the zip-bomb refusal a refusal rather
-// than a disk-full, and what would make a browse list or a preview card
-// affordable later.
-//
-// THE CENSUS DESCRIBES WHAT WILL LAND, exactly. That is a stronger claim than
-// "everything stays inside the folder", and it is the one the consent sheet rests
-// on: an archive whose entries would collapse into each other on the recipient's
-// filesystem is refused (caseSet), and a native tier spelled in the wrong case is
-// folded onto the format's own name (canonicalSidecarRel), so the sidecar this
-// file reads out of the archive is the sidecar theme.LoadSidecar reads back off
-// the disk — on all three platforms.
-//
 // The one exception is deliberate and bounded: when the bundle carries an
 // asyncao_theme.ini, exactly THAT entry is decompressed (bounded by the format's
 // own theme.IniDocByteCap) so the sheet can show a name, an author and a licence
@@ -200,7 +182,6 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 		// file on the recipient's disk would make Files count a file that is not
 		// there, and would let the LAST spelling decide what the theme claims about
 		// its author and its licence.
-		//
 		// CLAIMED ON rel AND QUOTED AS name: the collision is decided by the path that
 		// will be written, and the refusal names the entry the way the ARCHIVE spells
 		// it — root folder included — because that is the name the user has to find in
@@ -289,20 +270,16 @@ func packRoot(zr *zip.Reader) (string, packLayout) {
 
 // normalizeEntryName folds an archive entry name into the one spelling every
 // guard below is written against: forward slashes, no "./" prefix.
-//
 // BACKSLASHES ARE FOLDED FIRST and that is not cosmetic. A zip entry name is
 // '/'-separated by the format, but the name is ATTACKER-CONTROLLED metadata and
 // Windows treats '\' as a separator too — an entry called `..\..\evil.dll` would
 // otherwise sail past a '/'-only ".." check and be joined into a real traversal.
-// safepath.UnsafeRel and TooDeep both count either separator for the same reason;
-// folding here means the root-stripping and length rules see it too.
 func normalizeEntryName(name string) string {
 	return strings.TrimPrefix(strings.ReplaceAll(name, `\`, "/"), "./")
 }
 
 // describeContents fills the two lists the consent sheet shows: what art comes
 // with the theme, and what typefaces — with whether their licence travels along.
-//
 // BOTH BOUNDED (hard rule 4): theme.MediaCap and theme.FontCap are the format's
 // own manifest bounds, reused rather than restated so the sheet cannot claim more
 // entries than a sidecar could ever declare.
@@ -340,20 +317,6 @@ func describeContents(m *Manifest, entries []packEntry) {
 
 // readPackSidecar decompresses the ONE entry named asyncao_theme.ini, if the
 // bundle has one, so the sheet can show a name rather than a folder.
-//
-// BOUNDED BY THE FORMAT'S OWN CAP (theme.IniDocByteCap) and read through an
-// io.LimitReader, so a central directory that lies about the size cannot make
-// this allocate more than the format would ever accept. A parse failure is a
-// WARNING, never a refusal: the theme is still importable, the sheet just has
-// nothing to say about it.
-//
-// THE EXACT-NAME MATCH IS SOUND BY CONSTRUCTION, and only by construction: the
-// census folded a mis-cased spelling onto sidecarName and refused a second entry
-// that differed from it only in case, so at most one entry can be the theme's
-// native tier and it is spelled the way the format spells it. Both of those are
-// load-bearing here — without them, the entry this reads and the file
-// theme.LoadSidecar opens after extraction are two different files, and this
-// function is what puts the theme's name, author and licence on the consent line.
 func readPackSidecar(m *Manifest, zr *zip.Reader, entries []packEntry) {
 	for _, e := range entries {
 		if e.rel != sidecarName {

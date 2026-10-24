@@ -1,42 +1,6 @@
 package courtroom
 
 // blipurl.go — the ONE place a blip-set NAME becomes blip URLs.
-//
-// AO2 resolves a blip in two steps, and both are canon:
-//
-//  1. The NAME — AOApplication::get_blipname
-//     (../AO2-Client/src/text_file_functions.cpp:487-514): char.ini [Options]
-//     blips, then the per-emote [Options<N>] blips override (:491-503), then the
-//     LEGACY [Options] gender key (:507), then "male" (:510). Both keys yield the
-//     same bare string: get_blipname returns a NAME, and the key the author used
-//     is gone by the time anything looks for a file. The key therefore does NOT
-//     select a folder — see the ordering note below.
-//
-//  2. The FILE — AOApplication::get_blips (:515-527), which CHECKS two
-//     spellings against a LOCAL, case-insensitive filesystem and falls back
-//     to a third it never checks:
-//
-//     sounds/general/<name>          get_sounds_path (path_functions.cpp:53-56), :517
-//     sounds/blips/<name>            "../blips/" + name, :519-522 ("the cool kids variant")
-//     sounds/general/sfx-blip<name>  :524 ("Return legacy variant") — an
-//                                    UNCHECKED return, no file_exists guard
-//
-//     The legacy spelling is one token — "sfx-blip" + p_blipname, a DASH and no
-//     separator, so gender=male reads sounds/general/sfx-blipmale.<ext>. The DRO
-//     fork kept the same two-rung ladder and spells out the file it means:
-//     "sounds/general/sfx-blipmale.wav style"
-//     (../DRO-Client/src/dro/system/audio/blip_player.cpp:21-25).
-//
-//     AOBlipPlayer::setBlip feeds get_blips' answer back through get_sounds_path
-//     (../AO2-Client/src/aoblipplayer.cpp:19-21), which is why the middle rung is
-//     written as a "../blips/" escape out of sounds/general — it is exactly
-//     sounds/blips/<name>.
-//
-// Why AsyncAO's rung ORDER differs from AO2's: AO2 stats a local disk, where a
-// probe is free and looking in sounds/general/ first costs nothing. We speak HTTP
-// to a case-sensitive mirror, where every miss is a request, so the rungs are
-// ordered by what mirrors actually serve. webAO — this client's URL reference —
-// only ever asks for sounds/blips/<name>.opus
 // (../webAO/src/viewport/utils/handleICSpeaking.ts:403-405), and that is where
 // every modern base keeps its sets; it also collapses the legacy gender key into
 // the SAME blips name (../webAO/src/client/handleCharacterInfo.ts:97-113), which
@@ -52,7 +16,6 @@ package courtroom
 // base that ships the same set twice; otherwise it just changes how many probes
 // it takes to find the one file that exists, and every miss is 404-cached
 // (rule §17.6), so a settled chain costs nothing.
-//
 // Each rung splits by CASE, lowercase first. AO2 read a case-insensitive local
 // filesystem and never had to choose; HTTP mirrors do — webAO-convention mirrors
 // lowercase every path, raw content folders keep the author's case. Same shape
@@ -98,7 +61,6 @@ const (
 // guaranteed miss. The parse-side feature gate (protocol.ParseMS's getBlips) is
 // the real fix; this is the belt at the prefetch boundary so no server, hostile or
 // merely odd, can mint asset URLs out of that field.
-//
 // It is not exported and it has no second copy: every blip URL in the client is
 // minted by BlipRef, which applies this guard first. The live funnel and the
 // Studio content report used to carry two different versions of it — the report's

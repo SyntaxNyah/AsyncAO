@@ -1,20 +1,11 @@
 package themepack
 
 // COPY FOR EDITING — "editing makes your own copy".
-//
-// ONE concern: reproducing somebody else's theme folder inside the write root, so
-// that everything the editor does afterwards lands on a folder we own.
-//
 // WHY IT IS NOT A ZIP ROUND TRIP. Write-then-Extract would give the same tree and
 // would also compress and decompress every byte for no reason, and would report a
 // bundle's caps ("this .aotheme is too big") for a folder nobody is bundling. The
 // caps are the same, the guards are the same, and the walk is the same
 // safepath.WalkFiles — only the destination differs.
-//
-// NOTHING IS SKIPPED. A theme's unknown files are its author's business; a copy
-// that dropped what this build did not recognise would silently make the copy
-// worse than the original, and the user would find out when they exported it.
-//
 // THE ORIGINAL IS NEVER OPENED FOR WRITING. Every path on the source side is
 // read-only, and that is what TestCopyForEditingLeavesTheOriginalUntouched
 // hashes (pack_test.go). The name that used to stand here —
@@ -35,17 +26,6 @@ import (
 
 // CopyForEditing copies srcDir into a new folder under themesRoot and stamps the
 // copy's [import] provenance.
-//
-// name is the folder the user asked for; "" takes the source's own name. It is
-// sanitized and collision-suffixed exactly as an import is, because it is one —
-// the bytes just arrive over a shorter wire.
-//
-// PROVENANCE IS WRITTEN, and it is four lines of format that buy three things:
-// tamper/corruption detection on a re-shared copy, an answerable "upstream
-// updated — what changed?", and — socially the biggest — CREDIT THAT SURVIVES
-// RE-SHARE. A copy that forgot where it came from is how an ecosystem loses its
-// authors.
-//
 // BLOCKING — goroutine only (hard rule 2).
 func CopyForEditing(srcDir, themesRoot, name string) (*Manifest, error) {
 	entries, m, err := scanFolder(srcDir)
@@ -140,7 +120,6 @@ func copyOneFile(from, to, rel string) error {
 // "" when it had none. Case-folded, because that is the question: on a
 // case-sensitive filesystem `ASYNCAO_THEME.INI` is a different file from
 // `asyncao_theme.ini`, and the copy has whichever one the source had.
-//
 // It is readFolderSidecar's own probe, factored out rather than repeated: the two
 // callers must agree about which entry IS the sidecar, or one of them reads the
 // author's metadata while the other writes beside it.
@@ -155,24 +134,6 @@ func foundSidecarRel(entries []srcEntry) string {
 
 // stampProvenance writes [import] derived_from / derived_at / derived_hash into
 // the copy's sidecar, creating one when the source had none.
-//
-// THE HASH IS OF courtroom_design.ini — the file the upstream author actually
-// maintains — using the same xxhash the disk cache keys by, so "has upstream
-// changed?" is one cheap comparison rather than a diff.
-//
-// IT GOES THROUGH Sidecar.Bytes, which means it goes through the WRITE GUARD: a
-// provenance stamp cannot be the thing that produces a theme the reader refuses.
-//
-// `rel` IS THE SPELLING THE COPY ACTUALLY HAS, and it is a parameter for a reason
-// this file's two siblings already learned. readPackSidecar folds a mis-cased
-// archive entry onto the canonical name (canonicalSidecarRel) and readFolderSidecar
-// probes with EqualFold, but this function used to open the canonical name
-// unconditionally. On a case-sensitive filesystem, copying a theme whose tier is
-// spelled `ASYNCAO_THEME.INI` therefore read nothing, created a SECOND, empty
-// sidecar beside the author's, and wrote the provenance into that: the copy lost
-// its name, author and licence, the editor showed an empty native tier, and the
-// export refused it under our own one-file-per-name guard. Three call sites, three
-// answers to "which file is the sidecar" — now one.
 func stampProvenance(dir, from, rel string) error {
 	if rel == "" {
 		rel = sidecarName // the source had none; the copy gets one under the format's name

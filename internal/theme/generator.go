@@ -2,26 +2,6 @@ package theme
 
 // Procedural generators — the SPEC half (v1.90.0 W4).
 // docs/wip/THEME-EDITOR-DESIGN.md §6.3, docs/THEME-FORMAT.md §5.
-//
-// A `kind = gen` element names a generator and hands it an ordered `k = v` list.
-// This file is everything about that which is SDL-free, serialisable and hashable:
-// the name, the params, and the content address the rasterised tile is cached
-// under. The rasteriser itself lives in internal/ui (gentex.go) because it produces
-// pixels; hard rule 1 keeps the two apart, and the seam is exactly this struct.
-//
-// WHY A CONTENT ADDRESS AT ALL. A generator produces a TILE, never a field
-// (GenTileMaxPx), and the tile's key carries no width, no height and no theme —
-// only the hash of (name, params). Three consequences, and they are the whole
-// reason generators are affordable:
-//
-//   - A window resize never re-rasters and never re-pins anything: the tile is the
-//     same tile at every canvas size, and the ELEMENT stretches or repeats it.
-//     (TestGeneratorKeyIsResizeInvariant.)
-//   - Two elements with identical params share one texture, across elements and
-//     across themes. A 14-element scanline set costs one tile.
-//   - The cache key cannot collide by construction, so `theme://g/<hash>` needs no
-//     theme namespace where `theme://m/<themeid>/<id>` does.
-//
 // That last point is why the hash has to be a real hash of the real bytes, and why
 // the generator contract's first clause is DETERMINISM (gentex.go): a generator
 // that returned different pixels for the same params would have the cache serve
@@ -49,7 +29,6 @@ const (
 )
 
 // GeneratorSpec is one `generator =` + `gen_params =` pair, normalised.
-//
 // The param list is ORDER-SENSITIVE and the hash is order-sensitive with it. That
 // is deliberate and it is the cheap direction of the trade: two elements that write
 // the same params in a different order rasterise the same tile twice (one wasted
@@ -91,17 +70,6 @@ func GeneratorSpecOf(e *Element) GeneratorSpec {
 
 // ParseGenParams / WriteGenParams publish the FORMAT'S OWN `gen_params` grammar
 // (v1.90.0 W7b), for the editor's parameter row.
-//
-// WHY PUBLISHED RATHER THAN RE-IMPLEMENTED IN internal/ui. It is the enumnames.go
-// argument applied to a grammar instead of an enum: an editor that split on commas
-// itself would be a SECOND parser of `k = v, k = v` that no gate compares against
-// the first, so the day the reader's trimming, its cap or its empty-key rule
-// changed, the editor would start writing rows the reader silently drops. Here the
-// editor's row round-trips through the very functions the reader and the writer
-// already use — WriteGenParams is formatGenParams, ParseGenParams is genParamsOf —
-// so "what the editor shows" and "what the file means" cannot diverge, and the cap
-// refusal (GenParamCap) reaches the editor as the error it already is.
-//
 // Cold path: an inspector keystroke, never a frame.
 func ParseGenParams(raw string) ([GenParamCap]KV, error) { return genParamsOf(raw) }
 
@@ -136,14 +104,6 @@ func (g GeneratorSpec) Empty() bool { return g.Name == "" }
 const genHashSep = "\x00"
 
 // Hash is the content address: xxhash64 over the name and the ordered params.
-//
-// xxhash64 is what the disk cache already keys full URLs by (cache/disk.go), so
-// this introduces no dependency and no second hashing discipline. Collisions are
-// the usual 64-bit story and the consequence is bounded: two generators that
-// collided would share one tile, which is a wrong-looking element, not a crash or a
-// leak — and the alternative (a longer digest in a cache key) costs bytes on every
-// key for a risk nobody will meet.
-//
 // Cold path: it walks strings. The KEY is computed once per element per theme apply
 // and then lives in the baked row as an already-built string.
 func (g GeneratorSpec) Hash() uint64 {
@@ -161,14 +121,12 @@ func (g GeneratorSpec) Hash() uint64 {
 
 // ParseRGBA is the format's colour grammar, exported for the ONE caller outside
 // this package that needs it: internal/ui's generator param parser (gentex.go).
-//
 // A generator parameter and an element's `fill` must mean the same thing by the
 // same code. The alternative — a second parser in internal/ui — is precisely the
 // divergence that let upper-case hex silently drop four of themes/thh_trial's five
 // [palette] roles while `#101010` beside them worked, and a generator whose `tint`
 // disagreed with the element's `fill` about `#1C1C1C` would be the same bug with a
 // second place to fix it.
-//
 // Accepts `#rrggbb`, `#rrggbbaa` (either hex case) and `r, g, b[, a]`.
 func ParseRGBA(v string) (RGBA, bool) { return parseRGBAValue(v) }
 

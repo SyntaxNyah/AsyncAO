@@ -1,24 +1,6 @@
 package theme
 
 // AO2-COMPAT EXPORT (v1.90.0 W8) — design §Q4 "Also work in AO2-Client".
-//
-// ONE concern: producing the TWO files an AO2-Client user needs out of an
-// AsyncAO theme — a courtroom_design.ini with our [overrides] baked into AO2's
-// own keys, and a plain-text list of everything AO2 will not show.
-//
-// IT PRODUCES BYTES AND WRITES NOTHING. Every function here takes the source
-// bytes and returns the result; no path, no os call, no destination. That is
-// what keeps the design's hardest write guard true by construction rather than
-// by discipline: the author's own courtroom_design.ini is the ONE file the
-// editor must never touch (a re-download would destroy their work and every
-// upstream diff would be noise), so the baked version exists only for the
-// length of one zip and only inside it.
-//
-// THE BAKE IS LOSSLESS ON THE WAY IN. It runs through INIDoc, so the author's
-// comments, key order, casing, unknown keys and line endings all survive; only
-// the keys the sidecar overrides are rewritten, and only to values AO2 already
-// reads. Gate: the baked bytes go back through the Qt-parity oracle.
-//
 // AND ASYNCAO-LOST.txt GOES IN THE BUNDLE. A file in the archive beats a dialog
 // in our UI: it survives re-share, renaming and re-zipping, and it reaches the
 // AO2 user who will never see our export sheet.
@@ -41,17 +23,6 @@ const lostReportCap = ElementCap + 16
 
 // BakeAO2Design rewrites a courtroom_design.ini so an AO2-Client reading it sees
 // the geometry this theme actually draws with.
-//
-// src is the author's file (nil or empty is fine — a theme may ship none, and
-// the result is then a file holding only the baked keys). The returned bytes are
-// the bundle's copy; the caller never writes them back over src.
-//
-// ROTATIONS ARE NOT BAKED, and that is not an omission. AO2 has no rotation key
-// to bake them INTO — a rotated widget in AO2 is simply the un-rotated one — so
-// each is reported in ASYNCAO-LOST.txt instead. Inventing a key AO2 does not
-// read would produce a file its own parser warns about, which is worse than a
-// documented absence.
-//
 // COLD PATH ONLY (hard rule 2).
 func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 	d, err := ParseINIDoc(src)
@@ -74,11 +45,6 @@ func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 // StripForAO2 returns a COPY of the sidecar with the tier that has just been
 // baked emptied out, so the exported theme does not apply its overrides twice
 // when an AsyncAO client opens it.
-//
-// A COPY, never the live model: the editor's document and the applied theme are
-// the same *Sidecar (themeDoc.side), so mutating it here would silently move
-// every widget in the user's own courtroom the moment they pressed Share.
-//
 // The lossless carrier is deliberately NOT copied — the copy re-emits from the
 // model into a fresh document, which is exactly right for a DERIVED file: the
 // bundle's sidecar is a new artefact, and carrying the original's untouched
@@ -100,7 +66,6 @@ func StripForAO2(s *Sidecar) *Sidecar {
 
 // LostToAO2 names, by id and kind, everything an AO2-Client will not show. It is
 // the body of ASYNCAO-LOST.txt.
-//
 // EVERY LINE IS ACTIONABLE OR IT IS NOT WRITTEN. "Your theme is different in
 // AO2" helps nobody; "[element.butterflies] (image) — AsyncAO free elements have
 // no AO2 equivalent" tells the reader exactly what they are missing and lets the
