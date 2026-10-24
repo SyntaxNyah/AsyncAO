@@ -1,7 +1,6 @@
 package ui
 
 // W7b — THE INSPECTORS (v1.90.0).
-//
 // Every gate here DRIVES the shipping seam: the real inspector table, the real
 // document funnel, the real pick lists, the real type tables. Nothing below
 // re-implements a rule it is checking (rule 11's mirror-test clause), and the
@@ -46,7 +45,6 @@ func editSlotRig(t *testing.T) (*App, *themeDoc, editTarget) {
 
 // TestSlotInspectorOffersGeometryAndNothingElse is the AO2 full-parity rule, made
 // structural.
-//
 // W7a stated the rule in a label and offered no control at all, so a widget could be
 // dragged but its rect could not be TYPED. W7b gives the arm a real row — and the gate
 // is that it is the ONLY row, addressing the ONLY field [overrides] can carry. A
@@ -85,7 +83,6 @@ func TestSlotInspectorOffersGeometryAndNothingElse(t *testing.T) {
 // TestResetToThemeDropsTheRowAndUndoRestoresIt pins the one ACTION the widget rail
 // carries, in the half that matters: a reset must REMOVE the [overrides] row, not
 // write the resolved rect back into it.
-//
 // Writing it back would leave a row in the author's file restating exactly what the
 // AO2 tier already says — a diff for an edit the user just took back, which is the
 // same defect editSlotRowPresent exists to keep an undo from causing.
@@ -263,7 +260,6 @@ func elementIDsIn(s *theme.Sidecar) []string {
 }
 
 // TestGenParamsRowUsesTheFormatsOwnParser is the anti-second-grammar gate.
-//
 // The row's validation must be theme.ParseGenParams — the very function the READER
 // uses (genParamsOf) — so a string the editor accepts is a string the file means. A
 // hand-rolled comma split in internal/ui would pass a happy-path test and diverge the
@@ -561,9 +557,6 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 // the wave. restoreBaseline is "all or nothing"; a snapshot that covered elements and
 // overrides but not the type tables would let "Back, Back" discard a session's
 // geometry and silently KEEP its font bindings.
-// UNCHANGED BY W8's re-baselining, deliberately: this session never saves, so the
-// baseline never moves and "discard" still means "back to when I opened it". That it
-// still passes verbatim is the open–closed evidence for rebaseline — the semantics
 func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	a, doc := editDocRig(t, 1)
 	doc.side.Fonts = []theme.FontFamily{{Family: "Original", File: "o.otf"}}
@@ -636,7 +629,6 @@ func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 
 // TestSavingATypeEditAppliesTheThemeOnce is the other half, and it is what stops the fix
 // above from being "delete the call".
-//
 // A [fontbind] row is resolved into real SDL_ttf faces by applySidecarFonts, on the
 // theme-apply goroutine, against the sidecar ON DISK — so without an apply after the
 // write the binding is saved and still drawn in the old face. The second save proves the
@@ -820,11 +812,6 @@ func TestEditTargetFontSpaceIsExplicit(t *testing.T) {
 // TestOnlyTheDocumentWritesTheTypeTables is the anti-second-writer census for the
 // [fonts] / [fontbind] tier — the twin of TestOnlyTheDocumentWritesTheOverridesTier,
 // and the seam gate rule 11 requires for every new abstraction.
-//
-// themeDoc.writeFontRow is the ONE function that may change a type table in a document
-// under edit. Anything else assigning to Sidecar.Fonts or Sidecar.FontBind is a writer
-// with no undo entry: an edit the user cannot take back and the baseline snapshot
-// cannot restore — half an edit, silently.
 func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 	const owner = "themeeditordoc.go"
 	needles := []string{
@@ -869,7 +856,6 @@ func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 
 // TestDroppedFaceInstallsThroughTheFunnel lands W4's written deferral: with the editor
 // open, a dropped .ttf is copied into the theme and becomes ONE undoable [fonts] row.
-//
 // It drives HandleFileDrop, not editorTakeFontDrop, because the routing is half the
 // feature — W4's own dropclaim.go gate exists because a missing arm there let a
 // dropped font repoint the user's theme root.
@@ -1033,7 +1019,6 @@ func TestEditorRedoRidesCtrlShiftZ(t *testing.T) {
 
 // TestOfflinePackMirrorsTheLiveBlipLadder is the downloader gap, stated as the
 // property that was broken: the pack must be able to hold what the live ladder PLAYS.
-//
 // The download used to fetch rung 1 of six (sounds/blips/<lowercased name>), so a
 // legacy base that serves only sounds/general/sfx-blip<name> produced a pack whose
 // blips are silent while the same base blips fine online — an offline pack that works

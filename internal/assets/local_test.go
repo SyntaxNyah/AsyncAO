@@ -43,7 +43,6 @@ func TestLocalFetcherDecodesSpaces(t *testing.T) {
 // mount folder carries the case its author typed. NTFS and a default APFS volume
 // call those the same file; ext4 does not, so on the Linux AppImage/Flatpak every
 // asset of a capitalised pack folder missed — the whole character, not an edge.
-//
 // Nesting is incidental to it: this is the FLAT case, the ~99% one, and it failed
 // exactly as the nested one did (internal/courtroom
 // TestNestedCharacterResolvesOnALocalMount).
@@ -81,7 +80,6 @@ func TestLocalFetcherResolvesAnAuthoredCaseMount(t *testing.T) {
 // tried — a fold hoisted above the exact reads would answer "(a)normal.png" with
 // "(a)Normal.png" (or the other way round) and re-point a lookup that already
 // worked.
-//
 // The walk's OWN preference — an exact segment beating a fold-equal sibling INSIDE
 // the scan — is a different rule and is pinned by
 // TestLocalFetcherFoldPrefersTheExactlyCasedSegment and
@@ -130,19 +128,6 @@ func TestLocalFetcherExactNameOutranksACaseFold(t *testing.T) {
 
 // TestLocalFetcherFoldPrefersTheExactlyCasedSegment is the walk's own containment
 // pin, and the one that reaches attempt 3 with a CHOICE to make.
-//
-// The mount holds two character folders differing only in case, and each holds the
-// emote under the OTHER spelling, so the URL misses both exact spellings and the
-// fold has to pick a directory. The rule is "an exact name wins outright", which
-// foldJoin spells as an os.Stat preference and foldLookup as an early return on an
-// exact entry — two expressions of one guarantee. Remove both and the tie-break
-// takes over: 'P' (0x50) sorts below 'p' (0x70), so the walk would step into
-// characters/Phoenix and serve a DIFFERENT sprite for the same URL, on a rule
-// nothing about the request asked for.
-//
-// (Either mechanism alone still answers correctly — each masks the other for any
-// entry a bounded scan can see — so this is the pin on the guarantee rather than on
-// one line of it; foldLookup's half is driven directly below.)
 func TestLocalFetcherFoldPrefersTheExactlyCasedSegment(t *testing.T) {
 	dir := t.TempDir()
 	chars := filepath.Join(dir, "characters")
@@ -176,7 +161,6 @@ func TestLocalFetcherFoldPrefersTheExactlyCasedSegment(t *testing.T) {
 // which is where the second half of that guarantee lives: the scan meets the exact
 // name and returns it on the spot instead of carrying on and letting the
 // smallest-name tie-break answer.
-//
 // It is the seam being driven, not mirrored — the tie-break it must beat is the one
 // TestLocalFetcherFoldPicksTheSameNameEveryTime relies on, and 'W' (0x57) sorts
 // below 'w' (0x77), so a missing early return is visible in one call.
@@ -204,7 +188,6 @@ func TestFoldLookupReturnsTheExactNameOverASmallerVariant(t *testing.T) {
 // the fold was added under: spelling-major, mount-minor. A raw hit in the LAST mount
 // already beats a decoded hit in the first, and the fold extends that ladder at the
 // bottom rather than joining the per-mount loop.
-//
 // TWO MOUNTS is what makes the order observable at all: with one mount, foldJoin's
 // own os.Stat preference answers identically whichever way round the attempts run,
 // so a fold hoisted to the front of Fetch keeps every single-mount gate green while

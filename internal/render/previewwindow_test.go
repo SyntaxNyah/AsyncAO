@@ -46,8 +46,6 @@ func TestPreviewWindowClosedPresentIsZeroAlloc(t *testing.T) {
 // internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
 // BenchmarkActiveMountLayerConfigured. Run together (same process, same
 // machine) so the ratio is the meaningful number, not either absolute:
-//
-//	go test ./internal/render/... -run NONE -bench PreviewWindowPresent -benchmem
 func BenchmarkPreviewWindowPresentClosed(b *testing.B) {
 	pw := NewPreviewWindow()
 	b.ReportAllocs()
@@ -326,18 +324,6 @@ func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
 
 // TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick pins the one
 // case where a stale frame could outlive the pick it belongs to.
-//
-// A pick that OVERFLOWED the aggregate cache budget is displayed with
-// texIsCached false — the display slot owns that texture outright, and
-// animFrames never held it. If the next pick's very first fill then FAILS
-// (readTexturePixels has a documented failure mode: a backend without
-// render-target support, or a transient device loss), the identity fields
-// have already moved to the new pick. A resetAnimCache that cleared the
-// display slot only in the cache-owned case would leave the window PAINTING
-// THE PREVIOUS EMOTE under the new pick's identity, and the split would
-// stick: internal/ui marks a pick fed before the fill that might fail, so
-// nothing retries until the user picks a third, different emote.
-//
 // Delete the `p.tex != nil && !p.texIsCached` destroy or the unconditional
 // clear that follows it in resetAnimCache and this test fails on the
 // "still displaying the previous pick" assertion.
@@ -416,8 +402,6 @@ func TestPreviewWindowShowAnimFrameClosedIsNoOp(t *testing.T) {
 // for, modeled on BenchmarkPreviewWindowPresentClosed/Open: run together so
 // the RATIO (a cache hit must be dramatically cheaper than a fill+upload) is
 // the meaningful evidence, not either absolute.
-//
-//	go test ./internal/render/... -run NONE -bench PreviewWindowShowAnimFrame -benchmem
 func BenchmarkPreviewWindowShowAnimFrameCacheHit(b *testing.B) {
 	_, cleanup := newHeadlessRenderer(b)
 	defer cleanup()

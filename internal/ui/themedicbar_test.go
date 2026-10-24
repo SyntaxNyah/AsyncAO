@@ -12,12 +12,6 @@ import (
 )
 
 // The themed IC bar is AO2's own (#21, the issue's headline complaint).
-//
-// aceattorney2x declares ao2_ic_chat_message = 216,384,512,23 — a bar of its own,
-// the full width of the stage — and places the colour picker, the SFX picker and
-// the Pre/Immediate/Flip toggles at their own design rects on the rows below.
-// AsyncAO used to pack all of them INTO the message rect, so the input the theme
-// sized at 512 px rendered as a ~136 px leftover on the right.
 
 // fixtureLayout builds a themeLayoutCache straight from the checked-in
 // aceattorney2x rects at 1:1, which is what ThemeFitNative gives on a window that
@@ -37,7 +31,6 @@ func fixtureLayout(t *testing.T) *themeLayoutCache {
 
 // TestThemedICControlsHaveTheirOwnRows pins the theme's INTENT: every control the
 // old bar crammed into the message rect has a rect of its own, on another row.
-//
 // This is a fixture assertion, not a proof about the draw — see
 // TestThemedICInputAcceptsAClickWhereTheCramUsedToBe for that half. Kept separate
 // because a reviewer correctly pointed out that this one passed before the fix
@@ -69,12 +62,6 @@ func TestThemedICControlsHaveTheirOwnRows(t *testing.T) {
 
 // TestThemedICInputAcceptsAClickWhereTheCramUsedToBe is the headline regression,
 // pinned behaviourally.
-//
-// The cram took a bite out of the LEFT of the message rect: 14 px of colour
-// swatch plus a 64 px colour dropdown plus a 4 px gap, so the first 82 px of the
-// theme's own input rect belonged to something else, and the field started after
-// it. Clicking there therefore did NOT focus the IC input. Now it must.
-//
 // A geometry assertion cannot catch this — the cram was entirely in draw code, so
 // the layout cache looked identical before and after. Driving a real themed frame
 // and clicking is the only thing that distinguishes them.
@@ -194,8 +181,6 @@ func TestImmediateIsGatedOnCCCC(t *testing.T) {
 // the theme's own art rather than painting an AsyncAO text chip into a 42x42 AO2
 // icon rect. AO2 loads them with setImage (courtroom.cpp:1109, :1114); a text chip
 // there is exactly the AsyncAO-inside-an-AO2-rect the parity rule exists to stop.
-// drawThemeButton still falls back to a chip when the file is absent, which is
-// AOButton's own behaviour.
 func TestShoutAdjacentIconsUseThemeArt(t *testing.T) {
 	stems := themeButtonStems()
 	for _, key := range []string{"realization", "screenshake"} {

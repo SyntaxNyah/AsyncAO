@@ -1,11 +1,6 @@
 package ui
 
 // THE TRANSPORT'S UI GATES (v1.90.0 W8).
-//
-// internal/themepack's own suite proves the archive is safe. These prove the
-// CLIENT drives it: that a dropped bundle is described before it is written, that
-// the second drop is what writes, that the import applies live, and that the
-// pieces cannot be deleted while the suite stays green.
 
 import (
 	"archive/zip"
@@ -27,11 +22,8 @@ const bundleGateWait = 10 * time.Second
 
 // dropRig is an App a drop can be delivered to, plus a themes root that is a
 // temp directory rather than the developer's real AppData.
-//
 // THE ROOT IS A PARAMETER, which is the whole reason bundleDrop is split out of
 // handleThemeBundleDrop: a gate that had to go through config.UserThemesDir()
-// would either write into the developer's own AppData or re-implement the
-// portability policy it is not testing.
 func dropRig(t *testing.T) (*App, string) {
 	t.Helper()
 	return &App{env: env{}}, filepath.Join(t.TempDir(), "themes")
@@ -260,11 +252,6 @@ func TestOnlyOneBundleJobRunsAtATime(t *testing.T) {
 
 // TestAnImportNeverRepointsTheThemeRoot is the W2 defect, gated at the LANDING
 // rather than at the claim.
-//
-// dropclaim_test.go already pins that a bundle never reaches the Settings screen's
-// theme-folder arm. This is the other door: the import itself must not "helpfully"
-// point the custom root at wherever the theme landed, which would make every
-// unrelated theme in that folder appear and the user's own choice disappear.
 func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 	a, root := dropRig(t)
 	a.d.Prefs = newTestPrefs(t)
@@ -477,7 +464,6 @@ func stageExportable(t *testing.T, a *App) string {
 // TestSharingAThemeWritesABundleThatImportsBack is the export half's end-to-end
 // gate, and it is the one that makes editorAwaitExport a shipped path rather than
 // a function with no callers.
-//
 // It asserts on the FILE — the bundle exists, it is outside the theme folder, and
 // the tree that comes back out of it is the tree that went in. Round-tripping is
 // not a feature that had to be built; it is a consequence of "a theme IS a folder",

@@ -1,15 +1,6 @@
 package theme
 
 // The Qt row-pitch reader, held against NUMBERS QT ITSELF PRODUCED.
-//
-// Every expectation below was measured, not derived: a probe built against the
-// Qt 6.5.3 kit on the development box (QGuiApplication under the `windows`
-// platform plugin, QFontDatabase::addApplicationFont, QFontMetricsF) printed the
-// ascent, descent, leading and lineSpacing of each face at each size, and those
-// are the values pinned here. That is the point of the whole file: this reader is
-// an emulation of another engine's metric choice, so a test that re-derived the
-// expectation from the same table arithmetic the reader uses would prove nothing.
-//
 // The two faces are the ones the repository ships, so the gate needs no fixture
 // and cannot rot when a machine lacks a font. Both happen to have
 // USE_TYPO_METRICS SET, which is exactly the branch a win-metrics-only reader
@@ -72,13 +63,6 @@ func TestReadQtRowPitchMatchesQtForTheBundledFaces(t *testing.T) {
 
 // TestQtRowPitchWinBranchArithmetic pins the OTHER branch — the one no bundled
 // face exercises and the one the reported defect lives in.
-//
-// The numbers are DangitV3IC's, the `message_font` of the shipped DRRA / KFO
-// theme family and the face in the capture this work was measured against: upem
-// 1000, usWinAscent 1107, usWinDescent 334, sTypo 880 / -120 / 0, fsSelection
-// 0x0040. Qt 6.5.3 reports ascent 27, descent 8, leading 0 at 24 px — a 35 px
-// row pitch where hhea (and therefore SDL_ttf) says 24.
-//
 // The face itself is not in the repository (it belongs to a third-party theme
 // pack), so the struct is built directly. That is not a mirror test: the
 // arithmetic under test is Pitch's, and the field values are the ones the reader
@@ -154,7 +138,6 @@ func TestQtRowPitchZeroValueIsInert(t *testing.T) {
 
 // synthOS2Font builds the smallest sfnt that carries a head and an OS/2 table
 // with the given metrics — enough for ReadQtRowPitch and nothing else.
-//
 // A synthetic font rather than a checked-in fixture because the only thing under
 // test is the two tables' arithmetic, and a real face would drag several hundred
 // kilobytes of outlines into the repository to say the same thing.

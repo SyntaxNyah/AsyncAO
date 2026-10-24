@@ -58,9 +58,6 @@ func fxTestElement(k theme.EffectKind) bakedElement {
 // only shape of element that takes a pool slot, because it is the only one whose
 // one-shot has to replay when its condition re-opens. An unconditional element's
 // one-shot began when the theme applied, so it needs no state (fxAlwaysOrigin).
-//
-// cond/condLive are wired to agree so the element is VISIBLE: a gate that closed
-// would make every assertion below pass for the wrong reason.
 func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 	e := fxTestElement(k)
 	e.condAxis, e.cond = theme.CondPos, 0
@@ -72,7 +69,6 @@ func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 // software renderer over the dummy video driver, the same one every other
 // page-building test in this package runs on. SKIPPED rather than failed where SDL
 // is unavailable, which is the package's standing rule for its SDL-backed gates.
-//
 // Only the four tests that need a real page ask for one, so the effect-only gates
 // (the pool, the binds) still run with no renderer at all.
 func fxTestStore(t *testing.T) *render.TextureStore {
@@ -188,12 +184,10 @@ func TestEveryEffectKindIsResolvable(t *testing.T) {
 
 // TestPeriodicEffectsNeverGoIdleMidCycle is the other half of the doctrine, and the
 // one a naive implementation gets wrong.
-//
 // A sine crosses zero twice per period. A static test written on the INSTANTANEOUS
 // term would therefore report "nothing moved" at every crossing, the pacer would drop
 // to the idle rate for that frame, and a running animation would stutter twice a
 // cycle — on a machine fast enough to sample the crossing, which is every machine.
-// The envelope, not the value, is what decides.
 func TestPeriodicEffectsNeverGoIdleMidCycle(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone || effectIsStateful[k] {
@@ -356,7 +350,6 @@ func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
 // Independent wall clocks would make an exported GIF non-reproducible and a preset
 // thumbnail non-deterministic — you could not diff two exports of the same recording,
 // and a gallery would shimmer.
-// Both halves are pinned: the page index AND the effect terms.
 func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 	page := fxTestPage(t, fxTestStore(t), 5, 40*time.Millisecond)
 	for _, loop := range []bool{false, true} {
@@ -408,7 +401,6 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 
 // TestElapsedForIsAllocFree measures elementElapsed — the wave plan calls it
 // "elapsed-for"; design §Q3's own code sketch spells it elementElapsed.
-//
 // It runs once per element per frame, at up to theme.ElementCap elements, inside the
 // one frame gated at exactly zero allocations. An allocation here is 96 of them a
 // frame, on every themed install that uses the feature at all.
@@ -454,7 +446,6 @@ func fxDrawRig(t *testing.T) (*App, *themeLayoutCache, *[]*bakedElement, func())
 // TestStaticElementNeverCallsNoteAnimating is the idle half of the doctrine at the
 // per-element level: an element with no effect, an amplitude-zero effect, a finished
 // one-shot or a static page must leave the census untouched.
-//
 // This is the v1.56.0 idle-CPU-burn arc's rule applied to a brand-new draw surface.
 // A themed client sitting on a settled courtroom must fall to the idle rate, and one
 // element quietly noting every frame is enough to stop that happening — with nothing
@@ -774,7 +765,6 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 // TestOneShotEffectReleasesItsFXSlot is the pool's whole reason for existing, seen
 // from the element's side: a slam fires, finishes, the element goes away, and the
 // slot comes back on its own.
-//
 // The slot is deliberately NOT released the instant the one-shot finishes. Releasing
 // it there would let the very next pass re-acquire a fresh slot, restart the effect
 // and note the census again — an infinite replay that pins the pacer forever, which
@@ -1021,7 +1011,6 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestReduceMotionFreezesEveryElement pins the accessibility branch.
-//
 // Reduce motion is not "most effects": a person who turns it on because motion makes
 // them ill is not helped by a theme whose backdrop still breathes. Every effect
 // resolves neutral, every animated page holds frame 0, and nothing is noted — so the
@@ -1115,9 +1104,6 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 // render" claim carried forward to the half W5 added: a hand-authored sidecar
 // MOVES, and every moving part of it survives the whole pipeline rather than only
 // the unit test each part has of its own.
-// The fixture (testdata/sidecars/w5_clocks.ini) is written the way an author
-// writes, so this gate reads a FILE through the real reader, the real bake, the
-// real clock pool and the real resolver — which is the only place the four of them
 func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w5_clocks.ini")
 	defer cleanup()
@@ -1221,7 +1207,6 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	}
 	// ReduceMotion stills the same frame. Measured HERE rather than on a synthetic
 	// element because this is the shape a user actually has: a real theme, applied.
-	//
 	// A SUB-TEST so its skip is its own. The census is a whole-frame signal, so the
 	// fixture's own chrome can drown the element model out — the same limitation
 	// TestIdleElementsDoNotPinTheFrameRate names — and a skip there must not hide
@@ -1259,7 +1244,6 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 }
 
 // findBakedElement locates one authored element in the SORTED baked array.
-//
 // The bake sorts by band and z, so a fixture's declaration order is not the array's
 // order and an index would be a guess. The authored id is not carried on the baked
 // row (it is bake-time-only, by design — a string on the frame path is exactly what

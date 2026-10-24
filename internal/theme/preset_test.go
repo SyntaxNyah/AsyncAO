@@ -2,7 +2,6 @@ package theme
 
 // THE PRESET LIBRARY'S GATES (v1.90.0 W9) — design §6.5 acceptance clauses 1-3
 // and 7, plus the encapsulation gates hard rule 11 asks of every new seam.
-//
 // The 294-combination COHERENCE matrix is not here: it needs the real anchor
 // resolver, which lives in internal/ui, and re-deriving the resolve in this
 // package would be exactly the mirror-test hard rule 11 rejects. See
@@ -38,7 +37,6 @@ func shippedLibraryFor(t testing.TB) *PresetLibrary {
 // TestEveryEmbeddedPresetParses is acceptance clause 1, and it is deliberately
 // the loudest test in the file: everything else in this wave is downstream of
 // the fragments being readable at all.
-//
 // It asserts the SHAPE of the library, not just the absence of an error. A
 // loader that silently skipped a file it could not classify would return a
 // perfectly valid library with 13 styles in it, and the gallery would render a
@@ -222,7 +220,6 @@ func fragmentSections(t testing.TB, p *Preset) []string {
 // TestPresetTierViolationIsRefusedNotIgnored is the ENCAPSULATION half of the
 // disjointness rule: the partition cannot be bypassed by writing a fragment that
 // ignores it. Both directions, and the element-kind rule with them.
-//
 // It drives ParsePreset — the sanctioned path — with hand-built fragments rather
 // than asserting over the table a second time, because a test that re-derived
 // the rule would pass even if nothing enforced it.
@@ -323,7 +320,6 @@ func TestFullCanvasIsADeclarationNotAnInference(t *testing.T) {
 // data. The parser refuses a violation (above), so this cannot fail while that
 // passes — which is the point: it is the gate that proves the rule was applied
 // to the 461 elements that actually ship, not only to the two in a fixture.
-//
 // It also asserts the converse, which the parser does NOT check: every id in a
 // `full_canvas` list must name an element that exists. A stale entry there is an
 // anchor rule quietly switched off for an element that was renamed.
@@ -380,7 +376,6 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 // TestEveryShippedPresetShipsZeroBytesOfArt is acceptance clause 7, and it is an
 // AGPLv3 gate before it is an engineering one: "everything is arithmetic, so
 // everything is original by construction" is only true while it stays true.
-//
 // It checks the FS as well as the model. A preset cannot reference art without a
 // [media] entry, but it could still smuggle a .png into the axis directory and a
 // later wave could start reading it.
@@ -442,9 +437,6 @@ func fontFileExt(file string) bool {
 // budget is the recipient's, not the author's". Every cap a preset can spend is
 // counted here, against the constant rather than against a number typed into the
 // assertion.
-// The generator TILE count is the interesting one, and it is counted the way the
-// texture cache counts it — by DEDUPLICATING (name, params) pairs, because the
-// param hash is the cache key, so twenty elements sharing one recipe cost one
 func TestNoShippedPresetExceedsTheRecipientsBudget(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap, which internal/theme may not
 	// import (it is an SDL package). NAMED and asserted against the one live
@@ -554,7 +546,6 @@ func TestPresetLoaderRefusesEveryWayAnAxisCanLie(t *testing.T) {
 // above: the refusal only protects the tree if the tree is actually inside it,
 // and a cap nothing is measured against is a cap that gets discovered the day a
 // fragment crosses it.
-//
 // It also reports the total, because "how many bytes does the preset library add
 // to the binary" is the number the zero-bundled-art claim is really about.
 func TestEveryShippedFragmentFitsTheFragmentCap(t *testing.T) {
@@ -633,7 +624,6 @@ func sidecarFingerprint(t testing.TB, s *Sidecar) string {
 // TestMergePresetsNeverMutatesItsBase is the property the gallery's live preview
 // rests on: scrubbing a row merges 294 candidate themes and throws every one of
 // them away, and not one of them may leave a mark on the theme the user has open.
-//
 // It hashes the base BEFORE and AFTER, which is the same shape
 // TestCopyForEditingLeavesTheOriginalUntouched uses for the folder on disk. The
 // aliasing bug this catches is the plausible one: a struct copy shares every
@@ -671,7 +661,6 @@ func TestMergePresetsNeverMutatesItsBase(t *testing.T) {
 
 // TestApplyPresetTierReplacesConfigurationAndMergesManifests pins the ONE
 // sentence the merge is built on (presetmerge.go's header), in both halves.
-//
 // Configuration replaced: a layout apply must leave nothing of the previous
 // layout, INCLUDING a pane element the user hand-authored — a tier you cannot
 // replace is a tier you cannot swap.
@@ -771,9 +760,6 @@ func TestApplyPresetTierIsAllOrNothing(t *testing.T) {
 // catches the failures that are not about geometry at all: an id collision
 // between the axes, a cap the two tiers only breach together, and a merged model
 // the writer would refuse to save.
-// PER COMBINATION, which is the whole point. TestNoShippedPresetExceedsThe-
-// RecipientsBudget measures one FRAGMENT; a cap the two axes only breach
-// TOGETHER — 52 style elements over 48 layout panes — is invisible there and is
 func TestEveryCombinationMergesAndValidates(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap; see the fragment-level gate's
 	// note on why the number is spelled here rather than imported.

@@ -1,7 +1,6 @@
 package ui
 
 // The free-element BAKE's gates (v1.90.0 W3).
-//
 // The draw path's gates live in themeelements_test.go and were written first,
 // against a stub painter table, because that is what the wave plan asked for. These
 // are the other half: what the bake must PRODUCE for those loops to be drawing the
@@ -88,7 +87,6 @@ var errFixtureNotThemed = errors.New("the fixture did not reach the themed branc
 // TestStockAO2ThemeGetsZeroElements is the property every install that never opens
 // the theme editor depends on: an AO2 theme has no sidecar, so it declares no
 // elements, so the three band loops are three empty loops.
-//
 // It asserts the BAND RANGES too, not just the count, because a count of zero with
 // a stale non-empty range would still walk the array — and the array is not cleared
 // between rebuilds, so those entries are a previous theme's.
@@ -189,7 +187,6 @@ func bakedByFill(lay *themeLayoutCache, col sdl.Color) (*bakedElement, int) {
 
 // TestAnchoredRectIsASignedDelta is design §6.6 R1, measured: an anchored element's
 // rect is the ANCHOR'S box plus the rect, component by component, in DESIGN pixels.
-//
 // The delta scales with the canvas, which is the half that is easy to get wrong: a
 // six-pixel inflate authored against a 714-wide canvas must still be six DESIGN
 // pixels at 1280x720, or a frame that hugs its chatbox at one window size stands off
@@ -221,7 +218,6 @@ func TestAnchoredRectIsASignedDelta(t *testing.T) {
 
 // TestElementWithAnAbsentAnchorIsInert is design §6.6 R10: an element whose anchor
 // key no layout declares is INERT — no widget, no decoration — and is NOT an error.
-//
 // Skip-if-absent rather than "fall back to the canvas": a decoration placed
 // relative to a widget that is not there has no defined position, and putting it
 // somewhere anyway is how a theme ends up with a badge floating in the middle of
@@ -303,7 +299,6 @@ func TestElementOpacityFoldsIntoTheBakedColours(t *testing.T) {
 // prevents is cumulative: a second reparent composes the pane's origin onto a rect
 // that already carries it, so the widget walks further off screen at every rebuild
 // — a window resize away from a bug nobody can reproduce from a screenshot.
-//
 // "Exactly once" is checked as an ARITHMETIC identity rather than a call count: the
 // host lands at pane origin + its pane-relative override, and a second application
 // could not produce that rect.
@@ -409,12 +404,6 @@ func TestPaneDoesNotRehomeAParentRelativeChild(t *testing.T) {
 
 // TestElementDrawOrderIsBakedNotSorted pins BOTH halves of the design's
 // "bake, don't sort":
-//
-//  1. the ORDER is (band, then z, then declaration) — including the tie, which is
-//     what an unstable sort silently gets wrong;
-//  2. it is produced ONCE, at bake, and the draw path re-derives nothing — proved
-//     by dispatching the bands and comparing what the painters received against the
-//     baked array, index for index.
 func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_order.ini")
 	defer cleanup()
@@ -473,7 +462,6 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 // TestVisibleWhenIsInternedAndGatesTheDraw pins the condition pipeline end to end:
 // the bake interns each distinct value once, and the draw path gates on an integer
 // compare against the index the frame resolved.
-//
 // The gate must be able to say NO. A condition that is always true is not a
 // condition, and "the element drew" is not evidence that anything was evaluated —
 // so this drives the live state both ways and demands the dispatch count move.
@@ -551,7 +539,6 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 // TestUnknownConditionAxisLeavesTheElementVisible is the format's own rule
 // (docs/THEME-FORMAT.md §3): "an unknown axis leaves the element visible — an
 // element a future condition would have hidden is better shown than lost".
-//
 // It is checked against an axis OUT of the enum, which is exactly what a theme from
 // a newer client produces, and it is the one case where the safe default is to
 // paint rather than to skip.
@@ -573,8 +560,6 @@ func TestUnknownConditionAxisLeavesTheElementVisible(t *testing.T) {
 // arrays and copies strings the sidecar already owns, so its allocation count must
 // not be a function of how many elements a theme declares. A preset swap re-bakes,
 // and a swap that allocated per element would hitch the frame it landed on.
-// The headroom that is here covers label truncation (truncateLabelTo allocates when
-// it actually shortens a string, which is the one legitimate allocator on this path)
 const elemBakeAllocCeil = 8
 
 // TestElementBandBakeAllocationCeiling is BenchmarkElementBandBake's assertion half:
@@ -628,7 +613,6 @@ func BenchmarkElementBandBake(b *testing.B) {
 // TestHandAuthoredSidecarRendersEveryW3Painter is the wave's ship criterion stated
 // as a test: the hand-authored fixture reaches shape, gradient, text AND pane, on a
 // real themed frame, through the real band loops.
-//
 // It counts dispatches per KIND rather than inspecting pixels: the software
 // renderer these tests run on is not a pixel oracle, and what W3 owes is that the
 // model resolves and dispatches — the pixels are what a human verifies on a screen.

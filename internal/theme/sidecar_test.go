@@ -681,13 +681,6 @@ func onlyElement(t *testing.T, s *Sidecar) *Element {
 // (sidecar_write.go's header, and §7's "emit a key only when the file does not
 // already mean what you are writing"): a number the reader had to NARROW still
 // means what the file says, so an untouched save must not touch it.
-//
-// Every narrowing the reader performs therefore needs a canonicaliser that
-// performs the SAME one. The drift is invisible until a user opens a theme,
-// changes nothing, saves, and finds a diff — and for the millisecond fields it
-// was worse than a diff: a bare int32 conversion rewrote a legal 3000000000 as
-// a NEGATIVE phase, silently changing what the element does.
-//
 // A NEW numeric key that clamps, wraps or truncates needs a row here.
 func TestOutOfRangeNumbersClampAndAreLeftInTheFile(t *testing.T) {
 	cases := []struct {
@@ -771,7 +764,6 @@ func TestOutOfRangeNumbersClampAndAreLeftInTheFile(t *testing.T) {
 
 // TestALegalClockSpellingIsNeverDuplicated pins the other half of "an untouched
 // save changes nothing": the SECTION NAME is the author's too.
-//
 // "01" matches the format's id grammar and reads as clock 1. A writer that
 // rebuilt the name from the array index would not find [clock.01], would append
 // a [clock.1] beside it, and the file would then say the same thing twice — a
@@ -914,7 +906,6 @@ func repeatPairs(n int) string {
 
 // TestUnknownKindsPastNoteCapStillLoad is the OTHER half of the cap rule, and
 // it points the opposite way: NoteCap bounds the import REPORT, never the load.
-//
 // The file below is a perfectly legal format-2 theme. ElementCap elements of a
 // kind this build does not draw is EXACTLY what §7.4's forward-compatibility
 // path looks like from an older client — and each one costs a note. A reader
@@ -1202,7 +1193,6 @@ func TestHandAuthoredFixturesRoundTripByteIdentical(t *testing.T) {
 // courtroom_design.ini is not written in the normal path at all — and in the one
 // export mode that does write it, it goes through INIDoc, whose behaviour on any
 // line it did not deliberately change is "emit the original bytes".
-//
 // The AO2 half of the umineko fixture is checked in claiming exactly that in its
 // own header. This is the assertion that makes the header true instead of
 // decorative — and the second half proves the fixture is not vacuous: the
@@ -1396,10 +1386,6 @@ func TestPaperLanternFixtureIsTheUglyOne(t *testing.T) {
 // checked in, deliberately — a fixture's line endings are a property of how the
 // repository was checked out, and a gate that can be flipped by a git setting
 // is a gate about git.
-//
-// bufio.ScanLines eats a trailing '\r' silently, so a writer that rebuilt lines
-// would turn every Windows-authored theme into a whole-file diff, and one that
-// appended a newline would touch the last line of every one of them.
 func TestASidecarWithWindowsLineEndingsRoundTrips(t *testing.T) {
 	src := strings.Join([]string{
 		"; a Windows-authored sidecar",
@@ -1528,15 +1514,7 @@ func TestLoadSidecarTreatsAMissingFileAsAStockTheme(t *testing.T) {
 }
 
 // TestSidecarColoursAcceptEitherHexCase pins the colour grammar's case-blindness.
-//
 // It exists because it was NOT case-blind and nobody could see the difference.
-// parseRGBAValue hands each digit to hexNibble, which knew '0'-'9' and 'a'-'f' and
-// nothing else, so a sidecar written the way humans write hex — `#1C1C1C` — was
-// refused, degraded to "keep the stylesheet's value", and noted into an import
-// report that had no consumer. `#101010` on the next line parsed, because it
-// happens to be all digits, which is exactly the shape of bug that survives a
-// hand-check of the file.
-//
 // Both the '#rrggbb' and '#rrggbbaa' widths are covered, and a genuinely invalid
 // digit must still fail — a parser that accepted everything would pass the first
 // half of this test and mean nothing.

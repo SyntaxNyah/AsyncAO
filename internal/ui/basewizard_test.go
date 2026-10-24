@@ -2,7 +2,6 @@ package ui
 
 // Gates on the guided base-folder setup (issue #72) and the folder report behind
 // it.
-//
 // The class of bug this whole surface exists to remove is the SILENT one: a
 // setup that looks applied and is not, a folder one level off, a base whose
 // characters carry no char.ini. So most of what is pinned here is what the user
@@ -96,7 +95,6 @@ func TestBaseScanCountsWhatIsActuallyThere(t *testing.T) {
 }
 
 // TestBaseScanWarnsWhenNoCharacterShipsAnINI is issue #72 stated before the fact.
-//
 // This is the state that reads as "it worked": the sprites load out of the
 // folder, so the setup looks correct, while every emote list, showname, blip set
 // and chatbox skin still comes from the server's copy of that character. Nothing
@@ -238,11 +236,6 @@ func TestBaseScanReportsAnUnreadablePick(t *testing.T) {
 
 // TestBaseScanFolderNamesMatchTheURLBuilder keeps this file's folder names tied
 // to the layout the client actually requests.
-//
-// courtroom/urlbuilder.go is the authority and its path constants are
-// unexported, so the parity is checked through the exported builder: if a
-// directory is ever renamed there, the scan would otherwise go on reporting
-// every base as empty, and nothing else in the suite would notice.
 func TestBaseScanFolderNamesMatchTheURLBuilder(t *testing.T) {
 	u := courtroom.NewURLBuilder("http://example.test/base/")
 	for _, tc := range []struct {
@@ -340,14 +333,6 @@ func TestBaseWizardAppliesTheFolderFirstAndTheChosenMode(t *testing.T) {
 
 // TestOpenBaseWizardTakesTheDropBeforeTheThemeRoot pins the drop arm from both
 // sides.
-//
-// The wizard says "or drag the folder onto this window", so an open wizard has to
-// consume the drop — otherwise it falls through to the Settings screen's default,
-// which points the user's THEME ROOT at the folder they were setting up as an
-// asset base. That is the silent-wrong-action class dropclaim.go exists to end,
-// reached through a different door. And a CLOSED wizard, or a path some global
-// owner already claimed, must not be touched — stealing those would resurrect the
-// same bug from the other side.
 func TestOpenBaseWizardTakesTheDropBeforeTheThemeRoot(t *testing.T) {
 	a := testTabApp(t)
 	restoreBaseWizard(t)

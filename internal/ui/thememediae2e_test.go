@@ -3,14 +3,6 @@ package ui
 // The W4 END-TO-END gate: a hand-authored sidecar that declares FILES and
 // GENERATORS goes all the way from testdata to a resolved texture page on a baked
 // element, headlessly.
-//
-// The unit gates around it each prove one link — the store's ceiling
-// (render/thememedia_test.go), the planner's refusals (thememedia_test.go), the
-// rasterisers' determinism (gentex_test.go). None of them proves the CHAIN, and the
-// chain is where this feature actually lives: a key spelled one way by the planner
-// and another by the bake, a plan landed after the canvases were invalidated, a
-// generator deduplicated into a tile nobody uploaded — every one of those passes
-// every unit gate and ships a theme that renders nothing.
 
 import (
 	"bytes"
@@ -152,8 +144,6 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	// Four `kind = gen` elements are declared. `discbadge` and `disctwin` carry
 	// byte-identical params, so they ARE one tile — that is what the hash is for and
 	// it is the difference between 12 tiles of budget and 12 elements of budget.
-	// `futuretile` names a generator this build has never heard of, which costs no
-	// tile at all.
 	if len(plan.Gens) != 3 {
 		var names []string
 		for _, g := range plan.Gens {
@@ -244,7 +234,6 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 // TestThemeMediaSwapPrunesTheOutgoingThemesArt is the producer half of the leak the
 // store-side gate pins from below: applying a theme with no art after one with art
 // must leave nothing resident.
-//
 // The prune is keyed on what the OUTGOING apply DECLARED (a.themeMediaKeys), not on
 // what the store happens to hold, and that is the only reason it can be right — the
 // store cannot tell a page the new theme also declares from one only the old one did.
@@ -278,7 +267,6 @@ func TestThemeMediaSwapPrunesTheOutgoingThemesArt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestExportDrawsTheSameElementBandsAsTheScreen is the GIF/video parity gate.
-//
 // It exists because the export composes its own frame (drawGifThemedFrame) rather
 // than calling drawCourtroomThemed, so every band the themed pass gained had to be
 // wired in by hand — and until W4 none of them were. The symptom is not subtle and
@@ -345,7 +333,6 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 
 // TestExportConditionsFollowTheExportedRoom pins WHICH room a visible_when resolves
 // against in an export.
-//
 // The live courtroom is still behind the progress overlay with its last message on
 // it, so reading a.room would decorate a recording with whatever the session
 // happened to be doing — an objection glow over a line nobody objected to. The two
@@ -384,7 +371,6 @@ func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 // different `top` than the window does, so the only thing standing between that and
 // a cold rebuild (a 12 KiB clear plus the rect map plus the element bake) every
 // frame is that the two never run in the same frame.
-//
 // That property lives two files away — App.Frame's full-window precedence, written
 // down as chrometop.go's screenDispatchPreempted — so it is pinned here rather than
 // left as a comment somebody could invalidate from screens.go without ever opening
