@@ -51,13 +51,13 @@ func TestSendICKeepsInputUntilEcho(t *testing.T) {
 // still holds exactly what was sent.
 func TestOwnEchoClearsUnchangedInput(t *testing.T) {
 	a := testTabApp(t)
-	a.compose.icInput, a.compose.icPendingSent, a.evidPresent = "same line", "same line", true
+	a.compose.icInput, a.compose.icPendingSent, a.evid.evidPresent = "same line", "same line", true
 
 	a.noteOwnICEcho()
 
-	if a.compose.icInput != "" || a.compose.icPendingSent != "" || a.evidPresent {
+	if a.compose.icInput != "" || a.compose.icPendingSent != "" || a.evid.evidPresent {
 		t.Errorf("own echo must clear box+pending+present, got input=%q pending=%q present=%v",
-			a.compose.icInput, a.compose.icPendingSent, a.evidPresent)
+			a.compose.icInput, a.compose.icPendingSent, a.evid.evidPresent)
 	}
 }
 

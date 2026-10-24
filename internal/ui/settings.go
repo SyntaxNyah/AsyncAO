@@ -1166,11 +1166,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// keybinds (random or a specific one). Cleared only by a factory reset.
 	c.Label(pad, y+4, "Presets:", ColText)
 	var addNow bool
-	saP, saE := a.icFieldFonts(a.shownameAdd) // CJK-safe preset entry (ASCII stays fast path)
-	a.shownameAdd, addNow = c.TextFieldEmoji("shownameadd", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, a.shownameAdd, "type a name to save…", saP, saE)
+	saP, saE := a.icFieldFonts(a.roster.shownameAdd) // CJK-safe preset entry (ASCII stays fast path)
+	a.roster.shownameAdd, addNow = c.TextFieldEmoji("shownameadd", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, a.roster.shownameAdd, "type a name to save…", saP, saE)
 	if c.Button(sdl.Rect{X: pad + 378, Y: y, W: 60, H: btnH}, "Save") || addNow {
-		if a.d.Prefs.AddShownamePreset(a.shownameAdd) {
-			a.shownameAdd = ""
+		if a.d.Prefs.AddShownamePreset(a.roster.shownameAdd) {
+			a.roster.shownameAdd = ""
 		}
 	}
 	if c.Button(sdl.Rect{X: pad + 444, Y: y, W: 110, H: btnH}, "Save current") {
@@ -1542,7 +1542,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	if move {
 		if c.Button(sdl.Rect{X: pad + 20, Y: y, W: 200, H: btnH}, "Reset all moved sprites") {
-			clear(a.spriteOv)
+			clear(a.roster.spriteOv)
 			settings.statusLine = "Cleared every sprite reposition."
 		}
 		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)

@@ -14,20 +14,20 @@ func TestEvidURL(t *testing.T) {
 	a.link.urls = courtroom.NewURLBuilder("https://server/base")
 
 	// Default (local) with a cached local:// origin.
-	a.evidLocalOrigin = "local://m-x/"
+	a.evid.evidLocalOrigin = "local://m-x/"
 	if got := a.evidURL("knife"); got != "local://m-x/evidence/knife.png" {
 		t.Errorf("local = %q, want %q", got, "local://m-x/evidence/knife.png")
 	}
 
 	// Streaming from the server.
-	a.evidStream = true
+	a.evid.evidStream = true
 	if got := a.evidURL("knife"); got != "https://server/base/evidence/knife.png" {
 		t.Errorf("stream = %q, want %q", got, "https://server/base/evidence/knife.png")
 	}
 
 	// Local requested but no mounts → fall back to streaming.
-	a.evidStream = false
-	a.evidLocalOrigin = ""
+	a.evid.evidStream = false
+	a.evid.evidLocalOrigin = ""
 	if got := a.evidURL("knife"); got != "https://server/base/evidence/knife.png" {
 		t.Errorf("no-mount fallback = %q, want %q", got, "https://server/base/evidence/knife.png")
 	}

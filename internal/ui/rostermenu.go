@@ -56,7 +56,7 @@ func hasRosterMenu(p *areaPlayer) bool {
 // roster can refresh/reorder while the menu is open, so acting through a live
 // index could hit the wrong player.
 func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
-	items := a.rosterMenuItems[:0]
+	items := a.roster.rosterMenuItems[:0]
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
@@ -77,9 +77,9 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	}
 	// Follow rides the header's Follow toggle exactly like the old per-row
 	// button (OFF default: no follow affordances anywhere).
-	if a.followShow && p.uid != "" {
+	if a.roster.followShow && p.uid != "" {
 		fl := "Follow"
-		if a.followUID == p.uid {
+		if a.roster.followUID == p.uid {
 			fl = "Unfollow"
 		}
 		items = append(items, rosterMenuItem{rosterActFollow, fl})
@@ -108,15 +108,15 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	if _, ok := a.profileFor(p, isMe); ok && !a.classic.panelHidden(rosterBtnProfile) {
 		items = append(items, rosterMenuItem{rosterActProfile, "Profile"})
 	}
-	a.rosterMenuItems = items
+	a.roster.rosterMenuItems = items
 	if len(items) == 0 {
 		return // nothing applicable (every action hidden in the UI… popup)
 	}
-	a.rosterMenuP = *p
-	a.rosterMenuMe = isMe
-	a.rosterMenuAt = at
-	a.rosterMenuTab = a.activeTab
-	a.rosterMenuOpen = true
+	a.roster.rosterMenuP = *p
+	a.roster.rosterMenuMe = isMe
+	a.roster.rosterMenuAt = at
+	a.roster.rosterMenuTab = a.activeTab
+	a.roster.rosterMenuOpen = true
 }
 
 // rosterMenuFence holds/releases the kit's modal fence for the open menu, and
@@ -125,16 +125,16 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 // discipline as emojiPickerFence: an un-released modalOn freezes the UI.
 func (a *App) rosterMenuFence(c *Ctx) {
 	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
-		!a.makerOpen && a.activeTab == a.rosterMenuTab
-	if a.rosterMenuOpen && !live {
-		a.rosterMenuOpen = false
+		!a.makerOpen && a.activeTab == a.roster.rosterMenuTab
+	if a.roster.rosterMenuOpen && !live {
+		a.roster.rosterMenuOpen = false
 	}
-	if a.rosterMenuOpen {
+	if a.roster.rosterMenuOpen {
 		c.modalOn = true
-		a.rosterMenuFenceOn = true
-	} else if a.rosterMenuFenceOn {
+		a.roster.rosterMenuFenceOn = true
+	} else if a.roster.rosterMenuFenceOn {
 		c.modalOn = false // menu just closed → release the persistent fence
-		a.rosterMenuFenceOn = false
+		a.roster.rosterMenuFenceOn = false
 	}
 }
 
@@ -142,14 +142,14 @@ func (a *App) rosterMenuFence(c *Ctx) {
 func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 	c := a.ctx
 	mw := rosterMenuMinW
-	for _, it := range a.rosterMenuItems {
+	for _, it := range a.roster.rosterMenuItems {
 		if lw := c.TextWidth(it.label) + 2*rosterMenuPadX; lw > mw {
 			mw = lw
 		}
 	}
-	mh := int32(len(a.rosterMenuItems))*rosterMenuItemH + 8
-	x := clampI32(a.rosterMenuAt.X, pad, maxI32(pad, w-mw-pad))
-	y := clampI32(a.rosterMenuAt.Y, pad, maxI32(pad, h-mh-pad))
+	mh := int32(len(a.roster.rosterMenuItems))*rosterMenuItemH + 8
+	x := clampI32(a.roster.rosterMenuAt.X, pad, maxI32(pad, w-mw-pad))
+	y := clampI32(a.roster.rosterMenuAt.Y, pad, maxI32(pad, h-mh-pad))
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
@@ -157,7 +157,7 @@ func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 // pointIn — the modal fence blanks hovering() everywhere, including here).
 // Any item click acts on the snapshot and closes; a click elsewhere closes.
 func (a *App) drawRosterMenu(w, h int32) {
-	if !a.rosterMenuOpen {
+	if !a.roster.rosterMenuOpen {
 		return
 	}
 	c := a.ctx
@@ -165,14 +165,14 @@ func (a *App) drawRosterMenu(w, h int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	y := panel.Y + 4
-	for i := range a.rosterMenuItems {
-		it := &a.rosterMenuItems[i]
+	for i := range a.roster.rosterMenuItems {
+		it := &a.roster.rosterMenuItems[i]
 		row := sdl.Rect{X: panel.X + 2, Y: y, W: panel.W - 4, H: rosterMenuItemH - 2}
 		if pointIn(c.mouseX, c.mouseY, row) {
 			c.Fill(row, ColPanelHi)
 			if c.clicked {
 				a.rosterMenuAct(it.kind)
-				a.rosterMenuOpen = false
+				a.roster.rosterMenuOpen = false
 				c.clicked = false
 				return
 			}
@@ -183,7 +183,7 @@ func (a *App) drawRosterMenu(w, h int32) {
 	// Click-away (or a fresh right-click) closes; the fence already kept the
 	// press from reaching anything underneath.
 	if (c.clicked || c.rightClicked) && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.rosterMenuOpen = false
+		a.roster.rosterMenuOpen = false
 		c.clicked = false
 		c.rightClicked = false
 	}
@@ -191,7 +191,7 @@ func (a *App) drawRosterMenu(w, h int32) {
 
 // rosterMenuAct performs one menu action against the opened row's snapshot.
 func (a *App) rosterMenuAct(kind rosterMenuKind) {
-	p := &a.rosterMenuP
+	p := &a.roster.rosterMenuP
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
@@ -229,7 +229,7 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 	case rosterActIgnore:
 		a.toggleServerIgnore(fk)
 	case rosterActProfile:
-		if prof, ok := a.profileFor(p, a.rosterMenuMe); ok {
+		if prof, ok := a.profileFor(p, a.roster.rosterMenuMe); ok {
 			a.openProfileCard(prof, display)
 		}
 	}

@@ -161,7 +161,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	// question: the room under the showname strip versus what the wrapped message
 	// actually needs. A CUT verdict here says the box is too short; "fits" with
 	// text still missing says the fault is in the drawing, not the layout.
-	d := &a.chatDiag
+	d := &a.raster.chatDiag
 	need := d.lines * d.lineH
 	room := d.boxY + d.boxH - d.textY
 	grew := ""

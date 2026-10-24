@@ -16,7 +16,7 @@ import (
 // menuKinds flattens the open menu's item kinds for assertion.
 func menuKinds(a *App) map[rosterMenuKind]bool {
 	out := map[rosterMenuKind]bool{}
-	for _, it := range a.rosterMenuItems {
+	for _, it := range a.roster.rosterMenuItems {
 		out[it.kind] = true
 	}
 	return out
@@ -32,13 +32,13 @@ func TestRosterMenuItems(t *testing.T) {
 	p := areaPlayer{uid: "7", name: "Phoenix", ipid: "AbCd1234"}
 
 	a.openRosterMenu(&p, false, false, sdl.Point{X: 10, Y: 10})
-	if !a.rosterMenuOpen {
+	if !a.roster.rosterMenuOpen {
 		t.Fatal("a rich row must open the menu")
 	}
 	got := menuKinds(a)
 	for _, want := range []rosterMenuKind{rosterActMessage, rosterActPair, rosterActCopyUID, rosterActCopyIPID, rosterActFriend, rosterActIgnore} {
 		if !got[want] {
-			t.Errorf("menu missing kind %d (items=%v)", want, a.rosterMenuItems)
+			t.Errorf("menu missing kind %d (items=%v)", want, a.roster.rosterMenuItems)
 		}
 	}
 	if got[rosterActPairManual] {
@@ -50,25 +50,25 @@ func TestRosterMenuItems(t *testing.T) {
 
 	// Spectators: no Message (DM threads key on the character name — ambiguous),
 	// no Pair-manual; the UID copy still works when a live UID exists.
-	a.rosterMenuOpen = false
+	a.roster.rosterMenuOpen = false
 	spec := areaPlayer{uid: "9", name: "Spectator"}
 	a.openRosterMenu(&spec, false, true, sdl.Point{})
 	got = menuKinds(a)
 	if got[rosterActMessage] || got[rosterActPairManual] {
-		t.Errorf("spectator rows must not offer Message / manual Pair (items=%v)", a.rosterMenuItems)
+		t.Errorf("spectator rows must not offer Message / manual Pair (items=%v)", a.roster.rosterMenuItems)
 	}
 	if !got[rosterActCopyUID] {
 		t.Error("a spectator with a live UID keeps Copy UID")
 	}
 
 	// UI… hide prefs trim menu entries (same ids that hid the old buttons).
-	a.rosterMenuOpen = false
+	a.roster.rosterMenuOpen = false
 	a.classic.hidden = map[string]bool{rosterBtnPair: true, rosterBtnUID: true, rosterBtnIPID: true, rosterBtnIgnore: true}
 	a.openRosterMenu(&p, false, false, sdl.Point{})
 	got = menuKinds(a)
 	for _, hidden := range []rosterMenuKind{rosterActPair, rosterActCopyUID, rosterActCopyIPID, rosterActIgnore} {
 		if got[hidden] {
-			t.Errorf("hidden action kind %d still in the menu (items=%v)", hidden, a.rosterMenuItems)
+			t.Errorf("hidden action kind %d still in the menu (items=%v)", hidden, a.roster.rosterMenuItems)
 		}
 	}
 	if !got[rosterActMessage] {
@@ -86,7 +86,7 @@ func TestRosterMenuFence(t *testing.T) {
 	a.srvMeta.serverKey = "ws://test"
 	p := areaPlayer{uid: "3", name: "Edgeworth"}
 	a.openRosterMenu(&p, false, false, sdl.Point{X: 5, Y: 5})
-	if !a.rosterMenuOpen {
+	if !a.roster.rosterMenuOpen {
 		t.Fatal("open failed")
 	}
 
@@ -95,9 +95,9 @@ func TestRosterMenuFence(t *testing.T) {
 		t.Fatal("open menu must hold the modal fence")
 	}
 
-	a.activeTab = a.rosterMenuTab + 1 // tab switch under an open menu
+	a.activeTab = a.roster.rosterMenuTab + 1 // tab switch under an open menu
 	a.rosterMenuFence(c)
-	if a.rosterMenuOpen {
+	if a.roster.rosterMenuOpen {
 		t.Fatal("a tab switch must force-close the menu")
 	}
 	if c.modalOn {
@@ -106,15 +106,15 @@ func TestRosterMenuFence(t *testing.T) {
 
 	// Same for leaving the courtroom.
 	a.activeTab = 0
-	a.rosterMenuTab = 0
-	a.rosterMenuOpen = true
+	a.roster.rosterMenuTab = 0
+	a.roster.rosterMenuOpen = true
 	a.rosterMenuFence(c)
 	if !c.modalOn {
 		t.Fatal("re-open must re-hold the fence")
 	}
 	a.screen = ScreenLobby
 	a.rosterMenuFence(c)
-	if a.rosterMenuOpen || c.modalOn {
+	if a.roster.rosterMenuOpen || c.modalOn {
 		t.Fatal("leaving the courtroom must close the menu and release the fence")
 	}
 }
@@ -122,11 +122,11 @@ func TestRosterMenuFence(t *testing.T) {
 // TestRosterMenuEscCloses pins Esc's closeTopOverlay rung for the menu.
 func TestRosterMenuEscCloses(t *testing.T) {
 	a := testTabApp(t)
-	a.rosterMenuOpen = true
+	a.roster.rosterMenuOpen = true
 	if !a.closeTopOverlay() {
 		t.Fatal("closeTopOverlay must claim the open roster menu")
 	}
-	if a.rosterMenuOpen {
+	if a.roster.rosterMenuOpen {
 		t.Fatal("Esc must close the roster menu")
 	}
 }

@@ -30,13 +30,13 @@ func followTarget(theirArea, myArea int, areas []string) (string, bool) {
 // toggleFollow starts or stops following a player by UID. Starting catches up to
 // them at once if they're already in another area.
 func (a *App) toggleFollow(uid string) {
-	if a.followUID == uid {
-		a.followUID = ""
+	if a.roster.followUID == uid {
+		a.roster.followUID = ""
 		a.warnLine = "Stopped following"
 		a.warnAt = a.now()
 		return
 	}
-	a.followUID = uid
+	a.roster.followUID = uid
 	a.warnLine = clampLine("Following UID " + uid)
 	a.warnAt = a.now()
 	a.maybeFollowJump()
@@ -46,16 +46,16 @@ func (a *App) toggleFollow(uid string) {
 // ours. Called on each PR/PU update (EventPlayersUpdated); debounced. No-op when
 // not following, the player is gone, or we're already together.
 func (a *App) maybeFollowJump() {
-	if a.followUID == "" || a.link.sess == nil {
+	if a.roster.followUID == "" || a.link.sess == nil {
 		return
 	}
 	if !a.d.Prefs.Load().FollowEnabled {
-		a.followUID = "" // feature is off (opt-in): stop trailing
+		a.roster.followUID = "" // feature is off (opt-in): stop trailing
 		return
 	}
-	uid, err := strconv.Atoi(a.followUID)
+	uid, err := strconv.Atoi(a.roster.followUID)
 	if err != nil {
-		a.followUID = "" // malformed; stop trailing a ghost
+		a.roster.followUID = "" // malformed; stop trailing a ghost
 		return
 	}
 	theirArea, ok := a.link.sess.PlayerArea(uid)
@@ -67,10 +67,10 @@ func (a *App) maybeFollowJump() {
 	if !ok {
 		return
 	}
-	if a.now().Sub(a.lastFollowJump) < followJumpDebounce {
+	if a.now().Sub(a.roster.lastFollowJump) < followJumpDebounce {
 		return
 	}
-	a.lastFollowJump = a.now()
+	a.roster.lastFollowJump = a.now()
 	a.jumpToArea(name)
 	a.warnLine = clampLine("Following → " + name)
 	a.warnAt = a.now()

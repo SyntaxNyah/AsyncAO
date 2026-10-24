@@ -246,7 +246,7 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 		t.Fatalf("park must leave a pristine live session: name=%q log=%d input=%q",
 			a.srvMeta.serverName, len(a.chatlog.icLog), a.compose.icInput)
 	}
-	if a.spriteOv == nil || a.pairbox.pairWith == 0 {
+	if a.roster.spriteOv == nil || a.pairbox.pairWith == 0 {
 		t.Fatal("reset state must re-init maps and sentinels")
 	}
 	// Park must hand the live session a PRISTINE pair/iniswap/pos — not the parked
@@ -968,7 +968,7 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 		srvMeta: serverMetaState{serverName: "PinnedServer"},
 		link:    linkState{sess: pinnedSess},
 		compose: composeState{sidePref: "wit", icInput: "hello from the right pane"},
-		evidIdx: -1,
+		evid:    evidenceState{evidIdx: -1},
 		pairbox: pairBoxState{pairWith: protocol.UnpairedCharID},
 	}}
 	a.tabs = append(a.tabs, pin)
@@ -1065,13 +1065,13 @@ func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = playerSortName })
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListAreaSort = areaSortPop })
 	a.resetSessionState()
-	if a.playerSort != playerSortName || a.playerAreaSort != areaSortPop {
-		t.Errorf("seed = %d/%d, want %d/%d", a.playerSort, a.playerAreaSort, playerSortName, areaSortPop)
+	if a.roster.playerSort != playerSortName || a.roster.playerAreaSort != areaSortPop {
+		t.Errorf("seed = %d/%d, want %d/%d", a.roster.playerSort, a.roster.playerAreaSort, playerSortName, areaSortPop)
 	}
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = 99 }) // a stale/out-of-range value clamps to 0
 	a.resetSessionState()
-	if a.playerSort != 0 {
-		t.Errorf("out-of-range sort must clamp to 0, got %d", a.playerSort)
+	if a.roster.playerSort != 0 {
+		t.Errorf("out-of-range sort must clamp to 0, got %d", a.roster.playerSort)
 	}
 }
 

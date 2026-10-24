@@ -66,9 +66,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
-			a.chatDiag.grew = true
+			a.raster.chatDiag.grew = true
 		} else {
-			a.chatDiag.grew = false
+			a.raster.chatDiag.grew = false
 		}
 	}
 	// Skin priority: the speaker's own art, else the theme's, else the flat
@@ -157,7 +157,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// The box follows its own crawl (chatcrawlscroll.go = AO2's ensureCursorVisible,
 	// courtroom.cpp:4514-4521). Exactly 0 for a message that fits, so the ordinary
 	// post draws from the same origin it always did.
-	msgScroll := chatCrawlOffset(a.msRaster, sc.VisibleRunes, textRect.H)
+	msgScroll := chatCrawlOffset(a.raster.msRaster, sc.VisibleRunes, textRect.H)
 	msgY := textRect.Y - msgScroll
 	// …and the clip that contains it starts at the TEXT origin, not at the top of
 	// the box: a scrolled message draws from above textRect.Y, and the showname
@@ -165,23 +165,23 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// scrolled-off rows on the name band. chatcrawlscroll.go explains why the other
 	// three edges stay the box's — and why the #M5 animated painter, which cannot
 	// scroll but DOES lift glyphs off their row, keeps the whole box instead.
-	msgClip := chatCrawlClip(box, textRect.Y, a.msAnim)
+	msgClip := chatCrawlClip(box, textRect.Y, a.raster.msAnim)
 	a.handleChatSelect(textRect, msgScroll, sc)
 	// Snapshot the geometry for Debug → Session. Plain field stores, no allocation,
 	// so it costs the draw nothing; it is the only way to see these numbers on a
 	// machine we can't run.
-	a.chatDiag.vpH, a.chatDiag.boxY, a.chatDiag.boxH = vp.H, box.Y, box.H
-	a.chatDiag.textY, a.chatDiag.wrapW = textRect.Y, wrapW
-	a.chatDiag.renderPct, a.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct
-	a.chatDiag.visible = int32(sc.VisibleRunes)
-	if a.msRaster != nil {
-		a.chatDiag.lines = int32(a.msRaster.Lines())
-		a.chatDiag.lineH = a.msRaster.LineH()
-		a.chatDiag.total = int32(a.msRaster.TotalRunes())
+	a.raster.chatDiag.vpH, a.raster.chatDiag.boxY, a.raster.chatDiag.boxH = vp.H, box.Y, box.H
+	a.raster.chatDiag.textY, a.raster.chatDiag.wrapW = textRect.Y, wrapW
+	a.raster.chatDiag.renderPct, a.raster.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct
+	a.raster.chatDiag.visible = int32(sc.VisibleRunes)
+	if a.raster.msRaster != nil {
+		a.raster.chatDiag.lines = int32(a.raster.msRaster.Lines())
+		a.raster.chatDiag.lineH = a.raster.msRaster.LineH()
+		a.raster.chatDiag.total = int32(a.raster.msRaster.TotalRunes())
 	} else {
-		a.chatDiag.lines, a.chatDiag.lineH, a.chatDiag.total = 0, 0, 0
+		a.raster.chatDiag.lines, a.raster.chatDiag.lineH, a.raster.chatDiag.total = 0, 0, 0
 	}
-	if a.msAnim != nil || a.msRaster != nil {
+	if a.raster.msAnim != nil || a.raster.msRaster != nil {
 		// Clip to the box below the name plate: oversized Text settings stay INSIDE
 		// it, and the crawl's scrolled-off rows stay OUT of the showname strip. Via
 		// the Ctx scratch rect — &msgClip into cgo would heap-allocate it at its
@@ -191,13 +191,13 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(textRect.X, msgY, wrapW, sc) // scrolled with the text it marks
 		}
-		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
+		if a.raster.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			// The master off-switch implies reduce-motion for text too: the glyphs
 			// still lay out and read normally, they just stop moving (animtext.go
 			// pins everything static under this flag), which is exactly what the
 			// toggle promises — no spinning, no waving, text still legible.
 			reduce := a.d.Prefs.Load().ReduceMotionOn || a.d.Prefs.Load().DisableEffects
-			if a.msAnim.Animates(reduce) {
+			if a.raster.msAnim.Animates(reduce) {
 				// Clock-driven text FX on screen: keep frames coming through the
 				// static skip (idle=0 froze/stuttered them — the FX-at-idle
 				// report). Draw-site census, so it self-clears the moment the
@@ -207,7 +207,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 				// background cap off still parks (that gate outranks this).
 				a.NoteAnimating()
 			}
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, msgY, reduce)
+			a.raster.msAnim.Draw(c.Ren, a.raster.glyphCache, a.raster.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, msgY, reduce)
 		} else {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
@@ -218,10 +218,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// draw()). Handing it `box` here would restore the name band as a paint
 			// target for every scaled UI — the exact defect, on the exact machines
 			// hardest to reproduce it on.
-			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
+			a.raster.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
 		}
 		_ = c.Ren.SetClipRect(nil)
-	} else if a.rasterFailedText != "" && sc.MessageText != "" {
+	} else if a.raster.rasterFailedText != "" && sc.MessageText != "" {
 		// Last resort: the raster could not be built at all. Draw the words with the
 		// ordinary wrapped label path so the player still reads the message. It gets
 		// no typewriter and no per-glyph effects — but a chatbox that silently shows
@@ -265,8 +265,8 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 		if inText {
 			a.chatSelDragging = true
 			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
-			if a.msRaster != nil { // anchor the range at the pressed boundary
-				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+			if a.raster.msRaster != nil { // anchor the range at the pressed boundary
+				a.chatSelA = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 				a.chatSelB = a.chatSelA
 			}
 		} else {
@@ -275,8 +275,8 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 	}
 	if a.chatSelDragging {
 		if c.mouseDown {
-			if a.msRaster != nil { // the held drag moves the range's head
-				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+			if a.raster.msRaster != nil { // the held drag moves the range's head
+				a.chatSelB = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			}
 			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
 				if !a.chatSelActive {
@@ -287,7 +287,7 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 		} else {
 			a.chatSelDragging = false
 			switch {
-			case a.chatSelActive && a.msRaster != nil && a.chatSelA == a.chatSelB:
+			case a.chatSelActive && a.raster.msRaster != nil && a.chatSelA == a.chatSelB:
 				a.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
 			case a.chatSelActive:
 				c.clicked = false // a real drag isn't a click on whatever's under it
@@ -297,13 +297,13 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 	}
 	// Double-click: the word under the cursor; triple-click: the whole
 	// message (native text gestures — mirrors the fields and the logs).
-	if a.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
+	if a.raster.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
 		runes := []rune(sc.MessageText)
 		if c.tripleClick {
 			a.chatSelA, a.chatSelB = 0, len(runes)
 			c.tripleClick = false
 		} else {
-			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+			idx := a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
 			c.dblClick = false
 		}
@@ -330,7 +330,7 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 // chatSelText is the text the chatbox selection copies: the selected rune
 // range, or the whole message on the animated path / a degenerate range.
 func (a *App) chatSelText(sc *courtroom.Scene) string {
-	if a.msRaster == nil {
+	if a.raster.msRaster == nil {
 		return sc.MessageText
 	}
 	runes := []rune(sc.MessageText)
@@ -359,7 +359,7 @@ func (a *App) chatSelText(sc *courtroom.Scene) string {
 // while a selection is up.
 func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 	c := a.ctx
-	m := a.msRaster
+	m := a.raster.msRaster
 	if m == nil { // animated message (msAnim): whole-block highlight
 		// a.rasterScale, not a fresh messagePct(): it is the percent ensureChatRaster
 		// actually built msAnim at, and the two now differ inside a themed chatbox,
@@ -369,7 +369,7 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 		// #39: theme "message" size, stepped by the raster's own row pitch
 		// (render.FontLineSpacing) — a highlight built on the shorter glyph box would
 		// leave an unpainted stripe between every pair of wrapped rows.
-		lineH := a.msAnim.RowPitch() // the step Draw will actually use, override included
+		lineH := a.raster.msAnim.RowPitch() // the step Draw will actually use, override included
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
@@ -432,8 +432,8 @@ func (a *App) ensureSFXChoices() {
 // chatMsgLines is the chatbox message's wrapped-line count (the raster's own count when
 // present, else an approximate re-wrap) — sizes the whole-message selection block.
 func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
-	if a.msRaster != nil {
-		if n := a.msRaster.Lines(); n > 0 {
+	if a.raster.msRaster != nil {
+		if n := a.raster.msRaster.Lines(); n > 0 {
 			return n
 		}
 	}
@@ -454,35 +454,35 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	// carries the old font-chain generation; its glyphs are still tofu/uniform-advance until
 	// it re-rasters against the new chain. Keyed on fontChainGen the same way the log wrap
 	// caches are (qol.go) — Task E. Cheap field compare; only the effects path builds msAnim.
-	staleAnimChain := a.msAnim != nil && a.msAnim.ChainGen() != a.ctx.fontChainGen
-	if !staleAnimChain && (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
-		a.rasterScale == pct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
-		a.rasterChatMsg == sc.ChatSkinMsgColor && a.rasterChatMsgHas == sc.ChatSkinMsgHas &&
-		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
+	staleAnimChain := a.raster.msAnim != nil && a.raster.msAnim.ChainGen() != a.ctx.fontChainGen
+	if !staleAnimChain && (a.raster.msRaster != nil || a.raster.msAnim != nil) && a.raster.rasterRaw == sc.MessageRaw && a.raster.rasterText == sc.MessageText && a.raster.rasterColor == sc.TextColor &&
+		a.raster.rasterScale == pct && a.raster.rasterW == wrapW && a.raster.rasterSkinned == skinned && a.raster.rasterEffSig == effSig && a.raster.rasterCentered == sc.Centered &&
+		a.raster.rasterChatMsg == sc.ChatSkinMsgColor && a.raster.rasterChatMsgHas == sc.ChatSkinMsgHas &&
+		a.raster.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
 	}
-	if a.rasterRaw != sc.MessageRaw {
+	if a.raster.rasterRaw != sc.MessageRaw {
 		a.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
 	}
-	if a.msRaster != nil {
-		a.msRaster.Destroy()
-		a.msRaster = nil
+	if a.raster.msRaster != nil {
+		a.raster.msRaster.Destroy()
+		a.raster.msRaster = nil
 	}
-	a.msAnim = nil // AnimatedText owns no textures (the glyph cache does); just drop it
-	a.msAnimFont = nil
+	a.raster.msAnim = nil // AnimatedText owns no textures (the glyph cache does); just drop it
+	a.raster.msAnimFont = nil
 	if sc.MessageText == "" {
 		return
 	}
 	// #M5: a message with effect spans takes the per-glyph animated path; every other
 	// message keeps the untouched MessageRaster fast paths (zero change for the common case).
 	if len(sc.MessageEffects) > 0 {
-		if a.glyphCache == nil {
-			a.glyphCache = render.NewGlyphCache(glyphCacheCap)
+		if a.raster.glyphCache == nil {
+			a.raster.glyphCache = render.NewGlyphCache(glyphCacheCap)
 		}
 		anim, font := renderAnimated(a, sc, wrapW, skinned, pct)
-		anim.Warm(a.ctx.Ren, a.glyphCache, font) // render all glyphs up front → 0-alloc draws
-		a.msAnim = anim
-		a.msAnimFont = font
+		anim.Warm(a.ctx.Ren, a.raster.glyphCache, font) // render all glyphs up front → 0-alloc draws
+		a.raster.msAnim = anim
+		a.raster.msAnimFont = font
 	} else {
 		raster, err := renderRaster(a, sc, wrapW, skinned, pct, false)
 		if err != nil {
@@ -494,23 +494,23 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// screen, and say so in the debug log so the next report carries the
 			// actual SDL error instead of "the text is invisible".
 			a.debug.push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
-			a.rasterFailedText = sc.MessageText
+			a.raster.rasterFailedText = sc.MessageText
 			return
 		}
-		a.msRaster = raster
-		a.rasterFailedText = ""
+		a.raster.msRaster = raster
+		a.raster.rasterFailedText = ""
 	}
-	a.rasterText = sc.MessageText
-	a.rasterRaw = sc.MessageRaw
-	a.rasterColor = sc.TextColor
-	a.rasterScale = pct
-	a.rasterW = wrapW
-	a.rasterSkinned = skinned
-	a.rasterChatMsg = sc.ChatSkinMsgColor
-	a.rasterChatMsgHas = sc.ChatSkinMsgHas
-	a.rasterEffSig = effSig
-	a.rasterCentered = sc.Centered
-	a.rasterDevPct = a.ctx.textDevPct // #77
+	a.raster.rasterText = sc.MessageText
+	a.raster.rasterRaw = sc.MessageRaw
+	a.raster.rasterColor = sc.TextColor
+	a.raster.rasterScale = pct
+	a.raster.rasterW = wrapW
+	a.raster.rasterSkinned = skinned
+	a.raster.rasterChatMsg = sc.ChatSkinMsgColor
+	a.raster.rasterChatMsgHas = sc.ChatSkinMsgHas
+	a.raster.rasterEffSig = effSig
+	a.raster.rasterCentered = sc.Centered
+	a.raster.rasterDevPct = a.ctx.textDevPct // #77
 }
 
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
@@ -1147,7 +1147,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	x += 116
 	evLabel := "Evidence"
-	if a.evidPresent {
+	if a.evid.evidPresent {
 		evLabel = "Evidence ●" // armed: next IC message presents it
 	}
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
@@ -1155,7 +1155,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	x += 106
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
-		a.showModcall = true
+		a.courtxtra.showModcall = true
 	}
 	x += 86
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
@@ -1273,7 +1273,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// the row stays alloc-free.
 	const gGap = int32(16) // gap between groups
 	evLabel := "Evidence"
-	if a.evidPresent {
+	if a.evid.evidPresent {
 		evLabel = "Evidence ●"
 	}
 	// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
@@ -1311,7 +1311,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// — Moderation —
 	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
 		if c.Button(r, "Mods...") {
-			a.showModcall = true
+			a.courtxtra.showModcall = true
 		}
 	}
 	if a.amIMod() {

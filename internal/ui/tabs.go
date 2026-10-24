@@ -203,11 +203,11 @@ func (a *App) parkActive() {
 		a.Disconnect()           // rehearsal never parks (global offline gate)
 		return
 	}
-	if a.msRaster != nil {
-		a.msRaster.Destroy()
-		a.msRaster = nil
+	if a.raster.msRaster != nil {
+		a.raster.msRaster.Destroy()
+		a.raster.msRaster = nil
 	}
-	a.msAnim, a.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
+	a.raster.msAnim, a.raster.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
 	a.tabs[a.activeTab].inCourt = a.link.room != nil
 	a.link.room = nil
 	// Music CONTINUITY across a tab switch (the agreed exception to ecd6d9e's
@@ -599,7 +599,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// The same overlay teardown the live tab does (#23). A parked tab has no
 			// Courtroom, so this is the only place its splash / testimony badge /
 			// evidence popup can be cleared before the user tabs back into it.
-			s.wtceName, s.testimonyOn, s.evShowImg = "", false, ""
+			s.courtxtra.wtceName, s.courtxtra.testimonyOn, s.evid.evShowImg = "", false, ""
 		}
 	case courtroom.EventSetPos:
 		// KFO-family servers carry the pos INSIDE an area change's BN and send no SP
@@ -1212,7 +1212,7 @@ func (a *App) resetSessionState() {
 	// shares another tab's log file by forgetting to stamp it. Monotonic: park moves
 	// the id into the tab with the rest of the state, so an id is never reused.
 	a.nextLogSession++
-	a.sessionState = sessionState{srvMeta: serverMetaState{logSession: a.nextLogSession}, pairbox: pairBoxState{pairWith: protocol.UnpairedCharID}, playerSort: clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes), compose: composeState{
+	a.sessionState = sessionState{srvMeta: serverMetaState{logSession: a.nextLogSession}, pairbox: pairBoxState{pairWith: protocol.UnpairedCharID}, roster: rosterState{playerSort: clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes), spriteOv: map[string][2]int{}}, compose: composeState{
 		oocName: a.defaultOOCName(),
 		// pmThreads keeps the Friends-tab DM history bounded per session.
 		pmThreads: map[string][]pmLine{},
@@ -1227,7 +1227,7 @@ func (a *App) resetSessionState() {
 		// always-play-the-emote's-preanim behavior; selectEmote then
 		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
 		icPreanim: true,
-	}, musicTab: musicTabState{volStripOn: a.d.Prefs.Load().VolStripOn, musicVolMode: a.d.Prefs.Load().MusicVolMode}, audio: audioLevelState{masterMuted: a.d.Prefs.Load().MasterVolMuted, musicMuted: a.d.Prefs.Load().MusicVolMuted, sfxMuted: false, blipMuted: a.d.Prefs.Load().BlipVolMuted}, spriteOv: map[string][2]int{}, evidIdx: -1, hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax}, charsel: charGridState{charShowTaken: true, charListSel: -1}}
+	}, musicTab: musicTabState{volStripOn: a.d.Prefs.Load().VolStripOn, musicVolMode: a.d.Prefs.Load().MusicVolMode}, audio: audioLevelState{masterMuted: a.d.Prefs.Load().MasterVolMuted, musicMuted: a.d.Prefs.Load().MusicVolMuted, sfxMuted: false, blipMuted: a.d.Prefs.Load().BlipVolMuted}, evid: evidenceState{evidIdx: -1}, courtxtra: courtExtrasState{hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax}}, charsel: charGridState{charShowTaken: true, charListSel: -1}}
 	a.wireComponentEnvs()
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change

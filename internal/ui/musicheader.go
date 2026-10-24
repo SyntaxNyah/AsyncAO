@@ -301,7 +301,7 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	case musicMenuVolumeView:
 		return a.musicTab.musicVolMode
 	case musicMenuRosterLegacy:
-		return a.rosterLegacy
+		return a.roster.rosterLegacy
 	case musicMenuPairStatus:
 		return a.d.Prefs.Load().ShowPairStatus
 	case musicMenuFollow:
@@ -349,10 +349,10 @@ func (a *App) musicEffectsSupported() bool {
 // too, for the same snapshot reason — the menu paints at the frame tail, long
 // after the panel that owns that answer has returned.
 func (a *App) openMusicMenu(at sdl.Point, themed bool) {
-	a.musicMenuAt = at
-	a.musicMenuTab = a.activeTab
-	a.musicMenuThemed = themed
-	a.musicMenuOpen = true
+	a.roster.musicMenuAt = at
+	a.roster.musicMenuTab = a.activeTab
+	a.roster.musicMenuThemed = themed
+	a.roster.musicMenuOpen = true
 }
 
 // openMusicMenuFromButton opens the overflow menu from the header's ⋮ control
@@ -367,16 +367,16 @@ func (a *App) openMusicMenuFromButton(at sdl.Point, themed bool) {
 // rosterMenuFence: a stranded modalOn freezes the whole UI.
 func (a *App) musicMenuFence(c *Ctx) {
 	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
-		!a.makerOpen && a.activeTab == a.musicMenuTab
-	if a.musicMenuOpen && !live {
-		a.musicMenuOpen = false
+		!a.makerOpen && a.activeTab == a.roster.musicMenuTab
+	if a.roster.musicMenuOpen && !live {
+		a.roster.musicMenuOpen = false
 	}
-	if a.musicMenuOpen {
+	if a.roster.musicMenuOpen {
 		c.modalOn = true
-		a.musicMenuFenceOn = true
-	} else if a.musicMenuFenceOn {
+		a.roster.musicMenuFenceOn = true
+	} else if a.roster.musicMenuFenceOn {
 		c.modalOn = false
-		a.musicMenuFenceOn = false
+		a.roster.musicMenuFenceOn = false
 	}
 }
 
@@ -409,8 +409,8 @@ func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 		}
 	}
 	mh := a.musicMenuHeight(themed)
-	x := clampI32(a.musicMenuAt.X, pad, maxI32(pad, w-mw-pad))
-	y := clampI32(a.musicMenuAt.Y, pad, maxI32(pad, h-mh-pad))
+	x := clampI32(a.roster.musicMenuAt.X, pad, maxI32(pad, w-mw-pad))
+	y := clampI32(a.roster.musicMenuAt.Y, pad, maxI32(pad, h-mh-pad))
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
@@ -419,11 +419,11 @@ func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 // Ctx.Tooltip no-ops under modalOn, which is why every row's LABEL has to say
 // what it does on its own (tooltips belong on the icon buttons).
 func (a *App) drawMusicMenu(w, h int32) {
-	if !a.musicMenuOpen {
+	if !a.roster.musicMenuOpen {
 		return
 	}
 	c := a.ctx
-	themed := a.musicMenuThemed
+	themed := a.roster.musicMenuThemed
 	panel := a.musicMenuRect(w, h, themed)
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
@@ -449,7 +449,7 @@ func (a *App) drawMusicMenu(w, h int32) {
 				a.musicMenuAct(row.kind)
 				c.clicked = false
 				if !musicMenuRowIsToggle(row.kind) {
-					a.musicMenuOpen = false
+					a.roster.musicMenuOpen = false
 					return
 				}
 			}
@@ -463,7 +463,7 @@ func (a *App) drawMusicMenu(w, h int32) {
 	// Click-away (or a fresh right-click) closes; the fence already kept the press
 	// from reaching anything underneath.
 	if (c.clicked || c.rightClicked) && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.musicMenuOpen = false
+		a.roster.musicMenuOpen = false
 		c.clicked = false
 		c.rightClicked = false
 	}
@@ -503,16 +503,16 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 		// /getarea: that spelling is registered on neither Athena, Nyathena nor
 		// Whisker (liveroster.go, rosterDetailCmd), and two of those three have no
 		cmd := a.rosterDetailCmd()
-		a.pairAreaReset = true
+		a.roster.pairAreaReset = true
 		a.queueOOCLines([]string{cmd})
 		a.warnLine = clampLine("Fetching UIDs / IPIDs for this area (" + cmd + ")…")
 		a.warnAt = a.now()
 	case musicMenuRosterLegacy:
-		a.setRosterLegacy(!a.rosterLegacy) // drops the index-keyed icon cache, rebuilds live
+		a.setRosterLegacy(!a.roster.rosterLegacy) // drops the index-keyed icon cache, rebuilds live
 	case musicMenuPairStatus:
 		next := !a.d.Prefs.Load().ShowPairStatus
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowPairStatus = next })
-		a.pairStatusShow = next
+		a.roster.pairStatusShow = next
 	case musicMenuFollow:
 		next := !a.d.Prefs.Load().FollowEnabled
 		a.d.Prefs.Update(func(
@@ -526,9 +526,9 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 
 		})
 
-		a.followShow = next
+		a.roster.followShow = next
 		if !next {
-			a.followUID = "" // turning it off stops any active trailing
+			a.roster.followUID = "" // turning it off stops any active trailing
 		}
 	}
 }

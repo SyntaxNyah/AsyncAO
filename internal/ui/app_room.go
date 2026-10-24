@@ -96,19 +96,19 @@ func (a *App) buildRoom() {
 	a.d.Prefs.RememberServerChar(a.srvMeta.serverKey, a.myCharName())
 	// Court-extras state is per-room: splash/badge clear, penalty-sfx
 	// direction tracking re-arms at the session's current bar values.
-	a.wtceName, a.testimonyOn = "", false
-	a.hpPrev = [2]int{a.link.sess.HPDef, a.link.sess.HPPro}
-	a.showModcall, a.modUI.modReason = false, ""
-	a.showEvid, a.evidEditing, a.evidPresent, a.evidIdx = false, false, false, -1
-	a.evidPresentImage = ""
-	a.evidCtxMenu = false
-	a.evidAsk = nil
-	a.evShowImg = ""
+	a.courtxtra.wtceName, a.courtxtra.testimonyOn = "", false
+	a.courtxtra.hpPrev = [2]int{a.link.sess.HPDef, a.link.sess.HPPro}
+	a.courtxtra.showModcall, a.modUI.modReason = false, ""
+	a.evid.showEvid, a.evid.evidEditing, a.evid.evidPresent, a.evid.evidIdx = false, false, false, -1
+	a.evid.evidPresentImage = ""
+	a.evid.evidCtxMenu = false
+	a.evid.evidAsk = nil
+	a.evid.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
-	a.updatePresence()         // character (and server) just became known
-	a.liveDetailsArea = "\x00" // force a fresh rich-roster pull for the new session
-	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
+	a.updatePresence()                // character (and server) just became known
+	a.roster.liveDetailsArea = "\x00" // force a fresh rich-roster pull for the new session
+	a.rebuildLiveRoster()             // seed the live player list from the handshake's CharsCheck
 }
 
 // stageRestoreMsg is the message buildRoom re-stages into a rebuilt room — the
@@ -161,9 +161,9 @@ func (a *App) splitActive() bool {
 // frees the full-theme render target + the pinned tab's chat raster (built by the
 // full-view pass; it lives in the tab's sessionState, so this tab is its sole owner).
 func (a *App) clearSplit() {
-	if a.splitTab != nil && a.splitTab.state.msRaster != nil {
-		a.splitTab.state.msRaster.Destroy()
-		a.splitTab.state.msRaster = nil
+	if a.splitTab != nil && a.splitTab.state.raster.msRaster != nil {
+		a.splitTab.state.raster.msRaster.Destroy()
+		a.splitTab.state.raster.msRaster = nil
 	}
 	a.splitTab, a.splitRoom = nil, nil
 	if a.ctx != nil && a.ctx.focusID == "ic-split" {

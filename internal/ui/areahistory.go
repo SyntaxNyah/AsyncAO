@@ -35,5 +35,5 @@ func (a *App) recordAreaHistory() {
 	if !ok || id < 0 || id >= len(a.link.sess.Areas) {
 		return
 	}
-	a.areaHistory = pushAreaHistory(a.areaHistory, a.link.sess.Areas[id])
+	a.roster.areaHistory = pushAreaHistory(a.roster.areaHistory, a.link.sess.Areas[id])
 }

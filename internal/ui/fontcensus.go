@@ -355,7 +355,7 @@ func (a *App) pollCensusFont() {
 	select {
 	case data := <-a.censusRes:
 		a.ctx.AddCensusFace(data)
-		a.rasterText = "" // re-raster the visible message with the wider coverage
+		a.raster.rasterText = "" // re-raster the visible message with the wider coverage
 	default:
 	}
 }

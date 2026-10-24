@@ -333,7 +333,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 			if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 				_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
 			} else {
-				a.demandAsset(&a.voiceIconAsk, len(peers), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+				a.demandAsset(&a.roster.voiceIconAsk, len(peers), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			}
 		}
 		if speaking {

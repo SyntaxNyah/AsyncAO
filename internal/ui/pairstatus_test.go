@@ -28,7 +28,7 @@ func TestNotePairPartner(t *testing.T) {
 	for i := 0; i < pairPartnersCap+25; i++ {
 		a.notePairPartner(&protocol.ChatMessage{CharName: "c" + strconv.Itoa(i), Pair: protocol.PairInfo{CharID: 1, Name: "x"}})
 	}
-	if len(a.pairPartners) > pairPartnersCap {
-		t.Errorf("pairPartners grew to %d, want capped at %d", len(a.pairPartners), pairPartnersCap)
+	if len(a.roster.pairPartners) > pairPartnersCap {
+		t.Errorf("pairPartners grew to %d, want capped at %d", len(a.roster.pairPartners), pairPartnersCap)
 	}
 }

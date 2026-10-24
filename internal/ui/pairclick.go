@@ -32,25 +32,25 @@ func (a *App) notePairPartner(m *protocol.ChatMessage) {
 		return
 	}
 	if m.Pair.Active() {
-		if a.pairPartners == nil {
-			a.pairPartners = make(map[string]string)
+		if a.roster.pairPartners == nil {
+			a.roster.pairPartners = make(map[string]string)
 		}
-		if _, ok := a.pairPartners[char]; !ok && len(a.pairPartners) >= pairPartnersCap {
+		if _, ok := a.roster.pairPartners[char]; !ok && len(a.roster.pairPartners) >= pairPartnersCap {
 			return // bounded: don't grow past the cap with new speakers
 		}
-		a.pairPartners[char] = strings.TrimSpace(m.Pair.Name)
-	} else if a.pairPartners != nil {
-		delete(a.pairPartners, char) // a solo line clears their pairing
+		a.roster.pairPartners[char] = strings.TrimSpace(m.Pair.Name)
+	} else if a.roster.pairPartners != nil {
+		delete(a.roster.pairPartners, char) // a solo line clears their pairing
 	}
 }
 
 // pairPartnerOf returns the partner a roster player is currently paired with ("" = none), for the
 // opt-in player-list chip. Matched by lowercased character.
 func (a *App) pairPartnerOf(p *areaPlayer) string {
-	if len(a.pairPartners) == 0 || p.name == "" {
+	if len(a.roster.pairPartners) == 0 || p.name == "" {
 		return ""
 	}
-	return a.pairPartners[strings.ToLower(p.name)]
+	return a.roster.pairPartners[strings.ToLower(p.name)]
 }
 
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
@@ -89,7 +89,7 @@ func (a *App) parseAreaLine(line string) {
 		if name == "" {
 			return
 		}
-		a.areaLastUID = uid // a following "Showname:" line aliases to this player
+		a.roster.areaLastUID = uid // a following "Showname:" line aliases to this player
 		a.addAreaPlayer(name, uid)
 		return
 	}
@@ -123,23 +123,23 @@ func (a *App) addAreaPlayer(name, uid string) {
 	if name == "" {
 		return
 	}
-	if a.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
-		a.areaUIDs = nil
-		a.areaPlayers = a.areaPlayers[:0]
-		a.playerIconPages = nil // re-resolve icons: a same-length new roster reuses indices (cachedPage reorder invariant)
-		a.playerIconAsk = nil   // and re-arm the demand timers so the new faces fetch immediately
-		a.pairAreaReset = false
-		a.areaListAt = a.now()
+	if a.roster.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
+		a.roster.areaUIDs = nil
+		a.roster.areaPlayers = a.roster.areaPlayers[:0]
+		a.roster.playerIconPages = nil // re-resolve icons: a same-length new roster reuses indices (cachedPage reorder invariant)
+		a.roster.playerIconAsk = nil   // and re-arm the demand timers so the new faces fetch immediately
+		a.roster.pairAreaReset = false
+		a.roster.areaListAt = a.now()
 	}
-	if a.areaUIDs == nil {
-		a.areaUIDs = map[string]string{}
+	if a.roster.areaUIDs == nil {
+		a.roster.areaUIDs = map[string]string{}
 	}
-	a.areaUIDs[strings.ToLower(name)] = uid
+	a.roster.areaUIDs[strings.ToLower(name)] = uid
 	if showname != "" {
-		a.areaUIDs[strings.ToLower(showname)] = uid // IC name → UID for the pair auto-fill
+		a.roster.areaUIDs[strings.ToLower(showname)] = uid // IC name → UID for the pair auto-fill
 	}
-	if len(a.areaPlayers) < areaPlayersCap {
-		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name, showname: showname, ooc: ooc, ipid: ipid, area: a.areaCurName})
+	if len(a.roster.areaPlayers) < areaPlayersCap {
+		a.roster.areaPlayers = append(a.roster.areaPlayers, areaPlayer{uid: uid, name: name, showname: showname, ooc: ooc, ipid: ipid, area: a.roster.areaCurName})
 	}
 }
 
@@ -147,18 +147,18 @@ func (a *App) addAreaPlayer(name, uid string) {
 // (the one whose "[uid]" line preceded it).
 func (a *App) setAreaField(field, val string) {
 	val = strings.TrimSpace(val)
-	n := len(a.areaPlayers)
-	if val == "" || n == 0 || a.areaPlayers[n-1].uid != a.areaLastUID {
+	n := len(a.roster.areaPlayers)
+	if val == "" || n == 0 || a.roster.areaPlayers[n-1].uid != a.roster.areaLastUID {
 		return
 	}
 	switch field {
 	case "showname":
-		a.areaPlayers[n-1].showname = val
-		a.areaUIDs[strings.ToLower(val)] = a.areaLastUID // the IC name → UID, for auto-fill
+		a.roster.areaPlayers[n-1].showname = val
+		a.roster.areaUIDs[strings.ToLower(val)] = a.roster.areaLastUID // the IC name → UID, for auto-fill
 	case "ooc":
-		a.areaPlayers[n-1].ooc = val
+		a.roster.areaPlayers[n-1].ooc = val
 	case "ipid":
-		a.areaPlayers[n-1].ipid = val
+		a.roster.areaPlayers[n-1].ipid = val
 	}
 }
 
@@ -181,10 +181,10 @@ func (a *App) parseAreaBlock(text string) {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "----") { // area divider (/ga: one; /gas: one per non-empty area)
 			if firstArea {
-				a.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
+				a.roster.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
 				firstArea = false
 			}
-			a.areaCurName = "" // the name line below sets it ("" = a nameless block)
+			a.roster.areaCurName = "" // the name line below sets it ("" = a nameless block)
 			expectAreaName = true
 			wantShowname = false
 			continue
@@ -192,7 +192,7 @@ func (a *App) parseAreaBlock(text string) {
 		if expectAreaName {
 			expectAreaName = false
 			if isAreaNameLine(t) { // "Lobby:" / "Pizza Room 3:" — tags the players that follow
-				a.areaCurName = strings.TrimSpace(strings.TrimSuffix(t, ":"))
+				a.roster.areaCurName = strings.TrimSpace(strings.TrimSuffix(t, ":"))
 				continue
 			}
 			// else fall through: a nameless block, or the "N empty area(s) hidden." footer
@@ -268,8 +268,8 @@ func looksLikeAreaList(text string) bool {
 func (a *App) openPairPopup(char string) {
 	a.pairbox.pairPopupOpen = true
 	a.pairbox.pairPopupChar = char
-	a.pairbox.pairPopupUID = a.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
-	a.pairListScroll = 0
+	a.pairbox.pairPopupUID = a.roster.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
+	a.roster.pairListScroll = 0
 }
 
 // Pair-popup geometry — the old modal's fixed block, kept as the floatWin default.
@@ -346,7 +346,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
 		bw := c.TextWidth(cmd) + 16
 		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, cmd) {
-			a.pairAreaReset = true
+			a.roster.pairAreaReset = true
 			a.queueOOCLines([]string{cmd})
 			a.warnLine = clampLine("Sent " + cmd + " — the roster fills from the reply.")
 			a.warnAt = a.now()
@@ -354,7 +354,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 		bx += bw + 6
 	}
 	y += btnH + 10
-	c.LabelClipped(x, y, pw-36, "Players parsed from the area list: "+strconv.Itoa(len(a.areaPlayers)), ColTextDim)
+	c.LabelClipped(x, y, pw-36, "Players parsed from the area list: "+strconv.Itoa(len(a.roster.areaPlayers)), ColTextDim)
 	y += 20
 	// The roster takes whatever height is left, stopping clear of the resize grip.
 	a.drawPairPlayerList(sdl.Rect{X: x, Y: y, W: pw - 36, H: panel.Y + panel.H - y - 20})
@@ -365,7 +365,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 // entirely (the reliable path for a quiet scene partner you can't click on stage).
 func (a *App) drawPairPlayerList(r sdl.Rect) {
 	c := a.ctx
-	if len(a.areaPlayers) == 0 {
+	if len(a.roster.areaPlayers) == 0 {
 		c.LabelClipped(r.X+2, r.Y+4, r.W-4, "No area data yet — run /ga, /gas, or hit Refresh; or type the UID above.", ColTextDim)
 		return
 	}
@@ -375,16 +375,16 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 	lineH := int32(24) * int32(a.playerPct) / 100
 	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
 	if !c.ctrlHeld {
-		a.pairListScroll -= c.WheelIn(r) * scrollStepPx
+		a.roster.pairListScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(a.areaPlayers)) * lineH
+	contentH := int32(len(a.roster.areaPlayers)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.pairListScroll = c.VScrollbar("pairlist", track, a.pairListScroll, contentH, r.H)
+	a.roster.pairListScroll = c.VScrollbar("pairlist", track, a.roster.pairListScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowY := r.Y - a.pairListScroll
+	rowY := r.Y - a.roster.pairListScroll
 	rowW := r.W - scrollBarW - 6
-	for _, p := range a.areaPlayers {
+	for _, p := range a.roster.areaPlayers {
 		if rowY > r.Y+r.H {
 			break
 		}

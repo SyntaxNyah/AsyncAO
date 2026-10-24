@@ -92,7 +92,7 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 	a.srvMeta.serverName = server
 	t.Cleanup(a.CloseTranscript)
 	a.frameNow = time.Now()
-	a.suppressAreaEchoUntil = a.frameNow.Add(time.Minute) // arm the /gas suppression window
+	a.roster.suppressAreaEchoUntil = a.frameNow.Add(time.Minute) // arm the /gas suppression window
 
 	before := transcriptLogFiles(t, server)
 	if a.transcriptFor(server, a.srvMeta.logSession) == nil {

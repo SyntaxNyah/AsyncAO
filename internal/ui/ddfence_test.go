@@ -21,7 +21,7 @@ func TestOpenDropdownPunchesThroughPanelFence(t *testing.T) {
 	const w, h = int32(1000), int32(800)
 
 	// A floating panel is open and the cursor sits inside it: fenced (baseline).
-	a.showEvid = true
+	a.evid.showEvid = true
 	r := a.evidPanelRect(w, h)
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if !a.boxFencesPointer(w, h) {

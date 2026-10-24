@@ -145,7 +145,7 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 	// the gap between the snapshot and the wall clock.
 	before := a.now().Add(-5 * time.Second)
 	a.toolbox.themeAt = before
-	a.rasterText = "an already-rastered IC line"
+	a.raster.rasterText = "an already-rastered IC line"
 	elapsedBefore := a.themeElapsed()
 	if elapsedBefore < 4*time.Second {
 		t.Fatalf("the fixture's theme clock reads %v — the gate cannot tell a restart from a fresh apply", elapsedBefore)
@@ -167,7 +167,7 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 		t.Errorf("the theme clock moved from %v to %v — every animated element on screen just jumped back "+
 			"to frame 0 because one image changed", before, a.toolbox.themeAt)
 	}
-	if a.rasterText == "" {
+	if a.raster.rasterText == "" {
 		t.Error("the message raster was invalidated — a media page has no colour anyone cached, and " +
 			"re-rastering every string in the client for one image is what the incremental path exists to avoid")
 	}

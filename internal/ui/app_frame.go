@@ -554,7 +554,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.dialogs.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidServerPickerOpen || demoBrowser.open {
+	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.dialogs.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -740,7 +740,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidServerPickerOpen && !demoBrowser.open {
+		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evid.evidDiscardConfirm && !a.evid.evidServerPickerOpen && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -750,7 +750,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.updates.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm || a.evidServerPickerOpen {
+	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen {
 		a.ctx.unfencePointer()
 		switch {
 		case a.makerExportPack > 0:
@@ -763,9 +763,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// Explicit case BEFORE default: a lone pending close must not fall into
 			// the hide-sprite branch below (it would draw the wrong modal).
 			a.drawCloseTabConfirm(winW, winH)
-		case a.evidDiscardConfirm:
+		case a.evid.evidDiscardConfirm:
 			a.drawEvidenceDiscardConfirm(winW, winH)
-		case a.evidServerPickerOpen:
+		case a.evid.evidServerPickerOpen:
 			a.drawServerEvidencePicker(winW, winH)
 		default:
 			a.drawHideSpriteConfirm(winW, winH)

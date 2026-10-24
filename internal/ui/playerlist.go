@@ -106,8 +106,8 @@ func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 func (a *App) applyGasAreaOrder(order []string, groups map[string][]int) {
 	mine := a.myAreaName()
 	gasRank := make(map[string]int, len(order)) // area → its index in the /gas snapshot
-	for i := range a.areaPlayers {
-		ar := a.areaPlayers[i].area
+	for i := range a.roster.areaPlayers {
+		ar := a.roster.areaPlayers[i].area
 		if _, ok := gasRank[ar]; !ok {
 			gasRank[ar] = len(gasRank)
 		}
@@ -177,8 +177,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// and on each area change. Nothing refreshes it on join/leave any more — that was
 	// maybeRefetchRoster, deleted with the whole automatic tier (liveroster.go) — so the
 	// top-up for stale rows is the person pressing "Refresh roster details".
-	if !a.rosterLegacy && a.link.sess != nil && a.liveDetailsArea != a.srvMeta.curArea {
-		a.liveDetailsArea = a.srvMeta.curArea
+	if !a.roster.rosterLegacy && a.link.sess != nil && a.roster.liveDetailsArea != a.srvMeta.curArea {
+		a.roster.liveDetailsArea = a.srvMeta.curArea
 		a.fetchRoster()
 	}
 	// The toolbar is ONE wrapping strip (playerlisttoolbar.go), not two rows of
@@ -188,7 +188,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
 	// width. The plan below cannot overlap: it is one cursor.
 	labels := plToolbarLabels{
-		sort: "Sort: " + playerSortLabel(a.playerSort),
+		sort: "Sort: " + playerSortLabel(a.roster.playerSort),
 		// #M1: your own cross-client status — the button cycles none → AFK → Busy →
 		// Writing → LFRP. Send-on-change transmits it on your next IC message;
 		// AsyncAO players see a coloured chip on your row, standard clients see nothing.
@@ -200,22 +200,22 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// concatenation on the render path.
 	multiArea := a.rosterMultiArea()
 	if multiArea {
-		labels.rooms = "Rooms: " + areaSortLabel(a.playerAreaSort)
+		labels.rooms = "Rooms: " + areaSortLabel(a.roster.playerAreaSort)
 	}
 	// Both toggles are read ONCE here rather than at their (now menu-side) switches:
 	// drawPlayerRow consults followShow/pairStatusShow for every row, and the switches
 	// live in a menu that is usually closed, so the per-row answer has to come from
 	// the pref itself — otherwise a theme would silently turn the features off.
-	a.followShow, a.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.Load().ShowPairStatus
+	a.roster.followShow, a.roster.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.Load().ShowPairStatus
 	plan := planPlayerToolbar(r, labels, multiArea, c.TextWidth)
 	for i := 0; i < plan.n; i++ {
 		it := &plan.items[i]
 		switch it.id {
 		case plItemSort:
 			if c.Button(it.r, it.label) {
-				a.playerSort = (a.playerSort + 1) % playerSortModes
+				a.roster.playerSort = (a.roster.playerSort + 1) % playerSortModes
 				{
-					pv1 := a.playerSort
+					pv1 := a.roster.playerSort
 					a.d.Prefs.Update(func(sn *config.Settings) {
 						sn. // remember it across sessions
 							PlayerListSort = pv1
@@ -224,9 +224,9 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			}
 		case plItemRooms:
 			if c.Button(it.r, it.label) {
-				a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
+				a.roster.playerAreaSort = (a.roster.playerAreaSort + 1) % areaSortModes
 				{
-					pv2 := a.playerAreaSort
+					pv2 := a.roster.playerAreaSort
 					a.d.Prefs.Update(func(sn *config.Settings) {
 						sn.PlayerListAreaSort = // remember it across sessions
 							pv2
@@ -270,12 +270,12 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 
 	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
-		if !a.rosterLegacy {
+		if !a.roster.rosterLegacy {
 			hint = "Nobody with a character here yet — the list fills live as people join."
 		}
 		if n, ok := a.curAreaPlayers(); ok {
 			hint = "This area has " + strconv.Itoa(n) + " player(s) right now."
-			if a.rosterLegacy {
+			if a.roster.rosterLegacy {
 				hint += " Run /ga for names."
 			}
 		}
@@ -299,8 +299,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		// scrolling: it changes row heights, and the latch usefully re-nudges through
 		// it, so it deliberately does NOT disarm.
 		if dy := c.WheelIn(r); dy != 0 {
-			a.playerScroll -= dy * scrollStepPx
-			a.areaJumpFollow = "" // user scrolled — stop pinning
+			a.roster.playerScroll -= dy * scrollStepPx
+			a.roster.areaJumpFollow = "" // user scrolled — stop pinning
 		}
 	}
 	rowW := r.W - scrollBarW - 6
@@ -309,7 +309,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		contentH += a.rowHeight(rows[i])
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
+	a.roster.playerScroll = c.VScrollbar("playerlist", track, a.roster.playerScroll, contentH, r.H)
 	// Disarm on an actual thumb DRAG, not any value change: c.dragID is set only
 	// while the user holds this scrollbar (ui.go, cleared on release), so a real
 	// drag stops the follow. VScrollbar also clamps its input to [0, content-visible]
@@ -318,7 +318,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// bare "value changed" test, wrongly killing the follow on the very reorder
 	// frame scope-2 must track. Keying on the drag id ignores that clamp.
 	if c.dragID == "playerlist" {
-		a.areaJumpFollow = "" // the user is dragging the scrollbar — user scroll wins over the follow
+		a.roster.areaJumpFollow = "" // the user is dragging the scrollbar — user scroll wins over the follow
 	}
 	// Re-nudge the jumped-to area header into view (armed by jumpToArea). Placed
 	// AFTER the wheel/scrollbar disarms so a same-frame user scroll beats it, and
@@ -329,12 +329,12 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// pointer-blind (the kit's fence = its z-order): a click on the card must
 	// not also press the "…" trigger or jump an area header behind it.
 	cardFenced := false
-	if a.profileCardShow && pointIn(c.mouseX, c.mouseY, profileCardRect(r)) {
+	if a.roster.profileCardShow && pointIn(c.mouseX, c.mouseY, profileCardRect(r)) {
 		c.fencePointer()
 		cardFenced = true
 	}
 	clipPrev, clipHad := c.pushClip(r)
-	y := r.Y - a.playerScroll
+	y := r.Y - a.roster.playerScroll
 	for i := range rows {
 		rh := a.rowHeight(rows[i])
 		if y > r.Y+r.H {
@@ -379,13 +379,13 @@ func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 	for i := range rows {
 		if rows[i].header && rows[i].area == area {
 			headerH := a.rowHeight(rows[i])
-			if top < a.playerScroll {
-				a.playerScroll = top // header is above the viewport — pull up to its top
-			} else if top+headerH > a.playerScroll+viewH {
-				a.playerScroll = top + headerH - viewH // below — pull down just enough to reveal it
+			if top < a.roster.playerScroll {
+				a.roster.playerScroll = top // header is above the viewport — pull up to its top
+			} else if top+headerH > a.roster.playerScroll+viewH {
+				a.roster.playerScroll = top + headerH - viewH // below — pull down just enough to reveal it
 			}
-			if a.playerScroll < 0 {
-				a.playerScroll = 0
+			if a.roster.playerScroll < 0 {
+				a.roster.playerScroll = 0
 			}
 			return
 		}
@@ -403,15 +403,15 @@ func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 // deadline it disarms and leaves playerScroll untouched. Kept off the draw path
 // and SDL-free so it's unit-testable.
 func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
-	if a.areaJumpFollow == "" {
+	if a.roster.areaJumpFollow == "" {
 		return
 	}
-	if !a.now().Before(a.areaJumpFollowUntil) { // window elapsed (or a lost/rejected transfer) → stop pinning
-		a.areaJumpFollow = ""
-		a.areaJumpFollowUntil = time.Time{}
+	if !a.now().Before(a.roster.areaJumpFollowUntil) { // window elapsed (or a lost/rejected transfer) → stop pinning
+		a.roster.areaJumpFollow = ""
+		a.roster.areaJumpFollowUntil = time.Time{}
 		return
 	}
-	a.scrollAreaIntoView(a.areaJumpFollow, rows, viewH)
+	a.scrollAreaIntoView(a.roster.areaJumpFollow, rows, viewH)
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -463,7 +463,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// New-joiner highlight (#107): a brief, fading amber tint when this UID just
 	// appeared in the live roster, so a join is easy to spot. 0-alloc (a map lookup).
 	if p.uid != "" {
-		if t, ok := a.joinFlash[p.uid]; ok && !t.IsZero() {
+		if t, ok := a.roster.joinFlash[p.uid]; ok && !t.IsZero() {
 			if el := a.now().Sub(t); el >= 0 && el < joinFlashWindow {
 				fa := uint8(70 * int64(joinFlashWindow-el) / int64(joinFlashWindow))
 				c.Fill(row, sdl.Color{R: joinFlashColor.R, G: joinFlashColor.G, B: joinFlashColor.B, A: fa})
@@ -539,7 +539,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		cx += a.drawRosterChip(cx, row.Y+4, lbl, statusColor(st), ColText) + 5
 	}
 	// Pair chip (#20, opt-in): who this player is currently paired with (⇄), from their IC messages.
-	if a.pairStatusShow {
+	if a.roster.pairStatusShow {
 		if partner := a.pairPartnerOf(p); partner != "" {
 			cx += a.drawRosterChip(cx, row.Y+4, "⇄ "+partner, chipPairColor, ColBackground) + 5
 		}
@@ -581,11 +581,11 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 		return
 	}
 	base := a.link.urls.CharIcon(p.name)
-	if page, ok := a.cachedPage(&a.playerIconPages, &a.playerIconPagesGen, len(a.rosterView()), idx, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.roster.playerIconPages, &a.roster.playerIconPagesGen, len(a.rosterView()), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 		return
 	}
-	a.demandAsset(&a.playerIconAsk, len(a.rosterView()), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+	a.demandAsset(&a.roster.playerIconAsk, len(a.rosterView()), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 	initial := p.name
 	if len(initial) > 2 {
 		initial = initial[:2]
@@ -707,15 +707,15 @@ func (a *App) cmNameSet() map[string]bool {
 // current speaker change — never per frame.
 func (a *App) playerRosterOrder(speaker string) []int {
 	spk := ""
-	if a.playerSort == playerSortSpeaking {
+	if a.roster.playerSort == playerSortSpeaking {
 		spk = speaker // only this mode depends on who's talking
 	}
-	if a.playerOrder != nil && a.playerOrderLen == len(a.rosterView()) &&
-		a.playerOrderSort == a.playerSort && a.playerOrderSpk == spk &&
-		a.playerOrderAt.Equal(a.rosterStamp()) {
-		return a.playerOrder
+	if a.roster.playerOrder != nil && a.roster.playerOrderLen == len(a.rosterView()) &&
+		a.roster.playerOrderSort == a.roster.playerSort && a.roster.playerOrderSpk == spk &&
+		a.roster.playerOrderAt.Equal(a.rosterStamp()) {
+		return a.roster.playerOrder
 	}
-	ord := a.playerOrder[:0]
+	ord := a.roster.playerOrder[:0]
 	if cap(ord) < len(a.rosterView()) {
 		ord = make([]int, 0, len(a.rosterView()))
 	}
@@ -723,18 +723,18 @@ func (a *App) playerRosterOrder(speaker string) []int {
 		ord = append(ord, i)
 	}
 	a.sortRosterIdxs(ord, spk)
-	a.playerOrder = ord
-	a.playerOrderLen = len(a.rosterView())
-	a.playerOrderSort = a.playerSort
-	a.playerOrderSpk = spk
-	a.playerOrderAt = a.rosterStamp()
+	a.roster.playerOrder = ord
+	a.roster.playerOrderLen = len(a.rosterView())
+	a.roster.playerOrderSort = a.roster.playerSort
+	a.roster.playerOrderSpk = spk
+	a.roster.playerOrderAt = a.rosterStamp()
 	return ord
 }
 
 // sortRosterIdxs orders indices into areaPlayers in place by the current sort
 // mode (shared by the flat list and each /gas area group).
 func (a *App) sortRosterIdxs(ord []int, spk string) {
-	switch a.playerSort {
+	switch a.roster.playerSort {
 	case playerSortName:
 		sort.SliceStable(ord, func(i, j int) bool {
 			return strings.ToLower(rosterName(&a.rosterView()[ord[i]])) <
@@ -784,16 +784,16 @@ func (a *App) rosterMultiArea() bool {
 // playerRosterOrder, so it rebuilds only on roster/sort/speaker change.
 func (a *App) playerRosterRows(speaker string) []rosterRow {
 	spk := ""
-	if a.playerSort == playerSortSpeaking {
+	if a.roster.playerSort == playerSortSpeaking {
 		spk = speaker
 	}
-	if a.playerRows != nil && a.playerRowsLen == len(a.rosterView()) &&
-		a.playerRowsSort == a.playerSort && a.playerRowsAreaSort == a.playerAreaSort &&
-		a.playerRowsSpk == spk && a.playerRowsAt.Equal(a.rosterStamp()) &&
-		a.playerRowsAreaAt.Equal(a.areaListAt) { // a /gas refresh changes the default area order
-		return a.playerRows
+	if a.roster.playerRows != nil && a.roster.playerRowsLen == len(a.rosterView()) &&
+		a.roster.playerRowsSort == a.roster.playerSort && a.roster.playerRowsAreaSort == a.roster.playerAreaSort &&
+		a.roster.playerRowsSpk == spk && a.roster.playerRowsAt.Equal(a.rosterStamp()) &&
+		a.roster.playerRowsAreaAt.Equal(a.roster.areaListAt) { // a /gas refresh changes the default area order
+		return a.roster.playerRows
 	}
-	rows := a.playerRows[:0]
+	rows := a.roster.playerRows[:0]
 	if !a.rosterMultiArea() {
 		for _, idx := range a.playerRosterOrder(speaker) {
 			rows = append(rows, rosterRow{idx: idx})
@@ -808,10 +808,10 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 			}
 			groups[ar] = append(groups[ar], i)
 		}
-		if a.playerAreaSort == areaSortGas {
+		if a.roster.playerAreaSort == areaSortGas {
 			a.applyGasAreaOrder(order, groups) // default: current area first, then the server's /gas order
 		} else {
-			sortAreaOrder(order, groups, a.playerAreaSort) // A→Z or most-populated
+			sortAreaOrder(order, groups, a.roster.playerAreaSort) // A→Z or most-populated
 		}
 		for _, ar := range order {
 			idxs := groups[ar]
@@ -822,9 +822,9 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 			}
 		}
 	}
-	a.playerRows = rows
-	a.playerRowsLen, a.playerRowsSort, a.playerRowsAreaSort, a.playerRowsSpk, a.playerRowsAt, a.playerRowsAreaAt =
-		len(a.rosterView()), a.playerSort, a.playerAreaSort, spk, a.rosterStamp(), a.areaListAt
+	a.roster.playerRows = rows
+	a.roster.playerRowsLen, a.roster.playerRowsSort, a.roster.playerRowsAreaSort, a.roster.playerRowsSpk, a.roster.playerRowsAt, a.roster.playerRowsAreaAt =
+		len(a.rosterView()), a.roster.playerSort, a.roster.playerAreaSort, spk, a.rosterStamp(), a.roster.areaListAt
 	return rows
 }
 
@@ -953,8 +953,8 @@ func (a *App) jumpToArea(area string) {
 	// Arm the scroll-follow latch: keep the jumped-to area header in view until it
 	// expires, so once the server round-trip reorders the grouped roster the Players
 	// tab scrolls to the row wherever it lands (complaints 2 + 3, "click to jump").
-	a.areaJumpFollow = area
-	a.areaJumpFollowUntil = a.now().Add(areaJumpFollowWindow)
+	a.roster.areaJumpFollow = area
+	a.roster.areaJumpFollowUntil = a.now().Add(areaJumpFollowWindow)
 	a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves (it keys the outgoing log on the OLD curArea)
 	a.srvMeta.curArea = area     // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
 	a.updatePresence()
@@ -970,7 +970,7 @@ func (a *App) jumpToArea(area string) {
 	if a.link.room != nil {
 		a.link.room.WipeStage()
 	}
-	a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
+	a.courtxtra.wtceName, a.courtxtra.testimonyOn, a.evid.evShowImg = "", false, ""
 	a.link.sess.LastIC = nil // ...so tabbing back can't re-stage the area we just left
 	a.warnLine = clampLine("Jumping to " + area + "…")
 	a.warnAt = a.now()

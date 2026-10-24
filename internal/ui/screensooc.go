@@ -906,10 +906,10 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	}
 	// Recent areas (M3): one-click jump-back chips for the areas you've passed
 	// through (newest first; index 0 is the current area, so skip it). One row.
-	if len(a.areaHistory) > 1 {
+	if len(a.roster.areaHistory) > 1 {
 		c.Label(r.X+2, r.Y+5, "Recent:", ColTextDim)
 		cx := r.X + 2 + c.TextWidth("Recent:") + 8
-		for _, name := range a.areaHistory[1:] {
+		for _, name := range a.roster.areaHistory[1:] {
 			w := c.TextWidth(name) + 16
 			if cx+w > r.X+r.W-scrollBarW {
 				break // keep it to a single row inside the panel

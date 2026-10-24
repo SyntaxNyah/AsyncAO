@@ -232,13 +232,13 @@ func (a *App) exitEditorPreview() {
 	// against a 256 MiB budget. clearSplit does exactly this for the pinned tab's
 	// parked state and for exactly this reason; the swap was copied from there, and
 	// the release belongs with it.
-	if p.state.msRaster != nil {
-		p.state.msRaster.Destroy()
-		p.state.msRaster = nil
+	if p.state.raster.msRaster != nil {
+		p.state.raster.msRaster.Destroy()
+		p.state.raster.msRaster = nil
 	}
-	if p.state.glyphCache != nil {
-		p.state.glyphCache.Purge() // the white-glyph textures the effects path uploads
-		p.state.glyphCache = nil
+	if p.state.raster.glyphCache != nil {
+		p.state.raster.glyphCache.Purge() // the white-glyph textures the effects path uploads
+		p.state.raster.glyphCache = nil
 	}
 	a.te.sel, a.te.selN = p.sel, p.selN
 	a.te.preview = nil

@@ -262,11 +262,11 @@ func (a *App) Disconnect() {
 	if a.notebook != nil {
 		go func(nb *config.Notebook) { _ = nb.Flush() }(a.notebook)
 	}
-	if a.msRaster != nil {
-		a.msRaster.Destroy()
+	if a.raster.msRaster != nil {
+		a.raster.msRaster.Destroy()
 	}
-	if a.glyphCache != nil {
-		a.glyphCache.Purge() // free the #M5 white-glyph textures
+	if a.raster.glyphCache != nil {
+		a.raster.glyphCache.Purge() // free the #M5 white-glyph textures
 	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
@@ -648,7 +648,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// (ui_vp_evidence_display->reset). Deliberate deviation: AO2 stops the
 				// testimony overlay on EVERY BN, including the no-pos form; we keep it
 				// inside the wipe branch so a plain /bg behaves exactly as it does today.
-				a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
+				a.courtxtra.wtceName, a.courtxtra.testimonyOn, a.evid.evShowImg = "", false, ""
 			}
 		case courtroom.EventMusic:
 			// Log "<name> has played a song: <song>" in the IC log like webAO and
@@ -783,10 +783,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				a.notePairPartner(ev.Message)                            // #20: track each player's current pair
 				if sn := ev.Message.SFXName; sn != "" && sn != "0" && sn != "1" {
-					a.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
+					a.roster.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
 				}
 				if cn := ev.Message.CharName; cn != "" {
-					a.lastBlipChar = cn // M11: remember the most-recent speaker for one-click per-char blip volume
+					a.roster.lastBlipChar = cn // M11: remember the most-recent speaker for one-click per-char blip volume
 				}
 				if fr {
 					a.signalFriend(a.srvMeta.serverName, ev.Message)
@@ -799,13 +799,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventHP:
 			// Direction decides the penalty sfx (set_hp_bar compares the
 			// new state against the previous one).
-			if idx := ev.Int - 1; idx >= 0 && idx < len(a.hpPrev) {
-				if ev.Int2 > a.hpPrev[idx] {
+			if idx := ev.Int - 1; idx >= 0 && idx < len(a.courtxtra.hpPrev) {
+				if ev.Int2 > a.courtxtra.hpPrev[idx] {
 					a.playThemeSFX("hp_increased_sfx")
-				} else if ev.Int2 < a.hpPrev[idx] {
+				} else if ev.Int2 < a.courtxtra.hpPrev[idx] {
 					a.playThemeSFX("hp_decreased_sfx")
 				}
-				a.hpPrev[idx] = ev.Int2
+				a.courtxtra.hpPrev[idx] = ev.Int2
 			}
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
@@ -880,29 +880,29 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:
-			a.evidAsk = nil  // list replaced; thumbnail pacing resets
-			a.evidScroll = 0 // a fresh list scrolls from the top
-			if a.evidIdx >= len(a.link.sess.Evidence) {
-				a.evidIdx = -1
+			a.evid.evidAsk = nil  // list replaced; thumbnail pacing resets
+			a.evid.evidScroll = 0 // a fresh list scrolls from the top
+			if a.evid.evidIdx >= len(a.link.sess.Evidence) {
+				a.evid.evidIdx = -1
 			}
 		case courtroom.EventEvidenceChanged:
 			// One item changed (PE/EE/DE relay from another player or the
 			// server): keep the selection and scroll, just fix the cursor when
 			// a delete removed or shifted the selection.
 			if ev.Int2 == courtroom.EvidenceOpDelete {
-				if a.evidIdx == ev.Int {
-					a.evidIdx = -1
-					a.evidEditing = false
-					a.evidConflict = false
-				} else if a.evidIdx > ev.Int {
-					a.evidIdx--
+				if a.evid.evidIdx == ev.Int {
+					a.evid.evidIdx = -1
+					a.evid.evidEditing = false
+					a.evid.evidConflict = false
+				} else if a.evid.evidIdx > ev.Int {
+					a.evid.evidIdx--
 				}
-			} else if ev.Int2 == courtroom.EvidenceOpEdit && a.evidEditing && a.evidIdx == ev.Int {
+			} else if ev.Int2 == courtroom.EvidenceOpEdit && a.evid.evidEditing && a.evid.evidIdx == ev.Int {
 				// Someone else edited the very item we're mid-edit on: snapshot
 				// the incoming values and surface the Keep mine / Accept theirs
 				// compare instead of silently clobbering our unsaved work.
-				a.evidIncoming = a.link.sess.Evidence[ev.Int]
-				a.evidConflict = true
+				a.evid.evidIncoming = a.link.sess.Evidence[ev.Int]
+				a.evid.evidConflict = true
 			}
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
@@ -1081,9 +1081,9 @@ func (a *App) rebuildAssetOrigin() {
 	// none, so the toggle falls back to streaming). Rebuilt on every mounts/pref
 	// change because this is the one funnel they all route through.
 	if _, mounts := a.localAssets(); len(mounts) > 0 {
-		a.evidLocalOrigin = assets.LocalOriginFor(mounts)
+		a.evid.evidLocalOrigin = assets.LocalOriginFor(mounts)
 	} else {
-		a.evidLocalOrigin = ""
+		a.evid.evidLocalOrigin = ""
 	}
 	if enabled, mounts := a.localAssets(); enabled && len(mounts) > 0 {
 		// The ORIGIN helper, not a fetcher: this branch only ever read BaseURL off
@@ -1515,7 +1515,7 @@ func (a *App) applyFontConfig() {
 		} else {
 			a.ctx.SetChromeFont(nil)
 		}
-		a.rasterText = "" // re-raster the visible message in the new font
+		a.raster.rasterText = "" // re-raster the visible message in the new font
 	default:
 		// Manual font paths win; otherwise the active theme's own bundled font
 		// (an AO theme that ships a .ttf — #6, Crystalwarrior); otherwise the
@@ -1536,7 +1536,7 @@ func (a *App) loadFontChainAsync(raw string) {
 	if len(paths) == 0 {
 		a.ctx.SetFontChain(nil, nil)
 		a.ctx.SetChromeFont(nil) // no override chain → the chrome is embedded again
-		a.rasterText = ""        // re-raster the visible message with the embedded font
+		a.raster.rasterText = "" // re-raster the visible message with the embedded font
 		return
 	}
 	if len(paths) > fontChainCap {
@@ -1595,7 +1595,7 @@ func (a *App) pollFontChain() {
 				res.note += " — chrome font failed to open, whole-UI font stays embedded"
 			}
 		}
-		a.rasterText = ""
+		a.raster.rasterText = ""
 		settings.statusLine = clampLine(res.note)
 		a.debug.push(res.note)
 	default:

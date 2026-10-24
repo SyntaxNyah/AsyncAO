@@ -128,7 +128,7 @@ func (a *App) pollEmojiFont() {
 		a.ctx.EmojiFont(emojiBtnPct)      // …and the IC-bar button size
 		a.ctx.EmojiFont(reactionFloatPct) // …and the floating-reaction size (#2)
 		a.warmReactBadges()               // build the 12 reaction badges so the first float never hitches
-		a.rasterText = ""                 // re-raster the visible message with the emoji face
+		a.raster.rasterText = ""          // re-raster the visible message with the emoji face
 	default:
 	}
 }

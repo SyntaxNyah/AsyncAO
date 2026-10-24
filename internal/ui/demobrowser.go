@@ -778,5 +778,5 @@ func (a *App) pickBrowsedFile(path string) {
 // a pick in the MERGED browse (issue #6 follow-up). See evidenceRelFromMerged for
 // the conversion, which lives in mergebrowse.go beside the rest of that model.
 func (a *App) setEvidenceImageFromMergedPath(path string) {
-	a.evidImage = evidenceRelFromMerged(path)
+	a.evid.evidImage = evidenceRelFromMerged(path)
 }
