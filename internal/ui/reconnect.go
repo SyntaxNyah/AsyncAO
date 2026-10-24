@@ -16,7 +16,7 @@ func (a *App) fireAutoConnect() {
 		return
 	}
 	a.dialogs.autoConnectPending = false
-	if a.link.sess != nil || a.lastConnURL != "" {
+	if a.link.sess != nil || a.conn.lastConnURL != "" {
 		return // a tab restore (or anything) already started connecting
 	}
 	if name, url := a.d.Prefs.Load().LastServer(); url != "" {
@@ -91,20 +91,20 @@ func shouldAutoReconnect(reason string, deliberate bool) bool {
 // closed-channel / SendErr drop paths (after Disconnect tore the session down);
 // the caller has already vetted intent via shouldAutoReconnect.
 func (a *App) scheduleAutoReconnect() {
-	if a.lastConnURL == "" || !a.d.Prefs.Load().AutoReconnect {
+	if a.conn.lastConnURL == "" || !a.d.Prefs.Load().AutoReconnect {
 		return
 	}
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(autoReconnectDelay(0))
-	a.autoReconnectMsg = "Auto-reconnecting to " + a.lastConnName + "…"
+	a.conn.autoReconnectTries = 0
+	a.conn.autoReconnectAt = a.now().Add(autoReconnectDelay(0))
+	a.conn.autoReconnectMsg = "Auto-reconnecting to " + a.conn.lastConnName + "…"
 }
 
 // cancelAutoReconnect stops any pending retry — a deliberate Disconnect, a manual
 // Reconnect, or a fresh Join all take over.
 func (a *App) cancelAutoReconnect() {
-	a.autoReconnectAt = time.Time{}
-	a.autoReconnectTries = 0
-	a.autoReconnectMsg = ""
+	a.conn.autoReconnectAt = time.Time{}
+	a.conn.autoReconnectTries = 0
+	a.conn.autoReconnectMsg = ""
 }
 
 // pollAutoReconnect fires a due retry from the frame loop. No-op unless a retry is
@@ -113,18 +113,18 @@ func (a *App) cancelAutoReconnect() {
 // reschedules, on success it clears. It calls connectWith directly (not Connect) so
 // the backoff counter survives.
 func (a *App) pollAutoReconnect() {
-	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) || a.screen != ScreenLobby {
+	if a.conn.autoReconnectAt.IsZero() || a.now().Before(a.conn.autoReconnectAt) || a.screen != ScreenLobby {
 		return
 	}
-	a.autoReconnectTries++
-	a.autoReconnectMsg = "Auto-reconnecting to " + a.lastConnName + "… (attempt " +
-		strconv.Itoa(a.autoReconnectTries) + ")"
+	a.conn.autoReconnectTries++
+	a.conn.autoReconnectMsg = "Auto-reconnecting to " + a.conn.lastConnName + "… (attempt " +
+		strconv.Itoa(a.conn.autoReconnectTries) + ")"
 	ctx, cancel := context.WithTimeout(context.Background(), restoreDialTimeout)
-	a.connectWith(a.lastConnName, a.lastConnURL, ctx)
+	a.connectWith(a.conn.lastConnName, a.conn.lastConnURL, ctx)
 	cancel()
 	if a.screen != ScreenLobby { // left the lobby = the dial connected; stop retrying
 		a.cancelAutoReconnect()
 		return
 	}
-	a.autoReconnectAt = a.now().Add(autoReconnectDelay(a.autoReconnectTries)) // failed: back off
+	a.conn.autoReconnectAt = a.now().Add(autoReconnectDelay(a.conn.autoReconnectTries)) // failed: back off
 }

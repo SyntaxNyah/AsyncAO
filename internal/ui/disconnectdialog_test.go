@@ -21,7 +21,7 @@ func froomApp(t *testing.T) *App {
 	a.toolbox.themeAppliedName = name
 	a.d.Viewport = render.NewViewport(nil)
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
@@ -114,10 +114,10 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 		if a.link.conn != nil {
 			t.Errorf("%s: the conn must be nilled so the pump stops and the room freezes", tc.name)
 		}
-		if a.connErr != tc.reason {
-			t.Errorf("%s: connErr=%q, want %q", tc.name, a.connErr, tc.reason)
+		if a.conn.connErr != tc.reason {
+			t.Errorf("%s: connErr=%q, want %q", tc.name, a.conn.connErr, tc.reason)
 		}
-		if !a.autoReconnectAt.IsZero() {
+		if !a.conn.autoReconnectAt.IsZero() {
 			t.Errorf("%s: armed a countdown pollAutoReconnect can never fire off the lobby", tc.name)
 		}
 	}
@@ -153,7 +153,7 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 
 		})
 
-		a.deliberateClose = tc.deliberate
+		a.conn.deliberateClose = tc.deliberate
 		if tc.roomless {
 			a.link.room = nil // char-select, or a session that never reached a courtroom
 		}
@@ -165,10 +165,10 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 		if a.screen != ScreenLobby {
 			t.Errorf("%s: must land on the lobby, got %v", tc.name, a.screen)
 		}
-		if a.connErr != tc.reason {
-			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.connErr, tc.reason)
+		if a.conn.connErr != tc.reason {
+			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.conn.connErr, tc.reason)
 		}
-		if gotArm := !a.autoReconnectAt.IsZero(); gotArm != tc.wantAutoArm {
+		if gotArm := !a.conn.autoReconnectAt.IsZero(); gotArm != tc.wantAutoArm {
 			t.Errorf("%s: auto-reconnect armed=%v, want %v", tc.name, gotArm, tc.wantAutoArm)
 		}
 	}
@@ -181,7 +181,7 @@ func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a := froomApp(t)
 	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
-	a.deliberateClose = true // the user chose to leave
+	a.conn.deliberateClose = true // the user chose to leave
 	a.handleInvoluntaryDrop("connection closed")
 	if a.dialogs.disconnectDlg.open {
 		t.Error("a deliberate close must NEVER open the dialog")
@@ -210,20 +210,20 @@ func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 	})
 
 	a.screen = ScreenLobby // a drop already tore down to the lobby
-	a.connErr = "connection closed"
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.conn.connErr = "connection closed"
+	a.conn.autoReconnectTries = 0
+	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	const attempts = 10 // well past the 8-try cutoff a prior version enforced
 	for i := 1; i <= attempts; i++ {
 		a.pollAutoReconnect()
-		if a.autoReconnectAt.IsZero() {
+		if a.conn.autoReconnectAt.IsZero() {
 			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up", i)
 		}
-		a.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
+		a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
 	}
-	if a.autoReconnectTries != attempts {
-		t.Errorf("expected %d attempts to have run, got %d", attempts, a.autoReconnectTries)
+	if a.conn.autoReconnectTries != attempts {
+		t.Errorf("expected %d attempts to have run, got %d", attempts, a.conn.autoReconnectTries)
 	}
 }
 
@@ -232,13 +232,13 @@ func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 // retry does NOT fire — the restored Frame-only-from-lobby contract.
 func TestAutoReconnectSuppressedOffLobby(t *testing.T) {
 	a := froomApp(t) // screen == Courtroom
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.conn.autoReconnectTries = 0
+	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
-	if a.autoReconnectTries != 0 {
+	if a.conn.autoReconnectTries != 0 {
 		t.Error("a retry must NOT fire off the lobby (courtroom): it stays armed until the user returns")
 	}
-	if a.autoReconnectAt.IsZero() {
+	if a.conn.autoReconnectAt.IsZero() {
 		t.Error("the armed retry must remain armed while off the lobby")
 	}
 }
@@ -249,7 +249,7 @@ func TestAutoReconnectSuppressedOffLobby(t *testing.T) {
 func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	a := froomApp(t)
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
-	a.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
+	a.conn.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
 	a.closeDisconnectDialogToLobby()
 
 	if a.dialogs.disconnectDlg.open {
@@ -261,7 +261,7 @@ func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	if a.link.sess != nil || a.link.room != nil || a.link.conn != nil {
 		t.Error("Back to lobby runs the full teardown — session/room/conn must all be gone")
 	}
-	if !a.autoReconnectAt.IsZero() {
+	if !a.conn.autoReconnectAt.IsZero() {
 		t.Error("Back to lobby cancels any pending auto-reconnect (the user opted out)")
 	}
 }
@@ -274,7 +274,7 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	// A DIFFERENT server later became the global lastConn* (a second tab): Reconnect
 	// must still target the server captured in the dialog, not this one.
-	a.lastConnName, a.lastConnURL = "Other", "ws://other.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Other", "ws://other.example"
 
 	a.reconnectFromDisconnectDialog()
 
@@ -283,8 +283,8 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 	}
 	// Connect seeds lastConn* to the redial target; with no reachable server the dial
 	// fails and lands on the lobby, but lastConn* proves which server was dialed.
-	if a.lastConnURL != "ws://test.example" {
-		t.Errorf("Reconnect must redial the dialog's server, got lastConnURL=%q", a.lastConnURL)
+	if a.conn.lastConnURL != "ws://test.example" {
+		t.Errorf("Reconnect must redial the dialog's server, got lastConnURL=%q", a.conn.lastConnURL)
 	}
 	if a.screen != ScreenLobby {
 		t.Errorf("a failed redial lands on the lobby, got %v", a.screen)

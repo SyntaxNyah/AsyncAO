@@ -133,7 +133,7 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	// does and for the same reason: lastConn* is GLOBAL and in a multi-tab session
 	// may hold whatever server connected most recently rather than THIS one.
 	if a.link.conn != nil {
-		a.lastConnName, a.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
+		a.conn.lastConnName, a.conn.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
 	}
 	// Close any courtroom-owned confirm that could be open at freeze time — it
 	// would stack with this modal for a frame. confirmDisconnect: the user clicked
@@ -168,8 +168,8 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 // reason is known: pumpConnection's SendErr (half-dead write) and closed-Incoming
 // (transport drop) branches, and handleSessionEvents' EventDisconnect (kick/ban).
 func (a *App) handleInvoluntaryDrop(reason string) {
-	deliberate := a.deliberateClose
-	a.connErr = reason // set FIRST: it must survive whichever branch runs below
+	deliberate := a.conn.deliberateClose
+	a.conn.connErr = reason // set FIRST: it must survive whichever branch runs below
 	// A live courtroom FREEZES under the dialog instead of being torn down: the
 	// logs and the last frame stay readable, the reason is named, and Reconnect is
 	// one click. That is the same end state a PARKED tab reaches via activateTab,
@@ -264,8 +264,8 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 // LAST so its fence is released this frame (the emoji-picker freeze class).
 func (a *App) closeDisconnectDialogToLobby() {
 	a.dialogs.disconnectDlg = disconnectDialog{}
-	a.deliberateClose = true // Back to lobby is a user choice — this teardown must not auto-reconnect
-	a.cancelAutoReconnect()  // and the user opted out of any pending countdown
+	a.conn.deliberateClose = true // Back to lobby is a user choice — this teardown must not auto-reconnect
+	a.cancelAutoReconnect()       // and the user opted out of any pending countdown
 	a.Disconnect()
 }
 
@@ -278,7 +278,7 @@ func (a *App) closeDisconnectDialogToLobby() {
 func (a *App) reconnectFromDisconnectDialog() {
 	name, url := a.dialogs.disconnectDlg.name, a.dialogs.disconnectDlg.url
 	a.dialogs.disconnectDlg = disconnectDialog{}
-	a.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
+	a.conn.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
 	if url != "" {
 		// Clicking Reconnect IS "we're coming back": snapshot today's log before
 		// the teardown below wipes it, so the redial to this SAME server (below)
@@ -379,8 +379,8 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	// successful auto-reconnect closes the dialog on its own (pollAutoReconnect
 	// clears disconnectDlg on success; see reconnect.go). Reads the EXISTING
 	// autoReconnect* state, no new timer.
-	if !a.autoReconnectAt.IsZero() {
-		secs := int(a.autoReconnectAt.Sub(a.now()).Round(time.Second) / time.Second)
+	if !a.conn.autoReconnectAt.IsZero() {
+		secs := int(a.conn.autoReconnectAt.Sub(a.now()).Round(time.Second) / time.Second)
 		if secs < 0 {
 			secs = 0
 		}

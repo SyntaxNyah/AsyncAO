@@ -31,7 +31,7 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 	if a.screen != ScreenLobby {
 		t.Fatalf("the Phone Book row must go to the lobby first, screen=%v", a.screen)
 	}
-	if !a.lobby.phoneBookPage {
+	if !a.conn.lobby.phoneBookPage {
 		t.Error("and it must actually switch the page on")
 	}
 	if !menuRow(t, menuServersTitle, "Phone Book").checked(a, 0) {
@@ -42,8 +42,8 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 	// all-servers page and FocusField silently drops an id nothing draws.
 	a.screen = ScreenCourtroom
 	a.fireMenuItem(menuRow(t, menuServersTitle, "Direct connect…"))
-	if a.screen != ScreenLobby || a.lobby.phoneBookPage {
-		t.Fatalf("Direct connect must land on the all-servers lobby page (screen=%v phoneBook=%v)", a.screen, a.lobby.phoneBookPage)
+	if a.screen != ScreenLobby || a.conn.lobby.phoneBookPage {
+		t.Fatalf("Direct connect must land on the all-servers lobby page (screen=%v phoneBook=%v)", a.screen, a.conn.lobby.phoneBookPage)
 	}
 	if a.ctx.focusNext != directConnectFieldID {
 		t.Errorf("Direct connect must queue focus onto %q, got %q", directConnectFieldID, a.ctx.focusNext)
@@ -56,20 +56,20 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 // bool would leave selServer pointing at a row that is no longer there.
 func TestMenuServersPhoneBookSharesTheLobbySetter(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.lobby.selServer, a.lobby.descLines, a.lobby.lobbyScroll = 4, []string{"stale"}, 120
+	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.lobbyScroll = 4, []string{"stale"}, 120
 
 	a.fireMenuItem(menuRow(t, menuServersTitle, "Phone Book"))
-	if a.lobby.selServer != -1 || a.lobby.descLines != nil || a.lobby.lobbyScroll != 0 {
+	if a.conn.lobby.selServer != -1 || a.conn.lobby.descLines != nil || a.conn.lobby.lobbyScroll != 0 {
 		t.Errorf("the page swap must clear the selection/description/scroll: sel=%d desc=%v scroll=%d",
-			a.lobby.selServer, a.lobby.descLines, a.lobby.lobbyScroll)
+			a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.lobbyScroll)
 	}
 
 	// Idempotent: asking for the page you are already on must not wipe a selection
 	// the user is reading (the Direct-connect row leaves the page unconditionally).
-	a.lobby.selServer = 7
+	a.conn.lobby.selServer = 7
 	a.setPhoneBookPage(true)
-	if a.lobby.selServer != 7 {
-		t.Errorf("a no-op page set cleared the selection (sel=%d)", a.lobby.selServer)
+	if a.conn.lobby.selServer != 7 {
+		t.Errorf("a no-op page set cleared the selection (sel=%d)", a.conn.lobby.selServer)
 	}
 }
 
@@ -86,30 +86,30 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 	if !a.menuItemEnabled(refresh) || !a.menuItemEnabled(ping) {
 		t.Fatal("an idle lobby must offer both rows")
 	}
-	a.lobby.lobbyFetching = true
+	a.conn.lobby.lobbyFetching = true
 	if a.menuItemEnabled(refresh) {
 		t.Error("Refresh must dim while a fetch is in flight — RefreshServers coalesces it away")
 	}
-	a.lobby.lobbyFetching = false
-	a.lobby.pinging = true
+	a.conn.lobby.lobbyFetching = false
+	a.conn.lobby.pinging = true
 	if a.menuItemEnabled(ping) {
 		t.Error("the connect-time row must dim while a sweep runs — startPinging refuses a second one")
 	}
-	a.lobby.pinging = false
+	a.conn.lobby.pinging = false
 
 	// The check tracks pingMode, and turning it OFF re-sorts immediately (pingMode
 	// alone only picks the comparator for the NEXT sort).
-	a.lobby.pingMode = true
-	a.lobby.selServer = 3
+	a.conn.lobby.pingMode = true
+	a.conn.lobby.selServer = 3
 	if !ping.checked(a, 0) {
 		t.Error("the row must read as checked while the lobby is in connect-time order")
 	}
 	a.fireMenuItem(ping)
-	if a.lobby.pingMode {
+	if a.conn.lobby.pingMode {
 		t.Fatal("firing the row again must leave connect-time order")
 	}
-	if a.lobby.selServer != -1 {
-		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.lobby.selServer)
+	if a.conn.lobby.selServer != -1 {
+		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.conn.lobby.selServer)
 	}
 }
 

@@ -835,7 +835,7 @@ func stageMenuBarDrawApp(t *testing.T) (*App, func()) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.lobby.lobbyStatus = "Servers loaded."
+	a.conn.lobby.lobbyStatus = "Servers loaded."
 	return a, cleanup
 }
 

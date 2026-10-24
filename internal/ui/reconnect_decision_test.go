@@ -85,7 +85,7 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.toolbox.themeAppliedName = name
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
 	a.link.conn = conn
 	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error {
 		return conn.Send(context.Background(), p)
@@ -108,10 +108,10 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	}
 	// The #1 fix: a genuine transport drop arms auto-reconnect (the old code only
 	// Disconnected and never rescheduled).
-	if a.autoReconnectAt.IsZero() {
+	if a.conn.autoReconnectAt.IsZero() {
 		t.Error("a transport drop must arm auto-reconnect (autoReconnectAt is zero)")
 	}
-	if a.connErr == "" {
+	if a.conn.connErr == "" {
 		t.Error("the drop reason should be shown in the lobby (connErr is empty)")
 	}
 }
@@ -158,7 +158,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.toolbox.themeAppliedName = name
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
 	a.link.conn = conn
 	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error {
 		return conn.Send(context.Background(), p)
@@ -188,7 +188,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	if a.link.sess == nil || a.link.room == nil {
 		t.Error("sess/room were torn down — the logs and last frame the user wanted to read are gone")
 	}
-	if a.connErr == "" {
+	if a.conn.connErr == "" {
 		t.Error("the dialog must be able to name the reason (connErr is empty)")
 	}
 	// The redial target must be THIS server, re-captured before the conn was
@@ -196,7 +196,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	if a.dialogs.disconnectDlg.url != "ws://test.example" {
 		t.Errorf("dialog redial url = %q, want this server's", a.dialogs.disconnectDlg.url)
 	}
-	if !a.autoReconnectAt.IsZero() {
+	if !a.conn.autoReconnectAt.IsZero() {
 		t.Error("a frozen session must not arm a countdown pollAutoReconnect can never fire off the lobby")
 	}
 }
@@ -222,7 +222,7 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.toolbox.themeAppliedName = name
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
 
 	// A real, live conn (server holds the socket open) so a.conn != nil — but we
 	// force the WRITE side to fail via a failing send func, so pumpConnection
@@ -255,10 +255,10 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	if a.link.conn != nil {
 		t.Fatal("a half-dead write (SendErr) should have disconnected the session")
 	}
-	if a.autoReconnectAt.IsZero() {
+	if a.conn.autoReconnectAt.IsZero() {
 		t.Error("a half-dead write must arm auto-reconnect (it's a transport failure, not a ban)")
 	}
-	if a.connErr == "" {
+	if a.conn.connErr == "" {
 		t.Error("the half-dead reason should be shown in the lobby (connErr is empty)")
 	}
 }
@@ -283,7 +283,7 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.toolbox.themeAppliedName = name
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, nil)
@@ -303,12 +303,12 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return context.DeadlineExceeded }, "test-hdid")
 	a.link.sess.SendChat(protocol.OutgoingMS{}) // record a write failure so pumpConnection takes the SendErr branch
 
-	a.deliberateClose = true // the user meant to leave
+	a.conn.deliberateClose = true // the user meant to leave
 	a.pumpConnection()
 	if a.link.conn != nil {
 		t.Fatal("the teardown should still have run")
 	}
-	if !a.autoReconnectAt.IsZero() {
+	if !a.conn.autoReconnectAt.IsZero() {
 		t.Error("a deliberate close must NOT arm auto-reconnect (autoReconnectAt should stay zero)")
 	}
 }

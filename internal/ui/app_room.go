@@ -1265,7 +1265,7 @@ func (a *App) expScreenSkippable() bool {
 	case ScreenCourtroom, ScreenCharSelect:
 		return a.link.sess != nil
 	case ScreenLobby:
-		return !a.lobby.lobbyFetching && !a.lobby.pinging
+		return !a.conn.lobby.lobbyFetching && !a.conn.lobby.pinging
 	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
 		return true
 	case ScreenThemeEditor:

@@ -17,17 +17,17 @@ import (
 )
 
 func (a *App) RefreshServers() {
-	if a.lobby.lobbyFetching {
+	if a.conn.lobby.lobbyFetching {
 		return
 	}
-	a.lobby.lobbyFetching = true
+	a.conn.lobby.lobbyFetching = true
 	// Arm the on-open auto-refresh cap. Stamped here — not at the auto-trigger —
 	// so EVERY fetch start (boot, the manual Refresh button, a master-URL change,
 	// the on-open auto) pushes the cap out: entering the lobby right after a
 	// manual refresh must not fire a second request. Below the dedup gate above
 	// because a coalesced call started nothing and must not extend the cap.
-	a.lobby.lastLobbyRefreshAt = a.now()
-	a.lobby.lobbyStatus = "Fetching server list..."
+	a.conn.lobby.lastLobbyRefreshAt = a.now()
+	a.conn.lobby.lobbyStatus = "Fetching server list..."
 	// Ping state deliberately survives a refresh: the on-open auto-refresh
 	// funnels through here too, and the old wipe (pings/pingMode/pinging reset
 	// at fetch START) snapped a ping-sorted lobby back to player order the
@@ -39,7 +39,7 @@ func (a *App) RefreshServers() {
 	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
 	// correct for whichever list is showing, so neither needs abandoning.
 	urls := a.masterListURLs()
-	ch := a.lobby.lobbyResult
+	ch := a.conn.lobby.lobbyResult
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
@@ -73,8 +73,8 @@ func lobbyAutoRefreshDue(last, now time.Time) bool {
 
 func (a *App) pollLobbyFetch() {
 	select {
-	case res := <-a.lobby.lobbyResult:
-		a.lobby.lobbyFetching = false
+	case res := <-a.conn.lobby.lobbyResult:
+		a.conn.lobby.lobbyFetching = false
 		if res.err != nil {
 			// A failed fetch KEEPS the list on screen. Refreshes now fire with
 			// zero user action (the on-open auto-refresh), so a transient master
@@ -84,9 +84,9 @@ func (a *App) pollLobbyFetch() {
 			// stay un-pruned too: pruning against a degraded list would throw
 			// away every connect time over a hiccup. Only a boot-time failure
 			// (nothing merged yet) rebuilds, so phone-book favorites still show.
-			a.lobby.lobbyStatus = "Master list error: " + res.err.Error()
-			if len(a.lobby.servers) == 0 {
-				a.lobby.servers = a.lobby.mergedFavorites(&a.env)
+			a.conn.lobby.lobbyStatus = "Master list error: " + res.err.Error()
+			if len(a.conn.lobby.servers) == 0 {
+				a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
 			}
 			return
 		}
@@ -97,15 +97,15 @@ func (a *App) pollLobbyFetch() {
 		// before the swap, re-match after — so a background auto-refresh landing
 		// mid-glance no longer deselects the row the user is about to join.
 		prevSel := ""
-		if a.lobby.selServer >= 0 && a.lobby.selServer < len(a.lobby.servers) {
-			prevSel = a.lobby.servers[a.lobby.selServer].WebSocketURL()
+		if a.conn.lobby.selServer >= 0 && a.conn.lobby.selServer < len(a.conn.lobby.servers) {
+			prevSel = a.conn.lobby.servers[a.conn.lobby.selServer].WebSocketURL()
 		}
-		a.lobby.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
-		a.lobby.masterEntries = res.entries
-		a.lobby.servers = a.lobby.mergedFavorites(&a.env)
+		a.conn.lobby.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
+		a.conn.lobby.masterEntries = res.entries
+		a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
 		// Prune on the successful land: the map was sized by the last good list
 		// and each land re-prunes to the current one (boundedness, rule §17.4).
-		a.lobby.pruneStalePings()
+		a.conn.lobby.pruneStalePings()
 		a.reselectServer(prevSel)
 	default:
 	}
@@ -117,13 +117,13 @@ func (a *App) pollLobbyFetch() {
 // rebuilds the cached description lines/links against the NEW entry — the
 // master list may have changed the description text the cache was built from.
 func (a *App) reselectServer(url string) {
-	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks = -1, nil, nil
+	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.descLinks = -1, nil, nil
 	if url == "" {
 		return
 	}
-	for i := range a.lobby.servers {
-		if a.lobby.servers[i].WebSocketURL() == url {
-			a.lobby.selectServerRow(&a.env, i, a.frame.winW)
+	for i := range a.conn.lobby.servers {
+		if a.conn.lobby.servers[i].WebSocketURL() == url {
+			a.conn.lobby.selectServerRow(&a.env, i, a.frame.winW)
 			return
 		}
 	}

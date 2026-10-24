@@ -181,7 +181,7 @@ func (a *App) allocateTab() bool {
 		a.reapTranscripts() // a reaped dead tab's transcript writer goes with it (F4)
 	}
 	if lim := a.d.Prefs.Load().TabCap(); len(a.tabs) >= lim {
-		a.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", lim)
+		a.conn.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", lim)
 		return false
 	}
 	a.tabs = append(a.tabs, &courtTab{})
@@ -199,8 +199,8 @@ func (a *App) parkActive() {
 		return
 	}
 	if a.srvMeta.rehearsal {
-		a.deliberateClose = true // ending rehearsal mode is deliberate — never auto-reconnect (#1)
-		a.Disconnect()           // rehearsal never parks (global offline gate)
+		a.conn.deliberateClose = true // ending rehearsal mode is deliberate — never auto-reconnect (#1)
+		a.Disconnect()                // rehearsal never parks (global offline gate)
 		return
 	}
 	if a.raster.msRaster != nil {
@@ -314,9 +314,9 @@ func (a *App) activateTab(i int) {
 		// teardown of an already-dead tab; background-tab drops are their own concern
 		// (#46), so suppress auto-reconnect here (#1).
 		name := a.srvMeta.serverName
-		a.deliberateClose = true
+		a.conn.deliberateClose = true
 		a.Disconnect()
-		a.connErr = name + " disconnected while backgrounded"
+		a.conn.connErr = name + " disconnected while backgrounded"
 		return
 	}
 	if t.inCourt {

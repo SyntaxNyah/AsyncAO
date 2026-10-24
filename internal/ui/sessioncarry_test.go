@@ -63,7 +63,7 @@ func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	a := froomApp(t)
 	url := wsTestServer(t)
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-	a.lastConnName, a.lastConnURL = "Test Server", url
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
 	seedCarryableLog(a, "before")
 
 	a.handleInvoluntaryDrop("connection closed") // freezes: sess/room/logs all survive
@@ -107,7 +107,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 	t.Run("Disconnect button", func(t *testing.T) {
 		a := froomApp(t)
 		a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-		a.lastConnName, a.lastConnURL = "Test Server", url
+		a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
 		seedCarryableLog(a, "stale")
 
 		a.Disconnect()
@@ -124,7 +124,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 	t.Run("Back to lobby", func(t *testing.T) {
 		a := froomApp(t)
 		a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-		a.lastConnName, a.lastConnURL = "Test Server", url
+		a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
 		seedCarryableLog(a, "stale")
 		a.handleInvoluntaryDrop("connection closed") // freeze first, as the real path requires
 		if !a.dialogs.disconnectDlg.open {
@@ -153,7 +153,7 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 			a := froomApp(t)
 			url := wsTestServer(t)
 			a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-			a.lastConnName, a.lastConnURL = "Test Server", url
+			a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
 			seedCarryableLog(a, "stale")
 			a.link.room = nil // no courtroom to freeze — the plain-teardown branch
 
@@ -184,7 +184,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	goodURL := wsTestServer(t)
 	badURL := "ws://127.0.0.1:1" // nothing listens here: an immediate refused-connection failure
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", goodURL
-	a.lastConnName, a.lastConnURL = "Test Server", goodURL
+	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", goodURL
 	seedCarryableLog(a, "before")
 	a.link.room = nil // roomless drop: takes handleInvoluntaryDrop's plain-teardown branch
 	a.d.Prefs.Update(func(
@@ -202,32 +202,32 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	if a.screen != ScreenLobby {
 		t.Fatalf("test setup: expected the plain teardown to lobby, got %v", a.screen)
 	}
-	if a.autoReconnectAt.IsZero() {
+	if a.conn.autoReconnectAt.IsZero() {
 		t.Fatal("test setup: a genuine transport drop must arm auto-reconnect")
 	}
 	if !logIsEmpty(a) {
 		t.Fatal("test setup: Disconnect must have wiped the live log before the retry")
 	}
-	if a.pendingSessionCarry == nil {
+	if a.conn.pendingSessionCarry == nil {
 		t.Fatal("a roomless transport drop about to auto-retry must snapshot a carry")
 	}
 
 	// First retry: point it at an unreachable address so the dial fails. The
 	// pending carry must survive this — it's the mistake test (d) in this
 	// class of fix is built to catch.
-	a.lastConnURL = badURL
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.conn.lastConnURL = badURL
+	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
 	if a.link.conn != nil {
 		t.Fatal("test setup: the bad address must fail to dial")
 	}
-	if a.pendingSessionCarry == nil {
+	if a.conn.pendingSessionCarry == nil {
 		t.Fatal("a failed dial attempt must NOT consume the pending carry")
 	}
 
 	// Second retry: back to the real server. The carry must land now.
-	a.lastConnURL = goodURL
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.conn.lastConnURL = goodURL
+	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
 
 	if a.link.conn == nil {
@@ -239,7 +239,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	if len(a.chatlog.oocLog) != 1 || a.chatlog.oocLog[0] != "before-ooc-line" {
 		t.Errorf("oocLog not restored on the successful retry, got %v", a.chatlog.oocLog)
 	}
-	if a.pendingSessionCarry != nil {
+	if a.conn.pendingSessionCarry != nil {
 		t.Error("the carry must be consumed (one-shot) after a successful apply")
 	}
 }
@@ -257,7 +257,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	urlA := wsTestServer(t)
 	urlB := wsTestServer(t)
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Server A", urlA
-	a.lastConnName, a.lastConnURL = "Server A", urlA
+	a.conn.lastConnName, a.conn.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
 	a.link.room = nil // roomless drop: takes the plain-teardown+carry branch
 	a.d.Prefs.Update(func(
@@ -272,7 +272,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	})
 
 	a.handleInvoluntaryDrop("connection closed")
-	if a.pendingSessionCarry == nil {
+	if a.conn.pendingSessionCarry == nil {
 		t.Fatal("test setup: expected server A's drop to snapshot a carry")
 	}
 
@@ -286,7 +286,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	if !logIsEmpty(a) {
 		t.Errorf("server B's fresh session must start blank, not carry A's log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
 	}
-	if a.pendingSessionCarry != nil {
+	if a.conn.pendingSessionCarry != nil {
 		t.Error("the mismatched carry must be discarded (one-shot), not left pending")
 	}
 
@@ -311,7 +311,7 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 	a := froomApp(t) // tab 0: active, in court
 	urlA := wsTestServer(t)
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Server A", urlA
-	a.lastConnName, a.lastConnURL = "Server A", urlA
+	a.conn.lastConnName, a.conn.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
 
 	// Tab 1: a different, parked server with its OWN distinct log.

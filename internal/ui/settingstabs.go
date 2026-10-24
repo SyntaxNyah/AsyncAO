@@ -1256,8 +1256,8 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	// auto-refresh funnels through it), so a factory reset clears it here
 	// explicitly — an ephemeral sort mode + RTT cache must not outlive
 	// "fresh-install state". The gen bump discards an in-flight sweep.
-	a.lobby.pings, a.lobby.pingMode, a.lobby.pinging = nil, false, false
-	a.lobby.pingGen++
+	a.conn.lobby.pings, a.conn.lobby.pingMode, a.conn.lobby.pinging = nil, false, false
+	a.conn.lobby.pingGen++
 	a.RefreshServers() // favourites/master re-merge
 	a.inibrowse.showReset = false
 	a.warnAt = time.Now()

@@ -26,7 +26,7 @@ type sessionCarry struct {
 // never accumulates — so this is a single named slot, not an unbounded
 // history (rule 4). Its contents are already bounded by icLogCap/oocLineCap
 func (a *App) snapshotSessionCarry() {
-	a.pendingSessionCarry = &sessionCarry{
+	a.conn.pendingSessionCarry = &sessionCarry{
 		icLog:        a.chatlog.icLog,
 		icLogSeq:     a.chatlog.icLogSeq,
 		icReadMark:   a.compose.icReadMark,
@@ -36,7 +36,7 @@ func (a *App) snapshotSessionCarry() {
 		areaLogs:     a.srvMeta.areaLogs,
 		areaLogOrder: a.srvMeta.areaLogOrder,
 	}
-	a.pendingSessionCarryKey = a.srvMeta.serverKey
+	a.conn.pendingSessionCarryKey = a.srvMeta.serverKey
 }
 
 // applySessionCarryIfPending consumes the pending carry onto the just-dialed
@@ -47,8 +47,8 @@ func (a *App) snapshotSessionCarry() {
 // right after resetSessionState — so a FAILED auto-reconnect attempt never
 // burns the one-shot slot; the next retry still has it
 func (a *App) applySessionCarryIfPending(wsURL string) {
-	carry, key := a.pendingSessionCarry, a.pendingSessionCarryKey
-	a.pendingSessionCarry, a.pendingSessionCarryKey = nil, "" // one-shot: consumed either way
+	carry, key := a.conn.pendingSessionCarry, a.conn.pendingSessionCarryKey
+	a.conn.pendingSessionCarry, a.conn.pendingSessionCarryKey = nil, "" // one-shot: consumed either way
 	if carry == nil || wsURL == "" || wsURL != key {
 		return // no pending carry, or it belongs to a DIFFERENT server: the fresh session's empty log stands
 	}

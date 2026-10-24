@@ -114,7 +114,7 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 func TestADeliberateDisconnectIsSilent(t *testing.T) {
 	a := froomApp(t)
 	a.link.room = nil
-	a.deliberateClose = true
+	a.conn.deliberateClose = true
 	a.handleInvoluntaryDrop("Kicked: you left")
 	if a.font.serverNoticeDlg.open {
 		t.Error("a deliberate close raised a modal")
@@ -431,7 +431,7 @@ func TestAStaleFontChainCannotFreezeTheWrap(t *testing.T) {
 // frame.
 func TestTheLobbyLineStaysOneLineAndIsMemoised(t *testing.T) {
 	a := froomApp(t)
-	a.connErr = "Banned: " + noticeLockdownReason
+	a.conn.connErr = "Banned: " + noticeLockdownReason
 
 	line := a.connErrLabel()
 	if strings.Contains(line, "\n") {
@@ -446,8 +446,8 @@ func TestTheLobbyLineStaysOneLineAndIsMemoised(t *testing.T) {
 	if n := testing.AllocsPerRun(50, func() { a.connErrLabel() }); n > 0 {
 		t.Errorf("connErrLabel allocates %.0f/op on an unchanged reason", n)
 	}
-	a.connErr = "connection lost: EOF"
-	if got := a.connErrLabel(); got != a.connErr {
+	a.conn.connErr = "connection lost: EOF"
+	if got := a.connErrLabel(); got != a.conn.connErr {
 		t.Errorf("a changed reason was not recomputed: %q", got)
 	}
 }
@@ -626,20 +626,20 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	// refused by the OS in microseconds instead of waiting out a handshake.
 	const wantURL = "ws://127.0.0.1:1"
 	a.screen = ScreenLobby
-	a.lobby.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
-	a.lobby.selServer = 0
+	a.conn.lobby.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
+	a.conn.lobby.selServer = 0
 	a.ctx.focusID = "" // the arrow/Enter block only runs when no field holds the caret
 	// Arm the on-open auto-refresh's cap. lastLobbyRefreshAt is zero in a fresh fixture,
 	// which lobbyAutoRefreshDue reads as "maximally due", and a real master-list fetch
 	// would replace a.servers from a goroutine mid-test.
-	a.lobby.lastLobbyRefreshAt = a.now()
+	a.conn.lobby.lastLobbyRefreshAt = a.now()
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "Refuser", noticeLockdownReason)
-	a.lastConnURL = ""
+	a.conn.lastConnURL = ""
 	driveEnter(a)
-	if a.lastConnURL != "" {
+	if a.conn.lastConnURL != "" {
 		t.Errorf("Enter under the notice box dialled %q — the box's own text is the reason that "+
-			"server is unreachable", a.lastConnURL)
+			"server is unreachable", a.conn.lastConnURL)
 	}
 	if !a.font.serverNoticeDlg.open {
 		t.Error("Enter dismissed the box; only Esc and its own button do that, and a ban reason " +
@@ -647,13 +647,13 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	}
 
 	a.closeServerNotice()
-	a.lobby.selServer = 0
+	a.conn.lobby.selServer = 0
 	a.ctx.focusID = ""
 	driveEnter(a)
-	if a.lastConnURL != wantURL {
+	if a.conn.lastConnURL != wantURL {
 		t.Fatalf("Enter with nothing in the way left lastConnURL = %q, want %q — the lobby's "+
 			"Enter-to-join is not reached at all, so the arm above is a fence around dead code",
-			a.lastConnURL, wantURL)
+			a.conn.lastConnURL, wantURL)
 	}
 }
 

@@ -322,7 +322,7 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.lobby.lobbyStatus = "Servers loaded."
+	a.conn.lobby.lobbyStatus = "Servers loaded."
 
 	const w, h = 1280, 720
 	// noteScreenTransition rides inside the gated closure: its settled-frame
