@@ -13,10 +13,6 @@ import (
 // hardcoded offsets that only held at the widest of the three. These tests pin the
 // property that failure had: across every plausible width, no two controls may
 // share a pixel and none may leave the panel.
-// They drive the REAL planner. An earlier draft re-derived the placements in the
-// test body, which would have passed with the production arithmetic deleted; the
-// planner was split out of drawPlayerList precisely so there is something here to be
-// wrong about.
 
 const (
 	// toolbarTestGlyphPx is the per-rune width the stub measure reports. The chrome
@@ -83,9 +79,6 @@ func toolbarPlanRect(plan plToolbarPlan, id int) (sdl.Rect, bool) {
 // reported bug fails: it sweeps every width from absurd to generous, with the Rooms
 // button present and absent, and asserts that no two placed controls intersect and
 // that every one of them stays inside the panel.
-// It goes red if any control is ever placed on top of another (the reported
-// symptom), if one is allowed to run past the panel's right or bottom edge, or if
-// the strip claims more height than it left the roster.
 func TestPlayerToolbarNeverOverlapsAtAnyWidth(t *testing.T) {
 	for _, multiArea := range []bool{false, true} {
 		for w := int32(0); w <= 720; w++ {
@@ -130,8 +123,6 @@ func TestPlayerToolbarNeverOverlapsAtAnyWidth(t *testing.T) {
 // creates — the classic dock, a freshly torn-off tab — the whole toolbar is a single
 // line of Sort · Rooms · Status · ⋮, and it reserves the one row's worth of height
 // (plStripLinePitch + plStripBodyGapPx) that the old strip spent per row.
-// It goes red if a control creeps back into the strip, or if the metrics change so
-// that a comfortable panel starts wrapping again.
 func TestPlayerToolbarIsOneRowOnARealPanel(t *testing.T) {
 	const oneRowHeight = plStripLinePitch + plStripBodyGapPx
 	// A SINGLE-AREA roster (the ordinary case: Sort · Status · ⋮) fits one line from a
@@ -171,8 +162,6 @@ func TestPlayerToolbarIsOneRowOnARealPanel(t *testing.T) {
 // width a real theme gives this panel every control must still be REACHABLE — and
 // the ⋮ most of all, since it is now the only route to Refresh, the legacy snapshot,
 // pair status and follow.
-// It goes red if the planner ever "fixes" a narrow panel by dropping a control
-// instead of wrapping.
 func TestPlayerToolbarKeepsEveryControlInAThemesPanel(t *testing.T) {
 	panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx}
 	plan := planPlayerToolbar(panel, toolbarTestLabels(), true, toolbarTestMeasure)
@@ -238,8 +227,6 @@ func TestPlayerToolbarWrapsRatherThanClipsWhenNarrow(t *testing.T) {
 // theme with a stubby music_list, or a torn-off tab dragged small — could otherwise
 // end up all toolbar and no list. The strip stops opening lines once the roster would
 // fall below plStripMinBodyPx.
-// It goes red if the toolbar ever leaves the list less than one area-header row, or
-// if it reserves height it did not place any control on.
 func TestPlayerToolbarStopsBeforeEatingTheRoster(t *testing.T) {
 	for h := int32(0); h <= 260; h++ {
 		panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: h}
@@ -286,8 +273,6 @@ func TestPlayerToolbarDegradesToNothingWhenAbsurdlyNarrow(t *testing.T) {
 // a WRAPPING strip a width change does not merely nudge one button, it can reflow
 // every control after it onto a different line, so the toolbar would visibly jump
 // each time you set yourself AFK.
-// It goes red when a new courtroom.Status gets a label longer than "Writing" and
-// plStatusWidestLabel is not updated with it.
 func TestStatusButtonIsSizedToItsWidestLabel(t *testing.T) {
 	widest := toolbarTestMeasure(plStatusWidestLabel)
 	for s := courtroom.Status(0); s < courtroom.StatusCount; s++ {
@@ -307,9 +292,6 @@ func TestStatusButtonIsSizedToItsWidestLabel(t *testing.T) {
 // user. Four FUNCTIONS left the Players toolbar — Refresh details, the legacy
 // snapshot switch, pair status and follow — and none of them exists anywhere else in
 // the UI, so deleting the row without rehoming them would have deleted the features.
-// It goes red if a row is dropped from musicMenuRows, if one loses its self-
-// describing label (Ctx.Tooltip no-ops under modalOn, so the label is the only
-// explanation a menu row gets), or if one stops behaving as a toggle.
 func TestRosterDebloatLeftNothingUnreachable(t *testing.T) {
 	seen := map[musicMenuKind]string{}
 	for _, row := range musicMenuRows {

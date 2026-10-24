@@ -14,7 +14,6 @@ import (
 // since Ctx.Button ends in `hover && c.clicked` with no click consumption, ONE
 // click fired BOTH: expanding the categories also stopped the music. With only the
 // plate external, the search TextField landed on the button instead.
-//
 // These drive the REAL planner across the whole flag matrix, so the property the
 // bug violated is the thing asserted.
 
@@ -175,13 +174,6 @@ func TestMusicMenuCoversEveryDebloatedControl(t *testing.T) {
 // ⋮ control, and it is the half TestMusicMenuCoversEveryDebloatedControl cannot
 // see: that one proves every function HAS a row, this one proves the rows can be
 // reached at all.
-//
-// musicIconButton reports `hover && c.clicked` and consumes nothing (Ctx.Button
-// is the same), while drawMusicMenu runs its click-away test LATER IN THE SAME
-// FRAME. The panel hangs off the button's bottom edge, so the cursor that just
-// pressed the button sits ABOVE panel.Y — outside it. An unconsumed press
-// therefore closed the menu on the frame it opened and the ⋮ read as inert.
-// Only driving both halves of one frame catches that.
 func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

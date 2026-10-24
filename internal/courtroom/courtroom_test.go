@@ -1867,9 +1867,6 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 // async re-probe's Warning drains. The fix skips the preanim SYNCHRONOUSLY at
 // entry: PhasePreanim is never entered, Active is never the missing preanim base
 // at ANY observable point, and the message goes straight to talking.
-// AO2-Client parity: it stats the preanim locally and skips a missing one before
-// it draws (courtroom.cpp play_preanim) — a base we already know is absent is the
-// same certainty. This is distinct from TestMissingPreanimSkipsInsteadOfTimeout,
 func TestKnownMissingPreanimNeverStagesPlaceholder(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -1932,8 +1929,6 @@ func TestKnownMissingImmediatePreanimNeverStages(t *testing.T) {
 // left a one-frame placeholder flash on draw drivers that draw without first
 // calling this room's Update (the audio-paced present cycle skips Update but still
 // draws; a minimized→restored frame; a split/replay/maker room on its own cadence).
-// The synchronous swap closes that window; Update still runs startTalking on its
-// own tick with no double-effect.
 func TestMissingPreanimSwapIsSynchronous(t *testing.T) {
 	// Blocking preanim (PhasePreanim).
 	room, sess, _, _ := newCourtroomRig(t)
@@ -2062,9 +2057,6 @@ func immediatePreanimMsg(text string) *protocol.ChatMessage {
 // SETTLES on schedule while the animation plays on, and the speaker drops to
 // idle only when the animation itself ends.
 // ../AO2-Client/src/courtroom.cpp.
-// So in canon occupancy ends at text completion with the animation still
-// running. Holding the queue for the animation is exactly what ticking
-// "immediate" asks the client not to do.
 func TestImmediatePreanimTransitions(t *testing.T) {
 	// Preanim finishes mid-text → talk sprite.
 	room, _, _, _ := newCourtroomRig(t)
@@ -2110,7 +2102,6 @@ func TestImmediatePreanimTransitions(t *testing.T) {
 // TestImmediateDoesNotHoldTheQueueForThePreanim is the field report itself: with
 // a LONG immediate preanim still playing, the next message must take the stage
 // at TEXT completion + TextStay, not at preanim completion.
-//
 // The room is given a decoded 5 s preanim (NotifyPreanimStarted) and a zero
 // TextStay, so the only thing that could delay the second message is the
 // animation. AO2 arms text_queue_timer from chat_tick regardless of anim_state

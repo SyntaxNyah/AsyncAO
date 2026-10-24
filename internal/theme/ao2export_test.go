@@ -1,15 +1,6 @@
 package theme
 
 // THE AO2-COMPAT EXPORT's gates (v1.90.0 W8).
-//
-// Two properties, and both of them are about somebody ELSE's client:
-//
-//  1. the baked courtroom_design.ini is readable by the Qt-parity parser, i.e.
-//     by the reader AO2-Client actually has (ParseINI is this repo's oracle for
-//     QSettings::IniFormat, pinned by iniparity_test.go);
-//  2. the author's own file, their comments and their unknown keys survive the
-//     bake, because the alternative is a theme that stops round-tripping the
-//     moment anybody shares it.
 
 import (
 	"bytes"

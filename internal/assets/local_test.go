@@ -43,9 +43,6 @@ func TestLocalFetcherDecodesSpaces(t *testing.T) {
 // mount folder carries the case its author typed. NTFS and a default APFS volume
 // call those the same file; ext4 does not, so on the Linux AppImage/Flatpak every
 // asset of a capitalised pack folder missed — the whole character, not an edge.
-// Nesting is incidental to it: this is the FLAT case, the ~99% one, and it failed
-// exactly as the nested one did (internal/courtroom
-// TestNestedCharacterResolvesOnALocalMount).
 func TestLocalFetcherResolvesAnAuthoredCaseMount(t *testing.T) {
 	dir := t.TempDir()
 	full := filepath.Join(dir, "characters", "Phoenix Wright", "(a)normal.png")
@@ -80,12 +77,6 @@ func TestLocalFetcherResolvesAnAuthoredCaseMount(t *testing.T) {
 // tried — a fold hoisted above the exact reads would answer "(a)normal.png" with
 // "(a)Normal.png" (or the other way round) and re-point a lookup that already
 // worked.
-// The walk's OWN preference — an exact segment beating a fold-equal sibling INSIDE
-// the scan — is a different rule and is pinned by
-// TestLocalFetcherFoldPrefersTheExactlyCasedSegment and
-// TestFoldLookupReturnsTheExactNameOverASmallerVariant below. Deleting both fold
-// mechanisms left this test green, which is what made the distinction worth writing
-// down rather than assuming.
 func TestLocalFetcherExactNameOutranksACaseFold(t *testing.T) {
 	dir := t.TempDir()
 	folder := filepath.Join(dir, "characters", "phoenix")

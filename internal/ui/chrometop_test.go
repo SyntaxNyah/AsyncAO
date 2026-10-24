@@ -105,9 +105,6 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 // on a 768 px window has a 206 px logical zone. Both the row and the Phone Book
 // button would then hit-test, so one click would open the changelog AND toggle the
 // page. Two buttons fitted, which is why adding the third made it reachable.
-// This mirrors the production arithmetic rather than calling drawLobby, which needs
-// a live renderer — so it is a geometry pin, not a proof the draw uses it. The
-// shed loop it mirrors is small and directly above the three ButtonCol calls.
 func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
 	const (
 		helpBtnWMax     = int32(132)
@@ -343,7 +340,6 @@ func TestLobbyUtilRowStaysOnScreen(t *testing.T) {
 // opposite way off the same window — `fieldX + 290 / +390 / +560` put the TLS
 // checkbox, "Save to phone book" and the whole Connect button outside a
 // config.MinWindowW window, and Connect is the row's entire point.
-//
 // The measured widths below are a real chrome font's, give or take; the layout is pure
 // arithmetic over them, so the property holds for any font that produces them.
 func TestLobbyDirectConnectRowStaysOnScreen(t *testing.T) {
@@ -488,8 +484,6 @@ func stockLikeThemeLayout() map[string]theme.Rect {
 // persisted edits laid over a copy. Tests that stage a.themeRects by hand skip
 // all of it, which is exactly how a key that never entered the apply path could
 // look wired up while being dead in the running client.
-// It calls seedTabBarThroughOverrides rather than restating the two steps, so it
-// cannot get the order right while production has it wrong (or the reverse).
 func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
 	applyThemeGeometryWithSidecarForTest(a, layout, nil)
 }
@@ -663,9 +657,6 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 // press on the strip's box, a drag, a release — and then the same reload the test
 // above simulates. This is the end-to-end proof that the affordance issue #14 asked
 // for actually exists, rather than the geometry merely being in the right maps.
-// It asserts against the PAINTED BOX, not against "the stored design rect plus the
-// delta". The strip is intrinsically sized, so its box is not the transform of its
-// stored rect (tabStripCacheRect), and an assertion phrased as base+delta is satisfied
 func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

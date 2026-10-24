@@ -1,14 +1,6 @@
 package ui
 
 // F4, the LIFETIME half — see translogsplit_test.go for the identity half.
-//
-// Splitting the transcript per tab session gave every reconnect a brand-new writer
-// key. Nothing retired the old one: the map was drained only by CloseTranscript, at
-// process exit. So each park / Disconnect / reconnect left an open file and a live
-// goroutine behind, and the 64th cycle hit transcriptWriterCap — after which
-// transcriptFor returned nil and the opt-in detailed log silently stopped for the
-// rest of the run, with nothing on screen to say so.
-//
 // The rule now is ownership: a writer lives exactly as long as some session — the
 // live one or a parked tab's — can still write to it. reapTranscripts asks that
 // question rather than trusting a list of teardown sites to stay complete.
@@ -45,7 +37,6 @@ func transcriptTestApp(t *testing.T, server string) *App {
 
 // TestReconnectCyclesDoNotStrandTranscriptWriters is the regression itself. Far more
 // reconnects than the cap, and the log must still be being written at the end.
-//
 // The two assertions are deliberately different in kind. The map size proves the
 // files and goroutines are actually released; the final non-nil writer proves the
 // USER-VISIBLE symptom is gone — before the reap, cycle 65 and every one after it
