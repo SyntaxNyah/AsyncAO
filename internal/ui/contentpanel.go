@@ -178,9 +178,6 @@ var contentPanel contentPanelState
 // bad load or a refused start (a job already running, empty recording) leaves the
 // panel closed and the engine's warnLine explaining why. pkg latches the package
 // build to fire once the probe is ready.
-// Render thread only: loadRecordingAny emits its import notes on this thread, and
-// StartContentReport spawns the probe goroutines here. The load is a one-off
-// event-loop read (the importDroppedRecording precedent), never a render-path I/O.
 func (a *App) openContentReportFor(path string, pkg bool) {
 	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
@@ -192,13 +189,6 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 
 	s := &contentPanel
 	// Capture BOTH source candidates for the picker before the probe starts:
-	//   - originServer: the recording's server origin. loadRecordingAny already set
-	//     rec.Origin via demoDefaultOrigin, which is the local:// mount when mounts
-	//     are configured — so we recover the SERVER candidate as the non-local
-	//     origin (a .aorec's stamped Origin is already the server one; a .demo's
-	//     server candidate is the live session AssetURL). contentServerOrigin picks
-	//     it out.
-	//   - originLocal: the configured mounts' local:// origin ("" when off).
 	s.originServer = a.contentServerOrigin(rec)
 	s.originLocal = a.mountOrigin()
 	// Choice: an explicit prior pick sticks for the session; otherwise follow the
@@ -448,9 +438,6 @@ func cpStatusTag(st AssetStatus) string {
 // segmented control and returns the y past it. The active source is accent-filled;
 // clicking the inactive source calls switchContentSource (cancel + re-run against
 // the other origin).
-// When "Local base" is servable but NO base is configured (originLocal==""), the
-// segment is still CLICKABLE: clicking expands an inline setup row (a folder-path
-// field + "Use") so the user can set a base right here — see drawLocalSetupRow.
 func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
 	c := a.ctx
 	// The Manager's fixed mode still decides whether the SERVER (https://) source is

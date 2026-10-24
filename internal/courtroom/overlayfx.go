@@ -3,7 +3,6 @@ package courtroom
 // AO2 screen-effect OVERLAYS — the wire parse, the scene model and the trigger /
 // clear lifecycle. Canon is ../AO2-Client (do_effect, courtroom.cpp:3182-3273 and
 // start_chat_ticking, :4154-4177); it wins every conflict.
-//
 // NAMING FENCE: this package already owns TextEffect* / EffectSpan / EffectMark
 // (effectwire.go — animated chat TEXT, a different feature entirely), so every
 // identifier here is prefixed Overlay… / overlay….
@@ -149,14 +148,7 @@ func overlayNameIsNone(name string) bool {
 }
 
 // OverlaySoundPlayable filters the effect SOUND sentinels.
-//
 // Canon only tests `fx_sound != ""` (courtroom.cpp:3196). The extras are earned:
-// KFO's stock effects.ini writes `sound = 0` as its "no sound" idiom, which AO2
-// gets away with because the local file 0.* simply never exists — a streaming
-// client would burn a real probe (and a 404 cache entry) per effect on it, which
-// is the zero-fallback rule's whole subject. "-" is webAO's BAD_EFFECTS marker
-// and "none" the ASCII "None" row; both are the same class of never-a-file.
-//
 // EXPORTED because the message path is not the only place an effect sound is
 // played: the picker's right-click PREVIEW (internal/ui/effectspicker.go) plays
 // the same value, and a second copy of this list there would drift — reintroducing
@@ -171,12 +163,6 @@ func OverlaySoundPlayable(sound string) bool {
 
 // parseEffectsField splits the 2.8 EFFECTS wire field, verbatim per
 // start_chat_ticking (courtroom.cpp:4154-4172):
-//
-//	1 part   "name"                → folder falls back to the SENDER's char.ini
-//	2 parts  "name|sound"          → legacy; folder still falls back
-//	3 parts  "name|folder|sound"   → AO2 ≥ 2.8
-//	≥4 parts: only [0], [1] and [2] are read — the tail is ignored
-//
 // The ≥4 case is why this cannot take parts[len-1] as the sound: a sender that
 // pads the field would have its FOLDER read as the sound and its sound dropped.
 func parseEffectsField(raw string) (fx, folder, sound string) {
@@ -215,7 +201,6 @@ func (c *Courtroom) clearOverlay() {
 
 // fireOverlay is do_effect. It returns whether an overlay is now on stage, so the
 // caller can decide about the legacy flash/shake fallback.
-//
 // The three CLEAR sites in canon are display_character (courtroom.cpp:2755-2761 —
 // the next IC message carrying an emote, i.e. our begin), set_background with
 // display=true (:1427-1435 — wipeStage), and the unresolvable branch below
@@ -239,7 +224,6 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 	// art may ever be drawn, so paying network, decode and VRAM for it is pure
 	// waste — the same reason remoteChatSkinFor gates on its pref before touching
 	// the misc art (internal/ui/charmeta.go:127-134).
-	//
 	// Observably identical to the canon order: the effect SOUND is played by the
 	// caller, outside this function (fireMessageEffects), and the clear below is
 	// exactly what the gated path leaves behind either way.

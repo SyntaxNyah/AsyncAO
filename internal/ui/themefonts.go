@@ -74,9 +74,6 @@ type themeElemFont struct {
 	// size. It is what arms the panel-wide chrome scope, and it is deliberately
 	// narrower than dressed(): a theme that merely SIZES music_list must not have
 	// the jukebox's buttons and search box resized for a user who set nothing.
-	// AO2 stamps its element stylesheet on the list widget, not on the toolbar
-	// around it, and the first requirement for this feature was that an unset
-	// override changes nothing at all.
 	userFont bool
 }
 
@@ -121,9 +118,6 @@ func themeFontPx(points int) int {
 // FIXED user option (Options::themeScalingFactor, default 1.0) — it does NOT
 // scale them with the window, which is why AsyncAO doesn't either; the per-panel
 // Ctrl+wheel zoom is the user's equivalent knob and folds in through elemPct.
-// TWO truncations used to eat the size and they compounded. Points were treated
-// as pixels (8 pt → 8 px instead of 11), and then the percent was rounded DOWN
-// again when the face was opened at UIFontSize×pct/100 — so this theme's 8 pt
 func themeFontPct(points int) int {
 	px := themeFontPx(points)
 	return (px*DefaultScalePct + UIFontSize - 1) / UIFontSize
@@ -135,7 +129,6 @@ func themeFontPct(points int) int {
 // a 12 px base, so the old 400 would have silently capped every element above
 // 36 pt — the corpus's 50 pt outlier lands at 534 now instead of being cut to
 // three quarters of its authored size.
-// Deliberately NOT the per-panel user clamps (config.MinLogScalePercent = 75):
 const (
 	themeFontMinPct = 34  // 3 pt → 4 px
 	themeFontMaxPct = 534 // 48 pt → 64 px
@@ -377,9 +370,6 @@ func themeSidecarFontPath(dir, file string) (string, bool) {
 // the theme asked for. Runs on the same off-thread pass and immediately after
 // buildThemeFontTable, because both the family resolution and the face read
 // touch the disk (hard rule 2).
-// Colour and bold are deliberately untouched. Those are the theme's design
-// (and, for colour, already guarded for readability), while size and family are
-// the two an accessibility need actually turns on.
 func (res *themeApply) applyPanelFonts(overrides map[string]config.PanelFont, contentDirs, sysDirs []string) {
 	if len(overrides) == 0 {
 		return
@@ -426,7 +416,6 @@ func (res *themeApply) applyPanelFonts(overrides map[string]config.PanelFont, co
 
 // facesIfReferenced returns data when at least one element in tbl actually
 // points into it, and nil otherwise.
-//
 // The distinction matters because face bytes are not free: Ctx.SetThemeFaces
 // holds them for the theme's lifetime, parses a cmap coverage table per face,
 // and purges every cached label. A table where every element fell back to the
@@ -468,7 +457,6 @@ func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 // pxToScalePct converts a pixel size the user typed into the percent scale the
 // table stores, the same conversion themeFontPct does for a theme's points —
 // minus the point-to-pixel step, because a user picks the pixels directly.
-//
 // Rounds UP for the same reason themeFontPct does: the percent is applied to
 // UIFontSize with integer division when the face is opened, so rounding down
 // here reopens one pixel small and the round trip is not exact.
@@ -490,7 +478,6 @@ const themeMissingFamilyCap = 8
 // and Qt resolves the class out of QFont's own alias table, so an AO2 theme
 // writing `serif` in courtroom_fonts.ini renders correctly upstream with no font
 // file anywhere near it.
-// Lower-cased spellings only; the probe folds case.
 var themeGenericFontClasses = [...]string{
 	"serif", "sans", "sans-serif", "sansserif",
 	"mono", "monospace", "cursive", "fantasy", "system-ui",
@@ -648,7 +635,6 @@ asking for "Ace Name" wants a file called "Ace Name.ttf" or "acename.ttf".
 
 // ensureUserFontsDir creates the drop folder and its README if they are absent,
 // and returns the folder path ("" if it could not be resolved or created).
-//
 // Created EAGERLY on theme apply rather than on first use, because the whole
 // point is discoverability: a folder that only appears once you have already
 // worked out that you need it has not helped anyone. Off-thread, and cheap — a

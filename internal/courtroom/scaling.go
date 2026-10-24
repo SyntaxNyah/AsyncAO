@@ -3,23 +3,9 @@ package courtroom
 import "strings"
 
 // Per-sprite texture filtering, ported from AO2-Client.
-//
 // Issue #21 label 15: a hand-pixelled character drawn through AsyncAO's single
 // client-wide linear filter "becomes a smoothie". AO2 doesn't have one filter —
 // it resolves one per sprite, from two inputs, in a strict order:
-//
-//  1. The user's own resize mode (Options::resizeMode). If they picked Smooth or
-//     Pixel outright, that WINS and the character's request is ignored entirely.
-//  2. Only if the user is on Auto does the character's char.ini [Options]
-//     scaling= key get a say (AOApplication::get_scaling,
-//     ../AO2-Client/src/text_file_functions.cpp:175-191).
-//  3. If it's still Auto after both — no user preference, no char.ini key — the
-//     geometry decides: a sprite being ENLARGED is point-sampled, a sprite being
-//     shrunk is filtered (AnimationLayer::calculateFrameGeometry,
-//     ../AO2-Client/src/animationlayer.cpp:229-273). That is the rule that fixes
-//     the reported character without a pref or a char.ini edit, and it is why
-//     Auto is the shipped default.
-//
 // The order matters and is easy to get backwards: char.ini does NOT override the
 // user, the user overrides char.ini.
 type ScalingMode uint8

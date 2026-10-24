@@ -8,24 +8,11 @@ import (
 
 // missMemo is a bounded, TTL'd negative memo — "this key was conclusively
 // missing at time T" — with NO background goroutine and nothing to close.
-//
-// WHY NOT expirable.LRU (what network.Client uses). golang-lru v2.0.7's
-// expirable.NewLRU starts a permanent janitor goroutine per instance
 // (expirable/expirable_lru.go:77-92: `go func(done){ ticker :=
 // time.NewTicker(res.ttl / numBuckets) … }`, numBuckets = 100) and Close() is
 // COMMENTED OUT in that release with the note "done channel is never closed, so
 // deleteExpired() goroutine will never exit". It also allocates 100 bucket maps
 // per instance.
-//
-// network.Client can afford that: exactly one long-lived client per process and
-// a five-minute TTL, i.e. one 3 s ticker for the life of the app. LocalFetcher
-// cannot. It is NOT a once-per-process constructor — the local:// overlay is
-// re-minted on every mounts/preference change (ui/app.go rebuildAssetOrigin) and
-// an archive replay mints its own (ui/replay.go beginBundledReplay) — so at
-// localNotFoundCacheTTL = 30 s each construction would pin a 300 ms ticker
-// forever: an unbounded goroutine (hard rule 4) and a permanent wakeup source
-// against the idle-CPU doctrine.
-//
 // Expiry is therefore LAZY: a read drops its own stale entry, and an insert
 // sweeps when the memo is full. Correctness does not depend on any timer.
 type missMemo struct {

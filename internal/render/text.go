@@ -35,11 +35,6 @@ const DefaultDevScale int32 = 100
 // glyphs rasterize at final device size, and this divides the resulting device
 // metric down to the logical rect the kit lays out in (the renderer's own
 // SetScale then multiplies it back up 1:1 onto device pixels — no blur).
-// ROUNDING RULE — "round half up" (add half the divisor before dividing). This
-// is the roadmap's flagged off-by-one failure mode at odd/non-integer scales;
-// it MUST match ui.devToLogical exactly (see internal/ui/ui.go), or a label and
-// a message raster of the same string would disagree by a pixel. devScale<=0 or
-// ==100 is the identity fast path.
 func logicalFromDevice(device, devScale int32) int32 {
 	if devScale <= 0 || devScale == DefaultDevScale {
 		return device
@@ -57,8 +52,6 @@ func LogicalFromDevice(device, devScale int32) int32 { return logicalFromDevice(
 // below) because Badge needs the identical conversion for its own device-exact
 // bracket and a second, drifting copy of this arithmetic is exactly the kind of bug
 // #77's rounding-rule comment warns about.
-// Pinned equal to uiDeviceFromLogical by the ui package's cross-package test via
-// DeviceFromLogicalAt. devScale<=0 or ==100 is the identity fast path.
 func deviceFromLogicalAt(v, devScale int32) int32 {
 	if devScale <= 0 || devScale == DefaultDevScale {
 		return v
@@ -549,12 +542,6 @@ func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, ex
 		// physical rows depending on when the backend converts it, and the backends
 		// disagree. Setting it here, at 1:1, in device pixels, means both readings
 		// land on the same rows — the rows the caller actually asked for.
-		// This was a real, total failure on macOS (Metal), not a theoretical one: the
-		// clip evaluated against the bracketed 1:1 scale covered only 1/scale of its
-		// height, so at 125% chatbox text drawn at device y454 was clipped at y432
-		// and NOTHING rendered, while the showname — drawn before the clip was set —
-		// still appeared. The geometry was correct throughout, which is what made it
-		// so hard to see: the client reported the text as drawn and fitting.
 		_ = ren.SetScale(1, 1)
 		if clip != nil {
 			m.cgoClip = sdl.Rect{
@@ -774,9 +761,6 @@ func (m *MessageRaster) LineRange(i int) (int, int) {
 // cursor lands on the revealed character's own block; a client that recomputed
 // the row from a rune count and an average line length would drift on any
 // wrapped message, which is precisely the case that needs to scroll.
-// Clamped at both ends: a negative n is row 0 and an n past the text is the last
-// row, so a typewriter position that has run ahead of a re-wrapped raster (one
-// frame of overlap during a resize) can never index off the table.
 func (m *MessageRaster) RowOfRune(n int) int {
 	if m == nil || len(m.lineRanges) == 0 || n <= 0 {
 		return 0

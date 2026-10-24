@@ -33,9 +33,6 @@ func ghostInk(col, bg sdl.Color) sdl.Color {
 // entry `entry` and of everything after it is faint. ok=false means nothing is
 // ghosted (the option is off, nothing is queued) and the log draws exactly as it
 // always has.
-// There is no row field. The message on stage is never partially ghosted, so a
-// boundary INSIDE an entry has nothing left to express — and removing it is what
-// stops the "ghost the current message's own lines" behaviour from coming back
 type ghostSpan struct {
 	entry int // first icLog index that has not started being spoken
 	ok    bool
@@ -52,7 +49,6 @@ func (g ghostSpan) ghosted(_ int, e int) bool {
 
 // queuedCount is how many IC messages the courtroom has taken in but not yet
 // STARTED saying — the play queue, and only the play queue.
-//
 // The message on stage is deliberately excluded whatever phase it is in. It is
 // the line the reader is watching; ghosting it (which the first cut did for
 // PhaseShout / PhasePreanim / PhaseTalking) hides the text at the exact moment
@@ -69,9 +65,6 @@ func queuedCount(queued int) int {
 // in the queue. Backward because the pairing is with the TAIL of the log:
 // system lines (music, evidence) interleave freely and are skipped, since they
 // were true the instant they appeared and were never queued.
-// Returns len(log) when n is 0 or the log holds fewer speech lines than the queue
-// claims (a shed message, a catch-up skip): fewer ghosted rows is the safe way to
-// be wrong — it can under-hide, never hide a line that has already been said.
 func firstQueuedEntry(log []icEntry, n int) int {
 	if n <= 0 {
 		return len(log)
@@ -90,11 +83,6 @@ func firstQueuedEntry(log []icEntry, n int) int {
 // ghostLogSpan resolves this frame's ghost boundary for the live IC log.
 // Every refusal below is a state where nothing should be hidden: the option is
 // off, there is no courtroom, or nothing is waiting behind the current line.
-//
-// rows is unused now that the boundary is entry-granular. It stays in the
-// signature because the caller has it and a future per-row rule would need it —
-// and because dropping it would silently change every call site's shape in a
-// change whose whole point is that the row dimension went away.
 func (a *App) ghostLogSpan(_ []icWrapLine) ghostSpan {
 	if a.link.room == nil || a.d.Prefs == nil || !a.d.Prefs.Load().GhostCrawlText {
 		return ghostSpan{}

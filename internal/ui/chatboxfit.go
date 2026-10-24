@@ -5,9 +5,6 @@ package ui
 // This lives in one file because the geometry has two consumers that must never
 // drift: the live themed chatbox (drawThemedChatBox, theme_layout.go) and the
 // video / comic export's themed chatbox (drawGifThemedChatbox, gifexport.go).
-// The numbers here are Qt DEFAULTS, not theme data. A corpus-wide grep over 74
-// real AO2 themes finds no theme declaring padding or margin on the showname or
-// the message; the only `padding` rule any of them ships is on the clock label.
 
 import (
 	"strconv"
@@ -39,9 +36,6 @@ const (
 // narrower than 2×the inset (none in the reference corpus, but theme data is
 // user data) would otherwise produce a negative wrap width and a raster the
 // text layout cannot fill.
-// NOT stageframe.go's insetRect, whose degenerate case collapses the rect to its
-// CENTRE POINT. That is right for a decorative border and wrong here: a chatbox
-// too small for its margin must keep its origin so the text still starts where
 func insetChatRect(r sdl.Rect, n int32) sdl.Rect {
 	r.X += n
 	r.Y += n
@@ -133,7 +127,6 @@ const shownameExtraWidthKey = "showname_extra_width"
 // is then tested with `extra_width > 0` (AO2-Client courtroom.cpp:3357, :3374).
 // So garbage disables the ladder rather than aborting the chatbox — the same
 // tolerance internal/theme's atoiTrim documents for every other design number.
-//
 // Runs on the theme-apply goroutine, once per theme (hard rule 2).
 func parseShownameExtraWidth(raw string) int {
 	v, err := strconv.Atoi(strings.TrimSpace(raw))
@@ -219,9 +212,6 @@ func (r chatboxRung) fileStem(base string) string {
 // skin's own directory, in the order AO2 reaches for them: the widen-and-swap
 // ladder's med and big, then the plate-less blank. A fixed array, so the load is
 // bounded by construction (hard rule 4).
-// It is deliberately ONE array even though the blank rung is not part of the
-// widening ladder: what the array actually names is "extra chatbox art pinned per
-// theme apply, located relative to the resolved base skin", and every rung in it
 var chatboxLadderRungs = [...]chatboxRung{chatboxRungMed, chatboxRungBig, chatboxRungBlank}
 
 // chatboxSkinForShowname is AO2's per-MESSAGE chatbox choice: a post with a blank
@@ -321,9 +311,6 @@ func shownameSpan(box sdl.Rect, textW int32, al shownameAlign) (x, maxW int32) {
 // point size alone, so the invariant broke by exactly that factor: too little
 // room and the message overruns the frame it was drawn for, too much and the
 // text is lost in the middle of a box far bigger than it needs.
-// AND IT ONLY BITES AWAY FROM 1:1. The shipped default fit is ThemeFitNative, in
-// which a window at least as large as the theme's canvas scales by exactly 1.0 —
-// so canvasPct is 100, the fold is the identity, and the out-of-the-box chatbox
 
 // themedCanvasFontMaxPct bounds the chatbox font AFTER the canvas fold. It is a
 // memory bound, not a typographic one: the fold multiplies a point size that is
@@ -398,12 +385,9 @@ func (a *App) themedChatFace(el themeFontElem, userPct int, lay *themeLayoutCach
 
 // shownameSpanFor is shownameSpan bound to the active theme's alignment and to
 // the face the name will actually be drawn in.
-//
 // The LEFT short-circuit is load-bearing, not an optimisation flourish: it is
 // what keeps the default and every `left` theme on a per-frame path that never
 // measures text at all, byte-identical to the code before alignment existed.
-// Centre and right cost one cache probe per frame (labelEmojiWidth), which
-// TestDrawCourtroomThemedCentredShownameZeroAlloc covers.
 func (a *App) shownameSpanFor(box sdl.Rect, primary, emoji *ttf.Font, text string, col sdl.Color) (x, maxW int32) {
 	if a.themeShownameAlign == shownameAlignLeft {
 		return box.X, box.W

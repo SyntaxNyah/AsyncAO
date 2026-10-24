@@ -9,7 +9,6 @@ import "strings"
 // codec below), and every AsyncAO viewer renders it on that speaker's sprite —
 // while AO2/webAO see a normal, unstyled character (the marker is zero-width, so
 // their chat text is unaffected too).
-//
 // It is plain data (no pointers, SDL-free): the renderer reads it off the
 // SpriteLayer and feeds it into the existing SetColorMod/SetBlendMode bracket, so
 // applying a style costs nothing on the render hot path. Slice 1 carries only the
@@ -119,10 +118,6 @@ const (
 // 4-bit X/Y), so the whole path is a short, send-on-change tail — kept modest on purpose
 // (the zero-width run is otherwise blip-spam to webAO). A path needs at least 2 points.
 // The wire is length-prefixed ([len][len bytes]), so raising this stays backward-compatible:
-// an older AsyncAO client decodes pl > its own max and simply drops the path (no motion),
-// while AO2 / webAO never see the zero-width run at all. This value MUST equal the size of
-// config.SpriteStylePref.Path and render's pathPts array (compiler-enforced at s.Path = p.Path
-// and pathPts = st.Path).
 const maxPathPoints = 16
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
@@ -246,16 +241,6 @@ func resolvePct(v uint8, lo, hi int) int {
 // --- zero-width wire codec --------------------------------------------------
 //
 // The style travels as a run of INVISIBLE characters appended to the message text:
-// a sentinel rune (zwStart) frames the run, then the fixed payload is packed THREE
-// bits per rune across an alphabet of eight zero-width symbols, so AsyncAO can
-// locate + decode + strip it while AO2/webAO render nothing (the only channel that
-// survives an arbitrary server is the message text — the same reason \cN colours
-// ride there). Three bits per rune (instead of one) keeps the invisible tail SHORT:
-// other clients typewriter the invisible run and blip on each character, so a long
-// run was audible blip-spam to webAO listeners (a real playtest complaint). The
-// payload is version-tagged; a benign failure mode (a mangled run just yields no
-// style) keeps a length-truncating server from corrupting the visible text.
-//
 // The codec runes are written as hex code points (NOT literal glyphs) so the source
 // stays visible and can't be mangled by an editor or a codepage pipe.
 const (

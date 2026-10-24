@@ -83,7 +83,6 @@ func takeNudgeKey(c *Ctx) (dx, dy int, coarse, ok bool) {
 // next line", not "move by one line's worth". That is what makes the coarse nudge land
 // on the SAME lattice a snapped drag lands on (snapDesign / classicSnapTo round to it)
 // from any starting offset, including a widget the theme authored off-grid.
-//
 // The floor correction matters: the server-tab strip's stored Y is legitimately negative
 // while it is docked in the chrome band above the canvas, and Go's integer division
 // truncates toward zero, which would step the wrong way there.
@@ -105,12 +104,6 @@ func gridStepTo(v, dir, g int) int {
 }
 
 // nudgeCoord steps ONE coordinate of the selected widget.
-//
-// phase is the distance between the STORED coordinate and the coordinate the editor's
-// grid is phased against. It is zero for everything that is stored, drawn and snapped in
-// one space, and the canvas origin for the server-tab strip, whose stored value is
-// canvas-relative while its grid is the WINDOW's (snapTabStripScreen carries the whole
-// argument for why that key's grid lives in window phase).
 func nudgeCoord(v, dir int, coarse bool, phase, grid int) int {
 	switch {
 	case dir == 0:
@@ -124,7 +117,6 @@ func nudgeCoord(v, dir int, coarse bool, phase, grid int) int {
 
 // editorNudgeKeys routes this frame's arrow key to the armed layout editor and reports
 // whether it belonged to one (and was therefore consumed).
-//
 // It runs PRE-SCREEN, beside the other app-wide key claims, for the same reason
 // editorUndoChord had to be hoisted out of the editors' draw bodies: both editors draw
 // LAST in their pass, long after the focused text field, the IC/OOC recall rings, the
@@ -156,7 +148,6 @@ func (a *App) editorNudgeKeys(w, h int32) bool {
 }
 
 // editSelection is the armed editor's current target.
-//
 // The two editors are mutually exclusive by construction (openLayoutEditor arms one or
 // the other, and drawCourtroom force-stops the classic one under a theme), so this is
 // a lookup rather than a priority rule — but it is written as a switch on the armed
@@ -173,11 +164,6 @@ func (a *App) editSelection() editTarget {
 }
 
 // nudgeThemedRect moves the THEMED editor's selected DESIGN rect.
-//
-// a.editTgt is the selection: the editor arms it on the press that grabs a box and
-// leaves it set after the release (it is the key drawn in ColDanger with the readout at
-// the bottom of the screen), so the gesture the user already knows — click the box, then
-// arrow it — needs nothing new. A drag in flight keeps the mouse in charge.
 func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int32) {
 	key := tgt.designKey()
 	if key == "" || !themeKeyEditable(key) || a.editDrag != 0 {
@@ -310,7 +296,6 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 }
 
 // classicSlotCurrentRect is the selected slot's rect right now.
-//
 // An existing override is resolved live (anchoredRect — window pins included) rather
 // than read out of the slot registry, because the registry is one frame behind here: the
 // nudge runs pre-screen, and the courtroom pass that rebuilds the registry has not run

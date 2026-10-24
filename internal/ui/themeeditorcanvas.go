@@ -42,12 +42,6 @@ const (
 
 // editGesture is one press-drag-release. A VALUE on the editor, so it dies with the
 // screen and costs a closed editor nothing.
-//
-// base holds the authored rect of EVERY selected target as it stood at the press —
-// a fixed array, never a slice, for the same reason the selection is one. Recording
-// the whole selection at the press is what makes a multi-target move rigid: every
-// frame recomputes from the same origin, so a rounding wobble can never accumulate
-// into shear between two elements that started aligned.
 type editGesture struct {
 	kind  uint8
 	edges uint8
@@ -192,7 +186,6 @@ func (a *App) editorProbeElements(lay *themeLayoutCache, mx, my int32) (editTarg
 
 // elemPickBeats is the element population's ordering, in one place so the probe reads
 // as a policy rather than as a comparison chain.
-//
 // A GRIP ALWAYS BEATS A PLAIN HIT, then paint order (band, z, declaration index —
 // the same three keys the bake sorts by), then the smaller box. The last one is what
 // keeps a full-canvas wallpaper from swallowing every press inside it.
@@ -237,7 +230,6 @@ func (a *App) editorProbeSlots(lay *themeLayoutCache, mx, my int32) (editTarget,
 }
 
 // slotPickBeats is the widget population's ordering.
-//
 // THE KEY IS THE FINAL TIE-BREAK, and it is not decoration: lay.r is a MAP, so a
 // theme with two identical editable rects under the cursor would otherwise resolve
 // to whichever one Go's randomised iteration happened to reach first — a different
@@ -263,7 +255,6 @@ func area64(r sdl.Rect) int64 { return int64(r.W) * int64(r.H) }
 
 // editorCanvasRect is the region of the window the canvas owns for INPUT: the frame
 // minus the header band and the two rails.
-//
 // PUBLISH THE RECT THAT IS ACTUALLY PAINTED (overlayfence.go's rule, applied by
 // arithmetic rather than by a fence): the rails are opaque chrome drawn over the
 // canvas, so a press on them belongs to them even when a theme's element extends
@@ -351,7 +342,6 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 }
 
 // editorBeginGesture captures the press.
-//
 // It records the authored rect of the WHOLE selection, not just the pressed target,
 // because a multi-target move recomputes every frame from these origins (see
 // editGesture). A locked target records its rect too and is simply never written —
@@ -500,7 +490,6 @@ func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r them
 }
 
 // editorClampGeometry keeps a WIDGET on the stage and leaves an ELEMENT alone.
-//
 // The asymmetry is the format's, not a shortcut: themeLayoutIn clamps every
 // courtroom-relative widget into the canvas because Qt amputated overhanging
 // children and themes rely on it, whereas an element's rect is a signed delta on its
@@ -534,7 +523,6 @@ func (a *App) editorWriteGeometry(t editTarget, r theme.Rect) {
 }
 
 // editorEndGesture closes the gesture and its undo group.
-//
 // Nothing is "committed" here and nothing needs to be: every frame already wrote
 // through editorApply, so the document has been correct the whole way down. What the
 // release does is close the group, which is what makes the NEXT edit a separate undo
@@ -632,7 +620,6 @@ func (a *App) drawEditorBox(lay *themeLayoutCache, t, hover editTarget) {
 }
 
 // drawEditorReadout prints the primary selection's numbers, in ITS OWN UNITS.
-//
 // Naming the unit is not decoration: a widget's rect is design px, a `space = window`
 // element's is window px, and an anchored element's is a signed DELTA on its anchor
 // (§6.6 R1) — three different meanings for four numbers, and a readout that implied

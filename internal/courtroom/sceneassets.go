@@ -18,20 +18,6 @@ func IsBlankSpeaker(charName string) bool {
 // Base is an extensionless AO base (sprite / background / desk) the exporter
 // resolves via Manager.ResolveRaw, OR a complete URL when Exact is set (music
 // carries its own extension).
-//
-// Alts are the further CANDIDATES for that same one asset: probed in Base-then-
-// Alts order, first hit wins, and whichever answers satisfies the ref. That is
-// the general contract every consumer already relies on — PrefetchChain, the
-// exporter's resolveRef, the content report's ResolveRawFull walk, the scene
-// maker's PackCovers count — so the population is whatever ladder the asset's
-// own prefetch site walks live, NOT sprites alone. Two fill it today:
-//
-//   - character sprites — the further spellings behind the "(a)X" identity, in
-//     EmoteAlts order (the bare name, then the "(a)/X" prefix folder);
-//   - position backgrounds — AO2's witness ladder, in BackgroundFallbacks
-//     order (the witnessempty / wit spellings, less the position's own stem).
-//
-// nil means the ref has no ladder at all: Base is the only spelling to try.
 // The DESK's nil is deliberate and must stay — set_scene's desk arm has no
 // fallback (BackgroundFallbacks' documented asymmetry, pinned by
 // TestTheDeskKeepsItsNoFallbackContract); "symmetrising" it with the
@@ -52,7 +38,6 @@ type AssetRef struct {
 // playable music. De-duplicated by (type, base), so a 100-line scene with three
 // characters bundles three characters' art, not a hundred copies — that keeps
 // the archive as small as possible.
-//
 // Exotica (shout bubbles, blip sounds, pair-partner edge art) is intentionally
 // omitted: the zero-fallback renderer degrades gracefully on a missing asset, so
 // v1 bundles the spine and those simply 404 on replay rather than bloating every

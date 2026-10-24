@@ -202,9 +202,6 @@ func (a *App) applyThemeAsync() uint64 {
 			// to bind to. See foldSidecarOverrides (themeoverrides.go) for why this
 			// tier existed unapplied until now, and what it was doing to the elements
 			// anchored on top of it.
-			// The server-tab strip's synthesized key rides WITH the fold, in the one
-			// order that answers an `asyncao_tabbar` row exactly once — see
-			// seedTabBarThroughOverrides (tabs.go). This used to be two statements
 			res.tabBarSeeded = seedTabBarThroughOverrides(res.layout, res.sidecar)
 			// #21 label 16: measure the theme's own art behind each font element, so
 			// the render thread can guard the per-element ink without touching a
@@ -353,7 +350,6 @@ func (a *App) pollThemeApply() {
 	}
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
-	//
 	// The server-tab strip's synthesized key was seeded on the apply goroutine,
 	// into this same pristine map, before the [overrides] fold (see there). It is
 	// in themeRectsOrig for reset/undo to restore from, and in the copy below for
@@ -530,7 +526,6 @@ const themeUnboundReportCap = 12
 // unboundDesignKeys lists the theme's rect-shaped design keys that reach no
 // widget: not a themeSlots row, not a deliberate deferral, not a char-select key.
 // "" when the theme is fully covered.
-//
 // This is the observability that makes "a missing rect draws nothing" supportable
 // — a player who loses a control can be told which key their theme declares that
 // AsyncAO does not read. Allocates, and walks every design key: apply goroutine
@@ -983,7 +978,6 @@ func (a *App) postFX() render.PostFX {
 func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.link.room) }
 
 // applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
-//
 // Parameterised because these are USER-level choices — the Hide-desk toggle, the
 // per-character Missingno hides, the per-character offsets — and a
 // user who hides the desk means everywhere, not "in whichever room happens to be
@@ -1225,7 +1219,6 @@ func (a *App) signalModcall(serverName, notice string) {
 // explicit area click (curArea), so server-initiated moves keep the current log
 // — same as the default continuous behavior. Runs only on an area click, never
 // per frame, and no-ops entirely when off, so it costs the default path nothing.
-// Bounded FIFO over visited areas (rule §17.4). Both maps park per tab.
 func (a *App) switchAreaScrollback(toArea string) {
 	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.srvMeta.curArea {
 		return
@@ -1330,9 +1323,6 @@ func (a *App) transcriptSeqFor(server string) int {
 // exists: the live one, or a parked tab's. It is the single definition of "this
 // writer still has an owner", so the reap below and any future caller cannot form
 // two different opinions about which files are alive.
-// The live session is checked off App (a.serverName / a.logSession) and the parked
-// ones off their own tab state, which is exactly how the two message seams file
-// their lines (see logDetailed) — so a writer is owned precisely when some seam
 func (a *App) transcriptOwned(k translogKey) bool {
 	if k.server == a.srvMeta.serverName && k.session == a.srvMeta.logSession {
 		return true
@@ -1420,9 +1410,6 @@ func (a *App) icLogCapFor() int {
 // chars, which is why they arrived truncated; they now wrap at draw time
 // instead. 4096 still cut real /help dumps (a single-paragraph /help runs well
 // past 4 KiB), so it's 16 KiB: the OOC log holds at most icLogCap (1024)
-// entries (appendCapped caps it), so even a hostile server that fills every
-// slot to the brim stores 1024 × 16384 B = 16 MiB — bounded and comfortably
-// inside the 256 MiB envelope, while real /help and MOTD texts sit far below.
 const oocLineCap = 16384
 
 // pushOOC appends an OOC log line. speaker is the sender's name for a real OOC
@@ -1435,9 +1422,6 @@ func (a *App) pushOOC(line, speaker string) {
 	// and the caller composes us ev.Name + ": " + a RAW ev.Text, so this is the lane
 	// where a marker actually arrives; the control frame itself was already decoded
 	// upstream (routeIncomingPM runs before this call), so by here it is display text.
-	// The head is preserved, which is what keeps the "speaker: " trim below working and
-	// keeps oocSpeakers a substring of oocLog — see stripDisplayTail for why stripping
-	// the whole composed line was wrong. Zero-alloc when absent.
 	line = stripDisplayTail(line, speaker)
 	// Harvest /getarea "[uid] name" rows for click-to-pair, from the RAW text:
 	// strip the "speaker: " prefix first, else when a server sends /getarea line

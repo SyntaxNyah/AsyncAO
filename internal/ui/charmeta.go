@@ -15,8 +15,6 @@ import (
 // webAO resolves both from the SPEAKER's char.ini, and so do we now: a small
 // per-URL cache filled by one async fetch per character, answered lock-free
 // from the courtroom's begin() via the BlipNameFor / ChatSkinFor callbacks.
-// Keys are full char.ini URLs (origin included), so per-server separation is
-// structural — the repo's cache-key convention.
 
 const (
 	// charMetaCap bounds the cache (rule §17.4). A busy server list tops out
@@ -72,9 +70,6 @@ type charMeta struct {
 	// convention plenty of packs do not keep. Empty until the fetch lands and for
 	// an ini with no emotes — an absent answer, so the reader keeps its optimistic
 	// convention for that window rather than drawing nothing.
-	// It rides this SAME single fetch, so previewing a partner honestly costs no
-	// extra network probe: the char.ini was already being downloaded for their
-	// blips, skin, effects, scaling and showname.
 	idle string
 	done bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 	// stamp is when an IN-FLIGHT marker (done=false) was armed. A dropped async
@@ -130,10 +125,6 @@ func (a *App) charMetaFor(char string) charMeta {
 
 // charMetaFetchOne downloads + parses one char.ini off-thread and posts the
 // result (never blocking; a dropped result refetches next session).
-//
-// char is the FOLDER the url was minted from — get_showname's fallback value,
-// resolved here so the cache holds canon's finished answer and no second copy
-// of the rule exists at the read side.
 func (a *App) charMetaFetchOne(url, char string) {
 	if a.overlays.charMetaRes == nil {
 		a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
@@ -255,11 +246,6 @@ func (a *App) remoteChatInkFor(char string) (theme.RGB, bool, theme.RGB, bool) {
 // remoteIniShownameFor is the courtroom's IniShownameFor callback — AO2's
 // get_showname for a speaker, off the SAME single char.ini fetch as blips,
 // skins, effects and scaling.
-//
-// known is `done`, never `showname != ""`: an empty answer is a character that
-// declared needs_showname=false and wants a blank plate, and reading emptiness
-// as "not fetched" would silently put the folder name back on exactly the
-// characters that asked for no name at all.
 func (a *App) remoteIniShownameFor(char string) (string, bool) {
 	m := a.charMetaFor(char)
 	return m.showname, m.done
@@ -332,7 +318,6 @@ func (r envResolver) OnPreanimEnd(courtroom.PreanimEndReason) {}
 // char.ini lookups (blips, chatbox skin/ink/showname/realization, scaling), the
 // asset/overlay engine, and the local env (side, inline emotes, preanim-end) — so
 // a room behaves identically in every mode.
-//
 // ONE production caller: App.newRoom (newroom.go). Construction and wiring are
 // the same step on purpose — this used to be several call sites, and two of the
 // five forgot it.
@@ -361,7 +346,6 @@ func (a *App) iniIdleAnimFor(char, fallback string) string {
 // char.ini [Options] scaling= request (issue #21 label 15). It rides the SAME
 // cache and the SAME single fetch as blips and chat skins, so honouring every
 // character's declared filter costs no extra network probe.
-//
 // Auto until the fetch lands — the speaker's NEXT message picks it up, and the
 // renderer's geometry rule covers the gap meanwhile, so a first message is never
 // wrong, only potentially less specific than the author asked for.
