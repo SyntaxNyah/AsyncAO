@@ -2,7 +2,6 @@ package ui
 
 // The layout editors' UNRECOVERABLE states, and the one frame-level decision that
 // keeps the server-tab strip painted exactly once.
-//
 // Everything here drives the REAL courtroom pass. The lock these pin was not visible
 // in any arithmetic: every predicate involved was individually correct, and the app
 // died from the COMBINATION — an editor armed, a modal holding the pass, and four
@@ -59,7 +58,6 @@ func TestEveryCourtroomModalCloseUndoesItsOpen(t *testing.T) {
 // TestArmingALayoutEditorClosesEveryCourtroomModal is the second of the three
 // belt-and-braces guarantees against the hard lock: with every return-to-top modal
 // open at once, arming either editor must leave none of them up.
-//
 // The arm paths used to close a HAND-WRITTEN list of nine popups that had drifted
 // three entries behind this table — showTimer, pairPopupOpen and showSfxBrowser were
 // all missing — and any one of those three open when the editor armed took the
@@ -294,9 +292,6 @@ func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 // addition, so editBaseFor's subtraction is an EXACT inverse — and a one-pixel drag is
 // a one-pixel move at every scale, not only where the two rounding rules happened to
 // agree.
-// While the map was scaled, the preimage rounded and the forward transform truncated,
-// so the base was not a fixed point: measured at Letterbox 1000x900 (scale 1.4006) a
-// +1,+1 cursor move took the box {460,22,79,22} → {459,23,79,22} — BACKWARDS on X —
 func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -456,9 +451,6 @@ func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 // parked-ness in the key. The flag is resolved BEFORE the validity test — it has to
 // be, it is part of the test — so it now runs on every themeLayoutIn call, i.e. every
 // courtroom frame, on the cache-HIT path that the whole design exists to keep cheap.
-// The existing themed whole-screen gate cannot cover this: its fixture's theme has no
-// asyncao_tabbar entry at all, so tabStripThemeParked returns on its first map probe
-// and never reaches the prefs read. This one seeds the key and parks the strip, which
 func TestThemeLayoutCacheHitIsAllocFreeWithASeededTabStrip(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
@@ -553,7 +545,6 @@ func assertStripBoxIsOnTheStrip(t *testing.T, a *App, w, h int32, stage string) 
 }
 
 // TestMagnetSeesTheLiveTabStripNotTheInertSeed pins the sibling-list fix.
-//
 // While the strip is unparked its stored entry is the SYNTHESIZED SEED — a
 // tabBarDesignSeedW-wide box centred on the canvas that nothing paints and nothing
 // hit-tests — so every OTHER widget's snapped drag was magnetting to a phantom while

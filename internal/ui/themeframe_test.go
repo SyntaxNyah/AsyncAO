@@ -1,14 +1,6 @@
 package ui
 
 // themeFrame's half of the animation contract (L22).
-//
-// themeFrame and elementFrame were documented as twins and had already stopped
-// being twins: elementFrame honoured the ReduceMotion latch and themeFrame did
-// not. On a themed install with the accessibility option ON, the free elements
-// went still while the theme's own chrome — chatbox, buttons, backdrops — kept
-// animating, and themeFrame's census kept the pacer at the animation cadence.
-// The person who turned it on got neither the stillness nor the idle frame rate.
-//
 // The suite RECORDED that divergence instead of failing on it: two gates in
 // themeclock_test.go t.Skip when the fixture's own chrome notes the census under
 // ReduceMotion, which is exactly the symptom. These gates drive themeFrame
@@ -97,7 +89,6 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 // TestThemeFrameAndElementFrameShareOneIndexer keeps the two from drifting apart
 // again. They differ in WHOSE CLOCK they read and in nothing else, so given the
 // same elapsed and a looping page they must select the same frame.
-//
 // Stated as an identity over the shared pure core rather than as two hardcoded
 // numbers: elementFrameIndex is what both call, and the day one of them stops
 // calling it this is what says so.

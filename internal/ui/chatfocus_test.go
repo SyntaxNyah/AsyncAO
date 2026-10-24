@@ -12,11 +12,6 @@ import (
 
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —
 // the state claimTypingForIC requires before it will take a keystroke.
-//
-// drawnFieldSeq, not fieldSeq: fieldSeq is the list the CURRENT pass is building
-// and it is empty for the whole pre-screen half of App.Frame, which is where the
-// claim runs. Seeding the wrong one is how this file used to pass against a claim
-// that could not fire — see the frame-driven gate below.
 func focusTestApp() *App {
 	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
 	a.screen = ScreenCourtroom
@@ -247,10 +242,6 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 
 // colorPickTestApp is a courtroom App with real preferences — applyICColorChoice
 // writes the rainbow/random flags through them — and no bind capture armed.
-//
-// macroBind is the one App field whose ZERO value means "armed" (slot 0), and
-// bounceFocusToIC is a no-op while a capture is armed, so without the sentinel
-// every bounce assertion below would pass or fail for the wrong reason.
 func colorPickTestApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)

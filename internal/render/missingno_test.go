@@ -27,15 +27,6 @@ func greenPage() *assets.Decoded {
 
 // TestMissingnoOnlyOnConfirmedMissing pins the disjoint-state contract that keeps
 // the placeholder from ever flashing over a still-loading sprite:
-//
-//	(a) an UNCACHED base with NO MarkMissing (a still-loading "ghost") draws
-//	    hold-previous/blank EXACTLY as today — the pref-only regression trap: a
-//	    pref-only missingno would fire here and regress hold-previous;
-//	(b) after store.MarkMissing(base) the SAME render draws the shared MissingKey
-//	    page (readback its green colour) instead of the previous character;
-//	(c) after uploadTier(base) lands the real sprite the flag clears and the real
-//	    sprite draws again.
-//
 // It uses a SYNTHETIC MissingKey page (green), not the embedded art, so it builds
 // and runs without the //go:embed asset present (that lives in internal/ui).
 func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {

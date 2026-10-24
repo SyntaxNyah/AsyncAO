@@ -2,15 +2,6 @@ package render
 
 // F5 — hearts, sparkles and other SYMBOLS drawing as boxes while CJK and Greek came
 // out fine.
-//
-// The v1.87 Unicode census walked SCRIPTS. Symbol blocks were never in it, and they
-// fail for a different reason than a script does: a script gap is answered by a text
-// font (the curated tiers, then the system-font census), but the BMP pictographs
-// live in the COLOUR-EMOJI face, and nothing routed a bare one to it.
-// needsEmojiFallback only fires on a supplementary-plane rune or a VS16, and a bare
-// ♥ / ✨ / ⭐ has neither — so the character went to the text chain, which has no
-// glyph for it, forever.
-//
 // These gates pin the eligibility table. The ROUTING decision (only promote a rune no
 // text face covers) is coverage-driven and lives in package ui, where the font chain
 // is; see TestUncoveredSymbolsRouteToTheEmojiFace there.

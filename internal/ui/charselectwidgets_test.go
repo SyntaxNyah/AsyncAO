@@ -19,8 +19,6 @@ import (
 // all-or-nothing rule that decides whose control row a frame is drawing, and the
 // behaviour at BOTH ends of the window range — a theme far bigger than the 640x480
 // floor and a theme far smaller than it.
-//
-// stageCharSelect / stockCharSelectDesign live in charselectlayout_test.go.
 
 // nativeCharSelect stages a design table at Native fit and returns the canvas plus the
 // grid plan for a window, with no app-chrome band in the way.
@@ -242,7 +240,6 @@ func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 }
 
 // TestCharListTabsShowWhichRosterIsActive pins the roster switch's selected state.
-//
 // It was invisible: the active chip was Fill(chip, ColAccent) followed by
 // Button(chip, ...) on the IDENTICAL rect, and Button fills again with an opaque
 // ColPanel/ColPanelHi. Both chips then took Button's ColAccent border, so Characters
@@ -660,12 +657,6 @@ func TestCharSelectPageArrowsStepWholePages(t *testing.T) {
 
 // TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs pins the rule the classic arm
 // already followed and the themed one did not: a filter with no control is a trap.
-//
-// char_taken is deliberately NOT one of charSelectEssentialKeys, so the themed control
-// row is taken whether or not the checkbox resolves — a theme may hide the key (AO2's
-// 11037 convention) or the canvas may scale it under minThemedElementPx. Unguarded, a
-// session that cleared the box and then changed theme would keep hiding every taken
-// character with nothing on screen able to bring them back.
 func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	a, lay, _ := nativeCharSelect(t, stockCharSelectDesign(), w, h)

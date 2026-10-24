@@ -93,14 +93,6 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 
 // TestPanelFontsApplyWithNoThemeLoaded is the regression pin for the report that
 // the per-panel fonts "just don't work".
-//
-// They were resolved inside the branch that runs only when a theme LOADS, next to
-// the theme's own font table. Anyone whose theme failed to load — none configured,
-// a folder since moved, the stock default with no tree on disk — had the setting
-// save perfectly and do nothing at all, with nothing on screen to say why. The
-// user's fonts are the USER's, not the theme's, and must not need one to be
-// present.
-//
 // Driven through applyThemeAsync + pollThemeApply, the real path, because the
 // defect was entirely in WHERE the call sat rather than in what it did.
 func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
@@ -166,7 +158,6 @@ func awaitThemeApply(t *testing.T, a *App) {
 
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
 // fault: the size box "defaults to weird numbers, you can't set it correctly".
-//
 // It clamped on EVERY keystroke and fed the clamped number straight back into the
 // box, so typing the "1" of "18" became a 6 — the minimum — before the "8" could
 // be typed. Every size below ten was unreachable, and every one above it had to

@@ -11,7 +11,6 @@ import (
 )
 
 // The server-tab strip inside the THEMED layout editor (#14).
-//
 // The strip is intrinsically sized — its width comes from the chips, so it changes as
 // tabs open, close and get renamed — but it was wired into the theme-rect system as if
 // it carried an authored W/H. Everything below drives the REAL editor rather than its
@@ -206,7 +205,6 @@ func TestThemedEditorBoxFollowsAClassicSlotOverride(t *testing.T) {
 // seed, so a drag that happened to land on the seed's own coordinates wrote its
 // override and was then read back as "never moved": the strip snapped straight back
 // into the chrome band, silently discarding the placement.
-//
 // The fixture moves the PRISTINE seed to where the drag will land, which is the same
 // coincidence with fewer moving parts than hunting for a chip width that reproduces it.
 func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
@@ -411,9 +409,6 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 // strip's two draw sites: App.Frame's over-everything paint (after the screen dispatch)
 // and the in-pass one under a layout editor's overlay. Exactly one may run per frame —
 // running both paints the strip twice, running neither loses it.
-// The over-everything site used to be gated on classicEdit alone, so with the THEMED
-// editor armed the strip painted AFTER drawLayoutEditor and buried its banner. The
-// predicate must not simply be "an editor is armed" either: an editor flag outlives
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
 		"themed editor":  func(a *App) { a.layoutEdit = true },
@@ -510,10 +505,6 @@ func textCacheHasLabel(c *Ctx, text string) bool {
 // measured at 1152x864 with one session, a chip at {545,22,28,22} buried 4 px of banner
 // and the bottom 2 px of every chip, and a strip wide enough marches into the Done
 // cluster itself.
-// Rendering the SAME frame twice, differing only in whether the strip is painted after
-// the editor, is what makes this exact: if the two agree, the strip's chips never reach
-// those pixels and the test is vacuous, so the assertion is that they DIFFER — the
-// strip does land there, and production is not the order that puts it on top.
 func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 	for _, tc := range []struct {
 		name string

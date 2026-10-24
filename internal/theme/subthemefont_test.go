@@ -1,13 +1,6 @@
 package theme
 
 // Subtheme FONTS.
-//
-// The three font scanners used to decide "is this one of the active theme's own
-// directories?" with `filepath.Base(dir) != t.Name`. That test is right for
-// <root>/themes/<name> and for the flat tier, and WRONG for the tier AO2 puts
-// FIRST: <root>/themes/<name>/<sub>, whose base is the subtheme's name. So every
-// subtheme directory silently fell out of every font scan.
-//
 // Both gates below drive the real Load + the real resolvers, and both fail on
 // the old filter. The boundary is now t.ownDirN via ownDirs(), which Load itself
 // records — one spelling, and the one that already governs the sidecar.
@@ -35,7 +28,6 @@ func writeFontIn(t *testing.T, dir, file string) {
 // TestSubthemeShippingOneFaceIsNotInvisible is issue #6's client-wide install,
 // asked of a SUBTHEME: a variant folder that ships a .ttf and declares no family
 // must restyle the client exactly as its parent theme would.
-//
 // Before the fix FontFile returned "" here, and HasAnyFontFile answered "this
 // installation has no fonts at all" — which is the advice-selecting predicate, so
 // the user was told to go and point AsyncAO at their base.
@@ -61,7 +53,6 @@ func TestSubthemeShippingOneFaceIsNotInvisible(t *testing.T) {
 // property Load exists to guarantee: the subtheme directory is ahead of the theme
 // directory, so a subtheme shipping its own file for a family the parent also
 // ships must win.
-//
 // It could not, before: the subtheme dir was skipped outright, so the parent's
 // file was the only candidate and the variant was a variant of everything except
 // its typeface.

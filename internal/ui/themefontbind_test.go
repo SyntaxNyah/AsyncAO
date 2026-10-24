@@ -2,14 +2,6 @@ package ui
 
 // The W4 font-intake gate: `[fonts]` + `[fontbind]` bind a courtroom element to a
 // font FILE INSIDE THE THEME.
-//
-// It is the answer to the single most-reported theme confusion in this client.
-// AO2's courtroom_fonts.ini names a FAMILY and leaves finding it to Qt's system font
-// database, so a theme downloaded on its own — which is how almost all of them are
-// shared — arrives with every family named and not one file present, renders in the
-// client's own face, and says nothing. The sidecar's two sections close that: the
-// theme carries its own type and it renders the same on a machine that has never
-// heard of the family.
 
 import (
 	"os"
@@ -135,7 +127,6 @@ func TestSidecarFontBindRefusesAPathOutsideTheTheme(t *testing.T) {
 
 // TestElementFontAndSizeAreCarriedNotDrawn pins the OTHER half of W4's font
 // decision, in both places it is stated.
-//
 // An element's own `font`/`size` are parsed and preserved and are NOT read by the
 // format-1 renderer (paintElementText carries the measurement). That is a
 // deliberate ruling, and the danger with a deliberate ruling is that it decays into

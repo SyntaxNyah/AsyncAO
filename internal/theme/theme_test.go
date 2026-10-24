@@ -153,15 +153,6 @@ func TestThemeFindAssetProbesExtensionsAndDirs(t *testing.T) {
 
 // TestFindAssetInRefusesAnEmptyStem is the guard FindAssetIn opens with, driven
 // against the file it exists to refuse.
-//
-// An empty stem means "this variant does not apply to this theme". The chatbox's
-// blank rung is the one caller that can produce one — a theme whose BASE skin
-// already resolved to chatblank has no separate blank variant (internal/ui
-// chatboxfit.go, chatboxRung.fileStem) — and without the guard filepath.Join
-// builds <dir>/.png. That is a legal filename on every filesystem this ships on,
-// so a theme could ship one and have it silently adopted as a variant skin:
-// unnamed art pinned into T1 for as long as the theme is applied.
-//
 // The fixture ships exactly that dotfile in both entry points' path, so the test
 // fails the moment the guard is deleted rather than passing vacuously — and the
 // last block proves the directory is probeable at all, so "found nothing" above
