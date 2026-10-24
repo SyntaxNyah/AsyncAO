@@ -55,15 +55,15 @@ func (a *App) spawnReactionFloat(index uint8) {
 	if _, ok := courtroom.ReactionEmoji(index); !ok {
 		return
 	}
-	a.reactSpawnSeq++
-	xJit := int32(a.reactSpawnSeq*53%reactionFloatSpreadPx) - reactionFloatSpreadPx/2
+	a.reactUI.reactSpawnSeq++
+	xJit := int32(a.reactUI.reactSpawnSeq*53%reactionFloatSpreadPx) - reactionFloatSpreadPx/2
 	f := reactionFloat{index: index, born: a.now(), xJit: xJit}
-	if len(a.reactionFloats) >= reactionFloatsMax {
-		copy(a.reactionFloats, a.reactionFloats[1:]) // drop the oldest
-		a.reactionFloats[len(a.reactionFloats)-1] = f
+	if len(a.reactUI.reactionFloats) >= reactionFloatsMax {
+		copy(a.reactUI.reactionFloats, a.reactUI.reactionFloats[1:]) // drop the oldest
+		a.reactUI.reactionFloats[len(a.reactUI.reactionFloats)-1] = f
 		return
 	}
-	a.reactionFloats = append(a.reactionFloats, f)
+	a.reactUI.reactionFloats = append(a.reactUI.reactionFloats, f)
 }
 
 // drawReactionFloats renders + ages the active floats over the stage rect vp, culling
@@ -72,7 +72,7 @@ func (a *App) spawnReactionFloat(index uint8) {
 // constraint for received content); with floats active it is also 0-alloc on a warm badge
 // cache (a reused scratch rect, cached badges, no per-frame build).
 func (a *App) drawReactionFloats(vp sdl.Rect) {
-	if len(a.reactionFloats) == 0 {
+	if len(a.reactUI.reactionFloats) == 0 {
 		return
 	}
 	c := a.ctx
@@ -80,12 +80,12 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 	baseX := vp.X + vp.W/2
 	baseY := vp.Y + vp.H - reactionFloatBottomMargin
 	w := 0 // in-place compaction write index (drops expired floats)
-	for _, f := range a.reactionFloats {
+	for _, f := range a.reactUI.reactionFloats {
 		ageMs := now.Sub(f.born).Milliseconds()
 		if ageMs >= reactionFloatLifeMs {
 			continue
 		}
-		a.reactionFloats[w] = f
+		a.reactUI.reactionFloats[w] = f
 		w++
 		b := a.ensureReactBadge(f.index)
 		if b == nil {
@@ -95,7 +95,7 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 		bw, bh := b.Size()
 		x := baseX + f.xJit - bw/2
 		y := baseY - int32(float64(reactionFloatRisePx)*prog) - bh
-		a.reactRect = sdl.Rect{X: x, Y: y, W: bw, H: bh}
+		a.reactUI.reactRect = sdl.Rect{X: x, Y: y, W: bw, H: bh}
 		// The clip param mirrors whatever's ambient right now (nil when nothing is
 		// fenced, which is every call site today) rather than assuming none — a future
 		// caller that wraps this in a pushClip must not silently reintroduce the
@@ -105,9 +105,9 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 		if c.clipOn {
 			clip = &c.clipRect
 		}
-		b.Draw(c.Ren, &a.reactRect, reactionAlpha(prog), c.RenderScalePct(), clip)
+		b.Draw(c.Ren, &a.reactUI.reactRect, reactionAlpha(prog), c.RenderScalePct(), clip)
 	}
-	a.reactionFloats = a.reactionFloats[:w]
+	a.reactUI.reactionFloats = a.reactUI.reactionFloats[:w]
 }
 
 // reactionAlpha is the fade envelope over a float's life: ramp up, hold, ramp down.
@@ -130,10 +130,10 @@ func reactionAlpha(prog float64) uint8 {
 // same "one stale scale invalidates the whole cache" idiom SetTextDevScale already uses
 // for the label/emoji-raster caches. Without it a badge built at whatever scale was
 func (a *App) ensureReactBadge(index uint8) *render.Badge {
-	if a.ctx.textDevPct != a.reactBadgeDevScale {
+	if a.ctx.textDevPct != a.reactUI.reactBadgeDevScale {
 		a.purgeReactBadges()
 	}
-	if b, ok := a.reactBadges[index]; ok {
+	if b, ok := a.reactUI.reactBadges[index]; ok {
 		return b
 	}
 	// emojiDeviceFont, not EmojiFont: the float now blits through Badge.Draw's
@@ -153,11 +153,11 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if err != nil || b == nil {
 		return nil
 	}
-	if a.reactBadges == nil {
-		a.reactBadges = make(map[uint8]*render.Badge, courtroom.ReactionCount())
+	if a.reactUI.reactBadges == nil {
+		a.reactUI.reactBadges = make(map[uint8]*render.Badge, courtroom.ReactionCount())
 	}
-	a.reactBadges[index] = b
-	a.reactBadgeDevScale = a.ctx.textDevPct
+	a.reactUI.reactBadges[index] = b
+	a.reactUI.reactBadgeDevScale = a.ctx.textDevPct
 	return b
 }
 
@@ -165,11 +165,11 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 // Render thread only (the textures are render-thread-owned) — called from
 // ensureReactBadge on a device-scale mismatch, mirroring purgeEmojiCache/purgeTextCache.
 func (a *App) purgeReactBadges() {
-	for k, b := range a.reactBadges {
+	for k, b := range a.reactUI.reactBadges {
 		if b != nil {
 			b.Destroy()
 		}
-		delete(a.reactBadges, k)
+		delete(a.reactUI.reactBadges, k)
 	}
 }
 
@@ -228,7 +228,7 @@ func (a *App) reactionTargetKnown(ref uint32) bool {
 // a click outside the panel and the button closes it. Called once per frame after the
 // courtroom (covers both layouts), like the emoji picker.
 func (a *App) drawReactPalette(w, h int32) {
-	if !a.showReactPicker {
+	if !a.reactUI.showReactPicker {
 		return
 	}
 	c := a.ctx
@@ -238,25 +238,25 @@ func (a *App) drawReactPalette(w, h int32) {
 	const headerH = 20
 	pw := int32(reactPaletteCols*emojiCellPx) + 8
 	ph := rows*emojiCellPx + 8 + headerH
-	px := a.reactBtnRect.X
+	px := a.reactUI.reactBtnRect.X
 	if px+pw > w-pad {
 		px = w - pad - pw
 	}
 	if px < pad {
 		px = pad
 	}
-	py := a.reactBtnRect.Y - ph - 4
+	py := a.reactUI.reactBtnRect.Y - ph - 4
 	if py < pad {
-		py = a.reactBtnRect.Y + a.reactBtnRect.H + 4 // no room above → drop below the bar
+		py = a.reactUI.reactBtnRect.Y + a.reactUI.reactBtnRect.H + 4 // no room above → drop below the bar
 	}
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	// Header: who you're reacting to (or a hint when there's nothing yet).
 	head := "React to last message"
-	if a.reactTargetName != "" {
-		head = "React to " + a.reactTargetName
-	} else if a.reactTargetRef == 0 {
+	if a.reactUI.reactTargetName != "" {
+		head = "React to " + a.reactUI.reactTargetName
+	} else if a.reactUI.reactTargetRef == 0 {
 		head = "No message to react to yet"
 	}
 	c.Label(panel.X+5, panel.Y+4, head, ColTextDim)
@@ -274,20 +274,20 @@ func (a *App) drawReactPalette(w, h int32) {
 		}
 		a.labelEmoji(c.font, c.EmojiFont(emojiPickerPct), cx+5, cy+4, emojiCellPx, e, ColText)
 	}
-	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.reactBtnRect) {
-		a.showReactPicker = false
+	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.reactUI.reactBtnRect) {
+		a.reactUI.showReactPicker = false
 	}
 }
 
 // queueReaction stores the chosen emoji against the snapshotted target message; it rides
 // the next IC send. A click with no target (nothing reactable yet) just closes the palette.
 func (a *App) queueReaction(index uint8) {
-	a.showReactPicker = false
-	if a.reactTargetRef == 0 {
+	a.reactUI.showReactPicker = false
+	if a.reactUI.reactTargetRef == 0 {
 		return
 	}
-	a.pendingReact = courtroom.WireReaction{Ref: a.reactTargetRef, Index: index}
-	a.pendingReactSet = true
+	a.reactUI.pendingReact = courtroom.WireReaction{Ref: a.reactUI.reactTargetRef, Index: index}
+	a.reactUI.pendingReactSet = true
 }
 
 // reactPickerFence manages the palette's modal fence each frame, BEFORE the screen draws —
@@ -295,14 +295,14 @@ func (a *App) queueReaction(index uint8) {
 // frame the palette closes, or the UI freezes). Courtroom-only, force-closed elsewhere.
 func (a *App) reactPickerFence(c *Ctx) {
 	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
-	if a.showReactPicker && !courtroomActive {
-		a.showReactPicker = false
+	if a.reactUI.showReactPicker && !courtroomActive {
+		a.reactUI.showReactPicker = false
 	}
-	if a.showReactPicker {
+	if a.reactUI.showReactPicker {
 		c.modalOn = true
-		a.reactFenceOn = true
-	} else if a.reactFenceOn {
+		a.reactUI.reactFenceOn = true
+	} else if a.reactUI.reactFenceOn {
 		c.modalOn = false
-		a.reactFenceOn = false
+		a.reactUI.reactFenceOn = false
 	}
 }

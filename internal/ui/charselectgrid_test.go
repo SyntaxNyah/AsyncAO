@@ -590,7 +590,7 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 	ctx.mouseX, ctx.mouseY = -1000, -1000
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
 	a.ensureCharLower()
-	a.wardrobeMembers = map[string]bool{}
+	a.charsel.wardrobeMembers = map[string]bool{}
 	a.iniList = []string{"Phoenix"}
 	a.iniLower = []string{"phoenix"}
 	a.iniFolders = []string{""}
@@ -630,11 +630,11 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 		shot func(cell sdl.Rect, on bool) []byte
 	}{
 		{"Characters ★", func(cell sdl.Rect, on bool) []byte {
-			a.wardrobeMembers = map[string]bool{"phoenix": on}
+			a.charsel.wardrobeMembers = map[string]bool{"phoenix": on}
 			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, false, plan) })
 		}},
 		{"Characters download badge", func(cell sdl.Rect, on bool) []byte {
-			a.wardrobeMembers = map[string]bool{}
+			a.charsel.wardrobeMembers = map[string]bool{}
 			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, on, plan) })
 		}},
 		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
@@ -649,9 +649,9 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
 		{"Wardrobe key badge", func(cell sdl.Rect, on bool) []byte {
-			a.charKeysRev = nil
+			a.courtkeys.charKeysRev = nil
 			if on {
-				a.charKeysRev = map[string]string{"Phoenix": "q"}
+				a.courtkeys.charKeysRev = map[string]string{"Phoenix": "q"}
 			}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
@@ -721,8 +721,8 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth"}}}
 	a.ensureCharLower()
-	if len(a.charHoverIDs) != len(a.link.sess.Chars) {
-		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charHoverIDs), len(a.link.sess.Chars))
+	if len(a.charsel.charHoverIDs) != len(a.link.sess.Chars) {
+		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charsel.charHoverIDs), len(a.link.sess.Chars))
 	}
 	for i := range a.link.sess.Chars {
 		if want := "char:" + a.link.sess.Chars[i].Name; a.charHoverID(i) != want {
@@ -733,11 +733,11 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 		t.Errorf("charHoverID allocates %v per cell, want 0", n)
 	}
 	// A roster change rebuilds both caches together, never one of them.
-	a.charLower = nil
+	a.charsel.charLower = nil
 	a.link.sess.Chars = append(a.link.sess.Chars, courtroom.CharacterSlot{Name: "Franziska"})
 	a.ensureCharLower()
-	if len(a.charHoverIDs) != 3 || a.charHoverID(2) != "char:Franziska" {
-		t.Errorf("after a roster change: ids %v", a.charHoverIDs)
+	if len(a.charsel.charHoverIDs) != 3 || a.charHoverID(2) != "char:Franziska" {
+		t.Errorf("after a roster change: ids %v", a.charsel.charHoverIDs)
 	}
 	// Out of range: a fallback string, not a panic in the middle of a frame.
 	if got := a.charHoverID(99); got != "char:" {

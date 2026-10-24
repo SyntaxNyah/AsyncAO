@@ -1488,7 +1488,7 @@ func (a *App) wantsFullRate() bool {
 	if a.replaying || a.makerOpen || a.gifExporting || a.link.voiceJoined || a.perfHUD {
 		return true
 	}
-	return len(a.reactionFloats) > 0 || a.splitActive()
+	return len(a.reactUI.reactionFloats) > 0 || a.splitActive()
 }
 
 // SetSpriteCapBase hands the App the display-derived decode-downscale base
@@ -1973,7 +1973,7 @@ func (a *App) rebuildIniMenu() {
 	// float up), and cachedPage keys its icon slice by index without re-checking
 	// the URL — so drop the idx→page cache here or a reorder would paint the
 	// previous name's icon. Icons re-resolve from T1 next frame (a map hit).
-	a.iniPages = nil
+	a.rcache.iniPages = nil
 }
 
 // iniHoverIDPrefix namespaces a wardrobe cell's HoverPreview id, exactly as
@@ -2021,19 +2021,19 @@ func (a *App) applyPendingFav() {
 // per-cell star lookup in drawCharCell then reads it lock-free.
 func (a *App) ensureWardrobeMembers() {
 	gen := a.d.Prefs.WardrobeGeneration()
-	if a.wardrobeMembers != nil && a.wardrobeMembersFor == a.srvMeta.serverKey && a.wardrobeMembersGen == gen {
+	if a.charsel.wardrobeMembers != nil && a.charsel.wardrobeMembersFor == a.srvMeta.serverKey && a.charsel.wardrobeMembersGen == gen {
 		return
 	}
-	if a.wardrobeMembers == nil {
-		a.wardrobeMembers = make(map[string]bool)
+	if a.charsel.wardrobeMembers == nil {
+		a.charsel.wardrobeMembers = make(map[string]bool)
 	} else {
-		clear(a.wardrobeMembers)
+		clear(a.charsel.wardrobeMembers)
 	}
 	for _, name := range a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey) {
-		a.wardrobeMembers[strings.ToLower(name)] = true
+		a.charsel.wardrobeMembers[strings.ToLower(name)] = true
 	}
-	a.wardrobeMembersFor = a.srvMeta.serverKey
-	a.wardrobeMembersGen = gen
+	a.charsel.wardrobeMembersFor = a.srvMeta.serverKey
+	a.charsel.wardrobeMembersGen = gen
 }
 
 // mergeWardrobe combines your wardrobe favourites with the server's iniswap
@@ -2425,7 +2425,7 @@ func (a *App) pollCharINI() {
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
 		// buttons without this.
-		a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
+		a.rcache.emoteBtnOff, a.rcache.emoteBtnOn, a.rcache.emoteIconPages = nil, nil, nil
 		if res.err != nil || res.ini == nil {
 			// Surface WHY the emote list is a bare default (better than a
 			// silent single "normal" chip).

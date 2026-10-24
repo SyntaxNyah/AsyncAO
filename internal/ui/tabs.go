@@ -1212,61 +1212,22 @@ func (a *App) resetSessionState() {
 	// shares another tab's log file by forgetting to stamp it. Monotonic: park moves
 	// the id into the tab with the rest of the state, so an id is never reused.
 	a.nextLogSession++
-	a.sessionState = sessionState{
-		srvMeta: serverMetaState{logSession: a.nextLogSession},
-		// Pair placement is per-session AND session-only: each tab keeps its
-		// own, and a fresh session starts centered/unflipped — the old prefs
-		// seeding made offsets "inexplicably saved" across client restarts
-		// (playtest), so pairing state deliberately does not persist.
-		pairbox:        pairBoxState{pairWith: protocol.UnpairedCharID},
-		playerSort:     clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), // remembered Players-tab sorts
-		playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes),
-		// OOC name is per-tab (typed names leaked across tabs from App);
-		// fresh tabs start from the saved default.
-		compose: composeState{
-			oocName: a.defaultOOCName(),
-			// pmThreads keeps the Friends-tab DM history bounded per session.
-			pmThreads: map[string][]pmLine{},
-			// -1 = editing the live draft, not browsing history (#8); the OOC
-			// recall ring uses the same convention.
-			icRecallIdx:  -1,
-			oocRecallIdx: -1,
-			// Logs follow the tail until the user scrolls up.
-			icStick:  true,
-			oocStick: true,
-			// "Pre" defaults ON so a fresh join reproduces the historical
-			// always-play-the-emote's-preanim behavior; selectEmote then
-			// auto-follows each subsequent emote pick (AO2-Client ui_pre).
-			icPreanim: true,
-		},
-		// The volume-view toggles are per-session UI but PERSISTED prefs:
-		// NewApp restored them once and every connect wiped them back to
-		// hidden (playtest: the show/hide volume option did not persist).
-		// Seed them on every fresh session instead.
-		volStripOn:   a.d.Prefs.Load().VolStripOn,
-		musicVolMode: a.d.Prefs.Load().MusicVolMode,
-		// The master/music/blip channel mutes are the SAME failure mode as
-		// volStripOn just above (playtest never happened for this one, but the
-		// bug is identical by inspection): they PERSIST, but they live on
-		// sessionState, which NewApp/Connect/Disconnect all rebuild via this
-		// literal. A boot-only seed (dndOn's pattern, App.dndOn) would look
-		// right at launch and silently un-mute the instant the user connects
-		// to a server. Reseed here, every time, like volStripOn.
-		masterMuted: a.d.Prefs.Load().MasterVolMuted,
-		musicMuted:  a.d.Prefs.Load().MusicVolMuted,
-		sfxMuted:    false,
-		blipMuted:   a.d.Prefs.Load().BlipVolMuted,
-		spriteOv:    map[string][2]int{},
-		evidIdx:     -1,
-		// Full bars so the first HP packets don't fire penalty sfx.
-		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
-		// AO2 seeds char select's "Taken" filter CHECKED on every join
-		// (charselect.cpp:99) — the roster shows everyone, taken or not — and never
-		// persists it. Seeded here for the same reason every other session toggle is:
-		// the zero value would silently hide half the character list on a fresh join.
-		charShowTaken: true,
-		charListSel:   -1, // no name-column selection yet
-	}
+	a.sessionState = sessionState{srvMeta: serverMetaState{logSession: a.nextLogSession}, pairbox: pairBoxState{pairWith: protocol.UnpairedCharID}, playerSort: clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes), compose: composeState{
+		oocName: a.defaultOOCName(),
+		// pmThreads keeps the Friends-tab DM history bounded per session.
+		pmThreads: map[string][]pmLine{},
+		// -1 = editing the live draft, not browsing history (#8); the OOC
+		// recall ring uses the same convention.
+		icRecallIdx:  -1,
+		oocRecallIdx: -1,
+		// Logs follow the tail until the user scrolls up.
+		icStick:  true,
+		oocStick: true,
+		// "Pre" defaults ON so a fresh join reproduces the historical
+		// always-play-the-emote's-preanim behavior; selectEmote then
+		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
+		icPreanim: true,
+	}, volStripOn: a.d.Prefs.Load().VolStripOn, musicVolMode: a.d.Prefs.Load().MusicVolMode, masterMuted: a.d.Prefs.Load().MasterVolMuted, musicMuted: a.d.Prefs.Load().MusicVolMuted, sfxMuted: false, blipMuted: a.d.Prefs.Load().BlipVolMuted, spriteOv: map[string][2]int{}, evidIdx: -1, hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax}, charsel: charGridState{charShowTaken: true, charListSel: -1}}
 	a.wireComponentEnvs()
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change

@@ -241,7 +241,7 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	deadline := time.Now().Add(missGateSettle)
 	for time.Now().Before(deadline) && !settled {
 		a.iconAskBudget = charIconAskPerFrame
-		a.emotepick.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window
+		a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil // reopen the retry window
 		a.drawEmoteImageButton(btn, me, 0, false, "normal")
 		drainManager(a)
 		if a.d.Manager.IsConclusiveMiss(buttonBase, assets.AssetTypeEmoteButton) &&
@@ -259,7 +259,7 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	// The permanently-grey frame: still blank, but nothing can change that, so the
 	// pump is free to sleep.
 	a.iconAskBudget = charIconAskPerFrame
-	a.emotepick.emoteAsk, a.emoteIconAsk = nil, nil
+	a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil
 	a.frame.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
 	if a.frame.frameDemandPending {

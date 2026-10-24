@@ -245,9 +245,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// F1 toggles the hotkey cheat-sheet on any screen (consumed so a plain-key
 	// macro/char bind named "f1" can't double-fire).
 	if a.ctx.keyPressed == sdl.K_F1 {
-		if a.showHotkeys {
-			a.showHotkeys = false
-			a.hkCache = nil
+		if a.courtkeys.showHotkeys {
+			a.courtkeys.showHotkeys = false
+			a.courtkeys.hkCache = nil
 		} else {
 			a.openHotkeyCheatSheet() // (re)builds the rows so it reflects current bindings
 		}
@@ -735,7 +735,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// menu the user had just opened. Nothing is re-decided here — drawMenuPanes
 	// replays the same phase-1 latch drawMenuBar does.
 	a.drawMenuPanes()
-	if a.showHotkeys {
+	if a.courtkeys.showHotkeys {
 		// Restore the pointer for the sheet's own pass — it was fenced above
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal

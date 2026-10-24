@@ -395,9 +395,9 @@ func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 		t.Error("the Text FX row did not toggle the picker")
 	}
 	em := menuRow(t, menuExtrasTitle, "Emoji picker…")
-	beforeEm := a.showEmojiPicker
+	beforeEm := a.emoji.showEmojiPicker
 	em.act(a, em.arg)
-	if a.showEmojiPicker == beforeEm {
+	if a.emoji.showEmojiPicker == beforeEm {
 		t.Error("the Emoji row did not toggle the picker")
 	}
 }

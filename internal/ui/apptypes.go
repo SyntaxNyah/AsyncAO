@@ -43,106 +43,11 @@ type sessionState struct {
 	// modDashState.
 	modDash modDashState
 
-	// --- char select ---
-	charSearch string
-	charScroll int32
-	charTab    int // charTabServer | charTabWardrobe (grid contents swap)
-	// charShowTaken is AO2's char_taken FILTER checkbox (charselect.cpp:99 seeds it
-	// CHECKED; :360-364 hides taken characters when it is cleared). It is not an
-	// indicator and it is not persisted: AO2 resets it per join, and so does a fresh
-	// session here. Only the themed canvas draws the checkbox, so the classic screen
-	// passes `true` explicitly rather than reading this — a filter with no control
-	// would be a trap.
-	charShowTaken bool
-	// charListSel is the roster index highlighted in the themed name column
-	// (char_list), -1 for none. It also outlines the matching grid cell, which is the
-	// whole point of drawing the column: the two views are one selection. Reset on a
-	// tab switch, because the two tabs index different slices.
-	charListSel int
-	// charListScroll is the name column's own scroll offset. Independent of the
-	// grid's: the column is one name per row and scrolls far faster.
-	charListScroll int32
-	// wardrobeMembers is the lowercased wardrobe set for the current server,
-	// powering the ★ star state in the Characters grid. Rebuilt only when the
-	// server or the wardrobe generation changes (ensureWardrobeMembers), so the
-	// per-cell star lookup stays a lock-free, alloc-free map read.
-	wardrobeMembers    map[string]bool
-	wardrobeMembersFor string // serverKey the set was built for
-	wardrobeMembersGen uint64 // config.WardrobeGeneration() it was built at
-	// lowered-query memos: search filters run per frame; re-lowering the
-	// query allocated on every one of them.
-	charQ loweredCache
-	pairQ loweredCache
-	iniQ  loweredCache
-	// iconAsk[i] is when char i's icon was last demanded by the visible
-	// grid (bounded by the server's char list length).
-	iconAsk []time.Time
-	// charLower caches lowercased char names for the search filter —
-	// without it a 4000-char grid pays two ToLower allocations per char
-	// per frame while a query is active. Invalidated on EventCharsUpdated.
-	charLower []string
-	// charHoverIDs caches the char-select grid's per-cell HoverPreview id
-	// ("char:"+name). It was a runtime concat at the call site, i.e. one heap
-	// allocation per VISIBLE CELL per frame — 63 of them on a themed 7x9 page and
-	// more on a big classic window, for a string that only changes when the roster
-	// does. Built and invalidated in lockstep with charLower.
-	charHoverIDs []string
-	// charSelTitle caches the char-select heading ("Choose a character — <server>"),
-	// which was two allocations per frame for a string that changes once per connect.
-	// charSelTitleFor is the serverName it was built for.
-	charSelTitle    string
-	charSelTitleFor string
-	// Generation-keyed texture page caches (the viewport's animState
-	// trick applied to grids): while the store generation is unchanged a
-	// grid redraw costs ZERO LRU lookups/locks for resident icons.
-	iconPages    []*render.TexturePage
-	iconPagesGen uint64
-	iniPages     []*render.TexturePage
-	iniPagesGen  uint64
-	// Emote button art (off/on variants) rides the same gen-keyed trick:
-	// the grid was the last draw path paying an LRU lock per cell/frame.
-	emoteBtnOff    []*render.TexturePage
-	emoteBtnOffGen uint64
-	emoteBtnOn     []*render.TexturePage
-	emoteBtnOnGen  uint64
-	// emoteIconPages: the active character's icon (one slot), drawn behind the emote
-	// label when an emotions/button<N> image is absent/streaming — a face beats a bare
-	// grey box. Same gen-/index-keyed page cache, so it's nulled on a character change.
-	emoteIconPages []*render.TexturePage
-	emoteIconGen   uint64
-	emoteIconAsk   []time.Time
-	// #M2 S1: the IC-bar emoji picker (local; insert emoji into your message).
-	// showEmojiPicker toggles the grid overlay; emojiBtnRect anchors it above the button.
-	// emojiFenceOn tracks that WE set the modal fence so it's RELEASED when the picker
-	// closes — modalOn persists across frames, so an un-released fence freezes the UI.
-	showEmojiPicker bool
-	emojiFenceOn    bool
-	emojiBtnRect    sdl.Rect
+	charsel charGridState
+	rcache  iconCacheState
+	emoji   emojiUIState
 
-	// #2 real reactions. reactionFloats is the bounded ring of emoji rising over the stage
-	// (drawReactionFloats); reactBadges caches one alpha-fadeable texture per palette index
-	// (built once the colour-emoji face lands); reactRect is the reused draw scratch (a fresh
-	// local would heap-escape through cgo). reactSpawnSeq scatters floats horizontally.
-	// invalidates everything" idiom SetTextDevScale uses for the label/emoji caches (#77);
-	reactionFloats     []reactionFloat
-	reactBadges        map[uint8]*render.Badge
-	reactBadgeDevScale int32
-	reactRect          sdl.Rect
-	reactSpawnSeq      int32
-	// React trigger: showReactPicker toggles the palette (reactFenceOn tracks our modal
-	// fence so it's released on close, like the emoji picker); reactBtnRect anchors it.
-	// reactTarget{Ref,Name} is the message snapshotted when the palette opened. pendingReact
-	// (+set) is the queued reaction that rides the next IC send; lastReact{Ref,Name} tracks
-	// the most recent IC message, the snapshot source.
-	showReactPicker bool
-	reactFenceOn    bool
-	reactBtnRect    sdl.Rect
-	reactTargetRef  uint32
-	reactTargetName string
-	pendingReact    courtroom.WireReaction
-	pendingReactSet bool
-	lastReactRef    uint32
-	lastReactName   string
+	reactUI reactUIState
 
 	compose   composeState
 	pairbox   pairBoxState
@@ -201,34 +106,7 @@ type sessionState struct {
 	noteCache    []string // rev-keyed Lines() snapshot
 	noteCacheRev int64
 
-	// --- character keybinds (per server) ---
-	// bindingFor is the character a wardrobe key-capture is armed for
-	// ("" = none); charKeys/charKeysRev cache this server's binds for
-	// per-frame lookups (refreshed on connect + edits only).
-	bindingFor  string
-	hkCapture   string            // settings Controls tab: hotkey id a key-capture is armed for ("" = none)
-	charKeys    map[string]string // key name → character
-	charKeysRev map[string]string // character → key name (badges)
-
-	// --- showname keybinds (M6, global) ---
-	// shownameBindFor is the showname a Settings key-capture is armed for
-	// ("" = none); shownameKeys/Rev cache the global binds for per-frame
-	// lookups (refreshed on connect + edits only, like charKeys).
-	shownameBindFor string
-	shownameKeys    map[string]string // key name → showname
-	shownameKeysRev map[string]string // showname → key name (badges)
-	// #126 custom style presets: stylePresetBindFor is the preset NAME awaiting a key-capture
-	// ("" = none); stylePresetNameInput is the Style box's "name this mood" field.
-	stylePresetBindFor   string
-	stylePresetNameInput string
-	// IC quick-phrases (ic_phrase.go): a bare key sends a canned IC line.
-	// icPhraseBindFor is the phrase a Settings key-capture is armed for ("" = none);
-	// icPhraseKeys caches the global key→phrase binds for the per-frame dispatch.
-	icPhraseBindFor string
-	icPhraseKeys    map[string]string // key name → IC phrase
-
-	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
-	ghostWarm map[string]string
+	courtkeys keyBindState
 
 	// --- OOC automation (login flows + macros share the send pipeline) ---
 	oocQueue []oocSend // paced OOC sends (≤ macroQueueCap)
@@ -446,8 +324,6 @@ type sessionState struct {
 	masterMuted        bool
 	musicMuted         bool
 	blipMuted          bool
-	showHotkeys        bool
-	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
 	disconnectDlg      disconnectDialog    // involuntary-disconnect modal over the FROZEN courtroom (zero value = closed). Lives on sessionState DELIBERATELY: it is a per-tab session modal (it belongs to the frozen room/logs it draws over), so it parks/restores with its OWN tab rather than bleeding onto whatever tab is active, and resetSessionState clears it for free — no App-level special-casing. Nothing needs it to outlive resetSessionState: closeDisconnectDialogToLobby / reconnectFromDisconnectDialog snapshot name/url into locals and clear the dialog BEFORE the teardown that resets. Because it's per-tab, EVERY park/swap surface must be inert while it's open, or a park would copy the open dialog into a slot and resetSessionState would wipe the live copy — a stale modal resurfacing cross-tab. Two surfaces do a PRIMARY-session switch and both are now guarded: handleTabBar (tabs.go) and the pinned-client control-swap consume (a.pendingControlSwap, above); with both guarded an open dialog can never park at all. Do NOT move this to App even so: an App-level open dialog would paint tab 0's reason + redial target over a DIFFERENT pinned server's live courtroom, and its Reconnect would tear down that healthy session to dial the wrong one — the per-tab placement is what makes it belong to the frozen server, and the guards are a second line, not the reason.
 	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt. ⚠ Lives on sessionState (parked/copied per tab), safe ONLY because every live park/swap path is strip-guarded, pointer-fenced, or resets session state — a NEW park/swap path must keep one of those protections or this field moves to App (the conn-error-state precedent), else a parked slot could resurface a stale modal.

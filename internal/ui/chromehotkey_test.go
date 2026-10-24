@@ -171,13 +171,13 @@ func TestEveryBuiltInRowIsRebindableFromTheSheet(t *testing.T) {
 // sheet-side rebinding was added to remove.
 func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 	a := testTabApp(t)
-	a.hkCapture = hotkeyToggleToolbox
-	a.hkCache = a.hotkeyCheatEntries()
+	a.courtkeys.hkCapture = hotkeyToggleToolbox
+	a.courtkeys.hkCache = a.hotkeyCheatEntries()
 	a.ctx.keyPressed = sdl.K_F9
 
 	a.consumeHotkeyCapture()
 
-	if a.hkCapture != "" {
+	if a.courtkeys.hkCapture != "" {
 		t.Error("the capture never completed — the row would stay armed forever")
 	}
 	if got := a.hotkeyFor(hotkeyToggleToolbox); got != "f9" {
@@ -186,16 +186,16 @@ func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 	if a.ctx.keyPressed != 0 {
 		t.Error("the captured key was not consumed; it would also fire whatever else it is bound to")
 	}
-	if a.hkCache != nil {
+	if a.courtkeys.hkCache != nil {
 		t.Error("the sheet's cached rows survived a rebind — it would keep showing the old key")
 	}
 
 	// Esc cancels without binding anything.
-	a.hkCapture = hotkeyToggleMenuBar
+	a.courtkeys.hkCapture = hotkeyToggleMenuBar
 	before := a.hotkeyFor(hotkeyToggleMenuBar)
 	a.ctx.keyPressed = sdl.K_ESCAPE
 	a.consumeHotkeyCapture()
-	if a.hkCapture != "" {
+	if a.courtkeys.hkCapture != "" {
 		t.Error("Esc did not disarm the capture")
 	}
 	if got := a.hotkeyFor(hotkeyToggleMenuBar); got != before {

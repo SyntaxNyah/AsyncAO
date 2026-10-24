@@ -124,11 +124,11 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	a.chatlog.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactionFloats) != 1 {
-		t.Fatalf("baseline reaction didn't float (got %d)", len(a.reactionFloats))
+	if len(a.reactUI.reactionFloats) != 1 {
+		t.Fatalf("baseline reaction didn't float (got %d)", len(a.reactUI.reactionFloats))
 	}
 
-	a.reactionFloats = a.reactionFloats[:0]
+	a.reactUI.reactionFloats = a.reactUI.reactionFloats[:0]
 	prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -141,7 +141,7 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	})
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactionFloats) != 0 {
+	if len(a.reactUI.reactionFloats) != 0 {
 		t.Error("the master off-switch didn't suppress an incoming reaction float")
 	}
 	if prefs.Load().HideReactions {

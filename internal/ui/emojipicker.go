@@ -32,10 +32,10 @@ const (
 // picker is open). Stores its rect so the overlay can anchor above it.
 func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	c := a.ctx
-	a.emojiBtnRect = btn
+	a.emoji.emojiBtnRect = btn
 	c.Fill(btn, ColPanel)
 	hover := pointIn(c.mouseX, c.mouseY, btn)
-	if a.showEmojiPicker || hover {
+	if a.emoji.showEmojiPicker || hover {
 		c.Border(btn, ColAccent)
 	} else {
 		c.Border(btn, ColTextDim)
@@ -55,7 +55,7 @@ func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 // inserts the clicked emoji. Called once per frame after the courtroom (covers both
 // layouts). No-op when closed. A click outside the panel and the button closes it.
 func (a *App) drawEmojiPicker(w, h int32) {
-	if !a.showEmojiPicker {
+	if !a.emoji.showEmojiPicker {
 		return
 	}
 	c := a.ctx
@@ -63,16 +63,16 @@ func (a *App) drawEmojiPicker(w, h int32) {
 	rows := int32((len(icEmojiSet) + emojiPickerCols - 1) / emojiPickerCols)
 	pw := int32(emojiPickerCols*emojiCellPx) + 8
 	ph := rows*emojiCellPx + 8
-	px := a.emojiBtnRect.X
+	px := a.emoji.emojiBtnRect.X
 	if px+pw > w-pad {
 		px = w - pad - pw
 	}
 	if px < pad {
 		px = pad
 	}
-	py := a.emojiBtnRect.Y - ph - 4
+	py := a.emoji.emojiBtnRect.Y - ph - 4
 	if py < pad {
-		py = a.emojiBtnRect.Y + a.emojiBtnRect.H + 4 // no room above → drop below the bar
+		py = a.emoji.emojiBtnRect.Y + a.emoji.emojiBtnRect.H + 4 // no room above → drop below the bar
 	}
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
 	c.Fill(panel, ColBackground)
@@ -89,8 +89,8 @@ func (a *App) drawEmojiPicker(w, h int32) {
 		}
 		a.labelEmoji(c.font, c.EmojiFont(emojiPickerPct), cx+5, cy+4, emojiCellPx, e, ColText)
 	}
-	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.emojiBtnRect) {
-		a.showEmojiPicker = false
+	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.emoji.emojiBtnRect) {
+		a.emoji.showEmojiPicker = false
 	}
 }
 
@@ -108,14 +108,14 @@ func (a *App) insertICEmoji(emoji string) {
 // screen / overlay is up, to never strand the fence elsewhere.
 func (a *App) emojiPickerFence(c *Ctx) {
 	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
-	if a.showEmojiPicker && !courtroomActive {
-		a.showEmojiPicker = false
+	if a.emoji.showEmojiPicker && !courtroomActive {
+		a.emoji.showEmojiPicker = false
 	}
-	if a.showEmojiPicker {
+	if a.emoji.showEmojiPicker {
 		c.modalOn = true
-		a.emojiFenceOn = true
-	} else if a.emojiFenceOn {
+		a.emoji.emojiFenceOn = true
+	} else if a.emoji.emojiFenceOn {
 		c.modalOn = false // picker just closed → release the persistent fence
-		a.emojiFenceOn = false
+		a.emoji.emojiFenceOn = false
 	}
 }

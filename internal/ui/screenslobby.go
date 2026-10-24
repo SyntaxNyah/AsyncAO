@@ -752,7 +752,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 			// Char-select Wardrobe tab: a favourite SWITCHES to the real character
 			// (wardrobeClick picks its free slot), not a blind iniswap.
 			a.drawIniswapCell(i, cell, cellClickChar, g.caption)
-			if i == a.charListSel {
+			if i == a.charsel.charListSel {
 				c.Border(cell, ColStar) // the name column's selection (charselectwidgets.go)
 			}
 		}
@@ -887,7 +887,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	if !themedUI {
-		a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
+		a.charsel.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charsel.charSearch, "Search...")
 
 		// Grid tabs right of the search: the same grid swaps between the
 		// server's list and your wardrobe (favourites + server customs), so
@@ -895,7 +895,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		tabX := pad + 240
 		for _, tb := range charSelectTabs {
 			bw := c.TextWidth(tb.label) + 20
-			if a.charTab == tb.id {
+			if a.charsel.charTab == tb.id {
 				c.Fill(sdl.Rect{X: tabX - 2, Y: hdrY + 34, W: bw + 4, H: btnH + 4}, ColAccent)
 			}
 			if c.Button(sdl.Rect{X: tabX, Y: hdrY + 36, W: bw, H: btnH}, tb.label) {
@@ -925,10 +925,10 @@ func (a *App) drawCharSelect(w, h int32) {
 			csLay.clip.W-2*pad, a.warnLine, ColDanger)
 	}
 
-	query := a.charQ.get(a.charSearch)
+	query := a.charsel.charQ.get(a.charsel.charSearch)
 	showTaken := a.charSelectShowTaken(themedUI, csLay)
 
-	if a.charTab == charTabWardrobe {
+	if a.charsel.charTab == charTabWardrobe {
 		rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
 		if themedUI {
 			a.drawCharNameList(csLay, rows, query, showTaken, g)
@@ -939,7 +939,7 @@ func (a *App) drawCharSelect(w, h int32) {
 
 	a.ensureCharLower()
 	a.ensureWardrobeMembers() // star state for the grid; rebuilt only on change
-	rows := charListRows{n: len(a.link.sess.Chars), chars: a.link.sess.Chars, lower: a.charLower}
+	rows := charListRows{n: len(a.link.sess.Chars), chars: a.link.sess.Chars, lower: a.charsel.charLower}
 	// The name column draws BEFORE the grid: the two never overlap (the widget gate
 	// rejects a theme where they would), so this is purely about the selection being
 	// settled before the cells are painted with it.
@@ -951,7 +951,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	// that bites on servers with thousands of characters); the draw loop below
 	// still culls to the visible rows either way. Mirrors the bg picker.
 	matches := rows.matches(query, showTaken)
-	a.charScroll = a.charGridScroll(w, "charscroll", g, a.charScroll, matches)
+	a.charsel.charScroll = a.charGridScroll(w, "charscroll", g, a.charsel.charScroll, matches)
 
 	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	n := int32(0)
@@ -974,14 +974,14 @@ func (a *App) drawCharSelect(w, h int32) {
 		if rows.hidden(i, query, showTaken) {
 			continue
 		}
-		cell := g.cellAt(n, a.charScroll)
+		cell := g.cellAt(n, a.charsel.charScroll)
 		n++
 		if g.visible(cell) { // only rows touching the viewport (no draw/hover through the bar)
 			if c.hovering(cell) {
 				hoverCell = cell
 			}
 			a.drawCharCell(slot, cell, i, dlOn, g)
-			if i == a.charListSel {
+			if i == a.charsel.charListSel {
 				// The name column's selection, shown where the user is looking. One
 				// selection, two views (charselectwidgets.go).
 				c.Border(cell, ColStar)
@@ -1011,7 +1011,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	c := a.ctx
 	c.Fill(cell, ColPanel)
 	base := a.link.urls.CharIcon(slot.Name)
-	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.link.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.rcache.iconPages, &a.rcache.iconPagesGen, len(a.link.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
 		// &cell into cgo would heap-allocate the PARAMETER once per VISIBLE CELL per
 		// frame — a 7×9 themed grid is 63 of them, and escape analysis is static so
 		// the placeholder branch pays it too. Shared scratch (ui.go cgoRect contract:
@@ -1022,7 +1022,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
 		// initials placeholder; the texture pops in live.
-		a.demandAsset(&a.iconAsk, len(a.link.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+		a.demandAsset(&a.rcache.iconAsk, len(a.link.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 		// AO2 does the same thing when a character ships no char_icon: it clears the
 		// stylesheet's border-image and setText()s the character's name into the button
 		// (AO2-Client aocharbutton.cpp:55-58). Centred off the CELL, not off iconCell,
@@ -1078,7 +1078,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// Wardrobe (LemmyAO-style), so it appears in the Wardrobe tab on every
 		// connect. The click is consumed so it can't also pick the character; works
 		// on taken slots too. Membership is the lock-free cached set.
-		starred := idx >= 0 && idx < len(a.charLower) && a.wardrobeMembers[a.charLower[idx]]
+		starred := idx >= 0 && idx < len(a.charsel.charLower) && a.charsel.wardrobeMembers[a.charsel.charLower[idx]]
 		starR := sdl.Rect{X: cell.X + cell.W - charCellStarPx - charCellStarInsetPx,
 			Y: cell.Y + charCellStarInsetPx, W: charCellStarPx, H: charCellStarPx}
 		c.Fill(starR, sdl.Color{R: 0, G: 0, B: 0, A: 130})

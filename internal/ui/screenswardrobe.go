@@ -175,11 +175,11 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	// Armed key-capture hint: while a wardrobe bind waits for a key, say so loudly
 	// in the header AND that Esc or a click cancels — the per-cell "press..." badge
 	// alone was too easy to miss after an accidental arm.
-	if a.bindingFor != "" {
+	if a.courtkeys.bindingFor != "" {
 		hintX := tabX + 8
 		hintW := (panel.X + panel.W - 90 - pad) - hintX - 8
 		if hintW > 60 {
-			c.LabelClipped(hintX, panel.Y+13, hintW, "Binding "+a.bindingFor+": press a key — or Esc / click to cancel", ColAccent)
+			c.LabelClipped(hintX, panel.Y+13, hintW, "Binding "+a.courtkeys.bindingFor+": press a key — or Esc / click to cancel", ColAccent)
 		}
 	}
 	switch a.wardSection {
@@ -289,7 +289,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	// that removes a character from the folder). Folders are membership-derived;
 	// typing a name below makes a transient folder cell so the FIRST character
 	// has something to drop onto. A search spans every folder.
-	query := a.iniQ.get(a.iniSearch)
+	query := a.charsel.iniQ.get(a.iniSearch)
 	searching := query != ""
 
 	folderCells := a.wardrobeFolders()
@@ -530,7 +530,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	y += btnH + 6
 
 	if a.iniBase.show {
-		a.drawIniswapBaseBody(panel, y, a.iniQ.get(a.iniSearch))
+		a.drawIniswapBaseBody(panel, y, a.charsel.iniQ.get(a.iniSearch))
 		return
 	}
 
@@ -563,7 +563,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		return
 	}
 
-	query := a.iniQ.get(a.iniSearch)
+	query := a.charsel.iniQ.get(a.iniSearch)
 	// The Iniswaps tab is the server's iniswap.txt ONLY — a favourite that isn't
 	// a server iniswap (or any favourite on a server with no list) stays out.
 	visible := func(i int) bool {
@@ -796,7 +796,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 
 	c.Fill(cell, ColBackground)
 	base := a.link.urls.CharIcon(name)
-	if page, ok := a.cachedPage(&a.iniPages, &a.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.rcache.iniPages, &a.rcache.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
 		// Shared scratch, not &cell: cell is a PARAMETER, and escape analysis is
 		// static, so a cgo pointer taken from it moves it to the heap on every call —
 		// including the placeholder branch below, which never touches SDL. One
@@ -874,7 +874,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		if c.hovering(cell) {
 			unbound = "+key"
 		}
-		badgeLabel := bindChipLabel(bound, a.bindingFor == name, "press...", unbound)
+		badgeLabel := bindChipLabel(bound, a.courtkeys.bindingFor == name, "press...", unbound)
 		if badgeLabel != "" {
 			bw := c.TextWidth(badgeLabel) + 8
 			badge := sdl.Rect{X: cell.X + 1, Y: cell.Y + cell.H - iniCellKeyBadgeH - 1, W: bw, H: iniCellKeyBadgeH}
@@ -886,7 +886,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 			c.Label(badge.X+4, badge.Y+1, badgeLabel, col)
 			if c.hovering(badge) {
 				if c.clicked && !a.iniDragging {
-					a.bindingFor = name
+					a.courtkeys.bindingFor = name
 					c.focusID = "" // capture owns the next keypress outright
 					return         // don't also wear it
 				}

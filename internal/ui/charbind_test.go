@@ -11,32 +11,32 @@ import "testing"
 func TestPollCharBindCancel(t *testing.T) {
 	// Esc cancels.
 	a := &App{env: env{ctx: &Ctx{escPressed: true}}}
-	a.bindingFor = "Apollo"
+	a.courtkeys.bindingFor = "Apollo"
 	a.pollCharBind()
-	if a.bindingFor != "" {
+	if a.courtkeys.bindingFor != "" {
 		t.Error("Esc must cancel the armed bind")
 	}
 
 	// A click cancels (the "oops, didn't mean to" gesture).
 	a = &App{env: env{ctx: &Ctx{clicked: true}}}
-	a.bindingFor = "Apollo"
+	a.courtkeys.bindingFor = "Apollo"
 	a.pollCharBind()
-	if a.bindingFor != "" {
+	if a.courtkeys.bindingFor != "" {
 		t.Error("a click must cancel the armed bind")
 	}
 
 	// No key, no click, no Esc: the capture stays armed (waiting for a key).
 	a = &App{env: env{ctx: &Ctx{}}}
-	a.bindingFor = "Apollo"
+	a.courtkeys.bindingFor = "Apollo"
 	a.pollCharBind()
-	if a.bindingFor != "Apollo" {
+	if a.courtkeys.bindingFor != "Apollo" {
 		t.Error("an armed capture with no input must stay armed")
 	}
 
 	// Idle (nothing armed): a no-op even with a click queued.
 	a = &App{env: env{ctx: &Ctx{clicked: true}}}
 	a.pollCharBind() // must not panic / touch state
-	if a.bindingFor != "" {
+	if a.courtkeys.bindingFor != "" {
 		t.Error("idle pollCharBind must stay idle")
 	}
 }

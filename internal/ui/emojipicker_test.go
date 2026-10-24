@@ -14,28 +14,28 @@ func TestEmojiPickerFenceReleases(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}, screen: ScreenCourtroom}}
 	c := a.ctx
 
-	a.showEmojiPicker = true
+	a.emoji.showEmojiPicker = true
 	a.emojiPickerFence(c)
-	if !c.modalOn || !a.emojiFenceOn {
+	if !c.modalOn || !a.emoji.emojiFenceOn {
 		t.Fatal("fence should be ON while the picker is open")
 	}
 
 	// Picker closes → the fence MUST release this frame, or the UI freezes.
-	a.showEmojiPicker = false
+	a.emoji.showEmojiPicker = false
 	a.emojiPickerFence(c)
 	if c.modalOn {
 		t.Error("fence must RELEASE the frame after the picker closes (frozen-UI bug)")
 	}
-	if a.emojiFenceOn {
+	if a.emoji.emojiFenceOn {
 		t.Error("emojiFenceOn should clear after release")
 	}
 
 	// Open it, then leave the courtroom: it force-closes and the fence releases.
-	a.showEmojiPicker = true
+	a.emoji.showEmojiPicker = true
 	a.emojiPickerFence(c)
 	a.screen = ScreenSettings
 	a.emojiPickerFence(c)
-	if a.showEmojiPicker {
+	if a.emoji.showEmojiPicker {
 		t.Error("the picker should force-close off the courtroom screen")
 	}
 	if c.modalOn {
@@ -56,14 +56,14 @@ func TestEmojiPickerKeepsPanels(t *testing.T) {
 	if !a.extrasSurfaceLive() {
 		t.Fatal("a live court with nothing open must show the Extras surface")
 	}
-	a.showEmojiPicker = true
+	a.emoji.showEmojiPicker = true
 	if !a.courtModalOpen() {
 		t.Error("the open picker must still fence the pointer (courtModalOpen)")
 	}
 	if !a.extrasSurfaceLive() {
 		t.Error("the open picker must NOT hide torn-off panels / the Extras box")
 	}
-	a.showEmojiPicker = false
+	a.emoji.showEmojiPicker = false
 	a.showIni = true // a genuinely blocking popup still hides them
 	if a.extrasSurfaceLive() {
 		t.Error("a blocking popup must hide the Extras surface")

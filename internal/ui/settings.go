@@ -1197,11 +1197,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key>
 			// (bareBindKey, qol.go) and a row printing the bare letter advertises
 			// a press that no longer does anything.
-			keyLbl := bindChipLabel(bound, a.shownameBindFor == name, "press a key…", "Bind key")
+			keyLbl := bindChipLabel(bound, a.courtkeys.shownameBindFor == name, "press a key…", "Bind key")
 			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
 			if c.Button(kr, keyLbl) {
-				a.bindingFor = "" // don't also arm a character keybind
-				a.shownameBindFor = name
+				a.courtkeys.bindingFor = "" // don't also arm a character keybind
+				a.courtkeys.shownameBindFor = name
 				c.focusID = "" // the capture owns the next keypress
 			}
 			if bound != "" && c.rightClicked && c.hovering(kr) {

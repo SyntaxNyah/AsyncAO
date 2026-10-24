@@ -703,8 +703,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		// per-site verdict and the trade-off. All three now do nothing but rebuild the
 		// roster from what the server PUSHED.
 		case courtroom.EventCharsUpdated:
-			a.charLower = nil     // names may have changed; rebuild lazily
-			a.rebuildLiveRoster() // pre-snapshot fallback only
+			a.charsel.charLower = nil // names may have changed; rebuild lazily
+			a.rebuildLiveRoster()     // pre-snapshot fallback only
 		case courtroom.EventAreasUpdated:
 			a.rebuildLiveRoster()
 			a.srvMeta.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
@@ -775,7 +775,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if speaker != "" {
 					ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
 					a.chatlog.icLog[len(a.chatlog.icLog)-1].ref = ref
-					a.lastReactRef, a.lastReactName = ref, speaker
+					a.reactUI.lastReactRef, a.reactUI.lastReactName = ref, speaker
 				}
 				if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
 					a.onIncomingReaction(r)

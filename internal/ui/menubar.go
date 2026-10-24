@@ -425,8 +425,8 @@ func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
 func menuFxPickerOpen(a *App, _ int) bool { return a.lookUI.showFxPicker }
 func menuToggleFxPicker(a *App, _ int)    { a.lookUI.showFxPicker = !a.lookUI.showFxPicker }
 
-func menuEmojiPickerOpen(a *App, _ int) bool { return a.showEmojiPicker }
-func menuToggleEmojiPicker(a *App, _ int)    { a.showEmojiPicker = !a.showEmojiPicker }
+func menuEmojiPickerOpen(a *App, _ int) bool { return a.emoji.showEmojiPicker }
+func menuToggleEmojiPicker(a *App, _ int)    { a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker }
 
 // Mod / CM are ENABLED-gated rather than hidden, so the row still says the
 // command exists and simply greys out until the server grants it — the chips
@@ -478,9 +478,9 @@ func menuOpenServerHelp(a *App, _ int) { a.menuGoto(ScreenServerHelp) }
 // menuToggleHotkeys mirrors App.Frame's F1 arm exactly (including dropping the
 // cached rows, which are rebuilt per open).
 func menuToggleHotkeys(a *App, _ int) {
-	if a.showHotkeys {
-		a.showHotkeys = false
-		a.hkCache = nil
+	if a.courtkeys.showHotkeys {
+		a.courtkeys.showHotkeys = false
+		a.courtkeys.hkCache = nil
 		return
 	}
 	a.openHotkeyCheatSheet()
@@ -952,7 +952,7 @@ func (a *App) menuBarModalFence(c *Ctx) {
 // the same discipline, and every one of them runs above the menu bar in App.Frame, so
 // their flags are already this frame's answer by the time the bar releases.
 func (a *App) otherModalFenceHeld() bool {
-	return a.emojiFenceOn || a.reactFenceOn || a.rosterMenuFenceOn || a.musicMenuFenceOn || a.updates.fenceHeld()
+	return a.emoji.emojiFenceOn || a.reactUI.reactFenceOn || a.rosterMenuFenceOn || a.musicMenuFenceOn || a.updates.fenceHeld()
 }
 
 // menuBarInput resolves the bar's own interaction. Every hit test is raw pointIn:

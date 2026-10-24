@@ -54,11 +54,11 @@ func TestCapturingKey(t *testing.T) {
 	if a.capturingKey() {
 		t.Fatal("fresh app should not be capturing a key (macroBind must default to -1)")
 	}
-	a.bindingFor = "modcall"
+	a.courtkeys.bindingFor = "modcall"
 	if !a.capturingKey() {
 		t.Error("an armed hotkey capture should report capturingKey")
 	}
-	a.bindingFor = ""
+	a.courtkeys.bindingFor = ""
 	a.macroBind = 0 // 0 = armed (slot 0)
 	if !a.capturingKey() {
 		t.Error("an armed macro capture should report capturingKey")
