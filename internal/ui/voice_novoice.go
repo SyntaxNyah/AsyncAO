@@ -46,5 +46,5 @@ func (*App) drawSettingsVoice(y, _ int32) int32    { return y }
 // in the voice-free build; they back the live engine in voiceaudio.go for the
 // voice-enabled build.
 func (a *App) stopVoiceAudio() {
-	_, _, _, _ = a.voiceAudio, a.voiceIconAsk, a.micTest, a.micTestSidetone
+	_, _, _, _ = a.voiceAudio, a.roster.voiceIconAsk, a.micTest, a.micTestSidetone
 }
