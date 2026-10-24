@@ -1,13 +1,6 @@
 // Package cache implements AsyncAO's three storage tiers (spec §9):
-//
-//	T1 — decoded textures, byte-budgeted LRU (64 MiB default)
-//	T2 — raw fetched bytes, byte-budgeted LRU (128 MiB default)
-//	T3 — on-disk asset cache with a single async writer
-//
 // T1/T2 are ByteBudgetLRU instantiations owned by internal/assets and the
 // render side; this package is SDL-free so every tier is testable headless.
-// Cache keys embed the full asset URL (host included), so two servers can
-// never collide — per-server separation is structural, not best-effort.
 package cache
 
 import (
@@ -41,7 +34,6 @@ const (
 	// animation fix) — they get the fixed budget
 	// DefaultMaxAnimatedDecodedAssetBytes instead, downscaled to fit it, and
 	// overflow the main tier into an eviction-exempt map on the render side.
-	// Cross-package invariant pinned by render.TestDecodeCapFitsMainTier.
 	decodeCapBudgetDiv = 4
 )
 
@@ -60,9 +52,6 @@ const DefaultMaxAnimatedDecodedAssetBytes = 128 << 20
 // OVERFLOW tier in total: an animated page that still exceeds the main LRU
 // tier's budget (the animated budget is larger than the default main tier)
 // lives there, and this bounds how many such pages can be resident at once.
-// Sized to ONE animated budget (500 MiB) so a single full-size animation is
-// resident and peak animated memory stays ~500 MiB rather than the ~1 GiB that
-// two resident clips would cost.
 const DefaultOversizedTextureBytes = 500 << 20
 
 // MaxDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4 across
@@ -203,7 +192,6 @@ func (c *ByteBudgetLRU[K, V]) Peek(key K) (V, bool) {
 // only its byte cost changes). It exists for the texture store's animated-page
 // downgrade: a full animation reduced to a still frame keeps its one remaining
 // texture but must shrink its byte accounting so the tier evicts correctly.
-// Returns false when the key is absent (or the size is invalid).
 func (c *ByteBudgetLRU[K, V]) Resize(key K, size int64) bool {
 	if size < 0 {
 		return false
@@ -233,11 +221,6 @@ func (c *ByteBudgetLRU[K, V]) Purge() {
 }
 
 // Keys returns a SNAPSHOT of the current keys, oldest first.
-//
-// It allocates the whole slice, so it is deliberately NOT a hot-path API: the
-// only callers are user-initiated sweeps (dropping exactly the textures a newly
-// mounted local pack can re-answer), never per frame and never per asset.
-//
 // Snapshotting is also what makes those sweeps safe. Removing while iterating
 // re-enters the cache through the eviction callback, which the texture store
 // documents as forbidden — so a caller must collect the keys it wants first and

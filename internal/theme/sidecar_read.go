@@ -3,12 +3,6 @@ package theme
 // The sidecar READER. It walks the lossless document (never a second parser),
 // so classification here is the same classification the write path uses and the
 // same one ParseINI uses — the parity FuzzINIDocRoundTrip pins.
-//
-// It never refuses on version, degrades every unknown enum value, and records
-// everything it did not understand so the import report can say so out loud.
-// It DOES refuse a file past a named LOAD cap: truncating a theme and then
-// saving it back is data loss (hard rule 4's "refuse, never truncate").
-//
 // NoteCap is the one cap that is NOT a load cap. It bounds the import REPORT,
 // so every degrade/skip site absorbs its error (`_ = s.note(...)`) and keeps
 // loading: a theme is never refused for having too many things to say about it.
@@ -108,12 +102,6 @@ func LoadSidecar(path string) (*Sidecar, error) {
 
 // LoadSidecarIn returns the sidecar of the FIRST directory that has one, plus
 // that directory.
-//
-// ATOMIC, never merged per key across the theme ladder — unlike the three AO2
-// INIs, which merge because AO2 merges them. Merging elements per id would
-// materialise a fallback theme's decoration onto rects the author's canvas does
-// not have, which is a visual bug with no author to blame.
-//
 // BLOCKING — goroutine only (hard rule 2).
 func LoadSidecarIn(dirs []string) (*Sidecar, string, error) {
 	for _, dir := range dirs {
@@ -133,7 +121,6 @@ func LoadSidecarIn(dirs []string) (*Sidecar, string, error) {
 
 // docSections is the ordered section view of a document: section names in
 // DECLARATION order, each with its unique keys in declaration order.
-//
 // Order is load-bearing twice over: element z-ties break on declaration index,
 // and a file whose element order depended on Go's map iteration would render
 // differently on every launch.
@@ -221,7 +208,6 @@ func (s *Sidecar) readSections(d *INIDoc, secs docSections) error {
 // still correct. Refusing here would make §7.1 ("a reader NEVER refuses to
 // load because of format") unenforceable, because §7.4's unknown-kind skip —
 // the forward-compat path itself — notes once per element.
-//
 // The error return is kept so the drop is VISIBLE at each call site rather
 // than hidden inside this function; a site that legitimately refuses uses a
 // load cap (ElementCap, PreservedCap, …), never this one.
@@ -537,11 +523,6 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 
 // resolvePaneHosts enforces the two structural pane rules AFTER every pane is
 // read, because both are cross-pane properties:
-//
-//   - host sets are DISJOINT (a widget draws exactly once, so it can belong to
-//     exactly one pane; a later claim on the same key is dropped)
-//   - "courtroom" and "viewport" can never be hosted (paneForbiddenHosts)
-//
 // A violation drops the HOST, never the theme: the rest of the pane is a
 // perfectly good split, and refusing to load would punish the reader of a file
 // the author can no longer fix.
@@ -591,7 +572,6 @@ var effectBindKeyKnown = keySet("effect", "color", "period_ms", "amp_pct", "cloc
 // state is "there is one, and it fits the widget-key bound" — AnchorRuneCap, the
 // same bound an element's `anchor` is held to, because both name that same
 // vocabulary.
-//
 // It is a named predicate rather than the inline test it used to be because the
 // WRITER's guard (Sidecar.validateIDs) must ask exactly this question of the
 // model: a target this refuses is preserved in the file and dropped from the
@@ -766,7 +746,6 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 // and the writer compares format(parse(raw)) against what it wants to write —
 // which is what makes an unchanged key, an out-of-range value and an UNKNOWN
 // ENUM VALUE all survive a save byte-identically.
-// ---------------------------------------------------------------------------
 
 // sectionGetter binds a section, returning "" for an absent key. Values arrive
 // already trimmed and already stripped of any ';' comment (INIDoc.Get).
@@ -852,7 +831,6 @@ func (s *Sidecar) elementText(section, raw string) (string, error) {
 
 // genParamsOf parses "k=v, k=v". Ordered, because the generator's parameter
 // hash is the texture cache key and is order-sensitive.
-//
 // PURE, with no Sidecar receiver, because the WRITER canonicalises through the
 // same function: a value the writer could not re-derive by parsing is a value
 // it would silently reformat.
@@ -896,7 +874,6 @@ func (s *Sidecar) genParams(section, raw string) ([GenParamCap]KV, error) {
 // conditionOf parses "always | speaking | pos:X | char:X | side:X | shout:X".
 // An unknown axis degrades to always-visible: an element a future axis would
 // have hidden is better shown than lost.
-//
 // It returns the PROBLEM as text rather than noting it, so the writer can share
 // the parse without inventing notes on a save.
 func conditionOf(raw string) (Condition, string, error) {

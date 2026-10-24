@@ -223,10 +223,6 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 		// being re-derived here: deriving a generator key means lowercasing a name and
 		// hashing a param list, and the bake's allocation ceiling is a constant rather
 		// than a per-element budget so that a preset swap cannot hitch its frame.
-		//
-		// nil is the ordinary answer for art that has not landed, was evicted by a
-		// window recreate, or was refused by the budget — the painter draws nothing
-		// rather than probing, and themeMediaPage has already kicked the paced heal.
 		be.el.page, _ = a.themeMediaPage(a.themeMediaPlan.ElemKey(idx))
 	case theme.ElemText:
 		// The ink is `color`, not `fill` — and it is the ONE colour an absent value
@@ -247,7 +243,6 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 }
 
 // elemBindZ is the z every [effect.*] bind bakes at: the top of the overlay band.
-//
 // A bind is a HIGHLIGHT ON a widget, so it belongs above the free elements an author
 // placed in the same band — a glow that a decorative plate covered would be a glow
 // nobody can see. int16's maximum rather than a chosen number, because "on top of
@@ -268,13 +263,6 @@ func (a *App) bakeEffectBind(lay *themeLayoutCache, b *theme.EffectBind) (bakeEl
 	peak := sdlColorOf(b.Color)
 	peak.A = uint8(int(peak.A) * int(b.AmpPct) / theme.AmpMaxPct)
 	// The baked row, in one piece:
-	//   kind/shape — a flat plate, the silhouette family's most neutral member,
-	//     because a bind's shape is the WIDGET's and not one the author chose;
-	//   col        — the authored hue at its peak opacity (see above);
-	//   wash       — the alpha rule that makes the plate the effect (themeelements.go);
-	//   tint       — opaque white, the neutral value every baked row carries;
-	//   cond       — always visible, so the one-shot resolves off the theme clock's
-	//     own zero and needs no pool slot (fxAlwaysOrigin).
 	return bakeElement{
 		band: theme.BandOverlay,
 		z:    elemBindZ,
@@ -342,7 +330,6 @@ func elemConditionValue(cond theme.Condition) string {
 // Courtroom.CurrentShout reports. An unrecognised value is returned verbatim: it
 // simply never matches, which is the format's rule for a condition naming something
 // this build has no idea about.
-//
 // Allocation-free by construction (EqualFold compares, ShoutName returns constants),
 // which matters because the bake's whole allocation budget is elemBakeAllocCeil for
 // a theme of any size.
@@ -360,7 +347,6 @@ func elemShoutStem(v string) string {
 // internCondition maps a VisibleWhen value to an index into lay.condVal, adding it
 // on first sight. The table is bounded by theme.ElementCap because at most one new
 // value can arrive per element.
-//
 // The VALUE-LESS axes (always, speaking) intern nothing: elementVisible switches on
 // the axis before it ever looks at the index.
 func (a *App) internCondition(lay *themeLayoutCache, cond theme.Condition) int16 {
@@ -554,8 +540,6 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			// their entries in lay.r are PARENT-relative and their draw sites re-base
 			// them, so re-homing one would compose the pane offset on top of a
 			// re-basing that still happens — the widget would land at pane + parent.
-			// A child moves by moving its parent, which is what a pane hosting
-			// ao2_chatbox already does.
 			if themeSlotRel(key) != relCourtroom {
 				continue
 			}
@@ -568,8 +552,6 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			// origin instead of the canvas's — which is the definition of a
 			// reparent, and what makes a toggle pair share a sub-rect by overriding
 			// both to the same box.
-			// A courtroom-relative rect in lay.r is window-absolute; take its
-			// design-space offset back off before re-basing it onto the pane.
 			rel := cur
 			rel.X -= lay.area.X
 			rel.Y -= lay.area.Y
@@ -617,9 +599,6 @@ func (a *App) paneRect(lay *themeLayoutCache, p *theme.Pane) (sdl.Rect, bool) {
 // INSERTION SORT, which is stable, allocation-free and, over at most elemZSortCap
 // entries on a cold path, faster than the machinery sort.SliceStable would set up
 // (a closure and a reflect swapper, both allocations).
-// STABILITY IS THE FORMAT. docs/THEME-FORMAT.md §4: "within a band, elements paint
-// in ascending z, ties broken by declaration order". The input is already in
-// declaration order, so stability is the whole of that second clause — and it is
 func (a *App) sortBakedElements(lay *themeLayoutCache, n int) {
 	if n > elemZSortCap {
 		n = elemZSortCap

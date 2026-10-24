@@ -171,9 +171,6 @@ func (a *App) drawLobby(w, h int32) {
 	// They used to be pinned by raw `w - <literal> - pad` rects
 	// (110/230/350/470/590/710/830); at config.MinWindowW those literals put "What's
 	// New" at x=-78 and "Logs" at x=-198, i.e. clean off the left edge of the window.
-	// Six of the seven now live in the menu bar (see the constants above); the Phone
-	// Book page toggle takes its rect here, in cursor order, but draws further down
-	// where its dynamic label and tooltip live.
 	utilW := lobbyUtilWidth(w)
 	pbBtn := sdl.Rect{X: lobbyUtilStop(w, 0), Y: hdrY, W: utilW, H: btnH}
 	// The leftmost of the cluster: its X is what the centred Privacy/Glossary pair
@@ -407,7 +404,6 @@ func (a *App) drawLobby(w, h int32) {
 
 	// Keyboard navigation (#18): arrows move the selection through joinable servers, Enter joins —
 	// when no text field is focused. The selection drives the same expand + scroll as a click.
-	//
 	// NOT while the server-notice box is up. A refused dial lands here with the box open
 	// and a.selServer still pointing at the server that just refused us, and the pointer
 	// fence (App.Frame) only blanks the MOUSE — fencePointer leaves the keyboard alone.
@@ -419,7 +415,6 @@ func (a *App) drawLobby(w, h int32) {
 		// reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm (ui.go), so keyPressed
 		// can never hold Return and the `case sdl.K_RETURN` this replaces was unreachable
 		// from a real keystroke. #18's "Enter joins" has been dead since it shipped.
-		// Consumed on use so one press joins once and nothing downstream sees it twice.
 		if c.enter {
 			c.enter = false
 			if a.lobby.selServer >= 0 && a.lobby.selServer < len(a.lobby.servers) && a.lobby.servers[a.lobby.selServer].Joinable() {
@@ -964,10 +959,6 @@ func (a *App) drawCharSelect(w, h int32) {
 	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
 	// bar is drawn first, so without this the later cell draws covered it as you
 	// scrolled down, and search became unreachable. Keeps the bar always usable.
-	// pushClip (not raw SetClipRect) also sets the INPUT clip, so a cell scrolled
-	// half under the bar can't be clicked/hovered up there — hovering() honours
-	// clipRect, so the pick (drawCharCell), the ★ star, and the hover-preview all
-	// stop at the viewport edge instead of firing under the search/tabs bar.
 	prev, had := c.pushClip(g.view)
 	for i := range a.link.sess.Chars {
 		slot := &a.link.sess.Chars[i]
@@ -1149,7 +1140,6 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// clamp-to-window math (baseX/hiX/baseY/hiY below) is exactly the thing
 	// the detached path must never inherit. previewFrameRect is zeroed so
 	// handlePreviewInput's wheel/drag hit-testing (which gates on box.W==0)
-	// also stands down for free.
 	if a.previewIsDetached() {
 		a.previewFrameRect = sdl.Rect{}
 		return
@@ -1454,8 +1444,6 @@ func (a *App) closeSpritePreview() {
 	// hoverSince satisfies the dwell instantly. That silent re-arm is how a
 	// char pick carried a "closed" preview into the courtroom (PV lands a few
 	// frames after the click) and latched the frame pacer at the active cap.
-	// A fresh hover restarts the full dwell, which is also the right feel:
-	// a selection commits, the pop-up shouldn't bounce straight back.
 	a.ctx.hoverID = ""
 }
 
@@ -1484,10 +1472,6 @@ func (a *App) noteScreenTransition() {
 	// full pingRes drops it) and pollPing only runs from drawLobby — so an
 	// undrained sweep would leave a.pinging latched true for the session (dead
 	// Ping button, expScreenSkippable stuck false = idle lobby at full rate).
-	// Clear the latch on the one funnel every exit passes through, and bump the
-	// generation so the moot sweep's stragglers — including a late done
-	// sentinel's surprise re-sort — are discarded. Same idiom as the join path
-	// (connectWith).
 	if prev == ScreenLobby && a.lobby.pinging {
 		a.lobby.pinging = false
 		a.lobby.pingGen++
@@ -1541,9 +1525,6 @@ const previewDragBottomReserve = 22
 // the registry depth taken just BEFORE its footprint was published, handed to
 // pushOverlayOwner so the box's own − / + zoom buttons and pinned × stay live
 // while everything painted UNDER the box goes inert (overlayfence.go).
-// A latch rather than a re-derived predicate for the reason compactToolboxLatch
-// documents: the fence is published at the TOP of the courtroom pass (a fence is
-// only consulted at hit-test time, and a single-pass kit hit-tests as it draws)
 type previewFenceLatch struct {
 	mark int  // registry depth before our publication (0 when nothing was published)
 	on   bool // we published — so the draw must suspend it for its own widgets
@@ -1554,9 +1535,6 @@ type previewFenceLatch struct {
 // no fence a click on it ALSO fired the music row underneath: the box won the
 // pixels, the row won the click, and a song started playing. The row draws far
 // earlier in the same single pass and has no way to know the box is coming.
-// The footprint is last frame's rect. That is the same one-frame latch
-// handlePreviewInput has always hit-tested against (previewFrameRect is cached
-// for exactly this reason), and it cannot leak in practice: the box only appears
 func (a *App) fenceSpritePreview() {
 	c := a.ctx
 	a.previewFence = previewFenceLatch{mark: c.overlayFenceMark()}

@@ -134,10 +134,6 @@ const (
 	// §17.4 — a hostile server cannot balloon memory, and LabelClipped does NOT save
 	// us because it rasterizes the whole string before clipping the blit width, so an
 	// oversized reason draws NOTHING at all).
-	// Sized well past every real payload (the longest surveyed removal reason is a
-	// few hundred runes) while staying far below anything that threatens the memory
-	// envelope. The display surfaces bound their own row count separately, so this
-	// only has to keep what Copy hands the user useful — not what fits on screen.
 	serverTextRuneCap = 8192
 )
 
@@ -150,10 +146,6 @@ const (
 // reason that stopped matching "Banned" would silently re-arm auto-reconnect against
 // a ban, turning a display bug into ban evasion. Capping the field keeps the prefix
 // structurally out of reach of the cap whatever its value.
-// The fast path allocates nothing: SanitizeText returns the input untouched when there
-// is nothing to drop, RuneCountInString does not build a []rune, and every real payload
-// sits far under the cap, so the conversion only ever runs on the pathological input
-// that actually needs it.
 func capServerText(s string) string {
 	s = protocol.SanitizeText(s)
 	if utf8.RuneCountInString(s) <= serverTextRuneCap {
@@ -1020,11 +1012,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// old servers send only fields 0-2, so a short packet degrades to the
 		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
 		// end, and atoiOr falls back, so no bounds check is needed here.
-		// Loop default DELIBERATELY DIFFERS from AO2: AO2 sets looping=false when
-		// field 3 is absent (relying on outdated servers to loop server-side),
-		// but AsyncAO has always looped client-side, and every legacy tsuserver
-		// depends on that — so absent field 3 keeps loop-forever. An explicit
-		// field 3 = "0" (or the NO_REPEAT flag) means play once.
 		looping := true
 		if v := p.Field(3); v != "" {
 			looping = v == "1"
@@ -1136,12 +1123,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// (packet_distribution.cpp CHECK → pong()). Nothing else changes — it is
 		// not an event, it does not touch the keepalive (the connection's own
 		// goroutine owns that), it only dates the clock correction.
-		// In production this always early-returns: the CH it answers came from
-		// the connection's keepalive goroutine, which leaves no stamp, so
-		// notePong finds none outstanding. That is deliberate (a stamp-less
-		// CHECK must never invent a measurement), and it is why the clock
-		// correction below is currently inert — latency.go, "the missing call
-		// site".
 		s.notePong()
 
 	case "HP":
@@ -1490,9 +1471,6 @@ func (s *Session) RequestMusic(track string) {
 // MC#<song>#<cid>[#<showname>][#<flags>] — Courtroom::on_music_list_double_clicked
 // (courtroom.cpp:5806-5819).
 // The showname condition is canon's, verbatim and in canon's order:
-// The MUSIC_EFFECT bitmask rides only under `effects`; on a server without it the
-// bits would never leave the client, which is why the Music overflow menu greys
-// those rows rather than hiding them (musicheader.go).
 func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 	fields := make([]string, 0, 4)
 	fields = append(fields, track, strconv.Itoa(s.MyCharID))

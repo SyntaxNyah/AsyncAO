@@ -26,9 +26,6 @@ const (
 	// misc folder) pair. A busy server shows a handful of effect packs; past the cap
 	// the map resets, because it is a cache and a re-resolve heals (the charMetaCap
 	// idiom).
-	// In-flight resolves are NOT in this map (overlayRosterInFlight is its own set),
-	// precisely so this reset cannot wipe one: a wiped marker lets the next ask
-	// spawn a second goroutine for a key already being resolved, and the two
 	overlayManifestCap = 16
 	// overlayRosterFetchCap bounds CONCURRENT roster resolves (hard rule 4). Each
 	// one holds an 8 s network timeout and a bounded disk walk; four is past every
@@ -69,8 +66,6 @@ const (
 	// FOUR call sites must agree on it — the dropdown itself, the row right-click,
 	// the tooltip, and overlayPreviewCloseEdge's "is the list still open" test —
 	// and a typo in the last one would silently strand the preview box open.
-	// Constant, so the tooltip's `+ "-tip"` folds at compile time (no per-frame
-	// concat on the zero-alloc courtroom path).
 	overlayEffectsDDID = "effectsdd"
 	// overlayIconRowH / overlayIconThumbW size the open dropdown's rows when the
 	// theme declares no effects_icon_size. Same shape as the Pos selector's
@@ -296,8 +291,6 @@ func (a *App) pollOverlayRosters() {
 	// site and drawSpritePreviewFallback stands in for it when the grid did not run
 	// (hidden panel, no themed `emotes` rect, char.ini still loading) — the right-
 	// click effect preview is opened from the IC bar and must appear in all of them.
-	// The latch is set by whichever site draws and cleared here, once per frame,
-	// ahead of every screen draw (app.go's poll cluster).
 	a.emoteGridDrewPreview = false
 	a.overlayPreviewCloseEdge()
 	if a.overlays.overlayRosterRes != nil {
@@ -421,9 +414,6 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 		// cull, no max_duration) that nothing would ever correct, which is precisely
 		// the marquee case: the first message from any character shipping its own
 		// misc effects pack.
-		// So report PENDING. The courtroom holds the request and re-asks
-		// (courtroom/overlayfx.go tickOverlayPending) until this resolve lands, then
-		// walks the full ladder with the real properties. Nothing is fetched
 		out.Pending = true
 		return out, true
 	}
@@ -466,7 +456,6 @@ func (a *App) overlayEffectsFolderFor(char string) string {
 // speaker's char.ini [Options] realization as a full SFX url, "" when the
 // character declares none (the courtroom then falls back to the theme's
 // courtroom_sounds.ini value, exactly as canon does).
-//
 // Same origin guard every other origin-dependent path in this package carries —
 // an origin-less URLBuilder would hand back a relative "sounds/general/<name>".
 func (a *App) overlayCustomRealizationFor(char string) string {
@@ -482,8 +471,6 @@ func (a *App) overlayCustomRealizationFor(char string) string {
 // fx == "realization" has its sound replaced wholesale by get_custom_realization
 // (text_file_functions.cpp:889-892), i.e. by char.ini [Options] realization,
 // falling back to the theme's courtroom_sounds.ini "realization".
-// DIVERGENCE, deliberate: canon's get_custom_realization returns a RESOLVED LOCAL
-// PATH for the char.ini case (get_sfx_suffix(get_sounds_path(...)), :902) and AO2
 // then puts that path straight on the wire (courtroom.cpp:2299-2307). A local
 func (a *App) overlayEffectSound(folder, name string) string {
 	if strings.EqualFold(strings.TrimSpace(name), overlayRealizationEffect) {
@@ -500,7 +487,6 @@ func (a *App) overlayEffectSound(folder, name string) string {
 
 // myOverlayFolder is OUR OWN character's effects folder — the value that rides
 // the outgoing field's middle slot (courtroom.cpp:2296-2308).
-//
 // Memoised on the active character name (a plain string compare) because the
 // underlying charMetaFor builds a char.ini URL by concatenation and this is asked
 // on every courtroom frame, which is zero-alloc-gated. pollCharMeta drops the
@@ -518,8 +504,6 @@ func (a *App) myOverlayFolder() string {
 // roster's display order verbatim (theme file ++ misc file, duplicates preserved
 // — the wire carries the NAME, not the index, so a duplicate is harmless and
 // deduping would diverge from every other client's row numbering).
-// Baked once per roster: the copy and the prepend both allocate, and this is
-// asked on every courtroom frame (the zero-alloc gate).
 func (a *App) overlayChoices() []string {
 	folder := a.myOverlayFolder()
 	if a.overlays.overlayIconFolder != folder {
@@ -749,10 +733,6 @@ func (a *App) overlayRosterFXFor(folder, name string) (theme.OverlayFX, bool) {
 
 // outgoingEffectsField builds the MS EFFECTS value for the message being sent:
 // "<name>|<folder>|<sound>" (courtroom.cpp:2296-2308), or "" for the "None" row.
-//
-// sound is forced to "0" when Pre is UNCHECKED and a custom/dropdown SFX is set —
-// AO2's anti-overlap rule (:2302-2305): the effect's own sound would otherwise
-// play on top of the sound the user explicitly chose for this line.
 func (a *App) outgoingEffectsField() string {
 	choices := a.overlayChoices()
 	if a.emotepick.overlayChoiceIdx <= 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
@@ -800,7 +780,6 @@ func (a *App) overlayPostSendReset(globalSticky bool) {
 // layer OUT of the viewport onto the Courtroom (courtroom.cpp:3234-3237), which
 // is why it cannot ride Viewport.Render like the other three: it must paint after
 // the chatbox. Called immediately after drawChatOverlay in both layouts.
-//
 // Free when nothing is on stage — DrawOverlayChat's first test is the base.
 func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	if a.d.Viewport == nil || a.ctx == nil {

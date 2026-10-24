@@ -41,9 +41,6 @@ const (
 // that number. They REFUSE rather than truncate — a silently truncated theme
 // that then gets saved is data loss, which is the one failure this feature
 // cannot recover from. Pinned by TestSidecarCapsRefuseNotTruncate.
-// NoteCap is the exception and says so at its own declaration: it bounds the
-// import REPORT, never the load. Published in docs/THEME-FORMAT.md §7 and
-// pinned against it by TestPublishedCapsMatchTheConstants.
 const (
 	// ElementCap bounds [element.*]. ~4x the densest style preset (Manga Panel
 	// is ~22 elements); 96 baked entries is a fixed array that never grows.
@@ -61,9 +58,6 @@ const (
 	// pair is by construction either a repeat of a slot already set — the reader's
 	// "later wins" rule makes it dead — or a key no generator resolves. There is
 	// nothing a file can say in a twelfth pair that it cannot say in eleven.
-	// RAISING IT IS BACKWARD COMPATIBLE in the only direction that matters: every
-	// file that parsed under 8 still parses, and a file authored at 11 read by an
-	// older build is refused with the cap named rather than silently shortened
 	GenParamCap = 11
 	// ClockCap bounds the authoring clock groups. Clock 0 is the shared theme
 	// anchor and is never declared; the densest style preset wants four.
@@ -87,8 +81,6 @@ const (
 	// both are bounded by MediaCap. It is written as a CONST ALIAS, not as a
 	// second 24, for the reason the texture budget already const-aliases its
 	// producer and store caps: two copies of a number are two numbers.
-	// The pool landed in W5 as internal/ui's themeFXCap, which aliases this
-	// constant exactly as the sentence that used to stand here asked it to.
 	EffectBindCap = MediaCap
 	// SoundCap bounds [sounds], the AsyncAO-tier sound overrides.
 	SoundCap = 16
@@ -154,7 +146,6 @@ const (
 	AngleCount = 256
 	// ZMin / ZMax bound Element.Z and the four 9-slice insets: both are int16
 	// in the model, and the file's grammar has to say so out loud.
-	//
 	// NAMED because THREE places must agree on the number — the reader, the
 	// writer's canonicaliser and docs/THEME-FORMAT.md. When they do not, the
 	// writer decides an untouched file "does not already mean" what it says and
@@ -163,7 +154,6 @@ const (
 	ZMax = 32767
 	// TimeMsMin / TimeMsMax bound every millisecond-valued key (phase_ms,
 	// effect_period_ms and [effect.*] period_ms), which are int32 in the model.
-	//
 	// CLAMPED, never truncated. A bare int32() conversion would turn a legal
 	// "phase_ms = 3000000000" into a NEGATIVE phase, and it would do it only on
 	// a 64-bit host — atoiTrim saturates at the platform int width, so a 32-bit
@@ -189,7 +179,6 @@ var (
 // never repurposed. Inserting a value in the middle silently re-maps every
 // theme already on disk. Pinned by TestElementKindNamesAreAppendOnly and
 // TestElementBandNamesAreAppendOnly.
-// ---------------------------------------------------------------------------
 
 // ElementKind is what a free element paints.
 type ElementKind uint8
@@ -528,7 +517,6 @@ func (e Element) Inert() bool {
 
 // Pane is split-screen. It REPARENTS the listed slot keys into a second rect:
 // each host widget draws EXACTLY ONCE, at the pane's position.
-//
 // Calling the host's draw site twice was rejected and must stay rejected: the
 // immediate-mode kit has ONE drag owner and a documented single wheel consumer,
 // so a widget cannot be in two places.
@@ -660,7 +648,6 @@ type KeyAngle struct {
 // Sidecar is a parsed asyncao_theme.ini PLUS the lossless document it came
 // from. The document is what preserves everything this build does not
 // understand; the struct is what this build draws.
-//
 // A nil *Sidecar is the STOCK AO2 THEME: every accessor is nil-safe and returns
 // nothing, so "a theme with no sidecar produces zero elements" needs no branch
 // at any call site.
@@ -709,9 +696,6 @@ func NewSidecar() *Sidecar {
 // production consumers and a nil check for a test — and INIDoc's Set/Bytes/Write
 // are exported, so it handed any caller a second writer with no arbitration:
 // sc.Doc().Set("element.x", "z", "9") is silently reverted by the next Bytes()
-// W7's undo ring and autosave are the named future callers, and they get a
-// NARROW path — the shape the reader/writer pair can arbitrate, named at the
-// waves' own call sites — rather than this one back. The census that keeps the
 
 // IsFutureFormat reports a theme authored by a NEWER AsyncAO. It never blocks
 // reading (rule 1); it is what gates the editor into read-only with a
@@ -799,7 +783,6 @@ func (s *Sidecar) UnretireElementSection(id string) {
 // flushRetiredSections performs the deferred removals. Called by Bytes, before
 // any key is written, so a retired section cannot be resurrected by the very
 // write that was supposed to delete it.
-//
 // UNCONDITIONAL: an id still in the model is not a reason to keep its lines. The
 // only thing that cancels a retirement is UnretireElementSection, because the
 // caller that re-added the element is the only one that knows the two acts are
@@ -960,8 +943,6 @@ type sidecarMigration func(*INIDoc) error
 // is the point: the chain exists, is called, and is tested BEFORE it is needed,
 // so the first real migration is one entry in a table rather than a design
 // decision taken under pressure.
-// Still bounded and still ships empty: its length is the number of grammars this
-// build knows, which is a compile-time fact either way (hard rule 4).
 var sidecarMigrations = []sidecarMigration{}
 
 // migrateSidecar walks the chain from the file's format up to this build's.
