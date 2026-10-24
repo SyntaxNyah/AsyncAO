@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"time"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/debuglog"
 )
 
@@ -13,6 +11,8 @@ import (
 //
 // It stays a named type with unexported method names so App's ~130 call sites
 // keep reading as a.debug.push(...) rather than growing an import at each one.
+// The clock-injected PushAt has no adapter: its only in-tree caller is the fold
+// test, which now lives beside the code it pins.
 type debugSink struct {
 	debuglog.Sink
 }
@@ -20,12 +20,10 @@ type debugSink struct {
 // push appends one line to the bounded failure log (render thread only).
 func (d *debugSink) push(line string) { d.Push(line) }
 
-// pushAt is push with the clock injected, so tests drive the fold window.
-func (d *debugSink) pushAt(line string, now time.Time) { d.PushAt(line, now) }
-
 // lines is the ring for the panels that draw it (newest last).
 func (d *debugSink) lines() []debuglog.Entry { return d.Lines() }
 
 // len is the ring's row count.
 func (d *debugSink) len() int { return d.Len() }
+
 
