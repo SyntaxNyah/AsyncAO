@@ -206,7 +206,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	pad := a.formX
 	y = a.settingsSection(y, w, "This server")
 
-	host := hostOfURL(a.urls.Origin())
+	host := hostOfURL(a.link.urls.Origin())
 	if host == "" {
 		y = a.settingsDesc(pad, y, "Not connected to a server yet. Join one and this section shows what it serves, what AsyncAO learned there, and the one-click fixes for it.", ColTextDim)
 		y += 10
@@ -224,7 +224,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	// list" — claiming a server publishes nothing when we simply haven't asked
 	// would send a player straight to a fix they don't need.
 	hasCustom := a.d.Prefs.Load().ExtProfile(host) != ""
-	st, known := a.manifestStatus[host]
+	st, known := a.srvMeta.manifestStatus[host]
 	source, col := "", ColTextDim
 	switch {
 	case hasCustom:
@@ -276,14 +276,14 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	a.noteSearchRow(vanillaLabel, y)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, vanillaLabel) {
 		a.d.Prefs.SetExtProfile(host, assets.BundledVanillaManifestJSON)
-		a.manifestFor = ""     // allow a re-seed of the connected origin
-		a.fetchManifestAsync() // apply instantly
+		a.srvMeta.manifestFor = "" // allow a re-seed of the connected origin
+		a.fetchManifestAsync()     // apply instantly
 		settings.statusLine = "Applied the official-vanilla format list to " + host + "."
 	}
 	if hasCustom {
 		if c.Button(sdl.Rect{X: pad + 310, Y: y, W: 200, H: btnH}, "Unpin (back to automatic)") {
 			a.d.Prefs.SetExtProfile(host, "")
-			a.manifestFor = ""
+			a.srvMeta.manifestFor = ""
 			a.fetchManifestAsync()
 			settings.statusLine = "Unpinned " + host + " — back to this server's own format list."
 		}
@@ -300,7 +300,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 		for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 			a.d.Resolver.Invalidate(host, t)
 		}
-		a.manifestFor = ""
+		a.srvMeta.manifestFor = ""
 		a.fetchManifestAsync()
 		settings.statusLine = fmt.Sprintf("Forgot %d remembered format(s) for %s — they re-derive on the next request.", n, host)
 	}
@@ -320,8 +320,8 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 	for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 		a.d.Resolver.Invalidate(host, t)
 	}
-	a.manifestFor = ""     // allow a re-seed of the connected origin
-	a.fetchManifestAsync() // seeds from the pinned profile, no network round-trip
+	a.srvMeta.manifestFor = "" // allow a re-seed of the connected origin
+	a.fetchManifestAsync()     // seeds from the pinned profile, no network round-trip
 	settings.statusLine = "Pinned " + label + " for " + host + " — art re-requests in that format."
 }
 
@@ -386,7 +386,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 		})
 
 		if next {
-			a.manifestFor = "" // re-check the current server right away
+			a.srvMeta.manifestFor = "" // re-check the current server right away
 			a.fetchManifestAsync()
 		}
 	}
@@ -411,7 +411,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 		a.d.Resolver.InvalidateAll()
 		a.d.Resolver.WarmFromPrefs()
 		if !next { // now following the list: re-seed from the current server
-			a.manifestFor = ""
+			a.srvMeta.manifestFor = ""
 			a.fetchManifestAsync()
 		}
 	}

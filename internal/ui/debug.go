@@ -52,7 +52,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 // is. A buggy/hung server shows up as the phase stuck before "ready" with
 // the last-packet age climbing.
 func (a *App) debugHealthLine() string {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return "debug · no session (lobby) · log " +
 			fmt.Sprintf("%d/%d", a.debug.len(), debugLogCap)
 	}
@@ -60,16 +60,16 @@ func (a *App) debugHealthLine() string {
 	if !a.lastPktAt.IsZero() {
 		age = fmt.Sprintf("%q %.0fs ago", a.lastPktHdr, time.Since(a.lastPktAt).Seconds())
 	}
-	software := a.sess.Software
+	software := a.link.sess.Software
 	if software == "" {
 		software = "(unannounced)"
 	}
 	wire := "fanta"
-	if a.conn != nil && a.conn.JSONMode() {
+	if a.link.conn != nil && a.link.conn.JSONMode() {
 		wire = "json"
 	}
 	return fmt.Sprintf("debug · phase %s · server %s · wire %s · last pkt %s · log %d/%d",
-		a.sess.Phase(), software, wire, age, a.debug.len(), debugLogCap)
+		a.link.sess.Phase(), software, wire, age, a.debug.len(), debugLogCap)
 }
 
 // debugDiagLine is the second readout: live structural counts that catch leaks
@@ -78,13 +78,13 @@ func (a *App) debugHealthLine() string {
 // goroutine count (a steady climb is the classic leak tell). Cheap fields only;
 // computed solely while the opt-in overlay is open.
 func (a *App) debugDiagLine() string {
-	area := a.curArea
+	area := a.srvMeta.curArea
 	if area == "" {
 		area = "—"
 	}
 	queue := 0
-	if a.room != nil {
-		queue = a.room.QueueLen()
+	if a.link.room != nil {
+		queue = a.link.room.QueueLen()
 	}
 	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d",
 		len(a.tabs), area, queue, len(a.chatlog.icLog), len(a.chatlog.oocLog), runtime.NumGoroutine())

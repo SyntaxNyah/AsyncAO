@@ -129,12 +129,12 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		c.LabelClipped(r.X, y, r.W, s, col)
 		y += debugLineH
 	}
-	if a.sess == nil {
+	if a.link.sess == nil {
 		line("No session — you're in the lobby.", ColTextDim)
 		return
 	}
 	sw := a.detectedSoftware()
-	raw := a.sess.Software
+	raw := a.link.sess.Software
 	if raw == "" {
 		raw = "(unannounced)"
 	}
@@ -151,8 +151,8 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	default:
 		line("Ping: off (enable the connection chip in Settings to measure it)", ColTextDim)
 	}
-	if a.conn != nil {
-		st := a.conn.Stats()
+	if a.link.conn != nil {
+		st := a.link.conn.Stats()
 		line(fmt.Sprintf("Conn packets: %d sent · %d received", st.Sent, st.Received), ColTextDim)
 	}
 	// Chatbox geometry. Every candidate for the "message text is cut off at a
@@ -266,7 +266,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// focusSuffix reads focus at panel-draw time while the tier was stamped at the
 	// previous FramePace call, so a focus flip between them can momentarily show a
 	// mismatched pair; diagnostic-only, self-corrects next frame.
-	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
+	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.frame.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
 	y += debugLineH
 
 	// Pump (#50): GPU upload + transient network errors that reached the upload

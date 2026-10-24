@@ -132,8 +132,8 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	// Re-capture the redial target BEFORE nilling the conn, exactly as Disconnect
 	// does and for the same reason: lastConn* is GLOBAL and in a multi-tab session
 	// may hold whatever server connected most recently rather than THIS one.
-	if a.conn != nil {
-		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
+	if a.link.conn != nil {
+		a.lastConnName, a.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
 	}
 	// Close any courtroom-owned confirm that could be open at freeze time — it
 	// would stack with this modal for a frame. confirmDisconnect: the user clicked
@@ -144,10 +144,10 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	// tab's confirm) — neither is ours to cancel on a drop.
 	a.confirmDisconnect = false
 	a.hidePrompt = ""
-	if a.conn != nil {
-		a.conn.Close() // idempotent: the socket is already dead on every drop path
+	if a.link.conn != nil {
+		a.link.conn.Close() // idempotent: the socket is already dead on every drop path
 	}
-	a.conn = nil // pumpConnection early-returns on a nil conn, so the room freezes
+	a.link.conn = nil // pumpConnection early-returns on a nil conn, so the room freezes
 	if a.d.Audio != nil {
 		// The server's area music must not outlive the connection (as Disconnect does).
 		a.d.Audio.StopMusic()
@@ -156,12 +156,12 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 		a.musicAwaitSince = time.Time{}
 	}
 	a.stopVoiceAudio() // free the voice devices with the connection
-	a.voiceJoined, a.voiceMicOn = false, false
+	a.link.voiceJoined, a.link.voiceMicOn = false, false
 	// hiddenUntil is deliberately the zero value: ALWAYS visible immediately. The
 	// 5-minute grace window this function used to take is half of what made
 	// v1.81.4 rip the freeze out — a drop hid itself, self-healed in the
 	// background, and dumped the user at char-select without ever saying why.
-	a.openDisconnectDialog(a.serverName, a.serverKey, raw, time.Time{})
+	a.openDisconnectDialog(a.srvMeta.serverName, a.srvMeta.serverKey, raw, time.Time{})
 }
 
 // handleInvoluntaryDrop is the SHARED tail every active-tab drop path runs once its
@@ -178,7 +178,7 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// This restores the freeze v1.81.4 removed, WITHOUT the two things that made it
 	// a bug then: there is no grace window (see freezeSessionUnderDialog), and no
 	// auto-reconnect is armed here. Arming would paint a countdown that
-	if !deliberate && a.room != nil && a.sess != nil && a.screen == ScreenCourtroom {
+	if !deliberate && a.link.room != nil && a.link.sess != nil && a.screen == ScreenCourtroom {
 		a.freezeSessionUnderDialog(reason)
 		return
 	}
@@ -192,7 +192,7 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	if !deliberate {
 		noticeBody, showNotice = serverRemovalMessage(reason)
 	}
-	noticeTitle, noticeServer := friendlyDisconnectReason(reason).friendly, a.serverName
+	noticeTitle, noticeServer := friendlyDisconnectReason(reason).friendly, a.srvMeta.serverName
 	if noticeTitle == "" {
 		noticeTitle = serverNoticeRemovedFallbackTitle
 	}

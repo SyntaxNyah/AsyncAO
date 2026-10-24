@@ -75,9 +75,9 @@ func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {
 			if opt.remove {
-				a.d.Prefs.RemoveWardrobe(a.serverKey, a.iniMenuChar) // unfavourite (also drops its folder)
+				a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, a.iniMenuChar) // unfavourite (also drops its folder)
 			} else {
-				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniMenuChar, opt.folder)
+				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniMenuChar, opt.folder)
 			}
 			a.rebuildIniMenu()
 			a.iniMenuChar = ""
@@ -95,7 +95,7 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	c.Fill(rect, sdl.Color{R: 18, G: 18, B: 26, A: 245})
 	c.Border(rect, ColAccent)
-	cur := a.d.Prefs.Load().WardrobeFolderMap(a.serverKey)[strings.ToLower(a.iniMenuChar)]
+	cur := a.d.Prefs.Load().WardrobeFolderMap(a.srvMeta.serverKey)[strings.ToLower(a.iniMenuChar)]
 	for i, opt := range opts {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {
@@ -257,9 +257,9 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		if i := strings.IndexByte(raw, '/'); i >= 0 {
 			folder, char = strings.TrimSpace(raw[:i]), strings.TrimSpace(raw[i+1:])
 		}
-		if a.d.Prefs.AddWardrobe(a.serverKey, char) {
+		if a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, char) {
 			if folder != "" {
-				a.d.Prefs.SetWardrobeFolder(a.serverKey, char, folder)
+				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, char, folder)
 			}
 			a.iniAdd = ""
 			a.rebuildIniMenu()
@@ -333,7 +333,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		// A folder delete awaits confirmation: the bar replaces the nav row.
 		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countInFolder(a.wardDelFolder), "characters")
 		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
-			a.d.Prefs.DeleteWardrobeFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			a.d.Prefs.DeleteWardrobeFolder(a.srvMeta.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
 			if strings.EqualFold(a.iniNewFold, a.wardDelFolder) {
 				a.iniNewFold = "" // also drop the transient "new folder" chip if it named this one
 			}
@@ -365,7 +365,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 			c.Tooltip(back, "Back to all folders — or drop a character here to take it out of this folder")
 			if c.hovering(back) && c.clicked {
 				if a.iniDragging && a.iniDragChar != "" {
-					a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, "")
+					a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniDragChar, "")
 					a.rebuildIniMenu()
 					c.clicked = false // consume the drop
 				} else {
@@ -436,11 +436,11 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	if a.iniHoverChar != "" && c.focusID == "" && a.iniMenuChar == "" {
 		switch {
 		case c.keyPressed == sdl.K_0:
-			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniHoverChar, "")
+			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniHoverChar, "")
 			a.rebuildIniMenu()
 		case c.keyPressed >= sdl.K_1 && c.keyPressed <= sdl.K_9:
 			if folders := a.wardrobeFolders(); int(c.keyPressed-sdl.K_1) < len(folders) {
-				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniHoverChar, folders[c.keyPressed-sdl.K_1])
+				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniHoverChar, folders[c.keyPressed-sdl.K_1])
 				a.rebuildIniMenu()
 			}
 		}
@@ -504,8 +504,8 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	// two more, and on the many servers that publish no iniswap.txt they are the ONLY
 	// ones. A server with no published list opens on the base browser once per server
 	// (the autoDone/autoKey latch) rather than on the empty state this replaces.
-	if !a.iniBusy && (!a.iniBase.autoDone || a.iniBase.autoKey != a.serverKey) {
-		a.iniBase.autoDone, a.iniBase.autoKey = true, a.serverKey
+	if !a.iniBusy && (!a.iniBase.autoDone || a.iniBase.autoKey != a.srvMeta.serverKey) {
+		a.iniBase.autoDone, a.iniBase.autoKey = true, a.srvMeta.serverKey
 		a.iniBase.show = serverN == 0 && baseN > 0
 	}
 	for i, src := range [...]struct {
@@ -537,7 +537,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	// No server list yet → a mini guide for owners (where to put iniswap.txt) and
 	// players (they can still wear any folder by name).
 	if !a.iniBusy && serverN == 0 {
-		base := a.urls.Origin()
+		base := a.link.urls.Origin()
 		if base == "" {
 			base = "https://your-server.com/base/"
 		}
@@ -706,7 +706,7 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a character here to file it")
 	if hover && c.clicked {
 		if a.iniDragging && a.iniDragChar != "" {
-			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, name)
+			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniDragChar, name)
 			a.rebuildIniMenu()
 			c.clicked = false // consume the drop
 		} else {
@@ -795,7 +795,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	}
 
 	c.Fill(cell, ColBackground)
-	base := a.urls.CharIcon(name)
+	base := a.link.urls.CharIcon(name)
 	if page, ok := a.cachedPage(&a.iniPages, &a.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
 		// Shared scratch, not &cell: cell is a PARAMETER, and escape analysis is
 		// static, so a cgo pointer taken from it moves it to the heap on every call —
@@ -891,7 +891,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 					return         // don't also wear it
 				}
 				if c.rightClicked && bound != "" {
-					a.d.Prefs.SetCharKeyBind(a.serverKey, bound, "")
+					a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, bound, "")
 					a.refreshCharKeys()
 					return
 				}
@@ -908,9 +908,9 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	}
 
 	if c.HoverPreview(a.iniHoverID(idx), cell) {
-		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
-		a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
-		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                      // try-before-wear: load this character's emotes to cycle
+		a.previewBase = a.link.urls.Emote(name, "normal", courtroom.EmoteIdle)
+		a.d.Manager.PrefetchChain(a.previewBase, a.link.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                           // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
@@ -942,17 +942,17 @@ type musicFilterKey struct {
 // It matches the RAW list entry, which covers the displayed short name too:
 // substring of the raw name (#43 shortened the rows, not what you can search).
 func (a *App) refreshMusicFilter(query string) {
-	n := len(a.sess.Music)
+	n := len(a.link.sess.Music)
 	key := musicFilterKey{q: query, n: n}
 	if n > 0 {
-		key.first, key.last = a.sess.Music[0], a.sess.Music[n-1]
+		key.first, key.last = a.link.sess.Music[0], a.link.sess.Music[n-1]
 	}
 	if key == a.musicFilterMemo {
 		return
 	}
 	a.musicFilterMemo = key
 	a.musicFiltered = a.musicFiltered[:0]
-	for i, track := range a.sess.Music {
+	for i, track := range a.link.sess.Music {
 		if strings.Contains(strings.ToLower(track), query) {
 			a.musicFiltered = append(a.musicFiltered, i)
 		}
@@ -989,10 +989,10 @@ type musicGroupKey struct {
 // tracks always show (auto-expanded, VSCode-style), with their category
 // header pulled in for context even if that header didn't itself match.
 func (a *App) refreshMusicGroups(query string) {
-	n := len(a.sess.Music)
+	n := len(a.link.sess.Music)
 	key := musicGroupKey{q: query, n: n, collapseGen: a.musicCollapseGen}
 	if n > 0 {
-		key.first, key.last = a.sess.Music[0], a.sess.Music[n-1]
+		key.first, key.last = a.link.sess.Music[0], a.link.sess.Music[n-1]
 	}
 	if key == a.musicGroupMemo && a.musicRows != nil {
 		return
@@ -1002,7 +1002,7 @@ func (a *App) refreshMusicGroups(query string) {
 
 	if query == "" {
 		collapsed := false
-		for i, entry := range a.sess.Music {
+		for i, entry := range a.link.sess.Music {
 			if !courtroom.HasAudioExt(entry) {
 				collapsed = a.musicCollapsed[i]
 				a.musicRows = append(a.musicRows, musicRow{ti: i, header: true})
@@ -1017,7 +1017,7 @@ func (a *App) refreshMusicGroups(query string) {
 	}
 
 	pendingHeader, headerShown := -1, false
-	for i, entry := range a.sess.Music {
+	for i, entry := range a.link.sess.Music {
 		if !courtroom.HasAudioExt(entry) {
 			pendingHeader = i
 			headerShown = strings.Contains(strings.ToLower(entry), query)
@@ -1052,7 +1052,7 @@ func (a *App) setAllMusicCollapsed(collapsed bool) {
 	if a.musicCollapsed == nil {
 		a.musicCollapsed = make(map[int]bool)
 	}
-	for i, entry := range a.sess.Music {
+	for i, entry := range a.link.sess.Music {
 		if !courtroom.HasAudioExt(entry) {
 			a.musicCollapsed[i] = true
 		}
@@ -1078,17 +1078,17 @@ type areaFilterKey struct {
 // parallels a.sess.AreaInfo, so a caller uses ti (not the visible index) to look
 // up either.
 func (a *App) refreshAreaFilter(query string, slot int) []int {
-	n := len(a.sess.Areas)
+	n := len(a.link.sess.Areas)
 	key := areaFilterKey{q: query, n: n}
 	if n > 0 {
-		key.first, key.last = a.sess.Areas[0], a.sess.Areas[n-1]
+		key.first, key.last = a.link.sess.Areas[0], a.link.sess.Areas[n-1]
 	}
 	if key == a.areaFilterMemo[slot] {
 		return a.areaFiltered[slot]
 	}
 	a.areaFilterMemo[slot] = key
 	out := a.areaFiltered[slot][:0]
-	for i, area := range a.sess.Areas {
+	for i, area := range a.link.sess.Areas {
 		if strings.Contains(strings.ToLower(area), query) {
 			out = append(out, i)
 		}
@@ -1179,8 +1179,8 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// itself belongs to the header buttons and is placed either way; that coupling
 	// is exactly what used to paint Expand all on top of Stop music.
 	now := ""
-	if a.room != nil {
-		now = a.room.Scene.MusicTrack
+	if a.link.room != nil {
+		now = a.link.room.Scene.MusicTrack
 	}
 	nowLabel := musicNothingPlaying
 	if now != "" {
@@ -1194,7 +1194,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// screen is nothing but ~26 px stolen from the sliders, which is what the old
 	// code's early return used to prevent.
 	hideSearchRow := searchExternal || volMode
-	total := len(a.sess.Music)
+	total := len(a.link.sess.Music)
 	// planMusicHeader needs the count's WIDTH to size the search field, so a label
 	// has to exist BEFORE the field draws — but the count's NUMBERS must not be
 	// computed up here. The TextField returns this frame's text, so a query read
@@ -1304,8 +1304,8 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 		if y > r.Y+r.H {
 			break
 		}
-		if y >= r.Y-lineH && mr.ti >= 0 && mr.ti < len(a.sess.Music) {
-			entry := a.sess.Music[mr.ti]
+		if y >= r.Y-lineH && mr.ti >= 0 && mr.ti < len(a.link.sess.Music) {
+			entry := a.link.sess.Music[mr.ti]
 			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
 			hover := c.hovering(row)
 			if mr.header {

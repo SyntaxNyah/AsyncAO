@@ -239,14 +239,14 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 		pw = 12 + colorWheelDiam + 18 + 26 + 20 + 110 + 12 // wheel · brightness bar · swatch/hex column
 		ph = colorWheelDiam + 40                           // + heading row and padding
 	)
-	x := a.icSwatchRect.X
+	x := a.lookUI.icSwatchRect.X
 	if x+pw > w-4 {
 		x = w - 4 - pw
 	}
 	if x < 4 {
 		x = 4
 	}
-	y := a.icSwatchRect.Y - ph - 6 // above the swatch
+	y := a.lookUI.icSwatchRect.Y - ph - 6 // above the swatch
 	if y < 4 {
 		y = 4 // tiny window: clamp to the top rather than run off-screen
 	}
@@ -329,10 +329,10 @@ func (a *App) drawICColorWheel(w, h int32) {
 	c.Fill(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, sdl.Color{R: r8, G: g8, B: b8, A: 255})
 	c.Border(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, ColPanelHi)
 	if c.focusID != "iccustomhex" {
-		a.icColorHexBuf = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
+		a.lookUI.icColorHexBuf = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
 	}
-	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.icColorHexBuf, "RRGGBB"); next != a.icColorHexBuf {
-		a.icColorHexBuf = next
+	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.lookUI.icColorHexBuf, "RRGGBB"); next != a.lookUI.icColorHexBuf {
+		a.lookUI.icColorHexBuf = next
 		if rgb, ok := parseHex6(next); ok {
 			a.setICCustomRGB(rgb)
 		}
@@ -341,7 +341,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	done := sdl.Rect{X: hx, Y: wheel.Y + diam - btnH, W: 90, H: btnH}
 	a.rawChip(done, "Done")
 	if c.clicked && pointIn(c.mouseX, c.mouseY, done) {
-		a.showICColorWheel = false
+		a.lookUI.showICColorWheel = false
 	}
 }
 

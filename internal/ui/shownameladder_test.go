@@ -606,8 +606,8 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	// fixture made resident stays exactly as it was) and settle it again.
 	long := msgFor(0, "Witch", "settled line")
 	long.Showname = "Beatrice the Golden Endless Witch"
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: long})
-	a.room.SkipToIdle()
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: long})
+	a.link.room.SkipToIdle()
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
@@ -620,7 +620,7 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	if lay.shownameExtraPx() <= 0 {
 		t.Fatalf("the layout baked a %d px rung — the ladder is off", lay.shownameExtraPx())
 	}
-	name := a.room.Scene.ShownameText
+	name := a.link.room.Scene.ShownameText
 	nameBox, _ := chatboxTextRects(mustRect(t, lay, "ao2_chatbox"), lay, 0)
 	snFont, snEmoji := a.themedChatFace(elemShowname, DefaultScalePct, lay, name)
 	if px := a.labelEmojiWidth(snFont, snEmoji, name, ColAccent); px <= nameBox.W {

@@ -529,10 +529,10 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		})
 
 		noFX = next
-		if a.room != nil { // apply to the live room immediately, like the rows below do
-			a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
-			a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects && !noFX
-			a.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
+		if a.link.room != nil { // apply to the live room immediately, like the rows below do
+			a.link.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
+			a.link.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects && !noFX
+			a.link.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
 		}
 	}
 	y += 26
@@ -546,8 +546,8 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	seff := a.d.Prefs.Load().ScreenEffects
 	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = next })
-		if a.room != nil {
-			a.room.ScreenEffects = next // apply to the live room immediately
+		if a.link.room != nil {
+			a.link.room.ScreenEffects = next // apply to the live room immediately
 		}
 	}
 	y += 26
@@ -921,8 +921,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 			nv = 1
 		}
 		a.d.Prefs.SetPrefetchAggressiveness(int(nv))
-		if a.room != nil && a.room.Predictor != nil {
-			a.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
+		if a.link.room != nil && a.link.room.Predictor != nil {
+			a.link.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
 		}
 	}
 	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.Load().PrefetchAggressiveness()), ColAccent)
@@ -1276,11 +1276,11 @@ func (a *App) applyPrefsToState() {
 	a.refreshCharKeys()
 	a.applyThemeAsync()
 	a.applyAudioVolumes()
-	if a.room != nil {
+	if a.link.room != nil {
 		a.applyTimingToRoom()
-		a.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
-		a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn
-		a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects
+		a.link.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
+		a.link.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn
+		a.link.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects
 	}
 }
 
@@ -1295,8 +1295,8 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// Volumes save PER SERVER while you're connected to one, so muting blips (or
 	// anything) on one server leaves the others untouched — each tab keeps its own.
 	// Edited from the lobby they set the global default new servers start from.
-	if a.serverName != "" {
-		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
+	if a.srvMeta.serverName != "" {
+		c.Label(pad, y, "Saved for this server ("+a.srvMeta.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
 		y += 22
 	}
 	em, emu, es, eb := a.effectiveVolumes()

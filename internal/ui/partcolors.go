@@ -31,16 +31,16 @@ func (a *App) refreshPartColors() {
 	hex := a.d.Prefs.Load().LayoutPartHex
 	for i := range hex {
 		col, ok := parseHexColor(hex[i])
-		a.partColorOn[i] = ok
+		a.lookUI.partColorOn[i] = ok
 		if ok {
-			a.partColors[i] = col
+			a.lookUI.partColors[i] = col
 		}
 	}
 }
 
 // partPanel reports part i's tint override (cache read, allocation-free).
 func (a *App) partPanel(i int) (sdl.Color, bool) {
-	return a.partColors[i], a.partColorOn[i]
+	return a.lookUI.partColors[i], a.lookUI.partColorOn[i]
 }
 
 // partPanelOr is partPanel with a fallback — the common fill-site shape.
@@ -68,14 +68,14 @@ func (a *App) drawPartColorSettings(y int32) int32 {
 		}
 		c.Fill(sw, cur)
 		ring := ColTextDim
-		if i == a.partEditSlot {
+		if i == a.lookUI.partEditSlot {
 			ring = ColAccent
 		}
 		c.Border(sw, ring)
 		c.Label(pad+34, y+3, partColorLabels[i], ColText)
 		editR := sdl.Rect{X: pad + 220, Y: y, W: 54, H: 22}
 		if c.Button(editR, "Edit") {
-			a.partEditSlot = i
+			a.lookUI.partEditSlot = i
 		}
 		if on {
 			resetR := sdl.Rect{X: editR.X + editR.W + 6, Y: y, W: 60, H: 22}
@@ -89,10 +89,10 @@ func (a *App) drawPartColorSettings(y int32) int32 {
 
 	// The shared wheel edits the selected part (same feel as the custom
 	// chrome editor above it).
-	sel := a.partEditSlot
+	sel := a.lookUI.partEditSlot
 	if sel < 0 || sel >= len(partColorLabels) {
 		sel = 0
-		a.partEditSlot = 0
+		a.lookUI.partEditSlot = 0
 	}
 	c.Label(pad, y, "Editing: "+partColorLabels[sel], ColAccent)
 	y += 22
@@ -100,7 +100,7 @@ func (a *App) drawPartColorSettings(y int32) int32 {
 	if !on {
 		cur = ColPanel
 	}
-	y = a.wheelHexEditor(y, "parthex", &a.partHexBuf, cur, func(col sdl.Color) {
+	y = a.wheelHexEditor(y, "parthex", &a.lookUI.partHexBuf, cur, func(col sdl.Color) {
 		a.d.Prefs.SetLayoutPartColor(sel, fmt.Sprintf("%02x%02x%02x", col.R, col.G, col.B))
 		a.refreshPartColors()
 	})

@@ -79,10 +79,10 @@ func (g *msgGroup) appendLine(from, text string, fromMe bool, char string) {
 
 // myUID is our server-assigned UID, or 0 when not in a session.
 func (a *App) myUID() int {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return 0
 	}
-	return a.sess.PlayerID
+	return a.link.sess.PlayerID
 }
 
 // applyGroupInvite records a group we were invited to (owner = the inviter), adding
@@ -189,7 +189,7 @@ func (a *App) createGroup(name string) {
 	// Gate on CONNECTION, not the UID: some servers (Nyathena seen in the wild)
 	// assign player-id 0, so myUID()==0 is a valid connected state — the old guard
 	// wrongly blocked group creation with "needs you fully connected".
-	if a.sess == nil || a.room == nil {
+	if a.link.sess == nil || a.link.room == nil {
 		a.warnLine = clampLine("Group chat needs you connected to a server first.")
 		a.warnAt = a.now()
 		return
@@ -210,12 +210,12 @@ func (a *App) createGroup(name string) {
 // mirrors it into the local thread.
 func (a *App) sendGroupText(g *msgGroup, text string) {
 	text = strings.TrimSpace(text)
-	if text == "" || g == nil || a.sess == nil {
+	if text == "" || g == nil || a.link.sess == nil {
 		return
 	}
 	if ids := g.otherUIDs(a.myUID()); len(ids) > 0 {
 		body := text + courtroom.WireMessage{Kind: courtroom.MsgGroupText, GroupID: g.id}.EncodeMarker()
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
 	g.appendLine(a.oocNameOrDefault(), text, true, a.activeCharName())
 }
@@ -223,18 +223,18 @@ func (a *App) sendGroupText(g *msgGroup, text string) {
 // inviteToGroup invites one player (uid + name) to a group I'm in; the visible body
 // is human-readable so a non-AsyncAO recipient at least sees the invite.
 func (a *App) inviteToGroup(g *msgGroup, uid int, name string) {
-	if g == nil || a.sess == nil || uid == 0 || uid == a.myUID() {
+	if g == nil || a.link.sess == nil || uid == 0 || uid == a.myUID() {
 		return
 	}
 	g.addMember(uid, name)
 	body := "[AsyncAO group invite: " + g.name + "]" +
 		courtroom.WireMessage{Kind: courtroom.MsgInvite, GroupID: g.id, GroupName: g.name}.EncodeMarker()
-	a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
+	a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
 }
 
 // kickMember (owner only) removes a member and tells every current member.
 func (a *App) kickMember(g *msgGroup, uid int) {
-	if g == nil || a.sess == nil || g.ownerUID != a.myUID() || uid == a.myUID() {
+	if g == nil || a.link.sess == nil || g.ownerUID != a.myUID() || uid == a.myUID() {
 		return
 	}
 	targets := g.otherUIDs(a.myUID()) // notify everyone (incl. the kicked one) before removing
@@ -242,19 +242,19 @@ func (a *App) kickMember(g *msgGroup, uid int) {
 	if len(targets) > 0 {
 		body := "[AsyncAO group update]" +
 			courtroom.WireMessage{Kind: courtroom.MsgKick, GroupID: g.id, TargetUID: uid}.EncodeMarker()
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(targets, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(targets, body))
 	}
 }
 
 // leaveGroup notifies the other members, then drops the group locally.
 func (a *App) leaveGroup(g *msgGroup) {
-	if g == nil || a.sess == nil {
+	if g == nil || a.link.sess == nil {
 		return
 	}
 	if ids := g.otherUIDs(a.myUID()); len(ids) > 0 {
 		body := "[AsyncAO left the group]" +
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: g.id}.EncodeMarker()
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
 	delete(a.msgs.msgGroups, g.id)
 	if a.msgs.msgSelGroup == g.id {

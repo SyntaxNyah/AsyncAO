@@ -285,10 +285,10 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 	// Spectate needs a session to join without a character; this row draws before the
 	// handshake completes (so "leave" stays reachable while a join hangs), so the
 	// button is simply absent until there is something to spectate.
-	if r, ok := lay.rect(charSelectSpectatorKey); ok && a.sess != nil {
+	if r, ok := lay.rect(charSelectSpectatorKey); ok && a.link.sess != nil {
 		if c.Button(r, "Spectate") {
-			if !a.sess.Rehearsal {
-				a.sess.PickCharacter(protocol.UnpairedCharID)
+			if !a.link.sess.Rehearsal {
+				a.link.sess.PickCharacter(protocol.UnpairedCharID)
 			}
 			a.enterCourtroom()
 			return true
@@ -301,7 +301,7 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 	// the slot muscle memory aims at. Disconnect stays one click away in the menu bar
 	// either way, so nothing is lost when Back occupies the rect.
 	if r, ok := lay.rect(charSelectBackKey); ok {
-		if a.room != nil {
+		if a.link.room != nil {
 			if c.Button(r, "Back") {
 				a.screen = ScreenCourtroom
 				return true

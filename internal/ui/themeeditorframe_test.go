@@ -209,7 +209,7 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 
 	// NO ROOM: drawEditorCanvas takes its offline arm, which is the arm that reaches no
 	// courtroom pass and therefore no handleHotkeys.
-	a.room = nil
+	a.link.room = nil
 	driveFrame(a)
 	if a.screen != ScreenThemeEditor || a.te == nil {
 		t.Fatalf("the editor did not survive a frame with no room (screen %d, te %v) — the session-free "+
@@ -251,7 +251,7 @@ func TestEditorScreenIsFrameRateSkippable(t *testing.T) {
 			"with a still theme on screen and nothing to explain why the fans are on")
 	}
 	// …and with no session, which is the case the courtroom pair would have failed.
-	a.sess = nil
+	a.link.sess = nil
 	if !a.expScreenSkippable() {
 		t.Fatal("the editor stopped being skippable with no session — that is the Settings entry point, " +
 			"i.e. the common case")

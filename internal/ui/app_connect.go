@@ -100,9 +100,9 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		return // connErr set; lobby shows it
 	}
 	a.resetSessionState()
-	a.serverName = name
-	a.serverKey = wsURL
-	a.connAt = time.Now()
+	a.srvMeta.serverName = name
+	a.srvMeta.serverKey = wsURL
+	a.srvMeta.connAt = time.Now()
 	// One-time wardrobe migration: the first server joined after the
 	// per-server split inherits the old flat collection.
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
@@ -111,7 +111,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.refreshICPhraseKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
 	// Per-server theme binding: this server always uses that theme.
-	a.themeBound = a.d.Prefs.Load().ServerWarmInfoFor(wsURL).Theme
+	a.srvMeta.themeBound = a.d.Prefs.Load().ServerWarmInfoFor(wsURL).Theme
 	a.ensureThemeForSession()
 	// Case notebook: per-server pins load off-thread, land via the poll
 	// (the payload carries the key so it routes even after a tab switch).
@@ -137,7 +137,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		// the explanation is how you get in (a Discord invite to ask for a whitelist
 		// entry, an access code), and the lobby line is one row that cannot hold it.
 		// Snapshot the name before the teardown below — serverName is on sessionState.
-		noticeServer := a.serverName
+		noticeServer := a.srvMeta.serverName
 		var de *protocol.DialError
 		refused := errors.As(err, &de) && de.Body != ""
 		a.closeActiveTab()
@@ -147,7 +147,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		}
 		return
 	}
-	a.conn = conn
+	a.link.conn = conn
 	// A pending carry from THIS server's own drop (a dialog Reconnect click or
 	// an auto-retry) rejoins the fresh session now that the dial actually
 	// succeeded — placed AFTER the dial, not right after resetSessionState
@@ -161,8 +161,8 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	conn.SetNotify(PushWake)
 	a.pkts.reset() // a fresh connection starts a clean packet history
 	a.pktConn = conn
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
-		if conn == a.conn { // record only the ACTIVE connection's sends (a parked tab's Ping won't match)
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error {
+		if conn == a.link.conn { // record only the ACTIVE connection's sends (a parked tab's Ping won't match)
 			a.recordPacket(p, true)
 		}
 		return conn.Send(context.Background(), p)
@@ -170,7 +170,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	// Prime the background keepalive goroutine immediately, so the CH ping flows from
 	// the moment we connect even if the first render frame is delayed (or the window
 	// is already minimized). pumpConnection refreshes it as MyCharID changes.
-	conn.SetKeepalive(a.sess.KeepalivePacket())
+	conn.SetKeepalive(a.link.sess.KeepalivePacket())
 	a.screen = ScreenCharSelect
 }
 
@@ -209,9 +209,9 @@ func (a *App) collectOpenTabs() []config.OpenTab {
 	}
 	for i, t := range a.tabs {
 		if i == a.activeTab {
-			add(a.serverName, a.serverKey, false, a.rehearsal)
+			add(a.srvMeta.serverName, a.srvMeta.serverKey, false, a.srvMeta.rehearsal)
 		} else {
-			add(t.state.serverName, t.state.serverKey, t.dead, t.state.rehearsal)
+			add(t.state.srvMeta.serverName, t.state.srvMeta.serverKey, t.dead, t.state.srvMeta.rehearsal)
 		}
 	}
 	return out
@@ -241,8 +241,8 @@ func (a *App) Disconnect() {
 		a.disconnectDlg = disconnectDialog{}
 	}
 	a.cancelAutoReconnect() // teardown cancels any pending retry; the EventDisconnect path re-arms after
-	if a.conn != nil {
-		a.conn.Close()
+	if a.link.conn != nil {
+		a.link.conn.Close()
 	}
 	// The server's area music shouldn't outlive the connection (manual
 	// disconnect, kick, or a dropped socket all land here).
@@ -253,9 +253,9 @@ func (a *App) Disconnect() {
 		a.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
 	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
-	a.voiceJoined, a.voiceMicOn = false, false
+	a.link.voiceJoined, a.link.voiceMicOn = false, false
 	// Rehearsal mode ends with the session: reopen the network gate.
-	if a.rehearsal {
+	if a.srvMeta.rehearsal {
 		a.d.Manager.SetOffline(false)
 	}
 	// Notebook: flush pending pins off-thread.
@@ -279,8 +279,8 @@ func (a *App) Disconnect() {
 	// alone would hold whatever was connected most recently). Guarded on a live
 	// socket so rehearsal / an already-dead tab can't claim a phantom target;
 	// connectWith seeds lastConn* for the dial-FAILURE case (no session here).
-	if a.conn != nil {
-		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
+	if a.link.conn != nil {
+		a.lastConnName, a.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
 	}
 	a.closeActiveTab()
 	a.resetSessionState()
@@ -511,7 +511,7 @@ func (a *App) updatePresence() {
 		a.d.Presence.Clear()
 		return
 	}
-	if a.sess == nil {
+	if a.link.sess == nil {
 		// In the lobby / server list — keep "Playing AsyncAO" up (the user asked for
 		// presence to persist there too, not vanish until you join a room). No
 		// server/character/showname applies yet, and no elapsed timer (it'd reset on
@@ -519,9 +519,9 @@ func (a *App) updatePresence() {
 		a.d.Presence.Set(presence.Activity{Details: "In the lobby"})
 		return
 	}
-	act := presence.Activity{Start: a.connAt, Details: "In court"}
-	if dp.ShowServer && a.serverName != "" {
-		act.Details = "On " + a.serverName
+	act := presence.Activity{Start: a.srvMeta.connAt, Details: "In court"}
+	if dp.ShowServer && a.srvMeta.serverName != "" {
+		act.Details = "On " + a.srvMeta.serverName
 	}
 	var parts []string
 	if dp.ShowName {
@@ -538,8 +538,8 @@ func (a *App) updatePresence() {
 			}
 		}
 	}
-	if dp.ShowArea && a.curArea != "" {
-		parts = append(parts, "— "+a.curArea)
+	if dp.ShowArea && a.srvMeta.curArea != "" {
+		parts = append(parts, "— "+a.srvMeta.curArea)
 	}
 	act.State = strings.Join(parts, " ")
 	a.d.Presence.Set(act)
@@ -554,7 +554,7 @@ func hdid(wsURL string) string { return hwid.For(wsURL) }
 
 // pumpConnection drains incoming packets into the session each frame.
 func (a *App) pumpConnection() {
-	if a.conn == nil || a.sess == nil {
+	if a.link.conn == nil || a.link.sess == nil {
 		return
 	}
 	// Keep the connection's background keepalive goroutine primed with the current
@@ -565,13 +565,13 @@ func (a *App) pumpConnection() {
 	// Setting it here each frame is a cheap atomic swap; while minimized this loop may
 	// not run, but MyCharID can't change then anyway, so the last-set payload stays
 	// correct.
-	a.conn.SetKeepalive(a.sess.KeepalivePacket())
+	a.link.conn.SetKeepalive(a.link.sess.KeepalivePacket())
 	// Half-dead write side (#7a): Session.reply records the FIRST failed outgoing
 	// write into sendErr and then silently swallows every later packet. A non-nil
 	// SendErr means our writes are going into a dead socket (the keepalive above,
 	// or any IC send) — surface it and tear down, then auto-reconnect (a write
 	// failure is a transport drop, never a ban/kick, so it's not deliberate).
-	if err := a.sess.SendErr(); err != nil {
+	if err := a.link.sess.SendErr(); err != nil {
 		reason := "connection lost: " + err.Error()
 		a.connErr = reason
 		a.debug.push("disconnected: " + reason)
@@ -585,11 +585,11 @@ func (a *App) pumpConnection() {
 		// touches a.conn.Incoming()/a.sess.HandlePacket again, or the next
 		// iteration nil-derefs (conn.go:73). The plain socket-close path
 		// returns immediately below, so only the kick/ban packet hit this.
-		if a.conn == nil || a.sess == nil {
+		if a.link.conn == nil || a.link.sess == nil {
 			return
 		}
 		select {
-		case p, ok := <-a.conn.Incoming():
+		case p, ok := <-a.link.conn.Incoming():
 			a.uiDirty = true // packets (or the drop below) change UI-visible state — redraw-worthy damage
 			if !ok {
 				// The Incoming channel closed: a genuine transport drop (Wi-Fi
@@ -601,7 +601,7 @@ func (a *App) pumpConnection() {
 				// for (#1: previously this path only Disconnected and never
 				// rearmed a retry).
 				reason := "connection closed"
-				if err := a.conn.Err(); err != nil {
+				if err := a.link.conn.Err(); err != nil {
 					reason = err.Error()
 				}
 				a.connErr = reason
@@ -612,7 +612,7 @@ func (a *App) pumpConnection() {
 			a.lastPktHdr, a.lastPktAt = p.Header, time.Now()
 			a.notePktConn() // reset the packet ring if the active conn changed (tab switch / reconnect)
 			a.recordPacket(p, false)
-			a.handleSessionEvents(a.sess.HandlePacket(p))
+			a.handleSessionEvents(a.link.sess.HandlePacket(p))
 		default:
 			return
 		}
@@ -630,17 +630,17 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.sendCasingPrefs()
 			a.prewarmServer()
 			// Remember enough to rehearse this server offline later.
-			a.d.Prefs.RememberServerOrigin(a.serverKey, a.sess.AssetURL)
-			names := make([]string, len(a.sess.Chars))
-			for i := range a.sess.Chars {
-				names[i] = a.sess.Chars[i].Name
+			a.d.Prefs.RememberServerOrigin(a.srvMeta.serverKey, a.link.sess.AssetURL)
+			names := make([]string, len(a.link.sess.Chars))
+			for i := range a.link.sess.Chars {
+				names[i] = a.link.sess.Chars[i].Name
 			}
-			a.d.Prefs.RememberServerChars(a.serverKey, names)
+			a.d.Prefs.RememberServerChars(a.srvMeta.serverKey, names)
 			a.autoLoginOnReady()
 		case courtroom.EventBackground:
 			// Remember it for next visit's pre-warm; the room still
 			// consumes the event below (no continue).
-			a.d.Prefs.RememberServerBackground(a.serverKey, ev.Text)
+			a.d.Prefs.RememberServerBackground(a.srvMeta.serverKey, ev.Text)
 			if ev.Wipe {
 				// The overlays AO2's set_background teardown also drops, which live on
 				// the App rather than in the Scene: the WT/CE splash and testimony badge
@@ -669,15 +669,15 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// to download. So KEEP the duck and record the awaited URL instead;
 			// settleAwaitedMusic lifts it the frame the new track's bytes land (the mixer
 			// swaps in startMusic, CurrentMusicURL catches up, ~16ms, imperceptible).
-			if a.sess.MusicTrack != "" {
+			if a.link.sess.MusicTrack != "" {
 				// This active tab is now the audible owner of the single stream (its DJ
 				// /play is what the room's handler plays below). Stamp the owner so its
 				// per-server music volume governs the stream — including when the user later
 				// backgrounds THIS tab under MusicAcrossTabs ON and the stream keeps playing
 				// its song under a different active tab. See musicOwnerKey.
-				a.musicOwnerKey = a.serverKey
+				a.musicOwnerKey = a.srvMeta.serverKey
 				if a.musicTabDucked {
-					a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
+					a.musicAwaitURL = a.link.urls.MusicURL(a.link.sess.MusicTrack)
 					a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 				}
 			} else {
@@ -707,24 +707,24 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.rebuildLiveRoster() // pre-snapshot fallback only
 		case courtroom.EventAreasUpdated:
 			a.rebuildLiveRoster()
-			a.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
-			a.areaInfoSeq++        // invalidate the area-list word-wrap cache (screens.go areaWrapped)
+			a.srvMeta.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
+			a.areaInfoSeq++                // invalidate the area-list word-wrap cache (screens.go areaWrapped)
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster()
-			a.amICMNow = a.amICM() // a PU may have moved us to another area — refresh the cached flag  // server-pushed PR/PU: the live roster's primary source
-			a.maybeFollowJump()    // follow-a-player (M3): trail the followed UID across areas
-			a.recordAreaHistory()  // area history (M3): note our own area into the MRU list
+			a.srvMeta.amICMNow = a.amICM() // a PU may have moved us to another area — refresh the cached flag  // server-pushed PR/PU: the live roster's primary source
+			a.maybeFollowJump()            // follow-a-player (M3): trail the followed UID across areas
+			a.recordAreaHistory()          // area history (M3): note our own area into the MRU list
 		case courtroom.EventCharPicked:
 			// #88 diagnostic: the server's PV echo — the char_id it actually
 			// assigned us. If this differs from the CC char_id logged on pick, the
 			// desync is on the wire/server; if it matches but the player list still
 			// shows the wrong char, it's in how the roster reports it.
-			if ev.Int >= 0 && ev.Int < len(a.sess.Chars) {
-				a.debug.push(fmt.Sprintf("server assigned char_id=%d (%s)", ev.Int, a.sess.Chars[ev.Int].Name))
+			if ev.Int >= 0 && ev.Int < len(a.link.sess.Chars) {
+				a.debug.push(fmt.Sprintf("server assigned char_id=%d (%s)", ev.Int, a.link.sess.Chars[ev.Int].Name))
 			}
 			a.enterCourtroom()
 		case courtroom.EventOOC:
-			if a.serverKey != "" && a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, ev.Name) {
+			if a.srvMeta.serverKey != "" && a.d.Prefs.Load().ServerIgnoreMatch(a.srvMeta.serverKey, ev.Name) {
 				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
 			}
 			// Received private message (Nyathena / Athena attribute the sender in the
@@ -744,13 +744,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// Our own message echoed back — the server accepted it, so NOW
 				// the input clears (keep-until-echo, see noteOwnICEcho). Above
 				// the ignore filter: it's our line, filtering is display-only.
-				if a.sess != nil && ev.Message.CharID == a.sess.MyCharID {
+				if a.link.sess != nil && ev.Message.CharID == a.link.sess.MyCharID {
 					a.noteOwnICEcho()
 				}
-				if a.serverKey != "" && a.ignoreSpeaker(ev.Message) {
+				if a.srvMeta.serverKey != "" && a.ignoreSpeaker(ev.Message) {
 					continue // #81: ignored player — drop IC entirely (no log, no sprite/blip via room, no recording)
 				}
-				fr, fc := a.friendMessage(a.serverKey, ev.Message)
+				fr, fc := a.friendMessage(a.srvMeta.serverKey, ev.Message)
 				force := a.d.Prefs.Load().ForceCharNames
 				// The log's name resolves through the SAME char.ini rung the plate
 				// uses (remoteIniShownameFor) — one chain, two surfaces.
@@ -789,9 +789,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 					a.lastBlipChar = cn // M11: remember the most-recent speaker for one-click per-char blip volume
 				}
 				if fr {
-					a.signalFriend(a.serverName, ev.Message)
+					a.signalFriend(a.srvMeta.serverName, ev.Message)
 				}
-				a.logDetailed(a.serverName, a.logSession, ev.Message) // detailed transcript (opt-in), this tab's own file
+				a.logDetailed(a.srvMeta.serverName, a.srvMeta.logSession, ev.Message) // detailed transcript (opt-in), this tab's own file
 				a.noteEvidencePresented(ev.Message)
 				names := a.mentionNames()
 				a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
@@ -812,8 +812,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventVoiceCaps:
 			// Voice just became available here (VS_CAPS) — point the user at the
 			// Voice button once per session (also confirms VS_CAPS reached us).
-			if a.sess != nil && a.sess.VoiceAvailable() && !a.voiceCapsAnnounced {
-				a.voiceCapsAnnounced = true
+			if a.link.sess != nil && a.link.sess.VoiceAvailable() && !a.link.voiceCapsAnnounced {
+				a.link.voiceCapsAnnounced = true
 				a.pushOOC("[Voice] This area supports voice chat — use the Voice button (bottom row / Extras) to join.", "")
 			}
 		case courtroom.EventVoiceAudio:
@@ -830,8 +830,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.playThemeSFX("mod_call")
 				a.ctx.FlashWindow()
 			}
-			a.signalModcall(a.serverName, ev.Text)                    // desktop toast (opt-in)
-			a.autoClipModcall(a.serverName, a.chatlog.icLog, ev.Text) // freeze IC context for mods (opt-out)
+			a.signalModcall(a.srvMeta.serverName, ev.Text)                    // desktop toast (opt-in)
+			a.autoClipModcall(a.srvMeta.serverName, a.chatlog.icLog, ev.Text) // freeze IC context for mods (opt-out)
 		case courtroom.EventAuth:
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log
 			// (on_authentication_state_received).
@@ -841,7 +841,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// Mod now: re-pull /getarea so IPIDs (mod-only, absent from PR/PU)
 				// grab onto the roster. The first auto-pull on tab-open can fire
 				// BEFORE this auto-login lands, so its reply carried no IPIDs.
-				if a.sess != nil {
+				if a.link.sess != nil {
 					a.fetchRoster()
 				}
 			case ev.Int == 0:
@@ -866,7 +866,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// the connection is fine and the server just said something.
 			a.pushOOC("[SERVER] "+ev.Text, "")
 			if strings.TrimSpace(ev.Text) != "" {
-				a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, a.serverName, ev.Text)
+				a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, a.srvMeta.serverName, ev.Text)
 			}
 			a.ctx.FlashWindow()
 		case courtroom.EventMuted:
@@ -882,7 +882,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventEvidence:
 			a.evidAsk = nil  // list replaced; thumbnail pacing resets
 			a.evidScroll = 0 // a fresh list scrolls from the top
-			if a.evidIdx >= len(a.sess.Evidence) {
+			if a.evidIdx >= len(a.link.sess.Evidence) {
 				a.evidIdx = -1
 			}
 		case courtroom.EventEvidenceChanged:
@@ -901,7 +901,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// Someone else edited the very item we're mid-edit on: snapshot
 				// the incoming values and surface the Keep mine / Accept theirs
 				// compare instead of silently clobbering our unsaved work.
-				a.evidIncoming = a.sess.Evidence[ev.Int]
+				a.evidIncoming = a.link.sess.Evidence[ev.Int]
 				a.evidConflict = true
 			}
 		case courtroom.EventDisconnect:
@@ -934,8 +934,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.recordEvent(ev)
 		}
 		a.bufferReplayEvent(ev) // instant-replay rolling buffer (no-op unless the opt-in pref is on)
-		if a.room != nil {
-			a.room.HandleEvent(ev)
+		if a.link.room != nil {
+			a.link.room.HandleEvent(ev)
 		}
 	}
 }
@@ -950,7 +950,7 @@ const musicLogColor = 0
 // room still plays the track — this only mirrors the on-screen notice.
 func (a *App) logMusicChange(ev courtroom.Event) {
 	cid := ev.Int
-	if a.sess == nil || cid < 0 || cid >= len(a.sess.Chars) {
+	if a.link.sess == nil || cid < 0 || cid >= len(a.link.sess.Chars) {
 		return // no player to attribute it to (system/area change or bad id)
 	}
 	action, song, ok := courtroom.MusicAction(ev.Text)
@@ -959,7 +959,7 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 	}
 	name := ev.Name // the MC packet's showname (field 2)
 	if name == "" {
-		name = a.sess.Chars[cid].Name // fall back to the character name
+		name = a.link.sess.Chars[cid].Name // fall back to the character name
 	}
 	if name == "" {
 		name = "Someone"
@@ -1034,14 +1034,14 @@ func icPos(m *protocol.ChatMessage) string {
 // since a nickname is a label, not an alert. Showname-else-character match, the
 // identity the MS wire carries.
 func (a *App) friendNick(m *protocol.ChatMessage) string {
-	if m == nil || a.serverKey == "" {
+	if m == nil || a.srvMeta.serverKey == "" {
 		return ""
 	}
 	name := strings.TrimSpace(m.Showname)
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
-	_, _, nick := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, name)
+	_, _, nick := a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, name)
 	return nick
 }
 
@@ -1050,7 +1050,7 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 // Both jobs live here so they cannot drift apart: an origin installed without
 // the flush would silently serve a previous visit's verdict.
 func (a *App) installAssetOrigin(origin string) {
-	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
+	a.link.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
 	a.d.Manager.ForgetConclusiveMissesUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
 }
 
@@ -1096,15 +1096,15 @@ func (a *App) rebuildAssetOrigin() {
 		return
 	}
 	origin := ""
-	if a.sess != nil {
-		origin = a.sess.AssetURL
+	if a.link.sess != nil {
+		origin = a.link.sess.AssetURL
 	}
 	if origin == "" {
 		a.connErr = `server provided no asset URL — set Settings > Assets > Asset source to "Only use my folders"`
 		return
 	}
 	a.installAssetOrigin(origin)
-	if a.rehearsal {
+	if a.srvMeta.rehearsal {
 		return // offline: no DNS warm, no manifest fetch
 	}
 	if host := hostOfURL(origin); host != "" {
@@ -1126,17 +1126,17 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 		return
 	}
 	a.resetSessionState()
-	a.serverName = name + " (rehearsal)"
-	a.serverKey = key
-	a.connAt = time.Now()
-	a.rehearsal = true
+	a.srvMeta.serverName = name + " (rehearsal)"
+	a.srvMeta.serverKey = key
+	a.srvMeta.connAt = time.Now()
+	a.srvMeta.rehearsal = true
 	a.d.Manager.SetOffline(true)
-	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
+	a.link.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
 	a.rebuildAssetOrigin()
 	a.refreshCharKeys()
 	a.refreshShownameKeys()
 	a.refreshICPhraseKeys()
-	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
+	a.srvMeta.themeBound = info.Theme // rehearsal wears the server's bound theme too
 	a.ensureThemeForSession()
 	a.screen = ScreenCharSelect
 	ch := a.notebookRes
@@ -1159,11 +1159,11 @@ func (a *App) pickCharacter(idx int) {
 	// log the exact char_id we put on the wire in CC, named from our own list, so
 	// a playtest with the Debug overlay on shows whether the index we SEND matches
 	// the character picked (vs the server-assigned id logged at EventCharPicked).
-	if idx >= 0 && idx < len(a.sess.Chars) {
-		a.debug.push(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.sess.Chars[idx].Name))
+	if idx >= 0 && idx < len(a.link.sess.Chars) {
+		a.debug.push(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.link.sess.Chars[idx].Name))
 	}
-	if a.sess.Rehearsal {
-		a.sess.MyCharID = idx
+	if a.link.sess.Rehearsal {
+		a.link.sess.MyCharID = idx
 		a.enterCourtroom()
 		return
 	}
@@ -1173,10 +1173,10 @@ func (a *App) pickCharacter(idx int) {
 	// char-select click does, adding one full RTT of visible button-load
 	// delay). warmCharINI's iniWarmed guard makes the hover-then-click path a
 	// no-op. Same bounds guard shape as the pushDebug above.
-	if idx >= 0 && idx < len(a.sess.Chars) {
-		a.warmCharINI(a.sess.Chars[idx].Name)
+	if idx >= 0 && idx < len(a.link.sess.Chars) {
+		a.warmCharINI(a.link.sess.Chars[idx].Name)
 	}
-	a.sess.PickCharacter(idx)
+	a.link.sess.PickCharacter(idx)
 }
 
 // fetchManifestAsync grabs <origin>/extensions.json (webAO convention —
@@ -1201,7 +1201,7 @@ func (a *App) extProfileFor(host string) string {
 func (a *App) isOfficialVanilla(assetHost string) bool {
 	h := strings.ToLower(assetHost)
 	return strings.Contains(h, "attorneyoffline.de") ||
-		strings.Contains(strings.ToLower(a.serverKey), "vanilla.aceattorneyonline.com")
+		strings.Contains(strings.ToLower(a.srvMeta.serverKey), "vanilla.aceattorneyonline.com")
 }
 
 // casingProbeResult carries an asset-casing probe's outcome back to the render thread.
@@ -1230,17 +1230,17 @@ func (a *App) charCasingFor(origin string) uint8 {
 // has selected Auto casing, the char list is known, and this host hasn't been probed yet. A cheap
 // per-frame no-op otherwise, so it costs nothing unless Auto is on.
 func (a *App) maybeProbeCasing() {
-	if a.d.Prefs.Load().AssetCharCase != courtroom.CharCaseAuto || a.casingProbing || a.sess == nil {
+	if a.d.Prefs.Load().AssetCharCase != courtroom.CharCaseAuto || a.casingProbing || a.link.sess == nil {
 		return
 	}
-	origin := a.urls.Origin()
+	origin := a.link.urls.Origin()
 	host := hostOfURL(origin)
 	if host == "" || !strings.HasPrefix(origin, "http") || a.casingProbedHost == host {
 		return // not a network origin, or already handled this host this session
 	}
 	name := ""
-	for i := range a.sess.Chars {
-		if n := strings.TrimSpace(a.sess.Chars[i].Name); n != "" {
+	for i := range a.link.sess.Chars {
+		if n := strings.TrimSpace(a.link.sess.Chars[i].Name); n != "" {
 			name = n
 			break
 		}
@@ -1293,8 +1293,8 @@ func (a *App) pollCasingProbe() {
 			a.charCaseLearned = map[string]uint8{}
 		}
 		a.charCaseLearned[res.host] = res.casing
-		if hostOfURL(a.urls.Origin()) == res.host { // still on this server → apply now
-			a.urls = a.urls.WithCharCase(res.casing)
+		if hostOfURL(a.link.urls.Origin()) == res.host { // still on this server → apply now
+			a.link.urls = a.link.urls.WithCharCase(res.casing)
 		}
 		a.debug.push("asset casing auto-detect: " + res.host + " → " + charCaseName(res.casing))
 	default:
@@ -1314,14 +1314,14 @@ func charCaseName(c uint8) string {
 }
 
 func (a *App) fetchManifestAsync() {
-	origin := a.urls.Origin()
+	origin := a.link.urls.Origin()
 	// Settings' re-seed hooks blank manifestFor to force a fresh fetch of the
 	// current server after a profile / auto-detect change; honor that by dropping
 	// the current origin from the dedupe set so the guard below re-runs it.
-	if a.manifestFor == "" {
-		delete(a.manifestSeeded, origin)
+	if a.srvMeta.manifestFor == "" {
+		delete(a.srvMeta.manifestSeeded, origin)
 	}
-	a.manifestFor = origin
+	a.srvMeta.manifestFor = origin
 	if a.originSeeded(origin) || !strings.HasPrefix(origin, "http") {
 		return
 	}
@@ -1374,7 +1374,7 @@ func (a *App) originSeeded(origin string) bool {
 	if origin == "" {
 		return false
 	}
-	_, ok := a.manifestSeeded[origin]
+	_, ok := a.srvMeta.manifestSeeded[origin]
 	return ok
 }
 
@@ -1385,10 +1385,10 @@ func (a *App) markOriginSeeded(origin string) {
 	if origin == "" {
 		return
 	}
-	if a.manifestSeeded == nil {
-		a.manifestSeeded = map[string]struct{}{}
+	if a.srvMeta.manifestSeeded == nil {
+		a.srvMeta.manifestSeeded = map[string]struct{}{}
 	}
-	a.manifestSeeded[origin] = struct{}{}
+	a.srvMeta.manifestSeeded[origin] = struct{}{}
 }
 
 // seedStatus is the outcome of a diagnostic origin-seeding pass, noted on a
@@ -1473,10 +1473,10 @@ func (a *App) noteManifestStatus(host string, st seedStatus) {
 	if host == "" {
 		return
 	}
-	if a.manifestStatus == nil {
-		a.manifestStatus = map[string]seedStatus{}
+	if a.srvMeta.manifestStatus == nil {
+		a.srvMeta.manifestStatus = map[string]seedStatus{}
 	}
-	a.manifestStatus[host] = st
+	a.srvMeta.manifestStatus[host] = st
 }
 
 // fontLoad is one font-override read result: file bytes in chain order
@@ -1606,19 +1606,19 @@ func (a *App) pollFontChain() {
 // Deliberately capped: the rest load on demand from drawCharCell, because
 // a 4000-char burst would only shed itself out of the low lane.
 func (a *App) prefetchCharIcons() {
-	if a.sess == nil || a.urls.Origin() == "" {
+	if a.link.sess == nil || a.link.urls.Origin() == "" {
 		return
 	}
-	for i, c := range a.sess.Chars {
+	for i, c := range a.link.sess.Chars {
 		if i >= charIconWarmup {
 			break
 		}
-		a.d.Manager.Prefetch(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+		a.d.Manager.Prefetch(a.link.urls.CharIcon(c.Name), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 	}
 }
 
 func (a *App) enterCourtroom() {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
 	// FRESH entry from char select: a wardrobe pick rides in as pendingIni (the
@@ -1639,7 +1639,7 @@ func (a *App) enterCourtroom() {
 	// message — buildRoom's stageRestoreMsg would otherwise re-stage the OLD
 	// speaker's sprite (the "swapped to Armstrong, Phoenix's emote on the witness
 	// desk" report). Tab reactivation (activateTab → buildRoom directly) keeps it.
-	a.sess.LastIC = nil
+	a.link.sess.LastIC = nil
 	a.buildRoom()
 }
 

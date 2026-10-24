@@ -75,7 +75,7 @@ func TestOwnerMusicInputs(t *testing.T) {
 
 	// No owner set: the active tab's values pass through unchanged.
 	a := testTabApp(t)
-	a.serverKey = active
+	a.srvMeta.serverKey = active
 	a.musicOwnerKey = ""
 	if m, mu := a.ownerMusicInputs(100, 0); m != 100 || mu != 0 {
 		t.Errorf("unset owner → active pass-through, got (%d,%d) want (100,0)", m, mu)
@@ -114,18 +114,18 @@ func TestOwnerMusicInputs(t *testing.T) {
 // handler (handleSessionEvents), the single site that stamps/clears the owner.
 func TestOwnerClearedOnStop(t *testing.T) {
 	a := testTabApp(t)
-	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 
 	// A real track: the active tab becomes the audible owner.
-	a.sess.MusicTrack = "Trial.opus"
+	a.link.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
 	if a.musicOwnerKey != "wss://srv:2096" {
 		t.Errorf("a real track must stamp the active tab as owner, got %q", a.musicOwnerKey)
 	}
 
 	// A ~stop clears MusicTrack; the handler must drop the owner stamp with it.
-	a.sess.MusicTrack = ""
+	a.link.sess.MusicTrack = ""
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
 	if a.musicOwnerKey != "" {
 		t.Errorf("a ~stop must clear the owner stamp, got %q", a.musicOwnerKey)
@@ -141,9 +141,9 @@ func TestOwnerClearedOnStop(t *testing.T) {
 func TestBackgroundMusicFollow(t *testing.T) {
 	const bgKey = "wss://bg:2096"
 	newSession := func(track string) *sessionState {
-		s := &sessionState{serverName: "BG", serverKey: bgKey, urls: courtroom.NewURLBuilder("https://cdn.example/base/")}
-		s.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-		s.sess.MusicTrack = track // HandlePacket already advanced this on the real path
+		s := &sessionState{srvMeta: serverMetaState{serverName: "BG", serverKey: bgKey}, link: linkState{urls: courtroom.NewURLBuilder("https://cdn.example/base/")}}
+		s.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+		s.link.sess.MusicTrack = track // HandlePacket already advanced this on the real path
 		return s
 	}
 
@@ -164,7 +164,7 @@ func TestBackgroundMusicFollow(t *testing.T) {
 	a.musicOwnerKey = bgKey
 	s := newSession("Battle.opus")
 	url, ok := a.backgroundMusicFollow(s)
-	if !ok || url != s.urls.MusicURL("Battle.opus") {
+	if !ok || url != s.link.urls.MusicURL("Battle.opus") {
 		t.Errorf("ON + owner + track must follow: got (%q,%v)", url, ok)
 	}
 
@@ -245,9 +245,9 @@ func TestRouteBackgroundEventMusicPreservesLatch(t *testing.T) {
 
 	})
 
-	tab := &courtTab{state: sessionState{serverName: "BG", serverKey: "wss://bg:2096", urls: courtroom.NewURLBuilder("https://cdn.example/base/")}}
-	tab.state.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	tab.state.sess.MusicTrack = "Song.opus"
+	tab := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "BG", serverKey: "wss://bg:2096"}, link: linkState{urls: courtroom.NewURLBuilder("https://cdn.example/base/")}}}
+	tab.state.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	tab.state.link.sess.MusicTrack = "Song.opus"
 	a.musicOwnerKey = "wss://bg:2096"
 
 	// A background music change must not mark the tab dead or set a reason.

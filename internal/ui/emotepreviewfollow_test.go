@@ -60,7 +60,7 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 		Pool:      pool,
 		Decoder:   decoder,
 	})
-	a.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
+	a.link.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
 	a.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
 	a.emotepick.emotes = []courtroom.Emote{
 		{Anim: "happy", Comment: "happy"},
@@ -88,7 +88,7 @@ func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 	if a.previewBase == openedOn {
 		t.Fatal("selectEmote(1) left the pinned preview on emote 0 — it must follow the click")
 	}
-	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("previewBase = %q, want %q (emote 1's talk sprite)", a.previewBase, want)
 	}
@@ -164,7 +164,7 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 	// Open + pinned: must follow.
 	a.previewPinned = true
 	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
-	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.previewBase, want)
 	}
@@ -202,7 +202,7 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 
 	a.selectEmote(1)
 
-	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
 	if a.previewBase != want {
 		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.previewBase, want)
 	}

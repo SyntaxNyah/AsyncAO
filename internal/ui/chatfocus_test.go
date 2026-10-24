@@ -232,7 +232,7 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// Enter must not reach the IC input's send. The ONE documented divergence.
 	d := colorPickTestApp(t)
 	d.applyICColorPick(icColorCustomIdx)
-	if !d.showICColorWheel {
+	if !d.lookUI.showICColorWheel {
 		t.Fatal("Custom… did not open the colour wheel — this case is no longer the one being excepted")
 	}
 	if d.ctx.focusNext != "" {

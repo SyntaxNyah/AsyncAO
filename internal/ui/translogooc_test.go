@@ -31,7 +31,7 @@ func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 			false
 
 	})
-	a.serverName = "Skrapegropen-ooc-pref-off"
+	a.srvMeta.serverName = "Skrapegropen-ooc-pref-off"
 
 	a.pushOOC("Nyah: should not be logged", "Nyah")
 
@@ -89,13 +89,13 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 
 	})
 
-	a.serverName = server
+	a.srvMeta.serverName = server
 	t.Cleanup(a.CloseTranscript)
 	a.frameNow = time.Now()
 	a.suppressAreaEchoUntil = a.frameNow.Add(time.Minute) // arm the /gas suppression window
 
 	before := transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.logSession) == nil {
+	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	file, ok := transcriptNewFile(t, server, before)
@@ -141,7 +141,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 
 	})
 
-	a.serverName = server
+	a.srvMeta.serverName = server
 	t.Cleanup(a.CloseTranscript)
 
 	// Open each tab's writer EXPLICITLY, independent of the OOC seam under test:
@@ -150,7 +150,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	// cleanly here and a BROKEN OOC seam instead shows up as a content mismatch
 	// below — never a false skip that would hide the regression.
 	before := transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.logSession) == nil {
+	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	tab1File, ok := transcriptNewFile(t, server, before)
@@ -164,10 +164,10 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive()
-	a.serverName = server
+	a.srvMeta.serverName = server
 
 	before = transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.logSession) == nil {
+	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
 		t.Fatal("tab two's transcript writer failed to open")
 	}
 	tab2File, ok := transcriptNewFile(t, server, before)

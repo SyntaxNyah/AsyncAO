@@ -177,8 +177,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	// and on each area change. Nothing refreshes it on join/leave any more — that was
 	// maybeRefetchRoster, deleted with the whole automatic tier (liveroster.go) — so the
 	// top-up for stale rows is the person pressing "Refresh roster details".
-	if !a.rosterLegacy && a.sess != nil && a.liveDetailsArea != a.curArea {
-		a.liveDetailsArea = a.curArea
+	if !a.rosterLegacy && a.link.sess != nil && a.liveDetailsArea != a.srvMeta.curArea {
+		a.liveDetailsArea = a.srvMeta.curArea
 		a.fetchRoster()
 	}
 	// The toolbar is ONE wrapping strip (playerlisttoolbar.go), not two rows of
@@ -285,8 +285,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 
 	speaker := a.currentSpeakerName()
 	myUID := ""
-	if a.sess != nil && a.sess.PlayerID > 0 {
-		myUID = strconv.Itoa(a.sess.PlayerID)
+	if a.link.sess != nil && a.link.sess.PlayerID > 0 {
+		myUID = strconv.Itoa(a.link.sess.PlayerID)
 	}
 	cmSet := a.cmNameSet()
 	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped for a /gas
@@ -437,8 +437,8 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		fk = p.name
 	}
 	isFriend, fColor, fNick := false, -1, ""
-	if a.serverKey != "" && fk != "" {
-		isFriend, fColor, fNick = a.d.Prefs.Load().ServerFriendInfo(a.serverKey, fk)
+	if a.srvMeta.serverKey != "" && fk != "" {
+		isFriend, fColor, fNick = a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, fk)
 	}
 	friend := isFriend && a.d.Prefs.Load().FriendHighlight // row tint gate (unchanged)
 	display := rosterName(p)                               // showname → OOC → character
@@ -521,7 +521,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// cross-client zero-width channel (AO2 / webAO never emit it). Passive: shows once
 	// they've spoken / reacted; your own row always shows it. It's a hint, not proof —
 	// the badge can be self-faked but never used to impersonate another player.
-	if a.room != nil && (isMe || a.room.RemoteIsAsyncAO(p.name)) {
+	if a.link.room != nil && (isMe || a.link.room.RemoteIsAsyncAO(p.name)) {
 		cx += a.drawRosterChip(cx, row.Y+4, "AO", ColAccent, ColBackground) + 5
 	}
 	// Status chip (#M1): your own from a.myStatus, others from the room's per-character
@@ -530,8 +530,8 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	st := courtroom.StatusNone
 	if isMe {
 		st = a.compose.myStatus
-	} else if a.room != nil {
-		if rs, ok := a.room.RemoteStatus(p.name); ok {
+	} else if a.link.room != nil {
+		if rs, ok := a.link.room.RemoteStatus(p.name); ok {
 			st = rs
 		}
 	}
@@ -580,7 +580,7 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 	if isSpec {
 		return
 	}
-	base := a.urls.CharIcon(p.name)
+	base := a.link.urls.CharIcon(p.name)
 	if page, ok := a.cachedPage(&a.playerIconPages, &a.playerIconPagesGen, len(a.rosterView()), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 		return
@@ -640,15 +640,15 @@ func (a *App) currentSpeakerName() string {
 // below and drawAreaHeaderRow / drawCurrentAreaStatusStrip (both read it FRESH
 // every frame, never memoized — see the staleness note on drawAreaHeaderRow)
 func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
-	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
+	if a.link.sess == nil || len(a.link.sess.AreaInfo) == 0 {
 		return nil, false
 	}
-	for i, nm := range a.sess.Areas {
+	for i, nm := range a.link.sess.Areas {
 		if nm == name {
-			if i >= len(a.sess.AreaInfo) {
+			if i >= len(a.link.sess.AreaInfo) {
 				return nil, false
 			}
-			return &a.sess.AreaInfo[i], true
+			return &a.link.sess.AreaInfo[i], true
 		}
 	}
 	return nil, false
@@ -657,15 +657,15 @@ func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
 // curAreaPlayers returns the live ARUP head-count for the area we're in (matched
 // by name; area 0 on a fresh join before any area click). ok=false when unknown.
 func (a *App) curAreaPlayers() (int, bool) {
-	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
+	if a.link.sess == nil || len(a.link.sess.AreaInfo) == 0 {
 		return 0, false
 	}
 	var info *courtroom.AreaInfo
-	if a.curArea == "" {
-		info = &a.sess.AreaInfo[0] // fresh join, no area click yet: assume the spawn area (index 0)
+	if a.srvMeta.curArea == "" {
+		info = &a.link.sess.AreaInfo[0] // fresh join, no area click yet: assume the spawn area (index 0)
 	} else {
 		var ok bool
-		if info, ok = a.areaInfoByName(a.curArea); !ok { // navigated, but the name didn't match the list
+		if info, ok = a.areaInfoByName(a.srvMeta.curArea); !ok { // navigated, but the name didn't match the list
 			return 0, false
 		}
 	}
@@ -679,12 +679,12 @@ func (a *App) curAreaPlayers() (int, bool) {
 // cms), so a roster row whose name is a CM gets the chip. Excludes ""/FREE and
 // splits multi-CM lists. nil when no area has a CM.
 func (a *App) cmNameSet() map[string]bool {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return nil
 	}
 	var set map[string]bool
-	for i := range a.sess.AreaInfo {
-		cm := strings.TrimSpace(a.sess.AreaInfo[i].CM)
+	for i := range a.link.sess.AreaInfo {
+		cm := strings.TrimSpace(a.link.sess.AreaInfo[i].CM)
 		if cm == "" || strings.EqualFold(cm, "FREE") {
 			continue
 		}
@@ -860,7 +860,7 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	// as "why is the last area first?" — mark it unmistakably: a coloured row
 	// wash ("you are here" green by default, recolourable in Settings → Chat),
 	// a matching edge bar + name, and "(current)" where the jump hint would be.
-	current := a.sess != nil && hr.area != "" && hr.area == a.myAreaName()
+	current := a.link.sess != nil && hr.area != "" && hr.area == a.myAreaName()
 	nameCol := ColText
 	switch {
 	case current:
@@ -869,7 +869,7 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 		nameCol = hi
 		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, hi)
 		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "(current)", hi)
-	case a.sess != nil && hr.area != "":
+	case a.link.sess != nil && hr.area != "":
 		if c.hovering(r) {
 			c.Border(r, ColAccent)
 		}
@@ -947,7 +947,7 @@ func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
 // list: MC#<area name>#<char id>). The name comes from the same server, so it
 // matches the area list.
 func (a *App) jumpToArea(area string) {
-	if a.sess == nil || area == "" {
+	if a.link.sess == nil || area == "" {
 		return
 	}
 	// Arm the scroll-follow latch: keep the jumped-to area header in view until it
@@ -956,9 +956,9 @@ func (a *App) jumpToArea(area string) {
 	a.areaJumpFollow = area
 	a.areaJumpFollowUntil = a.now().Add(areaJumpFollowWindow)
 	a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves (it keys the outgoing log on the OLD curArea)
-	a.curArea = area             // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
+	a.srvMeta.curArea = area     // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
 	a.updatePresence()
-	a.sess.RequestMusic(area)
+	a.link.sess.RequestMusic(area)
 	// Wipe the stage on OUR OWN area jump (#23). A deliberate ADDITION to the AO2
 	// path, not a conflict with it: akashi/KFO-family servers put a pos in the
 	// area-change BN, so the reducer's arity test already wipes for them — but the
@@ -967,11 +967,11 @@ func (a *App) jumpToArea(area string) {
 	// area row is unambiguous local intent, and this is the one seam that knows the
 	// jump was client-initiated. Server-PUSHED area moves still rely on BN arity,
 	// exactly like AO2.
-	if a.room != nil {
-		a.room.WipeStage()
+	if a.link.room != nil {
+		a.link.room.WipeStage()
 	}
 	a.wtceName, a.testimonyOn, a.evShowImg = "", false, ""
-	a.sess.LastIC = nil // ...so tabbing back can't re-stage the area we just left
+	a.link.sess.LastIC = nil // ...so tabbing back can't re-stage the area we just left
 	a.warnLine = clampLine("Jumping to " + area + "…")
 	a.warnAt = a.now()
 }
@@ -981,10 +981,10 @@ func (a *App) jumpToArea(area string) {
 // character), the same key the IC-log highlight uses. Reuses the cloned list +
 // SetServerFriends (which dedups, caps, and persists).
 func (a *App) toggleServerFriend(name string) {
-	if a.serverKey == "" || strings.TrimSpace(name) == "" {
+	if a.srvMeta.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
 	}
-	friends := a.d.Prefs.Load().ServerFriends(a.serverKey)
+	friends := a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey)
 	out := friends[:0]
 	removed := false
 	for _, f := range friends {
@@ -1001,7 +1001,7 @@ func (a *App) toggleServerFriend(name string) {
 	if !removed {
 		out = append(out, name) // add as a plain entry (default glow)
 	}
-	a.d.Prefs.SetServerFriends(a.serverKey, out)
+	a.d.Prefs.SetServerFriends(a.srvMeta.serverKey, out)
 	if removed {
 		a.warnLine = clampLine("Removed " + name + " from friends")
 	} else {
@@ -1016,10 +1016,10 @@ func (a *App) toggleServerFriend(name string) {
 // OOC messages are dropped at ingest (#81). Reuses the cloned list +
 // SetServerIgnored (dedups, caps, persists).
 func (a *App) toggleServerIgnore(name string) {
-	if a.serverKey == "" || strings.TrimSpace(name) == "" {
+	if a.srvMeta.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
 	}
-	ignored := a.d.Prefs.Load().ServerIgnored(a.serverKey)
+	ignored := a.d.Prefs.Load().ServerIgnored(a.srvMeta.serverKey)
 	out := ignored[:0]
 	removed := false
 	for _, n := range ignored {
@@ -1032,7 +1032,7 @@ func (a *App) toggleServerIgnore(name string) {
 	if !removed {
 		out = append(out, name)
 	}
-	a.d.Prefs.SetServerIgnored(a.serverKey, out)
+	a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, out)
 	if removed {
 		a.warnLine = clampLine("Unignored " + name + " — their messages show again")
 	} else {

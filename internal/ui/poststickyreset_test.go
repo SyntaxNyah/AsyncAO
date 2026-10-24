@@ -123,7 +123,7 @@ func TestClearPreAfterSendReadsTheRealPreferences(t *testing.T) {
 // plain effect, row 2 declares `sticky` (courtroom.cpp:2348's
 // get_effect_property(..., "sticky")).
 func stickyFXFixture(a *App) {
-	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
 	fx := []theme.OverlayFX{{Name: "tv on", Sound: "switch tv"}, {Name: "sticky one", Sound: "s", Sticky: true}}
 	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX([]string{"tv on", "sticky one"}, fx)},

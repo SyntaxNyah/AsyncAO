@@ -16,8 +16,8 @@ import (
 // the list), the panel fence behaves exactly as before.
 func TestOpenDropdownPunchesThroughPanelFence(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
 	// A floating panel is open and the cursor sits inside it: fenced (baseline).

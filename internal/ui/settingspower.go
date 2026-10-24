@@ -35,12 +35,12 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
 	y += 4
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
-		a.showPowerUser = !a.showPowerUser
-		a.powerNukeArm = false // never carry an armed nuke across a hide/reveal
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.lookUI.showPowerUser)) {
+		a.lookUI.showPowerUser = !a.lookUI.showPowerUser
+		a.lookUI.powerNukeArm = false // never carry an armed nuke across a hide/reveal
 	}
 	y += btnH + 8
-	if !a.showPowerUser {
+	if !a.lookUI.showPowerUser {
 		return y
 	}
 
@@ -48,11 +48,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// confirm — arming flips the label). Scoped to this tab; the image-format block
 	// keeps its own controls (its learned state is per-server, not a "knob").
 	nukeLabel := "⟲ Reset ALL power-user options to defaults"
-	if a.powerNukeArm {
+	if a.lookUI.powerNukeArm {
 		nukeLabel = "⚠ Click again to confirm the reset"
 	}
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 340, H: btnH}, nukeLabel) {
-		if a.powerNukeArm {
+		if a.lookUI.powerNukeArm {
 			a.d.Prefs.ResetPowerUser()
 			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
 			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
@@ -67,7 +67,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			a.warnLine = "Power-user options reset to defaults."
 			a.warnAt = a.now()
 		}
-		a.powerNukeArm = !a.powerNukeArm
+		a.lookUI.powerNukeArm = !a.lookUI.powerNukeArm
 	}
 	y += btnH + 6
 	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)

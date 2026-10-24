@@ -1667,14 +1667,14 @@ func (a *App) inputFieldH() int32 {
 // ensureCharLower keeps the lowercase name cache in sync with the char
 // list (shared by char select filtering and the pairing search).
 func (a *App) ensureCharLower() {
-	if a.sess == nil || len(a.charLower) == len(a.sess.Chars) {
+	if a.link.sess == nil || len(a.charLower) == len(a.link.sess.Chars) {
 		return
 	}
-	a.charLower = make([]string, len(a.sess.Chars))
-	a.charHoverIDs = make([]string, len(a.sess.Chars))
-	for i := range a.sess.Chars {
-		a.charLower[i] = strings.ToLower(a.sess.Chars[i].Name)
-		a.charHoverIDs[i] = charHoverIDPrefix + a.sess.Chars[i].Name
+	a.charLower = make([]string, len(a.link.sess.Chars))
+	a.charHoverIDs = make([]string, len(a.link.sess.Chars))
+	for i := range a.link.sess.Chars {
+		a.charLower[i] = strings.ToLower(a.link.sess.Chars[i].Name)
+		a.charHoverIDs[i] = charHoverIDPrefix + a.link.sess.Chars[i].Name
 	}
 }
 
@@ -1691,23 +1691,23 @@ func (a *App) charHoverID(i int) string {
 	if i >= 0 && i < len(a.charHoverIDs) {
 		return a.charHoverIDs[i]
 	}
-	if a.sess == nil || i < 0 || i >= len(a.sess.Chars) {
+	if a.link.sess == nil || i < 0 || i >= len(a.link.sess.Chars) {
 		return charHoverIDPrefix
 	}
-	return charHoverIDPrefix + a.sess.Chars[i].Name
+	return charHoverIDPrefix + a.link.sess.Chars[i].Name
 }
 
 // charSelectTitle is the char-select heading, rebuilt only when the server name
 // changes. The concat used to run every frame on a screen that is otherwise pure
 // integer layout.
 func (a *App) charSelectTitle() string {
-	if a.charSelTitle != "" && a.charSelTitleFor == a.serverName {
+	if a.charSelTitle != "" && a.charSelTitleFor == a.srvMeta.serverName {
 		return a.charSelTitle
 	}
-	a.charSelTitleFor = a.serverName
+	a.charSelTitleFor = a.srvMeta.serverName
 	a.charSelTitle = charSelectHeading
-	if a.serverName != "" {
-		a.charSelTitle = charSelectHeading + " — " + a.serverName
+	if a.srvMeta.serverName != "" {
+		a.charSelTitle = charSelectHeading + " — " + a.srvMeta.serverName
 	}
 	return a.charSelTitle
 }
@@ -1747,8 +1747,8 @@ func (a *App) Background(dt time.Duration) {
 	a.pollCharINI()        // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
 	a.pollLogBrowser()     // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
 	a.updates.pollUpdate() // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
-	if a.room != nil {
-		a.room.Update(dt)
+	if a.link.room != nil {
+		a.link.room.Update(dt)
 		// Re-derive the message duck here too. Frame does this inside its own
 		// `case a.room != nil` block; without the same call here, advancing the
 		// message lifecycle while minimized (room.Update above) would finish a
@@ -1775,8 +1775,8 @@ func (a *App) Background(dt time.Duration) {
 // Background pass: the courtroom bumps it on EVERY trigger (overlayfx.go), including a
 // repeat of the same effect, which is the case a Base comparison would miss.
 func (a *App) noteOverlayStart() {
-	if gen := a.room.Scene.Overlay.Gen; gen != a.drawnOverlayGen {
-		a.drawnOverlayGen = gen
+	if gen := a.link.room.Scene.Overlay.Gen; gen != a.frame.drawnOverlayGen {
+		a.frame.drawnOverlayGen = gen
 		a.NoteDeadline() // damage → the main loop renders on the very next pass
 	}
 }
@@ -1790,7 +1790,7 @@ func (a *App) noteOverlayStart() {
 // a message that finished while minimized would leave the duck stuck at 35% until the
 // window was restored.
 func (a *App) rederiveMessageDuck() {
-	p := a.room.Phase()
+	p := a.link.room.Phase()
 	wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.Load().MusicDuckingOn
 	if wantDuck != a.musicDucked {
 		a.musicDucked = wantDuck
@@ -1806,7 +1806,7 @@ func (a *App) rederiveMessageDuck() {
 // the URL build + map ops here would break the 0-alloc render path (a drawn
 // frame's emote row already touches these).
 func (a *App) keepActiveAssetsWarm() {
-	if a.room == nil || a.sess == nil {
+	if a.link.room == nil || a.link.sess == nil {
 		return
 	}
 	me := a.activeCharName()
@@ -1820,10 +1820,10 @@ func (a *App) keepActiveAssetsWarm() {
 		clear(a.activeWarm.demands)
 	}
 	if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
-		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emotepick.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
-		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emotepick.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
+		a.activeWarm.warmBase(&a.env, a.link.urls.EmoteButton(me, a.emotepick.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
+		a.activeWarm.warmBase(&a.env, a.link.urls.EmoteButton(me, a.emotepick.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
 	}
-	a.activeWarm.warmBase(&a.env, a.urls.CharIcon(me), assets.AssetTypeCharIcon)
+	a.activeWarm.warmBase(&a.env, a.link.urls.CharIcon(me), assets.AssetTypeCharIcon)
 }
 
 // The scene-heal futility budget: how the heal machinery (keepSceneAssetsWarm,
@@ -1965,7 +1965,7 @@ const sceneWarmRedemandEvery = 250 * time.Millisecond
 // reasoning as keepActiveAssetsWarm). Steady state is a handful of map
 // probes on the render-thread-owned store: no locks, no allocations, no I/O.
 func (a *App) keepSceneAssetsWarm() {
-	if a.room == nil && !(a.replaying && a.replayRoom != nil) {
+	if a.link.room == nil && !(a.replaying && a.replayRoom != nil) {
 		return // no stage on screen (lobby) — nothing to pin
 	}
 	sc := a.renderScene()
@@ -1982,8 +1982,8 @@ func (a *App) keepSceneAssetsWarm() {
 		a.sceneWarm.set = warmSet
 		clear(a.sceneWarm.demands)
 	}
-	if a.room != nil {
-		if p := a.room.Phase(); p != a.sceneWarm.phase {
+	if a.link.room != nil {
+		if p := a.link.room.Phase(); p != a.sceneWarm.phase {
 			if a.sceneWarm.phase == courtroom.PhaseIdle {
 				clear(a.sceneWarm.demands) // idle → ceremony: a new message began
 			}
@@ -2071,15 +2071,15 @@ func (a *App) SetPump(p *render.Pump) { a.d.Pump = p }
 func (a *App) Screen() Screen { return a.screen }
 
 // Room exposes the courtroom (nil before joining).
-func (a *App) Room() *courtroom.Courtroom { return a.room }
+func (a *App) Room() *courtroom.Courtroom { return a.link.room }
 
 // IsLiveBase reports whether base belongs to the on-screen message (upload
 // budget bypass).
 func (a *App) IsLiveBase(base string) bool {
-	if a.room == nil {
+	if a.link.room == nil {
 		return false
 	}
-	sc := &a.room.Scene
+	sc := &a.link.room.Scene
 	switch base {
 	case sc.BackgroundBase, sc.DeskBase, sc.ShoutBase,
 		sc.Speaker.Active, sc.Pair.Active:
@@ -2102,7 +2102,7 @@ func (a *App) IsLiveBase(base string) bool {
 // viewport draws (renderScene covers the replay/slideshow overrides). Render
 // thread only — onEvict runs on every T1 mutation, all render-thread.
 func (a *App) IsLiveStageBase(base string) bool {
-	if base == "" || (a.room == nil && !(a.replaying && a.replayRoom != nil)) {
+	if base == "" || (a.link.room == nil && !(a.replaying && a.replayRoom != nil)) {
 		return false
 	}
 	sc := a.renderScene()

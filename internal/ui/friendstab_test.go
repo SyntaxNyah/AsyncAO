@@ -45,7 +45,7 @@ func TestPMThreadBounds(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.serverKey = "s"
+	a.srvMeta.serverKey = "s"
 
 	// Per-thread line cap keeps only the newest pmThreadLineCap lines.
 	for i := 0; i < pmThreadLineCap+20; i++ {
@@ -65,7 +65,7 @@ func TestPMThreadBounds(t *testing.T) {
 
 	// detectIncomingPM: outgoing echo creates nothing; a real "PM from" records once.
 	a2 := &App{env: env{d: Deps{Prefs: prefs}}}
-	a2.serverKey = "s"
+	a2.srvMeta.serverKey = "s"
 	a2.detectIncomingPM("PM sent to Phoenix: hi")
 	if len(a2.compose.pmThreads) != 0 {
 		t.Errorf("outgoing echo must not create a thread, got %d", len(a2.compose.pmThreads))

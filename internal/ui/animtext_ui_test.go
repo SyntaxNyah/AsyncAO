@@ -38,24 +38,24 @@ func TestEffectIDsMatchRender(t *testing.T) {
 // leaves the Scene effect-free so it keeps the untouched MessageRaster fast path.
 func TestRemoteEffectsThroughRoom(t *testing.T) {
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	spans := []courtroom.TextEffectSpan{{Start: 0, Len: 2, Effect: courtroom.TextEffectShake}, {Start: 3, Len: 5, Effect: courtroom.TextEffectRainbow}}
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hi there"+courtroom.EncodeEffectsMarker(spans))})
-	a.room.SkipToIdle()
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hi there"+courtroom.EncodeEffectsMarker(spans))})
+	a.link.room.SkipToIdle()
 
-	if a.room.Scene.MessageText != "hi there" {
-		t.Fatalf("MessageText = %q, want \"hi there\" (effects frame must be stripped)", a.room.Scene.MessageText)
+	if a.link.room.Scene.MessageText != "hi there" {
+		t.Fatalf("MessageText = %q, want \"hi there\" (effects frame must be stripped)", a.link.room.Scene.MessageText)
 	}
-	got := a.room.Scene.MessageEffects
+	got := a.link.room.Scene.MessageEffects
 	if len(got) != 2 || got[0] != spans[0] || got[1] != spans[1] {
 		t.Fatalf("Scene.MessageEffects = %v, want %v", got, spans)
 	}
 
 	// A plain follow-up clears the effects → back on the fast path.
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "just talking")})
-	a.room.SkipToIdle()
-	if len(a.room.Scene.MessageEffects) != 0 {
-		t.Errorf("a plain message left %d effect spans on the Scene, want 0", len(a.room.Scene.MessageEffects))
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "just talking")})
+	a.link.room.SkipToIdle()
+	if len(a.link.room.Scene.MessageEffects) != 0 {
+		t.Errorf("a plain message left %d effect spans on the Scene, want 0", len(a.link.room.Scene.MessageEffects))
 	}
 }
 
@@ -224,19 +224,19 @@ func TestSendParsesEffectMarkup(t *testing.T) {
 	msg := wire + courtroom.EncodeEffectsMarker(spans)
 
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(7, "Apollo", msg)})
-	a.room.SkipToIdle()
+	a.link.room = newRoomForTest(t)
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(7, "Apollo", msg)})
+	a.link.room.SkipToIdle()
 
-	if a.room.Scene.MessageText != "abcd ef" {
-		t.Fatalf("MessageText = %q, want \"abcd ef\"", a.room.Scene.MessageText)
+	if a.link.room.Scene.MessageText != "abcd ef" {
+		t.Fatalf("MessageText = %q, want \"abcd ef\"", a.link.room.Scene.MessageText)
 	}
-	got := a.room.Scene.MessageEffects
+	got := a.link.room.Scene.MessageEffects
 	if len(got) != 2 {
 		t.Fatalf("spans = %v, want 2", got)
 	}
 	// Verify each span covers the intended substring of the displayed text.
-	disp := []rune(a.room.Scene.MessageText)
+	disp := []rune(a.link.room.Scene.MessageText)
 	if s := string(disp[got[0].Start : got[0].Start+got[0].Len]); s != "cd" || got[0].Effect != courtroom.TextEffectShake {
 		t.Errorf("span0 = %q effect %d, want \"cd\" shake", s, got[0].Effect)
 	}

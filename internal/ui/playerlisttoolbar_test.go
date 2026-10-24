@@ -389,7 +389,7 @@ func TestRosterDetailCmdIsNeverInert(t *testing.T) {
 		{"some-fork-nobody-has-heard-of", rosterCmdGetarea},
 	} {
 		a := &App{env: env{}}
-		a.sess = &courtroom.Session{Software: tc.software}
+		a.link.sess = &courtroom.Session{Software: tc.software}
 		if got := a.rosterDetailCmd(); got != tc.want {
 			t.Errorf("software %q → %q, want %q", tc.software, got, tc.want)
 		}

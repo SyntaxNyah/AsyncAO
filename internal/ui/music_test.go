@@ -12,7 +12,7 @@ import (
 // nothing, and ~stop reads as "has stopped the music".
 func TestLogMusicChange(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
 
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "Trial.opus", Int: 1, Name: "Mystic Maya"})
 	if len(a.chatlog.icLog) != 1 {

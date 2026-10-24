@@ -46,7 +46,7 @@ func (a *App) toggleFollow(uid string) {
 // ours. Called on each PR/PU update (EventPlayersUpdated); debounced. No-op when
 // not following, the player is gone, or we're already together.
 func (a *App) maybeFollowJump() {
-	if a.followUID == "" || a.sess == nil {
+	if a.followUID == "" || a.link.sess == nil {
 		return
 	}
 	if !a.d.Prefs.Load().FollowEnabled {
@@ -58,12 +58,12 @@ func (a *App) maybeFollowJump() {
 		a.followUID = "" // malformed; stop trailing a ghost
 		return
 	}
-	theirArea, ok := a.sess.PlayerArea(uid)
+	theirArea, ok := a.link.sess.PlayerArea(uid)
 	if !ok {
 		return // they've left, or no PR/PU yet — keep following in case they return
 	}
-	myArea, _ := a.sess.PlayerArea(a.sess.PlayerID)
-	name, ok := followTarget(theirArea, myArea, a.sess.Areas)
+	myArea, _ := a.link.sess.PlayerArea(a.link.sess.PlayerID)
+	name, ok := followTarget(theirArea, myArea, a.link.sess.Areas)
 	if !ok {
 		return
 	}

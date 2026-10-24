@@ -210,7 +210,7 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 // refreshCharKeys re-reads this server's character keybinds into the
 // per-frame lookup caches (connect + bind edits only — never per frame).
 func (a *App) refreshCharKeys() {
-	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.serverKey)
+	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.srvMeta.serverKey)
 	if len(a.charKeys) == 0 {
 		a.charKeysRev = nil
 		return
@@ -245,7 +245,7 @@ func (a *App) pollCharBind() {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetCharKeyBind(a.serverKey, key, a.bindingFor)
+	a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, key, a.bindingFor)
 	a.debug.push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.bindingFor))
 	a.bindingFor = ""
 	a.refreshCharKeys()
@@ -389,7 +389,7 @@ func (a *App) handleHotkeys() {
 		a.handleEmoteKeys()
 	}
 	key := a.ctx.hotkey
-	if key == 0 || a.sess == nil {
+	if key == 0 || a.link.sess == nil {
 		return
 	}
 	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until the user ticks
@@ -584,7 +584,7 @@ func (a *App) toggleFavEmoteBox() {
 // a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
 // per server, so the ring is too.
 func (a *App) quickSwapNext() {
-	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), nil)
+	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey), nil)
 	if len(ring) == 0 {
 		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
 		a.warnAt = time.Now()
@@ -664,7 +664,7 @@ func (a *App) applyAudioVolumes() {
 	// ServerAudio falls back to the global per channel for any level this server never
 	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
 	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
-	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
+	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
 	// The single music stream may belong to a BACKGROUNDED owner tab (MusicAcrossTabs
@@ -703,7 +703,7 @@ func (a *App) applyAudioVolumes() {
 // makes no extra prefs call. A method with no mixer dependency, so the volume math
 // stays testable without a device (the codebase's settleAwaitTimeout idiom).
 func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int) {
-	if a.musicOwnerKey == "" || a.musicOwnerKey == a.serverKey {
+	if a.musicOwnerKey == "" || a.musicOwnerKey == a.srvMeta.serverKey {
 		return activeMaster, activeMusic
 	}
 	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.musicOwnerKey); on {
@@ -865,8 +865,8 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	master = a.d.Prefs.Load().MasterVol
 	music, sfx, blip = a.d.Prefs.Load().AudioVolumes()
-	if a.serverKey != "" {
-		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
+	if a.srvMeta.serverKey != "" {
+		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
 			master, music, sfx, blip = m, mu, s, b // each falls back to global if this server never set it
 		}
 	}
@@ -877,8 +877,8 @@ func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 // when connected — so muting blips on one server leaves another untouched (each
 // tab keeps its own) — else to the global defaults. Applies it live.
 func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
-	if a.serverKey != "" {
-		a.d.Prefs.SetServerAudioVolumes(a.serverKey, master, music, sfx, blip)
+	if a.srvMeta.serverKey != "" {
+		a.d.Prefs.SetServerAudioVolumes(a.srvMeta.serverKey, master, music, sfx, blip)
 	} else {
 		a.d.Prefs.Update(func(
 			sn *config.
@@ -1123,30 +1123,30 @@ func (a *App) stopMusic() {
 	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
 	a.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
 	a.musicAwaitSince = time.Time{} // and no dangling timeout stamp
-	if a.room != nil {
-		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
+	if a.link.room != nil {
+		a.link.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
 	const fakeStopSong = "~stop.mp3"
 	track := fakeStopSong
 	found := false
-	for _, song := range a.sess.Music {
+	for _, song := range a.link.sess.Music {
 		if song == fakeStopSong {
 			found = true
 			break
 		}
 	}
 	if !found {
-		for _, song := range a.sess.Music {
+		for _, song := range a.link.sess.Music {
 			if !strings.Contains(song, ".") {
 				track = song
 				break
 			}
 		}
 	}
-	a.sess.RequestMusic(track)
+	a.link.sess.RequestMusic(track)
 }
 
 // jumpLogs snaps every scrollback to its newest line.
@@ -1342,10 +1342,10 @@ func (a *App) mentionNamesFor(s *sessionState) []string {
 // sessionCharName is the character a session is playing (its wire identity), or
 // "" if none is selected yet.
 func sessionCharName(s *sessionState) string {
-	if s.sess == nil || s.sess.MyCharID < 0 || s.sess.MyCharID >= len(s.sess.Chars) {
+	if s.link.sess == nil || s.link.sess.MyCharID < 0 || s.link.sess.MyCharID >= len(s.link.sess.Chars) {
 		return ""
 	}
-	return s.sess.Chars[s.sess.MyCharID].Name
+	return s.link.sess.Chars[s.link.sess.MyCharID].Name
 }
 
 // isSelfName reports whether name is (case-insensitively) one of selfNames — the
@@ -2187,7 +2187,7 @@ func (a *App) exportICLog(asHTML bool) {
 			return '-'
 		}
 		return r
-	}, a.serverName)
+	}, a.srvMeta.serverName)
 	stamp := time.Now().Format("20060102-150405")
 	go func() {
 		root, err := exeDataDir()

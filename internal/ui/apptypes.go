@@ -14,144 +14,25 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
-	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 type sessionState struct {
-	// --- connection / session ---
-	conn *protocol.Conn
-	sess *courtroom.Session
-	room *courtroom.Courtroom
-	urls courtroom.URLBuilder
-	// #130 CM/mod dashboard: per-server software override (SoftwareUnknown = auto-detect from
-	// the ID packet). Parks per tab; a fresh connect's new sessionState resets it to auto.
-	cmSoftwareOverride courtroom.ServerSoftware
-	// autoLoginTried latches the auto-login to fire AT MOST ONCE per session.
-	// EventReady fires on every DONE packet, and some servers re-send DONE
-	// mid-session (the WAP/Akashi fork, area changes) — without this the saved
-	// login re-queued on every one and spammed OOC. resetSessionState clears it,
-	// so a genuine reconnect logs in again. See autoLoginOnReady.
-	autoLoginTried bool
-	// Voice chat membership (per-server, so it parks per tab): voiceJoined = we've
-	// sent VS_JOIN; voiceMicOn = our speak state is on (announced via VS_SPEAK).
-	voiceJoined bool
-	voiceMicOn  bool
-	// voiceCapsAnnounced: we've posted the one-time "this area supports voice" OOC
-	// hint this session (so it confirms VS_CAPS arrived + points at the button).
-	voiceCapsAnnounced bool
-	showModDash        bool // the mod (ban/kick) dashboard panel is open
-	showCMPanel        bool // the separate CM (area control) panel is open
+	link  linkState
+	modUI modPanelState
 	// Debug panel (Extras → Debug): sectioned diagnostics view (#333 packet
 	// inspector + perf + log); see debugPanelState.
 	debugPanel debugPanelState
-	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
-	showFxPicker bool
-	// showICColorWheel floats the free-hex colour wheel anchored to
-	// the IC colour swatch; icSwatchRect remembers where that swatch drew this
-	// frame (either layout), icColorHexBuf is the wheel's hex-field edit buffer.
-	showICColorWheel bool
-	icSwatchRect     sdl.Rect
-	icColorHexBuf    string
-	fxBtnRect        sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
-	// Per-part layout colours: the parsed draw cache (refreshPartColors),
-	// the Settings wheel's selected part, and its hex-field edit buffer.
-	partColors   [config.LayoutPartColorCount]sdl.Color
-	partColorOn  [config.LayoutPartColorCount]bool
-	partEditSlot int
-	partHexBuf   string
-	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
-	// casing) — hidden by default so they're not changed by accident. Session-only.
-	showPowerUser bool
-	// powerNukeArm is the two-click confirm on "Reset all power-user options": the first
-	// click arms (label flips), the second fires ResetPowerUser. Cleared on the reveal
-	// toggle and on fire, so a stale arm can't linger across visits.
-	powerNukeArm bool
-	// spriteCapBase is the display-derived decode-downscale base height (set once
-	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
-	spriteCapBase int
-	// lastInputAt is the most recent SDL input event (frame pacing: full rate
-	// through the InputGraceFrames hold after any interaction).
-	lastInputAt time.Time
-	// lastMotionAt is the most recent BARE pointer motion (experimental loop):
-	// it holds full rate only through motionInputGrace, so circling the mouse
-	// over dead space stops costing frames the moment it stops — clicks, keys
-	// and the wheel still get the full input grace via lastInputAt.
-	lastMotionAt time.Time
-	// lastFrameDrawn is when Frame last actually rendered — the idle-cadence
-	// anchor both loops measure from: the classic loop re-renders a static
-	// courtroom once per idle-budget, and the event-driven loop schedules its
-	// idle-rate wake from it (NextWakeDelay). idle=off → neither fires.
-	lastFrameDrawn time.Time
-	// drawnGen is the texture-store generation as of the last drawn frame: a
-	// mismatch means textures uploaded/evicted since the screen was painted
-	// (streamed-in icons, healed pages), which is redraw-worthy damage under
-	// the experimental loop.
-	drawnGen uint64
-	// drawnCaretOn is the caret blink state as of the last drawn frame; a flip
-	// since then is the scheduled damage that redraws a focused text field at
-	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
-	drawnCaretOn bool
-	// drawnOverlayGen is Scene.Overlay.Gen as of the last frame that either DREW
-	// the stage or observed the trigger from Background — the latch behind
-	// noteOverlayStart. A screen effect armed while the loop is parked has no draw
-	// site to census it, so its Gen bump is the doorbell that gets the first frame
-	// out on time instead of an idle period late.
-	drawnOverlayGen uint32
-	// drawnScreen is the screen as of the last Frame — noteScreenTransition
-	// compares against it to tear down hover-preview state that would otherwise
-	// ride across a screen switch with no draw site left to close it (the
-	// orphaned-preview cap latch; distinct from prevScreen, the back-nav memory).
-	// The same edge detects lobby entry for the capped master-list auto-refresh.
-	drawnScreen Screen
-	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
-	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
-	// anim scheduler — an animated theme page (themeFrame), the looping testimony
-	// badge, a WT/CE splash, the layout editor's ghost, or any future widget that
-	// tweens on its own clock. drawnAnimChrome is the last completed frame's
-	// value: while true, SkipFrame keeps frames coming AND FramePace paces at the
-	// active cap, so the motion stays smooth (the general "self-driven animation →
-	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
-	frameAnimChrome bool
-	drawnAnimChrome bool
-	// lastPacerTier records which FramePace branch set the last budget — a
-	// write-only DIAGNOSTIC for the F8 panel (#50), never read by any pacing
-	// decision (see pacerTier's own doc).
-	lastPacerTier pacerTier
-	// roomPreAdvanced is set by the main loop's audio-paced sub-stepping: while a
-	// message types at a low PRESENT rate, the loop advances the courtroom (and
-	// plays its blips) at the fine audio cadence via Background between presents, so
-	// audio never batches to the frame rate. When set, the next Frame skips its own
-	// room.Update (the room is already current) but still advances the UI + draws.
-	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
-	roomPreAdvanced bool
-	// lastSpeakerDiagBase is the speaker sprite base last logged to the debug
-	// log (pushDebug) — the #110 animation diagnostic logs once per base change,
-	// never per frame, so the ring isn't flooded with identical rows.
-	lastSpeakerDiagBase string
-	// frameDemandPending is set during a draw pass whenever it leaves a
-	// DEMAND-STREAMED cell (an emote-grid button with neither its art nor its
-	// fallback icon resident yet) truly blank. drawnDemandPending is the last
-	// completed frame's value: while true, NextWakeDelay schedules a re-render at
-	// the demand cadence so demandAsset keeps issuing asks. Without it the pump
-	// stalls at idle=0 — a batch of asks that all 404 uploads nothing, so nothing
-	// bumps the store generation and no self-wake fires, and the grid can sit
-	// half-filled until unrelated damage or input. Clears the moment every cell
-	// shows something (art or the shared icon), so it costs nothing at rest.
-	frameDemandPending bool
-	drawnDemandPending bool
+	lookUI     lookToggleState
+	frame      framePaceState
 	// sceneWarm is the scene-residency keeper's memory (throttle, futility
 	// latches, message phase); see sceneWarmState.
 	sceneWarm sceneWarmState
 	// activeWarm is the active-emote keeper's memory (identity, index, throttle);
 	// see activeWarmState.
 	activeWarm activeWarmState
-	// winW/winH cache the logical window size Frame was last given, for draw
-	// helpers deep in a call chain that need window bounds (e.g. the sprite
-	// preview's on-screen clamp) without threading params through every layer.
-	winW, winH int32
-	amICMNow   bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	srvMeta    serverMetaState
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
@@ -160,60 +41,7 @@ type sessionState struct {
 	banBox banBoxState
 	// modDash is the mod dashboard's per-session view and selection state; see
 	// modDashState.
-	modDash          modDashState
-	cmRosterScroll   int32    // CM panel roster scroll offset
-	bulkBoxUIDs      []string // frozen snapshot of the ticked UIDs when a bulk box opens
-	modTemplatesEdit bool     // the ban box's reason-template editor is open (× removes a chip)
-	modDurEdit       bool     // the ban box's custom-duration editor is open (× removes a chip)
-	modDurInput      string   // the "add custom duration" field's draft ("45m", "2 days", …)
-	serverName       string
-	serverKey        string // ws URL: keys the per-server warm state in prefs
-	// logSession is THIS TAB's transcript identity: a process-unique ordinal minted
-	// by resetSessionState, so two tabs are two sessions even when they are the same
-	// server. Detailed logging keyed on serverName alone, which is why two tabs on
-	// one server interleaved into ONE file (the reported defect) — and, worse, two
-	// tabs on the SAME server had no way to tell their lines apart afterwards.
-	// It lives on sessionState, not App, because park/activate MOVE the whole struct
-	// between the live slot and the tab: the id then follows its tab automatically,
-	// and a tab that is backgrounded and brought back keeps writing to the same file
-	logSession   int
-	connAt       time.Time // session start (Rich Presence elapsed timer)
-	curArea      string    // last area WE clicked (Rich Presence, best-effort)
-	presenceInit bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
-	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
-	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
-	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
-	areaLogs     map[string][]icEntry
-	areaLogOrder []string
-	lastICSend   time.Time // chat_ratelimit window
-	// manifestFor is a RE-SEED SIGNAL for the CURRENT session origin: Settings
-	// writes "" to it to force fetchManifestAsync to re-fetch the connected
-	// server's extensions.json right after a profile / auto-detect toggle change.
-	// (It no longer serves as the dedupe key — manifestSeeded does — but keeping
-	// the field lets the Settings re-seed hooks stay a plain field write.)
-	manifestFor string
-	// manifestSeeded records every origin whose extensions.json has already been
-	// fetched + seeded this session, so the session connect path AND the two
-	// diagnostic paths (content report, export loader) each seed a given origin
-	// at most once. Bounded by the number of DISTINCT asset origins visited in a
-	// session — a handful in practice (§17.4). Replaces the old single-string
-	// dedupe, which could only remember the ONE session origin and so never
-	// deduped a recording's (different) origin.
-	manifestSeeded map[string]struct{}
-	// manifestStatus records, per asset HOST, how that host's extensions.json
-	// probe ended (applied / absent / failed). Settings → Formats reads it to say
-	// out loud whether the server publishes a format manifest — the single fact
-	// that decides whether a player needs to touch anything at all. Same bound and
-	// same render-thread-only rule as manifestSeeded above.
-	manifestStatus map[string]seedStatus
-	// themeBound is this server's bound theme ("" = the global pick);
-	// loaded from ServerWarmInfo.Theme on connect, wins in
-	// applyThemeAsync while the session lives.
-	themeBound string
-	// rehearsal marks the offline cached-asset browser (no connection;
-	// the manager's network gate is closed while set). Rehearsal never
-	// parks — backgrounding it would hold the global gate closed.
-	rehearsal bool
+	modDash modDashState
 
 	// --- char select ---
 	charSearch string
@@ -435,7 +263,6 @@ type sessionState struct {
 	testimonyOn bool      // persistent "Testimony" recording badge (RT 2.9)
 	hpPrev      [2]int    // last drawn HP per bar — penalty sfx direction
 	showModcall bool      // modcall reason dialog
-	modReason   string
 	// Local alarm/timer (#97, opt-in): a personal countdown distinct from the
 	// server courtroom timers. App-global (one timer across all tabs, like DND).
 	// timerEndAt zero = not counting down; timerPausedLeft > 0 = paused; both at

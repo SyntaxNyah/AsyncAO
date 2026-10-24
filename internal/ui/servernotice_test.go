@@ -38,8 +38,8 @@ const (
 // must now raise the box, attribute it to the server we dialled, and keep the WHOLE
 func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	a := froomApp(t)
-	a.room = nil // a drop before the courtroom: char-select, or a refused join
-	server := a.serverName
+	a.link.room = nil // a drop before the courtroom: char-select, or a refused join
+	server := a.srvMeta.serverName
 
 	a.handleInvoluntaryDrop("Banned: " + noticeLockdownReason)
 
@@ -98,7 +98,7 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := froomApp(t)
-			a.room = nil
+			a.link.room = nil
 			a.handleInvoluntaryDrop(tc.reason)
 			if got := a.serverNoticeDlg.open; got != tc.want {
 				t.Errorf("box open = %v, want %v for %q", got, tc.want, tc.reason)
@@ -113,7 +113,7 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 // user asked for is noise.
 func TestADeliberateDisconnectIsSilent(t *testing.T) {
 	a := froomApp(t)
-	a.room = nil
+	a.link.room = nil
 	a.deliberateClose = true
 	a.handleInvoluntaryDrop("Kicked: you left")
 	if a.serverNoticeDlg.open {

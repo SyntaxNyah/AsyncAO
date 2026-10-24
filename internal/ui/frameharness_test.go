@@ -93,7 +93,7 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// updatePresence is the other frame-1 one-shot. Presence is nil in tests and the
 	// call is guarded, but latching it keeps the frame free of first-frame-only work
 	// so frame 1 and frame 2 are comparable.
-	a.presenceInit = true
+	a.srvMeta.presenceInit = true
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -224,7 +224,7 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	before := a.themeFXFrame
 	driveFrame(a)
 
-	if a.lastFrameDrawn.IsZero() {
+	if a.frame.lastFrameDrawn.IsZero() {
 		t.Fatal("App.Frame did not stamp lastFrameDrawn — the harness is not driving a frame at all")
 	}
 	if !a.menuBar.draws {

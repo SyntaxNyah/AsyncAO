@@ -852,7 +852,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		// character from the courtroom puts a safe Back there; Disconnect is ALWAYS danger-
 		// tinted (red outline + label) and kept out of that spot. Buttons lay out R→L.
 		rightX := w - pad
-		if a.room != nil {
+		if a.link.room != nil {
 			backW := int32(90)
 			rightX -= backW
 			if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: backW, H: btnH}, "Back") {
@@ -877,11 +877,11 @@ func (a *App) drawCharSelect(w, h int32) {
 			a.docs.openHelp(1)
 		}
 	}
-	if a.sess == nil {
+	if a.link.sess == nil {
 		c.Label(statusX, statusY, "Loading...", ColTextDim)
 		return
 	}
-	if a.sess.Phase() != courtroom.PhaseReady {
+	if a.link.sess.Phase() != courtroom.PhaseReady {
 		c.Label(statusX, statusY, "Handshaking with server...", ColTextDim)
 		return
 	}
@@ -905,8 +905,8 @@ func (a *App) drawCharSelect(w, h int32) {
 		}
 		specX := tabX + 8
 		if c.Button(sdl.Rect{X: specX, Y: hdrY + 36, W: 90, H: btnH}, "Spectate") {
-			if !a.sess.Rehearsal {
-				a.sess.PickCharacter(protocol.UnpairedCharID)
+			if !a.link.sess.Rehearsal {
+				a.link.sess.PickCharacter(protocol.UnpairedCharID)
 			}
 			a.enterCourtroom()
 			return
@@ -939,7 +939,7 @@ func (a *App) drawCharSelect(w, h int32) {
 
 	a.ensureCharLower()
 	a.ensureWardrobeMembers() // star state for the grid; rebuilt only on change
-	rows := charListRows{n: len(a.sess.Chars), chars: a.sess.Chars, lower: a.charLower}
+	rows := charListRows{n: len(a.link.sess.Chars), chars: a.link.sess.Chars, lower: a.charLower}
 	// The name column draws BEFORE the grid: the two never overlap (the widget gate
 	// rejects a theme where they would), so this is purely about the selection being
 	// settled before the cells are painted with it.
@@ -969,8 +969,8 @@ func (a *App) drawCharSelect(w, h int32) {
 	// clipRect, so the pick (drawCharCell), the ★ star, and the hover-preview all
 	// stop at the viewport edge instead of firing under the search/tabs bar.
 	prev, had := c.pushClip(g.view)
-	for i := range a.sess.Chars {
-		slot := &a.sess.Chars[i]
+	for i := range a.link.sess.Chars {
+		slot := &a.link.sess.Chars[i]
 		if rows.hidden(i, query, showTaken) {
 			continue
 		}
@@ -1010,8 +1010,8 @@ func (a *App) drawCharSelect(w, h int32) {
 func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int, downloaderOn bool, g charGridPlan) {
 	c := a.ctx
 	c.Fill(cell, ColPanel)
-	base := a.urls.CharIcon(slot.Name)
-	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
+	base := a.link.urls.CharIcon(slot.Name)
+	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.link.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
 		// &cell into cgo would heap-allocate the PARAMETER once per VISIBLE CELL per
 		// frame — a 7×9 themed grid is 63 of them, and escape analysis is static so
 		// the placeholder branch pays it too. Shared scratch (ui.go cgoRect contract:
@@ -1022,7 +1022,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
 		// initials placeholder; the texture pops in live.
-		a.demandAsset(&a.iconAsk, len(a.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+		a.demandAsset(&a.iconAsk, len(a.link.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 		// AO2 does the same thing when a character ships no char_icon: it clears the
 		// stylesheet's border-image and setText()s the character's name into the button
 		// (AO2-Client aocharbutton.cpp:55-58). Centred off the CELL, not off iconCell,
@@ -1091,9 +1091,9 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 			c.Tooltip(starR, "Star → save to your Wardrobe (favourites)")
 			if c.clicked {
 				if starred {
-					a.d.Prefs.RemoveWardrobe(a.serverKey, slot.Name)
+					a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, slot.Name)
 				} else {
-					a.d.Prefs.AddWardrobe(a.serverKey, slot.Name)
+					a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, slot.Name)
 				}
 				c.clicked = false // consumed: don't also pick the character
 				return
@@ -1112,13 +1112,13 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 // uniformly-random untaken slot other than the current one, chosen by reservoir
 // sampling so it never allocates. No-op with no free slot. Render thread only.
 func (a *App) randomChar() {
-	if a.sess == nil || len(a.sess.Chars) == 0 {
+	if a.link.sess == nil || len(a.link.sess.Chars) == 0 {
 		return
 	}
-	cur := a.sess.MyCharID
+	cur := a.link.sess.MyCharID
 	chosen, seen := -1, 0
-	for i := range a.sess.Chars {
-		if i == cur || a.sess.Chars[i].Taken {
+	for i := range a.link.sess.Chars {
+		if i == cur || a.link.sess.Chars[i].Taken {
 			continue
 		}
 		seen++
@@ -1132,7 +1132,7 @@ func (a *App) randomChar() {
 		return
 	}
 	a.pickCharacter(chosen)
-	a.warnLine = clampLine("Random character: " + a.sess.Chars[chosen].Name)
+	a.warnLine = clampLine("Random character: " + a.link.sess.Chars[chosen].Name)
 	a.warnAt = time.Now()
 }
 
@@ -1472,11 +1472,11 @@ func (a *App) closeSpritePreview() {
 // lobby-entry master-list auto-refresh: this is the one place every screen
 // switch funnels through, so the edge fires below.
 func (a *App) noteScreenTransition() {
-	if a.screen == a.drawnScreen {
+	if a.screen == a.frame.drawnScreen {
 		return // settled frame: one int compare, nothing below runs (the lobby draw is 0-alloc-gated)
 	}
-	prev := a.drawnScreen
-	a.drawnScreen = a.screen
+	prev := a.frame.drawnScreen
+	a.frame.drawnScreen = a.screen
 	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
 	a.previewFrameRect = sdl.Rect{}
 	a.previewTriggerRect = sdl.Rect{}

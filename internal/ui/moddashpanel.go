@@ -124,7 +124,7 @@ var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 	c := a.ctx
 	tpls := a.d.Prefs.Load().ModReasonTemplatesList()
-	editing := manage && a.modTemplatesEdit
+	editing := manage && a.modUI.modTemplatesEdit
 	tx := x
 	for _, tpl := range tpls {
 		label := tpl
@@ -161,7 +161,7 @@ func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 			editLabel = "Done"
 		}
 		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
-			a.modTemplatesEdit = !a.modTemplatesEdit
+			a.modUI.modTemplatesEdit = !a.modUI.modTemplatesEdit
 		}
 		y += btnH + 6
 	}
@@ -199,7 +199,7 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 			a.banBox.dur, a.banBox.customDur = d, ""
 		})
 	}
-	editing := manage && a.modDurEdit
+	editing := manage && a.modUI.modDurEdit
 	for _, token := range a.d.Prefs.Load().ModDurationsList() {
 		token := token
 		label := courtroom.BanDurationTokenLabel(token)
@@ -219,24 +219,24 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 	}
 	y += btnH + 6
 	if manage {
-		a.modDurInput, _ = c.TextField("moddashdur", sdl.Rect{X: x, Y: y, W: 150, H: fieldH}, a.modDurInput, "e.g. 45m, 2 days")
+		a.modUI.modDurInput, _ = c.TextField("moddashdur", sdl.Rect{X: x, Y: y, W: 150, H: fieldH}, a.modUI.modDurInput, "e.g. 45m, 2 days")
 		if c.Button(sdl.Rect{X: x + 156, Y: y, W: 130, H: btnH}, "+ Save duration") {
-			if token, ok := courtroom.CanonicalBanDuration(a.modDurInput); ok {
+			if token, ok := courtroom.CanonicalBanDuration(a.modUI.modDurInput); ok {
 				if a.d.Prefs.AddModDuration(token) {
 					a.banBox.customDur = token // a fresh chip becomes the pick — what you just typed is what you meant
 				}
-				a.modDurInput = ""
+				a.modUI.modDurInput = ""
 			} else {
 				a.warnLine = "Custom duration not understood — try 45m, 12h, 2 days, 1w or perma"
 				a.warnAt = a.now()
 			}
 		}
 		editLabel := "Edit"
-		if a.modDurEdit {
+		if a.modUI.modDurEdit {
 			editLabel = "Done"
 		}
 		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
-			a.modDurEdit = !a.modDurEdit
+			a.modUI.modDurEdit = !a.modUI.modDurEdit
 		}
 		y += btnH + 6
 	}
@@ -248,8 +248,8 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 func (a *App) formatModAudit() string {
 	var b strings.Builder
 	b.WriteString("AsyncAO mod audit")
-	if a.serverName != "" {
-		b.WriteString(" — " + a.serverName)
+	if a.srvMeta.serverName != "" {
+		b.WriteString(" — " + a.srvMeta.serverName)
 	}
 	b.WriteByte('\n')
 	for _, e := range a.modDash.audit {
@@ -378,7 +378,7 @@ func (a *App) openModBulkBox(kind int) {
 		return
 	}
 	a.banBox.kind = kind
-	a.bulkBoxUIDs = uids
+	a.modUI.bulkBoxUIDs = uids
 	a.banBox.reason = ""
 	a.banBox.dur = courtroom.Ban1Day
 	a.banBox.customDur = "" // a fresh box starts on the sane preset, never a stale custom chip
@@ -405,8 +405,8 @@ func (a *App) bulkCommandFor(uid string, isBan bool) string {
 // toggleModDash opens / closes the dashboard (the Extras entry + the hotkey). Closing it also
 // drops any half-filled ban/kick box, so it can't reappear out of context next open.
 func (a *App) toggleModDash() {
-	a.showModDash = !a.showModDash
-	if !a.showModDash {
+	a.modUI.showModDash = !a.modUI.showModDash
+	if !a.modUI.showModDash {
 		a.banBox.kind = 0
 	}
 }
@@ -414,7 +414,7 @@ func (a *App) toggleModDash() {
 // cycleModDashSoftware advances the manual software override one step (… → KFO → Athena → Akashi
 // → Whisker → Nyathena → auto). SoftwareUnknown means "auto-detect from the ID packet".
 func (a *App) cycleModDashSoftware() {
-	a.cmSoftwareOverride = (a.cmSoftwareOverride + 1) % courtroom.ServerSoftwareCount
+	a.link.cmSoftwareOverride = (a.link.cmSoftwareOverride + 1) % courtroom.ServerSoftwareCount
 }
 
 // rosterByUID resolves a live-roster row by UID — the STABLE identity key. The roster slice is
@@ -446,10 +446,10 @@ func rosterDisplayName(p areaPlayer) string {
 // sendModCommand fires one already-built OOC command (the only send path for the dashboard) and
 // flashes a confirming toast of exactly what went out. Refuses an empty command defensively.
 func (a *App) sendModCommand(cmd string) {
-	if cmd == "" || a.sess == nil {
+	if cmd == "" || a.link.sess == nil {
 		return
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), cmd)
+	a.link.sess.SendOOC(a.oocNameOrDefault(), cmd)
 	a.warnLine = clampLine("Sent: " + cmd)
 	a.warnAt = a.now()
 }
@@ -470,7 +470,7 @@ func (a *App) openModDashBox(kind int) {
 	a.banBox.reason = ""
 	a.banBox.dur = courtroom.Ban1Day // a sane default duration
 	a.banBox.customDur = ""          // never a stale custom chip from the last box
-	a.modTemplatesEdit = false       // start in normal (fill) mode, not the template editor
+	a.modUI.modTemplatesEdit = false // start in normal (fill) mode, not the template editor
 }
 
 // fetchAreaForBan asks the server for the area roster — the mod-only reply that carries IPIDs — so
@@ -480,7 +480,7 @@ func (a *App) openModDashBox(kind int) {
 // clean roster (Akashi's "=== area ===" blocks carry no "----" reset marker), and the reply burst is
 // kept out of OOC like the other roster pulls. (WAP doesn't reach here — its IPID arrives live.)
 func (a *App) fetchAreaForBan() {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
 	a.pairAreaReset = true
@@ -502,7 +502,7 @@ func (a *App) modDashRect(w, h int32) sdl.Rect {
 func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.showModDash = false
+		a.modUI.showModDash = false
 		return
 	}
 	wasActive := a.wins.modWin.dragging || a.wins.modWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -522,7 +522,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 
 	c.Heading(x, panel.Y+12, "Moderation — Ban / Kick", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.showModDash = false
+		a.modUI.showModDash = false
 		return
 	}
 
@@ -533,7 +533,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	vx := x + c.TextWidth("Server:") + 8
 	c.Label(vx, sy+5, sw.String(), ColText)
 	mode := "auto-detected"
-	if a.cmSoftwareOverride != courtroom.SoftwareUnknown {
+	if a.link.cmSoftwareOverride != courtroom.SoftwareUnknown {
 		mode = "manual override"
 	}
 	c.Label(vx+c.TextWidth(sw.String())+10, sy+5, "("+mode+")", ColTextDim)
@@ -685,7 +685,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 	y += 6
 	c.Label(x, y, "Room (CM)", ColAccent)
 	y += 20
-	if a.amICMNow {
+	if a.srvMeta.amICMNow {
 		c.LabelClipped(x, y, w, "You hold CM — open the CM panel from the corner chip.", ColTextDim)
 	} else {
 		c.LabelClipped(x, y, w, "Type /cm to claim CM; its controls open from the corner chip.", ColTextDim)
@@ -1078,7 +1078,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	if isBan {
 		title = "Bulk Ban"
 	}
-	n := len(a.bulkBoxUIDs)
+	n := len(a.modUI.bulkBoxUIDs)
 	c.Heading(x, panel.Y+12, title+"  —  "+strconv.Itoa(n)+" player(s)", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
 		a.banBox.kind = 0
@@ -1094,7 +1094,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	c.Border(listR, ColPanelHi)
 	clipPrev, clipHad := c.pushClip(listR)
 	ly := listR.Y + 4
-	shown, more := a.bulkBoxUIDs, 0
+	shown, more := a.modUI.bulkBoxUIDs, 0
 	if int32(len(shown)) > maxListRows {
 		more = len(shown) - int(maxListRows-1)
 		shown = shown[:maxListRows-1]
@@ -1137,7 +1137,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
 	// this server hasn't surfaced yet). Ground truth — we just try to build each command.
 	ready := 0
-	for _, uid := range a.bulkBoxUIDs {
+	for _, uid := range a.modUI.bulkBoxUIDs {
 		if a.bulkCommandFor(uid, isBan) != "" {
 			ready++
 		}
@@ -1182,8 +1182,8 @@ func (a *App) sendBulk(isBan bool) int {
 	if isBan {
 		action = "Ban"
 	}
-	cmds := make([]string, 0, len(a.bulkBoxUIDs))
-	for _, uid := range a.bulkBoxUIDs {
+	cmds := make([]string, 0, len(a.modUI.bulkBoxUIDs))
+	for _, uid := range a.modUI.bulkBoxUIDs {
 		cmd := a.bulkCommandFor(uid, isBan)
 		if cmd == "" {
 			continue // not ready (no identifier yet) — never send a broken command
@@ -1200,7 +1200,7 @@ func (a *App) sendBulk(isBan bool) int {
 	}
 	a.queueOOCLines(cmds) // paced + capped (macroQueueCap)
 	a.clearModSelected()
-	a.bulkBoxUIDs = nil
+	a.modUI.bulkBoxUIDs = nil
 	a.warnLine = clampLine("Queued " + strconv.Itoa(len(cmds)) + " " + action + " command(s).")
 	a.warnAt = a.now()
 	return len(cmds)

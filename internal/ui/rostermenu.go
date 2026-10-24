@@ -64,7 +64,7 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	// Message (PM): anything that targets one player belongs here (playtest) —
 	// no friending required. Spectators are excluded: DM threads key on the
 	// character name, and "Spectator" is ambiguous across clients.
-	if !isSpec && p.name != "" && a.sess != nil {
+	if !isSpec && p.name != "" && a.link.sess != nil {
 		items = append(items, rosterMenuItem{rosterActMessage, "Message (PM)"})
 	}
 	if !a.classic.panelHidden(rosterBtnPair) {
@@ -91,16 +91,16 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	if p.ipid != "" && !a.classic.panelHidden(rosterBtnIPID) {
 		items = append(items, rosterMenuItem{rosterActCopyIPID, "Copy IPID"})
 	}
-	if fk != "" && a.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
+	if fk != "" && a.srvMeta.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
 		fl := "+ Friend"
-		if isF, _, _ := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, fk); isF {
+		if isF, _, _ := a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, fk); isF {
 			fl = "Unfriend"
 		}
 		items = append(items, rosterMenuItem{rosterActFriend, fl})
 	}
-	if fk != "" && a.serverKey != "" && !a.classic.panelHidden(rosterBtnIgnore) {
+	if fk != "" && a.srvMeta.serverKey != "" && !a.classic.panelHidden(rosterBtnIgnore) {
 		il := "Ignore"
-		if a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, fk) {
+		if a.d.Prefs.Load().ServerIgnoreMatch(a.srvMeta.serverKey, fk) {
 			il = "Unignore"
 		}
 		items = append(items, rosterMenuItem{rosterActIgnore, il})

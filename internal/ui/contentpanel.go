@@ -259,8 +259,8 @@ func (a *App) contentServerOrigin(rec *sceneRecording) string {
 	if rec != nil && !strings.HasPrefix(rec.Origin, assets.LocalScheme) {
 		return rec.Origin // already the server origin (stamped .aorec, or mounts-off .demo)
 	}
-	if a.sess != nil {
-		return a.sess.AssetURL // a .demo under local mounts: the live session is the server candidate
+	if a.link.sess != nil {
+		return a.link.sess.AssetURL // a .demo under local mounts: the live session is the server candidate
 	}
 	return ""
 }

@@ -111,8 +111,8 @@ var panelSlotTable = []panelSlot{
 	// The mod dashboard hides while its own ban box is open (they share the modWin
 	// draw slot in drawFloatingPanels) — match that so the census never carries a
 	// panel that isn't on screen.
-	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBox.kind == 0 }},
-	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
+	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.modUI.showModDash && a.banBox.kind == 0 }},
+	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.modUI.showCMPanel }},
 	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
 	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
 	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
@@ -319,11 +319,11 @@ func (a *App) pollVoicePTT() {
 		return
 	}
 	k := a.bareBindKey() // Alt+<bound key>, like every other plain-key namespace (qol.go)
-	if !a.voiceJoined || k == 0 {
+	if !a.link.voiceJoined || k == 0 {
 		return
 	}
 	if key := a.d.Prefs.Load().VoicePTTKey; key != "" && sdl.GetKeyName(k) == key {
-		a.voiceSetMic(!a.voiceMicOn)
+		a.voiceSetMic(!a.link.voiceMicOn)
 		c.keyPressed = 0
 	}
 }
@@ -447,16 +447,16 @@ func (a *App) closeTopOverlay() bool {
 		a.showEvid = false
 	case a.showModcall:
 		a.showModcall = false
-	case a.showModDash:
-		a.showModDash = false
+	case a.modUI.showModDash:
+		a.modUI.showModDash = false
 	case a.debugPanel.open:
 		a.debugPanel.open = false
-	case a.showICColorWheel:
-		a.showICColorWheel = false
-	case a.showFxPicker:
-		a.showFxPicker = false
-	case a.showCMPanel:
-		a.showCMPanel = false
+	case a.lookUI.showICColorWheel:
+		a.lookUI.showICColorWheel = false
+	case a.lookUI.showFxPicker:
+		a.lookUI.showFxPicker = false
+	case a.modUI.showCMPanel:
+		a.modUI.showCMPanel = false
 	case a.pairbox.showPair:
 		a.pairbox.showPair = false
 	case a.emotepick.showSfxBrowser:
@@ -493,7 +493,7 @@ func (a *App) closeTopOverlay() bool {
 // ride on this alone, so they persist when the main box is closed — closing the
 // main box must not yank the widgets you dragged out.
 func (a *App) extrasSurfaceLive() bool {
-	return a.room != nil && a.sess != nil && !a.blockingCourtPopup()
+	return a.link.room != nil && a.link.sess != nil && !a.blockingCourtPopup()
 }
 
 // extrasBoxRect is the main box's screen rect: the (possibly user-resized) size
@@ -657,22 +657,22 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.pairbox.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
-	if a.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
+	if a.modUI.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
 		return true
 	}
 	if a.debugPanel.open && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
 		return true
 	}
-	if a.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
+	if a.lookUI.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
 		return true
 	}
-	if a.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
+	if a.lookUI.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
 		return true
 	}
 	if a.banBox.kind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
 		return true
 	}
-	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
+	if a.modUI.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
 		return true
 	}
 	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
@@ -975,19 +975,19 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.pairbox.showPair {
 		a.drawPairPanel(w, h, &pressed)
 	}
-	if a.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
+	if a.modUI.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
 	}
 	if a.debugPanel.open {
 		a.drawDebugPanel(w, h, &pressed)
 	}
-	if a.showFxPicker {
+	if a.lookUI.showFxPicker {
 		a.drawFxPicker(w, h)
 	}
-	if a.showICColorWheel {
+	if a.lookUI.showICColorWheel {
 		a.drawICColorWheel(w, h)
 	}
-	if a.showCMPanel {
+	if a.modUI.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)
 	}
 	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it

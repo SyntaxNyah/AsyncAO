@@ -239,10 +239,10 @@ func (a *App) pollLocalCharFolders() {
 func (a *App) baseNames() ([]string, []string) {
 	b := &a.iniBase
 	chars := 0
-	if a.sess != nil {
-		chars = len(a.sess.Chars)
+	if a.link.sess != nil {
+		chars = len(a.link.sess.Chars)
 	}
-	if b.names != nil && b.namesKey == a.serverKey && b.namesChars == chars && b.namesLocal == len(b.local) {
+	if b.names != nil && b.namesKey == a.srvMeta.serverKey && b.namesChars == chars && b.namesLocal == len(b.local) {
 		return b.names, b.lower
 	}
 	names := make([]string, 0, chars+len(b.local))
@@ -266,16 +266,16 @@ func (a *App) baseNames() ([]string, []string) {
 		names = append(names, n)
 		lower = append(lower, key)
 	}
-	if a.sess != nil {
-		for i := range a.sess.Chars {
-			add(a.sess.Chars[i].Name)
+	if a.link.sess != nil {
+		for i := range a.link.sess.Chars {
+			add(a.link.sess.Chars[i].Name)
 		}
 	}
 	for _, n := range b.local {
 		add(n)
 	}
 	b.names, b.lower = names, lower
-	b.namesKey, b.namesChars, b.namesLocal = a.serverKey, chars, len(b.local)
+	b.namesKey, b.namesChars, b.namesLocal = a.srvMeta.serverKey, chars, len(b.local)
 	b.pages, b.pagesGen, b.ask = nil, 0, nil // the list changed: drop the index-keyed icon cache
 	return b.names, b.lower
 }
@@ -365,7 +365,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		cell := sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}
 		c.Tooltip(cell, names[i])
 		c.Fill(cell, ColBackground)
-		base := a.urls.CharIcon(names[i])
+		base := a.link.urls.CharIcon(names[i])
 		if page, ok := a.cachedPage(&a.iniBase.pages, &a.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
 			c.cgoRect = cell
 			_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)

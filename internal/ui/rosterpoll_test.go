@@ -26,7 +26,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 		setup func(a *App)
 	}{
 		{"no PR/PU (the old KFO hub), plain user", func(*App) {}},
-		{"no PR/PU (the old KFO hub), logged-in mod", func(a *App) { a.sess.ModGranted = true }},
+		{"no PR/PU (the old KFO hub), logged-in mod", func(a *App) { a.link.sess.ModGranted = true }},
 		{
 			// The nastiest historical case: the mod IPID top-up looked self-limiting
 			// (`ModGranted && liveRosterMissingIPID()`) but never settled on a server
@@ -34,7 +34,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 			// whole session.
 			"live roster whose rows never carry an IPID, logged-in mod",
 			func(a *App) {
-				a.sess.ModGranted = true
+				a.link.sess.ModGranted = true
 				a.livePlayersOn = true
 				a.liveRoster = []areaPlayer{{uid: "1", name: "Phoenix", area: "Courtroom"}}
 			},
@@ -42,8 +42,8 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Edgeworth"})
-			a.sess.Areas = []string{"Courtroom"}
+			a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Edgeworth"})
+			a.link.sess.Areas = []string{"Courtroom"}
 			tc.setup(a)
 			t0 := time.Now()
 
@@ -71,7 +71,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 // presses still collapse to one command.
 func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.frameNow = time.Now()
 
 	a.fetchRoster()

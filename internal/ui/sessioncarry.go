@@ -33,10 +33,10 @@ func (a *App) snapshotSessionCarry() {
 		oocLog:       a.chatlog.oocLog,
 		oocSpeakers:  a.chatlog.oocSpeakers,
 		oocSeq:       a.chatlog.oocSeq,
-		areaLogs:     a.areaLogs,
-		areaLogOrder: a.areaLogOrder,
+		areaLogs:     a.srvMeta.areaLogs,
+		areaLogOrder: a.srvMeta.areaLogOrder,
 	}
-	a.pendingSessionCarryKey = a.serverKey
+	a.pendingSessionCarryKey = a.srvMeta.serverKey
 }
 
 // applySessionCarryIfPending consumes the pending carry onto the just-dialed
@@ -58,6 +58,6 @@ func (a *App) applySessionCarryIfPending(wsURL string) {
 	a.chatlog.oocLog = carry.oocLog
 	a.chatlog.oocSpeakers = carry.oocSpeakers
 	a.chatlog.oocSeq = carry.oocSeq
-	a.areaLogs = carry.areaLogs
-	a.areaLogOrder = carry.areaLogOrder
+	a.srvMeta.areaLogs = carry.areaLogs
+	a.srvMeta.areaLogOrder = carry.areaLogOrder
 }

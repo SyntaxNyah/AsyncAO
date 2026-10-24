@@ -104,7 +104,7 @@ type charMetaFetch struct {
 // picks it up (the same streaming shape as sprites and profiles).
 func (a *App) charMetaFor(char string) charMeta {
 	char = strings.TrimSpace(char)
-	if char == "" || a.urls.Origin() == "" {
+	if char == "" || a.link.urls.Origin() == "" {
 		return charMeta{}
 	}
 	url := a.charINIURL(char)
@@ -146,7 +146,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 	if mgr == nil {
 		return
 	}
-	ub := a.urls // captured too: the goroutine must not read a.urls after spawn
+	ub := a.link.urls // captured too: the goroutine must not read a.urls after spawn
 	resCh := a.overlays.charMetaRes
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)

@@ -57,12 +57,12 @@ func msgFor(charID int, name, text string) *protocol.ChatMessage {
 // no-marker line (never the live msg), keeping recordings self-contained.
 func TestRecEventSelfContainsStyle(t *testing.T) {
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	style := courtroom.SpriteStyle{Tint: true, R: 200, G: 40, B: 40, Glow: true}
 
 	// Feed a styled message so the room remembers char 5's style.
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "hi"+style.EncodeMarker())})
-	a.room.SkipToIdle()
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "hi"+style.EncodeMarker())})
+	a.link.room.SkipToIdle()
 
 	// A NO-marker line from char 5 is recorded WITH the style re-injected.
 	bare := msgFor(5, "Phoenix", "no marker here")

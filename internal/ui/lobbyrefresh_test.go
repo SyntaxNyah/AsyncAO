@@ -42,7 +42,7 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 	a.d.MasterURL = "://no-network" // missing scheme: http.NewRequestWithContext errors before any I/O
 
 	// Entry edge with a cold (zero) stamp: fires immediately, arming the cap.
-	a.screen, a.drawnScreen = ScreenLobby, ScreenCourtroom
+	a.screen, a.frame.drawnScreen = ScreenLobby, ScreenCourtroom
 	a.noteScreenTransition()
 	if !a.lobby.lobbyFetching {
 		t.Fatal("entering the lobby with no prior fetch must refresh immediately")
@@ -65,7 +65,7 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 	// Re-entry INSIDE the cap: suppressed — a manual refresh (or any fetch)
 	// moments ago already armed the stamp.
 	a.lobby.lastLobbyRefreshAt = a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
-	a.drawnScreen = ScreenSettings // last frame drew Settings → this frame is an entry edge
+	a.frame.drawnScreen = ScreenSettings // last frame drew Settings → this frame is an entry edge
 	a.noteScreenTransition()
 	if a.lobby.lobbyFetching {
 		t.Error("re-entering the lobby within the cap must not refetch")
@@ -130,7 +130,7 @@ func TestLobbyEntryDrainsParkedFetch(t *testing.T) {
 	// Re-entry past the cap: the edge must drain the parked result AND fire a
 	// fresh fetch.
 	a.lobby.lastLobbyRefreshAt = base.Add(-2 * lobbyAutoRefreshMinInterval)
-	a.screen, a.drawnScreen = ScreenLobby, ScreenSettings
+	a.screen, a.frame.drawnScreen = ScreenLobby, ScreenSettings
 	a.noteScreenTransition()
 	if len(a.lobby.masterEntries) != 1 || a.lobby.masterEntries[0].Name != "Alpha" {
 		t.Errorf("the parked result must be applied on entry, got masterEntries=%v", a.lobby.masterEntries)
@@ -262,7 +262,7 @@ func TestLeaveLobbyClearsPingLatch(t *testing.T) {
 	a := testTabApp(t)
 	a.lobby.pinging = true
 	gen := a.lobby.pingGen
-	a.screen, a.drawnScreen = ScreenSettings, ScreenLobby // leaving the lobby this frame
+	a.screen, a.frame.drawnScreen = ScreenSettings, ScreenLobby // leaving the lobby this frame
 	a.noteScreenTransition()
 	if a.lobby.pinging {
 		t.Error("leaving the lobby must clear the pinging latch (dropped-sentinel wedge)")

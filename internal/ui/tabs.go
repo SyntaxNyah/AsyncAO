@@ -96,19 +96,19 @@ type notebookLoad struct {
 // tabName names a tab for the chip (parked state or the live one).
 func (a *App) tabName(i int) string {
 	if i == a.activeTab {
-		return a.serverName
+		return a.srvMeta.serverName
 	}
-	return a.tabs[i].state.serverName
+	return a.tabs[i].state.srvMeta.serverName
 }
 
 // tabKey returns a tab's serverKey (its ws URL) — stable across park/activate, so per-tab colour
 // (#22) sticks to the server, not the slot. "" for an unkeyed tab (it then never colours).
 func (a *App) tabKey(i int) string {
 	if i == a.activeTab {
-		return a.serverKey
+		return a.srvMeta.serverKey
 	}
 	if i >= 0 && i < len(a.tabs) {
-		return a.tabs[i].state.serverKey
+		return a.tabs[i].state.srvMeta.serverKey
 	}
 	return ""
 }
@@ -168,7 +168,7 @@ func (a *App) tabChipTint(i int) (sdl.Color, bool) {
 func (a *App) allocateTab() bool {
 	reaped := false
 	for i := 0; i < len(a.tabs); i++ {
-		if a.tabs[i].dead && a.tabs[i].state.conn == nil {
+		if a.tabs[i].dead && a.tabs[i].state.link.conn == nil {
 			a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 			if a.activeTab > i {
 				a.activeTab--
@@ -198,7 +198,7 @@ func (a *App) parkActive() {
 	if a.activeTab < 0 || a.activeTab >= len(a.tabs) {
 		return
 	}
-	if a.rehearsal {
+	if a.srvMeta.rehearsal {
 		a.deliberateClose = true // ending rehearsal mode is deliberate — never auto-reconnect (#1)
 		a.Disconnect()           // rehearsal never parks (global offline gate)
 		return
@@ -208,8 +208,8 @@ func (a *App) parkActive() {
 		a.msRaster = nil
 	}
 	a.msAnim, a.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
-	a.tabs[a.activeTab].inCourt = a.room != nil
-	a.room = nil
+	a.tabs[a.activeTab].inCourt = a.link.room != nil
+	a.link.room = nil
 	// Music CONTINUITY across a tab switch (the agreed exception to ecd6d9e's
 	// log/scenery isolation): DON'T stop the single music stream when a tab goes
 	// to the background. It keeps rolling — so its position is preserved perfectly
@@ -281,7 +281,7 @@ func (a *App) activateTab(i int) {
 	// switch so one session's drafts can't resurface (or read as "external
 	// changes") in another (the multi-tab isolation rule).
 	a.ctx.ClearFieldHistories()
-	if t.dead && a.sess != nil && t.inCourt {
+	if t.dead && a.link.sess != nil && t.inCourt {
 		// The tab's connection died in the BACKGROUND while it was in court. The
 		// drop couldn't pop a modal then (it would have covered whatever tab the
 		// user was actually looking at — the parked-tab rule), so the reason was
@@ -307,13 +307,13 @@ func (a *App) activateTab(i int) {
 		a.updatePresence()
 		return
 	}
-	if t.dead || a.sess == nil {
+	if t.dead || a.link.sess == nil {
 		// Died in the background with no court to freeze (char-select, or a session
 		// that never fully connected): tear the tab down fully (notebook flush, slot
 		// removed) and say why on the lobby — today's exact fallback. Deliberate
 		// teardown of an already-dead tab; background-tab drops are their own concern
 		// (#46), so suppress auto-reconnect here (#1).
-		name := a.serverName
+		name := a.srvMeta.serverName
 		a.deliberateClose = true
 		a.Disconnect()
 		a.connErr = name + " disconnected while backgrounded"
@@ -380,8 +380,8 @@ func (a *App) closeParkedTab(i int) {
 	if t == a.splitTab {
 		a.clearSplit()
 	}
-	if t.state.conn != nil {
-		t.state.conn.Close()
+	if t.state.link.conn != nil {
+		t.state.link.conn.Close()
 	}
 	if t.state.notebook != nil {
 		go func(nb *config.Notebook) { _ = nb.Flush() }(t.state.notebook)
@@ -457,15 +457,15 @@ func (a *App) pumpBackgroundTabs() {
 			continue
 		}
 		s := &t.state
-		if s.conn == nil || s.sess == nil {
+		if s.link.conn == nil || s.link.sess == nil {
 			continue
 		}
 		// Keep this parked tab's background keepalive goroutine primed (it sends the
 		// CH ping off the render loop, so a backgrounded app doesn't idle-drop it).
-		s.conn.SetKeepalive(s.sess.KeepalivePacket())
+		s.link.conn.SetKeepalive(s.link.sess.KeepalivePacket())
 		for drained := 0; drained < tabPumpBudget; drained++ {
 			select {
-			case p, ok := <-s.conn.Incoming():
+			case p, ok := <-s.link.conn.Incoming():
 				a.uiDirty = true // unread badges / tab chips / the pinned pane change with parked-tab traffic
 				if !ok {
 					t.dead = true
@@ -474,13 +474,13 @@ func (a *App) pumpBackgroundTabs() {
 					// closed-channel reason (conn.Err() when the transport left one,
 					// else the plain "connection closed").
 					reason := "connection closed"
-					if s.conn != nil {
-						if err := s.conn.Err(); err != nil {
+					if s.link.conn != nil {
+						if err := s.link.conn.Err(); err != nil {
 							reason = err.Error()
 						}
 					}
 					t.deadReason = reason
-					s.conn = nil
+					s.link.conn = nil
 					if t == a.splitTab {
 						// The pinned float pane is about to VANISH (clearSplit tears it
 						// down). Announce it first, or a torn-out server's death is
@@ -489,7 +489,7 @@ func (a *App) pumpBackgroundTabs() {
 						// the existing warn-line surface (jukeWarn, same one background
 						// music/asset failures use); no new UI. The dead tab's chip is
 						// unchanged: it still opens the disconnect dialog on activation.
-						a.jukeWarn("Pinned server " + s.serverName + " disconnected: " + reason)
+						a.jukeWarn("Pinned server " + s.srvMeta.serverName + " disconnected: " + reason)
 						a.clearSplit() // the pinned right-pane server dropped
 					}
 					// SCOPE-OUT (deliberate, deferred): a parked/pinned tab's death is
@@ -498,10 +498,10 @@ func (a *App) pumpBackgroundTabs() {
 					// single countdown, and arming them for a parked tab would FIGHT a
 					// live primary's own countdown. The recovery gap is known; recovery
 					// for parked tabs needs per-tab retry state (designed elsewhere).
-					a.debug.push("tab " + s.serverName + ": connection closed in background")
+					a.debug.push("tab " + s.srvMeta.serverName + ": connection closed in background")
 					break
 				}
-				for _, ev := range s.sess.HandlePacket(p) {
+				for _, ev := range s.link.sess.HandlePacket(p) {
 					a.routeBackgroundEvent(t, ev)
 					if t == a.splitTab && a.splitRoom != nil {
 						a.splitRoom.HandleEvent(ev) // drive the pinned right-pane stage
@@ -529,10 +529,10 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// A parked/pinned tab's own send clears on ITS server's echo too
 			// (keep-until-echo — the split pane's input must not vanish when
 			// that server swallows a raced send; see noteOwnICEcho).
-			if s.sess != nil && ev.Message.CharID == s.sess.MyCharID {
+			if s.link.sess != nil && ev.Message.CharID == s.link.sess.MyCharID {
 				s.noteOwnICEcho()
 			}
-			fr, fc := a.friendMessage(s.serverKey, ev.Message)
+			fr, fc := a.friendMessage(s.srvMeta.serverKey, ev.Message)
 			force := a.d.Prefs.Load().ForceCharNames
 			// nil char.ini rung, deliberately: charMetaFor resolves against the
 			// ACTIVE tab's asset origin, and a BACKGROUND tab's speaker is on a
@@ -552,9 +552,9 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			s.chatlog.icLogSeq++
 			t.unread++
 			if fr {
-				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
+				a.signalFriend(s.srvMeta.serverName, ev.Message) // alert even from a backgrounded server
 			}
-			a.logDetailed(s.serverName, s.logSession, ev.Message) // detailed transcript (opt-in), the PARKED tab's own file
+			a.logDetailed(s.srvMeta.serverName, s.srvMeta.logSession, ev.Message) // detailed transcript (opt-in), the PARKED tab's own file
 			names := a.mentionNamesFor(s)
 			a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 		}
@@ -571,7 +571,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, line, icLogCap)
 		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
 		s.chatlog.oocSeq++
-		a.logDetailedOOC(s.serverName, s.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
+		a.logDetailedOOC(s.srvMeta.serverName, s.srvMeta.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
 		// OOC still LOGS, but by default it doesn't bump the unread badge: servers
 		// post auto-messages in OOC (hourly "hydration" reminders, etc.) and a "(1)"
 		// when nobody chatted is just noise. Opt in to count OOC in Settings.
@@ -589,12 +589,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, modcallLine, icLogCap)
 		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, "", icLogCap) // system line — no name tint
 		s.chatlog.oocSeq++
-		a.logDetailedOOC(s.serverName, s.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
+		a.logDetailedOOC(s.srvMeta.serverName, s.srvMeta.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
 		t.unread++
-		a.signalModcall(s.serverName, ev.Text)
-		a.autoClipModcall(s.serverName, s.chatlog.icLog, ev.Text) // freeze IC context even on a backgrounded server
+		a.signalModcall(s.srvMeta.serverName, ev.Text)
+		a.autoClipModcall(s.srvMeta.serverName, s.chatlog.icLog, ev.Text) // freeze IC context even on a backgrounded server
 	case courtroom.EventBackground:
-		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
+		a.d.Prefs.RememberServerBackground(s.srvMeta.serverKey, ev.Text)
 		if ev.Wipe {
 			// The same overlay teardown the live tab does (#23). A parked tab has no
 			// Courtroom, so this is the only place its splash / testimony badge /
@@ -627,7 +627,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, disconnectLine, icLogCap)
 		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, "", icLogCap) // system line
 		s.chatlog.oocSeq++
-		a.logDetailedOOC(s.serverName, s.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
+		a.logDetailedOOC(s.srvMeta.serverName, s.srvMeta.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
 	}
 }
 
@@ -646,13 +646,13 @@ func (a *App) backgroundMusicFollow(s *sessionState) (url string, ok bool) {
 	if !a.d.Prefs.Load().MusicAcrossTabs || a.d.Audio == nil {
 		return "", false
 	}
-	if a.musicOwnerKey == "" || a.musicOwnerKey != s.serverKey {
+	if a.musicOwnerKey == "" || a.musicOwnerKey != s.srvMeta.serverKey {
 		return "", false // stream is silent-isolated, or owned by another tab: don't touch it
 	}
-	if s.sess == nil || s.sess.MusicTrack == "" {
+	if s.link.sess == nil || s.link.sess.MusicTrack == "" {
 		return "", false // ~stop / no track: nothing to switch to
 	}
-	return s.urls.MusicURL(s.sess.MusicTrack), true
+	return s.link.urls.MusicURL(s.link.sess.MusicTrack), true
 }
 
 // --- tab bar (docked strip, drawn over every screen) ------------------------
@@ -884,7 +884,7 @@ func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 // frame's own dimensions with no chrome band (themeLayout vs themeWindowLayout). The
 // strip would read export-space geometry and teleport for the whole export.
 func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
-	if a.screen != ScreenCourtroom || a.room == nil || a.theaterOn || a.screenDispatchPreempted() {
+	if a.screen != ScreenCourtroom || a.link.room == nil || a.theaterOn || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
 	}
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
@@ -1213,7 +1213,7 @@ func (a *App) resetSessionState() {
 	// the id into the tab with the rest of the state, so an id is never reused.
 	a.nextLogSession++
 	a.sessionState = sessionState{
-		logSession: a.nextLogSession,
+		srvMeta: serverMetaState{logSession: a.nextLogSession},
 		// Pair placement is per-session AND session-only: each tab keeps its
 		// own, and a fresh session starts centered/unflipped — the old prefs
 		// seeding made offsets "inexplicably saved" across client restarts

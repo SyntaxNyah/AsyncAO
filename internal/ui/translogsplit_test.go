@@ -27,29 +27,29 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 	a := testTabApp(t)
 	const server = "Skrapegropen"
 
-	first := a.logSession
+	first := a.srvMeta.logSession
 	if first == 0 {
 		t.Fatal("resetSessionState left logSession at the zero value — every tab would share writer key 0")
 	}
-	a.serverName = server
+	a.srvMeta.serverName = server
 	// A live session on the slot, the headless pattern the other tab-lifecycle tests
 	// use. Without it activateTab takes its "died while backgrounded" arm (a.sess ==
 	// nil) and Disconnects instead of restoring — which would make the id assertion
 	// below measure the teardown path rather than the park/activate hand-off.
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 
 	// Park tab one and open tab two on the SAME server.
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive()
-	second := a.logSession
+	second := a.srvMeta.logSession
 	if second == first {
 		t.Fatalf("a fresh live slot reused log session %d — two tabs on one server would share a transcript file (F4)", first)
 	}
-	if got := a.tabs[0].state.logSession; got != first {
+	if got := a.tabs[0].state.srvMeta.logSession; got != first {
 		t.Errorf("the parked tab's log session is %d, want %d — the id must ride the session state into the tab", got, first)
 	}
-	a.serverName = server
+	a.srvMeta.serverName = server
 
 	// Both sessions log; each must get its OWN writer.
 	a.d.Prefs.Update(func(
@@ -82,8 +82,8 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 
 	// Bringing tab one back must NOT mint a third id.
 	a.activateTab(0)
-	if a.logSession != first {
-		t.Errorf("activating a parked tab changed its log session to %d, want %d — it would abandon its own file mid-session", a.logSession, first)
+	if a.srvMeta.logSession != first {
+		t.Errorf("activating a parked tab changed its log session to %d, want %d — it would abandon its own file mid-session", a.srvMeta.logSession, first)
 	}
 }
 

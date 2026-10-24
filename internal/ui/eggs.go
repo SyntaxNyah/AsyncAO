@@ -312,7 +312,7 @@ var eggScatterPalette = [4]sdl.Color{
 // c.Fill / c.Border, which reuse the Ctx scratch rect (never &local into cgo).
 func (a *App) drawCreatorEgg(box sdl.Rect, kind uint8) {
 	t := a.d.Viewport.AnimClock().Seconds()
-	win := sdl.Rect{X: 0, Y: 0, W: a.winW, H: a.winH}
+	win := sdl.Rect{X: 0, Y: 0, W: a.frame.winW, H: a.frame.winH}
 	switch kind {
 	case eggFanat:
 		a.drawEggRainbow(box, win, t)

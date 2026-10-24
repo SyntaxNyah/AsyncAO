@@ -15,7 +15,7 @@ import (
 // still play but are NOT recorded; Discord records only audio files.
 func TestNoteMusicHistory(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
 
 	// A catbox link (allowlisted): recorded, attributed via the MC showname.
 	cat := "https://files.catbox.moe/ab12cd.mp3"
@@ -71,7 +71,7 @@ func TestNoteMusicHistoryCap(t *testing.T) {
 // off, an otherwise-allowlisted link is not captured.
 func TestNoteMusicHistoryDisabled(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -93,7 +93,7 @@ func TestNoteMusicHistoryDisabled(t *testing.T) {
 // charID must not panic, and "by" is simply left blank.
 func TestNoteMusicHistoryNoSession(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = nil
+	a.link.sess = nil
 	a.noteMusicHistory(courtroom.Event{Kind: courtroom.EventMusic, Text: "https://files.catbox.moe/solo.mp3", Int: 5})
 	if len(a.jukebox.musicHist) != 1 || a.jukebox.musicHist[0].display != "solo" {
 		t.Fatalf("entry = %+v, want a single entry with display 'solo'", a.jukebox.musicHist)

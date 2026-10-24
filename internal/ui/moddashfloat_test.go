@@ -35,8 +35,8 @@ func TestBanActionSummary(t *testing.T) {
 // TestEvidencePanelNonBlocking (#5) for the moderation box.
 func TestBanBoxNonBlocking(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
 	a.banBox.kind = 1 // a single ban box is open
@@ -65,11 +65,11 @@ func TestBanBoxNonBlocking(t *testing.T) {
 // dashboard fence from silently fencing an invisible panel.
 func TestBanBoxHidesDashboard(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
-	a.showModDash = true
+	a.modUI.showModDash = true
 	a.banBox.kind = 2 // a kick box is open over the dashboard
 	// A point inside the dashboard rect but clear of the (smaller/elsewhere) ban box must not be
 	// fenced by the now-hidden dashboard.

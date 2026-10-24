@@ -28,12 +28,12 @@ func pushAreaHistory(hist []string, name string) []string {
 // history. Called on each EventPlayersUpdated; the dedup guard makes it free
 // while we stay put. No-op without PR/PU (older servers report no self area).
 func (a *App) recordAreaHistory() {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
-	id, ok := a.sess.PlayerArea(a.sess.PlayerID)
-	if !ok || id < 0 || id >= len(a.sess.Areas) {
+	id, ok := a.link.sess.PlayerArea(a.link.sess.PlayerID)
+	if !ok || id < 0 || id >= len(a.link.sess.Areas) {
 		return
 	}
-	a.areaHistory = pushAreaHistory(a.areaHistory, a.sess.Areas[id])
+	a.areaHistory = pushAreaHistory(a.areaHistory, a.link.sess.Areas[id])
 }

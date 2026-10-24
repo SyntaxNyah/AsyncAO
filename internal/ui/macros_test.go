@@ -14,7 +14,7 @@ import (
 // and the queue is bounded.
 func TestMacroQueuePacing(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
+	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	t0 := time.Now()
 	a.frameNow = t0
 
@@ -59,7 +59,7 @@ func TestMacroQueuePacing(t *testing.T) {
 // line, and clearing a backlog must take one oocSendMinGap per line.
 func TestOOCQueueNeverBursts(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
+	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	t0 := time.Now()
 	a.frameNow = t0
 
@@ -98,7 +98,7 @@ func TestOOCQueueNeverBursts(t *testing.T) {
 // can hammer the Players panel's refresh.
 func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
 	t0 := time.Now()
 	a.frameNow = t0
 
@@ -163,23 +163,23 @@ func TestInLoginGrace(t *testing.T) {
 // vs the one-line form everyone else (and unknown servers) uses.
 func TestLoginLines(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
 
-	a.sess.Software = "Akashi 1.8"
+	a.link.sess.Software = "Akashi 1.8"
 	got := a.loginLines("admin", "hunter2")
 	if len(got) != 2 || got[0] != "/login" || got[1] != "admin hunter2" {
 		t.Fatalf("akashi flow = %v", got)
 	}
 
 	// KFO has no usernames: password only.
-	a.sess.Software = "KFO-Server"
+	a.link.sess.Software = "KFO-Server"
 	got = a.loginLines("admin", "hunter2")
 	if len(got) != 1 || got[0] != "/login hunter2" {
 		t.Fatalf("kfo flow = %v, want password-only", got)
 	}
 
 	for _, soft := range []string{"Nyathena", "Athena", "Whisker", ""} {
-		a.sess.Software = soft
+		a.link.sess.Software = soft
 		got = a.loginLines("admin", "hunter2")
 		if len(got) != 1 || got[0] != "/login admin hunter2" {
 			t.Fatalf("%q flow = %v, want one-line", soft, got)
@@ -196,11 +196,11 @@ func TestLoginLines(t *testing.T) {
 func TestAutoLoginFiresOnce(t *testing.T) {
 	newApp := func(software string) *App {
 		a := testTabApp(t)
-		a.sess = courtroom.NewRehearsalSession("", nil)
-		a.sess.Software = software
+		a.link.sess = courtroom.NewRehearsalSession("", nil)
+		a.link.sess.Software = software
 		a.frameNow = time.Now()
-		a.serverKey = "ws://login.test"
-		a.d.Prefs.SetServerLogin(a.serverKey, "admin", "hunter2", true) // AutoLogin ON
+		a.srvMeta.serverKey = "ws://login.test"
+		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, "admin", "hunter2", true) // AutoLogin ON
 		a.d.Prefs.Update(func(
 			sn *config.
 				Settings) {

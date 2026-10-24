@@ -138,7 +138,7 @@ func TestPreviewDemoDrivesTheRealCourtroomPainters(t *testing.T) {
 	driveFrame(a)
 	enterPreviewByButton(t, a)
 
-	sc := &a.te.preview.state.room.Scene
+	sc := &a.te.preview.state.link.room.Scene
 	if sc.VisibleRunes != 0 {
 		t.Fatalf("the demo revealed %d runes before a single frame was driven — the crawl is not the typewriter's",
 			sc.VisibleRunes)
@@ -267,7 +267,7 @@ func TestEditorPreviewProbesNothing(t *testing.T) {
 		t.Fatal("the demo left on its own — the gate measured the wrong thing")
 	}
 	// It really did loop, so the prefetch fan-out really did run more than once.
-	if a.te.preview.state.room.Scene.VisibleRunes == 0 {
+	if a.te.preview.state.link.room.Scene.VisibleRunes == 0 {
 		t.Fatal("the demo never revealed a rune — nothing was driven, so zero probes proves nothing")
 	}
 	if got := canary.n.Load() - before; got != 0 {
@@ -353,13 +353,13 @@ func TestEditorPreviewRidesAndReleasesThePacingCensus(t *testing.T) {
 	driveFrame(a)
 	enterPreviewByButton(t, a)
 	driveFrames(a, 3)
-	if !a.drawnAnimChrome {
+	if !a.frame.drawnAnimChrome {
 		t.Fatal("a driven demo does not mark the pacing census — the crawl would be paced at the idle rate")
 	}
 	pressEscFrame(a)
 	// One more frame so the exit's own frame cannot be the one being read.
 	driveFrames(a, 2)
-	if a.drawnAnimChrome {
+	if a.frame.drawnAnimChrome {
 		t.Error("the census is still marked after leaving the demo — the editor would hold the active cap " +
 			"forever on a screen where a still theme is a still picture")
 	}
@@ -382,7 +382,7 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	enterPreviewByButton(t, a)
-	sc := &a.te.preview.state.room.Scene
+	sc := &a.te.preview.state.link.room.Scene
 	if sc.ShownameText != editorPreviewShowname || sc.MusicTrack != editorPreviewTrack {
 		t.Fatal("the frozen demo staged nothing — reduce motion must still show the theme, just still")
 	}
@@ -391,7 +391,7 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 		t.Errorf("the typewriter advanced to %d runes under reduce motion — the demo is a self-driven "+
 			"animation the user asked not to have", sc.VisibleRunes)
 	}
-	if a.drawnAnimChrome {
+	if a.frame.drawnAnimChrome {
 		t.Error("a frozen demo still marks the pacing census — nothing is moving for it to pace")
 	}
 }
@@ -502,7 +502,7 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 	if !a.editorPreviewOn() {
 		t.Fatal("the demo left on its own over a blank theme")
 	}
-	sceneNow := &a.te.preview.state.room.Scene
+	sceneNow := &a.te.preview.state.link.room.Scene
 	if sceneNow.VisibleRunes <= 0 {
 		t.Error("the demo never crawled a rune over a brand-new blank theme — the scene is not playing")
 	}
@@ -766,7 +766,7 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	if a.room == nil || a.sess == nil {
+	if a.link.room == nil || a.link.sess == nil {
 		t.Skip("the fixture has no live session — there is no primary result for the demo to eat")
 	}
 	if a.charINIres == nil {
@@ -777,7 +777,7 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	}
 	// A serverKey the demo cannot possibly match, and a result fetched FOR it.
 	const primaryKey = "wss://preview.gate.invalid/ws"
-	a.serverKey = primaryKey
+	a.srvMeta.serverKey = primaryKey
 	a.compose.charINIBusy = true
 
 	// THE RESULT ARRIVES WHILE THE DEMO IS UP, which is the whole case: the frame

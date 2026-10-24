@@ -11,7 +11,7 @@ import (
 // and a local request with no mounts falls back to streaming.
 func TestEvidURL(t *testing.T) {
 	a := &App{env: env{}}
-	a.urls = courtroom.NewURLBuilder("https://server/base")
+	a.link.urls = courtroom.NewURLBuilder("https://server/base")
 
 	// Default (local) with a cached local:// origin.
 	a.evidLocalOrigin = "local://m-x/"

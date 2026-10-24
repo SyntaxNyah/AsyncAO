@@ -37,8 +37,8 @@ var (
 func previewFenceApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.previewBase = "characters/Phoenix/(a)normal"
 	a.previewFrameRect = previewTestBox
 	return a

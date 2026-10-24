@@ -24,8 +24,8 @@ import (
 // NOT on folder navigation. Nulls the thumbnail cache because the set/order
 // changed (the cache is keyed by index without re-checking the URL).
 func (a *App) rebuildBgFav() {
-	favs := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
-	folders := a.d.Prefs.Load().FavBackgroundFolderMap(a.serverKey)
+	favs := a.d.Prefs.Load().FavBackgroundList(a.srvMeta.serverKey)
+	folders := a.d.Prefs.Load().FavBackgroundFolderMap(a.srvMeta.serverKey)
 	a.bgFavList = favs
 	a.bgFavLower = make([]string, len(favs))
 	a.bgFavFolders = make([]string, len(favs))
@@ -106,7 +106,7 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 		// A folder delete awaits confirmation: the bar replaces the nav row.
 		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countIn(a.wardDelFolder), "backgrounds")
 		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
-			a.d.Prefs.DeleteFavBackgroundFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			a.d.Prefs.DeleteFavBackgroundFolder(a.srvMeta.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
 			if strings.EqualFold(a.bgFavNewFold, a.wardDelFolder) {
 				a.bgFavNewFold = "" // also drop the transient "new folder" chip if it named this one
 			}
@@ -138,7 +138,7 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 			c.Tooltip(back, "Back to all folders — or drop a background here to take it out of this folder")
 			if c.hovering(back) && c.clicked {
 				if a.iniDragging && a.iniDragChar != "" {
-					a.d.Prefs.SetFavBackgroundFolder(a.serverKey, a.iniDragChar, "")
+					a.d.Prefs.SetFavBackgroundFolder(a.srvMeta.serverKey, a.iniDragChar, "")
 					a.rebuildBgFav()
 					c.clicked = false // consume the drop
 				} else {
@@ -222,7 +222,7 @@ func (a *App) drawBgFavFolderCell(name string, count int, cell sdl.Rect) {
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a background here to file it")
 	if hover && c.clicked {
 		if a.iniDragging && a.iniDragChar != "" {
-			a.d.Prefs.SetFavBackgroundFolder(a.serverKey, a.iniDragChar, name)
+			a.d.Prefs.SetFavBackgroundFolder(a.srvMeta.serverKey, a.iniDragChar, name)
 			a.rebuildBgFav()
 			c.clicked = false // consume the drop
 		} else {
@@ -240,7 +240,7 @@ func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 	c := a.ctx
 	name := a.bgFavList[idx]
 	c.Fill(cell, ColBackground)
-	base := a.urls.Background(name, bgThumbPart)
+	base := a.link.urls.Background(name, bgThumbPart)
 	if page, ok := a.cachedPage(&a.bgFavPages, &a.bgFavPagesGen, len(a.bgFavList), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 	} else {
@@ -248,7 +248,7 @@ func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 		c.LabelClipped(cell.X+4, cell.Y+cell.H/2-8, cell.W-8, name, ColTextDim)
 	}
 	c.Border(cell, ColPanelHi)
-	if a.sess != nil && strings.EqualFold(name, a.sess.Background) {
+	if a.link.sess != nil && strings.EqualFold(name, a.link.sess.Background) {
 		tag := sdl.Rect{X: cell.X + 1, Y: cell.Y + 1, W: c.TextWidth("current") + 8, H: 16}
 		c.Fill(tag, sdl.Color{R: 0, G: 0, B: 0, A: 190})
 		c.Label(tag.X+4, tag.Y+1, "current", ColAccent)
@@ -280,7 +280,7 @@ func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 	c.Label(star.X+3, star.Y+1, "★", ColStar)
 	c.Tooltip(star, "Remove from favourites")
 	if c.hovering(star) && c.clicked && !a.iniDragging {
-		a.d.Prefs.RemoveFavBackground(a.serverKey, name)
+		a.d.Prefs.RemoveFavBackground(a.srvMeta.serverKey, name)
 		a.rebuildBgFav()
 		return
 	}

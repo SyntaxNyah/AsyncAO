@@ -146,7 +146,7 @@ func (jukebox1 *jukeboxState) refreshJukeCache() {
 
 // jukePlay streams a link to everyone (DJ/CM only — the server enforces it).
 func (a *App) jukePlay(url string) {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		a.jukeWarn("Connect to a server to play music (/play needs DJ/CM rights).")
 		return
 	}
@@ -158,7 +158,7 @@ func (a *App) jukePlay(url string) {
 // one-press send (not just dropping it in the box), through the same paced OOC
 // pipeline as jukePlay, minus the /play prefix so it's a plain shareable line.
 func (a *App) jukeShare(url string) {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		a.jukeWarn("Connect to a server first.")
 		return
 	}

@@ -40,7 +40,7 @@ func TestExportPackConfirmFiresOnlyWhenThePackContributes(t *testing.T) {
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
 	a.d.Prefs.SetLocalAssets(false, []string{dir})
 	a.setAssetSourceMode(assetSrcLayered, []string{dir})
-	a.urls = courtroom.NewURLBuilder(origin)
+	a.link.urls = courtroom.NewURLBuilder(origin)
 	waitForIndex(t, a)
 
 	// A scene using the packed character must be flagged...
@@ -64,7 +64,7 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	a.d.Prefs.SetLocalAssets(false, []string{dir})
 	a.setAssetSourceMode(assetSrcLayered, []string{dir})
-	a.urls = courtroom.NewURLBuilder(origin)
+	a.link.urls = courtroom.NewURLBuilder(origin)
 	waitForIndex(t, a)
 
 	scene := packScene(origin, "witch")

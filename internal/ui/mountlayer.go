@@ -177,14 +177,14 @@ func (a *App) pollMountIndex() {
 // inert while Settings cheerfully reported thousands of indexed files.
 func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 	origins := make([]string, 0, len(a.tabs)+1)
-	if o := a.urls.Origin(); o != "" {
+	if o := a.link.urls.Origin(); o != "" {
 		origins = append(origins, o)
 	}
 	for _, t := range a.tabs {
 		if t == nil {
 			continue
 		}
-		if o := t.state.urls.Origin(); o != "" {
+		if o := t.state.link.urls.Origin(); o != "" {
 			origins = append(origins, o)
 		}
 	}
@@ -232,7 +232,7 @@ func (a *App) forgetParsedINIs() {
 	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil
 	a.previewEmoteIdx = 0
 	a.compose.iniWarmed = "" // the hover warm's latch, same reason
-	if a.sess != nil && a.activeCharName() != "" {
+	if a.link.sess != nil && a.activeCharName() != "" {
 		a.loadCharINI() // the emote strip in front of the user, reloaded in place
 	}
 }

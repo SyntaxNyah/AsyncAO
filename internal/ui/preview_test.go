@@ -190,8 +190,8 @@ func portraitTestApp(t *testing.T, emotes ...string) (*App, string) {
 	}
 	local := assets.NewLocalFetcher([]string{dir})
 	a := headlessProbeApp(t, local, true)
-	a.urls = courtroom.NewURLBuilder(local.BaseURL())
-	a.serverKey = "ws://portrait.test" // pollPreviewEmotes drops results for another tab's key
+	a.link.urls = courtroom.NewURLBuilder(local.BaseURL())
+	a.srvMeta.serverKey = "ws://portrait.test" // pollPreviewEmotes drops results for another tab's key
 	// The real App constructor makes this one-slot result channel; the test App is
 	// built bare, and a nil channel would silently swallow every parse.
 	a.previewEmoteRes = make(chan previewEmoteFetch, 1)
@@ -226,14 +226,14 @@ func TestCharSelectPortraitFallsBackToFirstEmote(t *testing.T) {
 	// Frame 1 — the hover: parse the char.ini, show the optimistic convention.
 	a.ensurePreviewEmotes(char, previewEmotePortrait)
 	a.setCharPortraitPreview(char)
-	if want := a.urls.Emote(char, "normal", courtroom.EmoteIdle); a.previewBase != want {
+	if want := a.link.urls.Emote(char, "normal", courtroom.EmoteIdle); a.previewBase != want {
 		t.Fatalf("first frame must probe the conventional idle pose\n got %q\nwant %q", a.previewBase, want)
 	}
 
 	// …the parse lands (the cursor may already have left the cell, so the drain,
 	// not the next hover frame, has to be what corrects the box).
 	waitPortraitEmotes(t, a)
-	if want := a.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
+	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
 		t.Fatalf("a pack with no \"normal\" emote must fall back to its first real emote\n got %q\nwant %q", a.previewBase, want)
 	}
 	if got := a.previewPortraitAnim(char); got != "SNormal" {
@@ -241,7 +241,7 @@ func TestCharSelectPortraitFallsBackToFirstEmote(t *testing.T) {
 	}
 	// Re-hovering the same cell must be stable, never bounce back to "normal".
 	a.setCharPortraitPreview(char)
-	if want := a.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
+	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
 		t.Fatalf("a later hover frame reverted the correction: got %q, want %q", a.previewBase, want)
 	}
 }
@@ -258,7 +258,7 @@ func TestCharSelectPortraitKeepsNormalWhenPackHasIt(t *testing.T) {
 
 	a.ensurePreviewEmotes(char, previewEmotePortrait)
 	a.setCharPortraitPreview(char)
-	normal := a.urls.Emote(char, "normal", courtroom.EmoteIdle)
+	normal := a.link.urls.Emote(char, "normal", courtroom.EmoteIdle)
 	waitPortraitEmotes(t, a)
 	if a.previewBase != normal {
 		t.Fatalf("a pack that has \"normal\" must keep the optimistic base\n got %q\nwant %q", a.previewBase, normal)
@@ -277,7 +277,7 @@ func TestPortraitPreviewIgnoresOtherTabsParse(t *testing.T) {
 	a.ensurePreviewEmotes(char, previewEmotePortrait)
 	a.setCharPortraitPreview(char)
 	normal := a.previewBase
-	a.serverKey = "ws://other.tab" // the user switched tabs mid-parse
+	a.srvMeta.serverKey = "ws://other.tab" // the user switched tabs mid-parse
 
 	// A local-mount parse lands in single-digit milliseconds; this window is the
 	// drain budget that gives it every chance to (wrongly) apply.

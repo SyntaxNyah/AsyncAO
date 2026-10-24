@@ -22,8 +22,8 @@ import (
 func sendICOnce(t *testing.T, a *App, line string) []protocol.Packet {
 	t.Helper()
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a.sess.MyCharID = 7
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess.MyCharID = 7
 	a.compose.icInput = line
 	a.sendIC()
 	return sent
@@ -66,9 +66,9 @@ func TestSendBareInlineEffectObeysRateLimit(t *testing.T) {
 	a.d.Prefs.SetTiming(crawl, stay, rateLimitMs)
 
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a.sess.MyCharID = 7
-	a.lastICSend = time.Time{} // no prior send: the first one must go through
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess.MyCharID = 7
+	a.srvMeta.lastICSend = time.Time{} // no prior send: the first one must go through
 
 	a.compose.icInput = `\s`
 	a.sendIC()
@@ -88,16 +88,16 @@ func TestSendBareInlineEffectObeysRateLimit(t *testing.T) {
 // transmitted text, so its bare-effect line arrives here as a literal "\f".
 func TestBareInlineEffectFromAnotherClient(t *testing.T) {
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
-	a.room.ScreenEffects, a.room.ReduceMotion = true, false
+	a.link.room = newRoomForTest(t)
+	a.link.room.ScreenEffects, a.link.room.ReduceMotion = true, false
 
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Edgeworth", `\f`)})
-	a.room.Update(20 * time.Millisecond)
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Edgeworth", `\f`)})
+	a.link.room.Update(20 * time.Millisecond)
 
-	if a.room.Scene.FlashLeft != courtroom.RealizationFlashDuration {
-		t.Errorf(`a foreign bare "\f" must flash, FlashLeft = %v`, a.room.Scene.FlashLeft)
+	if a.link.room.Scene.FlashLeft != courtroom.RealizationFlashDuration {
+		t.Errorf(`a foreign bare "\f" must flash, FlashLeft = %v`, a.link.room.Scene.FlashLeft)
 	}
-	if a.room.Scene.ShakeLeft != 0 {
-		t.Errorf(`a bare "\f" must not shake, ShakeLeft = %v`, a.room.Scene.ShakeLeft)
+	if a.link.room.Scene.ShakeLeft != 0 {
+		t.Errorf(`a bare "\f" must not shake, ShakeLeft = %v`, a.link.room.Scene.ShakeLeft)
 	}
 }

@@ -15,7 +15,7 @@ import (
 func TestCharMetaStaleMarkerRefetches(t *testing.T) {
 	a, cleanup := roomFactoryApp(t)
 	defer cleanup()
-	a.urls = courtroom.NewURLBuilder(gateOrigin)
+	a.link.urls = courtroom.NewURLBuilder(gateOrigin)
 	a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 
 	url := a.charINIURL("Phoenix")

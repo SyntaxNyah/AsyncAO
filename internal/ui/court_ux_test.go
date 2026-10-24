@@ -383,12 +383,12 @@ func TestHPBarStemNoAlloc(t *testing.T) {
 // state, ZERO allocations while a tab is stable (the strip asks ~3×/tab/frame),
 // and a rebuild when unread changes.
 func TestTabChipLabelMemoized(t *testing.T) {
-	a := &App{env: env{}, sessionState: sessionState{serverName: "ActiveServer"},
+	a := &App{env: env{}, sessionState: sessionState{srvMeta: serverMetaState{serverName: "ActiveServer"}},
 		activeTab: 0,
 		tabs: []*courtTab{
 			{}, // 0: active
-			{state: sessionState{serverName: "Other"}, unread: 3}, // 1: backgrounded, unread
-			{state: sessionState{serverName: "Gone"}, dead: true}, // 2: backgrounded, dead
+			{state: sessionState{srvMeta: serverMetaState{serverName: "Other"}}, unread: 3}, // 1: backgrounded, unread
+			{state: sessionState{srvMeta: serverMetaState{serverName: "Gone"}}, dead: true}, // 2: backgrounded, dead
 		},
 	}
 	if got := a.tabChipLabel(0); got != "ActiveServer" {
@@ -425,7 +425,7 @@ func TestDebugDiagLine(t *testing.T) {
 			t.Errorf("diag line %q missing %q", got, want)
 		}
 	}
-	a.curArea = "Courtroom 1"
+	a.srvMeta.curArea = "Courtroom 1"
 	if got := a.debugDiagLine(); !strings.Contains(got, "area Courtroom 1") {
 		t.Errorf("area not shown in %q", got)
 	}
@@ -435,9 +435,9 @@ func TestDebugDiagLine(t *testing.T) {
 // labels and ZERO allocations for a stable (paused) clock — the always-on draw
 // asks every frame, so only a ticking second should rebuild.
 func TestTimerChipLabelsMemoized(t *testing.T) {
-	a := &App{env: env{}, sessionState: sessionState{sess: &courtroom.Session{}}}
-	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second} // paused 01:30
-	a.sess.Timers[2] = courtroom.TimerState{Visible: true, Left: 5 * time.Second}  // paused 00:05
+	a := &App{env: env{}, sessionState: sessionState{link: linkState{sess: &courtroom.Session{}}}}
+	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second} // paused 01:30
+	a.link.sess.Timers[2] = courtroom.TimerState{Visible: true, Left: 5 * time.Second}  // paused 00:05
 
 	now := time.Now()
 	chips := a.timerChipLabels(now)
@@ -449,7 +449,7 @@ func TestTimerChipLabelsMemoized(t *testing.T) {
 		t.Errorf("steady-state allocs = %v, want 0", n)
 	}
 	// A changed second rebuilds that timer's label.
-	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 91 * time.Second}
+	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 91 * time.Second}
 	if got := a.timerChipLabels(now); got[0] != "T1 01:31" {
 		t.Errorf("rebuilt label = %q, want T1 01:31", got[0])
 	}

@@ -54,15 +54,15 @@ func TestModBulkSelectionCap(t *testing.T) {
 // selection cleared after. Whisker kicks by UID, so no IPID fetch is needed for the test.
 func TestSendBulk(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
+	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	a.frameNow = time.Now()
-	a.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
+	a.link.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
 	a.rosterLegacy = true
 	a.areaPlayers = []areaPlayer{
 		{uid: "1", name: "phoenix"},
 		{uid: "2", name: "edgeworth"},
 	}
-	a.bulkBoxUIDs = []string{"1", "2"}
+	a.modUI.bulkBoxUIDs = []string{"1", "2"}
 	a.banBox.reason = "spam"
 
 	if n := a.sendBulk(false); n != 2 { // false = kick
@@ -77,7 +77,7 @@ func TestSendBulk(t *testing.T) {
 	if len(a.modDash.audit) != 2 {
 		t.Errorf("audit has %d entries, want 2", len(a.modDash.audit))
 	}
-	if len(a.bulkBoxUIDs) != 0 || len(a.modDash.selected) != 0 {
+	if len(a.modUI.bulkBoxUIDs) != 0 || len(a.modDash.selected) != 0 {
 		t.Error("sendBulk must clear both the frozen list and the live selection")
 	}
 }

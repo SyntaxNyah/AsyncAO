@@ -206,8 +206,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 		return y
 	}
 	cur := 0
-	if settings.themeBindKey == "" && a.serverKey != "" {
-		settings.themeBindKey = a.serverKey
+	if settings.themeBindKey == "" && a.srvMeta.serverKey != "" {
+		settings.themeBindKey = a.srvMeta.serverKey
 	}
 	for i, k := range keys {
 		if k == settings.themeBindKey {
@@ -223,8 +223,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	bound := a.d.Prefs.Load().ServerWarmInfoFor(settings.themeBindKey).Theme
 	if c.Button(sdl.Rect{X: pad + 440, Y: y, W: 150, H: btnH}, "Bind "+clampLine(settings.themeName)) {
 		a.d.Prefs.SetServerTheme(settings.themeBindKey, settings.themeName)
-		if settings.themeBindKey == a.serverKey && a.sess != nil {
-			a.themeBound = settings.themeName
+		if settings.themeBindKey == a.srvMeta.serverKey && a.link.sess != nil {
+			a.srvMeta.themeBound = settings.themeName
 			a.ensureThemeForSession()
 		}
 		settings.statusLine = "Theme " + settings.themeName + " bound — that server always uses it now."
@@ -232,8 +232,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	if bound != "" {
 		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Unbind") {
 			a.d.Prefs.SetServerTheme(settings.themeBindKey, "")
-			if settings.themeBindKey == a.serverKey && a.sess != nil {
-				a.themeBound = ""
+			if settings.themeBindKey == a.srvMeta.serverKey && a.link.sess != nil {
+				a.srvMeta.themeBound = ""
 				a.ensureThemeForSession()
 			}
 			settings.statusLine = "Theme binding removed."

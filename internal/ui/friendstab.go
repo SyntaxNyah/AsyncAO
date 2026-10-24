@@ -21,11 +21,11 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	// size stands alone at the client's base scale.
 	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemFriends, DefaultScalePct)))
 	c := a.ctx
-	if a.serverKey == "" {
+	if a.srvMeta.serverKey == "" {
 		c.Label(r.X+4, r.Y+6, "Connect to a server to see its friends.", ColTextDim)
 		return
 	}
-	names := a.d.Prefs.Load().ServerFriends(a.serverKey)
+	names := a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey)
 	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
 	// Start a group chat right from the friends list — the natural place to gather
 	// friends. Opens the Group Chat panel on a fresh group's invite view.
@@ -82,7 +82,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		if c.hovering(row) {
 			c.Fill(row, ColPanel)
 		}
-		_, fcol, nick := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, name)
+		_, fcol, nick := a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, name)
 		nameCol := ColText
 		if fcol >= 0 {
 			nameCol = readableOnPanel(fcol)
@@ -146,14 +146,14 @@ func (a *App) drawPMComposer(box sdl.Rect) {
 // back to the name when we don't have a live id). The reply lands in the OOC log.
 func (a *App) sendPM() {
 	msg := strings.TrimSpace(a.compose.pmInput)
-	if msg == "" || a.compose.pmTarget == "" || a.sess == nil {
+	if msg == "" || a.compose.pmTarget == "" || a.link.sess == nil {
 		return
 	}
 	target := a.friendUID(a.compose.pmTarget)
 	if target == "" {
 		target = a.compose.pmTarget // no live id — try the name (some servers accept it)
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), "/pm "+target+" "+msg)
+	a.link.sess.SendOOC(a.oocNameOrDefault(), "/pm "+target+" "+msg)
 	a.pmAppend(a.compose.pmTarget, true, msg) // mirror into the DM thread (it also shows in OOC)
 	a.compose.pmInput = ""
 }
@@ -218,7 +218,7 @@ func (a *App) pmThreadKey(name string) string {
 	if want == "" {
 		return ""
 	}
-	friends := a.d.Prefs.Load().ServerFriends(a.serverKey)
+	friends := a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey)
 	for _, f := range friends {
 		if strings.ToLower(f) == want {
 			return want

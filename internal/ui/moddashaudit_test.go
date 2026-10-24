@@ -40,7 +40,7 @@ func TestRecordModAudit(t *testing.T) {
 // tab-separated row per entry (action, target, command), in record order.
 func TestFormatModAudit(t *testing.T) {
 	a := testTabApp(t)
-	a.serverName = "Test Server"
+	a.srvMeta.serverName = "Test Server"
 	a.recordModAudit("Kick", "[5] Phoenix", "/kick 5 spam")
 	a.recordModAudit("Ban", "[7] Maya", "/ban -u 7 -d perma trolling")
 	out := a.formatModAudit()

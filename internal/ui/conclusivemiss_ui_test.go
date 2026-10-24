@@ -118,7 +118,7 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	local := wireEmptyPackManager(t, a)
 	a.installAssetOrigin(local.BaseURL())
 
-	base := a.urls.CharIcon("gold_ship")
+	base := a.link.urls.CharIcon("gold_ship")
 	var stamps []time.Time
 	a.iconAskBudget = charIconAskPerFrame
 
@@ -160,7 +160,7 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	// The negative control: the gate keys on the BASE, so a sibling asset of the
 	// same character is untouched by its neighbour's verdict. Without this, a gate
 	// that simply stopped demanding everything would pass.
-	sibling := a.urls.EmoteButton("gold_ship", 1, false)
+	sibling := a.link.urls.EmoteButton("gold_ship", 1, false)
 	a.iconAskBudget = charIconAskPerFrame
 	var siblingStamps []time.Time
 	if !a.demandAsset(&siblingStamps, 1, 0, sibling, assets.AssetTypeEmoteButton) {
@@ -181,7 +181,7 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	local := wireEmptyPackManager(t, a)
 	a.installAssetOrigin(local.BaseURL())
 
-	base := a.urls.CharIcon("mejiro_mcqueen")
+	base := a.link.urls.CharIcon("mejiro_mcqueen")
 	var stamps []time.Time
 	a.iconAskBudget = charIconAskPerFrame
 	a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
@@ -217,16 +217,16 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	const me = "silence_suzuka"
 	a.emotepick.emotes = make([]courtroom.Emote, 1)
 	btn := sdl.Rect{X: 0, Y: 0, W: 48, H: 48}
-	buttonBase := a.urls.EmoteButton(me, 1, false)
-	iconBase := a.urls.CharIcon(me)
+	buttonBase := a.link.urls.EmoteButton(me, 1, false)
+	iconBase := a.link.urls.CharIcon(me)
 
 	// Frame 1 must FLAG: nothing has been probed, so the art may still arrive and
 	// the pump has to stay awake to receive it. Without this the gate would pass
 	// against a draw that never flagged anything.
 	a.iconAskBudget = charIconAskPerFrame
-	a.frameDemandPending = false
+	a.frame.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
-	if !a.frameDemandPending {
+	if !a.frame.frameDemandPending {
 		t.Fatal("a blank cell whose art is still unprobed did not hold the pump awake — it would sleep through " +
 			"the arriving texture, and the gate below would be vacuous")
 	}
@@ -260,9 +260,9 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	// pump is free to sleep.
 	a.iconAskBudget = charIconAskPerFrame
 	a.emotepick.emoteAsk, a.emoteIconAsk = nil, nil
-	a.frameDemandPending = false
+	a.frame.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
-	if a.frameDemandPending {
+	if a.frame.frameDemandPending {
 		t.Error("a permanently-blank emote cell still held the frame pump awake — the client stays pinned at the " +
 			"demand cadence, re-rendering for art that can never arrive")
 	}

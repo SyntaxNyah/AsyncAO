@@ -578,10 +578,10 @@ func (jukebox1 *jukeboxState) oocLinkActions(rowRect, linkRect sdl.Rect, url str
 // The name falls back to the sticky AsyncAO<n> — servers reject empty
 // OOC names, and commands must always be sendable.
 func (a *App) submitOOC() {
-	if strings.TrimSpace(a.compose.oocInput) == "" || a.sess == nil {
+	if strings.TrimSpace(a.compose.oocInput) == "" || a.link.sess == nil {
 		return
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), a.compose.oocInput)
+	a.link.sess.SendOOC(a.oocNameOrDefault(), a.compose.oocInput)
 	a.recordSentOOC(a.compose.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
 	a.compose.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
 }
@@ -766,7 +766,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 		m.cardW == cardW && m.pct == pct && m.gen == a.ctx.fontChainGen {
 		return m.rows
 	}
-	shown := len(a.sess.Areas)
+	shown := len(a.link.sess.Areas)
 	var filtered []int
 	if query != "" {
 		filtered = a.refreshAreaFilter(query, slot)
@@ -779,13 +779,13 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 		if query != "" {
 			i = filtered[vi]
 		}
-		if i < 0 || i >= len(a.sess.Areas) {
+		if i < 0 || i >= len(a.link.sess.Areas) {
 			continue
 		}
-		area := a.sess.Areas[i]
+		area := a.link.sess.Areas[i]
 		detail := ""
-		if i < len(a.sess.AreaInfo) {
-			info := &a.sess.AreaInfo[i]
+		if i < len(a.link.sess.AreaInfo) {
+			info := &a.link.sess.AreaInfo[i]
 			if info.Players >= 0 {
 				unit := "users"
 				if info.Players == 1 {
@@ -900,7 +900,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	// panel the outer zoomWheel already took the wheel (wheelTaken), so this
 	// no-ops there; no double-step.
 	a.zoomWheel(r, &a.areaPct, config.MinLogScalePercent, config.MaxLogScalePercent)
-	if len(a.sess.Areas) == 0 {
+	if len(a.link.sess.Areas) == 0 {
 		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
 		return
 	}
@@ -950,7 +950,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		a.areaSearch, _ = c.TextField("areasearch", head.field, a.areaSearch, "Search areas…")
 		query = strings.ToLower(strings.TrimSpace(a.areaSearch))
 	}
-	total := len(a.sess.Areas)
+	total := len(a.link.sess.Areas)
 	shown := total
 	if query != "" {
 		shown = len(a.refreshAreaFilter(query, slot))
@@ -994,7 +994,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		if y >= r.Y-rowH {
 			card := sdl.Rect{X: r.X + 2, Y: y + 2, W: cardW, H: rowH - areaCardGap}
 			hover := c.hovering(card)
-			current := row.name == a.curArea
+			current := row.name == a.srvMeta.curArea
 			// Two-block entry: the name (population-coloured) on top, an indented
 			// detail block (count / status / lock / CM) under it, each independently
 			// word-wrapped (Issue #22). A locked room tints the whole row red, the
@@ -1002,8 +1002,8 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 			// busy or where I am / every area looked the same".
 			nameCol := areaIdleCol
 			locked := false
-			if row.idx < len(a.sess.AreaInfo) {
-				info := &a.sess.AreaInfo[row.idx]
+			if row.idx < len(a.link.sess.AreaInfo) {
+				info := &a.link.sess.AreaInfo[row.idx]
 				if info.Players > 0 {
 					nameCol = areaLiveCol // populated reads at full strength
 				}

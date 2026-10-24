@@ -13,7 +13,7 @@ import (
 // lock for each shown row rather than the wrong parallel entry.
 func TestRefreshAreaFilter(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Areas: []string{
+	a.link.sess = &courtroom.Session{Areas: []string{
 		"Courtroom 1", "Basement", "Courtyard", "Rooftop", "Court Records",
 	}}
 
@@ -25,7 +25,7 @@ func TestRefreshAreaFilter(t *testing.T) {
 	for i, idx := range want {
 		if got[i] != idx {
 			t.Fatalf("filtered[%d] = %d (%q), want original index %d (%q)",
-				i, got[i], a.sess.Areas[got[i]], idx, a.sess.Areas[idx])
+				i, got[i], a.link.sess.Areas[got[i]], idx, a.link.sess.Areas[idx])
 		}
 	}
 }
@@ -39,7 +39,7 @@ func TestRefreshAreaFilter(t *testing.T) {
 // that re-scanned would refill its result.
 func TestRefreshAreaFilterSlotsDoNotEvictEachOther(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Areas: []string{"Alpha", "Beta", "Alabama"}}
+	a.link.sess = &courtroom.Session{Areas: []string{"Alpha", "Beta", "Alabama"}}
 
 	if got := a.refreshAreaFilter("al", areaQuerySlotOwn); len(got) != 2 {
 		t.Fatalf("own slot: filtered %v, want 2 matches", got)
@@ -65,7 +65,7 @@ func TestRefreshAreaFilterSlotsDoNotEvictEachOther(t *testing.T) {
 // it, the memo leaves it as-is.
 func TestRefreshAreaFilterMemo(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Areas: []string{"Alpha", "Beta", "Alabama"}}
+	a.link.sess = &courtroom.Session{Areas: []string{"Alpha", "Beta", "Alabama"}}
 
 	if got := a.refreshAreaFilter("al", areaQuerySlotOwn); len(got) != 2 { // Alpha (0), Alabama (2)
 		t.Fatalf("first pass: filtered %v, want 2 matches", got)
@@ -77,7 +77,7 @@ func TestRefreshAreaFilterMemo(t *testing.T) {
 	}
 
 	// A changed list identity (append) must invalidate the memo and re-scan.
-	a.sess.Areas = append(a.sess.Areas, "Algeria")
+	a.link.sess.Areas = append(a.link.sess.Areas, "Algeria")
 	if got := a.refreshAreaFilter("al", areaQuerySlotOwn); len(got) != 3 { // + Algeria (3)
 		t.Fatalf("list change did not re-scan: filtered %v, want 3 matches", got)
 	}

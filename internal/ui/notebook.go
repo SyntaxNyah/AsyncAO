@@ -32,12 +32,12 @@ func (a *App) pinNote(line string) {
 func (a *App) pollNotebook() {
 	select {
 	case res := <-a.notebookRes:
-		if res.key == a.serverKey {
+		if res.key == a.srvMeta.serverKey {
 			a.notebook = res.nb
 			return
 		}
 		for i, t := range a.tabs {
-			if i != a.activeTab && t.state.serverKey == res.key {
+			if i != a.activeTab && t.state.srvMeta.serverKey == res.key {
 				t.state.notebook = res.nb
 				return
 			}

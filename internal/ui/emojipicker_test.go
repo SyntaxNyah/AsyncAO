@@ -50,8 +50,8 @@ func TestEmojiPickerFenceReleases(t *testing.T) {
 // blocking popups still hide them.
 func TestEmojiPickerKeepsPanels(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}, screen: ScreenCourtroom}}
-	a.room = &courtroom.Courtroom{}
-	a.sess = &courtroom.Session{}
+	a.link.room = &courtroom.Courtroom{}
+	a.link.sess = &courtroom.Session{}
 
 	if !a.extrasSurfaceLive() {
 		t.Fatal("a live court with nothing open must show the Extras surface")

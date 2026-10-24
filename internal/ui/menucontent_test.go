@@ -389,9 +389,9 @@ func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 	}
 	// The rows must actually toggle the pickers, not merely exist.
 	fx := menuRow(t, menuExtrasTitle, "Text FX…")
-	before := a.showFxPicker
+	before := a.lookUI.showFxPicker
 	fx.act(a, fx.arg)
-	if a.showFxPicker == before {
+	if a.lookUI.showFxPicker == before {
 		t.Error("the Text FX row did not toggle the picker")
 	}
 	em := menuRow(t, menuExtrasTitle, "Emoji picker…")
@@ -407,7 +407,7 @@ func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 // on-screen clamps would pin the list to the top-left corner.
 func TestFxPickerAnchorsOnScreenWithoutAButton(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.fxBtnRect = sdl.Rect{} // never drawn: a theme that declares no asyncao_ic_fx
+	a.lookUI.fxBtnRect = sdl.Rect{} // never drawn: a theme that declares no asyncao_ic_fx
 	const w, h = 1280, 720
 	r := a.fxPickerRect(w, h)
 	if r.X <= 8 && r.Y <= 8 {

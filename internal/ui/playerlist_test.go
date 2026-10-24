@@ -152,7 +152,7 @@ func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
 		{uid: "0", area: "Pizza Room 1"},
 	}
 	a.areaListAt = time.Now()
-	a.curArea = "Lobby" // sess is nil here, so myAreaName falls back to curArea
+	a.srvMeta.curArea = "Lobby" // sess is nil here, so myAreaName falls back to curArea
 	a.playerSort = playerSortUID
 	a.playerAreaSort = areaSortGas
 
@@ -214,7 +214,7 @@ func TestRosterNameOOCFallback(t *testing.T) {
 // multi-CM list into individual names.
 func TestCMNameSet(t *testing.T) {
 	a := &App{env: env{}}
-	a.sess = &courtroom.Session{AreaInfo: []courtroom.AreaInfo{
+	a.link.sess = &courtroom.Session{AreaInfo: []courtroom.AreaInfo{
 		{CM: "FREE"},
 		{CM: "Phoenix, Edgeworth"},
 		{CM: ""},
@@ -233,19 +233,19 @@ func TestCMNameSet(t *testing.T) {
 // the count (-1).
 func TestCurAreaPlayers(t *testing.T) {
 	a := &App{env: env{}}
-	a.sess = &courtroom.Session{
+	a.link.sess = &courtroom.Session{
 		Areas:    []string{"Lobby", "Courtroom"},
 		AreaInfo: []courtroom.AreaInfo{{Players: 5}, {Players: 2}},
 	}
-	a.curArea = "Courtroom"
+	a.srvMeta.curArea = "Courtroom"
 	if n, ok := a.curAreaPlayers(); !ok || n != 2 {
 		t.Errorf("Courtroom = %d,%v, want 2,true", n, ok)
 	}
-	a.curArea = "" // fresh join → assume the spawn area (index 0)
+	a.srvMeta.curArea = "" // fresh join → assume the spawn area (index 0)
 	if n, ok := a.curAreaPlayers(); !ok || n != 5 {
 		t.Errorf("fresh join = %d,%v, want 5,true (area 0)", n, ok)
 	}
-	a.sess.AreaInfo[0].Players = -1 // server hasn't reported it
+	a.link.sess.AreaInfo[0].Players = -1 // server hasn't reported it
 	if _, ok := a.curAreaPlayers(); ok {
 		t.Error("Players=-1 must give ok=false")
 	}
@@ -260,12 +260,12 @@ func TestCurAreaPlayers(t *testing.T) {
 func TestJumpToAreaSelectsAndSends(t *testing.T) {
 	a := testTabApp(t)
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 
 	a.jumpToArea("Courtroom 2")
 
-	if a.curArea != "Courtroom 2" {
-		t.Errorf("jump must set the optimistic selection, curArea = %q", a.curArea)
+	if a.srvMeta.curArea != "Courtroom 2" {
+		t.Errorf("jump must set the optimistic selection, curArea = %q", a.srvMeta.curArea)
 	}
 	if len(sent) != 1 || sent[0].Header != "MC" {
 		t.Fatalf("want exactly one MC transfer out, got %+v", sent)
@@ -293,16 +293,16 @@ func TestJumpToAreaDrivesScrollback(t *testing.T) {
 
 	})
 
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.curArea = "C1"
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.srvMeta.curArea = "C1"
 	a.chatlog.icLog = []icEntry{{text: "c1 line"}}
 
 	a.jumpToArea("C2") // saves "c1 line" under the OLD curArea (C1), loads empty C2
 	if len(a.chatlog.icLog) != 0 {
 		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
-	if a.curArea != "C2" {
-		t.Fatalf("jump must advance curArea, got %q", a.curArea)
+	if a.srvMeta.curArea != "C2" {
+		t.Fatalf("jump must advance curArea, got %q", a.srvMeta.curArea)
 	}
 
 	a.jumpToArea("C1") // back to C1 → its saved line returns
@@ -327,18 +327,18 @@ func TestJumpToAreaGuards(t *testing.T) {
 
 	})
 
-	a.curArea = "orig"
+	a.srvMeta.curArea = "orig"
 	a.chatlog.icLog = []icEntry{{text: "keep me"}}
 	a.jumpToArea("Elsewhere")
-	if a.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
-		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.curArea, a.chatlog.icLog)
+	if a.srvMeta.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
+		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.srvMeta.curArea, a.chatlog.icLog)
 	}
 
 	// Live session but empty area name (the guard's other half).
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.jumpToArea("")
-	if a.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
-		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.curArea, a.chatlog.icLog)
+	if a.srvMeta.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
+		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.srvMeta.curArea, a.chatlog.icLog)
 	}
 }
 
@@ -509,7 +509,7 @@ func TestJumpToAreaArmsFollow(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Unix(2_000, 0)
 	a.frameNow = base
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 
 	a.jumpToArea("Courtroom 2")
 

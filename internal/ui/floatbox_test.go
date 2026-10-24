@@ -12,8 +12,8 @@ import (
 // live courtroom, and not shadowed by a blocking popup.
 func TestExtrasBoxVisibility(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 
 	a.toolbox.showWidgets = true
 	if !(a.toolbox.showWidgets && a.extrasSurfaceLive()) {
@@ -35,8 +35,8 @@ func TestExtrasBoxVisibility(t *testing.T) {
 // don't leak through, but the courtroom stays live everywhere else.
 func TestBoxFencesPointer(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r := a.extrasBoxRect(w, h)
@@ -61,8 +61,8 @@ func TestBoxFencesPointer(t *testing.T) {
 // and release ends the drag.
 func TestExtrasDrag(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r0 := a.extrasBoxRect(w, h)
@@ -169,8 +169,8 @@ func TestExtrasReattach(t *testing.T) {
 // regardless of position, and the cursor clear of every box does not.
 func TestBoxFencesPointerDetached(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
@@ -199,8 +199,8 @@ func TestBoxFencesPointerDetached(t *testing.T) {
 // the closed main box does not.
 func TestExtrasDetachedPersistsClosed(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
 	a.toolbox.showWidgets = false // main box CLOSED
@@ -226,8 +226,8 @@ func TestExtrasDetachedPersistsClosed(t *testing.T) {
 // and a release ends it.
 func TestExtrasResize(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r := a.extrasBoxRect(w, h)
@@ -267,8 +267,8 @@ func TestExtrasResize(t *testing.T) {
 // minimum, and release ends it.
 func TestDetachedResize(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 500, y: 300}}
 	r := a.detachedBoxRect(0, w, h)

@@ -59,25 +59,25 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	a.toolbox.themeAppliedName = name
 	// Simulate a live connection to a named server, as connectWith would leave it,
 	// so Disconnect captures the reconnect target.
-	a.serverName, a.serverKey = "Test Server", "ws://test.example"
-	a.conn = conn
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
+	a.link.conn = conn
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 
 	// Drain until the kick lands. The first pumps may see an empty queue (the
 	// read loop hasn't delivered KK yet) and return via the select default with
 	// conn still live; once KK arrives the drain disconnects and nils a.conn.
 	// Without the loop guard, that very drain panics on the re-check iteration.
 	deadline := time.Now().Add(5 * time.Second)
-	for a.conn != nil && time.Now().Before(deadline) {
+	for a.link.conn != nil && time.Now().Before(deadline) {
 		a.pumpConnection() // must not panic when the session is freed mid-drain
 		time.Sleep(2 * time.Millisecond)
 	}
 	// The disconnect must have actually run (so the loop's re-check was the
 	// thing under test, not a timeout): conn AND sess are torn down.
-	if a.conn != nil {
+	if a.link.conn != nil {
 		t.Fatal("server kick (KK) should have disconnected the session")
 	}
-	if a.sess != nil {
+	if a.link.sess != nil {
 		t.Error("Disconnect should have torn the session down (sess != nil)")
 	}
 	// Fix #2: the kick reason and reconnect state must SURVIVE Disconnect.

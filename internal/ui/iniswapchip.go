@@ -43,7 +43,7 @@ const (
 // is a courtroom modal. Suppressed while the Wardrobe is already open, so the chip
 // never sits on top of the thing it opens.
 func (a *App) iniswapChipActive() bool {
-	return a.screen == ScreenCourtroom && a.sess != nil && !a.showIni &&
+	return a.screen == ScreenCourtroom && a.link.sess != nil && !a.showIni &&
 		!a.gifExporting && !a.replaying && !a.makerOpen
 }
 

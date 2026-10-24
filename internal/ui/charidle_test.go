@@ -78,7 +78,7 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 
 	// An ORIGIN, because charMetaFor refuses to answer without one (a cache keyed
 	// by full char.ini URL is what makes per-server separation structural).
-	a.urls = courtroom.NewURLBuilder(gateOrigin)
+	a.link.urls = courtroom.NewURLBuilder(gateOrigin)
 	// Seed the cache through pollCharMeta — the one production door into it — so
 	// this drives the same store the live courtroom fills. Writing the map here
 	// would be the mirror-test shape rule 11 forbids.
@@ -99,8 +99,8 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 
 	// The BASE the ghost actually mints, through the real URL builder: a different
 	// pose has to reach the URL, or the fix stops at a string nobody uses.
-	oddBase := a.urls.Emote("Beatrice", a.iniIdleAnimFor("Beatrice", ghostFallbackEmote), courtroom.EmoteIdle)
-	litBase := a.urls.Emote("Beatrice", ghostFallbackEmote, courtroom.EmoteIdle)
+	oddBase := a.link.urls.Emote("Beatrice", a.iniIdleAnimFor("Beatrice", ghostFallbackEmote), courtroom.EmoteIdle)
+	litBase := a.link.urls.Emote("Beatrice", ghostFallbackEmote, courtroom.EmoteIdle)
 	if oddBase == litBase {
 		t.Errorf("the partner ghost still resolves %q — the char.ini answer never reached the URL", oddBase)
 	}
@@ -112,8 +112,8 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	// the whole repo. The prefixed base stays the asset's identity (CLAUDE.md) and
 	// the bare spelling is an ALTERNATE, so the two must both be present and must
 	// not be the same URL.
-	alts := a.urls.EmoteAlts("Beatrice", "HSmug", courtroom.EmoteIdle)
-	bare := a.urls.EmoteBare("Beatrice", "HSmug")
+	alts := a.link.urls.EmoteAlts("Beatrice", "HSmug", courtroom.EmoteIdle)
+	bare := a.link.urls.EmoteBare("Beatrice", "HSmug")
 	if bare == oddBase {
 		t.Fatalf("stale premise: the bare spelling and the prefixed identity are both %q, so this "+
 			"gate could not tell a one-spelling chain from a two-spelling one", bare)
@@ -173,7 +173,7 @@ func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, charINIFileName), []byte(ini), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
+	a.link.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
 
 	// The MISS is the trigger: charMetaFor plants the in-flight marker and fires
 	// exactly one fetch. Nothing is known yet, which is the window the seam's

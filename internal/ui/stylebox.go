@@ -467,7 +467,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		// The real stage background behind the sprite (the pair-ghost pattern): a
 		// flat fill stands in until it streams.
 		bgPart, _ := courtroom.PositionScene(a.mySide())
-		bgBase := a.urls.Background(a.sess.Background, bgPart)
+		bgBase := a.link.urls.Background(a.link.sess.Background, bgPart)
 		if bgBase != a.favstyle.stylePrevBgKey {
 			a.favstyle.stylePrevBgPages, a.favstyle.stylePrevBgKey = nil, bgBase
 		}
@@ -475,7 +475,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			_ = c.Ren.Copy(page.Frames[0], nil, &pv)
 		} else {
 			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
-			if a.sess.Background != "" {
+			if a.link.sess.Background != "" {
 				a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
 			}
 		}
@@ -484,10 +484,10 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
 				anim = a.emotepick.emotes[a.emotepick.emoteIdx].Anim
 			}
-			sbase := a.urls.Emote(me, anim, courtroom.EmoteIdle)
+			sbase := a.link.urls.Emote(me, anim, courtroom.EmoteIdle)
 			if a.favstyle.stylePrevWarm != sbase { // warm once per emote base, not per frame
 				a.favstyle.stylePrevWarm = sbase
-				a.d.Manager.PrefetchChain(sbase, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
+				a.d.Manager.PrefetchChain(sbase, a.link.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
 			}
 			a.d.Viewport.RenderStylePreview(c.Ren, sbase, styleFromPref(p), pv)
 		} else {

@@ -33,7 +33,7 @@ func (a *App) handleICPhraseKeys() bool {
 		return false
 	}
 	phrase, ok := a.icPhraseKeys[strings.ToLower(sdl.GetKeyName(k))]
-	if !ok || a.sess == nil {
+	if !ok || a.link.sess == nil {
 		return false
 	}
 	a.sendICPhrase(phrase)
@@ -48,7 +48,7 @@ func (a *App) handleICPhraseKeys() bool {
 // swallows a phrase, re-pressing its key is the natural retry. A "/command"
 // phrase runs as the command, same as typing it.
 func (a *App) sendICPhrase(phrase string) {
-	if a.sess == nil || a.sess.MyCharID < 0 || strings.TrimSpace(phrase) == "" {
+	if a.link.sess == nil || a.link.sess.MyCharID < 0 || strings.TrimSpace(phrase) == "" {
 		return
 	}
 	draft := a.compose.icInput

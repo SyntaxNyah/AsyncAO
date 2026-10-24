@@ -321,7 +321,7 @@ func menuActDirectConnect(a *App, _ int) {
 	a.ctx.FocusField(directConnectFieldID)
 }
 
-func menuInSession(a *App, _ int) bool { return a.sess != nil }
+func menuInSession(a *App, _ int) bool { return a.link.sess != nil }
 
 func menuActDisconnect(a *App, _ int) { a.requestDisconnect() } // routed through the confirm, like every other exit
 func menuActQuit(a *App, _ int)       { a.requestQuit() }
@@ -422,8 +422,8 @@ func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
 
 // Text FX and the emoji picker: the two IC controls with no AO2 design key, so
 // this menu is the only place a themed player can reach them (#21 rule (c)).
-func menuFxPickerOpen(a *App, _ int) bool { return a.showFxPicker }
-func menuToggleFxPicker(a *App, _ int)    { a.showFxPicker = !a.showFxPicker }
+func menuFxPickerOpen(a *App, _ int) bool { return a.lookUI.showFxPicker }
+func menuToggleFxPicker(a *App, _ int)    { a.lookUI.showFxPicker = !a.lookUI.showFxPicker }
 
 func menuEmojiPickerOpen(a *App, _ int) bool { return a.showEmojiPicker }
 func menuToggleEmojiPicker(a *App, _ int)    { a.showEmojiPicker = !a.showEmojiPicker }
@@ -432,11 +432,11 @@ func menuToggleEmojiPicker(a *App, _ int)    { a.showEmojiPicker = !a.showEmojiP
 // command exists and simply greys out until the server grants it — the chips
 // they replace vanished entirely, which read as the feature being missing.
 func menuAmIMod(a *App, _ int) bool      { return a.amIMod() }
-func menuModDashOpen(a *App, _ int) bool { return a.showModDash }
+func menuModDashOpen(a *App, _ int) bool { return a.modUI.showModDash }
 func menuActModDash(a *App, _ int)       { a.toggleModDash() }
 
-func menuAmICM(a *App, _ int) bool       { return a.amICMNow }
-func menuCMPanelOpen(a *App, _ int) bool { return a.showCMPanel }
+func menuAmICM(a *App, _ int) bool       { return a.srvMeta.amICMNow }
+func menuCMPanelOpen(a *App, _ int) bool { return a.modUI.showCMPanel }
 func menuActCMPanel(a *App, _ int)       { a.toggleCMPanel() }
 
 func menuToolboxShown(a *App, _ int) bool { return !a.classic.panelHidden(panelToolbox) }

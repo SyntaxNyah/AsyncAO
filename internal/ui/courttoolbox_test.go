@@ -80,7 +80,7 @@ func TestToolIconAllocFree(t *testing.T) {
 // per-piece list. The old showUICfg field is gone; this is now the only trigger.
 func TestUICfgRetired(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{}                // handleHotkeys early-returns without a session
+	a.link.sess = &courtroom.Session{}           // handleHotkeys early-returns without a session
 	a.classic.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
 	a.classic.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
 	// Bind the action to whatever name SDL gives Ctrl+F4's keycode (headless
@@ -112,7 +112,7 @@ func TestUICfgRetired(t *testing.T) {
 // classic slot editor (classicEdit).
 func TestEditLayoutHotkey(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{} // handleHotkeys early-returns without a session
+	a.link.sess = &courtroom.Session{} // handleHotkeys early-returns without a session
 	// Bind the action to whatever name SDL gives Ctrl+F2's keycode (headless
 	// GetKeyName can differ from the "f2" default the dispatch compares against), so
 	// the bind and the dispatch agree — this proves the WIRING, not the key-name
@@ -155,8 +155,8 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	// draw gate.
 	a.ctx = c
 	a.classic.hidden = map[string]bool{}
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)
@@ -214,8 +214,8 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	a := testTabApp(t)
 	a.ctx = c
 	a.classic.hidden = map[string]bool{}
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)

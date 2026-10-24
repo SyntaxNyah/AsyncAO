@@ -16,7 +16,7 @@ func (a *App) fireAutoConnect() {
 		return
 	}
 	a.autoConnectPending = false
-	if a.sess != nil || a.lastConnURL != "" {
+	if a.link.sess != nil || a.lastConnURL != "" {
 		return // a tab restore (or anything) already started connecting
 	}
 	if name, url := a.d.Prefs.Load().LastServer(); url != "" {
@@ -27,7 +27,7 @@ func (a *App) fireAutoConnect() {
 // quickConnect dials the saved last server now (the quick-connect keybind) — to
 // hop back on after a disconnect without going through the lobby.
 func (a *App) quickConnect() {
-	if a.sess != nil {
+	if a.link.sess != nil {
 		a.warnLine = "Already connected — Disconnect first."
 		a.warnAt = time.Now()
 		return

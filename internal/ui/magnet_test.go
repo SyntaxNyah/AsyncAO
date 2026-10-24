@@ -99,7 +99,7 @@ func TestPanelMagnetCensusExcludesDraggedAndClosed(t *testing.T) {
 	a.wins.pairWin.dragging = true
 	a.showEvid = true // a second, non-dragged open panel → a legit candidate
 	// A closed panel must contribute nothing even though its floatWin has a rect.
-	a.showCMPanel = false
+	a.modUI.showCMPanel = false
 
 	a.rebuildPanelMagnetRects(w, h)
 

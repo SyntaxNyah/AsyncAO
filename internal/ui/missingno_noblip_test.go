@@ -125,10 +125,10 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
 	seedPNGFormat(t, a)
 
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.Speaker.Visible = true
-	a.room.Scene.Speaker.Active = glued
-	a.room.Scene.Speaker.IdleBase = glued
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.Speaker.Visible = true
+	a.link.room.Scene.Speaker.Active = glued
+	a.link.room.Scene.Speaker.IdleBase = glued
 
 	a.sceneWarm.lastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
@@ -229,10 +229,10 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	// the manifest seeded it — see TestResolveRawFromLocalArchive).
 	seedPNGFormat(t, a)
 
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.Speaker.Visible = true
-	a.room.Scene.Speaker.Active = prefixed
-	a.room.Scene.Speaker.IdleBase = prefixed
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.Speaker.Visible = true
+	a.link.room.Scene.Speaker.Active = prefixed
+	a.link.room.Scene.Speaker.IdleBase = prefixed
 
 	// Throttle open so the warm re-demand actually fires this pass.
 	a.sceneWarm.lastDemand = time.Time{}
@@ -283,10 +283,10 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	prefixed := local.BaseURL() + "characters/ghost/(a)normal"
 	seedPNGFormat(t, a)
 
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.Speaker.Visible = true
-	a.room.Scene.Speaker.Active = prefixed
-	a.room.Scene.Speaker.IdleBase = prefixed
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.Speaker.Visible = true
+	a.link.room.Scene.Speaker.Active = prefixed
+	a.link.room.Scene.Speaker.IdleBase = prefixed
 
 	a.sceneWarm.lastDemand = time.Time{}
 	a.keepSceneAssetsWarm()

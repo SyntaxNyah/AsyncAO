@@ -714,7 +714,7 @@ func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	a, _, cleanup := cellChromeHarness(t)
 	defer cleanup()
-	a.serverKey = "ws://wardrobe.test"
+	a.srvMeta.serverKey = "ws://wardrobe.test"
 	const w, h int32 = 320, 240
 	lay := a.charSelectLayout(w, h) // themeless: the classic plan, which is what this tab had
 	g := a.charSelectGridPlan(w, h, 40, lay)
@@ -728,7 +728,7 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	if a.iniFavPending != "" {
 		t.Error("a deferred ★ toggle survived the frame — on this screen the star does nothing")
 	}
-	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 1 || list[0] != "Phoenix" {
+	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 1 || list[0] != "Phoenix" {
 		t.Errorf("the wardrobe is %v, want the starred character to have been saved", list)
 	}
 
@@ -750,7 +750,7 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	if a.iniFavPending != "" {
 		t.Error("the empty-wardrobe arm skipped the host bookkeeping")
 	}
-	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 0 {
+	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 0 {
 		t.Errorf("the wardrobe is %v after an un-star, want it empty", list)
 	}
 }

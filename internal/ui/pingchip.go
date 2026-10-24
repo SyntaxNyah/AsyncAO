@@ -36,7 +36,7 @@ var (
 // ACTIVE conn while the chip is on, and runs no goroutine when it's off. Cheap: a pointer
 // compare + one pref read in steady state.
 func (a *App) updatePingLoop() {
-	want := a.conn
+	want := a.link.conn
 	if !a.d.Prefs.Load().PingChip {
 		want = nil
 	}
@@ -116,7 +116,7 @@ func pingQuality(ms int, unknown bool) (bars int32, col sdl.Color) {
 // atomic RTT; the bars are Fill rects and the tooltip text is cached (rebuilt only when the ms
 // changes), so steady-state draw is 0-alloc.
 func (a *App) drawPingChip(x, y int32) {
-	if !a.d.Prefs.Load().PingChip || a.conn == nil {
+	if !a.d.Prefs.Load().PingChip || a.link.conn == nil {
 		return
 	}
 	c := a.ctx

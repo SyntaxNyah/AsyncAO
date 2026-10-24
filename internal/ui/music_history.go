@@ -53,8 +53,8 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 		return // server/non-allowlisted song: it still plays, it's just not recorded
 	}
 	by := ev.Name // the MC showname (field 2); may be empty
-	if by == "" && a.sess != nil && ev.Int >= 0 && ev.Int < len(a.sess.Chars) {
-		by = a.sess.Chars[ev.Int].Name // fall back to the character — bounds-checked
+	if by == "" && a.link.sess != nil && ev.Int >= 0 && ev.Int < len(a.link.sess.Chars) {
+		by = a.link.sess.Chars[ev.Int].Name // fall back to the character — bounds-checked
 	}
 	display := song
 	if by != "" {

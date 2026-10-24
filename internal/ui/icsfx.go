@@ -62,7 +62,7 @@ func sfxIdlePromotion(mod, pickIdx int, sfxOnIdle, prezoom bool) (int, bool) {
 func (a *App) applySFXPick(next int) {
 	a.emotepick.sfxChoiceIdx = next
 	if next > 0 && next < len(a.emotepick.sfxChoices) {
-		a.d.Audio.PlaySFX(a.urls.SFX(a.emotepick.sfxChoices[next]), 0) // preview the picked sound
+		a.d.Audio.PlaySFX(a.link.urls.SFX(a.emotepick.sfxChoices[next]), 0) // preview the picked sound
 	}
 	a.bounceFocusToIC() // courtroom.cpp:5501
 }

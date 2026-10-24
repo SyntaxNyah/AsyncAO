@@ -344,7 +344,7 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 // (courtroom.cpp:747-759); a toggle for a field the wire drops is a control that
 // silently does nothing.
 func (a *App) sessHasCCCC() bool {
-	return a.sess != nil && a.sess.Features.Has(protocol.FeatureCCCCIC)
+	return a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureCCCCIC)
 }
 
 // themedSwatchW is the colour swatch's width inside AO2's text_color rect. AO2
@@ -737,7 +737,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys()
-	if a.rehearsal {
+	if a.srvMeta.rehearsal {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
 	}
 
@@ -962,9 +962,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		swatch := sdl.Rect{X: r.X, Y: r.Y, W: themedSwatchW, H: r.H}
 		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
-		a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
+		a.lookUI.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
 		if a.compose.icCustomOn && c.clicked && c.hovering(swatch) {
-			a.showICColorWheel = !a.showICColorWheel // re-open to adjust (same as the classic row)
+			a.lookUI.showICColorWheel = !a.lookUI.showICColorWheel // re-open to adjust (same as the classic row)
 		}
 		// Freeze the IC field's selection so a picked colour can wrap it (§3.8,
 		// folded into the dropdown to match AO2's on_text_color_changed); shared
@@ -1006,7 +1006,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// ALONE when the toggle is hidden — a stale flip stops being shown, never
 	// silently cleared, because pairFlip is real pair state that parks per tab.
 	if r, ok := themedToggleRect(lay, "flip", "", ""); ok &&
-		!a.classic.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
+		!a.classic.panelHidden(slotICFlip) && a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureFlipping) {
 		a.pairbox.pairFlip = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairbox.pairFlip), a.pairbox.pairFlip) // ui_flip → focus_ic_input (courtroom.cpp:503)
 		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 	}
@@ -1018,7 +1018,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// the same rule the classic row applies, and the reason the crammed bar used to
 	// clear it unconditionally (it had nowhere to draw the toggle at all).
 	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
-		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
+		a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		a.compose.icAdditive = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.compose.icAdditive), a.compose.icAdditive) // :504 → :6572
 		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 	} else {
@@ -1055,8 +1055,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			// Push the LIVE room too, as the Settings surface does. Without this the
 			// pref lands but nothing re-reads it until an unrelated applyPrefsToRoom,
 			// so the toggle appears to do nothing for the rest of the session.
-			if a.room != nil {
-				a.room.ForceCharNames = !next
+			if a.link.room != nil {
+				a.link.room.ForceCharNames = !next
 			}
 		}
 		c.Tooltip(r, "Shownames: show players' custom shownames. Off falls back to character names, which makes impersonation obvious.")
@@ -1164,7 +1164,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				a.drawArmedOverlay(r, a.compose.icShout == s.mod)
 			}
 		}
-		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
+		if a.link.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			if r, ok := lay.rect("custom_objection"); ok {
 				if a.drawThemeButton("custom_objection", a.customShoutLabel(), r) {
 					a.toggleShout(protocol.ShoutCustom)
@@ -1189,14 +1189,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			key, label string
 			run        func()
 		}{
-			{"witness_testimony", "WT", func() { a.sess.SendWTCE("testimony1", 0) }},
-			{"cross_examination", "CE", func() { a.sess.SendWTCE("testimony2", 0) }},
-			{"not_guilty", "NG", func() { a.sess.SendWTCE("judgeruling", 0) }},
-			{"guilty", "G", func() { a.sess.SendWTCE("judgeruling", 1) }},
-			{"defense_minus", "D-", func() { a.sess.SendHP(1, a.sess.HPDef-1) }},
-			{"defense_plus", "D+", func() { a.sess.SendHP(1, a.sess.HPDef+1) }},
-			{"prosecution_minus", "P-", func() { a.sess.SendHP(2, a.sess.HPPro-1) }},
-			{"prosecution_plus", "P+", func() { a.sess.SendHP(2, a.sess.HPPro+1) }},
+			{"witness_testimony", "WT", func() { a.link.sess.SendWTCE("testimony1", 0) }},
+			{"cross_examination", "CE", func() { a.link.sess.SendWTCE("testimony2", 0) }},
+			{"not_guilty", "NG", func() { a.link.sess.SendWTCE("judgeruling", 0) }},
+			{"guilty", "G", func() { a.link.sess.SendWTCE("judgeruling", 1) }},
+			{"defense_minus", "D-", func() { a.link.sess.SendHP(1, a.link.sess.HPDef-1) }},
+			{"defense_plus", "D+", func() { a.link.sess.SendHP(1, a.link.sess.HPDef+1) }},
+			{"prosecution_minus", "P-", func() { a.link.sess.SendHP(2, a.link.sess.HPPro-1) }},
+			{"prosecution_plus", "P+", func() { a.link.sess.SendHP(2, a.link.sess.HPPro+1) }},
 		}
 		for _, j := range judge {
 			if r, ok := lay.rect(j.key); ok {
@@ -1266,7 +1266,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				// is a no-op for a folder that was only ever worn (a server
 				// iniswap.txt entry never added to the wardrobe), which is exactly
 				// the case the trailing choices entry exists for.
-				a.d.Prefs.RemoveWardrobe(a.serverKey, a.emotepick.iniswapChoices[cur])
+				a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, a.emotepick.iniswapChoices[cur])
 				a.setIniswap("")
 				c.FocusField("ic")
 			}
@@ -1368,7 +1368,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 // rects (AO2 child-widget semantics).
 func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
-	sc := &a.room.Scene
+	sc := &a.link.room.Scene
 	// Blankpost hides the whole chatbox (frame + showname + text) so only the
 	// sprite shows; the second clause is the unchanged idle/no-message case.
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
@@ -1709,7 +1709,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	if a.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: the preview could not be moved out of the viewport).
-		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
+		a.drawSpritePreview(a.frame.winW, a.frame.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		// Pin-aware, and routed through closeSpritePreview so the trigger's dwell
 		// id is disarmed (a raw previewBase="" re-opened the box the next frame).
 		a.dismissPreviewOnClick()
@@ -1943,10 +1943,10 @@ func (a *App) drawMusicMarquee(font *ttf.Font, dst sdl.Rect, inset, ty int32, la
 // nothing is playing — the same name the list rows and the IC "has played a song"
 // line use, so all three agree.
 func (a *App) nowPlayingName() string {
-	if a.room == nil {
+	if a.link.room == nil {
 		return ""
 	}
-	now := a.room.Scene.MusicTrack
+	now := a.link.room.Scene.MusicTrack
 	if now == "" {
 		return ""
 	}

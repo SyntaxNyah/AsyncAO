@@ -15,10 +15,10 @@ func pairOrderSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 	t.Helper()
 	a := testTabApp(t)
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a.sess.Chars = []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Maya"}}
-	a.sess.MyCharID = 0
-	a.sess.PlayerID = 7
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess.Chars = []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Maya"}}
+	a.link.sess.MyCharID = 0
+	a.link.sess.PlayerID = 7
 	return a, &sent
 }
 

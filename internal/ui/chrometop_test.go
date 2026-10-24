@@ -520,7 +520,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	a.screen = ScreenCourtroom
 
 	authored := theme.Rect{X: 120, Y: 300, W: 240, H: int(tabBarH)}
@@ -552,7 +552,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	b.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	b.tabs = []*courtTab{{}}
 	b.activeTab = 0
-	b.room = newRoomForTest(t)
+	b.link.room = newRoomForTest(t)
 	applyThemeGeometryForTest(b, stockLikeThemeLayout())
 	if !b.tabBarSeeded {
 		t.Error("a theme that declares the strip nowhere must still be reported as seeded")
@@ -571,7 +571,7 @@ func stageTabbarlessCourtroom(t *testing.T, themeName string) *App {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned so a default flip can't silently un-gate these
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	a.screen = ScreenCourtroom
 	applyThemeGeometryForTest(a, stockLikeThemeLayout())
 	return a
@@ -760,7 +760,7 @@ func TestTabStripIgnoresExportSpaceGeometry(t *testing.T) {
 		set  func(*App)
 	}{
 		{"gif export", func(a *App) { a.gifExporting = true }},
-		{"replay", func(a *App) { a.replaying, a.replayRoom = true, a.room }},
+		{"replay", func(a *App) { a.replaying, a.replayRoom = true, a.link.room }},
 		{"scene maker", func(a *App) { a.makerOpen = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -794,7 +794,7 @@ func TestTabStripFollowsTheThemeRect(t *testing.T) {
 	a := testTabApp(t)
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	a.screen = ScreenCourtroom
 	a.themeRects = map[string]theme.Rect{
 		"courtroom":    {X: 0, Y: 0, W: 714, H: 579},
