@@ -13,8 +13,8 @@ import (
 // (left) is dropped, so a bulk command never targets a stale slot.
 func TestModBulkSelection(t *testing.T) {
 	a := testTabApp(t)
-	a.rosterLegacy = true
-	a.areaPlayers = []areaPlayer{
+	a.roster.rosterLegacy = true
+	a.roster.areaPlayers = []areaPlayer{
 		{uid: "1", name: "phoenix"},
 		{uid: "2", name: "edgeworth"},
 		{uid: "3", name: "maya"},
@@ -57,8 +57,8 @@ func TestSendBulk(t *testing.T) {
 	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	a.frameNow = time.Now()
 	a.link.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
-	a.rosterLegacy = true
-	a.areaPlayers = []areaPlayer{
+	a.roster.rosterLegacy = true
+	a.roster.areaPlayers = []areaPlayer{
 		{uid: "1", name: "phoenix"},
 		{uid: "2", name: "edgeworth"},
 	}

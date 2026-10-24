@@ -26,7 +26,7 @@ var exModalPanels = []struct {
 	open func(*App)
 	rect func(*App, int32, int32) sdl.Rect
 }{
-	{"timer", func(a *App) { a.showTimer = true }, (*App).timerPanelRect},
+	{"timer", func(a *App) { a.timer.showTimer = true }, (*App).timerPanelRect},
 	{"login", func(a *App) { a.showLogin = true }, (*App).loginPanelRect},
 	{"pair popup", func(a *App) { a.pairbox.pairPopupOpen = true }, (*App).pairPopPanelRect},
 }
@@ -94,7 +94,7 @@ func TestExModalsAreClosedByEsc(t *testing.T) {
 			if !a.closeTopOverlay() {
 				t.Fatal("Esc must resolve this panel, not fall through to the leave-the-server shortcut")
 			}
-			if a.showTimer || a.showLogin || a.pairbox.pairPopupOpen {
+			if a.timer.showTimer || a.showLogin || a.pairbox.pairPopupOpen {
 				t.Error("Esc left the panel open")
 			}
 		})

@@ -28,14 +28,14 @@ func TestServerEvidenceEmptyLabel(t *testing.T) {
 // a timeout or error) re-runs the fetch instead of dead-ending empty forever.
 func TestPollServerEvidencePickerResetsBusy(t *testing.T) {
 	a := &App{env: env{}}
-	a.evidServerRes = make(chan []string, 4)
-	a.evidServerBusy = true
-	a.evidServerRes <- []string{"Knife.png", "Gun.png"}
+	a.evid.evidServerRes = make(chan []string, 4)
+	a.evid.evidServerBusy = true
+	a.evid.evidServerRes <- []string{"Knife.png", "Gun.png"}
 	a.pollServerEvidencePicker()
-	if a.evidServerBusy {
+	if a.evid.evidServerBusy {
 		t.Fatal("poll must clear evidServerBusy once the result is consumed")
 	}
-	if len(a.evidServerNames) != 2 {
-		t.Fatalf("merged %d names, want 2", len(a.evidServerNames))
+	if len(a.evid.evidServerNames) != 2 {
+		t.Fatalf("merged %d names, want 2", len(a.evid.evidServerNames))
 	}
 }

@@ -15,7 +15,7 @@ func TestEvidencePanelNonBlocking(t *testing.T) {
 	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
-	a.showEvid = true
+	a.evid.showEvid = true
 	if a.courtModalOpen() {
 		t.Error("evidence open must NOT be a blocking modal — chat stays live (#5)")
 	}
@@ -28,7 +28,7 @@ func TestEvidencePanelNonBlocking(t *testing.T) {
 	if a.boxFencesPointer(w, h) {
 		t.Error("cursor clear of the evidence panel must NOT fence — the courtroom stays live")
 	}
-	a.showEvid = false
+	a.evid.showEvid = false
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if a.boxFencesPointer(w, h) {
 		t.Error("a closed evidence panel must never fence")

@@ -29,10 +29,10 @@ const (
 
 // openServerEvidencePicker opens the modal and starts the server-index discovery.
 func (a *App) openServerEvidencePicker() {
-	if a.evidServerRes == nil {
-		a.evidServerRes = make(chan []string, 4)
+	if a.evid.evidServerRes == nil {
+		a.evid.evidServerRes = make(chan []string, 4)
 	}
-	if a.evidServerNames == nil {
+	if a.evid.evidServerNames == nil {
 		// Seed with the case evidence already on hand so the modal is never empty
 		// while the index fetch runs.
 		seen := map[string]bool{}
@@ -42,18 +42,18 @@ func (a *App) openServerEvidencePicker() {
 				continue
 			}
 			seen[strings.ToLower(name)] = true
-			a.evidServerNames = append(a.evidServerNames, name)
+			a.evid.evidServerNames = append(a.evid.evidServerNames, name)
 		}
-		a.evidServerLower = make([]string, len(a.evidServerNames))
-		for i, n := range a.evidServerNames {
-			a.evidServerLower[i] = strings.ToLower(n)
+		a.evid.evidServerLower = make([]string, len(a.evid.evidServerNames))
+		for i, n := range a.evid.evidServerNames {
+			a.evid.evidServerLower[i] = strings.ToLower(n)
 		}
 	}
-	a.evidServerPickerOpen = true
-	a.evidServerScroll = 0
-	a.evidServerSearch = ""
-	if !a.evidServerBusy && a.link.urls.Origin() != "" {
-		a.evidServerBusy = true
+	a.evid.evidServerPickerOpen = true
+	a.evid.evidServerScroll = 0
+	a.evid.evidServerSearch = ""
+	if !a.evid.evidServerBusy && a.link.urls.Origin() != "" {
+		a.evid.evidServerBusy = true
 		go a.fetchServerEvidenceIndex()
 	}
 }
@@ -70,7 +70,7 @@ func (a *App) fetchServerEvidenceIndex() {
 	defer cancel()
 	data, err := a.d.Manager.FetchRaw(ctx, a.link.urls.EvidenceRoot())
 	if err != nil {
-		a.evidServerRes <- nil
+		a.evid.evidServerRes <- nil
 		return
 	}
 	entries := parseAutoindexEntries(data, evidServerCap)
@@ -82,19 +82,19 @@ func (a *App) fetchServerEvidenceIndex() {
 		out = append(out, e.name)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
-	a.evidServerRes <- out
+	a.evid.evidServerRes <- out
 }
 
 // pollServerEvidencePicker drains a finished index fetch into the name list.
 func (a *App) pollServerEvidencePicker() {
-	if a.evidServerRes == nil {
+	if a.evid.evidServerRes == nil {
 		return
 	}
 	for {
 		select {
-		case names := <-a.evidServerRes:
+		case names := <-a.evid.evidServerRes:
 			a.mergeServerEvidenceNames(names)
-			a.evidServerBusy = false
+			a.evid.evidServerBusy = false
 		default:
 			return
 		}
@@ -104,13 +104,13 @@ func (a *App) pollServerEvidencePicker() {
 // mergeServerEvidenceNames appends discovered names, de-duplicated case-insensitively
 // and capped at evidServerCap.
 func (a *App) mergeServerEvidenceNames(names []string) {
-	have := make(map[string]bool, len(a.evidServerNames))
-	for _, n := range a.evidServerNames {
+	have := make(map[string]bool, len(a.evid.evidServerNames))
+	for _, n := range a.evid.evidServerNames {
 		have[strings.ToLower(n)] = true
 	}
 	for _, n := range names {
 		n = strings.TrimSpace(n)
-		if n == "" || len(a.evidServerNames) >= evidServerCap {
+		if n == "" || len(a.evid.evidServerNames) >= evidServerCap {
 			break
 		}
 		k := strings.ToLower(n)
@@ -118,8 +118,8 @@ func (a *App) mergeServerEvidenceNames(names []string) {
 			continue
 		}
 		have[k] = true
-		a.evidServerNames = append(a.evidServerNames, n)
-		a.evidServerLower = append(a.evidServerLower, k)
+		a.evid.evidServerNames = append(a.evid.evidServerNames, n)
+		a.evid.evidServerLower = append(a.evid.evidServerLower, k)
 	}
 }
 
@@ -149,11 +149,11 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Choose evidence image — server", ColText)
 	if c.Button(sdl.Rect{X: m.X + mw - 80 - pad, Y: m.Y + pad - 4, W: 80, H: btnH}, "Close") {
-		a.evidServerPickerOpen = false
+		a.evid.evidServerPickerOpen = false
 		return
 	}
 	y := m.Y + pad + 40
-	a.evidServerSearch, _ = c.TextField("evidserverpickersearch", sdl.Rect{X: m.X + pad, Y: y, W: mw - 2*pad, H: fieldH}, a.evidServerSearch, "filter server images…")
+	a.evid.evidServerSearch, _ = c.TextField("evidserverpickersearch", sdl.Rect{X: m.X + pad, Y: y, W: mw - 2*pad, H: fieldH}, a.evid.evidServerSearch, "filter server images…")
 	y += fieldH + 10
 
 	grid := sdl.Rect{X: m.X + pad, Y: y, W: mw - 2*pad, H: m.Y + mh - pad - y}
@@ -162,23 +162,23 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 	if cols < 1 {
 		cols = 1
 	}
-	q := strings.ToLower(a.evidServerSearch)
-	names := make([]string, 0, len(a.evidServerNames))
-	for i, n := range a.evidServerNames {
-		if q == "" || strings.Contains(a.evidServerLower[i], q) {
+	q := strings.ToLower(a.evid.evidServerSearch)
+	names := make([]string, 0, len(a.evid.evidServerNames))
+	for i, n := range a.evid.evidServerNames {
+		if q == "" || strings.Contains(a.evid.evidServerLower[i], q) {
 			names = append(names, n)
 		}
 	}
 	if len(names) == 0 {
-		c.LabelClipped(grid.X, grid.Y+4, grid.W, serverEvidenceEmptyLabel(a.evidServerBusy, a.evidServerSearch != ""), ColTextDim)
+		c.LabelClipped(grid.X, grid.Y+4, grid.W, serverEvidenceEmptyLabel(a.evid.evidServerBusy, a.evid.evidServerSearch != ""), ColTextDim)
 		return
 	}
 	rows := (int32(len(names)) + cols - 1) / cols
 	rowPitch := evidServerCell + evidServerCellGap + evidServerNameBand
 	contentH := rows*rowPitch - evidServerCellGap
-	a.evidServerScroll -= c.WheelIn(grid) * rowPitch
+	a.evid.evidServerScroll -= c.WheelIn(grid) * rowPitch
 	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
-	a.evidServerScroll = c.VScrollbar("evidserverpicker", track, a.evidServerScroll, contentH, grid.H)
+	a.evid.evidServerScroll = c.VScrollbar("evidserverpicker", track, a.evid.evidServerScroll, contentH, grid.H)
 	// Clip AFTER the wheel/scrollbar resolve, like the other icon grids
 	// (charGridScroll, drawEvidenceGrid, drawSfxBrowser): hovering() honours clipOn,
 	// and the scrollbar's grab slop extends past the grid's right edge, so pushing
@@ -187,7 +187,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 	for i, name := range names {
 		col, row := int32(i)%cols, int32(i)/cols
 		cx := grid.X + col*(evidServerCell+evidServerCellGap)
-		cy := grid.Y + row*rowPitch - a.evidServerScroll
+		cy := grid.Y + row*rowPitch - a.evid.evidServerScroll
 		if cy+evidServerCell+evidServerNameBand <= grid.Y || cy >= grid.Y+grid.H {
 			continue
 		}
@@ -202,8 +202,8 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+evidServerCell+2, evidServerCell, name, ColTextDim)
 		if c.hovering(rc) && c.clicked {
-			a.evidImage = name
-			a.evidServerPickerOpen = false
+			a.evid.evidImage = name
+			a.evid.evidServerPickerOpen = false
 		}
 	}
 	c.popClip(clipPrev, clipHad)

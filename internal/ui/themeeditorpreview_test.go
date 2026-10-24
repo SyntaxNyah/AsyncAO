@@ -818,11 +818,11 @@ func TestLeavingPreviewFreesTheDemosChatTextures(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	live := a.msRaster
+	live := a.raster.msRaster
 
 	enterPreviewByButton(t, a)
 	driveFrames(a, previewDriveFrames)
-	demo := a.te.preview.state.msRaster
+	demo := a.te.preview.state.raster.msRaster
 	if demo == nil {
 		t.Skip("this build's demo pass rasterised no chat text — there is nothing to leak, so the gate " +
 			"would pass for the wrong reason")

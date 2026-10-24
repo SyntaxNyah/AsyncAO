@@ -140,13 +140,13 @@ func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 func TestDrawAreaHeaderRowReadsARUPStatusLive(t *testing.T) {
 	a, ct, rect, cleanup := arupPixelFixture(t, 400, 30)
 	defer cleanup()
-	a.rosterLegacy = true
-	a.areaPlayers = []areaPlayer{
+	a.roster.rosterLegacy = true
+	a.roster.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "1", name: "maya", area: "Courtroom"},
 	}
-	a.areaListAt = time.Now()
-	a.playerSort = playerSortUID
+	a.roster.areaListAt = time.Now()
+	a.roster.playerSort = playerSortUID
 	a.link.sess = &courtroom.Session{
 		Areas:    []string{"Lobby", "Courtroom"},
 		AreaInfo: []courtroom.AreaInfo{{Players: 1}, {Players: 1}},

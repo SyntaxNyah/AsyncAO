@@ -23,7 +23,7 @@ func newTimerApp(t *testing.T) *App {
 // reset returns to idle showing the configured duration. Start also persists.
 func TestTimerLifecycle(t *testing.T) {
 	a := newTimerApp(t)
-	a.timerSetSec = 120
+	a.timer.timerSetSec = 120
 
 	a.startTimer()
 	if !a.timerRunning() {
@@ -40,10 +40,10 @@ func TestTimerLifecycle(t *testing.T) {
 	if a.timerRunning() {
 		t.Error("pause: must not be running")
 	}
-	if !a.timerActive() || a.timerPausedLeft <= 0 {
+	if !a.timerActive() || a.timer.timerPausedLeft <= 0 {
 		t.Error("pause: want paused (active, remainder frozen)")
 	}
-	frozen := a.timerPausedLeft
+	frozen := a.timer.timerPausedLeft
 
 	a.resumeTimer()
 	if !a.timerRunning() {
@@ -67,9 +67,9 @@ func TestTimerLifecycle(t *testing.T) {
 func TestTimerFire(t *testing.T) {
 	a := newTimerApp(t)
 
-	a.timerSetSec = 60
-	a.timerRepeat = false
-	a.timerEndAt = time.Now().Add(-time.Second) // already due
+	a.timer.timerSetSec = 60
+	a.timer.timerRepeat = false
+	a.timer.timerEndAt = time.Now().Add(-time.Second) // already due
 	a.pollTimer()
 	if a.timerRunning() {
 		t.Error("no-repeat: must stop after firing")
@@ -78,8 +78,8 @@ func TestTimerFire(t *testing.T) {
 		t.Errorf("warn banner = %q, want \"Timer finished!\"", a.warnLine)
 	}
 
-	a.timerRepeat = true
-	a.timerEndAt = time.Now().Add(-time.Second)
+	a.timer.timerRepeat = true
+	a.timer.timerEndAt = time.Now().Add(-time.Second)
 	a.pollTimer()
 	if !a.timerRunning() {
 		t.Fatal("repeat: must restart")

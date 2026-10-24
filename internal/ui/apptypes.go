@@ -8,13 +8,11 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -80,107 +78,11 @@ type sessionState struct {
 	loginPass   string
 	loginAuto   bool
 
-	// --- viewport camera (hyperfocus zoom; 0 or 1 = off) ---
-	vpZoom   float64
-	vpPanX   float64 // pan fractions of the zoom overflow (0..1)
-	vpPanY   float64
-	zoomDrag bool
-	zoomPrev bool // last frame's mouseDown (edge detect)
+	cam cameraState
 
-	// M16: drag the viewport's right edge to resize it (vpPct), the mouse
-	// alternative to the View knob. dragVpDivider is the active grab.
-	dragVpDivider  bool
-	dividerPrevDwn bool // mouseDown edge detect for the divider grab
-	zoomStart      [2]int32
-	zoomBase       [2]float64
-
-	// --- court extras (HP / WTCE / modcall / evidence) ---
-	wtceName    string    // active splash stem ("" = none)
-	wtceAt      time.Time // splash start (frame stepping + expiry)
-	testimonyOn bool      // persistent "Testimony" recording badge (RT 2.9)
-	hpPrev      [2]int    // last drawn HP per bar — penalty sfx direction
-	showModcall bool      // modcall reason dialog
-	// Local alarm/timer (#97, opt-in): a personal countdown distinct from the
-	// server courtroom timers. App-global (one timer across all tabs, like DND).
-	// timerEndAt zero = not counting down; timerPausedLeft > 0 = paused; both at
-	// rest = idle, so pollTimer and the on-stage chip cost nothing when unused.
-	showTimer       bool
-	timerEndAt      time.Time     // when the running countdown fires (zero = not running)
-	timerPausedLeft time.Duration // frozen remainder while paused (0 = not paused)
-	timerSetSec     int           // configured duration, seeded from prefs on first open
-	timerRepeat     bool          // restart from the same duration on fire
-	timerSeeded     bool          // timerSetSec loaded from prefs once
-	showEvid        bool          // evidence panel
-	evidIdx         int           // selected evidence (-1 = none)
-	evidPresent     bool          // armed: next IC message carries the selection
-	evidEditing     bool          // editor open (add when evidIdx == -1)
-	evidName        string
-	evidDesc        string
-	evidImage       string
-	evidScroll      int32
-	// evidDescScroll (Issue #15) scrolls the inspector's description text
-	// instead of forcing the whole panel to be resized to read it.
-	// evidDescScrollIdx remembers which item it belongs to so switching the
-	// selection resets the scroll rather than carrying over a stale offset.
-	evidDescScroll    int32
-	evidDescScrollIdx int
-	evidAsk           []time.Time // thumbnail demand pacing, parallel to Evidence
-	// evShow is the incoming presented-evidence pop-up.
-	evShowImg string
-	evShowAt  time.Time
-	// evidPresentImage is the #59 present-image override: when armed and
-	// non-empty, presenting shows THIS image instead of the selected evidence's
-	// own image (decouples the presented picture from the evidence id).
-	evidPresentImage string
-	// evidCtxMenu opens a small right-click context menu over the evidence list
-	// (Edit / Delete / Present / Pin), positioned at evidCtxX/evidCtxY.
-	evidCtxMenu bool
-	evidCtxX    int32
-	evidCtxY    int32
-	// evidInspectorDetached pops the inspector (the right column, which now
-	// hosts editing as a view/edit toggle) out into its own floating window;
-	// evidInspectorWin is that window's geometry. One at a time for now — the
-	// inspector edits a single selection, so "multiple edited evidences" would
-	// mean multiple of these windows later.
-	evidInspectorDetached bool
-	evidInspectorWin      floatWin
-	// evidGridView toggles the evidence browser between the DRO-style icon
-	// list and the AO2 thumbnail grid. In-memory (not persisted): the earlier
-	// evidenceMode preference was dropped and this is a quick layout flip, not
-	// a stored setting.
-	evidGridView bool
-	// evidIconSize scales the evidence list icons and grid cells (32–96 px;
-	// default 40). In-memory like evidGridView — the icon-size slider in the
-	// evidence window drives it and both layouts rescale together.
-	evidIconSize int32
-	// evidStream toggles the evidence panel's image source: OFF (default) reads
-	// evidence images from the user's local mounts (local://); ON streams them
-	// from the server. Session-scoped. evidLocalOrigin caches the local:// origin
-	// (rebuilt on mount change); "" when there are no local mounts, so the toggle
-	// falls back to streaming.
-	evidStream      bool
-	evidLocalOrigin string
-	// Server evidence image picker (#119 stream mode): the evidence editor's
-	// "Browse…" button, when streaming is on, opens this modal grid of the server's
-	// evidence/ autoindex instead of the local folder browser.
-	evidServerPickerOpen bool
-	evidServerNames      []string
-	evidServerLower      []string
-	evidServerRes        chan []string
-	evidServerBusy       bool
-	evidServerSearch     string
-	evidServerScroll     int32
-	// evidDiscardConfirm is the "Stop editing?" modal: swapping the selection
-	// (or Add new) while the editor is open first asks. evidDiscardTarget is
-	// the index the swap would land on (-1 = Add new).
-	evidDiscardConfirm bool
-	evidDiscardTarget  int
-	// evidConflict is the incoming-edit compare view: an EE for the item being
-	// edited arrived while the editor was open. evidIncoming snapshots the
-	// server's new {name,desc,image} so the user can Keep mine / Accept theirs
-	// instead of silently losing the unsaved work.
-	evidConflict bool
-	evidIncoming courtroom.EvidenceItem
+	courtxtra courtExtrasState
+	timer     timerState
+	evid      evidenceState
 	// The evidence image picker USED TO LIVE HERE as evidPickerOpen/Search/Scroll/
 	// Files/Lower/Busy/Scanned/Res (a modal thumbnail grid fed by a local scan plus
 	// the server's evidence/ autoindex). Both of its sources were wrong for the
@@ -204,174 +106,10 @@ type sessionState struct {
 
 	demand demandClockState
 
-	areaUIDs      map[string]string
-	areaPlayers   []areaPlayer
-	areaLastUID   string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
-	areaCurName   string    // area currently being parsed in a /gas block (tags each player's .area)
-	areaListAt    time.Time // when the current roster snapshot was parsed ("as of HH:MM")
-	pairAreaReset bool
-	// Live player list (M1): rosterLegacy off (default) = the CharsCheck/ARUP
-	// roster that updates as people join/leave with no extra traffic; on = the
-	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
-	// so a live row shows the showname, not the bare character folder.
-	rosterLegacy  bool
-	livePlayersOn bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
-	liveRoster    []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
-	liveRosterAt  time.Time    // live roster's last change — the rows/order memo key
-	// New-joiner highlight (#107): joinFlash[uid] = when a UID first appeared in the live
-	// roster (zero value = present at the first population, never flashed). Updated only on a
-	// roster change (updateJoinFlash); the per-frame row draw just reads it (0-alloc).
-	joinFlash     map[string]time.Time
-	joinFlashInit bool
-	// pairPartners maps a lowercased character → who they last spoke PAIRED with (#20, opt-in
-	// player-list chip). A paired IC message sets it; a solo one clears it, so it tracks the
-	// player's CURRENT pair as of their latest line. Per-tab; bounded by pairPartnersCap.
-	pairPartners map[string]string
-	// Player-list profile card popover (#101): which profile to show + its title.
-	profileCardShow bool
-	profileCardPr   config.ProfilePref
-	profileCardName string
-	// Player-row action menu (rostermenu.go): the "…" / right-click popup that
-	// replaced the per-row button cluster. Holds an identity SNAPSHOT (the
-	// roster can refresh under an open menu) and the modal-fence latch.
-	rosterMenuOpen    bool
-	rosterMenuFenceOn bool             // WE hold modalOn for the open menu (released on close)
-	rosterMenuMe      bool             // the snapshot row is our own client
-	rosterMenuAt      sdl.Point        // preferred top-left (clamped at draw)
-	rosterMenuTab     int              // tab the menu opened on — auto-close on switch
-	rosterMenuP       areaPlayer       // identity snapshot (uid/name/showname/ooc/ipid)
-	rosterMenuItems   []rosterMenuItem // built at open; bounded by the action-kind count
-	// Music panel overflow ("kebab") menu (musicheader.go): the anchored popup that
-	// took the playback flags and the volume-view toggle off the header row. Same
-	// modal-fence + tab-latch discipline as the roster menu above.
-	musicMenuOpen         bool
-	musicMenuFenceOn      bool      // WE hold modalOn for the open menu (released on close)
-	musicMenuAt           sdl.Point // preferred top-left (clamped at draw)
-	musicMenuTab          int       // tab the menu opened on — auto-close on switch
-	musicMenuThemed       bool      // the panel drew inside a theme canvas when it opened (gates the volume-view row)
-	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
-	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	// lastRosterFetch (the 3 s poll debounce) and rosterCmdUnsupported (the "this
-	// server rejected /gas — stop sending it" latch) are DELETED along with the
-	// automatic poll they served; see liveroster.go. The latch could only do harm
-	// now: with every surviving fetch coming from a button, silently disabling one
-	// for the rest of the session would turn a press into nothing at all.
-	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
-	// off); we auto-jump to their area on each PR/PU update, debounced.
-	followUID      string
-	lastFollowJump time.Time
-	followShow     bool // FollowEnabled pref, read once per player-list frame (no per-row lock)
-	pairStatusShow bool // ShowPairStatus pref (#20), read once per player-list frame (no per-row lock)
-	// areaHistory is the most-recently-visited areas (MRU, index 0 = current),
-	// driven by our own PR/PU area; the Areas tab shows the rest as jump-back
-	// chips (M3). Bounded by areaHistoryCap.
-	areaHistory    []string
-	shownameFor    map[string]string
-	lastSFXName    string // M11: most-recent emote SFX name, for one-click "Mute last SFX"
-	lastBlipChar   string // M11: most-recent speaker char, for one-click per-character blip volume
-	pairListScroll int32
-	playerScroll   int32 // Players-tab roster scroll
-	// Area-jump scroll follow (the "click to jump →" fix): the grouped roster
-	// floats the just-jumped area to the top only on the next memo REBUILD (a
-	// server round-trip — a PR/PU roster bump or /gas refresh reorders the list),
-	// so a one-shot scroll at click time would target the pre-reorder position and
-	// the row would then slide out from under it. Instead we latch the target and
-	// re-nudge it into view every frame until it expires: the frame after the
-	// rebuild reorders the list, the nudge follows the row to its new spot.
-	areaJumpFollow      string    // target area name to keep scrolled into view ("" = disarmed)
-	areaJumpFollowUntil time.Time // hard expiry: a lost/rejected transfer can never pin the scroll past this
-	playerSort          int       // roster sort (players): 0=UID, 1=name, 2=speakers-first
-	playerAreaSort      int       // /gas area-group order: 0=/gas, 1=A→Z, 2=most-populated
-	shownameAdd         string    // M6: Settings "save a showname preset" input
-	// playerOrder is the memoized display order (indices into areaPlayers); it
-	// recomputes only when the roster, sort mode, or current speaker change, so
-	// the Players tab never sorts per-frame.
-	playerOrder     []int
-	playerOrderSort int
-	playerOrderLen  int
-	playerOrderSpk  string
-	playerOrderAt   time.Time
-	// playerRows is the memoized GROUPED display (area headers + players) used
-	// when a /gas spans areas; same invalidation keys as playerOrder.
-	playerRows         []rosterRow
-	playerRowsSort     int
-	playerRowsAreaSort int
-	playerRowsLen      int
-	playerRowsSpk      string
-	playerRowsAt       time.Time
-	playerRowsAreaAt   time.Time // areaListAt the rows were built at (a /gas reorders the default)
-	// player-row char icons: same demand/cache pipeline as the char grid, but
-	// keyed by the areaPlayers index (sort-stable). NULLED on every /ga replace
-	// so a same-length new roster re-resolves (cachedPage reorder invariant).
-	playerIconPages    []*render.TexturePage
-	playerIconPagesGen uint64
-	playerIconAsk      []time.Time
-	// voiceIconAsk paces char-icon fetches for the voice panel rows (timing stamps
-	// only — the texture itself comes straight from the URL-keyed Store, so there's
-	// no index→page cache to corrupt). Sized to the live peer count.
-	voiceIconAsk []time.Time
+	roster rosterState
 
-	// client-side sprite position overrides, keyed by lowercased character
-	// folder: the server keeps setting positions per message, the client
-	// wins afterwards (drag in the viewport; right-click a sprite resets).
-	spriteOv  map[string][2]int
-	dragName  string // character being dragged ("" = none)
-	dragStart [2]int32
-	dragBase  [2]int
-	prevDown  bool // mouseDown edge detection for drag begin
+	raster rasterCacheState
 
-	// chat raster invalidation extras (text/color tracked separately)
-	rasterScale      int
-	rasterW          int32
-	rasterSkinned    bool      // a drawn chatbox skin (theme OR per-character) gates theme text colors (readability)
-	rasterChatMsg    theme.RGB // per-character chatbox ink the message raster was built with (cache key)
-	rasterChatMsgHas bool
-	rasterDevPct     int32 // #77: the device font scale the raster was built at — a UI-scale change must rebuild it
-
-	msRaster   *render.MessageRaster
-	rasterText string
-	// rasterFailedText is the message whose raster could NOT be built, arming the
-	// chatbox's plain-label fallback. Empty in the normal case. It exists because
-	// the failure is otherwise invisible AND permanent: msRaster stays nil, the
-	// cache key is never recorded, so every frame retries, fails the same way, and
-	// draws no text at all under a showname that still paints — which reads as
-	// "the client stopped receiving IC" rather than as a font/texture fault.
-	rasterFailedText string
-	// chatDiag is the last frame's chatbox geometry, shown in Debug → Session.
-	// It exists because the "message text is cut off at a scaled UI" report could
-	// not be reproduced on the machines the developers have: every candidate was
-	// eliminated by measurement EXCEPT the numbers on the reporter's own screen,
-	// which nobody could see. Printing them turns the affected machine into the
-	// measuring instrument instead of asking it for another screenshot.
-	chatDiag struct {
-		vpH, boxY, boxH     int32
-		textY, wrapW        int32
-		lines, lineH        int32
-		devScale, renderPct int32
-		visible, total      int32
-		grew                bool
-	}
-	// rasterRaw is the pre-strip message the cached raster was built from — the
-	// cache key, since two differently-colored messages can share the same
-	// stripped MessageText (the cachedPage index-key class of bug).
-	rasterRaw string
-
-	// last-applied scene text color (raster invalidation)
-	rasterColor int
-
-	// Animated chat text (#M5): when the message carries effect spans, msAnim
-	// replaces msRaster for this message (the per-glyph path that can displace +
-	// recolour). msAnimFont is the face it was laid out with (the glyph cache keys
-	// on it); glyphCache holds the white glyph textures, shared + bounded. A plain
-	// message never builds msAnim, so its draw path is byte-identical to before.
-	// rasterEffSig folds the effect spans into the raster cache key.
-	msAnim       *render.AnimatedText
-	msAnimFont   *ttf.Font
-	glyphCache   *render.GlyphCache
-	rasterEffSig uint64
-	// rasterCentered folds the webAO "~~" centre flag into the raster cache key, so a
-	// centred "hi" and a plain "hi" (same stripped text) don't share one raster.
-	rasterCentered bool
 	// Creator easter eggs: the detection cache (text + resolved kind) is its own
 	// component (eggstate.go), parked with the tab.
 	eggs eggs

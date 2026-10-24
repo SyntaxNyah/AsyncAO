@@ -952,7 +952,7 @@ func (a *App) menuBarModalFence(c *Ctx) {
 // the same discipline, and every one of them runs above the menu bar in App.Frame, so
 // their flags are already this frame's answer by the time the bar releases.
 func (a *App) otherModalFenceHeld() bool {
-	return a.emoji.emojiFenceOn || a.reactUI.reactFenceOn || a.rosterMenuFenceOn || a.musicMenuFenceOn || a.updates.fenceHeld()
+	return a.emoji.emojiFenceOn || a.reactUI.reactFenceOn || a.roster.rosterMenuFenceOn || a.roster.musicMenuFenceOn || a.updates.fenceHeld()
 }
 
 // menuBarInput resolves the bar's own interaction. Every hit test is raw pointIn:

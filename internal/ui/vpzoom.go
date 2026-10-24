@@ -23,14 +23,14 @@ const (
 // zoomDst maps the viewport rect to the zoomed destination: vp scaled by
 // vpZoom with the pan fractions picking which slice stays visible.
 func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
-	if a.vpZoom <= 1 {
+	if a.cam.vpZoom <= 1 {
 		return vp
 	}
-	zw := int32(float64(vp.W) * a.vpZoom)
-	zh := int32(float64(vp.H) * a.vpZoom)
+	zw := int32(float64(vp.W) * a.cam.vpZoom)
+	zh := int32(float64(vp.H) * a.cam.vpZoom)
 	return sdl.Rect{
-		X: vp.X - int32(a.vpPanX*float64(zw-vp.W)),
-		Y: vp.Y - int32(a.vpPanY*float64(zh-vp.H)),
+		X: vp.X - int32(a.cam.vpPanX*float64(zw-vp.W)),
+		Y: vp.Y - int32(a.cam.vpPanY*float64(zh-vp.H)),
 		W: zw,
 		H: zh,
 	}
@@ -52,7 +52,7 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	if a.d.Viewport != nil && a.d.Viewport.AmbientAnimating(sc) {
 		a.NoteAnimating()
 	}
-	if a.vpZoom <= 1 {
+	if a.cam.vpZoom <= 1 {
 		a.d.Viewport.Render(c.Ren, sc, vp)
 		a.drawEditorPreviewFigure(vp) // theme-editor demo stand-in (no-op unless previewing)
 		a.drawStageEgg(vp, sc)        // Scatterflower petals, behind the frame and the chatbox
@@ -77,7 +77,7 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	// Reset chip, top-right of the stage.
 	chip := sdl.Rect{X: vp.X + vp.W - 40, Y: vp.Y + 4, W: 36, H: 20}
 	if c.Button(chip, "1×") {
-		a.vpZoom, a.vpPanX, a.vpPanY = 1, 0, 0
+		a.cam.vpZoom, a.cam.vpPanX, a.cam.vpPanY = 1, 0, 0
 	}
 }
 
@@ -86,14 +86,14 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 // cursor sits in the chat box band (that area's Ctrl+wheel resizes text).
 func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 	c := a.ctx
-	if vp.W <= 0 || vp.H <= 0 || a.dragVpDivider || a.courtModalOpen() {
+	if vp.W <= 0 || vp.H <= 0 || a.cam.dragVpDivider || a.courtModalOpen() {
 		return // a blocking popup (Pair menu, evidence…) fences the stage
 	}
 
 	// Zoom: Ctrl+wheel over the stage (outside the chat text band).
 	if c.ctrlHeld && !c.wheelTaken && c.wheelY != 0 && c.hovering(vp) && !inChatBox {
 		c.wheelTaken = true
-		old := a.vpZoom
+		old := a.cam.vpZoom
 		if old < 1 {
 			old = 1
 		}
@@ -108,7 +108,7 @@ func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 			z = vpZoomMax
 		}
 		if z < vpZoomSnap {
-			a.vpZoom, a.vpPanX, a.vpPanY = 1, 0, 0
+			a.cam.vpZoom, a.cam.vpPanX, a.cam.vpPanY = 1, 0, 0
 			return
 		}
 		// Zoom-to-cursor: keep the scene point under the mouse fixed.
@@ -116,41 +116,41 @@ func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 		oldDst := a.zoomDst(vp)
 		u := float64(c.mouseX-oldDst.X) / float64(oldDst.W)
 		v := float64(c.mouseY-oldDst.Y) / float64(oldDst.H)
-		a.vpZoom = z
+		a.cam.vpZoom = z
 		zw := float64(vp.W) * z
 		zh := float64(vp.H) * z
 		// Solve pan so u stays under the cursor: dst.X = mouseX - u*zw.
 		if zw > float64(vp.W) {
-			a.vpPanX = clampFrac((u*zw - float64(c.mouseX-vp.X)) / (zw - float64(vp.W)))
+			a.cam.vpPanX = clampFrac((u*zw - float64(c.mouseX-vp.X)) / (zw - float64(vp.W)))
 		}
 		if zh > float64(vp.H) {
-			a.vpPanY = clampFrac((v*zh - float64(c.mouseY-vp.Y)) / (zh - float64(vp.H)))
+			a.cam.vpPanY = clampFrac((v*zh - float64(c.mouseY-vp.Y)) / (zh - float64(vp.H)))
 		}
 	}
 
 	// Pan: Ctrl+drag while zoomed.
-	if a.vpZoom <= 1 {
-		a.zoomDrag = false
+	if a.cam.vpZoom <= 1 {
+		a.cam.zoomDrag = false
 		return
 	}
-	pressed := c.mouseDown && !a.zoomPrev
-	a.zoomPrev = c.mouseDown
+	pressed := c.mouseDown && !a.cam.zoomPrev
+	a.cam.zoomPrev = c.mouseDown
 	if pressed && c.ctrlHeld && c.hovering(vp) {
-		a.zoomDrag = true
-		a.zoomStart = [2]int32{c.mouseX, c.mouseY}
-		a.zoomBase = [2]float64{a.vpPanX, a.vpPanY}
+		a.cam.zoomDrag = true
+		a.cam.zoomStart = [2]int32{c.mouseX, c.mouseY}
+		a.cam.zoomBase = [2]float64{a.cam.vpPanX, a.cam.vpPanY}
 	}
 	if !c.mouseDown {
-		a.zoomDrag = false
+		a.cam.zoomDrag = false
 	}
-	if a.zoomDrag {
-		overX := float64(vp.W) * (a.vpZoom - 1)
-		overY := float64(vp.H) * (a.vpZoom - 1)
+	if a.cam.zoomDrag {
+		overX := float64(vp.W) * (a.cam.vpZoom - 1)
+		overY := float64(vp.H) * (a.cam.vpZoom - 1)
 		if overX > 0 {
-			a.vpPanX = clampFrac(a.zoomBase[0] - float64(c.mouseX-a.zoomStart[0])/overX)
+			a.cam.vpPanX = clampFrac(a.cam.zoomBase[0] - float64(c.mouseX-a.cam.zoomStart[0])/overX)
 		}
 		if overY > 0 {
-			a.vpPanY = clampFrac(a.zoomBase[1] - float64(c.mouseY-a.zoomStart[1])/overY)
+			a.cam.vpPanY = clampFrac(a.cam.zoomBase[1] - float64(c.mouseY-a.cam.zoomStart[1])/overY)
 		}
 	}
 }

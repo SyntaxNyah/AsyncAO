@@ -236,7 +236,7 @@ func TestMenuBarReleaseDoesNotStealASiblingFence(t *testing.T) {
 	const w, h = int32(1280), int32(720)
 
 	// The roster menu is open and holding the shared flag.
-	a.rosterMenuOpen, a.rosterMenuFenceOn = true, true
+	a.roster.rosterMenuOpen, a.roster.rosterMenuFenceOn = true, true
 	c.modalOn = true
 
 	a.menuOpen = menuBarMenus[0].title
@@ -255,7 +255,7 @@ func TestMenuBarReleaseDoesNotStealASiblingFence(t *testing.T) {
 	}
 
 	// With no sibling holding it, the ordinary release still happens.
-	a.rosterMenuOpen, a.rosterMenuFenceOn = false, false
+	a.roster.rosterMenuOpen, a.roster.rosterMenuFenceOn = false, false
 	c.modalOn = false
 	a.menuOpen = menuBarMenus[0].title
 	menuBarFrameFor(a, w, h)

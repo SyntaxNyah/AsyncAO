@@ -127,10 +127,10 @@ func buildLivePlayers(players []courtroom.LivePlayer, areas []string, ipidByUID 
 // merge is exact (unlike the old by-name match). Nil when no snapshot has IPIDs.
 func (a *App) ipidByUID() map[string]string {
 	var m map[string]string
-	for i := range a.areaPlayers {
-		if p := &a.areaPlayers[i]; p.uid != "" && p.ipid != "" {
+	for i := range a.roster.areaPlayers {
+		if p := &a.roster.areaPlayers[i]; p.uid != "" && p.ipid != "" {
 			if m == nil {
-				m = make(map[string]string, len(a.areaPlayers))
+				m = make(map[string]string, len(a.roster.areaPlayers))
 			}
 			m[p.uid] = p.ipid
 		}
@@ -166,7 +166,7 @@ func rosterEqual(a, b []areaPlayer) bool {
 // reorder invariant — a same-length new roster reuses indices) and restamps the
 // memo time so the grouped-rows cache rebuilds once.
 func (a *App) rebuildLiveRoster() {
-	if a.rosterLegacy || a.link.sess == nil {
+	if a.roster.rosterLegacy || a.link.sess == nil {
 		return
 	}
 	var next []areaPlayer
@@ -174,24 +174,24 @@ func (a *App) rebuildLiveRoster() {
 		// Primary: the server-pushed PR/PU roster — live UIDs, shownames, OOC
 		// names and areas, plus spectators, with no /getarea polling. IPID is
 		// enriched by UID from the last snapshot (mod-only) when present.
-		a.livePlayersOn = true
+		a.roster.livePlayersOn = true
 		next = buildLivePlayers(live, a.link.sess.Areas, a.ipidByUID())
 	} else {
-		a.livePlayersOn = false
-		if len(a.areaPlayers) > 0 {
+		a.roster.livePlayersOn = false
+		if len(a.roster.areaPlayers) > 0 {
 			return // no PR/PU on this server; the /getarea snapshot is the roster
 		}
 		// Pre-PR/PU fallback: name-only rows from CharsCheck so the list isn't blank.
 		n, ok := a.curAreaPlayers()
-		next = buildLiveRoster(a.link.sess.Chars, n, ok, a.srvMeta.curArea, a.shownameFor, a.areaPlayers)
+		next = buildLiveRoster(a.link.sess.Chars, n, ok, a.srvMeta.curArea, a.roster.shownameFor, a.roster.areaPlayers)
 	}
-	if rosterEqual(a.liveRoster, next) {
+	if rosterEqual(a.roster.liveRoster, next) {
 		return
 	}
-	a.liveRoster = next
-	a.playerIconPages = nil // re-resolve icons (same-length new roster reuses indices)
-	a.liveRosterAt = a.now()
-	a.updateJoinFlash(a.liveRosterAt) // new-joiner highlight (#107)
+	a.roster.liveRoster = next
+	a.roster.playerIconPages = nil // re-resolve icons (same-length new roster reuses indices)
+	a.roster.liveRosterAt = a.now()
+	a.updateJoinFlash(a.roster.liveRosterAt) // new-joiner highlight (#107)
 }
 
 // joinFlashWindow is how long a newly-joined player's row stays highlighted.
@@ -204,27 +204,27 @@ const joinFlashWindow = 4 * time.Second
 // only from rebuildLiveRoster on a real roster change, so the per-frame draw just does
 // a 0-alloc map lookup.
 func (a *App) updateJoinFlash(now time.Time) {
-	if a.joinFlash == nil {
-		a.joinFlash = make(map[string]time.Time, len(a.liveRoster)+4)
+	if a.roster.joinFlash == nil {
+		a.roster.joinFlash = make(map[string]time.Time, len(a.roster.liveRoster)+4)
 	}
-	stampNew := a.joinFlashInit // skip flashing the initial population
-	for i := range a.liveRoster {
-		uid := a.liveRoster[i].uid
+	stampNew := a.roster.joinFlashInit // skip flashing the initial population
+	for i := range a.roster.liveRoster {
+		uid := a.roster.liveRoster[i].uid
 		if uid == "" {
 			continue
 		}
-		if _, ok := a.joinFlash[uid]; !ok {
+		if _, ok := a.roster.joinFlash[uid]; !ok {
 			if stampNew {
-				a.joinFlash[uid] = now
+				a.roster.joinFlash[uid] = now
 			} else {
-				a.joinFlash[uid] = time.Time{} // present at first sight — never flashed
+				a.roster.joinFlash[uid] = time.Time{} // present at first sight — never flashed
 			}
 		}
 	}
-	a.joinFlashInit = true
-	for uid := range a.joinFlash {
+	a.roster.joinFlashInit = true
+	for uid := range a.roster.joinFlash {
 		if _, ok := a.rosterByUID(uid); !ok {
-			delete(a.joinFlash, uid)
+			delete(a.roster.joinFlash, uid)
 		}
 	}
 }
@@ -261,8 +261,8 @@ func (a *App) fetchRoster() {
 		// server — so a double-press collapses to one command.
 		return
 	}
-	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
-	a.pairAreaReset = true
+	a.roster.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
+	a.roster.pairAreaReset = true
 	a.queueOOCLines([]string{rosterCmd})
 }
 
@@ -307,19 +307,19 @@ func (a *App) rosterDetailCmd() string {
 // the snapshot (areaPlayers) directly — it needs the UIDs only /getarea carries,
 // so the live roster lives in its own slice rather than swapping areaPlayers out.
 func (a *App) rosterView() []areaPlayer {
-	if a.rosterLegacy {
-		return a.areaPlayers // explicit legacy /getarea snapshot
+	if a.roster.rosterLegacy {
+		return a.roster.areaPlayers // explicit legacy /getarea snapshot
 	}
-	if a.livePlayersOn {
-		return a.liveRoster // server-pushed PR/PU roster (UIDs/shownames live)
+	if a.roster.livePlayersOn {
+		return a.roster.liveRoster // server-pushed PR/PU roster (UIDs/shownames live)
 	}
 	// No PR/PU on this server: show the /getarea snapshot once it has landed,
 	// else the CharsCheck name-only roster so the list isn't blank. (The pair
 	// popup uses areaPlayers directly too.)
-	if len(a.areaPlayers) > 0 {
-		return a.areaPlayers
+	if len(a.roster.areaPlayers) > 0 {
+		return a.roster.areaPlayers
 	}
-	return a.liveRoster
+	return a.roster.liveRoster
 }
 
 // myAreaName is our current area NAME from the PR/PU roster — reliable on spawn
@@ -338,13 +338,13 @@ func (a *App) myAreaName() string {
 // rosterStamp is the active roster's last-change time — the memo-invalidation
 // key for the grouped rows and sort order.
 func (a *App) rosterStamp() time.Time {
-	if !a.rosterLegacy && a.livePlayersOn {
-		return a.liveRosterAt
+	if !a.roster.rosterLegacy && a.roster.livePlayersOn {
+		return a.roster.liveRosterAt
 	}
-	if a.rosterLegacy || len(a.areaPlayers) > 0 {
-		return a.areaListAt
+	if a.roster.rosterLegacy || len(a.roster.areaPlayers) > 0 {
+		return a.roster.areaListAt
 	}
-	return a.liveRosterAt
+	return a.roster.liveRosterAt
 }
 
 // setRosterLegacy switches the player list between the live roster and the
@@ -352,11 +352,11 @@ func (a *App) rosterStamp() time.Time {
 // changes, so the index-keyed icon cache is dropped; switching back to live
 // rebuilds at once.
 func (a *App) setRosterLegacy(legacy bool) {
-	if a.rosterLegacy == legacy {
+	if a.roster.rosterLegacy == legacy {
 		return
 	}
-	a.rosterLegacy = legacy
-	a.playerIconPages = nil
+	a.roster.rosterLegacy = legacy
+	a.roster.playerIconPages = nil
 	if !legacy {
 		a.rebuildLiveRoster()
 	}
@@ -369,8 +369,8 @@ func (a *App) noteShowname(char, showname string) {
 	if char == "" || showname == "" {
 		return
 	}
-	if a.shownameFor == nil {
-		a.shownameFor = make(map[string]string, 32)
+	if a.roster.shownameFor == nil {
+		a.roster.shownameFor = make(map[string]string, 32)
 	}
-	a.shownameFor[strings.ToLower(char)] = showname
+	a.roster.shownameFor[strings.ToLower(char)] = showname
 }

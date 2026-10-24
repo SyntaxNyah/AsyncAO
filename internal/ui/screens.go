@@ -493,7 +493,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// only at 1× — zoomed hit rects would lie.
 	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
-	if a.vpZoom <= 1 {
+	if a.cam.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
@@ -714,31 +714,31 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 // the View knob's own clamp so the two never disagree.
 func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 	c := a.ctx
-	if !a.d.Prefs.Load().DragLayout || a.vpZoom > 1 || a.courtModalOpen() || a.classic.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
-		a.dragVpDivider = false
-		a.dividerPrevDwn = c.mouseDown
+	if !a.d.Prefs.Load().DragLayout || a.cam.vpZoom > 1 || a.courtModalOpen() || a.classic.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
+		a.cam.dragVpDivider = false
+		a.cam.dividerPrevDwn = c.mouseDown
 		return
 	}
 	handle := sdl.Rect{X: vp.X + vp.W - 4, Y: vp.Y, W: 12, H: vp.H}
 	hot := c.hovering(handle)
 	grip := ColPanelHi
-	if hot || a.dragVpDivider {
+	if hot || a.cam.dragVpDivider {
 		grip = ColAccent
 	}
 	c.Fill(sdl.Rect{X: vp.X + vp.W - 1, Y: vp.Y + vp.H/2 - 24, W: 3, H: 48}, grip) // a subtle edge grip
-	pressed := c.mouseDown && !a.dividerPrevDwn
-	a.dividerPrevDwn = c.mouseDown
+	pressed := c.mouseDown && !a.cam.dividerPrevDwn
+	a.cam.dividerPrevDwn = c.mouseDown
 	if pressed && hot {
-		a.dragVpDivider = true
+		a.cam.dragVpDivider = true
 	}
 	if !c.mouseDown {
-		if a.dragVpDivider {
+		if a.cam.dragVpDivider {
 			a.saveLayout() // persist the new width on release
 		}
-		a.dragVpDivider = false
+		a.cam.dragVpDivider = false
 		return
 	}
-	if a.dragVpDivider && w > 0 {
+	if a.cam.dragVpDivider && w > 0 {
 		// Grabbing the edge is a deliberate "size it freely" gesture, so it takes
 		// back control from an exact-px pin (else the drag would silently no-op
 		// against the shadowing fixed size).
@@ -781,7 +781,7 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 // wins afterwards. Right-click a sprite to reset it. All math runs on
 // press/drag edges only; idle frames cost one bool check.
 func (a *App) handleSpriteDrag(vp sdl.Rect) {
-	if a.dragVpDivider || a.courtModalOpen() {
+	if a.cam.dragVpDivider || a.courtModalOpen() {
 		return // the resize divider owns this press, or a blocking popup fences the stage
 	}
 	if !a.d.Prefs.Load().SpriteMoveOn {
@@ -789,10 +789,10 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 	}
 	c := a.ctx
 	sc := &a.link.room.Scene
-	pressed := c.mouseDown && !a.prevDown
-	a.prevDown = c.mouseDown
+	pressed := c.mouseDown && !a.roster.prevDown
+	a.roster.prevDown = c.mouseDown
 	if !c.mouseDown {
-		a.dragName = "" // release keeps the override, ends the drag
+		a.roster.dragName = "" // release keeps the override, ends the drag
 	}
 
 	// Front-most first, matching render z-order; the chat box area is
@@ -804,35 +804,35 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 		layers[0], layers[1] = &sc.Pair, &sc.Speaker
 	}
 
-	if pressed && c.hovering(vp) && !inChatBox && a.dragName == "" {
+	if pressed && c.hovering(vp) && !inChatBox && a.roster.dragName == "" {
 		for _, layer := range layers {
 			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) && layer.Name != "" {
-				if _, have := a.spriteOv[strings.ToLower(layer.Name)]; !have && len(a.spriteOv) >= spriteOvCap {
+				if _, have := a.roster.spriteOv[strings.ToLower(layer.Name)]; !have && len(a.roster.spriteOv) >= spriteOvCap {
 					break // table full; never unbounded
 				}
-				a.dragName = strings.ToLower(layer.Name)
-				a.dragStart = [2]int32{c.mouseX, c.mouseY}
-				a.dragBase = [2]int{layer.OffsetX, layer.OffsetY}
+				a.roster.dragName = strings.ToLower(layer.Name)
+				a.roster.dragStart = [2]int32{c.mouseX, c.mouseY}
+				a.roster.dragBase = [2]int{layer.OffsetX, layer.OffsetY}
 				break
 			}
 		}
 	}
 
-	if a.dragName != "" && c.mouseDown && vp.W > 0 && vp.H > 0 {
-		dx := int(c.mouseX-a.dragStart[0]) * 100 / int(vp.W)
-		dy := int(c.mouseY-a.dragStart[1]) * 100 / int(vp.H)
-		a.spriteOv[a.dragName] = [2]int{
-			clampOffset(a.dragBase[0] + dx),
-			clampOffset(a.dragBase[1] + dy),
+	if a.roster.dragName != "" && c.mouseDown && vp.W > 0 && vp.H > 0 {
+		dx := int(c.mouseX-a.roster.dragStart[0]) * 100 / int(vp.W)
+		dy := int(c.mouseY-a.roster.dragStart[1]) * 100 / int(vp.H)
+		a.roster.spriteOv[a.roster.dragName] = [2]int{
+			clampOffset(a.roster.dragBase[0] + dx),
+			clampOffset(a.roster.dragBase[1] + dy),
 		}
 	}
 
 	// Right-click a sprite: drop its move override (back to server placement) —
 	// but only when right-click-to-hide is OFF, so the two don't both fire.
-	if c.rightClicked && !a.d.Prefs.Load().RightClickHideSprite && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
+	if c.rightClicked && !a.d.Prefs.Load().RightClickHideSprite && len(a.roster.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
 		for _, layer := range layers {
 			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) {
-				delete(a.spriteOv, strings.ToLower(layer.Name))
+				delete(a.roster.spriteOv, strings.ToLower(layer.Name))
 				break
 			}
 		}

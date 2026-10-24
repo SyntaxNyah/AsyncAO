@@ -19,47 +19,47 @@ import (
 // hot path. App-global (one personal timer across all tabs, like Do-Not-Disturb).
 
 // timerRunning reports a live countdown (not idle, not paused).
-func (a *App) timerRunning() bool { return !a.timerEndAt.IsZero() }
+func (a *App) timerRunning() bool { return !a.timer.timerEndAt.IsZero() }
 
 // timerActive reports a countdown that's running OR paused (so the chip shows).
-func (a *App) timerActive() bool { return a.timerRunning() || a.timerPausedLeft > 0 }
+func (a *App) timerActive() bool { return a.timerRunning() || a.timer.timerPausedLeft > 0 }
 
 // timerRemaining is the time left: until timerEndAt while running, the frozen
 // remainder while paused, else the configured duration (idle preview).
 func (a *App) timerRemaining() time.Duration {
 	switch {
 	case a.timerRunning():
-		if d := time.Until(a.timerEndAt); d > 0 {
+		if d := time.Until(a.timer.timerEndAt); d > 0 {
 			return d
 		}
 		return 0
-	case a.timerPausedLeft > 0:
-		return a.timerPausedLeft
+	case a.timer.timerPausedLeft > 0:
+		return a.timer.timerPausedLeft
 	default:
-		return time.Duration(a.timerSetSec) * time.Second
+		return time.Duration(a.timer.timerSetSec) * time.Second
 	}
 }
 
 // openTimer seeds the configured duration from prefs once, then shows the panel.
 func (a *App) openTimer() {
-	if !a.timerSeeded {
-		a.timerSetSec = a.d.Prefs.Load().TimerSecondsValue()
-		a.timerRepeat = a.d.Prefs.Load().TimerRepeat
-		a.timerSeeded = true
+	if !a.timer.timerSeeded {
+		a.timer.timerSetSec = a.d.Prefs.Load().TimerSecondsValue()
+		a.timer.timerRepeat = a.d.Prefs.Load().TimerRepeat
+		a.timer.timerSeeded = true
 	}
-	a.showTimer = true
+	a.timer.showTimer = true
 }
 
 // startTimer begins the countdown from the configured duration and remembers it.
 func (a *App) startTimer() {
-	sec := a.timerSetSec
+	sec := a.timer.timerSetSec
 	if sec < config.TimerMinSeconds {
 		sec = config.TimerMinSeconds
 	}
-	a.timerSetSec = sec
+	a.timer.timerSetSec = sec
 	a.d.Prefs.SetTimerSeconds(sec)
-	a.timerEndAt = time.Now().Add(time.Duration(sec) * time.Second)
-	a.timerPausedLeft = 0
+	a.timer.timerEndAt = time.Now().Add(time.Duration(sec) * time.Second)
+	a.timer.timerPausedLeft = 0
 }
 
 // pauseTimer freezes a running countdown at its current remainder.
@@ -67,36 +67,36 @@ func (a *App) pauseTimer() {
 	if !a.timerRunning() {
 		return
 	}
-	a.timerPausedLeft = a.timerRemaining()
-	if a.timerPausedLeft <= 0 {
-		a.timerPausedLeft = time.Second // never freeze at a stopped zero
+	a.timer.timerPausedLeft = a.timerRemaining()
+	if a.timer.timerPausedLeft <= 0 {
+		a.timer.timerPausedLeft = time.Second // never freeze at a stopped zero
 	}
-	a.timerEndAt = time.Time{}
+	a.timer.timerEndAt = time.Time{}
 }
 
 // resumeTimer restarts a paused countdown from the frozen remainder.
 func (a *App) resumeTimer() {
-	if a.timerPausedLeft <= 0 {
+	if a.timer.timerPausedLeft <= 0 {
 		return
 	}
-	a.timerEndAt = time.Now().Add(a.timerPausedLeft)
-	a.timerPausedLeft = 0
+	a.timer.timerEndAt = time.Now().Add(a.timer.timerPausedLeft)
+	a.timer.timerPausedLeft = 0
 }
 
 // resetTimer stops the countdown back to idle (the configured duration shows).
 func (a *App) resetTimer() {
-	a.timerEndAt = time.Time{}
-	a.timerPausedLeft = 0
+	a.timer.timerEndAt = time.Time{}
+	a.timer.timerPausedLeft = 0
 }
 
 // pollTimer fires the alarm when a running countdown reaches zero. One time
 // compare per frame while running; an immediate return (zero cost) when idle or
 // paused. Called from the main poll loop.
 func (a *App) pollTimer() {
-	if a.timerEndAt.IsZero() {
+	if a.timer.timerEndAt.IsZero() {
 		return
 	}
-	if time.Now().Before(a.timerEndAt) {
+	if time.Now().Before(a.timer.timerEndAt) {
 		return
 	}
 	a.fireTimer()
@@ -115,10 +115,10 @@ func (a *App) fireTimer() {
 	if a.d.Audio != nil {
 		a.d.Audio.PlayAlert()
 	}
-	if a.timerRepeat && a.timerSetSec > 0 {
-		a.timerEndAt = time.Now().Add(time.Duration(a.timerSetSec) * time.Second)
+	if a.timer.timerRepeat && a.timer.timerSetSec > 0 {
+		a.timer.timerEndAt = time.Now().Add(time.Duration(a.timer.timerSetSec) * time.Second)
 	} else {
-		a.timerEndAt = time.Time{}
+		a.timer.timerEndAt = time.Time{}
 	}
 }
 
@@ -147,7 +147,7 @@ func (a *App) drawTimerChip(vp sdl.Rect) {
 	c := a.ctx
 	rem := a.timerRemaining()
 	label := "Timer " + formatTimer(rem)
-	if a.timerPausedLeft > 0 {
+	if a.timer.timerPausedLeft > 0 {
 		label += " (paused)"
 	}
 	w := c.TextWidth(label) + 12
@@ -202,7 +202,7 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	c.Heading(panel.X+pad, panel.Y+6, "Timer", ColText)
 	closeB := sdl.Rect{X: panel.X + panel.W - 30, Y: panel.Y + 3, W: 24, H: btnH}
 	if c.Button(closeB, "X") {
-		a.showTimer = false
+		a.timer.showTimer = false
 		return
 	}
 	a.floatWinDrag(&a.wins.timerWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
@@ -215,7 +215,7 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 
 	// Big remaining / configured readout, plus a paused tag.
 	read := formatTimer(a.timerRemaining())
-	if a.timerPausedLeft > 0 {
+	if a.timer.timerPausedLeft > 0 {
 		read += "  (paused)"
 	}
 	c.Heading(panel.X+pad, panel.Y+44, read, ColAccent)
@@ -240,8 +240,8 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 		// The tracks follow the panel width now that it is resizable — a fixed 200 px
 		// track with its value label pinned 278 px in would have run straight out of a
 		// panel dragged down to timerPanelMinW.
-		mins := int32(a.timerSetSec / 60)
-		secs := int32(a.timerSetSec % 60)
+		mins := int32(a.timer.timerSetSec / 60)
+		secs := int32(a.timer.timerSetSec % 60)
 		trackX := panel.X + pad + 70
 		trackW := panel.W - pad - 70 - timerValueColW
 		ry := panel.Y + 86
@@ -253,7 +253,7 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 		ns := c.Slider("tsec", sdl.Rect{X: trackX, Y: ry, W: trackW, H: 18}, secs, 59)
 		c.Label(trackX+trackW+8, ry+3, fmt.Sprintf("%d", ns), ColText)
 		if nm != mins || ns != secs {
-			a.timerSetSec = int(nm)*60 + int(ns)
+			a.timer.timerSetSec = int(nm)*60 + int(ns)
 		}
 		// Quick presets.
 		ry += 28
@@ -263,7 +263,7 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 			sec   int
 		}{{"1m", 60}, {"3m", 180}, {"5m", 300}, {"10m", 600}} {
 			if c.Button(sdl.Rect{X: px, Y: ry, W: 56, H: btnH}, p.label) {
-				a.timerSetSec = p.sec
+				a.timer.timerSetSec = p.sec
 			}
 			px += 62
 		}
@@ -274,8 +274,8 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	// Repeat toggle (both states), persisted so it's remembered next session. Sits on
 	// its own row ABOVE the transport buttons rather than beside them: on the bottom
 	// row it collided with the resize grip the moment the panel was dragged narrow.
-	if rep := c.Checkbox(panel.X+pad, by-24, "Repeat", a.timerRepeat); rep != a.timerRepeat {
-		a.timerRepeat = rep
+	if rep := c.Checkbox(panel.X+pad, by-24, "Repeat", a.timer.timerRepeat); rep != a.timer.timerRepeat {
+		a.timer.timerRepeat = rep
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.TimerRepeat = rep })
 	}
 }

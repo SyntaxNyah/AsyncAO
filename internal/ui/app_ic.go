@@ -425,7 +425,7 @@ func (a *App) pollThemeApply() {
 	a.pushRealizationToRoom()
 	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
 	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
-	a.rasterText = "" // re-raster the current message with theme colors
+	a.raster.rasterText = "" // re-raster the current message with theme colors
 	a.toolbox.themeAppliedName = res.name
 	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
 	// manual font / the dyslexia toggle). Re-resolve only when it actually changed,
@@ -995,7 +995,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		return
 	}
 	hideDesk := a.d.Prefs.Load().HideDesk
-	if !hideDesk && len(a.spriteOv) == 0 && len(a.dialogs.hiddenSprites) == 0 {
+	if !hideDesk && len(a.roster.spriteOv) == 0 && len(a.dialogs.hiddenSprites) == 0 {
 		return // nothing hidden/moved (the common case): one pref read, then out
 	}
 	sc := &room.Scene
@@ -1016,7 +1016,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		if !layer.Visible {
 			continue
 		}
-		if ov, ok := a.spriteOv[key]; ok {
+		if ov, ok := a.roster.spriteOv[key]; ok {
 			layer.OffsetX, layer.OffsetY = ov[0], ov[1]
 		}
 	}
@@ -1459,7 +1459,7 @@ func (a *App) pushOOC(line, speaker string) {
 	// log — a multi-area /gas is a wall of text nobody asked to read in chat. Only a
 	// fetch WE sent arms the window (fetchRoster / fetchAreaForBan / the menu row), so
 	// somebody else's /getarea still shows.
-	if isAreaList && a.now().Before(a.suppressAreaEchoUntil) {
+	if isAreaList && a.now().Before(a.roster.suppressAreaEchoUntil) {
 		return // the entire /gas reply burst stays out of OOC, not just its first line
 	}
 	// A REFUSAL is deliberately NOT swallowed any more. It used to be — swallowed and

@@ -1386,8 +1386,8 @@ func (a *App) sendIC() {
 	}
 	// Armed evidence rides this message; the wire shifts ids by 1 because
 	// 0 means "no evidence" (legacy standard, courtroom.cpp:2160).
-	if a.evidPresent && a.evidIdx >= 0 && a.evidIdx < len(a.link.sess.Evidence) {
-		out.EvidenceID = a.evidIdx + 1
+	if a.evid.evidPresent && a.evid.evidIdx >= 0 && a.evid.evidIdx < len(a.link.sess.Evidence) {
+		out.EvidenceID = a.evid.evidIdx + 1
 	}
 	a.link.sess.SendChat(out)
 	a.srvMeta.lastICSend = time.Now()
@@ -1469,7 +1469,7 @@ func (s *sessionState) noteOwnICEcho() {
 	// sent line back — with real redo on top.
 	s.compose.icInput = strings.TrimPrefix(s.compose.icInput, s.compose.icPendingSent)
 	s.compose.icPendingSent = ""
-	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
+	s.evid.evidPresent = false // presenting is one-shot: consumed by the message that displayed
 }
 
 // sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).

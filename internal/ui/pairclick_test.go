@@ -10,33 +10,33 @@ func TestParseAreaBlock(t *testing.T) {
 	a := &App{env: env{}}
 	a.parseAreaBlock("=== Area 0 ===\n[0] Phoenix Wright\n[2] Miles Edgeworth (Edgey)\njust chatter\n[abc] bad uid")
 
-	if got := a.areaUIDs["phoenix wright"]; got != "0" {
+	if got := a.roster.areaUIDs["phoenix wright"]; got != "0" {
 		t.Errorf("Phoenix uid = %q, want 0", got)
 	}
-	if got := a.areaUIDs["miles edgeworth"]; got != "2" { // trailing "(Edgey)" dropped
+	if got := a.roster.areaUIDs["miles edgeworth"]; got != "2" { // trailing "(Edgey)" dropped
 		t.Errorf("Edgeworth uid = %q, want 2", got)
 	}
-	if _, ok := a.areaUIDs["bad uid"]; ok {
+	if _, ok := a.roster.areaUIDs["bad uid"]; ok {
 		t.Error("[abc] must be rejected (non-numeric uid)")
 	}
-	if len(a.areaPlayers) != 2 {
-		t.Fatalf("areaPlayers = %d, want 2", len(a.areaPlayers))
+	if len(a.roster.areaPlayers) != 2 {
+		t.Fatalf("areaPlayers = %d, want 2", len(a.roster.areaPlayers))
 	}
 
 	// Refresh path: pairAreaReset starts the roster over on the next block.
-	a.pairAreaReset = true
+	a.roster.pairAreaReset = true
 	a.parseAreaBlock("[5] Franziska")
-	if len(a.areaPlayers) != 1 || a.areaPlayers[0].uid != "5" {
-		t.Errorf("after reset: players = %+v, want just {5 Franziska}", a.areaPlayers)
+	if len(a.roster.areaPlayers) != 1 || a.roster.areaPlayers[0].uid != "5" {
+		t.Errorf("after reset: players = %+v, want just {5 Franziska}", a.roster.areaPlayers)
 	}
-	if _, ok := a.areaUIDs["phoenix wright"]; ok {
+	if _, ok := a.roster.areaUIDs["phoenix wright"]; ok {
 		t.Error("reset must clear the previous roster's map")
 	}
 
 	// Plain chat with no bracket fast-rejects (no panic, no spurious entries).
 	a.parseAreaBlock("hey what's up everyone")
-	if len(a.areaPlayers) != 1 {
-		t.Errorf("non-getarea OOC must not add players, got %d", len(a.areaPlayers))
+	if len(a.roster.areaPlayers) != 1 {
+		t.Errorf("non-getarea OOC must not add players, got %d", len(a.roster.areaPlayers))
 	}
 }
 
@@ -47,17 +47,17 @@ func TestParseAreaBlock(t *testing.T) {
 func TestParseAreaShowname(t *testing.T) {
 	a := &App{env: env{}}
 	a.parseAreaBlock("[21] dante pxz\nShowname:\niumiro\n[22] Klavier\nShowname: Gavin")
-	if got := a.areaUIDs["iumiro"]; got != "21" {
+	if got := a.roster.areaUIDs["iumiro"]; got != "21" {
 		t.Errorf("next-line showname iumiro -> uid = %q, want 21", got)
 	}
-	if got := a.areaUIDs["gavin"]; got != "22" {
+	if got := a.roster.areaUIDs["gavin"]; got != "22" {
 		t.Errorf("inline showname Gavin -> uid = %q, want 22", got)
 	}
-	if got := a.areaUIDs["dante pxz"]; got != "21" {
+	if got := a.roster.areaUIDs["dante pxz"]; got != "21" {
 		t.Errorf("char name still maps: dante pxz -> %q, want 21", got)
 	}
-	if len(a.areaPlayers) != 2 {
-		t.Errorf("roster = %d, want 2 (shownames are aliases, not rows)", len(a.areaPlayers))
+	if len(a.roster.areaPlayers) != 2 {
+		t.Errorf("roster = %d, want 2 (shownames are aliases, not rows)", len(a.roster.areaPlayers))
 	}
 }
 
@@ -99,22 +99,22 @@ func TestParseAreaRealFormat(t *testing.T) {
 		"m16a1":        "2",
 		"fünfzehn":     "2", // unicode showname
 	} {
-		if got := a.areaUIDs[k]; got != want {
+		if got := a.roster.areaUIDs[k]; got != want {
 			t.Errorf("areaUIDs[%q] = %q, want %q", k, got, want)
 		}
 	}
 	// Header / OOC lines must NOT pollute the map.
 	for _, junk := range []string{"players", "lobby:", "21 players online.", "peen"} {
-		if _, ok := a.areaUIDs[junk]; ok {
+		if _, ok := a.roster.areaUIDs[junk]; ok {
 			t.Errorf("header/OOC junk %q leaked into the UID map", junk)
 		}
 	}
-	if got := len(a.areaPlayers); got != 7 { // [0] [2] [3] [5] [11] [12] [24]
+	if got := len(a.roster.areaPlayers); got != 7 { // [0] [2] [3] [5] [11] [12] [24]
 		t.Errorf("roster rows = %d, want 7 (shownames are aliases, not rows)", got)
 	}
 	// The roster carries the showname so the picker shows the recognisable name.
 	var ciel areaPlayer
-	for _, p := range a.areaPlayers {
+	for _, p := range a.roster.areaPlayers {
 		if p.uid == "11" {
 			ciel = p
 		}
@@ -137,19 +137,19 @@ func TestParseAreaRosterIdentity(t *testing.T) {
 		"OOC: PeenOOC\n" +
 		"IPID: ABC123\n" +
 		"[17] Spectator\n")
-	if got := len(a.areaPlayers); got != 3 {
+	if got := len(a.roster.areaPlayers); got != 3 {
 		t.Fatalf("roster = %d, want 3 (the two Spectators must NOT collapse)", got)
 	}
-	if a.areaPlayers[0].uid != "10" || a.areaPlayers[2].uid != "17" {
-		t.Errorf("spectator rows = %q,%q, want 10,17 (distinct)", a.areaPlayers[0].uid, a.areaPlayers[2].uid)
+	if a.roster.areaPlayers[0].uid != "10" || a.roster.areaPlayers[2].uid != "17" {
+		t.Errorf("spectator rows = %q,%q, want 10,17 (distinct)", a.roster.areaPlayers[0].uid, a.roster.areaPlayers[2].uid)
 	}
-	if h := a.areaPlayers[1]; h.showname != "Peen" || h.ooc != "PeenOOC" || h.ipid != "ABC123" {
+	if h := a.roster.areaPlayers[1]; h.showname != "Peen" || h.ooc != "PeenOOC" || h.ipid != "ABC123" {
 		t.Errorf("hina = {showname:%q ooc:%q ipid:%q}, want {Peen, PeenOOC, ABC123}", h.showname, h.ooc, h.ipid)
 	}
 
 	// A header REPLACES (recycled UIDs must not ghost): re-fetch with new people.
 	a.parseAreaBlock("----------\n2 players online.\n[0] phoenix\n[1] edgeworth\n")
-	if got := len(a.areaPlayers); got != 2 {
+	if got := len(a.roster.areaPlayers); got != 2 {
 		t.Errorf("after re-fetch roster = %d, want 2 (replaced, not accumulated)", got)
 	}
 }
@@ -161,8 +161,8 @@ func TestParseAreaRosterIdentity(t *testing.T) {
 // nobody.
 func TestParseAreaGasGroups(t *testing.T) {
 	a := &App{env: env{}}
-	a.areaPlayers = []areaPlayer{{uid: "99", name: "stale ghost"}} // a prior snapshot the /gas must replace
-	a.pairAreaReset = true
+	a.roster.areaPlayers = []areaPlayer{{uid: "99", name: "stale ghost"}} // a prior snapshot the /gas must replace
+	a.roster.pairAreaReset = true
 	block := "Players\n" +
 		"----------\n" +
 		"Lobby:\n" +
@@ -188,18 +188,18 @@ func TestParseAreaGasGroups(t *testing.T) {
 		"17 empty area(s) hidden.\n"
 	a.parseAreaBlock(block)
 
-	if got := len(a.areaPlayers); got != 7 { // 3 Lobby + 2 Pizza + 2 Teto; footer adds nobody
+	if got := len(a.roster.areaPlayers); got != 7 { // 3 Lobby + 2 Pizza + 2 Teto; footer adds nobody
 		t.Fatalf("roster = %d, want 7 (stale replaced, footer ignored)", got)
 	}
-	if a.areaPlayers[0].uid != "0" {
-		t.Errorf("first row uid = %q, want 0 (the prior snapshot must be replaced)", a.areaPlayers[0].uid)
+	if a.roster.areaPlayers[0].uid != "0" {
+		t.Errorf("first row uid = %q, want 0 (the prior snapshot must be replaced)", a.roster.areaPlayers[0].uid)
 	}
 	wantArea := map[string]string{
 		"0": "Lobby", "2": "Lobby", "19": "Lobby",
 		"16": "Pizza Room 3", "28": "Pizza Room 3",
 		"14": "Teto Cafe", "15": "Teto Cafe",
 	}
-	for _, p := range a.areaPlayers {
+	for _, p := range a.roster.areaPlayers {
 		if want := wantArea[p.uid]; p.area != want {
 			t.Errorf("uid %s area = %q, want %q", p.uid, p.area, want)
 		}
@@ -207,7 +207,7 @@ func TestParseAreaGasGroups(t *testing.T) {
 			t.Errorf("uid 14 ooc = %q, want web999", p.ooc)
 		}
 	}
-	a.rosterLegacy = true // rosterMultiArea reads the active roster — the snapshot here
+	a.roster.rosterLegacy = true // rosterMultiArea reads the active roster — the snapshot here
 	if !a.rosterMultiArea() {
 		t.Error("a /gas spanning 3 areas must read as multi-area")
 	}
@@ -218,11 +218,11 @@ func TestParseAreaGasGroups(t *testing.T) {
 func TestParseAreaGaSingle(t *testing.T) {
 	a := &App{env: env{}}
 	a.parseAreaBlock("Players\n----------\nLobby:\n2 players online.\n[0] phoenix\n[1] edgeworth\n")
-	if len(a.areaPlayers) != 2 {
-		t.Fatalf("roster = %d, want 2", len(a.areaPlayers))
+	if len(a.roster.areaPlayers) != 2 {
+		t.Fatalf("roster = %d, want 2", len(a.roster.areaPlayers))
 	}
-	if a.areaPlayers[0].area != "Lobby" {
-		t.Errorf("area = %q, want Lobby", a.areaPlayers[0].area)
+	if a.roster.areaPlayers[0].area != "Lobby" {
+		t.Errorf("area = %q, want Lobby", a.roster.areaPlayers[0].area)
 	}
 	if a.rosterMultiArea() {
 		t.Error("a single-area /ga must NOT read as multi-area")

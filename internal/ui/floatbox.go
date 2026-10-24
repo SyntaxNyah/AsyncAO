@@ -114,8 +114,8 @@ var panelSlotTable = []panelSlot{
 	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.modUI.showModDash && a.banBox.kind == 0 }},
 	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.modUI.showCMPanel }},
 	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.courtkeys.showHotkeys }},
-	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
-	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
+	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.evid.showEvid }},
+	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.courtxtra.showModcall }},
 	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
 	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBox.kind != 0 }},
 	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.debugPanel.open }},
@@ -129,7 +129,7 @@ var panelSlotTable = []panelSlot{
 	// The three ex-modals (#31). They were centred blocks that took the screen; as
 	// floatWins they get the same drag, position persistence and de-overlap cascade
 	// every sibling panel has.
-	{slotPanelTimer, func(a *App) *floatWin { return &a.wins.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
+	{slotPanelTimer, func(a *App) *floatWin { return &a.wins.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.timer.showTimer }},
 	{slotPanelLogin, func(a *App) *floatWin { return &a.wins.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
 	{slotPanelPairPop, func(a *App) *floatWin { return &a.wins.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairbox.pairPopupOpen }},
 }
@@ -146,7 +146,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardrobe.wardSection = wardSectionJukebox }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.toggleEvidence() }},
-			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
+			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.courtxtra.showModcall = true }},
 			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
 			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.pairbox.showPair = true }},
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
@@ -418,10 +418,10 @@ func (a *App) closeTopOverlay() bool {
 		a.updates.closeModal()
 	case a.showLogin:
 		a.showLogin = false
-	case a.rosterMenuOpen:
-		a.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
-	case a.musicMenuOpen:
-		a.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
+	case a.roster.rosterMenuOpen:
+		a.roster.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
+	case a.roster.musicMenuOpen:
+		a.roster.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
 	case a.emoji.showEmojiPicker:
 		a.emoji.showEmojiPicker = false
 	case a.reactUI.showReactPicker:
@@ -430,8 +430,8 @@ func (a *App) closeTopOverlay() bool {
 		a.bgPick.show = false
 	case a.inibrowse.showIni:
 		a.inibrowse.showIni = false
-	case a.showTimer:
-		a.showTimer = false
+	case a.timer.showTimer:
+		a.timer.showTimer = false
 	case a.toolbox.toolboxPinned && a.toolbox.toolboxPieces:
 		a.toolbox.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
 	case a.pairbox.pairPopupOpen:
@@ -443,10 +443,10 @@ func (a *App) closeTopOverlay() bool {
 		a.showVoice = false
 	case a.msgs.showMessages:
 		a.msgs.showMessages = false
-	case a.showEvid:
-		a.showEvid = false
-	case a.showModcall:
-		a.showModcall = false
+	case a.evid.showEvid:
+		a.evid.showEvid = false
+	case a.courtxtra.showModcall:
+		a.courtxtra.showModcall = false
 	case a.modUI.showModDash:
 		a.modUI.showModDash = false
 	case a.debugPanel.open:
@@ -675,13 +675,13 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.modUI.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
 		return true
 	}
-	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
+	if a.evid.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
-	if a.showEvid && a.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
+	if a.evid.showEvid && a.evid.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
 		return true
 	}
-	if a.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
+	if a.courtxtra.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
 		return true
 	}
 	if a.msgs.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
@@ -696,7 +696,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// The three ex-modals (#31). They fence by footprint now instead of by taking the
 	// whole pass — the courtroom behind stays live, but a click on one must still not
 	// also land on the scene, the music list or the IC bar underneath.
-	if a.showTimer && pointIn(mx, my, a.timerPanelRect(w, h)) {
+	if a.timer.showTimer && pointIn(mx, my, a.timerPanelRect(w, h)) {
 		return true
 	}
 	if a.showLogin && pointIn(mx, my, a.loginPanelRect(w, h)) {
@@ -990,14 +990,14 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.modUI.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)
 	}
-	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
+	if a.evid.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
 		a.drawEvidencePanel(w, h, &pressed)
-		if a.evidInspectorDetached { // the inspector popped out into its own window
+		if a.evid.evidInspectorDetached { // the inspector popped out into its own window
 			a.drawEvidenceInspectorWindow(w, h, &pressed)
 		}
 	}
 	// The three ex-modals (#31), drawn like every other floating panel.
-	if a.showTimer {
+	if a.timer.showTimer {
 		a.drawTimerPanel(w, h, &pressed)
 	}
 	if a.showLogin {
@@ -1006,7 +1006,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.pairbox.pairPopupOpen {
 		a.drawPairPopup(w, h, &pressed)
 	}
-	if a.showModcall { // call-mod is a floating box now — chat stays live behind it
+	if a.courtxtra.showModcall { // call-mod is a floating box now — chat stays live behind it
 		a.drawModcallPanel(w, h, &pressed)
 	}
 	if a.msgs.showMessages { // Group Chat / DMs — non-blocking floating panel

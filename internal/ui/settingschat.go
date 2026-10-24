@@ -676,17 +676,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Sound effects")
 	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
 	// last one you heard gets a one-click toggle; the muted list is below.
-	if a.lastSFXName != "" {
-		on := a.d.Prefs.Load().IsSFXMuted(a.lastSFXName)
-		lbl := "Mute last SFX: " + a.lastSFXName
+	if a.roster.lastSFXName != "" {
+		on := a.d.Prefs.Load().IsSFXMuted(a.roster.lastSFXName)
+		lbl := "Mute last SFX: " + a.roster.lastSFXName
 		if on {
-			lbl = "Unmute last SFX: " + a.lastSFXName
+			lbl = "Unmute last SFX: " + a.roster.lastSFXName
 		}
 		if c.Button(sdl.Rect{X: pad, Y: y, W: c.TextWidth(lbl) + 20, H: btnH}, lbl) {
 			if on {
-				a.d.Prefs.UnmuteSFX(a.lastSFXName)
+				a.d.Prefs.UnmuteSFX(a.roster.lastSFXName)
 			} else {
-				a.d.Prefs.MuteSFX(a.lastSFXName)
+				a.d.Prefs.MuteSFX(a.roster.lastSFXName)
 			}
 		}
 		y += 30
@@ -713,10 +713,10 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// is listed below with their own slider and a × that resets to 100%.
 	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
 	y += 22
-	if a.lastBlipChar != "" {
-		cur := a.d.Prefs.Load().BlipVolumeFor(a.lastBlipChar)
-		if nv := a.volumeRow(y, "Last speaker — "+a.lastBlipChar, cur); nv != cur {
-			a.d.Prefs.SetBlipVolume(a.lastBlipChar, nv)
+	if a.roster.lastBlipChar != "" {
+		cur := a.d.Prefs.Load().BlipVolumeFor(a.roster.lastBlipChar)
+		if nv := a.volumeRow(y, "Last speaker — "+a.roster.lastBlipChar, cur); nv != cur {
+			a.d.Prefs.SetBlipVolume(a.roster.lastBlipChar, nv)
 		}
 		y += 28
 	} else {

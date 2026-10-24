@@ -568,14 +568,14 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 		t.Skip("no key is bound to the evidence action in this build")
 	}
 	driveHotkey(a, key)
-	if !a.showEvid {
+	if !a.evid.showEvid {
 		t.Skip("the evidence chord does not fire in this fixture, so the gate below proves nothing")
 	}
 
-	a.showEvid = false
+	a.evid.showEvid = false
 	a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "read the rules")
 	driveHotkey(a, key)
-	if a.showEvid {
+	if a.evid.showEvid {
 		t.Error("a courtroom chord fired under the notice box — handleHotkeys must stand down " +
 			"for it, exactly as it does for the disconnect dialog")
 	}

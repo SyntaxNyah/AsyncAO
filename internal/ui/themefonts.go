@@ -612,7 +612,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 	a.themeFonts = tbl
 	// The chatbox message raster bakes its face and scale; re-raster it so a
 	// theme swap doesn't leave the old size on screen until the next message.
-	a.rasterText = ""
+	a.raster.rasterText = ""
 }
 
 // systemFontDirs lists the fallback font folders theme.FontFiles searches for a

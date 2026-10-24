@@ -424,9 +424,9 @@ func (a *App) rosterByUID(uid string) (areaPlayer, bool) {
 	if uid == "" {
 		return areaPlayer{}, false
 	}
-	for i := range a.liveRoster {
-		if a.liveRoster[i].uid == uid {
-			return a.liveRoster[i], true
+	for i := range a.roster.liveRoster {
+		if a.roster.liveRoster[i].uid == uid {
+			return a.roster.liveRoster[i], true
 		}
 	}
 	return areaPlayer{}, false
@@ -483,8 +483,8 @@ func (a *App) fetchAreaForBan() {
 	if a.link.sess == nil {
 		return
 	}
-	a.pairAreaReset = true
-	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow)
+	a.roster.pairAreaReset = true
+	a.roster.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow)
 	a.queueOOCLines([]string{"/getareas"})
 	a.warnLine = "Fetching area info (/getareas) — IPID fills in when the server replies."
 	a.warnAt = a.now()

@@ -475,7 +475,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyPairMenu):
 		a.pairbox.showPair = true
 	case a.hotkeyFor(hotkeyModcall):
-		a.showModcall = true
+		a.courtxtra.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
 		// A1: open the pinned per-piece hide/show panel directly. This works even
 		// when panelHidden(panelToolbox) hides the grip — drawToolboxPieces gates
@@ -1084,7 +1084,7 @@ func (a *App) drawTheater(w, h int32) {
 	a.renderViewportZoomed(vp)
 	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
-	if a.vpZoom <= 1 {
+	if a.cam.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}

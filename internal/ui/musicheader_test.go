@@ -215,7 +215,7 @@ func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 		return a
 	}
 
-	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenuFromButton(at, false) }); !a.musicMenuOpen {
+	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenuFromButton(at, false) }); !a.roster.musicMenuOpen {
 		t.Error("the ⋮ menu closed on the frame it opened — every row it hosts (volume " +
 			"view, the four MC playback flags, stop, random) is then reachable only by " +
 			"right-clicking the track list")
@@ -224,7 +224,7 @@ func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 	// the assertion above is load-bearing rather than vacuously true. If this one
 	// goes red, the click-away rule changed — re-derive whether the consumption is
 	// still what keeps the button alive.
-	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenu(at, false) }); a.musicMenuOpen {
+	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenu(at, false) }); a.roster.musicMenuOpen {
 		t.Error("an unconsumed opening click no longer closes the menu, so this test can " +
 			"no longer prove openMusicMenuFromButton's consumption is what fixes the ⋮")
 	}

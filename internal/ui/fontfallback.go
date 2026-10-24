@@ -169,7 +169,7 @@ func (a *App) pollFallbackFont() {
 	select {
 	case data := <-a.fallbackFontRes:
 		a.ctx.SetFallbackFonts(data)
-		a.rasterText = "" // re-raster the visible message with the broader coverage
+		a.raster.rasterText = "" // re-raster the visible message with the broader coverage
 	default:
 	}
 }
@@ -304,7 +304,7 @@ func (a *App) pollCJKFont() {
 	select {
 	case data := <-a.cjkFontRes:
 		a.ctx.SetCJKFonts(data)
-		a.rasterText = ""
+		a.raster.rasterText = ""
 	default:
 	}
 }

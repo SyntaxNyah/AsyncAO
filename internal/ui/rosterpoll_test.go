@@ -35,8 +35,8 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 			"live roster whose rows never carry an IPID, logged-in mod",
 			func(a *App) {
 				a.link.sess.ModGranted = true
-				a.livePlayersOn = true
-				a.liveRoster = []areaPlayer{{uid: "1", name: "Phoenix", area: "Courtroom"}}
+				a.roster.livePlayersOn = true
+				a.roster.liveRoster = []areaPlayer{{uid: "1", name: "Phoenix", area: "Courtroom"}}
 			},
 		},
 	} {
