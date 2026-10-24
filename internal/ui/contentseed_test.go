@@ -4,17 +4,6 @@ package ui
 // is never the session origin, so its host is never format-seeded, and the
 // zero-fallback probe walks the single default format against a server whose
 // sprites are e.g. .gif/.png → "everything missing" + an empty exported stage.
-//
-// These tests pin the two-part fix:
-//   1. ORIGIN SEEDING: the content report seeds <origin>/extensions.json before
-//      probing, so a manifest-declared format resolves in one probe.
-//   2. FULL-CHAIN PROBE FALLBACK: a host with NO manifest (no learned entry even
-//      after seeding) is probed with the FULL configured chain, so a .png/.gif
-//      server still resolves — and RecordSuccess learns it so a repeat pass is
-//      single-probe. A genuinely absent asset stays missing after the full walk
-//      (honesty preserved).
-//   4. LOCAL MOUNTS: a recording whose origin is a mounted local base resolves
-//      through the mounts in the probe path (AO2-parity).
 
 import (
 	"net/http"

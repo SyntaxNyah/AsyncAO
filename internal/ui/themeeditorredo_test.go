@@ -1,14 +1,6 @@
 package ui
 
 // The REDO affordance, both of its doors.
-//
-// Redo is a shipped feature with two spellings (Ctrl+Y, Ctrl+Shift+Z) and a header
-// button, and the ring publishes canUndo/canRedo to say whether either can do
-// anything right now. canRedo shipped UNCALLED: the header drew a live-looking Redo
-// over an empty tail, and nothing in the suite would have noticed if the tail had
-// stopped being reachable at all. These gates are that hole, closed from three
-// sides — the chord through the real event path, the button through a real frame,
-// and a census so the guard cannot be quietly unwired again.
 
 import (
 	"testing"
@@ -57,7 +49,6 @@ const (
 // gates it: an edit, Ctrl+Z, Ctrl+Shift+Z, and the value is back — through SDL's
 // event, the kit's HandleEvent, App.Frame and the chord claimer, with nothing called
 // by hand.
-//
 // TestEditorRedoRidesCtrlShiftZ pins the same spelling one layer in (it stamps
 // c.hotkey and calls editorUndoChord itself, which is what lets it run without a
 // window). This one is the layer OUT: it would fail if App.Frame stopped claiming
@@ -102,7 +93,6 @@ func TestRedoRidesTheRealKeyDispatch(t *testing.T) {
 
 // TestTheHeaderRedoButtonStepsTheTimeline drives the OTHER door — the band's own
 // button, pressed through a real frame at the geometry drawEditorHeader publishes.
-//
 // It is the gate that would catch a guard wired backwards: editorHeaderBtn swallows
 // the click when the action is unavailable, so a `!canRedo()` (or a canUndo() copied
 // into the Redo row) makes the button refuse the one press that is legal, and this

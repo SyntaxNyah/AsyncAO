@@ -124,16 +124,6 @@ func TestPreanimEndHookFiresOncePerRelease(t *testing.T) {
 
 // TestStalePreanimDoneFromASharedViewportIsIgnored is the regression pin for the
 // "the preanimation is randomly interrupted" report.
-//
-// internal/ui keeps ONE viewport with ONE OnPreanimDone slot and re-points it at
-// whichever room drives it (ui/replay.go, ui/scenemaker.go, ui/gifexport.go each
-// assign it and assign it back to a.room). A completion that fires across such a
-// swap used to land on a room with nothing playing and set the sticky
-// preanimDone flag anyway; the NEXT message then inherited it and lost its
-// preanim three different ways at once — enterAfterShout's `!c.preanimDone` term
-// skips the selection, PhasePreanim exits on its first Update, and
-// tickImmediatePreanim ends the decoration on tick one. No local cause, no
-// repro. NotifyPreanimStarted already carried this guard; its sibling did not.
 func TestStalePreanimDoneFromASharedViewportIsIgnored(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)

@@ -1,17 +1,8 @@
 package theme
 
 // EVERY SECTION EMITTER, DRIVEN FROM THE MODEL (ledger L2).
-//
-// Twelve of the fourteen emitters in writeInto could `return nil` with the whole
-// suite green. Every writer gate other than the element and clock ones asserts only
-// that an UNTOUCHED save is byte-identical — which an emitter that writes nothing
-// satisfies perfectly — and no test in the tree assigned Overrides / Rotations /
-// Media / Fonts / FontBind / Sounds / Panes / Effects / Palette / Chrome / Import /
-// Meta and then called Bytes().
-//
 // W7's editor save path is the caller. A section that silently emits nothing is a
 // user's work discarded at the moment they hit save, with no error anywhere.
-//
 // THE SHAPE. One table row per section: build the model, Bytes(), and then read the
 // bytes back through the REAL parser and compare the model that comes out. Byte
 // comparison alone would not do — the section header is what an empty emitter fails
@@ -246,7 +237,6 @@ const sidecarSectionEmitterCount = 14
 // gate above from being satisfied by an emitter that writes its header
 // unconditionally: an EMPTY model must produce a file with no section bodies at all
 // beyond the one [theme] line every file states its grammar with.
-//
 // It matters because a stock AO2 theme's sidecar (a fresh "New theme…") must not
 // ship eleven empty sections the author then has to read past.
 func TestNoSectionIsWrittenForAnEmptyModel(t *testing.T) {

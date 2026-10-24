@@ -351,16 +351,6 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 // own .ttf applied to the OOC log, an emoji-laden MOTD) and pins the invariant
 // that closes it: EVERY wrapped row of both logs, measured in the face(s) that
 // will actually DRAW it, fits the column.
-//
-// The setup is the real one, not a synthetic pick: installing a font chain makes
-// the log set MULTI-face (the chain face + the embedded last resort), which is
-// what takes pickSet off its len==1 fast path — without a custom font there is no
-// divergence to have. The emoji then split the picks apart: no face covers a
-// colour emoji, so the whole PARAGRAPH picks the last-resort face, while its
-// plain rows pick the wide chain face. The old emoji wrap measured every row in
-// the paragraph's face and the rows overflowed by the ratio between the two
-// (OpenDyslexic is ~70% wider than the embedded face at the same size) — exactly
-// the screenshot on the issue.
 func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 	if err := ttf.Init(); err != nil {
 		t.Skipf("SDL_ttf unavailable: %v", err)

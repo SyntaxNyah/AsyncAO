@@ -1,19 +1,10 @@
 package ui
 
 // REGRESSION: HOLD IT / OBJECTION / TAKE THAT fired on the CLICK.
-//
-// Live report, 2026-08-10: "clicking a shout button now plays the interjection
-// immediately". Canon does not: on_hold_it_clicked and its three siblings
 // (courtroom.cpp:6048-6127) only toggle objection_state and bounce the keyboard
 // back to the message. The interjection rides the NEXT message — the MS
 // objection field is assembled from objection_state at :2136-2147 and cleared in
 // reset_ui at :2327.
-//
-// AsyncAO's three surfaces (the classic bar, the themed bar, the four hotkeys)
-// each called sendIC(mod) instead, and sendIC's blankpost guard deliberately
-// lets a shout through with NO text — so one click sent a whole empty message
-// and played the shout on every client in the room.
-//
 // These gates drive the real state and the real packet builder.
 
 import (
@@ -98,7 +89,6 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 // same lane as this defect (the realization button, 0fc8f38 item 8): it must
 // keep arming — and now that its neighbour in the same bar arms too, the two
 // have to ride ONE message and clear together.
-//
 // The effects-row half of the realization arm keeps its own gate
 // (TestRealizationArmsTheEffectsRowNotJustTheFlag, icarms_test.go, which owns
 // the roster fixture); this one is about the wire and the reset.

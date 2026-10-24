@@ -425,16 +425,6 @@ func mkWarmRefs(n int) []courtroom.AssetRef {
 // the FRONT of the list — the arrangement that broke the old arithmetic. It pins
 // the Finding-1 fix: the in-flight window must count only refs THIS phase actually
 // submitted, never the pre-resident ones.
-//
-// Ground truth in THIS harness: no SUBMITTED ref ever becomes resident (only the
-// pre-resident ones are seeded, and the upload Pump never runs), so true high-lane
-// occupancy == cumulative warmSubmitted. The invariant is therefore simply
-// warmSubmitted ≤ warmInFlightWindow after every tick — an assertion INDEPENDENT of
-// the code's own formula (the old circular check passed for the bug too). The buggy
-// resident−residentPending model drives outstanding negative once the front
-// residents drop out of pendingWarm, keeps room at the full burst, and blows
-// warmSubmitted past the window within a few ticks; the correct set-based model
-// plateaus at the window.
 func TestTickGifWarmPreResidentDoesNotOverfillWindow(t *testing.T) {
 	a, store := newWarmHarness(t)
 
@@ -579,7 +569,6 @@ func TestTickGifWarmHardCapDoesNotFireEarly(t *testing.T) {
 // ref is marked conclusively missing (as drainWarnings' Store.MarkMissing relay does
 // live on chain exhaustion), and the warm must then latch warmSubmitDone and fire
 // allReady within a bounded number of ticks — no sleep, no shrunk cap.
-//
 // This FAILS on the unfixed code: with only Store.Contains counting, a never-resident
 // ref never prunes from warmInFlight, room pins at 0, pendingWarm never drains,
 // warmSubmitDone never latches, and warming stays true until the hard cap (which this

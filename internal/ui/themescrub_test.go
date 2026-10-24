@@ -1,7 +1,6 @@
 package ui
 
 // THE PAUSED-CLOCK CENSUS GUARD (v1.90.0 W7a).
-//
 // W5 shipped themeClock.paused with NO WRITER and left the whole failure written
 // down at drawElement's census line as a TODO. W7's scrub is the first writer, so
 // the guard lands with it — and these gates land BEFORE the scrub UI does, which is
@@ -18,16 +17,6 @@ import (
 
 // TestPausedClockNeverPinsTheFrameRate is the idle-CPU-burn gate for a scrubbed
 // clock, over BOTH sites that can note the census on the element path.
-//
-// The three ways a paused clock reports motion forever, each correct in isolation:
-//
-//   - the five PERIODIC effect kinds return static=false unconditionally (design
-//     §Q3: "they note forever, which is correct and is what the author asked for");
-//   - a CONDITIONAL one-shot acquires its pool slot at the frozen elapsed, so
-//     startedAt == el permanently and its envelope sits at full amplitude;
-//   - a LOOPING page's elementFrameIndex returns live=true unconditionally, because
-//     a loop never ends.
-//
 // Every one of them is a still picture once the clock stops.
 func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
