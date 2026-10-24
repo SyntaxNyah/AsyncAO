@@ -648,19 +648,19 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
-	if a.splitActive() && pointIn(mx, my, a.clientWinRect(w, h)) { // the floating client window fences too
+	if a.splitActive() && pointIn(mx, my, a.classic.clientWinRect(&a.env, w, h)) { // the floating client window fences too
 		return true
 	}
 	if a.toolbox.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
-	if a.pairbox.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
+	if a.pairbox.showPair && pointIn(mx, my, a.classic.pairPanelRect(&a.env, w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
-	if a.modUI.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
+	if a.modUI.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.classic.modDashRect(&a.env, w, h)) { // dashboard hides while its ban box is open
 		return true
 	}
-	if a.debugPanel.open && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
+	if a.debugPanel.open && pointIn(mx, my, a.classic.debugPanelRect(&a.env, w, h)) { // the Debug panel fences too
 		return true
 	}
 	if a.lookUI.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
@@ -672,22 +672,22 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.banBox.kind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
 		return true
 	}
-	if a.modUI.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
+	if a.modUI.showCMPanel && pointIn(mx, my, a.classic.cmPanelRect(&a.env, w, h)) {
 		return true
 	}
-	if a.evid.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
+	if a.evid.showEvid && pointIn(mx, my, a.classic.evidPanelRect(&a.env, w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
 	if a.evid.showEvid && a.evid.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
 		return true
 	}
-	if a.courtxtra.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
+	if a.courtxtra.showModcall && pointIn(mx, my, a.classic.modcallPanelRect(&a.env, w, h)) { // Call Mod box
 		return true
 	}
-	if a.msgs.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
+	if a.msgs.showMessages && pointIn(mx, my, a.classic.msgPanelRect(&a.env, w, h)) { // Group Chat / DMs box
 		return true
 	}
-	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
+	if a.showVoice && pointIn(mx, my, a.classic.voicePanelRect(&a.env, w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
 		return true
 	}
 	if a.courtkeys.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too

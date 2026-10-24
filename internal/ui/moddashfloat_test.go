@@ -73,7 +73,7 @@ func TestBanBoxHidesDashboard(t *testing.T) {
 	a.banBox.kind = 2 // a kick box is open over the dashboard
 	// A point inside the dashboard rect but clear of the (smaller/elsewhere) ban box must not be
 	// fenced by the now-hidden dashboard.
-	dr := a.modDashRect(w, h)
+	dr := a.classic.modDashRect(&a.env, w, h)
 	br := a.banBoxRect(w, h)
 	mx, my := dr.X+4, dr.Y+4
 	if pointIn(mx, my, br) {

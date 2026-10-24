@@ -22,7 +22,7 @@ func TestOpenDropdownPunchesThroughPanelFence(t *testing.T) {
 
 	// A floating panel is open and the cursor sits inside it: fenced (baseline).
 	a.evid.showEvid = true
-	r := a.evidPanelRect(w, h)
+	r := a.classic.evidPanelRect(&a.env, w, h)
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if !a.boxFencesPointer(w, h) {
 		t.Fatal("baseline: cursor over the evidence panel must fence the courtroom")

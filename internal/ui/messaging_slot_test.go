@@ -15,7 +15,7 @@ func TestMessagesSlotSeedsPanel(t *testing.T) {
 	const w, h = int32(1000), int32(800)
 	a.classic.classicOv = map[string][4]float64{slotMessages: {0.1, 0.1, 0.5, 0.5}}
 
-	got := a.msgPanelRect(w, h)
+	got := a.classic.msgPanelRect(&a.env, w, h)
 	want := sdl.Rect{X: 100, Y: 80, W: 500, H: 400}
 	if got != want {
 		t.Errorf("seeded rect = %+v, want %+v", got, want)
@@ -33,7 +33,7 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	const w, h = int32(1000), int32(800)
 	a.wins.msgWin.x, a.wins.msgWin.y, a.wins.msgWin.w, a.wins.msgWin.h, a.wins.msgWin.placed = 200, 100, 480, 360, true
 
-	a.persistMsgSlot(w, h)
+	a.classic.persistMsgSlot(&a.env, w, h)
 
 	want := [4]float64{0.2, 0.125, 0.48, 0.45}
 	if got := a.classic.classicOv[slotMessages]; got != want {

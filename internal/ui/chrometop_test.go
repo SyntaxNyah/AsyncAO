@@ -186,14 +186,14 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	a.classic.seedHiddenFromPrefs(&a.env)
 
 	// Hiding two of the three is allowed — one route survives.
-	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
-	a.setPanelHiddenGuarded(panelToolbox, true)
+	a.classic.setPanelHiddenGuarded(&a.env, ctrlSettingsSlot, true)
+	a.classic.setPanelHiddenGuarded(&a.env, panelToolbox, true)
 	if !a.classic.panelHidden(panelToolbox) || !a.classic.panelHidden(ctrlSettingsSlot) {
 		t.Fatal("hiding two lifelines while a third survives must be allowed")
 	}
 	// The LAST one is refused, with a toast rather than a silent undo.
 	a.warnLine = ""
-	a.setPanelHiddenGuarded(panelMenuBar, true)
+	a.classic.setPanelHiddenGuarded(&a.env, panelMenuBar, true)
 	if a.classic.panelHidden(panelMenuBar) {
 		t.Error("hiding the last mouse lifeline was allowed — a themed user would have no chrome left")
 	}
@@ -203,9 +203,9 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	// Order must not matter: the menu bar is not privileged, it is just one of three.
 	b := testTabApp(t)
 	b.classic.seedHiddenFromPrefs(&b.env)
-	b.setPanelHiddenGuarded(panelMenuBar, true)
-	b.setPanelHiddenGuarded(ctrlSettingsSlot, true)
-	b.setPanelHiddenGuarded(panelToolbox, true)
+	b.classic.setPanelHiddenGuarded(&b.env, panelMenuBar, true)
+	b.classic.setPanelHiddenGuarded(&b.env, ctrlSettingsSlot, true)
+	b.classic.setPanelHiddenGuarded(&b.env, panelToolbox, true)
 	if b.classic.panelHidden(panelToolbox) {
 		t.Error("the guard is order-dependent — hiding the toolbox last slipped through")
 	}

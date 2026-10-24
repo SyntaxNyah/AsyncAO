@@ -77,7 +77,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	}
 	// msgWin keeps its historical slot + wrappers, so it isn't in the table.
 	if a.msgs.showMessages && !a.wins.msgWin.dragging {
-		add(a.msgPanelRect(w, h))
+		add(a.classic.msgPanelRect(&a.env, w, h))
 	}
 	// The bespoke (non-floatWin) boxes share the same shared helper.
 	if a.toolbox.showWidgets && !a.extrasDragging {

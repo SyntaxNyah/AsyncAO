@@ -75,16 +75,16 @@ func (classic1 *classicState) persistPanelSlot(e *env, slot string, r sdl.Rect, 
 // msgPanelRect is the panel's screen rect. First open this session seeds from the
 // persisted layout slot (if you positioned it in Edit Layout), else tucks it
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
-func (a *App) msgPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
+func (classic1 *classicState) msgPanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
 		return r
 	}
-	if !a.wins.msgWin.placed { // historical default: tuck top-left (not centred)
+	if !e.wins.msgWin.placed { // historical default: tuck top-left (not centred)
 		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
+	return e.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 }
 
 // msgSlotDefaultRect is where the Group Chat slot lands when first added from the
@@ -98,8 +98,8 @@ func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 // persistMsgSlot writes the Group Chat panel's rect back to its layout slot on the
 // drag/resize-END frame (never per-frame). Thin wrapper over the generic
 // persistPanelSlot now that every panel shares that path.
-func (a *App) persistMsgSlot(w, h int32) {
-	a.classic.persistPanelSlot(&a.env, slotMessages, a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
+func (classic1 *classicState) persistMsgSlot(e *env, w, h int32) {
+	classic1.persistPanelSlot(e, slotMessages, e.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
@@ -173,7 +173,7 @@ func (a *App) msgEntries() []msgEntry {
 func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.msgWin.dragging || a.wins.msgWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.msgPanelRect(w, h)
+	r := a.classic.msgPanelRect(&a.env, w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
@@ -188,7 +188,7 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.msgWin.dragging && !a.wins.msgWin.resizing { // drag/resize just ended → remember where
-		a.persistMsgSlot(w, h)
+		a.classic.persistMsgSlot(&a.env, w, h)
 	}
 
 	top := r.Y + floatTitleH + 8

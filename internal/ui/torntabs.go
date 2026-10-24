@@ -106,20 +106,20 @@ func (classic1 *classicState) tabHidden(tab int) bool {
 // panel OR fully hidden. Returns a fixed-size array (by value → stack, 0-alloc) and
 // the live count. Log is always present (the home/fallback tab); OOC appears only
 // when it's a tab (oocAsTab = the Legacy theme, or the opt-in "OOC in the log tab").
-func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
+func (classic1 *classicState) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	var d [7]dockTab
 	n := int32(0)
 	d[n] = dockTab{logTabLog, "Log"} // never tear-offable
 	n++
-	if !a.classic.tabTorn(logTabMusic) && !a.classic.tabHidden(logTabMusic) {
+	if !classic1.tabTorn(logTabMusic) && !classic1.tabHidden(logTabMusic) {
 		d[n] = dockTab{logTabMusic, "Music"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabAreas) && !a.classic.tabHidden(logTabAreas) {
+	if !classic1.tabTorn(logTabAreas) && !classic1.tabHidden(logTabAreas) {
 		d[n] = dockTab{logTabAreas, "Areas"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabPlayers) && !a.classic.tabHidden(logTabPlayers) {
+	if !classic1.tabTorn(logTabPlayers) && !classic1.tabHidden(logTabPlayers) {
 		d[n] = dockTab{logTabPlayers, "Players"}
 		n++
 	}
@@ -127,11 +127,11 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 		d[n] = dockTab{logTabOOC, "OOC"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabNotes) && !a.classic.tabHidden(logTabNotes) {
+	if !classic1.tabTorn(logTabNotes) && !classic1.tabHidden(logTabNotes) {
 		d[n] = dockTab{logTabNotes, "Notes"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabFriends) && !a.classic.tabHidden(logTabFriends) {
+	if !classic1.tabTorn(logTabFriends) && !classic1.tabHidden(logTabFriends) {
 		d[n] = dockTab{logTabFriends, "Friends"}
 		n++
 	}
@@ -232,21 +232,21 @@ func (classic1 *classicState) tornTabOrder() [len(tornTabTable)]int {
 // raises it above the others — the standard window behaviour the old fixed
 // table order lacked (the Players tab always drew over Music/Areas no matter
 // how the panels were arranged).
-func (a *App) bringTornToFront(w, h int32) {
-	c := a.ctx
+func (classic1 *classicState) bringTornToFront(e *env, w, h int32) {
+	c := e.ctx
 	if !c.clicked {
 		return
 	}
-	order := a.classic.tornTabOrder()
+	order := classic1.tornTabOrder()
 	// Scan front-to-back: the panel already on top under the cursor wins, and
 	// promoting it is a no-op when it is already front.
 	for j := len(order) - 1; j >= 0; j-- {
 		idx := order[j]
 		t := tornTabTable[idx]
-		if _, torn := a.classic.classicOv[t.key]; !torn || a.classic.tabHidden(t.id) {
+		if _, torn := classic1.classicOv[t.key]; !torn || classic1.tabHidden(t.id) {
 			continue
 		}
-		r, ok := a.classic.tornTabRect(t.key, w, h)
+		r, ok := classic1.tornTabRect(t.key, w, h)
 		if !ok || r.W < classicMinPx || r.H < classicMinPx {
 			continue
 		}
@@ -261,7 +261,7 @@ func (a *App) bringTornToFront(w, h int32) {
 				}
 			}
 			z = append(z, idx)
-			a.classic.tornZ = z
+			classic1.tornZ = z
 			return
 		}
 	}
@@ -278,7 +278,7 @@ func (a *App) drawTornTabs(w, h int32) {
 		return
 	}
 	c := a.ctx
-	a.bringTornToFront(w, h)
+	a.classic.bringTornToFront(&a.env, w, h)
 	for _, idx := range a.classic.tornTabOrder() {
 		t := tornTabTable[idx]
 		if _, torn := a.classic.classicOv[t.key]; !torn {

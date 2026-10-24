@@ -439,7 +439,7 @@ func menuActCMPanel(a *App, _ int)       { a.toggleCMPanel() }
 
 func menuToolboxShown(a *App, _ int) bool { return !a.classic.panelHidden(panelToolbox) }
 func menuToggleToolbox(a *App, _ int) {
-	a.setPanelHiddenGuarded(panelToolbox, !a.classic.panelHidden(panelToolbox))
+	a.classic.setPanelHiddenGuarded(&a.env, panelToolbox, !a.classic.panelHidden(panelToolbox))
 }
 
 func menuOpenSettings(a *App, _ int) { a.menuGoto(ScreenSettings) }

@@ -492,11 +492,11 @@ func (a *App) fetchAreaForBan() {
 
 // drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
 // modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
-func (a *App) modDashRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
+func (classic1 *classicState) modDashRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
 		return r
 	}
-	return a.wins.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
+	return e.wins.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
 }
 
 func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
@@ -506,7 +506,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 		return
 	}
 	wasActive := a.wins.modWin.dragging || a.wins.modWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.modDashRect(w, h)                                  // floating box: movable / resizable, non-blocking
+	panel := a.classic.modDashRect(&a.env, w, h)                  // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)

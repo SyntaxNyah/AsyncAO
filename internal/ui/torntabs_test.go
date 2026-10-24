@@ -45,7 +45,7 @@ func TestTabTorn(t *testing.T) {
 func TestDockedLogTabs(t *testing.T) {
 	// Nothing torn, new default (OOC is its own box): Log+Music+Areas+Players+Notes+Friends.
 	var a App
-	d, n := a.dockedLogTabs(false)
+	d, n := a.classic.dockedLogTabs(false)
 	if n != 6 {
 		t.Fatalf("default docked count = %d, want 6", n)
 	}
@@ -55,7 +55,7 @@ func TestDockedLogTabs(t *testing.T) {
 
 	// OOC-as-a-tab (the Legacy theme OR the opt-in "OOC in the log tab" toggle) keeps
 	// the OOC tab in the strip — and the OOC tab is actually one of them.
-	dt, dn := a.dockedLogTabs(true)
+	dt, dn := a.classic.dockedLogTabs(true)
 	if dn != 7 {
 		t.Fatalf("ooc-as-tab docked count = %d, want 7", dn)
 	}
@@ -74,7 +74,7 @@ func TestDockedLogTabs(t *testing.T) {
 		"tab:music":   {0.1, 0.1, 0.3, 0.3},
 		"tab:players": {0.4, 0.1, 0.3, 0.3},
 	}
-	d, n = a.dockedLogTabs(false)
+	d, n = a.classic.dockedLogTabs(false)
 	if n != 4 {
 		t.Fatalf("two torn: docked count = %d, want 4", n)
 	}
@@ -90,7 +90,7 @@ func TestDockedLogTabs(t *testing.T) {
 		"tab:players": {0, 0, .1, .1}, "tab:notes": {0, 0, .1, .1},
 		"tab:friends": {0, 0, .1, .1},
 	}
-	if d, n := a.dockedLogTabs(false); n != 1 || d[0].id != logTabLog {
+	if d, n := a.classic.dockedLogTabs(false); n != 1 || d[0].id != logTabLog {
 		t.Fatalf("all torn: got count=%d first=%d, want 1 / Log", n, d[0].id)
 	}
 }
@@ -101,8 +101,8 @@ func TestDockedLogTabsNoAlloc(t *testing.T) {
 	var a App
 	a.classic.classicOv = map[string][4]float64{"tab:music": {0.1, 0.1, 0.3, 0.3}}
 	if n := testing.AllocsPerRun(200, func() {
-		_, _ = a.dockedLogTabs(false)
-		_, _ = a.dockedLogTabs(true)
+		_, _ = a.classic.dockedLogTabs(false)
+		_, _ = a.classic.dockedLogTabs(true)
 	}); n != 0 {
 		t.Fatalf("dockedLogTabs allocates %v/op on the render path; want 0", n)
 	}

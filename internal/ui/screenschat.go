@@ -677,7 +677,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.chatlog.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
-	docked, numLogTabs := a.dockedLogTabs(oocAsTab)
+	docked, numLogTabs := a.classic.dockedLogTabs(oocAsTab)
 	tab := (r.W - volBtnW) / numLogTabs
 	for i := int32(0); i < numLogTabs; i++ {
 		bw := tab
@@ -1081,7 +1081,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 		}
 	}
 	if !a.classic.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
-		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
+		if a.classic.movableButton(&a.env, "ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
 			a.pairbox.showPair = !a.pairbox.showPair
 		}
 		x += 80
@@ -1268,31 +1268,31 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		evLabel = "Evidence ●"
 	}
 	// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
-	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
 		if c.Button(r, "Character") {
 			a.screen = ScreenCharSelect
 		}
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
 		if c.Button(r, "Wardrobe") {
 			a.openIniswap()
 		}
 		c.Border(r, ColAccent)
 		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
 		if c.Button(r, "Restyle") {
 			a.openSpriteStyle()
 		}
 		c.Tooltip(r, "Recolour / glow your character on the fly — other AsyncAO players see it")
 	}
 	// — Scene —
-	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
 		if c.Button(r, "Background") {
 			a.openBgPicker()
 		}
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
 		if c.Button(r, evLabel) {
 			a.toggleEvidence()
 		}
@@ -1300,7 +1300,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	x = a.drawPosSelect(x, y2, btnH)
 	x += gGap
 	// — Moderation —
-	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
 		if c.Button(r, "Mods...") {
 			a.courtxtra.showModcall = true
 		}
@@ -1331,19 +1331,19 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		y2 += btnH + 4
 		x = clusterX
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
 		if c.Button(r, "Settings") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenSettings
 		}
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
 		if c.Button(r, "Hotkeys") {
 			a.openHotkeyCheatSheet()
 		}
 		c.Tooltip(r, "Show all your hotkeys & custom binds (also F1)")
 	}
-	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
+	if r, ok := a.classic.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
 		if c.Button(r, "About") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenAbout
@@ -1359,7 +1359,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	if acct != "" {
 		loginLabel, loginW = acct, c.TextWidth(acct)+18
 	}
-	if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
+	if loginR, ok := a.classic.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
 		if c.Button(loginR, loginLabel) {
 			if acct != "" {
 				a.link.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
@@ -1418,7 +1418,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		x = clusterX
 	}
 	if !a.classic.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
-		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
+		if a.classic.movableButton(&a.env, "ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
 			a.requestDisconnect()
 			return y2, true
 		}

@@ -801,7 +801,7 @@ var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 // getting no response at all would be its own dead end.
 func (a *App) toggleChromePanel(id, label string) {
 	hide := !a.classic.panelHidden(id)
-	a.setPanelHiddenGuarded(id, hide)
+	a.classic.setPanelHiddenGuarded(&a.env, id, hide)
 	if a.classic.panelHidden(id) != hide {
 		return // refused by the guard, which has set its own explanatory toast
 	}
@@ -817,13 +817,13 @@ func (a *App) toggleChromePanel(id, label string) {
 // instead of applied-then-silently-undone. Every other toggle passes straight
 // through. Wholesale hidden-set writes (profile apply, prefs import/reset)
 // normalize the same invariant in seedHiddenFromPrefs instead.
-func (a *App) setPanelHiddenGuarded(id string, hide bool) {
-	if hide && a.classic.lastMouseLifeline(id) {
-		a.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
-		a.warnAt = time.Now()
+func (classic1 *classicState) setPanelHiddenGuarded(e *env, id string, hide bool) {
+	if hide && classic1.lastMouseLifeline(id) {
+		e.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
+		e.warnAt = time.Now()
 		return
 	}
-	a.classic.setPanelHidden(id, hide)
+	classic1.setPanelHidden(id, hide)
 }
 
 // lastMouseLifeline reports whether hiding id would leave every mouse lifeline
@@ -951,7 +951,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		}
 		hidden := a.classic.panelHidden(p.id)
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.short, hidden); next != hidden {
-			a.setPanelHiddenGuarded(p.id, next)
+			a.classic.setPanelHiddenGuarded(&a.env, p.id, next)
 		}
 		y += toolboxPiecesRowPitch
 	}
@@ -972,7 +972,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 				cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
 				hidden := a.classic.panelHidden(b.id)
 				if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-					a.setPanelHiddenGuarded(b.id, next)
+					a.classic.setPanelHiddenGuarded(&a.env, b.id, next)
 				}
 				vis++
 			}
@@ -991,7 +991,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 			cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
 			hidden := a.classic.panelHidden(b.id)
 			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-				a.setPanelHiddenGuarded(b.id, next)
+				a.classic.setPanelHiddenGuarded(&a.env, b.id, next)
 			}
 			vis++
 		}

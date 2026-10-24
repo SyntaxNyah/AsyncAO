@@ -62,16 +62,16 @@ func (a *App) voiceButtonState() (label string, border sdl.Color) {
 	}
 }
 
-func (a *App) voicePanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
+func (classic1 *classicState) voicePanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
 		return r
 	}
-	if !a.wins.voiceWin.placed {
+	if !e.wins.voiceWin.placed {
 		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
 		dh := clampI32(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: w - dw - floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.wins.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
+	return e.wins.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
 }
 
 // voicePeerName resolves a voice peer uid to a display name via the live roster,
@@ -201,7 +201,7 @@ func (a *App) voicePeerChar(uid int) string {
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.voiceWin.dragging || a.wins.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.voicePanelRect(w, h)
+	r := a.classic.voicePanelRect(&a.env, w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)

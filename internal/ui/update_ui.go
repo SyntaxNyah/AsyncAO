@@ -99,6 +99,7 @@ func (a *App) wireComponents() {
 // pointers have to be restored after each park/restore as well as at boot.
 func (a *App) wireComponentEnvs() {
 	a.updates.env = &a.env
+	a.classic.env = &a.env
 	a.toolbox.env = &a.env
 	a.jukebox.env = &a.env
 	a.debugPanel.env = &a.env

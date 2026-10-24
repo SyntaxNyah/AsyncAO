@@ -32,7 +32,7 @@ func TestCtrlSlotCompaction(t *testing.T) {
 		x := startX
 		at := map[string]int32{}
 		for _, b := range row {
-			if r, ok := a.ctrlSlot(&x, y2, b.wdt, b.adv, 1000, 800, b.key); ok {
+			if r, ok := a.classic.ctrlSlot(&x, y2, b.wdt, b.adv, 1000, 800, b.key); ok {
 				at[b.key] = r.X
 			}
 		}

@@ -1007,16 +1007,16 @@ func evidDescViewH(panelBottom, descTop int32) int32 {
 // into the top-LEFT over the stage (not centred), so the IC input (bottom) and the log
 // (right column) stay visible — you can keep talking and follow the conversation while
 // you browse evidence (#5). Once dragged/resized (placed) the floatWin geometry wins.
-func (a *App) evidPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.evidWin, slotPanelEvid, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h); ok {
+func (classic1 *classicState) evidPanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.evidWin, slotPanelEvid, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h); ok {
 		return r
 	}
-	if !a.wins.evidWin.placed {
+	if !e.wins.evidWin.placed {
 		dw := clampI32(evidPanelDefW, evidPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(evidPanelDefH, evidPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.wins.evidWin.rect(evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h)
+	return e.wins.evidWin.rect(evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h)
 }
 
 // drawEvidencePanel is the evidence browser/editor — a NON-BLOCKING floating window
@@ -1029,7 +1029,7 @@ func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.evidWin.dragging || a.wins.evidWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.evidPanelRect(w, h)
+	r := a.classic.evidPanelRect(&a.env, w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	// Title bar / drag handle + close + "Add new" + "Pop out/in" + a bottom-right
@@ -1631,16 +1631,16 @@ const (
 // modcallPanelRect is the Call-Mod window's screen rect. First-open tucks top-left
 // (like the evidence panel) so the IC input and log stay clear; once dragged or
 // resized (placed) the floatWin geometry wins.
-func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.modcallWin, slotPanelModcall, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h); ok {
+func (classic1 *classicState) modcallPanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.modcallWin, slotPanelModcall, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h); ok {
 		return r
 	}
-	if !a.wins.modcallWin.placed {
+	if !e.wins.modcallWin.placed {
 		dw := clampI32(modcallPanelDefW, modcallPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(modcallPanelDefH, modcallPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return a.wins.modcallWin.rect(modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h)
+	return e.wins.modcallWin.rect(modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h)
 }
 
 // drawModcallPanel collects the reason and fires ZZ — a NON-BLOCKING floating
@@ -1651,7 +1651,7 @@ func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
 func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.wins.modcallWin.dragging || a.wins.modcallWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.modcallPanelRect(w, h)
+	r := a.classic.modcallPanelRect(&a.env, w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColDanger)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)

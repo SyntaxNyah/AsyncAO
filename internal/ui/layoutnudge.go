@@ -142,7 +142,7 @@ func (a *App) editorNudgeKeys(w, h int32) bool {
 	case spaceElement:
 		a.nudgeThemeElement(tgt, dx, dy, coarse)
 	case spaceClassic:
-		a.nudgeClassicSlot(tgt, dx, dy, coarse, w, h)
+		a.classic.nudgeClassicSlot(&a.env, tgt, dx, dy, coarse, w, h)
 	}
 	return true
 }
@@ -261,12 +261,12 @@ func clampDesignRectToCanvas(r theme.Rect, court theme.Rect) theme.Rect {
 
 // nudgeClassicSlot moves the CLASSIC (default-layout) editor's selected slot, in screen
 // px, through the same override → fraction → prefs path a drag release takes.
-func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int32) {
+func (classic1 *classicState) nudgeClassicSlot(e *env, tgt editTarget, dx, dy int, coarse bool, w, h int32) {
 	key := tgt.classicKey()
-	if key == "" || a.classic.classicEditDrag != 0 {
+	if key == "" || classic1.classicEditDrag != 0 {
 		return
 	}
-	base, ok := a.classic.classicSlotCurrentRect(key, w, h)
+	base, ok := classic1.classicSlotCurrentRect(key, w, h)
 	if !ok {
 		return
 	}
@@ -274,7 +274,7 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 	// config.Settings.LayoutGridSize), so the coarse nudge reads it rather than the themed
 	// editor's fixed one — otherwise Ctrl+arrow would land off the lattice the Snap
 	// chip is drawing the widget onto.
-	grid := int(a.d.Prefs.Load().LayoutGridSize())
+	grid := int(e.d.Prefs.Load().LayoutGridSize())
 	r := base
 	r.X = int32(nudgeCoord(int(r.X), dx, coarse, 0, grid))
 	r.Y = int32(nudgeCoord(int(r.Y), dy, coarse, 0, grid))
@@ -282,16 +282,16 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 	if r == base {
 		return
 	}
-	a.classic.pushClassicUndo()
-	if a.classic.classicOv == nil {
-		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	classic1.pushClassicUndo()
+	if classic1.classicOv == nil {
+		classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	ov := rectToFrac(r, w, h)
-	a.classic.classicOv[key] = ov
-	a.classic.syncAnchorWindow(key, w, h) // the override now describes THIS window size
-	a.d.Prefs.SetClassicSlot(key, ov)
-	if m := a.classic.slotAnchorMode(key); m != "" {
-		a.d.Prefs.SetClassicAnchor(key, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+	classic1.classicOv[key] = ov
+	classic1.syncAnchorWindow(key, w, h) // the override now describes THIS window size
+	e.d.Prefs.SetClassicSlot(key, ov)
+	if m := classic1.slotAnchorMode(key); m != "" {
+		e.d.Prefs.SetClassicAnchor(key, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 	}
 }
 

@@ -52,11 +52,11 @@ var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Font
 func (debugpanel *debugPanelState) toggleDebugPanel() { debugpanel.open = !debugpanel.open }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
-func (a *App) debugPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
+func (classic1 *classicState) debugPanelRect(e *env, w, h int32) sdl.Rect {
+	if r, ok := classic1.seedPanelFromSlot(&e.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
 		return r
 	}
-	return a.wins.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
+	return e.wins.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
 }
 
 func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
@@ -66,7 +66,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		return
 	}
 	wasActive := a.wins.debugWin.dragging || a.wins.debugWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.debugPanelRect(w, h)
+	panel := a.classic.debugPanelRect(&a.env, w, h)
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
