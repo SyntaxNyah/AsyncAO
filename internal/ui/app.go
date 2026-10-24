@@ -257,7 +257,7 @@ type App struct {
 	// sidecar, the bake generation, the two sort keys and the visible_when memo).
 	// Lifted off App's flat namespace: it is read only by the themed element pass.
 	elemBake elemBakeState
-	sel selState
+	sel      selState
 	// fxPool is the fixed clock pool plus the stateful-effect pool and the sidecar
 	// refusal the chip quotes (element clocks / effects).
 	fxPool themeFXState
@@ -651,13 +651,6 @@ type App struct {
 	nextLogSession int
 
 	// --- IC/OOC log text selection (drag to highlight, Ctrl+C to copy) ---
-
-
-
-
-
-
-
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
