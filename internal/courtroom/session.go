@@ -134,12 +134,6 @@ const (
 	// §17.4 — a hostile server cannot balloon memory, and LabelClipped does NOT save
 	// us because it rasterizes the whole string before clipping the blit width, so an
 	// oversized reason draws NOTHING at all).
-	//
-	// RUNES, not bytes, and that distinction is load-bearing: Cyrillic is two bytes
-	// per rune in UTF-8, so a byte cap would cut a Russian server's whitelist notice
-	// at roughly half the text a Latin one keeps. clampWireBytes (profilewire.go) is
-	// the byte-capping sibling and is deliberately NOT reused here.
-	//
 	// Sized well past every real payload (the longest surveyed removal reason is a
 	// few hundred runes) while staying far below anything that threatens the memory
 	// envelope. The display surfaces bound their own row count separately, so this
@@ -149,7 +143,6 @@ const (
 
 // capServerText clamps server-authored prose to serverTextRuneCap runes, marking a
 // cut with an ellipsis so a truncated copy-paste never reads as the whole message.
-//
 // It MUST be applied to the raw wire field BEFORE any "Kicked: " / "Banned: "
 // prefix is concatenated on. Capping the joined string instead would let a small cap
 // eat into the prefix literal itself, and four consumers in internal/ui match that
@@ -157,15 +150,6 @@ const (
 // reason that stopped matching "Banned" would silently re-arm auto-reconnect against
 // a ban, turning a display bug into ban evasion. Capping the field keeps the prefix
 // structurally out of reach of the cap whatever its value.
-//
-// It also SCRUBS before it counts, through protocol.SanitizeText — the same scrub the
-// refusal-body reader uses, shared rather than repeated. That is not tidiness: a single
-// NUL anywhere in the payload truncates the C string SDL_ttf draws and the one
-// SDL_SetClipboardText copies, so a server could put one byte in front of its own access
-// code and both the box and Copy would silently stop there — the same "the tail is
-// unreachable" bug the notice box exists to end, through a different door. Scrubbing
-// first also means the rune count is a count of what will actually be shown.
-//
 // The fast path allocates nothing: SanitizeText returns the input untouched when there
 // is nothing to drop, RuneCountInString does not build a []rune, and every real payload
 // sits far under the cap, so the conversion only ever runs on the pathological input
@@ -300,7 +284,6 @@ type Event struct {
 // Nyathena run a PlayerStateObserver that streams PR (join/leave) and PU (field
 // update) packets to every client from connect — no /getarea, no opt-in — so the
 // roster is live and carries the server UID (the id pairing and /getarea target).
-// Char is "" for a spectator / a player still at character select. AreaID indexes
 // Areas. (../akashi/src/playerstateobserver.cpp.)
 type LivePlayer struct {
 	ID       int
@@ -328,16 +311,6 @@ const livePlayerCap = 1024
 // the looping field. AsyncAO honors FADE_IN, FADE_OUT (stop-path only) and
 // NO_REPEAT; SYNC_POS is skipped (see startMusic — SDL_mixer can't cheaply seek
 // a freshly-loaded stream mid-fetch).
-//
-// These same four wire values exist a second time on the SEND path as
-// config.MusicFlag* (internal/config/preferences.go), which cannot import this
-// package — the preference the Music header writes is what
-// RequestMusicWithFlags transmits. Only the VALUES are shared: the outgoing
-// shape has no fixed index for them (the showname ahead is conditional — see
-// RequestMusicWithFlags), which is why the round-trip test rebuilds the echo
-// field by field. The two copies are held equal by
-// TestMusicEffectBitsMatchTheSendSidePreference (musicflagspin_test.go); change
-// one and that test fails.
 const (
 	musicEffectFadeIn   = 1
 	musicEffectFadeOut  = 2
@@ -352,19 +325,7 @@ const (
 )
 
 // PU field types — PU#<id>#<type>#<data>#% (akashi PacketPU::DATA_TYPE).
-//
-// puIPID is an EXTENSION past akashi's four types. 2.11 defines PU by field
-// POSITION, so a server can add a type without breaking any client that doesn't
-// know it: an unknown type falls through the switch below and is ignored. It
-// carries the mod-only IPID as its own field instead of smuggling it inside the
-// name (the witches-fork trick handled under puOOCName), which is why it needs
-// no per-family gate — a dedicated type can't be confused with a player whose
-// OOC name merely ends in brackets, so the wrong-target-ban hazard that forced
-// embedsIPIDInName's gating cannot arise here.
-//
 // Whether a client is ALLOWED to see this is the server's decision, not ours:
-// PU is sent per recipient, so a server sends the IPID-bearing update only to
-// clients it has authenticated as moderators. We simply store what we are told.
 const (
 	puOOCName  = 0
 	puChar     = 1
@@ -506,9 +467,6 @@ type Session struct {
 	// re-stage it settled (Courtroom.RestoreMessage) instead of coming back to
 	// a blank stage. One replaced pointer, bounded by construction; cleared on
 	// a fresh SI handshake like MusicTrack (no stale stage across a rejoin).
-	//
-	// Two known fidelity gaps, both degrading to the pre-restore status quo
-	// (a blank / plainer stage, never a wrong render): it records EVERY
 	// speaker — the #81 ignore list is active-tab UI state, so an ignored
 	// LAST speaker shadows the previous non-ignored line and the restore
 	// stages nothing; and the send-on-change memories (sprite style, status,
@@ -627,10 +585,6 @@ func (s *Session) KFOCompat() bool {
 // returns ok=false for headers whose aolib typed model is not a faithful
 // superset of what AsyncAO consumes, so those fall through to the positional
 // switch in HandlePacket:
-//   - MS: aolib's MSToClient drops blipname/slide and the custom shout name.
-//   - PU: the mod-only IPID feed (type 4) is outside PlayerDataType (0-3).
-//   - MC: aolib's MusicEffects drops the NO_REPEAT bit (8).
-//   - SM: fix_last_area category shift; BN: arity-keyed wipe; RT/TI: arity.
 func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 	switch v := t.(type) {
 	case *aolib.Decryptor:
@@ -1066,7 +1020,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// old servers send only fields 0-2, so a short packet degrades to the
 		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
 		// end, and atoiOr falls back, so no bounds check is needed here.
-		//
 		// Loop default DELIBERATELY DIFFERS from AO2: AO2 sets looping=false when
 		// field 3 is absent (relying on outdated servers to loop server-side),
 		// but AsyncAO has always looped client-side, and every legacy tsuserver
@@ -1102,9 +1055,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "BN":
 		// ../AO2-Client/src/packet_distribution.cpp:342-358. Two things ride this
 		// packet, and both are keyed off its ARITY, not off the pos being non-empty:
-		//   set_side(content.at(1))                  — only when non-empty
-		//   set_background(content.at(0), size >= 2) — the viewport re-stage
-		// The size test is what makes an AREA SWAP wipe the stage while a plain /bg
 		// does not (#23). It must NOT be softened to `Field(1) != ""`: akashi's
 		// area side is empty until someone runs /side (../akashi/src/area_data.cpp),
 		// and KFO's remote-listen form sends BN with an explicitly empty pos
@@ -1171,7 +1121,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "checkconnection":
 		// Keepalive: AO2-Client answers CH with our char id.
-		//
 		// COMPATIBILITY ONLY — no server in the maintained fleet sends this
 		// header (zero occurrences across KFO-Server, Nyathena, Athena, akashi
 		// and Whisker; AO2-Client names it only to exclude it from a debug log,
@@ -1187,7 +1136,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// (packet_distribution.cpp CHECK → pong()). Nothing else changes — it is
 		// not an event, it does not touch the keepalive (the connection's own
 		// goroutine owns that), it only dates the clock correction.
-		//
 		// In production this always early-returns: the CH it answers came from
 		// the connection's keepalive goroutine, which leaves no stamp, so
 		// notePong finds none outstanding. That is deliberate (a stamp-less
@@ -1267,11 +1215,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// the measured half-RTT, matching AO2 and KFO byte for byte; see
 		// latency.go for the citations and for why a paused value is not
 		// corrected (it is a display value, not an anchor).
-		//
-		// clockLead() is 0 in production today (nothing measures a round trip —
-		// latency.go, "the missing call site"), so this arm currently behaves
-		// exactly as the uncorrected one it replaced. The correction is canon
-		// parity, not a fix for any reproduced defect.
 		id := atoiOr(p.Field(0), -1)
 		if id < 0 || id >= TimerCount || len(p.Fields) < 2 {
 			return nil
@@ -1546,17 +1489,7 @@ func (s *Session) RequestMusic(track string) {
 // RequestMusicWithFlags is AO2's TRACK-PLAY shape,
 // MC#<song>#<cid>[#<showname>][#<flags>] — Courtroom::on_music_list_double_clicked
 // (courtroom.cpp:5806-5819).
-//
 // The showname condition is canon's, verbatim and in canon's order:
-//
-//	(!ui_ic_chat_name->text().isEmpty() && CCCC_IC_SUPPORT) || EFFECTS
-//
-// so an EMPTY showname is appended only under `effects`, and a cccc_ic_support
-// server whose user has no showname set sees the bare two-field packet — exactly
-// what AO2 sends it. Positionality is not a reason to pad here: under `effects`
-// the flags follow and the empty placeholder is required (and canon emits it),
-// while without `effects` there is no later field for an omission to shift into.
-//
 // The MUSIC_EFFECT bitmask rides only under `effects`; on a server without it the
 // bits would never leave the client, which is why the Music overflow menu greys
 // those rows rather than hiding them (musicheader.go).

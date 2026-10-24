@@ -358,4 +358,3 @@ func TestNewSidecarSavesCleanly(t *testing.T) {
 		t.Errorf("a nil *Sidecar must validate (it is the stock AO2 theme): %v", err)
 	}
 }
-

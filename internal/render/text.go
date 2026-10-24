@@ -35,7 +35,6 @@ const DefaultDevScale int32 = 100
 // glyphs rasterize at final device size, and this divides the resulting device
 // metric down to the logical rect the kit lays out in (the renderer's own
 // SetScale then multiplies it back up 1:1 onto device pixels — no blur).
-//
 // ROUNDING RULE — "round half up" (add half the divisor before dividing). This
 // is the roadmap's flagged off-by-one failure mode at odd/non-integer scales;
 // it MUST match ui.devToLogical exactly (see internal/ui/ui.go), or a label and
@@ -58,16 +57,6 @@ func LogicalFromDevice(device, devScale int32) int32 { return logicalFromDevice(
 // below) because Badge needs the identical conversion for its own device-exact
 // bracket and a second, drifting copy of this arithmetic is exactly the kind of bug
 // #77's rounding-rule comment warns about.
-//
-// ROUNDING RULE — the SAME "round half up" logicalFromDevice uses, and for the same
-// reason: uiDeviceFromLogical (internal/ui/ui.go, the projection every kit label and
-// the focused text field draw through) rounds half up, so a TRUNCATING projection
-// here biased every text origin toward the stage origin — at the fractional scales
-// a maximized window's auto UI scale lands on (125/150/175%) a logical x of 3 drew
-// the chatbox text at device 4 while the chrome laid out around it drew at 5. That
-// one-pixel separation between the text and its own frame is the reported text
-// offset on maximize.
-//
 // Pinned equal to uiDeviceFromLogical by the ui package's cross-package test via
 // DeviceFromLogicalAt. devScale<=0 or ==100 is the identity fast path.
 func deviceFromLogicalAt(v, devScale int32) int32 {
@@ -501,7 +490,6 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xO
 // Draw blits the first visibleRunes runes at (x, y). Full lines blit whole;
 // the partial line reveals via src-rect width — O(lines) per frame, zero
 // allocations, zero texture churn.
-//
 // Callers that know the scale the renderer is CURRENTLY at should prefer
 // DrawScaled: it unlocks the device-exact blit that keeps a typing-out message
 // pixel-stable (see deviceExact). Draw keeps the scaled projection, which is what
@@ -514,34 +502,12 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 // as a percent (100 = 1:1). When it matches the scale the glyphs were rasterized
 // at, the blit goes device-exact and every revealed glyph lands on a fixed device
 // pixel for the whole crawl.
-// clip is the LOGICAL clip rect the caller currently has set, or nil if none. It
-// is required, not optional, because the device-exact bracket changes the scale
-// underneath an already-set clip and SDL backends do NOT agree on when a clip is
-// converted to device pixels: the software and GL renderers bake it at SET time
-// (so the bracket is harmless), while macOS's Metal renderer evaluates it against
-// the scale in force when it is USED. Under Metal the bracket therefore shrank
-// the clip to 1/scale of its intended height, and text drawn in device
-// coordinates fell outside it — at 125% a chatbox line drawn at device y454 was
-// clipped to y432 and vanished completely, while the showname above it (drawn
-// before the clip) kept rendering. Passing the rect lets draw re-assert it in
-// device pixels inside the bracket, which is correct on every backend.
 func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, renderPct int32, clip *sdl.Rect) {
 	m.draw(ren, visibleRunes, x, y, m.deviceExact(renderPct), clip)
 }
 
 // deviceExact reports whether the 1:1 device blit is both SAFE and WORTH IT for a
 // renderer currently scaled to renderPct.
-//
-// THE BUG IT FIXES. The scaled path blits a DEVICE-px source rect into a LOGICAL
-// dst rect that SetScale multiplies back up — but the dst width is rounded to a
-// whole logical pixel INDEPENDENTLY of the source, so the two rects can describe
-// different physical widths. At 200% a revealed prefix of 101 device px becomes
-// ceil(101/2) = 51 logical px = 102 device px: SDL stretches the whole revealed
-// run by one pixel, resampling every glyph in it. The crawl walks that width one
-// glyph at a time, so the stretch switches on and off with its parity and the
-// text visibly wobbles by a pixel or two every few letters — exactly the reported
-// artifact, and invisible at 100% where the projection is the identity.
-//
 // Under the device-exact blit dst.W IS src.W, so no resample is even possible.
 // Gated on the renderer scale MATCHING the raster's font device scale, because
 // that equality is what makes a 1:1 device blit reproduce the intended on-screen
@@ -563,17 +529,6 @@ func (m *MessageRaster) proj(v int32, exact bool) int32 {
 }
 
 // linePitch is the vertical step between wrapped lines, in the blit's own units.
-//
-// The device-exact case is deliberately NOT the raw device lineH. Every other
-// consumer of this block's vertical geometry — Height(), LineH(), the selection
-// highlight that steps rows by LineH(), the chatbox auto-grow — derives from the
-// FOLDED logical pitch, and Height()'s contract says in as many words that it must
-// match Draw's per-line step. Stepping by the raw device lineH instead differs by
-// up to a pixel per line and, unlike a one-off origin rounding, that error
-// ACCUMULATES down the message: by line three a selection highlight would sit
-// visibly off its text. So the exact path projects the LOGICAL pitch back to
-// device and steps by that — horizontal reveal width is the only thing that had to
-// change, and vertical layout stays bit-for-bit what it was.
 func (m *MessageRaster) linePitch(exact bool) int32 {
 	logical := logicalFromDevice(m.lineH, m.devScale)
 	if exact {
@@ -594,7 +549,6 @@ func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, ex
 		// physical rows depending on when the backend converts it, and the backends
 		// disagree. Setting it here, at 1:1, in device pixels, means both readings
 		// land on the same rows — the rows the caller actually asked for.
-		//
 		// This was a real, total failure on macOS (Metal), not a theoretical one: the
 		// clip evaluated against the bracketed 1:1 scale covered only 1/scale of its
 		// height, so at 125% chatbox text drawn at device y454 was clipped at y432
@@ -730,10 +684,6 @@ func (m *MessageRaster) TotalRunes() int {
 // the text-field caret metric. Fields raster their value unwrapped (a single
 // line), and the raster already stores the cumulative per-rune advances the
 // DRAW uses, so a caret measured here lands exactly where the glyphs are.
-// BOTH raster shapes are covered: the single-font `lines` path AND the
-// multi-font `styled` path — RasterizeFallback (what text fields use for
-// non-Latin/emoji) builds the styled shape, and reading only `lines` returned
-// 0 for it, pinning the drawn caret to the field's left edge. Clamped.
 func (m *MessageRaster) PrefixWidth(n int) int32 {
 	return logicalFromDevice(m.prefixWidthDev(n), m.devScale) // #77: device advances → logical caret metric
 }
@@ -820,12 +770,10 @@ func (m *MessageRaster) LineRange(i int) (int, int) {
 // RowOfRune is the display row that source rune n falls on — the vertical
 // sibling of RuneAt, off the same lineRanges table, so a caller that scrolls to
 // "where the crawl is" can never disagree with where the glyphs were drawn.
-//
 // It exists for AO2's ensureCursorVisible (courtroom.cpp:4514-4521), whose Qt
 // cursor lands on the revealed character's own block; a client that recomputed
 // the row from a rune count and an average line length would drift on any
 // wrapped message, which is precisely the case that needs to scroll.
-//
 // Clamped at both ends: a negative n is row 0 and an n past the text is the last
 // row, so a typewriter position that has run ahead of a re-wrapped raster (one
 // frame of overlap during a resize) can never index off the table.

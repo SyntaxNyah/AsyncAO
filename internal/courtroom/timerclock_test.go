@@ -314,4 +314,3 @@ func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 			got.Sub(before.Add(want)))
 	}
 }
-

@@ -3,20 +3,6 @@ package assets
 // MountIndex is the pre-built map of everything in the user's local mount
 // folders and .zip packs, so a layered lookup is an in-memory map hit instead of
 // a directory walk or a stat storm on the fetch path.
-//
-// THE ONE KEY SPACE. Every map and set in this file is keyed by the FOLDED REL
-// INCLUDING ITS EXTENSION — the output of foldRel. `files`, the quarantine and
-// Covers' exact arm all use that identical string, and a pack transport URL is
-// defined as MountLayer.LocalOrigin() + <that folded rel>. So URL→key is one
-// CutPrefix and key→URL is one concatenation; nothing ever re-folds. Two earlier
-// drafts of this design shipped a quarantine that was silently dead code because
-// it was written with a URL and read with a rel — hence the single stated rule.
-//
-// The index is IMMUTABLE once published, with exactly one bounded mutable
-// member: the quarantine. Rebuilding it (the user's Rescan) deliberately forgets
-// the quarantine, because a rescan is the user asserting their folders changed,
-// which is the only realistic moment a damaged file gets fixed.
-//
 // Threading: BuildMountIndex blocks and MUST run on a goroutine, never on the
 // render thread (rule 2 — no synchronous disk I/O on the render path). Lookups
 // run on pool workers. Reference counting keeps an archive handle alive while a
@@ -43,21 +29,8 @@ const (
 	// past ~46k files — the "size cap" / "not indexing files" report. Index memory
 	// grows with the pack (~180 bytes/file); the only remaining bounds are the
 	// SAFETY ones below (depth, per-entry size, symlink skip).
-	//
-	// mountIndexMaxDepth bounds directory recursion. It is safepath's shared
-	// bound, aliased rather than copied so the mount index and the theme packer
-	// can never drift into two different ideas of "too deep" (rule 4).
 	mountIndexMaxDepth = safepath.MaxDepth
 	// mountBadCap bounds the quarantine of pack files that failed to DECODE.
-	//
-	// Eviction is OLDEST-FIRST, deliberately inverting the stop-inserting-when-full
-	// policy used by TextureStore.MarkMissing and courtroom.recordMissing. There, a
-	// refused insert costs slightly worse UX. HERE it costs correctness: an
-	// unquarantined corrupt pack file keeps winning the lookup, so the network is
-	// never reached and the asset is permanently missingno. Evicting the oldest
-	// guarantees the CURRENTLY demanded asset is always quarantined and therefore
-	// always heals; a pack with more than this many corrupt files pays one extra
-	// read per cycled-out entry, bounded by demand rate, never per frame.
 	mountBadCap = 256
 	// mountArchiveCap bounds simultaneously OPEN .zip handles (rule 4). Each is an
 	// OS file descriptor plus its parsed central directory held for the index's
@@ -165,11 +138,6 @@ type mountSource interface {
 
 // BuildMountIndex walks every mount in order and returns the published index.
 // BLOCKING — goroutine only.
-//
-// Order matters: mounts are searched first-hit-wins, so an earlier mount shadows
-// a later one, exactly like AO2-Client mount paths. The walk therefore keeps the
-// FIRST spelling it sees for a key and ignores later duplicates.
-//
 // Errors are deliberately not fatal. A mount that cannot be opened (an unplugged
 // drive, a deleted folder, a corrupt zip) is skipped with its error recorded, and
 // whatever else indexed still serves: the layer only ever ADDS hits over the
@@ -391,14 +359,6 @@ func (q *quarantine) mark(foldedRel string) bool {
 
 // foldRel maps a URL-relative path onto the index's ONE key space: percent
 // decoded per segment, then lowercased.
-//
-// It returns its input UNCHANGED — same string header, no allocation — when a
-// single byte scan finds nothing to fold, which is the case for a typical
-// all-lowercase AO path. Real character folders often DO need folding, though:
-// the URL builder percent-escapes every segment, so "phoenix wright" arrives here
-// as "phoenix%20wright". The cost is paid once per lookup on those, and never on
-// the plain ones.
-//
 // Decoding per SEGMENT rather than over the whole string keeps a literal "%2F"
 // inside a filename from inventing a path separator. Folding case is what makes a
 // pack authored on Windows resolve identically on Linux, which is strictly better
@@ -500,13 +460,6 @@ func (d *dirSource) walk(fn func(rel string) bool) error {
 }
 
 // zipSource is a .zip pack mount.
-//
-// CONCURRENCY: zip.OpenReader parses the central directory once and keeps one
-// os.File open. Each File.Open returns a fresh reader over an io.SectionReader on
-// that shared *os.File, and os.File.ReadAt is safe for concurrent use, so several
-// pool workers may read different entries at once. Nothing here mutates the
-// Reader after construction.
-//
 // LIFETIME: the handle is owned by the MountIndex and closed only when the last
 // reference drops (see acquire/release), never when the layer pointer is swapped
 // — otherwise a Rescan during a read would close the file mid-ReadAt.

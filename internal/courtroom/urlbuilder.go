@@ -98,14 +98,8 @@ func (u URLBuilder) Evidence(image string) string {
 	// A nested evidence name ("cases/knife.png") keeps its separators (segPath),
 	// so the exact URL mirrors the server's real layout and a bundle writes real
 	// subfolders, never a "cases%2Fknife.png" file (#40).
-	//
 	// #127: AO allows an evidence image to crawl OUT of the evidence folder with
 	// ".." ("../characters/Ridelle/char_icon.png" — asset reuse across folders).
-	// cleanRel collapses "."/".." like the OS does, clamped so the path can never
-	// escape the origin (the same traversal guard Background uses), so the escaped
-	// spelling resolves to its real asset instead of 404ing / being refused by the
-	// local fetcher. Flat + nested names are unchanged (cleanRel is identity for a
-	// path with no "."/".." segments).
 	return u.origin + segPath(cleanRel(evidenceDir+image))
 }
 
@@ -163,8 +157,6 @@ func segPathRaw(name string) string {
 // charSeg escapes the CHARACTER-folder PATH honouring the builder's casing setting — lowercase
 // by default (the correct choice for almost every server), or the first-cap / title-case forms for
 // the rare capitalised-folder server. Emotes and every other segment stay lowercase (seg).
-//
-// The character identity MAY NEST, and AO2 supports it structurally: get_character_path is
 // VPath("characters/" + p_char + "/" + p_file) (../AO2-Client/src/path_functions.cpp:43-46), so a
 // '/' inside the name is a real directory on disk and packs use it ("SG/Faris NyanNyan"). webAO
 // agrees at the URL layer — it builds `characters/${encodeURI(charactername)}/…`
@@ -176,7 +168,6 @@ func segPathRaw(name string) string {
 // exactly this spelling ("characters/drio%2Fbyakuya%20togami"), which is the same defect #40 fixed
 // for backgrounds, evidence and sfx and missed here. Split first, then escape (and case) each
 // segment, exactly as segPath does everywhere else.
-//
 // FLAT identities — virtually every character on virtually every server — take the ContainsRune
 // fast path and come out BYTE-IDENTICAL, so no cache key, learned format or T1 texture key moves.
 func (u URLBuilder) charSeg(name string) string {
@@ -281,15 +272,6 @@ func emotePrefix(kind EmoteKind) string {
 // EmoteAlts returns the alternate spellings behind Emote()'s identity: the
 // bare unprefixed file, then the "(a)/" prefix FOLDER. Every sprite prefetch
 // site feeds this to PrefetchChain after the glued Emote() base.
-//
-// Deliberate deviation from AO2-Client's pathlist ORDER (animationlayer.cpp
-// probes "(a)X", "(a)/X", bare X): coverage is identical, but bare files
-// outnumber prefix-folder packs in the wild by far, and a live origin was
-// observed HANGING on folder-form misses (characters without an "(a)" dir
-// timed out instead of 404ing, which aborted the chain before the bare file
-// that existed and back-offed the host). Order only matters when a pack
-// ships BOTH spellings of the same emote — effectively never.
-// AssetType: CharSprite
 func (u URLBuilder) EmoteAlts(character, emote string, kind EmoteKind) []string {
 	return []string{
 		u.EmoteBare(character, emote),
@@ -473,20 +455,8 @@ func (u URLBuilder) BlipAuthored(name string) string {
 // MiscChatboxCandidates returns the ordered spellings of a per-character
 // chatbox skin (char.ini chat=<misc>), first entry = the asset's identity.
 // Two axes multiply, both real in the wild:
-//
-//   - Stem: AO2-Client loads misc/<misc>/chat before misc/<misc>/chatbox
-//     (courtroom.cpp:3328-3330; modern packs ship chat.png).
-//   - Case: AO2 reads a case-INSENSITIVE local filesystem, but web mirrors
-//     are case-sensitive and split two ways — webAO-convention mirrors
-//     lowercase every path (miku.pizza ships misc/yttd/chat.png for
-//     chat=YTTD), while raw content-folder mirrors keep the authored case
-//     (misc/HallA/...). Lowercase leads (it's this client's URL convention,
-//     seg() everywhere); the authored spelling follows when it differs.
-//
 // Slashes survive as path separators (nested values like "VA-11/Jill" are
 // common; PathEscape's %2F was a dead URL), spaces still escape per segment.
-// Feed [0] to the scene and the rest to PrefetchChain — ≤ 4 entries, each
-// miss 404-cached. // AssetType: Misc
 func (u URLBuilder) MiscChatboxCandidates(misc string) []string {
 	misc = strings.TrimSpace(misc)
 	lower := escapePreservingSlashes(strings.ToLower(misc))
@@ -519,18 +489,9 @@ const overlayIconsDir = "icons/"
 // in a character's effects folder — rung 8 of the ladder and the ONLY rung a
 // streaming client has to ask the network for (every other rung is a theme-local
 // directory probe, theme.FindOverlayElement).
-//
-// Same shape as MiscChatboxCandidates: the lowercase spelling is the identity
-// (this client's URL convention and what webAO-convention mirrors serve), the
-// authored spelling follows when it differs (raw content-folder mirrors keep the
-// author's case; AO2's case-insensitive local filesystem never had to choose).
-// ≤ 2 URLs, each miss 404-cached.
-//
 // Effect names carry SPACES in the wild ("fade to black", "tv black-trans") and
 // may nest, so every segment is escaped individually and slashes survive as
 // separators — a whole-value PathEscape would mint a dead "%2F" URL (#40).
-// [0] is the asset's identity everywhere; feed the rest to PrefetchChain.
-// AssetType: Effect
 func (u URLBuilder) OverlayEffectMisc(folder, name string) []string {
 	return u.overlayEffectCandidates(folder, name)
 }
@@ -669,7 +630,6 @@ func escapePreservingSlashes(p string) string {
 // defaultPosBackground / legacyPosBackground are the two spellings AO2 uses for
 // "the witness view", which doubles as the fallback for ANY position a
 // background does not ship art for.
-//
 // ../AO2-Client/src/path_functions.cpp:108-117 (get_pos_path) seeds every lookup
 // with witnessempty when that file exists and wit otherwise, and only then lets
 // a known pos or a 2.8 unique pos override it — and only if THAT file exists. So
@@ -683,16 +643,6 @@ const (
 
 // BackgroundFallbacks returns the further background stems to probe when a
 // position's own background art is absent, in AO2's order.
-//
-// A streaming client cannot stat files the way get_pos_path does, so the
-// existence ladder becomes a candidate chain: PrefetchChain probes the primary
-// first and only walks these when EVERY format of it 404s, delivering whichever
-// answers under the primary's base. Cost when the position's own art exists —
-// the overwhelmingly common case — is exactly zero extra probes, and a settled
-// miss is 404-cached, so the chain does not re-probe inside the TTL.
-//
-// The DESK deliberately gets no such chain. get_pos_path pairs the desk with the
-// background it settled on, but set_scene's desk arm
 // (../AO2-Client/src/courtroom.cpp:4628-4634) has no fallback at all: an author
 // suppresses a desk by not shipping the file, and 2.8 unique-position
 // backgrounds routinely ship <pos> with no <pos>_overlay for exactly that
@@ -713,7 +663,6 @@ func BackgroundFallbacks(bgPart string) []string {
 // PositionScene maps an AO side/pos code to its background and desk part
 // stems (AO2-Client path_functions get_pos_path table). Unknown positions
 // use the 2.8 unique-position convention: <pos> / <pos>_overlay.
-//
 // This is get_pos_path's table with its file-existence tests removed — those
 // become the probe chain BackgroundFallbacks returns, because a streaming client
 // cannot stat the origin.
@@ -746,21 +695,12 @@ func PositionScene(pos string) (bgPart, deskPart string) {
 // prosecution for the prosecution/helper-prosecution/WITNESS side, defense for
 // EVERYTHING else — the defense/helper-defense side, the judge, the jury, the
 // seance, and the empty side. Issue #126.
-//
-// IT NEVER RETURNS "". v1.98.0 returned "" for judge/jury/seance as a deliberate
-// deviation from AO2's catch-all else, and the playtest killed the deviation: a
-// zoom emote that draws no burst at all reads as a broken emote, and the question
-// "which burst does a judge get?" already has an answer — AO2's else branch gives
-// them defense_speedlines. Crystalwarrior: "in no circumstance should ZoomSide
-// return ”". So defense is the catch-all, exactly like AO2.
-//
 // The witness stands with the PROSECUTION because that is what AO2 hardcodes:
 // `side.startsWith("pro") || side == "hlp" || side.startsWith("wit")` is the whole
 // test, under its own comment "I still hate this hardcoding"
 // (../AO2-Client/src/courtroom.cpp:3463-3471 — the same block Crystalwarrior
 // quoted on the zoom report). This function shipped `wit` on the DEFENSE side for
 // the whole of v1.98.0, which drew the wrong speedline art for every witness.
-//
 // This is the side of the LAST-resort file (and the bundled stock burst keyed off
 // it); which FILES are tried before that is SpeedlinesCandidates' chain.
 func ZoomSide(pos string) string {
@@ -777,18 +717,10 @@ func ZoomSide(pos string) string {
 // side, defense_speedlines for everyone else). The last entry is the
 // AO2-compatible file; ZoomSide gives the bundled-burst side that stands behind
 // the whole chain.
-//
-// This is Crystalwarrior's resolution chain, with one substitution at the end:
-//
-//	check <pos>_speedlines; else prosecution_speedlines on pro/hlp/wit; else
-//	defense_speedlines; else report missing asset     (AO2)
-//
-// The last tier is served by the bundled stock burst instead of an alert — issue
 // #126 shipped that burst so a zoom always draws SOMETHING — and the bundled key
 // follows ZoomSide, so a pro whose pack ships nothing gets the PROSECUTION burst,
 // never the defense one. AO2 never hands a pro position defense_speedlines (its
 // hardcoded filename has no such branch), and neither do we.
-//
 // The <pos> arm is the extension AO2's hardcoded filename never allowed: a judge,
 // jury or seance speaker can now ship jud_speedlines / jur_speedlines /
 // sea_speedlines in their own character folder and have it used. For the six

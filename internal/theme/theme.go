@@ -48,15 +48,6 @@ type FontSpec struct {
 	Font  string // optional "<name>_font" family (AO2); used to find a bundled .ttf
 	// Sharp mirrors "<id>_sharp = 1" — AO2 renders that element WITHOUT
 	// antialiasing (courtroom.cpp:1237, QFont::NoAntialias).
-	//
-	// Parsed and DELIBERATELY not applied, on measurement rather than effort:
-	// the faces themes set it on already rasterise fully binary at the sizes
-	// AsyncAO opens them, so honouring it changes nothing where it was meant to,
-	// while SDL_ttf's Solid path adds an inverse-colour halo under the client's
-	// linear filtering and blanks colour emoji outright. The numbers, and the
-	// better target in the same set_font body (outline_*), are in
-	// docs/KNOWN-ISSUES.md — read that before wiring this up.
-	//
 	// Only the literal string "1" counts (courtroom.cpp:1237 is `!= "1"`), so
 	// "true"/"yes"/"0" all leave antialiasing ON. Do not "improve" the read below
 	// into a boolean parser: it would flip the elements a theme deliberately left
@@ -72,13 +63,9 @@ type FontSpec struct {
 
 // FontElements are the courtroom_fonts.ini identifiers AsyncAO honours, drawn
 // from AO2-Client Courtroom::set_fonts (courtroom.cpp:1195-1207).
-//
 // Order is load-bearing but is NOT AO2's call order: internal/ui indexes its
 // resolved per-element table by position in this list, so the pairing that must
 // hold is with the themeFontElem enum there (pinned by TestThemeFontElemOrder).
-// New identifiers are APPENDED for exactly that reason — inserting one at AO2's
-// position would silently hand every later element another's family and size.
-//
 // Still unhonoured, each for its own reason: "clock_N" has no themed clock
 // widget, and "evidence_name" / "evidence_image_name" / "evidence_description"
 // are set from a different translation unit (evidence.cpp:94-96) onto a surface
@@ -97,7 +84,6 @@ var FontElements = [...]string{
 	// widget in there. AO2: set_font(ui_debug_log, "", "debug_log", p_char)
 	// (courtroom.cpp:1198) — note this is NOT server_chatlog's font, which is the
 	// neighbouring key it is easiest to mistake it for, and NOT "ms_chatlog":
-	// set_fonts never reads that identifier, it survives only as the RECT key
 	// (courtroom.cpp:831).
 	"debug_log",
 
@@ -110,14 +96,8 @@ var FontElements = [...]string{
 	// the Settings rows — is identical whether an element came from AO2 or from
 	// us, and a second parallel table would have to duplicate all of it to say
 	// nothing new.
-	//
-	// APPENDED, never inserted: the position in this list IS the persisted index
-	// for internal/ui's enum, and TestFontElementsIsAppendOnly holds that.
-	//
 	// A theme MAY set them ("player_list = 12", "notes_font = Arial") and nothing
 	// stops it, which is deliberate — AsyncAO's own theme format will want to.
-	// Until then they are set by the user in Settings and no shipped AO2 theme
-	// mentions them, so they resolve to nothing and cost nothing.
 	"player_list",
 	"notes",
 	"friends",
@@ -149,22 +129,17 @@ type Theme struct {
 	// subtheme tier, its own folder and the flat-folder tier). Everything past it
 	// is the DEFAULT-theme fallback, which exists because AO2 falls back per key
 	// in the three design INIs.
-	//
 	// The sidecar deliberately does NOT: see sidecar below.
 	ownDirN int
 	// sidecar is the AsyncAO extension tier (asyncao_theme.ini), read ATOMICALLY
 	// from the first of THIS theme's own directories that has one — never merged
 	// per id across the ladder, and never inherited from the default theme.
-	//
 	// Both halves matter and they fail differently. Merging per id would
 	// materialise a fallback theme's decoration onto rects the author's canvas
 	// does not have; adopting the default theme's file wholesale would do the same
 	// thing to every theme that simply has no sidecar, which is most of them.
 	// AO2's own per-key merge is copied for the three design INIs because AO2 does
 	// it; nothing about the extension tier obliges us to repeat it.
-	// Pinned by TestElementsDoNotInheritFromDefault, in THIS package
-	// (sidecarload_test.go) — the loader is what the gate exercises, so it never
-	// needed internal/ui at all.
 	sidecar    *Sidecar
 	sidecarDir string
 	// sidecarErr is a sidecar that FAILED to parse (a cap refusal, or a file that
@@ -187,7 +162,6 @@ const SubthemeNameLen = 48
 // path_functions.cpp:192), so anything with a separator, a drive letter, a ".."
 // segment or a leading dot is refused outright rather than cleaned into
 // something plausible — cleaning is how a guard becomes a suggestion.
-//
 // Refusal is silent by design: the value comes from a preferences file, and the
 // only sane reading of an impossible subtheme is "no subtheme", which resolves
 // exactly like AO2 with the option unset.
@@ -214,9 +188,6 @@ func SanitizeSubtheme(sub string) string {
 // Load opens the named theme across the given content roots (e.g. the
 // user config dir and the executable's directory). Missing INIs are
 // tolerated; lookups then simply miss into defaults.
-//
-// sub is the AO2 subtheme folder to prefer ("" = none). AO2-Client's
-// get_asset_paths puts the subtheme directory AHEAD of the theme directory
 // (path_functions.cpp:190-193) and — deliberately — gives the default-theme
 // fallback NO subtheme tier (:202-205), so a subtheme can only ever add
 // resolutions inside the theme that owns it. That order is reproduced exactly;
@@ -247,9 +218,6 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	// client's content root is whatever the user pointed at. Probing <root>/<name>
 	// AFTER every <root>/themes/<name> means a real base can never lose to it:
 	// loadFirstINI takes the FIRST hit per key and FindAsset walks dirs in order.
-	// A well-formed base simply misses here (the dir does not exist) and pays two
-	// os.Open per INI on the theme-apply goroutine — never on a render, decode or
-	// resolver path (hard rule 2).
 	for _, root := range roots {
 		if root == "" {
 			continue
@@ -267,9 +235,7 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	// supplies exactly one theme, and synthesising <root>/default would let a
 	// stray folder named "default" sitting beside the drop hijack every key the
 	// real theme leaves unresolved.
-	//
 	// No SUBTHEME tier here either, and that is AO2's call, not a shortcut:
-	// get_asset_paths appends the default theme with no subtheme component
 	// (path_functions.cpp:202-205) while every earlier tier takes one, so
 	// "night" inside your theme must not reach into the bundled default's
 	// "night". Adding it would resolve files AO2 would not.
@@ -297,16 +263,6 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 
 // ownDirs are THIS theme's own directories — its subtheme tier, its own folder
 // and the flat-folder tier — with the default-theme fallback excluded.
-//
-// It is the ONE spelling of that boundary, and it is ownDirN, which Load records
-// while it is building the list. The three font scanners below used to spell it
-// `filepath.Base(dir) != t.Name` instead, and that test is WRONG for a subtheme:
-// dirs[0] is <root>/themes/<name>/<sub>, whose base is the SUBTHEME name, so
-// every subtheme directory fell out of the scan. A subtheme shipping one .ttf
-// and declaring no family was invisible, and a subtheme could not override its
-// parent's face for the same family — inverting the tier order Load exists to
-// guarantee. The effects ladder had already learned this the hard way and says
-// so in its own comment (overlayfx.go's dirIsActiveTheme).
 func (t *Theme) ownDirs() []string { return t.dirs[:t.ownDirN] }
 
 // Sidecar is the parsed asyncao_theme.ini, or nil for a stock AO2 theme. Every
@@ -418,22 +374,9 @@ func (t *Theme) HasFont(name string) bool {
 // FontFile returns the path to the font file (.ttf/.otf) the ACTIVE theme wants
 // its courtroom text drawn in, so a streaming client can honour a theme's font
 // (#6/#39, Crystalwarrior). Resolution order:
-//
-//  1. A file matching the "message_font" family bundled in the theme's own dir.
-//  2. That same declared family under the content root's base "fonts/" folder —
-//     AO themes reference fonts by NAME expecting them in base/fonts/, so this is
-//     where an imported theme's font actually lives (#39). The declared family is
-//     required here: base/fonts/ holds many faces, so we never grab an arbitrary
-//     one.
-//  3. Any font file bundled in the theme's own dir (a theme that ships one .ttf
-//     but declares no family — the original #6 case).
-//
 // The default-theme fallback dirs are skipped — only the active theme may impose
 // a font. "" = none found (keep the client font). FontFileFor / FontFiles resolve
 // the OTHER elements the same way (#39).
-// NamesAnyFontFamily reports whether courtroom_fonts.ini declares a "<id>_font"
-// family for ANY element. A theme that does is dressing its elements
-// individually, so nothing may impose a face on the whole client on its behalf.
 func (t *Theme) NamesAnyFontFamily() bool {
 	for _, id := range FontElements {
 		if t.Font(id).Font != "" {
@@ -499,15 +442,6 @@ var systemFontAliases = map[string]string{
 
 // HasAnyFontFile reports whether ANY font file is reachable through this theme's
 // ladder — its own directory tree, or a fonts/ folder beside the content roots.
-//
-// It answers one question and only one: is this installation set up with fonts
-// at all? A theme downloaded on its own, from a themes-only repository, arrives
-// with its families NAMED and none of the files, because AO2 keeps them in the
-// base's fonts/ folder. That user needs different advice ("point AsyncAO at your
-// base") from one whose base is present but simply lacks this family ("put the
-// file in the theme folder"), and nothing else in the resolver distinguishes the
-// two — FontFiles returns an absent key for both.
-//
 // Off-thread only: it walks the disk. Stops at the FIRST hit, so the common
 // healthy case is cheap.
 func (t *Theme) HasAnyFontFile() bool {
@@ -536,19 +470,6 @@ func (t *Theme) HasAnyFontFile() bool {
 // ResolveFamilies resolves arbitrary family NAMES to font files, for callers
 // choosing a font that no theme declared — the per-panel font a USER picks in
 // Settings, rather than one courtroom_fonts.ini asked for.
-//
-// It is the same ladder and the same bounded index FontFiles walks, exported
-// because the alternative was a second, subtly different resolver: this one
-// already knows that "Arial" means arial.ttf on Windows (systemFontAliases),
-// already caps the walk at fontScanMaxFiles, and is already covered by tests.
-//
-// An entry that is already a PATH to an existing file is taken verbatim and
-// never resolved, so a user can point at a font the walk would not find — which
-// on macOS and Linux is the only route, since those platforms hand no font
-// directories to sysDirs (their stores are laid out per-family and per-user, and
-// probing them by file stem resolves the wrong cut more often than the right
-// one).
-//
 // Off-thread only (hard rule 2): this walks the disk. Returns a map from the
 // requested name to its resolved path, omitting whatever did not resolve.
 func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[string]string {
@@ -615,14 +536,6 @@ func looksLikeFontPath(s string) bool {
 // from Qt — main.cpp:44-55 registers <base>/fonts RECURSIVELY into the
 // application font database, and QFont(family) then resolves against that plus
 // the system fonts:
-//
-//  1. the ACTIVE theme's own dir, recursively (DR Theme/igiari.ttf,
-//     Lymantriina/fonts/IBMPlexSerif-Regular.otf, 3DS Widescreen/fonts/*)
-//  2. <root>/fonts for every content root, recursively
-//  3. sysDirs (the OS font folders — pass nil to skip), stem match plus
-//     systemFontAliases, which is what makes a theme declaring plain "Arial"
-//     (DRRetribution, KFO qHD) resolve at all
-//
 // "" when the element declares no family or nothing matches.
 func (t *Theme) FontFileFor(element string, sysDirs []string) string {
 	return t.FontFiles(sysDirs)[element]
@@ -825,11 +738,6 @@ func (t *Theme) FindAsset(stem string, exts []string) (string, bool) {
 // FindAssetIn is FindAsset restricted to ONE directory — the same extension
 // probe, without the fall-through to the next theme dir (and therefore without
 // the fall-through to the bundled default theme).
-//
-// It exists for the variants AO2 derives from an image it has ALREADY resolved
-// rather than looking up by name. AOImage remembers the resolved path of the
-// picture it is showing (AO2-Client aoimage.cpp m_file_name) and the chatbox's
-// widen-and-swap ladder builds its med/big candidates by string-appending to
 // that path minus its extension (courtroom.cpp:3358-3368) — so those two files
 // can only ever come out of the directory the base skin came out of. A theme
 // that ships chatmed.png but no chat.png does not get its med art in AO2, and
@@ -873,7 +781,6 @@ func (t *Theme) KeyCount() int {
 // resolved (lowercased, values raw). Keys under a [section] are excluded, which
 // is what the caller wants: AO2 reads courtroom_design.ini's widget rects from
 // the root only.
-//
 // Diagnostics only — it allocates a map, so it must never be called from a draw
 // path. The one caller runs on the theme-apply goroutine.
 func (t *Theme) DesignKeys() map[string]string { return t.design.SectionKeys("") }

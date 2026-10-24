@@ -6,27 +6,6 @@ import (
 )
 
 // Windows proxy discovery, using only the standard library.
-//
-// NO NEW DEPENDENCY, and that is a checked result rather than an assumption:
-// neither golang.org/x/net nor golang.org/x/sys is in this module's go.mod or
-// go.sum, so either would be a brand-new direct require. stdlib syscall already
-// exports RegOpenKeyEx / RegQueryValueEx / RegCloseKey / HKEY_* / NewLazyDLL /
-// UTF16PtrFromString, which is everything this needs.
-//
-// TWO SOURCES OF TRUTH, and they disagree. The WinINET registry values are what
-// "Use a proxy server" writes; the WinHTTP API additionally reports "Automatically
-// detect settings" (WPAD) and any auto-config script (PAC URL). We read the
-// registry for an explicit proxy and the WinHTTP API for an explicit PAC URL, but
-// deliberately IGNORE the WPAD "Automatically detect settings" flag — it is on by
-// default on Windows, and honouring it let a misbehaving WPAD server (or an ISP
-// redirecting WPAD) carry every asset and take the client down. See discoverWindows.
-//
-// ⚠ DLL PLANTING. stdlib's syscall.LazyDLL has no System flag (x/sys's does), so
-// syscall.NewLazyDLL("winhttp.dll") would use the default search order — which
-// begins with the executable's own directory, and AsyncAO ships several dozen
-// staged runtime DLLs next to the .exe. winhttp.dll is therefore loaded through
-// kernel32's LoadLibraryExW with LOAD_LIBRARY_SEARCH_SYSTEM32, which is what
-// x/sys does internally and what makes that search order impossible.
 
 func init() { discoverSystem = discoverWindows }
 
@@ -110,15 +89,11 @@ func discoverWindows() *Policy {
 }
 
 // autoProxyPolicy resolves WPAD / a PAC script into a concrete policy, ONCE.
-//
 // Once, and not per request, because each call is a network round trip on the
 // first use and a syscall thereafter — squarely the kind of work hard rule 2
 // keeps off a request path, on a transport that fires thousands of requests per
 // cold load. The cost is that a script returning DIFFERENT proxies for different
 // destinations is collapsed to the answer for one representative destination.
-// That is a real approximation and it is recorded in the policy's source string
-// rather than hidden: scripts of that shape are rare, and the alternative —
-// a syscall on the asset hot path — is not available to this client.
 func autoProxyPolicy(cfg ieConfig) *Policy {
 	bypass := parseBypass(cfg.proxyBypass)
 	if bypass.dropped == 0 && len(bypass.hosts)+len(bypass.nets)+len(bypass.ips) == 0 && !bypass.noDot {
@@ -258,16 +233,6 @@ func utf16BytesToString(b []byte) string {
 // --- WinHTTP ----------------------------------------------------------------
 
 // ieProxyConfig is WINHTTP_CURRENT_USER_IE_PROXY_CONFIG.
-//
-// ⚠ autoDetect is int32, NOT bool. The C field is a BOOL, which is a 32-bit int;
-// declaring it as a Go bool (as one widely-used library does) reads only its low
-// byte and happens to work on amd64 by luck of the struct layout. int32 is what
-// the ABI actually says.
-// The three strings are kept as *uint16 rather than uintptr all the way through.
-// A uintptr is just a number to the compiler and the garbage collector, so
-// deriving one and converting it back to a pointer is the pattern `go vet` flags
-// as a possible misuse — correctly, even though this particular memory is
-// allocated by Windows and not by Go.
 type ieProxyConfig struct {
 	autoDetect    int32
 	_             int32 // explicit padding to the pointer alignment that follows
@@ -415,12 +380,6 @@ var (
 )
 
 // system32Proc resolves one export of a DLL loaded from System32 ONLY.
-//
-// kernel32 itself is safe to name directly — it is a KnownDLL, so Windows always
-// resolves it from the system image regardless of search order. Everything else
-// goes through LoadLibraryExW with LOAD_LIBRARY_SEARCH_SYSTEM32, because the
-// default search order starts with the executable's directory and AsyncAO ships
-// a directory full of DLLs beside the .exe.
 func system32Proc(dll, name string) (uintptr, bool) {
 	wide, err := syscall.UTF16PtrFromString(dll)
 	if err != nil {
@@ -449,10 +408,6 @@ func globalFree(p *uint16) {
 
 // utf16PtrToString reads a NUL-terminated UTF-16 string the API allocated.
 // Bounded by winhttpStringMaxChars so a corrupt pointer cannot walk forever.
-//
-// unsafe.Add rather than pointer arithmetic on a uintptr: it is the sanctioned
-// form for stepping through memory the Go heap does not own, and it keeps the
-// value a pointer the whole way so nothing can be collected out from under it.
 func utf16PtrToString(p *uint16) string {
 	if p == nil {
 		return ""

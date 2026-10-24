@@ -15,14 +15,14 @@ import (
 )
 
 const (
-	loadGoldenSHA256      = "3dc4d6dcdadc62f94e07455d282401caadf2e94d18f19f707ad386006405d1dc"
-	loadGoldenCompactSHA  = "8c4b5861996341a49de822e5c3a794d44d4229af550496250223acbbe89565c3"
-	malformedGoldenSHA    = "8211cdc9008e4e5da754d54de3590c50a6e7dfab7c4cef353ab6cfafc14fec67"
-	malformedCompactSHA   = "2280ef31818a2e4123f6febb1f93107d37760255e24faf4d2734f57f4568821f"
-	defaultPrefsSHA       = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
-	prefsGoldenSHA256     = "687acf079b173ad68c82f0f66322bef5572d78aa78804568552a607499ff42be"
-	settersGoldenSHA      = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
-	settersCompactSHA     = "93859183128deb63cc2ab8d2ec5420e4241cc6a84415f71215938650dd8bead7"
+	loadGoldenSHA256     = "3dc4d6dcdadc62f94e07455d282401caadf2e94d18f19f707ad386006405d1dc"
+	loadGoldenCompactSHA = "8c4b5861996341a49de822e5c3a794d44d4229af550496250223acbbe89565c3"
+	malformedGoldenSHA   = "8211cdc9008e4e5da754d54de3590c50a6e7dfab7c4cef353ab6cfafc14fec67"
+	malformedCompactSHA  = "2280ef31818a2e4123f6febb1f93107d37760255e24faf4d2734f57f4568821f"
+	defaultPrefsSHA      = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
+	prefsGoldenSHA256    = "687acf079b173ad68c82f0f66322bef5572d78aa78804568552a607499ff42be"
+	settersGoldenSHA     = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
+	settersCompactSHA    = "93859183128deb63cc2ab8d2ec5420e4241cc6a84415f71215938650dd8bead7"
 )
 
 // TestGoldenFilesFrozen pins the four data files the persistence-swap oracle depends on
