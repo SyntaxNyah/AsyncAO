@@ -131,7 +131,7 @@ func driveExportToCompletion(t *testing.T, a *App, budget int) int {
 		a.drainWarnings() // conclusive 404 → Store.MarkMissing (+ nil-safe room relays)
 		a.d.Pump.Frame()  // upload any decoded textures into T1 (none here — all 404)
 		a.tickGifExport() // warm → capture → finish
-		if a.gif == nil {
+		if a.sel.gif == nil {
 			return i + 1 // finished (finishGifExport / an error teardown cleared the job)
 		}
 		time.Sleep(2 * time.Millisecond) // real frame cadence; lets the 404 probes land
@@ -145,7 +145,7 @@ func driveExportToCompletion(t *testing.T, a *App, budget int) int {
 // where "never finished" alone couldn't distinguish a frozen warm, a wedged
 // room, or a merely-slow capture.
 func describeExportStall(a *App, ticks int) string {
-	j := a.gif
+	j := a.sel.gif
 	if j == nil {
 		return fmt.Sprintf("no stall: job already cleared after %d ticks", ticks)
 	}
@@ -219,7 +219,7 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 
 	wallStart := time.Now()
 	a.startSceneExport(rec, "all404", exportGIF)
-	if a.gif == nil || !a.gifExporting {
+	if a.sel.gif == nil || !a.sel.gifExporting {
 		t.Fatal("startSceneExport did not begin the export")
 	}
 
@@ -230,10 +230,10 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	const tickBudget = 4000
 	ticks := driveExportToCompletion(t, a, tickBudget)
 
-	if a.gif != nil {
+	if a.sel.gif != nil {
 		t.Fatal(describeExportStall(a, ticks))
 	}
-	if a.gifExporting {
+	if a.sel.gifExporting {
 		t.Error("gifExporting still set after the export finished")
 	}
 	// Wall-time guard: the whole drive must be far under the 20 s warm hard cap that a
@@ -250,7 +250,7 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	// test proves a real artifact was produced, not just that the loop terminated.
 	var res exportResult
 	select {
-	case res = <-a.gifResultCh:
+	case res = <-a.sel.gifResultCh:
 	case <-time.After(10 * time.Second):
 		t.Fatal("GIF encode result never arrived — the encode goroutine hung")
 	}

@@ -73,7 +73,7 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	if a.makerExportPack == 0 {
 		t.Fatal("the export did not ask before bundling the user's own art")
 	}
-	if a.makerExporting {
+	if a.sel.makerExporting {
 		t.Error("the export started while the confirmation was still open")
 	}
 	if a.makerExportScene == nil {

@@ -56,20 +56,20 @@ func decodeMayoRGBA() (*image.RGBA, bool) {
 // resample never touches the render loop.
 func (a *App) mayoTexture() (*sdl.Texture, int32, int32) {
 	scale := a.UIScale() // percent; bake to physical px = logical × scale
-	if a.mayoTex != nil {
-		if a.mayoTexScale == scale {
-			return a.mayoTex, a.mayoLogW, a.mayoLogH
+	if a.sel.mayoTex != nil {
+		if a.sel.mayoTexScale == scale {
+			return a.sel.mayoTex, a.sel.mayoLogW, a.sel.mayoLogH
 		}
-		_ = a.mayoTex.Destroy() // UI scale changed — rebake at the new physical size
-		a.mayoTex = nil
-	} else if a.mayoTexFailed {
+		_ = a.sel.mayoTex.Destroy() // UI scale changed — rebake at the new physical size
+		a.sel.mayoTex = nil
+	} else if a.sel.mayoTexFailed {
 		return nil, 0, 0 // decode/upload failed once — don't retry (and re-resample) every frame
 	}
-	a.mayoTexScale = scale
+	a.sel.mayoTexScale = scale
 
 	src, ok := decodeMayoRGBA()
 	if !ok {
-		a.mayoTexFailed = true
+		a.sel.mayoTexFailed = true
 		return nil, 0, 0
 	}
 	sb := src.Bounds()
@@ -89,11 +89,11 @@ func (a *App) mayoTexture() (*sdl.Texture, int32, int32) {
 
 	tex, err := a.ctx.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, int32(physW), int32(physH))
 	if err != nil {
-		a.mayoTexFailed = true
+		a.sel.mayoTexFailed = true
 		return nil, 0, 0
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	_ = tex.Update(nil, unsafe.Pointer(&dst.Pix[0]), dst.Stride)
-	a.mayoTex, a.mayoLogW, a.mayoLogH = tex, logW, logH
+	a.sel.mayoTex, a.sel.mayoLogW, a.sel.mayoLogH = tex, logW, logH
 	return tex, logW, logH
 }

@@ -348,8 +348,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// Log-selection press edge, computed once so both logs (which may both be
 	// on screen) read the same value — whichever draws first can't steal it.
-	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
-	a.logSelPrevDown = a.ctx.mouseDown
+	a.sel.logSelPressed = a.ctx.mouseDown && !a.sel.logSelPrevDown
+	a.sel.logSelPrevDown = a.ctx.mouseDown
 	// Ctrl+Z / Ctrl+Y with a text field focused become the FIELD's undo/redo
 	// (fieldhistory.go): consumed here, pre-screen, so no later chord consumer
 	// — the courtroom dispatcher, quick-connect, a user hotkey bound to z/y —
@@ -461,16 +461,16 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
-	case a.gifExporting:
+	case a.sel.gifExporting:
 		// M16 GIF export drives the viewport itself in the draw-phase tick — skip
 		// the normal scene driving so they don't fight over the shared viewport.
-	case a.replaying && a.replayRoom != nil:
+	case a.sel.replaying && a.sel.replayRoom != nil:
 		// M16 replay: drive the recorded scene instead of the live one (feed the
 		// next event when the room goes idle so the courtroom's own pacing times
 		// it; the viewport reads the replay scene via renderScene too). Wrapped
 		// so a panic in a bad/edge recording stops the replay, not the app.
 		a.driveReplay(dt)
-	case a.makerOpen:
+	case a.sel.makerOpen:
 		// M16 scene maker: drive the preview-pane room (NOT the live room) so the
 		// shared viewport's anim state tracks the previewed line, not whatever the
 		// live courtroom is doing behind the overlay.
@@ -615,13 +615,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// nothing at all unless an editor's own draw actually reaches the screen.
 	a.editorNudgeKeys(winW, winH)
 
-	if a.gifExporting {
+	if a.sel.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
 		// batch of frames on the render thread, behind a progress overlay, instead
 		// of any screen. Highest precedence: gif > replay > maker > screen.
 		a.tickGifExport()
 		a.drawGifProgress(winW, winH)
-	} else if a.replaying && a.replayRoom != nil {
+	} else if a.sel.replaying && a.sel.replayRoom != nil {
 		// M16: a replay takes over the whole window via the guarded overlay,
 		// drawn INSTEAD of any screen — so its controls own the input AND every
 		// replay render path is the recover-wrapped one (a themed courtroom or a
@@ -629,7 +629,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// replaying > makerOpen > screen: a Preview launched from the maker shows
 		// the replay; on ■ Stop the maker (still makerOpen) reappears intact.
 		a.drawReplayOverlay(winW, winH)
-	} else if a.makerOpen {
+	} else if a.sel.makerOpen {
 		// M16 scene maker: a full-window editor overlay (scenemaker.go), drawn
 		// instead of any screen so it owns input.
 		a.drawSceneMaker(winW, winH)

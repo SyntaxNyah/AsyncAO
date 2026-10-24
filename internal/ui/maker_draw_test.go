@@ -143,7 +143,7 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	// draw paths a nil-session test would skip.
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
 	a.bgPick.server = []string{"court", "gs4", "lobby"}
-	a.makerScene = &sceneRecording{
+	a.sel.makerScene = &sceneRecording{
 		Version: recordingVersion,
 		Origin:  "https://example.test/base/",
 		StartBg: "court",
@@ -170,10 +170,10 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	// No crop, then a crop range — both exercise the list visuals + toolbar.
 	for _, crop := range []bool{false, true} {
 		if crop {
-			a.makerTrimStart, a.makerTrimEnd = 1, 3
+			a.sel.makerTrimStart, a.sel.makerTrimEnd = 1, 3
 		}
-		for sel := range a.makerScene.Events {
-			a.makerSel = sel
+		for sel := range a.sel.makerScene.Events {
+			a.sel.makerSel = sel
 			a.drawMakerList(8, 40, 360, 600)
 			a.drawMakerEditor(380, 40, 600)
 		}
@@ -185,11 +185,11 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	// assertion that the whole draw — including the parts not covered above —
 	// survived (this is what would catch the reported edit crash).
 	for _, exp := range []bool{false, true} {
-		a.makerOpen = true
-		a.makerExportOpen = exp
-		a.makerSel = 0
+		a.sel.makerOpen = true
+		a.sel.makerExportOpen = exp
+		a.sel.makerSel = 0
 		a.drawSceneMaker(1280, 720)
-		if !a.makerOpen {
+		if !a.sel.makerOpen {
 			t.Fatalf("drawSceneMaker (exportPanel=%v) panicked — recoverMaker closed the maker; edit crash reproduced", exp)
 		}
 	}

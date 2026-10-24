@@ -1232,8 +1232,8 @@ func (a *App) callwordAlert(osTitle, body string) {
 		a.warnLine = clampLine(body)
 		a.warnAt = time.Now()
 	}
-	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
-		a.lastOSToast = time.Now()
+	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.sel.lastOSToast) >= osToastMinInterval {
+		a.sel.lastOSToast = time.Now()
 		showOSToast(osTitle, body)
 	}
 	a.ctx.FlashWindow()

@@ -44,7 +44,7 @@ const (
 // never sits on top of the thing it opens.
 func (a *App) iniswapChipActive() bool {
 	return a.screen == ScreenCourtroom && a.link.sess != nil && !a.inibrowse.showIni &&
-		!a.gifExporting && !a.replaying && !a.makerOpen
+		!a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
 }
 
 // iniswapChipRect is the chip's rect in the menu-bar band, left-anchored after the

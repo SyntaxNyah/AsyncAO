@@ -536,7 +536,7 @@ type contentPackageResult struct {
 // non-nil; the origin comes from rec.Origin (the caller filled it via
 // demoDefaultOrigin on load), so this touches no other App fields.
 func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
-	if a.contentBusy {
+	if a.sel.contentBusy {
 		a.warnLine = "A content report / package is already running — let it finish first."
 		a.warnAt = time.Now()
 		return false
@@ -552,9 +552,9 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	}
 	report := enumerateContent(rec.Origin, rec.StartBg, evs)
 
-	a.contentGen++
+	a.sel.contentGen++
 	j := &contentJob{
-		gen:     a.contentGen,
+		gen:     a.sel.contentGen,
 		stem:    sanitizeStem(stem),
 		report:  report,
 		created: time.Now(),
@@ -565,8 +565,8 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 		// Nothing to probe: the report is already complete (every item stays
 		// StatusUnknown, and OriginMissing tells the formatter to say so up front).
 		j.phase = phaseReport
-		a.content = j
-		a.contentBusy = true
+		a.sel.content = j
+		a.sel.contentBusy = true
 		a.warnLine = "No server recorded — nothing to check. See the report."
 		a.warnAt = time.Now()
 		return true
@@ -594,8 +594,8 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	}
 	j.seedItems = items
 	j.seedMgr = a.d.Manager
-	a.content = j
-	a.contentBusy = true
+	a.sel.content = j
+	a.sel.contentBusy = true
 
 	// SEED FIRST when the origin is a network host and auto-detect is on: fetch
 	// <origin>/extensions.json and seed this host's learned formats BEFORE probing,
@@ -630,7 +630,7 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 // (reads a.d.Manager/Prefs, spawns the seed/probe goroutines) — called AFTER
 // stopRecording's async .aorec write, so it never blocks or slows the stop.
 func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
-	if a.contentBusy {
+	if a.sel.contentBusy {
 		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
 		// Queuing would violate the single-flight/no-unbounded rule and stomping a
 		// user's manual report would be worse than silently declining the freebie.
@@ -650,9 +650,9 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 		return // defensive: TrimSpace above already guarded this — nothing to probe
 	}
 
-	a.contentGen++
+	a.sel.contentGen++
 	j := &contentJob{
-		gen:     a.contentGen,
+		gen:     a.sel.contentGen,
 		stem:    sanitizeStem(stem),
 		report:  report,
 		created: time.Now(),
@@ -678,8 +678,8 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	}
 	j.seedItems = items
 	j.seedMgr = a.d.Manager
-	a.content = j
-	a.contentBusy = true
+	a.sel.content = j
+	a.sel.contentBusy = true
 
 	// Seed the recording's origin first when it's a network host with auto-detect
 	// on and not already seeded this session — an in-app recording's origin IS the
@@ -871,7 +871,7 @@ func assetLikelyMissing(err error) bool {
 // no job runs (zero live-path cost). The UI agent calls this each frame while
 // its Studio panel is up; it is also registered in App.Update's poll list.
 func (a *App) tickContentJob() {
-	j := a.content
+	j := a.sel.content
 	if j == nil {
 		return
 	}
@@ -894,8 +894,8 @@ func (a *App) tickContentJob() {
 				// job so contentBusy can't stick and wedge every future content job. The
 				// flat .aorec already landed, so nothing is lost.
 				a.debug.push("recording auto-bundle: package could not start — " + a.warnLine)
-				a.content = nil
-				a.contentBusy = false
+				a.sel.content = nil
+				a.sel.contentBusy = false
 			}
 		}
 	case phasePackaging:
@@ -1002,16 +1002,16 @@ func (a *App) finishContentProbe(j *contentJob, msg string) {
 // ContentReportReady reports whether a probed report is available to display
 // (probe finished; not yet or not being packaged). For the UI's panel gate.
 func (a *App) ContentReportReady() bool {
-	return a.content != nil && a.content.phase == phaseReport
+	return a.sel.content != nil && a.sel.content.phase == phaseReport
 }
 
 // ContentJobReport returns the current job's report (nil if none). Read-only for
 // the UI panel + the formatter; the render thread owns it.
 func (a *App) ContentJobReport() *ContentReport {
-	if a.content == nil {
+	if a.sel.content == nil {
 		return nil
 	}
-	return a.content.report
+	return a.sel.content.report
 }
 
 // CancelContentJob drops the running job at any phase, leak-free: it bumps the
@@ -1019,13 +1019,13 @@ func (a *App) ContentJobReport() *ContentReport {
 // job, and lets the buffered channels + closed workCh drain the workers to
 // death. Idempotent. Render thread only.
 func (a *App) CancelContentJob() {
-	if a.content == nil {
+	if a.sel.content == nil {
 		return
 	}
-	a.contentGen++           // invalidate the dropped job's generation
-	a.content.releaseProbe() // unblock any probe goroutines so they die (no leak)
-	a.content = nil
-	a.contentBusy = false
+	a.sel.contentGen++           // invalidate the dropped job's generation
+	a.sel.content.releaseProbe() // unblock any probe goroutines so they die (no leak)
+	a.sel.content = nil
+	a.sel.contentBusy = false
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,7 +1040,7 @@ func (a *App) CancelContentJob() {
 // (the same a.contentBusy job continues into packaging). rec supplies the events
 // + StartBg the bundled .aorec needs. Returns false if no probed report is ready.
 func (a *App) PackageContentBundle(rec *sceneRecording) bool {
-	j := a.content
+	j := a.sel.content
 	if j == nil || j.phase != phaseReport {
 		a.warnLine = "Run the content report first, then package."
 		a.warnAt = time.Now()
@@ -1113,8 +1113,8 @@ func (a *App) tickContentPackage(j *contentJob) {
 	select {
 	case res := <-j.pkgDone:
 		auto := j.auto
-		a.content = nil
-		a.contentBusy = false
+		a.sel.content = nil
+		a.sel.contentBusy = false
 		// The SINGLE toast for the whole auto-build (steps 3+4): on a clean success name
 		// the bundle folder in the recordings-relative form the other Studio toasts use.
 		// The size-cap abort returns dir != "" (a PARTIAL write) — don't claim a clean

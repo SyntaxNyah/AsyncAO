@@ -751,11 +751,11 @@ func (a *App) drainWarnings() {
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.replayRoom != nil {
-					a.replayRoom.NotifyAssetMissing(w.Base)
+				if a.sel.replayRoom != nil {
+					a.sel.replayRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.makerPreviewRoom != nil {
-					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				if a.sel.makerPreviewRoom != nil {
+					a.sel.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 				// missingno: relay the render-side confirmed-missing signal so the
 				// viewport draws the AO2 placeholder for this base instead of a stale
@@ -785,11 +785,11 @@ func (a *App) drainWarnings() {
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyDeskMissing(w.Base)
 				}
-				if a.replayRoom != nil {
-					a.replayRoom.NotifyDeskMissing(w.Base)
+				if a.sel.replayRoom != nil {
+					a.sel.replayRoom.NotifyDeskMissing(w.Base)
 				}
-				if a.makerPreviewRoom != nil {
-					a.makerPreviewRoom.NotifyDeskMissing(w.Base)
+				if a.sel.makerPreviewRoom != nil {
+					a.sel.makerPreviewRoom.NotifyDeskMissing(w.Base)
 				}
 				// The render-side half: syncAnimDesk releases the held desk layer on
 				// this flag, so nothing is blitted (AO2's ui_vp_desk->hide()). The set
@@ -815,11 +815,11 @@ func (a *App) drainWarnings() {
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.replayRoom != nil {
-					a.replayRoom.NotifyAssetMissing(w.Base)
+				if a.sel.replayRoom != nil {
+					a.sel.replayRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.makerPreviewRoom != nil {
-					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				if a.sel.makerPreviewRoom != nil {
+					a.sel.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 			}
 			line := "Missing asset: " + w.Base
@@ -1151,8 +1151,8 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	}
 	// Desktop (OS) toast — only while you're tabbed away (#M4), rate-limited so a chatty
 	// friend can't storm it.
-	if a.d.Prefs.Load().FriendOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
-		a.lastOSToast = time.Now()
+	if a.d.Prefs.Load().FriendOSToast && !a.ctx.WindowFocused() && time.Since(a.sel.lastOSToast) >= osToastMinInterval {
+		a.sel.lastOSToast = time.Now()
 		name := strings.TrimSpace(m.Showname)
 		if name == "" {
 			name = strings.TrimSpace(m.CharName)
@@ -1174,10 +1174,10 @@ func (a *App) signalModcall(serverName, notice string) {
 	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.Load().StreamerModeOn || a.ctx.WindowFocused() {
 		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
 	}
-	if time.Since(a.lastOSToast) < osToastMinInterval {
+	if time.Since(a.sel.lastOSToast) < osToastMinInterval {
 		return
 	}
-	a.lastOSToast = time.Now()
+	a.sel.lastOSToast = time.Now()
 	body := strings.TrimSpace(notice)
 	if serverName != "" {
 		body = serverName + ": " + body

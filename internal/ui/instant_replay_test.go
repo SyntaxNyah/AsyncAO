@@ -80,10 +80,10 @@ func TestLinearizeReplayBuf(t *testing.T) {
 	const ringCap = 4
 	a := &App{env: env{}, replayBuf: make([]replayBufEntry, ringCap)}
 	write := func(text string) { // mirrors bufferReplayEvent's ring advance
-		a.replayBuf[a.replayBufW] = replayBufEntry{ev: recEvent{Text: text}}
-		a.replayBufW = (a.replayBufW + 1) % ringCap
-		if a.replayBufN < ringCap {
-			a.replayBufN++
+		a.sel.replayBuf[a.sel.replayBufW] = replayBufEntry{ev: recEvent{Text: text}}
+		a.sel.replayBufW = (a.sel.replayBufW + 1) % ringCap
+		if a.sel.replayBufN < ringCap {
+			a.sel.replayBufN++
 		}
 	}
 	texts := func() []string {

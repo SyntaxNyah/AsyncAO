@@ -241,8 +241,8 @@ func (a *App) autoLoginOnReady() {
 	// A desktop notification too, so a minimized mod still sees it — rate-limited
 	// (shares the friend-toast throttle) so a multi-tab restore-on-launch can't
 	// burst the notification centre with one popup per reconnecting server.
-	if time.Since(a.lastOSToast) >= osToastMinInterval {
-		a.lastOSToast = time.Now()
+	if time.Since(a.sel.lastOSToast) >= osToastMinInterval {
+		a.sel.lastOSToast = time.Now()
 		showOSToast("AsyncAO — auto-login", line)
 	}
 }

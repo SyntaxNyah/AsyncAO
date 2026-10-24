@@ -152,11 +152,11 @@ func TestContentPanelCloseCancels(t *testing.T) {
 	}
 	contentPanel.open = true
 	contentPanel.rec = rec
-	if !a.contentBusy {
+	if !a.sel.contentBusy {
 		t.Fatal("job should be busy after start")
 	}
 	a.closeContentPanel()
-	if a.contentBusy || a.content != nil {
+	if a.sel.contentBusy || a.sel.content != nil {
 		t.Error("closeContentPanel must cancel the job (clear contentBusy + content)")
 	}
 	if contentPanel.open {
@@ -183,7 +183,7 @@ func TestContentPanelCloseViaEsc(t *testing.T) {
 	if !a.closeTopOverlay() {
 		t.Fatal("closeTopOverlay must claim the open content panel")
 	}
-	if contentPanel.open || a.contentBusy {
+	if contentPanel.open || a.sel.contentBusy {
 		t.Error("Esc close must close the panel and cancel the job")
 	}
 }
@@ -206,7 +206,7 @@ func TestBrowserPurposeRoutesVideoUnchanged(t *testing.T) {
 	if contentPanel.open {
 		t.Error("the VIDEO purpose must NOT open the content panel")
 	}
-	if a.content != nil || a.contentBusy {
+	if a.sel.content != nil || a.sel.contentBusy {
 		t.Error("the VIDEO purpose must NOT start a content job")
 	}
 }
@@ -234,7 +234,7 @@ func TestBrowserPurposeCheckOpensPanel(t *testing.T) {
 	if contentPanel.stem != "myscene" {
 		t.Errorf("stem = %q, want myscene", contentPanel.stem)
 	}
-	if a.content == nil {
+	if a.sel.content == nil {
 		t.Error("check purpose must start a content job")
 	}
 }
@@ -266,8 +266,8 @@ func TestContentPanelReportRetainedAfterClear(t *testing.T) {
 		t.Fatal("panel should have stashed the live report")
 	}
 	// Simulate the post-package clear (tickContentPackage nils a.content).
-	a.content = nil
-	a.contentBusy = false
+	a.sel.content = nil
+	a.sel.contentBusy = false
 	if a.ContentJobReport() != nil {
 		t.Fatal("precondition: ContentJobReport must be nil after the clear")
 	}
@@ -388,7 +388,7 @@ func TestContentPickerSwitchRestarts(t *testing.T) {
 	if !contentPanel.useLocal || contentPanel.rec.Origin != mountOrigin {
 		t.Fatalf("precondition: default should be the local base; useLocal=%v origin=%q", contentPanel.useLocal, contentPanel.rec.Origin)
 	}
-	genBefore := a.contentGen
+	genBefore := a.sel.contentGen
 
 	// Switch to "This server" (no session → empty server origin). The job restarts
 	// against the empty origin, which short-circuits to an OriginMissing report.
@@ -401,8 +401,8 @@ func TestContentPickerSwitchRestarts(t *testing.T) {
 	if !contentPanel.pickerChosen {
 		t.Error("an explicit switch must latch pickerChosen (sticky per session)")
 	}
-	if a.contentGen <= genBefore {
-		t.Errorf("a switch must bump the generation (cancel + restart): %d → %d", genBefore, a.contentGen)
+	if a.sel.contentGen <= genBefore {
+		t.Errorf("a switch must bump the generation (cancel + restart): %d → %d", genBefore, a.sel.contentGen)
 	}
 	if contentPanel.rec.Origin != "" {
 		t.Errorf("rec.Origin after switching to the empty server = %q, want empty", contentPanel.rec.Origin)
@@ -447,13 +447,13 @@ func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
 	contentPanel.rec = rec
 	contentPanel.originServer = ""
 	contentPanel.originLocal = "" // no mounts
-	genBefore := a.contentGen
+	genBefore := a.sel.contentGen
 
 	// The direct switch is still a no-op on an empty base (nothing to switch to).
 	if a.switchContentSource(true) {
 		t.Error("switch to local with no mounts must be a no-op (nothing re-runs)")
 	}
-	if a.contentGen != genBefore {
+	if a.sel.contentGen != genBefore {
 		t.Error("a no-op switch must NOT bump the generation")
 	}
 	if contentPanel.useLocal {
@@ -467,7 +467,7 @@ func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
 	if !contentPanel.localSetupOpen {
 		t.Error("clicking Local base with no base must expand the inline setup row")
 	}
-	if contentPanel.useLocal || a.contentGen != genBefore {
+	if contentPanel.useLocal || a.sel.contentGen != genBefore {
 		t.Error("expanding the setup row must not switch source or re-run the report")
 	}
 }

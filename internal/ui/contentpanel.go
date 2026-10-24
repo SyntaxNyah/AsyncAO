@@ -636,7 +636,7 @@ func (a *App) drawContentPanel(w, h int32) {
 		// concat runs once per probe result, never once per frame. "probing" is the
 		// ACTUAL phase — NOT !ContentReportReady(): that reads false during packaging
 		// AND after the post-package clear, which would stick "(checking…)" on forever.
-		probing := a.content != nil && a.content.phase == phaseProbing
+		probing := a.sel.content != nil && a.sel.content.phase == phaseProbing
 		c.LabelClipped(inX, y, inW, s.contentStatusLine(rep, probing), ColText)
 		y += 20
 	}
@@ -813,5 +813,5 @@ func contentHeaderLabel(c *CategoryReport) string {
 // is still cancellable via the ✕/Esc close, but the Cancel BUTTON only shows
 // while work is actually in flight.
 func (a *App) contentJobRunning() bool {
-	return a.content != nil && (a.content.phase == phaseProbing || a.content.phase == phasePackaging)
+	return a.sel.content != nil && (a.sel.content.phase == phaseProbing || a.sel.content.phase == phasePackaging)
 }

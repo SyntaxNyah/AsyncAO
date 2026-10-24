@@ -184,7 +184,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// creation every frame (SDL copies the rect, so later scratch reuse is safe).
 		c.cgoRect = msgClip
 		_ = c.Ren.SetClipRect(&c.cgoRect)
-		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
+		if a.sel.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(textRect.X, msgY, wrapW, sc) // scrolled with the text it marks
 		}
 		if a.raster.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
@@ -254,38 +254,38 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 // scrollY is the crawl-follow offset the text is DRAWN with
 func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.Scene) {
 	c := a.ctx
-	pressed := c.mouseDown && !a.chatSelPrevDown
-	a.chatSelPrevDown = c.mouseDown
+	pressed := c.mouseDown && !a.sel.chatSelPrevDown
+	a.sel.chatSelPrevDown = c.mouseDown
 	inText := c.hovering(textRect)
 	if pressed {
 		if inText {
-			a.chatSelDragging = true
-			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
+			a.sel.chatSelDragging = true
+			a.sel.chatSelDownX, a.sel.chatSelDownY = c.mouseX, c.mouseY
 			if a.raster.msRaster != nil { // anchor the range at the pressed boundary
-				a.chatSelA = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
-				a.chatSelB = a.chatSelA
+				a.sel.chatSelA = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+				a.sel.chatSelB = a.sel.chatSelA
 			}
 		} else {
-			a.chatSelActive = false // a press elsewhere clears the highlight
+			a.sel.chatSelActive = false // a press elsewhere clears the highlight
 		}
 	}
-	if a.chatSelDragging {
+	if a.sel.chatSelDragging {
 		if c.mouseDown {
 			if a.raster.msRaster != nil { // the held drag moves the range's head
-				a.chatSelB = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+				a.sel.chatSelB = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			}
-			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
-				if !a.chatSelActive {
-					a.chatSelActive = true // moved enough → a selection, not a click
-					a.logSelActive = false // …and it owns the highlight now
+			if absInt(int(c.mouseX-a.sel.chatSelDownX))+absInt(int(c.mouseY-a.sel.chatSelDownY)) > 3 {
+				if !a.sel.chatSelActive {
+					a.sel.chatSelActive = true // moved enough → a selection, not a click
+					a.sel.logSelActive = false // …and it owns the highlight now
 				}
 			}
 		} else {
-			a.chatSelDragging = false
+			a.sel.chatSelDragging = false
 			switch {
-			case a.chatSelActive && a.raster.msRaster != nil && a.chatSelA == a.chatSelB:
-				a.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
-			case a.chatSelActive:
+			case a.sel.chatSelActive && a.raster.msRaster != nil && a.sel.chatSelA == a.sel.chatSelB:
+				a.sel.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
+			case a.sel.chatSelActive:
 				c.clicked = false // a real drag isn't a click on whatever's under it
 				c.focusID = ""    // unfocus so Ctrl+C copies the selection, not a still-focused field
 			}
@@ -296,21 +296,21 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 	if a.raster.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
 		runes := []rune(sc.MessageText)
 		if c.tripleClick {
-			a.chatSelA, a.chatSelB = 0, len(runes)
+			a.sel.chatSelA, a.sel.chatSelB = 0, len(runes)
 			c.tripleClick = false
 		} else {
 			idx := a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
-			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
+			a.sel.chatSelA, a.sel.chatSelB = wordBoundsAt(runes, idx)
 			c.dblClick = false
 		}
-		if a.chatSelB > a.chatSelA {
-			a.chatSelActive = true
-			a.logSelActive = false
+		if a.sel.chatSelB > a.sel.chatSelA {
+			a.sel.chatSelActive = true
+			a.sel.logSelActive = false
 			c.clicked = false
 			c.focusID = ""
 		}
 	}
-	if a.chatSelActive && sc.MessageText != "" {
+	if a.sel.chatSelActive && sc.MessageText != "" {
 		if (c.copyReq && c.focusID == "") || (c.rightClicked && inText) {
 			_ = sdl.SetClipboardText(a.chatSelText(sc))
 			a.warnLine = "Copied selection to clipboard"
@@ -330,7 +330,7 @@ func (a *App) chatSelText(sc *courtroom.Scene) string {
 		return sc.MessageText
 	}
 	runes := []rune(sc.MessageText)
-	lo, hi := a.chatSelA, a.chatSelB
+	lo, hi := a.sel.chatSelA, a.sel.chatSelB
 	if lo > hi {
 		lo, hi = hi, lo
 	}
@@ -369,7 +369,7 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
-	lo, hi := a.chatSelA, a.chatSelB
+	lo, hi := a.sel.chatSelA, a.sel.chatSelB
 	if lo > hi {
 		lo, hi = hi, lo
 	}
@@ -458,7 +458,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 		return
 	}
 	if a.raster.rasterRaw != sc.MessageRaw {
-		a.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
+		a.sel.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
 	}
 	if a.raster.msRaster != nil {
 		a.raster.msRaster.Destroy()

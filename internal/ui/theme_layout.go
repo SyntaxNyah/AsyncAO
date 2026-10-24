@@ -1506,7 +1506,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		// overwrite cgoRect while this clip is in force.
 		c.cgoRect = msgClip
 		_ = c.Ren.SetClipRect(&c.cgoRect)
-		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
+		if a.sel.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(msgX, msgDrawY, wrapW, sc) // scrolled with the text it marks
 		}
 		if a.raster.msAnim != nil { // #M5 animated message

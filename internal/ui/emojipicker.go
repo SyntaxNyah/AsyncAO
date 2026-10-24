@@ -107,7 +107,7 @@ func (a *App) insertICEmoji(emoji string) {
 // open-then-close bug). The picker is courtroom-only, so it's force-closed if any other
 // screen / overlay is up, to never strand the fence elsewhere.
 func (a *App) emojiPickerFence(c *Ctx) {
-	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
+	courtroomActive := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
 	if a.emoji.showEmojiPicker && !courtroomActive {
 		a.emoji.showEmojiPicker = false
 	}

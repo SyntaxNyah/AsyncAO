@@ -166,23 +166,23 @@ func TestWarmRoom(t *testing.T) {
 func TestTickGifLoadErrorTeardown(t *testing.T) {
 	a := testTabApp(t)
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportVideo}
-	a.gifExporting = true
+	a.sel.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportVideo}
+	a.sel.gifExporting = true
 	loadCh <- gifLoadResult{err: errors.New("bad file")}
 
-	a.tickGifLoad(a.gif)
+	a.tickGifLoad(a.sel.gif)
 
-	if a.gif != nil {
+	if a.sel.gif != nil {
 		t.Error("failed load must clear a.gif (no dangling job)")
 	}
-	if a.gifExporting {
+	if a.sel.gifExporting {
 		t.Error("failed load must clear a.gifExporting")
 	}
 	if a.warnLine == "" || !strings.Contains(a.warnLine, "bad file") {
 		t.Errorf("warnLine = %q, want the load error surfaced", a.warnLine)
 	}
-	if a.exportSavedDevScale != 0 {
-		t.Errorf("scale bracket leaked (exportSavedDevScale=%d) — the loading shell never set it", a.exportSavedDevScale)
+	if a.sel.exportSavedDevScale != 0 {
+		t.Errorf("scale bracket leaked (exportSavedDevScale=%d) — the loading shell never set it", a.sel.exportSavedDevScale)
 	}
 }
 
@@ -193,15 +193,15 @@ func TestTickGifLoadErrorTeardown(t *testing.T) {
 func TestTickGifLoadPendingKeepsOverlay(t *testing.T) {
 	a := testTabApp(t)
 	loadCh := make(chan gifLoadResult, gifLoadBuf) // empty: loader still working
-	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "big.aorec", loadPath: "big.aorec"}
-	a.gifExporting = true
+	a.sel.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "big.aorec", loadPath: "big.aorec"}
+	a.sel.gifExporting = true
 
-	a.tickGifLoad(a.gif)
+	a.tickGifLoad(a.sel.gif)
 
-	if a.gif == nil || !a.gif.loading {
+	if a.sel.gif == nil || !a.sel.gif.loading {
 		t.Error("with no result yet, the loading job must survive so the overlay stays up")
 	}
-	if !a.gifExporting {
+	if !a.sel.gifExporting {
 		t.Error("gifExporting must stay true while loading")
 	}
 }
@@ -284,38 +284,38 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	}
 
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "scene.demo", loadPath: "scene.demo", loadKind: exportGIF}
-	a.gifExporting = true
+	a.sel.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "scene.demo", loadPath: "scene.demo", loadKind: exportGIF}
+	a.sel.gifExporting = true
 	loadCh <- gifLoadResult{rec: rec}
 
-	a.tickGifLoad(a.gif)
+	a.tickGifLoad(a.sel.gif)
 
-	if a.gif == nil {
+	if a.sel.gif == nil {
 		t.Fatal("delivery must build the real export job, got nil")
 	}
-	if a.gif.loading {
+	if a.sel.gif.loading {
 		t.Error("job still in loading phase after delivery — the transition didn't run")
 	}
-	if !a.gif.warming {
+	if !a.sel.gif.warming {
 		t.Error("job must enter the pre-warm phase after a successful load")
 	}
-	if !a.gifExporting {
+	if !a.sel.gifExporting {
 		t.Error("gifExporting must stay true across the load→warming swap (no screen steals a frame)")
 	}
-	if len(a.gif.warmRefs) == 0 {
+	if len(a.sel.gif.warmRefs) == 0 {
 		t.Error("warmRefs empty — SceneAssets found nothing to warm for a message scene")
 	}
 	// The freeze fix: refs are PENDING (queued for incremental submit), not all
 	// blasted at the pool in startSceneExport.
-	if len(a.gif.pendingWarm) == 0 {
+	if len(a.sel.gif.pendingWarm) == 0 {
 		t.Error("pendingWarm empty — refs were not queued for incremental submission")
 	}
-	if a.gif.warmSubmitDone {
+	if a.sel.gif.warmSubmitDone {
 		t.Error("warmSubmitDone true before any warm tick — the clock started too early")
 	}
 	// Clean up the in-flight export so the test's deferred renderer teardown is safe.
-	a.gif = nil
-	a.gifExporting = false
+	a.sel.gif = nil
+	a.sel.gifExporting = false
 	a.endExportScaleBracket()
 }
 
@@ -436,7 +436,7 @@ func TestTickGifWarmPreResidentDoesNotOverfillWindow(t *testing.T) {
 		seedResident(t, store, refs[i].Base)
 	}
 
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		warming:     true,
 		warmRefs:    refs,
 		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
@@ -446,16 +446,16 @@ func TestTickGifWarmPreResidentDoesNotOverfillWindow(t *testing.T) {
 	// Many ticks — more than enough for the buggy model to overshoot. Nothing
 	// submitted resolves here, so the correct model plateaus warmSubmitted at the
 	// window and pendingWarm never fully drains (that plateau IS the fix).
-	for tick := 0; tick < 40 && a.gif.warming; tick++ {
-		a.tickGifWarm(a.gif)
-		if a.gif.warmSubmitted > warmInFlightWindow {
+	for tick := 0; tick < 40 && a.sel.gif.warming; tick++ {
+		a.tickGifWarm(a.sel.gif)
+		if a.sel.gif.warmSubmitted > warmInFlightWindow {
 			t.Fatalf("tick %d: warmSubmitted %d exceeds window %d — pre-resident refs re-opened room and the high lane can now block",
-				tick, a.gif.warmSubmitted, warmInFlightWindow)
+				tick, a.sel.gif.warmSubmitted, warmInFlightWindow)
 		}
 		// The set is the outstanding count; it must equal warmSubmitted here (no
 		// submitted ref resolves) and stay within the window.
-		if len(a.gif.warmInFlight) > warmInFlightWindow {
-			t.Fatalf("tick %d: warmInFlight size %d exceeds window %d", tick, len(a.gif.warmInFlight), warmInFlightWindow)
+		if len(a.sel.gif.warmInFlight) > warmInFlightWindow {
+			t.Fatalf("tick %d: warmInFlight size %d exceeds window %d", tick, len(a.sel.gif.warmInFlight), warmInFlightWindow)
 		}
 	}
 }
@@ -470,7 +470,7 @@ func TestTickGifWarmDrainsAsSubmittedRefsResolve(t *testing.T) {
 
 	const total = 100 // > warmInFlightWindow, so it can't all submit in one window
 	refs := mkWarmRefs(total)
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		warming:     true,
 		warmRefs:    refs,
 		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
@@ -479,12 +479,12 @@ func TestTickGifWarmDrainsAsSubmittedRefsResolve(t *testing.T) {
 
 	// Each tick: run the warm tick, then "resolve" everything currently in flight by
 	// seeding those bases resident, so the NEXT tick prunes them and reopens room.
-	for tick := 0; tick < 50 && a.gif.warming; tick++ {
-		a.tickGifWarm(a.gif)
-		if a.gif.warmSubmitted > total {
-			t.Fatalf("tick %d: warmSubmitted %d exceeds the ref count %d (double-submitted)", tick, a.gif.warmSubmitted, total)
+	for tick := 0; tick < 50 && a.sel.gif.warming; tick++ {
+		a.tickGifWarm(a.sel.gif)
+		if a.sel.gif.warmSubmitted > total {
+			t.Fatalf("tick %d: warmSubmitted %d exceeds the ref count %d (double-submitted)", tick, a.sel.gif.warmSubmitted, total)
 		}
-		for base := range a.gif.warmInFlight {
+		for base := range a.sel.gif.warmInFlight {
 			if !store.Contains(base) {
 				seedResident(t, store, base)
 			}
@@ -493,13 +493,13 @@ func TestTickGifWarmDrainsAsSubmittedRefsResolve(t *testing.T) {
 
 	// With room reopening as refs resolve, every ref is eventually submitted and the
 	// phase ends (all-ready, since we made them all resident).
-	if len(a.gif.pendingWarm) != 0 {
-		t.Errorf("pendingWarm not drained (%d left) — room never reopened as refs resolved", len(a.gif.pendingWarm))
+	if len(a.sel.gif.pendingWarm) != 0 {
+		t.Errorf("pendingWarm not drained (%d left) — room never reopened as refs resolved", len(a.sel.gif.pendingWarm))
 	}
-	if a.gif.warmSubmitted != total {
-		t.Errorf("warmSubmitted = %d, want %d (every ref submitted exactly once)", a.gif.warmSubmitted, total)
+	if a.sel.gif.warmSubmitted != total {
+		t.Errorf("warmSubmitted = %d, want %d (every ref submitted exactly once)", a.sel.gif.warmSubmitted, total)
 	}
-	if a.gif.warming {
+	if a.sel.gif.warming {
 		t.Error("warm phase never ended even though every ref became resident")
 	}
 }
@@ -516,7 +516,7 @@ func TestTickGifWarmHardCapEndsNeverResidentScene(t *testing.T) {
 
 	// More refs than the window, NONE ever seeded resident: the stall shape.
 	refs := mkWarmRefs(warmInFlightWindow + 40)
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		warming:     true,
 		warmRefs:    refs,
 		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
@@ -525,9 +525,9 @@ func TestTickGifWarmHardCapEndsNeverResidentScene(t *testing.T) {
 		warmCreated: time.Now().Add(-gifWarmHardCap - time.Second),
 	}
 
-	a.tickGifWarm(a.gif)
+	a.tickGifWarm(a.sel.gif)
 
-	if a.gif.warming {
+	if a.sel.gif.warming {
 		t.Fatal("hard cap did not end the warm phase for a never-resident scene — it would hang forever")
 	}
 	if a.warnLine != "Rendering…" {
@@ -543,7 +543,7 @@ func TestTickGifWarmHardCapDoesNotFireEarly(t *testing.T) {
 	a, _ := newWarmHarness(t)
 
 	refs := mkWarmRefs(warmInFlightWindow + 40) // enough that room can pin at 0
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		warming:     true,
 		warmRefs:    refs,
 		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
@@ -553,9 +553,9 @@ func TestTickGifWarmHardCapDoesNotFireEarly(t *testing.T) {
 	// Several ticks in quick succession: none should end the phase via the hard cap
 	// (nothing resident → no all-ready/quiesce either, so warming stays true).
 	for i := 0; i < 5; i++ {
-		a.tickGifWarm(a.gif)
+		a.tickGifWarm(a.sel.gif)
 	}
-	if !a.gif.warming {
+	if !a.sel.gif.warming {
 		t.Fatal("a fresh warm phase ended too early — the hard cap must be a last resort, not the normal path")
 	}
 }
@@ -580,7 +580,7 @@ func TestTickGifWarmConclusiveMissEndsWarmPromptly(t *testing.T) {
 	// More refs than the window, so the never-resident stall shape applies: without
 	// the conclusive-miss release the first window fills and nothing ever prunes.
 	refs := mkWarmRefs(warmInFlightWindow + 40)
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		warming:     true,
 		warmRefs:    refs,
 		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
@@ -593,18 +593,18 @@ func TestTickGifWarmConclusiveMissEndsWarmPromptly(t *testing.T) {
 	// missing well inside this, so warming flips false; without it, it never does.
 	const tickBudget = 60
 	ticks := 0
-	for ; ticks < tickBudget && a.gif.warming; ticks++ {
-		a.tickGifWarm(a.gif)
-		for base := range a.gif.warmInFlight {
+	for ; ticks < tickBudget && a.sel.gif.warming; ticks++ {
+		a.tickGifWarm(a.sel.gif)
+		for base := range a.sel.gif.warmInFlight {
 			store.MarkMissing(base) // the conclusive 404 signal (render-thread; no fetch)
 		}
 	}
 
-	if a.gif.warming {
+	if a.sel.gif.warming {
 		t.Fatalf("warm phase never ended for an all-404 scene in %d ticks — it would freeze the progress bar for the full hard cap (the 'never converts' stall)", tickBudget)
 	}
-	if len(a.gif.pendingWarm) != 0 {
-		t.Errorf("pendingWarm not drained (%d left) — the conclusive-miss release never reopened room", len(a.gif.pendingWarm))
+	if len(a.sel.gif.pendingWarm) != 0 {
+		t.Errorf("pendingWarm not drained (%d left) — the conclusive-miss release never reopened room", len(a.sel.gif.pendingWarm))
 	}
 	if a.warnLine != "Rendering…" {
 		t.Errorf("warnLine = %q, want the render banner once the all-404 warm settles", a.warnLine)

@@ -788,7 +788,7 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	// renderScene dereferences a.room unless a replay owns the stage, and this is
 	// called from a draw tail that a themed layout can reach with no chatbox rect
 	// (so drawChatOverlay's own deref did not run first).
-	if a.link.room == nil && !(a.replaying && a.replayRoom != nil) {
+	if a.link.room == nil && !(a.sel.replaying && a.sel.replayRoom != nil) {
 		return
 	}
 	a.d.Viewport.DrawOverlayChat(a.ctx.Ren, a.renderScene(), vp)

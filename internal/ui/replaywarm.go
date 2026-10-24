@@ -60,7 +60,7 @@ type replayWarmState struct {
 // submission, reusing seedOriginFormats + the shared per-origin dedupe. Render thread
 // only (it reads a.d and starts one bounded goroutine like the export seed).
 func (a *App) startReplayWarm(rec *sceneRecording) {
-	a.replayWarm = nil
+	a.sel.replayWarm = nil
 	if rec == nil || !strings.HasPrefix(rec.Origin, "http") {
 		return // empty / local origin: nothing to stream, so nothing to warm
 	}
@@ -106,16 +106,16 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 		prefs := a.d.Prefs
 		go func() { done <- seedOriginFormats(mgr, prefs, rec.Origin) }()
 	}
-	a.replayWarm = w
+	a.sel.replayWarm = w
 }
 
 // replayWarming reports whether the FLAT-replay pre-warm phase is active (the
 // driver gates event-feeding on it and the overlay draws the loading line).
-func (a *App) replayWarming() bool { return a.replayWarm != nil }
+func (a *App) replayWarming() bool { return a.sel.replayWarm != nil }
 
 // endReplayWarm clears the pre-warm phase (all-ready / quiesce / hard-cap / Skip /
 // replay stop). Idempotent so every teardown path can call it unconditionally.
-func (a *App) endReplayWarm() { a.replayWarm = nil }
+func (a *App) endReplayWarm() { a.sel.replayWarm = nil }
 
 // tickReplayWarm advances the FLAT-replay pre-warm one frame (render thread). Same
 // shape as tickGifWarm: (1) poll the format seed, (2) count settled refs + prune the
@@ -125,7 +125,7 @@ func (a *App) endReplayWarm() { a.replayWarm = nil }
 // instead of freezing. Nothing here blocks the render thread — submission is bounded
 // and every fetch is async.
 func (a *App) tickReplayWarm() {
-	w := a.replayWarm
+	w := a.sel.replayWarm
 	if w == nil {
 		return
 	}

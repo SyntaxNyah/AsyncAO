@@ -90,7 +90,7 @@ func recordable(k courtroom.EventKind) bool {
 
 // toggleRecording starts or stops scene recording (the Ctrl+W hotkey).
 func (a *App) toggleRecording() {
-	if a.recActive {
+	if a.sel.recActive {
 		a.stopRecording()
 	} else {
 		a.startRecording()
@@ -100,21 +100,21 @@ func (a *App) toggleRecording() {
 // startRecording begins capturing the scene event stream. Snapshots the asset
 // origin + current background so a replay starts against the right scene.
 func (a *App) startRecording() {
-	if a.recActive {
+	if a.sel.recActive {
 		return
 	}
 	bg := ""
 	if a.link.sess != nil {
 		bg = a.link.sess.Background
 	}
-	a.rec = &sceneRecording{
+	a.sel.rec = &sceneRecording{
 		Version:    recordingVersion,
 		Origin:     a.link.urls.Origin(),
 		StartBg:    bg,
 		RecordedAt: time.Now().Format(time.RFC3339),
 	}
-	a.recStart = time.Now()
-	a.recActive = true
+	a.sel.recStart = time.Now()
+	a.sel.recActive = true
 	a.warnLine = "● Recording scene — press the Record key again to stop & save"
 	a.warnAt = time.Now()
 }
@@ -154,12 +154,12 @@ func (a *App) recEventFrom(ev courtroom.Event) recEvent {
 // recordEvent appends a scene-mutating event to the active recording (bounded).
 // Called from the event loop for every event while recActive.
 func (a *App) recordEvent(ev courtroom.Event) {
-	if a.rec == nil || !recordable(ev.Kind) || len(a.rec.Events) >= maxRecordedEvents {
+	if a.sel.rec == nil || !recordable(ev.Kind) || len(a.sel.rec.Events) >= maxRecordedEvents {
 		return
 	}
 	re := a.recEventFrom(ev)
-	re.OffsetMs = int(time.Since(a.recStart).Milliseconds())
-	a.rec.Events = append(a.rec.Events, re)
+	re.OffsetMs = int(time.Since(a.sel.recStart).Milliseconds())
+	a.sel.rec.Events = append(a.sel.rec.Events, re)
 }
 
 // replayBufEntry is one ring slot for the instant-replay buffer: a wall-clock
@@ -177,9 +177,9 @@ type replayBufEntry struct {
 // two servers' assets (a long window can outlive a server switch).
 func (a *App) bufferReplayEvent(ev courtroom.Event) {
 	if !a.d.Prefs.Load().InstantReplay {
-		if a.replayBuf != nil { // turned off at runtime → free the ring
-			a.replayBuf = nil
-			a.replayBufN, a.replayBufW, a.replayBufOrigin = 0, 0, ""
+		if a.sel.replayBuf != nil { // turned off at runtime → free the ring
+			a.sel.replayBuf = nil
+			a.sel.replayBufN, a.sel.replayBufW, a.sel.replayBufOrigin = 0, 0, ""
 		}
 		return
 	}
@@ -187,34 +187,34 @@ func (a *App) bufferReplayEvent(ev courtroom.Event) {
 		return
 	}
 	origin := a.link.urls.Origin()
-	if a.replayBuf == nil || a.replayBufOrigin != origin {
-		a.replayBuf = make([]replayBufEntry, instantReplayMaxEvents)
-		a.replayBufW, a.replayBufN, a.replayBufOrigin = 0, 0, origin
+	if a.sel.replayBuf == nil || a.sel.replayBufOrigin != origin {
+		a.sel.replayBuf = make([]replayBufEntry, instantReplayMaxEvents)
+		a.sel.replayBufW, a.sel.replayBufN, a.sel.replayBufOrigin = 0, 0, origin
 	}
-	a.replayBuf[a.replayBufW] = replayBufEntry{at: time.Now(), ev: a.recEventFrom(ev)}
-	a.replayBufW++
-	if a.replayBufW == len(a.replayBuf) {
-		a.replayBufW = 0
+	a.sel.replayBuf[a.sel.replayBufW] = replayBufEntry{at: time.Now(), ev: a.recEventFrom(ev)}
+	a.sel.replayBufW++
+	if a.sel.replayBufW == len(a.sel.replayBuf) {
+		a.sel.replayBufW = 0
 	}
-	if a.replayBufN < len(a.replayBuf) {
-		a.replayBufN++
+	if a.sel.replayBufN < len(a.sel.replayBuf) {
+		a.sel.replayBufN++
 	}
 }
 
 // linearizeReplayBuf copies the ring into a fresh oldest→newest slice. Only the
 // clip key calls it (a rare user action), so the allocation is fine here.
 func (a *App) linearizeReplayBuf() []replayBufEntry {
-	n := a.replayBufN
-	if n == 0 || len(a.replayBuf) == 0 {
+	n := a.sel.replayBufN
+	if n == 0 || len(a.sel.replayBuf) == 0 {
 		return nil
 	}
 	out := make([]replayBufEntry, 0, n)
-	start := a.replayBufW - n
+	start := a.sel.replayBufW - n
 	if start < 0 {
-		start += len(a.replayBuf)
+		start += len(a.sel.replayBuf)
 	}
 	for i := 0; i < n; i++ {
-		out = append(out, a.replayBuf[(start+i)%len(a.replayBuf)])
+		out = append(out, a.sel.replayBuf[(start+i)%len(a.sel.replayBuf)])
 	}
 	return out
 }
@@ -280,7 +280,7 @@ func (a *App) clipInstantReplay() {
 		a.warnAt = time.Now()
 		return
 	}
-	if a.replayBufN == 0 {
+	if a.sel.replayBufN == 0 {
 		a.warnLine = "Nothing captured yet — Instant Replay needs some conversation to clip."
 		a.warnAt = time.Now()
 		return
@@ -291,7 +291,7 @@ func (a *App) clipInstantReplay() {
 		bg = a.link.sess.Background
 	}
 	now := time.Now()
-	clip := buildClip(a.linearizeReplayBuf(), now.Add(-window), a.replayBufOrigin, bg)
+	clip := buildClip(a.linearizeReplayBuf(), now.Add(-window), a.sel.replayBufOrigin, bg)
 	if clip == nil || len(clip.Events) == 0 {
 		a.warnLine = "Nothing in the last " + formatReplayWindow(window) + " to clip."
 		a.warnAt = time.Now()
@@ -329,12 +329,12 @@ func formatReplayWindow(d time.Duration) string {
 // gives up), so a caller can wait for the file instead of polling the filesystem;
 // nil when nothing was written.
 func (a *App) stopRecording() <-chan struct{} {
-	if !a.recActive {
+	if !a.sel.recActive {
 		return nil
 	}
-	a.recActive = false
-	rec := a.rec
-	a.rec = nil
+	a.sel.recActive = false
+	rec := a.sel.rec
+	a.sel.rec = nil
 	if rec == nil || len(rec.Events) == 0 {
 		a.warnLine = "Recording discarded — no scene happened while recording."
 		a.warnAt = time.Now()
@@ -514,7 +514,7 @@ func (a *App) openRecordingsFolder() {
 // entry point). The replay plays in an overlay over whatever screen you're on
 // (drawReplayOverlay), so it works connected or from the lobby.
 func (a *App) replayFromPath(path string) {
-	if a.recActive {
+	if a.sel.recActive {
 		a.warnLine = "Stop recording first, then replay."
 		a.warnAt = time.Now()
 		return
@@ -549,25 +549,25 @@ func (a *App) beginBundledReplay(rec *sceneRecording, dir string) {
 	rec.Origin = local.BaseURL()
 	a.d.Manager.SetArchiveSource(local)
 	archive.SeedFormats(a.d.Resolver, rec.Origin, rec.Formats)
-	a.replayBundled = true
+	a.sel.replayBundled = true
 }
 
 // endBundledReplay removes the archive source override (replay teardown).
 func (a *App) endBundledReplay() {
-	if a.replayBundled {
+	if a.sel.replayBundled {
 		a.d.Manager.ClearArchiveSource()
-		a.replayBundled = false
+		a.sel.replayBundled = false
 	}
 }
 
 // toggleReplay starts replaying the most recent recording, or stops the current
 // replay (the Ctrl+I hotkey). Recording and replay are mutually exclusive.
 func (a *App) toggleReplay() {
-	if a.replaying {
+	if a.sel.replaying {
 		a.stopReplay()
 		return
 	}
-	if a.recActive {
+	if a.sel.recActive {
 		a.warnLine = "Stop recording first, then replay."
 		a.warnAt = time.Now()
 		return
@@ -616,9 +616,9 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// Constructed AND wired through the one seam (newroom.go): speakers blip,
 	// skin and flash in a replay exactly as they do live, and the room starts
 	// under the viewer's own visual prefs instead of NewCourtroom's defaults.
-	a.replayRoom = a.newRoom(courtroom.NewURLBuilder(rec.Origin), nil, a.d.Audio)
-	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
-	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
+	a.sel.replayRoom = a.newRoom(courtroom.NewURLBuilder(rec.Origin), nil, a.d.Audio)
+	a.sel.replayRoom.Typewriter.Interval, a.sel.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
+	a.sel.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
 	// POST-CONSTRUCTION OVERRIDE, and the only one this mode needs: a Preview
 	// launched from the maker is authoring (show the scene's screenshake, flash
 	// and overlays), while a normal replay honours the viewer's reduce-motion,
@@ -627,30 +627,30 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// scene must still SHOW what is being authored, or the maker previews a lie.
 	// The three gates come from newroom.go so this mode cannot answer differently
 	// from the export it is previewing. Everything else newRoom seeded stands.
-	if a.makerOpen {
-		a.applyAuthoringVisualsToRoom(a.replayRoom)
+	if a.sel.makerOpen {
+		a.applyAuthoringVisualsToRoom(a.sel.replayRoom)
 	}
 
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
-		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.replayRoom.NotifyFrameShown // #17: frame effects follow the room that owns the on-screen sprite
+		a.d.Viewport.OnPreanimDone = a.sel.replayRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.sel.replayRoom.NotifyFrameShown // #17: frame effects follow the room that owns the on-screen sprite
 	}
 	if rec.StartBg != "" {
-		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: rec.StartBg})
+		a.sel.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: rec.StartBg})
 	}
-	a.replayEvents = rec.Events
-	a.replayIdx = 0
-	a.replayName = name
-	a.replayRec = rec                                  // kept so ⏮ Restart can rebuild from the top
-	a.replayChapters = buildReplayChapters(rec.Events) // #70 the jump list (idempotent across restarts/jumps)
-	a.replayPaused = false                             // a fresh replay starts playing
-	a.replaying = true
+	a.sel.replayEvents = rec.Events
+	a.sel.replayIdx = 0
+	a.sel.replayName = name
+	a.sel.replayRec = rec                                  // kept so ⏮ Restart can rebuild from the top
+	a.sel.replayChapters = buildReplayChapters(rec.Events) // #70 the jump list (idempotent across restarts/jumps)
+	a.sel.replayPaused = false                             // a fresh replay starts playing
+	a.sel.replaying = true
 	// H5: a FLAT (streamed) recording pre-warms its sprites + music before the first
 	// event so nothing pops in or plays silent. A bundled replay reads local files
 	// (already gap-free — beginBundledReplay ran first and set replayBundled), so it
 	// skips the warm. An empty / non-http origin also skips (startReplayWarm no-ops).
 	a.endReplayWarm() // clear any prior phase (⏮ Restart re-enters here)
-	if !a.replayBundled {
+	if !a.sel.replayBundled {
 		a.startReplayWarm(rec)
 	}
 	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
@@ -664,37 +664,37 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 // H5 pre-warm is running, ⏭ Next means "start already": end the warm and let the
 // first event feed next frame, rather than fast-forwarding a scene that hasn't begun.
 func (a *App) replayNext() {
-	if a.replayRoom == nil {
+	if a.sel.replayRoom == nil {
 		return
 	}
 	if a.replayWarming() {
 		a.endReplayWarm()
 		return
 	}
-	a.replayRoom.SkipToIdle()
+	a.sel.replayRoom.SkipToIdle()
 	a.advanceReplay(0) // now idle → feed the next event immediately (or end if exhausted)
 }
 
 // replayTogglePause freezes / resumes playback (Next + Restart still work while
 // paused).
-func (a *App) replayTogglePause() { a.replayPaused = !a.replayPaused }
+func (a *App) replayTogglePause() { a.sel.replayPaused = !a.sel.replayPaused }
 
 // replayRestart rebuilds the replay from the first event.
 func (a *App) replayRestart() {
-	if a.replayRec != nil {
-		a.startReplay(a.replayRec, a.replayName)
+	if a.sel.replayRec != nil {
+		a.startReplay(a.sel.replayRec, a.sel.replayName)
 	}
 }
 
 // replayMessagePos reports the current / total MESSAGE count (ignoring bg/music
 // events) for the player's position readout.
 func (a *App) replayMessagePos() (cur, total int) {
-	for i, e := range a.replayEvents {
+	for i, e := range a.sel.replayEvents {
 		if courtroom.EventKind(e.Kind) != courtroom.EventMessage {
 			continue
 		}
 		total++
-		if i < a.replayIdx {
+		if i < a.sel.replayIdx {
 			cur++
 		}
 	}
@@ -706,39 +706,39 @@ func (a *App) replayMessagePos() (cur, total int) {
 // the playback — NOT the recorded wall-clock deltas, which would double-drag.
 // When the stream is exhausted and the room settles, the replay ends.
 func (a *App) advanceReplay(dt time.Duration) {
-	if !a.replaying || a.replayRoom == nil {
+	if !a.sel.replaying || a.sel.replayRoom == nil {
 		return
 	}
 	if a.replayWarming() {
 		return // H5: hold every event off-stage until the pre-warm finishes / is skipped
 	}
-	if a.replayRoom.Phase() != courtroom.PhaseIdle || a.replayRoom.QueueLen() != 0 {
+	if a.sel.replayRoom.Phase() != courtroom.PhaseIdle || a.sel.replayRoom.QueueLen() != 0 {
 		return // a message is still on stage — let it finish
 	}
-	if a.replayIdx >= len(a.replayEvents) {
+	if a.sel.replayIdx >= len(a.sel.replayEvents) {
 		a.stopReplay() // exhausted and idle: done
 		return
 	}
-	a.replayRoom.HandleEvent(eventFromRec(a.replayEvents[a.replayIdx]))
-	a.replayIdx++
+	a.sel.replayRoom.HandleEvent(eventFromRec(a.sel.replayEvents[a.sel.replayIdx]))
+	a.sel.replayIdx++
 }
 
 // stopReplay tears down the replay and returns the stage to the live room.
 func (a *App) stopReplay() {
-	if !a.replaying {
+	if !a.sel.replaying {
 		return
 	}
 	a.endBundledReplay() // drop the archive source override if this was a bundled replay
 	a.endReplayWarm()    // H5: drop any in-flight pre-warm phase
-	a.replaying = false
-	a.replayRoom = nil
-	a.replayEvents = nil
-	a.replayIdx = 0
-	a.replayName = ""
-	a.replayPaused = false
-	a.replayRec = nil
-	a.replayChapters = nil
-	a.replayChaptersOpen = false
+	a.sel.replaying = false
+	a.sel.replayRoom = nil
+	a.sel.replayEvents = nil
+	a.sel.replayIdx = 0
+	a.sel.replayName = ""
+	a.sel.replayPaused = false
+	a.sel.replayRec = nil
+	a.sel.replayChapters = nil
+	a.sel.replayChaptersOpen = false
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
 		if a.link.room != nil {
 			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
@@ -764,15 +764,15 @@ func (a *App) recoverReplay(where string) {
 	a.debug.push("replay " + where + " panic: " + fmt.Sprint(r))
 	a.endBundledReplay()
 	a.endReplayWarm() // H5: drop any in-flight pre-warm phase
-	a.replaying = false
-	a.replayRoom = nil
-	a.replayEvents = nil
-	a.replayIdx = 0
-	a.replayName = ""
-	a.replayPaused = false
-	a.replayRec = nil
-	a.replayChapters = nil
-	a.replayChaptersOpen = false
+	a.sel.replaying = false
+	a.sel.replayRoom = nil
+	a.sel.replayEvents = nil
+	a.sel.replayIdx = 0
+	a.sel.replayName = ""
+	a.sel.replayPaused = false
+	a.sel.replayRec = nil
+	a.sel.replayChapters = nil
+	a.sel.replayChaptersOpen = false
 	if a.d.Viewport != nil {
 		if a.link.room != nil {
 			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
@@ -790,7 +790,7 @@ func (a *App) recoverReplay(where string) {
 // viewport sync), wrapped so a panic stops the replay instead of crashing.
 func (a *App) driveReplay(dt time.Duration) {
 	defer a.recoverReplay("update")
-	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
+	a.sel.replayRoom.Typewriter.Interval, a.sel.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
 	// H5 pre-warm: while the FLAT recording's sprites + music load, hold the first
 	// event off-stage (advanceReplay is skipped) so playback starts warm, not popping.
 	// The room + viewport still Update so the stage (StartBg, once resident) draws
@@ -798,22 +798,22 @@ func (a *App) driveReplay(dt time.Duration) {
 	// or the Skip button clears it; either way the next frame feeds the first event.
 	if a.replayWarming() {
 		a.tickReplayWarm()
-		a.replayRoom.Update(dt)
-		a.applySpriteOverridesTo(a.replayRoom) // the warm-up stage draws under the overlay — apply here too
+		a.sel.replayRoom.Update(dt)
+		a.applySpriteOverridesTo(a.sel.replayRoom) // the warm-up stage draws under the overlay — apply here too
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.SetPostFX(a.postFX())
-		a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+		a.d.Viewport.Update(&a.sel.replayRoom.Scene, dt)
 		return
 	}
-	if a.replayPaused {
+	if a.sel.replayPaused {
 		return // ⏸ frozen — the overlay keeps drawing the last frame; Next/Restart still act
 	}
 	a.advanceReplay(dt)
-	a.replayRoom.Update(dt)
-	a.applySpriteOverridesTo(a.replayRoom) // a hidden sprite / hidden desk stays hidden in playback too
+	a.sel.replayRoom.Update(dt)
+	a.applySpriteOverridesTo(a.sel.replayRoom) // a hidden sprite / hidden desk stays hidden in playback too
 	a.d.Viewport.SetSpriteFX(a.spriteFX())
 	a.d.Viewport.SetPostFX(a.postFX()) // #10 retro overlays in replay viewing
-	a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+	a.d.Viewport.Update(&a.sel.replayRoom.Scene, dt)
 }
 
 // drawStageRecordButton draws the optional on-stage control at the top-left of
@@ -822,7 +822,7 @@ func (a *App) driveReplay(dt time.Duration) {
 // when the "Show a Record button" setting is on.
 func (a *App) drawStageRecordButton(vp sdl.Rect) {
 	c := a.ctx
-	if a.replaying {
+	if a.sel.replaying {
 		if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 104, H: 22}, "■ Stop replay") {
 			a.stopReplay()
 		}
@@ -833,7 +833,7 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 		return
 	}
 	label := "● Record"
-	if a.recActive {
+	if a.sel.recActive {
 		label = "■ Stop rec"
 	}
 	if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 92, H: 22}, label) {
@@ -848,7 +848,7 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 // button/toast already says so) and off entirely unless the opt-in pref is on, so
 // the default client draws nothing here.
 func (a *App) drawInstantReplayDot(vp sdl.Rect) {
-	if a.recActive || !a.d.Prefs.Load().InstantReplay {
+	if a.sel.recActive || !a.d.Prefs.Load().InstantReplay {
 		return
 	}
 	c := a.ctx
@@ -882,7 +882,7 @@ func (a *App) drawInstantReplayDot(vp sdl.Rect) {
 // Stop button owns the input. The courtroom screen renders the replay in its own
 // stage instead, so this isn't used there.
 func (a *App) drawReplayOverlay(w, h int32) {
-	if a.replayRoom == nil {
+	if a.sel.replayRoom == nil {
 		return
 	}
 	defer a.recoverReplay("render")
@@ -898,11 +898,11 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	}
 	stage := sdl.Rect{X: (w - stageW) / 2, Y: 46, W: stageW, H: stageH}
 	c.Fill(stage, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	a.d.Viewport.Render(c.Ren, &a.replayRoom.Scene, stage)
+	a.d.Viewport.Render(c.Ren, &a.sel.replayRoom.Scene, stage)
 	a.drawStageFrame(stage)               // #56: the viewer stage wears the same frame as live
 	a.drawChatOverlay(stage, false, 0, 0) // M16: the spoken text (reads the replay scene via renderScene)
 	a.drawReplayWarmBanner(stage)         // H5: "Loading scene…" + Skip while the FLAT-replay pre-warm runs
-	c.Label(20, 16, "▶ Replaying — "+a.replayName, ColText)
+	c.Label(20, 16, "▶ Replaying — "+a.sel.replayName, ColText)
 	if c.Button(sdl.Rect{X: w - 136, Y: 12, W: 120, H: 26}, "■ Stop replay") {
 		a.stopReplay()
 	}
@@ -916,7 +916,7 @@ func (a *App) drawReplayOverlay(w, h int32) {
 // vanishes when playback begins. Skip ends the warm immediately and plays with
 // whatever has loaded (the rest streams in on demand, as before this phase existed).
 func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
-	w := a.replayWarm
+	w := a.sel.replayWarm
 	if w == nil {
 		return
 	}
@@ -956,7 +956,7 @@ func (a *App) drawReplayControls(stage sdl.Rect, w int32) {
 	}
 	bx += 100
 	pp := "⏸ Pause"
-	if a.replayPaused {
+	if a.sel.replayPaused {
 		pp = "▶ Play"
 	}
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 86, H: 28}, pp) {

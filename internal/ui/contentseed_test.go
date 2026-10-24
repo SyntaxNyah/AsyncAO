@@ -295,22 +295,22 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	// Build a seeding-phase export job and fire the seed, exactly as startSceneExport
 	// does after the load lands (no viewport / capture target needed — seeding runs
 	// ahead of both).
-	a.gif = &gifExportJob{}
-	a.gifExporting = true
-	a.startExportSeed(a.gif, origin)
-	if !a.gif.seeding {
+	a.sel.gif = &gifExportJob{}
+	a.sel.gifExporting = true
+	a.startExportSeed(a.sel.gif, origin)
+	if !a.sel.gif.seeding {
 		t.Fatal("startExportSeed did not enter the seeding phase")
 	}
 
 	// Drive the render-thread tick until the seed lands and the phase clears.
-	for i := 0; i < 2000 && a.gif != nil && a.gif.seeding; i++ {
+	for i := 0; i < 2000 && a.sel.gif != nil && a.sel.gif.seeding; i++ {
 		a.tickGifExport()
 		time.Sleep(time.Millisecond)
 	}
-	if a.gif == nil {
+	if a.sel.gif == nil {
 		t.Fatal("export job vanished during seeding")
 	}
-	if a.gif.seeding {
+	if a.sel.gif.seeding {
 		t.Fatal("seeding phase never completed")
 	}
 

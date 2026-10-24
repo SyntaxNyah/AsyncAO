@@ -200,9 +200,9 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 		// A full-window mode takes the band away outright, so there is nothing to
 		// recover — editorHeld must stay clear or the bar would paint over an export.
 		for name, set := range map[string]func(*App){
-			"gif export":  func(a *App) { a.gifExporting = true },
+			"gif export":  func(a *App) { a.sel.gifExporting = true },
 			"theater":     func(a *App) { a.theaterOn = true },
-			"scene maker": func(a *App) { a.makerOpen = true },
+			"scene maker": func(a *App) { a.sel.makerOpen = true },
 		} {
 			a := stageMenuBarApp(t)
 			a.classic.classicEdit = true
@@ -690,8 +690,8 @@ func TestMenuBarHeightIsZeroWhenHidden(t *testing.T) {
 		undo func()
 	}{
 		{"theater", func() { a.theaterOn = true }, func() { a.theaterOn = false }},
-		{"gif export", func() { a.gifExporting = true }, func() { a.gifExporting = false }},
-		{"scene maker", func() { a.makerOpen = true }, func() { a.makerOpen = false }},
+		{"gif export", func() { a.sel.gifExporting = true }, func() { a.sel.gifExporting = false }},
+		{"scene maker", func() { a.sel.makerOpen = true }, func() { a.sel.makerOpen = false }},
 	} {
 		tc.set()
 		if got := a.menuBarHeight(); got != 0 {

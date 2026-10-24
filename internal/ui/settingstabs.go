@@ -599,10 +599,10 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
 		c.Border(sw, ColPanelHi)
 		if c.focusID != "spritetinthex" {
-			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
+			a.sel.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
 		}
-		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
-			a.spriteTintHex = next
+		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.sel.spriteTintHex, "RRGGBB"); next != a.sel.spriteTintHex {
+			a.sel.spriteTintHex = next
 			if rgb, ok := parseHex6(next); ok {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteTintColor = rgb })
 			}

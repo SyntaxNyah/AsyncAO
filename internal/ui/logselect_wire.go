@@ -275,25 +275,25 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int32) {
 	c := a.ctx
 	n := a.logLineCount(which)
-	if a.logSelActive {
-		a.logSelFill = a.highlightFill() // cache once/frame; the per-line draw won't lock
+	if a.sel.logSelActive {
+		a.sel.logSelFill = a.highlightFill() // cache once/frame; the per-line draw won't lock
 	}
 	inText := c.mouseX >= list.X && c.mouseX <= list.X+wrapW // exclude the scrollbar
-	if a.logSelPressed && n > 0 && c.hovering(list) && inText {
+	if a.sel.logSelPressed && n > 0 && c.hovering(list) && inText {
 		p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
-		a.logSelWhich = which
-		a.logSelAnchor, a.logSelHead = p, p
-		a.logSelActive = true
-		a.logSelDragging = true
-		a.chatSelActive = false // the log owns the highlight now (don't double-select with the chatbox)
+		a.sel.logSelWhich = which
+		a.sel.logSelAnchor, a.sel.logSelHead = p, p
+		a.sel.logSelActive = true
+		a.sel.logSelDragging = true
+		a.sel.chatSelActive = false // the log owns the highlight now (don't double-select with the chatbox)
 	}
-	if a.logSelDragging && a.logSelWhich == which {
+	if a.sel.logSelDragging && a.sel.logSelWhich == which {
 		if c.mouseDown {
-			a.logSelHead = a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
+			a.sel.logSelHead = a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
 		} else {
-			a.logSelDragging = false
-			if a.logSelAnchor.equal(a.logSelHead) {
-				a.logSelActive = false // a plain click clears the selection
+			a.sel.logSelDragging = false
+			if a.sel.logSelAnchor.equal(a.sel.logSelHead) {
+				a.sel.logSelActive = false // a plain click clears the selection
 			} else {
 				c.clicked = false // a real drag must not also open a link / pin
 				c.focusID = ""    // ...and it unfocuses the IC/OOC input, so Ctrl+C copies the SELECTION, not the (still-focused) field
@@ -302,8 +302,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 	}
 	// Ctrl+C copies the active selection when no text field is focused (a
 	// focused field's own copy wins). Consume copyReq so it fires once.
-	if c.copyReq && c.focusID == "" && a.logSelActive && a.logSelWhich == which {
-		lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
+	if c.copyReq && c.focusID == "" && a.sel.logSelActive && a.sel.logSelWhich == which {
+		lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
 		if !lo.equal(hi) {
 			_ = sdl.SetClipboardText(selectedText(func(i int) string { return a.logLineText(which, i) }, lo, hi))
 			a.warnLine = "Copied selection to clipboard"
@@ -334,8 +334,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 	// copies its URL (it runs after; last write wins) and the pill keeps its
 	// gesture. Pin-to-notes moved to its chord (default Ctrl+N).
 	if c.rightClicked && n > 0 && c.hovering(list) && inText {
-		if a.logSelActive && a.logSelWhich == which {
-			lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
+		if a.sel.logSelActive && a.sel.logSelWhich == which {
+			lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
 			if !lo.equal(hi) {
 				_ = sdl.SetClipboardText(selectedText(func(i int) string { return a.logLineText(which, i) }, lo, hi))
 				a.warnLine = "Copied selection to clipboard"
@@ -360,11 +360,11 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
 	li := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY).entry
-	a.logSelWhich = which
-	a.logSelAnchor = selPoint{entry: li, off: 0}
-	a.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
-	a.logSelActive = true
-	a.logSelDragging = false
+	a.sel.logSelWhich = which
+	a.sel.logSelAnchor = selPoint{entry: li, off: 0}
+	a.sel.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
+	a.sel.logSelActive = true
+	a.sel.logSelDragging = false
 }
 
 // selectLogWord selects the word under the cursor (the double-click gesture):
@@ -380,21 +380,21 @@ func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
 	if hi <= lo {
 		return // empty line — nothing to select
 	}
-	a.logSelWhich = which
-	a.logSelAnchor = selPoint{entry: p.entry, off: lo}
-	a.logSelHead = selPoint{entry: p.entry, off: hi}
-	a.logSelActive = true
-	a.logSelDragging = false
+	a.sel.logSelWhich = which
+	a.sel.logSelAnchor = selPoint{entry: p.entry, off: lo}
+	a.sel.logSelHead = selPoint{entry: p.entry, off: hi}
+	a.sel.logSelActive = true
+	a.sel.logSelDragging = false
 }
 
 // drawLogSelHighlight fills the selection background behind one display line
 // (called inside the line loop, before the text). Interior lines fill the whole
 // column; only the first/last partial lines measure an offset.
 func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, text string, font *ttf.Font) {
-	if !a.logSelActive || a.logSelWhich != which {
+	if !a.sel.logSelActive || a.sel.logSelWhich != which {
 		return
 	}
-	lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
+	lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
 	if lo.equal(hi) || li < lo.entry || li > hi.entry {
 		return
 	}
@@ -409,6 +409,6 @@ func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, t
 		x1 = listX + a.logRowIndent(which, li) + a.logPrefixWidth(which, li, text, font, runes, hi.off)
 	}
 	if x1 > x0 {
-		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.logSelFill)
+		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.sel.logSelFill)
 	}
 }

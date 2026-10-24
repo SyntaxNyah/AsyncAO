@@ -379,12 +379,12 @@ func TestExportBorrowsTheThemeLayoutCacheWithoutThrashing(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
-	a.gifExporting = true
+	a.sel.gifExporting = true
 	if !a.screenDispatchPreempted() {
 		t.Fatal("an export does not preempt the screen dispatch — the courtroom would rebuild the shared " +
 			"layout cache every frame the export borrowed it")
 	}
-	a.gifExporting = false
+	a.sel.gifExporting = false
 
 	const w, h int32 = 640, 480
 	j := &gifExportJob{room: newRoomForTest(t), chatPct: DefaultScalePct}

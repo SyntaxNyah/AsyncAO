@@ -819,7 +819,7 @@ const audioFineTick = time.Second / 60
 // stream needs the fine audio cadence. A static-but-open courtroom is NOT active,
 // so it still parks at true idle.
 func (a *App) AudioActive() bool {
-	if a.replaying || a.makerOpen || a.gifExporting || a.link.room == nil {
+	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.room == nil {
 		return false
 	}
 	return a.link.room.AudioActive()
@@ -1483,7 +1483,7 @@ func (a *App) wantsFullRate() bool {
 	// and input like any other chrome; only a live call's audio engine needs
 	// steady frames (SkipFrame's voice exception keeps them coming regardless —
 	// this keeps their PACE at the full rate the engine was tuned for).
-	if a.replaying || a.makerOpen || a.gifExporting || a.link.voiceJoined || a.perfHUD {
+	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.voiceJoined || a.perfHUD {
 		return true
 	}
 	return len(a.reactUI.reactionFloats) > 0 || a.splitActive()

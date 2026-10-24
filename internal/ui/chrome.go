@@ -127,7 +127,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Customize accent…") {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ChromeThemeKey = chromeCustomKey })
 		a.applyChromePreset(chromeCustomKey)
-		a.chromeEditSlot = 3 // the Accent slot → the wheel below edits it directly
+		a.sel.chromeEditSlot = 3 // the Accent slot → the wheel below edits it directly
 	}
 	c.LabelClipped(pad+180, y+5, w-pad-180-scrollBarW, "Recolour the whole UI accent — or pick a preset / edit every colour below.", ColTextDim)
 	y += btnH + 12
@@ -280,8 +280,8 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.CustomChromeHex = hex })
 		a.applyChromePreset(chromeCustomKey) // live recolour
 	}
-	if a.chromeEditSlot < 0 || a.chromeEditSlot >= len(labels) {
-		a.chromeEditSlot = 0
+	if a.sel.chromeEditSlot < 0 || a.sel.chromeEditSlot >= len(labels) {
+		a.sel.chromeEditSlot = 0
 	}
 
 	c.LabelClipped(pad, y, a.formW, "Pick a colour, then drag the wheel / brightness or type a hex. Untouched slots stay stock dark.", ColTextDim)
@@ -292,22 +292,22 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 		sw := sdl.Rect{X: sx, Y: y, W: 28, H: 28}
 		c.Fill(sw, colOf(i))
 		ring := ColTextDim
-		if i == a.chromeEditSlot {
+		if i == a.sel.chromeEditSlot {
 			ring = ColAccent
 		}
 		c.Border(sw, ring)
 		if c.clicked && c.hovering(sw) {
-			a.chromeEditSlot = i
+			a.sel.chromeEditSlot = i
 		}
 		c.TooltipAfter("chromeslot"+strconv.Itoa(i), sw, labels[i])
 		sx += 34
 	}
 	y += 36
-	sel := a.chromeEditSlot
+	sel := a.sel.chromeEditSlot
 	c.Label(pad, y, "Editing: "+labels[sel], ColAccent)
 	y += 22
 
-	y = a.wheelHexEditor(y, "chromehex", &a.chromeHexBuf, colOf(sel), func(col sdl.Color) {
+	y = a.wheelHexEditor(y, "chromehex", &a.sel.chromeHexBuf, colOf(sel), func(col sdl.Color) {
 		apply(sel, col)
 	})
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Reset all to Dark") {

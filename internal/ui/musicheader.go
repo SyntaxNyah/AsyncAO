@@ -366,8 +366,8 @@ func (a *App) openMusicMenuFromButton(at sdl.Point, themed bool) {
 // force-closes it when its surface is gone. Same set-and-release discipline as
 // rosterMenuFence: a stranded modalOn freezes the whole UI.
 func (a *App) musicMenuFence(c *Ctx) {
-	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
-		!a.makerOpen && a.activeTab == a.roster.musicMenuTab
+	live := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying &&
+		!a.sel.makerOpen && a.activeTab == a.roster.musicMenuTab
 	if a.roster.musicMenuOpen && !live {
 		a.roster.musicMenuOpen = false
 	}
